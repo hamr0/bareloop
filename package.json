@@ -4,6 +4,11 @@
   "description": "Workflows that earn their own design, with receipts — agent-authored workflows for repeated, long, verifiable jobs that improve across runs under an un-gameable gate.",
   "license": "MIT",
   "author": "hamr0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hamr0/bareloop.git"
+  },
+  "homepage": "https://github.com/hamr0/bareloop#readme",
   "files": [],
   "keywords": [
     "agent",
