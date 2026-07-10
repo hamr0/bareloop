@@ -1,7 +1,7 @@
-# bareloop — PRELIMINARY PRD (v0.2 — named, not locked)
+# bareloop — PRD (v1)
 
-> Status: **DRAFT — named `bareloop` 2026-07-11; locks as v1 after the bloat audit.** Seed
-> written 2026-07-10 in the adaptlearn repo; now lives in bareloop's own repo. Ground truth
+> Status: **v1 — LOCKED 2026-07-11** (naming pass + bloat audit applied). Seed written
+> 2026-07-10 in the adaptlearn repo; now lives in bareloop's own repo. Ground truth
 > it consumes: `docs/plans/2026-07-10-agentic-automation-successor-design.md` (validated
 > interview + all amendments, this repo), adaptlearn FINDINGS F1–F20 and CYBERNETICS.md
 > (closed records, copied to `docs/00-context/`), and — linked, not copied — adaptlearn
@@ -36,7 +36,7 @@ inherited rule carries the green that minted it and the contrast that attributed
 
 Open (product measures, not assumes): rule generalization across runs of one real job;
 soft-green minting policy; long-horizon gate value under executed inheritance (F20 deferred
-it); local-LLM providers.
+it); local-LLM providers. Each open question's pre-registered handle lives in §9.
 
 ## §3 Design laws (inherited doctrine — each one was paid for; see F-refs)
 
@@ -74,7 +74,9 @@ it); local-LLM providers.
   Mid-run revision allowed in production runs (it recovers runs and its learning is captured
   by law #2); disabled in claim/analytics cohorts (law #6).
 - **Floor:** append-only JSONL spine (single source for every UI), litectx store per job,
-  ledger with per-run rows. The panel is a pure observer of the spine.
+  ledger with per-run rows. The panel is a pure observer of the spine. Secrets load from
+  the environment and never enter the spine, configs, or ledger — an append-only record
+  that captures a key captures it forever.
 
 **Verdict classes, gated per step** (interview decision #2):
 - **Hard green** — predicate/exit-code truth. Mints inheritance automatically.
@@ -94,7 +96,8 @@ classes, budget, cadence, worker/provider), watch runs (chat incl. HITL prompts;
 generation × verdict; detail = spine stream), and the trust surface: **"what has this lineage
 learned"** — current rules, each with minting green + contrast evidence. API-first providers
 (SP-2); local LLMs deferred. Web UI deferred until the loop closes headless (spine-first, so
-the UI is always a pure observer).
+the UI is always a pure observer); when it lands it is mobile-responsive by default — HITL
+confirms and run-watching happen from a phone as much as a desktop (house rule).
 
 ## §6 Job #1 — auto-maintainer on litectx (decision #5)
 
@@ -102,8 +105,7 @@ review → fix → branch → PR → **human-gated merge, forever**. Hard greens
 suite + lint; bareguard write scopes cap the diff; the PR is the escalation artifact. The
 store seeds from CLAUDE.md/AGENT_RULES; what the lineage learns is per-repo folklore — which
 F17/F18 showed is exactly the regularity class where memory pays (outside the worker's
-prior). Job #1 doubles as the measurement bed for the §2 open questions: rule generalization
-across non-identical runs, soft-green minting policy, long-horizon gate value.
+prior). Job #1 doubles as the measurement bed for the §2 open questions (handles: §9).
 
 ## §7 What must be built that the experiment never had
 
@@ -145,4 +147,7 @@ the stop is a result. Budget discipline unchanged: hard cap per run, cap-not-est
 *Seed written 2026-07-10 in adaptlearn (v0.11.0). Named `bareloop` 2026-07-11 (npm-free at
 check time; suite-family name chosen deliberately — the product is the bare suite's flagship
 consumer, and "bare loop" states the §8 minimalism: no swarm, no orchestrator, one process
-per run). Remaining before the v1 lock: the bloat audit.*
+per run). Bloat-audited and locked v1 2026-07-11: the seed was already lean — the audit's
+changes were the §6→§9 dedup, the §4 secrets invariant, and the §5 mobile mandate. §3's
+citations stay: every parenthetical is a load-bearing F-ref. Amendments from here are dated
+addenda, not rewrites.*
