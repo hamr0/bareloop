@@ -20,6 +20,16 @@
 - **Mobile** (house rule — responsive by default): stacks to progress strip → chat →
   results behind a tap.
 
+## Primitive menu presentation — provisional
+
+The menu breaks primitives under **recall / compress / stash / remember** for easy
+categorization — the adaptlearn-proven spine set, one verb per litectx primitive
+(Select → recall, Compress → compress, Isolate → stash, Write → remember). Explicitly
+provisional: change or simplify as development teaches us. Open detail (not decided):
+where non-CE verbs (barebrowse, baremobile, bareagent, bareguard surfaces) sit — by
+package until this scheme evolves. Locked-but-listed primitives render visibly distinct
+from admitted ones (disclosure ≠ admission, PRD addendum v1.1 §3).
+
 ## Context-graph — third view, eventual
 
 litectx already ships the primitive: `ContextGraph` (`litectx/src/contextgraph.js`) — an
