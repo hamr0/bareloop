@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- PRD addendum v1.1 (2026-07-11, post-lock interview): panel layout + web-CLI command
+  bar (spec: `docs/01-product/PANEL.md`), full five-package primitive disclosure with
+  fix-upstream in scope, staged-disclosure open question registered (untested in
+  adaptlearn — verified).
 - PRD locked at v1 (2026-07-11) after the bloat audit: §6→§9 open-questions dedup,
   §4 secrets-never-enter-the-spine invariant, §5 mobile-responsive mandate on the
   panel. From here the PRD amends by dated addenda only.

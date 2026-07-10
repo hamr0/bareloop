@@ -144,6 +144,28 @@ non-identical runs — the §2 open question) → N4 verdict classes complete (s
 the stop is a result. Budget discipline unchanged: hard cap per run, cap-not-estimate.
 
 ---
+
+## Addendum v1.1 — 2026-07-11 (post-lock interview with hamr)
+
+1. **Panel layout decided; spec at `docs/01-product/PANEL.md`.** Left chat (+ command bar);
+   right = progress/cost/step over results cards; context-graph reserved as a third view
+   consuming litectx's `ContextGraph` + the spine (visual only, eventual). Mobile stacks.
+   Timing unchanged: headless first, UI when the spine is good (N6).
+2. **Web CLI = the panel's command bar**, speaking the exact verbs of the headless CLI —
+   one implementation, panel as passthrough. It may not disturb the two-pane layout.
+3. **§4 primitive menu, strengthened:** the FULL surface of all five bare-suite packages
+   (bareagent, bareguard, litectx, barebrowse, baremobile) is disclosed from day 1 — the
+   menu is disclosure, not implementation; per-job admission still gates what's callable.
+   And law 10 hardens: a missing or broken primitive gets FIXED in baresuite (upstream PR)
+   as in-scope bareloop work — `docs/UPSTREAM-ASKS.md` is a fix queue, not a log.
+4. **New open question (joins §2/§9): staged disclosure.** Start a lineage on the spine
+   primitives; once the workflow greens, disclose extra verbs for fine-tuning. Checked
+   2026-07-11: never tested in adaptlearn — its registry changed only by finding
+   ("re-admission is by finding, never by widening"; the menu never widened mid-lineage).
+   Handle: candidate probe on adaptlearn machinery (successor-POC style, like F19/F20) or
+   measure at N4 on job #1 — hamr picks the timing.
+
+---
 *Seed written 2026-07-10 in adaptlearn (v0.11.0). Named `bareloop` 2026-07-11 (npm-free at
 check time; suite-family name chosen deliberately — the product is the bare suite's flagship
 consumer, and "bare loop" states the §8 minimalism: no swarm, no orchestrator, one process
