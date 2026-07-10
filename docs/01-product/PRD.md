@@ -154,16 +154,32 @@ the stop is a result. Budget discipline unchanged: hard cap per run, cap-not-est
 2. **Web CLI = the panel's command bar**, speaking the exact verbs of the headless CLI —
    one implementation, panel as passthrough. It may not disturb the two-pane layout.
 3. **§4 primitive menu, strengthened:** the FULL surface of all five bare-suite packages
-   (bareagent, bareguard, litectx, barebrowse, baremobile) is disclosed from day 1 — the
-   menu is disclosure, not implementation; per-job admission still gates what's callable.
-   And law 10 hardens: a missing or broken primitive gets FIXED in baresuite (upstream PR)
-   as in-scope bareloop work — `docs/UPSTREAM-ASKS.md` is a fix queue, not a log.
-4. **New open question (joins §2/§9): staged disclosure.** Start a lineage on the spine
-   primitives; once the workflow greens, disclose extra verbs for fine-tuning. Checked
-   2026-07-11: never tested in adaptlearn — its registry changed only by finding
-   ("re-admission is by finding, never by widening"; the menu never widened mid-lineage).
-   Handle: candidate probe on adaptlearn machinery (successor-POC style, like F19/F20) or
-   measure at N4 on job #1 — hamr picks the timing.
+   (bareagent, bareguard, litectx, barebrowse, baremobile) is disclosed from day 1 —
+   disclosure ≠ admission (design decision #3 was already this shape); per-job admission
+   gates what's callable, so job #1 admits litectx/bareguard/bareagent verbs while
+   barebrowse/baremobile stay listed-but-locked. Disclosure is cheap, not free: every
+   listed primitive is a line in the author's context and a surface it can request-red
+   against — and that cost buys a diagnostic (a request-red against barebrowse on a repo
+   job is real signal: CI-checking instinct, or confusion — either is worth seeing).
+   **Two blocked-reds, never collapsed** (different resolutions):
+   - *locked-but-exists* → request-red → registry admission. Purely in-loop, no upstream PR.
+   - *missing/broken* → upstream-gap red → fixed in baresuite (we own the suite:
+     fix-and-consume in the same session, version bump in bareloop) — **never a local shim
+     in bareloop**. `docs/UPSTREAM-ASKS.md` queues this red only.
+   Collapsing the two would let "I want browser access" masquerade as "the browser
+   primitive is broken."
+4. **New open question (joins §2/§9): graduated disclosure.** Base admitted set (the
+   "spine primitives") always on; extras disclosed for fine-tuning once the workflow
+   greens. Verified 2026-07-11 against adaptlearn (schema-v1 design + PRD): never
+   exercised — the experiment ran a fixed hardcoded 4-verb subset with no registry;
+   mutation could swap ops within the catalog but never admit a primitive, and the
+   v2-candidate verbs were explicitly excluded. The idea is latent in decision #3's
+   admitted-vs-listed split but has zero evidence. The archive stays closed (decision #4);
+   the probe belongs in bareloop, pre-registered with M3 discipline on the new axis:
+   **minimal-menu vs menu+1-plausibly-load-bearing-extra, opposed configs on one job —
+   measurable separation required BEFORE the request-red registry is built.** No
+   separation → graduated disclosure is decoration and the registry complexity dies
+   unbuilt.
 
 ---
 *Seed written 2026-07-10 in adaptlearn (v0.11.0). Named `bareloop` 2026-07-11 (npm-free at
