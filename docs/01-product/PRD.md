@@ -147,7 +147,7 @@ the stop is a result. Budget discipline unchanged: hard cap per run, cap-not-est
 
 ## Addendum v1.1 — 2026-07-11 (post-lock interview with hamr)
 
-1. **Panel layout decided; spec at `docs/01-product/PANEL.md`.** Left chat (+ command bar);
+1. **Panel layout decided; spec: Appendix A below.** Left chat (+ command bar);
    right = progress/cost/step over results cards; context-graph reserved as a third view
    consuming litectx's `ContextGraph` + the spine (visual only, eventual). Mobile stacks.
    Timing unchanged: headless first, UI when the spine is good (N6).
@@ -191,6 +191,56 @@ menu+1-plausibly-load-bearing-extra, measurable separation required BEFORE barel
 the request-red registry (no separation → the registry dies unbuilt). bareloop consumes
 the probe's findings exactly the way §2 consumes F1–F20 — settled upstream, not re-proven
 here.
+
+---
+
+## Appendix A — Panel spec (provisional)
+
+> v0.1, from the 2026-07-11 PRD interview (hamr); folded in from `PANEL.md` 2026-07-11 —
+> one product doc. Unlike the locked core, this appendix is **provisional**: change or
+> simplify as development teaches us; changes from real use get dated notes here. Build
+> stays deferred until the spine is good (§10, N6). Two standing invariants: the panel is
+> a **pure observer of the spine plus a command passthrough** — it can never do something
+> the CLI can't — and it is **dead simple**.
+
+### Layout — two panes
+
+- **Left: chat.** System↔operator conversation, HITL prompts and confirms, and result
+  announcements (each announcement links into the results pane; results never live only in
+  scrollback). At the bottom of the pane: the **command bar** — a web CLI speaking the
+  exact verbs of the headless CLI (create job, run, pause, show rules, tail spine). One
+  implementation; the panel passes commands through. The bar must not disturb the two-pane
+  layout.
+- **Right, top: progress.** Current step, cost so far vs the run's hard cap, run/generation
+  state.
+- **Right, bottom: results.** Artifact cards, newest first. Job #1: PR link + diff stat +
+  suite verdict. A posting job: the posted URL. Whatever the job's closes produce.
+- **Mobile** (house rule — responsive by default): stacks to progress strip → chat →
+  results behind a tap.
+
+### Primitive menu presentation
+
+The menu breaks primitives under **recall / compress / stash / remember** for easy
+categorization — the adaptlearn-proven spine set, one verb per litectx primitive
+(Select → recall, Compress → compress, Isolate → stash, Write → remember). Explicitly
+provisional: change or simplify as development teaches us. Open detail (not decided):
+where non-CE verbs (barebrowse, baremobile, bareagent, bareguard surfaces) sit — by
+package until this scheme evolves. Locked-but-listed primitives render visibly distinct
+from admitted ones (disclosure ≠ admission, addendum v1.1 §3).
+
+### Context-graph — third view, eventual
+
+litectx already ships the primitive: `ContextGraph` (`litectx/src/contextgraph.js`) — an
+`observe()` proxy records every CE verb call live; `.json()` / `.mermaid()` out;
+visualization is explicitly a consumer concern. The panel's third view is that consumer,
+fed by ContextGraph traces + the spine, drawing the whole workflow: runs, retries,
+verdicts, rule lineage. Visual only, not load-bearing, not first — the slot is reserved
+and nothing in the two-pane layout may squat on it.
+
+### Timing
+
+Headless first. UI when the spine is good — no early read-only viewer unless the spine
+earns it sooner. When the panel lands, everything above is the starting layout.
 
 ---
 *Seed written 2026-07-10 in adaptlearn (v0.11.0). Named `bareloop` 2026-07-11 (npm-free at

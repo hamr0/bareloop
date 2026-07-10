@@ -99,7 +99,7 @@ ladder, and the stop is a result.
 | **N3** | Executed inheritance + contrast-bit extractor — **kill-switch: rules must transmit across non-identical runs** |
 | **N4** | Verdict classes complete (soft/HITL minting) |
 | **N5** | Scheduler + budget ops |
-| **N6** | The panel ([spec](docs/01-product/PANEL.md): left chat + command bar, right progress over results, context-graph reserved) |
+| **N6** | The panel ([spec](docs/01-product/PRD.md#appendix-a--panel-spec-provisional): left chat + command bar, right progress over results, context-graph reserved) |
 
 ## The bare ecosystem
 
