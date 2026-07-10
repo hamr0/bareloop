@@ -8,6 +8,9 @@ feature lands, **patch** = docs, fixes, scaffolding.
 ## [Unreleased]
 
 ### Added
+- PRD **addendum v1.2**: the menu-breadth (graduated-disclosure) probe is assigned to
+  adaptlearn (successor-POC track, F19/F20 style) and returns to bareloop as findings;
+  the registry-gating separation requirement is unchanged.
 - PRD locked at **v1** (2026-07-11) after the bloat audit: §6→§9 open-questions dedup,
   §4 secrets-never-enter-the-spine invariant, §5 mobile-responsive mandate. Amendments
   from here are dated addenda, never rewrites.

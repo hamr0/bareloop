@@ -181,6 +181,17 @@ the stop is a result. Budget discipline unchanged: hard cap per run, cap-not-est
    separation → graduated disclosure is decoration and the registry complexity dies
    unbuilt.
 
+## Addendum v1.2 — 2026-07-11 (probe assignment, hamr)
+
+Supersedes v1.1 §4's placement only: **the menu-breadth (graduated-disclosure) probe runs
+in adaptlearn** — successor-POC track, like F19/F20: post-archive use of the experiment's
+machinery that does not reopen the archived verdict — **and comes back to bareloop as
+findings.** Design and gate unchanged: M3 discipline, minimal-menu vs
+menu+1-plausibly-load-bearing-extra, measurable separation required BEFORE bareloop builds
+the request-red registry (no separation → the registry dies unbuilt). bareloop consumes
+the probe's findings exactly the way §2 consumes F1–F20 — settled upstream, not re-proven
+here.
+
 ---
 *Seed written 2026-07-10 in adaptlearn (v0.11.0). Named `bareloop` 2026-07-11 (npm-free at
 check time; suite-family name chosen deliberately — the product is the bare suite's flagship
