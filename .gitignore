@@ -2,6 +2,11 @@ node_modules/
 .env
 *.env
 !.env.example
+/types/
+
+# Agent / IDE scratch — never commit (LIBRARY_CONVENTIONS §7; CLAUDE.md stays tracked)
+.claude/
 .litectx/
-.claude/settings.local.json
+.idea/
+
 *.log
