@@ -1,0 +1,7 @@
+node_modules/
+.env
+*.env
+!.env.example
+.litectx/
+.claude/settings.local.json
+*.log

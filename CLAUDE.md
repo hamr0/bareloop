@@ -1,0 +1,48 @@
+# bareloop
+
+**"Automate this job — I don't know the best workflow."** A system for tasks that are
+repeated, long, and verifiable: an agent authors the workflow scaffolding (constrained,
+validated config — never freeform code); runs execute under an un-gameable outer gate; the
+scaffolding improves across runs through verdict-gated, run-as-executed inheritance with
+ledger-counted attribution. Every inherited rule carries the green that minted it and the
+contrast that attributed it.
+
+## Ground truth (read before designing anything)
+
+- `docs/01-product/PRD.md` — the PRD. §3 design laws are inherited doctrine, each paid for
+  in the adaptlearn experiment; do not relitigate them without new evidence.
+- `docs/plans/2026-07-10-agentic-automation-successor-design.md` — the design record
+  (validated interview + all amendments). Closed; amend with dated addenda, never rewrite.
+- `docs/00-context/` — adaptlearn's FINDINGS (F1–F20) and CYBERNETICS.md, closed records
+  copied for reference. The evidence archive and analysis lenses live in adaptlearn v0.11.1
+  (`../adaptlearn`): the science behind this product.
+- `docs/FINDINGS.md` — THIS repo's findings, starting at F1. No papering over: every
+  friction point gets logged, grounded in source or event log.
+- `docs/UPSTREAM-ASKS.md` — lib gaps filed against the bare suite. Every request-red doubles
+  as an upstream finding.
+
+## Hard lines (product form of the arbiter rule)
+
+- The agent authors its workflow; it NEVER authors its arbiter. Budgets, caps, verdicts,
+  merge/publish live outside the emergent part, permanently.
+- Merge stays human forever. No self-adjusted budgets — ever.
+- Secrets load from the environment; they never enter the tree, the spine, the configs, or
+  the ledger (an append-only log that captures a key captures it forever).
+- Build ladder discipline: a rung that cannot meet its exit stops the ladder; the stop is a
+  result. Hard cap per run, cap-not-estimate.
+
+## Dev Rules
+
+**POC first.** Always validate logic with a ~15min proof-of-concept before building. Cover happy path + common edges. POC works → design properly → build with tests. Never ship the POC. **Aim the spike at the riskiest assumption, not the easy part; prove, don't assert — measure anything you call "cheap"/"fast"/"constant," and claim only what the evidence supports (no big-mouthed conclusions measurement can falsify). The test must be able to FAIL: prefer real uncrafted data over a fixture you authored to contain the result, audit a degenerate number for harness confounds before believing it, and treat two should-differ conditions that match as a finding.**
+
+**Build incrementally.** Break work into small independent modules. One piece at a time, each must work on its own before integrating.
+
+**Dependency hierarchy — follow strictly:** vanilla language → standard library → external (only when stdlib can't do it in <100 lines). External deps must be maintained, lightweight, and widely adopted. Exception: always use vetted libraries for security-critical code (crypto, auth, sanitization).
+
+**Lightweight over complex.** Fewer moving parts, fewer deps, less config. Simple > clever. Readable > elegant.
+
+**Open-source only.** No vendor lock-in. Every line of code must have a purpose — no speculative code, no premature abstractions.
+
+**Responsive web UI is mandatory.** Any web UI must work on mobile by default — fluid layouts, viewport meta, breakpoints, no horizontal scroll. Verify in DevTools device emulation before claiming a UI task is done. POCs exempt; real projects are not. (Applies to the panel, rung N6.)
+
+For full development and testing standards, see `.claude/remember/AGENT_RULES.md`.

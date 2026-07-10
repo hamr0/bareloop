@@ -1,0 +1,15 @@
+{
+  "name": "bareloop",
+  "version": "0.0.1",
+  "description": "Workflows that earn their own design, with receipts — agent-authored workflows for repeated, long, verifiable jobs that improve across runs under an un-gameable gate.",
+  "license": "MIT",
+  "author": "hamr0",
+  "files": [],
+  "keywords": [
+    "agent",
+    "workflow",
+    "automation",
+    "inheritance",
+    "bare-suite"
+  ]
+}
