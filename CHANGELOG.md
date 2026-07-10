@@ -20,11 +20,12 @@ feature lands, **patch** = docs, fixes, scaffolding.
   and consume, never a local shim); **graduated-disclosure** open question pre-registered
   with M3 discipline (minimal-menu vs +1-extra contrast must separate before the
   request-red registry is built) — verified never exercised in adaptlearn.
-- `docs/01-product/PANEL.md` — panel spec: two panes (left chat + command bar speaking
-  the exact headless-CLI verbs; right progress/cost/step over results cards); primitive
-  menu grouped under recall / compress / stash / remember (provisional); context-graph
-  third view reserved (consumes litectx `ContextGraph` + the spine); mobile stacks;
-  headless first.
+- Panel spec — **PRD Appendix A** (provisional; briefly `PANEL.md`, folded into the PRD
+  same day — one product doc): two panes (left chat + command bar speaking the exact
+  headless-CLI verbs; right progress/cost/step over results cards); primitive menu
+  grouped under recall / compress / stash / remember (provisional); context-graph third
+  view reserved (consumes litectx `ContextGraph` + the spine); mobile stacks; headless
+  first.
 - `.github/workflows/publish.yml` — npm trusted publishing (OIDC, no token), manual
   dispatch, idempotent, asserts registry end-state.
 - `bareloop.context.md` — adopter contract per LIBRARY_CONVENTIONS §3 (draft; API
