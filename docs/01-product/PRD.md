@@ -345,6 +345,41 @@ the spine. Unchanged and re-affirmed structural: escalation text reaches the hum
 byte-identical to what the shell emitted (law #7/V4 — the pain channel is never
 summarized). No rung changes; §10 stands.
 
+## Addendum v1.7 — 2026-07-12 (reconciliation with the seed's §11 checklist — v1.6 was written from the session summary; the seed is the fuller statement)
+
+The adaptlearn seed draft gained §11 ("the PRD-spine checklist") after the repo cut;
+audited against v1.6 per §11's own rule — place every item or strike it deliberately, no
+silent drops. Four corrections; everything else in v1.6 stands as written. The CYBERNETICS
+registration (same-day) is updated in place to match; this addendum is the change record.
+
+1. **V7 upgraded: from category-commitment to pre-registered probe (supersedes v1.6 #1's
+   framing; the category and its N1/N2 landing stand).** Coordination is the ONE subsystem
+   adaptlearn structurally could not test (one process, one S1, sequential runs — nothing
+   to coordinate), so V7 ships as prediction, not proven mechanism. **Prediction:** the
+   first multi-step job surfaces ≥1 red that attributes to no single unit (S2-class).
+   **Falsifier:** if every job-#1 red attributes cleanly to a single unit under §5b
+   contrast, V7 over-predicted — note it, keep `coordination-red` as a named-but-empty
+   bin, move on. **Build gate:** until the probe fires, no S2 machinery beyond the named
+   category is built — the category IS the instrument that makes S2 reds visible;
+   schedulers before an observed coordination red would be cargo-cult coordination.
+2. **Loop-5 obligation gains two paid-for clauses (extends v1.6 #3):** (a) machinery
+   negatives drive the REAL code path, never a replica — the F22 run-1 clobber survived a
+   replica-based negative; (b) **provider failures are instrument, not verdict** — retry
+   once, then a provider red, excluded from every analytic read (§5b's spirit). Partially
+   embodied at N0 (`src/extract.js` reds `provider-error` and never throws); retry-once
+   and the spine-level category land with N2's real loop.
+3. **Amplifier truncation — gate polarity corrected (supersedes v1.6 #5).** v1.6 gated the
+   declaration rule's existence on the probe; the seed's framing is right: the declaration
+   ships regardless — a near-free honesty marker, the injection-side twin of the ledger's
+   "ABSENT, not fabricated." Every ranked/partial view injected into a worker says so in
+   the injection itself ("top-k of an unknown total — may be incomplete"). What the
+   **declared-truncation probe — adaptlearn F23, number reserved, prereg pending** —
+   decides is the rule's *status*: load-bearing (review blocker) vs hygiene. The floor is
+   unchanged either way: ranked views never claim exhaustiveness; exhaustive views may.
+4. **Attenuator manifest sharpened (extends v1.6 #4):** the manifest is per-field (the
+   ledger design doc's field table is the template), and an attenuation point without one
+   is a **review blocker**, not merely unfinished.
+
 ---
 
 ## Appendix A — Panel spec (provisional)

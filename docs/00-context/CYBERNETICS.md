@@ -253,18 +253,29 @@ does the signal land on the spine.
    derived from spines, 8 incident classes, lifecycle open → filed → fixed → consumed,
    filing stays human. The classifier table ports as-is.
 5. **Instrument — the probes heal the probe** `[budgets]`. Machinery negatives measured
-   before spend; must-fail fixtures shipped with every instrument. Evidence from the
-   menu-probe session alone: this discipline caught A3, the results-clobber, and a regex
-   bug before they could contaminate a readout. Promoted from dev rule to product
-   obligation in PRD v1.6.
+   before spend; must-fail fixtures shipped with every instrument; negatives drive the
+   REAL code path, never a replica (the F22 run-1 clobber survived a replica-based
+   negative). Provider failures are instrument, not verdict: retry once, then a provider
+   red, excluded from every analytic read (§5b). Evidence from the menu-probe session
+   alone: this discipline caught A3, the results-clobber, and a regex bug before they
+   could contaminate a readout. Promoted from dev rule to product obligation in PRD
+   v1.6/v1.7.
 
 ### New V-items (continuing the series, bareloop-registered)
 
-- **V7 — S2 red category** `[predicts]`: coordination failures (write-scope contention,
-  step-order violations, store races) get their own name on the spine, never folded into
+- **V7 — S2 red category** `[predicts]` — a pre-registered probe, fires on job #1:
+  coordination failures (write-scope contention, step-order violations, store races) get
+  their own name on the spine (`coordination-red`), never folded into
   worker/interpreter-red. Beer: S2 is the anti-oscillation layer; a coordination failure
-  logged as a worker failure teaches the wrong loop to heal. N0's vocabulary (cap-halt,
-  gate-red, interpreter-red, retention-red, broken-close) has no coordination name —
+  logged as a worker failure teaches the wrong loop to heal. This is the one subsystem
+  adaptlearn structurally could not test (one process, one S1, sequential runs), so it
+  ships as prediction, not proven mechanism. **Prediction:** the first multi-step job
+  surfaces ≥1 red attributing to no single unit. **Falsifier:** every job-#1 red
+  attributes cleanly under §5b contrast → V7 over-predicted; keep the category as a
+  named-but-empty bin, move on. **Build gate:** no S2 machinery beyond the named category
+  until the probe fires — the category is the instrument; schedulers before an observed
+  coordination red would be cargo-cult coordination. N0's vocabulary (cap-halt, gate-red,
+  interpreter-red, retention-red, broken-close) has no coordination name — the category
   lands with the N1 schema / N2 real-job loop, where the first real coordination surfaces
   (write scopes, step order, one store per job) appear.
 - **V8 — anti-S5-collapse** `[budgets]`: verdict and cost are separate values end-to-end;
@@ -275,13 +286,18 @@ does the signal land on the spine.
 ### Variety-engineering manifests (mapping "attenuators & amplifiers" made an obligation)
 
 - **Every attenuator declares its destruction** `[budgets]`: each summarizing point
-  (extractor, ledger fold, gap slice, escalation path) documents what it keeps, what it
-  drops, and why nothing downstream needs the dropped part. The upstream-ledger design doc
-  is the template. (The frame's standing question — "what information is destroyed, and
-  does anything downstream need it?" — becomes a per-component deliverable.)
-- **Every amplifier declares its truncation** `[predicts]`: any partial view injected into
-  a worker says so ("top-k of unknown total"). The floor is already earned — F21: partial
-  retrieval poisons gap attribution, so **ranked views never claim exhaustiveness;
-  exhaustive views (impact) may**. Whether *declaring* the truncation restores honest gap
-  attribution is the declared-truncation probe — adaptlearn-side, pre-registered first,
-  same track and bar as F21/F22, findings consumed back here.
+  (extractor, ledger fold, gap slice, escalation path) documents **per field** what is
+  destroyed, what survives, and why nothing downstream needs the dropped part — the
+  upstream-ledger design doc's field table is the template; an attenuation point without
+  its manifest is a review blocker. (The frame's standing question — "what information is
+  destroyed, and does anything downstream need it?" — becomes a per-component
+  deliverable.)
+- **Every amplifier declares its truncation** `[budgets → predicts]`: any ranked/partial
+  view injected into a worker says so in the injection itself ("top-k of an unknown total
+  — may be incomplete") — a near-free honesty marker, the injection-side twin of the
+  ledger's "ABSENT, not fabricated"; it ships regardless. The floor is already earned —
+  F21: undeclared partial retrieval poisons gap attribution, so **ranked views never
+  claim exhaustiveness; exhaustive views (impact) may**. What stays `[predicts]` is the
+  rule's *status* — load-bearing (review blocker) vs hygiene — decided by the
+  declared-truncation probe (adaptlearn F23, number reserved, prereg pending), same track
+  and bar as F21/F22, findings consumed back here.
