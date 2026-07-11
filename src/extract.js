@@ -23,14 +23,13 @@
 
 import { createRequire } from 'node:module';
 
+import { stripFences } from './text.js';
+
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
 
 export const MAX_RULES = 5;
 export const MAX_RULE_CHARS = 200;
-
-/** @param {string} t */
-const stripFences = (t) => t.trim().replace(/^```[a-z]*\n?/i, '').replace(/\n?```\s*$/, '');
 
 /**
  * Distill/update a lineage's rules from one green run's ledger facts.
@@ -64,9 +63,21 @@ The lineage has no rules yet. Write only what this single run actually evidences
 Output ONLY a JSON array of strings: at most ${MAX_RULES} rules, each at most ${MAX_RULE_CHARS}
 characters. No markdown fences, no commentary.`;
 
-  const r = await loop.run([{ role: 'user', content: prompt }]);
-  const costUsd = r.cost ?? 0;
+  // Never throw (the module contract): a provider blip during post-green
+  // extraction must not lose the green run's bookkeeping — it degrades to a
+  // red as data and the caller keeps the lineage's prior rules. Loop defaults
+  // throwOnError: true, so a transient 500 WOULD reject without this.
+  let r;
+  try {
+    r = await loop.run([{ role: 'user', content: prompt }]);
+  } catch (e) {
+    return { rules: null, valid: false, reds: [{ code: 'provider-error', detail: String(/** @type {Error} */ (e).message ?? e) }], costUsd: 0, raw: '' };
+  }
+  const costUsd = r.metrics?.costUsd ?? r.cost ?? 0;
   const raw = stripFences(r.text ?? '');
+  if (r.error) {
+    return { rules: null, valid: false, reds: [{ code: 'provider-error', detail: String(r.error) }], costUsd, raw };
+  }
   /** @type {(code: string, detail: string) => {rules: null, valid: false, reds: Array<object>, costUsd: number, raw: string}} */
   const red = (code, detail) => ({ rules: null, valid: false, reds: [{ code, detail }], costUsd, raw });
 

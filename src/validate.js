@@ -43,6 +43,29 @@ export function globToPrefix(scope) {
   return scope.replace(/\/\*\*?$/, '');
 }
 
+/**
+ * A scope may never reach the arbiter's inputs (design law #1): it must
+ * resolve to a PROPER subdirectory of the run directory. Absolute paths and
+ * ".." segments escape it; "." / "./**" cover the whole run directory — where
+ * the close suite lives. Windows spellings ("..\", "C:\") count as escapes.
+ * @param {string} s
+ */
+function scopeContained(s) {
+  if (s.startsWith('/') || s.includes('\\') || /^[a-zA-Z]:/.test(s)) return false;
+  const prefix = globToPrefix(s);
+  if (prefix === '' || prefix === '.') return false;
+  return prefix.split('/').every((seg) => seg !== '..');
+}
+
+// Each verb is legal ONLY in the slot where it has effect: recall/compress
+// build the attempt context (consumed by before-attempt only), stash parks the
+// gap (which exists only after-red), remember is verdict-gated retention
+// (on-green only, design law #2). An op that validates green but is inert at
+// runtime would still emit hook-op events — a live-looking knob with zero
+// effect, polluting the contrast evidence the extractor attributes by
+// (design law #3; the F16 credit-loss class).
+const VERB_SLOT = { recall: 'before-attempt', compress: 'before-attempt', stash: 'after-red', remember: 'on-green' };
+
 function isKinds(v) {
   return Array.isArray(v) && v.length > 0 && v.every((k) => KINDS.includes(k));
 }
@@ -112,12 +135,10 @@ export function validateConfig(input, { shellCapUsd = 2 } = {}) {
     // anywhere but a trailing /** or /* is inexpressible there, so it would validate green
     // and then gate-red EVERY write at runtime. Reds-before-tokens means rejecting it here.
     red('invalid-value', 'gate.writeScope', 'wildcards only as a trailing "/**" or "/*" (enforcement is prefix-containment, adaptlearn F9)');
-  } else if (!gate.writeScope.every((s) => !s.startsWith('/') && globToPrefix(s).split('/').every((seg) => seg !== '..'))) {
-    // Containment: the interpreter resolves scopes against the run directory; an absolute
-    // path or a ".." segment escapes it — and the close suite lives just outside the
-    // scoped tree. A scope that can reach the arbiter's inputs is the config-level
+  } else if (!gate.writeScope.every(scopeContained)) {
+    // A scope that can reach the arbiter's inputs is the config-level
     // fit-to-pass surface (design law #1). Reds-before-tokens.
-    red('invalid-value', 'gate.writeScope', 'must stay inside the run directory — no absolute paths, no ".." segments (design law #1)');
+    red('invalid-value', 'gate.writeScope', 'must be a proper subdirectory of the run directory — no absolute paths, no ".." segments, not the run dir itself (design law #1)');
   }
 
   const escalation = isObj(c.escalation) ? c.escalation : {};
@@ -136,14 +157,16 @@ export function validateConfig(input, { shellCapUsd = 2 } = {}) {
       ops.forEach((op, i) => {
         const opAt = `${at}.${i}`;
         if (!isObj(op) || !VERBS.includes(op.op)) { red('verb-illegal', opAt, `verbs: ${VERBS.join('|')}`); return; }
-        if (op.op === 'remember' && slot !== 'on-green') {
-          red('verb-placement', opAt, 'remember is legal only in on-green (retention is verdict-gated, design law #2)');
+        if (VERB_SLOT[op.op] !== slot) {
+          red('verb-placement', opAt, `${op.op} is legal only in ${VERB_SLOT[op.op]} — the one slot where it has effect (an inert op is a fake knob in the contrast evidence)`);
           return;
         }
         const params = VERB_PARAMS[op.op];
         for (const [key, value] of Object.entries(op)) {
           if (key === 'op') continue;
-          if (!(key in params)) red('verb-params', `${opAt}.${key}`, `unknown param for ${op.op}`);
+          // Object.hasOwn, not `in`: params named after Object.prototype members
+          // ("constructor", "toString") must not smuggle past the unknown-param red.
+          if (!Object.hasOwn(params, key)) red('verb-params', `${opAt}.${key}`, `unknown param for ${op.op}`);
           else if (!params[key](value)) red('verb-params', `${opAt}.${key}`, `invalid value for ${op.op}.${key}`);
         }
       });

@@ -86,20 +86,59 @@ test('a config with several defects reports each as its own red', () => {
 });
 
 // ---- containment: a scope can never reach the arbiter's inputs (design law #1) ----
+// ('../**' and '/tmp/**' live in the fixture table above; this covers the other spellings)
 
-test('workdir-escaping scopes red in every spelling; contained scopes pass', () => {
-  for (const bad of [['../**'], ['src/../../etc/**'], ['/tmp/**'], ['/**'], ['..']]) {
+test('workdir-escaping and whole-workdir scopes red in every spelling; contained scopes pass', () => {
+  const bad = [
+    ['src/../../etc/**'], ['/**'], ['..'],          // escapes
+    ['.'], ['./**'],                                 // the whole run dir — the close lives there
+    ['..\\evil/**'], ['C:/evil/**'], ['c:\\evil'],   // Windows spellings escape too
+  ];
+  for (const scope of bad) {
     const cfg = load('valid.json');
-    cfg.gate.writeScope = bad;
+    cfg.gate.writeScope = scope;
     const r = validateConfig(cfg);
-    assert.equal(r.ok, false, `${JSON.stringify(bad)} must red`);
+    assert.equal(r.ok, false, `${JSON.stringify(scope)} must red`);
     assert.equal(r.reds[0].path, 'gate.writeScope');
   }
-  for (const good of [['src/**'], ['src/gen/*'], ['out'], ['a/b/c/**']]) {
+  for (const scope of [['src/**'], ['src/gen/*'], ['out'], ['a/b/c/**'], ['./src/**']]) {
     const cfg = load('valid.json');
-    cfg.gate.writeScope = good;
-    assert.deepEqual(validateConfig(cfg).reds, [], `${JSON.stringify(good)} must pass`);
+    cfg.gate.writeScope = scope;
+    assert.deepEqual(validateConfig(cfg).reds, [], `${JSON.stringify(scope)} must pass`);
   }
+});
+
+// ---- placement: each verb is legal only where it has effect ----
+// An op that validates green but is inert at runtime is a fake knob in the
+// contrast evidence (design law #3) — reds-before-tokens closes the axis.
+
+test('every verb reds outside its one effective slot', () => {
+  const cases = [
+    ['after-red', { op: 'recall' }],       // context is discarded before the attempt
+    ['on-green', { op: 'recall' }],        // nothing consumes on-green context
+    ['after-red', { op: 'compress' }],
+    ['on-green', { op: 'compress' }],
+    ['before-attempt', { op: 'stash' }],   // no gap exists yet
+    ['on-green', { op: 'stash' }],
+    ['before-attempt', { op: 'remember' }],
+    ['after-red', { op: 'remember' }],     // retention is verdict-gated (law #2)
+  ];
+  for (const [slot, op] of cases) {
+    const cfg = load('valid.json');
+    cfg.hooks = { [slot]: [op] };
+    const r = validateConfig(cfg);
+    assert.equal(r.ok, false, `${op.op} in ${slot} must red`);
+    assert.equal(r.reds[0].code, 'verb-placement');
+  }
+});
+
+test('op params named after Object.prototype members do not smuggle past the unknown-param red', () => {
+  const cfg = load('valid.json');
+  cfg.hooks['after-red'] = [{ op: 'stash', constructor: 1 }];
+  const r = validateConfig(cfg);
+  assert.equal(r.ok, false);
+  assert.equal(r.reds[0].code, 'verb-params');
+  assert.equal(r.reds[0].path, 'hooks.after-red.0.constructor');
 });
 
 // ---- globToPrefix: the ONE validator↔enforcement transform (F9 drift guard) ----

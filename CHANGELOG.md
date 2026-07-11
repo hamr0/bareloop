@@ -21,12 +21,25 @@ feature lands, **patch** = docs, fixes, scaffolding.
   Rigging per LIBRARY_CONVENTIONS: tsconfig (checkJs + strictNullChecks), `typecheck` /
   `build:types` / `prepublishOnly` scripts, `.github/workflows/ci.yml`
   (typecheck → build:types → test, no lint). Deps: litectx ^0.28.0, bareguard ^0.12.0,
-  bare-agent ^0.26.2. Code-review hardening (post-mutation-validation): writeScope
-  **containment reds** (no absolute paths / ".." segments — a scope can never reach the
-  arbiter's inputs, design law #1), spine **reserved-key guard** (type/seq/ts are the
-  envelope's, by mechanism), shared **`globToPrefix`** (one validator↔enforcement
-  transform, F9 drift guard), and a `CategorizedError` typedef replacing any-casts
-  (CLAUDE.md library-shape rule).
+  bare-agent ^0.26.2. Code-review hardening (two rounds, all guards watch-it-fail
+  validated): writeScope **containment reds** (no absolute/Windows paths, no ".."
+  segments, not the run dir itself — a scope can never reach the arbiter's inputs,
+  design law #1); **verb placement tightened** — each verb legal only in its one
+  effective slot (recall/compress → before-attempt, stash → after-red, remember →
+  on-green; an inert-but-listed op is a fake knob in the contrast evidence, law #3);
+  **prototype-safe lookups** (`Object.hasOwn`) in the validator's param check and the
+  shell's escalation decision map; **silent-red gap sentinel** (a close that exits
+  nonzero with no output must not kill feedback/stall detection); spine **reserved-key
+  guard** (type/seq/ts are the envelope's, by mechanism); shared **`globToPrefix`** and
+  **`stripFences`** (`src/text.js` — one copy each, F9-class drift guards);
+  `extractRules` **never throws** (provider transport errors degrade to a
+  `provider-error` red as data); halt-as-return guard in `ask()` (bare-agent returns
+  `{error: 'halt:…'}` rather than throwing — forward armor for N2's tool loops); honest
+  cost emit (`metrics.costUsd ?? cost` — unpriced stays null, never a silent zero);
+  **package entry point** — `src/index.js` + `main`/`types`/`exports` map per
+  LIBRARY_CONVENTIONS §2 (the shipped `.d.ts` were previously unreferenced and the
+  package unimportable); a `CategorizedError` typedef and a `RecallHit` typedef replace
+  every `any`-cast (CLAUDE.md library-shape rule).
 - **F1 in `docs/FINDINGS.md`:** first `npm install` as a suite consumer surfaced two
   upstream gaps (stale bare-agent peer range; GateDecision/Decision null-reason type
   drift) — both fixed upstream and consumed via bare-agent 0.26.2, per two-red routing.

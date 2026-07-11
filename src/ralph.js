@@ -17,7 +17,10 @@ export function runClose(close) {
   const r = spawnSync(close[0], close.slice(1), { env, encoding: 'utf8', timeout: 120_000 });
   if (r.error) return { verdict: 'failed', detail: String(r.error) };
   if (r.status === 0) return { verdict: 'satisfied' };
-  return { verdict: 'needs_revision', gap: (r.stderr || r.stdout || '').slice(0, 2000), exitCode: r.status };
+  // The gap must never be falsy: every consumer guards with `if (gap)` — an
+  // empty-output red would silently kill gap feedback, after-red hooks, AND
+  // stall detection, leaving the worker re-prompted byte-identically to the cap.
+  return { verdict: 'needs_revision', gap: (r.stderr || r.stdout || '').slice(0, 2000) || '(close exited nonzero with no output)', exitCode: r.status };
 }
 
 /**
@@ -59,7 +62,11 @@ export async function ralph({ middle, close, capRuns, emit }) {
         'gate-red': ['The gate denied an action mid-run — the harness asked for something outside its scope.',
           ['widen the write scope deliberately', 'change the middle/harness', 'abandon the task']],
       };
-      const [decision, options] = DECISIONS[category]
+      // Object.hasOwn, not bare lookup: a category named after an
+      // Object.prototype member ("toString") would return the inherited
+      // function, and destructuring it would crash the shell inside its own
+      // escalation path — the one place that must never break.
+      const [decision, options] = (Object.hasOwn(DECISIONS, category) ? DECISIONS[category] : undefined)
         ?? ['The middle itself broke — no harness verdict is trustworthy until it is fixed.', ['fix the interpreter', 'abandon the task']];
       emit('escalation', {
         category, decisionReady: true, verdicts,

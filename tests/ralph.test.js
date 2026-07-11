@@ -69,6 +69,27 @@ test('gap feeds back to the middle on the next iteration', async () => {
   assert.match(gaps[1], /artifact missing/);
 });
 
+test('a silent red close still yields a truthy gap (feedback and stall detection stay alive)', async () => {
+  const gaps = [];
+  await run('silent-red', ['node', '-e', 'process.exit(1)'], 2, (_i, gap) => gaps.push(gap));
+  assert.ok(gaps[1], 'gap must be truthy — every consumer guards with `if (gap)`');
+  assert.match(gaps[1], /no output/);
+});
+
+test('a middle throwing a category named after an Object.prototype member escalates cleanly', async () => {
+  const middle = () => {
+    const err = new Error('weird category');
+    /** @type {any} */ (err).category = 'toString';
+    throw err;
+  };
+  const { outcome, events } = await run('proto-category', GREEN, 3, middle);
+  assert.equal(outcome, 'escalated', 'must escalate, never crash inside the escalation path');
+  const esc = events.find((e) => e.type === 'escalation');
+  assert.ok(esc, 'escalation event reached the spine');
+  assert.ok(esc.decisionReady);
+  assert.match(esc.decision, /middle itself broke/, 'unknown category falls back to the generic decision');
+});
+
 test('a middle that fixes the world by iteration 2 closes green under the same cap', async () => {
   const flag = join(dir, 'fixed-marker');
   const close = ['node', '-e', `require('node:fs').existsSync(${JSON.stringify(flag)}) ? process.exit(0) : process.exit(1)`];

@@ -26,9 +26,11 @@ export const STALL_REDS = 2;
 const require = createRequire(import.meta.url);
 const { Loop, wireGate, HaltError } = require('bare-agent');
 
+import { stripFences } from './text.js';
+
+/** @typedef {{body?: string|null, text?: string|null}} RecallHit litectx recall hit — body present only with `{body: true}` */
+
 const PERSONA = 'You are a senior engineer. Reply with ONLY the complete contents of the requested JavaScript file — no markdown fences, no commentary. ESM.';
-/** @param {string} t */
-const stripFences = (t) => t.trim().replace(/^```[a-z]*\n?/i, '').replace(/\n?```\s*$/, '');
 
 /**
  * Execute a workflow config against one task under the dumb shell.
@@ -84,12 +86,23 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
 
   /** @param {string} prompt */
   async function ask(prompt) {
+    let r;
     try {
-      return await loop.run([{ role: 'user', content: prompt }]);
+      r = await loop.run([{ role: 'user', content: prompt }]);
     } catch (e) {
-      if (e instanceof HaltError) /** @type {CategorizedError} */ (e).category = 'cap-halt'; // USD/turn gate tripped — a cap story, not a bug
+      if (e instanceof HaltError) /** @type {CategorizedError} */ (e).category = 'cap-halt'; // belt: bare-agent's contract could change
       throw e;
     }
+    // bare-agent NEVER throws HaltError out of run() — a governance halt comes
+    // back as an error RETURN ({text: '', error: 'halt:<rule>'}; loop.js: "no
+    // throw even when throwOnError: true"). Read it, or the failure map goes
+    // blind and a cap story masquerades as a worker result (design law #8).
+    if (r.error) {
+      const err = /** @type {CategorizedError} */ (new Error(`worker loop: ${r.error}`));
+      err.category = r.error.startsWith('halt:') ? 'cap-halt' : 'interpreter-red';
+      throw err;
+    }
+    return r;
   }
 
   /**
@@ -99,11 +112,12 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   async function runOps(slot, { iteration, gap, context }) {
     for (const op of slotOps(slot)) {
       if (op.op === 'recall') {
+        /** @type {RecallHit[]} */
         const hits = [];
         for (const kind of recallKinds(op)) {
           hits.push(...await lc.recall(task, { kind, n: op.k ?? config.memory.recall?.k ?? 5, body: true }));
         }
-        context.text = hits.map((/** @type {any} */ h) => h.body ?? h.text ?? '').filter(Boolean).join('\n');
+        context.text = hits.map((h) => h.body ?? h.text ?? '').filter(Boolean).join('\n');
         context.level = null;
         emit('hook-op', { slot, op: 'recall', hits: hits.length, iteration });
       } else if (op.op === 'compress') {
@@ -176,11 +190,11 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     if (config.loop.shape === 'plan') {
       // plan-then-execute: one call to decompose, one to implement following the plan
       const p = await ask([`Produce a SHORT numbered implementation plan (2-4 steps) for this task. Plan only, no code.`, ...parts.slice(1), parts[0]].filter(Boolean).join('\n\n'));
-      emit('worker-plan', { iteration, costUsd: p.cost ?? null });
+      emit('worker-plan', { iteration, costUsd: p.metrics?.costUsd ?? p.cost ?? null }); // metrics.costUsd carries the honest null when unpriced; cost sums priced rounds only
       parts.push(`Follow this plan:\n${p.text}`);
     }
     const r = await ask(parts.filter(Boolean).join('\n\n'));
-    emit('worker-result', { iteration, costUsd: r.cost ?? null, tokens: r.usage?.outputTokens ?? null });
+    emit('worker-result', { iteration, costUsd: r.metrics?.costUsd ?? r.cost ?? null, tokens: r.usage?.outputTokens ?? null });
 
     const decision = await gate.check({ type: 'write', path: target, args: { bytes: r.text.length } });
     if (decision.outcome !== 'allow') {

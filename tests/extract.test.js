@@ -65,6 +65,15 @@ test('an over-long rule → red, rejected whole', async () => {
   assert.equal(r.reds[0].code, 'rules-bound');
 });
 
+test('a throwing provider → provider-error red as data, never a throw (contract holds on the transport too)', async () => {
+  const exploding = { generate: async () => { throw new Error('502 upstream'); } };
+  const r = await extractRules({ config: config(), provider: exploding, priorRules: null });
+  assert.equal(r.valid, false);
+  assert.equal(r.rules, null, 'caller keeps prior rules');
+  assert.equal(r.reds[0].code, 'provider-error');
+  assert.match(r.reds[0].detail, /502/);
+});
+
 test('one shot: exactly one provider call, even when the output reds', async () => {
   const p = stub('garbage');
   await extractRules({ config: config(), provider: p, priorRules: null });
