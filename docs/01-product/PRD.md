@@ -216,6 +216,77 @@ let the loop own it — the M5 revisor is already orchestration's caged form. Ad
 unchanged: any such modality enters only through a pre-registered probe with measurable
 separation before machinery is built (the registry precedent). No rung changes; §10 stands.
 
+## Addendum v1.4 — 2026-07-11 (the menu probes return; graduated-disclosure question RESOLVED)
+
+The v1.2 assignment concluded: adaptlearn F21 (menu breadth) + F22 (menu disclosure), both
+pre-registered, consumed as bareloop F2. The v1.1 §4 open question closes as follows:
+
+1. **The registry gate is MET — the request-red registry builds (~N3/N4).** F21: the menu
+   axis is wired-in, categorically (one admitted verb flipped 0/3 cap-halt → 3/3 green@1
+   where it had purchase; inert where not). F22 P4: the admission chain — author reads
+   menu → selects → dispatch injects → green@1 — proved end-to-end through the authored
+   path. Full disclosure (decision #3, v1.1 §3) stands, now evidence-backed; the §4b
+   catalog-leak concern is unsupported (listing-without-capability never helped).
+2. **Author selection carries ZERO need signal — curation is never by agent appetite.**
+   The selection asymmetry (F2): zero false negatives, total false positives — picks are a
+   superset of need. Safe because the bias points the friendly way: over-grabbing is cheap
+   and self-corrects under cost-ranking; under-grabbing was fatal (0/3 at cap). The menu's
+   value lives on the COST axis (first-try certainty, ~4× iterations) — exactly where
+   design law #4 reads it.
+3. **Curation rules (replaces "provisional" tiering intuition with evidence):** secondary
+   tier locked by default; admission steered by within-run request-red frequency (a locked-
+   but-selected op fires every iteration — free, structured, stronger than authoring-time
+   asks, which did not replicate as need-weighted) plus outcome contrast (green@1 vs grind
+   vs cap); post-green menu expansion is an across-runs one-knob mutation; removal
+   symmetric. Re-admission is by finding, never by widening (unchanged).
+4. **New mechanism doctrine (F21):** partial retrieval poisons gap attribution — ranked
+   top-k induces false completeness and the worker discards real close evidence.
+   Structural-exhaustive verbs earn admission by preventing evidence misattribution, not
+   by adding context. The worker-side rhyme of design law #3.
+5. **N2 requirements filed (F21 instrument caveat):** an **artifact-red** category (a
+   non-code artifact reds on its own axis, never corrupts the close signal) and
+   fence-robust artifact extraction. N0's `interpret.js` deliberately carries the
+   reference bound until then.
+
+## Addendum v1.5 — 2026-07-11 (the upstream ledger: auto-detected upstream fixes + workflow debugging, hamr)
+
+New feature, spec'd and reference-implemented upstream (adaptlearn, house POC rules:
+`docs/plans/2026-07-11-upstream-ledger-design.md` + `poc/upstream-ledger.mjs`, selftest
+8/8 incl. two must-produce-nothing negatives; validated by re-deriving the menu-probe
+session's real incidents — provider crashes ×3 as one row, a distinct timeout kept
+separate, capability-gap: impact ×3, request-red: impact ×15 frequency-ranked, **zero
+false positives from ~100 close reds**). Consumed here as product commitment:
+
+1. **The upstream ledger — the runs already confess everything; this is the stenographer.**
+   A pure, derived, reconstructible reader over the spines (which stay ground truth and
+   never change shape for it). It classifies lib-relevant events into **8 incident
+   classes** (provider crashed · primitive threw · primitive silently lied · requested-
+   but-locked · capability gap, asked-and-died-at-cap · retention failed · config/vocab
+   drift · broken close), dedupes by `lib:verb:class:normalized-signature` (same bug
+   across 50 runs = one row with a count; two bugs in one verb stay two rows), and
+   appends to one JSONL — current state is a fold, never a rewrite.
+2. **Deliberately excluded: test failures and plain budget halts.** Those are workflow
+   stories; they can never pollute the upstream queue. This is the two-red routing rule
+   (v1.1 §3) made mechanical: the ledger auto-detects the upstream-gap red and
+   frequency-ranks the request-red — the same evidence stream F2's curation rules read.
+   It also catches the worst case: workflows that went GREEN while a lib quietly
+   degraded — the bug that otherwise ships invisible.
+3. **Two audiences, one file.** The panel (N6) renders it as *workflow health* — users
+   debug "the toolbox was broken here" separately from "your workflow failed here". The
+   maintainer reads it as a pre-drafted upstream to-do: each row carries a suggested ask
+   and spine-line evidence pointers (world/cell@seq). Fix lifecycle is human-appended
+   (open → filed → fixed → consumed, the A1/A2/A3 pattern); **the tool drafts, never
+   files** — filing and fixing stay human, per law #1's spirit. `docs/UPSTREAM-ASKS.md`
+   becomes the ledger's filed-state view rather than a hand-maintained queue.
+4. **New obligation on admission (lands with the registry, ~N2/N3): per-job known-answer
+   smokes.** Each admitted primitive gets a known-answer check emitted as a
+   `primitive-smoke` spine event before the loop spends — the only detector for the
+   silent-degradation class, because silent bugs throw nothing (adaptlearn A3; F21's
+   "impact must return 8/8" is the template).
+
+Ladder placement: ledger reader consumes spines from N2's first real runs; smoke
+obligation rides the admission machinery (~N2/N3); panel surface at N6. No rung changes.
+
 ---
 
 ## Appendix A — Panel spec (provisional)

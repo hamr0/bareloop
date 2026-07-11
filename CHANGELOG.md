@@ -7,7 +7,26 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+## [0.1.0] — 2026-07-11
+
 ### Added
+- **PRD addendum v1.5: the upstream ledger.** Auto-detected upstream fixes + user-facing
+  workflow debugging, derived purely from the spines: 8 lib-incident classes (test reds
+  and budget halts excluded by design — workflow stories never pollute the upstream
+  queue), signature-deduped counts, append-only state-as-fold, human-appended fix
+  lifecycle (the tool drafts, never files). Two audiences, one file: panel workflow
+  health (N6) and the maintainer's pre-drafted UPSTREAM-ASKS queue. New admission
+  obligation ~N2/N3: per-job known-answer `primitive-smoke` before tokens — the only
+  detector for silently-degrading primitives (adaptlearn A3 class). Spec + reference
+  implementation upstream in adaptlearn (validated: re-derived the menu-probe session's
+  incidents, zero false positives from ~100 close reds).
+- **F2 + PRD addendum v1.4: the menu probes return (adaptlearn F21/F22).** The v1.1 §4
+  graduated-disclosure open question RESOLVED: the registry gate is met (menu axis
+  wired-in; admission chain proven end-to-end) — the request-red registry builds ~N3/N4.
+  Author selection is cargo-cult (zero need signal; picks are a superset of need); need
+  reads off the ledger (within-run request-red frequency + outcome contrast); curation is
+  evidence-driven, never appetite-driven. New doctrine: partial retrieval poisons gap
+  attribution. N2 requirements filed: artifact-red category, fence-robust extraction.
 - **N0 — the token-free rung (PRD §10).** The five spine modules, rewritten from the
   adaptlearn originals (graduation-is-a-rewrite): `src/spine.js` (append-only JSONL
   emitter; seq monotonic, ts last), `src/ralph.js` (the dumb shell: close exit code =
@@ -100,5 +119,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
   `docs/UPSTREAM-ASKS.md`, guardrails pre-tool hook (local), `.gitignore`.
 - Public GitHub repo `hamr0/bareloop`, `main` branch.
 
-[Unreleased]: https://github.com/hamr0/bareloop/compare/v0.0.1...HEAD
+[Unreleased]: https://github.com/hamr0/bareloop/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/hamr0/bareloop/compare/v0.0.1...v0.1.0
 [0.0.1]: https://github.com/hamr0/bareloop/releases/tag/v0.0.1

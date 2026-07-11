@@ -44,3 +44,52 @@ ralph/validate/interpret/extract test semantics — 70 tests of adaptlearn's 122
 remainder cover experiment-side modules (author/mutate/cohort/revise/contrast) that are
 not N0 surface. revise.js's one interpreter-facing behavior — revisor spend metered by the
 run's own gate — is preserved as an interpret test with an inline gated revisor.)
+
+## F2 — the menu probes return (adaptlearn F21/F22, consumed): the registry gate is MET — the admission registry builds; author selection carries ZERO need signal; need is read off the ledger
+
+The PRD v1.2 probe assignment concluded upstream (adaptlearn F21 menu-breadth, F22 menu-
+disclosure — successor-POC track, both pre-registered, evidence archived in adaptlearn).
+Consumed here the way §2 consumes F1–F20: settled, not re-proven.
+
+**The gate fired the build way.** The pre-registered condition was "measurable separation
+BEFORE the request-red registry is built; no separation → registry dies unbuilt." F21:
+one admitted verb (litectx `impact`) flipped MAIN from 0/3 cap-halt to 3/3 green@1 where
+it had purchase, and moved nothing where inert (falsifier arm) — the menu axis is WIRED-IN,
+categorically. F22 P4: the full admission chain (author reads menu → selects → dispatch
+injects → green@1) proved end-to-end through the AUTHORED path, 3/3 vs 1/3. **The
+request-red registry gets built (~N3/N4 per §10), with its curation rules rewritten by the
+same evidence — see PRD addendum v1.4.**
+
+**The selection asymmetry (hamr's carry-sentence, the probe's most useful single fact):**
+the author never missed the tool it needed (6/6 selected `impact` where callers mattered
+— zero false negatives) and never abstained from one it didn't (6/6 grabbed it where it
+returns nothing — all false positives). Selections are a SUPERSET of need: what the agent
+chose carries no information (cargo-cult, replicated across both worlds); what it NEEDED
+stays recoverable from run evidence. The asymmetry points the friendly way: over-grabbing
+is cheap and self-correcting (inert extras change nothing in-run — F21 falsifier; cost-
+ranking strips dead weight across runs), while under-grabbing was fatal (0/3 at cap). If
+the bias ran the other way, list-all would be dangerous; as it is, full disclosure is
+confirmed safe AND useful.
+
+**Where need actually reads out (F22 bonus):** a locked-but-selected op fires request-red
+EVERY iteration — within-run request-red frequency is a free, structured need signal,
+stronger than authoring-time asks (which did not replicate as need-weighted: P2 downgraded
+to weak trend). Outcome contrast (green@1 vs grind vs cap) attributes the rest. The §4b
+disclosure-leak concern is UNSUPPORTED (P3: listing-without-capability never helped).
+
+**Mechanism finding worth its own line (F21):** partial retrieval doesn't just under-
+inform — it POISONS gap attribution: ranked top-k retrieval gave the worker false
+confidence of completeness and it dismissed real failing tests as noise. Structural-
+exhaustive verbs earn admission by preventing evidence MISATTRIBUTION, not by adding
+context — the worker-side rhyme of "verdict admits, contrast attributes."
+
+**Port requirements filed for N2 (from F21's instrument caveat, plus the N0 code review):**
+(1) a non-code artifact must red as its own category — **artifact-red** — never corrupt the
+close signal; (2) artifact extraction must handle prose-wrapped and mid-text fences
+(`stripFences` strips leading/trailing only; `src/interpret.js` carries the same bound at
+N0 by design — it is reference-semantics parity, upgraded at N2 when the real job loop
+lands); (3) the close **timeout** joins the shell's options surface (`src/ralph.js`
+hardcodes 120s — a real repo suite slower than that reads as broken-close, deterministically);
+(4) the close **gap bound** becomes a named option and tail-biased (`src/ralph.js` head-
+truncates at 2000 chars; a big suite's failure detail prints last, so the worker's only
+feedback channel can carry zero signal while the budget burns).
