@@ -83,8 +83,13 @@ confidence of completeness and it dismissed real failing tests as noise. Structu
 exhaustive verbs earn admission by preventing evidence MISATTRIBUTION, not by adding
 context — the worker-side rhyme of "verdict admits, contrast attributes."
 
-**Port requirements filed for N2 (from F21's instrument caveat):** (1) a non-code artifact
-must red as its own category — **artifact-red** — never corrupt the close signal; (2)
-artifact extraction must handle prose-wrapped and mid-text fences (`stripFences` strips
-leading/trailing only; `src/interpret.js` carries the same bound at N0 by design — it is
-reference-semantics parity, upgraded at N2 when the real job loop lands).
+**Port requirements filed for N2 (from F21's instrument caveat, plus the N0 code review):**
+(1) a non-code artifact must red as its own category — **artifact-red** — never corrupt the
+close signal; (2) artifact extraction must handle prose-wrapped and mid-text fences
+(`stripFences` strips leading/trailing only; `src/interpret.js` carries the same bound at
+N0 by design — it is reference-semantics parity, upgraded at N2 when the real job loop
+lands); (3) the close **timeout** joins the shell's options surface (`src/ralph.js`
+hardcodes 120s — a real repo suite slower than that reads as broken-close, deterministically);
+(4) the close **gap bound** becomes a named option and tail-biased (`src/ralph.js` head-
+truncates at 2000 chars; a big suite's failure detail prints last, so the worker's only
+feedback channel can carry zero signal while the budget burns).
