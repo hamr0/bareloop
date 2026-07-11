@@ -7,6 +7,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Fixed
+- `NOTICE` ships in the tarball (npm auto-includes LICENSE/README but not NOTICE; Apache-2.0
+  wants both) — found validating the installed 0.1.0 artifact.
+
 ## [0.1.0] — 2026-07-11
 
 ### Added
