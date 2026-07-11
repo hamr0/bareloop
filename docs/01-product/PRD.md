@@ -216,6 +216,38 @@ let the loop own it — the M5 revisor is already orchestration's caged form. Ad
 unchanged: any such modality enters only through a pre-registered probe with measurable
 separation before machinery is built (the registry precedent). No rung changes; §10 stands.
 
+## Addendum v1.4 — 2026-07-11 (the menu probes return; graduated-disclosure question RESOLVED)
+
+The v1.2 assignment concluded: adaptlearn F21 (menu breadth) + F22 (menu disclosure), both
+pre-registered, consumed as bareloop F2. The v1.1 §4 open question closes as follows:
+
+1. **The registry gate is MET — the request-red registry builds (~N3/N4).** F21: the menu
+   axis is wired-in, categorically (one admitted verb flipped 0/3 cap-halt → 3/3 green@1
+   where it had purchase; inert where not). F22 P4: the admission chain — author reads
+   menu → selects → dispatch injects → green@1 — proved end-to-end through the authored
+   path. Full disclosure (decision #3, v1.1 §3) stands, now evidence-backed; the §4b
+   catalog-leak concern is unsupported (listing-without-capability never helped).
+2. **Author selection carries ZERO need signal — curation is never by agent appetite.**
+   The selection asymmetry (F2): zero false negatives, total false positives — picks are a
+   superset of need. Safe because the bias points the friendly way: over-grabbing is cheap
+   and self-corrects under cost-ranking; under-grabbing was fatal (0/3 at cap). The menu's
+   value lives on the COST axis (first-try certainty, ~4× iterations) — exactly where
+   design law #4 reads it.
+3. **Curation rules (replaces "provisional" tiering intuition with evidence):** secondary
+   tier locked by default; admission steered by within-run request-red frequency (a locked-
+   but-selected op fires every iteration — free, structured, stronger than authoring-time
+   asks, which did not replicate as need-weighted) plus outcome contrast (green@1 vs grind
+   vs cap); post-green menu expansion is an across-runs one-knob mutation; removal
+   symmetric. Re-admission is by finding, never by widening (unchanged).
+4. **New mechanism doctrine (F21):** partial retrieval poisons gap attribution — ranked
+   top-k induces false completeness and the worker discards real close evidence.
+   Structural-exhaustive verbs earn admission by preventing evidence misattribution, not
+   by adding context. The worker-side rhyme of design law #3.
+5. **N2 requirements filed (F21 instrument caveat):** an **artifact-red** category (a
+   non-code artifact reds on its own axis, never corrupts the close signal) and
+   fence-robust artifact extraction. N0's `interpret.js` deliberately carries the
+   reference bound until then.
+
 ---
 
 ## Appendix A — Panel spec (provisional)

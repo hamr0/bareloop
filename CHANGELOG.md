@@ -8,6 +8,13 @@ feature lands, **patch** = docs, fixes, scaffolding.
 ## [Unreleased]
 
 ### Added
+- **F2 + PRD addendum v1.4: the menu probes return (adaptlearn F21/F22).** The v1.1 §4
+  graduated-disclosure open question RESOLVED: the registry gate is met (menu axis
+  wired-in; admission chain proven end-to-end) — the request-red registry builds ~N3/N4.
+  Author selection is cargo-cult (zero need signal; picks are a superset of need); need
+  reads off the ledger (within-run request-red frequency + outcome contrast); curation is
+  evidence-driven, never appetite-driven. New doctrine: partial retrieval poisons gap
+  attribution. N2 requirements filed: artifact-red category, fence-robust extraction.
 - **N0 — the token-free rung (PRD §10).** The five spine modules, rewritten from the
   adaptlearn originals (graduation-is-a-rewrite): `src/spine.js` (append-only JSONL
   emitter; seq monotonic, ts last), `src/ralph.js` (the dumb shell: close exit code =
