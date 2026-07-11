@@ -150,3 +150,71 @@ regularity to all arms through the close channel — and it did (F14, §4b).
   feedforward-reached = recall-evidence ∧ green@1; feedback-reached = iterations > 1 ∧ no
   recall evidence. Free from the existing ledger + spine; SP-3's Q3 lock prediction says late
   gated-arm greens should migrate feedforward while ungated stays feedback.
+
+---
+
+## Orchestration vs self-healing workflows — bareloop registration (2026-07-11)
+
+**Status:** bareloop-side addition to the frame, registered after the archive; everything
+above this line is the adaptlearn record, unchanged, and nothing here reopens it. Origin:
+hamr's question "is an orchestrator possible as a second way of doing things, or self-healing
+workflows — which is the future?" Same reading rule as the rest of this file: each mapping
+tagged `[confirms]` / `[predicts]` / `[budgets]`.
+
+**The framing:** orchestration and self-healing workflows are two *regimes*, not competitors.
+Orchestration spends model intelligence at runtime — the workflow is re-derived every run and
+lives nowhere but the model's context. A self-healing workflow crystallizes intelligence into
+an auditable artifact (validated config + rules with receipts) that improves across runs.
+Only one of the two compounds.
+
+### O1. Credit attribution rules out orchestrator-as-learner `[confirms → budgets]`
+
+Mapping 3 (channel capacity), extended. An orchestrator makes dozens of runtime decisions per
+run — which agent, what order, what context — all confounded into one outcome bit. Attribution
+needs ~log₂N attributable bits per decision; a bare outcome carries ~1, confounded. The
+one-knob workflow + ledger design exists precisely to make contrast bits countable (V2:
+present 16/16 generations, perfect separation). Orchestration maximizes runtime variety
+exactly where variety destroys attributability — it *structurally* cannot learn which of its
+decisions earned the green. Budget rule unchanged, now with its contrapositive: a coordination
+scheme whose decisions cannot each be contrast-attributed cannot be inside the learning loop.
+
+### O2. Conant–Ashby: only the crystallized regulator accumulates `[confirms]`
+
+Every good regulator must be a model of the system. The workflow *is* that model, written
+down: config + rules, each carrying its minting green and contrast bit. An orchestrator holds
+the model implicitly and re-derives it per run — so it re-buys, every run, exactly the
+regularities F17/F18 showed live outside the worker's reach (where memory pays). The cost
+curves are what accumulation looks like: ~10× cheaper post-lock (F17 Q3), cohort cost halved
+under executed inheritance (F20). Orchestration has no equivalent curve.
+
+### O3. The arbiter problem: runtime coordination is ungateable `[confirms]`
+
+Design law #1 (never author your arbiter) held through every cohort and is the no-fake-green
+record's foundation. An orchestrator's runtime decisions ARE the workflow — there is no
+artifact to schema-validate reds-before-tokens, because the plan doesn't exist until
+mid-flight. POSIWID/accountability-sink reading (mapping 7): coordination decisions severed
+from consequences, ungated because ungateable.
+
+### O4. Honest counterweight: model strength favors orchestration on the verdict axis `[confirms]`
+
+F15/F18: strong workers plus in-run acquisition saturate pass/fail on modest tasks — an
+orchestrator with a frontier model will usually just pass, and model strength keeps eating
+scaffolding from below. Orchestration is right for one-off, heterogeneous, unknown-shape work
+(PRD §1's explicit out-of-scope). The workflow's claim was never the verdict axis: it is
+greens you can trust and afford at run 500 — first-try rates, ~$0.03 vs ~$0.24
+acquisition-path cost, rules with lineage. Receipts and compounding cost are the moat; anyone
+can rent the model that powers an orchestrator.
+
+### O5. Convergence: orchestrator as front door, workflow as destination `[predicts]`
+
+Prediction: the two regimes fuse in sequence, not in parallel — first encounter with a new
+job is orchestrated (or is a CLI session); the trace crystallizes into a config; the
+self-healing loop owns it thereafter. F20 already built the bridge: run-as-executed
+inheritance is precisely "what the run improvised becomes what the lineage inherits." The M5
+revisor is the caged micro-orchestrator (re-plan mid-flight, arbiter untouchable, one
+revision, re-validated) — and F18 showed that caged re-planning is what made runs
+ultrastable. If orchestration ever enters bareloop as a modality, it extends the
+authoring/revision loop (a config allowed to settle over more than one pass, on jobs that are
+not yet jobs) — never a swarm, same laws, and it is admitted the house way: pre-registered
+probe, opposed conditions, measurable separation before any machinery is built (the
+request-red registry precedent).
