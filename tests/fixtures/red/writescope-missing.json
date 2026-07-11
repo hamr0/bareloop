@@ -1,0 +1,43 @@
+{
+  "schema": "v1",
+  "loop": {
+    "shape": "refine",
+    "maxIterations": 4
+  },
+  "memory": {
+    "store": "litectx",
+    "recall": {
+      "k": 5,
+      "kinds": [
+        "fact",
+        "episode"
+      ]
+    },
+    "compressLevel": "signature"
+  },
+  "hooks": {
+    "before-attempt": [
+      {
+        "op": "recall",
+        "k": 8
+      }
+    ],
+    "after-red": [
+      {
+        "op": "stash"
+      }
+    ],
+    "on-green": [
+      {
+        "op": "remember",
+        "kind": "fact"
+      }
+    ]
+  },
+  "gate": {
+    "budgetUsd": 2
+  },
+  "escalation": {
+    "mode": "decision-ready"
+  }
+}

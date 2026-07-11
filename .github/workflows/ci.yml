@@ -1,0 +1,24 @@
+# Push / PR gate (LIBRARY_CONVENTIONS §5): npm ci → typecheck → build:types → test.
+# No lint step (tsc with checkJs + strictNullChecks already catches the bug class that
+# matters; the ESLint ecosystem cuts against the dependency hierarchy for a small vanilla-ESM
+# lib). All tests are hermetic (own tmp fixtures, scripted stub providers) and token-free —
+# the N0 exit discipline: the whole suite runs without an LLM anywhere.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck   # tsc --noEmit — JSDoc/code mismatch blocks merge (anti-drift, LIBRARY_CONVENTIONS §2)
+      - run: npm run build:types # prove the .d.ts actually generate from the JSDoc
+      - run: npm test            # node --test — hermetic, token-free

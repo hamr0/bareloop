@@ -8,6 +8,24 @@ feature lands, **patch** = docs, fixes, scaffolding.
 ## [Unreleased]
 
 ### Added
+- **N0 — the token-free rung (PRD §10).** The five spine modules, rewritten from the
+  adaptlearn originals (graduation-is-a-rewrite): `src/spine.js` (append-only JSONL
+  emitter; seq monotonic, ts last), `src/ralph.js` (the dumb shell: close exit code =
+  truth, cap-halt its own category, decision-ready escalations), `src/validate.js`
+  (schema v1 predicate — named reds before tokens; litectx-bound vocabulary; `diffPaths`
+  one-knob checker), `src/interpret.js` (the only config reader; composes Gate + LiteCtx +
+  Loop; mid-run revision seam with interpreter-owned acceptance; emits `config-final` —
+  the run-as-executed record, design law #2), `src/extract.js` (rules distiller: one
+  sealed shot, bounds enforced mechanically, rejected whole). 70 tests carried from
+  adaptlearn's reference semantics, all hermetic and token-free (scripted stub providers).
+  Rigging per LIBRARY_CONVENTIONS: tsconfig (checkJs + strictNullChecks), `typecheck` /
+  `build:types` / `prepublishOnly` scripts, `.github/workflows/ci.yml`
+  (typecheck → build:types → test, no lint). Deps: litectx ^0.28.0, bareguard ^0.12.0,
+  bare-agent ^0.26.1.
+- **F1 in `docs/FINDINGS.md`:** first `npm install` as a suite consumer surfaced two
+  upstream gaps (stale bare-agent peer range; GateDecision/Decision null-reason type
+  drift) — both fixed upstream and consumed via bare-agent 0.26.1, per two-red routing.
+  No shims.
 - PRD **addendum v1.3** + CYBERNETICS.md O1–O5: the orchestration position — not a second
   runtime modality (credit attribution, accumulation, the arbiter — grounded in F15–F20);
   convergence path is orchestrate-first-encounter → crystallize via run-as-executed
