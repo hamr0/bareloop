@@ -29,10 +29,17 @@ upstream story before a line of bareloop code ran:
    consumer catches it; LIBRARY_CONVENTIONS §2 (checkJs in every repo) is what makes the
    drift class visible at all. Fixed upstream (bareagent PR #14): `reason` admits null.
 
-Both fixes shipped in bare-agent@0.26.1; bareloop consumes `^0.26.1` — no shims anywhere.
+Both fixes shipped in bare-agent@0.26.2 (hamr published); bareloop consumes `^0.26.2` — no shims anywhere.
 **Verdict: the two-red routing rule survived first contact, and the port itself was
 uneventful — 70/70 reference-semantics tests green on the first full run, typecheck clean
-under checkJs+strictNullChecks.** (Port scope note: the five N0 modules carry the
+under checkJs+strictNullChecks.** Because code and tests were ported together (the suite
+never got its watch-it-fail moment), the rewrite was validated by mutation: seven planted
+defects, one per load-bearing behavior — NODE_TEST_CONTEXT strip (fake green), unnamed-throw
+category masquerade, F9 mid-glob acceptance, config-final dropped, arbiter-touch vouched
+through, extractor trim-instead-of-reject, onLlmResult unwired (the F3 blind-budget trap) —
+each redded the suite (≥1 targeted failure), all reverted, 70/70 restored. Final validation
+ran against the PUBLISHED registry packages (bare-agent 0.26.2, bareguard 0.12.0, litectx
+0.28.0), not local checkouts. (Port scope note: the five N0 modules carry the
 ralph/validate/interpret/extract test semantics — 70 tests of adaptlearn's 122; the
 remainder cover experiment-side modules (author/mutate/cohort/revise/contrast) that are
 not N0 surface. revise.js's one interpreter-facing behavior — revisor spend metered by the
