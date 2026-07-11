@@ -39,6 +39,7 @@
   "files": [
     "src/",
     "types/",
+    "NOTICE",
     "bareloop.context.md",
     "CHANGELOG.md"
   ],
