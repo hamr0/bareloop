@@ -35,8 +35,45 @@ config-red before tokens burn.*
 
 ## Public API
 
-*TBD as rungs land: N0 (spine + shell), N1 (schema/validator), N2 (loop), N3 (inheritance
-+ contrast-bit extractor), N4 (verdict classes), N5 (scheduler + budget ops), N6 (panel).*
+*Landed through N0 (spine + shell + validator + interpreter + extractor). Still TBD:
+N1 (job/close schema), N2 (headless job loop), N3 (contrast-bit extractor), N4 (verdict
+classes), N5 (scheduler + budget ops), N6 (panel).*
+
+### `makeSpine(file)` → `emit(type, data?)` — `src/spine.js`
+
+Append-only JSONL event emitter bound to one file. `seq` monotonic per spine, `ts` stamped
+last. Consumers are pure listeners; nothing reads the file back. Returns each event as
+written.
+
+### `ralph({ middle, close, capRuns, emit })` → `'green' | 'escalated'` — `src/ralph.js`
+
+The dumb outer shell: `while close-red and under-cap: run the middle`. `close` is an argv
+whose exit code is truth (`runClose` is also exported); the red gap text feeds the next
+iteration. Escalations are decision-ready (category, options, spend); cap-halt is its own
+category, never merged with "wrong". A thrown middle is relayed by its `category`
+property (`cap-halt`, `gate-red`, …); an unnamed throw is `interpreter-red`.
+
+### `validateConfig(input, { shellCapUsd? })` → `{ ok, reds }` — `src/validate.js`
+
+Deterministic schema-v1 predicate; never throws. Every failure is a named red
+`{ code, path, detail? }` — reds before tokens burn. Verb vocabulary bound from litectx
+(`LOOP_SHAPES`, `SLOTS`, `VERBS` exported). `diffPaths(a, b)` returns changed JSON paths —
+the one-knob mutation checker.
+
+### `interpret(configRaw, opts)` → `'green' | 'escalated' | 'config-red'` — `src/interpret.js`
+
+The only code that reads a config. Composes bareguard `Gate` (write scopes, USD budget),
+litectx (recall/compress/stash/remember hook ops), and the bareagent `Loop` under `ralph`.
+The provider and the close arrive from the shell, never the config. Optional `revisor`
+seam fires once after `STALL_REDS` consecutive close reds; the interpreter owns acceptance
+(arbiter-touch / cap-touch / validation reds). Emits `config-final` — the run-as-executed
+config (design law #2) — on every run.
+
+### `extractRules({ config, provider, priorRules, revisionDiff? })` — `src/extract.js`
+
+One sealed LLM call distilling a lineage's rules from ledger facts after a green run.
+`MAX_RULES`/`MAX_RULE_CHARS` bounds enforced mechanically post-call, rejected whole.
+Malformed output is a red as data (`rules: null`) — the caller keeps prior rules.
 
 ## Architecture
 

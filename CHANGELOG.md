@@ -8,6 +8,42 @@ feature lands, **patch** = docs, fixes, scaffolding.
 ## [Unreleased]
 
 ### Added
+- **N0 — the token-free rung (PRD §10).** The five spine modules, rewritten from the
+  adaptlearn originals (graduation-is-a-rewrite): `src/spine.js` (append-only JSONL
+  emitter; seq monotonic, ts last), `src/ralph.js` (the dumb shell: close exit code =
+  truth, cap-halt its own category, decision-ready escalations), `src/validate.js`
+  (schema v1 predicate — named reds before tokens; litectx-bound vocabulary; `diffPaths`
+  one-knob checker), `src/interpret.js` (the only config reader; composes Gate + LiteCtx +
+  Loop; mid-run revision seam with interpreter-owned acceptance; emits `config-final` —
+  the run-as-executed record, design law #2), `src/extract.js` (rules distiller: one
+  sealed shot, bounds enforced mechanically, rejected whole). 70 tests carried from
+  adaptlearn's reference semantics, all hermetic and token-free (scripted stub providers).
+  Rigging per LIBRARY_CONVENTIONS: tsconfig (checkJs + strictNullChecks), `typecheck` /
+  `build:types` / `prepublishOnly` scripts, `.github/workflows/ci.yml`
+  (typecheck → build:types → test, no lint). Deps: litectx ^0.28.0, bareguard ^0.12.0,
+  bare-agent ^0.26.2. Code-review hardening (two rounds, all guards watch-it-fail
+  validated): writeScope **containment reds** (no absolute/Windows paths, no ".."
+  segments, not the run dir itself — a scope can never reach the arbiter's inputs,
+  design law #1); **verb placement tightened** — each verb legal only in its one
+  effective slot (recall/compress → before-attempt, stash → after-red, remember →
+  on-green; an inert-but-listed op is a fake knob in the contrast evidence, law #3);
+  **prototype-safe lookups** (`Object.hasOwn`) in the validator's param check and the
+  shell's escalation decision map; **silent-red gap sentinel** (a close that exits
+  nonzero with no output must not kill feedback/stall detection); spine **reserved-key
+  guard** (type/seq/ts are the envelope's, by mechanism); shared **`globToPrefix`** and
+  **`stripFences`** (`src/text.js` — one copy each, F9-class drift guards);
+  `extractRules` **never throws** (provider transport errors degrade to a
+  `provider-error` red as data); halt-as-return guard in `ask()` (bare-agent returns
+  `{error: 'halt:…'}` rather than throwing — forward armor for N2's tool loops); honest
+  cost emit (`metrics.costUsd ?? cost` — unpriced stays null, never a silent zero);
+  **package entry point** — `src/index.js` + `main`/`types`/`exports` map per
+  LIBRARY_CONVENTIONS §2 (the shipped `.d.ts` were previously unreferenced and the
+  package unimportable); a `CategorizedError` typedef and a `RecallHit` typedef replace
+  every `any`-cast (CLAUDE.md library-shape rule).
+- **F1 in `docs/FINDINGS.md`:** first `npm install` as a suite consumer surfaced two
+  upstream gaps (stale bare-agent peer range; GateDecision/Decision null-reason type
+  drift) — both fixed upstream and consumed via bare-agent 0.26.2, per two-red routing.
+  No shims.
 - PRD **addendum v1.3** + CYBERNETICS.md O1–O5: the orchestration position — not a second
   runtime modality (credit attribution, accumulation, the arbiter — grounded in F15–F20);
   convergence path is orchestrate-first-encounter → crystallize via run-as-executed
