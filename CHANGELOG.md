@@ -21,7 +21,12 @@ feature lands, **patch** = docs, fixes, scaffolding.
   Rigging per LIBRARY_CONVENTIONS: tsconfig (checkJs + strictNullChecks), `typecheck` /
   `build:types` / `prepublishOnly` scripts, `.github/workflows/ci.yml`
   (typecheck → build:types → test, no lint). Deps: litectx ^0.28.0, bareguard ^0.12.0,
-  bare-agent ^0.26.2.
+  bare-agent ^0.26.2. Code-review hardening (post-mutation-validation): writeScope
+  **containment reds** (no absolute paths / ".." segments — a scope can never reach the
+  arbiter's inputs, design law #1), spine **reserved-key guard** (type/seq/ts are the
+  envelope's, by mechanism), shared **`globToPrefix`** (one validator↔enforcement
+  transform, F9 drift guard), and a `CategorizedError` typedef replacing any-casts
+  (CLAUDE.md library-shape rule).
 - **F1 in `docs/FINDINGS.md`:** first `npm install` as a suite consumer surfaced two
   upstream gaps (stale bare-agent peer range; GateDecision/Decision null-reason type
   drift) — both fixed upstream and consumed via bare-agent 0.26.2, per two-red routing.

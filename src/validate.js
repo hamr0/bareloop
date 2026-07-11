@@ -30,6 +30,19 @@ const VERB_PARAMS = {
   remember: { kind: (v) => REMEMBER_KINDS.includes(v) },
 };
 
+/**
+ * Map a schema writeScope entry to its enforcement prefix. bareguard
+ * fs.writeScope is prefix-containment, not glob (adaptlearn F4/F9): the
+ * trailing "/**" | "/*" form maps to its directory prefix. The validator's
+ * legality rule and the interpreter's enforcement mapping BOTH go through this
+ * one helper — if they ever used different transforms, a scope could validate
+ * green and then gate-red every write at runtime (the F9 red-class).
+ * @param {string} scope
+ */
+export function globToPrefix(scope) {
+  return scope.replace(/\/\*\*?$/, '');
+}
+
 function isKinds(v) {
   return Array.isArray(v) && v.length > 0 && v.every((k) => KINDS.includes(k));
 }
@@ -94,11 +107,17 @@ export function validateConfig(input, { shellCapUsd = 2 } = {}) {
   else if (!(Array.isArray(gate.writeScope) && gate.writeScope.length > 0
              && gate.writeScope.every((s) => typeof s === 'string' && s.length > 0))) {
     red('invalid-value', 'gate.writeScope', 'non-empty array of glob strings');
-  } else if (!gate.writeScope.every((s) => !s.replace(/\/\*\*?$/, '').includes('*'))) {
+  } else if (!gate.writeScope.every((s) => !globToPrefix(s).includes('*'))) {
     // adaptlearn F9: enforcement (bareguard fs.writeScope) is prefix-containment — a wildcard
     // anywhere but a trailing /** or /* is inexpressible there, so it would validate green
     // and then gate-red EVERY write at runtime. Reds-before-tokens means rejecting it here.
     red('invalid-value', 'gate.writeScope', 'wildcards only as a trailing "/**" or "/*" (enforcement is prefix-containment, adaptlearn F9)');
+  } else if (!gate.writeScope.every((s) => !s.startsWith('/') && globToPrefix(s).split('/').every((seg) => seg !== '..'))) {
+    // Containment: the interpreter resolves scopes against the run directory; an absolute
+    // path or a ".." segment escapes it — and the close suite lives just outside the
+    // scoped tree. A scope that can reach the arbiter's inputs is the config-level
+    // fit-to-pass surface (design law #1). Reds-before-tokens.
+    red('invalid-value', 'gate.writeScope', 'must stay inside the run directory — no absolute paths, no ".." segments (design law #1)');
   }
 
   const escalation = isObj(c.escalation) ? c.escalation : {};

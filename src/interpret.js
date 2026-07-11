@@ -15,8 +15,10 @@ import { writeFileSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { Gate } from 'bareguard';
 import { LiteCtx, compress } from 'litectx';
-import { validateConfig, diffPaths } from './validate.js';
+import { validateConfig, diffPaths, globToPrefix } from './validate.js';
 import { ralph } from './ralph.js';
+
+/** @typedef {Error & {category?: string}} CategorizedError the failure map's carrier: ralph relays by `category` */
 
 // consecutive close reds that count as a stall; one revision per run
 export const STALL_REDS = 2;
@@ -62,10 +64,10 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
 
   const lc = new LiteCtx({ root: workdir });
   const gate = new Gate({
-    // bareguard fs.writeScope is prefix-containment, not glob (adaptlearn F4); the schema's
-    // trailing /** form maps to its directory prefix. Mid-path wildcards are not expressible
-    // at the enforcement layer — the validator rejects them up front (adaptlearn F9).
-    fs: { writeScope: config.gate.writeScope.map((/** @type {string} */ g) => resolve(workdir, g.replace(/\/\*\*?$/, ''))) },
+    // bareguard fs.writeScope is prefix-containment, not glob (adaptlearn F4); globToPrefix
+    // is the ONE transform shared with the validator's legality rule — mid-path wildcards
+    // and workdir-escaping scopes were already rejected up front (adaptlearn F9, law #1).
+    fs: { writeScope: config.gate.writeScope.map((/** @type {string} */ g) => resolve(workdir, globToPrefix(g))) },
     budget: { maxCostUsd: config.gate.budgetUsd },
     limits: { maxTurns: 8 * (capRuns + 1) },
     audit: { path: join(workdir, 'gate-audit.jsonl') },
@@ -85,7 +87,7 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     try {
       return await loop.run([{ role: 'user', content: prompt }]);
     } catch (e) {
-      if (e instanceof HaltError) /** @type {any} */ (e).category = 'cap-halt'; // USD/turn gate tripped — a cap story, not a bug
+      if (e instanceof HaltError) /** @type {CategorizedError} */ (e).category = 'cap-halt'; // USD/turn gate tripped — a cap story, not a bug
       throw e;
     }
   }
@@ -155,7 +157,7 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
         // not a revision bug
         rv = await revisor({ config, gaps: [...gaps], policy, onLlmResult });
       } catch (e) {
-        if (e instanceof HaltError) /** @type {any} */ (e).category = 'cap-halt';
+        if (e instanceof HaltError) /** @type {CategorizedError} */ (e).category = 'cap-halt';
         throw e;
       }
       const red = acceptRevision(rv.candidate);
@@ -182,8 +184,8 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
 
     const decision = await gate.check({ type: 'write', path: target, args: { bytes: r.text.length } });
     if (decision.outcome !== 'allow') {
-      const err = new Error(`gate ${decision.outcome} write to ${target} (${decision.rule ?? 'no rule'})`);
-      /** @type {any} */ (err).category = decision.severity === 'halt' ? 'cap-halt' : 'gate-red';
+      const err = /** @type {CategorizedError} */ (new Error(`gate ${decision.outcome} write to ${target} (${decision.rule ?? 'no rule'})`));
+      err.category = decision.severity === 'halt' ? 'cap-halt' : 'gate-red';
       throw err;
     }
     writeFileSync(target, stripFences(r.text));

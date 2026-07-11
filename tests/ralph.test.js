@@ -102,3 +102,13 @@ test('spine: seq monotonic from 1, ts stamped last on every event', async () => 
     assert.ok(!Number.isNaN(Date.parse(e.ts)));
   });
 });
+
+test('spine: reserved envelope keys (type/seq/ts) cannot be overridden by a spread payload', () => {
+  const emit = makeSpine(join(dir, 'reserved.jsonl'));
+  const ev = emit('honest', { type: 'evil', seq: 999, ts: 'evil', keep: 1 });
+  assert.equal(ev.type, 'honest', 'payload type must not relabel the event');
+  assert.equal(ev.seq, 1, 'payload seq must not break monotonicity');
+  assert.equal(ev.keep, 1, 'non-reserved payload keys pass through');
+  assert.equal(Object.keys(ev).at(-1), 'ts', 'ts stays the final key');
+  assert.ok(!Number.isNaN(Date.parse(ev.ts)), 'ts is the spine\'s stamp, not the payload\'s');
+});

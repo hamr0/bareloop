@@ -16,7 +16,12 @@ import { appendFileSync } from 'node:fs';
 export function makeSpine(file) {
   let seq = 0;
   return function emit(type, data = {}) {
-    const ev = { type, ...data, seq: ++seq };
+    // type/seq/ts are the envelope's, by mechanism not comment: callers spread
+    // foreign objects into events, and a payload that grows one of these keys
+    // must never relabel or mis-stamp a row in the append-only record.
+    const { type: _type, seq: _seq, ts: _ts, ...payload } = /** @type {Record<string, unknown>} */ (data);
+    /** @type {Record<string, unknown>} */
+    const ev = { type, ...payload, seq: ++seq };
     ev.ts = new Date().toISOString();
     appendFileSync(file, JSON.stringify(ev) + '\n');
     return ev;

@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { validateConfig, diffPaths } from '../src/validate.js';
+import { validateConfig, diffPaths, globToPrefix } from '../src/validate.js';
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const load = (name) => JSON.parse(readFileSync(join(fixtures, name), 'utf8'));
@@ -42,6 +42,8 @@ const RED_CASES = {
   'writescope-missing': { code: 'missing-required', path: 'gate.writeScope' },
   'writescope-empty':   { code: 'invalid-value',    path: 'gate.writeScope' },
   'writescope-midglob': { code: 'invalid-value',    path: 'gate.writeScope' },
+  'writescope-escape':  { code: 'invalid-value',    path: 'gate.writeScope' },
+  'writescope-absolute':{ code: 'invalid-value',    path: 'gate.writeScope' },
   'escalation-missing': { code: 'missing-required', path: 'escalation.mode' },
   'escalation-wrong':   { code: 'invalid-value',    path: 'escalation.mode' },
   'slot-unknown':       { code: 'unknown-field',    path: 'hooks.run-start' },
@@ -81,6 +83,33 @@ test('a config with several defects reports each as its own red', () => {
   const r = validateConfig(c);
   assert.equal(r.reds.length, 2);
   assert.deepEqual(r.reds.map((x) => x.code).sort(), ['invalid-value', 'missing-required']);
+});
+
+// ---- containment: a scope can never reach the arbiter's inputs (design law #1) ----
+
+test('workdir-escaping scopes red in every spelling; contained scopes pass', () => {
+  for (const bad of [['../**'], ['src/../../etc/**'], ['/tmp/**'], ['/**'], ['..']]) {
+    const cfg = load('valid.json');
+    cfg.gate.writeScope = bad;
+    const r = validateConfig(cfg);
+    assert.equal(r.ok, false, `${JSON.stringify(bad)} must red`);
+    assert.equal(r.reds[0].path, 'gate.writeScope');
+  }
+  for (const good of [['src/**'], ['src/gen/*'], ['out'], ['a/b/c/**']]) {
+    const cfg = load('valid.json');
+    cfg.gate.writeScope = good;
+    assert.deepEqual(validateConfig(cfg).reds, [], `${JSON.stringify(good)} must pass`);
+  }
+});
+
+// ---- globToPrefix: the ONE validator↔enforcement transform (F9 drift guard) ----
+
+test('globToPrefix maps trailing globs to their directory prefix and nothing else', () => {
+  assert.equal(globToPrefix('src/**'), 'src');
+  assert.equal(globToPrefix('src/*'), 'src');
+  assert.equal(globToPrefix('src'), 'src');
+  assert.equal(globToPrefix('a/b/**'), 'a/b');
+  assert.equal(globToPrefix('src/*/gen'), 'src/*/gen'); // mid-path untouched — the validator reds it
 });
 
 // ---- diffPaths: the one-knob mutation checker ----
