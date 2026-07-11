@@ -7,6 +7,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+## [0.1.0] — 2026-07-11
+
 ### Added
 - **PRD addendum v1.5: the upstream ledger.** Auto-detected upstream fixes + user-facing
   workflow debugging, derived purely from the spines: 8 lib-incident classes (test reds
@@ -117,5 +119,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
   `docs/UPSTREAM-ASKS.md`, guardrails pre-tool hook (local), `.gitignore`.
 - Public GitHub repo `hamr0/bareloop`, `main` branch.
 
-[Unreleased]: https://github.com/hamr0/bareloop/compare/v0.0.1...HEAD
+[Unreleased]: https://github.com/hamr0/bareloop/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/hamr0/bareloop/compare/v0.0.1...v0.1.0
 [0.0.1]: https://github.com/hamr0/bareloop/releases/tag/v0.0.1
