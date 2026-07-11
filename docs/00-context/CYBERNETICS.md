@@ -13,6 +13,11 @@ merely renames. Each mapping below is tagged `[confirms]` (doctrine already earn
 way), `[predicts]` (testable, see V-items), or `[budgets]` (turns a doctrine into an
 accounting rule).
 
+> **Addendum 2026-07-11** (§"The VSM ladder in full", V7–V8): registered after F21/F22 and the
+> upstream-ledger feature — mappings citing those are `[confirms]` (post-hoc naming of earned
+> results); the bareloop-facing items are predictions for the successor repo and count as
+> pre-registration there.
+
 ---
 
 ## The core mappings
@@ -85,6 +90,86 @@ regularity to all arms through the close channel — and it did (F14, §4b).
 
 ---
 
+## The VSM ladder in full (Davies 2024, ch. 5 "Cybernetics Without Diagrams") — completes mapping 5
+
+Davies' plain-English decomposition: a viable organization is five interlocking subsystems —
+S1 operations (the doers), S2 regulation (the schedulers: anti-friction protocols between S1
+units), S3 here-and-now optimization (efficiency, metrics, the present), S4 there-and-then
+intelligence (the environment, the future), S5 identity (who we are; the anchor that manages
+the S3↔S4 tension) — plus two dynamics: **variety engineering** (attenuate upward, amplify
+the front line) and **S5 collapse** (when identity is hollowed out to a single metric, S3
+optimizes without constraint, S4 is disempowered, and the organization becomes a blind,
+unaccountable machine). Mapping 5 above used S1/S3/S4/S5; the full ladder adds three things
+this project can actually use:
+
+### 5a. System 2 is the successor's missing subsystem `[predicts → V7]`
+
+adaptlearn never needed an S2: one process, one S1 unit, sequential runs — nothing to
+coordinate (the validator and slot rules are proto-S2 at most: "administrative rules the
+doers agree prevent chaos," Davies' phrase almost verbatim). bareloop's real shape — multi-
+step jobs, shared store, several primitives touching one repo — creates the first genuine S2
+demand: write-scope partitioning, step ordering, store-access conventions, the bareagent
+Scheduler. Beer's warning, Davies' rendering: S2 failures present as *friction between
+healthy units* (oscillation, contention, units undoing each other), which none of the
+existing red categories name — worker-red, interpreter-red, gate-red all blame a unit, not a
+coordination. Prediction: the first multi-step job will surface reds that are S2-class, and
+folding them into worker-red will misattribute exactly the way counting reds without §5b
+contrast did.
+
+### 5b′. S5 collapse = the single-fitness-score smell, named structurally `[confirms → budgets → V8]`
+
+Davies' diagnosis of Friedmanite shareholder-value: when S5's whole identity becomes one
+maximizable number, S3 devours S4 and the machine goes blind. That is *precisely* the
+doctrine "green gates, cost ranks — **never one fitness score** (efficiency must not negotiate
+with truth)": verdict is S5/identity territory (what counts as done), cost is S3 territory
+(how efficiently), and collapsing them into one scalar is the S5 collapse in miniature —
+fit-to-pass is Friedmanism for harnesses. Two existing results are this mapping earned:
+"improvement is nobody's goal" (the learning curve stays an observer's reading — S3's metric
+is never promoted into S5's identity), and F20's honest bound (ungated inheritance looked
+fine for 8 calm generations — Davies: the collapsed machine fails on *environmental shock*,
+not on calm seas, so short windows structurally cannot show the cost). Budget rule for
+bareloop (V8): make the collapse unrepresentable, not just discouraged — selection code takes
+verdict and cost as separate arguments and no function may combine them into one scalar.
+
+### 5c. Variety engineering, both directions — now with post-frame evidence `[confirms]`
+
+Davies: healthy organizations **attenuate upward** (summaries that survive compression) and
+**amplify the front line** (equip S1 to absorb the unexpected locally). Both halves now have
+earned instances that postdate this frame's registration:
+
+- **Amplification = the primitive menu.** F21: admitting one structural verb (`impact`)
+  flipped 0/3 cap-halt to 3/3 green@1 — variety imported to S1 exactly where the task's
+  disturbance exceeded the worker's own (mapping 1, new axis). F21's sharpest lesson is
+  Davies-shaped too: *partial* amplification is worse than none informationally — 4-of-8
+  callers gave the worker false confidence of completeness and it discarded true feedback
+  (attribution poisoning). Amplifiers must be exhaustive over their declared scope or
+  declare their truncation (cf. the ledger doctrine: ABSENT, not fabricated).
+- **Attenuation = the upstream ledger.** The fold (dedupe by lib:verb:class:signature,
+  counts, three samples) is an attenuator designed against Beer's question in the toolbox
+  entry below — *what information is destroyed, and does anything downstream need it?* —
+  answered per field: identity of the bug survives (signature), scale survives (count),
+  drill-down survives (samples → exact spine seqs), and everything else is reconstructible
+  from the spines, which stay ground truth. Close reds and bare cap-halts are attenuated to
+  zero *deliberately* (workflow stories, not lib incidents) — attenuation as a design
+  decision with named exclusions, not lossy accident.
+- **The asymmetry F22 adds:** S1's appetite is not a variety signal. Authors grab every
+  amplifier offered (cargo-cult, 6/6 on inert tasks) — so amplification decisions must key on
+  evidence from the ledger (request-red frequency under failure, green@1-vs-grind contrast),
+  never on the front line's stated wants. Davies' managers who mistake requisition volume
+  for requisite variety are the same failure.
+
+### 5d. Recursion: every step of a bareloop job is itself a viable system `[predicts]`
+
+Davies stresses VSM is recursive — each S1 unit contains the whole five-system ladder at its
+own scale. bareloop's per-step verdict classes (hard/soft/HITL green, gated PER STEP) are
+this recursion made concrete: each step has its own close (its S5 boundary), its own budget
+slice (S3), its own escalation (algedonic). The prediction worth carrying: step-level
+viability does not compose into job-level viability for free — the job needs its own S2
+(step coordination) and its own S5 (the human merge line), or the steps will be individually
+green and jointly incoherent. Never tested anywhere; job #1 is the test.
+
+---
+
 ## Shorter refs — the rest of the toolbox
 
 - **Wiener — feedback vs feedforward.** Error-driven correction (feedback) vs model-driven
@@ -150,8 +235,16 @@ regularity to all arms through the close channel — and it did (F14, §4b).
   feedforward-reached = recall-evidence ∧ green@1; feedback-reached = iterations > 1 ∧ no
   recall evidence. Free from the existing ledger + spine; SP-3's Q3 lock prediction says late
   gated-arm greens should migrate feedforward while ungated stays feedback.
+- **V7 (bareloop, first multi-step job):** System-2 red category — coordination failures
+  between steps/units (write-scope contention, step-order violations, store races) get their
+  own named category on the spine, never folded into worker-red/interpreter-red. Prediction
+  (§5a): job #1 surfaces at least one red that is S2-class; if every red attributes cleanly
+  to a single unit, the S2 mapping over-predicted — note it and move on.
+- **V8 (bareloop, selection code):** the single-fitness-score ban made structural (§5b′) —
+  verdict and cost travel as separate values end-to-end; no function in the selection path
+  combines them into one scalar. Testable mechanically (type/lint the selection seam) and by
+  review: any PR introducing a combined score is the S5-collapse smell, rejected on sight.
 
----
 
 ## Orchestration vs self-healing workflows — bareloop registration (2026-07-11)
 

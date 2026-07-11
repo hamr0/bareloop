@@ -6,7 +6,7 @@ a workaround), or with the build ladder (a rung that can't meet its exit stops t
 the stop is a result) — is logged here, grounded in source (file:line) or in the spine
 (run + seq). "Works as intended" is also a finding.
 
-Numbering starts at F1 in this repo. adaptlearn's F1–F20 are a closed record at
+Numbering starts at F1 in this repo. adaptlearn's F1–F23 are a closed record at
 `docs/00-context/FINDINGS.md` — cite them as `adaptlearn F<n>`, never renumber.
 
 ## F1 — first contact with the suite as a CONSUMER surfaced two upstream gaps; both fixed-and-consumed same session (two-red routing, working as designed)

@@ -13,7 +13,7 @@ contrast that attributed it.
   in the adaptlearn experiment; do not relitigate them without new evidence.
 - `docs/plans/2026-07-10-agentic-automation-successor-design.md` — the design record
   (validated interview + all amendments). Closed; amend with dated addenda, never rewrite.
-- `docs/00-context/` — adaptlearn's FINDINGS (F1–F20) and CYBERNETICS.md, closed records
+- `docs/00-context/` — adaptlearn's FINDINGS (F1–F23) and CYBERNETICS.md, closed records
   copied for reference. The evidence archive and analysis lenses live in adaptlearn v0.11.1
   (`../adaptlearn`): the science behind this product.
 - `docs/FINDINGS.md` — THIS repo's findings, starting at F1. No papering over: every

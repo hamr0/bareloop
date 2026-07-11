@@ -907,3 +907,170 @@ categorical separation); executed inheritance transmits so completely that the g
 moves to the risks an 8-gen window cannot show (F20). The successor takes both: inherit the
 run-as-executed, verdict-gate what enters the lineage, and let attribution (V2 contrast bits)
 say which knob earned the green.
+
+## F21 — BARELOOP DE-RISK PROBE (menu breadth): the primitive-menu axis is WIRED IN — one
+## admitted verb flipped 0/3 cap-halt to 3/3 green@1 where it had purchase, moved nothing
+## where it was inert; and partial retrieval POISONED gap attribution
+
+**Track note:** this is successor (bareloop) de-risk work run in the adaptlearn sandbox —
+same posture as F20. Pre-registered before spend in `poc/menu-breadth-prereg.md` (question,
+falsifier, categorical read, grounded amendments); runner `poc/probe-menu-breadth.mjs`;
+evidence `docs/archive/evidence/menu-breadth-rpcu95/`. The archive record is unchanged.
+
+**Question (bareloop design decision #3):** the successor discloses the full bare-suite
+primitive menu but admits verbs per job. Is menu breadth a live contrast variable — does
+admitting one more *callable* verb change outcome — or is the registry decoration? M3
+kill-switch logic on a new axis. The extra verb was litectx `impact` (schema v1's named v2
+exclusion), chosen because its relevance is structural and binary (callers exist or don't) —
+the one extra primitive whose load-bearingness cannot be rigged by tuning the base menu.
+
+**Design:** menus one knob apart (A = [recall], C = [recall, impact]); MAIN task = fix
+`formatLabel` under 8 caller-module constraints (recall k=5 structurally cannot enumerate 8;
+impact returns all 8, bodies via the get() fetch-toll); FALSIFIER task = fix a zero-caller
+leaf parser (impact provably inert, conventions recall-surfaceable in notes); identical world
+furniture, shared close, cap 4, clipipe. Four machinery negatives measured token-free before
+spend: stubs red / references green, impact 8/8, recall 4/8, A/C exactly-one-block contrast.
+
+**Results (12/12 cells):**
+- MAIN: A 0/3 green (3× cap-halt@4, §5b category confirmed on every spine) — C 3/3 green@1.
+- FALSIFIER: A 3/3 green@1 — C 3/3 green@1 (the impact op *fired* and injected its inert
+  "no callers" form: op presence moved nothing; only content did).
+- Pre-registered read: **WIRED-IN**, no confound → bareloop builds the admission registry
+  (disclosure → request-red → admit). The B-arm (disclosed-but-locked) is the registered
+  follow-up, to run in bareloop.
+- Cleanest cut — iteration 1, uncontaminated (real code, both arms, all reps): C green@1 3/3;
+  A red@1 3/3 failing exactly {badge, price, qty} — the three callers recall did not surface.
+  The failure signature IS the information gap, deterministic across reps.
+
+**Mechanism finding (unexpected, the probe's most valuable output):** partial retrieval
+doesn't just under-inform — it **poisons gap attribution**. The A worker took recall's 4
+callers as the complete set and *dismissed the 3 real failing tests as another repo's noise*
+(verbatim in main-A-0's final artifact: it "ignored the … badge/price/qty failures as
+unrelated to this repo's four callers"). Ranked top-k ⇒ false confidence of completeness ⇒
+genuine close evidence discarded. Structural-exhaustive verbs earn admission by preventing
+evidence MISATTRIBUTION, not by adding context — the worker-side rhyme of F16/F18's "verdict
+admits, contrast attributes."
+
+**Instrument caveat (honest bound):** A's iterations 2–4 are contaminated — under the
+confusing gap the worker broke persona and emitted prose with a mid-text fenced block;
+`stripFences` (probe copy AND graduated `interpret.js:27` — port note only, repo closed)
+strips only leading/trailing fences, so prose landed in the artifact → SyntaxError gaps
+replaced test-level feedback for the rest of the run. "A can never green at cap 4" is NOT
+established; the @1 contrast and 0/3-at-cap under this instrument are. bareloop port notes:
+(1) a non-code artifact must red as its own category (**artifact-red**), never corrupt the
+close signal; (2) artifact extraction must handle prose-wrapped fences. Notably the persona
+break occurred ONLY in the narrow arm — plausibly downstream of the info gap itself, but not
+cleanly attributable.
+
+**Lib friction (filed as A3):** a world under bare `git init` indexes NOTHING silently —
+litectx `collectFiles` (`src/indexer.js:41`) trusts `git ls-files`, which is empty in a
+commit-less repo, and `index()` gives no signal that zero files were collected. Found live by
+machinery negative #2 (impact 0/8) before any token burned; fixed here by committing seed
+files (the honest fix — litectx targets real repos). Ask: surface an empty collect.
+
+## F22 — BARELOOP DE-RISK PROBE #2 (menu disclosure): the ADMISSION CHAIN PROVES END-TO-END
+## (author selects → dispatch injects → 3/3 green@1); author choice and authoring-time asks
+## are both CARGO-CULT (no need signal); the §4b disclosure-leak concern is unsupported
+
+**Track note:** successor (bareloop) probe #2, F21's registered follow-up + author-side
+selection, run in the adaptlearn sandbox. Pre-registered in `poc/menu-disclosure-prereg.md`
+(three questions, three conditions, predictions and the leak's named legal path committed
+before spend). Evidence: `docs/archive/evidence/menu-disclosure-RuUllB/` (run 2, complete,
+27/27 cells readable) and `menu-disclosure-hhD2yp/` (run 1: run cells VOID on two instrument
+failures — kept for the postmortem; authoring cells load-bearing). Record unchanged.
+
+**Design:** one axis — how litectx `impact` is disclosed to the M4 AUTHOR: D0 absent (stock
+catalog) | D1 admitted (selected → dispatched) | D2 locked (selected → request-red, skipped).
+Authoring {D0,D1,D2} × {MAIN, LEAF} × 3; runs MAIN-only on each rep's own authored config,
+cap 4, clipipe. Schema v1 stayed closed (impact stripped-and-counted before stock
+validation). Six machinery-negative groups, incl. two added after run 1's postmortem.
+
+**Results (run 2, world RuUllB):**
+- **P4 HOLDS — the probe's keystone.** D1 3/3 green@1 vs D0 1/3 green@[4]: author reads
+  menu → selects impact → dispatch injects 8 callers → first-try green. F21-C reproduced
+  through the AUTHORED path — bareloop decision #3's admission chain demonstrated end-to-end,
+  in both authored op orders.
+- **P1 CARGO-CULT, replicated across both worlds.** D1 selects impact 3/3 MAIN and 3/3 LEAF
+  (pooled 6/6, 6/6). Free listing exerts zero selection pressure; author selection is NOT a
+  need signal.
+- **P2 ALIVE, but run 1's "lock creates discrimination" DID NOT REPLICATE.** D2 asks: MAIN
+  6/6 pooled, LEAF 4/6 pooled (1/3 then 3/3). The lock keeps the ask channel alive; it does
+  not need-weight it. Downgraded to weak trend — a live demonstration of why single-world
+  findings don't get designed around (the pre-registered replication caught it).
+- **P3: catBeats fired in the OPPOSITE direction to the leak hypothesis** (D0 1/3 vs D2 0/3;
+  listing-without-capability never helped). Registered config-inspection procedure: no
+  systematic recall-widening in D2. The §4b catalog-leak concern is UNSUPPORTED here.
+- **Bonus reads:** (a) locked ops fire request-red EVERY iteration (4/run) — within-run
+  request-red frequency is a free, structured need signal, stronger than the authoring-time
+  ask; (b) one D0 cell ground to green@4 under the fixed instrument — sharpening F21's bound:
+  the narrow menu CAN occasionally grind to green; the wide menu makes it deterministic @1.
+  The menu buys first-try certainty (~4× iterations), i.e. it lives on the cost axis, exactly
+  where across-run selection (green gates, cost ranks) reads it.
+
+**Run 1 postmortem (instrument, both found in spines, both fixed + negative-guarded):**
+(1) op-composition clobber — recall ASSIGNED context while impact appends; authored
+[impact, recall] order erased the caller view, every D1 worker ran effectively-D0; fixed to
+append-only composition with a machinery negative driving the REAL dispatch path (fails on
+the old code). (2) provider crashes killed all 3 D2 runs at iteration 1; fixed with one
+retry + 30s backoff, second failure tags the cell provider-red and EXCLUDES it from every
+read (§5b: a broken middle is never a verdict). Run 2 absorbed two provider timeouts through
+this seam with zero cells lost.
+
+**Design consequence for bareloop (incl. hamr's primary/secondary tiering question):**
+author selection cannot curate (cargo-cult, robust) and authoring-time asks cannot curate
+(non-replicated) — so menu choice management must be EVIDENCE-driven: secondary tier locked
+by default, admission steered by within-run request-red frequency plus outcome contrast, and
+post-green menu expansion as an across-runs mutation knob (one primitive per mutation, green
+gates, cost ranks, removal symmetric).
+
+## F23 — BARELOOP DE-RISK PROBE #3 (declared truncation): NULL — the label is NOT load-bearing,
+## because F21's attribution-poisoning mechanism DOES NOT REPLICATE under the fixed instrument;
+## the narrow arm's real failure mode is hunting, not dismissal; artifact-red revalidated
+
+**Track note:** successor (bareloop) probe #3, gating bareloop PRD v1.6 commitment #5
+(amplifier-truncation rule). Pre-registered in `poc/truncation-declared-prereg.md` before
+spend; runner `poc/probe-truncation-declared.mjs`; evidence
+`docs/archive/evidence/truncation-declared-E1wCrp/` (12/12 cells readable, two provider
+timeouts absorbed, zero exclusions). The archive record is unchanged.
+
+**Question:** is the VSM manifest rule "every amplifier declares its truncation" load-bearing
+— does labeling recall's injected block "ranked top-k, may be incomplete" restore honest gap
+attribution in the narrow arm — or is attribution only fixed structurally (F21's admission
+answer)? One knob: the declaration parenthetical in the context header (U undeclared vs T
+declared), F21 world verbatim, narrow menu only, F22 fixed instrument. Primary read is an
+observer-only per-test meter: does the iteration-2 artifact (first authored after seeing the
+gap) pass ≥2/3 of the {badge, price, qty} tests recall cannot surface.
+
+**Results:** MAIN attribution@2 **U 3/3 | T 3/3** → pre-registered NULL (no separation).
+MAIN outcome U 0/3, T 0/3 green (narrow-arm cap-halt bound replicated; pooled 0/9 narrow vs
+wide green@1 6/6 across F21/F22). FALSIFIER U 3/3 ≈ T 3/3 green@1 — guard clean, no confound.
+Iteration-1 gapOnly 0 everywhere (no leak). The runner's canned null wording ("poisoning
+persists") was wrong for this data — the null took its other shape:
+
+**The retro-read is the probe's real output: F21's poisoning mechanism does not replicate.**
+Zero dismissal prose in all 24 main-arm artifacts; every narrow-arm worker adopted the gap
+evidence at iteration 2; the cleanest counter-example (main-U-0@2, UNDECLARED arm) annotates
+each convention "verified" (from the gap diff) vs "INFERRED (exact input/output truncated)"
+— the worker declares its own evidence truncation unprompted. F21's poisoning quote came from
+a single cell's final artifact inside the stripFences-contaminated region. F22's lesson, one
+level down: single-world sub-findings don't get designed around — and single-CELL
+sub-findings harvested from a contaminated instrument region especially don't. F21's headline
+(menu axis WIRED-IN) is untouched and replicated here again.
+
+**What narrow-arm failure actually is (observational):** hunting (Wiener), not dismissal —
+attribution lands @2 (~4-5/8), then oscillates: fixing gap conventions breaks
+previously-passing ones under a partial caller view; cap 4 halts mid-oscillation. The wide
+menu's value re-reads as delivering the whole constraint set at once (convergence@1), not as
+preventing misattribution.
+
+**Instrument (revalidates the F21 artifact-red port note):** one reply was prose + UNFENCED
+code — last-fence extraction passes it through whole → SyntaxError artifact → the close reds
+"artifact invalid" while meaning "code wrong". No extraction heuristic closes this class; a
+non-code artifact needs its own red category (artifact-red). Persona breaks concentrated in
+the info-starved MAIN arms (U 4, T 7 vs falsifier 1) — direction consistent with F21, small-n.
+
+**Consequence for bareloop (commitment #5, gate honored both directions):** the full
+amplifier rule does NOT enter. The floor survives — ranked views never claim exhaustiveness;
+exhaustive views may — but re-grounded: it rests on the manifest/honesty principle (injection-
+side twin of ledger ABSENT-not-fabricated), not on a demonstrated poisoning mechanism. The
+successor seed PRD §11 amplifier-manifest item is annotated accordingly.
