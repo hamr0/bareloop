@@ -8,6 +8,16 @@ feature lands, **patch** = docs, fixes, scaffolding.
 ## [Unreleased]
 
 ### Added
+- **PRD addendum v1.5: the upstream ledger.** Auto-detected upstream fixes + user-facing
+  workflow debugging, derived purely from the spines: 8 lib-incident classes (test reds
+  and budget halts excluded by design — workflow stories never pollute the upstream
+  queue), signature-deduped counts, append-only state-as-fold, human-appended fix
+  lifecycle (the tool drafts, never files). Two audiences, one file: panel workflow
+  health (N6) and the maintainer's pre-drafted UPSTREAM-ASKS queue. New admission
+  obligation ~N2/N3: per-job known-answer `primitive-smoke` before tokens — the only
+  detector for silently-degrading primitives (adaptlearn A3 class). Spec + reference
+  implementation upstream in adaptlearn (validated: re-derived the menu-probe session's
+  incidents, zero false positives from ~100 close reds).
 - **F2 + PRD addendum v1.4: the menu probes return (adaptlearn F21/F22).** The v1.1 §4
   graduated-disclosure open question RESOLVED: the registry gate is met (menu axis
   wired-in; admission chain proven end-to-end) — the request-red registry builds ~N3/N4.
