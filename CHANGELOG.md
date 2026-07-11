@@ -8,6 +8,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 ## [Unreleased]
 
 ### Added
+- PRD **addendum v1.3** + CYBERNETICS.md O1–O5: the orchestration position — not a second
+  runtime modality (credit attribution, accumulation, the arbiter — grounded in F15–F20);
+  convergence path is orchestrate-first-encounter → crystallize via run-as-executed
+  inheritance; admission only by pre-registered probe.
 - PRD **addendum v1.2**: the menu-breadth (graduated-disclosure) probe is assigned to
   adaptlearn (successor-POC track, F19/F20 style) and returns to bareloop as findings;
   the registry-gating separation requirement is unchanged.

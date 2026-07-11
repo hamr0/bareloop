@@ -192,6 +192,30 @@ the request-red registry (no separation → the registry dies unbuilt). bareloop
 the probe's findings exactly the way §2 consumes F1–F20 — settled upstream, not re-proven
 here.
 
+## Addendum v1.3 — 2026-07-11 (orchestration position, hamr's question)
+
+Asked and answered against the full F1–F20 record; frame registered in
+`docs/00-context/CYBERNETICS.md` ("Orchestration vs self-healing workflows", O1–O5). Summary:
+
+**Orchestration is not a second runtime modality for bareloop — §8's "no swarm, no
+orchestrator frameworks" is now grounded in the record, not just taste.** Three reasons:
+(a) *credit attribution* — an orchestrator confounds dozens of runtime decisions into one
+outcome bit, destroying the contrast-bit channel the extractor depends on (design law #3;
+V2's 16/16); (b) *accumulation* — an orchestrator re-derives its workflow every run and
+compounds nothing, while earned workflows compound on cost and first-try with receipts
+(F17 ~10× post-lock, F20 ~½ cohort cost); (c) *the arbiter* — runtime-emergent coordination
+has no artifact to validate reds-before-tokens (design law #1).
+
+**Honest bound:** on the bare verdict axis, frontier models make orchestration mostly work
+(F15/F18 saturation) — its legitimate regime is one-off/heterogeneous/unknown jobs, already
+out of scope (§1). bareloop's axis is trust + compounding cost, not greens.
+
+**Convergence path (if ever wanted):** orchestrate the *first* encounter with a job, then
+crystallize the trace into a config via run-as-executed inheritance (F20 is the bridge) and
+let the loop own it — the M5 revisor is already orchestration's caged form. Admission rule
+unchanged: any such modality enters only through a pre-registered probe with measurable
+separation before machinery is built (the registry precedent). No rung changes; §10 stands.
+
 ---
 
 ## Appendix A — Panel spec (provisional)
