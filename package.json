@@ -9,7 +9,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test 'tests/**/*.test.js'",
+    "test": "node --test",
     "typecheck": "tsc --noEmit",
     "build:types": "tsc",
     "prepublishOnly": "npm run build:types"
