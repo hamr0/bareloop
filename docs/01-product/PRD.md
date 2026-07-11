@@ -248,6 +248,45 @@ pre-registered, consumed as bareloop F2. The v1.1 §4 open question closes as fo
    fence-robust artifact extraction. N0's `interpret.js` deliberately carries the
    reference bound until then.
 
+## Addendum v1.5 — 2026-07-11 (the upstream ledger: auto-detected upstream fixes + workflow debugging, hamr)
+
+New feature, spec'd and reference-implemented upstream (adaptlearn, house POC rules:
+`docs/plans/2026-07-11-upstream-ledger-design.md` + `poc/upstream-ledger.mjs`, selftest
+8/8 incl. two must-produce-nothing negatives; validated by re-deriving the menu-probe
+session's real incidents — provider crashes ×3 as one row, a distinct timeout kept
+separate, capability-gap: impact ×3, request-red: impact ×15 frequency-ranked, **zero
+false positives from ~100 close reds**). Consumed here as product commitment:
+
+1. **The upstream ledger — the runs already confess everything; this is the stenographer.**
+   A pure, derived, reconstructible reader over the spines (which stay ground truth and
+   never change shape for it). It classifies lib-relevant events into **8 incident
+   classes** (provider crashed · primitive threw · primitive silently lied · requested-
+   but-locked · capability gap, asked-and-died-at-cap · retention failed · config/vocab
+   drift · broken close), dedupes by `lib:verb:class:normalized-signature` (same bug
+   across 50 runs = one row with a count; two bugs in one verb stay two rows), and
+   appends to one JSONL — current state is a fold, never a rewrite.
+2. **Deliberately excluded: test failures and plain budget halts.** Those are workflow
+   stories; they can never pollute the upstream queue. This is the two-red routing rule
+   (v1.1 §3) made mechanical: the ledger auto-detects the upstream-gap red and
+   frequency-ranks the request-red — the same evidence stream F2's curation rules read.
+   It also catches the worst case: workflows that went GREEN while a lib quietly
+   degraded — the bug that otherwise ships invisible.
+3. **Two audiences, one file.** The panel (N6) renders it as *workflow health* — users
+   debug "the toolbox was broken here" separately from "your workflow failed here". The
+   maintainer reads it as a pre-drafted upstream to-do: each row carries a suggested ask
+   and spine-line evidence pointers (world/cell@seq). Fix lifecycle is human-appended
+   (open → filed → fixed → consumed, the A1/A2/A3 pattern); **the tool drafts, never
+   files** — filing and fixing stay human, per law #1's spirit. `docs/UPSTREAM-ASKS.md`
+   becomes the ledger's filed-state view rather than a hand-maintained queue.
+4. **New obligation on admission (lands with the registry, ~N2/N3): per-job known-answer
+   smokes.** Each admitted primitive gets a known-answer check emitted as a
+   `primitive-smoke` spine event before the loop spends — the only detector for the
+   silent-degradation class, because silent bugs throw nothing (adaptlearn A3; F21's
+   "impact must return 8/8" is the template).
+
+Ladder placement: ledger reader consumes spines from N2's first real runs; smoke
+obligation rides the admission machinery (~N2/N3); panel surface at N6. No rung changes.
+
 ---
 
 ## Appendix A — Panel spec (provisional)
