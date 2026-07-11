@@ -218,3 +218,70 @@ authoring/revision loop (a config allowed to settle over more than one pass, on 
 not yet jobs) — never a swarm, same laws, and it is admitted the house way: pre-registered
 probe, opposed conditions, measurable separation before any machinery is built (the
 request-red registry precedent).
+
+---
+
+## The self-healing map — bareloop registration (2026-07-12)
+
+**Status:** bareloop-side addition to the frame, same standing as the orchestration section:
+registered after the archive, nothing above the first divider reopens. Origin: hamr's
+follow-up on the orchestration mapping — *where exactly does bareloop self-heal?* Same
+reading rule: `[confirms]` / `[predicts]` / `[budgets]`.
+
+**The law (Ashby's ultrastability generalized to every layer):** a system self-heals only
+at the loops it actually has. A subsystem without its own loop, its own **named red**, and
+an **undeletable signal** (a spine event no emergent component can suppress or summarize)
+cannot heal — its ill-health is invisible by construction. The audit question for any new
+component is therefore three-fold: which loop owns it, what is its red called, and where
+does the signal land on the spine.
+
+### The five loops (each needs a PRD home + spine events)
+
+1. **Within-run — S1 heals itself** `[confirms]`. Revision-on-stall (M5, F11) — exists.
+   Registered gaps: **artifact-red** (a non-code artifact reds on its own axis, F21's
+   instrument caveat / PRD v1.4 §5) and **primitive-smoke** (per-job known-answer check per
+   admitted primitive before spend, PRD v1.5 §4) — the only defense against the A3 silent
+   class, because silent bugs throw nothing.
+2. **Across-run — S4 heals the harness** `[confirms]`. One-knob mutation under green-gates /
+   cost-ranks (design law #4). Spine: `config-final` (inherit run-as-executed, F18/F20;
+   live at N0) and ≥1 contrast bit per claimed knob (V2; design law #3).
+3. **Menu — S4 heals capability** `[confirms]`. request-red → registry → admit → rerun;
+   gate MET (adaptlearn F21/F22, bareloop F2). Spine: `request-red` carries op + iteration
+   (within-run frequency = need weight, F22). Admission keys on ledger evidence, never on
+   author selections (the cargo-cult law, F2).
+4. **Lib — the human heals the substrate** `[confirms]`. The upstream ledger (PRD v1.5):
+   derived from spines, 8 incident classes, lifecycle open → filed → fixed → consumed,
+   filing stays human. The classifier table ports as-is.
+5. **Instrument — the probes heal the probe** `[budgets]`. Machinery negatives measured
+   before spend; must-fail fixtures shipped with every instrument. Evidence from the
+   menu-probe session alone: this discipline caught A3, the results-clobber, and a regex
+   bug before they could contaminate a readout. Promoted from dev rule to product
+   obligation in PRD v1.6.
+
+### New V-items (continuing the series, bareloop-registered)
+
+- **V7 — S2 red category** `[predicts]`: coordination failures (write-scope contention,
+  step-order violations, store races) get their own name on the spine, never folded into
+  worker/interpreter-red. Beer: S2 is the anti-oscillation layer; a coordination failure
+  logged as a worker failure teaches the wrong loop to heal. N0's vocabulary (cap-halt,
+  gate-red, interpreter-red, retention-red, broken-close) has no coordination name —
+  lands with the N1 schema / N2 real-job loop, where the first real coordination surfaces
+  (write scopes, step order, one store per job) appear.
+- **V8 — anti-S5-collapse** `[budgets]`: verdict and cost are separate values end-to-end;
+  no function anywhere in the tree combines them into one scalar. Design law #4 made
+  structural and lintable — a token-free static check can enforce it, and S5 (the shell)
+  never has to trust that the doctrine was followed.
+
+### Variety-engineering manifests (mapping "attenuators & amplifiers" made an obligation)
+
+- **Every attenuator declares its destruction** `[budgets]`: each summarizing point
+  (extractor, ledger fold, gap slice, escalation path) documents what it keeps, what it
+  drops, and why nothing downstream needs the dropped part. The upstream-ledger design doc
+  is the template. (The frame's standing question — "what information is destroyed, and
+  does anything downstream need it?" — becomes a per-component deliverable.)
+- **Every amplifier declares its truncation** `[predicts]`: any partial view injected into
+  a worker says so ("top-k of unknown total"). The floor is already earned — F21: partial
+  retrieval poisons gap attribution, so **ranked views never claim exhaustiveness;
+  exhaustive views (impact) may**. Whether *declaring* the truncation restores honest gap
+  attribution is the declared-truncation probe — adaptlearn-side, pre-registered first,
+  same track and bar as F21/F22, findings consumed back here.

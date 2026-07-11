@@ -287,6 +287,64 @@ false positives from ~100 close reds**). Consumed here as product commitment:
 Ladder placement: ledger reader consumes spines from N2's first real runs; smoke
 obligation rides the admission machinery (~N2/N3); panel surface at N6. No rung changes.
 
+## Addendum v1.6 — 2026-07-12 (the self-healing map: every loop gets its named red and an undeletable signal, hamr via the cybernetics frame)
+
+Frame registered in `docs/00-context/CYBERNETICS.md` ("The self-healing map", V7/V8). The
+one-sentence law: **a system self-heals only at the loops it has; give every subsystem its
+loop, its named red, and its undeletable signal** — a red that lacks a name gets folded
+into a neighbor and teaches the wrong loop; a signal an emergent component can summarize
+can be suppressed. This addendum is the audit of bareloop against that law: four of the
+five loops were already committed piecewise (v1.4/v1.5 + design laws); what's new is the
+completeness criterion itself, one spine category, one lint rule, and two documentation
+obligations.
+
+**The five loops — where each lives (audit result, cites only):**
+
+| Loop | Heals | Already committed | Spine signal |
+|---|---|---|---|
+| 1. Within-run | S1 heals itself | M5 revision (§4); artifact-red (v1.4 §5, N2); primitive-smoke (v1.5 §4, ~N2/N3) | revision, artifact-red, `primitive-smoke` |
+| 2. Across-run | S4 heals the harness | laws #2/#3/#4; one-knob mutation | `config-final` (live at N0) + ≥1 contrast bit per knob (V2) |
+| 3. Menu | S4 heals capability | registry, gate MET (v1.4, F2); ~N3/N4 | `request-red` with op + iteration (frequency = need weight) |
+| 4. Lib | the human heals the substrate | upstream ledger (v1.5); filing stays human | ledger rows derived from spines |
+| 5. Instrument | the probes heal the probe | **new — committed below** | must-fail fixtures, measured before spend |
+
+**New commitments:**
+
+1. **`coordination-red` joins the spine vocabulary (V7).** Coordination failures — write-
+   scope contention, step-order violations, store races — get their own category, never
+   folded into worker/interpreter-red: a coordination failure logged as a worker failure
+   teaches the wrong loop to heal. Lands with the N1 schema / N2 loop, where the first
+   real coordination surfaces appear. (N0's category set has no coordination name — that
+   is correct for one process per run with no steps; it stops being correct at N2.)
+2. **The verdict/cost separation becomes lintable (V8).** Law #4 was doctrine; now it's
+   structure: verdict and cost are separate values end-to-end, and **no function in the
+   tree combines them into one scalar** — no fitness score can exist even by accident.
+   Token-free static check; rides CI from N1 (the rung already touching the validator API).
+3. **Instrument obligation (loop 5, promoted from dev rule to product doctrine):** every
+   probe and every analytics instrument ships with must-fail fixtures, and machinery
+   negatives are measured **before** spend. The menu-probe session caught A3, a results-
+   clobber, and a regex bug this way — before any of them could contaminate a readout.
+   Applies to every pre-registered probe bareloop consumes and every N3+ extractor/ledger
+   analytic.
+4. **Attenuator manifests.** Every summarizing point — extractor, ledger fold, gap slice,
+   escalation path — documents what it keeps, what it drops, and why nothing downstream
+   needs the dropped part. The upstream-ledger design doc is the template; the manifest is
+   part of each component's definition-of-done as it lands (extractor at N3, ledger fold
+   at N2+, escalation at N2).
+5. **Amplifier truncation — floor committed, full rule gated on a probe.** The floor is
+   evidence-backed now (F21: partial retrieval poisons gap attribution): **ranked views
+   never claim exhaustiveness; exhaustive views (impact) may.** The full rule — every
+   partial view injected into a worker declares itself partial ("top-k of unknown total")
+   — enters only if the **declared-truncation probe** shows the declaration restores
+   honest gap attribution: adaptlearn-side, pre-registered first, same track and bar as
+   F21/F22 (the v1.2 assignment pattern), findings consumed back here.
+
+Standing rule going forward: any new subsystem answers the three-fold audit question at
+design time — which loop owns it, what is its red called, where does its signal land on
+the spine. Unchanged and re-affirmed structural: escalation text reaches the human
+byte-identical to what the shell emitted (law #7/V4 — the pain channel is never
+summarized). No rung changes; §10 stands.
+
 ---
 
 ## Appendix A — Panel spec (provisional)
