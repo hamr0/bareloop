@@ -83,6 +83,12 @@ confidence of completeness and it dismissed real failing tests as noise. Structu
 exhaustive verbs earn admission by preventing evidence MISATTRIBUTION, not by adding
 context — the worker-side rhyme of "verdict admits, contrast attributes."
 
+> **Corrected by F3 (2026-07-12, adaptlearn F23):** the poisoning mechanism does not
+> replicate under the fixed instrument — its evidence lived in a single cell inside the
+> stripFences-contaminated region. Narrow-arm failure is hunting, not dismissal; the wide
+> menu's value re-reads as convergence@1 (the whole constraint set at once). The
+> admission conclusion above stands; only this mechanism story is retired.
+
 **Port requirements filed for N2 (from F21's instrument caveat, plus the N0 code review):**
 (1) a non-code artifact must red as its own category — **artifact-red** — never corrupt the
 close signal; (2) artifact extraction must handle prose-wrapped and mid-text fences
@@ -93,3 +99,37 @@ hardcodes 120s — a real repo suite slower than that reads as broken-close, det
 (4) the close **gap bound** becomes a named option and tail-biased (`src/ralph.js` head-
 truncates at 2000 chars; a big suite's failure detail prints last, so the worker's only
 feedback channel can carry zero signal while the budget burns).
+
+## F3 — the declared-truncation probe returns NULL (adaptlearn F23, consumed): truncation declarations are HYGIENE, not load-bearing; F2's poisoning-mechanism line is retired; artifact-red revalidated
+
+The last assigned adaptlearn probe concluded (F23, v0.11.5, evidence
+`truncation-declared-E1wCrp`, pre-registered before spend, falsifier clean, zero
+exclusions). Consumed the F2 way: settled upstream, not re-proven.
+
+**The gate honored both directions (PRD v1.7 #3, annotated ANSWERED):** attribution@2 was
+3/3 in BOTH arms — declaring the injected view "ranked top-k, may be incomplete" changed
+nothing, because there was no poisoning to cure. The declaration ships as a near-free
+honesty marker (injection-side twin of the ledger's ABSENT-not-fabricated), is **never a
+review blocker**, and is **never relied on for attribution** — that fix stays structural
+(exhaustive verbs, admission).
+
+**The probe's real output is a retro-read: F21's poisoning mechanism does not replicate.**
+Zero dismissal prose across all 24 main-arm artifacts; every narrow-arm worker adopted the
+gap evidence by iteration 2; one undeclared-arm worker even annotated its own conventions
+"verified" vs "INFERRED (truncated)" unprompted. The original poisoning quote came from a
+single cell inside the stripFences-contaminated instrument region — F22's lesson one level
+down: single-CELL sub-findings from a contaminated region don't get designed around.
+Narrow-arm failure is **hunting** (attribution lands @2, then fixing gap conventions
+breaks passing ones under the partial view; cap halts mid-oscillation), so the wide menu's
+value re-reads as **convergence@1 — the whole constraint set at once**. F21's WIRED-IN
+headline is untouched and replicated a third time (narrow 0/9 pooled vs wide 6/6 green@1).
+
+**Corrections applied in this repo (no silent drops):** F2's mechanism paragraph annotated
+above; PRD v1.4 §4 mechanism doctrine annotated; CYBERNETICS self-healing registration's
+amplifier entry synced to ANSWERED. Superseded text stays in place per house style — the
+annotations are the change record.
+
+**Side yield, filed requirement reaffirmed:** one probe reply was prose + UNFENCED code —
+no extraction heuristic closes that class; **artifact-red** (F2 port requirement #1, PRD
+v1.4 §5) is revalidated for N2. With F23 consumed, no adaptlearn probes remain assigned or
+pending; the one open prediction is bareloop-side — V7/coordination-red, fires on job #1.

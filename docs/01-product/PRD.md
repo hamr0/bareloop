@@ -243,6 +243,12 @@ pre-registered, consumed as bareloop F2. The v1.1 §4 open question closes as fo
    top-k induces false completeness and the worker discards real close evidence.
    Structural-exhaustive verbs earn admission by preventing evidence misattribution, not
    by adding context. The worker-side rhyme of design law #3.
+   > **Retired 2026-07-12 (adaptlearn F23, bareloop F3):** the poisoning mechanism failed
+   > replication under the fixed instrument (single contaminated cell); narrow-arm
+   > failure is hunting, not dismissal. The admission conclusion stands, re-grounded:
+   > structural-exhaustive verbs earn admission by delivering the whole constraint set at
+   > once (convergence@1, wide 6/6 vs narrow 0/9 pooled) — not by preventing
+   > misattribution.
 5. **N2 requirements filed (F21 instrument caveat):** an **artifact-red** category (a
    non-code artifact reds on its own axis, never corrupts the close signal) and
    fence-robust artifact extraction. N0's `interpret.js` deliberately carries the

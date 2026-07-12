@@ -385,12 +385,14 @@ does the signal land on the spine.
   its manifest is a review blocker. (The frame's standing question — "what information is
   destroyed, and does anything downstream need it?" — becomes a per-component
   deliverable.)
-- **Every amplifier declares its truncation** `[budgets → predicts]`: any ranked/partial
-  view injected into a worker says so in the injection itself ("top-k of an unknown total
-  — may be incomplete") — a near-free honesty marker, the injection-side twin of the
-  ledger's "ABSENT, not fabricated"; it ships regardless. The floor is already earned —
-  F21: undeclared partial retrieval poisons gap attribution, so **ranked views never
-  claim exhaustiveness; exhaustive views (impact) may**. What stays `[predicts]` is the
-  rule's *status* — load-bearing (review blocker) vs hygiene — decided by the
-  declared-truncation probe (adaptlearn F23, number reserved, prereg pending), same track
-  and bar as F21/F22, findings consumed back here.
+- **Every amplifier declares its truncation** `[budgets]` — **ANSWERED 2026-07-12
+  (adaptlearn F23, bareloop F3): status = HYGIENE.** Any ranked/partial view injected
+  into a worker says so in the injection itself ("top-k of an unknown total — may be
+  incomplete") — a near-free honesty marker, the injection-side twin of the ledger's
+  "ABSENT, not fabricated"; it ships, is never a review blocker, and is never relied on
+  for attribution. F23's pre-registered NULL (attribution@2 3/3 in both arms) came with a
+  retro-read: F21's poisoning mechanism failed replication (single contaminated cell);
+  narrow-arm failure is hunting, not dismissal. The floor survives on the honesty
+  principle alone — **ranked views never claim exhaustiveness; exhaustive views (impact)
+  may** — and the attribution fix stays structural (exhaustive verbs, admission;
+  wide-menu value = convergence@1, the whole constraint set at once).
