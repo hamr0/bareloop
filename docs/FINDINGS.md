@@ -263,3 +263,14 @@ exact class F6 names. Fixed: when metrics exist their `costUsd` is authoritative
 included), and `unpricedRounds` rides the event so a PARTIALLY unpriced run (finite but
 under-counted costUsd) is visible too; the runner halts `pricing-red` on either signal.
 TDD: both F6 tests watched failing against the shipped emit before the fix.
+
+**Addendum 2 (same day, module 3 build):** the sweep continued into `extract.js` and the
+same class hid there twice more. The rules-path cost read `metrics?.costUsd ?? cost ?? 0`
+(the identical launder chain), and the transport-throw path reported a failed call's
+spend as `costUsd: 0` — spend nobody measured, counted as free. Both fixed to the honest
+null, and the contract is now documented in the JSDoc return type: `costUsd:
+number|null`, null means "spend unknown," callers must not coerce it to 0. Running total:
+the rule minted from the probe's own harness confound has caught **three silent $0
+launderings in shipped code within one day** (interpret's cost emit + two in extract.js).
+`runJob` halts `pricing-red` on a null cost OR `unpricedRounds > 0` — partially-unpriced
+is also never free.

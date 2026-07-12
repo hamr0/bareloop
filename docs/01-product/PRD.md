@@ -398,6 +398,26 @@ registration (same-day) is updated in place to match; this addendum is the chang
    ledger design doc's field table is the template), and an attenuation point without one
    is a **review blocker**, not merely unfinished.
 
+## Addendum v1.8 — 2026-07-12 (pricing-red: unpriced is never free — F6, N2 commitment)
+
+Minted by F6: the N2 drafting probe reported `spent=$0.0000` for a real API call because
+an unpriced `costUsd` was `?? 0`-coerced — a harness confound that named a real hole in
+§10's budget discipline. **Cap-not-estimate must close over pricing:** a ledger that
+counts an unpriced result as $0 makes the hard cap gameable by any unpriced model or
+provider path. This is pricing-red's product-level filing, same tier as its sibling
+artifact-red (v1.4 §5); it answers the v1.6 standing rule — loop 1 (within-run), red
+named `pricing-red`, signal on the spine as a decision-ready halt.
+
+1. **The honest null:** cost is `number|null` end-to-end; null means "spend unknown,"
+   never $0. No `?? cost` / `?? 0` fallback may launder it — a transport failure's spend
+   is unknown, not zero.
+2. **The runner halts `pricing-red`** on a null cost OR `unpricedRounds > 0` (a
+   partially-unpriced run — finite but under-counted — is also never free). Drafting
+   calls route through the same accounting, never around it.
+3. **The class is real, not theoretical:** within one day of minting, the rule caught
+   three silent $0 launderings in shipped code (interpret's cost emit; two in extract.js,
+   including a transport throw reported as $0) — F6 addenda hold the evidence.
+
 ---
 
 ## Appendix A — Panel spec (provisional)
