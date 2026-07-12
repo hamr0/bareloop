@@ -26,7 +26,7 @@ export const STALL_REDS = 2;
 const require = createRequire(import.meta.url);
 const { Loop, wireGate, HaltError } = require('bare-agent');
 
-import { stripFences } from './text.js';
+import { extractArtifact } from './text.js';
 
 /** @typedef {{body?: string|null, text?: string|null}} RecallHit litectx recall hit — body present only with `{body: true}` */
 
@@ -184,6 +184,8 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   /** @type {string[]} */
   const gaps = [];
   let revised = false;
+  /** @type {string|undefined} set on artifact-red, consumed by the next attempt's prompt */
+  let artifactNote;
   /**
    * @param {number} iteration
    * @param {string} [gap]
@@ -214,7 +216,8 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     if (gap) await runOps('after-red', { iteration, gap, context: {} });
     const context = {};
     await runOps('before-attempt', { iteration, context });
-    const parts = [task, context.text && `Possibly relevant notes:\n${context.text}`, gap && `Previous attempt failed the test suite:\n${gap}`];
+    const parts = [task, context.text && `Possibly relevant notes:\n${context.text}`, gap && `Previous attempt failed the test suite:\n${gap}`,
+      artifactNote && `Previous attempt never reached the close:\n${artifactNote}`];
 
     if (config.loop.shape === 'plan') {
       // plan-then-execute: one call to decompose, one to implement following the plan
@@ -230,13 +233,26 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     const r = await ask(parts.filter(Boolean).join('\n\n'));
     emit('worker-result', { iteration, costUsd: r.metrics ? r.metrics.costUsd : (r.cost ?? null), unpricedRounds: r.metrics?.unpricedRounds ?? 0, tokens: r.usage?.outputTokens ?? null });
 
-    const decision = await gate.check({ type: 'write', path: target, args: { bytes: r.text.length } });
+    // Fence-robust extraction BEFORE the gate: what gets written is the
+    // artifact, not the response (F2 #2). A response with no artifact reds on
+    // its OWN axis — artifact-red — and writes nothing: the close will red
+    // against the stale/missing target, but the spine names the true cause,
+    // so the contrast evidence stays clean (F21's instrument caveat).
+    const ex = extractArtifact(r.text);
+    if (ex.red) {
+      emit('artifact-red', { iteration, category: 'artifact-red', reason: ex.red });
+      artifactNote = `your response was rejected as a non-artifact (${ex.red}) — emit ONLY the code artifact`;
+      return; // retryable: the next attempt carries the note; ralph's cap still governs
+    }
+    artifactNote = undefined;
+    const code = /** @type {string} */ (ex.code); // non-null: ex.red was checked above
+    const decision = await gate.check({ type: 'write', path: target, args: { bytes: code.length } });
     if (decision.outcome !== 'allow') {
       const err = /** @type {CategorizedError} */ (new Error(`gate ${decision.outcome} write to ${target} (${decision.rule ?? 'no rule'})`));
       err.category = decision.severity === 'halt' ? 'cap-halt' : 'gate-red';
       throw err;
     }
-    writeFileSync(target, stripFences(r.text));
+    writeFileSync(target, code);
     emit('artifact-written', { iteration, path: target });
   };
 

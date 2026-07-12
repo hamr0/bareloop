@@ -11,7 +11,7 @@ import { LiteCtx, COMPRESS_LEVELS, KINDS, WRITE_KINDS } from 'litectx';
 import { validateJob, jobSpecHash, checkApproval } from './job.js';
 import { validateConfig, LOOP_SHAPES, SLOTS, VERBS } from './validate.js';
 import { interpret } from './interpret.js';
-import { stripFences } from './text.js';
+import { extractArtifact } from './text.js';
 
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
@@ -161,7 +161,7 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
     account(costUsd);
     if ((r.metrics?.unpricedRounds ?? 0) > 0) unpriced = true;
     emit('draft-result', { costUsd, redraft: reds !== null, error: r.error ?? null });
-    return r.error ? null : stripFences(r.text);
+    return r.error ? null : (extractArtifact(r.text).code ?? '');
   };
   const capNow = () => Math.min(shellCapUsd, job.budgetUsd - spentUsd);
   const cOpts = () => ({ shellCapUsd: capNow(), jobWriteScope: job.writeScope });

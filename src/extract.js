@@ -23,7 +23,7 @@
 
 import { createRequire } from 'node:module';
 
-import { stripFences } from './text.js';
+import { extractArtifact } from './text.js';
 
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
@@ -38,7 +38,9 @@ export const MAX_RULE_CHARS = 200;
  * @param {object} opts.provider a bareagent provider — SHELL-owned, sealed
  * @param {string[]|null} opts.priorRules the lineage's current rules, if any
  * @param {string[]} [opts.revisionDiff] changed config paths, when the run recovered mid-run
- * @returns {Promise<{rules: string[]|null, valid: boolean, reds: Array<object>, costUsd: number, raw: string}>}
+ * @returns {Promise<{rules: string[]|null, valid: boolean, reds: Array<object>, costUsd: number|null, raw: string}>}
+ *   costUsd is null when the spend could not be priced — the explicit-unknown
+ *   signal (F6: unpriced is never free); callers must not coerce it to 0
  */
 export async function extractRules({ config, provider, priorRules, revisionDiff }) {
   const loop = new Loop({ provider, system: 'You emit exactly one JSON document and nothing else.' });
@@ -71,14 +73,17 @@ characters. No markdown fences, no commentary.`;
   try {
     r = await loop.run([{ role: 'user', content: prompt }]);
   } catch (e) {
-    return { rules: null, valid: false, reds: [{ code: 'provider-error', detail: String(/** @type {Error} */ (e).message ?? e) }], costUsd: 0, raw: '' };
+    // a transport throw means the spend is UNKNOWN, not zero (F6)
+    return { rules: null, valid: false, reds: [{ code: 'provider-error', detail: String(/** @type {Error} */ (e).message ?? e) }], costUsd: null, raw: '' };
   }
-  const costUsd = r.metrics?.costUsd ?? r.cost ?? 0;
-  const raw = stripFences(r.text ?? '');
+  // metrics.costUsd is the honest null when nothing priced; `cost` sums priced
+  // rounds only, so `?? cost` would launder unpriced into $0 (F6)
+  const costUsd = r.metrics ? r.metrics.costUsd : (r.cost ?? null);
+  const raw = extractArtifact(r.text ?? '').code ?? '';
   if (r.error) {
     return { rules: null, valid: false, reds: [{ code: 'provider-error', detail: String(r.error) }], costUsd, raw };
   }
-  /** @type {(code: string, detail: string) => {rules: null, valid: false, reds: Array<object>, costUsd: number, raw: string}} */
+  /** @type {(code: string, detail: string) => {rules: null, valid: false, reds: Array<object>, costUsd: number|null, raw: string}} */
   const red = (code, detail) => ({ rules: null, valid: false, reds: [{ code, detail }], costUsd, raw });
 
   let rules;

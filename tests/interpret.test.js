@@ -263,6 +263,23 @@ test('release review: a GitHub token in close output is scrubbed — the redacto
   assert.ok(raw.includes('[REDACTED') || raw.includes('push failed'), 'the gap is redacted, not dropped');
 });
 
+test('N2: a prose-wrapped artifact greens — only the fenced code reaches the target (fence-robust, F21)', async () => {
+  const wrapped = 'Here is the fix you asked for:\n\n```js\n' + GOOD_SUM.trim() + '\n```\n\nHope this helps!';
+  const { outcome, target } = await run('prose-wrapped', config(), { script: [{ text: wrapped }] });
+  assert.equal(outcome, 'green', 'the prose wrapper must not reach the close');
+  assert.equal(readFileSync(target, 'utf8'), GOOD_SUM.trim());
+});
+
+test('N2: an empty worker response reds artifact-red on its own axis, target unwritten, and the next attempt is told', async () => {
+  const { outcome, events, provider, target } = await run('artifact-red', config(), { script: [{ text: '' }, { text: GOOD_SUM }] });
+  assert.equal(outcome, 'green', 'the artifact-red attempt is retryable, not terminal');
+  const ar = events.find((e) => e.type === 'artifact-red');
+  assert.ok(ar && ar.iteration === 1 && ar.reason === 'empty response', 'artifact-red carries its own category and reason');
+  assert.ok(!events.some((e) => e.type === 'artifact-written' && e.iteration === 1), 'nothing was written on the red attempt');
+  assert.match(provider.calls[1], /non-artifact|ONLY the code/i, 'the second attempt is told the artifact never reached the close');
+  assert.equal(readFileSync(target, 'utf8'), GOOD_SUM.trim());
+});
+
 test('R2: a non-canonical but legal scope spelling runs green end to end (no regression)', async () => {
   const cfg = config(); cfg.gate.writeScope = ['./src/**']; // dot-slash form of the fixture's src/**
   const { outcome } = await run('dotslash-scope', cfg);
