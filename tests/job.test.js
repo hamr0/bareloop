@@ -131,9 +131,15 @@ for (const [name, fn, want] of RED_CASES) {
   });
 }
 
-test('hyphenated words containing "sk-"/"pat_" shapes do not red (review: SECRET_RE left boundary)', () => {
+test('hyphenated words containing "sk-"/"pat_" shapes do not red (review: SECRET_RE left boundary, both hyphen depths)', () => {
   const r = validateJob(mut((j) => { j.description = 'migrate the flask-sqlalchemy-based models and task-1234567890abcdefgh queues'; }));
   assert.deepEqual(r.reds, []);
+  // R2: a hyphen/underscore-delimited segment one deeper must also pass ("-sk-", not just "ask-")
+  const r2 = validateJob(mut((j) => { j.description = 'run pipeline-sk-transform-utils-v2 and build_sk_widgets_frontend_v2'; }));
+  assert.deepEqual(r2.reds, [], 'kebab/snake package names are not secrets');
+  // ...but a REAL boundary-delimited key still reds (feat intact)
+  const r3 = validateJob(mut((j) => { j.description = 'token is sk-ant-api03-abcdefghijklmnop here'; }));
+  assert.equal(r3.reds[0]?.code, 'secret-literal');
 });
 
 test('the returned job is the same reference AND survives a fresh-copy comparison (review: no aliasing tautology)', () => {
@@ -143,16 +149,24 @@ test('the returned job is the same reference AND survives a fresh-copy compariso
   assert.deepEqual(r.job, fresh, 'validation must not mutate the spec');
 });
 
-test('hash follows JSON semantics: a key explicitly set to undefined hashes like its disk round-trip (review: approval survives save/reload)', () => {
+test('hash follows JSON semantics: undefined keys AND toJSON objects hash like their disk round-trip (review: approval survives save/reload)', () => {
   const j = clone(JOB1);
   j.conditions = undefined;
   assert.equal(jobSpecHash(j), jobSpecHash(JSON.parse(JSON.stringify(j))));
+  // R2: a toJSON-bearing value (Date) must not collapse to {} — distinct values must not collide, and must match the disk form
+  const d1 = jobSpecHash({ a: new Date('2026-01-01') });
+  assert.notEqual(d1, jobSpecHash({ a: new Date('1999-12-31') }), 'distinct Dates must not collide');
+  assert.notEqual(d1, jobSpecHash({ a: {} }), 'a Date must not hash as an empty object');
+  assert.equal(d1, jobSpecHash(JSON.parse(JSON.stringify({ a: new Date('2026-01-01') }))), 'in-memory hash equals disk round-trip');
 });
 
-test('jobSpecHash never throws on JSON-representable garbage; checkApproval never throws on ANY garbage (review: N2 runner gets false, not a crash)', () => {
+test('jobSpecHash NEVER throws — the minting path (runner calls it directly) gets a hash, not a crash (review R2)', () => {
   assert.match(jobSpecHash(undefined), /^[0-9a-f]{64}$/);
   assert.match(jobSpecHash(null), /^[0-9a-f]{64}$/);
-  assert.equal(checkApproval({ a: 1n }, [{ specHash: 'x' }]), false, 'BigInt spec → false, not a serialize throw');
+  assert.match(jobSpecHash({ a: 1n }), /^[0-9a-f]{64}$/, 'BigInt spec hashes (minting path) instead of throwing');
+  const cyclic = {}; cyclic.self = cyclic;
+  assert.match(jobSpecHash(cyclic), /^[0-9a-f]{64}$/, 'a cycle hashes instead of throwing');
+  assert.equal(checkApproval({ a: 1n }, [{ specHash: 'x' }]), false, 'BigInt spec → false');
   assert.equal(checkApproval(undefined, [{ specHash: 'x' }]), false);
 });
 

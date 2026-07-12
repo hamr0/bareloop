@@ -49,6 +49,22 @@ feature lands, **patch** = docs, fixes, scaffolding.
   Upstream ask filed: bareguard should export its secret patterns (UPSTREAM-ASKS).
 
 ### Fixed
+- **Second-round review (self-review of the hardening commit found a regression IT
+  introduced — all fixes TDD'd, mutation-checked, zero feature regressions):**
+  **critical containment escape** — the fence-normalization added to `globToPrefix`
+  stripped a leading `./` before collapsing `//`, so `.//src/**` minted the ABSOLUTE
+  prefix `/src`, validated green, and resolved outside the run directory at enforcement
+  (design law #1); fixed by collapsing `//`+`/./` first (so `.//src/**` → `src`, safe),
+  a belt in `scopeContained` rejecting any normalized-absolute prefix, and an enforcement
+  belt in `interpret` that refuses to build a Gate whose resolved scope escapes the
+  workdir. `canon()` now honors `toJSON` (a `Date` no longer hashes as `{}`; distinct
+  values no longer collide) and `jobSpecHash` never throws (the minting path the runner
+  calls directly is now crash-free on `BigInt`/cycles). `SECRET_RE` left boundary extended
+  to `-`/`_` (`pipeline-sk-transform-utils-v2` no longer false-reds; real keys still red).
+  `jobWriteScope: null`/`undefined` are the legitimate no-fence spellings (no more deadlock
+  on every config); a malformed fence reds `fence-invalid` at path `jobWriteScope`, not the
+  innocent workflow field (no ledger misattribution), with the detail bounded. Shared
+  `legalScopeEntry` gives the scope-legality law one home across all three call sites.
 - `NOTICE` ships in the tarball (npm auto-includes LICENSE/README but not NOTICE; Apache-2.0
   wants both) — found validating the installed 0.1.0 artifact.
 

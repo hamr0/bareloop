@@ -12,7 +12,7 @@
 
 import { createRequire } from 'node:module';
 import { writeFileSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { Gate } from 'bareguard';
 import { LiteCtx, compress } from 'litectx';
 import { validateConfig, diffPaths, globToPrefix } from './validate.js';
@@ -69,11 +69,23 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   let config = /** @type {any} */ (v.config); // single parse — validateConfig returns the parsed config on ok
 
   const lc = new LiteCtx({ root: workdir });
+  // Enforcement belt (law #1, un-gameable gate): resolve every scope and prove
+  // it stays under workdir BEFORE building the Gate. validateConfig already
+  // rejects escaping scopes, so this is defense in depth — a future globToPrefix
+  // regression (a spelling that normalizes to an absolute path) can never reach
+  // a live Gate fence. The interpreter and the validator must never disagree (F9).
+  const resolvedScopes = config.gate.writeScope.map((/** @type {string} */ g) => resolve(workdir, globToPrefix(g)));
+  const escaped = resolvedScopes.filter((/** @type {string} */ abs) => abs !== workdir && !abs.startsWith(workdir + sep));
+  if (escaped.length) {
+    for (const abs of escaped) emit('config-red', { code: 'scope-escape', path: 'gate.writeScope', detail: `resolved scope ${abs} escapes the run directory` });
+    emit('run-end', { outcome: 'config-red', iterations: 0 });
+    return 'config-red';
+  }
   const gate = new Gate({
     // bareguard fs.writeScope is prefix-containment, not glob (adaptlearn F4); globToPrefix
     // is the ONE transform shared with the validator's legality rule — mid-path wildcards
     // and workdir-escaping scopes were already rejected up front (adaptlearn F9, law #1).
-    fs: { writeScope: config.gate.writeScope.map((/** @type {string} */ g) => resolve(workdir, globToPrefix(g))) },
+    fs: { writeScope: resolvedScopes },
     budget: { maxCostUsd: config.gate.budgetUsd },
     limits: { maxTurns: 8 * (capRuns + 1) },
     audit: { path: join(workdir, 'gate-audit.jsonl') },

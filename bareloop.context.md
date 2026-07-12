@@ -61,7 +61,7 @@ is a named red `close-hierarchy`):
 
 Red vocabulary (both validators): `parse-error`, `unknown-field`, `missing-required`,
 `invalid-value`, `bounds`, `duplicate-id`, `close-type`, `close-hierarchy`,
-`secret-literal`, `scope-escape`, plus the workflow-side verb reds (`verb-illegal`,
+`secret-literal`, `scope-escape`, `fence-invalid` (a malformed `jobWriteScope` fence — attributed to `jobWriteScope`, never the workflow config), plus the workflow-side verb reds (`verb-illegal`,
 `verb-placement`, `verb-params`, `slot-overflow`). The `secret-literal` sweep is
 defense-in-depth against known token shapes — env-only loading remains the law, not the
 sweep.
@@ -123,8 +123,13 @@ The only code that reads a config. Composes bareguard `Gate` (write scopes, USD 
 litectx (recall/compress/stash/remember hook ops), and the bareagent `Loop` under `ralph`.
 The provider and the close arrive from the shell, never the config. Optional `revisor`
 seam fires once after `STALL_REDS` consecutive close reds; the interpreter owns acceptance
-(arbiter-touch / cap-touch / validation reds). Emits `config-final` — the run-as-executed
-config (design law #2) — on every run.
+(arbiter-touch / cap-touch / validation reds), judged and installed on the candidate's
+PARSED form. Emits `config-final` — the run-as-executed config (design law #2) — on every
+run. Pass the job spec's fence as `jobWriteScope` (or `null`/omit for no fence): it is
+enforced HERE — the one choke point where a config becomes a Gate — on entry AND on every
+revision candidate, so a workflow scope outside the operator's fence reds before tokens.
+An enforcement belt resolves every scope and refuses to build a Gate that escapes the
+workdir, independent of validator correctness (law #1).
 
 ### `extractRules({ config, provider, priorRules, revisionDiff? })` — `src/extract.js`
 

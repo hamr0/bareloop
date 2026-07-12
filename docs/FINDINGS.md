@@ -187,3 +187,38 @@ forces, and the POC cannot answer it. (3) Not covered, deliberately (no silent c
 per-step budget splits, retry policy, V3 channel-condition declarations, job-level write
 scopes, cadence→Scheduler mapping, coordination-red placement — N1-proper design, several
 interview-gated.
+
+## F5 — a second review round caught a containment escape the FIRST round's fix introduced; the deep secrets choke point (spine) is deferred on a V4 tension, not missed
+
+Round-two `/code-review` (medium, 8 agent angles) on the hardening commit found **8
+verified findings, the top one a design-law-#1 breach the hardening commit itself
+introduced**: the fence-normalization added to `globToPrefix` (round one, fixing a
+cross-document spelling deadlock) stripped a leading `./` before collapsing `//`, so
+`.//src/**` normalized to the ABSOLUTE prefix `/src` — validated green, escaped the run
+dir at `resolve(workdir, '/src')`. Five independent finders caught it; reproduced live.
+Fixed at three depths (normalization order; a `scopeContained` belt on the normalized
+prefix; an `interpret` enforcement belt that refuses an escaping Gate) plus six more
+(canon/toJSON, jobSpecHash-never-throws, SECRET_RE boundary, fence null, fence-invalid
+attribution, `legalScopeEntry`). All TDD'd, 147/147, 5 fresh mutations each killing their
+target, feature batteries green throughout.
+
+**The lesson, paid for twice now (compounds F4's):** a fix aimed at one spelling bug
+opened a WORSE same-helper spelling bug, and the round-one mutation pass could not see it —
+because mutation tests only prove the checks you WROTE can fail, and no test pinned the
+`.//` input. Adversarial review is the complement to mutation testing, not a repeat; a
+normalization/parsing change deserves its own escape-spelling battery before it ships.
+
+**Deliberately DEFERRED, not fixed — the spine secrets choke point (finding #8, a real
+hard-line gap on a V4 collision):** close stderr/stdout (`gap`, up to 2000 chars) and
+error details are spread into the append-only spine unswept — the two validator sweeps are
+structurally blind to runtime text, and "secrets never enter the spine" is a hard line.
+The right-depth fix (a redaction pass in `makeSpine`) collides head-on with **design law
+#7 / V4**: escalation text must reach the human BYTE-IDENTICAL to what the shell emitted,
+and no emergent component may summarize the pain channel — a spine redactor is exactly such
+a component. This is a genuine two-hard-line tension (secrets-never-in-spine vs
+algedonic-byte-identical), not a mechanical fix, so it is **hamr's design call at N2**,
+where real closes first run real secrets (at N0/N1 close text is test scaffolding — the
+exposure is nil today). Options to weigh then: redact at the source (the close capture, before
+the spine) so the algedonic channel stays byte-identical to a shell that never emitted the
+secret; or bind bareguard's `redact` once the UPSTREAM-ASKS pattern-export lands. Filed
+here so the gap is logged, not papered over (the F-rule).

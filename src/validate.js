@@ -40,14 +40,22 @@ const VERB_PARAMS = {
  * @param {string} scope
  */
 export function globToPrefix(scope) {
-  let p = scope.replace(/\/\*\*?$/, '');
   // One canonical spelling for equivalent paths — leading "./", interior "/./",
   // doubled "//", trailing "/" all collapse — so the legality rule, the fence
   // comparison, and bareguard enforcement agree on what a scope NAMES. Without
   // this, a validateJob-green fence like "src/" would reject every workflow
   // scope inside it (the F9 red-class across two documents).
-  while (p.startsWith('./')) p = p.slice(2);
-  p = p.replace(/\/\.(?=\/|$)/g, '').replace(/\/{2,}/g, '/').replace(/\/+$/, '');
+  //
+  // Order is load-bearing: "//" collapses and interior "/./" drops BEFORE the
+  // leading "./" strip, so ".//src" → "src" and never "/src". Stripping first
+  // would MINT an absolute prefix from a relative scope — a design-law-#1
+  // containment escape (resolve(workdir, "/src") ignores workdir entirely).
+  //
+  // Deliberately NOT path.posix.normalize: it resolves ".." segments
+  // (normalize("src/../etc") === "etc"), which must stay VISIBLE so
+  // scopeContained can reject them — the whole point of the containment law.
+  let p = scope.replace(/\/\*\*?$/, '');
+  p = p.replace(/\/{2,}/g, '/').replace(/\/\.(?=\/|$)/g, '').replace(/^(?:\.\/)+/, '').replace(/\/+$/, '');
   return p;
 }
 
@@ -64,8 +72,25 @@ export function globToPrefix(scope) {
 export function scopeContained(s) {
   if (s.startsWith('/') || s.includes('\\') || /^[a-zA-Z]:/.test(s)) return false;
   const prefix = globToPrefix(s);
-  if (prefix === '' || prefix === '.') return false;
+  // Belt: reject a prefix that is empty, the run dir, absolute, or a drive —
+  // checked on the NORMALIZED prefix, not just the raw string, so a spelling
+  // that normalizes to something absolute can never pass (defense in depth
+  // against a future globToPrefix regression; the un-gameable gate, law #1).
+  if (prefix === '' || prefix === '.' || prefix.startsWith('/') || /^[a-zA-Z]:/.test(prefix)) return false;
   return prefix.split('/').every((seg) => seg !== '..');
+}
+
+/**
+ * The per-entry write-scope legality law, one home for all three call sites
+ * (workflow gate.writeScope, the job fence, the operator's job-v1 writeScope):
+ * a non-empty string, no mid-path wildcard (enforcement is prefix-containment,
+ * F9), contained under the run dir (law #1). The chains that need per-check
+ * reds still spell the three steps; fenceOk and future callers use this so a
+ * fence can never be blessed that the job validator would reject.
+ * @param {unknown} s
+ */
+export function legalScopeEntry(s) {
+  return isNonEmptyString(s) && !globToPrefix(s).includes('*') && scopeContained(s);
 }
 
 // Each verb is legal ONLY in the slot where it has effect: recall/compress
@@ -86,7 +111,7 @@ function isKinds(v) {
 export function isObj(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
-/** @param {unknown} v */
+/** @param {unknown} v @returns {v is string} */
 export function isNonEmptyString(v) {
   return typeof v === 'string' && v.length > 0;
 }
@@ -96,7 +121,7 @@ export function isNonEmptyString(v) {
 // riskier entry point (machine-written), the operator's job spec the other.
 // Known token shapes only, left-bounded so hyphenated words ("flask-sqlalchemy")
 // never red — defense-in-depth; env-only loading is the law, not this regex.
-const SECRET_RE = /(?<![A-Za-z0-9])(sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|xox[bap]-[A-Za-z0-9-]{10,})/;
+const SECRET_RE = /(?<![A-Za-z0-9_-])(sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|xox[bap]-[A-Za-z0-9-]{10,})/;
 
 /**
  * Red every string in a config tree that carries a known secret-token shape.
@@ -186,16 +211,19 @@ export function validateConfig(input, { shellCapUsd = 2, jobWriteScope } = {}) {
     // A scope that can reach the arbiter's inputs is the config-level
     // fit-to-pass surface (design law #1). Reds-before-tokens.
     red('invalid-value', 'gate.writeScope', 'must be a proper subdirectory of the run directory — no absolute paths, no ".." segments, not the run dir itself (design law #1)');
-  } else if (jobWriteScope !== undefined) {
+  } else if (jobWriteScope !== undefined && jobWriteScope !== null) {
     // Two-layer fence: the job spec's writeScope is operator law; the authored
     // config may tighten it, never exceed it (the budget pattern, on paths).
-    // The fence itself is caller input and gets no trust: a fence the job
-    // validator would reject fails CLOSED with its own red — never silently
-    // skipped (fail-open), never a lying scope-escape.
-    const fenceOk = Array.isArray(jobWriteScope) && jobWriteScope.length > 0
-      && jobWriteScope.every((s) => isNonEmptyString(s) && !globToPrefix(s).includes('*') && scopeContained(s));
+    // null/undefined are the legitimate "no fence" spellings (job optional at
+    // N2, and the only forms that survive JSON transit) — the layer is skipped,
+    // never a deadlock. A PRESENT-but-malformed fence fails CLOSED with its own
+    // red, attributed to jobWriteScope (NOT the innocent workflow field — the
+    // ledger's contrast attribution must not charge the agent's config for the
+    // operator's broken spec).
+    const fenceOk = Array.isArray(jobWriteScope) && jobWriteScope.length > 0 && jobWriteScope.every(legalScopeEntry);
     if (!fenceOk) {
-      red('fence-invalid', 'gate.writeScope', `jobWriteScope is not a validateJob-green fence (${JSON.stringify(jobWriteScope)}) — nothing validates against a fence the job validator would reject`);
+      const shown = JSON.stringify(jobWriteScope).slice(0, 200); // bound: a malformed fence is untrusted caller input, and this rides the append-only spine (ralph's 2000-char precedent)
+      red('fence-invalid', 'jobWriteScope', `not a validateJob-green fence (${shown}) — validate the job spec before threading its fence`);
     } else {
       // Boundary-aware: "src2" is not inside "src" — prefix means PATH prefix.
       const fence = jobWriteScope.map(globToPrefix);

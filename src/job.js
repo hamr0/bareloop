@@ -193,17 +193,21 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
  * @returns {string}
  */
 function canon(v) {
+  // Follow JSON.stringify semantics exactly — the hash must equal the hash of
+  // the disk round-trip, or an approval minted in memory fails after save/reload
+  // (human-signs-always rejecting an unedited spec). That means honoring toJSON
+  // (a Date serializes to its ISO string, not walked as {}) and dropping
+  // undefined-valued keys, both of which JSON.stringify does.
+  if (v !== null && typeof v === 'object' && typeof (/** @type {any} */ (v).toJSON) === 'function') {
+    return canon(/** @type {any} */ (v).toJSON());
+  }
   if (Array.isArray(v)) return `[${v.map((x) => (x === undefined ? 'null' : canon(x))).join(',')}]`;
   if (isObj(v)) {
     const obj = /** @type {Record<string, any>} */ (v);
-    // undefined-valued keys are dropped, exactly as JSON.stringify drops them —
-    // the in-memory spec and its disk round-trip MUST hash identically, or an
-    // approval minted before save fails after reload (human-signs-always
-    // rejecting an unedited spec).
     return `{${Object.keys(obj).sort().filter((k) => obj[k] !== undefined).map((k) => `${JSON.stringify(k)}:${canon(obj[k])}`).join(',')}}`;
   }
   const s = JSON.stringify(v);
-  return s === undefined ? 'null' : s; // undefined/function root: not JSON-representable — hash as null, never throw
+  return s === undefined ? 'null' : s; // undefined/function/symbol leaf: not JSON-representable — 'null', never throw
 }
 
 /**
@@ -214,7 +218,13 @@ function canon(v) {
  * @returns {string} sha256 hex
  */
 export function jobSpecHash(job) {
-  return createHash('sha256').update(canon(job)).digest('hex');
+  // NEVER throws: the N2 runner mints {specHash, signer, ts} by calling this
+  // directly on the raw job object, so a non-JSON value (BigInt, a cycle, a
+  // throwing getter) must yield a hash, not crash the signer. canon handles
+  // JSON-representable inputs; the guard covers cycles and hostile getters.
+  let c;
+  try { c = canon(job); } catch { c = '\u0000unhashable'; }
+  return createHash('sha256').update(c).digest('hex');
 }
 
 /**
@@ -228,7 +238,6 @@ export function jobSpecHash(job) {
  */
 export function checkApproval(job, approvals) {
   if (!Array.isArray(approvals)) return false;
-  let h;
-  try { h = jobSpecHash(job); } catch { return false; } // a non-JSON spec (BigInt, cycles) can never round-trip an approval — false, never a crash
+  const h = jobSpecHash(job); // never throws (guarded); a cycle/BigInt spec hashes to a sentinel that no real approval will match
   return approvals.some((a) => isObj(a) && /** @type {Record<string, unknown>} */ (a).specHash === h);
 }

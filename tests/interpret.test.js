@@ -203,6 +203,23 @@ test('interpret enforces the job fence: workflow scope outside jobWriteScope →
   assert.equal(provider.calls.length, 0, 'reds before tokens');
 });
 
+test('R2 CRITICAL: the ".//src/**" spelling resolves INSIDE the workdir, never to an absolute /src', async () => {
+  // pre-fix this validated green and the Gate fence resolved to absolute "/src"
+  const cfg = config(); cfg.gate.writeScope = ['.//src/**'];
+  const { outcome, provider, workdir } = await run('escape-scope', cfg);
+  assert.equal(outcome, 'green', 'the sloppy spelling normalizes to src/ and runs');
+  assert.ok(provider.calls.length > 0);
+  // the audit proves the fence stayed under workdir (no absolute /src grant)
+  const audit = readFileSync(join(workdir, 'gate-audit.jsonl'), 'utf8');
+  assert.ok(!audit.includes('"/src"'), 'the Gate fence never became the absolute /src');
+});
+
+test('R2: a non-canonical but legal scope spelling runs green end to end (no regression)', async () => {
+  const cfg = config(); cfg.gate.writeScope = ['./src/**']; // dot-slash form of the fixture's src/**
+  const { outcome } = await run('dotslash-scope', cfg);
+  assert.equal(outcome, 'green', 'the artifact under ./src/** still writes and greens');
+});
+
 test('revision: a candidate arriving as a JSON string is judged on its PARSED form (single-parse contract)', async () => {
   const candidate = config();
   candidate.loop.shape = 'plan'; // legal free-axis change, arbiter byte-identical
