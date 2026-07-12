@@ -226,3 +226,31 @@ WITHDRAWN (redact was already exported). Reading the lib source before filing wo
 saved the round-trip — a small process note. TDD'd end to end (secret in close output
 reaches neither the spine nor the worker prompt; benign gap byte-identical), mutation-
 checked (neuter the scrub OR unwire interpret → the hard-line test reds), 151/151.
+
+## F6 — N2 drafting probe GREEN on one shot; the probe's $0.0000 cost was a harness confound that surfaced a real ledger rule: unpriced is never free
+
+**The headline (POC #2, `poc/n2-drafting-probe.mjs`, real tokens):** claude-sonnet-5,
+given job #1's spec and a schema DESCRIPTION built live from the validator's exported
+menus — deliberately NO copyable example config, so the probe could fail — drafted a
+workflow config that validated **GREEN on the first shot**: correct verb-slot legality
+(recall/compress → before-attempt, stash → after-red, remember → on-green), fence inside
+the job's writeScope, budget at the ceiling, legal enum values throughout. The central-
+claim risk of design decision #3 (agent drafts every run) is retired for N2; the
+one-sealed-shot + one-redraft default stands with headroom to spare.
+
+**The confound, audited before belief (Dev Rules: a degenerate number is a suspect, not
+a result):** the probe reported `spent=$0.0000` for a real API call. Cause: bare-agent's
+`AnthropicProvider.generate()` does not price calls — pricing lives in `Loop`'s round
+accounting (provider-reported `costUsd` if finite, else the pricing table). The probe
+called `generate()` directly, so `costUsd` was `undefined` and the probe's `?? 0`
+coerced it to zero; the $0.10 cap guard never bound. Harness bug, not free tokens.
+
+**The rule it mints for the N2 runner (cap-not-estimate closes over pricing):** the
+budget ledger must treat an UNPRICED result as a stop condition, never as $0 — a
+`costUsd` of `null`/`undefined` accumulating as zero makes the hard cap gameable by
+any unpriced model or provider path. bare-agent's own bareguard adapter carries the
+same doctrine ("a null (unpriced) cost must NOT coerce to 0"). Runner requirement
+filed: `runJob`'s ledger halts (`pricing-red`, decision-ready) on an unpriced
+worker-result instead of counting it free; drafting calls route through the same
+accounting, not around it (the probe went around it — that is exactly the class of
+bypass the rule exists to red).
