@@ -108,3 +108,19 @@ meet its exit stops the ladder; the stop is a result.
 Inheritance + contrast-bit extractor live (N3) · soft/HITL minting (N4) · scheduler +
 cadence consumption + CLI (N5) · panel (N6) · request-red registry (~N3/N4) ·
 per-step budget slices (future tightening, N1 decision #2).
+
+---
+
+## Addendum 2026-07-12a — POC results (both green) + the pricing-red rule (F6)
+
+POC #1 (composition, token-free): **holds**, six scenarios against the real modules;
+budget exhaustion has TWO stop points (drafting gate and per-step re-validation), both
+before tokens. POC #2 (drafting, real tokens): **GREEN on one shot** — claude-sonnet-5
+drafted a fully legal config from the schema description alone (no example to copy);
+decision #3's central-claim risk is retired for N2; one-shot + one-redraft stands.
+
+New default minted by F6 (the probe's own harness confound): **unpriced is never free.**
+`runJob`'s ledger halts decision-ready (`pricing-red`) on a worker-result whose
+`costUsd` is null/undefined instead of accumulating $0 — otherwise the hard cap is
+gameable by any unpriced provider path. Drafting calls route through the same
+accounting, never around it.
