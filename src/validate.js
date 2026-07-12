@@ -48,9 +48,12 @@ export function globToPrefix(scope) {
  * resolve to a PROPER subdirectory of the run directory. Absolute paths and
  * ".." segments escape it; "." / "./**" cover the whole run directory — where
  * the close suite lives. Windows spellings ("..\", "C:\") count as escapes.
+ * Exported for the job validator: the operator's outer fence obeys the SAME
+ * law through the same code — two containment transforms would be the F9
+ * red-class one level up.
  * @param {string} s
  */
-function scopeContained(s) {
+export function scopeContained(s) {
   if (s.startsWith('/') || s.includes('\\') || /^[a-zA-Z]:/.test(s)) return false;
   const prefix = globToPrefix(s);
   if (prefix === '' || prefix === '.') return false;
@@ -74,12 +77,17 @@ function isObj(v) {
 }
 
 /**
- * Validate a workflow config against schema v1.
+ * Validate a workflow config against schema v1. Returns the parsed config on
+ * ok (single parse — callers never re-parse; null on any red).
  * @param {object|string} input parsed config, or raw JSON text (parse failures are a red)
- * @param {{ shellCapUsd?: number }} [opts] the shell's cap — a config may tighten it, never exceed it
- * @returns {{ ok: boolean, reds: Array<{code: string, path: string, detail?: string}> }}
+ * @param {{ shellCapUsd?: number, jobWriteScope?: string[] }} [opts] the shell's
+ *   ceilings — a config may tighten either, never exceed. `shellCapUsd`: at N2+
+ *   the shell passes min(shell cap, job budgetUsd) — the ceiling chain
+ *   workflow ≤ job ≤ shell. `jobWriteScope`: the job spec's outer fence
+ *   (operator law, job-v1) — every workflow scope must fit inside it.
+ * @returns {{ ok: boolean, reds: Array<{code: string, path: string, detail?: string}>, config: object|null }}
  */
-export function validateConfig(input, { shellCapUsd = 2 } = {}) {
+export function validateConfig(input, { shellCapUsd = 2, jobWriteScope } = {}) {
   /** @type {Array<{code: string, path: string, detail?: string}>} */
   const reds = [];
   /** @type {(code: string, path: string, detail?: string) => void} */
@@ -88,10 +96,10 @@ export function validateConfig(input, { shellCapUsd = 2 } = {}) {
   let c = input;
   if (typeof c === 'string') {
     try { c = JSON.parse(c); } catch (e) {
-      return { ok: false, reds: [{ code: 'parse-error', path: '$', detail: String(/** @type {Error} */ (e).message) }] };
+      return { ok: false, reds: [{ code: 'parse-error', path: '$', detail: String(/** @type {Error} */ (e).message) }], config: null };
     }
   }
-  if (!isObj(c)) return { ok: false, reds: [{ code: 'parse-error', path: '$', detail: 'config must be a JSON object' }] };
+  if (!isObj(c)) return { ok: false, reds: [{ code: 'parse-error', path: '$', detail: 'config must be a JSON object' }], config: null };
 
   // 1. shape — unknown top-level fields red here (smuggled close/provider included)
   for (const key of Object.keys(c)) {
@@ -139,6 +147,18 @@ export function validateConfig(input, { shellCapUsd = 2 } = {}) {
     // A scope that can reach the arbiter's inputs is the config-level
     // fit-to-pass surface (design law #1). Reds-before-tokens.
     red('invalid-value', 'gate.writeScope', 'must be a proper subdirectory of the run directory — no absolute paths, no ".." segments, not the run dir itself (design law #1)');
+  } else if (Array.isArray(jobWriteScope)) {
+    // Two-layer fence: the job spec's writeScope is operator law; the authored
+    // config may tighten it, never exceed it (the budget pattern, on paths).
+    // Boundary-aware: "src2" is not inside "src" — prefix means PATH prefix.
+    const strip = (/** @type {string} */ p) => p.replace(/^\.\//, '');
+    const fence = jobWriteScope.map((s) => strip(globToPrefix(s)));
+    const inside = (/** @type {string} */ p) => fence.some((f) => p === f || p.startsWith(f + '/'));
+    for (const s of gate.writeScope) {
+      if (!inside(strip(globToPrefix(s)))) {
+        red('scope-escape', 'gate.writeScope', `"${s}" is outside the job's fence [${jobWriteScope.join(', ')}] — the workflow may tighten the operator's bound, never exceed it`);
+      }
+    }
   }
 
   const escalation = isObj(c.escalation) ? c.escalation : {};
@@ -173,7 +193,7 @@ export function validateConfig(input, { shellCapUsd = 2 } = {}) {
     }
   }
 
-  return { ok: reds.length === 0, reds };
+  return { ok: reds.length === 0, reds, config: reds.length === 0 ? c : null };
 }
 
 /**

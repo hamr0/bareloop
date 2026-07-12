@@ -13,9 +13,10 @@ import { validateConfig, diffPaths, globToPrefix } from '../src/validate.js';
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const load = (name) => JSON.parse(readFileSync(join(fixtures, name), 'utf8'));
 
-test('valid fixture passes with zero reds', () => {
-  const r = validateConfig(load('valid.json'));
-  assert.deepEqual(r, { ok: true, reds: [] });
+test('valid fixture passes with zero reds and returns the parsed config (N1: single parse)', () => {
+  const valid = load('valid.json');
+  const r = validateConfig(valid);
+  assert.deepEqual(r, { ok: true, reds: [], config: valid });
 });
 
 test('raw invalid JSON → parse-error red', () => {

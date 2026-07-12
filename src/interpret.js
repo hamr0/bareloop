@@ -62,7 +62,7 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     emit('run-end', { outcome: 'config-red', iterations: 0 });
     return 'config-red';
   }
-  let config = typeof configRaw === 'string' ? JSON.parse(configRaw) : configRaw;
+  let config = /** @type {any} */ (v.config); // single parse — validateConfig returns the parsed config on ok
 
   const lc = new LiteCtx({ root: workdir });
   const gate = new Gate({

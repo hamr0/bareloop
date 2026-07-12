@@ -7,6 +7,30 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+- **N1 — the job/close schema (rung 2 of the ladder).** `validateJob` (`src/job.js`):
+  the operator-owned `job-v1` spec — the arbiter's rulebook as pure declarative data
+  (close chain, budget, outer write fence, environment label, escalation), validated
+  reds-before-tokens with pinned `code:path` reds. The arbiter split is guarded from
+  both sides by inexpressibility (workflow config can't say `close`/`provider`; job spec
+  can't say `hooks`/`loop`/`memory`, minting claims, or the shell-owned retry cap).
+  Close-authoring hierarchy (PRD §7) enforced as a class menu keyed by close type —
+  verdict-class laundering (`rubric` claiming `hard`) is a named red `close-hierarchy`.
+  `jobSpecHash` + `checkApproval`: the pure half of human-signs-always (sha256 over
+  canonical JSON; an edited spec is unapproved by construction; the N2 runner enforces).
+  Design record: `docs/plans/2026-07-12-n1-job-close-schema-design.md`; POC verdict: F4.
+- **Two-layer write fence.** `validateConfig` accepts `jobWriteScope` (the job spec's
+  operator-owned outer fence); every workflow scope must fit inside it — path-boundary
+  aware (`src2` is not inside `src`) — or it reds `scope-escape`. Same containment law,
+  same code, both layers (the F9 lesson).
+- **Reserved spine vocabulary: `coordination-red`** (V7, PRD v1.7 #1) — documented in
+  `bareloop.context.md`; no machinery until job #1 surfaces one.
+
+### Changed
+- **`validateConfig` returns `{ ok, reds, config }`** — the parsed config on ok, `null`
+  on any red; kills the interpreter's double-parse (N2+ queue item absorbed). Additive
+  for callers reading `ok`/`reds`.
+
 ### Fixed
 - `NOTICE` ships in the tarball (npm auto-includes LICENSE/README but not NOTICE; Apache-2.0
   wants both) — found validating the installed 0.1.0 artifact.
