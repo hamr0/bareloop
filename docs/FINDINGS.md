@@ -254,3 +254,12 @@ filed: `runJob`'s ledger halts (`pricing-red`, decision-ready) on an unpriced
 worker-result instead of counting it free; drafting calls route through the same
 accounting, not around it (the probe went around it — that is exactly the class of
 bypass the rule exists to red).
+
+**Addendum (same day, module 2 build):** the F6 rule caught SHIPPED code within hours.
+`interpret`'s cost emit read `metrics?.costUsd ?? cost` — but when a Loop run prices
+nothing, `metrics.costUsd` is the honest `null` while `cost` is `0` (the sum of zero
+priced rounds), so the `??` chain laundered the explicit-unknown into a silent $0 — the
+exact class F6 names. Fixed: when metrics exist their `costUsd` is authoritative (null
+included), and `unpricedRounds` rides the event so a PARTIALLY unpriced run (finite but
+under-counted costUsd) is visible too; the runner halts `pricing-red` on either signal.
+TDD: both F6 tests watched failing against the shipped emit before the fix.

@@ -45,6 +45,8 @@ const PERSONA = 'You are a senior engineer. Reply with ONLY the complete content
  * @param {(type: string, data?: object) => object} opts.emit spine emitter
  * @param {object} opts.provider a bareagent provider — SHELL-owned binding (adaptlearn F8: an unsealed binding is a gate bypass)
  * @param {number} [opts.shellCapUsd=2] the shell's USD cap; config budgetUsd is clamped by validation
+ * @param {number} [opts.closeTimeoutMs] close wall-clock cap, threaded to the shell
+ *        (shell/operator territory — the workflow config cannot express it)
  * @param {string[]} [opts.jobWriteScope] the job spec's outer write fence (operator law,
  *        job-v1) — enforced HERE, the one choke point where a config becomes a Gate:
  *        every workflow scope must fit inside it (scope-escape config-red otherwise),
@@ -58,7 +60,7 @@ const PERSONA = 'You are a senior engineer. Reply with ONLY the complete content
  *        the worker.
  * @returns {Promise<'green'|'escalated'|'config-red'>}
  */
-export async function interpret(configRaw, { task, target, close, workdir, capRuns, emit, provider, shellCapUsd = 2, jobWriteScope, revisor }) {
+export async function interpret(configRaw, { task, target, close, workdir, capRuns, emit, provider, shellCapUsd = 2, jobWriteScope, revisor, closeTimeoutMs }) {
   // Normalize ONCE: a trailing slash or a relative spelling must mean the same
   // directory everywhere below — the enforcement belt compares string prefixes,
   // and "/run/" vs "/run" would false-red every legal scope (release review).
@@ -217,11 +219,16 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     if (config.loop.shape === 'plan') {
       // plan-then-execute: one call to decompose, one to implement following the plan
       const p = await ask([`Produce a SHORT numbered implementation plan (2-4 steps) for this task. Plan only, no code.`, ...parts.slice(1), parts[0]].filter(Boolean).join('\n\n'));
-      emit('worker-plan', { iteration, costUsd: p.metrics?.costUsd ?? p.cost ?? null }); // metrics.costUsd carries the honest null when unpriced; cost sums priced rounds only
+      // metrics.costUsd carries the honest null when NOTHING priced — never fall
+      // through to `cost` when metrics exist: cost sums priced rounds only, so an
+      // all-unpriced run reports cost 0 and `?? cost` would launder the explicit
+      // unknown into a silent $0 (the F6 class). unpricedRounds makes a PARTIALLY
+      // unpriced run visible (costUsd finite but an under-count).
+      emit('worker-plan', { iteration, costUsd: p.metrics ? p.metrics.costUsd : (p.cost ?? null), unpricedRounds: p.metrics?.unpricedRounds ?? 0 });
       parts.push(`Follow this plan:\n${p.text}`);
     }
     const r = await ask(parts.filter(Boolean).join('\n\n'));
-    emit('worker-result', { iteration, costUsd: r.metrics?.costUsd ?? r.cost ?? null, tokens: r.usage?.outputTokens ?? null });
+    emit('worker-result', { iteration, costUsd: r.metrics ? r.metrics.costUsd : (r.cost ?? null), unpricedRounds: r.metrics?.unpricedRounds ?? 0, tokens: r.usage?.outputTokens ?? null });
 
     const decision = await gate.check({ type: 'write', path: target, args: { bytes: r.text.length } });
     if (decision.outcome !== 'allow') {
@@ -241,7 +248,7 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   // pass a shape detection reds (a git close echoing a ghp_ token was the gap).
   // Injected here (the layer that owns bareguard) so ralph stays stdlib-only and
   // the scrub is a fixed shell primitive, not an emergent component (V4 holds).
-  const outcome = await ralph({ middle, close, capRuns: effectiveCap, emit, redact: (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS }) });
+  const outcome = await ralph({ middle, close, capRuns: effectiveCap, emit, closeTimeoutMs, redact: (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS }) });
   if (outcome === 'green') {
     // The close already passed — a retention hiccup must not un-green a real
     // green (it would corrupt the learning curve). It degrades loudly:

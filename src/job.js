@@ -157,6 +157,10 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
       // per-type contracts — fixed menus only
       if (close.type === 'predicate') {
         if (!isNonEmptyString(close.cmd)) red('missing-required', `${at}.close.cmd`);
+        // the runner executes cmd as whitespace-split argv with NO shell: quote
+        // characters imply shell semantics the split cannot honor — honest
+        // refusal beats silent misparse (N2 design default)
+        else if (/["']/.test(close.cmd)) red('invalid-value', `${at}.close.cmd`, 'quote characters are inexpressible: cmd runs as whitespace-split argv, no shell');
         if (!Number.isInteger(close.expect)) red('invalid-value', `${at}.close.expect`, 'integer exit code');
       } else if (close.type === 'gold') {
         if (close.expected === undefined) red('missing-required', `${at}.close.expected`);

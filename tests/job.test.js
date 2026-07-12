@@ -113,6 +113,7 @@ const RED_CASES = [
   ['rubric close without criteria', (j) => { j.steps[1].close = { type: 'rubric' }; j.steps[1].class = 'soft'; }, 'missing-required:steps.1.close.criteria'],
   ['hitl close without a prompt', (j) => { delete j.steps[2].close.prompt; }, 'missing-required:steps.2.close.prompt'],
   ['predicate expect not an exit code', (j) => { j.steps[0].close.expect = 'zero'; }, 'invalid-value:steps.0.close.expect'],
+  ['quote characters in a predicate cmd (argv is whitespace-split, no shell — N2 design default)', (j) => { j.steps[0].close.cmd = 'node -e "process.exit(0)"'; }, 'invalid-value:steps.0.close.cmd'],
 
   // -- nested smuggle channels (review F1: every level reds unknown keys, not just some) --
   ['unknown field inside cadence', (j) => { j.cadence.exfil = 'x'; }, 'unknown-field:cadence.exfil'],
@@ -184,8 +185,10 @@ test('the arbiter menus are frozen — verdict-class laundering cannot be enable
   assert.throws(() => { CLASS_BY_CLOSE.rubric.push('hard'); }, TypeError);
 });
 
-test('an env REFERENCE in a close cmd does not red — only literals do', () => {
-  const r = validateJob(mut((j) => { j.steps[0].close.cmd = 'GITHUB_TOKEN="$GITHUB_TOKEN" npm test'; }));
+test('an env REFERENCE in a close cmd does not red the secret sweep — only literals do', () => {
+  // quote-free spelling: cmd runs as whitespace-split argv with no shell, so the
+  // old `X="$X" npm test` form was always a misparse (and now reds on quotes)
+  const r = validateJob(mut((j) => { j.steps[0].close.cmd = 'npm test --auth-env GITHUB_TOKEN'; }));
   assert.deepEqual(r.reds, []);
 });
 
