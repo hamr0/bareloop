@@ -12,10 +12,10 @@
 
 import { createRequire } from 'node:module';
 import { writeFileSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import { Gate } from 'bareguard';
+import { join, resolve, sep } from 'node:path';
+import { Gate, redact } from 'bareguard';
 import { LiteCtx, compress } from 'litectx';
-import { validateConfig, diffPaths, globToPrefix } from './validate.js';
+import { validateConfig, diffPaths, globToPrefix, SECRET_PATTERNS } from './validate.js';
 import { ralph } from './ralph.js';
 
 /** @typedef {Error & {category?: string}} CategorizedError the failure map's carrier: ralph relays by `category` */
@@ -45,6 +45,10 @@ const PERSONA = 'You are a senior engineer. Reply with ONLY the complete content
  * @param {(type: string, data?: object) => object} opts.emit spine emitter
  * @param {object} opts.provider a bareagent provider — SHELL-owned binding (adaptlearn F8: an unsealed binding is a gate bypass)
  * @param {number} [opts.shellCapUsd=2] the shell's USD cap; config budgetUsd is clamped by validation
+ * @param {string[]} [opts.jobWriteScope] the job spec's outer write fence (operator law,
+ *        job-v1) — enforced HERE, the one choke point where a config becomes a Gate:
+ *        every workflow scope must fit inside it (scope-escape config-red otherwise),
+ *        on entry validation and on every revision candidate alike
  * @param {(o: {config: object, gaps: string[], policy: any, onLlmResult: any}) => Promise<{candidate: object|null, parseError?: string|null, costUsd?: number}>} [opts.revisor]
  *        optional mid-run revision seam. Fires ONCE per run after STALL_REDS consecutive
  *        close reds. The interpreter — never the revisor — owns acceptance: the candidate
@@ -54,22 +58,40 @@ const PERSONA = 'You are a senior engineer. Reply with ONLY the complete content
  *        the worker.
  * @returns {Promise<'green'|'escalated'|'config-red'>}
  */
-export async function interpret(configRaw, { task, target, close, workdir, capRuns, emit, provider, shellCapUsd = 2, revisor }) {
-  const v = validateConfig(configRaw, { shellCapUsd });
+export async function interpret(configRaw, { task, target, close, workdir, capRuns, emit, provider, shellCapUsd = 2, jobWriteScope, revisor }) {
+  // Normalize ONCE: a trailing slash or a relative spelling must mean the same
+  // directory everywhere below — the enforcement belt compares string prefixes,
+  // and "/run/" vs "/run" would false-red every legal scope (release review).
+  workdir = resolve(workdir);
+  const v = validateConfig(configRaw, { shellCapUsd, jobWriteScope });
   emit('config-validate', { ok: v.ok, reds: v.reds });
   if (!v.ok) {
     for (const r of v.reds) emit('config-red', r);
     emit('run-end', { outcome: 'config-red', iterations: 0 });
     return 'config-red';
   }
-  let config = typeof configRaw === 'string' ? JSON.parse(configRaw) : configRaw;
+  let config = /** @type {any} */ (v.config); // single parse — validateConfig returns the parsed config on ok
 
   const lc = new LiteCtx({ root: workdir });
+  // Enforcement belt (law #1, un-gameable gate): resolve every scope and prove
+  // it stays under workdir BEFORE building the Gate. validateConfig already
+  // rejects escaping scopes, so this is defense in depth — a future globToPrefix
+  // regression (a spelling that normalizes to an absolute path) can never reach
+  // a live Gate fence. The interpreter and the validator must never disagree (F9).
+  const resolvedScopes = config.gate.writeScope.map((/** @type {string} */ g) => resolve(workdir, globToPrefix(g)));
+  // equality counts as escaped: no legal scope resolves to workdir itself (the
+  // close lives there), so a scope normalizing to ''/'.' is a regression, not a grant
+  const escaped = resolvedScopes.filter((/** @type {string} */ abs) => !abs.startsWith(workdir + sep));
+  if (escaped.length) {
+    for (const abs of escaped) emit('config-red', { code: 'scope-escape', path: 'gate.writeScope', detail: `resolved scope ${abs} escapes the run directory` });
+    emit('run-end', { outcome: 'config-red', iterations: 0 });
+    return 'config-red';
+  }
   const gate = new Gate({
     // bareguard fs.writeScope is prefix-containment, not glob (adaptlearn F4); globToPrefix
     // is the ONE transform shared with the validator's legality rule — mid-path wildcards
     // and workdir-escaping scopes were already rejected up front (adaptlearn F9, law #1).
-    fs: { writeScope: config.gate.writeScope.map((/** @type {string} */ g) => resolve(workdir, globToPrefix(g))) },
+    fs: { writeScope: resolvedScopes },
     budget: { maxCostUsd: config.gate.budgetUsd },
     limits: { maxTurns: 8 * (capRuns + 1) },
     audit: { path: join(workdir, 'gate-audit.jsonl') },
@@ -139,17 +161,22 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   // already snapshotted, so gate/escalation (arbiter) and loop.maxIterations
   // (cap) must be byte-identical; anything else that validates is a legal
   // free-axis revision.
-  /** @param {any} candidate */
+  /** @param {any} candidate
+   *  @returns {{ red: {code: string, reds?: object[]} } | { red?: undefined, config: any }} */
   const acceptRevision = (candidate) => {
-    if (!candidate) return { code: 'parse-error' };
-    const cv = validateConfig(candidate, { shellCapUsd });
-    if (!cv.ok) return { code: 'validation', reds: cv.reds };
-    if (JSON.stringify(candidate.gate) !== JSON.stringify(config.gate)
-        || JSON.stringify(candidate.escalation) !== JSON.stringify(config.escalation)) {
-      return { code: 'arbiter-touch' };
+    if (!candidate) return { red: { code: 'parse-error' } };
+    const cv = validateConfig(candidate, { shellCapUsd, jobWriteScope });
+    if (!cv.ok) return { red: { code: 'validation', reds: cv.reds } };
+    // judged and installed on the PARSED form (single-parse contract) — a
+    // string candidate compared raw would false-red arbiter-touch (its .gate
+    // is undefined), and installing it raw would crash every later read
+    const cand = /** @type {any} */ (cv.config);
+    if (JSON.stringify(cand.gate) !== JSON.stringify(config.gate)
+        || JSON.stringify(cand.escalation) !== JSON.stringify(config.escalation)) {
+      return { red: { code: 'arbiter-touch' } };
     }
-    if (candidate.loop?.maxIterations !== config.loop.maxIterations) return { code: 'cap-touch' };
-    return null;
+    if (cand.loop?.maxIterations !== config.loop.maxIterations) return { red: { code: 'cap-touch' } };
+    return { config: cand };
   };
 
   /** @type {string[]} */
@@ -174,12 +201,12 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
         if (e instanceof HaltError) /** @type {CategorizedError} */ (e).category = 'cap-halt';
         throw e;
       }
-      const red = acceptRevision(rv.candidate);
-      if (red) {
-        emit('revision-red', { iteration, ...red, detail: rv.parseError ?? undefined, costUsd: rv.costUsd ?? 0 });
+      const rr = acceptRevision(rv.candidate);
+      if (rr.red) {
+        emit('revision-red', { iteration, ...rr.red, detail: rv.parseError ?? undefined, costUsd: rv.costUsd ?? 0 });
       } else {
-        emit('revision-accepted', { iteration, changedPaths: diffPaths(config, rv.candidate), costUsd: rv.costUsd ?? 0 });
-        config = rv.candidate;
+        emit('revision-accepted', { iteration, changedPaths: diffPaths(config, rr.config), costUsd: rv.costUsd ?? 0 });
+        config = rr.config;
       }
     }
     if (gap) await runOps('after-red', { iteration, gap, context: {} });
@@ -208,7 +235,13 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
 
   // the config may tighten the shell's iteration budget, never exceed it (mirrors budgetUsd)
   const effectiveCap = Math.min(capRuns, config.loop.maxIterations ?? capRuns);
-  const outcome = await ralph({ middle, close, capRuns: effectiveCap, emit });
+  // Secrets never enter the spine (hard line): the shell scrubs close output at
+  // the source with bareguard's redactor — BG-1 defaults (Bearer/sk-…) PLUS the
+  // validator's whole shape inventory (SECRET_PATTERNS), so redaction can never
+  // pass a shape detection reds (a git close echoing a ghp_ token was the gap).
+  // Injected here (the layer that owns bareguard) so ralph stays stdlib-only and
+  // the scrub is a fixed shell primitive, not an emergent component (V4 holds).
+  const outcome = await ralph({ middle, close, capRuns: effectiveCap, emit, redact: (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS }) });
   if (outcome === 'green') {
     // The close already passed — a retention hiccup must not un-green a real
     // green (it would corrupt the learning curve). It degrades loudly:

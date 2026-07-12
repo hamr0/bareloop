@@ -8,14 +8,94 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { validateConfig, diffPaths, globToPrefix } from '../src/validate.js';
+import { validateConfig, diffPaths, globToPrefix, scopeContained } from '../src/validate.js';
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const load = (name) => JSON.parse(readFileSync(join(fixtures, name), 'utf8'));
 
-test('valid fixture passes with zero reds', () => {
-  const r = validateConfig(load('valid.json'));
-  assert.deepEqual(r, { ok: true, reds: [] });
+test('valid fixture passes with zero reds and returns the parsed config (N1: single parse)', () => {
+  const valid = load('valid.json');
+  const r = validateConfig(valid);
+  assert.equal(r.config, valid, 'reference echo is the contract for object input');
+  assert.deepEqual(r, { ok: true, reds: [], config: load('valid.json') }, 'fresh-copy compare: validation must not mutate the config');
+});
+
+// ---- review fixes: the two-layer fence is normalized, fail-closed, and indexed ----
+
+test('R2 CRITICAL: a "./"+"//" spelling normalizes to a CONTAINED prefix, never an absolute escape', () => {
+  // ".//src/**" is a sloppy-but-legal spelling of "src/**" (leading dot = relative).
+  // Before the fix it minted the absolute prefix "/src" and escaped the run dir;
+  // after, it collapses to "src" — contained and safe, not rejected.
+  const cases = { './/src/**': 'src', './/etc/**': 'etc', './//src/**': 'src', './/./src/**': 'src' };
+  for (const [scope, want] of Object.entries(cases)) {
+    assert.ok(!globToPrefix(scope).startsWith('/'), `globToPrefix(${JSON.stringify(scope)}) = ${JSON.stringify(globToPrefix(scope))} must never be absolute`);
+    assert.equal(globToPrefix(scope), want, `${JSON.stringify(scope)} normalizes to a contained prefix`);
+    assert.equal(scopeContained(scope), true, `${JSON.stringify(scope)} is contained`);
+    assert.deepEqual(validateConfig({ ...load('valid.json'), gate: { budgetUsd: 1, writeScope: [scope] } }).reds, [], `${JSON.stringify(scope)} validates green (safe)`);
+  }
+  // the belt still fires for a genuinely non-relative normalized prefix
+  assert.equal(scopeContained('/abs/**'), false);
+  assert.equal(scopeContained('../up/**'), false);
+});
+
+test('R2: "src/" and other equivalent spellings still normalize identically (no regression in the fence fix)', () => {
+  for (const [a, b] of [['src/', 'src'], ['./src/**', 'src'], ['././src/**', 'src'], ['src/./gen/**', 'src/gen'], ['src//gen/**', 'src/gen']]) {
+    assert.equal(globToPrefix(a), b, `globToPrefix(${JSON.stringify(a)})`);
+  }
+});
+
+
+test('equivalent scope spellings agree across the layers (one normalize in globToPrefix)', () => {
+  const wf = (scope) => ({ ...load('valid.json'), gate: { budgetUsd: 1, writeScope: [scope] } });
+  // a validateJob-green fence with a trailing slash must not deadlock every workflow config
+  assert.deepEqual(validateConfig(wf('src/**'), { jobWriteScope: ['src/'] }).reds, []);
+  // spellings scopeContained explicitly allows fit a plain fence
+  assert.deepEqual(validateConfig(wf('././src/**'), { jobWriteScope: ['src/**'] }).reds, []);
+  assert.deepEqual(validateConfig(wf('src/./gen/**'), { jobWriteScope: ['src/**'] }).reds, []);
+});
+
+test('a malformed fence fails CLOSED with its own red — never silently dropped, never a lying scope-escape', () => {
+  const cfg = load('valid.json');
+  // non-array fence: enforcement must not be skippable by a caller bug
+  const asString = validateConfig(cfg, { jobWriteScope: 'src/**' });
+  assert.equal(asString.ok, false);
+  assert.equal(asString.reds[0].code, 'fence-invalid');
+  // null/undefined are the legitimate "no fence" spellings (job optional at N2) — skip the layer, never deadlock
+  assert.deepEqual(validateConfig(cfg, { jobWriteScope: null }).reds, [], 'null fence = no fence');
+  assert.deepEqual(validateConfig(cfg, { jobWriteScope: undefined }).reds, [], 'undefined fence = no fence');
+  // fence entries validateJob would reject: distinct red, not scope-escape
+  for (const fence of [['.'], ['./**'], ['../x/**'], ['src/*/gen/**'], ['/abs/**'], [''], [42]]) {
+    const r = validateConfig(cfg, { jobWriteScope: fence });
+    assert.equal(r.ok, false, `${JSON.stringify(fence)} must red`);
+    assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'fence-invalid:jobWriteScope', `${JSON.stringify(fence)} attribution, got ${JSON.stringify(r.reds)}`);
+  }
+  // a malformed fence must not misattribute to the (innocent) workflow config field
+  assert.notEqual(validateConfig(cfg, { jobWriteScope: [''] }).reds[0].path, 'gate.writeScope');
+});
+
+test('each escaping scope reds at its own indexed path (spine pins code:path per defect)', () => {
+  const cfg = load('valid.json');
+  cfg.gate.writeScope = ['src/**', 'docs/**', 'infra/**'];
+  const r = validateConfig(cfg, { jobWriteScope: ['src/**'] });
+  assert.deepEqual(r.reds.map((x) => `${x.code}:${x.path}`), ['scope-escape:gate.writeScope.1', 'scope-escape:gate.writeScope.2']);
+});
+
+// ---- review fix: the secrets sweep guards BOTH config documents ----
+
+test('a token literal anywhere in a workflow config reds secret-literal (the agent-authored doc is the riskier one)', () => {
+  const cfg = load('valid.json');
+  cfg.gate.writeScope = ['src/ghp_abcdefghijklmnopqrstuv/**'];
+  const r = validateConfig(cfg);
+  assert.equal(r.ok, false);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'secret-literal:gate.writeScope.0');
+});
+
+test('a secret-shaped object KEY reds too — a token can ride a key onto the spine, not just a value (release review)', () => {
+  const cfg = load('valid.json');
+  cfg.memory.extra = { ghp_abcdefghijklmnopqrstuv: true };
+  const r = validateConfig(cfg);
+  assert.equal(r.ok, false);
+  assert.ok(r.reds.some((x) => `${x.code}:${x.path}` === 'secret-literal:memory.extra.ghp_abcdefghijklmnopqrstuv'), JSON.stringify(r.reds));
 });
 
 test('raw invalid JSON → parse-error red', () => {

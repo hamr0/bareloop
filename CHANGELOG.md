@@ -5,11 +5,87 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.2.0] — 2026-07-12
+
+### Added
+- **N1 — the job/close schema (rung 2 of the ladder).** `validateJob` (`src/job.js`):
+  the operator-owned `job-v1` spec — the arbiter's rulebook as pure declarative data
+  (close chain, budget, outer write fence, environment label, escalation), validated
+  reds-before-tokens with pinned `code:path` reds. The arbiter split is guarded from
+  both sides by inexpressibility (workflow config can't say `close`/`provider`; job spec
+  can't say `hooks`/`loop`/`memory`, minting claims, or the shell-owned retry cap).
+  Close-authoring hierarchy (PRD §7) enforced as a class menu keyed by close type —
+  verdict-class laundering (`rubric` claiming `hard`) is a named red `close-hierarchy`.
+  `jobSpecHash` + `checkApproval`: the pure half of human-signs-always (sha256 over
+  canonical JSON; an edited spec is unapproved by construction; the N2 runner enforces).
+  Design record: `docs/plans/2026-07-12-n1-job-close-schema-design.md`; POC verdict: F4.
+- **Two-layer write fence.** `validateConfig` accepts `jobWriteScope` (the job spec's
+  operator-owned outer fence); every workflow scope must fit inside it — path-boundary
+  aware (`src2` is not inside `src`) — or it reds `scope-escape`. Same containment law,
+  same code, both layers (the F9 lesson).
+- **Reserved spine vocabulary: `coordination-red`** (V7, PRD v1.7 #1) — documented in
+  `bareloop.context.md`; no machinery until job #1 surfaces one.
+
+### Changed
+- **`validateConfig` returns `{ ok, reds, config }`** — the parsed config on ok, `null`
+  on any red; kills the interpreter's double-parse (N2+ queue item absorbed). Additive
+  for callers reading `ok`/`reds`.
 
 ### Fixed
+- **Review hardening (post-build /code-review, 8 findings fixed + 6 sub-cap cleanups;
+  all fixes negative-tested and mutation-checked, zero feature regressions):**
+  cadence/escalation red unknown keys (the last smuggling level in a signed spec is
+  closed); the `jobWriteScope` fence opt fails CLOSED — a malformed fence is its own
+  `fence-invalid` red, never silently skipped, and each escaping scope reds at its own
+  indexed path (`gate.writeScope.N`); scope normalization moved into the shared
+  `globToPrefix` (leading `./`, interior `/./`, `//`, trailing `/` collapse) so a
+  validateJob-green fence like `src/` no longer deadlocks contained workflow configs;
+  `canon()` follows JSON semantics (undefined-valued keys dropped) so approvals survive
+  a disk round-trip, and `checkApproval` never throws (non-JSON spec → `false`);
+  `SECRET_RE` gained a left boundary (`flask-sqlalchemy` no longer reds) and the sweep
+  is shared by BOTH validators — the agent-authored workflow config is now swept too;
+  `interpret` accepts `jobWriteScope` and enforces the fence at the choke point (entry
+  + revision candidates); revision candidates are judged and installed on their PARSED
+  form (a JSON-string candidate no longer false-reds arbiter-touch); exported arbiter
+  menus are frozen; `isObj`/`isNonEmptyString` single-copied in `validate.js`.
+- **Second-round review (self-review of the hardening commit found a regression IT
+  introduced — all fixes TDD'd, mutation-checked, zero feature regressions):**
+  **critical containment escape** — the fence-normalization added to `globToPrefix`
+  stripped a leading `./` before collapsing `//`, so `.//src/**` minted the ABSOLUTE
+  prefix `/src`, validated green, and resolved outside the run directory at enforcement
+  (design law #1); fixed by collapsing `//`+`/./` first (so `.//src/**` → `src`, safe),
+  a belt in `scopeContained` rejecting any normalized-absolute prefix, and an enforcement
+  belt in `interpret` that refuses to build a Gate whose resolved scope escapes the
+  workdir. `canon()` now honors `toJSON` (a `Date` no longer hashes as `{}`; distinct
+  values no longer collide) and `jobSpecHash` never throws (the minting path the runner
+  calls directly is now crash-free on `BigInt`/cycles). `SECRET_RE` left boundary extended
+  to `-`/`_` (`pipeline-sk-transform-utils-v2` no longer false-reds; real keys still red).
+  `jobWriteScope: null`/`undefined` are the legitimate no-fence spellings (no more deadlock
+  on every config); a malformed fence reds `fence-invalid` at path `jobWriteScope`, not the
+  innocent workflow field (no ledger misattribution), with the detail bounded. Shared
+  `legalScopeEntry` gives the scope-legality law one home across all three call sites.
+- **Secrets never enter the spine (hard line), enforced at the source.** `runClose`
+  (`src/ralph.js`) scrubs close-command output the moment it is captured, so a secret a
+  checked command echoes (a 401 dumping a `Bearer …`/`sk-…` header) never reaches the
+  append-only spine or the next worker prompt. The redactor is injected (the shell stays
+  stdlib-only); `interpret` wires bareguard's exported `redact`. A benign gap is returned
+  byte-identical — the failure still reaches the human, just without the token (design
+  law #7 / V4 intact: the redactor is a fixed shell primitive, not an emergent component).
 - `NOTICE` ships in the tarball (npm auto-includes LICENSE/README but not NOTICE; Apache-2.0
   wants both) — found validating the installed 0.1.0 artifact.
+- **Release-gate review (fresh `/security` + `/diff-review` on the whole release diff;
+  every finding execution-verified, every fix TDD'd):** the spine redactor now scrubs
+  **every shape the validator reds** — bareguard's defaults cover only `Bearer`/`sk-`,
+  so a git close echoing a `ghp_`/`github_pat_`/`AKIA`/`xox` token passed unredacted
+  into the append-only spine (the most plausible leak for job #1, a GitHub PR workflow);
+  `SECRET_PATTERNS` is now the one shape inventory shared by detection and redaction.
+  `interpret` normalizes `workdir` once at entry — a trailing-slash or relative spelling
+  made the enforcement belt false-red every legal scope — and the belt now treats a scope
+  resolving to the run dir itself as escaped. `checkApproval` no longer routes through the
+  un-hashable sentinel (two distinct un-hashable specs cross-approved each other; now
+  un-hashable = unapproved). The secrets sweep tests object **keys**, not just values (a
+  token could ride a key in a `gold` `expected` onto the spine through a green spec). A
+  non-object `cadence` reds once at `cadence`, not twice at paths that don't exist.
 
 ## [0.1.0] — 2026-07-11
 
@@ -123,6 +199,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
   `docs/UPSTREAM-ASKS.md`, guardrails pre-tool hook (local), `.gitignore`.
 - Public GitHub repo `hamr0/bareloop`, `main` branch.
 
-[Unreleased]: https://github.com/hamr0/bareloop/compare/v0.1.0...HEAD
+[0.2.0]: https://github.com/hamr0/bareloop/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/hamr0/bareloop/compare/v0.0.1...v0.1.0
 [0.0.1]: https://github.com/hamr0/bareloop/releases/tag/v0.0.1

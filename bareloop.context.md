@@ -1,10 +1,9 @@
 # bareloop — Integration Guide
 
-> **DRAFT — pre-code.** bareloop is at the name-reservation stage; the API sections below
-> fill in as build-ladder rungs land (PRD §10). What is already settled — the boundary,
-> the architecture, the refusals, the constraints — is settled for good and recorded now.
-> Per LIBRARY_CONVENTIONS §3 this file ships with the package and is the complete adopter
-> contract; the README is only the pitch.
+> **Current through N1** (job/close schema); API sections fill in as build-ladder rungs
+> land (PRD §10). What is settled — the boundary, the architecture, the refusals, the
+> constraints — is settled for good. Per LIBRARY_CONVENTIONS §3 this file ships with the
+> package and is the complete adopter contract; the README is only the pitch.
 
 ## What this is
 
@@ -30,8 +29,42 @@ checkpoints + verdict classes, budget, cadence, provider) → run → watch the 
 
 ## All options
 
-*TBD at N1 (job/close schema + validator lands). The schema is the option surface;
-config-red before tokens burn.*
+Two documents, two validators — the schema is the option surface; config-red before
+tokens burn. The arbiter split is guarded from both sides by INEXPRESSIBILITY: the
+workflow config cannot say `close`/`provider`; the job spec cannot say
+`hooks`/`loop`/`memory`, any minting claim, or the shell-owned retry cap — all
+unknown-field reds.
+
+**Job spec (`schema: "job-v1"`, operator-owned — the arbiter's rulebook):**
+
+| field | shape | notes |
+|---|---|---|
+| `job` | kebab-case slug | |
+| `description` | non-empty string | |
+| `provider` | `anthropic-api` | menu; part of the lineage key by definition |
+| `conditions` | `{ providerPath?, closeVerbosity?, taskFraming?, scaffold? }` | declared keys only, string values — the environment label (consumed by the N3 lineage key; recorded on spines from run one) |
+| `cadence` | `{ unit: hour\|day\|week, every: 1..30 }` | validated now, consumed at N5 (Scheduler) |
+| `budgetUsd` | `0 < n <= shell cap` | ceiling chain: workflow ≤ job ≤ shell — each layer may tighten, never exceed |
+| `writeScope` | array of contained globs | the operator's outer fence; same containment law as the workflow layer, same code |
+| `steps` | array of `{ id, close, class }` | unique slug ids; every step names its close |
+| `escalation` | `{ mode: "decision-ready" }` | the pain channel is not optional |
+
+**Close types and the hierarchy** (a close is data, never code; verdict-class laundering
+is a named red `close-hierarchy`):
+
+| type | fields (exact — extras red) | legal class |
+|---|---|---|
+| `predicate` | `cmd`, `expect` (int exit code) | `hard` |
+| `gold` | `expected`, `compare: exact\|json-equal` | `hard` |
+| `rubric` | `criteria` | `soft` only — can never mint automatically |
+| `hitl` | `prompt` | `hitl` — a human IS the close |
+
+Red vocabulary (both validators): `parse-error`, `unknown-field`, `missing-required`,
+`invalid-value`, `bounds`, `duplicate-id`, `close-type`, `close-hierarchy`,
+`secret-literal`, `scope-escape`, `fence-invalid` (a malformed `jobWriteScope` fence — attributed to `jobWriteScope`, never the workflow config), plus the workflow-side verb reds (`verb-illegal`,
+`verb-placement`, `verb-params`, `slot-overflow`). The `secret-literal` sweep is
+defense-in-depth against known token shapes — env-only loading remains the law, not the
+sweep.
 
 ## Public API
 
@@ -51,14 +84,43 @@ The dumb outer shell: `while close-red and under-cap: run the middle`. `close` i
 whose exit code is truth (`runClose` is also exported); the red gap text feeds the next
 iteration. Escalations are decision-ready (category, options, spend); cap-halt is its own
 category, never merged with "wrong". A thrown middle is relayed by its `category`
-property (`cap-halt`, `gate-red`, …); an unnamed throw is `interpreter-red`.
+property (`cap-halt`, `gate-red`, …); an unnamed throw is `interpreter-red`. Close output
+is scrubbed at capture (an injected `redact`, wired to bareguard by `interpret` with the
+validators' full secret-shape inventory — Bearer/sk-/ghp_/github_pat_/AKIA/xox) so a
+secret a checked command echoes never enters the append-only spine or a worker prompt —
+a benign gap is byte-identical (secrets hard line; design law #7 intact).
 
-### `validateConfig(input, { shellCapUsd? })` → `{ ok, reds }` — `src/validate.js`
+### `validateConfig(input, { shellCapUsd?, jobWriteScope? })` → `{ ok, reds, config }` — `src/validate.js`
 
 Deterministic schema-v1 predicate; never throws. Every failure is a named red
-`{ code, path, detail? }` — reds before tokens burn. Verb vocabulary bound from litectx
+`{ code, path, detail? }` — reds before tokens burn. Returns the parsed config on ok
+(single parse; `null` on any red). Pass the job spec's `writeScope` as `jobWriteScope`
+and every workflow scope must fit inside the fence (path-boundary aware: `src2` is not
+inside `src`) or it reds `scope-escape`; pass `min(shell cap, job budgetUsd)` as
+`shellCapUsd` to complete the ceiling chain. Verb vocabulary bound from litectx
 (`LOOP_SHAPES`, `SLOTS`, `VERBS` exported). `diffPaths(a, b)` returns changed JSON paths —
 the one-knob mutation checker.
+
+### `validateJob(input, { shellCapUsd? })` → `{ ok, reds, job }` — `src/job.js`
+
+The operator-owned sibling (never an extension) of `validateConfig`: validates a
+`job-v1` spec — see **All options** for the full schema, close types, and hierarchy.
+Never throws on JSON text or plain parsed data (the ingest contract); returns the
+parsed spec on ok, `null` on any red. Menus exported:
+`CLOSE_TYPES`, `CLASSES`, `CLASS_BY_CLOSE`, `GOLD_COMPARE`, `CADENCE_UNITS`,
+`PROVIDERS`, `CONDITION_KEYS`.
+
+### `jobSpecHash(job)` / `checkApproval(job, approvals)` — `src/job.js`
+
+The pure half of **human-signs-always**: an agent may draft a job spec, but no job runs
+until a human approves that exact version. `jobSpecHash` is sha256 over canonical JSON
+(key-order independent) — any edit changes the hash, so an edited spec is unapproved by
+construction. `checkApproval(job, approvals)` is a pure predicate over
+`{ specHash, signer, ts }` records; the approval record lives OUTSIDE the document it
+signs and is shell/human territory, never agent-writable. The N2 runner enforces it.
+Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
+`coordination-red` — a failure between units (scope contention, step order, store
+races), never to be folded into worker/interpreter reds.
 
 ### `interpret(configRaw, opts)` → `'green' | 'escalated' | 'config-red'` — `src/interpret.js`
 
@@ -66,8 +128,13 @@ The only code that reads a config. Composes bareguard `Gate` (write scopes, USD 
 litectx (recall/compress/stash/remember hook ops), and the bareagent `Loop` under `ralph`.
 The provider and the close arrive from the shell, never the config. Optional `revisor`
 seam fires once after `STALL_REDS` consecutive close reds; the interpreter owns acceptance
-(arbiter-touch / cap-touch / validation reds). Emits `config-final` — the run-as-executed
-config (design law #2) — on every run.
+(arbiter-touch / cap-touch / validation reds), judged and installed on the candidate's
+PARSED form. Emits `config-final` — the run-as-executed config (design law #2) — on every
+run. Pass the job spec's fence as `jobWriteScope` (or `null`/omit for no fence): it is
+enforced HERE — the one choke point where a config becomes a Gate — on entry AND on every
+revision candidate, so a workflow scope outside the operator's fence reds before tokens.
+An enforcement belt resolves every scope and refuses to build a Gate that escapes the
+workdir, independent of validator correctness (law #1).
 
 ### `extractRules({ config, provider, priorRules, revisionDiff? })` — `src/extract.js`
 

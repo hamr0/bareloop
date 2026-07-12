@@ -12,4 +12,16 @@ reds have different resolutions and must not be collapsed (PRD addendum v1.1 §3
 Format per entry: **which package · what's missing/broken · the run/finding that surfaced
 it · the fix (upstream commit/PR) · the version bareloop consumed.**
 
-*(Empty — nothing filed yet from this repo.)*
+## WITHDRAWN (2026-07-12) — bareguard secret redaction is already exported
+
+Filed then withdrawn same day after reading bareguard's source. bareguard **already
+exports `redact`** (BG-1 default-on: `Bearer …`/`sk-…` value patterns + key-aware
+blanking), which is exactly what the spine-source scrub needs — `src/interpret.js` now
+consumes it directly (`ralph.js` scrubs close output at capture; F5). No upstream change
+was needed. The two "vocabularies" are a deliberate split, not drift: **validators keep
+their own tuned `SECRET_RE`** because DETECTION (redding a whole spec) needs a low false-
+positive rate, while **redaction tolerates false-positives** (masking a package name in a
+failure log blocks nothing). bareguard's own `sk-[\w-]{16,}` has the same missing-left-
+boundary the validator fix corrected — one more reason the validator does not bind it.
+
+*(No open asks from this repo.)*

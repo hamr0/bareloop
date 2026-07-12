@@ -159,6 +159,23 @@ predicate/gold→hard, rubric→soft only, hitl⇔hitl — so verdict-class laun
 (rubric-as-hard) is a named red, `close-hierarchy`. The `{ok, reds, config}` API change
 absorbs cleanly as `{ok, reds, job}` (normalized spec returned, single parse).
 
+> **Review addendum (2026-07-12, post-build /code-review medium, 8 agent angles +
+> execution-verified):** the POC's claim held where it was attacked and failed where it
+> wasn't — every one of the 8 findings sat on an edge the POC never adversarially probed:
+> nested objects (cadence/escalation accepted unknown keys — the one smuggling level left
+> open), the fence OPTION's own input (non-array fence failed OPEN; malformed fence lied
+> scope-escape), cross-document spelling equivalence ('src/' fence deadlocked contained
+> configs — normalization now lives in the shared globToPrefix), canon-vs-JSON semantics
+> (approval hash diverged across a disk round-trip; checkApproval could throw), SECRET_RE's
+> missing left boundary (flask-sqlalchemy redded), the fence not reaching interpret (the
+> choke point where the Gate is built), no sweep on the AGENT-authored config, and
+> aliasing-tautological deepEquals in the new tests. All fixed test-first (13 new failing
+> tests → 143/143), 5 fresh mutations killed exactly their targets, and the original
+> feature batteries stayed green through every fix — detection still detects, containment
+> still contains. Process lesson worth its line: mutation testing proves the checks you
+> WROTE can fail; it cannot see the checks you never wrote — adversarial review is the
+> complement, not a repeat.
+
 **Bounded claims + surfaced design questions (N1 interview, not POC scope):**
 (1) the secrets sweep is a literal-pattern deny — it catches known token shapes
 (sk-/ghp_/AKIA/xox…) and passed its false-positive probe, but a novel or encoded secret
@@ -170,3 +187,42 @@ forces, and the POC cannot answer it. (3) Not covered, deliberately (no silent c
 per-step budget splits, retry policy, V3 channel-condition declarations, job-level write
 scopes, cadence→Scheduler mapping, coordination-red placement — N1-proper design, several
 interview-gated.
+
+## F5 — a second review round caught a containment escape the FIRST round's fix introduced; the deep secrets choke point (spine) is deferred on a V4 tension, not missed
+
+Round-two `/code-review` (medium, 8 agent angles) on the hardening commit found **8
+verified findings, the top one a design-law-#1 breach the hardening commit itself
+introduced**: the fence-normalization added to `globToPrefix` (round one, fixing a
+cross-document spelling deadlock) stripped a leading `./` before collapsing `//`, so
+`.//src/**` normalized to the ABSOLUTE prefix `/src` — validated green, escaped the run
+dir at `resolve(workdir, '/src')`. Five independent finders caught it; reproduced live.
+Fixed at three depths (normalization order; a `scopeContained` belt on the normalized
+prefix; an `interpret` enforcement belt that refuses an escaping Gate) plus six more
+(canon/toJSON, jobSpecHash-never-throws, SECRET_RE boundary, fence null, fence-invalid
+attribution, `legalScopeEntry`). All TDD'd, 147/147, 5 fresh mutations each killing their
+target, feature batteries green throughout.
+
+**The lesson, paid for twice now (compounds F4's):** a fix aimed at one spelling bug
+opened a WORSE same-helper spelling bug, and the round-one mutation pass could not see it —
+because mutation tests only prove the checks you WROTE can fail, and no test pinned the
+`.//` input. Adversarial review is the complement to mutation testing, not a repeat; a
+normalization/parsing change deserves its own escape-spelling battery before it ships.
+
+**The spine secrets choke point (finding #8) — RESOLVED at source, and the V4 tension
+dissolved on inspection.** Close stderr/stdout (`gap`) could carry a secret a checked
+command echoes (a 401 dumping a `Bearer …` header) into the append-only spine and the next
+worker prompt — a hard-line breach ("secrets never enter the spine"). The first framing
+called this a two-hard-line collision with **design law #7 / V4** (escalation text must
+reach the human BYTE-IDENTICAL to what the shell emitted). That collision is not real once
+you place the redactor correctly: V4 forbids an EMERGENT component from summarizing the
+pain channel; a **fixed shell primitive** is not emergent. So the scrub lives in the shell
+at the SOURCE — `runClose` (`src/ralph.js`) redacts the gap the moment it is captured, so
+the shell's canonical emission IS the redacted text and everything downstream is
+byte-identical to it. The redactor is **injected**, not imported (ralph stays stdlib-only
+and un-gameable); `src/interpret.js` — the layer that owns bareguard — passes bareguard's
+exported `redact` (BG-1 `Bearer`/`sk-` patterns). A benign gap returns byte-identical; the
+failure still reaches the human, just without the token. The bareguard UPSTREAM-ASK was
+WITHDRAWN (redact was already exported). Reading the lib source before filing would have
+saved the round-trip — a small process note. TDD'd end to end (secret in close output
+reaches neither the spine nor the worker prompt; benign gap byte-identical), mutation-
+checked (neuter the scrub OR unwire interpret → the hard-line test reds), 151/151.

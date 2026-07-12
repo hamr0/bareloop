@@ -194,6 +194,92 @@ test('interpreter crash mid-run → interpreter-red, never masquerading as bad h
 
 const stalling = () => ({ script: [{ text: BAD_SUM }], capRuns: 3 }); // reds forever under cap 3
 
+// ---- review fixes: the fence reaches the choke point; revision accepts what validation validated ----
+
+test('interpret enforces the job fence: workflow scope outside jobWriteScope → config-red, zero tokens', async () => {
+  const { outcome, events, provider } = await run('fence-choke', config(), { jobWriteScope: ['docs/**'] });
+  assert.equal(outcome, 'config-red');
+  assert.ok(events.some((e) => e.type === 'config-red' && e.code === 'scope-escape'));
+  assert.equal(provider.calls.length, 0, 'reds before tokens');
+});
+
+test('R2 CRITICAL: the ".//src/**" spelling resolves INSIDE the workdir, never to an absolute /src', async () => {
+  // pre-fix this validated green and the Gate fence resolved to absolute "/src"
+  const cfg = config(); cfg.gate.writeScope = ['.//src/**'];
+  const { outcome, provider, workdir } = await run('escape-scope', cfg);
+  assert.equal(outcome, 'green', 'the sloppy spelling normalizes to src/ and runs');
+  assert.ok(provider.calls.length > 0);
+  // the audit proves the fence stayed under workdir (no absolute /src grant)
+  const audit = readFileSync(join(workdir, 'gate-audit.jsonl'), 'utf8');
+  assert.ok(!audit.includes('"/src"'), 'the Gate fence never became the absolute /src');
+});
+
+test('secrets in close output never reach the spine OR the next worker prompt (hard line, end to end)', async () => {
+  // a close that fails and prints a token; the worker keeps failing so gap feeds forward
+  const workdir = join(base, 'secret-gap');
+  mkdirSync(join(workdir, 'src'), { recursive: true });
+  const leaky = join(workdir, 'leaky.mjs');
+  writeFileSync(leaky, 'console.error("auth failed: Bearer sk-ant-abcdefghijklmnop"); process.exit(1);');
+  const provider = stubProvider([{ text: BAD_SUM }]);
+  const file = join(workdir, 'run.jsonl');
+  const outcome = await interpret(config(), {
+    task: TASK, target: join(workdir, 'src', 'sum.mjs'), close: ['node', leaky],
+    workdir, capRuns: 2, emit: makeSpine(file), provider,
+  });
+  assert.equal(outcome, 'escalated');
+  const raw = readFileSync(file, 'utf8');
+  assert.ok(!raw.includes('sk-ant-abcdefghijklmnop'), 'the token never entered the append-only spine');
+  // and the worker never saw it either (gap is scrubbed before the prompt)
+  assert.ok(!provider.calls.some((c) => c.includes('sk-ant-abcdefghijklmnop')), 'the token never entered a worker prompt');
+  // the failure itself still reaches the record (redacted, not hidden — V4)
+  assert.ok(raw.includes('[REDACTED') || raw.includes('auth failed'), 'the gap is redacted, not dropped');
+});
+
+test('release review: a trailing-slash workdir is a legal spelling — the enforcement belt must not false-red it', async () => {
+  const { workdir, target, close } = makeWork('trailing-slash-wd');
+  const provider = stubProvider([{ text: GOOD_SUM }]);
+  const file = join(workdir, 'run.jsonl');
+  const outcome = await interpret(config(), { task: TASK, target, close, workdir: workdir + '/', capRuns: 3, emit: makeSpine(file), provider });
+  assert.equal(outcome, 'green', 'workdir + "/" must behave exactly like workdir');
+});
+
+test('release review: a GitHub token in close output is scrubbed — the redactor covers every shape the validator reds', async () => {
+  const workdir = join(base, 'secret-gap-ghp');
+  mkdirSync(join(workdir, 'src'), { recursive: true });
+  const leaky = join(workdir, 'leaky.mjs');
+  // build the fakes by concatenation so the literals never sit in this file's bytes
+  writeFileSync(leaky, 'console.error("push failed for token ghp_" + "abcdefghijklmnopqrstuv" + " key AKIA" + "ABCDEFGHIJKLMNOP"); process.exit(1);');
+  const provider = stubProvider([{ text: BAD_SUM }]);
+  const file = join(workdir, 'run.jsonl');
+  const outcome = await interpret(config(), {
+    task: TASK, target: join(workdir, 'src', 'sum.mjs'), close: ['node', leaky],
+    workdir, capRuns: 2, emit: makeSpine(file), provider,
+  });
+  assert.equal(outcome, 'escalated');
+  const raw = readFileSync(file, 'utf8');
+  assert.ok(!raw.includes('ghp_' + 'abcdefghijklmnopqrstuv'), 'a GitHub token never enters the append-only spine');
+  assert.ok(!raw.includes('AKIA' + 'ABCDEFGHIJKLMNOP'), 'an AWS key never enters the append-only spine');
+  assert.ok(!provider.calls.some((c) => c.includes('ghp_' + 'abcdefghijklmnopqrstuv')), 'the token never entered a worker prompt');
+  assert.ok(raw.includes('[REDACTED') || raw.includes('push failed'), 'the gap is redacted, not dropped');
+});
+
+test('R2: a non-canonical but legal scope spelling runs green end to end (no regression)', async () => {
+  const cfg = config(); cfg.gate.writeScope = ['./src/**']; // dot-slash form of the fixture's src/**
+  const { outcome } = await run('dotslash-scope', cfg);
+  assert.equal(outcome, 'green', 'the artifact under ./src/** still writes and greens');
+});
+
+test('revision: a candidate arriving as a JSON string is judged on its PARSED form (single-parse contract)', async () => {
+  const candidate = config();
+  candidate.loop.shape = 'plan'; // legal free-axis change, arbiter byte-identical
+  const revisor = async () => ({ candidate: JSON.stringify(candidate), costUsd: 0.005 });
+  const { events } = await run('rev-string-candidate', config(), { ...stalling(), revisor, script: [{ text: BAD_SUM }, { text: BAD_SUM }, { text: GOOD_SUM }] });
+  const acc = events.find((e) => e.type === 'revision-accepted');
+  assert.ok(acc, `expected revision-accepted, got ${JSON.stringify(events.filter((e) => e.type === 'revision-red'))}`);
+  assert.deepEqual(acc.changedPaths, ['loop.shape']);
+  assert.ok(events.some((e) => e.type === 'config-final' && e.config?.loop?.shape === 'plan'), 'the PARSED candidate is installed, never the string');
+});
+
 test('revision: accepted free-axis revision changes behavior mid-run (shape swap observable)', async () => {
   const candidate = config();
   candidate.loop.shape = 'plan';
