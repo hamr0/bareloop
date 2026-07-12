@@ -30,6 +30,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - **`validateConfig` returns `{ ok, reds, config }`** — the parsed config on ok, `null`
   on any red; kills the interpreter's double-parse (N2+ queue item absorbed). Additive
   for callers reading `ok`/`reds`.
+
+### Fixed
 - **Review hardening (post-build /code-review, 8 findings fixed + 6 sub-cap cleanups;
   all fixes negative-tested and mutation-checked, zero feature regressions):**
   cadence/escalation red unknown keys (the last smuggling level in a signed spec is
@@ -46,9 +48,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
   + revision candidates); revision candidates are judged and installed on their PARSED
   form (a JSON-string candidate no longer false-reds arbiter-touch); exported arbiter
   menus are frozen; `isObj`/`isNonEmptyString` single-copied in `validate.js`.
-  Upstream ask filed: bareguard should export its secret patterns (UPSTREAM-ASKS).
-
-### Fixed
 - **Second-round review (self-review of the hardening commit found a regression IT
   introduced — all fixes TDD'd, mutation-checked, zero feature regressions):**
   **critical containment escape** — the fence-normalization added to `globToPrefix`

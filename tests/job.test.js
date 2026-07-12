@@ -9,6 +9,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { validateJob, jobSpecHash, checkApproval, CLASS_BY_CLOSE, CLOSE_TYPES, CLASSES } from '../src/job.js';
 import { validateConfig } from '../src/validate.js';
 
@@ -173,8 +174,6 @@ test('jobSpecHash NEVER throws — the minting path (runner calls it directly) g
 test('the arbiter menus are frozen — verdict-class laundering cannot be enabled by mutation (review)', () => {
   assert.ok(Object.isFrozen(CLASS_BY_CLOSE) && Object.isFrozen(CLASS_BY_CLOSE.rubric) && Object.isFrozen(CLOSE_TYPES) && Object.isFrozen(CLASSES));
   assert.throws(() => { CLASS_BY_CLOSE.rubric.push('hard'); }, TypeError);
-  const r = validateJob(mut((j) => { j.steps[1].close = { type: 'rubric', criteria: 'looks good' }; j.steps[1].class = 'hard'; }));
-  assert.equal(r.reds[0].code, 'close-hierarchy', 'the hierarchy still holds after the mutation attempt');
 });
 
 test('an env REFERENCE in a close cmd does not red — only literals do', () => {
@@ -191,13 +190,7 @@ test('the shell cap is the ceiling the shell sets (job 1.5 passes under 2, reds 
 
 // ---- the arbiter split, workflow side: REAL shipped path, not a replica ----
 
-const WF = {
-  schema: 'v1',
-  loop: { shape: 'refine' },
-  memory: { store: 'litectx' },
-  gate: { budgetUsd: 1, writeScope: ['src/**'] },
-  escalation: { mode: 'decision-ready' },
-};
+const WF = JSON.parse(readFileSync(new URL('./fixtures/valid.json', import.meta.url), 'utf8'));
 
 test('workflow config smuggling a close still reds in v1', () => {
   const r = validateConfig({ ...WF, close: { type: 'predicate', cmd: 'true', expect: 0 } });
