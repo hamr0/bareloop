@@ -124,3 +124,52 @@ New default minted by F6 (the probe's own harness confound): **unpriced is never
 `costUsd` is null/undefined instead of accumulating $0 — otherwise the hard cap is
 gameable by any unpriced provider path. Drafting calls route through the same
 accounting, never around it.
+
+## Addendum 2026-07-12b — module 2b, the tool-mode middle (interview, three decisions + defaults)
+
+Job #1's find-and-fix work spans many files; the shipped text-mode middle writes exactly
+one. Module 2b adds a **tool-mode middle**: the worker drives bare-agent's Loop with
+tools instead of returning one artifact. Interview with hamr, 2026-07-12:
+
+1. **Tool menu is read/grep/write only** (`shell_read`, `shell_grep`, `shell_write`).
+   The close remains the ONLY executor — no run-command inside the fence. `shell_run`
+   ships **locked-but-listed**: admission waits for request-red evidence (the product's
+   own curation doctrine, PRD F2 rules, applied to its own toolbox). Rejected now: an
+   allowlisted self-check command — it would be admission by intuition, not evidence.
+2. **The job spec (human side) owns mode + menu per step.** The drafted workflow config
+   may request neither a mode nor a tool the spec doesn't grant — `validateConfig` reds
+   it. The agent authors its workflow, never its own capabilities (hard-line corollary).
+3. **Both middles stay, chosen by step shape.** Single-target steps keep the shipped,
+   mutation-tested text middle (artifact-red intact — a PRD v1.4 §5 commitment). Tool
+   mode is only for steps that need multi-file work. In tool mode artifact-red genuinely
+   does not exist (the tool writes directly; there is no response artifact to red) —
+   "wrote junk" is the close's job there, plus the write fence per call.
+
+**Defaults taken (stated, not silent):**
+
+- **Git mechanics are never model tools.** Branch, commit, `gh pr create --draft` are
+  deterministic runner/middle code (the hitl middle, per the main record). The model
+  never sees a git or gh surface.
+- **Containment moves into the Loop's policy path.** bare-agent's built-in shell tools
+  are deliberately ungated (documented upstream: "gating is the caller's
+  responsibility"); their action type is their own name, which does NOT trip bareguard's
+  `fs` primitives. bareloop supplies `wireGate(gate, { actionTranslator })` mapping
+  `shell_write → {type:'write', path}`, `shell_read`/`shell_grep → {type:'read', path}`
+  so the existing `fs.writeScope` fence governs every tool call — the manual
+  `gate.check` in the text middle moves into the translator for tool mode. Without the
+  translator, tool writes would bypass the fence entirely; this wiring is the module's
+  load-bearing line.
+- **Caps re-tuned for multi-round attempts:** text mode was ~1–2 priced rounds per
+  attempt; tool mode is N. `limits.maxTurns` gets sized per-step from the config;
+  `maxConsecutiveDenials` (bare-agent default 3) is live — a worker hammering a denied
+  path stops cleanly.
+- **Pricing unchanged:** tool rounds price identically to text rounds (same
+  `metrics.costUsd`/`unpricedRounds` path) — pricing-red (F6, PRD v1.8) carries over
+  with no new machinery.
+
+**POC aim (riskiest assumption):** the containment wiring, token-free, against the REAL
+Loop + Gate (machinery negatives drive the real code path, never a replica — PRD v1.7
+§2a): a scripted stub provider issues tool calls; an in-scope write lands, an
+out-of-scope write REDS through the policy path, the denial streak stops the loop, and
+an unpriced round surfaces as `unpricedRounds > 0`, never $0. Each negative must be able
+to fail.
