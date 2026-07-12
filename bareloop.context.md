@@ -85,7 +85,8 @@ whose exit code is truth (`runClose` is also exported); the red gap text feeds t
 iteration. Escalations are decision-ready (category, options, spend); cap-halt is its own
 category, never merged with "wrong". A thrown middle is relayed by its `category`
 property (`cap-halt`, `gate-red`, …); an unnamed throw is `interpreter-red`. Close output
-is scrubbed at capture (an injected `redact`, wired to bareguard by `interpret`) so a
+is scrubbed at capture (an injected `redact`, wired to bareguard by `interpret` with the
+validators' full secret-shape inventory — Bearer/sk-/ghp_/github_pat_/AKIA/xox) so a
 secret a checked command echoes never enters the append-only spine or a worker prompt —
 a benign gap is byte-identical (secrets hard line; design law #7 intact).
 
@@ -104,7 +105,8 @@ the one-knob mutation checker.
 
 The operator-owned sibling (never an extension) of `validateConfig`: validates a
 `job-v1` spec — see **All options** for the full schema, close types, and hierarchy.
-Never throws; returns the parsed spec on ok, `null` on any red. Menus exported:
+Never throws on JSON text or plain parsed data (the ingest contract); returns the
+parsed spec on ok, `null` on any red. Menus exported:
 `CLOSE_TYPES`, `CLASSES`, `CLASS_BY_CLOSE`, `GOLD_COMPARE`, `CADENCE_UNITS`,
 `PROVIDERS`, `CONDITION_KEYS`.
 

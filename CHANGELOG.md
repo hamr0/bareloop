@@ -5,7 +5,7 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.2.0] — 2026-07-12
 
 ### Added
 - **N1 — the job/close schema (rung 2 of the ladder).** `validateJob` (`src/job.js`):
@@ -73,6 +73,19 @@ feature lands, **patch** = docs, fixes, scaffolding.
   law #7 / V4 intact: the redactor is a fixed shell primitive, not an emergent component).
 - `NOTICE` ships in the tarball (npm auto-includes LICENSE/README but not NOTICE; Apache-2.0
   wants both) — found validating the installed 0.1.0 artifact.
+- **Release-gate review (fresh `/security` + `/diff-review` on the whole release diff;
+  every finding execution-verified, every fix TDD'd):** the spine redactor now scrubs
+  **every shape the validator reds** — bareguard's defaults cover only `Bearer`/`sk-`,
+  so a git close echoing a `ghp_`/`github_pat_`/`AKIA`/`xox` token passed unredacted
+  into the append-only spine (the most plausible leak for job #1, a GitHub PR workflow);
+  `SECRET_PATTERNS` is now the one shape inventory shared by detection and redaction.
+  `interpret` normalizes `workdir` once at entry — a trailing-slash or relative spelling
+  made the enforcement belt false-red every legal scope — and the belt now treats a scope
+  resolving to the run dir itself as escaped. `checkApproval` no longer routes through the
+  un-hashable sentinel (two distinct un-hashable specs cross-approved each other; now
+  un-hashable = unapproved). The secrets sweep tests object **keys**, not just values (a
+  token could ride a key in a `gold` `expected` onto the spine through a green spec). A
+  non-object `cadence` reds once at `cadence`, not twice at paths that don't exist.
 
 ## [0.1.0] — 2026-07-11
 
@@ -186,6 +199,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
   `docs/UPSTREAM-ASKS.md`, guardrails pre-tool hook (local), `.gitignore`.
 - Public GitHub repo `hamr0/bareloop`, `main` branch.
 
-[Unreleased]: https://github.com/hamr0/bareloop/compare/v0.1.0...HEAD
+[0.2.0]: https://github.com/hamr0/bareloop/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/hamr0/bareloop/compare/v0.0.1...v0.1.0
 [0.0.1]: https://github.com/hamr0/bareloop/releases/tag/v0.0.1
