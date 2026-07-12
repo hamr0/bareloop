@@ -208,17 +208,21 @@ because mutation tests only prove the checks you WROTE can fail, and no test pin
 `.//` input. Adversarial review is the complement to mutation testing, not a repeat; a
 normalization/parsing change deserves its own escape-spelling battery before it ships.
 
-**Deliberately DEFERRED, not fixed — the spine secrets choke point (finding #8, a real
-hard-line gap on a V4 collision):** close stderr/stdout (`gap`, up to 2000 chars) and
-error details are spread into the append-only spine unswept — the two validator sweeps are
-structurally blind to runtime text, and "secrets never enter the spine" is a hard line.
-The right-depth fix (a redaction pass in `makeSpine`) collides head-on with **design law
-#7 / V4**: escalation text must reach the human BYTE-IDENTICAL to what the shell emitted,
-and no emergent component may summarize the pain channel — a spine redactor is exactly such
-a component. This is a genuine two-hard-line tension (secrets-never-in-spine vs
-algedonic-byte-identical), not a mechanical fix, so it is **hamr's design call at N2**,
-where real closes first run real secrets (at N0/N1 close text is test scaffolding — the
-exposure is nil today). Options to weigh then: redact at the source (the close capture, before
-the spine) so the algedonic channel stays byte-identical to a shell that never emitted the
-secret; or bind bareguard's `redact` once the UPSTREAM-ASKS pattern-export lands. Filed
-here so the gap is logged, not papered over (the F-rule).
+**The spine secrets choke point (finding #8) — RESOLVED at source, and the V4 tension
+dissolved on inspection.** Close stderr/stdout (`gap`) could carry a secret a checked
+command echoes (a 401 dumping a `Bearer …` header) into the append-only spine and the next
+worker prompt — a hard-line breach ("secrets never enter the spine"). The first framing
+called this a two-hard-line collision with **design law #7 / V4** (escalation text must
+reach the human BYTE-IDENTICAL to what the shell emitted). That collision is not real once
+you place the redactor correctly: V4 forbids an EMERGENT component from summarizing the
+pain channel; a **fixed shell primitive** is not emergent. So the scrub lives in the shell
+at the SOURCE — `runClose` (`src/ralph.js`) redacts the gap the moment it is captured, so
+the shell's canonical emission IS the redacted text and everything downstream is
+byte-identical to it. The redactor is **injected**, not imported (ralph stays stdlib-only
+and un-gameable); `src/interpret.js` — the layer that owns bareguard — passes bareguard's
+exported `redact` (BG-1 `Bearer`/`sk-` patterns). A benign gap returns byte-identical; the
+failure still reaches the human, just without the token. The bareguard UPSTREAM-ASK was
+WITHDRAWN (redact was already exported). Reading the lib source before filing would have
+saved the round-trip — a small process note. TDD'd end to end (secret in close output
+reaches neither the spine nor the worker prompt; benign gap byte-identical), mutation-
+checked (neuter the scrub OR unwire interpret → the hard-line test reds), 151/151.

@@ -12,13 +12,16 @@ reds have different resolutions and must not be collapsed (PRD addendum v1.1 §3
 Format per entry: **which package · what's missing/broken · the run/finding that surfaced
 it · the fix (upstream commit/PR) · the version bareloop consumed.**
 
-## OPEN — bareguard: export the secret-token patterns (or a `detect()`)
+## WITHDRAWN (2026-07-12) — bareguard secret redaction is already exported
 
-**Which:** bareguard · **What's missing:** bareguard redacts secret values (internal
-`DEFAULT_SECRET_VALUE_PATTERNS`, unexported) while bareloop's validators now red on
-secret literals with their own `SECRET_RE` (`src/validate.js`) — two secret vocabularies
-in one product that will drift as token shapes get added to one and not the other.
-**Surfaced by:** N1 code-review (reuse angle, 2026-07-12; the review also caught the two
-regexes already differing in class spelling). **Ask:** export the patterns (or a
-`detect(string) → boolean`) so bareloop binds them the way `validate.js` binds litectx's
-`WRITE_KINDS` — the adaptlearn-F5 pattern. **Fix:** unfiled. **Consumed:** —
+Filed then withdrawn same day after reading bareguard's source. bareguard **already
+exports `redact`** (BG-1 default-on: `Bearer …`/`sk-…` value patterns + key-aware
+blanking), which is exactly what the spine-source scrub needs — `src/interpret.js` now
+consumes it directly (`ralph.js` scrubs close output at capture; F5). No upstream change
+was needed. The two "vocabularies" are a deliberate split, not drift: **validators keep
+their own tuned `SECRET_RE`** because DETECTION (redding a whole spec) needs a low false-
+positive rate, while **redaction tolerates false-positives** (masking a package name in a
+failure log blocks nothing). bareguard's own `sk-[\w-]{16,}` has the same missing-left-
+boundary the validator fix corrected — one more reason the validator does not bind it.
+
+*(No open asks from this repo.)*

@@ -13,7 +13,7 @@
 import { createRequire } from 'node:module';
 import { writeFileSync, readFileSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
-import { Gate } from 'bareguard';
+import { Gate, redact } from 'bareguard';
 import { LiteCtx, compress } from 'litectx';
 import { validateConfig, diffPaths, globToPrefix } from './validate.js';
 import { ralph } from './ralph.js';
@@ -229,7 +229,11 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
 
   // the config may tighten the shell's iteration budget, never exceed it (mirrors budgetUsd)
   const effectiveCap = Math.min(capRuns, config.loop.maxIterations ?? capRuns);
-  const outcome = await ralph({ middle, close, capRuns: effectiveCap, emit });
+  // Secrets never enter the spine (hard line): the shell scrubs close output at
+  // the source with bareguard's redactor (BG-1 default patterns — Bearer/sk-…).
+  // Injected here (the layer that owns bareguard) so ralph stays stdlib-only and
+  // the scrub is a fixed shell primitive, not an emergent component (V4 holds).
+  const outcome = await ralph({ middle, close, capRuns: effectiveCap, emit, redact: (/** @type {string} */ s) => redact(s) });
   if (outcome === 'green') {
     // The close already passed — a retention hiccup must not un-green a real
     // green (it would corrupt the learning curve). It degrades loudly:

@@ -214,6 +214,27 @@ test('R2 CRITICAL: the ".//src/**" spelling resolves INSIDE the workdir, never t
   assert.ok(!audit.includes('"/src"'), 'the Gate fence never became the absolute /src');
 });
 
+test('secrets in close output never reach the spine OR the next worker prompt (hard line, end to end)', async () => {
+  // a close that fails and prints a token; the worker keeps failing so gap feeds forward
+  const workdir = join(base, 'secret-gap');
+  mkdirSync(join(workdir, 'src'), { recursive: true });
+  const leaky = join(workdir, 'leaky.mjs');
+  writeFileSync(leaky, 'console.error("auth failed: Bearer sk-ant-abcdefghijklmnop"); process.exit(1);');
+  const provider = stubProvider([{ text: BAD_SUM }]);
+  const file = join(workdir, 'run.jsonl');
+  const outcome = await interpret(config(), {
+    task: TASK, target: join(workdir, 'src', 'sum.mjs'), close: ['node', leaky],
+    workdir, capRuns: 2, emit: makeSpine(file), provider,
+  });
+  assert.equal(outcome, 'escalated');
+  const raw = readFileSync(file, 'utf8');
+  assert.ok(!raw.includes('sk-ant-abcdefghijklmnop'), 'the token never entered the append-only spine');
+  // and the worker never saw it either (gap is scrubbed before the prompt)
+  assert.ok(!provider.calls.some((c) => c.includes('sk-ant-abcdefghijklmnop')), 'the token never entered a worker prompt');
+  // the failure itself still reaches the record (redacted, not hidden — V4)
+  assert.ok(raw.includes('[REDACTED') || raw.includes('auth failed'), 'the gap is redacted, not dropped');
+});
+
 test('R2: a non-canonical but legal scope spelling runs green end to end (no regression)', async () => {
   const cfg = config(); cfg.gate.writeScope = ['./src/**']; // dot-slash form of the fixture's src/**
   const { outcome } = await run('dotslash-scope', cfg);

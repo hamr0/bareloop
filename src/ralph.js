@@ -9,9 +9,19 @@ import { spawnSync } from 'node:child_process';
 /**
  * Run a close command; its exit code is the verdict (hard green, PRD §4).
  * 0 → satisfied; nonzero → needs_revision (gap fed back); spawn error → failed (terminal).
+ *
+ * `redact` scrubs the close's own output at the SOURCE — before the gap becomes
+ * a spine event or a worker prompt — so a secret a checked command echoes
+ * (a 401 dumping an `Authorization: Bearer …` header) never enters the
+ * append-only spine (the hard line). It is INJECTED, not imported: the shell
+ * stays stdlib-only and un-gameable, and the redactor is a fixed shell
+ * primitive (bareguard's, wired by the interpreter), never an emergent
+ * component — so V4 holds. The shell's canonical emission IS the redacted text;
+ * a benign gap is returned byte-identical (default: identity).
  * @param {string[]} close argv, e.g. ['node', '--test', 'close/']
+ * @param {(s: string) => string} [redact] source scrubber; identity by default
  */
-export function runClose(close) {
+export function runClose(close, redact = (s) => s) {
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT; // a `node --test` close inherits this from a test runner and silently no-ops — a fake green
   const r = spawnSync(close[0], close.slice(1), { env, encoding: 'utf8', timeout: 120_000 });
@@ -20,7 +30,8 @@ export function runClose(close) {
   // The gap must never be falsy: every consumer guards with `if (gap)` — an
   // empty-output red would silently kill gap feedback, after-red hooks, AND
   // stall detection, leaving the worker re-prompted byte-identically to the cap.
-  return { verdict: 'needs_revision', gap: (r.stderr || r.stdout || '').slice(0, 2000) || '(close exited nonzero with no output)', exitCode: r.status };
+  // Redact BEFORE slicing so a token straddling the 2000-char bound can't survive.
+  return { verdict: 'needs_revision', gap: redact(r.stderr || r.stdout || '').slice(0, 2000) || '(close exited nonzero with no output)', exitCode: r.status };
 }
 
 /**
@@ -42,9 +53,11 @@ export function runClose(close) {
  * @param {string[]} opts.close argv whose exit code is truth
  * @param {number} opts.capRuns budget: max middle runs
  * @param {(type: string, data?: object) => object} opts.emit a spine emitter
+ * @param {(s: string) => string} [opts.redact] source scrubber for close output
+ *   (secrets never enter the spine); injected so the shell stays stdlib-only
  * @returns {Promise<'green'|'escalated'>}
  */
-export async function ralph({ middle, close, capRuns, emit }) {
+export async function ralph({ middle, close, capRuns, emit, redact }) {
   emit('run-start', { capRuns, close: close.join(' ') });
   const verdicts = [];
   let gap;
@@ -77,7 +90,7 @@ export async function ralph({ middle, close, capRuns, emit }) {
       return 'escalated';
     }
     emit('middle-done', { iteration });
-    const v = runClose(close);
+    const v = runClose(close, redact);
     verdicts.push(v.verdict);
     emit('close-verdict', { iteration, ...v });
     if (v.verdict === 'satisfied') {

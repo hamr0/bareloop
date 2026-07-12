@@ -65,6 +65,13 @@ feature lands, **patch** = docs, fixes, scaffolding.
   on every config); a malformed fence reds `fence-invalid` at path `jobWriteScope`, not the
   innocent workflow field (no ledger misattribution), with the detail bounded. Shared
   `legalScopeEntry` gives the scope-legality law one home across all three call sites.
+- **Secrets never enter the spine (hard line), enforced at the source.** `runClose`
+  (`src/ralph.js`) scrubs close-command output the moment it is captured, so a secret a
+  checked command echoes (a 401 dumping a `Bearer …`/`sk-…` header) never reaches the
+  append-only spine or the next worker prompt. The redactor is injected (the shell stays
+  stdlib-only); `interpret` wires bareguard's exported `redact`. A benign gap is returned
+  byte-identical — the failure still reaches the human, just without the token (design
+  law #7 / V4 intact: the redactor is a fixed shell primitive, not an emergent component).
 - `NOTICE` ships in the tarball (npm auto-includes LICENSE/README but not NOTICE; Apache-2.0
   wants both) — found validating the installed 0.1.0 artifact.
 

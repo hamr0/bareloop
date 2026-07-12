@@ -9,7 +9,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { makeSpine } from '../src/spine.js';
-import { ralph } from '../src/ralph.js';
+import { ralph, runClose } from '../src/ralph.js';
 
 const noop = () => {};
 const dir = mkdtempSync(join(tmpdir(), 'ralph-test-'));
@@ -132,4 +132,36 @@ test('spine: reserved envelope keys (type/seq/ts) cannot be overridden by a spre
   assert.equal(ev.keep, 1, 'non-reserved payload keys pass through');
   assert.equal(Object.keys(ev).at(-1), 'ts', 'ts stays the final key');
   assert.ok(!Number.isNaN(Date.parse(ev.ts)), 'ts is the spine\'s stamp, not the payload\'s');
+});
+
+// ---- secrets never enter the spine (hard line): the shell scrubs close output
+// at the SOURCE, before gap becomes a spine event or a worker prompt. The
+// redactor is INJECTED (ralph stays stdlib-only); default is identity. ----
+
+test('runClose scrubs a secret from the gap via the injected redactor, before it is returned', () => {
+  const close = ['node', '-e', 'console.error("GET 401 Authorization: Bearer " + "sk-" + "ant-abcdefghijklmnop"); process.exit(1)'];
+  const redact = (x) => String(x).replace(/Bearer\s+sk-[\w-]+/g, 'Bearer [REDACTED]');
+  const v = runClose(close, redact);
+  assert.equal(v.verdict, 'needs_revision');
+  assert.ok(!v.gap.includes('sk-ant'), 'the token never survives into the gap');
+  assert.ok(v.gap.includes('[REDACTED]'));
+});
+
+test('runClose default redactor is identity — a benign gap is byte-identical (V4: the shell does not summarize)', () => {
+  const close = ['node', '-e', 'console.error("AssertionError: 5 !== 6"); process.exit(1)'];
+  const v = runClose(close);
+  assert.equal(v.gap.trimEnd(), 'AssertionError: 5 !== 6');
+});
+
+test('ralph threads the redactor into runClose so the spine close-verdict carries no secret', async () => {
+  const file = join(dir, 'scrub.jsonl');
+  // token built at runtime so it is NOT literal in the argv (run-start emits close.join(' ');
+  // a real close argv comes from the validator-swept job spec and cannot carry a secret)
+  const close = ['node', '-e', 'console.error("Bearer " + "sk-" + "live0123456789abcdef"); process.exit(1)'];
+  const redact = (x) => String(x).replace(/sk-[\w-]+/g, '[REDACTED]');
+  await ralph({ middle: noop, close, capRuns: 1, emit: makeSpine(file), redact });
+  const raw = readFileSync(file, 'utf8');
+  assert.ok(!raw.includes('sk-live'), 'no token anywhere on the spine');
+  const cv = raw.trimEnd().split('\n').map((l) => JSON.parse(l)).find((e) => e.type === 'close-verdict');
+  assert.ok(cv.gap.includes('[REDACTED]'));
 });

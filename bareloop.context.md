@@ -84,7 +84,10 @@ The dumb outer shell: `while close-red and under-cap: run the middle`. `close` i
 whose exit code is truth (`runClose` is also exported); the red gap text feeds the next
 iteration. Escalations are decision-ready (category, options, spend); cap-halt is its own
 category, never merged with "wrong". A thrown middle is relayed by its `category`
-property (`cap-halt`, `gate-red`, …); an unnamed throw is `interpreter-red`.
+property (`cap-halt`, `gate-red`, …); an unnamed throw is `interpreter-red`. Close output
+is scrubbed at capture (an injected `redact`, wired to bareguard by `interpret`) so a
+secret a checked command echoes never enters the append-only spine or a worker prompt —
+a benign gap is byte-identical (secrets hard line; design law #7 intact).
 
 ### `validateConfig(input, { shellCapUsd?, jobWriteScope? })` → `{ ok, reds, config }` — `src/validate.js`
 
