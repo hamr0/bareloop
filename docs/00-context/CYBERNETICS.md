@@ -92,14 +92,38 @@ regularity to all arms through the close channel — and it did (F14, §4b).
 
 ## The VSM ladder in full (Davies 2024, ch. 5 "Cybernetics Without Diagrams") — completes mapping 5
 
-Davies' plain-English decomposition: a viable organization is five interlocking subsystems —
-S1 operations (the doers), S2 regulation (the schedulers: anti-friction protocols between S1
-units), S3 here-and-now optimization (efficiency, metrics, the present), S4 there-and-then
-intelligence (the environment, the future), S5 identity (who we are; the anchor that manages
-the S3↔S4 tension) — plus two dynamics: **variety engineering** (attenuate upward, amplify
-the front line) and **S5 collapse** (when identity is hollowed out to a single metric, S3
-optimizes without constraint, S4 is disempowered, and the organization becomes a blind,
-unaccountable machine). Mapping 5 above used S1/S3/S4/S5; the full ladder adds three things
+Davies' plain-English decomposition: a viable organization is five interlocking subsystems.
+The block, one per step — role, Davies' key question, and where it lives in this machinery:
+
+1. **S1 — Operations (the doers).** The front-line units that execute the mission and make
+   real changes: coders, cashiers, musicians. *"What value are we creating right now?"*
+   **Here:** the worker — the sealed model call inside the middle that writes the artifact.
+2. **S2 — Regulation (the schedulers).** The stabilizer: anti-friction protocols and
+   resource-sharing conventions between S1 units so the doers don't trip over each other —
+   HR, scheduling software, "administrative rules the doers agree prevent chaos."
+   *"Are the units coordinated without friction?"* **Here:** structurally absent and
+   structurally unneeded in adaptlearn (one process, one S1, sequential runs — no
+   "between" exists); the validator and slot rules are proto-S2 at most. bareloop's
+   multi-step jobs create the first genuine S2 demand → V7 `coordination-red`, §5a.
+3. **S3 — Optimization (here-and-now management).** Middle management: optimizes the
+   present operation for efficiency, metrics, short-term performance.
+   *"Are we running as efficiently as possible today?"* **Here:** cost ranking across
+   green runs (the ledger's cost column) — legal ONLY because it never touches verdict.
+4. **S4 — Intelligence (there-and-then strategy).** The outward radar: anticipates the
+   environment's future — R&D, strategists, planners. *"What changes are coming that we
+   must prepare for?"* **Here:** the across-run learning loops — mutation, verdict-gated
+   inheritance, menu admission — adapting the harness to disturbances the current config
+   can't absorb.
+5. **S5 — Identity (the balancing anchor).** Defines who we are and what counts as done;
+   manages the permanent S3↔S4 tension (efficiency vs adaptation). *"Who are we, and what
+   is our ultimate purpose?"* **Here:** the close and the human behind it — verdict is
+   identity territory, held outside the emergent part permanently ("the agent never
+   authors its arbiter").
+
+Plus two dynamics: **variety engineering** (attenuate upward, amplify the front line) and
+**S5 collapse** (when identity is hollowed out to a single metric, S3 optimizes without
+constraint, S4 is disempowered, and the organization becomes a blind, unaccountable
+machine). Mapping 5 above used S1/S3/S4/S5; the full ladder adds three things
 this project can actually use:
 
 ### 5a. System 2 is the successor's missing subsystem `[predicts → V7]`
@@ -144,6 +168,11 @@ earned instances that postdate this frame's registration:
   callers gave the worker false confidence of completeness and it discarded true feedback
   (attribution poisoning). Amplifiers must be exhaustive over their declared scope or
   declare their truncation (cf. the ledger doctrine: ABSENT, not fabricated).
+  *(Retro-read 2026-07-12, F23: the poisoning mechanism FAILED REPLICATION under the fixed
+  instrument — single contaminated cell; narrow-arm failure is hunting, not dismissal
+  (Wiener, below). The declared-truncation rule tested NULL → hygiene, never load-bearing.
+  The amplification half stands: wide-menu value = the whole constraint set at once,
+  convergence@1, narrow 0/9 pooled vs wide green@1 6/6.)*
 - **Attenuation = the upstream ledger.** The fold (dedupe by lib:verb:class:signature,
   counts, three samples) is an attenuator designed against Beer's question in the toolbox
   entry below — *what information is destroyed, and does anything downstream need it?* —
