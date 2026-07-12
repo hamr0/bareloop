@@ -173,3 +173,18 @@ Loop + Gate (machinery negatives drive the real code path, never a replica — P
 out-of-scope write REDS through the policy path, the denial streak stops the loop, and
 an unpriced round surfaces as `unpricedRounds > 0`, never $0. Each negative must be able
 to fail.
+
+**POC result (same day, `poc/n2-tool-middle.mjs`, 6/6):** all scenarios hold, including
+the two controls that could have falsified the design note: **(B)** WITHOUT the
+translator the identical out-of-scope write sails through and lands on disk — the two
+should-differ conditions differ, so the translator is proven load-bearing, not asserted;
+**(F)** a relative path from the worker resolves against `process.cwd()` (the tool's own
+semantics), NOT the workdir — the translator must resolve exactly as the tool does or
+the fence and the executor disagree about which file is meant. Consequence for the
+middle: the worker prompt instructs absolute paths; a relative spelling reds at the
+fence and the deny reason teaches the retry. Also confirmed: `readScope` denies an
+out-of-tree read (`/etc/hostname`) while serving workdir files — the stray-read secrets
+channel is closable with one Gate field; the denial streak returns `denied:shell_write`
+after 3 without burning to the cap; all-unpriced tool runs report `costUsd: null` (never
+$0) and a partially-unpriced run keeps `unpricedRounds` visible (F6 carries over with
+zero new machinery).
