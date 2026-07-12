@@ -11,9 +11,9 @@
 
 import { COMPRESS_LEVELS, KINDS, WRITE_KINDS } from 'litectx';
 
-export const LOOP_SHAPES = ['refine', 'plan'];
-export const SLOTS = ['before-attempt', 'after-red', 'on-green'];
-export const VERBS = ['recall', 'compress', 'stash', 'remember'];
+export const LOOP_SHAPES = Object.freeze(['refine', 'plan']);
+export const SLOTS = Object.freeze(['before-attempt', 'after-red', 'on-green']);
+export const VERBS = Object.freeze(['recall', 'compress', 'stash', 'remember']);
 const TOP_FIELDS = ['schema', 'loop', 'memory', 'hooks', 'gate', 'escalation'];
 const MAX_OPS_PER_SLOT = 2;
 
@@ -40,7 +40,15 @@ const VERB_PARAMS = {
  * @param {string} scope
  */
 export function globToPrefix(scope) {
-  return scope.replace(/\/\*\*?$/, '');
+  let p = scope.replace(/\/\*\*?$/, '');
+  // One canonical spelling for equivalent paths — leading "./", interior "/./",
+  // doubled "//", trailing "/" all collapse — so the legality rule, the fence
+  // comparison, and bareguard enforcement agree on what a scope NAMES. Without
+  // this, a validateJob-green fence like "src/" would reject every workflow
+  // scope inside it (the F9 red-class across two documents).
+  while (p.startsWith('./')) p = p.slice(2);
+  p = p.replace(/\/\.(?=\/|$)/g, '').replace(/\/{2,}/g, '/').replace(/\/+$/, '');
+  return p;
 }
 
 /**
@@ -72,8 +80,39 @@ const VERB_SLOT = { recall: 'before-attempt', compress: 'before-attempt', stash:
 function isKinds(v) {
   return Array.isArray(v) && v.length > 0 && v.every((k) => KINDS.includes(k));
 }
-function isObj(v) {
+/** Shared with the job validator — one definition of "a JSON object" for both
+ * documents (the sibling-validator drift class).
+ * @param {unknown} v */
+export function isObj(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
+}
+/** @param {unknown} v */
+export function isNonEmptyString(v) {
+  return typeof v === 'string' && v.length > 0;
+}
+
+// Secrets never enter the tree/spine/configs (hard line) — BOTH config
+// documents get the same sweep: the agent-authored workflow config is the
+// riskier entry point (machine-written), the operator's job spec the other.
+// Known token shapes only, left-bounded so hyphenated words ("flask-sqlalchemy")
+// never red — defense-in-depth; env-only loading is the law, not this regex.
+const SECRET_RE = /(?<![A-Za-z0-9])(sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|xox[bap]-[A-Za-z0-9-]{10,})/;
+
+/**
+ * Red every string in a config tree that carries a known secret-token shape.
+ * @param {any} root
+ * @param {(code: string, path: string, detail?: string) => void} red
+ */
+export function sweepSecretLiterals(root, red) {
+  (/** @type {(node: any, at: string) => void} */
+  function sweep(node, at) {
+    if (typeof node === 'string') {
+      if (SECRET_RE.test(node)) red('secret-literal', at, 'secrets load from the environment; an append-only record that captures a key captures it forever');
+      return;
+    }
+    if (Array.isArray(node)) node.forEach((v, i) => sweep(v, `${at}.${i}`));
+    else if (isObj(node)) for (const [k, v] of Object.entries(node)) sweep(v, at ? `${at}.${k}` : k);
+  })(root, '');
 }
 
 /**
@@ -136,7 +175,7 @@ export function validateConfig(input, { shellCapUsd = 2, jobWriteScope } = {}) {
   }
   if (gate.writeScope === undefined) red('missing-required', 'gate.writeScope');
   else if (!(Array.isArray(gate.writeScope) && gate.writeScope.length > 0
-             && gate.writeScope.every((s) => typeof s === 'string' && s.length > 0))) {
+             && gate.writeScope.every(isNonEmptyString))) {
     red('invalid-value', 'gate.writeScope', 'non-empty array of glob strings');
   } else if (!gate.writeScope.every((s) => !globToPrefix(s).includes('*'))) {
     // adaptlearn F9: enforcement (bareguard fs.writeScope) is prefix-containment — a wildcard
@@ -147,17 +186,25 @@ export function validateConfig(input, { shellCapUsd = 2, jobWriteScope } = {}) {
     // A scope that can reach the arbiter's inputs is the config-level
     // fit-to-pass surface (design law #1). Reds-before-tokens.
     red('invalid-value', 'gate.writeScope', 'must be a proper subdirectory of the run directory — no absolute paths, no ".." segments, not the run dir itself (design law #1)');
-  } else if (Array.isArray(jobWriteScope)) {
+  } else if (jobWriteScope !== undefined) {
     // Two-layer fence: the job spec's writeScope is operator law; the authored
     // config may tighten it, never exceed it (the budget pattern, on paths).
-    // Boundary-aware: "src2" is not inside "src" — prefix means PATH prefix.
-    const strip = (/** @type {string} */ p) => p.replace(/^\.\//, '');
-    const fence = jobWriteScope.map((s) => strip(globToPrefix(s)));
-    const inside = (/** @type {string} */ p) => fence.some((f) => p === f || p.startsWith(f + '/'));
-    for (const s of gate.writeScope) {
-      if (!inside(strip(globToPrefix(s)))) {
-        red('scope-escape', 'gate.writeScope', `"${s}" is outside the job's fence [${jobWriteScope.join(', ')}] — the workflow may tighten the operator's bound, never exceed it`);
-      }
+    // The fence itself is caller input and gets no trust: a fence the job
+    // validator would reject fails CLOSED with its own red — never silently
+    // skipped (fail-open), never a lying scope-escape.
+    const fenceOk = Array.isArray(jobWriteScope) && jobWriteScope.length > 0
+      && jobWriteScope.every((s) => isNonEmptyString(s) && !globToPrefix(s).includes('*') && scopeContained(s));
+    if (!fenceOk) {
+      red('fence-invalid', 'gate.writeScope', `jobWriteScope is not a validateJob-green fence (${JSON.stringify(jobWriteScope)}) — nothing validates against a fence the job validator would reject`);
+    } else {
+      // Boundary-aware: "src2" is not inside "src" — prefix means PATH prefix.
+      const fence = jobWriteScope.map(globToPrefix);
+      const inside = (/** @type {string} */ p) => fence.some((f) => p === f || p.startsWith(f + '/'));
+      gate.writeScope.forEach((/** @type {string} */ s, /** @type {number} */ i) => {
+        if (!inside(globToPrefix(s))) {
+          red('scope-escape', `gate.writeScope.${i}`, `"${s}" is outside the job's fence [${jobWriteScope.join(', ')}] — the workflow may tighten the operator's bound, never exceed it`);
+        }
+      });
     }
   }
 
@@ -192,6 +239,10 @@ export function validateConfig(input, { shellCapUsd = 2, jobWriteScope } = {}) {
       });
     }
   }
+
+  // 5. secrets sweep — same guard as the job spec (the agent-authored document
+  // is the riskier one; a green config is a ledger fact and inherits forever)
+  sweepSecretLiterals(c, red);
 
   return { ok: reds.length === 0, reds, config: reds.length === 0 ? c : null };
 }

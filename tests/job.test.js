@@ -9,7 +9,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateJob, jobSpecHash, checkApproval } from '../src/job.js';
+import { validateJob, jobSpecHash, checkApproval, CLASS_BY_CLOSE, CLOSE_TYPES, CLASSES } from '../src/job.js';
 import { validateConfig } from '../src/validate.js';
 
 // Job #1 exactly as the PRD §6 defines it — real target, not a fixture
@@ -112,6 +112,10 @@ const RED_CASES = [
   ['hitl close without a prompt', (j) => { delete j.steps[2].close.prompt; }, 'missing-required:steps.2.close.prompt'],
   ['predicate expect not an exit code', (j) => { j.steps[0].close.expect = 'zero'; }, 'invalid-value:steps.0.close.expect'],
 
+  // -- nested smuggle channels (review F1: every level reds unknown keys, not just some) --
+  ['unknown field inside cadence', (j) => { j.cadence.exfil = 'x'; }, 'unknown-field:cadence.exfil'],
+  ['unknown field inside escalation', (j) => { j.escalation.webhook = 'http://evil'; }, 'unknown-field:escalation.webhook'],
+
   // -- secrets (defense-in-depth: known literal shapes; env-only loading stays the hard line) --
   ['inline API key in the description', (j) => { j.description = 'use key sk-ant-api03-abcdefghijklmnop to auth'; }, 'secret-literal:description'],
   ['token smuggled deep in a close cmd', (j) => { j.steps[0].close.cmd = 'GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuv npm test'; }, 'secret-literal:steps.0.close.cmd'],
@@ -126,6 +130,38 @@ for (const [name, fn, want] of RED_CASES) {
     assert.equal(r.job, null);
   });
 }
+
+test('hyphenated words containing "sk-"/"pat_" shapes do not red (review: SECRET_RE left boundary)', () => {
+  const r = validateJob(mut((j) => { j.description = 'migrate the flask-sqlalchemy-based models and task-1234567890abcdefgh queues'; }));
+  assert.deepEqual(r.reds, []);
+});
+
+test('the returned job is the same reference AND survives a fresh-copy comparison (review: no aliasing tautology)', () => {
+  const fresh = clone(JOB1);
+  const r = validateJob(JOB1);
+  assert.equal(r.job, JOB1, 'reference echo is the contract');
+  assert.deepEqual(r.job, fresh, 'validation must not mutate the spec');
+});
+
+test('hash follows JSON semantics: a key explicitly set to undefined hashes like its disk round-trip (review: approval survives save/reload)', () => {
+  const j = clone(JOB1);
+  j.conditions = undefined;
+  assert.equal(jobSpecHash(j), jobSpecHash(JSON.parse(JSON.stringify(j))));
+});
+
+test('jobSpecHash never throws on JSON-representable garbage; checkApproval never throws on ANY garbage (review: N2 runner gets false, not a crash)', () => {
+  assert.match(jobSpecHash(undefined), /^[0-9a-f]{64}$/);
+  assert.match(jobSpecHash(null), /^[0-9a-f]{64}$/);
+  assert.equal(checkApproval({ a: 1n }, [{ specHash: 'x' }]), false, 'BigInt spec → false, not a serialize throw');
+  assert.equal(checkApproval(undefined, [{ specHash: 'x' }]), false);
+});
+
+test('the arbiter menus are frozen — verdict-class laundering cannot be enabled by mutation (review)', () => {
+  assert.ok(Object.isFrozen(CLASS_BY_CLOSE) && Object.isFrozen(CLASS_BY_CLOSE.rubric) && Object.isFrozen(CLOSE_TYPES) && Object.isFrozen(CLASSES));
+  assert.throws(() => { CLASS_BY_CLOSE.rubric.push('hard'); }, TypeError);
+  const r = validateJob(mut((j) => { j.steps[1].close = { type: 'rubric', criteria: 'looks good' }; j.steps[1].class = 'hard'; }));
+  assert.equal(r.reds[0].code, 'close-hierarchy', 'the hierarchy still holds after the mutation attempt');
+});
 
 test('an env REFERENCE in a close cmd does not red — only literals do', () => {
   const r = validateJob(mut((j) => { j.steps[0].close.cmd = 'GITHUB_TOKEN="$GITHUB_TOKEN" npm test'; }));
@@ -175,7 +211,7 @@ test('workflow scope inside the job fence passes; outside reds scope-escape', ()
   assert.deepEqual(equal.reds, []);
   const outside = validateConfig({ ...WF, gate: { budgetUsd: 1, writeScope: ['docs/**'] } }, { jobWriteScope: JOB1.writeScope });
   assert.equal(outside.ok, false);
-  assert.equal(`${outside.reds[0].code}:${outside.reds[0].path}`, 'scope-escape:gate.writeScope');
+  assert.equal(`${outside.reds[0].code}:${outside.reds[0].path}`, 'scope-escape:gate.writeScope.0');
 });
 
 test('prefix-boundary trap: src2/** is NOT inside src/** (string prefix is not path prefix)', () => {

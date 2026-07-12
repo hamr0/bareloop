@@ -12,4 +12,13 @@ reds have different resolutions and must not be collapsed (PRD addendum v1.1 §3
 Format per entry: **which package · what's missing/broken · the run/finding that surfaced
 it · the fix (upstream commit/PR) · the version bareloop consumed.**
 
-*(Empty — nothing filed yet from this repo.)*
+## OPEN — bareguard: export the secret-token patterns (or a `detect()`)
+
+**Which:** bareguard · **What's missing:** bareguard redacts secret values (internal
+`DEFAULT_SECRET_VALUE_PATTERNS`, unexported) while bareloop's validators now red on
+secret literals with their own `SECRET_RE` (`src/validate.js`) — two secret vocabularies
+in one product that will drift as token shapes get added to one and not the other.
+**Surfaced by:** N1 code-review (reuse angle, 2026-07-12; the review also caught the two
+regexes already differing in class spelling). **Ask:** export the patterns (or a
+`detect(string) → boolean`) so bareloop binds them the way `validate.js` binds litectx's
+`WRITE_KINDS` — the adaptlearn-F5 pattern. **Fix:** unfiled. **Consumed:** —

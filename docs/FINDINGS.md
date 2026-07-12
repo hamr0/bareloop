@@ -159,6 +159,23 @@ predicate/gold→hard, rubric→soft only, hitl⇔hitl — so verdict-class laun
 (rubric-as-hard) is a named red, `close-hierarchy`. The `{ok, reds, config}` API change
 absorbs cleanly as `{ok, reds, job}` (normalized spec returned, single parse).
 
+> **Review addendum (2026-07-12, post-build /code-review medium, 8 agent angles +
+> execution-verified):** the POC's claim held where it was attacked and failed where it
+> wasn't — every one of the 8 findings sat on an edge the POC never adversarially probed:
+> nested objects (cadence/escalation accepted unknown keys — the one smuggling level left
+> open), the fence OPTION's own input (non-array fence failed OPEN; malformed fence lied
+> scope-escape), cross-document spelling equivalence ('src/' fence deadlocked contained
+> configs — normalization now lives in the shared globToPrefix), canon-vs-JSON semantics
+> (approval hash diverged across a disk round-trip; checkApproval could throw), SECRET_RE's
+> missing left boundary (flask-sqlalchemy redded), the fence not reaching interpret (the
+> choke point where the Gate is built), no sweep on the AGENT-authored config, and
+> aliasing-tautological deepEquals in the new tests. All fixed test-first (13 new failing
+> tests → 143/143), 5 fresh mutations killed exactly their targets, and the original
+> feature batteries stayed green through every fix — detection still detects, containment
+> still contains. Process lesson worth its line: mutation testing proves the checks you
+> WROTE can fail; it cannot see the checks you never wrote — adversarial review is the
+> complement, not a repeat.
+
 **Bounded claims + surfaced design questions (N1 interview, not POC scope):**
 (1) the secrets sweep is a literal-pattern deny — it catches known token shapes
 (sk-/ghp_/AKIA/xox…) and passed its false-positive probe, but a novel or encoded secret

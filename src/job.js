@@ -14,19 +14,22 @@
 // judgment call. Minting policy is product doctrine, not job-authorable.
 
 import { createHash } from 'node:crypto';
-import { globToPrefix, scopeContained } from './validate.js';
+import { globToPrefix, scopeContained, isObj, isNonEmptyString, sweepSecretLiterals } from './validate.js';
 
-export const CLOSE_TYPES = ['predicate', 'gold', 'rubric', 'hitl'];
-export const CLASSES = ['hard', 'soft', 'hitl'];
+// The menus below ARE the close-authoring hierarchy (PRD §7) and ship frozen:
+// they are read at call time, so a mutable export would let adopter code
+// enable verdict-class laundering process-wide with one push().
+export const CLOSE_TYPES = Object.freeze(['predicate', 'gold', 'rubric', 'hitl']);
+export const CLASSES = Object.freeze(['hard', 'soft', 'hitl']);
 /** the hierarchy: which verdict classes a close type may claim (PRD §7) */
-export const CLASS_BY_CLOSE = { predicate: ['hard'], gold: ['hard'], rubric: ['soft'], hitl: ['hitl'] };
-export const GOLD_COMPARE = ['exact', 'json-equal'];
-export const CADENCE_UNITS = ['hour', 'day', 'week'];
-export const PROVIDERS = ['anthropic-api']; // SP-2: API-first; local deferred (PRD §5/§8)
+export const CLASS_BY_CLOSE = Object.freeze({ predicate: Object.freeze(['hard']), gold: Object.freeze(['hard']), rubric: Object.freeze(['soft']), hitl: Object.freeze(['hitl']) });
+export const GOLD_COMPARE = Object.freeze(['exact', 'json-equal']);
+export const CADENCE_UNITS = Object.freeze(['hour', 'day', 'week']);
+export const PROVIDERS = Object.freeze(['anthropic-api']); // SP-2: API-first; local deferred (PRD §5/§8)
 /** V3 environment label: declared keys only — every field is a lineage-key
  * candidate at N3. `provider` is part of the key by definition (top-level,
  * not duplicated here). */
-export const CONDITION_KEYS = ['providerPath', 'closeVerbosity', 'taskFraming', 'scaffold'];
+export const CONDITION_KEYS = Object.freeze(['providerPath', 'closeVerbosity', 'taskFraming', 'scaffold']);
 const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'conditions', 'cadence', 'budgetUsd', 'writeScope', 'steps', 'escalation'];
 /** exact field set per close type — anything else is an unknown-field red
  * (freeform code, script bodies, and minting claims all land there) */
@@ -36,20 +39,7 @@ const CLOSE_FIELDS = {
   rubric: ['type', 'criteria'],
   hitl: ['type', 'prompt'],
 };
-// Secrets never enter the tree/spine/configs (hard line). Known token shapes
-// only — defense-in-depth, never the defense (env-only loading is the law;
-// a novel or encoded secret passes this sweep, stated in F4 as a bounded claim).
-const SECRET_RE = /(sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|xox[bap]-[A-Za-z0-9-]{10,})/;
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
-
-/** @param {unknown} v */
-function isObj(v) {
-  return v !== null && typeof v === 'object' && !Array.isArray(v);
-}
-/** @param {unknown} v */
-function isNonEmptyString(v) {
-  return typeof v === 'string' && v.length > 0;
-}
 
 /** @typedef {{code: string, path: string, detail?: string}} Red */
 
@@ -104,6 +94,9 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
   if (spec.cadence === undefined) red('missing-required', 'cadence');
   else {
     const cad = isObj(spec.cadence) ? spec.cadence : {};
+    for (const key of Object.keys(cad)) {
+      if (key !== 'unit' && key !== 'every') red('unknown-field', `cadence.${key}`, 'nested objects red unknown keys too — no smuggling level exists in a signed spec');
+    }
     if (!CADENCE_UNITS.includes(cad.unit)) red('invalid-value', 'cadence.unit', CADENCE_UNITS.join('|'));
     if (!(Number.isInteger(cad.every) && cad.every >= 1 && cad.every <= 30)) red('bounds', 'cadence.every', '1..30');
   }
@@ -126,9 +119,14 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
     red('invalid-value', 'writeScope', 'must be a proper subdirectory of the run directory — no absolute paths, no ".." segments, not the run dir itself (design law #1)');
   }
 
-  const esc = isObj(spec.escalation) ? spec.escalation : {};
   if (spec.escalation === undefined) red('missing-required', 'escalation.mode', 'the pain channel is not optional (law #7)');
-  else if (esc.mode !== 'decision-ready') red('invalid-value', 'escalation.mode', 'must be "decision-ready"');
+  else {
+    const esc = isObj(spec.escalation) ? spec.escalation : {};
+    for (const key of Object.keys(esc)) {
+      if (key !== 'mode') red('unknown-field', `escalation.${key}`, 'nested objects red unknown keys too — no smuggling level exists in a signed spec');
+    }
+    if (esc.mode !== 'decision-ready') red('invalid-value', 'escalation.mode', 'must be "decision-ready"');
+  }
 
   // 4. steps + the close chain
   if (!Array.isArray(spec.steps) || spec.steps.length === 0) {
@@ -175,22 +173,15 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
       // close type's menu is laundering (rubric-as-hard) or delegation
       // (hitl-class on a script close); hitl ⇔ hitl falls out of the menus.
       const legal = CLASS_BY_CLOSE[close.type];
-      if (s.class !== undefined && CLASSES.includes(s.class) && !legal.includes(s.class)) {
+      if (CLASSES.includes(s.class) && !legal.includes(s.class)) {
         red('close-hierarchy', `${at}.class`, `${close.type} close admits class ${legal.join('|')} only (a rubric can never be hard; a human IS the hitl close — PRD §7)`);
       }
     });
   }
 
-  // 5. secrets sweep — every string in the tree (defense-in-depth; see SECRET_RE note)
-  (/** @type {(node: any, at: string) => void} */
-  function sweep(node, at) {
-    if (typeof node === 'string') {
-      if (SECRET_RE.test(node)) red('secret-literal', at, 'secrets load from the environment; an append-only record that captures a key captures it forever');
-      return;
-    }
-    if (Array.isArray(node)) node.forEach((v, i) => sweep(v, `${at}.${i}`));
-    else if (isObj(node)) for (const [k, v] of Object.entries(node)) sweep(v, at ? `${at}.${k}` : k);
-  })(spec, '');
+  // 5. secrets sweep — the SAME shared guard the workflow validator runs
+  // (defense-in-depth against known token shapes; env-only loading is the law)
+  sweepSecretLiterals(spec, red);
 
   return { ok: reds.length === 0, reds, job: reds.length === 0 ? spec : null };
 }
@@ -202,11 +193,17 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
  * @returns {string}
  */
 function canon(v) {
-  if (Array.isArray(v)) return `[${v.map(canon).join(',')}]`;
+  if (Array.isArray(v)) return `[${v.map((x) => (x === undefined ? 'null' : canon(x))).join(',')}]`;
   if (isObj(v)) {
-    return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canon(/** @type {Record<string, any>} */ (v)[k])}`).join(',')}}`;
+    const obj = /** @type {Record<string, any>} */ (v);
+    // undefined-valued keys are dropped, exactly as JSON.stringify drops them —
+    // the in-memory spec and its disk round-trip MUST hash identically, or an
+    // approval minted before save fails after reload (human-signs-always
+    // rejecting an unedited spec).
+    return `{${Object.keys(obj).sort().filter((k) => obj[k] !== undefined).map((k) => `${JSON.stringify(k)}:${canon(obj[k])}`).join(',')}}`;
   }
-  return JSON.stringify(v);
+  const s = JSON.stringify(v);
+  return s === undefined ? 'null' : s; // undefined/function root: not JSON-representable — hash as null, never throw
 }
 
 /**
@@ -231,6 +228,7 @@ export function jobSpecHash(job) {
  */
 export function checkApproval(job, approvals) {
   if (!Array.isArray(approvals)) return false;
-  const h = jobSpecHash(job);
+  let h;
+  try { h = jobSpecHash(job); } catch { return false; } // a non-JSON spec (BigInt, cycles) can never round-trip an approval — false, never a crash
   return approvals.some((a) => isObj(a) && /** @type {Record<string, unknown>} */ (a).specHash === h);
 }

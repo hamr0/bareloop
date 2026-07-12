@@ -45,6 +45,10 @@ const PERSONA = 'You are a senior engineer. Reply with ONLY the complete content
  * @param {(type: string, data?: object) => object} opts.emit spine emitter
  * @param {object} opts.provider a bareagent provider — SHELL-owned binding (adaptlearn F8: an unsealed binding is a gate bypass)
  * @param {number} [opts.shellCapUsd=2] the shell's USD cap; config budgetUsd is clamped by validation
+ * @param {string[]} [opts.jobWriteScope] the job spec's outer write fence (operator law,
+ *        job-v1) — enforced HERE, the one choke point where a config becomes a Gate:
+ *        every workflow scope must fit inside it (scope-escape config-red otherwise),
+ *        on entry validation and on every revision candidate alike
  * @param {(o: {config: object, gaps: string[], policy: any, onLlmResult: any}) => Promise<{candidate: object|null, parseError?: string|null, costUsd?: number}>} [opts.revisor]
  *        optional mid-run revision seam. Fires ONCE per run after STALL_REDS consecutive
  *        close reds. The interpreter — never the revisor — owns acceptance: the candidate
@@ -54,8 +58,8 @@ const PERSONA = 'You are a senior engineer. Reply with ONLY the complete content
  *        the worker.
  * @returns {Promise<'green'|'escalated'|'config-red'>}
  */
-export async function interpret(configRaw, { task, target, close, workdir, capRuns, emit, provider, shellCapUsd = 2, revisor }) {
-  const v = validateConfig(configRaw, { shellCapUsd });
+export async function interpret(configRaw, { task, target, close, workdir, capRuns, emit, provider, shellCapUsd = 2, jobWriteScope, revisor }) {
+  const v = validateConfig(configRaw, { shellCapUsd, jobWriteScope });
   emit('config-validate', { ok: v.ok, reds: v.reds });
   if (!v.ok) {
     for (const r of v.reds) emit('config-red', r);
@@ -139,17 +143,22 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   // already snapshotted, so gate/escalation (arbiter) and loop.maxIterations
   // (cap) must be byte-identical; anything else that validates is a legal
   // free-axis revision.
-  /** @param {any} candidate */
+  /** @param {any} candidate
+   *  @returns {{ red: {code: string, reds?: object[]} } | { red?: undefined, config: any }} */
   const acceptRevision = (candidate) => {
-    if (!candidate) return { code: 'parse-error' };
-    const cv = validateConfig(candidate, { shellCapUsd });
-    if (!cv.ok) return { code: 'validation', reds: cv.reds };
-    if (JSON.stringify(candidate.gate) !== JSON.stringify(config.gate)
-        || JSON.stringify(candidate.escalation) !== JSON.stringify(config.escalation)) {
-      return { code: 'arbiter-touch' };
+    if (!candidate) return { red: { code: 'parse-error' } };
+    const cv = validateConfig(candidate, { shellCapUsd, jobWriteScope });
+    if (!cv.ok) return { red: { code: 'validation', reds: cv.reds } };
+    // judged and installed on the PARSED form (single-parse contract) — a
+    // string candidate compared raw would false-red arbiter-touch (its .gate
+    // is undefined), and installing it raw would crash every later read
+    const cand = /** @type {any} */ (cv.config);
+    if (JSON.stringify(cand.gate) !== JSON.stringify(config.gate)
+        || JSON.stringify(cand.escalation) !== JSON.stringify(config.escalation)) {
+      return { red: { code: 'arbiter-touch' } };
     }
-    if (candidate.loop?.maxIterations !== config.loop.maxIterations) return { code: 'cap-touch' };
-    return null;
+    if (cand.loop?.maxIterations !== config.loop.maxIterations) return { red: { code: 'cap-touch' } };
+    return { config: cand };
   };
 
   /** @type {string[]} */
@@ -174,12 +183,12 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
         if (e instanceof HaltError) /** @type {CategorizedError} */ (e).category = 'cap-halt';
         throw e;
       }
-      const red = acceptRevision(rv.candidate);
-      if (red) {
-        emit('revision-red', { iteration, ...red, detail: rv.parseError ?? undefined, costUsd: rv.costUsd ?? 0 });
+      const rr = acceptRevision(rv.candidate);
+      if (rr.red) {
+        emit('revision-red', { iteration, ...rr.red, detail: rv.parseError ?? undefined, costUsd: rv.costUsd ?? 0 });
       } else {
-        emit('revision-accepted', { iteration, changedPaths: diffPaths(config, rv.candidate), costUsd: rv.costUsd ?? 0 });
-        config = rv.candidate;
+        emit('revision-accepted', { iteration, changedPaths: diffPaths(config, rr.config), costUsd: rv.costUsd ?? 0 });
+        config = rr.config;
       }
     }
     if (gap) await runOps('after-red', { iteration, gap, context: {} });

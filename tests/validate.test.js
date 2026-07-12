@@ -16,7 +16,50 @@ const load = (name) => JSON.parse(readFileSync(join(fixtures, name), 'utf8'));
 test('valid fixture passes with zero reds and returns the parsed config (N1: single parse)', () => {
   const valid = load('valid.json');
   const r = validateConfig(valid);
-  assert.deepEqual(r, { ok: true, reds: [], config: valid });
+  assert.equal(r.config, valid, 'reference echo is the contract for object input');
+  assert.deepEqual(r, { ok: true, reds: [], config: load('valid.json') }, 'fresh-copy compare: validation must not mutate the config');
+});
+
+// ---- review fixes: the two-layer fence is normalized, fail-closed, and indexed ----
+
+test('equivalent scope spellings agree across the layers (one normalize in globToPrefix)', () => {
+  const wf = (scope) => ({ ...load('valid.json'), gate: { budgetUsd: 1, writeScope: [scope] } });
+  // a validateJob-green fence with a trailing slash must not deadlock every workflow config
+  assert.deepEqual(validateConfig(wf('src/**'), { jobWriteScope: ['src/'] }).reds, []);
+  // spellings scopeContained explicitly allows fit a plain fence
+  assert.deepEqual(validateConfig(wf('././src/**'), { jobWriteScope: ['src/**'] }).reds, []);
+  assert.deepEqual(validateConfig(wf('src/./gen/**'), { jobWriteScope: ['src/**'] }).reds, []);
+});
+
+test('a malformed fence fails CLOSED with its own red — never silently dropped, never a lying scope-escape', () => {
+  const cfg = load('valid.json');
+  // non-array fence: enforcement must not be skippable by a caller bug
+  const asString = validateConfig(cfg, { jobWriteScope: 'src/**' });
+  assert.equal(asString.ok, false);
+  assert.equal(asString.reds[0].code, 'fence-invalid');
+  // fence entries validateJob would reject: distinct red, not scope-escape
+  for (const fence of [['.'], ['./**'], ['../x/**'], ['src/*/gen/**'], ['/abs/**'], [''], [42]]) {
+    const r = validateConfig(cfg, { jobWriteScope: fence });
+    assert.equal(r.ok, false, `${JSON.stringify(fence)} must red`);
+    assert.equal(r.reds[0].code, 'fence-invalid', `${JSON.stringify(fence)} → fence-invalid, got ${JSON.stringify(r.reds)}`);
+  }
+});
+
+test('each escaping scope reds at its own indexed path (spine pins code:path per defect)', () => {
+  const cfg = load('valid.json');
+  cfg.gate.writeScope = ['src/**', 'docs/**', 'infra/**'];
+  const r = validateConfig(cfg, { jobWriteScope: ['src/**'] });
+  assert.deepEqual(r.reds.map((x) => `${x.code}:${x.path}`), ['scope-escape:gate.writeScope.1', 'scope-escape:gate.writeScope.2']);
+});
+
+// ---- review fix: the secrets sweep guards BOTH config documents ----
+
+test('a token literal anywhere in a workflow config reds secret-literal (the agent-authored doc is the riskier one)', () => {
+  const cfg = load('valid.json');
+  cfg.gate.writeScope = ['src/ghp_abcdefghijklmnopqrstuv/**'];
+  const r = validateConfig(cfg);
+  assert.equal(r.ok, false);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'secret-literal:gate.writeScope.0');
 });
 
 test('raw invalid JSON → parse-error red', () => {

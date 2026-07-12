@@ -194,6 +194,26 @@ test('interpreter crash mid-run → interpreter-red, never masquerading as bad h
 
 const stalling = () => ({ script: [{ text: BAD_SUM }], capRuns: 3 }); // reds forever under cap 3
 
+// ---- review fixes: the fence reaches the choke point; revision accepts what validation validated ----
+
+test('interpret enforces the job fence: workflow scope outside jobWriteScope → config-red, zero tokens', async () => {
+  const { outcome, events, provider } = await run('fence-choke', config(), { jobWriteScope: ['docs/**'] });
+  assert.equal(outcome, 'config-red');
+  assert.ok(events.some((e) => e.type === 'config-red' && e.code === 'scope-escape'));
+  assert.equal(provider.calls.length, 0, 'reds before tokens');
+});
+
+test('revision: a candidate arriving as a JSON string is judged on its PARSED form (single-parse contract)', async () => {
+  const candidate = config();
+  candidate.loop.shape = 'plan'; // legal free-axis change, arbiter byte-identical
+  const revisor = async () => ({ candidate: JSON.stringify(candidate), costUsd: 0.005 });
+  const { events } = await run('rev-string-candidate', config(), { ...stalling(), revisor, script: [{ text: BAD_SUM }, { text: BAD_SUM }, { text: GOOD_SUM }] });
+  const acc = events.find((e) => e.type === 'revision-accepted');
+  assert.ok(acc, `expected revision-accepted, got ${JSON.stringify(events.filter((e) => e.type === 'revision-red'))}`);
+  assert.deepEqual(acc.changedPaths, ['loop.shape']);
+  assert.ok(events.some((e) => e.type === 'config-final' && e.config?.loop?.shape === 'plan'), 'the PARSED candidate is installed, never the string');
+});
+
 test('revision: accepted free-axis revision changes behavior mid-run (shape swap observable)', async () => {
   const candidate = config();
   candidate.loop.shape = 'plan';

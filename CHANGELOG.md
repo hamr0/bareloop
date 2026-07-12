@@ -30,6 +30,23 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - **`validateConfig` returns `{ ok, reds, config }`** — the parsed config on ok, `null`
   on any red; kills the interpreter's double-parse (N2+ queue item absorbed). Additive
   for callers reading `ok`/`reds`.
+- **Review hardening (post-build /code-review, 8 findings fixed + 6 sub-cap cleanups;
+  all fixes negative-tested and mutation-checked, zero feature regressions):**
+  cadence/escalation red unknown keys (the last smuggling level in a signed spec is
+  closed); the `jobWriteScope` fence opt fails CLOSED — a malformed fence is its own
+  `fence-invalid` red, never silently skipped, and each escaping scope reds at its own
+  indexed path (`gate.writeScope.N`); scope normalization moved into the shared
+  `globToPrefix` (leading `./`, interior `/./`, `//`, trailing `/` collapse) so a
+  validateJob-green fence like `src/` no longer deadlocks contained workflow configs;
+  `canon()` follows JSON semantics (undefined-valued keys dropped) so approvals survive
+  a disk round-trip, and `checkApproval` never throws (non-JSON spec → `false`);
+  `SECRET_RE` gained a left boundary (`flask-sqlalchemy` no longer reds) and the sweep
+  is shared by BOTH validators — the agent-authored workflow config is now swept too;
+  `interpret` accepts `jobWriteScope` and enforces the fence at the choke point (entry
+  + revision candidates); revision candidates are judged and installed on their PARSED
+  form (a JSON-string candidate no longer false-reds arbiter-touch); exported arbiter
+  menus are frozen; `isObj`/`isNonEmptyString` single-copied in `validate.js`.
+  Upstream ask filed: bareguard should export its secret patterns (UPSTREAM-ASKS).
 
 ### Fixed
 - `NOTICE` ships in the tarball (npm auto-includes LICENSE/README but not NOTICE; Apache-2.0
