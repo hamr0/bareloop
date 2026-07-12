@@ -133,3 +133,40 @@ annotations are the change record.
 no extraction heuristic closes that class; **artifact-red** (F2 port requirement #1, PRD
 v1.4 §5) is revalidated for N2. With F23 consumed, no adaptlearn probes remain assigned or
 pending; the one open prediction is bareloop-side — V7/coordination-red, fires on job #1.
+
+## F4 — N1 POC: the close chain IS expressible as pure declarative data with every attacked fit-to-pass surface redding at validation; the job spec is a SECOND schema, not a v1 extension
+
+`poc/n1-job-schema.mjs` (never ships; `files` whitelist excludes `poc/`), token-free by
+construction (no provider import). Riskiest assumption attacked: the arbiter side — job,
+cadence, budget, per-step close chain — can be pure data (no freeform code anywhere) with
+every gaming attempt producing a NAMED red (code AND path pinned; "some red somewhere"
+would let a wrong-reason red fake a pass) before tokens exist. 20 cases: job #1 exactly as
+PRD §6 defines it (real target, not a fixture authored to pass) validates green;
+18 adversarial negatives red where aimed; 1 must-not-red guard (an env *reference* in a
+close cmd stays legal — only literals red). **Negatives mutation-validated:** three
+planted defects in the real validator (hierarchy check killed, shell-cap bound killed,
+close unknown-field guard killed) each failed exactly their targeted cases (1/2/2), all
+restored, 20/20 clean — the first-run 20/20 was audited, not believed.
+
+**Structural readout (the v1-extension-vs-v2 question, answered by evidence):** two
+documents, two validators. `validateConfig` (workflow, agent-authored) is untouched — its
+close/provider inexpressibility guard was exercised through the REAL shipped path
+(smuggled `close` → `unknown-field:close`). `validateJob` (job spec, operator-owned,
+`schema: "job-v1"`) is new, and guards the split from the other side by the same
+mechanism: `hooks`/`loop`/`memory` and any minting claim are unknown-field reds. The
+close-authoring hierarchy (PRD §7) enforces as a class menu keyed by close type —
+predicate/gold→hard, rubric→soft only, hitl⇔hitl — so verdict-class laundering
+(rubric-as-hard) is a named red, `close-hierarchy`. The `{ok, reds, config}` API change
+absorbs cleanly as `{ok, reds, job}` (normalized spec returned, single parse).
+
+**Bounded claims + surfaced design questions (N1 interview, not POC scope):**
+(1) the secrets sweep is a literal-pattern deny — it catches known token shapes
+(sk-/ghp_/AKIA/xox…) and passed its false-positive probe, but a novel or encoded secret
+passes; it is defense-in-depth, never the defense (env-only loading stays the hard line).
+(2) A predicate close's `cmd` IS code in shell form — legal because the arbiter side is
+operator-owned, but the moment the close-authoring UX lets an agent DRAFT the chain,
+drafted text enters the arbiter: **who signs the job spec** is a design decision law #1
+forces, and the POC cannot answer it. (3) Not covered, deliberately (no silent caps):
+per-step budget splits, retry policy, V3 channel-condition declarations, job-level write
+scopes, cadence→Scheduler mapping, coordination-red placement — N1-proper design, several
+interview-gated.
