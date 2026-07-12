@@ -85,11 +85,11 @@ export function scopeContained(s) {
  * (workflow gate.writeScope, the job fence, the operator's job-v1 writeScope):
  * a non-empty string, no mid-path wildcard (enforcement is prefix-containment,
  * F9), contained under the run dir (law #1). The chains that need per-check
- * reds still spell the three steps; fenceOk and future callers use this so a
- * fence can never be blessed that the job validator would reject.
+ * reds still spell the three steps; fenceOk uses this so a fence can never be
+ * blessed that the job validator would reject.
  * @param {unknown} s
  */
-export function legalScopeEntry(s) {
+function legalScopeEntry(s) {
   return isNonEmptyString(s) && !globToPrefix(s).includes('*') && scopeContained(s);
 }
 
@@ -121,7 +121,18 @@ export function isNonEmptyString(v) {
 // riskier entry point (machine-written), the operator's job spec the other.
 // Known token shapes only, left-bounded so hyphenated words ("flask-sqlalchemy")
 // never red — defense-in-depth; env-only loading is the law, not this regex.
-const SECRET_RE = /(?<![A-Za-z0-9_-])(sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|xox[bap]-[A-Za-z0-9-]{10,})/;
+// ONE shape inventory for the whole system: detection (this sweep) and the
+// spine redactor (interpret wires these into bareguard's redact) must never
+// disagree on what a secret looks like — a shape the validator reds but the
+// redactor passes is a leak on the very output the validator was guarding.
+export const SECRET_PATTERNS = [
+  /(?<![A-Za-z0-9_-])sk-[A-Za-z0-9_-]{16,}/,
+  /(?<![A-Za-z0-9_-])ghp_[A-Za-z0-9]{20,}/,
+  /(?<![A-Za-z0-9_-])github_pat_[A-Za-z0-9_]{20,}/,
+  /(?<![A-Za-z0-9_-])AKIA[0-9A-Z]{16}/,
+  /(?<![A-Za-z0-9_-])xox[bap]-[A-Za-z0-9-]{10,}/,
+];
+const SECRET_RE = new RegExp(SECRET_PATTERNS.map((r) => r.source).join('|'));
 
 /**
  * Red every string in a config tree that carries a known secret-token shape.
@@ -136,7 +147,15 @@ export function sweepSecretLiterals(root, red) {
       return;
     }
     if (Array.isArray(node)) node.forEach((v, i) => sweep(v, `${at}.${i}`));
-    else if (isObj(node)) for (const [k, v] of Object.entries(node)) sweep(v, at ? `${at}.${k}` : k);
+    else if (isObj(node)) {
+      for (const [k, v] of Object.entries(node)) {
+        const path = at ? `${at}.${k}` : k;
+        // keys too: inside free-form values (a gold expected, a conditions map)
+        // a key is unconstrained, so a token can ride a KEY onto the spine
+        if (SECRET_RE.test(k)) red('secret-literal', path, 'secrets load from the environment; an append-only record that captures a key captures it forever');
+        sweep(v, path);
+      }
+    }
   })(root, '');
 }
 

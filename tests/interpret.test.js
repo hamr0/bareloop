@@ -235,6 +235,34 @@ test('secrets in close output never reach the spine OR the next worker prompt (h
   assert.ok(raw.includes('[REDACTED') || raw.includes('auth failed'), 'the gap is redacted, not dropped');
 });
 
+test('release review: a trailing-slash workdir is a legal spelling — the enforcement belt must not false-red it', async () => {
+  const { workdir, target, close } = makeWork('trailing-slash-wd');
+  const provider = stubProvider([{ text: GOOD_SUM }]);
+  const file = join(workdir, 'run.jsonl');
+  const outcome = await interpret(config(), { task: TASK, target, close, workdir: workdir + '/', capRuns: 3, emit: makeSpine(file), provider });
+  assert.equal(outcome, 'green', 'workdir + "/" must behave exactly like workdir');
+});
+
+test('release review: a GitHub token in close output is scrubbed — the redactor covers every shape the validator reds', async () => {
+  const workdir = join(base, 'secret-gap-ghp');
+  mkdirSync(join(workdir, 'src'), { recursive: true });
+  const leaky = join(workdir, 'leaky.mjs');
+  // build the fakes by concatenation so the literals never sit in this file's bytes
+  writeFileSync(leaky, 'console.error("push failed for token ghp_" + "abcdefghijklmnopqrstuv" + " key AKIA" + "ABCDEFGHIJKLMNOP"); process.exit(1);');
+  const provider = stubProvider([{ text: BAD_SUM }]);
+  const file = join(workdir, 'run.jsonl');
+  const outcome = await interpret(config(), {
+    task: TASK, target: join(workdir, 'src', 'sum.mjs'), close: ['node', leaky],
+    workdir, capRuns: 2, emit: makeSpine(file), provider,
+  });
+  assert.equal(outcome, 'escalated');
+  const raw = readFileSync(file, 'utf8');
+  assert.ok(!raw.includes('ghp_' + 'abcdefghijklmnopqrstuv'), 'a GitHub token never enters the append-only spine');
+  assert.ok(!raw.includes('AKIA' + 'ABCDEFGHIJKLMNOP'), 'an AWS key never enters the append-only spine');
+  assert.ok(!provider.calls.some((c) => c.includes('ghp_' + 'abcdefghijklmnopqrstuv')), 'the token never entered a worker prompt');
+  assert.ok(raw.includes('[REDACTED') || raw.includes('push failed'), 'the gap is redacted, not dropped');
+});
+
 test('R2: a non-canonical but legal scope spelling runs green end to end (no regression)', async () => {
   const cfg = config(); cfg.gate.writeScope = ['./src/**']; // dot-slash form of the fixture's src/**
   const { outcome } = await run('dotslash-scope', cfg);

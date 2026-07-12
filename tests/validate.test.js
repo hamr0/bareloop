@@ -90,6 +90,14 @@ test('a token literal anywhere in a workflow config reds secret-literal (the age
   assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'secret-literal:gate.writeScope.0');
 });
 
+test('a secret-shaped object KEY reds too — a token can ride a key onto the spine, not just a value (release review)', () => {
+  const cfg = load('valid.json');
+  cfg.memory.extra = { ghp_abcdefghijklmnopqrstuv: true };
+  const r = validateConfig(cfg);
+  assert.equal(r.ok, false);
+  assert.ok(r.reds.some((x) => `${x.code}:${x.path}` === 'secret-literal:memory.extra.ghp_abcdefghijklmnopqrstuv'), JSON.stringify(r.reds));
+});
+
 test('raw invalid JSON → parse-error red', () => {
   const r = validateConfig(readFileSync(join(fixtures, 'red/parse-error.txt'), 'utf8'));
   assert.equal(r.ok, false);

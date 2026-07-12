@@ -108,6 +108,7 @@ const RED_CASES = [
   ['duplicate step ids', (j) => { j.steps[1].id = 'review'; }, 'duplicate-id:steps.1.id'],
   ['provider outside the menu', (j) => { j.provider = 'local-llama'; }, 'invalid-value:provider'],
   ['cadence bounds', (j) => { j.cadence.every = 0; }, 'bounds:cadence.every'],
+  ['cadence not an object (one red naming cadence, not two at paths that do not exist)', (j) => { j.cadence = 'daily'; }, 'invalid-value:cadence'],
   ['cadence unit outside the menu', (j) => { j.cadence.unit = 'fortnight'; }, 'invalid-value:cadence.unit'],
   ['rubric close without criteria', (j) => { j.steps[1].close = { type: 'rubric' }; j.steps[1].class = 'soft'; }, 'missing-required:steps.1.close.criteria'],
   ['hitl close without a prompt', (j) => { delete j.steps[2].close.prompt; }, 'missing-required:steps.2.close.prompt'],
@@ -120,6 +121,7 @@ const RED_CASES = [
   // -- secrets (defense-in-depth: known literal shapes; env-only loading stays the hard line) --
   ['inline API key in the description', (j) => { j.description = 'use key sk-ant-api03-abcdefghijklmnop to auth'; }, 'secret-literal:description'],
   ['token smuggled deep in a close cmd', (j) => { j.steps[0].close.cmd = 'GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuv npm test'; }, 'secret-literal:steps.0.close.cmd'],
+  ['secret-shaped KEY inside a gold expected (keys are swept too, release review)', (j) => { j.steps[1].close = { type: 'gold', expected: { ghp_abcdefghijklmnopqrstuv: true }, compare: 'json-equal' }; }, 'secret-literal:steps.1.close.expected.ghp_abcdefghijklmnopqrstuv'],
 ];
 
 for (const [name, fn, want] of RED_CASES) {
@@ -169,6 +171,12 @@ test('jobSpecHash NEVER throws — the minting path (runner calls it directly) g
   assert.match(jobSpecHash(cyclic), /^[0-9a-f]{64}$/, 'a cycle hashes instead of throwing');
   assert.equal(checkApproval({ a: 1n }, [{ specHash: 'x' }]), false, 'BigInt spec → false');
   assert.equal(checkApproval(undefined, [{ specHash: 'x' }]), false);
+});
+
+test('un-hashable specs never cross-approve — the sentinel hash is not an equivalence class (release review)', () => {
+  const cyclic = {}; cyclic.self = cyclic;
+  assert.equal(checkApproval(cyclic, [{ specHash: jobSpecHash({ a: 1n }) }]), false, 'an approval minted for one un-hashable spec must not authorize another');
+  assert.equal(checkApproval(cyclic, [{ specHash: jobSpecHash(cyclic) }]), false, 'not even its own sentinel approves');
 });
 
 test('the arbiter menus are frozen — verdict-class laundering cannot be enabled by mutation (review)', () => {

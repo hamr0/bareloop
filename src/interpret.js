@@ -15,7 +15,7 @@ import { writeFileSync, readFileSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { Gate, redact } from 'bareguard';
 import { LiteCtx, compress } from 'litectx';
-import { validateConfig, diffPaths, globToPrefix } from './validate.js';
+import { validateConfig, diffPaths, globToPrefix, SECRET_PATTERNS } from './validate.js';
 import { ralph } from './ralph.js';
 
 /** @typedef {Error & {category?: string}} CategorizedError the failure map's carrier: ralph relays by `category` */
@@ -59,6 +59,10 @@ const PERSONA = 'You are a senior engineer. Reply with ONLY the complete content
  * @returns {Promise<'green'|'escalated'|'config-red'>}
  */
 export async function interpret(configRaw, { task, target, close, workdir, capRuns, emit, provider, shellCapUsd = 2, jobWriteScope, revisor }) {
+  // Normalize ONCE: a trailing slash or a relative spelling must mean the same
+  // directory everywhere below — the enforcement belt compares string prefixes,
+  // and "/run/" vs "/run" would false-red every legal scope (release review).
+  workdir = resolve(workdir);
   const v = validateConfig(configRaw, { shellCapUsd, jobWriteScope });
   emit('config-validate', { ok: v.ok, reds: v.reds });
   if (!v.ok) {
@@ -75,7 +79,9 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   // regression (a spelling that normalizes to an absolute path) can never reach
   // a live Gate fence. The interpreter and the validator must never disagree (F9).
   const resolvedScopes = config.gate.writeScope.map((/** @type {string} */ g) => resolve(workdir, globToPrefix(g)));
-  const escaped = resolvedScopes.filter((/** @type {string} */ abs) => abs !== workdir && !abs.startsWith(workdir + sep));
+  // equality counts as escaped: no legal scope resolves to workdir itself (the
+  // close lives there), so a scope normalizing to ''/'.' is a regression, not a grant
+  const escaped = resolvedScopes.filter((/** @type {string} */ abs) => !abs.startsWith(workdir + sep));
   if (escaped.length) {
     for (const abs of escaped) emit('config-red', { code: 'scope-escape', path: 'gate.writeScope', detail: `resolved scope ${abs} escapes the run directory` });
     emit('run-end', { outcome: 'config-red', iterations: 0 });
@@ -230,10 +236,12 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   // the config may tighten the shell's iteration budget, never exceed it (mirrors budgetUsd)
   const effectiveCap = Math.min(capRuns, config.loop.maxIterations ?? capRuns);
   // Secrets never enter the spine (hard line): the shell scrubs close output at
-  // the source with bareguard's redactor (BG-1 default patterns — Bearer/sk-…).
+  // the source with bareguard's redactor — BG-1 defaults (Bearer/sk-…) PLUS the
+  // validator's whole shape inventory (SECRET_PATTERNS), so redaction can never
+  // pass a shape detection reds (a git close echoing a ghp_ token was the gap).
   // Injected here (the layer that owns bareguard) so ralph stays stdlib-only and
   // the scrub is a fixed shell primitive, not an emergent component (V4 holds).
-  const outcome = await ralph({ middle, close, capRuns: effectiveCap, emit, redact: (/** @type {string} */ s) => redact(s) });
+  const outcome = await ralph({ middle, close, capRuns: effectiveCap, emit, redact: (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS }) });
   if (outcome === 'green') {
     // The close already passed — a retention hiccup must not un-green a real
     // green (it would corrupt the learning curve). It degrades loudly:

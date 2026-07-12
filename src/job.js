@@ -44,9 +44,10 @@ const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
 /** @typedef {{code: string, path: string, detail?: string}} Red */
 
 /**
- * Validate an operator-owned job spec (`schema: "job-v1"`). Never throws;
- * every failure is a named red. Returns the parsed spec on ok (single parse),
- * null on any red.
+ * Validate an operator-owned job spec (`schema: "job-v1"`). Never throws on
+ * JSON text or plain parsed data — the ingest contract; a live object with a
+ * hostile accessor is outside it. Every failure is a named red. Returns the
+ * parsed spec on ok (single parse), null on any red.
  * @param {object|string} input parsed spec, or raw JSON text (parse failures are a red)
  * @param {{ shellCapUsd?: number }} [opts] the shell's hard ceiling — the job
  *   budget may tighten it, never exceed it (ceiling chain: workflow ≤ job ≤ shell)
@@ -92,8 +93,9 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
   }
 
   if (spec.cadence === undefined) red('missing-required', 'cadence');
+  else if (!isObj(spec.cadence)) red('invalid-value', 'cadence', 'object of {unit, every}');
   else {
-    const cad = isObj(spec.cadence) ? spec.cadence : {};
+    const cad = spec.cadence;
     for (const key of Object.keys(cad)) {
       if (key !== 'unit' && key !== 'every') red('unknown-field', `cadence.${key}`, 'nested objects red unknown keys too — no smuggling level exists in a signed spec');
     }
@@ -193,11 +195,13 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
  * @returns {string}
  */
 function canon(v) {
-  // Follow JSON.stringify semantics exactly — the hash must equal the hash of
-  // the disk round-trip, or an approval minted in memory fails after save/reload
+  // Follow JSON.stringify semantics — the hash must equal the hash of the
+  // disk round-trip, or an approval minted in memory fails after save/reload
   // (human-signs-always rejecting an unedited spec). That means honoring toJSON
   // (a Date serializes to its ISO string, not walked as {}) and dropping
-  // undefined-valued keys, both of which JSON.stringify does.
+  // undefined-valued keys, both of which JSON.stringify does. One divergence:
+  // a function/symbol-VALUED key canonizes as null where stringify drops it —
+  // reachable only on non-JSON specs, where a round-trip mismatch is correct.
   if (v !== null && typeof v === 'object' && typeof (/** @type {any} */ (v).toJSON) === 'function') {
     return canon(/** @type {any} */ (v).toJSON());
   }
@@ -238,6 +242,11 @@ export function jobSpecHash(job) {
  */
 export function checkApproval(job, approvals) {
   if (!Array.isArray(approvals)) return false;
-  const h = jobSpecHash(job); // never throws (guarded); a cycle/BigInt spec hashes to a sentinel that no real approval will match
+  // NOT jobSpecHash: its un-hashable sentinel would make every un-hashable
+  // spec hash-equal — an approval minted for one would authorize any other.
+  // Here un-hashable simply means unapproved, full stop.
+  let c;
+  try { c = canon(job); } catch { return false; }
+  const h = createHash('sha256').update(c).digest('hex');
   return approvals.some((a) => isObj(a) && /** @type {Record<string, unknown>} */ (a).specHash === h);
 }
