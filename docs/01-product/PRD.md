@@ -376,6 +376,18 @@ registration (same-day) is updated in place to match; this addendum is the chang
    **declared-truncation probe — adaptlearn F23, number reserved, prereg pending** —
    decides is the rule's *status*: load-bearing (review blocker) vs hygiene. The floor is
    unchanged either way: ranked views never claim exhaustiveness; exhaustive views may.
+   > **ANSWERED 2026-07-12 (adaptlearn F23, v0.11.5, evidence
+   > `truncation-declared-E1wCrp`): status = HYGIENE.** Pre-registered NULL, falsifier
+   > clean: attribution@2 was 3/3 in BOTH arms, because F21's attribution-poisoning
+   > mechanism itself failed replication under the fixed instrument (its evidence lived
+   > in the stripFences-contaminated iterations; narrow-arm failure is
+   > hunting/oscillation, not dismissal — workers adopt the gap evidence by iteration 2,
+   > then break passing conventions while fixing others under the partial view). So: the
+   > declaration ships as the honesty marker above, is never a review blocker, and is
+   > never relied on for attribution — that fix stays structural (exhaustive verbs,
+   > admission; F21's WIRED-IN headline replicated again, narrow 0/9 pooled vs wide
+   > green@1 6/6). Side yield: **artifact-red revalidated** — prose + UNFENCED code
+   > defeats any extraction heuristic (v1.4 §5 commitment reaffirmed for N2).
 4. **Attenuator manifest sharpened (extends v1.6 #4):** the manifest is per-field (the
    ledger design doc's field table is the template), and an attenuation point without one
    is a **review blocker**, not merely unfinished.
