@@ -20,18 +20,30 @@ import { spawnSync } from 'node:child_process';
  * a benign gap is returned byte-identical (default: identity).
  * @param {string[]} close argv, e.g. ['node', '--test', 'close/']
  * @param {(s: string) => string} [redact] source scrubber; identity by default
+ * @param {{ timeoutMs?: number }} [opts] close wall-clock cap (operator-set via
+ *   the runner, never the config's — the agent must not author its arbiter's clock)
  */
-export function runClose(close, redact = (s) => s) {
+export function runClose(close, redact = (s) => s, { timeoutMs = 120_000 } = {}) {
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT; // a `node --test` close inherits this from a test runner and silently no-ops — a fake green
-  const r = spawnSync(close[0], close.slice(1), { env, encoding: 'utf8', timeout: 120_000 });
+  const r = spawnSync(close[0], close.slice(1), { env, encoding: 'utf8', timeout: timeoutMs });
   if (r.error) return { verdict: 'failed', detail: String(r.error) };
   if (r.status === 0) return { verdict: 'satisfied' };
   // The gap must never be falsy: every consumer guards with `if (gap)` — an
   // empty-output red would silently kill gap feedback, after-red hooks, AND
   // stall detection, leaving the worker re-prompted byte-identically to the cap.
-  // Redact BEFORE slicing so a token straddling the 2000-char bound can't survive.
-  return { verdict: 'needs_revision', gap: redact(r.stderr || r.stdout || '').slice(0, 2000) || '(close exited nonzero with no output)', exitCode: r.status };
+  // Redact BEFORE bounding so a token straddling the bound can't survive.
+  return { verdict: 'needs_revision', gap: boundGap(redact(r.stderr || r.stdout || '')) || '(close exited nonzero with no output)', exitCode: r.status };
+}
+
+// Tail-biased bound: a test runner's useful output (the assertion diff, the
+// failing case name) is at the END; head-only truncation fed the worker the
+// preamble and dropped the cause (N2 queue, F2). Head sample kept so "what ran"
+// stays visible; the marker is hygiene, not load-bearing (F3).
+const GAP_HEAD = 400, GAP_TAIL = 1500;
+function boundGap(s) {
+  if (s.length <= GAP_HEAD + GAP_TAIL + 100) return s;
+  return `${s.slice(0, GAP_HEAD)}\n…[${s.length - GAP_HEAD - GAP_TAIL} chars truncated]…\n${s.slice(-GAP_TAIL)}`;
 }
 
 /**
@@ -55,9 +67,11 @@ export function runClose(close, redact = (s) => s) {
  * @param {(type: string, data?: object) => object} opts.emit a spine emitter
  * @param {(s: string) => string} [opts.redact] source scrubber for close output
  *   (secrets never enter the spine); injected so the shell stays stdlib-only
+ * @param {number} [opts.closeTimeoutMs] close wall-clock cap (shell/operator
+ *   territory — the workflow config cannot express it)
  * @returns {Promise<'green'|'escalated'>}
  */
-export async function ralph({ middle, close, capRuns, emit, redact }) {
+export async function ralph({ middle, close, capRuns, emit, redact, closeTimeoutMs }) {
   emit('run-start', { capRuns, close: close.join(' ') });
   const verdicts = [];
   let gap;
@@ -90,7 +104,7 @@ export async function ralph({ middle, close, capRuns, emit, redact }) {
       return 'escalated';
     }
     emit('middle-done', { iteration });
-    const v = runClose(close, redact);
+    const v = runClose(close, redact, { timeoutMs: closeTimeoutMs ?? 120_000 });
     verdicts.push(v.verdict);
     emit('close-verdict', { iteration, ...v });
     if (v.verdict === 'satisfied') {

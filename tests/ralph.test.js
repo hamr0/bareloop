@@ -153,6 +153,43 @@ test('runClose default redactor is identity — a benign gap is byte-identical (
   assert.equal(v.gap.trimEnd(), 'AssertionError: 5 !== 6');
 });
 
+// ---- N2 queue: close timeout as an option; tail-biased gap bound ----
+
+test('a close exceeding closeTimeoutMs is a failed verdict (broken arbiter), not a hang', () => {
+  const slow = ['node', '-e', 'setTimeout(() => {}, 30000)']; // would hold the event loop 30s
+  const v = runClose(slow, undefined, { timeoutMs: 300 });
+  assert.equal(v.verdict, 'failed', 'a timed-out close is failed, never satisfied or needs_revision');
+  assert.match(v.detail, /ETIMEDOUT|timed?.?out/i, 'the detail names the timeout');
+});
+
+test('ralph threads closeTimeoutMs; a timed-out close escalates broken-close immediately', async () => {
+  const file = join(dir, 'timeout.jsonl');
+  const slow = ['node', '-e', 'setTimeout(() => {}, 30000)'];
+  const outcome = await ralph({ middle: noop, close: slow, capRuns: 3, emit: makeSpine(file), closeTimeoutMs: 300 });
+  assert.equal(outcome, 'escalated');
+  const events = readFileSync(file, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l));
+  const esc = events.find((e) => e.type === 'escalation');
+  assert.equal(esc.category, 'broken-close', 'a broken arbiter must not masquerade as a bad harness');
+  assert.equal(events.filter((e) => e.type === 'iteration-start').length, 1, 'never retried');
+});
+
+test('the gap bound is tail-biased: the error at the END of long output survives (the assertion diff lives there)', () => {
+  const close = ['node', '-e', 'console.error("x".repeat(3000) + "\\nAssertionError: THE-REAL-CAUSE"); process.exit(1)'];
+  const v = runClose(close);
+  assert.equal(v.verdict, 'needs_revision');
+  assert.ok(v.gap.includes('THE-REAL-CAUSE'), 'the tail is the useful part — it must survive the bound');
+  assert.ok(v.gap.includes('x'.repeat(100)), 'a head sample survives too (what ran)');
+  assert.ok(v.gap.length <= 2100, `bounded (got ${v.gap.length})`);
+});
+
+test('redaction happens BEFORE the tail-biased bound: a token near the end never survives', () => {
+  const close = ['node', '-e', 'console.error("x".repeat(2500) + " Bearer " + "sk-" + "tail0123456789abcdef end"); process.exit(1)'];
+  const redact = (x) => String(x).replace(/sk-[\w-]+/g, '[REDACTED]');
+  const v = runClose(close, redact);
+  assert.ok(!v.gap.includes('sk-tail'), 'the tail token never survives');
+  assert.ok(v.gap.includes('[REDACTED]'), 'the tail was included (bias) and scrubbed (order)');
+});
+
 test('ralph threads the redactor into runClose so the spine close-verdict carries no secret', async () => {
   const file = join(dir, 'scrub.jsonl');
   // token built at runtime so it is NOT literal in the argv (run-start emits close.join(' ');
