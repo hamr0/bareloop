@@ -440,6 +440,43 @@ three product-level commitments:
    step's PR mechanics (branch/commit/draft PR) are deterministic runner code; the model
    never sees a git surface, and a PR failure can never swallow the escalation (law #7).
 
+## Addendum v1.10 — 2026-07-13 (the Boolean floor: five gate-level borrows, things to try — hamr assignment)
+
+Registered in CYBERNETICS (§"The Boolean floor", V9–V13, both repos): digital logic is the
+solved instance of this product's problem — reliable systems from unreliable components —
+and five of its disciplines port as candidate experiments. Borrows are architectural
+(restoration, clocking, fault models, design-for-test), never boolean-composing LLM calls.
+None is a build commitment; each fires on its named trigger, and a null is a result.
+
+Things to try, in nominated order:
+
+1. **V9 — instrument BIST (NOMINATED FIRST; adaptlearn-sandbox POC, token-free).**
+   Stuck-at catalog over the real instrument components (close stuck-at-green/-red/broken,
+   spine dropping events / freezing seq / mis-stamping ts, validator stuck-at-green,
+   escalation channel summarizing detail) + one detection vector per fault, run as a
+   pre-flight before any probe's results are trusted. Control: zero false positives on the
+   good instrument. Falsifier: each vector, sabotaged, must MISS its fault
+   (mutation-validated, F4 pattern). Motivation: F23's contaminated cell was an undetected
+   instrument fault found only after tokens burned. Consumption: upstream-ledger pattern —
+   POC stays in adaptlearn `poc/`, bareloop rewrites against the spec and checks against
+   the POC.
+2. **V10 — forbidden-zone audit (per close, lands with N-ladder close work).** Each close
+   enumerates outcomes that are neither clean green nor clean red (F5 validate-then-crash
+   class, unparseable artifacts, partial suites); each maps to a named red/escalation;
+   coercing one to a verdict is itself the instrument fault. Kin to v1.6's named-red map:
+   this names the *gap between* verdicts.
+3. **V11 — transparent-path lint (any claim instrument).** The declared-condition list
+   marks every information path as clocked (advances only at run boundary, write-enabled
+   by verdict) or metered; an unmetered continuous path is the F18 revision-confound named
+   before tokens burn. Design law #6 made checkable.
+4. **V12 — restoration boundary (stage seams).** No analog value (rubric score,
+   confidence, partial-pass fraction) crosses a stage boundary as an input to any
+   decision; only quantized verdicts travel. V8's sibling: V8 bans combining two clean
+   signals; V12 bans propagating an unclean one.
+5. **V13 — toggle coverage (ledger, post-N4).** Per config knob: ≥1 observed contrast
+   toggle in the ledger, or the knob is flagged unwired-until-proven. Extends the F2
+   contrast-bit minting rule into an ongoing coverage metric.
+
 ---
 
 ## Appendix A — Panel spec (provisional)
