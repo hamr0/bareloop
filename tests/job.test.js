@@ -274,7 +274,9 @@ test('checkApproval: matching record approves; stale hash, empty, or garbage nev
 // ---- module 2b: step mode/tools — the spec-side tool grant (addendum 2026-07-12b) ----
 // The job spec (human) owns mode + menu; the drafted config cannot express either.
 // TOOL_MENU is read/grep/write ONLY: `run` is locked-but-listed — requesting it is
-// the request-red surface, an invalid-value red, never a grant.
+// the request-red surface, a DISTINCT `request-red` code (module 4): the ledger
+// counts admission demand, and a generic invalid-value would be indistinguishable
+// from a typo. Still a red, never a grant.
 
 test('tools step legal: mode "tools" + granted menu validates green', () => {
   const j = mut((x) => { x.steps[1] = { ...x.steps[1], mode: 'tools', tools: ['read', 'grep', 'write'] }; });
@@ -298,10 +300,19 @@ test('TOOL_MENU ships frozen and is read/grep/write only — run is NOT in the m
   assert.ok(Object.isFrozen(TOOL_MENU));
 });
 
+test('request-red detail names the locked verb in quotes (the ledger extracts it)', () => {
+  const r = validateJob(mut((x) => { x.steps[1] = { ...x.steps[1], mode: 'tools', tools: ['run'] }; }));
+  const red = r.reds.find((d) => d.code === 'request-red');
+  assert.ok(red, `expected a request-red, got ${JSON.stringify(r.reds)}`);
+  assert.match(red.detail ?? '', /"run"/);
+});
+
 test('single-defect mode/tools reds: pinned code + path', () => {
   const cases = [
     ['mode outside the menu', (x) => { x.steps[0].mode = 'agent'; }, 'invalid-value', 'steps.0.mode'],
-    ['run is locked: requesting it reds (the request-red surface)', (x) => { x.steps[1] = { ...x.steps[1], mode: 'tools', tools: ['read', 'run'] }; }, 'invalid-value', 'steps.1.tools'],
+    ['run is locked: requesting it is a request-red, not a typo', (x) => { x.steps[1] = { ...x.steps[1], mode: 'tools', tools: ['read', 'run'] }; }, 'request-red', 'steps.1.tools'],
+    ['run alone is still a request-red', (x) => { x.steps[1] = { ...x.steps[1], mode: 'tools', tools: ['run'] }; }, 'request-red', 'steps.1.tools'],
+    ['an unknown tool is a typo: invalid-value, never request-red', (x) => { x.steps[1] = { ...x.steps[1], mode: 'tools', tools: ['read', 'bash'] }; }, 'invalid-value', 'steps.1.tools'],
     ['tools on a text step: a grant without the mode is incoherent', (x) => { x.steps[0].tools = ['read']; }, 'invalid-value', 'steps.0.tools'],
     ['tools empty array: a tools step with no tools is ungrantable', (x) => { x.steps[1] = { ...x.steps[1], mode: 'tools', tools: [] }; }, 'invalid-value', 'steps.1.tools'],
     ['tools non-array', (x) => { x.steps[1] = { ...x.steps[1], mode: 'tools', tools: 'read' }; }, 'invalid-value', 'steps.1.tools'],

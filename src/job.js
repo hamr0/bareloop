@@ -30,6 +30,10 @@ export const STEP_MODES = Object.freeze(['text', 'tools']);
  * locked-but-listed; a spec requesting it reds, and that red IS the
  * request-red evidence admission waits on (curation doctrine, PRD F2) */
 export const TOOL_MENU = Object.freeze(['read', 'grep', 'write']);
+/** locked-but-listed tools: real capabilities deliberately outside the grant
+ * menu. Requesting one is a DISTINCT `request-red` (module 4) — the ledger
+ * counts admission demand, and a generic invalid-value would bury it as a typo. */
+export const LOCKED_TOOLS = Object.freeze(['run']);
 export const CADENCE_UNITS = Object.freeze(['hour', 'day', 'week']);
 export const PROVIDERS = Object.freeze(['anthropic-api']); // SP-2: API-first; local deferred (PRD §5/§8)
 /** V3 environment label: declared keys only — every field is a lineage-key
@@ -157,9 +161,17 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
         if (s.tools !== undefined) {
           if (s.mode !== 'tools') red('invalid-value', `${at}.tools`, 'a tool grant requires mode "tools" — a grant without the mode is incoherent');
           else if (!(Array.isArray(s.tools) && s.tools.length > 0
-                     && s.tools.every((/** @type {unknown} */ t) => typeof t === 'string' && TOOL_MENU.includes(t))
+                     && s.tools.every((/** @type {unknown} */ t) => typeof t === 'string')
                      && new Set(s.tools).size === s.tools.length)) {
-            red('invalid-value', `${at}.tools`, `non-empty unique subset of ${TOOL_MENU.join('|')} — run is locked-but-listed: requesting it here is the request-red surface, never a grant`);
+            red('invalid-value', `${at}.tools`, `non-empty unique subset of ${TOOL_MENU.join('|')}`);
+          } else {
+            // locked-but-listed asks red DISTINCTLY: request-red is the admission
+            // evidence the ledger tallies (two-red routing); a typo stays invalid-value
+            for (const t of s.tools.filter((/** @type {string} */ t) => LOCKED_TOOLS.includes(t))) {
+              red('request-red', `${at}.tools`, `"${t}" is locked-but-listed — this red IS the admission evidence, never a grant; granted menu: ${TOOL_MENU.join('|')}`);
+            }
+            const unknown = s.tools.filter((/** @type {string} */ t) => !TOOL_MENU.includes(t) && !LOCKED_TOOLS.includes(t));
+            if (unknown.length) red('invalid-value', `${at}.tools`, `unknown tool(s) ${unknown.join(', ')} — menu: ${TOOL_MENU.join('|')}`);
           }
         }
       }

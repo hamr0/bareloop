@@ -77,7 +77,7 @@ unknown-field reds.
 | `writeScope` | array of contained globs | the operator's outer fence; same containment law as the workflow layer, same code |
 | `steps` | array of `{ id, close, class, mode?, tools? }` | unique slug ids; every step names its close |
 | `steps[].mode` | `text` (default) \| `tools` | `text`: the worker returns ONE artifact written to the shell's `target`; `tools`: the worker drives Gate-governed file tools (multi-file). Illegal on `hitl` steps (they run no loop) |
-| `steps[].tools` | unique subset of `read\|grep\|write` | the SPEC-side tool grant (`TOOL_MENU`, frozen; defaults to all three) — the drafted config cannot express mode or tools; requesting `run` reds (locked-but-listed: admission waits on request-red evidence) |
+| `steps[].tools` | unique subset of `read\|grep\|write` | the SPEC-side tool grant (`TOOL_MENU`, frozen; defaults to all three) — the drafted config cannot express mode or tools; requesting `run` (`LOCKED_TOOLS`) reds with the DISTINCT code `request-red` (locked-but-listed: the red IS the admission evidence the ledger tallies; a typo stays `invalid-value`) |
 | `escalation` | `{ mode: "decision-ready" }` | the pain channel is not optional |
 
 **Close types and the hierarchy** (a close is data, never code; verdict-class laundering
@@ -141,7 +141,7 @@ The operator-owned sibling (never an extension) of `validateConfig`: validates a
 Never throws on JSON text or plain parsed data (the ingest contract); returns the
 parsed spec on ok, `null` on any red. Menus exported:
 `CLOSE_TYPES`, `CLASSES`, `CLASS_BY_CLOSE`, `GOLD_COMPARE`, `CADENCE_UNITS`,
-`PROVIDERS`, `CONDITION_KEYS`, `STEP_MODES`, `TOOL_MENU`.
+`PROVIDERS`, `CONDITION_KEYS`, `STEP_MODES`, `TOOL_MENU`, `LOCKED_TOOLS`.
 
 ### `jobSpecHash(job)` / `checkApproval(job, approvals)` — `src/job.js`
 
@@ -210,6 +210,29 @@ steps.
 One sealed LLM call distilling a lineage's rules from ledger facts after a green run.
 `MAX_RULES`/`MAX_RULE_CHARS` bounds enforced mechanically post-call, rejected whole.
 Malformed output is a red as data (`rules: null`) — the caller keeps prior rules.
+
+### `updateLedger({ ledgerFile, spineFiles })` → `{ appended, fold }` — `src/ledger.js`
+
+The upstream ledger: spines fold into ONE append-only incident JSONL both the consumer
+(workflow health) and the maintainer (upstream asks) read. Spines stay ground truth —
+the ledger is derived and reconstructible (delete it, re-run the collector: same fold).
+**Pass the FULL spine corpus each time**: counts are totals computed from what you pass,
+a `lib-incident` row appends only when a key is new or its count grew (idempotent over
+the same corpus), and `seq` continues monotonically across appends. Keys are
+`lib:verb:class:sig` — `sig` hashes the path/number-normalized detail, so the same bug
+across runs dedupes and distinct bugs in one verb don't merge. Classes, worst-first
+(`LEDGER_CLASSES`, frozen): `silent-degradation` (a failed `primitive-smoke` — the class
+failures can't derive), `runtime-red`, `provider-red`, `pricing-red` (F6), possibly-dormant
+`capability-gap` (cap-halt + request-red in one spine), `broken-close` (consumer-attributed),
+`request-red` (admission demand for a locked verb), `retention-red`, `config-red`
+(drafting friction — attributed to bareloop's own schema/prompt). Deliberate exclusions:
+bare `cap-halt` (a budget story), `close-verdict`/`artifact-red` (worker stories),
+`gate-red` (governance working as intended), `pr-red` (operator environment).
+`suggestedAsk` on every row is a template seed for an upstream ask — filing stays human;
+status rows (`open → filed → fixed → consumed`) are human-appended, and the fold shows
+the latest per key. Pure pieces exported for custom folds: `classifyIncidents(events,
+{spine?})`, `foldLedger(rows)`, `ledgerDeltas(fold, occurrences)`. CLI lands at N5; the
+panel reads the same file at N6.
 
 ## Architecture
 

@@ -8,7 +8,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 ## [Unreleased]
 
 ### Added
-- **N2 — the headless single-job loop (rung 3 of the ladder), modules 1–3 + 2b.**
+- **N2 — the headless single-job loop (rung 3 of the ladder), modules 1–4 + 2b.**
   - **`runJob(spec, opts)`** (`src/run.js`): the runner — approval gate (human-signs-always,
     refuses before ANY token: `unapproved-spec`) → litectx known-answer smoke before tokens
     (`smoke-red`, adaptlearn A3) → config drafting through the PRICED path, one sealed shot
@@ -37,8 +37,30 @@ feature lands, **patch** = docs, fixes, scaffolding.
   - **ralph options** (module 1): `closeTimeoutMs` (close wall-clock cap, was hardcoded
     120s) and the tail-biased gap bound (400 head + 1500 tail — the assertion diff lives
     at the end; head-only truncation fed the worker pure preamble).
+  - **The upstream ledger** (module 4): `updateLedger({ledgerFile, spineFiles})`
+    (`src/ledger.js`) folds run spines into ONE append-only incident JSONL — the
+    A1/A2/A3 upstream-ask flow, mechanized: evidence in, human judgment out
+    (`suggestedAsk` is a template seed, never an auto-file; status rows
+    `filed → fixed → consumed` stay human-appended). Keys `lib:verb:class:sig` dedupe
+    the same bug across runs (short hash of the path/number-normalized detail); rows
+    are cumulative deltas, the fold is current state, and the collector is idempotent
+    over the same corpus — the ledger is derived and reconstructible, spines stay
+    ground truth. Classes worst-first (`LEDGER_CLASSES`, frozen): `silent-degradation`,
+    `runtime-red`, `provider-red`, `pricing-red` (added vs the design doc — F6),
+    `capability-gap` (ships dormant until in-loop admission), `broken-close`,
+    `request-red`, `retention-red`, `config-red` (attributed to bareloop's own
+    drafting schema). Excluded by doctrine: bare `cap-halt` (budget story),
+    `close-verdict`/`artifact-red` (worker stories), `gate-red` (governance working
+    as intended), `pr-red` (operator environment). Pure pieces exported:
+    `classifyIncidents`, `foldLedger`, `ledgerDeltas`. Design record:
+    `docs/plans/2026-07-11-upstream-ledger-design.md` + 2026-07-13 addendum (the
+    bareloop event mapping). CLI lands at N5; the panel reads the same file at N6.
 
 ### Changed
+- **`job-v1`: requesting a locked tool is now a DISTINCT red.** `tools` containing
+  `run` reds with code `request-red` (was a generic `invalid-value`) so the ledger can
+  tally admission demand — a generic code buried the evidence as a typo. An unknown
+  tool name stays `invalid-value`. `LOCKED_TOOLS` (frozen, `['run']`) exported.
 - **`interpret` opts:** `target` is now optional (required in text mode only); new
   `mode`/`tools` opts thread the spec's grant. Additive — existing callers unchanged.
 - **Cost contract:** `extractRules` returns `costUsd: number|null` — null is the honest

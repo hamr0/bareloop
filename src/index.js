@@ -6,12 +6,15 @@
 // of human-signs-always (the N2 runner enforces).
 // N2: runJob — the runner: approval gate → primitive smoke → sealed priced
 // draft → sequential per-step loops under the ONE ledger (unpriced is never
-// free, F6) → the hitl step is the decision-ready escalation.
+// free, F6) → the hitl step is the decision-ready escalation. Module 4: the
+// upstream ledger — spines fold into one append-only incident file; filing
+// stays human (suggestedAsk is a seed, never an auto-file).
 
 export { makeSpine } from './spine.js';
 export { ralph, runClose } from './ralph.js';
 export { validateConfig, diffPaths, globToPrefix, LOOP_SHAPES, SLOTS, VERBS } from './validate.js';
-export { validateJob, jobSpecHash, checkApproval, CLOSE_TYPES, CLASSES, CLASS_BY_CLOSE, GOLD_COMPARE, CADENCE_UNITS, PROVIDERS, CONDITION_KEYS, STEP_MODES, TOOL_MENU } from './job.js';
+export { validateJob, jobSpecHash, checkApproval, CLOSE_TYPES, CLASSES, CLASS_BY_CLOSE, GOLD_COMPARE, CADENCE_UNITS, PROVIDERS, CONDITION_KEYS, STEP_MODES, TOOL_MENU, LOCKED_TOOLS } from './job.js';
 export { interpret, STALL_REDS } from './interpret.js';
 export { extractRules, MAX_RULES, MAX_RULE_CHARS } from './extract.js';
 export { runJob } from './run.js';
+export { classifyIncidents, foldLedger, ledgerDeltas, updateLedger, LEDGER_CLASSES } from './ledger.js';
