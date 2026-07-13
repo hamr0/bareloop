@@ -8,11 +8,12 @@
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { LiteCtx, COMPRESS_LEVELS, KINDS, WRITE_KINDS } from 'litectx';
+import { LiteCtx, COMPRESS_LEVELS, KINDS } from 'litectx';
+import { redact } from 'bareguard';
 import { validateJob, jobSpecHash, checkApproval } from './job.js';
-import { validateConfig, LOOP_SHAPES, SLOTS, VERBS, globToPrefix } from './validate.js';
+import { validateConfig, LOOP_SHAPES, SLOTS, VERBS, globToPrefix, SECRET_PATTERNS, REMEMBER_KINDS } from './validate.js';
 import { interpret } from './interpret.js';
-import { extractArtifact } from './text.js';
+import { extractArtifact, priceOf } from './text.js';
 
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
@@ -23,7 +24,8 @@ const { Loop } = require('bare-agent');
 // menus — never a copyable example config (the drafter must author, not echo;
 // the N2 drafting probe proved a frontier model greens on this, F6). The
 // DRAFT-CONFIG sentinel is fixed shell vocabulary, not content.
-const REMEMBER_KINDS = WRITE_KINDS.filter((k) => k !== 'doc');
+// REMEMBER_KINDS comes from the validator: the prompt advertises the SAME menu
+// the validator enforces — one source, no drift.
 /** @param {any} job @param {Red[]|null} reds */
 function draftPrompt(job, reds) {
   const doc = `DRAFT-CONFIG
@@ -107,10 +109,15 @@ async function openDraftPr({ workdir, branch, title, body, addPaths, exec }) {
     ['git', 'push', '-u', 'origin', branch],
     ['gh', 'pr', 'create', '--draft', '--title', title, '--body', body],
   ];
+  // Subprocess output is scrubbed AT CAPTURE with the ONE shape inventory —
+  // the same doctrine as the close path (interpret wires SECRET_PATTERNS into
+  // ralph): git/gh error text can echo a credentialed remote URL, and the
+  // detail lands on the append-only spine (pr-red + the escalation's pr.error).
+  const scrub = (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS });
   for (const argv of steps) {
     const r = exec(argv, { cwd: workdir });
     if (r.status !== 0) {
-      return { url: null, red: { argv: argv.join(' '), detail: `${argv.slice(0, 2).join(' ')} failed: ${(r.stderr || r.stdout || `exit ${r.status}`).trim().slice(0, 500)}` } };
+      return { url: null, red: { argv: argv.join(' '), detail: `${argv.slice(0, 2).join(' ')} failed: ${scrub((r.stderr || r.stdout || `exit ${r.status}`)).trim().slice(0, 500)}` } };
     }
     if (argv[0] === 'gh') {
       const url = (r.stdout.match(/https?:\/\/\S+/) ?? [null])[0];
@@ -148,8 +155,8 @@ async function openDraftPr({ workdir, branch, title, body, addPaths, exec }) {
  * @param {ExecCmd} [opts.execCmd] process runner for the hitl PR mechanics
  *        (shell-owned seam, same doctrine as the provider binding)
  * @returns {Promise<string>} outcome: 'green' | 'escalated' | 'unapproved-spec' |
- *   'job-red' | 'smoke-red' | 'config-red' | 'pricing-red' | 'close-unsupported' |
- *   `step-red:<id>`
+ *   'job-red' | 'smoke-red' | 'config-red' | 'pricing-red' | 'provider-red' |
+ *   'cap-halt' | 'close-unsupported' | `step-red:<id>`
  */
 export async function runJob(rawSpec, { approvals, workdir, target, provider, emit, capRuns = 3, shellCapUsd = 2, closeTimeoutMs, execCmd = defaultExec }) {
   // 1. human-signs-always — before ANY provider call (N1 decision #1)
@@ -164,6 +171,15 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
     return 'job-red';
   }
   const job = /** @type {any} */ (jv.job);
+  // Reds-before-tokens: a text-mode predicate step writes ONE artifact — with
+  // no target it would burn a draft + a worker call and then crash inside the
+  // middle as a misfiled interpreter-red. The spec is fine; the CALL is not.
+  if ((typeof target !== 'string' || !target)
+      && job.steps.some((/** @type {any} */ s) => s.close.type === 'predicate' && (s.mode ?? 'text') === 'text')) {
+    emit('job-red', { code: 'missing-required', path: 'opts.target', detail: 'text-mode steps write ONE artifact — pass opts.target (reds-before-tokens)' });
+    emit('job-end', { outcome: 'job-red' });
+    return 'job-red';
+  }
   emit('job-start', { job: job.job, specHash: jobSpecHash(job), budgetUsd: job.budgetUsd, steps: job.steps.map((/** @type {any} */ s) => s.id) });
 
   // 2. known-answer smoke before tokens (A3: silent degradation throws nothing)
@@ -183,7 +199,10 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
   const account = (c) => { if (typeof c === 'number' && Number.isFinite(c)) spentUsd += c; else unpriced = true; };
   /** @type {(type: string, data?: object) => object} */
   const meter = (type, data) => {
-    if (type === 'worker-result') {
+    // every priced emission is accounted: worker-result AND worker-plan — the
+    // plan shape makes a SEPARATE loop.run whose metrics never fold into the
+    // implement call's, so skipping it under-counts real spend (review 2026-07-13)
+    if (type === 'worker-result' || type === 'worker-plan') {
       account(/** @type {any} */ (data)?.costUsd);
       // a PARTIALLY unpriced run reports a finite costUsd that under-counts —
       // the flag is the only honest signal (F6)
@@ -200,29 +219,56 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
   // 4. sealed drafting: one shot + one redraft, reds fed back, PRICED path
   // (through Loop, the same accounting the worker uses — never around it, F6)
   const drafter = new Loop({ provider, system: 'You draft workflow configs as pure JSON. Output only the JSON object.' });
+  /** @type {string|null} a transport throw from the drafting call — spend UNKNOWN, terminal */
+  let transportRed = null;
   /** @param {Red[]|null} reds */
   const draft = async (reds) => {
-    const r = await drafter.run([{ role: 'user', content: draftPrompt(job, reds) }]);
-    // metrics.costUsd is the honest null when nothing priced; `cost` sums priced
-    // rounds only and would launder unpriced into $0 (F6)
-    const costUsd = r.metrics ? r.metrics.costUsd : (r.cost ?? null);
+    let r;
+    try {
+      r = await drafter.run([{ role: 'user', content: draftPrompt(job, reds) }]);
+    } catch (e) {
+      // Loop defaults throwOnError: true — a misconfigured binding or a bare
+      // transient 500 REJECTS here. The spend is UNKNOWN (F6), and the spine
+      // must still terminate: never an unhandled rejection out of the runner.
+      transportRed = String(/** @type {Error} */ (e)?.message ?? e);
+      emit('draft-result', { costUsd: null, redraft: reds !== null, error: transportRed });
+      return null;
+    }
+    const { costUsd, unpricedRounds } = priceOf(r); // the ONE honest-null cost read (F6)
     account(costUsd);
-    if ((r.metrics?.unpricedRounds ?? 0) > 0) unpriced = true;
+    if (unpricedRounds > 0) unpriced = true;
     emit('draft-result', { costUsd, redraft: reds !== null, error: r.error ?? null });
     return r.error ? null : (extractArtifact(r.text).code ?? '');
+  };
+  const providerRed = () => {
+    emit('escalation', { category: 'provider-red', decisionReady: true, decision: 'The provider path threw before a result existed — spend for the failed call is unknown (F6), and no drafting verdict exists.', options: ['fix the provider binding', 'retry the run', 'abandon the run'], detail: transportRed, spentUsd });
+    emit('job-end', { outcome: 'provider-red' });
+    return 'provider-red';
   };
   const capNow = () => Math.min(shellCapUsd, job.budgetUsd - spentUsd);
   const cOpts = () => ({ shellCapUsd: capNow(), jobWriteScope: job.writeScope });
   let text = await draft(null);
   let cv = validateConfig(text ?? '', cOpts());
   emit('config-validate', { ok: cv.ok, reds: cv.reds, phase: 'draft-1' });
-  if (!cv.ok && !unpriced) {
+  // the redraft only fires when it can still help: not over a transport red,
+  // not over unpriced spend, and never over an already-blown budget (a paid
+  // call against a negative cap can only red again — budget story, not drafter)
+  if (!cv.ok && !unpriced && !transportRed && capNow() > 0) {
     text = await draft(cv.reds);
     cv = validateConfig(text ?? '', cOpts());
     emit('config-validate', { ok: cv.ok, reds: cv.reds, phase: 'draft-2' });
   }
+  if (transportRed) return providerRed();
   if (unpriced) return pricingRed();
   if (!cv.ok) {
+    if (capNow() <= 0) {
+      // drafting consumed the whole job budget before a valid config existed —
+      // the honest stop is a cap story, never a config-red blaming the drafter
+      emit('cap-halt', { category: 'cap-halt', meaning: 'not under cap — not "can\'t"', spentUsd, budgetUsd: job.budgetUsd });
+      emit('escalation', { category: 'cap-halt', decisionReady: true, decision: `Drafting spend ($${spentUsd.toFixed(4)}) consumed the job budget ($${job.budgetUsd}) before a valid config existed.`, options: ['raise the job budget and rerun', 'abandon the run'], spentUsd });
+      emit('job-end', { outcome: 'cap-halt' });
+      return 'cap-halt';
+    }
     for (const r of cv.reds) emit('config-red', r);
     emit('job-end', { outcome: 'config-red' });
     return 'config-red';
@@ -257,14 +303,25 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
       return 'close-unsupported';
     }
     emit('step-start', { step: step.id, remainingUsd: job.budgetUsd - spentUsd, spentUsd, mode: step.mode ?? 'text' });
-    const outcome = await interpret(cv.config, {
-      task: `${job.description} — step: ${step.id}`,
-      target, close: step.close.cmd.split(/\s+/), workdir, capRuns,
-      emit: meter, provider, ...cOpts(), closeTimeoutMs,
-      // the SPEC's grant, threaded verbatim (2b decision #2) — the drafted
-      // config cannot express mode or tools, so there is nothing to merge
-      mode: step.mode ?? 'text', tools: step.tools,
-    });
+    let outcome;
+    try {
+      outcome = await interpret(cv.config, {
+        task: `${job.description} — step: ${step.id}`,
+        // trim before splitting: validateJob reds whitespace-padded cmds, but an
+        // empty argv[0] would THROW at spawn — belt for any path around the validator
+        target, close: step.close.cmd.trim().split(/\s+/), workdir, capRuns,
+        emit: meter, provider, ...cOpts(), closeTimeoutMs,
+        // the SPEC's grant, threaded verbatim (2b decision #2) — the drafted
+        // config cannot express mode or tools, so there is nothing to merge
+        mode: step.mode ?? 'text', tools: step.tools,
+      });
+    } catch (e) {
+      // ralph belts throws INSIDE the loop; this belts the interpreter's own
+      // setup (gate.init, store ctor) — the spine must terminate, never dangle
+      emit('escalation', { category: 'interpreter-red', decisionReady: true, step: step.id, decision: 'The interpreter broke outside the loop — no harness verdict is trustworthy until it is fixed.', options: ['fix the interpreter/run directory', 'abandon the run'], detail: String(/** @type {Error} */ (e)?.message ?? e), spentUsd });
+      emit('job-end', { outcome: 'step-red', step: step.id, cause: 'interpreter-red', spentUsd });
+      return `step-red:${step.id}`;
+    }
     emit('step-end', { step: step.id, outcome, spentUsd });
     if (unpriced) return pricingRed();
     if (outcome !== 'green') {

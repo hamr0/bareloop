@@ -1,8 +1,9 @@
-// Shared text helpers. extractArtifact is the ONE parser for every
+// Shared model-output helpers. extractArtifact is the ONE parser for every
 // model-output extraction (interpret's artifact, extract's rules, the
 // runner's drafted config) — two parsers that disagree about the same output
 // are two instruments (F2/F21, the adaptlearn instrument caveat). It replaced
-// N0's stripFences when the fence-robust upgrade landed at N2.
+// N0's stripFences when the fence-robust upgrade landed at N2. priceOf is the
+// ONE spelling of the honest-null cost read for the same reason (F6).
 
 /**
  * Fence-robust artifact extraction (F2 port requirements #1/#2):
@@ -26,4 +27,22 @@ export function extractArtifact(t) {
   }
   const bare = text.trim().replace(/^```[a-z]*\n?/i, '').replace(/\n?```\s*$/, '').trim();
   return bare ? { code: bare, red: null } : { code: null, red: 'empty response' };
+}
+
+/**
+ * The ONE spelling of the F6 honest-null cost read on a bare-agent result.
+ * `metrics.costUsd` is the honest null when NOTHING priced — never fall
+ * through to `cost` when metrics exist: `cost` sums priced rounds only, so an
+ * all-unpriced run reports cost 0 and `?? cost` would launder the explicit
+ * unknown into a silent $0 (the F6 class — four shipped launderings were this
+ * exact fallback chain hand-spelled). `unpricedRounds` makes a PARTIALLY
+ * unpriced run visible (costUsd finite but an under-count).
+ * @param {any} r a Loop.run() result (or null)
+ * @returns {{ costUsd: number|null, unpricedRounds: number }}
+ */
+export function priceOf(r) {
+  return {
+    costUsd: r?.metrics ? r.metrics.costUsd : (r?.cost ?? null),
+    unpricedRounds: r?.metrics?.unpricedRounds ?? 0,
+  };
 }

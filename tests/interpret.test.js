@@ -495,3 +495,14 @@ test('tools mode: on-green remember stores the worker summary — no target depe
   assert.equal(outcome, 'green');
   assert.ok(events.some((e) => e.type === 'hook-op' && e.op === 'remember'), 'retention fired without a target');
 });
+
+test('text mode without target throws immediately — reds-before-tokens, a caller bug is loud', async () => {
+  const { workdir, close } = makeWork('no-target');
+  const provider = stubProvider([{ text: GOOD_SUM }]);
+  const config = { schema: 'v1', loop: { shape: 'refine' }, memory: { store: 'litectx' }, gate: { budgetUsd: 1, writeScope: ['src/**'] }, escalation: { mode: 'decision-ready' } };
+  await assert.rejects(
+    interpret(config, { task: TASK, close, workdir, capRuns: 2, emit: () => ({}), provider }),
+    TypeError,
+  );
+  assert.equal(provider.calls.length, 0, 'the throw lands before any provider call');
+});

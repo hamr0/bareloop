@@ -266,3 +266,20 @@ test('a malformed ledger line throws with position — corruption is never paper
   writeFileSync(ledgerFile, '{"type":"lib-incident"}\n{nope\n');
   assert.throws(() => updateLedger({ ledgerFile, spineFiles: [] }), /line 2/);
 });
+
+test('escalation{provider-red} (the transport-throw seam) → provider-red, bare-agent', () => {
+  reset();
+  const occs = classifyIncidents([ev('escalation', { category: 'provider-red', decisionReady: true, detail: 'worker loop: 401 invalid x-api-key' })]);
+  assert.equal(occs.length, 1);
+  assert.equal(occs[0].class, 'provider-red');
+  assert.equal(occs[0].lib, 'bare-agent');
+});
+
+test('request-red verb: the structured field wins over prose; quoted-detail stays the legacy fallback', () => {
+  reset();
+  const structured = classifyIncidents([ev('job-red', { code: 'request-red', path: 'steps.1.tools', verb: 'run', detail: 'the menu "read|grep|write" does not include it' })]);
+  assert.equal(structured[0].verb, 'run', 'ev.verb wins even when the first quoted token is not the verb');
+  reset();
+  const legacy = classifyIncidents([ev('job-red', { code: 'request-red', path: 'steps.1.tools', detail: '"run" is locked-but-listed' })]);
+  assert.equal(legacy[0].verb, 'run');
+});

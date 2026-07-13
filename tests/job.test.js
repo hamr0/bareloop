@@ -304,6 +304,7 @@ test('request-red detail names the locked verb in quotes (the ledger extracts it
   const r = validateJob(mut((x) => { x.steps[1] = { ...x.steps[1], mode: 'tools', tools: ['run'] }; }));
   const red = r.reds.find((d) => d.code === 'request-red');
   assert.ok(red, `expected a request-red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(red.verb, 'run', 'the verb rides the red as a STRUCTURED field — the ledger keys on it');
   assert.match(red.detail ?? '', /"run"/);
 });
 
@@ -326,5 +327,14 @@ test('single-defect mode/tools reds: pinned code + path', () => {
     assert.ok(r.reds.some((red) => red.code === code && red.path === path),
       `${name}: expected ${code}@${path}, got ${JSON.stringify(r.reds)}`);
     assert.equal(r.job, null, `${name}: job must be null on red`);
+  }
+});
+
+test('close.cmd leading/trailing whitespace reds — argv splits on whitespace; honest refusal beats a silent misparse', () => {
+  for (const cmd of [' npm test', 'npm test ', '\tnpm test']) {
+    const r = validateJob(mut((x) => { x.steps[0].close.cmd = cmd; }));
+    assert.equal(r.ok, false, `${JSON.stringify(cmd)} must red`);
+    assert.ok(r.reds.some((d) => d.code === 'invalid-value' && d.path === 'steps.0.close.cmd'),
+      `${JSON.stringify(cmd)}: expected invalid-value@steps.0.close.cmd, got ${JSON.stringify(r.reds)}`);
   }
 });

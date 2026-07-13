@@ -23,7 +23,7 @@
 
 import { createRequire } from 'node:module';
 
-import { extractArtifact } from './text.js';
+import { extractArtifact, priceOf } from './text.js';
 
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
@@ -76,9 +76,7 @@ characters. No markdown fences, no commentary.`;
     // a transport throw means the spend is UNKNOWN, not zero (F6)
     return { rules: null, valid: false, reds: [{ code: 'provider-error', detail: String(/** @type {Error} */ (e).message ?? e) }], costUsd: null, raw: '' };
   }
-  // metrics.costUsd is the honest null when nothing priced; `cost` sums priced
-  // rounds only, so `?? cost` would launder unpriced into $0 (F6)
-  const costUsd = r.metrics ? r.metrics.costUsd : (r.cost ?? null);
+  const { costUsd } = priceOf(r); // the ONE honest-null cost read (F6)
   const raw = extractArtifact(r.text ?? '').code ?? '';
   if (r.error) {
     return { rules: null, valid: false, reds: [{ code: 'provider-error', detail: String(r.error) }], costUsd, raw };

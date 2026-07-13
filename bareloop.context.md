@@ -196,7 +196,13 @@ the job fence ONLY, so spines/audit logs never enter the PR → commit → push 
 decision-ready escalation; a PR failure is `pr-red` and the escalation still fires with
 the error. Model tools never touch git — `execCmd` is the shell-owned process seam
 (defaults to real spawnSync). Outcomes: `green | escalated | unapproved-spec | job-red |
-smoke-red | config-red | pricing-red | close-unsupported | step-red:<id>`.
+smoke-red | config-red | pricing-red | provider-red | cap-halt | close-unsupported |
+step-red:<id>` — `provider-red` is a transport throw from the drafting call (spend
+unknown, F6); `cap-halt` is drafting spend consuming the whole job budget before a
+valid config existed. Both are decision-ready escalations with a terminal `job-end`:
+the spine never dangles. A text-mode job invoked without `opts.target` is a `job-red`
+before ANY provider call (and `interpret` itself throws a TypeError for direct
+callers) — reds-before-tokens applies to the call, not just the spec.
 
 **Unpriced is never free (F6):** the ledger halts `pricing-red` — decision-ready — on
 any result whose cost is the honest null OR whose `unpricedRounds > 0` (a partially
@@ -224,7 +230,8 @@ across runs dedupes and distinct bugs in one verb don't merge. Classes, worst-fi
 (`LEDGER_CLASSES`, frozen): `silent-degradation` (a failed `primitive-smoke` — the class
 failures can't derive), `runtime-red`, `provider-red`, `pricing-red` (F6), possibly-dormant
 `capability-gap` (cap-halt + request-red in one spine), `broken-close` (consumer-attributed),
-`request-red` (admission demand for a locked verb), `retention-red`, `config-red`
+`request-red` (admission demand for a locked verb — keyed on the red's structured
+`verb` field, prose-quoted verb as legacy fallback), `retention-red`, `config-red`
 (drafting friction — attributed to bareloop's own schema/prompt). Deliberate exclusions:
 bare `cap-halt` (a budget story), `close-verdict`/`artifact-red` (worker stories),
 `gate-red` (governance working as intended), `pr-red` (operator environment).

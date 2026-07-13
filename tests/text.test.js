@@ -7,7 +7,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractArtifact } from '../src/text.js';
+import { extractArtifact, priceOf } from '../src/text.js';
 
 const CODE = 'export function sum(a, b) { return a + b; }';
 
@@ -51,4 +51,28 @@ test('an empty fenced block is artifact-red material', () => {
 test('null/undefined degrade to artifact-red, never a throw', () => {
   assert.equal(extractArtifact(undefined).red, 'empty response');
   assert.equal(extractArtifact(null).red, 'empty response');
+});
+
+// ---- priceOf: the ONE spelling of the F6 honest-null cost read ----
+// metrics.costUsd is the honest null when nothing priced; `cost` sums priced
+// rounds only, so `?? cost` would launder unpriced into $0 (F6). Four shipped
+// call sites collapsed onto this helper — the next priced seam gets no chance
+// to re-invent the `?? 0` bug.
+
+test('priceOf: metrics present → its costUsd verbatim, null stays null (the honest unknown)', () => {
+  assert.deepEqual(priceOf({ metrics: { costUsd: null, unpricedRounds: 2 }, cost: 0.5 }),
+    { costUsd: null, unpricedRounds: 2 });
+  assert.deepEqual(priceOf({ metrics: { costUsd: 0.25, unpricedRounds: 0 } }),
+    { costUsd: 0.25, unpricedRounds: 0 });
+});
+
+test('priceOf: a metrics costUsd of exactly $0 is a real price, never coerced (falsy-zero honesty)', () => {
+  assert.deepEqual(priceOf({ metrics: { costUsd: 0, unpricedRounds: 0 }, cost: 0.5 }),
+    { costUsd: 0, unpricedRounds: 0 });
+});
+
+test('priceOf: no metrics → legacy cost, and no cost at all → the honest null', () => {
+  assert.deepEqual(priceOf({ cost: 0.3 }), { costUsd: 0.3, unpricedRounds: 0 });
+  assert.deepEqual(priceOf({}), { costUsd: null, unpricedRounds: 0 });
+  assert.deepEqual(priceOf(null), { costUsd: null, unpricedRounds: 0 });
 });

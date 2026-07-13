@@ -274,3 +274,108 @@ test('gh success without a PR URL in its output is pr-red, never a silent null l
   const { events } = await run('hitl-pr-nourl', { execCmd: exec });
   assert.ok(events.some((e) => e.type === 'pr-red' && /no PR URL/i.test(e.detail)));
 });
+
+// ---- review-hardening round (2026-07-13): confirmed findings become behavior tests ----
+
+const planConfig = () => JSON.stringify({
+  schema: 'v1',
+  loop: { shape: 'plan', maxIterations: 3 },
+  memory: { store: 'litectx' },
+  gate: { budgetUsd: 1, writeScope: ['src/**'] },
+  escalation: { mode: 'decision-ready' },
+});
+
+test('the ONE ledger meters plan-shape spend: worker-plan calls enter spentUsd (cap-not-estimate)', async () => {
+  const provider = stubProvider({ drafts: [planConfig()], draftCostUsd: 0.001, workCostUsd: 0.15 });
+  const { outcome, events } = await run('plan-spend', { provider });
+  assert.equal(outcome, 'escalated', 'the run ends at the hitl step');
+  const esc = events.find((e) => e.type === 'escalation' && e.category === 'hitl-close');
+  // 1 draft (0.001) + 2 hard steps × (plan 0.15 + implement 0.15) = 0.601
+  assert.ok(Math.abs(esc.spentUsd - 0.601) < 1e-9,
+    `plan calls must be metered into the job ledger — expected 0.601, got ${esc.spentUsd}`);
+});
+
+test('F6 — an unpriced PLAN call halts pricing-red at the step boundary (plan spend is never invisible)', async () => {
+  const calls = { draft: [], work: [] };
+  const provider = {
+    calls,
+    async generate(messages) {
+      const prompt = messages.at(-1).content;
+      if (prompt.startsWith('DRAFT-CONFIG')) {
+        calls.draft.push(prompt);
+        return { text: planConfig(), toolCalls: [], usage: { inputTokens: 10, outputTokens: 10 }, costUsd: 0.001, model: null };
+      }
+      calls.work.push(prompt);
+      const isPlan = prompt.includes('numbered implementation plan');
+      return { text: GOOD_SUM, toolCalls: [], usage: { inputTokens: 10, outputTokens: 10 }, costUsd: isPlan ? null : 0.01, model: null };
+    },
+  };
+  const { outcome, events } = await run('plan-unpriced', { provider });
+  assert.equal(outcome, 'pricing-red');
+  assert.ok(!events.some((e) => e.type === 'step-start' && e.step === 'style'), 'the halt lands at the boundary');
+});
+
+test('pr-red never captures a secret: git/gh output is scrubbed at the source before the spine (hard line)', async () => {
+  const token = 'ghp_a1B2c3D4e5F6g7H8i9J0k1L2';
+  const execCmd = (argv) => {
+    if (argv.slice(0, 2).join(' ') === 'git push') {
+      return { status: 1, stdout: '', stderr: `fatal: unable to access 'https://x-access-token:${token}@github.com/x/y.git/': The requested URL returned error: 403` };
+    }
+    return { status: 0, stdout: argv[0] === 'gh' ? 'https://github.com/x/y/pull/1\n' : '', stderr: '' };
+  };
+  const { outcome, events, workdir } = await run('pr-secret', { execCmd });
+  assert.equal(outcome, 'escalated', 'a PR failure never swallows the escalation');
+  const raw = readFileSync(join(workdir, 'run.jsonl'), 'utf8');
+  assert.ok(!raw.includes(token), 'the token never enters the append-only spine');
+  const red = events.find((e) => e.type === 'pr-red');
+  assert.ok(red && red.detail.includes('git push failed'), 'the red still names the failed step');
+});
+
+test('a provider transport throw during drafting is a decision-ready provider-red, never an unhandled rejection', async () => {
+  const calls = { draft: [], work: [] };
+  const provider = { calls, async generate() { throw new Error('401 invalid x-api-key'); } };
+  const { outcome, events } = await run('draft-throw', { provider });
+  assert.equal(outcome, 'provider-red');
+  const esc = events.find((e) => e.type === 'escalation' && e.category === 'provider-red');
+  assert.ok(esc?.decisionReady && esc.detail.includes('401'), 'decision-ready, carries the cause');
+  assert.equal(events.find((e) => e.type === 'job-end').outcome, 'provider-red', 'the spine never dangles');
+  const dr = events.find((e) => e.type === 'draft-result');
+  assert.equal(dr.costUsd, null, 'a transport throw means spend UNKNOWN (F6), never $0');
+  assert.equal(calls.work.length, 0, 'no step ran');
+});
+
+test('an interpreter throw outside the loop (broken gate audit) escalates interpreter-red with a terminal job-end', async () => {
+  const { workdir, target, suiteCmd } = makeWork('gate-eisdir');
+  mkdirSync(join(workdir, 'gate-audit.jsonl')); // a DIRECTORY at the audit path: gate.init throws EISDIR
+  const s = spec(suiteCmd);
+  const file = join(workdir, 'run.jsonl');
+  const outcome = await runJob(s, { approvals: approve(s), workdir, target, provider: stubProvider(), emit: makeSpine(file), capRuns: 2 });
+  const events = readFileSync(file, 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  assert.equal(outcome, 'step-red:fix');
+  assert.ok(events.some((e) => e.type === 'escalation' && e.category === 'interpreter-red' && e.decisionReady));
+  const end = events.find((e) => e.type === 'job-end');
+  assert.equal(end.outcome, 'step-red');
+  assert.equal(end.cause, 'interpreter-red');
+});
+
+test('reds-before-tokens: a text-mode job without opts.target is a job-red before ANY provider call', async () => {
+  const { workdir, suiteCmd } = makeWork('no-target');
+  const s = spec(suiteCmd);
+  const provider = stubProvider();
+  const file = join(workdir, 'run.jsonl');
+  const outcome = await runJob(s, { approvals: approve(s), workdir, provider, emit: makeSpine(file), capRuns: 2 });
+  const events = readFileSync(file, 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  assert.equal(outcome, 'job-red');
+  assert.ok(events.some((e) => e.type === 'job-red' && e.code === 'missing-required' && e.path === 'opts.target'));
+  assert.equal(provider.calls.draft.length + provider.calls.work.length, 0, 'zero tokens on a missing target');
+});
+
+test('drafting spend that consumes the whole job budget stops cap-halt — no paid redraft over a blown budget', async () => {
+  const provider = stubProvider({ drafts: [draftedConfig(0.4)], draftCostUsd: 0.6 });
+  const { outcome, events } = await run('draft-blown', { provider, specOver: { budgetUsd: 0.5 } });
+  assert.equal(outcome, 'cap-halt');
+  assert.equal(provider.calls.draft.length, 1, 'the redraft never fires over a blown budget');
+  const esc = events.find((e) => e.type === 'escalation' && e.category === 'cap-halt');
+  assert.ok(esc?.decisionReady, 'a budget story escalates as cap-halt, never blames the drafter');
+  assert.equal(events.find((e) => e.type === 'job-end').outcome, 'cap-halt');
+});

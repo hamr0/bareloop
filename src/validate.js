@@ -22,7 +22,7 @@ const MAX_OPS_PER_SLOT = 2;
 // (the set remember() itself validates against — adaptlearn F5's drift lesson:
 // the export you bind can be wider than the function you call), minus doc:
 // the doc/upload axis stays gated out deliberately.
-const REMEMBER_KINDS = WRITE_KINDS.filter((k) => k !== 'doc');
+export const REMEMBER_KINDS = WRITE_KINDS.filter((k) => k !== 'doc'); // exported: the drafting prompt advertises THIS menu (one source, no drift)
 const VERB_PARAMS = {
   recall: { k: (v) => Number.isInteger(v) && v >= 1 && v <= 20, kinds: isKinds },
   compress: { level: (v) => COMPRESS_LEVELS.includes(v) },

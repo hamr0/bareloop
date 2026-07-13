@@ -51,7 +51,7 @@ const CLOSE_FIELDS = {
 };
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
 
-/** @typedef {{code: string, path: string, detail?: string}} Red */
+/** @typedef {{code: string, path: string, detail?: string, verb?: string}} Red — `verb` rides request-reds as structured data (the ledger keys on it, never on prose) */
 
 /**
  * Validate an operator-owned job spec (`schema: "job-v1"`). Never throws on
@@ -168,7 +168,9 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
             // locked-but-listed asks red DISTINCTLY: request-red is the admission
             // evidence the ledger tallies (two-red routing); a typo stays invalid-value
             for (const t of s.tools.filter((/** @type {string} */ t) => LOCKED_TOOLS.includes(t))) {
-              red('request-red', `${at}.tools`, `"${t}" is locked-but-listed — this red IS the admission evidence, never a grant; granted menu: ${TOOL_MENU.join('|')}`);
+              // verb as a structured field: the ledger keys admission demand on it;
+              // parsing it back out of the prose detail would break on a rewording
+              reds.push({ code: 'request-red', path: `${at}.tools`, verb: t, detail: `"${t}" is locked-but-listed — this red IS the admission evidence, never a grant; granted menu: ${TOOL_MENU.join('|')}` });
             }
             const unknown = s.tools.filter((/** @type {string} */ t) => !TOOL_MENU.includes(t) && !LOCKED_TOOLS.includes(t));
             if (unknown.length) red('invalid-value', `${at}.tools`, `unknown tool(s) ${unknown.join(', ')} — menu: ${TOOL_MENU.join('|')}`);
@@ -195,6 +197,7 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
         // characters imply shell semantics the split cannot honor — honest
         // refusal beats silent misparse (N2 design default)
         else if (/["']/.test(close.cmd)) red('invalid-value', `${at}.close.cmd`, 'quote characters are inexpressible: cmd runs as whitespace-split argv, no shell');
+        else if (close.cmd !== close.cmd.trim()) red('invalid-value', `${at}.close.cmd`, 'leading/trailing whitespace — argv splits on whitespace and an empty argv[0] cannot spawn; honest refusal beats a silent misparse');
         if (!Number.isInteger(close.expect)) red('invalid-value', `${at}.close.expect`, 'integer exit code');
       } else if (close.type === 'gold') {
         if (close.expected === undefined) red('missing-required', `${at}.close.expected`);

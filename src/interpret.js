@@ -28,7 +28,7 @@ const require = createRequire(import.meta.url);
 const { Loop, wireGate, HaltError } = require('bare-agent');
 const { createShellTools } = require('bare-agent/tools');
 
-import { extractArtifact } from './text.js';
+import { extractArtifact, priceOf } from './text.js';
 
 /** @typedef {{body?: string|null, text?: string|null}} RecallHit litectx recall hit — body present only with `{body: true}` */
 
@@ -69,7 +69,7 @@ const toolAction = (name, args) => {
  * @param {number} opts.capRuns shell iteration budget; the config may tighten via loop.maxIterations, never exceed
  * @param {(type: string, data?: object) => object} opts.emit spine emitter
  * @param {object} opts.provider a bareagent provider — SHELL-owned binding (adaptlearn F8: an unsealed binding is a gate bypass)
- * @param {number} [opts.shellCapUsd=2] the shell's USD cap; config budgetUsd is clamped by validation
+ * @param {number} [opts.shellCapUsd=2] the shell's USD cap; a config budgetUsd above it REDS at validation (bounds — no silent clamping)
  * @param {number} [opts.closeTimeoutMs] close wall-clock cap, threaded to the shell
  *        (shell/operator territory — the workflow config cannot express it)
  * @param {string[]} [opts.jobWriteScope] the job spec's outer write fence (operator law,
@@ -91,6 +91,13 @@ const toolAction = (name, args) => {
  * @returns {Promise<'green'|'escalated'|'config-red'>}
  */
 export async function interpret(configRaw, { task, target, close, workdir, capRuns, emit, provider, shellCapUsd = 2, jobWriteScope, revisor, closeTimeoutMs, mode = 'text', tools }) {
+  // Reds-before-tokens: text mode writes ONE artifact — a missing target is a
+  // caller bug that must be loud NOW, not a TypeError after a paid worker call
+  // that ralph would misfile as interpreter-red (the gate skips an absent path,
+  // so nothing downstream catches it before writeFileSync(undefined)).
+  if (mode === 'text' && (typeof target !== 'string' || !target)) {
+    throw new TypeError('interpret: text mode requires target (the absolute artifact path)');
+  }
   // Normalize ONCE: a trailing slash or a relative spelling must mean the same
   // directory everywhere below — the enforcement belt compares string prefixes,
   // and "/run/" vs "/run" would false-red every legal scope (release review).
@@ -268,16 +275,11 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     if (config.loop.shape === 'plan') {
       // plan-then-execute: one call to decompose, one to implement following the plan
       const p = await ask([`Produce a SHORT numbered implementation plan (2-4 steps) for this task. Plan only, no code.`, ...parts.slice(1), parts[0]].filter(Boolean).join('\n\n'));
-      // metrics.costUsd carries the honest null when NOTHING priced — never fall
-      // through to `cost` when metrics exist: cost sums priced rounds only, so an
-      // all-unpriced run reports cost 0 and `?? cost` would launder the explicit
-      // unknown into a silent $0 (the F6 class). unpricedRounds makes a PARTIALLY
-      // unpriced run visible (costUsd finite but an under-count).
-      emit('worker-plan', { iteration, costUsd: p.metrics ? p.metrics.costUsd : (p.cost ?? null), unpricedRounds: p.metrics?.unpricedRounds ?? 0 });
+      emit('worker-plan', { iteration, ...priceOf(p) }); // priceOf: the ONE honest-null cost read (F6)
       parts.push(`Follow this plan:\n${p.text}`);
     }
     const r = await ask(parts.filter(Boolean).join('\n\n'));
-    emit('worker-result', { iteration, costUsd: r.metrics ? r.metrics.costUsd : (r.cost ?? null), unpricedRounds: r.metrics?.unpricedRounds ?? 0, toolCalls: r.metrics?.toolCalls ?? 0, tokens: r.usage?.outputTokens ?? null });
+    emit('worker-result', { iteration, ...priceOf(r), toolCalls: r.metrics?.toolCalls ?? 0, tokens: r.usage?.outputTokens ?? null });
 
     // Tool mode: the worker already wrote through the gated tools (every call
     // policy-checked against the fence); its final text is a change summary,

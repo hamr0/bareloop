@@ -89,9 +89,10 @@ hamr, 3 locked). The POC stays adaptlearn-side; the reference implementation is 
 | `escalation{category: interpreter-red}`, detail names the worker loop / provider | `provider-red` | bare-agent |
 | `escalation{category: interpreter-red}`, neither | `runtime-red` | `unknown` — counted, never dropped |
 | `escalation{category: pricing-red}` | `pricing-red` | bare-agent (pricing-table gap; F6 — **new vs the 07-11 table**) |
+| `escalation{category: provider-red}` (the runner's transport-throw seam, review 2026-07-13) | `provider-red` | bare-agent |
 | `escalation{category: broken-close}` | `broken-close` | consumer (job owner) |
 | `retention-red` | `retention-red` | litectx (`remember`) |
-| `job-red{code: request-red}` | `request-red` | the requested verb (from the red's quoted detail) |
+| `job-red{code: request-red}` | `request-red` | the requested verb — the red's structured `verb` field (review 2026-07-13); quoted-detail parse kept only as the fallback for older spines |
 | `cap-halt` in a spine that also carries request-reds | `capability-gap` | the requested verb |
 | `config-red` | `config-red` | **bareloop itself** — the config is model-drafted against OUR schema description; a repeated signature indicts the drafting prompt/schema |
 

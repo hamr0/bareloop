@@ -67,6 +67,35 @@ feature lands, **patch** = docs, fixes, scaffolding.
   "spend unknown" (F6); callers must not coerce it to 0.
 
 ### Fixed
+- **Review round 2026-07-13 (8 confirmed findings, all execution-verified):**
+  - **Secret-leak channel closed:** `openDraftPr` now scrubs git/gh subprocess output
+    with the ONE shape inventory (`SECRET_PATTERNS`) at capture — a credentialed
+    remote URL echoed by a failed `git push` never reaches `pr-red`/the escalation's
+    `pr.error` on the append-only spine (same doctrine as the close path).
+  - **Plan-shape spend is metered:** the job ledger accounts `worker-plan` events too
+    (a separate `loop.run` whose metrics never fold into the implement call's) —
+    plan calls now drain `spentUsd` and an unpriced plan call halts `pricing-red`.
+  - **The spine never dangles:** a provider transport throw during drafting is a
+    decision-ready **`provider-red`** terminal (new outcome + escalation category,
+    classified by the ledger); an interpreter throw outside the loop (e.g. a broken
+    gate audit path) escalates `interpreter-red` with a terminal `job-end`.
+  - **Reds-before-tokens for the call, not just the spec:** a text-mode job invoked
+    without `opts.target` is a `job-red` before ANY provider call (`interpret`
+    throws a loud TypeError for direct callers); previously it burned a draft + a
+    worker call, the gate default-allowed the absent path, and `writeFileSync`
+    crashed as a misfiled interpreter-red.
+  - **Whitespace-padded `close.cmd` reds** (`invalid-value`) — a leading space made
+    `spawnSync('')` throw synchronously past every belt; the runner also trims
+    before splitting (defense in depth). **`cap-halt` job outcome:** drafting spend
+    that consumes the whole budget stops honestly (no paid redraft over a blown
+    budget, no config-red blaming the drafter).
+  - **One instrument for the F6 cost read:** `priceOf(result)` (`src/text.js`)
+    replaces four hand-copied `metrics ? costUsd : (cost ?? null)` spellings;
+    `REMEMBER_KINDS` is exported from the validator so the drafting prompt
+    advertises the menu the validator enforces (no drift). `request-red` reds carry
+    the locked verb as a **structured `verb` field** — the ledger keys on it (prose
+    stays a legacy fallback). Stale "clamped by validation" JSDoc corrected (the
+    validator REDS bounds; it never clamps).
 - **Three silent $0 cost launderings (the F6 class) in shipped code:** `interpret`'s
   worker cost emit (`?? cost` chain), `extract.js`'s rules-path cost (`?? cost ?? 0`),
   and `extract.js`'s transport-throw path reporting unmeasured spend as `$0`. All now

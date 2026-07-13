@@ -100,10 +100,15 @@ export function classifyIncidents(events, { spine = 'spine' } = {}) {
       // a repeated signature indicts the drafting prompt/schema, i.e. bareloop
       add(ev, 'config-red', 'bareloop', String(ev.path ?? 'config').split('.')[0] || 'config', `${ev.code} at ${ev.path}: ${ev.detail ?? ''}`);
     } else if (ev.type === 'job-red' && ev.code === 'request-red') {
-      add(ev, 'request-red', 'bare-agent', (String(ev.detail ?? '').match(QUOTED_VERB_RE) ?? [])[1] ?? 'unknown', ev.detail);
+      // the structured field wins; the prose-quoted verb stays as the fallback
+      // for spines written before the field existed
+      add(ev, 'request-red', 'bare-agent', ev.verb ?? (String(ev.detail ?? '').match(QUOTED_VERB_RE) ?? [])[1] ?? 'unknown', ev.detail);
     } else if (ev.type === 'escalation') {
       if (ev.category === 'broken-close') {
         add(ev, 'broken-close', 'consumer', 'close', ev.detail);
+      } else if (ev.category === 'provider-red') {
+        // the runner's transport-throw seam (design table: retry-exhausted seam)
+        add(ev, 'provider-red', 'bare-agent', 'provider', ev.detail ?? ev.decision);
       } else if (ev.category === 'pricing-red') {
         add(ev, 'pricing-red', 'bare-agent', 'pricing', ev.decision ?? ev.detail);
       } else if (ev.category === 'interpreter-red') {
