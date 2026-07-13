@@ -460,6 +460,12 @@ Things to try, in nominated order:
    instrument fault found only after tokens burned. Consumption: upstream-ledger pattern —
    POC stays in adaptlearn `poc/`, bareloop rewrites against the spec and checks against
    the POC.
+   **ANSWERED 2026-07-13 (adaptlearn F24, 0.11.6): GREEN** — control 7/7, 7/7 faults
+   detected by their own assertions, falsifier 8/8 sabotaged vectors miss; run 1's control
+   arm caught a real fixture bug (`node --test <dir>` = entry-file red) before anything
+   trusted the instrument. Spec carried to
+   `docs/plans/2026-07-13-instrument-bist-spec.md`; the pre-flight rewrite lands with
+   N-ladder instrument hygiene, timing owned by this repo's session.
 2. **V10 — forbidden-zone audit (per close, lands with N-ladder close work).** Each close
    enumerates outcomes that are neither clean green nor clean red (F5 validate-then-crash
    class, unparseable artifacts, partial suites); each maps to a named red/escalation;
