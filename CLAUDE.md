@@ -68,3 +68,13 @@ For full development and testing standards, see AGENT_RULES.md — canonical cop
 `~/PycharmProjects/hamr0/AGENT_RULES.md` (a local, untracked copy lives at
 `.claude/remember/AGENT_RULES.md`). Library-specific standards:
 `~/PycharmProjects/hamr0/LIBRARY_CONVENTIONS.md`.
+
+<!-- MEMORY:START -->
+@.claude/remember/MEMORY.md
+<!-- MEMORY:END -->
+
+<!-- AGENT_RULES:START -->
+Consult when building something new or adding a feature — a standards guide, not hot
+context like MEMORY.md above:
+@.claude/remember/AGENT_RULES.md
+<!-- AGENT_RULES:END -->
