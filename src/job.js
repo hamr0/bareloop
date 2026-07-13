@@ -44,7 +44,7 @@ const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'conditions', 'c
 /** exact field set per close type — anything else is an unknown-field red
  * (freeform code, script bodies, and minting claims all land there) */
 const CLOSE_FIELDS = {
-  predicate: ['type', 'cmd', 'expect'],
+  predicate: ['type', 'cmd', 'expect', 'judged'],
   gold: ['type', 'expected', 'compare'],
   rubric: ['type', 'criteria'],
   hitl: ['type', 'prompt'],
@@ -199,6 +199,41 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
         else if (/["']/.test(close.cmd)) red('invalid-value', `${at}.close.cmd`, 'quote characters are inexpressible: cmd runs as whitespace-split argv, no shell');
         else if (close.cmd !== close.cmd.trim()) red('invalid-value', `${at}.close.cmd`, 'leading/trailing whitespace — argv splits on whitespace and an empty argv[0] cannot spawn; honest refusal beats a silent misparse');
         if (!Number.isInteger(close.expect)) red('invalid-value', `${at}.close.expect`, 'integer exit code');
+        // The judgment-rendered signal (PRD v1.11, optional). Exit code alone
+        // cannot separate "the suite ran and failed" from "the suite crashed at
+        // load" — they are byte-identical at the seam, and against `node --test`
+        // so are the raw counts (a crashed file is reported as ONE failing test).
+        // So the signal is a FLOOR, not a zero-check: a close declares how many
+        // things it must judge before its exit code means anything at all.
+        if (close.judged !== undefined) {
+          const j = close.judged;
+          if (!isObj(j)) red('invalid-value', `${at}.close.judged`, 'object {pattern, min} — proof the close actually judged something');
+          else {
+            for (const key of Object.keys(j)) {
+              if (!['pattern', 'min'].includes(key)) red('unknown-field', `${at}.close.judged.${key}`);
+            }
+            if (!isNonEmptyString(j.pattern)) red('missing-required', `${at}.close.judged.pattern`, 'regex over the close output with ONE capture group yielding the count');
+            else {
+              let groups = 0;
+              try {
+                // `p|` always matches the empty string, so exec() returns an array
+                // whose length is 1 + the number of capture groups — the only way
+                // to count groups without executing the pattern against real output.
+                groups = (new RegExp(`${j.pattern}|`).exec('')?.length ?? 1) - 1;
+              } catch {
+                red('invalid-value', `${at}.close.judged.pattern`, 'must compile as a RegExp');
+                groups = -1;
+              }
+              // A pattern with no capture group extracts nothing, so EVERY close
+              // would read as crashed — a dead arbiter that reds forever. Red the
+              // spec, not every run.
+              if (groups === 0) red('invalid-value', `${at}.close.judged.pattern`, 'no capture group — the count is read from group 1, so this pattern would crash every close');
+            }
+            if (!Number.isInteger(j.min) || j.min < 1) {
+              red('invalid-value', `${at}.close.judged.min`, 'integer >= 1 — a floor of 0 is satisfied by judging nothing, which is the check it is meant to make');
+            }
+          }
+        }
       } else if (close.type === 'gold') {
         if (close.expected === undefined) red('missing-required', `${at}.close.expected`);
         if (!GOLD_COMPARE.includes(close.compare)) red('invalid-value', `${at}.close.compare`, GOLD_COMPARE.join('|'));

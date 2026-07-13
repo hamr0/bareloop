@@ -78,6 +78,11 @@ const toolAction = (name, args) => {
  *        required in text mode; unused in tool mode (the worker writes through
  *        the gated tools, wherever the fence allows)
  * @param {string[]} opts.close argv whose exit code is truth (shell-owned)
+ * @param {number} [opts.closeExpect] the exit code the SIGNED spec calls success
+ * @param {{pattern: string, min: number}} [opts.closeJudged] the signed spec's
+ *   judgment-rendered signal — proof the close actually judged something before
+ *   its exit code is believed in EITHER direction (PRD v1.11; the drafted config
+ *   cannot express it, and must not: it is the arbiter's own honesty check)
  * @param {string} opts.workdir run directory (litectx root, gate audit, scope base)
  * @param {number} opts.capRuns shell iteration budget; the config may tighten via loop.maxIterations, never exceed
  * @param {(type: string, data?: object) => object} opts.emit spine emitter
@@ -107,7 +112,7 @@ const toolAction = (name, args) => {
  *        job-v1 validated); defaults to the full menu in tool mode
  * @returns {Promise<'green'|'escalated'|'config-red'>}
  */
-export async function interpret(configRaw, { task, target, close, workdir, capRuns, emit, provider, shellCapUsd = 2, jobWriteScope, revisor, closeTimeoutMs, mode = 'text', tools, closeState }) {
+export async function interpret(configRaw, { task, target, close, workdir, capRuns, emit, provider, shellCapUsd = 2, jobWriteScope, revisor, closeTimeoutMs, mode = 'text', tools, closeState, closeExpect, closeJudged }) {
   // Reds-before-tokens: text mode writes ONE artifact — a missing target is a
   // caller bug that must be loud NOW, not a TypeError after a paid worker call
   // that ralph would misfile as interpreter-red (the gate skips an absent path,
@@ -403,7 +408,9 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   // cwd: workdir — the close judges the tree the work happened in (F8). A close
   // is a repository command (`npm test`); run from anywhere else it silently
   // judges another repo and exit-code-is-truth stops being true.
-  const outcome = await ralph({ middle, close, capRuns: effectiveCap, emit, closeTimeoutMs, cwd: workdir, redact: (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS }) });
+  // expect/judged are the SIGNED spec's, threaded verbatim — the drafted config
+  // cannot express either (they are arbiter territory, PRD v1.11).
+  const outcome = await ralph({ middle, close, capRuns: effectiveCap, emit, closeTimeoutMs, cwd: workdir, expect: closeExpect, judged: closeJudged, redact: (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS }) });
   if (outcome === 'green') {
     // The close already passed — a retention hiccup must not un-green a real
     // green (it would corrupt the learning curve). It degrades loudly:

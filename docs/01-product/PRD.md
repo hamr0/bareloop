@@ -492,6 +492,17 @@ Things to try, in nominated order:
 5. **V13 — toggle coverage (ledger, post-N4).** Per config knob: ≥1 observed contrast
    toggle in the ledger, or the knob is flagged unwired-until-proven. Extends the F2
    contrast-bit minting rule into an ongoing coverage metric.
+   **ANSWERED 2026-07-13 (adaptlearn F26, 0.11.8): metric VALIDATED, archive INSUFFICIENT** —
+   control exact, all three comparison rules falsifier-proven, `hooks.on-green` flagged
+   UNWIRED in every world, F15's lock found toggle-visible. But the clean tier (one-knob
+   sibling cells at a fixed task) is **barren across the whole archive**: toggle coverage is
+   a ledger *design* requirement, not a post-hoc query, and a "toggle" across a re-authoring
+   boundary can carry the **wrong sign** (demonstrated live: −episode reading as an
+   improvement). Spec carried to `docs/plans/2026-07-13-toggle-coverage-spec.md`; binds the
+   N3/N4 ledger shape. Folded into doctrine in **Addendum v1.11**.
+
+> **All three consumed 2026-07-13 — see Addendum v1.11.** With V9, V10 and V13 answered and
+> V11/V12 transferred as registered build rules, adaptlearn's sandbox is **closed**.
    **ANSWERED 2026-07-13 (adaptlearn F26, 0.11.8): METRIC VALIDATED, ARCHIVE
    INSUFFICIENT** — the metric passes as an instrument (control exact; all three comparison
    rules falsifier-proven; `hooks.on-green` flagged UNWIRED in every archived world; F15's
@@ -508,6 +519,100 @@ Things to try, in nominated order:
 V11 (transparent-path lint) and V12 (restoration boundary) stand as registered build rules
 here, firing when the N-ladder builds the seams they constrain. adaptlearn's sandbox is
 closed with nothing structurally hostable left; further probes ride bareloop's own jobs.
+
+---
+
+## Addendum v1.11 — 2026-07-13 (the Boolean floor CONSUMED: three adaptlearn specs land as doctrine — hamr)
+
+The three sandbox probes registered in v1.10 have all read out, and their specs are carried into
+this repo (`docs/plans/2026-07-13-{instrument-bist,forbidden-zone-audit,toggle-coverage}-spec.md`).
+adaptlearn's sandbox is now **closed**: every Boolean-floor V-item is either answered (V9, V10,
+V13) or transferred here as a registered build rule (V11, V12). This addendum folds what they
+bought into doctrine. Where a rule was *corrected* by contact with real code in this repo, the
+correction is named — the spec travels, but it does not outrank the evidence.
+
+### The forbidden zone (V10 / adaptlearn F25 / this repo's F17) — design law #8, generalized
+
+Law #8 says reds are evidence, never verdicts, and cap-halt is its own category. The forbidden
+zone is the same law applied to **the gap between the bands**:
+
+> **A close that rendered NO JUDGMENT produced NO VERDICT — in either direction.** The two clean
+> bands are green (exit == the signed `expect`, judgment rendered) and red (exit != `expect`,
+> judgment rendered). Every other outcome gets its own name, its own escalation, and its own
+> human decision — and is NEVER retried. Coercing one into a verdict *is* the instrument fault.
+
+Named, never pooled: **`broken-close`** (cannot run) · **`close-timeout`** (ran, never finished
+judging) · **`close-killed`** (died by signal) · **`close-crashed`** (ran, exited, judged nothing).
+`close-timeout` is split out of `broken-close` because "raise the timeout" and "fix the argv" are
+different human answers, and an escalation exists to carry exactly that distinction.
+
+**The judgment-rendered signal.** Exit code alone cannot separate a crash-at-load from an honest
+red — they are byte-identical at the seam. So a close may declare, in the **signed job spec**, how
+it evidences that judgment occurred (`close.judged: {pattern, min}` — one integer extracted from
+its own output, against a declared floor). Three things about it are doctrine:
+
+1. **It is a FLOOR, not a zero-check.** adaptlearn's rule 3 ("exit nonzero ∧ *zero* tests executed")
+   is **not buildable** — against `node --test` a crashed file is reported as one failing test, so
+   the count is never zero. The spec was corrected against a real runner (F17). *A rule validated
+   only against a fixture is a rule that has not met its instrument.*
+2. **It is checked on the GREEN band too.** This goes beyond what adaptlearn found, and it earned
+   its place immediately: pointed at a tree with no test suite (the F8 wrong-repository class),
+   `node --test` **exits 0** and the shipped arbiter returned **`satisfied`** — a fake green,
+   law #8's only real failure, live. A red-side-only guard cannot see it.
+3. **It is arbiter territory, and it is optional.** The agent-drafted config cannot express it
+   (inexpressibility, both directions). A close with nothing to count — a linter, a `hitl` close
+   where a human *is* the judgment — stays writable, and its absence is stamped `unaudited` and
+   announced on the spine. **A blind spot is named, never assumed away.**
+
+**Inexpressibility is only as deep as its unknown-field check** (F17, minted here). The workflow
+validator guarded unknown fields at the top level only; every nested block (`gate`, `loop`,
+`memory`, `escalation`) accepted arbitrary keys. Nothing consumed them — but "the arbiter split is
+guarded both directions by inexpressibility" was, as written, false below depth one. The guard is
+now per-section. **Any claim of inexpressibility must name the depth at which it is enforced.**
+
+### Instrument BIST (V9 / adaptlearn F24) — a pre-flight, before any instrument is trusted
+
+READOUT GREEN (control 7/7, 7/7 faults detected, falsifier 8/8 sabotaged vectors miss). The spec
+(`instrument-bist-spec.md`) carries a stuck-at fault catalog + one detection vector per fault over
+the real components (`runClose`/`ralph`, `makeSpine`, `validateConfig`). It lands with N-ladder
+instrument hygiene, and it lands as a **rewrite against this repo's components — never a copy**
+(graduation is always a rewrite). Two rules ride with it, both paid for:
+
+- **One shared read-back function against good AND faulted components** — a replica check is a
+  second instrument, and two instruments that disagree about the same seam are the fault itself.
+- **Keep the falsifier arm.** A vector whose sabotage still "detects" was detecting a crash, not
+  asserting anything; it is not load-bearing and must not ship. (V9's own run 1 proved this on
+  itself: its control arm caught a real fixture bug — a `node --test <dir>` argv redding every
+  close — *before* any probe trusted the instrument. The mechanism worked one level early.)
+
+### Toggle coverage (V13 / adaptlearn F26) — the metric is valid; the LEDGER must be designed for it
+
+READOUT: the metric works and discriminates (control exact; all three comparison rules
+falsifier-proven; `hooks.on-green` flagged UNWIRED in every archived world; F15's lock found
+toggle-visible) — **but adaptlearn's archived ledgers cannot support clean attribution**, and that
+is the lesson bareloop inherits. This binds N3/N4 (the ledger and the extractor), not N2:
+
+1. **Toggle coverage is a ledger DESIGN requirement, not a post-hoc query.** The clean tier
+   (sibling cells at the same task/generation/arm, configs one knob apart) was **barren in every
+   archived world** — sibling lineages had divergent mutation histories, so they virtually never
+   differed by exactly one knob. **bareloop's cohorts must deliberately EMIT one-knob sibling
+   cells.** Retrofitting the metric onto a ledger not designed for it yields a barren clean tier
+   and a confounded one. *This is a constraint on how runs are scheduled, and it must be settled
+   before the ledger's shape is locked — not after.*
+2. **Never count a toggle across a re-authoring boundary.** A lineage pair is one-knob only if the
+   ledger says it *was* a mutation step (`knobMutated` set). Demonstrated live and unpleasantly: a
+   re-authored pair produced a "toggle" attributing improvement to **removing** episode-recall —
+   **the wrong sign**, against the strongest result the project has. An arm that re-authors between
+   generations silently breaks the one-knob semantics.
+3. **Ship the UNWIRED-until-proven flag.** Zero observed toggles ⇒ the knob is unwired-until-proven,
+   by default. `hooks.on-green` is the worked example: an axis in the schema, in the mutation
+   catalog, and in every config, with **zero ledger evidence it ever changed an outcome**.
+4. **Keep all three comparison rules** — each is falsifier-proven load-bearing: single-knob
+   strictness, outcome-class sensitivity, and kinds-as-sets with mirror coupling.
+
+This extends design law #3 (*verdict admits, contrast attributes*) with its ongoing coverage
+counterpart: **a knob with no observed toggle has no standing to be claimed load-bearing** — and
+the ledger only produces toggles if it was built to.
 
 ---
 

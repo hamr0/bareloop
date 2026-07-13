@@ -13,7 +13,7 @@ import { redact } from 'bareguard';
 import { validateJob, jobSpecHash, checkApproval } from './job.js';
 import { validateConfig, LOOP_SHAPES, SLOTS, VERBS, globToPrefix, SECRET_PATTERNS, REMEMBER_KINDS } from './validate.js';
 import { interpret } from './interpret.js';
-import { runClose } from './ralph.js';
+import { runClose, CLOSE_FAULTS } from './ralph.js';
 import { extractArtifact, priceOf } from './text.js';
 
 const require = createRequire(import.meta.url);
@@ -393,17 +393,21 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
     // trim before splitting: validateJob reds whitespace-padded cmds, but an
     // empty argv[0] would THROW at spawn — belt for any path around the validator
     const closeArgv = step.close.cmd.trim().split(/\s+/);
-    const pre = runClose(closeArgv, (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS }), { timeoutMs: closeTimeoutMs, cwd: workdir });
+    const closeOpts = { timeoutMs: closeTimeoutMs, cwd: workdir, expect: step.close.expect, judged: step.close.judged };
+    const pre = runClose(closeArgv, (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS }), closeOpts);
     emit('close-precheck', { step: step.id, ...pre });
     if (pre.verdict === 'satisfied') {
       emit('step-end', { step: step.id, outcome: 'already-green', spentUsd });
       continue;
     }
-    if (pre.verdict === 'failed') {
-      // reds-before-tokens: a close that cannot RUN is a broken arbiter — the
-      // same honest stop ralph makes, moved before the draft and the worker call
-      emit('escalation', { category: 'broken-close', decisionReady: true, step: step.id, decision: 'The close itself cannot run — no verdict is trustworthy until it is fixed.', options: ['fix the close command', 'abandon the run'], detail: pre.detail, spentUsd });
-      emit('job-end', { outcome: 'step-red', step: step.id, cause: 'broken-close', spentUsd });
+    // reds-before-tokens: the forbidden zone is checked BEFORE the draft and the
+    // worker call. A close that cannot run, never finished, died by signal, or
+    // judged nothing rendered NO VERDICT — escalate by its own name (the SAME
+    // map ralph uses; two maps would be two instruments), never spend on it.
+    const fault = Object.hasOwn(CLOSE_FAULTS, pre.verdict) ? CLOSE_FAULTS[pre.verdict] : undefined;
+    if (fault) {
+      emit('escalation', { category: fault.category, decisionReady: true, step: step.id, decision: fault.decision, options: fault.options, detail: pre.detail, spentUsd });
+      emit('job-end', { outcome: 'step-red', step: step.id, cause: fault.category, spentUsd });
       return `step-red:${step.id}`;
     }
     // The precheck's gap goes to the worker as what it IS: the close's output on
@@ -420,8 +424,10 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
         target, close: closeArgv, workdir, capRuns,
         emit: meter, provider, ...cOpts(), closeTimeoutMs, closeState: pre.gap,
         // the SPEC's grant, threaded verbatim (2b decision #2) — the drafted
-        // config cannot express mode or tools, so there is nothing to merge
+        // config cannot express mode or tools, so there is nothing to merge.
+        // expect/judged ride the same rail for the same reason (PRD v1.11).
         mode: step.mode ?? 'text', tools: step.tools,
+        closeExpect: step.close.expect, closeJudged: step.close.judged,
       });
     } catch (e) {
       // ralph belts throws INSIDE the loop; this belts the interpreter's own

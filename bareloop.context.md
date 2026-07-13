@@ -85,10 +85,33 @@ is a named red `close-hierarchy`):
 
 | type | fields (exact — extras red) | legal class |
 |---|---|---|
-| `predicate` | `cmd`, `expect` (int exit code) | `hard` |
+| `predicate` | `cmd`, `expect` (int exit code), `judged?` | `hard` |
 | `gold` | `expected`, `compare: exact\|json-equal` | `hard` |
 | `rubric` | `criteria` | `soft` only — can never mint automatically |
 | `hitl` | `prompt` | `hitl` — a human IS the close |
+
+**`judged` — the judgment-rendered signal (optional, `predicate` only; PRD v1.11 / F17).**
+`{ pattern: string, min: int >= 1 }` — a regex with ONE capture group, run over the close's
+own (redacted) output to extract how many things it actually judged, against a declared
+floor. **Why it exists:** an exit code cannot distinguish "the suite ran and failed" from
+"the suite crashed at load" — and it cannot distinguish a real green from a close that ran
+**no tests at all**. Pointed at a tree with no suite, `node --test` exits 0, and without
+`judged` the arbiter returns `satisfied`: a fake green (law #8's only real failure). The
+floor is checked on **both** bands. Below it, the verdict is `crashed`, whatever the exit
+code said.
+
+It is a **floor, not a zero-check**: `node --test` reports a crashed file as ONE failing
+test, so "zero executed" never fires. Declare it against the suite's real size
+(`{ pattern: "^ℹ tests (\\d+)$", min: 300 }` for a 391-test suite, with
+`--test-reporter=spec`, which prints both the counts and the failures at the end). It
+catches *"the arbiter did not run"* — wrong tree, broken argv, a failed shared import — not
+*"one test file is broken"*, which is an honest red the worker should fix.
+
+Omitting it is legal (a linter, a `hitl` close, have nothing to count) and stamps
+`unaudited: true` on the verdict plus a `close-unaudited` spine event: **the blind spot is
+named, never assumed away.** The agent-drafted workflow config cannot express `judged` —
+it is the arbiter's own honesty check (unknown-field red, enforced per section at every
+depth).
 
 Red vocabulary (both validators): `parse-error`, `unknown-field`, `missing-required`,
 `invalid-value`, `bounds`, `duplicate-id`, `close-type`, `close-hierarchy`,
@@ -109,7 +132,7 @@ Append-only JSONL event emitter bound to one file. `seq` monotonic per spine, `t
 last. Consumers are pure listeners; nothing reads the file back. Returns each event as
 written.
 
-### `ralph({ middle, close, capRuns, emit, redact?, closeTimeoutMs?, cwd? })` → `'green' | 'escalated'` — `src/ralph.js`
+### `ralph({ middle, close, capRuns, emit, redact?, closeTimeoutMs?, cwd?, expect?, judged? })` → `'green' | 'escalated'` — `src/ralph.js`
 
 The dumb outer shell: `while close-red and under-cap: run the middle`. `close` is an argv
 whose exit code is truth (`runClose` is also exported); the red gap text feeds the next
@@ -121,7 +144,26 @@ always pass the workdir. **Corollary for job authors (F15):** the gap bound keep
 and the TAIL, so a close whose failures print mid-stream (a 391-subtest TAP dump) tells the
 worker only the summary counts — pick a reporter whose failures land at the end.
 `closeTimeoutMs` caps the close's wall clock (default 120s) — shell/operator
-territory, inexpressible in any config. Escalations are decision-ready (category, options, spend); cap-halt is its own
+territory, inexpressible in any config.
+
+**The forbidden zone (PRD v1.11 / F17).** `runClose` returns a verdict ONLY when judgment
+was rendered. `expect` (the signed exit code, default 0) and `judged` define the two clean
+bands; everything else is **not a verdict**, gets its own name, and is **never retried** —
+retrying a broken arbiter is the violation this closes. `CLOSE_FAULTS` (exported; the
+runner's pre-token precheck uses the *same* map — two maps would be two instruments):
+
+| verdict | what happened | escalation | the human's real options |
+|---|---|---|---|
+| `failed` | the close cannot RUN | `broken-close` | fix the argv |
+| `timed-out` | ran, never finished judging | `close-timeout` | raise the timeout / make it faster |
+| `killed` | died by signal (`status === null`, no spawn error) | `close-killed` | re-run / fix the environment (OOM) |
+| `crashed` | ran, exited, judged nothing (see `judged`) | `close-crashed` | fix the crash / fix the argv / lower the floor |
+
+`close-timeout` is deliberately **not** pooled into `broken-close`: "raise the timeout" and
+"fix the command" are different human answers, and pooling them erases the decision
+information the escalation exists to carry.
+
+Escalations are decision-ready (category, options, spend); cap-halt is its own
 category, never merged with "wrong". A thrown middle is relayed by its `category`
 property (`cap-halt`, `gate-red`, …); an unnamed throw is `interpreter-red`. Close output
 is scrubbed at capture (an injected `redact`, wired to bareguard by `interpret` with the

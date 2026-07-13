@@ -15,6 +15,20 @@ export const LOOP_SHAPES = Object.freeze(['refine', 'plan']);
 export const SLOTS = Object.freeze(['before-attempt', 'after-red', 'on-green']);
 export const VERBS = Object.freeze(['recall', 'compress', 'stash', 'remember']);
 const TOP_FIELDS = ['schema', 'loop', 'memory', 'hooks', 'gate', 'escalation'];
+// Unknown-field guard, PER SECTION — not just at the top (F17). The arbiter
+// split is guarded "both directions by inexpressibility": the drafted config
+// must be UNABLE to say certain things. A guard that stops at the top level
+// does not deliver that — `gate: { judged: {...} }` (the close's own honesty
+// check) validated green, as would `gate.maxCostUsd`. Nothing consumed those
+// keys, so nothing broke; the guarantee is that nothing ever can. Hook ops are
+// guarded separately by VERB_PARAMS.
+const SECTION_FIELDS = Object.freeze({
+  loop: ['shape', 'maxIterations'],
+  memory: ['store', 'recall', 'compressLevel'],
+  'memory.recall': ['k', 'kinds'],
+  gate: ['budgetUsd', 'writeScope'],
+  escalation: ['mode'],
+});
 const MAX_OPS_PER_SLOT = 2;
 
 // per-verb parameter contracts: name → check(value) (op field itself excluded).
@@ -284,6 +298,15 @@ export function validateConfig(input, { shellCapUsd = 2, jobWriteScope } = {}) {
           else if (!params[key](value)) red('verb-params', `${opAt}.${key}`, `invalid value for ${op.op}.${key}`);
         }
       });
+    }
+  }
+
+  // 4b. inexpressibility, at every depth the arbiter can be reached from
+  for (const [section, allowed] of Object.entries(SECTION_FIELDS)) {
+    const obj = section === 'memory.recall' ? memory.recall : c[section];
+    if (!isObj(obj)) continue;
+    for (const key of Object.keys(obj)) {
+      if (!allowed.includes(key)) red('unknown-field', `${section}.${key}`);
     }
   }
 

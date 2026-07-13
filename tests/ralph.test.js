@@ -48,7 +48,9 @@ test('passing close: green at first iteration, stop-at-first-green, no escalatio
   assert.equal(outcome, 'green');
   assert.deepEqual(
     events.map((e) => e.type),
-    ['run-start', 'iteration-start', 'middle-done', 'close-verdict', 'run-end'],
+    // close-unaudited rides at run-start: GREEN declares no judgment signal, so
+    // the record says so out loud (PRD v1.11) rather than trusting exit 0 blindly
+    ['run-start', 'close-unaudited', 'iteration-start', 'middle-done', 'close-verdict', 'run-end'],
   );
   assert.equal(events.at(-1).outcome, 'green');
 });
@@ -155,23 +157,11 @@ test('runClose default redactor is identity — a benign gap is byte-identical (
 
 // ---- N2 queue: close timeout as an option; tail-biased gap bound ----
 
-test('a close exceeding closeTimeoutMs is a failed verdict (broken arbiter), not a hang', () => {
-  const slow = ['node', '-e', 'setTimeout(() => {}, 30000)']; // would hold the event loop 30s
-  const v = runClose(slow, undefined, { timeoutMs: 300 });
-  assert.equal(v.verdict, 'failed', 'a timed-out close is failed, never satisfied or needs_revision');
-  assert.match(v.detail, /ETIMEDOUT|timed?.?out/i, 'the detail names the timeout');
-});
-
-test('ralph threads closeTimeoutMs; a timed-out close escalates broken-close immediately', async () => {
-  const file = join(dir, 'timeout.jsonl');
-  const slow = ['node', '-e', 'setTimeout(() => {}, 30000)'];
-  const outcome = await ralph({ middle: noop, close: slow, capRuns: 3, emit: makeSpine(file), closeTimeoutMs: 300 });
-  assert.equal(outcome, 'escalated');
-  const events = readFileSync(file, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l));
-  const esc = events.find((e) => e.type === 'escalation');
-  assert.equal(esc.category, 'broken-close', 'a broken arbiter must not masquerade as a bad harness');
-  assert.equal(events.filter((e) => e.type === 'iteration-start').length, 1, 'never retried');
-});
+// NOTE: the two tests that lived here pinned `timeout → failed → broken-close`.
+// That pooling IS the F25/Z-2 collapse — "cannot run" and "did not finish
+// judging" need opposite human decisions. Their surviving assertions (a timeout
+// terminates rather than hangs, and is never retried) moved into the
+// close-timeout tests in the forbidden-zone block below.
 
 test('the gap bound is tail-biased: the error at the END of long output survives (the assertion diff lives there)', () => {
   const close = ['node', '-e', 'console.error("x".repeat(3000) + "\\nAssertionError: THE-REAL-CAUSE"); process.exit(1)'];
@@ -230,4 +220,105 @@ test('ralph threads cwd to every close it runs — the arbiter never judges anot
   const middle = () => writeFileSync(join(repo, 'check.mjs'), 'process.exit(0)');
   const outcome = await ralph({ middle, close: ['node', 'check.mjs'], capRuns: 2, emit: makeSpine(file), cwd: repo });
   assert.equal(outcome, 'green', 'the close saw the middle\'s work because it ran where the work is');
+});
+
+// ─── The forbidden zone (PRD v1.11 / F17, from adaptlearn F25) ───────────────
+// The bands are clean green (exit == expect, judgment rendered) and clean red
+// (exit != expect, judgment rendered). EVERYTHING ELSE rendered no judgment and
+// is therefore NOT a verdict — it escalates by its own name and is NEVER retried
+// (retrying a broken arbiter is the §5b violation adaptlearn found live).
+
+const KILLED = ['node', '-e', 'process.kill(process.pid,"SIGKILL")'];
+const HANGS = ['node', '-e', 'setTimeout(()=>{}, 30000)'];
+// prints its own judged count to STDOUT while the gap comes from STDERR
+const judgedClose = (n, exit) => ['node', '-e', `console.log("tests ${n}"); console.error("gap: three recall tests failed"); process.exit(${exit})`];
+const JUDGED = { pattern: '^tests (\\d+)$', min: 3 };
+
+test('close killed by signal: no judgment rendered — its own verdict, never a red', () => {
+  const v = runClose(KILLED);
+  assert.equal(v.verdict, 'killed', 'a signal death is not a failing test suite');
+  assert.equal(v.signal, 'SIGKILL');
+});
+
+test('ralph escalates close-killed immediately and NEVER retries the broken arbiter', async () => {
+  const { outcome, events } = await run('killed', KILLED, 3);
+  assert.equal(outcome, 'escalated');
+  const esc = events.find((e) => e.type === 'escalation');
+  assert.equal(esc.category, 'close-killed');
+  assert.equal(esc.decisionReady, true);
+  assert.equal(events.filter((e) => e.type === 'iteration-start').length, 1, 'one iteration — the cap was NOT burned against a dead judge');
+});
+
+test('close timeout: "did not finish judging" is its own verdict, distinct from "cannot run"', () => {
+  const v = runClose(HANGS, undefined, { timeoutMs: 300 }); // would hold the event loop 30s — terminates, never hangs
+  assert.equal(v.verdict, 'timed-out', 'not pooled into failed/broken-close — the fixes differ');
+  assert.match(v.detail, /never finished judging/i, 'the detail says what it is: no judgment, not a failure');
+  const broken = runClose(BROKEN);
+  assert.equal(broken.verdict, 'failed', 'a missing binary is still cannot-run — the two are NOT one bucket');
+});
+
+test('ralph escalates close-timeout by its own name, with raise-the-timeout among the options', async () => {
+  const file = join(dir, 'timeout.jsonl');
+  const outcome = await ralph({ middle: noop, close: HANGS, capRuns: 3, emit: makeSpine(file), closeTimeoutMs: 300 });
+  const events = readFileSync(file, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l));
+  assert.equal(outcome, 'escalated');
+  const esc = events.find((e) => e.type === 'escalation');
+  assert.equal(esc.category, 'close-timeout');
+  assert.ok(esc.options.some((/** @type {string} */ o) => /timeout/i.test(o)), 'the decision names the timeout lever');
+  assert.equal(events.filter((e) => e.type === 'iteration-start').length, 1, 'never retried — a judge that cannot answer is not re-asked');
+});
+
+test('CONTROL — an honest red that DID render judgment passes the floor and stays a plain red', () => {
+  const v = runClose(judgedClose(391, 1), undefined, { judged: JUDGED });
+  assert.equal(v.verdict, 'needs_revision', 'the floor must not over-trigger on a real red');
+  assert.equal(v.judgedCount, 391);
+  assert.match(v.gap, /three recall tests failed/);
+});
+
+test('close-crashed: exit says red but nothing was judged — a crash, not a verdict', () => {
+  const v = runClose(judgedClose(1, 1), undefined, { judged: JUDGED });
+  assert.equal(v.verdict, 'crashed', 'judged 1 of a declared floor of 3 — the suite died at load');
+  assert.equal(v.judgedCount, 1);
+});
+
+test('close-crashed on GREEN too: exit 0 having judged nothing is a FAKE GREEN (law #8)', () => {
+  const v = runClose(judgedClose(0, 0), undefined, { judged: JUDGED });
+  assert.equal(v.verdict, 'crashed', 'a green that judged nothing is the only real failure there is');
+  assert.notEqual(v.verdict, 'satisfied');
+});
+
+test('ralph escalates close-crashed immediately — a crashed judge is never retried', async () => {
+  const file = join(dir, 'crashed.jsonl');
+  const outcome = await ralph({ middle: noop, close: judgedClose(0, 1), capRuns: 3, emit: makeSpine(file), judged: JUDGED });
+  const events = readFileSync(file, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l));
+  assert.equal(outcome, 'escalated');
+  assert.equal(events.find((e) => e.type === 'escalation').category, 'close-crashed');
+  assert.equal(events.filter((e) => e.type === 'iteration-start').length, 1);
+});
+
+test('no judged block: the close still works, and the blind spot is NAMED on the record', () => {
+  const v = runClose(judgedClose(391, 1));
+  assert.equal(v.verdict, 'needs_revision');
+  assert.equal(v.unaudited, true, 'the hole is stamped, not hidden — an unaudited close cannot detect a crash');
+  const audited = runClose(judgedClose(391, 1), undefined, { judged: JUDGED });
+  assert.ok(!audited.unaudited, 'a declared floor is audited');
+});
+
+test('a judged pattern that matches nothing is a crash, not a silent pass', () => {
+  const v = runClose(['node', '-e', 'console.log("no counts here"); process.exit(0)'], undefined, { judged: JUDGED });
+  assert.equal(v.verdict, 'crashed');
+  assert.equal(v.judgedCount, null, 'honest null: no number was rendered (F6 convention)');
+});
+
+test('close.expect is HONORED: a close whose declared success is exit 1 greens on exit 1', () => {
+  assert.equal(runClose(['node', '-e', 'process.exit(1)'], undefined, { expect: 1 }).verdict, 'satisfied');
+  assert.equal(runClose(['node', '-e', 'process.exit(0)'], undefined, { expect: 1 }).verdict, 'needs_revision',
+    'and exit 0 is the RED — the arbiter judges against the signed number, not against 0');
+});
+
+test('the judged count is read from a REDACTED stream — a secret in the close output never rides the count', () => {
+  const close = ['node', '-e', 'console.log("tests 391"); console.error("sk-ant-api03-AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHHIIIIJJJJKKKKLLLLMMMM"); process.exit(1)'];
+  const v = runClose(close, (s) => s.replace(/sk-ant-[A-Za-z0-9-]+/g, '[redacted]'), { judged: JUDGED });
+  assert.equal(v.judgedCount, 391);
+  assert.doesNotMatch(v.gap, /sk-ant-api03/);
 });

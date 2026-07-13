@@ -417,3 +417,104 @@ the test asked it to. Twenty-one runner tests, three review rounds and two mutat
 green over that code. Nine real runs — most of them costing pennies — found nine defects, two
 of which (the arbiter judging the wrong repo; the ledger under-counting spend 300×) go to the
 integrity of the two things this product claims are un-gameable.
+
+## F17 — the forbidden zone was reachable, and its worst outcome was a FAKE GREEN: the arbiter greened a tree that had run no tests at all
+
+**Where:** `src/ralph.js` (`runClose`, `ralph`), `src/run.js` (close-first precheck), `src/job.js`
+and `src/validate.js` (the two validators). Consumed from adaptlearn F25/V10
+(`docs/plans/2026-07-13-forbidden-zone-audit-spec.md`), which shipped three build rules. Two of
+them survived contact with a real runner. **One did not, and the correction is the finding.**
+
+### What adaptlearn shipped, and why rule 3 could not be built as written
+
+Rule 3 said: treat **"exit nonzero ∧ zero tests executed"** as `close-crashed`. Against `node --test`
+the count is **never zero** — node **synthesizes one failing test for the file that crashed at
+load**, so a crash reports `tests 1 / pass 0 / fail 1`, which is byte-identical in counts to an
+honest one-assertion failure:
+
+| | tests | pass | fail | exit |
+|---|---|---|---|---|
+| crash at load (no real test ran) | 1 | 0 | 1 | 1 |
+| honest red (one failing assertion) | 1 | 0 | 1 | 1 |
+
+The counts are as blind as the exit code. The probe could not have found this: it ran the rule
+against a hand-built fixture, never against a real runner's real output. **The signal cannot be
+"zero judged" — it must be a FLOOR against a declared baseline.** litectx runs 391 tests; a close
+claiming it judged 1 did not judge, whatever it exited.
+
+Second collision, same family: **the `dot` reporter prints no summary counts at all** — and `dot`
+is the reporter F15 had just moved job #1 to (failures land in the tail, where the gap bound
+looks). F15's fix and F25's rule 3 were in direct conflict. Job #1's close moved to
+`--test-reporter=spec`, which prints **both** the counts and the failing tests with assertion
+diffs at the end. Verified against the real suite: gap = 1927 bytes, naming the real failing
+tests with `file:line`.
+
+### The headline: the worst forbidden-zone outcome was a fake green, not a red
+
+adaptlearn's rule only guarded the **nonzero** side. hamr's call was to guard **both bands**
+("A yes, on green too"). That call was vindicated empirically within the hour. Running job #1's
+close against a tree containing no test suite — the **F8 wrong-repository class**, the defect
+this repo had *already* found once:
+
+```
+WRONG TREE → without judged:  verdict = satisfied,  unaudited = true   ← A FAKE GREEN
+WRONG TREE → with judged:     verdict = crashed,    judgedCount = 0
+```
+
+`node --test` in a tree with no tests **exits 0**. So the shipped arbiter, pointed at the wrong
+tree, did not red — it **greened**, and the job would have reported its work done having judged
+nothing. That is design law #8's "the only real failure is a confident fake green", live, and it
+is *unreachable* by a red-side-only guard. Had we stayed inside adaptlearn's finding, this case
+would still be open. **A guard written only for the failing side cannot see the failure that
+matters most.**
+
+### The four named outcomes (the arbiter no longer rounds)
+
+`runClose` now returns a verdict only when judgment was actually rendered. Everything else gets
+its own name, its own escalation, its own human decision — and is **never retried** (retrying a
+broken arbiter is the §5b violation adaptlearn found live in its own shell):
+
+| verdict | what happened | escalation | the human's actual options |
+|---|---|---|---|
+| `failed` | the close cannot RUN | `broken-close` | fix the argv |
+| `timed-out` | ran, never finished judging | `close-timeout` | **raise the timeout** / make it faster |
+| `killed` | died by signal (status null, no spawn error) | `close-killed` | re-run / fix the environment (OOM) |
+| `crashed` | ran, exited, judged nothing | `close-crashed` | fix the crash / fix the argv / lower the floor |
+
+`timed-out` is split out of `failed` because "raise the timeout" and "fix the command" are
+different answers — pooling them erases the decision information the escalation exists to carry
+(F25's Z-2 collapse). The two prior tests that pinned `timeout → broken-close` **encoded the
+collapse** and were rewritten; their still-true assertions (terminates, never retried) moved to
+the new tests.
+
+### Two more defects found while wiring it
+
+- **`close.expect` was validated and never used.** The job schema has taken an integer exit code
+  since N1; `runClose` hardcoded `status === 0`. A human signing `expect: 1` was judged against 0,
+  silently. A knob the arbiter declares and does not honor is a fit-to-pass surface with a
+  respectable name. Now threaded and honored.
+- **The workflow validator's unknown-field guard was top-level only.** `loop`, `memory`,
+  `memory.recall`, `gate`, `escalation` all accepted **arbitrary keys** — so an agent-drafted
+  config could carry `gate.judged` (the close's own honesty check) or `gate.maxCostUsd` and
+  validate **green**. Nothing consumed them, so nothing broke; but the doctrine this product
+  rests on is *"the arbiter split is guarded both directions by inexpressibility"*, and a guard
+  that stops one level down does not deliver that. Inexpressibility is now enforced per section,
+  at every depth the arbiter can be reached from. The lesson generalizes: **an inexpressibility
+  claim is only as deep as its unknown-field check.**
+
+### Judgment floor: what it catches, and what it is NOT for
+
+The floor catches **"the arbiter did not run"** — wrong tree, broken argv, a failed import in a
+widely-shared module, a runner that never started. It does **not** catch a single test file
+crashing at load among 390 healthy ones, and it should not: that is an honest red about the tree,
+and the worker should fix it. The forbidden zone is about the *arbiter* failing to render
+judgment — never about the code under test being broken.
+
+`judged` is **optional** (a linter or a `hitl` close has nothing to count; a human *is* the
+judgment). Its absence stamps `unaudited: true` on the close verdict and emits a loud
+`close-unaudited` event — the blind spot is **named** on the record rather than passed off as a
+trustworthy exit code.
+
+**Suite 257 → 277**, every new check watched failing first, five mutations caught (timeout not
+split; signal-kill falling through — the F25 bug itself; the floor never tripping; `expect`
+hardcoded to 0; the section guard removed). Typecheck clean.

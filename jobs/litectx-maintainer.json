@@ -12,7 +12,12 @@
       "id": "suite",
       "mode": "tools",
       "tools": ["read", "grep", "write"],
-      "close": { "type": "predicate", "cmd": "node --test --test-reporter=dot", "expect": 0 },
+      "close": {
+        "type": "predicate",
+        "cmd": "node --test --test-reporter=spec",
+        "expect": 0,
+        "judged": { "pattern": "^ℹ tests (\\d+)$", "min": 300 }
+      },
       "class": "hard"
     },
     {

