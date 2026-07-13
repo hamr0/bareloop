@@ -356,6 +356,12 @@ rule from a minting requirement into an ongoing coverage metric. → V13
   its fault (mutation-validated — detection power lives in the vector, not in incidental
   crashes). POC in adaptlearn `poc/`; bareloop rewrites against the spec (upstream-ledger
   pattern, 0.11.4).
+  **ANSWERED 2026-07-13 (adaptlearn F24, 0.11.6): GREEN** — control 7/7, 7/7 faults
+  detected by their own assertions, falsifier 8/8 sabotaged vectors miss; run 1's control
+  arm caught a real fixture bug (dir-argv close redding everything, VEC-1 passing for the
+  wrong reason) before anything trusted the instrument. Spec carried to this repo's
+  `docs/plans/2026-07-13-instrument-bist-spec.md`; rewrite lands with N-ladder instrument
+  hygiene (PRD v1.10 item 1).
 - **V10 (bareloop, per close):** forbidden-zone audit (§B2) — each close enumerates outcomes
   that are neither clean green nor clean red (the F5 validate-then-crash class, unparseable
   artifacts, partial suites); each maps to a named red or escalation; coercing one to a
