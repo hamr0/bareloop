@@ -1,9 +1,10 @@
 # bareloop — Integration Guide
 
-> **Current through N1** (job/close schema); API sections fill in as build-ladder rungs
-> land (PRD §10). What is settled — the boundary, the architecture, the refusals, the
-> constraints — is settled for good. Per LIBRARY_CONVENTIONS §3 this file ships with the
-> package and is the complete adopter contract; the README is only the pitch.
+> **Current through N2** (headless single-job loop: `runJob`, text + tool middles, the
+> draft-PR hitl step); API sections fill in as build-ladder rungs land (PRD §10). What is
+> settled — the boundary, the architecture, the refusals, the constraints — is settled
+> for good. Per LIBRARY_CONVENTIONS §3 this file ships with the package and is the
+> complete adopter contract; the README is only the pitch.
 
 ## What this is
 
@@ -24,8 +25,36 @@ inherited rule carries the green that minted it and the contrast that attributed
 
 ## Minimal usage
 
-*TBD at N2 (first headless single-job loop). Will show: define a job (description,
-checkpoints + verdict classes, budget, cadence, provider) → run → watch the spine.*
+```js
+import { runJob, jobSpecHash, makeSpine } from 'bareloop';
+import { AnthropicProvider } from 'bare-agent';
+
+const spec = {
+  schema: 'job-v1', job: 'my-maintainer',
+  description: 'fix src until the suite greens, then PR',
+  provider: 'anthropic-api',
+  cadence: { unit: 'day', every: 1 }, budgetUsd: 1.5,
+  writeScope: ['src/**'],
+  steps: [
+    { id: 'fix', mode: 'tools', tools: ['read', 'grep', 'write'],
+      close: { type: 'predicate', cmd: 'npm test', expect: 0 }, class: 'hard' },
+    { id: 'pr', close: { type: 'hitl', prompt: 'PR opened — review and merge?' }, class: 'hitl' },
+  ],
+  escalation: { mode: 'decision-ready' },
+};
+
+// human-signs-always: the approval record lives OUTSIDE the spec (a file the
+// human writes); an edited spec is unapproved by construction
+const approvals = [{ specHash: jobSpecHash(spec), signer: 'you', ts: new Date().toISOString() }];
+
+const outcome = await runJob(spec, {
+  approvals, workdir: '/path/to/checkout',
+  provider: new AnthropicProvider({ model: 'claude-sonnet-5' }), // key from env
+  emit: makeSpine('/path/to/checkout/run.jsonl'),
+});
+// 'escalated' at the hitl step is the happy path: the draft PR URL rides the
+// decision-ready escalation on the spine; merge stays human, forever.
+```
 
 ## All options
 
@@ -46,7 +75,9 @@ unknown-field reds.
 | `cadence` | `{ unit: hour\|day\|week, every: 1..30 }` | validated now, consumed at N5 (Scheduler) |
 | `budgetUsd` | `0 < n <= shell cap` | ceiling chain: workflow ≤ job ≤ shell — each layer may tighten, never exceed |
 | `writeScope` | array of contained globs | the operator's outer fence; same containment law as the workflow layer, same code |
-| `steps` | array of `{ id, close, class }` | unique slug ids; every step names its close |
+| `steps` | array of `{ id, close, class, mode?, tools? }` | unique slug ids; every step names its close |
+| `steps[].mode` | `text` (default) \| `tools` | `text`: the worker returns ONE artifact written to the shell's `target`; `tools`: the worker drives Gate-governed file tools (multi-file). Illegal on `hitl` steps (they run no loop) |
+| `steps[].tools` | unique subset of `read\|grep\|write` | the SPEC-side tool grant (`TOOL_MENU`, frozen; defaults to all three) — the drafted config cannot express mode or tools; requesting `run` reds (locked-but-listed: admission waits on request-red evidence) |
 | `escalation` | `{ mode: "decision-ready" }` | the pain channel is not optional |
 
 **Close types and the hierarchy** (a close is data, never code; verdict-class laundering
@@ -68,9 +99,9 @@ sweep.
 
 ## Public API
 
-*Landed through N0 (spine + shell + validator + interpreter + extractor). Still TBD:
-N1 (job/close schema), N2 (headless job loop), N3 (contrast-bit extractor), N4 (verdict
-classes), N5 (scheduler + budget ops), N6 (panel).*
+*Landed through N2 (spine + shell + both validators + interpreter with text/tool middles
++ extractor + runJob). Still TBD: N3 (contrast-bit extractor live), N4 (verdict classes —
+gold/rubric close EXECUTION), N5 (scheduler + budget ops + CLI), N6 (panel).*
 
 ### `makeSpine(file)` → `emit(type, data?)` — `src/spine.js`
 
@@ -78,11 +109,13 @@ Append-only JSONL event emitter bound to one file. `seq` monotonic per spine, `t
 last. Consumers are pure listeners; nothing reads the file back. Returns each event as
 written.
 
-### `ralph({ middle, close, capRuns, emit })` → `'green' | 'escalated'` — `src/ralph.js`
+### `ralph({ middle, close, capRuns, emit, redact?, closeTimeoutMs? })` → `'green' | 'escalated'` — `src/ralph.js`
 
 The dumb outer shell: `while close-red and under-cap: run the middle`. `close` is an argv
 whose exit code is truth (`runClose` is also exported); the red gap text feeds the next
-iteration. Escalations are decision-ready (category, options, spend); cap-halt is its own
+iteration, tail-biased when bounded (400 head + 1500 tail — the assertion diff lives at
+the end). `closeTimeoutMs` caps the close's wall clock (default 120s) — shell/operator
+territory, inexpressible in any config. Escalations are decision-ready (category, options, spend); cap-halt is its own
 category, never merged with "wrong". A thrown middle is relayed by its `category`
 property (`cap-halt`, `gate-red`, …); an unnamed throw is `interpreter-red`. Close output
 is scrubbed at capture (an injected `redact`, wired to bareguard by `interpret` with the
@@ -108,7 +141,7 @@ The operator-owned sibling (never an extension) of `validateConfig`: validates a
 Never throws on JSON text or plain parsed data (the ingest contract); returns the
 parsed spec on ok, `null` on any red. Menus exported:
 `CLOSE_TYPES`, `CLASSES`, `CLASS_BY_CLOSE`, `GOLD_COMPARE`, `CADENCE_UNITS`,
-`PROVIDERS`, `CONDITION_KEYS`.
+`PROVIDERS`, `CONDITION_KEYS`, `STEP_MODES`, `TOOL_MENU`.
 
 ### `jobSpecHash(job)` / `checkApproval(job, approvals)` — `src/job.js`
 
@@ -135,6 +168,42 @@ enforced HERE — the one choke point where a config becomes a Gate — on entry
 revision candidate, so a workflow scope outside the operator's fence reds before tokens.
 An enforcement belt resolves every scope and refuses to build a Gate that escapes the
 workdir, independent of validator correctness (law #1).
+
+Two middles, chosen by the step (`mode`/`tools` opts — SPEC-side territory threaded by
+the runner, never the config's): **text** (default) extracts ONE artifact from the
+response (`artifact-red` on a non-artifact: writes nothing, names its own axis on the
+spine, the retry is told why) and writes it to `target` behind a manual gate check;
+**tools** offers only the granted shell tools (`read|grep|write`) to the worker's Loop,
+every call policy-checked against the SAME fence (tool-call paths resolve exactly as the
+tools resolve them — workers must use absolute paths; a relative spelling reds at the
+fence and the deny reason teaches the retry), reads pinned to the workdir, a denial
+streak stopping as `gate-red`. In tool mode there is no artifact to extract — the close
+judges the tree; on-green `remember` retains the worker's change summary.
+
+### `runJob(spec, { approvals, workdir, provider, emit, target?, capRuns?, shellCapUsd?, closeTimeoutMs?, execCmd? })` → outcome — `src/run.js`
+
+The N2 runner — the shell's top layer; composes everything below it and interprets
+nothing itself. Sequence: **approval gate** (human-signs-always — refuses an unapproved
+spec before ANY provider call: `unapproved-spec`) → **primitive smoke** (litectx
+known-answer round-trip before tokens: `smoke-red` — silent degradation throws nothing)
+→ **sealed config drafting** through the priced path (one shot + one redraft, reds fed
+back; a second red is `config-red`, zero further tokens) → **sequential per-step
+interpret loops** under the ONE cumulative ledger (each step's ceiling is
+`min(job budget − spent, shell cap)`; a step that cannot green stops the job:
+`step-red:<id>`) → the **hitl step** opens a draft PR deterministically (branch → stage
+the job fence ONLY, so spines/audit logs never enter the PR → commit → push →
+`gh pr create --draft`) and ends `escalated` BY DESIGN, the PR URL riding the
+decision-ready escalation; a PR failure is `pr-red` and the escalation still fires with
+the error. Model tools never touch git — `execCmd` is the shell-owned process seam
+(defaults to real spawnSync). Outcomes: `green | escalated | unapproved-spec | job-red |
+smoke-red | config-red | pricing-red | close-unsupported | step-red:<id>`.
+
+**Unpriced is never free (F6):** the ledger halts `pricing-red` — decision-ready — on
+any result whose cost is the honest null OR whose `unpricedRounds > 0` (a partially
+unpriced run under-counts); a null cost never accumulates as $0, so the hard cap cannot
+be gamed by an unpriced provider path. N2 bounds (honest): `gold`/`rubric` closes refuse
+`close-unsupported` (execution lands at N4); `target` is required only for text-mode
+steps.
 
 ### `extractRules({ config, provider, priorRules, revisionDiff? })` — `src/extract.js`
 

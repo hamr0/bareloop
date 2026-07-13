@@ -418,6 +418,28 @@ named `pricing-red`, signal on the spine as a decision-ready halt.
    three silent $0 launderings in shipped code (interpret's cost emit; two in extract.js,
    including a transport throw reported as $0) — F6 addenda hold the evidence.
 
+## Addendum v1.9 — 2026-07-13 (the tool grant: capability is spec territory — N2 module 2b, hamr interview)
+
+Job #1's find-and-fix work spans many files; the single-target text middle cannot carry
+it. The tool-mode middle (design record: N2 addendum 2026-07-12b, POC 6/6) lands with
+three product-level commitments:
+
+1. **The agent never authors its own capabilities (hard-line corollary).** A step's
+   middle mode (`text`|`tools`) and its tool menu live in the JOB SPEC — human territory,
+   validated — and are inexpressible in the drafted workflow config, same guard as
+   close/provider (inexpressibility, both directions). The runner threads the grant
+   verbatim.
+2. **The menu is read/grep/write only; the close remains the ONLY executor.**
+   `run`-command is locked-but-listed: a spec requesting it reds, and that red is the
+   request-red evidence its admission waits on — the product's own curation doctrine
+   (F2 rules) applied to its own toolbox. No executor enters the fence on intuition.
+3. **Both middles stay, chosen by step shape.** Single-target steps keep the text middle
+   and artifact-red (the v1.4 §5 commitment holds there). In tool mode artifact-red
+   genuinely does not exist — the tools write directly under per-call fence checks
+   (write scope AND read scope), and "wrote junk" is the close's verdict. The hitl
+   step's PR mechanics (branch/commit/draft PR) are deterministic runner code; the model
+   never sees a git surface, and a PR failure can never swallow the escalation (law #7).
+
 ---
 
 ## Appendix A — Panel spec (provisional)

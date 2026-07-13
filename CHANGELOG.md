@@ -5,6 +5,52 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Added
+- **N2 — the headless single-job loop (rung 3 of the ladder), modules 1–3 + 2b.**
+  - **`runJob(spec, opts)`** (`src/run.js`): the runner — approval gate (human-signs-always,
+    refuses before ANY token: `unapproved-spec`) → litectx known-answer smoke before tokens
+    (`smoke-red`, adaptlearn A3) → config drafting through the PRICED path, one sealed shot
+    + one redraft with reds fed back (`config-red` on a second red, zero grinding) →
+    sequential per-step interpret loops under the ONE cumulative ledger (a step-red stops
+    the job with attribution: `step-red:<id>`) → the hitl step opens a **draft PR
+    deterministically** (branch → stage the job fence ONLY → commit → push →
+    `gh pr create --draft`, through an injectable shell-owned exec seam — model tools never
+    touch git; a failure is `pr-red` + the escalation still fires) and ends `escalated` by
+    design, the PR URL riding the decision-ready escalation. New spine vocabulary:
+    `job-start/end`, `step-start/end`, `primitive-smoke`, `draft-result`, `pr-opened`,
+    `pr-red`.
+  - **Tool-mode middle** (module 2b): `job-v1` steps gain `mode: "text"|"tools"` and
+    `tools` (unique subset of `read|grep|write` — `TOOL_MENU`, frozen; requesting `run`
+    reds: locked-but-listed, admission waits on request-red evidence). The SPEC owns the
+    grant; the drafted config cannot express either. In tool mode the worker drives
+    bare-agent's shell tools with every call policy-checked against the same fence
+    (`actionTranslator` maps tool calls onto write/read actions; paths resolve exactly as
+    the tools resolve them), reads pinned to the workdir (`readScope`), a denial streak
+    stopping as `gate-red`. `STEP_MODES`/`TOOL_MENU` exported.
+  - **`artifact-red` + fence-robust extraction** (module 3): ONE parser (`extractArtifact`)
+    for every model-output parse — prose-wrapped and mid-text fences extract clean; a
+    non-artifact response reds on its OWN axis, writes nothing, and the retry is told why
+    (non-terminal, under ralph's cap). Text mode only — in tool mode the tools write
+    directly and the close judges the tree (there is no response artifact to red).
+  - **ralph options** (module 1): `closeTimeoutMs` (close wall-clock cap, was hardcoded
+    120s) and the tail-biased gap bound (400 head + 1500 tail — the assertion diff lives
+    at the end; head-only truncation fed the worker pure preamble).
+
+### Changed
+- **`interpret` opts:** `target` is now optional (required in text mode only); new
+  `mode`/`tools` opts thread the spec's grant. Additive — existing callers unchanged.
+- **Cost contract:** `extractRules` returns `costUsd: number|null` — null is the honest
+  "spend unknown" (F6); callers must not coerce it to 0.
+
+### Fixed
+- **Three silent $0 cost launderings (the F6 class) in shipped code:** `interpret`'s
+  worker cost emit (`?? cost` chain), `extract.js`'s rules-path cost (`?? cost ?? 0`),
+  and `extract.js`'s transport-throw path reporting unmeasured spend as `$0`. All now
+  carry the honest null + `unpricedRounds`; `runJob` halts `pricing-red` on either
+  signal (unpriced is never free — F6, PRD v1.8).
+
 ## [0.2.0] — 2026-07-12
 
 ### Added
