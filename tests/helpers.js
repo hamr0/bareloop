@@ -34,11 +34,15 @@ export const reply = (entry, fallbackCostUsd = 0.001) => ({
 export function scriptedProvider(script) {
   /** @type {string[]} */
   const calls = [];
+  /** @type {string[]} the system prompt per call — Loop prepends it as messages[0] (the persona IS shell territory, F16) */
+  const systems = [];
   return {
     calls,
-    /** @param {Array<{content: string}>} messages */
+    systems,
+    /** @param {Array<{role?: string, content: string}>} messages */
     async generate(messages) {
       const s = script[Math.min(calls.length, script.length - 1)];
+      if (messages[0]?.role === 'system') systems.push(messages[0].content);
       calls.push(messages.at(-1).content);
       return reply(s);
     },

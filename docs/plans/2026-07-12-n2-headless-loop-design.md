@@ -251,3 +251,46 @@ fence containing `test/**` would hand the agent its own arbiter — the one thin
 **Approval, mechanized (`scripts/run-job1.mjs`):** the script prints the spec hash and
 refuses to run unless the SAME hash is handed back with `--approve`. A budget top-up (the
 resume model) edits `budgetUsd` → new hash → the old signature is void by construction.
+
+---
+
+## Addendum 2026-07-13c — the real-model runs (F8–F16) and the rung-exit STOP
+
+Nine real runs of job #1 against a real litectx clone found nine defects (F8–F16, all fixed
+TDD-first). Doctrine minted or corrected by them:
+
+- **The close runs where the work is.** `cwd` is part of the arbiter's identity: a
+  cwd-relative close (`npm test`) run elsewhere judges another repository. Exit-code-is-truth
+  is only true in the right tree.
+- **The shell may never advertise a bound its own spend invalidates.** Drafting is a paid
+  call that precedes the config it validates, so the shell reserves its own allowance and
+  advertises `budget − reserve`. One number, advertised and enforced.
+- **Money is metered as it is SPENT — per round, never per attempt.** An attempt that halts
+  never returns; accounting its result event loses the whole attempt's spend (the real run:
+  $1.4375 spent, $0.0048 reported). A call that never returns is not free (F6's family).
+- **Evidence about the tree is not a claim about an attempt.** The close's current output goes
+  to the worker as state, not as "your previous attempt" — withholding it left a worker that
+  cannot run the close (the `run` verb is locked) unable to see the failure it was hired to fix.
+- **The agent does not read the arbiter's books.** readScope is the workdir, which holds the
+  gate audit, the spine, the smoke store. Not authoring the arbiter is not enough; reading its
+  records is an invitation to fit-to-pass.
+- **A close's output format is part of the job's contract with the worker.** The tail-biased
+  gap bound assumes failures at the tail; a large TAP stream buries them mid-stream. Job #1's
+  close is now a reporter whose failures land in the tail.
+- **The worker must know it is in a loop.** Without it, a model one-shots: read everything, be
+  certain, act — and one attempt can eat the whole budget without ever reaching the close.
+
+**Rung-exit status: STOPPED, and the stop is a result** (build-ladder discipline). With every
+defect above fixed, the worker now reasons correctly to the true culprit — and still exhausts
+the $1.5 budget before writing, because tool-loop context compounds (2.3k → 121k tokens; the
+last round alone cost $0.25). Under the doctrinal $2 shell cap, job #1 does not green.
+
+**The three levers, each a DECISION for hamr, not a bug fix:**
+1. **Compaction** — bare-agent ships `createStashSkill({compaction})` + `Loop({trim})` with
+   litectx as the summarizer (composition, not invention). Undecided: whose territory the
+   ceiling is (the shell's cost cap, or the config's `memory` axis — the agent would then be
+   tuning its own context budget, which is adjacent to the arbiter and must be argued).
+2. **Admit the `run` verb** — this run IS the capability-gap evidence the ledger was built to
+   count (a cap-halt in a run whose worker needed to execute one targeted test). Admission is
+   the doctrine's own answer to demand evidence, and it stays a human grant.
+3. **Raise the shell cap** — locked at $2, operator territory, never the agent's.

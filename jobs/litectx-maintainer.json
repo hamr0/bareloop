@@ -12,7 +12,7 @@
       "id": "suite",
       "mode": "tools",
       "tools": ["read", "grep", "write"],
-      "close": { "type": "predicate", "cmd": "npm test", "expect": 0 },
+      "close": { "type": "predicate", "cmd": "node --test --test-reporter=dot", "expect": 0 },
       "class": "hard"
     },
     {

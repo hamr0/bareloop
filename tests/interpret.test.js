@@ -148,13 +148,17 @@ test('remember kind "code" is a verb-params red (validator matches litectx runti
 });
 
 test('interpreter crash mid-run → interpreter-red, never masquerading as bad harness', async () => {
-  const provider = { async generate() { throw new Error('provider exploded'); } };
-  const { workdir, target, close } = makeWork('interp-red');
+  // A GENUINE middle failure — the write itself throws (the target is a directory:
+  // the gate allows the path, the filesystem refuses it). NOT a provider throw:
+  // that is provider-red now (F11), and using one here was the misclassification.
+  const { workdir, close } = makeWork('interp-red');
+  const target = join(workdir, 'src', 'sum.mjs');
+  mkdirSync(target); // a DIRECTORY where the artifact must be written → writeFileSync EISDIR
   const file = join(workdir, 'run.jsonl');
-  const outcome = await interpret(config(), { task: TASK, target, close, workdir, capRuns: 3, emit: makeSpine(file), provider });
+  const outcome = await interpret(config(), { task: TASK, target, close, workdir, capRuns: 3, emit: makeSpine(file), provider: stubProvider([{ text: GOOD_SUM }]) });
   const events = readSpine(file);
   assert.equal(outcome, 'escalated');
-  assert.equal(events.find((e) => e.type === 'escalation').category, 'interpreter-red');
+  assert.equal(events.find((e) => e.type === 'escalation').category, 'interpreter-red', 'a broken middle is still its own category — the class did not collapse into provider-red');
 });
 
 // ---- mid-run revision (stall → revisor → interpreter-owned acceptance) ----
@@ -475,4 +479,117 @@ test('text mode without target throws immediately — reds-before-tokens, a call
     TypeError,
   );
   assert.equal(provider.calls.length, 0, 'the throw lands before any provider call');
+});
+
+// ---- F10: the worker must be TOLD where the repository is (first real-model run) ----
+// The real run groped for the repo — it read /home/hamr, the runner's own directory,
+// then / — and the fence denied all three until the denial streak stopped it. The
+// persona says "always use absolute paths", but nothing ever told the worker WHICH
+// absolute path: bare-agent's shell tools resolve relative paths against the PROCESS
+// cwd (not the workdir), so a worker with no root is working blind.
+
+test('F10: tool mode tells the worker the absolute repository root, and a worker that uses it greens', async () => {
+  const wd = twd('tools-root');
+  // the stub reads the root OUT of the prompt — it knows no path a priori, exactly
+  // like the real model. If the prompt does not carry it, this cannot write at all.
+  const rootUsing = {
+    calls: [],
+    async generate(messages) {
+      const prompt = messages.at(-1).content;
+      this.calls.push(prompt);
+      const root = (prompt.match(/Repository root \(absolute\): (\S+)/) ?? [])[1];
+      if (!root) return { text: 'I do not know where the repository is', toolCalls: [], usage: { inputTokens: 5, outputTokens: 5 }, costUsd: 0.001, model: null };
+      if (this.calls.length === 1) {
+        return { text: '', toolCalls: [tcall('t1', 'shell_write', { path: join(root, 'src', 'sum.mjs'), content: GOOD_SUM })], usage: { inputTokens: 5, outputTokens: 5 }, costUsd: 0.001, model: null };
+      }
+      return { text: 'wrote sum.mjs', toolCalls: [], usage: { inputTokens: 5, outputTokens: 5 }, costUsd: 0.001, model: null };
+    },
+  };
+  const { workdir, target, close } = makeWork('tools-root');
+  const file = join(workdir, 'run.jsonl');
+  const outcome = await interpret(config(), { task: TASK, target, close, workdir, capRuns: 2, emit: makeSpine(file), provider: rootUsing, mode: 'tools' });
+  assert.equal(outcome, 'green', 'the worker could only find the repo if the prompt told it — this is the whole finding');
+  assert.match(rootUsing.calls[0], new RegExp(`Repository root \\(absolute\\): ${wd}`), 'the root is stated verbatim');
+  assert.equal(readFileSync(join(wd, 'src', 'sum.mjs'), 'utf8'), GOOD_SUM);
+});
+
+test('F10: text mode is NOT told a root — it writes one shell-chosen target and has no tools to point anywhere', async () => {
+  const { provider } = await run('text-no-root', config(), { script: [{ text: GOOD_SUM }] });
+  assert.ok(!/Repository root/.test(provider.calls[0]), 'no dead prompt weight where there are no tools');
+});
+
+test('F11: a transport throw in the WORKER path is provider-red, not interpreter-red (a network error is not a broken middle)', async () => {
+  // the real run died `read ENETUNREACH` mid-worker-call and was filed
+  // interpreter-red — telling the operator to "fix the interpreter" when the
+  // truth was "the network failed, retry". bare-agent's Loop throws transport
+  // errors out of run(); a throw from the LOOP is provider territory by
+  // definition, and the drafting path already has provider-red for exactly this.
+  const netDown = { async generate() { const e = new Error('read ENETUNREACH'); throw e; } };
+  const { workdir, target, close } = makeWork('worker-transport');
+  const file = join(workdir, 'run.jsonl');
+  const outcome = await interpret(config(), { task: TASK, target, close, workdir, capRuns: 2, emit: makeSpine(file), provider: netDown });
+  const events = readSpine(file);
+  assert.equal(outcome, 'escalated');
+  const esc = events.find((e) => e.type === 'escalation');
+  assert.equal(esc.category, 'provider-red', 'the operator is told to retry the provider, not to debug the interpreter');
+  assert.match(esc.detail, /ENETUNREACH/, 'the cause still rides');
+});
+
+// ---- F14: the worker may not read the RUN'S OWN machinery (first real-model run) ----
+// The real run's worker read .bareloop/<spine>.jsonl (its own spine), gate-audit.jsonl
+// (the gate's own ledger) and .smoke — the emergent middle reading the arbiter's private
+// books. It is an invitation to fit-to-pass and it pollutes the context with the run's
+// own bookkeeping. The agent never authors its arbiter — it does not get to read its
+// records either. readScope is the workdir, so these must be DENIED explicitly.
+
+test('F14: tool mode denies reads of the run\'s own machinery — gate audit, smoke store, memory store', async () => {
+  const wd = twd('tools-books');
+  const { outcome, provider } = await run('tools-books', config(), {
+    mode: 'tools',
+    script: [
+      { toolCalls: [tcall('t1', 'shell_read', { path: join(wd, 'gate-audit.jsonl') })] },
+      { toolCalls: [tcall('t2', 'shell_read', { path: join(wd, '.litectx') })] },
+      { toolCalls: [tcall('t3', 'shell_write', { path: join(wd, 'src', 'sum.mjs'), content: GOOD_SUM })] },
+      { text: 'done' },
+    ],
+  });
+  assert.equal(outcome, 'green', 'the denials are feedback, not a stop — the worker pivots to real work');
+  assert.match(provider.calls[1], /deny|denied|not allowed|fs\./i, 'the gate refused the audit read');
+  assert.match(provider.calls[2], /deny|denied|not allowed|fs\./i, 'and the memory store too');
+});
+
+test('F13: the worker is told what the close CURRENTLY says — the tree\'s state is evidence, not an attempt', async () => {
+  // The real run asked a model to fix a failing suite while telling it NOTHING about
+  // which test failed — and the `run` verb is locked, so it cannot execute the suite
+  // itself. It groped through the repo and burned the entire $1.5 cap without ever
+  // attempting a write. The precheck had the failure output the whole time; it was
+  // withheld because "no attempt exists yet". That confused ATTRIBUTING AN ATTEMPT
+  // with EVIDENCE ABOUT THE TREE — which is what a human maintainer reads first.
+  const { workdir, target, close } = makeWork('close-state');
+  const provider = stubProvider([{ text: GOOD_SUM }]);
+  const file = join(workdir, 'run.jsonl');
+  await interpret(config(), {
+    task: TASK, target, close, workdir, capRuns: 1, emit: makeSpine(file), provider,
+    closeState: 'FAIL sum.test.mjs: expected 5, got -1',
+  });
+  assert.match(provider.calls[0], /expected 5, got -1/, 'the first prompt carries the close\'s current output');
+  assert.ok(!/Previous attempt/.test(provider.calls[0]), 'and it is NOT framed as a previous attempt — no attempt has happened');
+});
+
+test('F16: the tool persona states the LOOP contract — the worker knows it will be re-run with the close\'s verdict', async () => {
+  // the real run's worker read for 12 rounds and never wrote: it behaved like a
+  // one-shot because nothing told it otherwise. An attempt that never reaches the
+  // close produces no verdict, no gap, and no learning — the loop stops looping.
+  const wd = twd('tools-persona');
+  const { provider } = await run('tools-persona', config(), {
+    mode: 'tools',
+    script: [
+      { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'src', 'sum.mjs'), content: GOOD_SUM })] },
+      { text: 'done' },
+    ],
+  });
+  // the persona reaches the provider as the system prompt — assert on the contract, not the wording
+  const system = provider.systems?.[0] ?? '';
+  assert.match(system, /called again|re-?run|loop/i, 'the worker is told it is one attempt inside a loop');
+  assert.match(system, /budget|exhaust/i, 'and that reading exhaustively can burn the run before it ever writes');
 });

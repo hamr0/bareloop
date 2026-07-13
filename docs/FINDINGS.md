@@ -319,3 +319,101 @@ the real thing as early as the ladder allows.
 **Still unproven (the honest boundary):** the real-model tool-mode worker call and a real
 GitHub draft PR. Both need a key and a push to a live repo — neither can be claimed until
 it is run, and this finding claims neither.
+
+## F8–F16 — the first REAL-MODEL runs of job #1: nine defects, six of them invisible to a stubbed seam, and a rung-exit stop
+
+**Setup:** `scripts/run-job1.mjs` against a real litectx clone with a real regression injected
+(a `>= 3` → `> 3` off-by-one in `keywords()`, which reds 3 recall tests). Real key, real
+tokens, `claude-sonnet-5`, $1.5 job budget, tool mode. Nine runs. Every fix below was
+reproduced as a failing test first and mutation-checked; the suite went 245 → 257.
+
+**F8 — the close ran in the WRONG REPOSITORY.** `runClose` called `spawnSync` with no `cwd`,
+so `npm test` executed in *bareloop's* directory, not the job's. The precheck greened
+against bareloop's suite while litectx sat red — the arbiter, whose entire authority is
+"exit code is truth", was judging a different tree. **Every test in the suite missed it
+because every test close named an ABSOLUTE path** (`node --test /tmp/…/suite.mjs`), so cwd
+never mattered; a real close (`npm test`, `make check`) is cwd-relative by nature. This
+also invalidated the earlier token-free run's "litectx greened in the precheck" — that was
+this bug, not evidence. `cwd` now threads runner → ralph → spawnSync.
+
+**F9 — the drafting prompt advertised a bound the shell's own spend invalidated, and every
+real run deadlocked.** The prompt said `gate.budgetUsd <= 1.5` (the job budget); by the time
+the draft was validated, the drafting call itself had cost $0.0053, so the validator enforced
+`<= 1.4947` and red it. The redraft was told the same stale ceiling, claimed it again, and
+the run died `config-red` having burned two paid calls. A rational drafter claims the
+ceiling it is given — **the real model claimed exactly it, every time.** The stub never saw
+it because it drafts $1.00, comfortably under. Fix: the shell reserves its own drafting
+allowance (`DRAFT_RESERVE_FRAC`) and advertises `budget − reserve` — one number, advertised
+and enforced. It is a CAP, not an estimate: overspend it and the run stops on the budget
+story it is.
+
+**F10 — the worker was never told where the repository is.** The tool persona demands
+absolute paths, but bare-agent's shell tools resolve relative paths against the PROCESS cwd,
+and nothing ever named the workdir. The real worker groped: it read `/home/hamr`, then the
+runner's own directory, then `/`. The fence denied all three and the denial streak stopped
+the run. **Containment held perfectly; the task was impossible.** The prompt now states the
+absolute root.
+
+**F11 — a network failure was filed as a broken interpreter.** A run died `read ENETUNREACH`
+mid-worker-call and escalated `interpreter-red` — "fix the middle" — when the honest decision
+was "the network failed, retry". A throw out of `loop.run()` is provider territory by
+definition; it is now `provider-red`, the class the drafting path already had. (The old test
+pinning this had itself encoded the misclassification: its "interpreter crash" fixture was a
+throwing *provider*.)
+
+**F12 — spend inside an attempt that HALTS was invisible, and the ledger under-reported by
+300×.** The gate halted the worker at its own cap having genuinely spent **$1.4375**; the job
+ledger reported **$0.0048**. Cause: the ledger accounted `worker-result`, which is emitted
+only after `loop.run()` RETURNS — and a halted attempt never returns. A whole attempt's
+tokens vanished, and the escalation lied to the human about the money. **Money is now metered
+per ROUND** (`worker-round`, at bare-agent's `onLlmResult` seam), as it is spent — including
+the round that trips the cap. This is F6's family: a call that never returns is not free.
+
+**F13 — the worker was asked to fix a failure it could not see.** The precheck had the close's
+output the whole time; it was withheld on the doctrine that "no attempt exists yet, so feeding
+it would be a lie". That confused ATTRIBUTING AN ATTEMPT with DESCRIBING THE TREE — and the
+`run` verb is locked, so the worker cannot execute the suite itself. It was hired to fix a red
+suite while blindfolded. The close's current output now reaches the first attempt, framed as
+what it is: the tree's state, not an attempt of the worker's.
+
+**F14 — the worker read the arbiter's private books.** `readScope` is the workdir, which
+contains the run's own machinery: the real worker read `gate-audit.jsonl` (the gate's ledger),
+its own spine, and the `.smoke` store. The agent never authors its arbiter — it does not get
+to read its records either: that is an invitation to fit-to-pass and it fills the context with
+bookkeeping instead of code. Now denied (`fs.deny`), and the spine moved outside the tree.
+
+**F15 — the gap bound hid every failure it existed to show.** The tail-biased bound (400 head
++ 1500 tail, minted on the premise that "the useful output is at the END") is *false for a
+large TAP stream*: the 3 failing tests sat in the MIDDLE of 391 subtests and were truncated
+away. The worker was told "3 failed" and nothing else. **A close's output format is part of
+the job's contract with the worker** — job #1's close is now `node --test --test-reporter=dot`,
+whose failures (with assertion diffs and file:line) land in the tail where the bound looks.
+
+**F16 — one attempt spent the entire budget and never reached the close.** The tool persona
+never said the worker was inside a loop, so the model did the rational one-shot thing: read
+everything, be certain, then act. It read for 12 rounds and never wrote once — no write, no
+close verdict, no gap, no learning. The loop never looped. bare-agent has no per-call round
+bound by design (iteration is governed by the gate's cumulative `maxTurns`), so the only
+honest lever is the persona: the worker is now told it is one attempt inside
+`while close-red and under-cap`, that it will be re-run with the close's verdict, and that
+every file it reads is re-sent on every later round.
+
+**The rung-exit result: a STOP, and the stop is the finding.** With F8–F16 fixed, the worker
+now behaves correctly — it reads the failing tests, follows the causal chain, and reached
+`tokenize.js`, the true culprit — **and still exhausts the budget before writing a fix.** The
+cost curve is the reason: tool-loop context compounds (every read is re-sent every round), so
+the run grew 2.3k → 121k tokens and its last round alone cost $0.25. Under the doctrinal $2
+shell cap this job does not green. Three levers exist, and each is a decision, not a bug:
+(1) **wire bare-agent's stash/compaction** (`Loop({trim})` + litectx as `ctx`) into the middle
+— the suite already ships it, and this is composition, not invention, but *whose* territory the
+ceiling belongs to (shell cap vs config `memory`) is undecided; (2) **admit the `run` verb** —
+this run IS the capability-gap evidence the ledger was built to count: a worker that could run
+one targeted test file would need a fraction of the reads; (3) **raise the shell cap** (locked
+at $2 by doctrine — operator's call, never the agent's).
+
+**The lesson, and it is the same one every time:** all six of F8–F12's defects live in the seam
+between the runner and a *real* repository with a *real* model, and the stub answered whatever
+the test asked it to. Twenty-one runner tests, three review rounds and two mutation passes were
+green over that code. Nine real runs — most of them costing pennies — found nine defects, two
+of which (the arbiter judging the wrong repo; the ledger under-counting spend 300×) go to the
+integrity of the two things this product claims are un-gameable.

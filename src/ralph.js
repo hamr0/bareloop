@@ -18,15 +18,23 @@ import { spawnSync } from 'node:child_process';
  * primitive (bareguard's, wired by the interpreter), never an emergent
  * component — so V4 holds. The shell's canonical emission IS the redacted text;
  * a benign gap is returned byte-identical (default: identity).
+ * `cwd` is where the close RUNS, and it is load-bearing (F8): a close is a
+ * command in a repository — `npm test`, `make check` — and every one of them is
+ * cwd-relative. Run it anywhere but the workdir and the arbiter judges the wrong
+ * tree: exit-code-is-truth silently becomes exit-code-of-some-other-repo-is-truth.
+ * The default (the runner's own cwd) exists only for callers with an absolute
+ * close; the runner and the interpreter always pass the workdir.
+ *
  * @param {string[]} close argv, e.g. ['node', '--test', 'close/']
  * @param {(s: string) => string} [redact] source scrubber; identity by default
- * @param {{ timeoutMs?: number }} [opts] close wall-clock cap (operator-set via
+ * @param {{ timeoutMs?: number, cwd?: string }} [opts] close wall-clock cap (operator-set via
  *   the runner, never the config's — the agent must not author its arbiter's clock)
+ *   and the directory the close runs in (the workdir — the tree it is judging)
  */
-export function runClose(close, redact = (s) => s, { timeoutMs = 120_000 } = {}) {
+export function runClose(close, redact = (s) => s, { timeoutMs = 120_000, cwd } = {}) {
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT; // a `node --test` close inherits this from a test runner and silently no-ops — a fake green
-  const r = spawnSync(close[0], close.slice(1), { env, encoding: 'utf8', timeout: timeoutMs });
+  const r = spawnSync(close[0], close.slice(1), { env, cwd, encoding: 'utf8', timeout: timeoutMs });
   if (r.error) return { verdict: 'failed', detail: String(r.error) };
   if (r.status === 0) return { verdict: 'satisfied' };
   // The gap must never be falsy: every consumer guards with `if (gap)` — an
@@ -69,9 +77,11 @@ function boundGap(s) {
  *   (secrets never enter the spine); injected so the shell stays stdlib-only
  * @param {number} [opts.closeTimeoutMs] close wall-clock cap (shell/operator
  *   territory — the workflow config cannot express it)
+ * @param {string} [opts.cwd] the directory every close runs in — the tree it is
+ *   judging (F8: a cwd-relative close run elsewhere judges the wrong repository)
  * @returns {Promise<'green'|'escalated'>}
  */
-export async function ralph({ middle, close, capRuns, emit, redact, closeTimeoutMs }) {
+export async function ralph({ middle, close, capRuns, emit, redact, closeTimeoutMs, cwd }) {
   emit('run-start', { capRuns, close: close.join(' ') });
   const verdicts = [];
   let gap;
@@ -88,6 +98,8 @@ export async function ralph({ middle, close, capRuns, emit, redact, closeTimeout
           ['raise the cap and rerun', 'change the middle/harness', 'abandon the task']],
         'gate-red': ['The gate denied an action mid-run — the harness asked for something outside its scope.',
           ['widen the write scope deliberately', 'change the middle/harness', 'abandon the task']],
+        'provider-red': ['The provider path failed mid-run (transport, not logic) — no verdict exists and the spend for the failed call is unknown (F6).',
+          ['retry the run', 'fix the provider binding', 'abandon the task']],
       };
       // Object.hasOwn, not bare lookup: a category named after an
       // Object.prototype member ("toString") would return the inherited
@@ -104,7 +116,7 @@ export async function ralph({ middle, close, capRuns, emit, redact, closeTimeout
       return 'escalated';
     }
     emit('middle-done', { iteration });
-    const v = runClose(close, redact, { timeoutMs: closeTimeoutMs ?? 120_000 });
+    const v = runClose(close, redact, { timeoutMs: closeTimeoutMs ?? 120_000, cwd });
     verdicts.push(v.verdict);
     emit('close-verdict', { iteration, ...v });
     if (v.verdict === 'satisfied') {

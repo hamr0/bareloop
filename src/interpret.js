@@ -33,7 +33,20 @@ import { extractArtifact, priceOf } from './text.js';
 /** @typedef {{body?: string|null, text?: string|null}} RecallHit litectx recall hit — body present only with `{body: true}` */
 
 const PERSONA = 'You are a senior engineer. Reply with ONLY the complete contents of the requested JavaScript file — no markdown fences, no commentary. ESM.';
-const PERSONA_TOOLS = 'You are a senior engineer working in a repository through file tools. ALWAYS use absolute paths — relative paths resolve against the process, not the repository, and will be denied. Make the required changes with the write tool, then reply with a short summary of what you changed. Never put file contents in your reply.';
+// The tool persona states the LOOP CONTRACT (F16): the worker is one attempt inside
+// `while close-red and under-cap`, not a one-shot. Without knowing that, a model does
+// the rational one-shot thing — read everything, be certain, then act — and the real
+// run spent its ENTIRE budget on 12 rounds of reading without one write, never once
+// reaching the close. Every round re-pays for every earlier tool result, so reads
+// compound: that run's context grew 2k → 121k tokens and its last round cost $0.25.
+// Telling the worker it will be re-run with the close's verdict makes an early,
+// cheap, wrong attempt the rational move — which is exactly what the loop wants.
+const PERSONA_TOOLS = 'You are a senior engineer working in a repository through file tools. '
+  + 'ALWAYS use absolute paths — relative paths resolve against the process, not the repository, and will be denied. '
+  + 'You are ONE attempt inside an automated loop: when you finish, a test suite runs and, if it still fails, you are called again with its output. '
+  + 'So do not try to be certain before acting. Read only what you need to form your best hypothesis, make the change with the write tool, and stop. '
+  + 'A wrong cheap attempt is corrected by the next round; exhaustive reading is not — every file you read is re-sent on every later round and the run has a hard budget it can exhaust before you ever write. '
+  + 'Make the required changes with the write tool, then reply with a short summary of what you changed. Never put file contents in your reply.';
 
 // ---- tool mode (2b): the spec-side grant menu mapped to bare-agent's shell tools ----
 const TOOL_BY_VERB = Object.freeze({ read: 'shell_read', grep: 'shell_grep', write: 'shell_write' });
@@ -83,6 +96,10 @@ const toolAction = (name, args) => {
  *        (arbiter-touch / cap-touch revision-reds otherwise; the run continues on the old
  *        config). Revisor spend rides the run's own gate handlers — same budget axis as
  *        the worker.
+ * @param {string} [opts.closeState] the close's CURRENT output on the tree as it stands
+ *        (the shell's pre-token close check, F13) — shown to the first attempt only, and
+ *        never framed as an attempt: the worker cannot run the close itself (`run` is a
+ *        locked verb), so without this it is asked to fix a failure it cannot see
  * @param {'text'|'tools'} [opts.mode] middle mode (2b): 'text' (default) writes the ONE
  *        target from the response artifact; 'tools' gives the worker Gate-governed file
  *        tools — SPEC-side territory (the step declares it; the config cannot express it)
@@ -90,7 +107,7 @@ const toolAction = (name, args) => {
  *        job-v1 validated); defaults to the full menu in tool mode
  * @returns {Promise<'green'|'escalated'|'config-red'>}
  */
-export async function interpret(configRaw, { task, target, close, workdir, capRuns, emit, provider, shellCapUsd = 2, jobWriteScope, revisor, closeTimeoutMs, mode = 'text', tools }) {
+export async function interpret(configRaw, { task, target, close, workdir, capRuns, emit, provider, shellCapUsd = 2, jobWriteScope, revisor, closeTimeoutMs, mode = 'text', tools, closeState }) {
   // Reds-before-tokens: text mode writes ONE artifact — a missing target is a
   // caller bug that must be loud NOW, not a TypeError after a paid worker call
   // that ralph would misfile as interpreter-red (the gate skips an absent path,
@@ -132,7 +149,19 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     // and workdir-escaping scopes were already rejected up front (adaptlearn F9, law #1).
     // Tool mode adds readScope: the worker's reads stay inside the run directory —
     // the stray-read secrets channel (~/.ssh, /etc) closes with one field (2b POC D).
-    fs: { writeScope: resolvedScopes, ...(mode === 'tools' ? { readScope: [workdir] } : {}) },
+    // Tool mode adds readScope (the stray-read secrets channel, 2b POC D) AND
+    // deny (F14): readScope is the whole workdir, which CONTAINS the run's own
+    // machinery — the gate's audit ledger, the primitive-smoke store, the litectx
+    // memory store. The real run's worker read its own gate audit and spine. The
+    // emergent middle does not author the arbiter, and it does not get to read the
+    // arbiter's books either: that is an invitation to fit-to-pass and it fills the
+    // context with the run's own bookkeeping instead of the repository's code.
+    fs: {
+      writeScope: resolvedScopes,
+      ...(mode === 'tools'
+        ? { readScope: [workdir], deny: [join(workdir, 'gate-audit.jsonl'), join(workdir, '.smoke'), join(workdir, '.litectx')] }
+        : {}),
+    },
     budget: { maxCostUsd: config.gate.budgetUsd },
     // text mode is ~1-2 rounds per attempt; tool mode is N rounds (read→write→…)
     limits: { maxTurns: (mode === 'tools' ? 24 : 8) * (capRuns + 1) },
@@ -141,7 +170,27 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   });
   await gate.init();
   const { policy, onLlmResult } = wireGate(gate, mode === 'tools' ? { actionTranslator: (/** @type {string} */ n, /** @type {any} */ a) => toolAction(n, a) } : {});
-  const loop = new Loop({ provider, system: mode === 'tools' ? PERSONA_TOOLS : PERSONA, policy, onLlmResult });
+  // Money is metered as it is SPENT — per ROUND, not per attempt (F12). A
+  // multi-round attempt that halts (or throws) never returns, so its rounds
+  // never reach `worker-result`: the real run bought $1.4375 of tokens inside a
+  // halted attempt and the job ledger reported $0.0048. `onLlmResult` is the one
+  // seam that sees every round, and it fires BEFORE the gate records the round —
+  // so even the round that trips the cap lands on the spine. Emitted first, then
+  // forwarded verbatim: the gate's own accounting is never altered. costUsd/
+  // pricing ride AS-IS (a null is the honest unknown, never $0 — F6).
+  /** @type {number|undefined} the attempt a round belongs to (display only) */
+  let roundIteration;
+  /** @param {{costUsd?: number|null, pricing?: string|null, usage?: any}} arg */
+  const meteredOnLlmResult = async (arg) => {
+    emit('worker-round', {
+      iteration: roundIteration,
+      costUsd: arg?.costUsd ?? null,
+      pricing: arg?.pricing ?? null,
+      tokens: (arg?.usage?.inputTokens ?? 0) + (arg?.usage?.outputTokens ?? 0),
+    });
+    return onLlmResult(arg);
+  };
+  const loop = new Loop({ provider, system: mode === 'tools' ? PERSONA_TOOLS : PERSONA, policy, onLlmResult: meteredOnLlmResult });
   // The offered tools ARE the grant (2b decision #2): an ungranted tool is never
   // in the menu the model sees — a call to it is "unknown tool", not a deny.
   const toolDefs = mode === 'tools'
@@ -159,8 +208,15 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     try {
       r = await loop.run([{ role: 'user', content: prompt }], toolDefs);
     } catch (e) {
-      if (e instanceof HaltError) /** @type {CategorizedError} */ (e).category = 'cap-halt'; // belt: bare-agent's contract could change
-      throw e;
+      const err = /** @type {CategorizedError} */ (e);
+      // A throw OUT OF loop.run() is provider/loop territory by definition — the
+      // interpreter's own code is not on that stack. The real run died `read
+      // ENETUNREACH` mid-call and was filed interpreter-red ("fix the middle"),
+      // when the honest decision was "the network failed — retry" (F11). A
+      // governance halt keeps its own category; everything else is provider-red,
+      // the same class the drafting path already names.
+      err.category = e instanceof HaltError ? 'cap-halt' : (err.category ?? 'provider-red');
+      throw err;
     }
     // bare-agent NEVER throws HaltError out of run() — a governance halt comes
     // back as an error RETURN ({text: '', error: 'halt:<rule>'}; loop.js: "no
@@ -244,6 +300,7 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
    * @param {string} [gap]
    */
   const middle = async (iteration, gap) => {
+    roundIteration = iteration; // stamps every round of this attempt (F12)
     if (gap) gaps.push(gap);
     if (revisor && !revised && gaps.length >= STALL_REDS) {
       emit('stall-detected', { iteration, consecutiveReds: gaps.length });
@@ -253,7 +310,8 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
         // the run's own gate handlers ride along: revisor spend hits the same
         // budget axis as the worker; a budget halt mid-revision is a cap story,
         // not a revision bug
-        rv = await revisor({ config, gaps: [...gaps], policy, onLlmResult });
+        // the METERED handler: revisor rounds are real money on the same axis (F12)
+        rv = await revisor({ config, gaps: [...gaps], policy, onLlmResult: meteredOnLlmResult });
       } catch (e) {
         if (e instanceof HaltError) /** @type {CategorizedError} */ (e).category = 'cap-halt';
         throw e;
@@ -269,7 +327,27 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     if (gap) await runOps('after-red', { iteration, gap, context: {} });
     const context = {};
     await runOps('before-attempt', { iteration, context });
-    const parts = [task, context.text && `Possibly relevant notes:\n${context.text}`, gap && `Previous attempt failed the test suite:\n${gap}`,
+    // F10 (first real-model run): a tool-mode worker must be TOLD where the
+    // repository is. The persona demands absolute paths, but bare-agent's shell
+    // tools resolve relative paths against the PROCESS cwd — not the workdir —
+    // so a worker with no root is working blind: the real run groped for the repo
+    // (/home/hamr, the runner's own directory, then /) and the fence denied every
+    // guess until the denial streak stopped it. Containment held; the task was
+    // impossible. Text mode is told nothing: it has no tools to point anywhere,
+    // and the shell alone chooses its one target.
+    // (parts[0] stays the task: the plan shape re-orders around it)
+    const parts = [
+      task,
+      mode === 'tools' && `Repository root (absolute): ${workdir}\nEvery path you pass to a tool MUST be absolute and inside this root — a relative path resolves against a different directory and will be denied by the gate.`,
+      // F13: what the close says about the tree RIGHT NOW — the state a human
+      // maintainer reads first. Given only until an attempt of our own exists
+      // (then `gap` is the truer, attributable evidence). The real run withheld
+      // this on the grounds that "no attempt has happened", and the worker — which
+      // cannot run the suite itself, the `run` verb being locked — groped through
+      // the repository and burned the entire cap without one write. Attributing an
+      // attempt and describing the tree are different claims; this is the second.
+      !gap && closeState && `The close is currently failing. This is its output on the tree as it stands (not an attempt of yours):\n${closeState}`,
+      context.text && `Possibly relevant notes:\n${context.text}`, gap && `Previous attempt failed the test suite:\n${gap}`,
       artifactNote && `Previous attempt never reached the close:\n${artifactNote}`];
 
     if (config.loop.shape === 'plan') {
@@ -322,7 +400,10 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   // pass a shape detection reds (a git close echoing a ghp_ token was the gap).
   // Injected here (the layer that owns bareguard) so ralph stays stdlib-only and
   // the scrub is a fixed shell primitive, not an emergent component (V4 holds).
-  const outcome = await ralph({ middle, close, capRuns: effectiveCap, emit, closeTimeoutMs, redact: (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS }) });
+  // cwd: workdir — the close judges the tree the work happened in (F8). A close
+  // is a repository command (`npm test`); run from anywhere else it silently
+  // judges another repo and exit-code-is-truth stops being true.
+  const outcome = await ralph({ middle, close, capRuns: effectiveCap, emit, closeTimeoutMs, cwd: workdir, redact: (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS }) });
   if (outcome === 'green') {
     // The close already passed — a retention hiccup must not un-green a real
     // green (it would corrupt the learning curve). It degrades loudly:

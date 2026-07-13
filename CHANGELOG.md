@@ -83,6 +83,39 @@ feature lands, **patch** = docs, fixes, scaffolding.
     state.) New spine vocabulary: `close-precheck`, `pr-skipped`, `workdir-red`;
     `step-end` gains the `already-green` outcome.
 
+  - **Nine defects found by the first REAL-MODEL runs of job #1 (F8–F16)** — all fixed
+    TDD-first, all invisible to a stubbed seam:
+    - **`cwd` (F8):** `runClose` spawned the close with NO cwd, so a cwd-relative close
+      (`npm test`) ran in the RUNNER's directory — the arbiter judged the wrong repository.
+      `cwd` now threads runner → `ralph` → `spawnSync` (`ralph({cwd})`, `runClose(…, {cwd})`).
+    - **Drafting ceiling (F9):** the prompt advertised the JOB budget while the validator
+      enforced budget − drafting-spend — a bound the drafter was never told, so every real run
+      (the model claims the ceiling it is given) deadlocked `config-red`. The shell now reserves
+      its own drafting allowance and advertises `budget − reserve`: one number, advertised and
+      enforced.
+    - **Repository root (F10):** tool mode now tells the worker the absolute workdir. bare-agent's
+      shell tools resolve relative paths against the PROCESS cwd, so a worker with no root is
+      blind — the real one groped `/home/…`, the runner's dir, then `/`, and the fence denied it.
+    - **`provider-red` in the worker path (F11):** a transport throw out of `loop.run()` (the real
+      run: `read ENETUNREACH`) was filed `interpreter-red` ("fix the middle"). It is a provider
+      failure — retry, don't debug.
+    - **Per-round metering (F12):** the ledger accounted `worker-result`, emitted only after
+      `loop.run()` RETURNS — so an attempt that HALTS reported nothing: the real run spent $1.4375
+      and the ledger said $0.0048. Money is now metered per ROUND (`worker-round`, at
+      `onLlmResult`), including the round that trips the cap. Unpriced is never free (F6).
+    - **The close's current output (F13):** the precheck's gap now reaches the first attempt as the
+      tree's state (never as "your previous attempt"). The `run` verb is locked, so without it the
+      worker cannot see the failure it was hired to fix.
+    - **The arbiter's books (F14):** tool mode denies reads of `gate-audit.jsonl`, `.smoke` and
+      `.litectx` — the real worker read its own gate audit and spine. The agent does not author its
+      arbiter, and does not read its records.
+    - **The loop contract (F16):** the tool persona now tells the worker it is ONE attempt inside
+      `while close-red and under-cap` and will be re-run with the close's verdict. Without it a
+      model one-shots — the real run read for 12 rounds, never wrote, and ate the whole budget.
+    - **Job #1's close (F15):** `node --test --test-reporter=dot`, not `npm test` — the tail-biased
+      gap bound buries mid-stream failures in a 391-test TAP stream, so the worker was told "3
+      failed" and nothing else. A close's output format is part of its contract with the worker.
+
 ### Changed
 - **`job-v1`: requesting a locked tool is now a DISTINCT red.** `tools` containing
   `run` reds with code `request-red` (was a generic `invalid-value`) so the ledger can

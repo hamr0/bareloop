@@ -477,6 +477,102 @@ test('partial resume: finished steps skip; drafting is DEFERRED to the first ste
   assert.equal(events.find((e) => e.type === 'step-end' && e.step === 'style').outcome, 'green');
 });
 
+test('F12: spend inside an attempt that HALTS still lands on the job ledger — a call that never returns is not free', async () => {
+  // found by the real run: the gate halted the worker at its OWN cap ($1.4375
+  // spent) while the job ledger reported $0.0048. Cause: the ledger accounted
+  // `worker-result`, which is emitted only after loop.run() RETURNS — and it
+  // threw. An entire attempt's spend became invisible, so the escalation lied to
+  // the human about the money by 300x. Money must be counted as it is SPENT
+  // (per round), not after a call that may never come back (F6's family).
+  // The halt must land MID-attempt (as it did for real: tool mode, many rounds) —
+  // a single-round attempt RETURNS, and a returned attempt was always accounted.
+  const wd = join(base, 'halt-spend');
+  const provider = stubProvider({
+    drafts: [draftedConfig(0.05)],
+    draftCostUsd: 0.001,
+    workCostUsd: 0.03, // round 1: 0.03 (under cap) · round 2: 0.06 >= 0.05 → the gate halts INSIDE the attempt
+    worker: [{ toolCalls: [{ id: 't1', name: 'shell_read', arguments: { path: join(wd, 'sum.test.mjs') } }] }],
+  });
+  const { outcome, events } = await run('halt-spend', {
+    provider,
+    specOver: {
+      budgetUsd: 1.5,
+      steps: [{ id: 'fix', mode: 'tools', tools: ['read', 'write'], close: { type: 'predicate', cmd: `node --test ${join(wd, 'sum.test.mjs')}`, expect: 0 }, class: 'hard' }],
+    },
+  });
+  assert.equal(outcome, 'step-red:fix', 'the worker trips the config gate mid-attempt and the step stops');
+  const end = events.find((e) => e.type === 'job-end');
+  assert.ok(end.spentUsd > 0.05,
+    `every round the worker actually bought must be on the ledger — expected > $0.05 (draft 0.001 + 2 rounds x 0.03), got $${end.spentUsd}: the halted attempt's spend is INVISIBLE`);
+});
+
+test('F12: rounds are counted ONCE — a normal attempt does not double-count round + result', async () => {
+  const provider = stubProvider({ workCostUsd: 0.15, draftCostUsd: 0.001 });
+  const { events } = await run('round-once', { provider });
+  const esc = events.find((e) => e.type === 'escalation' && e.category === 'hitl-close');
+  // 1 draft (0.001) + ONE working step × one round (0.15) = 0.151 (step 2 skips already-green)
+  assert.ok(Math.abs(esc.spentUsd - 0.151) < 1e-9, `expected 0.151, got ${esc.spentUsd} (double counting?)`);
+});
+
+test('F9: a drafter that claims the WHOLE advertised ceiling greens — the shell may never advertise a bound its own spend invalidates', async () => {
+  // found by the first real-model run (2026-07-13): the prompt advertised the
+  // JOB budget ($1.5) as the ceiling, but by validation time the drafting call
+  // itself had spent $0.0053, so the validator enforced <= $1.4947 and red the
+  // draft. The redraft was told the same stale ceiling, claimed it again, and
+  // the run died config-red having burned two paid calls. A rational drafter
+  // claims the ceiling — so EVERY real run deadlocked. The stub never saw it
+  // because it drafts $1.00, comfortably under.
+  const ceilingClaimer = {
+    calls: { draft: [], work: [] },
+    async generate(messages) {
+      const prompt = messages.at(-1).content;
+      if (!prompt.startsWith('DRAFT-CONFIG')) {
+        this.calls.work.push(prompt);
+        return reply({ text: GOOD_SUM, costUsd: 0.001 });
+      }
+      this.calls.draft.push(prompt);
+      // read the ceiling the shell advertised and claim exactly it
+      const ceiling = Number(prompt.match(/gate\.budgetUsd must be <= (\d+(?:\.\d+)?)/)[1]);
+      return reply({
+        text: JSON.stringify({
+          schema: 'v1', loop: { shape: 'refine', maxIterations: 3 }, memory: { store: 'litectx' },
+          gate: { budgetUsd: ceiling, writeScope: ['src/**'] }, escalation: { mode: 'decision-ready' },
+        }),
+        costUsd: 0.0053, // a real drafting call is not free — this is what invalidated the bound
+      });
+    },
+  };
+  const { outcome, events } = await run('ceiling-claim', { provider: ceilingClaimer });
+  assert.equal(outcome, 'escalated', `claiming the advertised ceiling must VALIDATE (got ${outcome}: ${JSON.stringify(events.filter((e) => e.type === 'config-red'))})`);
+  assert.equal(ceilingClaimer.calls.draft.length, 1, 'and it greens on the first shot — no redraft over a bound the shell itself broke');
+  assert.ok(ceilingClaimer.calls.work.length > 0, 'the worker actually ran');
+});
+
+test('F8: the close runs in the WORKDIR — a cwd-relative close (npm test) judges the job\'s repo, never the runner\'s', async () => {
+  // found by the REAL job #1 run on litectx (2026-07-13): `npm test` ran in
+  // bareloop's own directory, so the precheck greened against bareloop's suite
+  // while litectx sat RED. The arbiter was judging the wrong repository, and
+  // every existing test missed it because their closes named ABSOLUTE paths.
+  // The close is GREEN in the workdir and does not exist anywhere else, so only a
+  // close that actually ran in the workdir can report satisfied — running it in
+  // the runner's own directory reds (file not found), which is a DIFFERENT answer.
+  // (Asserting the red side would pass for the wrong reason: wrong-dir also reds.)
+  const { workdir, target } = makeWork('close-cwd');
+  writeFileSync(join(workdir, 'check.mjs'), 'process.exit(0)');
+  const s = spec('node check.mjs', {
+    steps: [{ id: 'fix', close: { type: 'predicate', cmd: 'node check.mjs', expect: 0 }, class: 'hard' }],
+  });
+  const provider = stubProvider();
+  const file = join(workdir, 'run.jsonl');
+  const outcome = await runJob(s, { approvals: approve(s), workdir, target, provider, emit: makeSpine(file), capRuns: 1 });
+  const events = readSpine(file);
+  assert.equal(events.find((e) => e.type === 'close-precheck').verdict, 'satisfied',
+    'the precheck ran the close IN THE WORKDIR — anywhere else it cannot even find it');
+  assert.equal(events.find((e) => e.type === 'step-end').outcome, 'already-green');
+  assert.equal(outcome, 'green');
+  assert.equal(provider.calls.draft.length + provider.calls.work.length, 0, 'and it cost nothing');
+});
+
 test('a close that cannot RUN is a broken-close stop BEFORE any provider call (reds-before-tokens)', async () => {
   const { outcome, events, provider } = await run('precheck-broken', {
     specOver: { steps: [{ id: 'fix', close: { type: 'predicate', cmd: 'bareloop-no-such-binary-xyz --version', expect: 0 }, class: 'hard' }] },

@@ -21,14 +21,28 @@ const { Loop } = require('bare-agent');
 
 /** @typedef {{code: string, path: string, detail?: string}} Red */
 
+/**
+ * The shell's own drafting allowance, carved out of the job budget (F9).
+ * Drafting is a paid shell call that happens BEFORE the config it produces is
+ * validated — so a ceiling advertised as the whole job budget is invalidated by
+ * the very call that answers it, and a rational drafter (one that claims the
+ * ceiling it is given) deadlocks every run. The shell therefore reserves this
+ * slice for itself and advertises `budget − reserve` as the ceiling the config
+ * may claim. It is a CAP, not an estimate: overspend it and the run stops on
+ * the budget story it is, never on a config-red blaming the drafter.
+ */
+const DRAFT_RESERVE_FRAC = 0.05;
+/** truncate (never round up) — an advertised ceiling must be one the shell can honour */
+const floor4 = (/** @type {number} */ n) => Math.floor(n * 10_000) / 10_000;
+
 // The drafting prompt: a schema DESCRIPTION built from the live validator
 // menus — never a copyable example config (the drafter must author, not echo;
 // the N2 drafting probe proved a frontier model greens on this, F6). The
 // DRAFT-CONFIG sentinel is fixed shell vocabulary, not content.
 // REMEMBER_KINDS comes from the validator: the prompt advertises the SAME menu
 // the validator enforces — one source, no drift.
-/** @param {any} job @param {Red[]|null} reds */
-function draftPrompt(job, reds) {
+/** @param {any} job @param {Red[]|null} reds @param {number} ceiling the budget the config may actually claim (F9) */
+function draftPrompt(job, reds, ceiling) {
   const doc = `DRAFT-CONFIG
 You are drafting a workflow config (schema "v1") for the job spec below. The config is
 pure declarative JSON validated by a strict schema; ANY unknown field, wrong enum value,
@@ -40,7 +54,7 @@ Required top-level fields (no others exist):
 - "memory": { "store": must be "litectx",
     "recall": optional { "k": integer 1..20, "kinds": optional non-empty subset of ${JSON.stringify([...KINDS])} },
     "compressLevel": optional, one of ${JSON.stringify([...COMPRESS_LEVELS])} }
-- "gate": { "budgetUsd": number, 0 < n <= the job budget, "writeScope": array of path-prefix globs like "src/**" }
+- "gate": { "budgetUsd": number, 0 < n <= the ceiling stated below, "writeScope": array of path-prefix globs like "src/**" }
 - "escalation": { "mode": must be "decision-ready" }
 - "hooks": optional; keys from ${JSON.stringify([...SLOTS])}, each an array of ops.
   Each op is { "op": one of ${JSON.stringify([...VERBS])}, ...params }. STRICT slot legality:
@@ -51,7 +65,8 @@ Required top-level fields (no others exist):
 Hard constraints from the job spec (violations are rejected):
 - Every writeScope entry must fit INSIDE the job's writeScope (${JSON.stringify(job.writeScope)}).
   No "..", no absolute paths, no mid-path wildcards.
-- gate.budgetUsd must be <= ${job.budgetUsd}.
+- gate.budgetUsd must be <= ${ceiling}. (This is the job's $${job.budgetUsd} budget minus the
+  shell's own drafting allowance — claiming exactly ${ceiling} is legal and validates.)
 - The config CANNOT contain close commands, provider choice, retry caps, or minting claims.
 
 Job spec:
@@ -223,15 +238,18 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
   const account = (c) => { if (typeof c === 'number' && Number.isFinite(c)) spentUsd += c; else unpriced = true; };
   /** @type {(type: string, data?: object) => object} */
   const meter = (type, data) => {
-    // every priced emission is accounted: worker-result AND worker-plan — the
-    // plan shape makes a SEPARATE loop.run whose metrics never fold into the
-    // implement call's, so skipping it under-counts real spend (review 2026-07-13)
-    if (type === 'worker-result' || type === 'worker-plan') {
-      account(/** @type {any} */ (data)?.costUsd);
-      // a PARTIALLY unpriced run reports a finite costUsd that under-counts —
-      // the flag is the only honest signal (F6)
-      if ((/** @type {any} */ (data)?.unpricedRounds ?? 0) > 0) unpriced = true;
-    }
+    // The ledger counts ROUNDS, not attempts (F12). `worker-round` fires as each
+    // round is bought — including the round that trips the gate — so an attempt
+    // that HALTS mid-flight (loop.run never returns, no worker-result, no
+    // worker-plan) still lands its real spend here. Accounting the attempt-level
+    // events instead made the real run report $0.0048 of a $1.4375 spend.
+    // Round-level is also the ONLY level that cannot double-count: worker-result
+    // and worker-plan are attempt TOTALS of these same rounds — they stay on the
+    // spine for display and are deliberately NOT accounted.
+    // `account` reds the run on ANY unpriced round (a null cost is the honest
+    // unknown, never $0 — F6): per-round metering means a partially-unpriced run
+    // is caught natively, round by round, with no separate unpricedRounds tally.
+    if (type === 'worker-round') account(/** @type {any} */ (data)?.costUsd);
     return emit(type, data);
   };
   const pricingRed = () => {
@@ -249,7 +267,7 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
   const draft = async (reds) => {
     let r;
     try {
-      r = await drafter.run([{ role: 'user', content: draftPrompt(job, reds) }]);
+      r = await drafter.run([{ role: 'user', content: draftPrompt(job, reds, ceilingNow()) }]);
     } catch (e) {
       // Loop defaults throwOnError: true — a misconfigured binding or a bare
       // transient 500 REJECTS here. The spend is UNKNOWN (F6), and the spine
@@ -270,7 +288,15 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
     return 'provider-red';
   };
   const capNow = () => Math.min(shellCapUsd, job.budgetUsd - spentUsd);
-  const cOpts = () => ({ shellCapUsd: capNow(), jobWriteScope: job.writeScope });
+  // The ceiling the CONFIG may claim (F9): the job budget minus the shell's own
+  // drafting allowance, and never above what is actually left. Advertised in the
+  // prompt and enforced by the validator — ONE number, so a drafter that claims
+  // the ceiling it was given always validates. (Before: the prompt advertised the
+  // whole job budget while the validator enforced budget − drafting-spend, a bound
+  // the drafter was never told and could not satisfy.)
+  const workerCeiling = floor4(job.budgetUsd * (1 - DRAFT_RESERVE_FRAC));
+  const ceilingNow = () => Math.min(workerCeiling, capNow());
+  const cOpts = () => ({ shellCapUsd: ceilingNow(), jobWriteScope: job.writeScope });
   // Drafting is DEFERRED to the first step that needs a worker (resume model,
   // design addendum 2026-07-13): a step whose close already greens skips for
   // zero tokens, so a clean rerun may need no config at all — drafting one no
@@ -367,7 +393,7 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
     // trim before splitting: validateJob reds whitespace-padded cmds, but an
     // empty argv[0] would THROW at spawn — belt for any path around the validator
     const closeArgv = step.close.cmd.trim().split(/\s+/);
-    const pre = runClose(closeArgv, (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS }), { timeoutMs: closeTimeoutMs });
+    const pre = runClose(closeArgv, (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS }), { timeoutMs: closeTimeoutMs, cwd: workdir });
     emit('close-precheck', { step: step.id, ...pre });
     if (pre.verdict === 'satisfied') {
       emit('step-end', { step: step.id, outcome: 'already-green', spentUsd });
@@ -380,9 +406,11 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
       emit('job-end', { outcome: 'step-red', step: step.id, cause: 'broken-close', spentUsd });
       return `step-red:${step.id}`;
     }
-    // the precheck's gap stays on the spine only — feeding it to the worker as
-    // a "previous attempt" would be a lie (no attempt exists) and would skew
-    // the contrast evidence between fresh runs and resumes
+    // The precheck's gap goes to the worker as what it IS: the close's output on
+    // the tree as it stands (F13). It is never framed as an attempt — no attempt
+    // has happened — so the contrast evidence stays clean. Withholding it (the
+    // original call) left the worker unable to see the failure it was hired to
+    // fix: `run` is a locked verb, so it cannot execute the close itself.
     const halted = await ensureConfig();
     if (halted) return halted;
     let outcome;
@@ -390,7 +418,7 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
       outcome = await interpret(config, {
         task: `${job.description} — step: ${step.id}`,
         target, close: closeArgv, workdir, capRuns,
-        emit: meter, provider, ...cOpts(), closeTimeoutMs,
+        emit: meter, provider, ...cOpts(), closeTimeoutMs, closeState: pre.gap,
         // the SPEC's grant, threaded verbatim (2b decision #2) — the drafted
         // config cannot express mode or tools, so there is nothing to merge
         mode: step.mode ?? 'text', tools: step.tools,

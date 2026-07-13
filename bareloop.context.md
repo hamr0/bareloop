@@ -109,12 +109,18 @@ Append-only JSONL event emitter bound to one file. `seq` monotonic per spine, `t
 last. Consumers are pure listeners; nothing reads the file back. Returns each event as
 written.
 
-### `ralph({ middle, close, capRuns, emit, redact?, closeTimeoutMs? })` → `'green' | 'escalated'` — `src/ralph.js`
+### `ralph({ middle, close, capRuns, emit, redact?, closeTimeoutMs?, cwd? })` → `'green' | 'escalated'` — `src/ralph.js`
 
 The dumb outer shell: `while close-red and under-cap: run the middle`. `close` is an argv
 whose exit code is truth (`runClose` is also exported); the red gap text feeds the next
 iteration, tail-biased when bounded (400 head + 1500 tail — the assertion diff lives at
-the end). `closeTimeoutMs` caps the close's wall clock (default 120s) — shell/operator
+the end). **`cwd` is where the close RUNS, and it is load-bearing (F8):** a close is a
+repository command (`npm test`, `make check`) and every one of them is cwd-relative — run
+it anywhere but the workdir and the arbiter judges the wrong tree. `interpret`/`runJob`
+always pass the workdir. **Corollary for job authors (F15):** the gap bound keeps the head
+and the TAIL, so a close whose failures print mid-stream (a 391-subtest TAP dump) tells the
+worker only the summary counts — pick a reporter whose failures land at the end.
+`closeTimeoutMs` caps the close's wall clock (default 120s) — shell/operator
 territory, inexpressible in any config. Escalations are decision-ready (category, options, spend); cap-halt is its own
 category, never merged with "wrong". A thrown middle is relayed by its `category`
 property (`cap-halt`, `gate-red`, …); an unnamed throw is `interpreter-red`. Close output
@@ -225,10 +231,26 @@ pays ZERO provider calls. So the resume story is: a `cap-halt` stop is the check
 (the workdir + the closes), the human raises `budgetUsd` (a new spec hash — re-sign),
 and the rerun picks up exactly where the budget died.
 
-**Unpriced is never free (F6):** the ledger halts `pricing-red` — decision-ready — on
-any result whose cost is the honest null OR whose `unpricedRounds > 0` (a partially
-unpriced run under-counts); a null cost never accumulates as $0, so the hard cap cannot
-be gamed by an unpriced provider path. N2 bounds (honest): `gold`/`rubric` closes refuse
+**Unpriced is never free (F6/F12):** the ledger meters **per ROUND** (`worker-round`, at
+bare-agent's `onLlmResult` seam) — money is counted as it is spent, never at the end of an
+attempt: a tool-mode attempt that HALTS never returns, so accounting its result event lost
+the whole attempt's spend (a real run bought $1.4375 of tokens and the ledger reported
+$0.0048). Any round whose cost is the honest null halts `pricing-red`, decision-ready; a
+null never accumulates as $0, so the hard cap cannot be gamed by an unpriced provider path.
+The drafting call is metered on its own priced path, and the shell **reserves a drafting
+allowance** from the job budget (F9): the ceiling advertised to the drafter is
+`budgetUsd − reserve`, so a drafter that claims the ceiling it is given always validates
+(the prompt and the validator must never enforce different numbers).
+
+**What the worker is told (tool mode):** the absolute repository root (F10 — bare-agent's
+shell tools resolve relative paths against the PROCESS cwd, so a worker with no root is
+blind), the close's CURRENT output as the tree's state (F13 — never framed as "your previous
+attempt"; the `run` verb is locked, so the worker cannot see the failure any other way), and
+the loop contract (F16 — it is ONE attempt inside `while close-red and under-cap` and will be
+re-run with the close's verdict; without this a model one-shots and can eat the budget in
+reads before ever writing). It is NOT allowed to read the run's own machinery (F14): the gate
+audit, the smoke store and the litectx store are denied — the agent neither authors the
+arbiter nor reads its books. N2 bounds (honest): `gold`/`rubric` closes refuse
 `close-unsupported` (execution lands at N4); `target` is required only for text-mode
 steps.
 

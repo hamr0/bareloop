@@ -202,3 +202,32 @@ test('ralph threads the redactor into runClose so the spine close-verdict carrie
   const cv = raw.trimEnd().split('\n').map((l) => JSON.parse(l)).find((e) => e.type === 'close-verdict');
   assert.ok(cv.gap.includes('[REDACTED]'));
 });
+
+// ---- the close runs where the WORK is (F8, found by the real job #1 run) ----
+// A close is a command in a repository: `npm test`, `make check`, `./gradlew test`
+// — every one of them is cwd-relative. Run it in the wrong directory and the
+// arbiter judges the wrong tree; exit-code-is-truth becomes exit-code-of-something-
+// else-is-truth. The old suite could never catch this: every test close named an
+// ABSOLUTE path, so cwd never mattered.
+
+test('runClose executes the close in the given cwd — a cwd-relative close judges THAT tree, not the runner\'s', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'close-cwd-'));
+  writeFileSync(join(repo, 'check.mjs'), 'process.exit(0)');           // greens ONLY from inside repo
+  const elsewhere = mkdtempSync(join(tmpdir(), 'close-cwd-other-'));
+  writeFileSync(join(elsewhere, 'check.mjs'), 'process.exit(1)');      // the same relative name, red
+
+  const green = runClose(['node', 'check.mjs'], undefined, { cwd: repo });
+  assert.equal(green.verdict, 'satisfied', 'the close ran inside the workdir');
+
+  const red = runClose(['node', 'check.mjs'], undefined, { cwd: elsewhere });
+  assert.equal(red.verdict, 'needs_revision', 'the SAME argv reds in the other tree — cwd is load-bearing');
+});
+
+test('ralph threads cwd to every close it runs — the arbiter never judges another repository', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'ralph-cwd-'));
+  writeFileSync(join(repo, 'check.mjs'), 'process.exit(1)'); // red until the middle fixes it
+  const file = join(dir, 'ralph-cwd.jsonl');
+  const middle = () => writeFileSync(join(repo, 'check.mjs'), 'process.exit(0)');
+  const outcome = await ralph({ middle, close: ['node', 'check.mjs'], capRuns: 2, emit: makeSpine(file), cwd: repo });
+  assert.equal(outcome, 'green', 'the close saw the middle\'s work because it ran where the work is');
+});

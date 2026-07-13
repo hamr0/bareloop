@@ -67,7 +67,10 @@ const provider = dry
   : new AnthropicProvider({ apiKey, model: process.env.BARELOOP_MODEL || 'claude-sonnet-5' });
 
 const wd = resolve(workdir);
-const spineDir = join(wd, '.bareloop');
+// The spine lives OUTSIDE the tree under work (F14): inside it, the worker's own
+// readScope covers it — the real run's worker read its own spine — and it would
+// show up in the repository's status forever after.
+const spineDir = join(wd, '..', `${wd.split('/').at(-1)}-bareloop`);
 mkdirSync(spineDir, { recursive: true });
 const spineFile = join(spineDir, `job1-${Date.now().toString(36)}.jsonl`);
 
