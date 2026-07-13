@@ -48,13 +48,20 @@ function stubProvider({ drafts = [draftedConfig()], worker = [GOOD_SUM], draftCo
 }
 
 // recording exec seam for the hitl PR mechanics (the process runner is
-// shell-owned; injecting it is the same doctrine as the provider stub)
-function stubExec({ failAt = null, prUrl = 'https://github.com/hamr0/litectx/pull/7' } = {}) {
+// shell-owned; injecting it is the same doctrine as the provider stub).
+// `dirty` is the default: the run changed files in the fence, so `git status
+// --porcelain` reports them and the PR is real work. `dirty: false` is the
+// cadenced no-op — nothing changed, so there is nothing for a human to review.
+function stubExec({ failAt = null, prUrl = 'https://github.com/hamr0/litectx/pull/7', dirty = true } = {}) {
   const calls = [];
   const fn = (argv, opts = {}) => {
     calls.push({ argv, cwd: opts.cwd });
     const key = argv.slice(0, 2).join(' ');
-    if (failAt && key.startsWith(failAt)) return { status: 1, stdout: '', stderr: `stub: ${failAt} failed` };
+    // failAt matches the FULL argv prefix: 'git checkout main' (the restore)
+    // must be distinguishable from 'git checkout -b' (the branch)
+    if (failAt && argv.join(' ').startsWith(failAt)) return { status: 1, stdout: '', stderr: `stub: ${failAt} failed` };
+    if (key === 'git rev-parse') return { status: 0, stdout: 'main\n', stderr: '' };
+    if (key === 'git status') return { status: 0, stdout: dirty ? ' M src/sum.mjs\n' : '', stderr: '' };
     return { status: 0, stdout: argv[0] === 'gh' ? `${prUrl}\n` : '', stderr: '' };
   };
   fn.calls = calls;
@@ -240,15 +247,19 @@ test('hitl step opens the draft PR deterministically: branch → add(fence only)
   assert.equal(outcome, 'escalated');
   const seq = exec.calls.map((c) => c.argv.slice(0, 3).join(' '));
   assert.deepEqual(seq, [
+    'git status --porcelain',    // the fence has changes → there IS something to review
+    'git rev-parse --abbrev-ref', // where we started, read before anything moves
     'git checkout -b',
     'git add --',
     'git commit -m',
     'git push -u',
     'gh pr create',
+    'git checkout main',          // and handed back exactly as found
   ], `the fixed sequence, nothing model-authored (got ${JSON.stringify(seq)})`);
-  assert.match(exec.calls[0].argv[3], /^bareloop\/run-test-/, 'branch is runner-named');
-  assert.deepEqual(exec.calls[1].argv.slice(3), ['src'], 'git add stages the job fence ONLY — spines and audit logs never enter the PR');
-  assert.ok(exec.calls[4].argv.includes('--draft'), 'PRs are drafts, merge stays human');
+  assert.deepEqual(exec.calls[0].argv.slice(3), ['--', 'src'], 'the change check is fence-scoped too');
+  assert.match(exec.calls[2].argv[3], /^bareloop\/run-test-/, 'branch is runner-named');
+  assert.deepEqual(exec.calls[3].argv.slice(3), ['src'], 'git add stages the job fence ONLY — spines and audit logs never enter the PR');
+  assert.ok(exec.calls[6].argv.includes('--draft'), 'PRs are drafts, merge stays human');
   assert.ok(exec.calls.every((c) => c.cwd === join(base, 'hitl-pr')), 'everything runs in the workdir');
   const opened = events.find((e) => e.type === 'pr-opened');
   assert.equal(opened.url, 'https://github.com/hamr0/litectx/pull/7');
@@ -257,11 +268,43 @@ test('hitl step opens the draft PR deterministically: branch → add(fence only)
   assert.ok(esc.prompt.includes('review and merge'), 'the operator prompt still rides');
 });
 
+test('the PR step returns the checkout to the branch it started on — the next cadenced run never branches off an unmerged branch', async () => {
+  // found by the REAL job #1 run on litectx (2026-07-13): the workdir was left
+  // sitting on bareloop/litectx-maintainer-<id>, so tomorrow's run would branch
+  // off yesterday's unmerged branch and judge its close against that state
+  const exec = stubExec();
+  const { events } = await run('hitl-restore', { execCmd: exec });
+  const seq = exec.calls.map((c) => c.argv.join(' '));
+  assert.ok(seq.indexOf('git rev-parse --abbrev-ref HEAD') < seq.findIndex((s) => s.startsWith('git checkout -b')),
+    'the starting branch is read BEFORE anything moves');
+  assert.equal(seq.at(-1), 'git checkout main', 'the run hands the checkout back exactly as it found it');
+  assert.ok(events.some((e) => e.type === 'pr-opened'), 'and the PR still opened');
+  assert.ok(!events.some((e) => e.type === 'workdir-red'), 'a clean restore raises nothing');
+});
+
+test('a PR that fails mid-sequence STILL restores the branch — a broken run never strands the checkout', async () => {
+  const exec = stubExec({ failAt: 'git commit' });
+  const { outcome, events } = await run('hitl-restore-red', { execCmd: exec });
+  assert.equal(outcome, 'escalated');
+  assert.equal(exec.calls.at(-1).argv.join(' '), 'git checkout main', 'the restore runs on the failure path too');
+  assert.ok(events.some((e) => e.type === 'pr-red'), 'the failure is still reported');
+});
+
+test('a restore that itself fails is a LOUD workdir-red — a stranded checkout is never silent', async () => {
+  const exec = stubExec({ failAt: 'git checkout main' });
+  const { outcome, events } = await run('hitl-restore-broken', { execCmd: exec });
+  assert.equal(outcome, 'escalated', 'the hitl escalation still fires — the PR is real work');
+  const red = events.find((e) => e.type === 'workdir-red');
+  assert.ok(red && red.branch, 'the operator is told which branch the checkout was left on');
+  assert.ok(events.some((e) => e.type === 'pr-opened'), 'a failed restore does not un-open a real PR');
+});
+
 test('a failed PR step is pr-red on the spine; the escalation still fires decision-ready with the error', async () => {
   const exec = stubExec({ failAt: 'git push' });
   const { outcome, events } = await run('hitl-pr-red', { execCmd: exec });
   assert.equal(outcome, 'escalated', 'a broken PR path must never swallow the escalation');
-  assert.equal(exec.calls.length, 4, 'the sequence stops at the failure — gh never runs');
+  assert.ok(!exec.calls.some((c) => c.argv[0] === 'gh'), 'the sequence stops at the failure — gh never runs');
+  assert.equal(exec.calls.at(-1).argv.join(' '), 'git checkout main', 'and the checkout is still handed back');
   const red = events.find((e) => e.type === 'pr-red');
   assert.match(red.argv, /^git push/, 'the red names the failed command');
   const esc = events.find((e) => e.type === 'escalation' && e.category === 'hitl-close');
@@ -320,7 +363,9 @@ test('F6 — an unpriced PLAN call halts pricing-red at the step boundary (plan 
 test('pr-red never captures a secret: git/gh output is scrubbed at the source before the spine (hard line)', async () => {
   const token = 'ghp_a1B2c3D4e5F6g7H8i9J0k1L2';
   const execCmd = (argv) => {
-    if (argv.slice(0, 2).join(' ') === 'git push') {
+    const key = argv.slice(0, 2).join(' ');
+    if (key === 'git status') return { status: 0, stdout: ' M src/sum.mjs\n', stderr: '' }; // the fence changed → the PR path runs
+    if (key === 'git push') {
       return { status: 1, stdout: '', stderr: `fatal: unable to access 'https://x-access-token:${token}@github.com/x/y.git/': The requested URL returned error: 403` };
     }
     return { status: 0, stdout: argv[0] === 'gh' ? 'https://github.com/x/y/pull/1\n' : '', stderr: '' };
@@ -443,6 +488,43 @@ test('a close that cannot RUN is a broken-close stop BEFORE any provider call (r
   const end = events.find((e) => e.type === 'job-end');
   assert.equal(end.outcome, 'step-red');
   assert.equal(end.cause, 'broken-close');
+});
+
+test('a cadenced no-op run opens NO PR: nothing changed in the fence → nothing for a human to review, job ends green', async () => {
+  // found by the REAL job #1 rung-exit run on litectx (2026-07-13): with every
+  // step already-green, the hitl step still branched/added/committed — and `git
+  // commit` correctly failed ("nothing added to commit"), so a daily cadence on
+  // a green repo emitted a broken-PR escalation EVERY DAY. There is no decision
+  // to make when nothing changed.
+  const exec = stubExec({ dirty: false });
+  const { workdir, target, suiteCmd } = makeWork('hitl-noop');
+  writeFileSync(target, GOOD_SUM); // the work is already done: the suite step skips
+  const s = spec(suiteCmd, {
+    steps: [
+      { id: 'fix', close: { type: 'predicate', cmd: suiteCmd, expect: 0 }, class: 'hard' },
+      { id: 'pr', close: { type: 'hitl', prompt: 'review and merge?' }, class: 'hitl' },
+    ],
+  });
+  const provider = stubProvider();
+  const file = join(workdir, 'run.jsonl');
+  const outcome = await runJob(s, { approvals: approve(s), workdir, target, provider, emit: makeSpine(file), capRuns: 2, execCmd: exec });
+  const events = readSpine(file);
+  assert.equal(outcome, 'green', 'a no-op cadenced run ends green — not escalated, not pr-red');
+  assert.equal(provider.calls.draft.length + provider.calls.work.length, 0, 'and costs ZERO provider calls');
+  assert.deepEqual(exec.calls.map((c) => c.argv.slice(0, 2).join(' ')), ['git status'], 'the fence was checked and NOTHING else ran — no branch, no commit, no push');
+  assert.ok(!events.some((e) => e.type === 'pr-opened' || e.type === 'pr-red'), 'no PR, and no PR failure either');
+  assert.ok(!events.some((e) => e.type === 'escalation'), 'a silent no-op run raises no decision the human must make');
+  const skipped = events.find((e) => e.type === 'pr-skipped');
+  assert.ok(skipped && skipped.step === 'pr', 'the skip is a visible spine record, never a silent omission');
+  assert.equal(events.find((e) => e.type === 'step-end' && e.step === 'pr').outcome, 'already-green');
+  assert.equal(events.find((e) => e.type === 'job-end').outcome, 'green');
+});
+
+test('a broken git status (not a repo) still opens the PR path — a failed check never silently swallows the escalation', async () => {
+  const exec = stubExec({ failAt: 'git status' });
+  const { outcome, events } = await run('hitl-status-broken', { execCmd: exec });
+  assert.equal(outcome, 'escalated', 'the hitl escalation still fires');
+  assert.ok(events.some((e) => e.type === 'pr-red' || e.type === 'pr-opened'), 'the PR path ran rather than being skipped on an unknown fence state');
 });
 
 test('the skip-check close output is scrubbed at the source — a secret it echoes never enters the spine', async () => {

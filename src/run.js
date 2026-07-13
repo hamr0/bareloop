@@ -99,10 +99,33 @@ const defaultExec = (argv, { cwd } = {}) => {
  * never enter the PR. Any failure is an honest red carrying the failed argv;
  * the caller still escalates — a broken PR path must never swallow the
  * escalation (the pain channel, law #7).
+ * The checkout is handed back exactly as it was found: the starting branch is
+ * read BEFORE anything moves and restored on EVERY path, success or failure
+ * (found by the real job #1 run, 2026-07-13 — the workdir was left sitting on
+ * the bareloop branch, so the next cadenced run would branch off yesterday's
+ * unmerged branch and judge its close against that state). A restore that
+ * itself fails is loud (`strandedOn`), never silent.
+ *
  * @param {{workdir: string, branch: string, title: string, body: string, addPaths: string[], exec: ExecCmd}} o
- * @returns {Promise<{url: string|null, red: {argv: string, detail: string}|null}>}
+ * @returns {Promise<{url: string|null, red: {argv: string, detail: string}|null, strandedOn: string|null}>}
  */
 async function openDraftPr({ workdir, branch, title, body, addPaths, exec }) {
+  // Subprocess output is scrubbed AT CAPTURE with the ONE shape inventory —
+  // the same doctrine as the close path (interpret wires SECRET_PATTERNS into
+  // ralph): git/gh error text can echo a credentialed remote URL, and the
+  // detail lands on the append-only spine (pr-red + the escalation's pr.error).
+  const scrub = (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS });
+  const head = exec(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], { cwd: workdir });
+  const startBranch = head.status === 0 ? head.stdout.trim() : '';
+  /** put the checkout back where it started; report the branch it is stranded on if that fails */
+  const restore = () => {
+    if (!startBranch) return null; // never knew where we started — nothing honest to restore to
+    const r = exec(['git', 'checkout', startBranch], { cwd: workdir });
+    return r.status === 0 ? null : branch;
+  };
+  /** @param {{url?: string|null, red?: {argv: string, detail: string}|null}} o */
+  const done = ({ url = null, red = null }) => ({ url, red, strandedOn: restore() });
+
   const steps = [
     ['git', 'checkout', '-b', branch],
     ['git', 'add', '--', ...addPaths],
@@ -110,23 +133,18 @@ async function openDraftPr({ workdir, branch, title, body, addPaths, exec }) {
     ['git', 'push', '-u', 'origin', branch],
     ['gh', 'pr', 'create', '--draft', '--title', title, '--body', body],
   ];
-  // Subprocess output is scrubbed AT CAPTURE with the ONE shape inventory —
-  // the same doctrine as the close path (interpret wires SECRET_PATTERNS into
-  // ralph): git/gh error text can echo a credentialed remote URL, and the
-  // detail lands on the append-only spine (pr-red + the escalation's pr.error).
-  const scrub = (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS });
   for (const argv of steps) {
     const r = exec(argv, { cwd: workdir });
     if (r.status !== 0) {
-      return { url: null, red: { argv: argv.join(' '), detail: `${argv.slice(0, 2).join(' ')} failed: ${scrub((r.stderr || r.stdout || `exit ${r.status}`)).trim().slice(0, 500)}` } };
+      return done({ red: { argv: argv.join(' '), detail: `${argv.slice(0, 2).join(' ')} failed: ${scrub((r.stderr || r.stdout || `exit ${r.status}`)).trim().slice(0, 500)}` } });
     }
     if (argv[0] === 'gh') {
       const url = (r.stdout.match(/https?:\/\/\S+/) ?? [null])[0];
       // a "successful" gh with no link is not a PR the human can act on
-      return url ? { url, red: null } : { url: null, red: { argv: argv.join(' '), detail: 'no PR URL in gh output' } };
+      return url ? done({ url }) : done({ red: { argv: argv.join(' '), detail: 'no PR URL in gh output' } });
     }
   }
-  return { url: null, red: { argv: 'gh pr create', detail: 'PR step never ran' } }; // unreachable while gh is last; belt for edits
+  return done({ red: { argv: 'gh pr create', detail: 'PR step never ran' } }); // unreachable while gh is last; belt for edits
 }
 
 /**
@@ -297,6 +315,21 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
   // job and the stop is a result (ladder discipline applied to steps)
   for (const step of job.steps) {
     if (step.close.type === 'hitl') {
+      // Nothing changed in the fence → nothing for a human to review (found by
+      // the real job #1 run, 2026-07-13): a cadenced run whose steps all skip
+      // already-green would otherwise branch/add/commit, and `git commit`
+      // correctly fails ("nothing added to commit") — a broken-PR escalation
+      // every single day. A hitl close is a human decision point; with no
+      // changes there IS no decision. Only an AFFIRMATIVE clean answer skips:
+      // a failed check (not a repo, broken git) falls through to the PR path
+      // and reds honestly there — an unknown fence state is never a green.
+      const fence = job.writeScope.map((/** @type {string} */ g) => globToPrefix(g));
+      const st = execCmd(['git', 'status', '--porcelain', '--', ...fence], { cwd: workdir });
+      if (st.status === 0 && st.stdout.trim() === '') {
+        emit('pr-skipped', { step: step.id, reason: 'no changes in the job fence — nothing for a human to review' });
+        emit('step-end', { step: step.id, outcome: 'already-green', spentUsd });
+        continue;
+      }
       // the hitl middle's work (2b): deterministic branch/commit/draft-PR —
       // model tools never touch git; a PR failure is red + escalation, never a
       // swallowed escalation
@@ -310,6 +343,9 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
       });
       if (pr.red) emit('pr-red', { step: step.id, ...pr.red });
       else emit('pr-opened', { step: step.id, branch, url: pr.url });
+      // a checkout left on a bareloop branch poisons the NEXT cadenced run's
+      // baseline — loud, and never allowed to un-open a real PR
+      if (pr.strandedOn) emit('workdir-red', { step: step.id, branch: pr.strandedOn, detail: 'the run could not return the checkout to its starting branch — the next run would build on this one' });
       emit('escalation', { category: 'hitl-close', decisionReady: true, step: step.id, prompt: step.close.prompt, spentUsd, decision: step.close.prompt, options: ['approve', 'reject'], pr: { url: pr.url, branch, error: pr.red?.detail ?? null } });
       emit('job-end', { outcome: 'escalated', step: step.id, spentUsd });
       return 'escalated'; // by design: the human acts outside the run, forever

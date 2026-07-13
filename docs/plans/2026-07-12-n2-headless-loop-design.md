@@ -224,3 +224,30 @@ it, zero new code). The missing piece, built here:
 legitimately skips once the first greens — the budget-exhaustion and plan-spend tests
 now give step 2 its own still-red close / assert one working step. The intended
 behavior they pin (drained-ledger red before tokens; plan spend metered) is unchanged.
+
+---
+
+## Addendum 2026-07-13b — the rung-exit run's findings (F7)
+
+The first real run of job #1 (`scripts/run-job1.mjs`, real litectx checkout, token-free)
+found two defects in the runner/repository seam that a stubbed `exec` could not see. Both
+fixed TDD-first; both are doctrine, not just bugs:
+
+- **A hitl close is a human decision point — with no changes there IS no decision.** The
+  step checks the fence before touching git; an affirmatively-clean fence skips the PR
+  (`pr-skipped`, `step-end: already-green`, job ends green). An unknown fence state (a
+  failed check) is never treated as clean — it falls through and reds honestly.
+- **A run hands the checkout back exactly as it found it.** Leaving the workdir on the
+  bareloop branch would make tomorrow's cadenced run branch off yesterday's unmerged
+  branch and judge its close against that state — silent carry-over through the working
+  tree, the un-attributed inheritance this product exists to prevent. A failed restore is
+  loud (`workdir-red`), never silent.
+
+**Job #1's spec (`jobs/litectx-maintainer.json`) corrects the PRD/probe draft:**
+`writeScope` is `["src/**"]`, NOT `["src/**", "test/**"]`. The close is `npm test`, so a
+fence containing `test/**` would hand the agent its own arbiter — the one thing design law
+#1 forbids. The close's own files stay outside the fence, permanently.
+
+**Approval, mechanized (`scripts/run-job1.mjs`):** the script prints the spec hash and
+refuses to run unless the SAME hash is handed back with `--approve`. A budget top-up (the
+resume model) edits `budgetUsd` → new hash → the old signature is void by construction.

@@ -197,7 +197,14 @@ the job fence ONLY, so spines/audit logs never enter the PR → commit → push 
 `gh pr create --draft`) and ends `escalated` BY DESIGN, the PR URL riding the
 decision-ready escalation; a PR failure is `pr-red` and the escalation still fires with
 the error. Model tools never touch git — `execCmd` is the shell-owned process seam
-(defaults to real spawnSync). Outcomes: `green | escalated | unapproved-spec | job-red |
+(defaults to real spawnSync). **The hitl step checks the fence first**: an
+affirmatively-clean `git status --porcelain -- <fence>` means nothing changed, so there
+is nothing for a human to review — `pr-skipped` + `step-end: already-green`, the job ends
+`green`, no PR and no escalation (a cadenced no-op run is silent and free). A FAILED
+check falls through to the PR path and reds there — an unknown fence state is never a
+green. The PR step **hands the checkout back**: the starting branch is read before
+anything moves and restored on every path; a failed restore is a loud `workdir-red`
+naming the stranded branch (it never un-opens a real PR). Outcomes: `green | escalated | unapproved-spec | job-red |
 smoke-red | config-red | pricing-red | provider-red | cap-halt | close-unsupported |
 step-red:<id>` — `provider-red` is a transport throw from the drafting call (spend
 unknown, F6); `cap-halt` is drafting spend consuming the whole job budget before a

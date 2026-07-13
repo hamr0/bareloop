@@ -274,3 +274,48 @@ the rule minted from the probe's own harness confound has caught **three silent 
 launderings in shipped code within one day** (interpret's cost emit + two in extract.js).
 `runJob` halts `pricing-red` on a null cost OR `unpricedRounds > 0` — partially-unpriced
 is also never free.
+
+## F7 — the FIRST real run of job #1 (token-free, real litectx) found two defects no unit test could have: the cadenced no-op PR and the stranded checkout
+
+**The setup (rung-exit run, `scripts/run-job1.mjs --dry`, real litectx checkout, ZERO
+tokens):** litectx is genuinely green — 390 tests pass, no TODOs, freshly released. So
+job #1's `suite` step ran its close (`npm test`, the real suite) in the close-first
+precheck, greened, and skipped: `already-green`, **$0.0000, zero provider calls**, spine
+terminal and secrets-clean. The resume/cadence claim — "a clean cadenced rerun costs zero
+provider calls" — is now MEASURED against a real repo (29s wall clock, all of it the real
+suite), not asserted. The provider binding was one that THROWS if called, so any spend
+would have been a loud failure rather than a silent number.
+
+**Defect 1 — a cadenced no-op still tried to open a PR, every day, forever.** With every
+step skipped, the `hitl` step still ran branch → add → commit, and `git commit` correctly
+failed ("nothing added to commit") → `pr-red` + a decision-ready escalation. A daily
+maintainer job on a green repo would therefore hand the human a broken-PR escalation
+every single morning. The doctrinal error: **a hitl close is a human decision point, and
+with no changes there IS no decision.** Fixed: the hitl step checks the fence
+(`git status --porcelain -- <fence>`) first; an affirmatively-clean fence emits
+`pr-skipped` + `step-end: already-green` and the job ends **green** — no PR, no
+escalation, no noise. Only a CLEAN answer skips: a failed check (not a repo, broken git)
+falls through to the PR path and reds honestly there — an unknown fence state is never a
+green.
+
+**Defect 2 — the run left the checkout stranded on its own branch.** `openDraftPr` did
+`git checkout -b` and never came back, so the workdir sat on `bareloop/<job>-<id>`
+afterwards. On a cadence that compounds: tomorrow's run branches off yesterday's UNMERGED
+branch and judges its close against that state — silent inheritance through the working
+tree, which is exactly the kind of un-attributed carry-over this product exists to
+prevent. Fixed: the starting branch is read BEFORE anything moves and restored on EVERY
+path, success or failure; a restore that itself fails is a loud `workdir-red` (naming the
+branch the checkout is stranded on) and never un-opens a real PR.
+
+**The lesson (why the rung exit is a rung and not a formality):** both defects live in the
+seam between the runner and a real repository's state — the exact place a stubbed `exec`
+seam cannot see, because the stub answers whatever the test asked it to. Twenty-one runner
+tests, three review rounds, and a mutation pass had all been green over this code. **One
+run against a real checkout, spending nothing, found both in under a minute.** The
+close-first skip built the same day is what made the no-op path reachable at all — the
+feature and the bug it exposed arrived together, which is the honest argument for running
+the real thing as early as the ladder allows.
+
+**Still unproven (the honest boundary):** the real-model tool-mode worker call and a real
+GitHub draft PR. Both need a key and a push to a live repo — neither can be claimed until
+it is run, and this finding claims neither.

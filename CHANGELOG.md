@@ -67,6 +67,21 @@ feature lands, **patch** = docs, fixes, scaffolding.
     re-sign) and reruns, finished steps skip in seconds, and a clean cadenced rerun
     costs ZERO provider calls. Design record: the 2026-07-13 addendum on
     `docs/plans/2026-07-12-n2-headless-loop-design.md`.
+  - **The cadenced no-op is silent (F7).** A `hitl` step now checks the fence
+    (`git status --porcelain -- <fence>`) before touching git: an affirmatively-clean
+    fence emits `pr-skipped` + `step-end: already-green` and the job ends **green** —
+    no PR, no escalation. (Before: a green-repo cadence opened a branch, and `git
+    commit` correctly failed "nothing added to commit" → a broken-PR escalation every
+    single day. A hitl close is a human decision point; with no changes there is no
+    decision.) A FAILED check — not a repo, broken git — falls through to the PR path
+    and reds honestly: an unknown fence state is never a green.
+  - **The PR step hands the checkout back (F7).** The starting branch is read before
+    anything moves and restored on every path, success or failure; a restore that fails
+    is a loud `workdir-red` naming the stranded branch, and never un-opens a real PR.
+    (Before: the workdir was left on `bareloop/<job>-<id>`, so the next cadenced run
+    branched off the previous run's unmerged branch and judged its close against that
+    state.) New spine vocabulary: `close-precheck`, `pr-skipped`, `workdir-red`;
+    `step-end` gains the `already-green` outcome.
 
 ### Changed
 - **`job-v1`: requesting a locked tool is now a DISTINCT red.** `tools` containing
