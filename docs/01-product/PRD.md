@@ -492,6 +492,22 @@ Things to try, in nominated order:
 5. **V13 — toggle coverage (ledger, post-N4).** Per config knob: ≥1 observed contrast
    toggle in the ledger, or the knob is flagged unwired-until-proven. Extends the F2
    contrast-bit minting rule into an ongoing coverage metric.
+   **ANSWERED 2026-07-13 (adaptlearn F26, 0.11.8): METRIC VALIDATED, ARCHIVE
+   INSUFFICIENT** — the metric passes as an instrument (control exact; all three comparison
+   rules falsifier-proven; `hooks.on-green` flagged UNWIRED in every archived world; F15's
+   lock found toggle-visible), but adaptlearn's ledgers could not support clean attribution:
+   the unconfounded tier (sibling cells one knob apart at the same task/gen/arm) was BARREN
+   everywhere, and a re-authored pair's "toggle" was caught carrying the WRONG SIGN. Build
+   rules carried to `docs/plans/2026-07-13-toggle-coverage-spec.md`: coverage is a ledger
+   **design** requirement (cohorts must emit one-knob sibling cells), never count a toggle
+   across a re-authoring boundary (require `knobMutated`), ship the UNWIRED default, keep
+   the three proven comparison rules. Lands with the ledger/selection work.
+
+**Boolean-floor track complete (2026-07-13).** All five items resolved: V9 answered GREEN
+(F24), V10 answered GAP (F25), V13 answered (F26) — each with its spec in `docs/plans/`;
+V11 (transparent-path lint) and V12 (restoration boundary) stand as registered build rules
+here, firing when the N-ladder builds the seams they constrain. adaptlearn's sandbox is
+closed with nothing structurally hostable left; further probes ride bareloop's own jobs.
 
 ---
 

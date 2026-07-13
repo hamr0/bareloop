@@ -384,6 +384,13 @@ rule from a minting requirement into an ongoing coverage metric. → V13
 - **V13 (bareloop, ledger):** toggle coverage (§B5) — computable per knob from the existing
   ledger: ≥1 observed contrast toggle, or the knob is flagged unwired-until-proven. Extends
   V2 from minting requirement to ongoing coverage metric.
+  **ANSWERED 2026-07-13 (adaptlearn F26, 0.11.8): METRIC VALIDATED, ARCHIVE INSUFFICIENT** —
+  control exact, 3/3 comparison rules falsifier-proven, `hooks.on-green` UNWIRED in every
+  world, F15's lock toggle-visible; but the unconfounded tier was barren across the whole
+  archive and a re-authoring arm's toggle carried the wrong sign. Correction to the
+  registration: coverage is a ledger **design** requirement, not a post-hoc query, and no
+  toggle counts across a re-authoring boundary. Spec:
+  `docs/plans/2026-07-13-toggle-coverage-spec.md`.
 
 
 ## Orchestration vs self-healing workflows — bareloop registration (2026-07-11)
