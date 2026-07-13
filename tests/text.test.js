@@ -53,6 +53,44 @@ test('null/undefined degrade to artifact-red, never a throw', () => {
   assert.equal(extractArtifact(null).red, 'empty response');
 });
 
+// ---- the wrapper-vs-content gate (review 2026-07-13, confirmed by execution):
+// a fence is the artifact's WRAPPER only when it opens near the top (the chatty
+// preamble shape). A fence buried deep inside an unfenced reply is the
+// artifact's OWN content — extracting it truncated a doc-generator module to
+// its 2-line example fragment with red:null.
+
+test('an unfenced artifact whose OWN content contains a deep fence pair survives whole — never truncated to the fragment', () => {
+  const artifact = [
+    '// README generator — renders usage docs for a package',
+    "import { name } from './pkg.js';",
+    '',
+    'export function renderReadme() {',
+    '  return `# ${name}',
+    '',
+    'Usage:',
+    '```js',
+    "import { thing } from 'pkg';",
+    'thing();',
+    '```',
+    '`;',
+    '}',
+  ].join('\n');
+  const r = extractArtifact(artifact);
+  assert.deepEqual(r, { code: artifact, red: null });
+});
+
+test('a fence opening past the preamble window is content even when prose precedes it (the documented trade-off)', () => {
+  const longPreamble = ['line one', 'line two', 'line three', 'line four', 'line five', 'line six'].join('\n');
+  const text = longPreamble + '\n```js\n' + CODE + '\n```';
+  const r = extractArtifact(text);
+  assert.deepEqual(r, { code: text, red: null }, 'past the window the whole text is the artifact');
+});
+
+test('a fence within the preamble window still extracts (chatty wrapper, the F21 case)', () => {
+  const text = 'Sure!\nHere is\nthe fix\nyou asked for:\n```js\n' + CODE + '\n```';
+  assert.deepEqual(extractArtifact(text), { code: CODE, red: null });
+});
+
 // ---- priceOf: the ONE spelling of the F6 honest-null cost read ----
 // metrics.costUsd is the honest null when nothing priced; `cost` sums priced
 // rounds only, so `?? cost` would launder unpriced into $0 (F6). Four shipped

@@ -172,7 +172,11 @@ workdir, independent of validator correctness (law #1).
 Two middles, chosen by the step (`mode`/`tools` opts — SPEC-side territory threaded by
 the runner, never the config's): **text** (default) extracts ONE artifact from the
 response (`artifact-red` on a non-artifact: writes nothing, names its own axis on the
-spine, the retry is told why) and writes it to `target` behind a manual gate check;
+spine, the retry is told why) and writes it to `target` behind a manual gate check —
+a fence counts as the artifact's wrapper only when it opens within the first 5 lines
+(the chatty-preamble shape); deeper fences are the artifact's OWN content and the whole
+reply is the artifact (fence-heavy artifacts — doc generators, markdown emitters —
+belong in tool mode, where nothing is parsed);
 **tools** offers only the granted shell tools (`read|grep|write`) to the worker's Loop,
 every call policy-checked against the SAME fence (tool-call paths resolve exactly as the
 tools resolve them — workers must use absolute paths; a relative spelling reds at the

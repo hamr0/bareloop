@@ -5,11 +5,24 @@
 // N0's stripFences when the fence-robust upgrade landed at N2. priceOf is the
 // ONE spelling of the honest-null cost read for the same reason (F6).
 
+// A fence counts as the artifact's WRAPPER only when it opens within this many
+// lines of the response — the chatty-preamble shape ("Here's the fix:\n```…").
+// A fence buried deeper inside an unfenced reply is the artifact's OWN content
+// (a doc generator's example block): extracting it truncated a whole module to
+// its 2-line fragment with red:null (review 2026-07-13, confirmed by execution).
+// The trade-off is documented and pinned: past the window, prose + fence is
+// treated as the artifact verbatim — with the no-fences persona, long-preamble
+// replies are the rare shape; truncated artifacts corrupted the close signal.
+const FENCE_PREAMBLE_LINES = 5;
+
 /**
  * Fence-robust artifact extraction (F2 port requirements #1/#2):
- * - the FIRST fenced block anywhere is the artifact — prose-wrapped and
- *   mid-text fences extract clean (the F21 instrument caveat: prose written
- *   to the target corrupted the close signal);
+ * - a fenced block opening within the first {@link FENCE_PREAMBLE_LINES} lines
+ *   is the artifact — prose-wrapped and preamble fences extract clean (the F21
+ *   instrument caveat: prose written to the target corrupted the close signal);
+ * - a fence opening deeper is the artifact's own content — the trimmed whole
+ *   text is the artifact (fence-heavy artifacts belong in tool mode, where the
+ *   worker writes files directly and nothing is parsed);
  * - no fence → the trimmed whole text, with N0's unclosed-leading-fence strip
  *   as the fallback (reference parity);
  * - nothing extractable → `code: null` plus a named reason: artifact-red
@@ -22,8 +35,13 @@ export function extractArtifact(t) {
   const text = String(t ?? '');
   const m = text.match(/```[^\n`]*\n?([\s\S]*?)```/);
   if (m) {
-    const code = m[1].trim();
-    return code ? { code, red: null } : { code: null, red: 'empty fenced block' };
+    if (text.slice(0, /** @type {number} */ (m.index)).split('\n').length - 1 < FENCE_PREAMBLE_LINES) {
+      const code = m[1].trim();
+      return code ? { code, red: null } : { code: null, red: 'empty fenced block' };
+    }
+    // deep fence = the artifact's own content: verbatim, NO fence strips — the
+    // N0 fallback below would eat a trailing example fence off a real artifact
+    return { code: text.trim(), red: null };
   }
   const bare = text.trim().replace(/^```[a-z]*\n?/i, '').replace(/\n?```\s*$/, '').trim();
   return bare ? { code: bare, red: null } : { code: null, red: 'empty response' };

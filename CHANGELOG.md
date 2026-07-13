@@ -68,6 +68,14 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 - **Review round 2026-07-13 (8 confirmed findings, all execution-verified):**
+  - **extractArtifact wrapper-vs-content gate:** a fence counts as the artifact's
+    wrapper only when it opens within the first 5 lines of the response; a fence
+    buried deeper inside an unfenced reply is the artifact's OWN content and the
+    whole reply is the artifact, verbatim. Before: an unfenced doc-generator module
+    containing a ```js example``` was silently truncated to the 2-line fragment
+    with `red: null`, corrupting the close signal. Trade-off pinned in tests:
+    past the window, prose + fence is treated as the artifact (rare under the
+    no-fences persona); fence-heavy artifacts belong in tool mode.
   - **Secret-leak channel closed:** `openDraftPr` now scrubs git/gh subprocess output
     with the ONE shape inventory (`SECRET_PATTERNS`) at capture — a credentialed
     remote URL echoed by a failed `git push` never reaches `pr-red`/the escalation's
