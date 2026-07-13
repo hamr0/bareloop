@@ -13,56 +13,26 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { makeSpine } from '../src/spine.js';
 import { interpret } from '../src/interpret.js';
+// shared fixtures (helpers.js): the scripted stub keeps 2b tool-mode entries and
+// the EXPLICIT costUsd: undefined unpriced case ('in', never ?? — F6)
+import { scriptedProvider as stubProvider, GOOD_SUM, BAD_SUM, makeSumWork, readSpine, validConfig } from './helpers.js';
 
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
 
 const base = mkdtempSync(join(tmpdir(), 'interpret-test-'));
 
-// scripted provider: returns each script entry in turn (sticks on the last), counts calls.
-// Entries may carry toolCalls (2b tool mode) and an EXPLICIT costUsd: undefined —
-// the unpriced case — so the default uses `in`, not `??` (which would launder it).
-function stubProvider(script) {
-  const calls = [];
-  return {
-    calls,
-    async generate(messages) {
-      const s = script[Math.min(calls.length, script.length - 1)];
-      calls.push(messages.at(-1).content);
-      return { text: s.text ?? '', toolCalls: s.toolCalls ?? [], usage: { inputTokens: 10, outputTokens: 10 }, costUsd: 'costUsd' in s ? s.costUsd : 0.001, model: null };
-    },
-  };
-}
-
-const GOOD_SUM = 'export function sum(a, b) { return a + b; }\n';
-const BAD_SUM = 'export function sum(a, b) { return a - b; }\n';
 const TASK = 'Implement sum.mjs exporting sum(a, b) returning the numeric sum.';
 
-// artifact lives under src/ (inside valid.json's writeScope "src/**"); the suite
-// lives OUTSIDE the scope — a workflow can never edit its own close
-function makeWork(name) {
-  const workdir = join(base, name);
-  mkdirSync(join(workdir, 'src'), { recursive: true });
-  const target = join(workdir, 'src', 'sum.mjs');
-  const suite = join(workdir, 'sum.test.mjs');
-  writeFileSync(suite, `
-import { test } from 'node:test';
-import assert from 'node:assert/strict';
-import { sum } from './src/sum.mjs';
-test('adds', () => assert.equal(sum(2, 3), 5));
-`);
-  return { workdir, target, close: ['node', '--test', suite] };
-}
-
-const config = () => JSON.parse(readFileSync(new URL('./fixtures/valid.json', import.meta.url), 'utf8'));
+const makeWork = (/** @type {string} */ name) => makeSumWork(base, name);
+const config = validConfig;
 
 async function run(name, cfg, { script = [{ text: GOOD_SUM }], capRuns = 3, ...rest } = {}) {
   const { workdir, target, close } = makeWork(name);
   const provider = stubProvider(script);
   const file = join(workdir, 'run.jsonl');
   const outcome = await interpret(cfg, { task: TASK, target, close, workdir, capRuns, emit: makeSpine(file), provider, ...rest });
-  const events = readFileSync(file, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l));
-  return { outcome, events, provider, target, workdir };
+  return { outcome, events: readSpine(file), provider, target, workdir };
 }
 
 test('valid config + correct artifact → green; artifact on disk; on-green remember ran', async () => {
@@ -149,7 +119,7 @@ test('on-green hook failure → retention-red on the spine, but the green STANDS
   const close = ['node', '-e', `const fs=require('node:fs'); const t=${JSON.stringify(target)}; if(!fs.existsSync(t))process.exit(1); fs.unlinkSync(t); process.exit(0)`];
   const file = join(workdir, 'run.jsonl');
   const outcome = await interpret(config(), { task: TASK, target, close, workdir, capRuns: 3, emit: makeSpine(file), provider: stubProvider([{ text: GOOD_SUM }]) });
-  const events = readFileSync(file, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l));
+  const events = readSpine(file);
   assert.equal(outcome, 'green', 'a retention hiccup must not un-green a real green');
   const red = events.find((e) => e.type === 'retention-red');
   assert.ok(red, 'retention failure is loud on the spine, not swallowed');
@@ -182,7 +152,7 @@ test('interpreter crash mid-run → interpreter-red, never masquerading as bad h
   const { workdir, target, close } = makeWork('interp-red');
   const file = join(workdir, 'run.jsonl');
   const outcome = await interpret(config(), { task: TASK, target, close, workdir, capRuns: 3, emit: makeSpine(file), provider });
-  const events = readFileSync(file, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l));
+  const events = readSpine(file);
   assert.equal(outcome, 'escalated');
   assert.equal(events.find((e) => e.type === 'escalation').category, 'interpreter-red');
 });

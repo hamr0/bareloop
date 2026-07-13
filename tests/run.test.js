@@ -13,10 +13,9 @@ import { join } from 'node:path';
 import { makeSpine } from '../src/spine.js';
 import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
+import { GOOD_SUM, reply, makeSumWork, readSpine } from './helpers.js';
 
 const base = mkdtempSync(join(tmpdir(), 'run-test-'));
-const GOOD_SUM = 'export function sum(a, b) { return a + b; }\n';
-const BAD_SUM = 'export function sum(a, b) { return a - b; }\n';
 
 // a legal drafted config (the stub "drafter" emits it; fits inside the fence)
 const draftedConfig = (budgetUsd = 1) => JSON.stringify({
@@ -27,7 +26,8 @@ const draftedConfig = (budgetUsd = 1) => JSON.stringify({
   escalation: { mode: 'decision-ready' },
 });
 
-// routes by the DRAFT-CONFIG sentinel the runner prefixes drafting prompts with.
+// Runner-specific stub: routes by the DRAFT-CONFIG sentinel the runner prefixes
+// drafting prompts with; the response envelope is the shared `reply` (helpers.js).
 // Worker entries are strings (text mode) or { text, toolCalls } objects (2b tool mode).
 function stubProvider({ drafts = [draftedConfig()], worker = [GOOD_SUM], draftCostUsd = 0.001, workCostUsd = 0.001 } = {}) {
   const calls = { draft: [], work: [] };
@@ -38,12 +38,11 @@ function stubProvider({ drafts = [draftedConfig()], worker = [GOOD_SUM], draftCo
       const prompt = messages.at(-1).content;
       if (prompt.startsWith('DRAFT-CONFIG')) {
         calls.draft.push(prompt);
-        return { text: drafts[Math.min(d++, drafts.length - 1)], toolCalls: [], usage: { inputTokens: 10, outputTokens: 10 }, costUsd: draftCostUsd, model: null };
+        return reply({ text: drafts[Math.min(d++, drafts.length - 1)], costUsd: draftCostUsd });
       }
       calls.work.push(prompt);
       const s = worker[Math.min(w++, worker.length - 1)];
-      const entry = typeof s === 'string' ? { text: s } : s;
-      return { text: entry.text ?? '', toolCalls: entry.toolCalls ?? [], usage: { inputTokens: 10, outputTokens: 10 }, costUsd: workCostUsd, model: null };
+      return reply({ ...(typeof s === 'string' ? { text: s } : s), costUsd: workCostUsd });
     },
   };
 }
@@ -62,18 +61,7 @@ function stubExec({ failAt = null, prUrl = 'https://github.com/hamr0/litectx/pul
   return fn;
 }
 
-function makeWork(name, { breakSuite = false } = {}) {
-  const workdir = join(base, name);
-  mkdirSync(join(workdir, 'src'), { recursive: true });
-  const suite = join(workdir, 'sum.test.mjs');
-  writeFileSync(suite, breakSuite
-    ? 'process.exit(1); // a close that can never green'
-    : `import { test } from 'node:test';
-import assert from 'node:assert/strict';
-import { sum } from './src/sum.mjs';
-test('adds', () => assert.equal(sum(2, 3), 5));`);
-  return { workdir, target: join(workdir, 'src', 'sum.mjs'), suiteCmd: `node --test ${suite}` };
-}
+const makeWork = (/** @type {string} */ name, /** @type {{breakSuite?: boolean}} */ opts = {}) => makeSumWork(base, name, opts);
 
 const spec = (suiteCmd, over = {}) => ({
   schema: 'job-v1',
@@ -102,7 +90,7 @@ async function run(name, { specOver = {}, provider = stubProvider(), approvals, 
     approvals: approvals ?? approve(s), workdir, target, provider,
     emit: makeSpine(file), capRuns: 2, ...rest,
   });
-  const events = readFileSync(file, 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const events = readSpine(file);
   return { outcome, events, provider, spec: s, workdir };
 }
 
@@ -364,7 +352,7 @@ test('an interpreter throw outside the loop (broken gate audit) escalates interp
   const s = spec(suiteCmd);
   const file = join(workdir, 'run.jsonl');
   const outcome = await runJob(s, { approvals: approve(s), workdir, target, provider: stubProvider(), emit: makeSpine(file), capRuns: 2 });
-  const events = readFileSync(file, 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const events = readSpine(file);
   assert.equal(outcome, 'step-red:fix');
   assert.ok(events.some((e) => e.type === 'escalation' && e.category === 'interpreter-red' && e.decisionReady));
   const end = events.find((e) => e.type === 'job-end');
@@ -378,7 +366,7 @@ test('reds-before-tokens: a text-mode job without opts.target is a job-red befor
   const provider = stubProvider();
   const file = join(workdir, 'run.jsonl');
   const outcome = await runJob(s, { approvals: approve(s), workdir, provider, emit: makeSpine(file), capRuns: 2 });
-  const events = readFileSync(file, 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const events = readSpine(file);
   assert.equal(outcome, 'job-red');
   assert.ok(events.some((e) => e.type === 'job-red' && e.code === 'missing-required' && e.path === 'opts.target'));
   assert.equal(provider.calls.draft.length + provider.calls.work.length, 0, 'zero tokens on a missing target');
@@ -408,7 +396,7 @@ test('resume: a step whose close already greens skips for ZERO tokens as already
   const provider = stubProvider();
   const file = join(workdir, 'run.jsonl');
   const outcome = await runJob(s, { approvals: approve(s), workdir, target, provider, emit: makeSpine(file), capRuns: 2 });
-  const events = readFileSync(file, 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const events = readSpine(file);
   assert.equal(outcome, 'green');
   assert.equal(provider.calls.draft.length + provider.calls.work.length, 0, 'a clean rerun costs ZERO provider calls — no draft, no worker');
   const ends = events.filter((e) => e.type === 'step-end');
@@ -431,7 +419,7 @@ test('partial resume: finished steps skip; drafting is DEFERRED to the first ste
   const provider = stubProvider();
   const file = join(workdir, 'run.jsonl');
   const outcome = await runJob(s, { approvals: approve(s), workdir, target, provider, emit: makeSpine(file), capRuns: 2 });
-  const events = readFileSync(file, 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const events = readSpine(file);
   assert.equal(outcome, 'green');
   assert.equal(provider.calls.draft.length, 1, 'the config is still drafted fresh THIS run when a step needs it');
   assert.equal(provider.calls.work.length, 1, 'only the unfinished step paid a worker call');

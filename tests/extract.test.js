@@ -8,17 +8,11 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { extractRules, MAX_RULES, MAX_RULE_CHARS } from '../src/extract.js';
+import { scriptedProvider, validConfig } from './helpers.js';
 
-const stub = (text) => {
-  const calls = [];
-  return {
-    calls,
-    generate: async (opts) => { calls.push(opts); return { text, usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0.01, toolCalls: [] }; },
-  };
-};
-const config = () => JSON.parse(readFileSync(new URL('./fixtures/valid.json', import.meta.url), 'utf8'));
+const stub = (/** @type {string} */ text) => scriptedProvider([{ text }]);
+const config = validConfig;
 const GOOD = JSON.stringify(['prefer refine on this family', 'recall with high k went green']);
 
 test('valid rules list → carried through with cost', async () => {
