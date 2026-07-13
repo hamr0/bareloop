@@ -27,7 +27,8 @@ const draftedConfig = (budgetUsd = 1) => JSON.stringify({
   escalation: { mode: 'decision-ready' },
 });
 
-// routes by the DRAFT-CONFIG sentinel the runner prefixes drafting prompts with
+// routes by the DRAFT-CONFIG sentinel the runner prefixes drafting prompts with.
+// Worker entries are strings (text mode) or { text, toolCalls } objects (2b tool mode).
 function stubProvider({ drafts = [draftedConfig()], worker = [GOOD_SUM], draftCostUsd = 0.001, workCostUsd = 0.001 } = {}) {
   const calls = { draft: [], work: [] };
   let d = 0; let w = 0;
@@ -40,9 +41,25 @@ function stubProvider({ drafts = [draftedConfig()], worker = [GOOD_SUM], draftCo
         return { text: drafts[Math.min(d++, drafts.length - 1)], toolCalls: [], usage: { inputTokens: 10, outputTokens: 10 }, costUsd: draftCostUsd, model: null };
       }
       calls.work.push(prompt);
-      return { text: worker[Math.min(w++, worker.length - 1)], toolCalls: [], usage: { inputTokens: 10, outputTokens: 10 }, costUsd: workCostUsd, model: null };
+      const s = worker[Math.min(w++, worker.length - 1)];
+      const entry = typeof s === 'string' ? { text: s } : s;
+      return { text: entry.text ?? '', toolCalls: entry.toolCalls ?? [], usage: { inputTokens: 10, outputTokens: 10 }, costUsd: workCostUsd, model: null };
     },
   };
+}
+
+// recording exec seam for the hitl PR mechanics (the process runner is
+// shell-owned; injecting it is the same doctrine as the provider stub)
+function stubExec({ failAt = null, prUrl = 'https://github.com/hamr0/litectx/pull/7' } = {}) {
+  const calls = [];
+  const fn = (argv, opts = {}) => {
+    calls.push({ argv, cwd: opts.cwd });
+    const key = argv.slice(0, 2).join(' ');
+    if (failAt && key.startsWith(failAt)) return { status: 1, stdout: '', stderr: `stub: ${failAt} failed` };
+    return { status: 0, stdout: argv[0] === 'gh' ? `${prUrl}\n` : '', stderr: '' };
+  };
+  fn.calls = calls;
+  return fn;
 }
 
 function makeWork(name, { breakSuite = false } = {}) {
@@ -194,4 +211,66 @@ test('a gold/rubric close reaching the runner is an honest close-unsupported ref
   assert.equal(outcome, 'close-unsupported');
   const esc = events.find((e) => e.type === 'escalation' && e.category === 'close-unsupported');
   assert.ok(esc && esc.decisionReady && esc.step === 'compare');
+});
+
+// ---- module 2b: tools-step threading + the hitl draft-PR mechanics ----
+
+test('a tools step threads the spec grant to the interpreter: the worker writes through the gated tool', async () => {
+  const target = join(base, 'tools-step', 'src', 'sum.mjs');
+  const suiteCmd = `node --test ${join(base, 'tools-step', 'sum.test.mjs')}`; // deterministic: makeWork('tools-step') builds exactly this
+  const provider = stubProvider({
+    worker: [
+      { toolCalls: [{ id: 't1', name: 'shell_write', arguments: { path: target, content: GOOD_SUM } }] },
+      { text: 'wrote sum.mjs' },
+    ],
+  });
+  const { outcome, events } = await run('tools-step', {
+    provider,
+    specOver: { steps: [{ id: 'fix', mode: 'tools', tools: ['read', 'grep', 'write'], close: { type: 'predicate', cmd: suiteCmd, expect: 0 }, class: 'hard' }] },
+  });
+  assert.equal(outcome, 'green');
+  assert.equal(readFileSync(target, 'utf8'), GOOD_SUM, 'the tool wrote the exact bytes');
+  const wr = events.find((e) => e.type === 'worker-result');
+  assert.equal(wr.toolCalls, 1, 'tool invocations reached the spine through the runner');
+});
+
+test('hitl step opens the draft PR deterministically: branch → add(fence only) → commit → push → gh, URL rides the escalation', async () => {
+  const exec = stubExec();
+  const { outcome, events, spec: s } = await run('hitl-pr', { execCmd: exec });
+  assert.equal(outcome, 'escalated');
+  const seq = exec.calls.map((c) => c.argv.slice(0, 3).join(' '));
+  assert.deepEqual(seq, [
+    'git checkout -b',
+    'git add --',
+    'git commit -m',
+    'git push -u',
+    'gh pr create',
+  ], `the fixed sequence, nothing model-authored (got ${JSON.stringify(seq)})`);
+  assert.match(exec.calls[0].argv[3], /^bareloop\/run-test-/, 'branch is runner-named');
+  assert.deepEqual(exec.calls[1].argv.slice(3), ['src'], 'git add stages the job fence ONLY — spines and audit logs never enter the PR');
+  assert.ok(exec.calls[4].argv.includes('--draft'), 'PRs are drafts, merge stays human');
+  assert.ok(exec.calls.every((c) => c.cwd === join(base, 'hitl-pr')), 'everything runs in the workdir');
+  const opened = events.find((e) => e.type === 'pr-opened');
+  assert.equal(opened.url, 'https://github.com/hamr0/litectx/pull/7');
+  const esc = events.find((e) => e.type === 'escalation' && e.category === 'hitl-close');
+  assert.equal(esc.pr.url, 'https://github.com/hamr0/litectx/pull/7', 'the escalation carries the PR URL (decision-ready)');
+  assert.ok(esc.prompt.includes('review and merge'), 'the operator prompt still rides');
+});
+
+test('a failed PR step is pr-red on the spine; the escalation still fires decision-ready with the error', async () => {
+  const exec = stubExec({ failAt: 'git push' });
+  const { outcome, events } = await run('hitl-pr-red', { execCmd: exec });
+  assert.equal(outcome, 'escalated', 'a broken PR path must never swallow the escalation');
+  assert.equal(exec.calls.length, 4, 'the sequence stops at the failure — gh never runs');
+  const red = events.find((e) => e.type === 'pr-red');
+  assert.match(red.argv, /^git push/, 'the red names the failed command');
+  const esc = events.find((e) => e.type === 'escalation' && e.category === 'hitl-close');
+  assert.equal(esc.pr.url, null);
+  assert.match(esc.pr.error, /git push failed/, 'the human sees why there is no PR link');
+});
+
+test('gh success without a PR URL in its output is pr-red, never a silent null link', async () => {
+  const exec = stubExec({ prUrl: '' });
+  const { events } = await run('hitl-pr-nourl', { execCmd: exec });
+  assert.ok(events.some((e) => e.type === 'pr-red' && /no PR URL/i.test(e.detail)));
 });

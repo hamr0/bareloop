@@ -13,6 +13,7 @@
 import { createRequire } from 'node:module';
 import { writeFileSync, readFileSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
+import { homedir } from 'node:os';
 import { Gate, redact } from 'bareguard';
 import { LiteCtx, compress } from 'litectx';
 import { validateConfig, diffPaths, globToPrefix, SECRET_PATTERNS } from './validate.js';
@@ -25,12 +26,34 @@ export const STALL_REDS = 2;
 
 const require = createRequire(import.meta.url);
 const { Loop, wireGate, HaltError } = require('bare-agent');
+const { createShellTools } = require('bare-agent/tools');
 
 import { extractArtifact } from './text.js';
 
 /** @typedef {{body?: string|null, text?: string|null}} RecallHit litectx recall hit — body present only with `{body: true}` */
 
 const PERSONA = 'You are a senior engineer. Reply with ONLY the complete contents of the requested JavaScript file — no markdown fences, no commentary. ESM.';
+const PERSONA_TOOLS = 'You are a senior engineer working in a repository through file tools. ALWAYS use absolute paths — relative paths resolve against the process, not the repository, and will be denied. Make the required changes with the write tool, then reply with a short summary of what you changed. Never put file contents in your reply.';
+
+// ---- tool mode (2b): the spec-side grant menu mapped to bare-agent's shell tools ----
+const TOOL_BY_VERB = Object.freeze({ read: 'shell_read', grep: 'shell_grep', write: 'shell_write' });
+
+// The load-bearing containment line (2b POC, scenario B): bare-agent's built-in
+// tools are deliberately ungated and their action type is their own NAME, which
+// never trips bareguard's fs primitives — this translator maps them onto
+// write/read actions so the SAME fence text mode enforces manually governs
+// every tool call. Paths resolve exactly as the tools resolve them
+// (path.resolve(expandHome(p)), POC scenario F) so the gate judges the same
+// file the tool would touch; a relative spelling resolves against the process
+// cwd and reds at the fence, and the deny reason teaches the retry.
+/** @param {string} p */
+const expandHome = (p) => (p === '~' || p.startsWith('~/')) ? join(homedir(), p.slice(1)) : p;
+/** @param {string} name @param {any} args */
+const toolAction = (name, args) => {
+  if (name === 'shell_write') return { type: 'write', path: resolve(expandHome(String(args?.path ?? ''))), args: { bytes: String(args?.content ?? '').length } };
+  if (name === 'shell_read' || name === 'shell_grep') return { type: 'read', path: resolve(expandHome(String(args?.path ?? ''))) };
+  return { type: name, args };
+};
 
 /**
  * Execute a workflow config against one task under the dumb shell.
@@ -38,7 +61,9 @@ const PERSONA = 'You are a senior engineer. Reply with ONLY the complete content
  * @param {object|string} configRaw schema v1 config (object or raw JSON text)
  * @param {object} opts
  * @param {string} opts.task implement instruction shown to the worker
- * @param {string} opts.target absolute path the artifact is written to
+ * @param {string} [opts.target] absolute path the artifact is written to —
+ *        required in text mode; unused in tool mode (the worker writes through
+ *        the gated tools, wherever the fence allows)
  * @param {string[]} opts.close argv whose exit code is truth (shell-owned)
  * @param {string} opts.workdir run directory (litectx root, gate audit, scope base)
  * @param {number} opts.capRuns shell iteration budget; the config may tighten via loop.maxIterations, never exceed
@@ -58,9 +83,14 @@ const PERSONA = 'You are a senior engineer. Reply with ONLY the complete content
  *        (arbiter-touch / cap-touch revision-reds otherwise; the run continues on the old
  *        config). Revisor spend rides the run's own gate handlers — same budget axis as
  *        the worker.
+ * @param {'text'|'tools'} [opts.mode] middle mode (2b): 'text' (default) writes the ONE
+ *        target from the response artifact; 'tools' gives the worker Gate-governed file
+ *        tools — SPEC-side territory (the step declares it; the config cannot express it)
+ * @param {string[]} [opts.tools] the spec's tool grant (subset of read|grep|write,
+ *        job-v1 validated); defaults to the full menu in tool mode
  * @returns {Promise<'green'|'escalated'|'config-red'>}
  */
-export async function interpret(configRaw, { task, target, close, workdir, capRuns, emit, provider, shellCapUsd = 2, jobWriteScope, revisor, closeTimeoutMs }) {
+export async function interpret(configRaw, { task, target, close, workdir, capRuns, emit, provider, shellCapUsd = 2, jobWriteScope, revisor, closeTimeoutMs, mode = 'text', tools }) {
   // Normalize ONCE: a trailing slash or a relative spelling must mean the same
   // directory everywhere below — the enforcement belt compares string prefixes,
   // and "/run/" vs "/run" would false-red every legal scope (release review).
@@ -93,15 +123,23 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     // bareguard fs.writeScope is prefix-containment, not glob (adaptlearn F4); globToPrefix
     // is the ONE transform shared with the validator's legality rule — mid-path wildcards
     // and workdir-escaping scopes were already rejected up front (adaptlearn F9, law #1).
-    fs: { writeScope: resolvedScopes },
+    // Tool mode adds readScope: the worker's reads stay inside the run directory —
+    // the stray-read secrets channel (~/.ssh, /etc) closes with one field (2b POC D).
+    fs: { writeScope: resolvedScopes, ...(mode === 'tools' ? { readScope: [workdir] } : {}) },
     budget: { maxCostUsd: config.gate.budgetUsd },
-    limits: { maxTurns: 8 * (capRuns + 1) },
+    // text mode is ~1-2 rounds per attempt; tool mode is N rounds (read→write→…)
+    limits: { maxTurns: (mode === 'tools' ? 24 : 8) * (capRuns + 1) },
     audit: { path: join(workdir, 'gate-audit.jsonl') },
     humanChannel: async () => ({ decision: 'terminate' }), // no human mid-run: a tripped cap terminates → decision-ready escalation
   });
   await gate.init();
-  const { policy, onLlmResult } = wireGate(gate);
-  const loop = new Loop({ provider, system: PERSONA, policy, onLlmResult });
+  const { policy, onLlmResult } = wireGate(gate, mode === 'tools' ? { actionTranslator: (/** @type {string} */ n, /** @type {any} */ a) => toolAction(n, a) } : {});
+  const loop = new Loop({ provider, system: mode === 'tools' ? PERSONA_TOOLS : PERSONA, policy, onLlmResult });
+  // The offered tools ARE the grant (2b decision #2): an ungranted tool is never
+  // in the menu the model sees — a call to it is "unknown tool", not a deny.
+  const toolDefs = mode === 'tools'
+    ? (() => { const granted = new Set((tools ?? Object.keys(TOOL_BY_VERB)).map((v) => /** @type {Record<string, string>} */ (TOOL_BY_VERB)[v])); return createShellTools().tools.filter((/** @type {{name: string}} */ t) => granted.has(t.name)); })()
+    : [];
 
   /** @param {string} slot */
   const slotOps = (slot) => config.hooks?.[slot] ?? [];
@@ -112,7 +150,7 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   async function ask(prompt) {
     let r;
     try {
-      r = await loop.run([{ role: 'user', content: prompt }]);
+      r = await loop.run([{ role: 'user', content: prompt }], toolDefs);
     } catch (e) {
       if (e instanceof HaltError) /** @type {CategorizedError} */ (e).category = 'cap-halt'; // belt: bare-agent's contract could change
       throw e;
@@ -121,9 +159,11 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     // back as an error RETURN ({text: '', error: 'halt:<rule>'}; loop.js: "no
     // throw even when throwOnError: true"). Read it, or the failure map goes
     // blind and a cap story masquerades as a worker result (design law #8).
+    // A denial streak ('denied:<tool>', BA-11) is a governance deny, not a
+    // broken interpreter — gate-red, same category as text mode's fence deny.
     if (r.error) {
       const err = /** @type {CategorizedError} */ (new Error(`worker loop: ${r.error}`));
-      err.category = r.error.startsWith('halt:') ? 'cap-halt' : 'interpreter-red';
+      err.category = r.error.startsWith('halt:') ? 'cap-halt' : r.error.startsWith('denied:') ? 'gate-red' : 'interpreter-red';
       throw err;
     }
     return r;
@@ -152,7 +192,11 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
         if (gap) lc.stash(`gap-${iteration}`, gap);
         emit('hook-op', { slot, op: 'stash', iteration });
       } else if (op.op === 'remember') {
-        await lc.remember(`green-${iteration ?? 'final'}-${target.split('/').at(-1)}`, readFileSync(target, 'utf8'), { kind: op.kind ?? 'fact' });
+        // tool mode has no single target to read back — the green's retained
+        // form is the worker's own change summary (its final loop text), which
+        // is what a future recall can actually use
+        const content = mode === 'tools' ? (lastText ?? '') : readFileSync(/** @type {string} */ (target), 'utf8');
+        await lc.remember(`green-${iteration ?? 'final'}-${mode === 'tools' ? 'tools' : /** @type {string} */ (target).split('/').at(-1)}`, content, { kind: op.kind ?? 'fact' });
         emit('hook-op', { slot, op: 'remember' });
       }
     }
@@ -186,6 +230,8 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   let revised = false;
   /** @type {string|undefined} set on artifact-red, consumed by the next attempt's prompt */
   let artifactNote;
+  /** @type {string|undefined} tool mode: the last attempt's summary text (retention source) */
+  let lastText;
   /**
    * @param {number} iteration
    * @param {string} [gap]
@@ -231,7 +277,16 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
       parts.push(`Follow this plan:\n${p.text}`);
     }
     const r = await ask(parts.filter(Boolean).join('\n\n'));
-    emit('worker-result', { iteration, costUsd: r.metrics ? r.metrics.costUsd : (r.cost ?? null), unpricedRounds: r.metrics?.unpricedRounds ?? 0, tokens: r.usage?.outputTokens ?? null });
+    emit('worker-result', { iteration, costUsd: r.metrics ? r.metrics.costUsd : (r.cost ?? null), unpricedRounds: r.metrics?.unpricedRounds ?? 0, toolCalls: r.metrics?.toolCalls ?? 0, tokens: r.usage?.outputTokens ?? null });
+
+    // Tool mode: the worker already wrote through the gated tools (every call
+    // policy-checked against the fence); its final text is a change summary,
+    // not an artifact — there is nothing to extract and artifact-red genuinely
+    // does not exist here (2b decision #3). The close judges the tree as-is.
+    if (mode === 'tools') {
+      lastText = r.text ?? '';
+      return;
+    }
 
     // Fence-robust extraction BEFORE the gate: what gets written is the
     // artifact, not the response (F2 #2). A response with no artifact reds on
@@ -246,14 +301,15 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     }
     artifactNote = undefined;
     const code = /** @type {string} */ (ex.code); // non-null: ex.red was checked above
-    const decision = await gate.check({ type: 'write', path: target, args: { bytes: code.length } });
+    const t = /** @type {string} */ (target); // text mode contract: target is required
+    const decision = await gate.check({ type: 'write', path: t, args: { bytes: code.length } });
     if (decision.outcome !== 'allow') {
-      const err = /** @type {CategorizedError} */ (new Error(`gate ${decision.outcome} write to ${target} (${decision.rule ?? 'no rule'})`));
+      const err = /** @type {CategorizedError} */ (new Error(`gate ${decision.outcome} write to ${t} (${decision.rule ?? 'no rule'})`));
       err.category = decision.severity === 'halt' ? 'cap-halt' : 'gate-red';
       throw err;
     }
-    writeFileSync(target, code);
-    emit('artifact-written', { iteration, path: target });
+    writeFileSync(t, code);
+    emit('artifact-written', { iteration, path: t });
   };
 
   // the config may tighten the shell's iteration budget, never exceed it (mirrors budgetUsd)

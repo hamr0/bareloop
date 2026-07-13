@@ -19,7 +19,9 @@ const { Loop } = require('bare-agent');
 
 const base = mkdtempSync(join(tmpdir(), 'interpret-test-'));
 
-// scripted provider: returns each script entry in turn (sticks on the last), counts calls
+// scripted provider: returns each script entry in turn (sticks on the last), counts calls.
+// Entries may carry toolCalls (2b tool mode) and an EXPLICIT costUsd: undefined —
+// the unpriced case — so the default uses `in`, not `??` (which would launder it).
 function stubProvider(script) {
   const calls = [];
   return {
@@ -27,7 +29,7 @@ function stubProvider(script) {
     async generate(messages) {
       const s = script[Math.min(calls.length, script.length - 1)];
       calls.push(messages.at(-1).content);
-      return { text: s.text, toolCalls: [], usage: { inputTokens: 10, outputTokens: 10 }, costUsd: s.costUsd ?? 0.001, model: null };
+      return { text: s.text ?? '', toolCalls: s.toolCalls ?? [], usage: { inputTokens: 10, outputTokens: 10 }, costUsd: 'costUsd' in s ? s.costUsd : 0.001, model: null };
     },
   };
 }
@@ -384,4 +386,112 @@ test('revision: revisor spend is metered by the RUN\'s gate — an expensive rev
   assert.equal(esc.category, 'cap-halt');
   assert.equal(esc.spend.runs, 3, 'halted at iteration 3 — BEFORE the run cap of 4: the gate saw the revisor\'s tokens');
   assert.ok(events.some((e) => e.type === 'stall-detected'), 'the revision did fire before the halt');
+});
+
+// ---- module 2b: the tool-mode middle (design addendum 2026-07-12b) ----
+// Same doctrine as above: everything real (Loop, Gate, shell tools, ralph, a
+// real close) except the scripted provider. The POC (poc/n2-tool-middle.mjs)
+// proved the containment wiring; these tests pin the interpreter's use of it.
+
+const tcall = (id, name, args) => ({ id, name, arguments: args });
+const twd = (name) => join(base, name); // deterministic: makeWork(name) uses the same path
+
+test('tools mode green: the worker writes the artifact THROUGH the gated write tool', async () => {
+  const wd = twd('tools-green');
+  const { outcome, events } = await run('tools-green', config(), {
+    mode: 'tools',
+    script: [
+      { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'src', 'sum.mjs'), content: GOOD_SUM })] },
+      { text: 'done — wrote sum.mjs' },
+    ],
+  });
+  assert.equal(outcome, 'green');
+  assert.equal(readFileSync(join(wd, 'src', 'sum.mjs'), 'utf8'), GOOD_SUM, 'tool wrote the exact bytes — no extraction layer in tool mode');
+  assert.ok(!events.some((e) => e.type === 'artifact-red'), 'artifact-red does not exist in tool mode');
+  const wr = events.find((e) => e.type === 'worker-result');
+  assert.equal(wr.costUsd, 0.002, 'both rounds priced and summed');
+  assert.equal(wr.toolCalls, 1, 'tool invocations ride the worker-result event');
+});
+
+test('tools mode: out-of-scope write denied MID-ATTEMPT, deny reason feeds the same attempt, nothing lands outside', async () => {
+  const wd = twd('tools-deny');
+  const { outcome, provider } = await run('tools-deny', config(), {
+    mode: 'tools',
+    script: [
+      { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'escape.txt'), content: 'leak' })] },
+      { toolCalls: [tcall('t2', 'shell_write', { path: join(wd, 'src', 'sum.mjs'), content: GOOD_SUM })] },
+      { text: 'done' },
+    ],
+  });
+  assert.equal(outcome, 'green', 'a single deny is feedback, not a stop — the worker pivots');
+  assert.ok(!existsSync(join(wd, 'escape.txt')), 'denied write never touched disk');
+  assert.match(provider.calls[1], /writeScope/, 'the deny reason reached the worker verbatim');
+});
+
+test('tools mode: a denial streak stops the attempt as gate-red, its own category', async () => {
+  const wd = twd('tools-streak');
+  const esc = (n) => tcall(`t${n}`, 'shell_write', { path: join(wd, `escape-${n}.txt`), content: 'x' });
+  const { outcome, events } = await run('tools-streak', config(), {
+    mode: 'tools',
+    script: [{ toolCalls: [esc(1), esc(2), esc(3)] }, { text: 'never reached' }],
+  });
+  assert.equal(outcome, 'escalated');
+  assert.equal(events.find((e) => e.type === 'escalation').category, 'gate-red');
+  assert.ok(!existsSync(join(wd, 'escape-1.txt')), 'nothing written');
+});
+
+test('tools mode: the spec grant is the menu — an ungranted tool is never offered', async () => {
+  const wd = twd('tools-menu');
+  const { outcome, provider } = await run('tools-menu', config(), {
+    mode: 'tools', tools: ['read'], capRuns: 2,
+    script: [
+      { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'src', 'sum.mjs'), content: GOOD_SUM })] },
+      { text: 'done' },
+    ],
+  });
+  assert.equal(outcome, 'escalated', 'nothing written → the close keeps redding → cap');
+  assert.ok(!existsSync(join(wd, 'src', 'sum.mjs')), 'the ungranted write never executed');
+  assert.match(provider.calls[1], /Unknown tool/, 'the worker is told the tool does not exist for it');
+});
+
+test('tools mode: reads are fenced to the workdir (readScope — the stray-read secrets channel)', async () => {
+  const wd = twd('tools-read');
+  const { outcome, provider } = await run('tools-read', config(), {
+    mode: 'tools',
+    script: [
+      { toolCalls: [tcall('t1', 'shell_read', { path: '/etc/hostname' })] },
+      { toolCalls: [tcall('t2', 'shell_write', { path: join(wd, 'src', 'sum.mjs'), content: GOOD_SUM })] },
+      { text: 'done' },
+    ],
+  });
+  assert.equal(outcome, 'green');
+  assert.match(provider.calls[1], /readScope/, 'the out-of-tree read was denied with the reason');
+});
+
+test('tools mode: an unpriced run reaches the spine as the honest null, never $0 (F6)', async () => {
+  const wd = twd('tools-unpriced');
+  const { outcome, events } = await run('tools-unpriced', config(), {
+    mode: 'tools',
+    script: [
+      { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'src', 'sum.mjs'), content: GOOD_SUM })], costUsd: undefined },
+      { text: 'done', costUsd: undefined },
+    ],
+  });
+  assert.equal(outcome, 'green', 'green with unpriced spend is exactly the case the runner halts on');
+  const wr = events.find((e) => e.type === 'worker-result');
+  assert.equal(wr.costUsd, null, 'unknown spend is null on the spine');
+  assert.ok(wr.unpricedRounds >= 2, `unpriced rounds visible (got ${wr.unpricedRounds})`);
+});
+
+test('tools mode: on-green remember stores the worker summary — no target dependency', async () => {
+  const wd = twd('tools-remember');
+  const { outcome, events } = await run('tools-remember', config(), {
+    mode: 'tools', target: undefined,
+    script: [
+      { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'src', 'sum.mjs'), content: GOOD_SUM })] },
+      { text: 'wrote sum.mjs with the numeric sum' },
+    ],
+  });
+  assert.equal(outcome, 'green');
+  assert.ok(events.some((e) => e.type === 'hook-op' && e.op === 'remember'), 'retention fired without a target');
 });

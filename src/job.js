@@ -24,6 +24,12 @@ export const CLASSES = Object.freeze(['hard', 'soft', 'hitl']);
 /** the hierarchy: which verdict classes a close type may claim (PRD §7) */
 export const CLASS_BY_CLOSE = Object.freeze({ predicate: Object.freeze(['hard']), gold: Object.freeze(['hard']), rubric: Object.freeze(['soft']), hitl: Object.freeze(['hitl']) });
 export const GOLD_COMPARE = Object.freeze(['exact', 'json-equal']);
+/** step middle modes (2b): text = single-target artifact; tools = Gate-governed file tools */
+export const STEP_MODES = Object.freeze(['text', 'tools']);
+/** the tool grant menu (2b interview #1): read/grep/write ONLY — `run` is
+ * locked-but-listed; a spec requesting it reds, and that red IS the
+ * request-red evidence admission waits on (curation doctrine, PRD F2) */
+export const TOOL_MENU = Object.freeze(['read', 'grep', 'write']);
 export const CADENCE_UNITS = Object.freeze(['hour', 'day', 'week']);
 export const PROVIDERS = Object.freeze(['anthropic-api']); // SP-2: API-first; local deferred (PRD §5/§8)
 /** V3 environment label: declared keys only — every field is a lineage-key
@@ -139,7 +145,23 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
       const at = `steps.${i}`;
       if (!isObj(s)) { red('invalid-value', at, 'step must be an object'); return; }
       for (const key of Object.keys(s)) {
-        if (!['id', 'close', 'class'].includes(key)) red('unknown-field', `${at}.${key}`);
+        if (!['id', 'close', 'class', 'mode', 'tools'].includes(key)) red('unknown-field', `${at}.${key}`);
+      }
+      // mode/tools — the spec-side tool grant (2b decision #2: the human job
+      // spec owns mode + menu; the drafted config cannot express either)
+      const isHitl = isObj(s.close) && s.close.type === 'hitl';
+      if ((s.mode !== undefined || s.tools !== undefined) && isHitl) {
+        red('invalid-value', `${at}.mode`, 'hitl steps run no loop — mode/tools do not apply');
+      } else {
+        if (s.mode !== undefined && !STEP_MODES.includes(s.mode)) red('invalid-value', `${at}.mode`, STEP_MODES.join('|'));
+        if (s.tools !== undefined) {
+          if (s.mode !== 'tools') red('invalid-value', `${at}.tools`, 'a tool grant requires mode "tools" — a grant without the mode is incoherent');
+          else if (!(Array.isArray(s.tools) && s.tools.length > 0
+                     && s.tools.every((/** @type {unknown} */ t) => typeof t === 'string' && TOOL_MENU.includes(t))
+                     && new Set(s.tools).size === s.tools.length)) {
+            red('invalid-value', `${at}.tools`, `non-empty unique subset of ${TOOL_MENU.join('|')} — run is locked-but-listed: requesting it here is the request-red surface, never a grant`);
+          }
+        }
       }
       if (!isNonEmptyString(s.id) || !SLUG_RE.test(s.id)) red('invalid-value', `${at}.id`, 'kebab-case slug');
       else if (seen.has(s.id)) red('duplicate-id', `${at}.id`, s.id);

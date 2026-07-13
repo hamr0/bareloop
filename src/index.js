@@ -11,7 +11,7 @@
 export { makeSpine } from './spine.js';
 export { ralph, runClose } from './ralph.js';
 export { validateConfig, diffPaths, globToPrefix, LOOP_SHAPES, SLOTS, VERBS } from './validate.js';
-export { validateJob, jobSpecHash, checkApproval, CLOSE_TYPES, CLASSES, CLASS_BY_CLOSE, GOLD_COMPARE, CADENCE_UNITS, PROVIDERS, CONDITION_KEYS } from './job.js';
+export { validateJob, jobSpecHash, checkApproval, CLOSE_TYPES, CLASSES, CLASS_BY_CLOSE, GOLD_COMPARE, CADENCE_UNITS, PROVIDERS, CONDITION_KEYS, STEP_MODES, TOOL_MENU } from './job.js';
 export { interpret, STALL_REDS } from './interpret.js';
 export { extractRules, MAX_RULES, MAX_RULE_CHARS } from './extract.js';
 export { runJob } from './run.js';

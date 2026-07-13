@@ -10,7 +10,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { validateJob, jobSpecHash, checkApproval, CLASS_BY_CLOSE, CLOSE_TYPES, CLASSES } from '../src/job.js';
+import { validateJob, jobSpecHash, checkApproval, CLASS_BY_CLOSE, CLOSE_TYPES, CLASSES, TOOL_MENU } from '../src/job.js';
 import { validateConfig } from '../src/validate.js';
 
 // Job #1 exactly as the PRD §6 defines it — real target, not a fixture
@@ -268,5 +268,52 @@ test('checkApproval: matching record approves; stale hash, empty, or garbage nev
   assert.equal(checkApproval(JOB1, []), false);
   for (const garbage of [undefined, null, 42, 'yes', [{}], [{ specHash: 7 }]]) {
     assert.equal(checkApproval(JOB1, garbage), false, `${JSON.stringify(garbage)} must not approve`);
+  }
+});
+
+// ---- module 2b: step mode/tools — the spec-side tool grant (addendum 2026-07-12b) ----
+// The job spec (human) owns mode + menu; the drafted config cannot express either.
+// TOOL_MENU is read/grep/write ONLY: `run` is locked-but-listed — requesting it is
+// the request-red surface, an invalid-value red, never a grant.
+
+test('tools step legal: mode "tools" + granted menu validates green', () => {
+  const j = mut((x) => { x.steps[1] = { ...x.steps[1], mode: 'tools', tools: ['read', 'grep', 'write'] }; });
+  const r = validateJob(j);
+  assert.deepEqual(r.reds, []);
+  assert.equal(r.ok, true);
+});
+
+test('mode "tools" without tools is legal (runner defaults to the full menu)', () => {
+  const j = mut((x) => { x.steps[1] = { ...x.steps[1], mode: 'tools' }; });
+  assert.equal(validateJob(j).ok, true);
+});
+
+test('explicit mode "text" is legal (the default, spelled out)', () => {
+  const j = mut((x) => { x.steps[0] = { ...x.steps[0], mode: 'text' }; });
+  assert.equal(validateJob(j).ok, true);
+});
+
+test('TOOL_MENU ships frozen and is read/grep/write only — run is NOT in the menu', () => {
+  assert.deepEqual([...TOOL_MENU], ['read', 'grep', 'write']);
+  assert.ok(Object.isFrozen(TOOL_MENU));
+});
+
+test('single-defect mode/tools reds: pinned code + path', () => {
+  const cases = [
+    ['mode outside the menu', (x) => { x.steps[0].mode = 'agent'; }, 'invalid-value', 'steps.0.mode'],
+    ['run is locked: requesting it reds (the request-red surface)', (x) => { x.steps[1] = { ...x.steps[1], mode: 'tools', tools: ['read', 'run'] }; }, 'invalid-value', 'steps.1.tools'],
+    ['tools on a text step: a grant without the mode is incoherent', (x) => { x.steps[0].tools = ['read']; }, 'invalid-value', 'steps.0.tools'],
+    ['tools empty array: a tools step with no tools is ungrantable', (x) => { x.steps[1] = { ...x.steps[1], mode: 'tools', tools: [] }; }, 'invalid-value', 'steps.1.tools'],
+    ['tools non-array', (x) => { x.steps[1] = { ...x.steps[1], mode: 'tools', tools: 'read' }; }, 'invalid-value', 'steps.1.tools'],
+    ['duplicate tool entries', (x) => { x.steps[1] = { ...x.steps[1], mode: 'tools', tools: ['read', 'read'] }; }, 'invalid-value', 'steps.1.tools'],
+    ['mode on a hitl step: hitl runs no loop', (x) => { x.steps[2] = { ...x.steps[2], mode: 'tools' }; }, 'invalid-value', 'steps.2.mode'],
+    ['tools on a hitl step', (x) => { x.steps[2] = { ...x.steps[2], mode: 'tools', tools: ['read'] }; }, 'invalid-value', 'steps.2.mode'],
+  ];
+  for (const [name, mutate, code, path] of cases) {
+    const r = validateJob(mut(mutate));
+    assert.equal(r.ok, false, `${name}: must red`);
+    assert.ok(r.reds.some((red) => red.code === code && red.path === path),
+      `${name}: expected ${code}@${path}, got ${JSON.stringify(r.reds)}`);
+    assert.equal(r.job, null, `${name}: job must be null on red`);
   }
 });

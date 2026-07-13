@@ -7,9 +7,10 @@
 
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { LiteCtx, COMPRESS_LEVELS, KINDS, WRITE_KINDS } from 'litectx';
 import { validateJob, jobSpecHash, checkApproval } from './job.js';
-import { validateConfig, LOOP_SHAPES, SLOTS, VERBS } from './validate.js';
+import { validateConfig, LOOP_SHAPES, SLOTS, VERBS, globToPrefix } from './validate.js';
 import { interpret } from './interpret.js';
 import { extractArtifact } from './text.js';
 
@@ -77,33 +78,80 @@ async function primitiveSmoke(workdir) {
   }
 }
 
+/** @typedef {(argv: string[], opts?: {cwd?: string}) => {status: number|null, stdout: string, stderr: string}} ExecCmd */
+
+/** default process runner for the hitl PR mechanics — real spawnSync, no shell
+ * @type {ExecCmd} */
+const defaultExec = (argv, { cwd } = {}) => {
+  const r = spawnSync(argv[0], argv.slice(1), { cwd, encoding: 'utf8', timeout: 60_000 });
+  if (r.error) return { status: null, stdout: '', stderr: String(r.error) };
+  return { status: r.status, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
+};
+
+/**
+ * The hitl middle's work (2b): branch → stage the job fence ONLY → commit →
+ * push → draft PR. Deterministic runner code, never model tools (the model
+ * never sees a git or gh surface — design addendum 2026-07-12b). Staging is
+ * fence-scoped so spines, audit logs, and anything else living in the workdir
+ * never enter the PR. Any failure is an honest red carrying the failed argv;
+ * the caller still escalates — a broken PR path must never swallow the
+ * escalation (the pain channel, law #7).
+ * @param {{workdir: string, branch: string, title: string, body: string, addPaths: string[], exec: ExecCmd}} o
+ * @returns {Promise<{url: string|null, red: {argv: string, detail: string}|null}>}
+ */
+async function openDraftPr({ workdir, branch, title, body, addPaths, exec }) {
+  const steps = [
+    ['git', 'checkout', '-b', branch],
+    ['git', 'add', '--', ...addPaths],
+    ['git', 'commit', '-m', title],
+    ['git', 'push', '-u', 'origin', branch],
+    ['gh', 'pr', 'create', '--draft', '--title', title, '--body', body],
+  ];
+  for (const argv of steps) {
+    const r = exec(argv, { cwd: workdir });
+    if (r.status !== 0) {
+      return { url: null, red: { argv: argv.join(' '), detail: `${argv.slice(0, 2).join(' ')} failed: ${(r.stderr || r.stdout || `exit ${r.status}`).trim().slice(0, 500)}` } };
+    }
+    if (argv[0] === 'gh') {
+      const url = (r.stdout.match(/https?:\/\/\S+/) ?? [null])[0];
+      // a "successful" gh with no link is not a PR the human can act on
+      return url ? { url, red: null } : { url: null, red: { argv: argv.join(' '), detail: 'no PR URL in gh output' } };
+    }
+  }
+  return { url: null, red: { argv: 'gh pr create', detail: 'PR step never ran' } }; // unreachable while gh is last; belt for edits
+}
+
 /**
  * Run an approved job end to end: approval gate → primitive smoke → sealed
  * config draft (one shot + one redraft) → sequential per-step interpret loops
- * under the one ledger → the hitl step becomes the decision-ready escalation.
+ * under the one ledger → the hitl step opens the draft PR (deterministic git,
+ * never model tools) and becomes the decision-ready escalation.
  *
- * N2 bounds (honest, documented): steps write a single `target` artifact
- * (interpret's contract; the tool-driven multi-file middle is the next module);
- * `gold`/`rubric` closes refuse `close-unsupported` (execution lands with the
- * verdict classes, N4); the pricing-red halt lands at the step boundary — the
- * Gate still caps within a step, but an unpriced result cannot be summed, so
- * the run stops rather than counting it $0 (F6).
+ * N2 bounds (honest, documented): text-mode steps write a single `target`
+ * artifact; tool-mode steps (2b) work multi-file through the gated shell tools,
+ * granted per step by the SPEC (mode/tools — the drafted config cannot express
+ * either); `gold`/`rubric` closes refuse `close-unsupported` (execution lands
+ * with the verdict classes, N4); the pricing-red halt lands at the step
+ * boundary — the Gate still caps within a step, but an unpriced result cannot
+ * be summed, so the run stops rather than counting it $0 (F6).
  *
  * @param {object|string} rawSpec the job spec (job-v1), text or parsed
  * @param {object} opts
  * @param {unknown} opts.approvals `{ specHash, signer, ts }` records (from OUTSIDE the spec)
  * @param {string} opts.workdir the run directory (the fence's root)
- * @param {string} opts.target the step artifact path (N2 single-target bound)
+ * @param {string} [opts.target] the step artifact path (text-mode steps; unused by tool-mode steps)
  * @param {any} opts.provider shell-owned LLM binding (never the config's)
  * @param {(type: string, data?: object) => object} opts.emit spine emitter
  * @param {number} [opts.capRuns] shell-owned per-step iteration cap
  * @param {number} [opts.shellCapUsd] the shell's hard USD ceiling
  * @param {number} [opts.closeTimeoutMs] close wall-clock cap (shell territory)
+ * @param {ExecCmd} [opts.execCmd] process runner for the hitl PR mechanics
+ *        (shell-owned seam, same doctrine as the provider binding)
  * @returns {Promise<string>} outcome: 'green' | 'escalated' | 'unapproved-spec' |
  *   'job-red' | 'smoke-red' | 'config-red' | 'pricing-red' | 'close-unsupported' |
  *   `step-red:<id>`
  */
-export async function runJob(rawSpec, { approvals, workdir, target, provider, emit, capRuns = 3, shellCapUsd = 2, closeTimeoutMs }) {
+export async function runJob(rawSpec, { approvals, workdir, target, provider, emit, capRuns = 3, shellCapUsd = 2, closeTimeoutMs, execCmd = defaultExec }) {
   // 1. human-signs-always — before ANY provider call (N1 decision #1)
   if (!checkApproval(rawSpec, approvals)) {
     emit('job-end', { outcome: 'unapproved-spec', detail: 'no approval record matches this exact spec version' });
@@ -184,7 +232,20 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
   // job and the stop is a result (ladder discipline applied to steps)
   for (const step of job.steps) {
     if (step.close.type === 'hitl') {
-      emit('escalation', { category: 'hitl-close', decisionReady: true, step: step.id, prompt: step.close.prompt, spentUsd, decision: step.close.prompt, options: ['approve', 'reject'] });
+      // the hitl middle's work (2b): deterministic branch/commit/draft-PR —
+      // model tools never touch git; a PR failure is red + escalation, never a
+      // swallowed escalation
+      const branch = `bareloop/${job.job}-${Date.now().toString(36)}`;
+      const title = `bareloop draft: ${job.job}`;
+      const pr = await openDraftPr({
+        workdir, branch, title,
+        body: `${job.description}\n\nstep: ${step.id}\nprompt: ${step.close.prompt}\nspent: $${spentUsd.toFixed(4)} of $${job.budgetUsd}\n\nDraft by bareloop — merge stays human, forever.`,
+        addPaths: job.writeScope.map((/** @type {string} */ g) => globToPrefix(g)),
+        exec: execCmd,
+      });
+      if (pr.red) emit('pr-red', { step: step.id, ...pr.red });
+      else emit('pr-opened', { step: step.id, branch, url: pr.url });
+      emit('escalation', { category: 'hitl-close', decisionReady: true, step: step.id, prompt: step.close.prompt, spentUsd, decision: step.close.prompt, options: ['approve', 'reject'], pr: { url: pr.url, branch, error: pr.red?.detail ?? null } });
       emit('job-end', { outcome: 'escalated', step: step.id, spentUsd });
       return 'escalated'; // by design: the human acts outside the run, forever
     }
@@ -195,11 +256,14 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
       emit('job-end', { outcome: 'close-unsupported', step: step.id });
       return 'close-unsupported';
     }
-    emit('step-start', { step: step.id, remainingUsd: job.budgetUsd - spentUsd, spentUsd });
+    emit('step-start', { step: step.id, remainingUsd: job.budgetUsd - spentUsd, spentUsd, mode: step.mode ?? 'text' });
     const outcome = await interpret(cv.config, {
       task: `${job.description} — step: ${step.id}`,
       target, close: step.close.cmd.split(/\s+/), workdir, capRuns,
       emit: meter, provider, ...cOpts(), closeTimeoutMs,
+      // the SPEC's grant, threaded verbatim (2b decision #2) — the drafted
+      // config cannot express mode or tools, so there is nothing to merge
+      mode: step.mode ?? 'text', tools: step.tools,
     });
     emit('step-end', { step: step.id, outcome, spentUsd });
     if (unpriced) return pricingRed();
