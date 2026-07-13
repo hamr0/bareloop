@@ -366,6 +366,13 @@ rule from a minting requirement into an ongoing coverage metric. → V13
   that are neither clean green nor clean red (the F5 validate-then-crash class, unparseable
   artifacts, partial suites); each maps to a named red or escalation; coercing one to a
   verdict is itself the instrument fault.
+  **ANSWERED 2026-07-13 (adaptlearn F25, 0.11.7): GAP** — control 2/2, falsifier 6/6
+  classifiers flip; one live coercion (signal-killed close → `needs_revision
+  exitCode=null`, retried to cap), one collapse (timeout pooled into broken-close), one
+  coercion invisible at the seam (crash-at-load ≡ honest red by exit code). Build rules
+  carried to this repo's `docs/plans/2026-07-13-forbidden-zone-audit-spec.md`
+  (`close-killed`, `close-timeout`, judgment-rendered signal); they land with the
+  N-ladder close work (PRD v1.10 item 2).
 - **V11 (any claim instrument):** transparent-path lint (§B3) — the instrument's declared
   condition list marks every information path as clocked (advances only at run boundary,
   write-enabled by verdict) or metered; an unmetered continuous path is the F18 confound,

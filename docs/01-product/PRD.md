@@ -471,6 +471,16 @@ Things to try, in nominated order:
    class, unparseable artifacts, partial suites); each maps to a named red/escalation;
    coercing one to a verdict is itself the instrument fault. Kin to v1.6's named-red map:
    this names the *gap between* verdicts.
+   **ANSWERED 2026-07-13 (adaptlearn F25, 0.11.7): GAP** — audited against adaptlearn's
+   real close chain (control 2/2, falsifier 6/6 classifiers flip): one live coercion
+   (signal-killed close read as `needs_revision exitCode=null`, then retried to cap —
+   broken-close-must-escalate violated in behavior), one collapse (timeout pooled into
+   broken-close), one coercion INVISIBLE at the seam (crash-at-load ≡ honest red by exit
+   code; no mapping can separate them). Three build rules carried to
+   `docs/plans/2026-07-13-forbidden-zone-audit-spec.md`: `close-killed`, `close-timeout`,
+   and a judgment-rendered signal (executed-test count / structured verdict) so
+   `close-crashed` is auditable at all; they land with the N-ladder close work, timing
+   owned by this repo's session.
 3. **V11 — transparent-path lint (any claim instrument).** The declared-condition list
    marks every information path as clocked (advances only at run boundary, write-enabled
    by verdict) or metered; an unmetered continuous path is the F18 revision-confound named
