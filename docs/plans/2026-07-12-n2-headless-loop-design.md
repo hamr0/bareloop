@@ -188,3 +188,39 @@ channel is closable with one Gate field; the denial streak returns `denied:shell
 after 3 without burning to the cap; all-unpriced tool runs report `costUsd: null` (never
 $0) and a partially-unpriced run keeps `unpricedRounds` visible (F6 carries over with
 zero new machinery).
+
+---
+
+## Addendum 2026-07-13 — resume-to-cap: close-first skip (module 4.5)
+
+**Decision (hamr, in-session):** shrink-to-fit budgeting is off the table. The budget
+model is **run to the cap; the stop is the checkpoint; the human adds budget and
+reruns.** Pieces already in place: the `cap-halt` escalation's options include "raise
+the cap and rerun" (the pain channel), and a budget top-up is editing `budgetUsd` — a
+new spec hash, unapproved by construction until re-signed (human-signs-always covers
+it, zero new code). The missing piece, built here:
+
+- **Close-first skip.** Every predicate step runs its own close BEFORE any tokens
+  (`runClose` — the same instrument as ralph's verdict, same at-capture
+  `SECRET_PATTERNS` scrub). `satisfied` → the step skips for zero tokens; the workdir
+  plus the closes ARE the checkpoint — no checkpoint files, no state database.
+- **`already-green` is a distinct record, never plain `green`.** Nothing was done: the
+  skip mints no learning credit and runs no on-green retention (interpret never runs),
+  or resume would poison the N3 inheritance evidence with greens no worker earned.
+  Spine vocabulary: `close-precheck` (every predicate step), `step-end` outcome
+  `already-green`.
+- **A `failed` precheck (close cannot spawn) stops `broken-close` before any provider
+  call** — the same honest stop ralph makes, moved before the draft and the worker.
+- **The precheck's gap stays on the spine only** — feeding it to the worker as a
+  "previous attempt" would be a lie (no attempt exists) and would skew the fresh-run vs
+  resume contrast evidence.
+- **Drafting is deferred to the first step that needs a worker.** Decision #3
+  (orchestrate-first-encounter) holds in substance: a needed config is always drafted
+  fresh THIS run, never inherited. But a rerun whose closes all green needs no config
+  at all — drafting one no interpret would read is spend for nothing (F6's spirit).
+  Consequence: a clean rerun (the N5 cadence case) costs ZERO provider calls.
+
+**Fixture consequence, pinned:** two steps sharing one close command means the second
+legitimately skips once the first greens — the budget-exhaustion and plan-spend tests
+now give step 2 its own still-red close / assert one working step. The intended
+behavior they pin (drained-ledger red before tokens; plan spend metered) is unchanged.

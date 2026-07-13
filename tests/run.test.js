@@ -151,7 +151,19 @@ test('a step that cannot green stops the job and names itself; later steps never
 
 test('mid-job budget exhaustion: the drained ledger reds the next step BEFORE tokens (cap-not-estimate)', async () => {
   const provider = stubProvider({ drafts: [draftedConfig(0.4)], workCostUsd: 0.15 });
-  const { outcome, events } = await run('budget', { provider, specOver: { budgetUsd: 0.5 } });
+  // step 2 gets its OWN still-red close: a shared close would already-green
+  // after step 1 and skip — this test is about a step that NEEDS work finding
+  // the ledger drained before tokens
+  const { outcome, events } = await run('budget', {
+    provider,
+    specOver: {
+      budgetUsd: 0.5,
+      steps: [
+        { id: 'fix', close: { type: 'predicate', cmd: `node --test ${join(base, 'budget', 'sum.test.mjs')}`, expect: 0 }, class: 'hard' },
+        { id: 'style', close: { type: 'predicate', cmd: 'node -e process.exit(1)', expect: 0 }, class: 'hard' },
+      ],
+    },
+  });
   assert.equal(outcome, 'step-red:style', 'step 2 dies on the drained ledger');
   assert.ok(events.some((e) => e.type === 'config-red' && e.code === 'bounds' && e.path === 'gate.budgetUsd'));
   assert.equal(provider.calls.work.length, 1, 'step 2 burned zero worker tokens');
@@ -290,9 +302,11 @@ test('the ONE ledger meters plan-shape spend: worker-plan calls enter spentUsd (
   const { outcome, events } = await run('plan-spend', { provider });
   assert.equal(outcome, 'escalated', 'the run ends at the hitl step');
   const esc = events.find((e) => e.type === 'escalation' && e.category === 'hitl-close');
-  // 1 draft (0.001) + 2 hard steps × (plan 0.15 + implement 0.15) = 0.601
-  assert.ok(Math.abs(esc.spentUsd - 0.601) < 1e-9,
-    `plan calls must be metered into the job ledger — expected 0.601, got ${esc.spentUsd}`);
+  // 1 draft (0.001) + ONE working hard step × (plan 0.15 + implement 0.15) = 0.301
+  // (the second hard step shares the close and skips already-green — resume model);
+  // an un-metered plan call would read 0.151, so the assertion still distinguishes
+  assert.ok(Math.abs(esc.spentUsd - 0.301) < 1e-9,
+    `plan calls must be metered into the job ledger — expected 0.301, got ${esc.spentUsd}`);
 });
 
 test('F6 — an unpriced PLAN call halts pricing-red at the step boundary (plan spend is never invisible)', async () => {
@@ -378,4 +392,82 @@ test('drafting spend that consumes the whole job budget stops cap-halt — no pa
   const esc = events.find((e) => e.type === 'escalation' && e.category === 'cap-halt');
   assert.ok(esc?.decisionReady, 'a budget story escalates as cap-halt, never blames the drafter');
   assert.equal(events.find((e) => e.type === 'job-end').outcome, 'cap-halt');
+});
+
+// ---- resume-to-cap (2026-07-13): close-first skip — the workdir + the closes ARE the checkpoint ----
+
+test('resume: a step whose close already greens skips for ZERO tokens as already-green — never plain green', async () => {
+  const { workdir, target, suiteCmd } = makeWork('skip-all');
+  writeFileSync(target, GOOD_SUM); // the work is already done (a rerun after a budget top-up)
+  const s = spec(suiteCmd, {
+    steps: [
+      { id: 'fix', close: { type: 'predicate', cmd: suiteCmd, expect: 0 }, class: 'hard' },
+      { id: 'style', close: { type: 'predicate', cmd: suiteCmd, expect: 0 }, class: 'hard' },
+    ],
+  });
+  const provider = stubProvider();
+  const file = join(workdir, 'run.jsonl');
+  const outcome = await runJob(s, { approvals: approve(s), workdir, target, provider, emit: makeSpine(file), capRuns: 2 });
+  const events = readFileSync(file, 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  assert.equal(outcome, 'green');
+  assert.equal(provider.calls.draft.length + provider.calls.work.length, 0, 'a clean rerun costs ZERO provider calls — no draft, no worker');
+  const ends = events.filter((e) => e.type === 'step-end');
+  assert.deepEqual(ends.map((e) => [e.step, e.outcome]), [['fix', 'already-green'], ['style', 'already-green']], 'skips are DISTINCT spine records, never plain green');
+  assert.ok(!events.some((e) => e.type === 'worker-result' || e.type === 'run-start'), 'no worker loop ran — an already-green mints no learning credit');
+  assert.ok(events.filter((e) => e.type === 'close-precheck').every((e) => e.verdict === 'satisfied'), 'the skip-check is a visible spine record');
+  const end = events.find((e) => e.type === 'job-end');
+  assert.equal(end.outcome, 'green');
+  assert.equal(end.spentUsd, 0);
+});
+
+test('partial resume: finished steps skip; drafting is DEFERRED to the first step that needs a worker', async () => {
+  const { workdir, target, suiteCmd } = makeWork('skip-partial');
+  const s = spec(suiteCmd, {
+    steps: [
+      { id: 'fix', close: { type: 'predicate', cmd: 'node -e process.exit(0)', expect: 0 }, class: 'hard' },
+      { id: 'style', close: { type: 'predicate', cmd: suiteCmd, expect: 0 }, class: 'hard' },
+    ],
+  });
+  const provider = stubProvider();
+  const file = join(workdir, 'run.jsonl');
+  const outcome = await runJob(s, { approvals: approve(s), workdir, target, provider, emit: makeSpine(file), capRuns: 2 });
+  const events = readFileSync(file, 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  assert.equal(outcome, 'green');
+  assert.equal(provider.calls.draft.length, 1, 'the config is still drafted fresh THIS run when a step needs it');
+  assert.equal(provider.calls.work.length, 1, 'only the unfinished step paid a worker call');
+  const fixEnd = events.find((e) => e.type === 'step-end' && e.step === 'fix');
+  assert.equal(fixEnd.outcome, 'already-green');
+  assert.equal(fixEnd.spentUsd, 0, 'the skip itself cost nothing');
+  const styleStart = events.findIndex((e) => e.type === 'step-start' && e.step === 'style');
+  const draftIdx = events.findIndex((e) => e.type === 'draft-result');
+  assert.ok(styleStart >= 0 && draftIdx > styleStart, 'the draft fires only once a step actually needs a worker');
+  assert.equal(events.find((e) => e.type === 'step-end' && e.step === 'style').outcome, 'green');
+});
+
+test('a close that cannot RUN is a broken-close stop BEFORE any provider call (reds-before-tokens)', async () => {
+  const { outcome, events, provider } = await run('precheck-broken', {
+    specOver: { steps: [{ id: 'fix', close: { type: 'predicate', cmd: 'bareloop-no-such-binary-xyz --version', expect: 0 }, class: 'hard' }] },
+  });
+  assert.equal(outcome, 'step-red:fix');
+  assert.equal(provider.calls.draft.length + provider.calls.work.length, 0, 'zero tokens on a broken arbiter');
+  const esc = events.find((e) => e.type === 'escalation' && e.category === 'broken-close');
+  assert.ok(esc?.decisionReady && esc.step === 'fix', 'the same honest stop ralph makes, moved before the tokens');
+  const end = events.find((e) => e.type === 'job-end');
+  assert.equal(end.outcome, 'step-red');
+  assert.equal(end.cause, 'broken-close');
+});
+
+test('the skip-check close output is scrubbed at the source — a secret it echoes never enters the spine', async () => {
+  const token = 'ghp_a1B2c3D4e5F6g7H8i9J0k1L2';
+  const { workdir, target, suiteCmd } = makeWork('precheck-secret');
+  const leak = join(workdir, 'leak.mjs');
+  writeFileSync(leak, `console.error('fatal: https://x-access-token:${token}@github.com/x/y.git'); process.exit(1);`);
+  const s = spec(suiteCmd, { steps: [{ id: 'fix', close: { type: 'predicate', cmd: `node ${leak}`, expect: 0 }, class: 'hard' }] });
+  const provider = stubProvider();
+  const file = join(workdir, 'run.jsonl');
+  const outcome = await runJob(s, { approvals: approve(s), workdir, target, provider, emit: makeSpine(file), capRuns: 2 });
+  const raw = readFileSync(file, 'utf8');
+  assert.equal(outcome, 'step-red:fix', 'the close never greens — the cap stop is honest');
+  assert.ok(raw.includes('close-precheck'), 'the precheck is a visible spine record');
+  assert.ok(!raw.includes(token), 'the token never enters the append-only spine');
 });

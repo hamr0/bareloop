@@ -190,10 +190,8 @@ The N2 runner — the shell's top layer; composes everything below it and interp
 nothing itself. Sequence: **approval gate** (human-signs-always — refuses an unapproved
 spec before ANY provider call: `unapproved-spec`) → **primitive smoke** (litectx
 known-answer round-trip before tokens: `smoke-red` — silent degradation throws nothing)
-→ **sealed config drafting** through the priced path (one shot + one redraft, reds fed
-back; a second red is `config-red`, zero further tokens) → **sequential per-step
-interpret loops** under the ONE cumulative ledger (each step's ceiling is
-`min(job budget − spent, shell cap)`; a step that cannot green stops the job:
+→ **sequential per-step interpret loops** under the ONE cumulative ledger (each step's
+ceiling is `min(job budget − spent, shell cap)`; a step that cannot green stops the job:
 `step-red:<id>`) → the **hitl step** opens a draft PR deterministically (branch → stage
 the job fence ONLY, so spines/audit logs never enter the PR → commit → push →
 `gh pr create --draft`) and ends `escalated` BY DESIGN, the PR URL riding the
@@ -207,6 +205,18 @@ valid config existed. Both are decision-ready escalations with a terminal `job-e
 the spine never dangles. A text-mode job invoked without `opts.target` is a `job-red`
 before ANY provider call (and `interpret` itself throws a TypeError for direct
 callers) — reds-before-tokens applies to the call, not just the spec.
+
+**Resume-to-cap (close-first skip):** every predicate step runs its close FIRST, before
+any tokens (`close-precheck` on the spine, output scrubbed at capture like every close).
+Already-green skips the step for zero tokens as a DISTINCT record — `step-end` outcome
+`already-green`, never plain `green`: nothing was done, so it mints no learning credit
+and runs no on-green retention. A close that cannot RUN is a `broken-close` escalation
+before any provider call. **Config drafting is deferred** to the first step that
+actually needs a worker — the sealed one-shot + one-redraft is unchanged, and a config
+is always drafted fresh per run (never inherited), but a rerun whose closes all green
+pays ZERO provider calls. So the resume story is: a `cap-halt` stop is the checkpoint
+(the workdir + the closes), the human raises `budgetUsd` (a new spec hash — re-sign),
+and the rerun picks up exactly where the budget died.
 
 **Unpriced is never free (F6):** the ledger halts `pricing-red` — decision-ready — on
 any result whose cost is the honest null OR whose `unpricedRounds > 0` (a partially

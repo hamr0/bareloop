@@ -55,6 +55,18 @@ feature lands, **patch** = docs, fixes, scaffolding.
     `classifyIncidents`, `foldLedger`, `ledgerDeltas`. Design record:
     `docs/plans/2026-07-11-upstream-ledger-design.md` + 2026-07-13 addendum (the
     bareloop event mapping). CLI lands at N5; the panel reads the same file at N6.
+  - **Resume-to-cap: close-first skip** (module 4.5): every predicate step runs its
+    close BEFORE any tokens (`close-precheck` on the spine, output scrubbed at capture
+    like every close). Already-green skips the step for zero tokens as a DISTINCT
+    record (`step-end` outcome `already-green`, never plain `green` — nothing was done,
+    so it mints no learning credit and runs no on-green retention); a close that cannot
+    RUN stops `broken-close` before any provider call. Config drafting is deferred to
+    the first step that actually needs a worker (still one sealed shot + one redraft,
+    always drafted fresh per run) — so the resume story is: a `cap-halt` stop is the
+    checkpoint (the workdir + the closes), the human raises `budgetUsd` (new spec hash,
+    re-sign) and reruns, finished steps skip in seconds, and a clean cadenced rerun
+    costs ZERO provider calls. Design record: the 2026-07-13 addendum on
+    `docs/plans/2026-07-12-n2-headless-loop-design.md`.
 
 ### Changed
 - **`job-v1`: requesting a locked tool is now a DISTINCT red.** `tools` containing

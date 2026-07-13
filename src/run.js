@@ -13,6 +13,7 @@ import { redact } from 'bareguard';
 import { validateJob, jobSpecHash, checkApproval } from './job.js';
 import { validateConfig, LOOP_SHAPES, SLOTS, VERBS, globToPrefix, SECRET_PATTERNS, REMEMBER_KINDS } from './validate.js';
 import { interpret } from './interpret.js';
+import { runClose } from './ralph.js';
 import { extractArtifact, priceOf } from './text.js';
 
 const require = createRequire(import.meta.url);
@@ -129,10 +130,15 @@ async function openDraftPr({ workdir, branch, title, body, addPaths, exec }) {
 }
 
 /**
- * Run an approved job end to end: approval gate → primitive smoke → sealed
- * config draft (one shot + one redraft) → sequential per-step interpret loops
- * under the one ledger → the hitl step opens the draft PR (deterministic git,
- * never model tools) and becomes the decision-ready escalation.
+ * Run an approved job end to end: approval gate → primitive smoke → sequential
+ * per-step interpret loops under the one ledger → the hitl step opens the draft
+ * PR (deterministic git, never model tools) and becomes the decision-ready
+ * escalation. Every predicate step runs its close FIRST (close-first skip,
+ * resume model): already-green skips the step for zero tokens as a distinct
+ * spine record, so a stopped run reruns from where it died — the workdir plus
+ * the closes are the checkpoint. The sealed config draft (one shot + one
+ * redraft) is deferred to the first step that actually needs a worker; a clean
+ * rerun pays zero provider calls.
  *
  * N2 bounds (honest, documented): text-mode steps write a single `target`
  * artifact; tool-mode steps (2b) work multi-file through the gated shell tools,
@@ -247,32 +253,45 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
   };
   const capNow = () => Math.min(shellCapUsd, job.budgetUsd - spentUsd);
   const cOpts = () => ({ shellCapUsd: capNow(), jobWriteScope: job.writeScope });
-  let text = await draft(null);
-  let cv = validateConfig(text ?? '', cOpts());
-  emit('config-validate', { ok: cv.ok, reds: cv.reds, phase: 'draft-1' });
-  // the redraft only fires when it can still help: not over a transport red,
-  // not over unpriced spend, and never over an already-blown budget (a paid
-  // call against a negative cap can only red again — budget story, not drafter)
-  if (!cv.ok && !unpriced && !transportRed && capNow() > 0) {
-    text = await draft(cv.reds);
-    cv = validateConfig(text ?? '', cOpts());
-    emit('config-validate', { ok: cv.ok, reds: cv.reds, phase: 'draft-2' });
-  }
-  if (transportRed) return providerRed();
-  if (unpriced) return pricingRed();
-  if (!cv.ok) {
-    if (capNow() <= 0) {
-      // drafting consumed the whole job budget before a valid config existed —
-      // the honest stop is a cap story, never a config-red blaming the drafter
-      emit('cap-halt', { category: 'cap-halt', meaning: 'not under cap — not "can\'t"', spentUsd, budgetUsd: job.budgetUsd });
-      emit('escalation', { category: 'cap-halt', decisionReady: true, decision: `Drafting spend ($${spentUsd.toFixed(4)}) consumed the job budget ($${job.budgetUsd}) before a valid config existed.`, options: ['raise the job budget and rerun', 'abandon the run'], spentUsd });
-      emit('job-end', { outcome: 'cap-halt' });
-      return 'cap-halt';
+  // Drafting is DEFERRED to the first step that needs a worker (resume model,
+  // design addendum 2026-07-13): a step whose close already greens skips for
+  // zero tokens, so a clean rerun may need no config at all — drafting one no
+  // interpret will ever read is spend for nothing (F6's spirit). Decision #3
+  // holds: when a config IS needed, it is drafted fresh THIS run, never inherited.
+  /** @type {any} the validated config, drafted on first need */
+  let config = null;
+  /** @returns {Promise<string|null>} a terminal job outcome, or null with `config` set */
+  const ensureConfig = async () => {
+    if (config) return null;
+    let text = await draft(null);
+    let cv = validateConfig(text ?? '', cOpts());
+    emit('config-validate', { ok: cv.ok, reds: cv.reds, phase: 'draft-1' });
+    // the redraft only fires when it can still help: not over a transport red,
+    // not over unpriced spend, and never over an already-blown budget (a paid
+    // call against a negative cap can only red again — budget story, not drafter)
+    if (!cv.ok && !unpriced && !transportRed && capNow() > 0) {
+      text = await draft(cv.reds);
+      cv = validateConfig(text ?? '', cOpts());
+      emit('config-validate', { ok: cv.ok, reds: cv.reds, phase: 'draft-2' });
     }
-    for (const r of cv.reds) emit('config-red', r);
-    emit('job-end', { outcome: 'config-red' });
-    return 'config-red';
-  }
+    if (transportRed) return providerRed();
+    if (unpriced) return pricingRed();
+    if (!cv.ok) {
+      if (capNow() <= 0) {
+        // drafting consumed the whole job budget before a valid config existed —
+        // the honest stop is a cap story, never a config-red blaming the drafter
+        emit('cap-halt', { category: 'cap-halt', meaning: 'not under cap — not "can\'t"', spentUsd, budgetUsd: job.budgetUsd });
+        emit('escalation', { category: 'cap-halt', decisionReady: true, decision: `Drafting spend ($${spentUsd.toFixed(4)}) consumed the job budget ($${job.budgetUsd}) before a valid config existed.`, options: ['raise the job budget and rerun', 'abandon the run'], spentUsd });
+        emit('job-end', { outcome: 'cap-halt' });
+        return 'cap-halt';
+      }
+      for (const r of cv.reds) emit('config-red', r);
+      emit('job-end', { outcome: 'config-red' });
+      return 'config-red';
+    }
+    config = cv.config;
+    return null;
+  };
 
   // 5. sequential per-step loops under the one ledger; a step-red stops the
   // job and the stop is a result (ladder discipline applied to steps)
@@ -303,13 +322,38 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
       return 'close-unsupported';
     }
     emit('step-start', { step: step.id, remainingUsd: job.budgetUsd - spentUsd, spentUsd, mode: step.mode ?? 'text' });
+    // Close-first skip (resume model): the workdir + the close ARE the
+    // checkpoint. Run the step's own arbiter BEFORE any tokens — already-green
+    // means the step's work is done, and the step skips as a DISTINCT record
+    // (already-green, never plain green: nothing was done, so it mints no
+    // learning credit and runs no on-green retention). Same instrument as
+    // ralph's verdict (runClose), same at-capture scrub as every close output.
+    // trim before splitting: validateJob reds whitespace-padded cmds, but an
+    // empty argv[0] would THROW at spawn — belt for any path around the validator
+    const closeArgv = step.close.cmd.trim().split(/\s+/);
+    const pre = runClose(closeArgv, (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS }), { timeoutMs: closeTimeoutMs });
+    emit('close-precheck', { step: step.id, ...pre });
+    if (pre.verdict === 'satisfied') {
+      emit('step-end', { step: step.id, outcome: 'already-green', spentUsd });
+      continue;
+    }
+    if (pre.verdict === 'failed') {
+      // reds-before-tokens: a close that cannot RUN is a broken arbiter — the
+      // same honest stop ralph makes, moved before the draft and the worker call
+      emit('escalation', { category: 'broken-close', decisionReady: true, step: step.id, decision: 'The close itself cannot run — no verdict is trustworthy until it is fixed.', options: ['fix the close command', 'abandon the run'], detail: pre.detail, spentUsd });
+      emit('job-end', { outcome: 'step-red', step: step.id, cause: 'broken-close', spentUsd });
+      return `step-red:${step.id}`;
+    }
+    // the precheck's gap stays on the spine only — feeding it to the worker as
+    // a "previous attempt" would be a lie (no attempt exists) and would skew
+    // the contrast evidence between fresh runs and resumes
+    const halted = await ensureConfig();
+    if (halted) return halted;
     let outcome;
     try {
-      outcome = await interpret(cv.config, {
+      outcome = await interpret(config, {
         task: `${job.description} — step: ${step.id}`,
-        // trim before splitting: validateJob reds whitespace-padded cmds, but an
-        // empty argv[0] would THROW at spawn — belt for any path around the validator
-        target, close: step.close.cmd.trim().split(/\s+/), workdir, capRuns,
+        target, close: closeArgv, workdir, capRuns,
         emit: meter, provider, ...cOpts(), closeTimeoutMs,
         // the SPEC's grant, threaded verbatim (2b decision #2) — the drafted
         // config cannot express mode or tools, so there is nothing to merge
