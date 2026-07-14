@@ -65,46 +65,57 @@ necessary, not sufficient — see BA-2).
 **Fix upstream + version bump. No local shim** (design law #10): the provider is a
 shell-owned binding, so bareloop *could* bind a patched copy — and must not.
 
-## OPEN (2026-07-14) — BA-2: `shell_read` cannot seek, so a worker cannot navigate a large file
+## OPEN (2026-07-14) — BA-2 [CRITICAL]: no ranged-read primitive — a pointer the worker cannot act on
 
-**Package:** bare-agent (`tools/shell.js`) · surfaced by the same job #1 runs (F18).
+**Package:** bare-agent (`tools/shell.js`) · job #1 runs (F18) · **the load-bearing ask.**
 
 **What's missing.** `shell_read`'s only sizing knob is **`maxBytes`** — a cap measured from
-**byte zero**. There is no `offset`/`start` (nor a line range). A worker facing a 117 KB file
-has exactly two moves: swallow it whole, or re-read the same prefix. It cannot look at the
-middle.
+**byte zero**. There is no `offset`, no line range. So a worker can hold a perfect pointer
+("the bug is in `tokenize.js:66-72`") and have **no way to act on it**. Its only move is to
+swallow the whole file.
 
-**Consequence.** The real worker read `src/store.js` (117 KB) **nine times** in one run and
-`src/index.js` (90 KB) three times — pulling **1.37 MB** of source through context to find a
-one-character bug in a 3.4 KB file. It was not being stupid: it was trying to page through a
-file with a tool that has no pager. With caching wired (BA-1) it simply thrashes *longer* —
-the failing rep re-read the same 7 files **42 of 49 reads (86%)**.
+**Why it cannot be worked around here, and why that is correct.** There *is* one way to read
+lines 66-72 today: `sed -n '66,72p'` — which needs `shell_run`, and bareloop **locks `run` on
+purpose** (a worker that can run commands can run its own close; that is the arbiter, design
+law #1). The worker is caught between a fence we *want* and a primitive we never built. This
+is two-red routing at its cleanest: a **missing primitive → fix upstream**, emphatically NOT
+an argument for admitting `run`.
 
-**The fix.** Add `offset` (bytes or lines) to `shell_read`, so a range read is expressible.
-Related, and worth considering together: bare-agent already ships `liteCtxMcpBridgeConfig`
-(`recall · get · impact · recent`, read-only) — chunk retrieval is the *other* half of this,
-and is the standing candidate for bareloop's worker toolbox once granted.
+**Consequence (measured).** The control run read `src/store.js` (117 KB) **nine times** and
+`src/index.js` (90 KB) three times — **1.37 MB of source** dragged through context to find a
+one-character bug in a 3.4 KB function. It was not being stupid: it was paging through a file
+with a tool that has no pager. With caching wired (BA-1) it simply thrashes *longer* — the
+failing rep re-read the same 7 files **42 of 49 reads (86%)**.
 
-## OPEN (2026-07-14) — LC-1: litectx stores every chunk body and will not hand one back
+**The fix.** Add a range to `shell_read` — `offset`/`limit` in bytes, or (better for source)
+`startLine`/`endLine`, which is the unit litectx already indexes in. Everything else in the
+retrieval story is downstream of this one.
 
-**Package:** litectx (`src/store.js`, recall/get surface) · same job #1 runs (F18).
+## OPEN (2026-07-14) — LC-1 [REVISED]: recall's hit is too thin to triage, and its body is unreachable
 
-**What's missing.** The `nodes` table already persists **`body TEXT NOT NULL`** alongside
-`symbol`, `node_type`, `start_line`, `end_line` — litectx knows exactly where every function
-is *and holds its text*. But `recall` returns **pointers only** ("scored POINTERS — not
-bodies"), and `get` takes a path and reads **the whole file fresh from disk**. So the one
-thing a worker needs — *"give me just `keywords` from `tokenize.js`"* — is the one thing the
-API cannot express, even though the data is sitting in SQLite.
+**Package:** litectx (`src/store.js`, recall/get surface) · job #1 runs (F18).
+**Revised 2026-07-14 after hamr pushed back — the first draft of this ask was wrong**, and
+the correction is worth keeping: it asked recall to return **full bodies for every hit**,
+which would re-create the exact bloat this whole finding is about. Measured against this
+repo's index: a `recall(n=5)` that hit the fat tail would dump **61,402 B ≈ 15,350 tokens**
+into context *unbidden* — a whole-file read wearing a different hat. (Chunk sizes: median
+295 B, p90 1.9 KB, **max 18.8 KB**.) **A search index returns pointers; the caller decides
+what to pay for.** That design was right; my ask was not.
 
-**Consequence.** The worker's only route to a symbol is a whole-file read, and
-`shell_read` cannot seek (BA-2). To find a one-character bug in a 3.4 KB function it dragged
-**1.37 MB** of source through context, re-reading `store.js` (117 KB) nine times.
+**What's actually missing — two bounded things:**
 
-**The fix.** Let a hit's body be fetched: either `get({path, symbol})` / `get(nodeId)`, or a
-`withBody: true` option on `recall`. The chunk is already indexed, ranked and stored — this
-is exposure, not new capability. `recall` finds `keywords` at `tokenize.js:66-72`; returning
-its ~7 lines instead of 117 KB is the whole ballgame. **This largely subsumes BA-2** for the
-retrieval use case (recall + chunk body *is* the ranged read).
+1. **A snippet on the hit, so it can be triaged without fetching.** Today a hit carries
+   `path · symbol · nodeType · startLine · endLine · score` — no signature, no prose. The
+   worker cannot tell which of five hits is the one. Return the **head of the chunk** (a few
+   hundred bytes): with **LC-2** landed that head *is* the docstring + signature, so this
+   costs one fix, not two.
+2. **A way to fetch ONE chunk.** `get` takes a path and reads **the whole file fresh from
+   disk**. The body is already in SQLite — `nodes(path, kind, symbol, node_type, start_line,
+   end_line, **body TEXT NOT NULL**)`. Expose `get({path, symbol})` (or by node id) to return
+   that single chunk. This is **exposure, not new capability**.
+
+Together with **BA-2** this closes the loop: `recall` says *where* and *roughly what*, one
+`get` (or one ranged read) pulls *just that* — 7 lines instead of 117 KB.
 
 ## OPEN (2026-07-14) — LC-2: chunk bodies exclude the docstring above the symbol
 
