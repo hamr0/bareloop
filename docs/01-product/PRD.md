@@ -616,6 +616,114 @@ the ledger only produces toggles if it was built to.
 
 ---
 
+## Addendum v1.12 — 2026-07-14 (config-v1 retired, plan-v1 replaces it — the pivot record; hamr interview)
+
+The N2 loop was made to actually loop (F20: nothing had bounded a tool-mode attempt, so the
+close had never run, in any arm ever), and with it looping it repeated itself byte-for-byte
+three times (F21) because the drafted config had no channel from attempt N to attempt N+1 on a
+run that never greens. F22 named the deeper problem: of the drafted config's seven knobs,
+exactly one (`loop.shape`) can change what the worker experiences on a never-green job — **the
+emergent middle, as shipped, has no live surface, and "the agent authors its workflow" was
+near-empty.** This addendum records the pivot the evidence forces. It amends §3–§4 and §10; it
+does not touch the design laws' intent — it makes the middle finally express something the laws
+permit.
+
+### The law, restated (hamr-confirmed, verbatim)
+
+> **The agent may author anything whose only verbs are gated primitives. It may never author
+> the arbiter: the close, the budget, the fence, the merge.**
+
+This **RESTATES** §3 law #1's constrained-config rule — it does not repeal it. The danger was
+always in the ACTIONS, not the syntax: the inexpressibility guard (two docs, two validators,
+the arbiter unreachable at every depth — F17/v1.11) stays exactly as it is. config-v1 was too
+inert to be dangerous *and* too inert to be useful; plan-v1 gives the agent a real surface
+whose every verb still bottoms out in a gated primitive.
+
+### config-v1 is RETIRED
+
+The hooks/slots/knobs schema (`recall`/`compress`/`stash`/`remember` bound to
+`before-attempt`/`after-red`/`on-green`) is retired on the evidence of F21/F22. **Its code
+moves to an archive when plan-v1 lands — not before:** the suite still runs through it today,
+and a rung is never left un-runnable. `stash` in particular is a **decoy verb** (F21) — it
+looks like a ratchet and an agent drafts it every time, but it writes to a table nothing reads.
+
+### plan-v1 — the replacement shape
+
+Signed job spec (goal, budget, final close, tool ceiling — **all human, unchanged**) → the loop:
+
+1. **Preflight.** v1: a job whose final close is not a deterministic predicate escalates
+   **decision-ready** with a question — *"this is a chat, not a job"*. (A close compiling from
+   prose is N4, not now.)
+2. **SCOUT** — a read-only worker, **hard-bounded rounds + a reserved budget slice**, produces
+   a context blob. It cannot write; it cannot run.
+3. **PLAN** — `bareagent Planner.plan(goal, {info: scoutBlob})`, the decompose LLM call,
+   emitting a step DAG. A **new plan-v1 validator** gates it before tokens burn: each step's
+   verbs ⊆ the spec's tool ceiling; each step's bounds ≤ the shell caps; each scope inside the
+   fence; the arbiter untouchable and inexpressible (the F17 depth rule, carried). **The DAG is
+   executed in topological order, STRICTLY SEQUENTIALLY in v1** (fan-out is deferred — see
+   below).
+4. **Per-step micro-loops** — `ralph()` with the judge generalized to a **shell-owned seam**:
+   the outer close is the human's `runClose` (unchanged, the only truth). For a *step*, the
+   agent picks from a **CLOSED MENU of declarative inner exits the shell evaluates with its own
+   fixed code, never a command**: `artifact-written(path, pattern?)`, `tree-changed(scope)`,
+   `json-valid(path)`. `run` stays locked — an agent-authored command executed by the shell
+   would be arbitrary execution laundered through the arbiter, so it is **structurally
+   inexpressible**, not merely disallowed.
+5. **Feed-forward.** Each step's artifact feeds the next step's prompt (the bareagent BA-9
+   `withContext` shape) — this is the F21 wire: the channel from step to step that config-v1
+   never had.
+6. **ONE replan per run** — mirrors the one-revision rule (v1.9 / M5). Unlimited replanning
+   would launder thrash as adaptation.
+7. **The human-signed outer close is the only truth.** plan-AS-EXECUTED + a per-step ledger are
+   written to the spine; a **GREEN run's plan is minted for inheritance** (verdict-gated,
+   doctrine untouched — law #2/#3), a red run's is not. **N3's kill-switch now has a real
+   subject: does a minted plan transmit to a non-identical run?**
+
+### Doctrine that rides with plan-v1
+
+- **Per-step Gate.** Each step gets a **fresh Gate**, so `limits.maxTurns` IS the step bound
+  natively — this **retires the F20 `loop.stop()`/`stoppedByBound` workaround (BA-3)** at the
+  bareloop layer. The one run ledger still meters per round across gates (F12 stays).
+- **`tree-changed` as a WRITE step's exit makes "the attempt wrote nothing" a named red by
+  construction** — the F21 null-attempt problem becomes a structural red, not a silent
+  non-event.
+- **Verdict classes, restated for plan-v1:** **green** (predicate closed) / **soft-green**
+  (only advisory/rubric checks passed — NAMED now, executed at N4; rule adopted verbatim from
+  the sibling repo relayfact: *a rubric can OPEN a question, it can never CLOSE the loop*) /
+  **hitl**.
+- **Known bound, stated plainly:** inner exits verify **FORM, not truth** — a confident wrong
+  step artifact poisons downstream steps via feed-forward. Containment is the **outer close +
+  the one replan**; inner exits are **progress gates**, and there is **exactly one arbiter**.
+
+### Differentiation vs relayfact (sibling repo) — recorded so we don't rebuild it
+
+relayfact solves a task **once and discards the plan**. bareloop learns a **JOB** — the plan is
+the **persistent, improving, ledger-attributed artifact** across cadenced runs. **If bareloop
+threw the plan away each run it would BE relayfact and should be archived.** The persistent,
+minted, contrast-attributed plan is the whole reason this repo exists.
+
+### Deliberately NOT adopted in v1 (bareagent surfaces held back)
+
+- `recurse()`'s `spawn_child` self-recursion and forced fan-out — **a worker that spawns
+  children is a worker whose bound we cannot yet reason about (the F20 class)**. Planner's flat
+  DAG only, executed sequentially.
+- `refineLeaf`'s lesson **IS** adopted as doctrine: the fed-back gap critique is the primary
+  correction lever (adaptlearn F14, re-confirmed).
+
+### Decisions locked by interview 2026-07-14
+
+1. **config-v1 dies; plan-v1 replaces it.**
+2. **One replan per run** (mirrors one-revision).
+3. **The first experiment stays job #1** (litectx planted bug), with a **scratch POC of
+   Planner + feed-forward BEFORE the rewrite** — prove the wire moves the outcome before
+   building the schema around it (POC-first; the F19/F20 lesson that a fixed mechanism need not
+   move the outcome applies directly).
+
+No rung is renumbered: plan-v1 is what N2 becomes, N3 keeps its kill-switch (now with a real
+subject), §10 stands.
+
+---
+
 ## Appendix A — Panel spec (provisional)
 
 > v0.1, from the 2026-07-11 PRD interview (hamr); folded in from `PANEL.md` 2026-07-11 —

@@ -183,3 +183,30 @@ the next commit that matters is in the new repo.
   Suite-family name chosen deliberately: the product is the bare suite's flagship consumer,
   and "bare loop" states the non-goals (no swarm, no orchestrator, one process per run).
   PRD renamed to `docs/01-product/PRD.md`, header updated to v0.2.
+
+## 2026-07-14 addendum — the config→plan pivot (interview outcome; this record stays closed above)
+
+Appended, not edited — the design above is a closed record. N2's headless loop, once it
+actually looped (F20: nothing had bounded a tool-mode attempt, so the close had never run in
+any arm), repeated itself byte-for-byte three times (F21) and exposed that the agent-authored
+config had no live surface on a never-green job (F22). The pivot:
+
+- **config-v1 is retired; plan-v1 replaces it.** The law is restated, not repealed (hamr,
+  verbatim): *"The agent may author anything whose only verbs are gated primitives. It may
+  never author the arbiter: the close, the budget, the fence, the merge."* The
+  inexpressibility guard stays; the danger was always in the actions, not the syntax.
+- **plan-v1 shape:** signed spec → preflight → read-only SCOUT → `Planner.plan` (validated
+  step DAG, sequential in v1) → per-step micro-loops whose inner exits are a CLOSED MENU of
+  declarative checks the shell evaluates (`artifact-written`/`tree-changed`/`json-valid` —
+  never a command; `run` stays locked) → step artifacts feed forward (the F21 wire) → one
+  replan per run → the human-signed outer close, the only truth; a green run's plan is minted
+  for inheritance (verdict-gated, doctrine untouched). Each step gets a fresh Gate, so
+  `maxTurns` is the step bound natively (retires the F20 workaround).
+- **Differentiation held:** relayfact solves a task once and discards the plan; bareloop learns
+  a JOB — the plan is the persistent, ledger-attributed artifact across cadenced runs. Throw it
+  away and bareloop *is* relayfact.
+
+**Three decisions locked (interview 2026-07-14):** (1) config-v1 dies, plan-v1 replaces;
+(2) one replan per run; (3) the first experiment stays job #1 (litectx planted bug), with a
+scratch POC of Planner + feed-forward BEFORE the rewrite. Full record: **PRD Addendum v1.12**
+(`docs/01-product/PRD.md`) and **FINDINGS F19–F22** (`docs/FINDINGS.md`).

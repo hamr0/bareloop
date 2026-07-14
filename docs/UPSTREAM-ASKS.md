@@ -96,7 +96,52 @@ failing rep re-read the same 7 files **42 of 49 reads (86%)**.
 `startLine`/`endLine`, which is the unit litectx already indexes in. Everything else in the
 retrieval story is downstream of this one.
 
-## OPEN (2026-07-14) — LC-1 [REVISED]: recall's hit is too thin to triage, and its body is unreachable
+## OPEN (2026-07-14) — BA-3: `loop.stop()` returns a bogus hard-limit error and discards the run's text
+
+**Package:** bare-agent (`src/loop.js`) · surfaced by the F20 attempt bound · **the wart that
+made the fix ugly.**
+
+**What's broken.** A caller that stops the round loop deliberately — `loop.stop()` from an
+`onLlmResult` handler — breaks bare-agent's internal `while`, which then **falls through to the
+`HARD_ROUND_LIMIT` return path**. So a *deliberate* stop comes back as
+`{text: '', error: "[Loop] hit internal safety limit of N rounds"}` — **indistinguishable from
+a runaway, and it DISCARDS the worker's text.** bareloop bounds a tool-mode attempt by calling
+`stop()` at its per-attempt round bound (F20); read literally, that return escalated
+`interpreter-red` and killed the whole run at attempt 1 — the bound would have ended the
+attempt and killed the loop in the same breath.
+
+**The workaround (local, in bareloop).** A `stoppedByBound` flag: bareloop KNOWS it stopped the
+loop, so it ignores the bogus error and keeps its own accounting. It works, but it is a shim
+around a lib that reports a caller's intent as a fault. plan-v1 removes bareloop's need for it
+(a fresh Gate per step makes `limits.maxTurns` the native step bound), but the wart still taxes
+any other suite consumer that stops a loop on purpose.
+
+**The fix.** A stop requested via `stop()` must return `error: null` and **keep the run's
+accumulated text** — a caller-initiated halt is not a safety-limit failure and must not be
+reported as one.
+
+**Acceptance criteria (must be able to fail).** A scripted loop stopped via `stop()` at round N
+returns `error: null` **and** non-empty `text` (the text produced through round N). Without the
+fix, `error` is the hard-limit string and `text` is empty — that is the failing assertion.
+
+**Fix upstream + version bump. No local shim** in the shipped path (design law #10); the
+`stoppedByBound` flag is the honest interim and is documented as such (F20).
+
+## CLOSED (2026-07-14) — LC-1 [REVISED]: recall's hit is too thin to triage, and its body is unreachable
+
+> **CLOSED 2026-07-14 — litectx's decline is CONFIRMED by our own trace; triage is not the
+> bottleneck.** Part 2 (fetch one chunk) **shipped**: litectx 0.29.1's `get(path, {startLine,
+> endLine})` returns exactly one content-hash-gated chunk (code + docstring), refusing any
+> non-chunk-boundary range — consumed by bareloop (`litectx ^0.29.1`, F19). Part 1 (a snippet
+> on the hit) litectx **declined on measurement** (a 400 B chunk-head snippet costs 2.8× on
+> every recall; full bodies 27.9×), setting an un-defer condition: a trace showing the worker
+> electing **>2 wrong fetches per recall** (i.e. triage, not action, is the bottleneck). **Our
+> F19 trace ANSWERS it and confirms the decline: 0.2 fetches per recall (34 recalls / 10 gets;
+> `ctx_get` ok=9, no-chunk=1).** Triage is emphatically not where the run is stuck — the worker
+> searched the wrong subsystem entirely (F21), which a fatter hit would not have cured. litectx
+> also correctly did NOT ship `get({path, symbol})`: 92% of our code chunks have no symbol
+> (arrow functions) and duplicate names would silently return the wrong body — `get` by
+> line-range is the right primitive. Entry closes.
 
 **Package:** litectx (`src/store.js`, recall/get surface) · job #1 runs (F18).
 **Revised 2026-07-14 after hamr pushed back — the first draft of this ask was wrong**, and
@@ -122,7 +167,20 @@ what to pay for.** That design was right; my ask was not.
 Together with **BA-2** this closes the loop: `recall` says *where* and *roughly what*, one
 `get` (or one ranged read) pulls *just that* — 7 lines instead of 117 KB.
 
-## OPEN (2026-07-14) — LC-2: chunk bodies exclude the docstring above the symbol
+## WITHDRAWN (2026-07-14) — LC-2 was OUR ERROR, not a defect: a stale index, never a dropped docstring
+
+> **WITHDRAWN 2026-07-14 — this was a phantom, and the root cause is a live footgun in OUR
+> environment, not litectx.** Docstring attachment had been fixed upstream long before we
+> filed this; the missing docstrings we measured came from a **stale index that had never
+> re-chunked**. hamr's GLOBAL `~/.claude/settings.json` runs a `SessionStart` hook
+> (`.../node_modules/litectx/integrations/claude/warm-index.sh`) against a **globally-installed
+> litectx v0.5.0**, while every repo imports its own node_modules copy (bareloop: 0.29.1) — a
+> **24-version skew, and the OLD one writes the index in every repo hamr opens.** 0.29.1
+> self-heals on read (it stamps a hash of its own source in `PRAGMA user_version` and rebuilds
+> when the chunker changes), but the 0.5.0 hook re-poisons the index at every session start.
+> Fix is local, not upstream: `npm i -g litectx@0.29.1`. This is the "stale index manufactures
+> phantom defects" lesson, paid for with a false high-severity bug report. The defect
+> description below is **retained for the record only** — do NOT hand it to litectx.
 
 **Package:** litectx (`src/chunker.js`) · **found by hamr**, confirmed against the index.
 

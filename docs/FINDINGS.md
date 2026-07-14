@@ -608,3 +608,148 @@ recent`, read-only). It is now the *only* remaining lever, not one of three.
 - **Cheap context does not buy competence.** Lowering the price of a round made the worker
   thrash *more* (9 re-reads → 42), not less. Cost and capability are separate axes, and a
   cost fix must never be reported as a capability fix.
+
+## F19 — the retrieval verbs work exactly as designed and moved the outcome ZERO: cost and capability are separate axes, demonstrated a SECOND time
+
+litectx 0.29.1 shipped the ranged read that BA-2 and LC-1 were blocked on: `get(path,
+{startLine, endLine})` fetches ONE chunk (code + docstring), content-hash gated, throws
+`StalePointerError` on drift rather than serving a different symbol's body; it refuses any
+range that is not a chunk boundary, so it cannot be widened into a whole-file read. Two tool
+defs were built on it (`src/interpret.js`): `ctx_recall` → pointers only (path/symbol/
+line-range, no bodies); `ctx_get` → one chunk. `TOOL_MENU` (`src/job.js`) widened to
+`read/grep/write/recall/get`; **`run` stays locked** (asserted in `tests/job.test.js`).
+Both gated as READS by the same fence (deny-list still covers gate-audit/`.smoke`/`.litectx`).
+The job spec `jobs/litectx-maintainer.json` grants the two verbs; the persona carries the
+strategy (recall the symbol, fetch the chunk, don't page the file).
+
+**Measured free, before any spend, on the real litectx clone with the planted bug:**
+`recall('keywords')` → pointer `src/tokenize.js keywords function_declaration lines 64-71`,
+rank 1, 2ms; `get(path,{64,71})` → **260 B** vs **3,482 B** whole file (13.4×), containing
+the bug AND its refutation (docstring "length >= 3", code `> 3`). The `StalePointerError`
+gate was verified live (drift the file, re-get old lines → threw, did not lie).
+
+**The retrieval arm (n=1, cached provider): the mechanism was fixed and the outcome did not
+move.** Whole-file reads **41 → 11**, whole-file re-reads **42 → 7**, all retrieval costing
+**18,494 B** of context (tool mix: shell_read=11 shell_grep=14 ctx_recall=28 ctx_get=7). AND:
+still step-red, still cap-halt, **$1.43, ZERO writes**, context still climbed to 134,882
+tokens. Second time this happened (F18: caching made it thrash MORE). **Cheap context does
+not buy competence; precise retrieval does not buy diagnosis.**
+
+**Recall-injection is not a debugger — search only finds what you can NAME.** The planted bug
+is in `src/tokenize.js`; `keywords()` feeds recall, so the FAILING tests are memory tests
+(`test/memory-w4.test.js:52`, `test/memory.test.js`). Recall on the task text OR on the gap
+(the test-failure output) returns MEMORY chunks — confidently, uselessly — and would have
+injected 14,944 B / 8,258 B of irrelevant chunks, ADDING to the bloat. The symptom and the
+cause live in different files; my own "query the gap instead of the task" idea was falsified
+by the same test.
+
+**Semantic-search probe (hamr's challenge "did you use semantic search?"): lexical is the
+better instrument for symbol lookup, and I nearly mis-reported it.** Flipping `embeddings` on
+first gave BYTE-IDENTICAL results — a harness confound: indexing is INCREMENTAL, so flipping
+it on an EXISTING index computes NO vectors and the tier is silently inert (tell: "index 7ms"
+for 206 files). Forced rebuild (26,223ms — vectors genuinely computed):
+
+| query | BM25 | BM25+semantic |
+|---|---|---|
+| the task text | missed | missed |
+| the gap (test-failure output) | missed | missed |
+| plain English "the word filter drops short words" | missed | missed |
+| the word `keywords` | **found #1** | found, DEMOTED to #4 |
+
+For `code` hits, embeddings only RE-RANK a BM25-gated pool — they **cannot nominate** (KNN
+nomination applies to `fact`/`episode` only). So exact-symbol lookup is best served lexical;
+the ctx tools index BM25-only, deliberately. Two instrument failures I created and fixed
+along the way: the gate audit collapsed `shell_read` and `ctx_get` both to `{type:'read',
+path}` (blind to the one variable the arm existed to test — fixed: `args:{tool}` rides the
+action, new `ctx-tool` spine event records query/hits/outcome/bytes); and the POC harness's
+"wrote anything?" read `git status --porcelain`, which ALWAYS shows `M src/tokenize.js` (that
+IS the plant), reporting a write in every arm including arms with zero writes — fixed to read
+WRITE actions from the gate audit. Truth: **zero writes, every arm.**
+
+## F20 — the attempt was never bounded, and the close had NEVER RUN — in any arm, ever: Ralph never ralphed
+
+Spine, retrieval arm: `ATTEMPTS (iteration-start): 1 · worker rounds: 55 · close runs: 0 ·
+cap-halt: halt:gate.terminated`. **The close NEVER RAN — not once, in ANY arm ever run
+(control, caching, retrieval). Every arm was a one-shot blind worker, not a loop.** The worker
+never received a single verdict, gap, or piece of feedback; it ended only when the model CHOSE
+to stop calling tools, and a worker never told it is wrong does not stop. Attempt #1 drank the
+entire $1.50.
+
+**Cause:** bareguard's `limits.maxTurns` is a RUN-wide halt — the Gate is constructed once per
+run — so `maxTurns: (mode==='tools'?24:8)*(capRuns+1)` = 96 reads as a per-attempt budget but
+functions as one pooled ceiling. **Nothing bounded a single attempt.** This is NEW machinery,
+not an adaptlearn regression: adaptlearn's worker was tool-free (F8), one attempt = ONE LLM
+call, so an attempt COULD NOT run away. Tool mode (module 2b) introduced the unbounded attempt
+and shipped without the bound its predecessor never needed. Every prior N2 finding about the
+"loop" (F16, F18's thrash reps) was measured on a worker that had never once looped.
+
+**Fix (shipped, TDD, watched failing twice for two different real reasons):**
+`TURNS_PER_ATTEMPT = mode==='tools' ? 24 : 8`; count worker rounds per attempt in
+`meteredOnLlmResult` (kind==='turn' only — a summarizer fold is an LLM call but not a worker
+round); at the bound emit `attempt-bounded` and call `loop.stop()`; reset the counter per
+attempt. The next attempt is TOLD it was cut off ("Your previous attempt was CUT OFF after 24
+tool rounds without making a change. Reading is bounded; writing is not."). Regression test in
+`tests/interpret.test.js` ("an attempt that never stops reading is BOUNDED — the close still
+runs and the loop loops"; the scriptedProvider clamps to its LAST entry, so a script ending
+in a tool call IS a worker that reads forever).
+
+**Upstream wart BA-3 (filed).** `loop.stop()` breaks bare-agent's round loop, which falls
+through to its `HARD_ROUND_LIMIT` return → a deliberate stop comes back as `{text:'',
+error:"[Loop] hit internal safety limit of N rounds"}`, indistinguishable from a runaway, and
+DISCARDS the worker's text. Worked around with a `stoppedByBound` flag (bareloop knows it
+stopped the loop; it does not need bare-agent to tell it). The proper fix is upstream:
+`stop()` should return `error: null` and keep the run's text.
+
+## F21 — the loop loops, and it does NOT RATCHET: a never-green run has no channel from attempt N to attempt N+1 (adaptlearn F6, shipped unchanged)
+
+With the F20 bound in place the loop finally loops — and it did the SAME thing three times.
+Bounded arm (n=1, cached provider): **3 attempts, 3 closes ran, 3 bounded at 24 rounds each =
+72 rounds. Spend $0.91 (down from $1.43). STILL zero writes, still cap-halt, still no green.**
+The worker ran **34 recall queries across the run, ZERO touching `keywords`/`tokenize`/
+`splitIdent`** — every attempt searched the MEMORY subsystem (`reviewCandidates`,
+`recentMemory`, `recall`, `logRecall` — the symptom), never the tokenizer (the cause) — and
+re-fetched the identical pointers (`src/index.js:1313-1316`, `src/store.js:984-1014`) once per
+attempt.
+
+**Cause:** each attempt is a FRESH conversation; the only channel that carries is the gap; the
+worker wrote nothing, so the tests failed identically, so the gap was byte-identical, so the
+work was byte-identical. **Deterministic repetition.** (The worker is NOT refusing to write —
+in 34 searches it never found anything to change, and a good engineer would not write a random
+edit either. The ratchet matters precisely because it is what would let attempt 2 stop
+re-searching the room attempt 1 already cleared.)
+
+**The agent's drafted config DID author a ratchet — and it does nothing.** The config carried
+`after-red: [{op:'stash'}]`, `before-attempt: [{op:'recall',…}, {op:'compress',…}]`,
+`on-green: [{op:'remember',…}]`; all hooks fired. But adaptlearn F6 shipped unchanged:
+`src/validate.js` binds `VERB_SLOT = { recall:'before-attempt', compress:'before-attempt',
+stash:'after-red', remember:'on-green' }` — `stash` is **write-only decoration** (`recall`
+cannot read it back) and `remember` is **on-green ONLY** (nothing to recall until something is
+remembered, and a never-green run never remembers). **The schema STRUCTURALLY forbids an
+attempt telling the next attempt anything on a run that never greens.** `stash` is a DECOY: it
+looks like a ratchet, an agent will draft it every time (this one did), and it writes to a
+table nothing reads. WITHIN-run scratch (attempt 1 → attempt 2, discarded at run end) and
+ACROSS-run inheritance (verdict-gated, doctrine) are different scopes currently tangled in one
+rule — see the PRD plan-v1 addendum.
+
+## F22 — the emergent middle has no live surface: "the agent authors its workflow" was, as shipped, near-empty
+
+The design-level finding behind F21. Of the drafted config's **7 knobs**, on a never-green job
+exactly ONE can change what the worker actually experiences:
+
+| knob | live on a never-green run? | why not |
+|---|---|---|
+| `loop.shape` (rounds/attempts framing in the persona) | **YES** | the one live surface |
+| `before-attempt: recall` | no | hits an empty store — `remember` is on-green only, the run never greens |
+| `before-attempt: compress` | no | compresses recall's nothing |
+| `after-red: stash` | no | has no reader (F21) |
+| `on-green: remember` | no | the run never greens |
+| `budgetUsd` | no | may only TIGHTEN, never raise |
+| `writeScope` | no | may only tighten inside the fence |
+
+Meanwhile the knobs that WOULD move the outcome — rounds-per-attempt, attempts-per-run — are
+hardcoded shell constants (`TURNS_PER_ATTEMPT`, `capRuns`), correctly outside the agent's
+reach but leaving the agent authoring only inert knobs. **The product claim "the agent authors
+its workflow" was, as shipped, near-empty on the one job that exercises it.** This finding
+retires config-v1 and motivates plan-v1 (PRD Addendum v1.12): the emergent middle needs a live
+surface whose every verb is a gated primitive, while the arbiter (close, budget, fence, merge)
+stays inexpressible.
