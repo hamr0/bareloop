@@ -25,10 +25,106 @@ failure log blocks nothing). bareguard's own `sk-[\w-]{16,}` has the same missin
 boundary the validator fix corrected — one more reason the validator does not bind it.
 
 > **Handoff spec: [`UPSTREAM-FIXES.md`](UPSTREAM-FIXES.md)** — the asks below that are still
-> OPEN (BA-1, BA-3), written for the implementer: evidence, the exact change, and acceptance
-> criteria that can fail. This file stays the fix *queue* (status + the version bareloop
-> consumed); that file is what gets handed to each repo. Withdrawn/closed entries stay legible
-> here — a misfiled ask is itself a finding.
+> OPEN (BA-1, BA-4, BA-5), written for the implementer: evidence, the exact change, and
+> acceptance criteria that can fail. This file stays the fix *queue* (status + the version
+> bareloop consumed); that file is what gets handed to each repo. Withdrawn/closed/superseded
+> entries stay legible here — a misfiled ask is itself a finding.
+
+## OPEN (2026-07-14) — BA-4: `shell_write` silently truncates a file to ZERO BYTES when `content` is missing
+
+**Package:** bare-agent (`tools/shell.js`, `writeFile`) · **Severity: CRITICAL — silent data
+loss, and a consumer's gate structurally cannot see it.**
+
+**What's broken.** `path` is guarded; `content` is not.
+
+```js
+async function writeFile({ path: rawPath, content = '', append = false, maxBytes }) {
+  if (typeof rawPath !== 'string' || rawPath.length === 0) {
+    throw new Error('shell_write requires a non-empty "path" string');
+  }
+  const text = content == null ? '' : String(content);
+```
+
+**The asymmetry IS the defect.** An empty/non-string `path` throws. An **absent or null
+`content` defaults to `''`** — so a tool call that omits `content` **overwrites the target file
+with nothing** and reports success: `"wrote 0 bytes to <path>"`. A destructive no-op is
+indistinguishable from a successful write.
+
+**Observed live (this repo, real model).** A `claude-haiku-4-5` worker asked to rewrite a
+1789-line file hit its **output-token cap**; the tool call came back with `content` **absent**;
+`shell_write` emptied the file. Diff: `src/store.js | 1789 ------------------`. The suite went
+from **3 failures to 41**. Gate audit for the run: **14 write records, 10 of them `bytes=0`,
+every one `decision=allow`** — because a 0-byte write is a **legal** write. bareguard's `fs`
+primitive judges `{type:'write', path}` and never inspects the body, so **no gate can catch
+this**; it is not a policy gap, it is a missing precondition in the primitive.
+
+**Why it matters to adopters.** Any bare-agent consumer that grants the write tool has a silent
+data-loss path its gate is structurally blind to — and a truncated output (a long file, a
+cut-off generation) is the *normal* way to trigger it, not an adversarial one. bareloop's tool
+mode grants `write` **today**, so this is live in shipped code.
+
+**The fix.** `shell_write` must **reject** a call whose `content` is **absent, null, or a
+non-string** — the same guard `path` already gets. An empty body must stay expressible only via
+an explicit, unambiguous opt-in (`content: ""` passed deliberately, or a `truncate: true` flag)
+— never as the default for a missing argument.
+
+**Acceptance criteria (must be able to fail).**
+
+1. `shell_write({path: '/tmp/x.js'})` with **no** `content` arg → **THROWS**; `/tmp/x.js` is
+   byte-identical afterwards.
+2. `shell_write({path: '/tmp/x.js', content: null})` → **THROWS**; file unchanged.
+3. `shell_write({path: '/tmp/x.js', content: ''})` → **still succeeds** (a deliberate empty
+   write stays expressible); the file is 0 bytes.
+4. A pre-existing **1000-byte** file survives (1) and (2) with its content **intact** — the
+   assertion is on disk state, not on the return string.
+
+**Fix upstream + version bump. No local shim** (design law #10) — but see the N2-exit blocker
+under *"OUR SIDE"* below: this is a **safety** bug in shipped code, not a capability gap, and
+whether bareloop guards `content` in its own tool-def wrapper in the interim is hamr's call.
+
+## OPEN (2026-07-14) — BA-5: every governance halt/deny path DISCARDS the worker's text (supersedes BA-3)
+
+**Package:** bare-agent (`src/loop.js`) · **Severity: high.** **This SUPERSEDES BA-3**, which was
+filed narrowly against `loop.stop()`. The defect is **general**: it is not the stop path, it is
+*every* path where a bound fires. BA-3's original text stays below, legible, with a pointer here.
+
+**What's broken.** Three separate returns in `loop.js`, all substituting `text: ''`:
+
+```js
+line 620:  return { text: '', toolCalls: [], usage: lastUsage, cost: totalCost, error: err.message, msgs, metrics: finalizeMetrics() };
+line 782:  return { text: '', …, error: denyTag, … };        // deny streak
+line 843:  return { text: '', …, error: `halt:${rule}`, … };  // limits / budget halt
+```
+
+When a bound fires — **budget halt, deny streak, maxTurns** — the model's **already-produced
+text is thrown away** and replaced with `''`. The `error`/rule tag survives; the work does not.
+
+**Why it matters.** In a ralph-style loop (`while close-red and under-cap: run the worker`), **a
+bound firing is NORMAL operation, not an exception.** The worker's summary of what it did and
+what it ruled out is the **only** channel from one bounded attempt to the next. Discard it and a
+bounded attempt teaches its successor **nothing** — the loop cannot ratchet (cf. F21, where a
+never-green run already has no legal channel between attempts; this closes the last one).
+
+**Observed live.** With a step bound implemented as a gate limit, **every step returned an empty
+artifact**, and the artifact-feed-forward channel — *the entire variable under test in that
+experiment* — carried empty strings between steps. The experiment was **unreadable** until we
+worked around it by making the gate's `humanChannel` return `deny` instead of `terminate`.
+
+**The fix.** A halt/deny/stop must **preserve the text the model already produced**: return the
+accumulated text alongside the `error`/rule tag and let the caller decide what a partial result
+is worth. Do **not** substitute `''`. And — BA-3's original ask, now a sub-case — a
+**caller-initiated `loop.stop()` must return `error: null`**: a deliberate stop is not a fault.
+
+**Acceptance criteria (must be able to fail).**
+
+1. A scripted Loop whose model emits text and then trips a `limits.maxTurns` halt returns
+   `{ error: 'halt:limits.maxTurns', text: <the non-empty text the model produced> }` — `text`
+   is **NOT** `''`.
+2. Same for a **deny-streak** termination (line 782) and a **budget halt** (line 620).
+3. A Loop stopped via `loop.stop()` returns `error: null` **and** non-empty `text`.
+4. **Negative control:** a Loop that halts **before** the model ever produced text still returns
+   `text: ''` — nothing to preserve. Without this, the suite cannot distinguish *"preserved"*
+   from *"always non-empty"*.
 
 ## OPEN (2026-07-14) — BA-1: bare-agent cannot cache a tool loop's transcript on Anthropic
 
@@ -107,7 +203,16 @@ failing rep re-read the same 7 files **42 of 49 reads (86%)**.
 `startLine`/`endLine`, which is the unit litectx already indexes in. Everything else in the
 retrieval story is downstream of this one.
 
-## OPEN (2026-07-14) — BA-3: `loop.stop()` returns a bogus hard-limit error and discards the run's text
+## SUPERSEDED by BA-5 (2026-07-14) — BA-3: `loop.stop()` returns a bogus hard-limit error and discards the run's text
+
+> **SUPERSEDED — the ask was RIGHT but filed too NARROW. Hand upstream [BA-5](#open-2026-07-14--ba-5-every-governance-haltdeny-path-discards-the-workers-text-supersedes-ba-3), not this.**
+> BA-3 saw text discarded on **one** path (`loop.stop()` falling through to `HARD_ROUND_LIMIT`)
+> and asked for that one path to be fixed. Reading `loop.js` for BA-5 showed the discard is
+> **general**: three returns (620 provider/budget, 782 deny streak, 843 limits halt) all
+> substitute `text: ''`. Fixing only the stop path would have left the loop unable to ratchet on
+> **every other** bound — which is the shape that actually fires in production. BA-3's `error:
+> null` ask survives inside BA-5 as a sub-case. Original text retained below for the record: the
+> narrowing is itself the finding — **read the whole failure surface before scoping the ask.**
 
 **Package:** bare-agent (`src/loop.js`) · surfaced by the F20 attempt bound · **the wart that
 made the fix ugly.**
@@ -214,5 +319,81 @@ IS the load-bearing part, and it is exactly what gets cut.
 **The fix.** Extend a symbol chunk's range upward through an immediately-preceding comment
 block (JSDoc `/** … */`, `//` run, `#` run, Python docstring already inside the body) and
 include it in `body`. Same fix serves every `format` the chunker handles.
+
+---
+
+## CHECKED AND **NOT** FILED (2026-07-14) — two candidate asks that were OUR errors
+
+The misfiling is the lesson this repo keeps re-learning (**BA-2** aimed at the wrong package;
+**LC-2** a phantom from our own stale index), so the near-misses are recorded, not quietly
+dropped. Both of these looked like library defects during the same POC run that produced BA-4
+and BA-5. **Neither is a defect. Do not hand either to a suite repo.**
+
+**1. bareguard `limits.maxTurns` / `maxToolRounds` semantics — NOT a bug, we misread the API.**
+The primitive **documents itself precisely**, in its own source header
+(`bareguard/src/primitives/limits.js:2-3`):
+
+```
+//   - maxTurns: halt severity (run-level) — every gate.record ticks
+//   - maxToolRounds: halt severity — only ticks on non-"llm" records (v0.4.2)
+```
+
+We configured a step bound against the wrong counter and got **half the rounds we intended**,
+then went looking for a library bug. The counter did exactly what it says. **Our error** — the
+fix is to read the primitive and configure the right knob.
+
+**2. Planner spend invisible to the budget — NOT a bug, we simply never wired the hook.**
+`Planner` **already accepts `onLlmResult`** (`bare-agent/src/planner.js:18, 49, 94-95`), and its
+own docstring states the exact rationale we were about to file as an ask:
+
+> *"Forwards the planning call's usage to the gate so decomposition spend is visible — without
+> it the plan call is invisible to bareguard's budget (the RLM Family-B meter gap)."*
+
+The gap was real; the **owner** was us. **Our bug** — tracked under *"OUR SIDE"* below.
+
+**Also noted (no ask needed):** `Planner` accepts a custom `prompt` override
+(`src/planner.js:46` — `this.prompt = options.prompt || PLAN_PROMPT`). plan-v1's richer step
+schema (tools / exit / bound per step) therefore needs **no upstream change**: we author our own
+planner prompt. This is worth stating explicitly, because "the planner can't express our step
+schema" was the third ask that nearly got filed.
+
+*(Rule reaffirmed: **read the library source before filing an upstream ask.** Three candidates
+went in, two came out.)*
+
+---
+
+## OUR SIDE — bareloop's own bugs, surfaced by the same run (**not** upstream asks)
+
+Routed here because this file is where the **two-red routing** record lives: a gap that turns out
+to be ours is the same finding, pointed the other way. None of these are handed to a suite repo.
+
+**1. The planner-metering hole.** `Planner`'s `onLlmResult` hook exists and we never wired it, so
+**decomposition spend is invisible to the gate's budget** — an F6-class hole (*unpriced is never
+free*) one level up from the ledger. Fix: pass `onLlmResult` when constructing the planner and
+meter the plan call like any other round.
+
+**2. The per-run cap is checked only BETWEEN steps, so a step's own gate budget can overshoot
+it.** Measured: **$1.21 against a $1.00 cap — 21% over.** This is the *same class* as the known
+"the hard cap binds only BETWEEN rounds" (F8–F16 side findings), one level up: every level of the
+nesting needs a bound that binds *inside* it, not only at its seams.
+
+**3. Keyword-inferred per-step tools was never the design.** The interim planner *guesses* a
+step's tool grant from keywords in its text. plan-v1's planner must **EMIT `tools` / `exit` /
+`bound` per step as structured data, validated** — the tool grant is operator territory (the
+signed job-spec grant), and inferring it from prose is exactly the fit-to-pass surface the
+arbiter split exists to prevent.
+
+**4. BA-4 exposure — an N2-EXIT BLOCKER.** Until BA-4 lands upstream, **bareloop's own write path
+can zero a file inside the write scope**, and its gate cannot see it (a 0-byte write is a legal
+write). This is live in shipped code. Two options, presented without a recommendation — **this is
+hamr's call:**
+
+- **(a) Wait for the upstream fix + version bump.** Consistent with design law #10 (*never a
+  local shim*); the primitive's precondition is bare-agent's to own, and shimming it here means
+  every *other* suite consumer keeps the data-loss path.
+- **(b) Guard `content` in bareloop's own tool-def wrapper now**, on the grounds that this is a
+  **safety** bug in shipped code rather than a capability gap — the "no local shim" doctrine was
+  minted against *capability* gaps (BA-1's provider patch, BA-2's ranged read), and a data-loss
+  precondition may not be the same animal.
 
 *(No other open asks from this repo.)*

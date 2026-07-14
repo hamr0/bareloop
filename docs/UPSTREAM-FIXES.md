@@ -1,9 +1,9 @@
 # Upstream fixes — handoff spec
 
-> **What this is.** Four defects/gaps in the bare suite, found by running bareloop's job #1
-> against a real repository with a real model. Each one is stated with the evidence that
-> found it, the exact change, and **acceptance criteria that can fail**. Hand the relevant
-> section to the repo that owns the primitive.
+> **What this is.** Defects/gaps in the bare suite, found by running bareloop's job #1 against a
+> real repository with a real model. Each one is stated with the evidence that found it, the
+> exact change, and **acceptance criteria that can fail**. Hand the relevant section to the repo
+> that owns the primitive.
 >
 > **Why they're here and not fixed locally:** design law #10 — *consume the bare suite; never
 > paper over a lib gap.* A gap gets fixed at the repo that owns the primitive and is consumed
@@ -13,14 +13,21 @@
 > **Owner split (statuses updated 2026-07-14 — see the banners on each entry):**
 > - **litectx** — LC-1 **CLOSED** (decline confirmed by our own trace; the chunk fetch shipped
 >   in 0.29.1 and is consumed), LC-2 **WITHDRAWN** (our error — a stale-index phantom)
-> - **bare-agent** — BA-1 *(OPEN — the one live handoff left in this file)*, BA-2
->   **WITHDRAWN** (misfiled — the ranged read is litectx's `get`, which shipped)
+> - **bare-agent** — **BA-4 (OPEN, CRITICAL)**, **BA-1 (OPEN)**, **BA-5 (OPEN — supersedes
+>   BA-3)**; BA-2 **WITHDRAWN** (misfiled — the ranged read is litectx's `get`, which shipped)
 >
-> **Ground evidence** (bareloop `docs/FINDINGS.md` F8–F16): nine+ real-model runs of job #1 —
+> **Also checked and NOT filed** (see `UPSTREAM-ASKS.md`): bareguard's `limits.maxTurns` /
+> `maxToolRounds` semantics (documented in its own source; **we misread the API**) and the
+> planner's budget blindness (`Planner` already takes `onLlmResult`; **we never wired it**).
+> Both were **our** errors. Nothing to hand upstream — recorded because a misfiled ask is itself
+> a finding in this repo (BA-2, LC-2).
+>
+> **Ground evidence** (bareloop `docs/FINDINGS.md` F8–F22): nine+ real-model runs of job #1 —
 > fix a planted one-character regression in litectx's `tokenize.js` (a `>= 3` → `> 3` in
 > `keywords()`, which reds 3 recall tests), $1.50 budget, `claude-sonnet-5`. The worker
-> **reads half the repository and runs out of money before it writes a fix.** Every number
-> below is measured, not estimated.
+> **reads half the repository and runs out of money before it writes a fix.** BA-4 and BA-5 come
+> from a later POC run of the same job on a `claude-haiku-4-5` worker. Every number below is
+> measured, not estimated.
 
 ---
 
@@ -156,6 +163,79 @@ was at `tokenize.js:66-72`. It just couldn't hand it over.
 
 # bare-agent
 
+## BA-4 — `shell_write` silently truncates a file to ZERO BYTES when `content` is missing
+
+**File:** `tools/shell.js`, `writeFile` · **Severity: CRITICAL.** Silent data loss, on the
+happy path, with a success message — and a consumer's gate **structurally cannot see it**.
+
+### The defect
+
+`path` is guarded. `content` is not.
+
+```js
+async function writeFile({ path: rawPath, content = '', append = false, maxBytes }) {
+  if (typeof rawPath !== 'string' || rawPath.length === 0) {
+    throw new Error('shell_write requires a non-empty "path" string');   // ← guarded
+  }
+  const text = content == null ? '' : String(content);                    // ← NOT guarded
+```
+
+**The asymmetry is the whole bug.** An empty or non-string `path` throws. An **absent or `null`
+`content`** quietly becomes `''` — so a tool call that omits `content` **overwrites the target
+with nothing** and returns `"wrote 0 bytes to <path>"`. A destructive no-op is reported as a
+successful write, and there is no way for a caller to tell the two apart.
+
+### Evidence (observed live, real model)
+
+A `claude-haiku-4-5` worker was asked to rewrite a **1789-line** file. It hit its **output-token
+cap** mid-generation; the tool call arrived with `content` **absent**; `shell_write` **emptied
+the file**:
+
+```
+src/store.js | 1789 ------------------------------------------------------
+```
+
+The repo's test suite went from **3 failures to 41**. This is not an adversarial input — a
+truncated generation on a long file is the **ordinary** way to produce it.
+
+**And the gate allowed every one of them.** Gate audit for that run: **14 write records, 10 at
+`bytes=0`, all `decision=allow`.** That is correct behaviour: a 0-byte write is a **legal**
+write, and bareguard's `fs` primitive judges `{type:'write', path}` — it never inspects the
+body. **No policy can catch this.** It is not a governance gap; it is a **missing precondition in
+the primitive.**
+
+### Why it matters to adopters
+
+Every bare-agent consumer that grants the write tool carries a **silent data-loss path its gate
+is blind to**. bareloop's tool mode grants `write` **today** — this is live in shipped code, in
+the suite's own flagship consumer.
+
+### The fix
+
+`shell_write` must **reject** a call whose `content` is **absent, `null`, or a non-string** — the
+same guard `path` already gets. Keep the empty write **expressible**, but only via an explicit,
+unambiguous opt-in:
+
+- `content: ""` passed **deliberately** succeeds (it is a string; the caller meant it), **or**
+- an explicit `truncate: true` flag, if you'd rather make emptiness impossible to reach by
+  accident at all.
+
+What must **not** survive is `content` **defaulting** to `''` on a missing argument.
+
+### Acceptance criteria (must be able to fail)
+
+1. `shell_write({path: '/tmp/x.js'})` — **no `content` arg** → **THROWS**; `/tmp/x.js` is
+   **byte-identical** afterwards.
+2. `shell_write({path: '/tmp/x.js', content: null})` → **THROWS**; file unchanged.
+3. `shell_write({path: '/tmp/x.js', content: ''})` → **still succeeds**; the file is 0 bytes.
+   *(This is the criterion that stops the fix from over-shooting into "you can never empty a
+   file".)*
+4. A pre-existing **1000-byte** file survives (1) and (2) **with its content intact** — assert
+   **disk state**, not the return string. A test that only asserts "it threw" would pass even if
+   the truncation happened first.
+
+---
+
 ## BA-1 — a tool loop cannot cache its transcript on Anthropic (it re-buys it every round)
 
 **File:** `src/provider-anthropic.js` · **Severity: the most expensive defect found so far.**
@@ -244,6 +324,70 @@ the *prefix* invalidates the cache, so folds should keep the head stable.
 
 ---
 
+## BA-5 — every governance halt/deny path DISCARDS the worker's text *(supersedes BA-3)*
+
+**File:** `src/loop.js` · **Severity: high.** **Supersedes BA-3**, which was filed narrowly
+against `loop.stop()` (`UPSTREAM-ASKS.md`). The defect is **general** — it is not the stop path,
+it is **every** path where a bound fires. Implement this; BA-3 is a sub-case of it.
+
+### The defect
+
+Three separate returns, all substituting `text: ''`:
+
+```js
+line 620:  return { text: '', toolCalls: [], usage: lastUsage, cost: totalCost, error: err.message, msgs, metrics: finalizeMetrics() };
+line 782:  return { text: '', …, error: denyTag, … };         // deny streak
+line 843:  return { text: '', …, error: `halt:${rule}`, … };   // limits / budget halt
+```
+
+When a bound fires — **budget halt, deny streak, `maxTurns`** — the model's **already-produced
+text is thrown away** and replaced with `''`. The `error` tag survives. The work does not.
+
+### Why it matters
+
+In a ralph-style loop — `while close-red and under-cap: run the worker` — **a bound firing is
+NORMAL operation, not an exception.** It is how a bounded attempt is *supposed* to end. And the
+worker's summary of what it did and what it ruled out is the **only** channel from attempt N to
+attempt N+1.
+
+So this line silently deletes the loop's ratchet: **a bounded attempt teaches its successor
+nothing.** (bareloop already found the other half of this — a never-green run has no legal
+memory channel at all, `docs/FINDINGS.md` F21. This is the last one.)
+
+### Evidence (observed live)
+
+With a step bound implemented as a gate limit, **every step returned an empty artifact**, and the
+artifact-feed-forward channel — **the entire variable under test in that experiment** — carried
+empty strings between steps. The run was **unreadable** until we worked around it by making the
+gate's `humanChannel` return `deny` instead of `terminate`. That workaround is a shim around a
+lib that throws away the thing the caller came for.
+
+### The fix
+
+A halt / deny / stop must **preserve the text the model already produced**. Return the
+accumulated text alongside the `error`/rule tag — the caller decides what a partial result is
+worth; the library must not decide it is worth nothing. Do **not** substitute `''`.
+
+Additionally (**BA-3's original ask, now a sub-case**): a **caller-initiated `loop.stop()` must
+return `error: null`**. A deliberate stop is not a fault, and reporting it as one
+(indistinguishable from a runaway hard-limit) forces every caller to keep a `stoppedByBound` flag
+to un-lie the return value.
+
+### Acceptance criteria (must be able to fail)
+
+1. A scripted Loop whose model **emits text** and then trips a `limits.maxTurns` halt returns
+   `{ error: 'halt:limits.maxTurns', text: <the non-empty text the model produced> }` — `text` is
+   **NOT** `''`.
+2. The same for a **deny-streak** termination (line 782) and a **budget halt** (line 620). All
+   three paths, not one.
+3. A Loop stopped via `loop.stop()` returns `error: null` **and** non-empty `text`.
+4. **Negative control:** a Loop that halts **before the model ever produced text** still returns
+   `text: ''` — there is nothing to preserve. Without this criterion the suite cannot distinguish
+   *"preserved the text"* from *"always returns something non-empty"*, and a fix that stuffs a
+   placeholder into `text` would pass.
+
+---
+
 ## BA-2 [WITHDRAWN 2026-07-14] — no ranged-read primitive: a pointer the worker cannot act on
 
 > **WITHDRAWN — MISFILED. Do NOT hand this section to bare-agent.** The ranged read was never
@@ -310,24 +454,35 @@ about. `offset`/`limit` in bytes is acceptable; lines are what the ecosystem act
 # Order, and what unblocks what (updated 2026-07-14 — the retrieval track is RESOLVED)
 
 ```
-BA-1 (transcript caching)  ──►  the ONE live handoff; independent; proven necessary; land whenever
+BA-4 (shell_write zeroes files)  ──►  LAND FIRST. Data loss in shipped code; no gate can catch it.
+                                       Small, self-contained, no design question to settle.
+BA-1 (transcript caching)        ──►  independent; proven necessary; land whenever
+BA-5 (halts discard text)        ──►  independent; unblocks the ratchet (supersedes BA-3)
 
 resolved, no longer routed through:
-  LC-2  withdrawn (stale-index phantom — our error, not a defect)
-  LC-1  closed    (litectx 0.29.1 get(range) shipped + consumed; snippet decline confirmed by trace)
-  BA-2  withdrawn (misfiled — the ranged read is litectx's get, which shipped)
+  LC-2  withdrawn  (stale-index phantom — our error, not a defect)
+  LC-1  closed     (litectx 0.29.1 get(range) shipped + consumed; snippet decline confirmed by trace)
+  BA-2  withdrawn  (misfiled — the ranged read is litectx's get, which shipped)
+  BA-3  superseded (by BA-5 — the discard is general, not the stop path)
+
+checked and NOT filed (our errors — see UPSTREAM-ASKS.md):
+  bareguard limits.maxTurns/maxToolRounds semantics · planner budget blindness (onLlmResult exists)
 ```
 
-- **BA-1 is the only open handoff in this file.** It is independent and pays for itself
-  immediately, in every tool-loop agent in the suite. (BA-3 — `loop.stop()` returns a bogus
-  hard-limit error and discards text — is filed in `UPSTREAM-ASKS.md`; its spec has not been
-  written into this handoff file yet.)
+- **Three open handoffs, all to bare-agent, all independent of one another.** **BA-4 goes first**
+  — it is the only one that is losing data today, and the fix is a four-line precondition.
 - The old diagram routed bareloop's retrieval POC through LC-2 → LC-1 and BA-2. That path is
   gone: **the retrieval verbs landed (litectx 0.29.1, consumed as `ctx_recall`/`ctx_get`, F19)
   and were run.** Retrieval works exactly as designed — whole-file reads 41→11, re-reads 42→7 —
   **and moved the outcome zero** (still cap-halt, zero writes). The bottleneck was never the
-  primitives: the close had never run (F20) and the loop has no ratchet (F21).
+  primitives: the close had never run (F20) and the loop has no ratchet (F21) — of which **BA-5
+  is the library-side half.**
 
 **Where bareloop stands:** control **0/2**, caching alone **1/2**, retrieval **0/1**,
 bounded+retrieval **0/1**. The rung-exit stop stands; the next move is plan-v1 (PRD Addendum
 v1.12), not another primitive.
+
+**bareloop's own debt from the same run** — the planner-metering hole, the per-run cap that binds
+only *between* steps (measured $1.21 against a $1.00 cap), keyword-inferred per-step tools, and
+the **N2-exit blocker** that BA-4 is live in bareloop's write path — is tracked under *"OUR
+SIDE"* in [`UPSTREAM-ASKS.md`](UPSTREAM-ASKS.md). It is **not** part of this handoff.
