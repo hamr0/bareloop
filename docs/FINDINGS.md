@@ -753,3 +753,206 @@ its workflow" was, as shipped, near-empty on the one job that exercises it.** Th
 retires config-v1 and motivates plan-v1 (PRD Addendum v1.12): the emergent middle needs a live
 surface whose every verb is a gated primitive, while the arbiter (close, budget, fence, merge)
 stays inexpressible.
+
+## F23 — the first plan-v1 arm: the first WRITE in this project's history, and it destroyed the patient
+
+**n=1, `claude-haiku-4-5-20251001`, POC harness (`harness.mjs`), run cap $1.00.** The plan-v1
+shape from PRD Addendum v1.12, spiked: SCOUT (read-only, 24 rounds, $0.1975) → `Planner.plan()`
+→ per-step fresh Loop + fresh Gate, each step's artifact fed forward into the next step's
+prompt. The planner emitted 6 steps; 3 ran (s1–s3) before the cap stopped the run before s4.
+
+**Readout: G=0 · W=1 (the first arm ever to write) · C=0 · $1.2060 · unpriced 0.** And the
+writes **vandalised the tree**: `src/store.js` (**1,789 lines** at HEAD) was truncated to **0
+bytes**, and the close went from **3 failing tests to 41 failing test *files*** — the whole
+suite stopped loading. The worker spent its last two steps trying to reconstruct from memory a
+file it had itself erased ("*I got a write of 0 bytes - the file is now empty again*").
+
+Two independent real causes, both worth the run:
+
+**1. `shell_write` guards `path` but not `content` — and the gate blesses the result (BA-4).**
+bare-agent's `shell_write` defaults `content` to `''`, so a malformed tool call **zeroes the
+file**. Gate audit (`audit-run1.jsonl`), write records — each write is logged twice (gate
+decision + record), so **14 records = 7 distinct writes, of which 5 were `bytes: 0`** (10 of 14
+records at `bytes:0`; the other four: 2×1501, 2×1805). Every one carried `decision: "allow",
+rule: "default"`. It cannot do otherwise: bareguard's fs primitive judges `{type:'write',
+path}` and **never inspects the body** — *a 0-byte write is a legal write*. Filed **BA-4,
+CRITICAL** (`docs/UPSTREAM-ASKS.md`). **hamr's decision (2026-07-14): option (a) — wait for the
+upstream fix + version bump, NO local shim; doctrine unamended (design law #10).** That makes
+**BA-4 a hard N2-exit blocker**: bareloop cannot ship a write-capable loop on a primitive that
+can silently empty a source file.
+
+**2. The harness inferred each step's tools from action keywords, and mis-assigned 33% of the
+steps.** `WRITE_RE = /\b(fix|edit|change|implement|correct|apply|modif|patch|write|updat|…)/i`
+over the step's prose. Two of six steps (s2, s4) begin "**Examine** … **to verify** …" — pure
+read steps — and both were classified `write`: s2 because `\bwrite` matched inside
+`writeMemory()`, s4 because `updat` matched inside "correctly **updat**e provenance". **s2 is
+the step that emptied `store.js`.** Keyword inference was never the design and is not being
+fixed — it is the *absence* of the design: **plan-v1's planner must EMIT `tools`/`exit`/`bound`
+as structured data on each step, and the plan-v1 validator must gate them** (PRD v1.12 §3 —
+"per-step verbs ⊆ the spec's tool ceiling"). The DAG shape in the addendum (`{id, action,
+dependsOn}`) is hereby insufficient: the verbs, the exit, and the bound are part of the step,
+not something the shell may guess from a sentence. (The successor harness emits them; the
+planner produced valid ones on shot 1 in both later arms — see F24.)
+
+**The planner authored a step that RUNS THE CLOSE — unprompted, 2-for-2 across sessions.**
+Step s1, verbatim: *"Run the full test suite to confirm current state and capture exact failure
+messages for all 3 failing tests."* The fit-to-pass surface is reached for **by default**, by
+an agent that was never invited to touch it. `run` is not in the tool menu so it merely wasted
+a step — but this is direct, day-one evidence that the plan-v1 validator's inexpressibility
+rule is **load-bearing, not ceremonial**.
+
+**Third blind instrument.** The C detector (did the worker ever target the cause file?) first
+reported **C=true**. It regexed `tokenize\.js|\bkeywords\b|splitIdent` over the tool **result
+text**, so it fired on `import { ftsMatch, keywords } from './tokenize.js'` — the import line at
+the top of `store.js`, the file the worker read over and over. Ground truth, re-derived from
+`toollog-run1.json` (100 tool records): **zero tool calls whose target path is `tokenize.js`;
+zero whose args so much as mention it. C=0.** This is the **third** blind instrument in this
+project (after the cache-tier-blind ledger, F18, and the read-collapsing gate audit, F19). The
+detector is now what it was pre-registered to be — a tool call whose **target path** is
+`src/tokenize.js`. *Audit a too-good number before you believe it.*
+
+## F24 — decomposition does NOT fix aim, and neither does reframing the close: the paired A/B negative result
+
+**Two paired arms, `claude-sonnet-5`, identical harness (`harness2.mjs`), ONE knob apart, n=1
+each.** The budget stopped the pair at one rep each; **the stop is a result**, and the contrast
+the pair was built to expose survives it.
+
+| | ARM A (control) | ARM B (treatment) |
+|---|---|---|
+| close output | **raw** (`3 fails`, test names) | **root-cause reframed** (below) |
+| plan | **5 steps**, one track per file | **2 steps** ("determine the exact root cause" → "apply the minimal fix") |
+| G / W / C | **0 / 0 / 0** | **0 / 0 / 0** |
+| cost | **$1.4905** / cap $1.50 | **$1.5024** / cap $1.50 |
+| steps run | s1–s3, cap-stop before s4 | s1–s2, one replan, p2:s1, cap-stop |
+| artifacts | 5,942 / 5,957 / 4,561 B | **0 / 71 / 0 B** (BA-5, see confounds) |
+| truncated rounds | 0 | 0 |
+
+The one knob, quoted **verbatim** so the leak-audit is auditable — it is a fixed, deterministic,
+**non-LLM** wrapper and it contains **zero** information about the bug (no file, no symbol, no
+`tokenize`/`keywords`/`length`/`split`):
+
+> The test suite reports 3 failing tests, listed below. These are SYMPTOMS.
+> They may share a SINGLE root cause in code that all of them transitively depend on. Do NOT
+> assume they are independent defects, and do NOT open one work-stream per failing test.
+> Before proposing any fix, trace the call path from a failing assertion into the code it
+> exercises, and follow it through every function it calls — including helpers defined in other
+> files — until you find code whose BEHAVIOUR CONTRADICTS ITS OWN DOCUMENTED CONTRACT (its
+> doc-comment, or the invariant its callers depend on). Name that function and that file. Only
+> then propose a fix.
+
+**What the reframe DID move: the plan's shape.** Arm A fanned out into per-file tracks (read
+`store.js` · read `index.js` · read the 3 test files · fix `store.js` · fix `index.js`) — the
+symptom's own partition. Arm B collapsed to exactly the two steps it was asked for. **So
+symptom-decomposition fan-out is fixable this way.** That is the entire yield.
+
+**What it did NOT move: aim.** Arm B searched the same subsystem, in the same words, as arm A.
+Its root-cause step pre-committed to `src/store.js` **down to line numbers** (`memKey() ~255,
+writeMemory() ~533, logRecall() ~895-911, recallCount() ~979, reviewCandidates() ~999`) —
+inherited from the scout, which had already decided the answer lived in the memory store. **The
+wrong file was chosen UPSTREAM of the plan, by the scout, from the test names.** Reframing the
+close cannot fix that: by the time the close is read, the target is set.
+
+Across both arms: **15 recall queries and 47 grep patterns.** Not one names `tokenize`,
+`keywords` or `stopword`. (One arm-A recall query contains the *word* "split" — *"function
+memId decode public id **split** separator"* — about a key separator, not the tokenizer; it is
+not a hit on the cause.) Stronger, from the raw tool logs (`toollog-A1.json` 75 records,
+`toollog-B1.json` 65): **zero tool calls in either arm have `tokenize`/`keywords` anywhere in
+their arguments.** Not a near-miss — the vocabulary never entered the query.
+
+**The smoking gun.** `tokenize.js` crossed the worker's context **30 times** across the two arms
+(18 in A, 12 in B — tool results containing `tokenize.js`/`keywords`/`splitIdent`). It is the
+**import line at the top of `store.js` and `index.js`**, the two files the worker read in full,
+repeatedly. **It read past the cause 30 times and never followed it.**
+
+**The positive control (free, no API, re-verified while writing this):** on the same planted
+clone, `recall("keywords")` → `src/tokenize.js · keywords · function_declaration · lines 64–71`
+at **rank 1** (score 1.2447), and one `get(path, {64, 71})` returns **260 bytes** — the
+docstring *"…stopwords dropped, **length >= 3**"* sitting directly above the code `w.length > 3`.
+**The entire diagnosis, in one 260-byte fetch.** The failure is not retrieval. **It is a failure
+to ASK.**
+
+### The invariant
+
+| # | arm | source | model | G | W | C (targeted `tokenize.js`) |
+|---|---|---|---|---|---|---|
+| 1 | control | F18 (n=2) | sonnet | 0/2 | 0 | **0** |
+| 2 | prompt caching | F18 (n=2) | sonnet | **1/2** | 1 (greened rep) | **1 — the lone exception** |
+| 3 | retrieval verbs | F19 (n=1) | sonnet | 0 | 0 | **0** |
+| 4 | bounded attempts | F20/F21 (n=1) | sonnet | 0 | 0 | **0** |
+| 5 | planned (haiku) | F23 (n=1) | haiku | 0 | 1 (destructive) | **0** |
+| 6 | planned + raw close | F24 arm A (n=1) | sonnet | 0 | 0 | **0** |
+| 7 | planned + reframed close | F24 arm B (n=1) | sonnet | 0 | 0 | **0** |
+
+**Read it honestly: C=0 in six of seven arms.** The single exception is F18's greened cached
+rep — one run of two, which found `tokenize.js`, wrote `>= 3`, and greened, **and never
+replicated**. In the **five arms since**, across three capability upgrades and two prompt
+framings, **the worker has not once targeted the cause file again.**
+
+**The meta-finding, and the one that matters.** Every arm so far upgraded the worker's
+**EQUIPMENT** (cheaper context F18, precise retrieval F19, real feedback F20, structure F23/F24)
+or its **INSTRUCTIONS** (persona, root-cause reframe). **None changed WHAT IT ASKS ABOUT.** Its
+search is anchored to the symptom's vocabulary and does not leave it — however the task is
+framed, however it is partitioned. Seven arms of equipping have moved the outcome zero.
+
+**A live lead, not yet tested — the planner granted `recall`/`get` to ZERO steps.** In *both*
+sonnet arms, every authored step asked for `read`+`grep` only (arm A: 3× `[read,grep]`, 2×
+`[read,write]`; arm B: `[read,grep]`, `[read,grep,write]`), because it could — the verbs were in
+the ceiling and the planner declined them. The one instrument that finds the bug trivially was
+available only to the **scout**, which used it with symptom words. **A retrieval path the agent
+never asks for is not a capability.** The next arm should **CONSTRAIN** rather than **EQUIP**:
+deny the whole-file read, force `recall`/`get`, and make a step's deliverable a claim that
+*cannot be made from inside the symptom's vocabulary*. Pre-registered here before it is run.
+
+**Confounds, named.**
+- **Arm B's W and G are VOID as evidence.** All three of its steps ended
+  `halt:budget.maxCostUsd`; bare-agent's budget-halt path returns `{text:''}` (**BA-5**, line
+  843 — still live, we only worked around the `terminate` path), which **erased 2 of 3 arm-B
+  step artifacts** (0 / 71 / 0 bytes). Arm B never got a fair shot at writing. **Arm B's C
+  contrast survives** — 38 tool calls, all in the memory subsystem, complete tool log,
+  independent of any artifact.
+- **n=1 per arm.** The pair is a contrast, not a rate.
+- **The informative close (adaptlearn F14/F15) is present in BOTH arms**, so it cannot explain
+  the A/B difference — but it remains the most likely reason both marched into the memory
+  subsystem and stayed: the close names the failing *memory* tests, and the worker goes where it
+  is pointed. Pre-registered as the confound to break next.
+
+## F25 — BA-6: a silently truncated round is indistinguishable from a worker that chose to stop — and it may have corrupted every prior sonnet arm
+
+**`claude-sonnet-5` runs adaptive thinking BY DEFAULT.** On a hard prompt it thinks past
+bare-agent's Anthropic provider default (`provider-anthropic.js:82` —
+`max_tokens: options.maxTokens || 4096`) and the response comes back as `content: [thinking]`
+with **no text block and no `tool_use`**, and `stop_reason: 'max_tokens'`. bare-agent **drops
+thinking blocks** and **never reads `stop_reason`**, so it yields `{text: '', toolCalls: []}` —
+and `Loop` reads that as *"the model gave its final answer."* **The attempt ends CLEANLY:
+`error: null`, empty artifact, no halt, no warning, nothing in the audit.**
+
+Measured directly against the live API (`probe2.cjs`, one hard prompt, two ceilings):
+
+| `max_tokens` | `stop_reason` | output tokens | content | text returned |
+|---|---|---|---|---|
+| 1024 | `max_tokens` | 1024 | `[thinking: EMPTY]` | **0 B** |
+| 4096 | `max_tokens` | 4096 | `[thinking: EMPTY]` | **0 B** |
+
+**The consequence, unsoftened: every prior sonnet arm ran on that 4096 default.** In those logs
+a silently truncated round is **indistinguishable** from a worker that "chose to stop without
+writing" — the two produce byte-identical evidence. So the *"the worker did nothing / never
+wrote"* outcomes in **F18, F19, F20, F21** are, **to an unknown degree, this bug rather than the
+worker. They must be RE-AUDITED before being cited again.** The same applies to F23's haiku arm,
+whose harness also ran the 4096 default with no truncation counter (haiku's own thinking default
+was not measured — no claim either way).
+
+**The sonnet A/B arms (F24) are clean on this axis** — and only because it was found first:
+`maxTokens: 24000` on every call, plus a counter that increments on `stop_reason === 'max_tokens'`
+instead of laundering the round into an empty answer. **`truncatedRounds: 0` in both arms.** The
+fix is a harness override; **BA-6 is NOT YET FILED upstream.** The upstream ask is two-part: the
+provider must **surface `stop_reason`** (a truncated round is not a finished one), and it must not
+represent a thinking-only response as a final answer.
+
+**Same probe, second defect: bare-agent cannot price `claude-sonnet-5`.** `COST_PER_1K`
+(`loop.js:71`) has **no `claude-sonnet-5` row**, and `estimateCost()` falls through to
+`_default` (`$0.002 in / $0.008 out` per 1K) **silently**. The rate that actually bills today is
+the intro `$0.002 / $0.010` — so **every prior sonnet arm's output cost is understated by 20%**
+(equivalently: the true output rate is 25% above the one the ledger used). This is the **F6
+class again** — an unknown model must price as **null / UNPRICED**, never as a plausible-looking
+number. F24's harness carries its own rate table and hands the Gate the same price the ledger
+sees (`ledgerDrift: 0` in both arms). **Fold this into BA-6 when it is filed.**
