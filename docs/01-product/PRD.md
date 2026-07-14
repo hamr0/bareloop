@@ -679,6 +679,147 @@ Signed job spec (goal, budget, final close, tool ceiling — **all human, unchan
    doctrine untouched — law #2/#3), a red run's is not. **N3's kill-switch now has a real
    subject: does a minted plan transmit to a non-identical run?**
 
+### The plan-v1 run, end to end
+
+Written for someone who was not in the interview. Nothing here is new doctrine — it is the
+above, spelled out at the level of one run.
+
+#### 1. The flow
+
+```
+OPERATOR signs the job spec:
+   goal · budgetUsd (tighten-only below) · the final close (a command,
+   exit code = truth) · tool ceiling [read,grep,write,recall,get] · cadence
+        │
+        ▼
+0. PREFLIGHT — "does this job close deterministically?"
+   yes → proceed. no/unsure → decision-ready escalation WITH A QUESTION
+   (it's a chat). v1 never compiles a close from prose (N4).
+        │
+        ▼
+1. SCOUT — one read-only worker, hard-bounded (own rounds cap + reserved
+   budget slice, same pattern as the draft reserve). Output: a context
+   blob (repo layout, failing tests, best cause hypothesis). Never writes.
+        │
+        ▼
+2. PLAN — one decompose LLM call: Planner.plan(goal, {info: scoutBlob}).
+   Returns a step DAG [{id, action, dependsOn}]. The plan-v1 VALIDATOR
+   then enforces: per-step verbs ⊆ the spec's tool ceiling · per-step
+   bounds ≤ shell caps · scopes inside the job fence · inner exits from
+   the closed menu only · the arbiter (close/budget/fence/merge) is
+   INEXPRESSIBLE in the plan vocabulary. DAG executed in topological
+   order, strictly sequentially in v1.
+        │
+        ▼
+3. EXECUTE — each step is a micro-loop (the same ralph(), judge injected):
+     while inner-exit red and under step-bound:
+         worker(step.action, step's narrowed tools, gap)
+   · fresh Loop + fresh Gate per step — the Gate's maxTurns IS the step
+     bound (per-attempt bounding is native, no stop() machinery)
+   · the step's ARTIFACT (its final text / named file) feeds forward:
+     the next step's prompt opens with "Working context (read-only):"
+     + goal + repo root + close output + all prior steps' artifacts,
+     labeled by step id. No step starts blind. (The F21 wire.)
+   · a step that exhausts its bound → ONE replan per run
+     (Planner again, {info: scoutBlob + artifacts + what failed});
+     still red after the replanned steps → escalate. The stop is a result.
+        │
+        ▼
+4. THE CLOSE — the operator's signed command runs (shell territory,
+   unchanged from today: runClose, forbidden zone, judged floor, redaction).
+   exit==expect → green. red → the gap feeds one bounded fix loop.
+   still red → decision-ready escalation.
+        │
+        ▼
+5. FEED-FORWARD ACROSS RUNS (what makes this bareloop, not relayfact):
+   plan-AS-EXECUTED + per-step ledger (cost, rounds, exit outcome,
+   replans) → the spine. GREEN run → the plan is MINTED for inheritance
+   (verdict-gated, unchanged doctrine); next cadenced run starts from the
+   minted plan and may revise (prune a step that never helped, tighten a
+   bound never hit — self-heal). RED run → nothing minted; only the
+   decision-ready escalation survives.
+```
+
+#### 2. Privileges — who may author what, who may see what
+
+| | shell (`ralph`/`runJob`, code, no LLM) | scout | planner (the decompose call) | step workers | operator (human) |
+|---|---|---|---|---|---|
+| **runs the close** | **yes — only here** | no | no | no | no (they *sign* it) |
+| **sets the budget** | enforces it | may only tighten | may only tighten | may only tighten | **yes — only here** |
+| **sees the repository** | no | yes, via gated tools | **no — only the scout blob** | yes, via gated tools (step's narrowed grant) | yes |
+| **writes files** | no | no | no | **WRITE steps only, inside the fence** | yes |
+| **authors the plan** | validates it | no | **yes — only here** | no | reads it |
+| **authors inner exits** | evaluates them | no | **yes — closed menu only** | no | reads them |
+| **authors the arbiter** (close/budget/fence/merge) | **NOBODY** — structurally inexpressible in the plan vocabulary | | | | signs it out-of-band |
+| **merges** | no | no | no | no | **yes — forever** |
+
+The row that matters: **no self-adjusted budgets, ever** (§8). Everything below the operator may
+TIGHTEN `budgetUsd`, never raise it. And the planner never touches the repository — it sees the
+scout's blob and nothing else, which is what keeps the plan a *plan* and not a second worker.
+
+#### 3. The inner-exit closed menu
+
+A step's exit is picked from three declarative checks, **evaluated by the shell with its own
+fixed code — never a command**:
+
+| exit | means | typical step |
+|---|---|---|
+| `artifact-written(path, pattern?)` | the named file exists, and (optionally) matches the pattern | ISOLATE / diagnose |
+| `tree-changed(scope)` | the working tree changed inside `scope` | WRITE |
+| `json-valid(path)` | the named file parses as JSON | structured hand-off |
+
+**`run` stays locked forever.** An agent-authored command executed by the shell would be
+arbitrary execution laundered through the arbiter, so it is not merely disallowed — it is
+**structurally inexpressible in the plan vocabulary**, the same both-directions inexpressibility
+guard as the two-validator split (F17 / v1.11).
+
+`tree-changed` as a WRITE step's exit makes **"the attempt wrote nothing" a NAMED red by
+construction** — the F21 null-attempt hole, closed. Three attempts that read for 72 rounds and
+wrote nothing would now red at the step, not drift to the cap.
+
+**The known bound, stated plainly:** inner exits verify **FORM, not TRUTH**. A confident-but-wrong
+step artifact satisfies its exit and then propagates downstream through feed-forward. The
+containment is the **outer close plus the one replan**. Inner exits are **progress gates**; there
+is exactly **ONE arbiter, and it is the operator's close**.
+
+#### 4. Worked example
+
+> **Job:** "memory loading in gitdone is slow — make the load benchmark pass."
+> **Signed close:** `node bench/load.test.js`, expect exit 0.
+
+| step | verb | tools | inner exit | bound | what flows |
+|---|---|---|---|---|---|
+| s1 | ISOLATE | `recall`, `get` | `artifact-written(cause.md)` — must name a path and a symbol | 6 rounds | hands forward: *"src/memory/loader.ts: `loadIndex()` reads 400 blobs serially, no index"* |
+| s2 | WRITE | `get`, `write` | `tree-changed(src/**)` | 10 rounds | opens with s1's artifact in its working context — it does **not** re-derive the cause |
+| s3 | CLOSE | — (shell) | the operator's signed command | — | `node bench/load.test.js` → exit 0 → **green** |
+| s4 | PR | deterministic git | hitl close | — | **merge stays human, forever** |
+
+**The contrast with config-v1 is the point.** Under config-v1 this same job **could not even
+START**: a diagnosis goal has no predicate close, so it lands `close-unsupported` at validation.
+And if it had started, its worker would have been handed all five tools at once, with no plan, no
+step boundary, and **no wire between attempts** (F21) — which is precisely the run we measured
+three times.
+
+#### 5. What each attempt sees — the prompt contract
+
+F10, F13 and F21 all lived here, so it is stated precisely. A step worker's prompt contains:
+
+- **the step's action** — the task, and only this step's task;
+- **the ABSOLUTE repository root** — F10: bare-agent's shell tools resolve relative paths against
+  the *process* cwd, so a worker not told the root works blind (and, once, closed in bareloop's
+  own directory);
+- **the close's current output on the tree, or the gap from the previous attempt** — F13: a worker
+  asked to fix a failure it cannot see is a worker guessing;
+- **the "Working context (read-only)" block** — every prior step's artifact, labeled by step id.
+  This is F21's wire: the channel from attempt N to attempt N+1, and from step to step, that
+  config-v1 structurally lacked;
+- **a cut-off notice** if the previous attempt hit its bound (F20).
+
+And what it **NEVER** sees: the **budget**; the **close command**; the **plan validator**; **other
+steps' tool grants**; and the arbiter's own books — the **gate audit**, the **spine**, the
+**`.smoke` store** (explicit `fs.deny`, unchanged). **The emergent middle does not read the
+arbiter's books.**
+
 ### Doctrine that rides with plan-v1
 
 - **Per-step Gate.** Each step gets a **fresh Gate**, so `limits.maxTurns` IS the step bound
