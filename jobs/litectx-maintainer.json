@@ -11,7 +11,7 @@
     {
       "id": "suite",
       "mode": "tools",
-      "tools": ["read", "grep", "write"],
+      "tools": ["read", "grep", "write", "recall", "get"],
       "close": {
         "type": "predicate",
         "cmd": "node --test --test-reporter=spec",

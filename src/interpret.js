@@ -48,8 +48,89 @@ const PERSONA_TOOLS = 'You are a senior engineer working in a repository through
   + 'A wrong cheap attempt is corrected by the next round; exhaustive reading is not — every file you read is re-sent on every later round and the run has a hard budget it can exhaust before you ever write. '
   + 'Make the required changes with the write tool, then reply with a short summary of what you changed. Never put file contents in your reply.';
 
-// ---- tool mode (2b): the spec-side grant menu mapped to bare-agent's shell tools ----
-const TOOL_BY_VERB = Object.freeze({ read: 'shell_read', grep: 'shell_grep', write: 'shell_write' });
+// ---- tool mode (2b): the spec-side grant menu mapped to the underlying tools ----
+// read/grep/write are bare-agent's shell tools; recall/get are litectx's retrieval
+// verbs (F19), composed from the SAME LiteCtx the memory hooks already use.
+const TOOL_BY_VERB = Object.freeze({ read: 'shell_read', grep: 'shell_grep', write: 'shell_write', recall: 'ctx_recall', get: 'ctx_get' });
+const CTX_TOOLS = Object.freeze(['ctx_recall', 'ctx_get']);
+
+/**
+ * The retrieval pair (F19). `shell_read` cannot seek — it starts at byte zero — so a
+ * pointer at a symbol was inert and the worker paged whole files to reach one function.
+ * `ctx_recall` hands back a POINTER (no body: a search index returns pointers, and bodies
+ * on every hit rebuild the bloat — measured, a 5-hit recall dumps ~15k tokens unbidden);
+ * `ctx_get` trades that pointer for ONE chunk. A chunk starts at its doc-comment, so the
+ * body arrives WITH the docstring that says what it was supposed to do.
+ * @param {any} lc the run's LiteCtx (rooted at workdir)
+ * @param {string} workdir
+ * @param {(type: string, data: object) => void} emit the spine — a retrieval verb whose
+ *   RESULT is invisible cannot be judged: a `ctx_get` that silently reds (stale pointer,
+ *   bad range) looks exactly like one that worked, and the worker's fallback to a
+ *   whole-file read looks like a free choice instead of a forced one.
+ */
+function createCtxTools(lc, workdir, emit) {
+  return [
+    {
+      name: 'ctx_recall',
+      description: 'Search the repository index for a symbol or phrase. Returns POINTERS (path, symbol, line range) — not code. '
+        + 'Pass a pointer to ctx_get to read that one function. Search finds what you can NAME: it will not find a bug from a failing '
+        + "test's output (the symptom and the cause live in different files) — read the failing test first, then recall the function it calls.",
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Symbol name or phrase, e.g. "keywords" or "stopword filter".' },
+          n: { type: 'integer', description: 'Max pointers to return (default 5, max 20).' },
+        },
+        required: ['query'],
+      },
+      execute: async (/** @type {{query: string, n?: number}} */ { query, n }) => {
+        const hits = await lc.recall(String(query), { kind: 'code', n: Math.min(Math.max(Number(n) || 5, 1), 20) });
+        const out = hits.length
+          ? hits.map((/** @type {any} */ h) => (h.chunk
+            ? `${h.path}\t${h.chunk.symbol ?? '(anonymous)'}\t${h.chunk.nodeType}\tlines ${h.chunk.startLine}-${h.chunk.endLine}`
+            : `${h.path}\t(whole file — no chunk)`)).join('\n')
+          : 'no hits';
+        emit('ctx-tool', { tool: 'ctx_recall', query: String(query), hits: hits.length, bytes: Buffer.byteLength(out) });
+        return out;
+      },
+    },
+    {
+      name: 'ctx_get',
+      description: 'Read ONE function by the line range ctx_recall gave you — code plus its doc-comment, without the rest of the file. '
+        + 'The line range is a HANDLE you copy from ctx_recall, never one you compute: a range that is not a chunk boundary is refused, '
+        + 'and a file edited since it was indexed is refused (re-run ctx_recall for a fresh pointer).',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Repository-relative path, exactly as ctx_recall printed it.' },
+          startLine: { type: 'integer', description: 'From ctx_recall.' },
+          endLine: { type: 'integer', description: 'From ctx_recall.' },
+        },
+        required: ['path', 'startLine', 'endLine'],
+      },
+      execute: async (/** @type {{path: string, startLine: number, endLine: number}} */ { path: p, startLine, endLine }) => {
+        // The path is spelled as recall printed it (repo-relative); the gate judges the
+        // resolved absolute path, exactly as toolAction resolves it.
+        const rel = String(p).startsWith(workdir) ? String(p).slice(workdir.length + 1) : String(p);
+        try {
+          const item = lc.get(rel, { startLine: Number(startLine), endLine: Number(endLine) });
+          if (!item?.text) {
+            emit('ctx-tool', { tool: 'ctx_get', path: rel, startLine, endLine, outcome: 'no-chunk', bytes: 0 });
+            return `no chunk at ${startLine}-${endLine} in "${rel}" — copy a line range from ctx_recall, do not compute one`;
+          }
+          emit('ctx-tool', { tool: 'ctx_get', path: rel, startLine, endLine, outcome: 'ok', bytes: Buffer.byteLength(item.text) });
+          return item.text;
+        } catch (e) {
+          // StalePointerError: the file changed after indexing, so these lines now describe
+          // DIFFERENT code. Its message IS the recovery instruction — hand it to the worker.
+          const detail = String(/** @type {Error} */ (e)?.message || e);
+          emit('ctx-tool', { tool: 'ctx_get', path: rel, startLine, endLine, outcome: 'stale', bytes: 0, detail });
+          return `stale pointer: ${detail}`;
+        }
+      },
+    },
+  ];
+}
 
 // The load-bearing containment line (2b POC, scenario B): bare-agent's built-in
 // tools are deliberately ungated and their action type is their own NAME, which
@@ -61,10 +142,22 @@ const TOOL_BY_VERB = Object.freeze({ read: 'shell_read', grep: 'shell_grep', wri
 // cwd and reds at the fence, and the deny reason teaches the retry.
 /** @param {string} p */
 const expandHome = (p) => (p === '~' || p.startsWith('~/')) ? join(homedir(), p.slice(1)) : p;
-/** @param {string} name @param {any} args */
-const toolAction = (name, args) => {
+/** @param {string} name @param {any} args @param {string} [workdir] */
+const toolAction = (name, args, workdir) => {
   if (name === 'shell_write') return { type: 'write', path: resolve(expandHome(String(args?.path ?? ''))), args: { bytes: String(args?.content ?? '').length } };
-  if (name === 'shell_read' || name === 'shell_grep') return { type: 'read', path: resolve(expandHome(String(args?.path ?? ''))) };
+  // `tool` rides the action so the AUDIT can tell the read tools apart. Without it every
+  // read tool collapses to {type:'read', path} and a whole-file shell_read is
+  // indistinguishable from a bounded ctx_get chunk — the ledger cannot see the one
+  // variable the retrieval arm exists to test (the F18 blindness, repeated).
+  if (name === 'shell_read' || name === 'shell_grep') return { type: 'read', path: resolve(expandHome(String(args?.path ?? ''))), args: { tool: name } };
+  // The retrieval verbs are READS and are judged as reads by the SAME fence (F14/F19):
+  // ctx_get names a file, so the gate judges that file — the deny list (gate audit,
+  // primitive smoke, the litectx store itself) applies to a chunk read exactly as it
+  // applies to shell_read, or the worker would read the arbiter's books through the
+  // other door. ctx_recall names no file: it is a read OF THE INDEX, judged against the
+  // run directory, so it is contained by readScope and cannot reach outside the repo.
+  if (name === 'ctx_get') return { type: 'read', path: resolve(String(workdir ?? ''), expandHome(String(args?.path ?? ''))), args: { tool: name } };
+  if (name === 'ctx_recall') return { type: 'read', path: resolve(String(workdir ?? '')), args: { tool: name } };
   return { type: name, args };
 };
 
@@ -174,7 +267,7 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     humanChannel: async () => ({ decision: 'terminate' }), // no human mid-run: a tripped cap terminates → decision-ready escalation
   });
   await gate.init();
-  const { policy, onLlmResult } = wireGate(gate, mode === 'tools' ? { actionTranslator: (/** @type {string} */ n, /** @type {any} */ a) => toolAction(n, a) } : {});
+  const { policy, onLlmResult } = wireGate(gate, mode === 'tools' ? { actionTranslator: (/** @type {string} */ n, /** @type {any} */ a) => toolAction(n, a, workdir) } : {});
   // Money is metered as it is SPENT — per ROUND, not per attempt (F12). A
   // multi-round attempt that halts (or throws) never returns, so its rounds
   // never reach `worker-result`: the real run bought $1.4375 of tokens inside a
@@ -185,6 +278,25 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   // pricing ride AS-IS (a null is the honest unknown, never $0 — F6).
   /** @type {number|undefined} the attempt a round belongs to (display only) */
   let roundIteration;
+  // F20 — THE ATTEMPT HAD NO BOUND, so ralph never ralphed. `limits.maxTurns` is bareguard's,
+  // and the Gate is constructed ONCE for the whole RUN: it is a run-wide HALT, not a
+  // per-attempt cap. Nothing else ended an attempt — a tool-mode attempt ran until the model
+  // CHOSE to stop calling tools. A worker that has never been told it is wrong does not stop:
+  // measured, attempt #1 ran 55 rounds, spent the entire $1.50 budget, and the close NEVER RAN
+  // ONCE (zero verdicts, zero gaps, zero writes). The loop's whole premise — a cheap wrong
+  // attempt corrected by the next round — was unreachable, and the persona's promise ("a test
+  // suite runs and you are called again") was a lie the shell never kept.
+  // `loop.stop()` breaks at the round boundary and returns the transcript with NO error, so the
+  // attempt ends cleanly, its summary stands, and the close renders the verdict that feeds the
+  // next attempt. Per-attempt, because each attempt is a FRESH conversation (the context resets),
+  // which is what keeps four bounded attempts inside a budget one unbounded attempt exhausts.
+  const TURNS_PER_ATTEMPT = mode === 'tools' ? 24 : 8;
+  /** rounds spent inside the CURRENT attempt (reset per attempt, unlike the gate's run-wide tick) */
+  let roundsThisAttempt = 0;
+  /** @type {number|undefined} the attempt that was cut short by the bound (spine + gap note) */
+  let attemptBounded;
+  /** set when WE call loop.stop() — bare-agent surfaces our stop as an error return (see ask()) */
+  let stoppedByBound = false;
   // `tokens` alone cannot answer the question the ledger exists to answer.
   // bare-agent's `inputTokens` is the UNCACHED prompt remainder — re-sent context
   // is billed as a cache READ and never appears in it. So a round that re-pays for
@@ -208,14 +320,59 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
         cacheCreationTokens: u.cacheCreationTokens ?? 0,
       },
     });
+    // The attempt's own bound (F20). A summarizer fold is an LLM call but not a worker
+    // ROUND — counting it would let a fold shorten the attempt that paid for it.
+    if ((arg?.kind ?? 'turn') === 'turn' && mode === 'tools') {
+      roundsThisAttempt += 1;
+      if (roundsThisAttempt >= TURNS_PER_ATTEMPT) {
+        // Clean stop at the round boundary: run() returns the transcript with error=null,
+        // so this is an attempt that ENDED, not an attempt that FAILED. The close now runs
+        // and its verdict becomes the next attempt's gap — which is the entire point.
+        attemptBounded = roundIteration;
+        stoppedByBound = true;
+        emit('attempt-bounded', { iteration: roundIteration, rounds: roundsThisAttempt, cap: TURNS_PER_ATTEMPT });
+        loop.stop();
+      }
+    }
     return onLlmResult(arg);
   };
-  const loop = new Loop({ provider, system: mode === 'tools' ? PERSONA_TOOLS : PERSONA, policy, onLlmResult: meteredOnLlmResult });
   // The offered tools ARE the grant (2b decision #2): an ungranted tool is never
   // in the menu the model sees — a call to it is "unknown tool", not a deny.
   const toolDefs = mode === 'tools'
-    ? (() => { const granted = new Set((tools ?? Object.keys(TOOL_BY_VERB)).map((v) => /** @type {Record<string, string>} */ (TOOL_BY_VERB)[v])); return createShellTools().tools.filter((/** @type {{name: string}} */ t) => granted.has(t.name)); })()
+    ? await (async () => {
+      const granted = new Set((tools ?? Object.keys(TOOL_BY_VERB)).map((v) => /** @type {Record<string, string>} */ (TOOL_BY_VERB)[v]));
+      const shell = createShellTools().tools.filter((/** @type {{name: string}} */ t) => granted.has(t.name));
+      const ctx = CTX_TOOLS.some((t) => granted.has(t))
+        ? createCtxTools(lc, workdir, emit).filter((t) => granted.has(t.name))
+        : [];
+      // A retrieval verb with no index is a tool that always answers "no hits". Index is
+      // incremental (unchanged files skipped) and BM25-only: measured on the real repo, the
+      // semantic tier costs 26s of embedding and does NOT find a symbol the lexical tier
+      // misses (for code it only RE-RANKS a BM25-gated pool — it cannot nominate), and it
+      // demoted the exact-symbol hit from rank 1 to rank 4. Lexical is the better instrument here.
+      if (ctx.length) await lc.index();
+      return [...shell, ...ctx];
+    })()
     : [];
+
+  // The retrieval verbs only pay if the worker reaches for them INSTEAD of paging a file.
+  // F18 measured the failure they exist to fix: the worker read one 117 KB file NINE times
+  // and dragged 1.37 MB of source through context to reach an 8-line function. The tool
+  // descriptions carry the mechanics; the persona has to carry the STRATEGY, or a model
+  // with a familiar `read` and an unfamiliar `recall` will simply keep reading.
+  const RETRIEVAL_STRATEGY = '\nYou also have a repository index. To read a function, do NOT read its whole file: '
+    + 'call ctx_recall with the function name to get a pointer, then ctx_get with that pointer to read that function alone '
+    + '(it comes with its doc-comment, which states what the function is SUPPOSED to do — compare it against what the code does). '
+    + 'Reserve shell_read for whole files that are genuinely small, and for files you cannot name a symbol in yet. '
+    + 'Search only finds what you can NAME: a failing test names the symptom, not the cause, so read the failing test first, '
+    + 'see which function it calls, and recall THAT.';
+  const usesCtx = toolDefs.some((/** @type {{name: string}} */ t) => CTX_TOOLS.includes(t.name));
+  const loop = new Loop({
+    provider,
+    system: mode === 'tools' ? PERSONA_TOOLS + (usesCtx ? RETRIEVAL_STRATEGY : '') : PERSONA,
+    policy,
+    onLlmResult: meteredOnLlmResult,
+  });
 
   /** @param {string} slot */
   const slotOps = (slot) => config.hooks?.[slot] ?? [];
@@ -244,6 +401,18 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     // blind and a cap story masquerades as a worker result (design law #8).
     // A denial streak ('denied:<tool>', BA-11) is a governance deny, not a
     // broken interpreter — gate-red, same category as text mode's fence deny.
+    // OUR OWN stop is not a fault (F20). `loop.stop()` breaks bare-agent's round loop, which
+    // falls through to its HARD_ROUND_LIMIT return — so a deliberate stop comes back carrying
+    // the internal-safety-limit warning as `error`, indistinguishable from a runaway. Read
+    // literally, the interpreter escalates `interpreter-red` and the RUN dies at attempt 1:
+    // the bound would end the attempt and kill the loop in the same breath. bareloop knows it
+    // stopped the loop — it does not need bare-agent to tell it — so a bounded attempt is a
+    // clean end here, and the close renders the verdict that feeds the next attempt.
+    // (Filed upstream: stop() should return `error: null` and keep the run's text.)
+    if (r.error && stoppedByBound) {
+      stoppedByBound = false;
+      return r;
+    }
     if (r.error) {
       const err = /** @type {CategorizedError} */ (new Error(`worker loop: ${r.error}`));
       err.category = r.error.startsWith('halt:') ? 'cap-halt' : r.error.startsWith('denied:') ? 'gate-red' : 'interpreter-red';
@@ -321,6 +490,7 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
    */
   const middle = async (iteration, gap) => {
     roundIteration = iteration; // stamps every round of this attempt (F12)
+    roundsThisAttempt = 0;      // the bound is PER ATTEMPT — a fresh conversation, a fresh budget (F20)
     if (gap) gaps.push(gap);
     if (revisor && !revised && gaps.length >= STALL_REDS) {
       emit('stall-detected', { iteration, consecutiveReds: gaps.length });
@@ -368,7 +538,13 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
       // attempt and describing the tree are different claims; this is the second.
       !gap && closeState && `The close is currently failing. This is its output on the tree as it stands (not an attempt of yours):\n${closeState}`,
       context.text && `Possibly relevant notes:\n${context.text}`, gap && `Previous attempt failed the test suite:\n${gap}`,
-      artifactNote && `Previous attempt never reached the close:\n${artifactNote}`];
+      artifactNote && `Previous attempt never reached the close:\n${artifactNote}`,
+      // F20: a bounded attempt must SAY it was bounded. Otherwise the worker reads its own
+      // truncated transcript as a finished one, learns nothing from being cut off, and spends
+      // the next attempt investigating exactly as far and stopping exactly as short.
+      attemptBounded !== undefined && attemptBounded === iteration - 1
+        && `Your previous attempt was CUT OFF after ${TURNS_PER_ATTEMPT} tool rounds without making a change. Reading is bounded; writing is not. `
+          + `Form a hypothesis EARLY and make the edit — a wrong cheap edit is corrected by the next round, but an attempt that never writes teaches this loop nothing.`];
 
     if (config.loop.shape === 'plan') {
       // plan-then-execute: one call to decompose, one to implement following the plan

@@ -10,7 +10,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { validateJob, jobSpecHash, checkApproval, CLASS_BY_CLOSE, CLOSE_TYPES, CLASSES, TOOL_MENU } from '../src/job.js';
+import { validateJob, jobSpecHash, checkApproval, CLASS_BY_CLOSE, CLOSE_TYPES, CLASSES, TOOL_MENU, LOCKED_TOOLS } from '../src/job.js';
 import { validateConfig } from '../src/validate.js';
 
 // Job #1 exactly as the PRD §6 defines it — real target, not a fixture
@@ -295,9 +295,13 @@ test('explicit mode "text" is legal (the default, spelled out)', () => {
   assert.equal(validateJob(j).ok, true);
 });
 
-test('TOOL_MENU ships frozen and is read/grep/write only — run is NOT in the menu', () => {
-  assert.deepEqual([...TOOL_MENU], ['read', 'grep', 'write']);
+test('TOOL_MENU ships frozen: file tools + the two retrieval verbs — run is NOT in the menu', () => {
+  assert.deepEqual([...TOOL_MENU], ['read', 'grep', 'write', 'recall', 'get']);
   assert.ok(Object.isFrozen(TOOL_MENU));
+  // The line the menu exists to hold (F19): admitting retrieval must NOT admit execution.
+  // A worker that can run commands can run its own close — it grades its own exam.
+  assert.ok(!TOOL_MENU.includes('run'), 'run stays locked — retrieval is read-only, not a foot in the door');
+  assert.deepEqual([...LOCKED_TOOLS], ['run']);
 });
 
 test('request-red detail names the locked verb in quotes (the ledger extracts it)', () => {

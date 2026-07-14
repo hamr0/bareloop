@@ -414,6 +414,36 @@ test('tools mode: a denial streak stops the attempt as gate-red, its own categor
   assert.ok(!existsSync(join(wd, 'escape-1.txt')), 'nothing written');
 });
 
+// F20 — THE ATTEMPT MUST END, or ralph never ralphs. bareguard's limits.maxTurns is a
+// RUN-wide halt (the Gate is built once per run), so nothing bounded a single attempt: a
+// tool-mode attempt ran until the model CHOSE to stop calling tools. A worker that is never
+// told it is wrong does not choose to stop — measured on the real job, attempt #1 ran 55
+// rounds, ate the entire budget, and the close NEVER RAN (zero verdicts, zero writes).
+// The scripted provider clamps to its LAST entry, so a script ending in a tool call IS that
+// worker: it reads forever. The fix must cut the attempt, run the close, and loop.
+test('F20 tools mode: an attempt that never stops reading is BOUNDED — the close still runs and the loop loops', async () => {
+  const wd = twd('tools-unbounded');
+  const { events, provider } = await run('tools-unbounded', config(), {
+    mode: 'tools', tools: ['read'], capRuns: 2,
+    // one entry, clamped forever: the worker reads and reads and never writes, never finishes
+    script: [{ toolCalls: [tcall('t1', 'shell_read', { path: join(wd, 'src') })] }],
+  });
+
+  const bounded = events.filter((e) => e.type === 'attempt-bounded');
+  assert.ok(bounded.length >= 1, 'the runaway attempt was cut off at its bound');
+  assert.equal(bounded[0].cap, 24, 'tool mode bounds an attempt at 24 rounds');
+  assert.equal(bounded[0].rounds, 24, 'it stopped AT the bound, not past it');
+
+  // The point of bounding: the verdict gets rendered and the loop gets its second attempt.
+  const attempts = events.filter((e) => e.type === 'iteration-start');
+  assert.ok(attempts.length >= 2, `the close ran and the loop looped (attempts: ${attempts.length}) — an unbounded attempt would spend the whole run inside iteration 1`);
+
+  // and the next attempt is TOLD it was cut off — otherwise it reads its own truncated
+  // transcript as a finished one and stops exactly as short next time.
+  // (the LAST recorded call is a mid-loop tool result; the note rides the attempt's OPENING prompt)
+  assert.ok(provider.calls.some((c) => /CUT OFF after 24 tool rounds/.test(c)), 'the bound is fed back to the worker as evidence, not applied silently');
+});
+
 test('tools mode: the spec grant is the menu — an ungranted tool is never offered', async () => {
   const wd = twd('tools-menu');
   const { outcome, provider } = await run('tools-menu', config(), {

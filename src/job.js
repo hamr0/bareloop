@@ -26,10 +26,21 @@ export const CLASS_BY_CLOSE = Object.freeze({ predicate: Object.freeze(['hard'])
 export const GOLD_COMPARE = Object.freeze(['exact', 'json-equal']);
 /** step middle modes (2b): text = single-target artifact; tools = Gate-governed file tools */
 export const STEP_MODES = Object.freeze(['text', 'tools']);
-/** the tool grant menu (2b interview #1): read/grep/write ONLY — `run` is
- * locked-but-listed; a spec requesting it reds, and that red IS the
- * request-red evidence admission waits on (curation doctrine, PRD F2) */
-export const TOOL_MENU = Object.freeze(['read', 'grep', 'write']);
+/** the tool grant menu (2b interview #1): read/grep/write, plus the two litectx
+ * RETRIEVAL verbs (F19) — `run` stays locked-but-listed; a spec requesting it
+ * reds, and that red IS the request-red evidence admission waits on (curation
+ * doctrine, PRD F2).
+ *
+ * `recall`/`get` are READ-ONLY BY CONSTRUCTION, not by promise: `recall` returns
+ * pointers (path/symbol/line-range, no bodies) and `get` trades ONE pointer for
+ * ONE chunk — it refuses any range that is not a chunk boundary, so it cannot be
+ * widened into a whole-file read, and it is content-hash gated (a drifted file
+ * throws rather than serving a stale body). Admitting them does NOT weaken the
+ * `run` lock: the worker still cannot execute anything, so it still cannot run
+ * its own close (the arbiter). F19: `shell_read` starts at byte ZERO and cannot
+ * seek, so a pointer was INERT — the worker paged 1.37 MB of source through
+ * context to reach 8 lines. The ranged read is the pager. */
+export const TOOL_MENU = Object.freeze(['read', 'grep', 'write', 'recall', 'get']);
 /** locked-but-listed tools: real capabilities deliberately outside the grant
  * menu. Requesting one is a DISTINCT `request-red` (module 4) — the ledger
  * counts admission demand, and a generic invalid-value would bury it as a typo. */
