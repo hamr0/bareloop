@@ -518,3 +518,93 @@ trustworthy exit code.
 **Suite 257 → 277**, every new check watched failing first, five mutations caught (timeout not
 split; signal-kill falling through — the F25 bug itself; the floor never tripping; `expect`
 hardcoded to 0; the section guard removed). Typecheck clean.
+
+## F18 — the N2 cost curve was never a context problem: prompt caching was OFF, and the loop re-bought its whole transcript at full price every round
+
+**Pre-registered** (arms, predictions and confounds written before any spend): control vs
+compaction vs retrieval vs gap-quality, one knob apart, on the real litectx clone with the
+same planted one-character regression in `tokenize.js`. **The pre-registration was wrong
+about the mechanism, and the instrument caught it before the arms ran.**
+
+### The measurement that broke my own hypothesis
+
+I had been explaining the rung-exit stop as *transcript compounding* — "every file the worker
+reads is re-sent every round." That story was right about the *shape* and wrong about the
+*cause*, and I could not have known which until I decomposed the cost. `worker-round` recorded
+only `inputTokens + outputTokens`, and bare-agent documents `inputTokens` as the **uncached**
+prompt remainder — so a round that re-pays for half the repo and a round that reads it fresh
+carry the **same number**. I was reasoning about a cost driver with an instrument that could
+not see it. Instrumented the seam first (all four priced tiers + the call `kind`), then re-ran.
+
+**Control, real model, real litectx:**
+
+```
+fresh input   754,836 tok      RE-SENT (cache read)  0 tok      cache writes  0 tok
+spend $1.5519 · 14 rounds · cap-halt · zero writes · never fixed the bug
+```
+
+**Zero cached tokens.** Not "a little caching" — none. bare-agent's own JSDoc says why:
+*"Anthropic does NOT auto-cache, so without this its cache tiers are always 0."* And
+`cache_control` is settable **only on `system`** — never on `messages`. In a tool loop the
+transcript *is* the tool results, and `_toAnthropicMessage()` rebuilds them from scratch,
+discarding anything a caller attaches. There is no seam (`assemble` included) through which
+bareloop could mark the prefix. **The loop re-buys its entire transcript at full input price,
+every single round.** (Filed: UPSTREAM-ASKS **BA-1**.)
+
+### What the fix is worth — measured against the real API, one knob apart
+
+|  | round 1 | round 2 | round 3 | round 4 |
+|---|---|---|---|---|
+| today (no breakpoint) | $0.1524 | $0.1525 | $0.1525 | $0.1526 |
+| rolling `cache_control` | $0.1903 *(writes cache)* | **$0.0162** | **$0.0162** | **$0.0163** |
+
+**9.4× cheaper per round** in steady state; the 1.25× cache write is paid once. The
+never-decreasing flat line in row 1 *is* the bug: the same 50,484 tokens, re-bought forever.
+
+### End to end on job #1 — and the honest limit of the result
+
+Provider patched **in a scratch copy** (`node_modules` untouched, never shipped — the fix
+belongs upstream, design law #10), everything else identical:
+
+| arm | greened | spend | rounds | fresh input | cache-read | re-reads |
+|---|---|---|---|---|---|---|
+| **A0 control** (n=2) | **0/2** | $1.55 / $1.56 | 14 / 21 | 754,836 | **0** | 8 of 15, 12 of 22 |
+| **A5 cached** (n=2) | **1/2** | $1.09 / $1.43 | 18 / **49** | 35 / 96 | 2.29M / **2.86M** | 9 of 18, **42 of 49** |
+
+**Job #1 greened for the first time** — the worker found `tokenize.js`, wrote the correct
+`>= 3`, and the suite passed 390/391, verified independently. Same budget, ~**4× the context
+throughput per dollar**; last round $0.25 → $0.04.
+
+**And it does not replicate.** 1 of 2. Reported as such: **prompt caching is necessary, not
+sufficient.** In the failing rep the worker ran **49 rounds and re-read the same 7 files 42
+times (86% thrash)** — given cheap context it did not get smarter, it ground longer before
+running out of money. A single green is not a result; the stop stands until it replicates.
+
+### Why it thrashes — the second gap, and the one that now matters
+
+`shell_read`'s only knob is `maxBytes`, measured **from byte zero**. There is **no offset**.
+A worker facing a 117 KB file can swallow it whole or re-read the same prefix — it cannot
+look at the middle. The control run read `src/store.js` (117 KB) **nine times** and
+`src/index.js` (90 KB) three times, dragging **1.37 MB of source** through context to find a
+one-character bug in a 3.4 KB file. It was not being stupid: **it was trying to page through a
+file with a tool that has no pager.** (Filed: UPSTREAM-ASKS **BA-2**.) hamr's retrieval
+proposal — litectx `recall` for chunks instead of whole-file reads — attacks exactly this, and
+bare-agent already ships the bridge (`liteCtxMcpBridgeConfig`: `recall · get · impact ·
+recent`, read-only). It is now the *only* remaining lever, not one of three.
+
+### Lessons minted
+
+- **A cost claim needs an instrument that can see cost.** `tokens` was a sum of two tiers
+  priced 10× apart. Every "context is compounding" sentence in the F16 comment and in my own
+  plan was written on a number that could not distinguish re-payment from reading. *Decompose
+  before you diagnose.*
+- **A degenerate reading is a finding, not noise.** `cache-read = 0` looked like a broken
+  metric. Auditing it against the library's source — instead of assuming my parser was wrong —
+  is what surfaced BA-1. (The rule paid out twice: it also caught `.trim()` eating the leading
+  status column of `git status --porcelain`, which would have silently mis-reported "the worker
+  wrote nothing.")
+- **n=1 on a nondeterministic worker is an anecdote.** The first cached run greened and I very
+  nearly wrote it up as a win. The replication reds it. *Replicate before you claim.*
+- **Cheap context does not buy competence.** Lowering the price of a round made the worker
+  thrash *more* (9 re-reads → 42), not less. Cost and capability are separate axes, and a
+  cost fix must never be reported as a capability fix.

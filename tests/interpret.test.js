@@ -593,3 +593,33 @@ test('F16: the tool persona states the LOOP contract — the worker knows it wil
   assert.match(system, /called again|re-?run|loop/i, 'the worker is told it is one attempt inside a loop');
   assert.match(system, /budget|exhaust/i, 'and that reading exhaustively can burn the run before it ever writes');
 });
+
+// ─── worker-round carries the FULL usage breakdown (F18) ────────────────────
+// `inputTokens` is the UNCACHED prompt remainder. A round that re-pays for half
+// the repo (billed as cache READ) and a round that reads it fresh can carry the
+// SAME input+output count at very different cost. A ledger that records only the
+// sum cannot tell them apart — and "is re-sent context the cost driver?" is the
+// question the whole context-cost investigation turns on.
+
+test('worker-round records the four priced tiers separately — cache reads are not invisible', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'usage-'));
+  const { workdir, close } = makeSumWork(dir, 'w');
+  const provider = stubProvider([
+    { text: `\`\`\`js\n${GOOD_SUM}\`\`\``, costUsd: 0.02,
+      usage: { inputTokens: 100, outputTokens: 20, cacheReadTokens: 90_000, cacheCreationTokens: 5_000 } },
+  ]);
+  const events = [];
+  await interpret(validConfig(), {
+    task: 'sum', target: join(workdir, 'src/sum.js'), close, workdir, capRuns: 1,
+    emit: (type, data) => { events.push({ type, ...data }); return { type, ...data }; },
+    provider,
+  });
+  const round = events.find((e) => e.type === 'worker-round');
+  assert.ok(round, 'a worker-round was emitted');
+  assert.equal(round.usage.cacheReadTokens, 90_000, 're-sent context is VISIBLE, not folded into a sum');
+  assert.equal(round.usage.cacheCreationTokens, 5_000);
+  assert.equal(round.usage.inputTokens, 100);
+  assert.equal(round.usage.outputTokens, 20);
+  assert.equal(round.tokens, 120, 'the legacy sum stays input+output — cache tiers never inflate it');
+  assert.equal(round.kind, 'turn', 'a worker turn is tagged as such');
+});

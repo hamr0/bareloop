@@ -15,13 +15,16 @@ export const BAD_SUM = 'export function sum(a, b) { return a - b; }\n';
 
 /**
  * The ONE provider response envelope every stub returns.
- * @param {{text?: string, toolCalls?: object[], costUsd?: number|null}} entry
+ * @param {{text?: string, toolCalls?: object[], costUsd?: number|null, usage?: object}} entry
  * @param {number} [fallbackCostUsd] priced default when the entry stays silent
  */
 export const reply = (entry, fallbackCostUsd = 0.001) => ({
   text: entry.text ?? '',
   toolCalls: entry.toolCalls ?? [],
-  usage: { inputTokens: 10, outputTokens: 10 },
+  // the four tiers the provider prices SEPARATELY — a stub that reports only
+  // input/output cannot exercise the cache-read path, which is precisely where
+  // re-sent context hides (F18)
+  usage: { inputTokens: 10, outputTokens: 10, ...(entry.usage ?? {}) },
   costUsd: 'costUsd' in entry ? entry.costUsd : fallbackCostUsd,
   model: null,
 });
@@ -29,7 +32,7 @@ export const reply = (entry, fallbackCostUsd = 0.001) => ({
 /**
  * Scripted provider: returns each script entry in turn (sticks on the last),
  * records each prompt in `calls`.
- * @param {Array<{text?: string, toolCalls?: object[], costUsd?: number|null}>} script
+ * @param {Array<{text?: string, toolCalls?: object[], costUsd?: number|null, usage?: object}>} script
  */
 export function scriptedProvider(script) {
   /** @type {string[]} */

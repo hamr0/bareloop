@@ -185,13 +185,28 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   // pricing ride AS-IS (a null is the honest unknown, never $0 — F6).
   /** @type {number|undefined} the attempt a round belongs to (display only) */
   let roundIteration;
-  /** @param {{costUsd?: number|null, pricing?: string|null, usage?: any}} arg */
+  // `tokens` alone cannot answer the question the ledger exists to answer.
+  // bare-agent's `inputTokens` is the UNCACHED prompt remainder — re-sent context
+  // is billed as a cache READ and never appears in it. So a round that re-pays for
+  // half the repo and a round that reads it fresh can carry the same `tokens`, at
+  // very different cost. Record the four tiers the provider actually prices
+  // separately, and record the `kind` (a summarizer fold is an LLM call too, and
+  // must never hide inside the worker's own numbers).
+  /** @param {{costUsd?: number|null, pricing?: string|null, usage?: any, kind?: string}} arg */
   const meteredOnLlmResult = async (arg) => {
+    const u = arg?.usage ?? {};
     emit('worker-round', {
       iteration: roundIteration,
+      kind: arg?.kind ?? 'turn',
       costUsd: arg?.costUsd ?? null,
       pricing: arg?.pricing ?? null,
-      tokens: (arg?.usage?.inputTokens ?? 0) + (arg?.usage?.outputTokens ?? 0),
+      tokens: (u.inputTokens ?? 0) + (u.outputTokens ?? 0),
+      usage: {
+        inputTokens: u.inputTokens ?? 0,
+        outputTokens: u.outputTokens ?? 0,
+        cacheReadTokens: u.cacheReadTokens ?? 0,
+        cacheCreationTokens: u.cacheCreationTokens ?? 0,
+      },
     });
     return onLlmResult(arg);
   };
