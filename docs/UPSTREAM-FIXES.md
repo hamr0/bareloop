@@ -13,8 +13,10 @@
 > **Owner split (statuses updated 2026-07-14 — see the banners on each entry):**
 > - **litectx** — LC-1 **CLOSED** (decline confirmed by our own trace; the chunk fetch shipped
 >   in 0.29.1 and is consumed), LC-2 **WITHDRAWN** (our error — a stale-index phantom)
-> - **bare-agent** — **BA-4 (OPEN, CRITICAL)**, **BA-1 (OPEN)**, **BA-5 (OPEN — supersedes
->   BA-3)**; BA-2 **WITHDRAWN** (misfiled — the ranged read is litectx's `get`, which shipped)
+> - **bare-agent** — **BA-6 (OPEN, CRITICAL)**, **BA-4 (OPEN, CRITICAL)**, **BA-1 (OPEN)**,
+>   **BA-5 (OPEN — supersedes BA-3)**, **BA-7 (OPEN, HIGH — protocol/correctness only; it moved
+>   NO outcome in our test and we claim no capability benefit)**; BA-2 **WITHDRAWN** (misfiled —
+>   the ranged read is litectx's `get`, which shipped)
 >
 > **Also checked and NOT filed** (see `UPSTREAM-ASKS.md`): bareguard's `limits.maxTurns` /
 > `maxToolRounds` semantics (documented in its own source; **we misread the API**) and the
@@ -162,6 +164,211 @@ was at `tokenize.js:66-72`. It just couldn't hand it over.
 ---
 
 # bare-agent
+
+## BA-6 — a silently TRUNCATED round is indistinguishable from a completed one
+
+**Files:** `src/provider-anthropic.js`, `src/loop.js` · **Severity: CRITICAL.** A round the API cut
+off mid-thought is handed to the caller as **the model's final answer**, with **`error: null`**.
+There is no field on `GenerateResult` that could tell them apart.
+
+### The defect
+
+Four facts, verified at **0.26.2**. Each is innocuous alone; together they are the bug.
+
+**1. `max_tokens` defaults to 4096** — `provider-anthropic.js:82`:
+
+```js
+max_tokens: options.maxTokens || 4096,
+```
+
+**2. `stop_reason` is never read.** `grep -rn "stop_reason" src/` → **zero hits**. The API tells you
+exactly why generation ended; bare-agent throws that away and never exposes it.
+
+**3. The response parse keeps ONLY `text` and `tool_use`** — `provider-anthropic.js:105-113`:
+
+```js
+for (const block of data.content) {
+  if (block.type === 'text') text += block.text;
+  if (block.type === 'tool_use') { toolCalls.push({ id: block.id, name: block.name, arguments: block.input }); }
+}
+// every other block type — including `thinking` — is silently dropped
+```
+
+**4. Loop treats "no tool calls" as the FINAL ANSWER** — `loop.js:670`, whose own comment says so:
+
+```js
+// No tool calls — LLM gave a final text response
+if (!result.toolCalls || result.toolCalls.length === 0) {
+  …
+  return { text: result.text, toolCalls: [], …, error: null, … };   // line 684 — clean finish
+}
+```
+
+### The mechanism
+
+`claude-sonnet-5` runs **adaptive thinking by DEFAULT** when `thinking` is omitted from the request
+— which bare-agent **always** omits (that's BA-7). On a hard prompt the model thinks **straight past
+`max_tokens`**, and the API returns:
+
+```
+content: [ { type: "thinking", … } ]      ← no text block, no tool_use block
+stop_reason: "max_tokens"
+```
+
+bare-agent **drops the thinking block** (3) and **never reads `stop_reason`** (2), so `generate()`
+returns **`{ text: '', toolCalls: [] }`** — which Loop reads as *"the model gave its final text
+response"* (4) and returns as a **clean finish with `error: null`** (line 684).
+
+**A truncation is laundered into a completion.** The attempt ends tidily. It contains nothing.
+
+### Evidence (probe against the real API, bare-agent's own body shape)
+
+| `max_tokens` | `stop_reason` | output tokens | content blocks | text bare-agent yields |
+|---|---|---|---|---|
+| 1024 | `max_tokens` | 1024 | `[thinking]` | **0 B** |
+| **4096 (the default)** | `max_tokens` | 4096 | `[thinking]` | **0 B** |
+
+The default is not a safe harbour — it is the second row.
+
+### Why it matters to adopters
+
+**Any consumer running a reasoning model on a non-trivial task can have a round silently truncated
+and reported as a completed turn**, with no error, no warning, and no field to detect it by. In
+bareloop this is — in the logs — **indistinguishable from "the worker chose to stop without writing
+a fix"**, which is the exact outcome we have spent a week diagnosing. It may have **corrupted an
+unknown fraction of our prior experimental arms** (bareloop `docs/FINDINGS.md` **F25**).
+
+### The fix
+
+**Surface `stop_reason` on `GenerateResult`.** Then: a round that stopped on **`max_tokens` with
+zero tool calls** must **NOT** be treated as a finished turn — it must surface as an **error** (or
+be continued explicitly). Never a silent completion.
+
+Raising the default `max_tokens` for reasoning models is worth doing on its own merits, but it is
+**not the fix** — it moves the cliff, it does not add the signal. **The load-bearing change is
+reading `stop_reason`.** (Related but separable: BA-7 asks you to stop discarding the `thinking`
+blocks. BA-6 stands even if BA-7 is never implemented — an empty round must not read as a finish.)
+
+### Acceptance criteria (must be able to fail)
+
+1. `GenerateResult` carries **`stopReason`** (or equivalent) reflecting the API's `stop_reason`.
+2. A Loop round whose response has **`stop_reason: 'max_tokens'` and zero tool calls** does **NOT**
+   return as a clean finish with `error: null` — it surfaces as an **error** or a **continuation**.
+3. **Negative control:** a round that genuinely ends with **`stop_reason: 'end_turn'` and zero tool
+   calls STILL returns as a clean finish.** Without this, the suite cannot distinguish *truncated*
+   from *finished*, and a fix that errors on **every** zero-tool-call round would pass — breaking
+   every consumer's happy path.
+4. **All three must FAIL against 0.26.2.**
+
+---
+
+## BA-7 — thinking blocks are neither requested nor preserved
+
+**Files:** `src/provider-anthropic.js`, `src/loop.js` · **Severity: HIGH — correctness and protocol
+conformance.** Not performance. Read the next box before you prioritise this.
+
+> ### Honesty note — this fix moved NO outcome in our test, and we will not pretend otherwise
+>
+> We measured it **end-to-end**. A **raw-SDK harness** with `thinking` **explicitly enabled** and
+> **every block round-tripped correctly** (n=2), against **stock bare-agent** (n=2), on the **same
+> model, the same task, the same tools**, produced **indistinguishable outcomes**: the same wrong
+> hypothesis, the same files touched, **zero writes**, in both arms.
+>
+> **Fixing this changed nothing we could measure.** We file it as a **correctness / protocol
+> defect**: bare-agent silently violates Anthropic's stated contract and silently loses data the
+> API sent it. **We claim NO performance or capability benefit — and we cannot demonstrate one.**
+> If you are triaging by expected agent-quality gain, triage this **below** BA-6 and BA-4. It is
+> here because it is **wrong**, not because it is **slow**.
+
+### The defect
+
+Verified at **0.26.2**. Four holes, and there is no path through any of them.
+
+**1. The request never asks for thinking.** The body built at `provider-anthropic.js:79-93` has
+**no `thinking` key**, and no option can put one there:
+
+```js
+const body = {
+  model: this.model,
+  max_tokens: options.maxTokens || 4096,
+  messages: msgs,
+  ...(system && { system }),
+  ...(options.temperature != null && { temperature: options.temperature }),
+};
+// no `thinking` — and nothing downstream adds one
+```
+
+`grep -rn "thinking" src/` returns **only an unrelated Gemini comment** (`provider-gemini.js:148`,
+about folding `thoughtsTokenCount` into output tokens).
+
+**2. The response discards thinking blocks.** `provider-anthropic.js:105-113` keeps **only** `text`
+and `tool_use` (see BA-6). A `thinking` block hits the floor.
+
+**3. The transcript has nowhere to put one.** `loop.js:688-696` rebuilds the assistant turn pushed
+back into `msgs` from **`text` + `tool_calls` only**:
+
+```js
+msgs.push({
+  role: 'assistant',
+  content: result.text || null,
+  tool_calls: result.toolCalls.map(tc => ({ id: tc.id, type: 'function', function: { … } })),
+});
+```
+
+The OpenAI-shaped `Message` type **has no field that COULD carry a thinking block.**
+
+**4. And the re-serialiser could not emit one anyway.** `_toAnthropicMessage()`
+(`provider-anthropic.js:142-172`; the assistant branch at **155-170**) rebuilds an assistant message
+as `text` + `tool_use` blocks. **No path exists** by which a thinking block reaches the next
+request.
+
+### Confirmed empirically
+
+POSTing **bare-agent's exact body shape** — no `thinking` param, tools present, a real system prompt
+and task — returns:
+
+```
+stop: tool_use
+blocks: ["thinking", "tool_use"]
+thinking_tokens: 13
+```
+
+**bare-agent retains only `["tool_use"]`.** The thinking block was sent to it, and it dropped it.
+
+### Why it's a defect
+
+`claude-sonnet-5` (and Opus 4.7+) run **adaptive thinking by DEFAULT** when `thinking` is omitted —
+so **bare-agent is receiving thinking blocks today, on every round, on these models, without asking
+for them.** Anthropic's contract is that **thinking blocks are echoed back unchanged — including
+their `signature`** — when continuing an extended-thinking tool-use conversation on the same model.
+
+bare-agent **cannot** do this. It has nowhere to put them. And **the loss is SILENT**: no 400, no
+warning, no signal of any kind. A library that quietly drops protocol-significant data the API sent
+it is broken **regardless of whether the drop is currently costing anyone accuracy** — which, per
+the honesty note, we could not show it is.
+
+### The fix
+
+**(a) Preserve `thinking` blocks verbatim — `signature` included** — in the assistant turn replayed
+to the API. This needs a field on the transcript's assistant message that can hold provider-native
+blocks (the OpenAI-shaped `Message` cannot express one today; that is the real work here).
+
+**(b) Expose an opt-in `thinking` option** that reaches `body.thinking`.
+
+### Acceptance criteria (must be able to fail)
+
+1. On `claude-sonnet-5` **with tools**, round **N+1**'s request body contains — inside round N's
+   assistant turn — the **byte-identical `thinking` block objects** from round N's response,
+   **`signature` included**. (Assert on the **serialised body**, not on an internal field: the bug
+   is that nothing reaches the wire.)
+2. An opt-in **`thinking: {type: 'adaptive'}`** (or the API's current shape) reaches
+   **`body.thinking`**.
+3. **Negative control:** with thinking disabled/absent on a model that does not think, the request
+   body is **byte-identical to today's** — backward compatible, and the test is provably reading the
+   flag rather than the weather.
+4. **1 and 2 must FAIL against 0.26.2.**
+
+---
 
 ## BA-4 — `shell_write` silently truncates a file to ZERO BYTES when `content` is missing
 
@@ -374,6 +581,12 @@ empty strings between steps. The run was **unreadable** until we worked around i
 gate's `humanChannel` return `deny` instead of `terminate`. That workaround is a shim around a
 lib that throws away the thing the caller came for.
 
+**Independently RECONFIRMED live (2026-07-14).** A separate harness — bareloop's isolation study,
+which was not looking for this — rediscovered the **852 path** from scratch: `loop.stop()` returned
+the false `"[Loop] hit internal safety limit of 100 rounds"` error with **empty text**, observed at
+**12 and 16 rounds** — reporting a 100-round limit that **never happened**. Same defect, same line,
+found twice by two independent harnesses. No change to the ask; the evidence is doubled.
+
 ### The fix
 
 **All four** discard paths (620, 782, 843, 852) must **preserve the text the model already
@@ -474,9 +687,18 @@ about. `offset`/`limit` in bytes is acceptable; lines are what the ecosystem act
 BA-4 (shell_write zeroes files)  ──►  LAND FIRST — and bareloop's N2 EXIT IS BLOCKED ON IT.
                                        Data loss in shipped code; no gate can catch it.
                                        Small, self-contained, no design question to settle.
+BA-6 (truncation reads as a      ──►  LAND WITH IT. Silent data loss of a different kind: a round
+      clean finish)                    the API cut off is handed back as the model's final answer,
+                                       error: null. Every reasoning-model consumer is exposed, and
+                                       no caller can currently detect it. Fix = read stop_reason.
 BA-1 (transcript caching)        ──►  independent; proven necessary; land whenever
 BA-5 (halts discard text)        ──►  independent; unblocks the ratchet (supersedes BA-3;
                                        BA-3's mechanism was right, our ask was under-scoped)
+                                       RECONFIRMED live by a second, independent harness
+BA-7 (thinking blocks dropped)   ──►  independent; PROTOCOL/CORRECTNESS ONLY. We measured it and
+                                       it moved NO outcome (raw-SDK-with-thinking vs stock
+                                       bare-agent: indistinguishable, n=2 each). Land it because
+                                       it is wrong, not because it is slow. Lowest of the five.
 
 resolved, no longer routed through:
   LC-2  withdrawn  (stale-index phantom — our error, not a defect)
@@ -488,8 +710,12 @@ checked and NOT filed (our errors — see UPSTREAM-ASKS.md):
   bareguard limits.maxTurns/maxToolRounds semantics · planner budget blindness (onLlmResult exists)
 ```
 
-- **Three open handoffs, all to bare-agent, all independent of one another.** **BA-4 goes first**
-  — it is the only one that is losing data today, and the fix is a four-line precondition.
+- **Five open handoffs, all to bare-agent, all independent of one another.** **BA-4 and BA-6 go
+  first** — they are the two that are **losing data today**. BA-4 loses the file; BA-6 loses the
+  round *and tells the caller it succeeded*. BA-4's fix is a four-line precondition; BA-6's is
+  reading a field the API already sends.
+- **BA-7 goes last, and we say so ourselves.** We measured it end-to-end and it **moved no
+  outcome** — file it as protocol/correctness, not as a capability fix. See its honesty note.
 - **BA-4 is a HARD N2-EXIT BLOCKER for bareloop, and the rung STOPS on bare-agent shipping it.**
   hamr's decision (2026-07-14): **wait for the upstream fix + version bump — no local shim in
   `src/`.** The "never a local shim" doctrine holds **even for a safety bug**; two-red routing is

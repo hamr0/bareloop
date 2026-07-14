@@ -25,10 +25,133 @@ failure log blocks nothing). bareguard's own `sk-[\w-]{16,}` has the same missin
 boundary the validator fix corrected — one more reason the validator does not bind it.
 
 > **Handoff spec: [`UPSTREAM-FIXES.md`](UPSTREAM-FIXES.md)** — the asks below that are still
-> OPEN (BA-1, BA-4, BA-5), written for the implementer: evidence, the exact change, and
+> OPEN (BA-1, BA-4, BA-5, BA-6, BA-7), written for the implementer: evidence, the exact change, and
 > acceptance criteria that can fail. This file stays the fix *queue* (status + the version
 > bareloop consumed); that file is what gets handed to each repo. Withdrawn/closed/superseded
 > entries stay legible here — a misfiled ask is itself a finding.
+
+## OPEN (2026-07-14) — BA-6: a silently TRUNCATED round is indistinguishable from a completed one
+
+**Package:** bare-agent (`src/provider-anthropic.js`, `src/loop.js`) · **Severity: CRITICAL — a
+round the API cut off mid-thought is handed to the caller as the model's FINAL ANSWER, with
+`error: null`.**
+
+**What's broken — four facts, verified at 0.26.2, innocuous alone and a bug together.**
+
+1. **`max_tokens` defaults to 4096** — `provider-anthropic.js:82`:
+   ```js
+   max_tokens: options.maxTokens || 4096,
+   ```
+2. **`stop_reason` is NEVER read.** `grep -rn "stop_reason" src/` → **zero hits**. Not parsed, not
+   on `GenerateResult`, not reachable by any caller.
+3. **The response parse keeps only `text` and `tool_use`** — `provider-anthropic.js:105-113`. Every
+   other block type (including `thinking`) is silently dropped.
+4. **Loop treats "no tool calls" as the model's FINAL ANSWER** — `loop.js:670`, whose own comment
+   says exactly that:
+   ```js
+   // No tool calls — LLM gave a final text response
+   if (!result.toolCalls || result.toolCalls.length === 0) {   // → clean return at 684, error: null
+   ```
+
+**The mechanism.** `claude-sonnet-5` runs **adaptive thinking by DEFAULT** when `thinking` is
+omitted from the request — which bare-agent **always** omits (that is BA-7). On a hard prompt the
+model thinks **past `max_tokens`** and the API returns `content: [thinking]` — **no text block, no
+tool_use block** — with **`stop_reason: 'max_tokens'`**. bare-agent drops the thinking block (3) and
+never reads the stop reason (2), so `generate()` yields **`{text: '', toolCalls: []}`**, which Loop
+reads as *"the model gave its final answer"* (4) and returns as a **clean finish with `error:
+null`**. **A truncation is laundered into a completion.** The attempt ends tidily and contains
+nothing.
+
+**Measured (probe against the real API, bare-agent's own body shape):**
+
+| `max_tokens` | `stop_reason` | output tokens | content blocks | text bare-agent yields |
+|---|---|---|---|---|
+| 1024 | `max_tokens` | 1024 | `[thinking]` | **0 B** |
+| **4096 (the default)** | `max_tokens` | 4096 | `[thinking]` | **0 B** |
+
+The default is not a safe harbour — it is the second row.
+
+**Why it matters to adopters.** Any consumer running a **reasoning model** on a non-trivial task can
+have a round **silently truncated and reported as a completed turn** — no error, no warning, no
+field to detect it by. In bareloop this is, in the logs, **indistinguishable from "the worker chose
+to stop without writing a fix"** — the exact outcome we have spent a week diagnosing. It may have
+**corrupted an unknown fraction of our prior experimental arms** (`docs/FINDINGS.md` **F25**).
+
+**The fix.** Surface **`stop_reason`** on `GenerateResult`. A round that stopped on **`max_tokens`
+with zero tool calls** must **NOT** be treated as a finished turn — it must surface as an **error**
+(or an explicit continuation), never a silent completion. Raising the default `max_tokens` for
+reasoning models is worth considering, but it is **not** the fix: it moves the cliff, it does not add
+the signal. **The load-bearing change is reading `stop_reason`.**
+
+**Acceptance criteria (must be able to fail).**
+
+1. `GenerateResult` carries **`stopReason`** (or equivalent) reflecting the API's `stop_reason`.
+2. A Loop round whose response has **`stop_reason: 'max_tokens'` and zero tool calls** does **NOT**
+   return as a clean finish with `error: null` — it surfaces as an **error** or a **continuation**.
+3. **Negative control:** a round that genuinely ends with **`stop_reason: 'end_turn'` and zero tool
+   calls STILL returns as a clean finish** — so the suite distinguishes *truncated* from *finished*,
+   and a fix that errors on every zero-tool-call round (breaking every consumer's happy path) fails.
+4. **All three must FAIL against 0.26.2.**
+
+## OPEN (2026-07-14) — BA-7: thinking blocks are neither requested nor preserved
+
+**Package:** bare-agent (`src/provider-anthropic.js`, `src/loop.js`) · **Severity: HIGH —
+correctness and protocol conformance. NOT performance.**
+
+> **HONESTY NOTE — read before prioritising. We measured this end-to-end and it moved NO outcome.**
+> A **raw-SDK harness** with `thinking` **explicitly enabled** and **every block round-tripped
+> correctly** (n=2), against **stock bare-agent** (n=2), on the **same model, task and tools**,
+> produced **indistinguishable** results: same wrong hypothesis, same files, **zero writes**, in
+> both arms. **Fixing this changed nothing we could measure.** It is filed as a **correctness /
+> protocol defect** — bare-agent silently violates Anthropic's stated contract and silently loses
+> data the API sent it. **We claim NO performance or capability benefit, and we cannot demonstrate
+> one.** Do not let anyone — including us — sell it as a fix for agent quality.
+
+**What's broken.** Verified at **0.26.2**. Four holes, no path through any of them:
+
+1. **The request never asks for thinking.** The body built at `provider-anthropic.js:79-93` has **no
+   `thinking` key**, and no option can put one there. `grep -rn "thinking" src/` returns **only an
+   unrelated Gemini comment** (`provider-gemini.js:148`).
+2. **The response discards thinking blocks.** `provider-anthropic.js:105-113` keeps **only** `text`
+   and `tool_use`.
+3. **The transcript has nowhere to put one.** `loop.js:688-696` rebuilds the assistant turn pushed
+   into `msgs` from **`text` + `tool_calls` only** — the OpenAI-shaped `Message` type has **no field
+   that COULD carry a thinking block**.
+4. **The re-serialiser could not emit one anyway.** `_toAnthropicMessage()`
+   (`provider-anthropic.js:142-172`; assistant branch **155-170**) rebuilds an assistant message as
+   `text` + `tool_use` blocks. **No path exists** by which a thinking block reaches the next request.
+
+**Confirmed empirically.** POSTing **bare-agent's exact body shape** (no `thinking` param, tools
+present, real system + task) returns `stop: tool_use`, `blocks: ["thinking","tool_use"]`,
+`thinking_tokens: 13`. **bare-agent retains only `["tool_use"]`** — the block was sent to it, and it
+dropped it.
+
+**Why it's a defect.** `claude-sonnet-5` (and Opus 4.7+) run **adaptive thinking by DEFAULT** when
+`thinking` is omitted — so bare-agent is receiving thinking blocks **today, every round, on these
+models, without asking for them**. Anthropic's contract is that thinking blocks are **echoed back
+unchanged, `signature` included**, when continuing an extended-thinking tool-use conversation on the
+same model. bare-agent **cannot** do this — it has nowhere to put them. **The loss is SILENT: no
+400, no warning.** A library that quietly drops protocol-significant data the API sent it is broken
+**regardless** of whether the drop is currently costing accuracy — which, per the honesty note, we
+could not show it is.
+
+**The fix.** **(a)** Preserve `thinking` blocks **verbatim — including `signature`** — in the
+assistant turn replayed to the API (this needs a transcript field that can hold provider-native
+blocks; the OpenAI-shaped `Message` cannot express one today, and that is the real work).
+**(b)** Expose an **opt-in `thinking` option** that reaches `body.thinking`.
+
+**Acceptance criteria (must be able to fail).**
+
+1. On `claude-sonnet-5` **with tools**, round **N+1**'s request body contains — inside round N's
+   assistant turn — the **byte-identical `thinking` block objects** from round N's response,
+   **`signature` included**. Assert on the **serialised body**: the bug is that nothing reaches the
+   wire.
+2. An opt-in **`thinking: {type: 'adaptive'}`** (or the API's current shape) reaches
+   **`body.thinking`**.
+3. **Negative control:** with thinking disabled/absent on a model that does not think, the request
+   body is **byte-identical to today's** — backward compatible, and the test provably reads the flag
+   rather than the weather.
+4. **1 and 2 must FAIL against 0.26.2.**
 
 ## OPEN (2026-07-14) — BA-4: `shell_write` silently truncates a file to ZERO BYTES when `content` is missing
 
@@ -124,6 +247,14 @@ never-green run already has no legal channel between attempts; this closes the l
 artifact**, and the artifact-feed-forward channel — *the entire variable under test in that
 experiment* — carried empty strings between steps. The experiment was **unreadable** until we
 worked around it by making the gate's `humanChannel` return `deny` instead of `terminate`.
+
+**Independently RECONFIRMED live (2026-07-14, the isolation study).** A separate harness, not looking
+for this, rediscovered the **852 path** from scratch: `loop.stop()` returned the false
+`"[Loop] hit internal safety limit of 100 rounds"` error with **empty text**, observed at **12 and 16
+rounds** — reporting a 100-round limit that **never happened**. Same defect, same line, found twice by
+two independent harnesses. No change to the ask; the evidence is doubled. *(bareloop's own doc debt
+from the same mechanism — a comment that asserts the opposite of what `stop()` returns — is recorded
+under "OUR SIDE" §5, not as an upstream ask.)*
 
 **The fix.** All four discard paths must **preserve the text the model already produced**: return
 the accumulated text alongside the `error`/rule tag and let the caller decide what a partial
@@ -430,6 +561,34 @@ in `package.json`. This is a **legitimate stop, not a soft blocker and not a wor
 — build-ladder discipline: *a rung that cannot meet its exit stops the ladder; the stop is a
 result.* **BA-5 is HIGH but is NOT an exit blocker**: it degrades the loop's ratchet, it does not
 destroy data.
+
+**5. A comment in `src/interpret.js` asserts the OPPOSITE of what `loop.stop()` actually does.**
+`src/interpret.js:289` still says:
+
+> *"`loop.stop()` breaks at the round boundary and **returns the transcript with NO error**, so the
+> attempt ends cleanly…"*
+
+**That is FALSE**, and BA-3/BA-5 are the proof: `stop()` falls through to the `HARD_ROUND_LIMIT`
+return (`loop.js:852`), which yields `text: ''` carrying the internal-safety-limit **warning** as its
+`error`. bareloop survives **only** by special-casing that error string behind the `stoppedByBound`
+flag (`src/interpret.js:298`, `:412`) — and the comment 100 lines further down (`:404-411`) describes
+the real behaviour **correctly**. The code is right; one comment is a lie. **bareloop's doc debt, not
+an upstream ask** — recorded here because a stale comment that contradicts a filed upstream defect is
+exactly how a phantom gets re-filed. Fix: correct `:289` to say what `:404-411` already says.
+
+**6. The isolation study EXONERATED bare-agent on the AIM axis — and KILLED two more of our own
+suspects.** Recorded because this repo has filed **two phantom asks** (BA-2 misfiled, LC-2 a
+stale-index artefact): the suspects we *kill* belong in the record as much as the ones we file.
+
+- **bare-agent is not why the worker aims wrong.** RAW-SDK-with-thinking (every block round-tripped
+  correctly) vs **stock bare-agent**, same model/task/tools, **n=2 each: indistinguishable** — same
+  wrong hypothesis, same files, zero writes. And a **no-harness single-message probe** shows the
+  model **does not nominate the cause file even with everything in front of it**. The aim problem is
+  **not in the library.** *(This is BA-7's honesty note, pointed at ourselves.)*
+- **S3 — "the summarizer/compaction fold is eating the signal": KILLED. Not a defect.** bareloop
+  **wires neither compaction seam** — there is no fold, so there is nothing to eat the signal.
+- **S4 — "tool results are mangled in the replayed history": KILLED. Not a defect.** Tool results
+  are **replayed verbatim.**
 
 **Instrument ≠ product** (stated so a future reader does not read an inconsistency): the
 POC/scratch harness **does** guard `content` and **does** carry a shrink-blocker rail. That is an
