@@ -10,11 +10,13 @@
 > by version bump. bareloop binds its own provider and could have shimmed BA-1 in ten minutes;
 > it must not.
 >
-> **Owner split:**
-> - **litectx** — LC-1, LC-2 *(do these first; bareloop is blocked on them)*
-> - **bare-agent** — BA-1, BA-2
+> **Owner split (statuses updated 2026-07-14 — see the banners on each entry):**
+> - **litectx** — LC-1 **CLOSED** (decline confirmed by our own trace; the chunk fetch shipped
+>   in 0.29.1 and is consumed), LC-2 **WITHDRAWN** (our error — a stale-index phantom)
+> - **bare-agent** — BA-1 *(OPEN — the one live handoff left in this file)*, BA-2
+>   **WITHDRAWN** (misfiled — the ranged read is litectx's `get`, which shipped)
 >
-> **Ground evidence** (bareloop `docs/FINDINGS.md` F18): nine+ real-model runs of job #1 —
+> **Ground evidence** (bareloop `docs/FINDINGS.md` F8–F16): nine+ real-model runs of job #1 —
 > fix a planted one-character regression in litectx's `tokenize.js` (a `>= 3` → `> 3` in
 > `keywords()`, which reds 3 recall tests), $1.50 budget, `claude-sonnet-5`. The worker
 > **reads half the repository and runs out of money before it writes a fix.** Every number
@@ -24,7 +26,17 @@
 
 # litectx
 
-## LC-2 — chunk bodies drop the docstring above the symbol
+## LC-2 [WITHDRAWN 2026-07-14] — chunk bodies drop the docstring above the symbol
+
+> **WITHDRAWN — our error, not a litectx defect. Do NOT hand this section to litectx.** The
+> missing docstrings were a **phantom from a stale index that had never re-chunked**:
+> docstring attachment had been fixed upstream long before this was filed. Root cause is a
+> live footgun in OUR environment — hamr's global `~/.claude/settings.json` `SessionStart`
+> hook warm-indexes every repo with a **globally-installed litectx v0.5.0** while repos import
+> their own node_modules copy (bareloop: 0.29.1), a 24-version skew that re-poisons the index
+> at every session start. 0.29.1 self-heals on read; the local fix is `npm i -g
+> litectx@0.29.1`. The spec below stays legible for the record (same status + grounds as
+> `UPSTREAM-ASKS.md`): a stale index manufactures phantom defects.
 
 **File:** `src/chunker.js` · **Severity: high** — it silently strips the reasoning from every
 chunk in the index.
@@ -77,7 +89,13 @@ comment block and include it in `body` (and in `startLine`).
 
 ---
 
-## LC-1 — a hit cannot be triaged, and a chunk body cannot be fetched
+## LC-1 [CLOSED 2026-07-14] — a hit cannot be triaged, and a chunk body cannot be fetched
+
+> **CLOSED — part 2 shipped, part 1 declined and the decline is confirmed by our own trace.**
+> litectx 0.29.1 ships `get(path, {startLine, endLine})` — one content-hash-gated chunk —
+> and bareloop consumes it (F19 `ctx_get`). The snippet ask litectx declined on measurement,
+> with an un-defer condition (>2 wrong fetches per recall); our trace answers it: **0.2
+> fetches per recall** — triage is not the bottleneck. Full record in `UPSTREAM-ASKS.md`.
 
 **File:** `src/store.js` + the recall/get surface · **Severity: high** — bareloop's worker
 retrieval is blocked on this.
@@ -226,7 +244,15 @@ the *prefix* invalidates the cache, so folds should keep the head stable.
 
 ---
 
-## BA-2 [CRITICAL] — no ranged-read primitive: a pointer the worker cannot act on
+## BA-2 [WITHDRAWN 2026-07-14] — no ranged-read primitive: a pointer the worker cannot act on
+
+> **WITHDRAWN — MISFILED. Do NOT hand this section to bare-agent.** The ranged read was never
+> `shell_read`'s job: it is **litectx's `get(path, {startLine, endLine})`**, which shipped in
+> 0.29.1 — one content-hash-gated chunk, refusing any non-chunk-boundary range, so it cannot
+> be widened into a whole-file read. bareloop consumes it as the F19 `ctx_get` tool
+> (`litectx ^0.29.1`); read-only by construction, the `run` lock untouched. The misfiling is
+> itself the finding — **aim the ask at the right package** — so the spec below stays legible
+> for the record (same status + grounds as `UPSTREAM-ASKS.md`).
 
 **File:** `tools/shell.js` · **Severity: critical.** Everything in the retrieval story is
 downstream of this one.
@@ -281,23 +307,27 @@ about. `offset`/`limit` in bytes is acceptable; lines are what the ecosystem act
 
 ---
 
-# Order, and what unblocks what
+# Order, and what unblocks what (updated 2026-07-14 — the retrieval track is RESOLVED)
 
 ```
-LC-2 (docstrings in chunk)  ──┐
-                              ├──►  LC-1 (snippet = chunk head; get one chunk)  ──┐
-                              │                                                    ├──► bareloop
-BA-2 (ranged read)  ─────────────────────────────────────────────────────────────┘    retrieval
-                                                                                      POC (n=3)
-BA-1 (transcript caching)  ──►  independent; proven necessary; land whenever
+BA-1 (transcript caching)  ──►  the ONE live handoff; independent; proven necessary; land whenever
+
+resolved, no longer routed through:
+  LC-2  withdrawn (stale-index phantom — our error, not a defect)
+  LC-1  closed    (litectx 0.29.1 get(range) shipped + consumed; snippet decline confirmed by trace)
+  BA-2  withdrawn (misfiled — the ranged read is litectx's get, which shipped)
 ```
 
-- **LC-2 before LC-1** — LC-2 makes LC-1's snippet a slice of an already-correct body.
-- **BA-1 is independent** and pays for itself immediately, in every agent in the suite.
-- **BA-2 is the blocker.** Without a ranged read, a pointer is inert and retrieval cannot be
-  tested at all.
+- **BA-1 is the only open handoff in this file.** It is independent and pays for itself
+  immediately, in every tool-loop agent in the suite. (BA-3 — `loop.stop()` returns a bogus
+  hard-limit error and discards text — is filed in `UPSTREAM-ASKS.md`; its spec has not been
+  written into this handoff file yet.)
+- The old diagram routed bareloop's retrieval POC through LC-2 → LC-1 and BA-2. That path is
+  gone: **the retrieval verbs landed (litectx 0.29.1, consumed as `ctx_recall`/`ctx_get`, F19)
+  and were run.** Retrieval works exactly as designed — whole-file reads 41→11, re-reads 42→7 —
+  **and moved the outcome zero** (still cap-halt, zero writes). The bottleneck was never the
+  primitives: the close had never run (F20) and the loop has no ratchet (F21).
 
-**What bareloop does once these land:** grant the worker a retrieval verb (a menu change — a
-human grant in the signed job spec, never the agent's), re-run job #1 at n=3, and find out
-whether *recall + ranged read + caching* greens it **reliably**. Today: control **0/2**, caching
-alone **1/2**. The rung-exit stop stands until it replicates.
+**Where bareloop stands:** control **0/2**, caching alone **1/2**, retrieval **0/1**,
+bounded+retrieval **0/1**. The rung-exit stop stands; the next move is plan-v1 (PRD Addendum
+v1.12), not another primitive.

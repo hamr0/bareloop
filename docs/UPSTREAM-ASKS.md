@@ -24,10 +24,11 @@ positive rate, while **redaction tolerates false-positives** (masking a package 
 failure log blocks nothing). bareguard's own `sk-[\w-]{16,}` has the same missing-left-
 boundary the validator fix corrected — one more reason the validator does not bind it.
 
-> **Handoff spec: [`UPSTREAM-FIXES.md`](UPSTREAM-FIXES.md)** — the four open asks below,
-> written for the implementer: evidence, the exact change, and acceptance criteria that can
-> fail. This file stays the fix *queue* (status + the version bareloop consumed); that file is
-> what gets handed to each repo.
+> **Handoff spec: [`UPSTREAM-FIXES.md`](UPSTREAM-FIXES.md)** — the asks below that are still
+> OPEN (BA-1, BA-3), written for the implementer: evidence, the exact change, and acceptance
+> criteria that can fail. This file stays the fix *queue* (status + the version bareloop
+> consumed); that file is what gets handed to each repo. Withdrawn/closed entries stay legible
+> here — a misfiled ask is itself a finding.
 
 ## OPEN (2026-07-14) — BA-1: bare-agent cannot cache a tool loop's transcript on Anthropic
 
@@ -70,7 +71,17 @@ necessary, not sufficient — see BA-2).
 **Fix upstream + version bump. No local shim** (design law #10): the provider is a
 shell-owned binding, so bareloop *could* bind a patched copy — and must not.
 
-## OPEN (2026-07-14) — BA-2 [CRITICAL]: no ranged-read primitive — a pointer the worker cannot act on
+## WITHDRAWN (2026-07-14) — BA-2 was MISFILED: the ranged read was never `shell_read`'s job — it is litectx's `get`
+
+> **WITHDRAWN 2026-07-14 — wrong package; the capability exists and bareloop consumed it this
+> session.** The ask was filed as "no ranged-read primitive in bare-agent's `shell_read`; the
+> only route is `sed` via `shell_run`, which bareloop locks." But the ranged read was never
+> `shell_read`'s job: it is **litectx's `get(path, {startLine, endLine})`**, shipped in 0.29.1
+> — one content-hash-gated chunk, refusing any non-chunk-boundary range, so it cannot be
+> widened into a whole-file read. bareloop consumes it as the F19 `ctx_get` tool
+> (`litectx ^0.29.1`); the `run` lock is untouched, because the retrieval verbs are read-only
+> by construction. The misfiling itself is the finding — **aim the ask at the right package**
+> — so the original ask stays below, legible, for the record. Do NOT hand it to bare-agent.
 
 **Package:** bare-agent (`tools/shell.js`) · job #1 runs (F18) · **the load-bearing ask.**
 
