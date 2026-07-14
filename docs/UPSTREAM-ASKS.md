@@ -85,4 +85,49 @@ Related, and worth considering together: bare-agent already ships `liteCtxMcpBri
 (`recall · get · impact · recent`, read-only) — chunk retrieval is the *other* half of this,
 and is the standing candidate for bareloop's worker toolbox once granted.
 
+## OPEN (2026-07-14) — LC-1: litectx stores every chunk body and will not hand one back
+
+**Package:** litectx (`src/store.js`, recall/get surface) · same job #1 runs (F18).
+
+**What's missing.** The `nodes` table already persists **`body TEXT NOT NULL`** alongside
+`symbol`, `node_type`, `start_line`, `end_line` — litectx knows exactly where every function
+is *and holds its text*. But `recall` returns **pointers only** ("scored POINTERS — not
+bodies"), and `get` takes a path and reads **the whole file fresh from disk**. So the one
+thing a worker needs — *"give me just `keywords` from `tokenize.js`"* — is the one thing the
+API cannot express, even though the data is sitting in SQLite.
+
+**Consequence.** The worker's only route to a symbol is a whole-file read, and
+`shell_read` cannot seek (BA-2). To find a one-character bug in a 3.4 KB function it dragged
+**1.37 MB** of source through context, re-reading `store.js` (117 KB) nine times.
+
+**The fix.** Let a hit's body be fetched: either `get({path, symbol})` / `get(nodeId)`, or a
+`withBody: true` option on `recall`. The chunk is already indexed, ranked and stored — this
+is exposure, not new capability. `recall` finds `keywords` at `tokenize.js:66-72`; returning
+its ~7 lines instead of 117 KB is the whole ballgame. **This largely subsumes BA-2** for the
+retrieval use case (recall + chunk body *is* the ranged read).
+
+## OPEN (2026-07-14) — LC-2: chunk bodies exclude the docstring above the symbol
+
+**Package:** litectx (`src/chunker.js`) · **found by hamr**, confirmed against the index.
+
+**What's broken.** A chunk's `body` starts at the code. Tree-sitter's `function_declaration`
+node begins at the `function` keyword, so the **leading doc comment is dropped at index
+time**. Verified on this repo:
+
+```
+recall('runClose') → body starts:  export function runClose(close, redact = …) {
+immediately above it in source:    …the signal cannot be "zero judged"; it must be a FLOOR
+                                    against a declared baseline: litectx runs ~390 tests…
+```
+
+**Consequence.** In a codebase where the *reasoning* lives in the docblock — which is every
+codebase written to these rules — recall returns **what the code does with none of why**. A
+worker handed `runClose` without its docblock cannot know that `cwd` is load-bearing (F8),
+that a timeout is not a `broken-close` (F17), or why the judgment floor exists. The comment
+IS the load-bearing part, and it is exactly what gets cut.
+
+**The fix.** Extend a symbol chunk's range upward through an immediately-preceding comment
+block (JSDoc `/** … */`, `//` run, `#` run, Python docstring already inside the body) and
+include it in `body`. Same fix serves every `format` the chunker handles.
+
 *(No other open asks from this repo.)*
