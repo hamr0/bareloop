@@ -956,3 +956,57 @@ the intro `$0.002 / $0.010` — so **every prior sonnet arm's output cost is und
 class again** — an unknown model must price as **null / UNPRICED**, never as a plausible-looking
 number. F24's harness carries its own rate table and hands the Gate the same price the ledger
 sees (`ledgerDrift: 0` in both arms). **Fold this into BA-6 when it is filed.**
+
+---
+
+## F26 — the aim axis was never connected; job #1 is the wrong benchmark
+
+**Full write-up: `docs/REPORT-AIM.md`.** 151 no-harness API samples (one Anthropic call each — no
+bare-agent, no tool loop, no gate), $4.99, `claude-sonnet-5` fixed throughout.
+
+**The result: 0/140 across every legitimate intervention** — baseline, root-cause reframe,
+force-the-descent, each crossed with which source file is shown, plus a rich close. The only arm
+that ever hits (`PC`, 5/5, p<0.0001) is the one where the diagnosis is **hand-written into the
+prompt**.
+
+**The finding is not the zero — it is WHY the zero.** The model nominates whichever orchestration
+file was **withheld**: shown `store.js` → nominates `index.js` (20/20); shown `index.js` →
+nominates `store.js` (20/20); **shown a CLEAN repo with a GREEN suite → nominates the same file
+anyway** (3/3, both directions). The nomination is a function of the prompt's *structure*, not of
+the failure evidence. **The dial was not connected to the engine.**
+
+Consequently **F24 ("decomposition does not fix aim") is WITHDRAWN.** It was not a negative
+result; it was an unconnected instrument reading zero, exactly like the control, caching, and
+retrieval arms scored on the same axis. This is the **fourth** blind instrument in this project
+(ledger/cache-tiers, gate-audit/read-shape, harness/git-status, now aim/nomination) — *decompose
+before you diagnose*, paid for a fourth time.
+
+**Mechanism.** The model does not miss `tokenize.js`; it **rules it out by name** — *"not
+implicated"* — because it triages from the failing tests' **titles** (W4 clobber, promotion
+threshold, recency signal → three unrelated store features). From titles, a tokenizer genuinely is
+not implicated. The reasoning is sound; the inputs are wrong.
+
+**The close-format lever is DEAD (arm E0).** `node --test` already computes the assertion detail
+our close throws away — all three failures are one symptom (`actual []` / `expected ['A is 44']`;
+`actual false` / `expected true`: *every lookup returns empty*). E0 passes the runner's TAP
+diagnostic through **verbatim**, byte-identical to D0 otherwise (identity audit vs `prompt-D0.txt`;
+leak audit on the close). **E0 = 0/20 — and 0/20 replies even MENTION `tokenize.js`**, versus 12/20
+under the force-the-descent wrapper. Raw evidence moved the worker *less* than exhortation did.
+
+**The call (pre-registered): job #1 is the wrong benchmark.** Its defect requires a single
+inductive leap — *three failures across three unrelated features share one property: the query
+terms are short* — that the model makes from no input short of the answer, and **the arbiter may
+never supply the answer**. A benchmark whose only passing configuration is "leak the diagnosis"
+cannot distinguish a good workflow from a bad one: every arm scores 0. **plan-v1 cannot be
+evaluated on job #1.**
+
+**What job #2 needs:** a defect reachable by **elimination**, not **induction** — where reading the
+right file settles it, so a workflow that reads more of the right files scores strictly higher.
+Job #1 has no gradient; you either leap or you don't.
+
+**Not licensed by this finding:** the loop is *not* exonerated (F20/F21 stand on their own
+evidence), and the close-output doctrine is *not* retired (a close that names failures is still
+strictly better than one that hides them — it is merely **not sufficient**, and E0 is the receipt).
+
+**Honest limits:** `PC` is n=5 and the negative controls are n=3 — thin. The 0/140 is not, and the
+nomination-distribution result does not depend on either.
