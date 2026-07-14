@@ -24,6 +24,11 @@ positive rate, while **redaction tolerates false-positives** (masking a package 
 failure log blocks nothing). bareguard's own `sk-[\w-]{16,}` has the same missing-left-
 boundary the validator fix corrected — one more reason the validator does not bind it.
 
+> **Handoff spec: [`UPSTREAM-FIXES.md`](UPSTREAM-FIXES.md)** — the four open asks below,
+> written for the implementer: evidence, the exact change, and acceptance criteria that can
+> fail. This file stays the fix *queue* (status + the version bareloop consumed); that file is
+> what gets handed to each repo.
+
 ## OPEN (2026-07-14) — BA-1: bare-agent cannot cache a tool loop's transcript on Anthropic
 
 **Package:** bare-agent (`src/provider-anthropic.js`) · **Severity: the biggest gap this
