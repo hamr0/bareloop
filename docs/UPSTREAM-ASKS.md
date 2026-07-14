@@ -78,26 +78,41 @@ an explicit, unambiguous opt-in (`content: ""` passed deliberately, or a `trunca
 4. A pre-existing **1000-byte** file survives (1) and (2) with its content **intact** — the
    assertion is on disk state, not on the return string.
 
-**Fix upstream + version bump. No local shim** (design law #10) — but see the N2-exit blocker
-under *"OUR SIDE"* below: this is a **safety** bug in shipped code, not a capability gap, and
-whether bareloop guards `content` in its own tool-def wrapper in the interim is hamr's call.
+**Fix upstream + version bump. No local shim** (design law #10) — **decided by hamr 2026-07-14,
+and the doctrine holds even for a safety bug.** The consequence is accepted, not worked around:
+**BA-4 is a hard N2-exit blocker and the rung STOPS on bare-agent** (see *"OUR SIDE"* §4).
 
 ## OPEN (2026-07-14) — BA-5: every governance halt/deny path DISCARDS the worker's text (supersedes BA-3)
 
-**Package:** bare-agent (`src/loop.js`) · **Severity: high.** **This SUPERSEDES BA-3**, which was
-filed narrowly against `loop.stop()`. The defect is **general**: it is not the stop path, it is
-*every* path where a bound fires. BA-3's original text stays below, legible, with a pointer here.
+**Package:** bare-agent (`src/loop.js`) · **Severity: high.** **This SUPERSEDES BA-3** — *not
+because BA-3 was wrong, but because WE under-scoped it.* BA-3 found this defect, by the right
+mechanism, on the `loop.stop()` path, and asked for that one path to be fixed. Re-reading
+`loop.js` shows the **same** discard on **four** paths. BA-5 does **not** discover text loss; it
+**generalizes BA-3's finding from one path to four.** BA-3's original text stays below, legible.
 
-**What's broken.** Three separate returns in `loop.js`, all substituting `text: ''`:
+**What's broken.** `Loop.run()` has **five** return points. **Exactly ONE preserves the text.**
+Verified at bare-agent **0.26.2**:
 
 ```js
-line 620:  return { text: '', toolCalls: [], usage: lastUsage, cost: totalCost, error: err.message, msgs, metrics: finalizeMetrics() };
-line 782:  return { text: '', …, error: denyTag, … };        // deny streak
-line 843:  return { text: '', …, error: `halt:${rule}`, … };  // limits / budget halt
+line 620:  return { text: '',          …, error: err.message,      … };  // halt (exception)
+line 684:  return { text: result.text, …, error: null,             … };  // CLEAN FINISH — the ONLY
+                                                                          //   path that keeps text
+line 782:  return { text: '',          …, error: denyTag,          … };  // deny streak
+line 843:  return { text: '',          …, error: `halt:${rule}`,   … };  // limits / budget halt
+line 852:  return { text: '',          …, error: warning,          … };  // loop fall-through — THE
+                                                                          //   stop() PATH
 ```
 
-When a bound fires — **budget halt, deny streak, maxTurns** — the model's **already-produced
-text is thrown away** and replaced with `''`. The `error`/rule tag survives; the work does not.
+**Every exit that is not a clean, model-elected finish throws the work away.** The `error`/rule
+tag survives; the text does not.
+
+**The 852 path is the one BA-3 named, and its mechanism is confirmed.** `stop()` sets
+`this._stopped = true` (line 938); the round loop checks `if (this._stopped) break` (lines 544
+and 699) and **falls through past the for-loop** to the return at 852 — which yields `text: ''`
+carrying the **`HARD_ROUND_LIMIT` warning** as its `error`. So a caller's **deliberate** stop is
+returned as **indistinguishable from a runaway**, *and* its text is discarded. That is precisely
+what BA-3 claimed. The other three (620, 782, 843) are the same defect on the paths BA-3 did not
+look at.
 
 **Why it matters.** In a ralph-style loop (`while close-red and under-cap: run the worker`), **a
 bound firing is NORMAL operation, not an exception.** The worker's summary of what it did and
@@ -110,21 +125,28 @@ artifact**, and the artifact-feed-forward channel — *the entire variable under
 experiment* — carried empty strings between steps. The experiment was **unreadable** until we
 worked around it by making the gate's `humanChannel` return `deny` instead of `terminate`.
 
-**The fix.** A halt/deny/stop must **preserve the text the model already produced**: return the
-accumulated text alongside the `error`/rule tag and let the caller decide what a partial result
-is worth. Do **not** substitute `''`. And — BA-3's original ask, now a sub-case — a
-**caller-initiated `loop.stop()` must return `error: null`**: a deliberate stop is not a fault.
+**The fix.** All four discard paths must **preserve the text the model already produced**: return
+the accumulated text alongside the `error`/rule tag and let the caller decide what a partial
+result is worth. Do **not** substitute `''`. And — BA-3's original ask, now the **852 sub-case** —
+a **caller-initiated `loop.stop()` must return `error: null`**, not the `HARD_ROUND_LIMIT`
+warning: a deliberate stop is not a fault and must not be reported as a runaway.
 
 **Acceptance criteria (must be able to fail).**
 
 1. A scripted Loop whose model emits text and then trips a `limits.maxTurns` halt returns
    `{ error: 'halt:limits.maxTurns', text: <the non-empty text the model produced> }` — `text`
-   is **NOT** `''`.
-2. Same for a **deny-streak** termination (line 782) and a **budget halt** (line 620).
-3. A Loop stopped via `loop.stop()` returns `error: null` **and** non-empty `text`.
+   is **NOT** `''`. *(line 843)*
+2. Same for a **deny-streak** termination *(line 782)* and a **halt/exception** path *(line
+   620)*.
+3. **The `stop()` path *(line 852)*:** a Loop stopped via `loop.stop()` **after** the model has
+   produced text returns **that text** *and* **`error: null`** — **not** `text: ''`, and **not**
+   the `HARD_ROUND_LIMIT` warning string it returns today. Both halves must be asserted: the
+   error is the half BA-3 filed, the text is the half BA-5 adds.
 4. **Negative control:** a Loop that halts **before** the model ever produced text still returns
    `text: ''` — nothing to preserve. Without this, the suite cannot distinguish *"preserved"*
-   from *"always non-empty"*.
+   from *"always non-empty"*, and a fix that stuffs a placeholder into `text` would pass.
+5. **Positive control:** the clean-finish path *(line 684)* is unchanged — it already returns
+   `{text: result.text, error: null}`, and this fix must not regress it.
 
 ## OPEN (2026-07-14) — BA-1: bare-agent cannot cache a tool loop's transcript on Anthropic
 
@@ -205,14 +227,25 @@ retrieval story is downstream of this one.
 
 ## SUPERSEDED by BA-5 (2026-07-14) — BA-3: `loop.stop()` returns a bogus hard-limit error and discards the run's text
 
-> **SUPERSEDED — the ask was RIGHT but filed too NARROW. Hand upstream [BA-5](#open-2026-07-14--ba-5-every-governance-haltdeny-path-discards-the-workers-text-supersedes-ba-3), not this.**
-> BA-3 saw text discarded on **one** path (`loop.stop()` falling through to `HARD_ROUND_LIMIT`)
-> and asked for that one path to be fixed. Reading `loop.js` for BA-5 showed the discard is
-> **general**: three returns (620 provider/budget, 782 deny streak, 843 limits halt) all
-> substitute `text: ''`. Fixing only the stop path would have left the loop unable to ratchet on
-> **every other** bound — which is the shape that actually fires in production. BA-3's `error:
-> null` ask survives inside BA-5 as a sub-case. Original text retained below for the record: the
-> narrowing is itself the finding — **read the whole failure surface before scoping the ask.**
+> **SUPERSEDED by [BA-5](#open-2026-07-14--ba-5-every-governance-haltdeny-path-discards-the-workers-text-supersedes-ba-3) — hand that upstream, not this. BA-3 is NOT stale and was NOT wrong.**
+> Its mechanism claim was **re-verified line-by-line at bare-agent 0.26.2 and is CORRECT**:
+> `stop()` sets `_stopped` (938), the round loop `break`s (544, 699) and falls through past the
+> for-loop to the return at **852**, which yields `text: ''` carrying the `HARD_ROUND_LIMIT`
+> **warning** as its `error` — a deliberate stop returned as indistinguishable from a runaway,
+> with the text discarded. Exactly as filed. BA-3 also **already asked for the text to be
+> preserved**; BA-5 does not discover text loss.
+>
+> **The correction is on US, not on BA-3: we UNDER-SCOPED our own ask.** BA-3 found the right
+> defect by the right path, then scoped the fix to *that one path* — the one we happened to be
+> standing on. The same discard sits on **four** returns (620, 782, 843, **852** = BA-3's), and
+> only the clean finish (684) preserves text. Had bare-agent implemented BA-3 as written, the
+> loop would still have been unable to ratchet on **every other** bound — which is the shape that
+> actually fires in production. BA-5 is BA-3 **generalized from one path to four**, with BA-3's
+> `error: null` ask intact as the 852 sub-case. Original text retained below, unamended.
+>
+> **The lesson (ours): read the whole failure surface before scoping the ask.** Finding a defect
+> on the path you're standing on is not the same as knowing where it lives — the ask we sent was
+> narrower than the bug we'd found.
 
 **Package:** bare-agent (`src/loop.js`) · surfaced by the F20 attempt bound · **the wart that
 made the fix ugly.**
@@ -383,17 +416,25 @@ step's tool grant from keywords in its text. plan-v1's planner must **EMIT `tool
 signed job-spec grant), and inferring it from prose is exactly the fit-to-pass surface the
 arbiter split exists to prevent.
 
-**4. BA-4 exposure — an N2-EXIT BLOCKER.** Until BA-4 lands upstream, **bareloop's own write path
-can zero a file inside the write scope**, and its gate cannot see it (a 0-byte write is a legal
-write). This is live in shipped code. Two options, presented without a recommendation — **this is
-hamr's call:**
+**4. BA-4 exposure — a HARD N2-EXIT BLOCKER. The rung STOPS on bare-agent.**
+*(Decided by hamr, 2026-07-14: **option (a) — wait for the upstream fix + version bump. No local
+shim in `src/`.** The "never a local shim" doctrine holds **even for a safety bug**; two-red
+routing is unamended.)*
 
-- **(a) Wait for the upstream fix + version bump.** Consistent with design law #10 (*never a
-  local shim*); the primitive's precondition is bare-agent's to own, and shimming it here means
-  every *other* suite consumer keeps the data-loss path.
-- **(b) Guard `content` in bareloop's own tool-def wrapper now**, on the grounds that this is a
-  **safety** bug in shipped code rather than a capability gap — the "no local shim" doctrine was
-  minted against *capability* gaps (BA-1's provider patch, BA-2's ranged read), and a data-loss
-  precondition may not be the same animal.
+Until BA-4 lands upstream, **bareloop's own write path can zero a file inside the write scope**,
+and the gate structurally cannot see it (a 0-byte write is a legal write). bareloop **cannot
+honestly ship a write-granting tool mode** on that primitive.
+
+**N2 exit therefore requires bare-agent to ship BA-4**, and bareloop to consume the version bump
+in `package.json`. This is a **legitimate stop, not a soft blocker and not a workaround-pending**
+— build-ladder discipline: *a rung that cannot meet its exit stops the ladder; the stop is a
+result.* **BA-5 is HIGH but is NOT an exit blocker**: it degrades the loop's ratchet, it does not
+destroy data.
+
+**Instrument ≠ product** (stated so a future reader does not read an inconsistency): the
+POC/scratch harness **does** guard `content` and **does** carry a shrink-blocker rail. That is an
+**instrument**, not shipped code — it never ships, and without it the worker destroys the patient
+and every experimental arm is unreadable. *"Never a local shim" binds shipped `src/`, not the
+experimental bench.*
 
 *(No other open asks from this repo.)*

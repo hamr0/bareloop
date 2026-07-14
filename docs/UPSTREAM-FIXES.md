@@ -326,22 +326,34 @@ the *prefix* invalidates the cache, so folds should keep the head stable.
 
 ## BA-5 — every governance halt/deny path DISCARDS the worker's text *(supersedes BA-3)*
 
-**File:** `src/loop.js` · **Severity: high.** **Supersedes BA-3**, which was filed narrowly
-against `loop.stop()` (`UPSTREAM-ASKS.md`). The defect is **general** — it is not the stop path,
-it is **every** path where a bound fires. Implement this; BA-3 is a sub-case of it.
+**File:** `src/loop.js` · **Severity: high.** **Supersedes BA-3** (`UPSTREAM-ASKS.md`), which
+found this same defect on the `loop.stop()` path and — *our error, not its* — scoped the ask to
+that one path. **BA-3's mechanism was re-verified at 0.26.2 and is correct.** BA-5 is the same
+defect on **all four** discard paths. Implement this; BA-3 is the 852 sub-case of it.
 
 ### The defect
 
-Three separate returns, all substituting `text: ''`:
+`Loop.run()` has **five** return points. **Exactly ONE preserves the model's text.** Verified at
+**0.26.2**:
 
 ```js
-line 620:  return { text: '', toolCalls: [], usage: lastUsage, cost: totalCost, error: err.message, msgs, metrics: finalizeMetrics() };
-line 782:  return { text: '', …, error: denyTag, … };         // deny streak
-line 843:  return { text: '', …, error: `halt:${rule}`, … };   // limits / budget halt
+line 620:  return { text: '',          …, error: err.message,    … };  // halt (exception)
+line 684:  return { text: result.text, …, error: null,           … };  // CLEAN FINISH — the ONLY
+                                                                        //   path that keeps text
+line 782:  return { text: '',          …, error: denyTag,        … };  // deny streak
+line 843:  return { text: '',          …, error: `halt:${rule}`, … };  // limits / budget halt
+line 852:  return { text: '',          …, error: warning,        … };  // fall-through = stop() PATH
 ```
 
-When a bound fires — **budget halt, deny streak, `maxTurns`** — the model's **already-produced
-text is thrown away** and replaced with `''`. The `error` tag survives. The work does not.
+**Every exit that is not a clean, model-elected finish throws the work away.** The `error` tag
+survives. The work does not.
+
+**The 852 path, confirmed:** `stop()` sets `this._stopped = true` (line 938); the round loop
+checks `if (this._stopped) break` (lines 544, 699) and **falls through past the for-loop** to the
+return at 852 — which yields `text: ''` carrying the **`HARD_ROUND_LIMIT` warning** as its
+`error`. So a caller's **deliberate** stop comes back **indistinguishable from a runaway**, with
+its text discarded. Every caller that stops a loop on purpose must therefore keep a flag to
+un-lie the return value.
 
 ### Why it matters
 
@@ -364,27 +376,32 @@ lib that throws away the thing the caller came for.
 
 ### The fix
 
-A halt / deny / stop must **preserve the text the model already produced**. Return the
-accumulated text alongside the `error`/rule tag — the caller decides what a partial result is
-worth; the library must not decide it is worth nothing. Do **not** substitute `''`.
+**All four** discard paths (620, 782, 843, 852) must **preserve the text the model already
+produced**. Return the accumulated text alongside the `error`/rule tag — the caller decides what a
+partial result is worth; the library must not decide it is worth nothing. Do **not** substitute
+`''`.
 
-Additionally (**BA-3's original ask, now a sub-case**): a **caller-initiated `loop.stop()` must
-return `error: null`**. A deliberate stop is not a fault, and reporting it as one
-(indistinguishable from a runaway hard-limit) forces every caller to keep a `stoppedByBound` flag
-to un-lie the return value.
+Additionally (**BA-3's original ask, now the 852 sub-case**): a **caller-initiated `loop.stop()`
+must return `error: null`** — not the `HARD_ROUND_LIMIT` warning. A deliberate stop is not a
+fault, and reporting it as one forces every caller to keep a `stoppedByBound` flag to un-lie the
+return value.
 
 ### Acceptance criteria (must be able to fail)
 
 1. A scripted Loop whose model **emits text** and then trips a `limits.maxTurns` halt returns
    `{ error: 'halt:limits.maxTurns', text: <the non-empty text the model produced> }` — `text` is
-   **NOT** `''`.
-2. The same for a **deny-streak** termination (line 782) and a **budget halt** (line 620). All
-   three paths, not one.
-3. A Loop stopped via `loop.stop()` returns `error: null` **and** non-empty `text`.
+   **NOT** `''`. *(843)*
+2. The same for a **deny-streak** termination *(782)* and a **halt/exception** path *(620)*.
+3. **The `stop()` path *(852)*:** a Loop stopped via `loop.stop()` **after** the model produced
+   text returns **that text** *and* **`error: null`** — not `text: ''`, and not the
+   `HARD_ROUND_LIMIT` warning string it returns today. Assert **both** halves: the error is the
+   half BA-3 filed, the text is the half BA-5 adds.
 4. **Negative control:** a Loop that halts **before the model ever produced text** still returns
    `text: ''` — there is nothing to preserve. Without this criterion the suite cannot distinguish
    *"preserved the text"* from *"always returns something non-empty"*, and a fix that stuffs a
    placeholder into `text` would pass.
+5. **Positive control:** the clean-finish path *(684)* already returns `{text: result.text, error:
+   null}` and must not regress.
 
 ---
 
@@ -454,16 +471,18 @@ about. `offset`/`limit` in bytes is acceptable; lines are what the ecosystem act
 # Order, and what unblocks what (updated 2026-07-14 — the retrieval track is RESOLVED)
 
 ```
-BA-4 (shell_write zeroes files)  ──►  LAND FIRST. Data loss in shipped code; no gate can catch it.
+BA-4 (shell_write zeroes files)  ──►  LAND FIRST — and bareloop's N2 EXIT IS BLOCKED ON IT.
+                                       Data loss in shipped code; no gate can catch it.
                                        Small, self-contained, no design question to settle.
 BA-1 (transcript caching)        ──►  independent; proven necessary; land whenever
-BA-5 (halts discard text)        ──►  independent; unblocks the ratchet (supersedes BA-3)
+BA-5 (halts discard text)        ──►  independent; unblocks the ratchet (supersedes BA-3;
+                                       BA-3's mechanism was right, our ask was under-scoped)
 
 resolved, no longer routed through:
   LC-2  withdrawn  (stale-index phantom — our error, not a defect)
   LC-1  closed     (litectx 0.29.1 get(range) shipped + consumed; snippet decline confirmed by trace)
   BA-2  withdrawn  (misfiled — the ranged read is litectx's get, which shipped)
-  BA-3  superseded (by BA-5 — the discard is general, not the stop path)
+  BA-3  superseded (by BA-5 — the SAME defect, on four paths instead of one)
 
 checked and NOT filed (our errors — see UPSTREAM-ASKS.md):
   bareguard limits.maxTurns/maxToolRounds semantics · planner budget blindness (onLlmResult exists)
@@ -471,6 +490,19 @@ checked and NOT filed (our errors — see UPSTREAM-ASKS.md):
 
 - **Three open handoffs, all to bare-agent, all independent of one another.** **BA-4 goes first**
   — it is the only one that is losing data today, and the fix is a four-line precondition.
+- **BA-4 is a HARD N2-EXIT BLOCKER for bareloop, and the rung STOPS on bare-agent shipping it.**
+  hamr's decision (2026-07-14): **wait for the upstream fix + version bump — no local shim in
+  `src/`.** The "never a local shim" doctrine holds **even for a safety bug**; two-red routing is
+  unamended. bareloop cannot honestly ship a write-granting tool mode while `shell_write` can
+  silently zero a file inside the write scope and the gate structurally cannot see it. Per
+  build-ladder discipline — *a rung that cannot meet its exit stops the ladder; the stop is a
+  result* — **this is a legitimate stop, not a workaround-pending.** N2 exit = BA-4 shipped +
+  consumed in `package.json`. **BA-5 is HIGH but not an exit blocker**: it degrades the ratchet,
+  it does not destroy data.
+- *(Instrument ≠ product, so this doesn't read as an inconsistency: bareloop's POC/scratch harness
+  **does** guard `content` and carries a shrink-blocker rail — without it the worker destroys the
+  patient and every experimental arm is unreadable. That is an **instrument**; it never ships.
+  "Never a local shim" binds shipped `src/`, not the experimental bench.)*
 - The old diagram routed bareloop's retrieval POC through LC-2 → LC-1 and BA-2. That path is
   gone: **the retrieval verbs landed (litectx 0.29.1, consumed as `ctx_recall`/`ctx_get`, F19)
   and were run.** Retrieval works exactly as designed — whole-file reads 41→11, re-reads 42→7 —
