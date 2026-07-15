@@ -234,12 +234,20 @@ function readRow(/** @type {string} */ spineFile, /** @type {string|null} */ aud
   const runEnd = events.findLast((e) => e.type === 'run-end');
   const attemptsToGreen = runEnd?.outcome === 'green' ? runEnd.iterations : null;
   const leaks = SECRET_PATTERNS.map((re) => new RegExp(re.source, re.flags.replace('g', '') + 'g')).flatMap((re) => raw.match(re) ?? []);
-  // gate audit: allowed writes; culprit-file-read is an exact-path read hit
+  // gate audit: allowed write-CLASS actions — write AND edit both count (F33: a 7-edit
+  // pass read writes=0 because this counter predated the edit verb; an instrument must
+  // see every write-class verb, the F32 lesson re-learned at the reporting layer).
+  // culpritRead is "culprit content reached the worker by ANY read-class channel":
+  // a gated exact-path read, a ctx_get of the culprit, or a before-attempt recall
+  // whose hits included it (body:true — the hook hands the worker chunk bodies).
   let writes = null, culpritRead = null;
   if (auditFile) {
     const audit = readFileSync(auditFile, 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
-    writes = audit.filter((a) => a.action?.type === 'write' && a.phase === 'gate' && a.decision === 'allow').length;
-    culpritRead = audit.some((a) => a.action?.type === 'read' && a.action?.path === join(wd, p.culprit));
+    writes = audit.filter((a) => (a.action?.type === 'write' || a.action?.type === 'edit') && a.phase === 'gate' && a.decision === 'allow').length;
+    culpritRead = audit.some((a) => a.action?.type === 'read' && a.action?.path === join(wd, p.culprit))
+      || events.some((e) => e.type === 'ctx-tool' && e.tool === 'ctx_get' && e.path === p.culprit)
+      || events.some((e) => e.type === 'ctx-tool' && e.tool === 'ctx_recall' && (e.paths ?? []).includes(p.culprit))
+      || events.some((e) => e.type === 'hook-op' && e.op === 'recall' && (e.paths ?? []).includes(p.culprit));
   }
   return { plant: p.id, outcome, attemptsToGreen, writes, culpritRead, rounds, spentUsd, secretsClean: leaks.length === 0, spine: spineFile, audit: auditFile };
 }

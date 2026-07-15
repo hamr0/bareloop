@@ -38,6 +38,20 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **F33 — two verb-blind reporting instruments (battery pass 2's audit).** Pass 2 ran
+  7/7 attempt-1 green at $0.94 under the newly signed `edit`-granting spec — and the
+  battery's printed table said `writes=0` on a pass whose every fix was one anchored edit:
+  the collector counted only `write` actions, built before the `edit` verb existed and
+  never re-audited when the menu widened (F32's lesson, re-learned at the reporting layer
+  in the same session it was minted). `culpritRead` was equally blind to the retrieval
+  channels: P5 greened with the culprit's body handed to it by the drafted config's
+  `before-attempt` recall hook (`body: true` + litectx recency boost ranking the
+  just-planted chunk into the hits) — invisible to an instrument that only saw gated
+  reads. Fixed: the collector counts write AND edit as write-class; `culpritRead` sees
+  every read-class channel; both recall emit sites (`ctx-tool`, `hook-op`) now carry
+  `paths` so downstream instruments can see what reached the worker's context. The
+  archived pass-2 results JSON keeps its wrong zeros; FINDINGS F33 is the corrected read.
+
 - **F28 — the gap bound cut every failure line out of the worker's feedback.** The first
   real end-to-end firing of the N2 loop delivered a 1,927-char gap containing **zero**
   `not ok` lines: `ralph`'s `boundGap` keeps a head sample + elided middle + tail, and a

@@ -90,7 +90,7 @@ function createCtxTools(lc, workdir, emit) {
             ? `${h.path}\t${h.chunk.symbol ?? '(anonymous)'}\t${h.chunk.nodeType}\tlines ${h.chunk.startLine}-${h.chunk.endLine}`
             : `${h.path}\t(whole file — no chunk)`)).join('\n')
           : 'no hits';
-        emit('ctx-tool', { tool: 'ctx_recall', query: String(query), hits: hits.length, bytes: Buffer.byteLength(out) });
+        emit('ctx-tool', { tool: 'ctx_recall', query: String(query), hits: hits.length, paths: hits.map((/** @type {any} */ h) => h.path), bytes: Buffer.byteLength(out) });
         return out;
       },
     },
@@ -490,7 +490,10 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
         }
         context.text = hits.map((h) => h.body ?? h.text ?? '').filter(Boolean).join('\n');
         context.level = null;
-        emit('hook-op', { slot, op: 'recall', hits: hits.length, iteration });
+        // paths ride on the event: a recall whose CONTENT is invisible blinds every
+        // downstream instrument to what the worker was handed (F33 — P5's green looked
+        // like an impossible sight-unseen edit until recall_log forensics explained it)
+        emit('hook-op', { slot, op: 'recall', hits: hits.length, paths: hits.map((h) => /** @type {any} */ (h).path).filter(Boolean), iteration });
       } else if (op.op === 'compress') {
         const level = op.level ?? config.memory.compressLevel ?? 'verbatim';
         if (context.text) context.text = await compress({ text: context.text, format: 'js' }, { level });

@@ -1319,3 +1319,98 @@ for pass 2/3 is a NEW spec version for the operator to sign. 303/303 green.
   when it was built: `shell_edit` would have been invisible to `workerWrites` had both
   landed independently. Consuming a new verb means re-auditing every instrument that
   claims to observe "writes".
+
+---
+
+## F33 — battery pass 2: 7/7 attempt-1 greens at $0.94 — the greens are real, two reporting instruments were blind, and the benchmark saturated under the granted verb
+
+**The pass (frozen before any number: prereg §Pass 2, spec `0b707b77…b9a06`, hamr signed
+the `edit` grant + all-7 composition in-session).** All seven plants, frozen order, sonnet,
+$3/plant, one run each:
+
+| plant | outcome | attempts | write-class actions | rounds | spent |
+|---|---|---|---|---|---|
+| P1 | green | 1 | 1 edit, on-culprit | 18 | $0.2337 |
+| P2 | green | 1 | 1 edit, on-culprit | 8 | $0.0609 |
+| P3 | green | 1 | 1 edit, on-culprit | 6 | $0.0479 |
+| P4 | green | 1 | 1 edit, on-culprit | 18 | $0.1394 |
+| P5 | green | 1 | 1 edit, on-culprit | 4 | $0.0483 |
+| P6 | green | 1 | 1 edit, on-culprit | 7 | $0.0430 |
+| P7 | green | 1 | 1 edit, on-culprit | 24 | $0.3686 |
+
+Total $0.9418 of the $10 stop. Every sanity check matched the prereg's recorded failure
+set exactly; the final reset left the patient clean.
+
+**The green-side audit ran per the frozen rule, and the greens are REAL.** Every close:
+precheck red → final `satisfied` at `judgedCount: 317` (the full suite, above the 300
+floor). Zero gate denies across all seven audits, zero write-class actions outside
+`src/**`, no test file ever written. Each fix was ONE anchored edit of 116–476 bytes on
+the culprit file. No close exploitation found — and per the standing rule that finding
+nothing is suspicious, the one impossible-looking row was chased to mechanism (below).
+
+**Blind instrument #1 (the printed table lied): `writes=0` on a 7-edit pass.** The
+battery collector counted only `action.type === 'write'` — built before the `edit` verb
+existed, never re-audited when the menu widened. F32's own lesson ("an attribution
+instrument must see every write-class verb") was applied to the ARBITER's instrument
+(`workerWrites`) and missed at the REPORTING layer in the same session. Fixed: write and
+edit both count. The archived results JSON keeps the wrong zeros; this table is the
+corrected read.
+
+**Blind instrument #2, and the P5 forensic: the worker was handed the culprit's body
+before round 1.** P5 greened in 4 rounds/$0.048 with `culpritRead=false` — no gated read,
+no `ctx_get`, one pointer-only `ctx_recall` — yet landed an exact-once anchored edit,
+which should be impossible sight-unseen. litectx's own `recall_log` resolved it: the
+drafted config's `before-attempt` recall hook (`body: true`, k=8, query = the generic job
+description) returned 8 chunks at 20:08:32 INCLUDING `src/ingest.js handleInitiatorCommand`
+— the culprit, body and all. Mechanism: `applyPlant` makes the culprit the most-recently-
+changed chunk in the index, and litectx's recency boost ranks it into the hook's hits.
+Two consequences, one good, one cautionary:
+- The agent-drafted config's memory channel did REAL work for the first time (F21 declared
+  it dead on job #1's empty store; on job #2 it delivered the fix site pre-round-1).
+- The battery's reset→plant cycle MANUFACTURES that aim assist: the plant is the only
+  recent change, so recency-boosted retrieval points at it for free. A real escaped bug
+  is often a recent change too (this is git-bisect logic, not cheating) — but the battery's
+  version is artificially pure, and tier labels are conditional on it.
+Fixed forward: both recall emit sites now carry `paths`, and the collector's `culpritRead`
+sees every read-class channel (gated read, `ctx_get`, recall paths). P5's row stays
+false under the old instrument; the corrected instrument would read true.
+
+**Side observation for N3: the remember channel overwrites itself.** Seven greens each
+fired `on-green` remember under the SAME key (`green-<iteration>-tools`), so the store
+holds ONE surviving row (P7's, the last). Cross-plant answer leakage through the mem store
+was structurally capped at ~zero this pass — good for row independence, fatal for
+inheritance. N3's rule minting needs distinct keys before anything can accumulate.
+
+**Tier reading under the frozen rules: all seven EASY tier.** P1 has now greened attempt-1
+three times across independent runs (F29, pass 1, pass 2) and P2 twice; P3–P7 are n=1
+provisional. The loop tier — THE thesis — is still unobserved: nothing needed a second
+attempt. Ratchet-grade: zero rows, so Layer R still has no proving ground here. And zero
+`worker-crash` events fired, so the pre-registered delivery/conversion axes have NO data
+this pass — the mechanism that produced crashes (truncated whole-file rewrites) is exactly
+what the `edit` verb removed. Attribution honesty holds as pre-registered: pass 2 differs
+from pass 1 by both F32 routing and the `edit` grant, so the 7/7-vs-pass-1 delta is not
+attributable to either alone; within pass 2, F32 routing never fired.
+
+**The benchmark is saturated.** The predicted difficulty bands (P6 medium–hard, P7 hard
+multi-attempt — pass 1 validated P7's trap live) did not materialize in attempts. The
+gradient survives only in effort: 4 rounds/$0.048 (P5) to 24 rounds/$0.369 (P7, which
+read the innocent `crypto.js` five times before landing on the wiring — the trap slowed
+it, one attempt absorbed it). Under sonnet + `edit` + recency-boosted retrieval, mailproof
+cannot mint loop-tier or ratchet-grade rows. The prereg's honest-limits section predicted
+the hard supply was thin (two plants); it is now measured as exhausted. Saturation is a
+RESULT: the next discriminating instrument is a harder patient — the prereg already specs
+what it needs (layered orchestrator/pure-module seams, high integration-to-unit ratio,
+600+-line files, behaviour-named tests) — not more passes on this one.
+
+**Lessons minted.**
+- When the tool menu widens, EVERY instrument claiming to observe a verb class gets
+  re-audited — arbiter and reporting layers both; fixing one and missing the other in the
+  same session is how a 7-edit pass prints `writes=0`.
+- An impossible-looking green is an audit lead, not a statistic: the cheapest row of the
+  pass (P5) was the one hiding a whole retrieval channel the instruments couldn't see.
+- Benchmark validity includes the retrieval layer: a harness choice (reset→plant) plus a
+  ranking signal (recency boost) can hand the worker the answer through a side door no
+  tool-level audit shows. Audit what reaches the worker's context, not just what it asks
+  for.
+- Economy note, not a claim: 7 greens for $0.94 (~$0.13/green, vs ~$0.20–0.30 pre-edit) —
+  consistent with BA-13's measured 56.3× output economy, not attributed (two variables).
