@@ -19,13 +19,16 @@ it · the fix (upstream commit/PR) · the version bareloop consumed.**
 
 ## Status at a glance (2026-07-15)
 
-**No OPEN asks remain.** `bare-agent@0.27.0` and `litectx 0.29.1` closed the entire queue.
-Delivery **verified by reading the shipped source in `node_modules`** (versions confirmed:
-`bare-agent 0.27.0`, `litectx 0.29.1`) — file/line cites below are the acceptance evidence,
-not a changelog's word. Withdrawn/superseded entries stay in the record with their reason.
+**One OPEN ask: BA-13** (`shell_edit` — the anchored edit verb; filed 2026-07-15 from battery
+pass-1 evidence, F30). Everything prior is closed: `bare-agent@0.27.0` and `litectx 0.29.1`
+cleared the whole earlier queue. Delivery **verified by reading the shipped source in
+`node_modules`** (versions confirmed: `bare-agent 0.27.0`, `litectx 0.29.1`) — file/line cites
+below are the acceptance evidence, not a changelog's word. Withdrawn/superseded entries stay in
+the record with their reason.
 
 | Ask | Package | Status | Delivered in | Acceptance — how verified |
 |---|---|---|---|---|
+| **BA-13** `shell_edit` anchored edit verb | bare-agent | **OPEN** | — | Full entry below: semantics (anchored exact-once replace, BA-4 param guards, atomic apply, gate `edit` action), 7 FAIL-able criteria, bareloop consumption plan. |
 | **BA-1** transcript caching | bare-agent | **DELIVERED** | 0.27.0 | `cacheMessages` opt-in rolls `cache_control` onto the last block (`provider-anthropic.js:102-111`). Shipped **opt-in, not default-on as asked** (it changes the wire format); bareloop wires `cacheMessages:true`. Source-verified. |
 | **BA-3** stop() bogus error | bare-agent | **SUPERSEDED by BA-5** | — | Mechanism re-verified at 0.26.2; the fix ships as the BA-5 852 sub-case. |
 | **BA-4** shell_write zeroes files | bare-agent | **DELIVERED** | 0.27.0 | `content` required-string guard, throws when absent/null/non-string; explicit `content:""` still empties; schema `required:['path','content']` (`tools/shell.js:107-126, :449`). All 4 criteria re-verified locally against the tarball (F27) + source-verified here. |
@@ -42,6 +45,98 @@ not a changelog's word. Withdrawn/superseded entries stay in the record with the
 Also **checked and NOT filed** (our errors, no ask): bareguard `limits.maxTurns`/`maxToolRounds`
 semantics (documented in its own source — we misread it) and the planner's budget blindness
 (`Planner` already takes `onLlmResult` — we never wired it). Both recorded below.
+
+## OPEN (2026-07-15) — BA-13: bare-agent has no edit verb — changing one line costs a whole-file rewrite (an output-token tax ∝ file size, and the maximal broken-tree surface)
+
+**Package:** bare-agent (`tools/shell.js`). **Surfaced by:** battery pass 1 (bareloop F30) and
+its rerun (F31, pending) — real sonnet runs against real planted bugs.
+
+### The evidence
+
+- The shipped mutation verbs are `shell_read / shell_grep / shell_write / shell_run / shell_exec`
+  (`tools/shell.js:408-496`, source-read 2026-07-15). **`shell_write` is whole-file**: to change
+  one line of an 800-line file the model must EMIT all 800 lines as tool-call JSON.
+- **Battery pass 1 (F30):** with the provider's 4096-token output default, that emission cannot
+  fit — the API cut the round, BA-6 (correctly) surfaced `truncated:max_tokens`, doctrine
+  (correctly) classed it provider-red, and **3/3 rows died in infra**. Every component to spec;
+  the run still dead. bareloop now passes `maxTokens: 32000` — that removes the *ceiling*, not
+  the *cost*.
+- **The cost that remains:** a one-line edit to `ingest.js` (~30KB) emits ~8–10k output tokens —
+  output is the expensive token class, so the tax is ~100× what the edit itself needs (~50–100
+  tokens), paid on EVERY revision of a big file.
+- **The risk that remains:** a whole-file rewrite is the maximal broken-tree surface. Battery
+  reruns P2/P3: a landed rewrite broke test files at load (`close judged 258 of a declared floor
+  of 300`), the close crashed, the run escalated. An anchored edit can still write a bad line —
+  but it cannot mangle the 790 lines it didn't touch.
+
+### Why this is bare-agent's job (the BA-2 lesson: aim at the right package)
+
+The READ side already split correctly: ranged read = litectx `get` (BA-2 was withdrawn for
+exactly that confusion). The WRITE side has no ranged counterpart, and it cannot be litectx's —
+litectx owns the index, not the tree mutation. Meanwhile **bareguard is already ahead of the
+toolset**: its action vocabulary includes `edit` (`action.type ∈ {read,write,edit,bash}`,
+quoted in `tools/shell.js:18`). The fence is ready; the tool was never built.
+
+### The ask — `shell_edit`, anchored exact-string replace
+
+```js
+shell_edit({ path, oldText, newText })
+```
+
+Semantics — each clause is a lesson already paid for:
+
+1. **Anchored, not line-numbered.** Models mangle line numbers; they quote text reliably (and
+   litectx's `get` hands them exact text to quote). `oldText` must occur **exactly once**:
+   zero matches → refuse `oldText not found in <path>`; two-plus → refuse naming the count
+   (`oldText occurs 3× — widen the anchor`). **The refusal string teaches the retry** (same
+   doctrine as `ctx_get`'s stale-pointer message; same class as BA-12's spin guard needing
+   distinguishable errors).
+2. **BA-4 param guards.** `oldText` required non-empty string; `newText` required string —
+   absent params THROW at the tool boundary, never default. Explicit `newText: ""` is a legal
+   deletion; absent `newText` is not. (BA-4 was `shell_write` zeroing files on a missing param —
+   same class, guarded from birth this time.)
+3. **Atomic.** Read → patch in memory → write whole from the patched buffer, or not at all. A
+   throw mid-operation leaves the old file intact, never a partial. (0.27.0 already discards
+   `toolCalls` on truncated rounds — a test should pin that `shell_edit` stays covered by that
+   invariant.)
+4. **Gate action `{type: 'edit', path}`** — flows through `wireGate`/actionTranslator exactly
+   like `write`; bareguard needs **zero changes** (the vocabulary exists). Consumers that fence
+   `write` should get `edit` fenced by the same writeScope with no extra config.
+5. **Compact receipt, no echo.** Return `edited <path>: 1 replacement (-1/+1 lines)` — never the
+   file body (a body echo rebuilds the context bloat litectx's pointer design exists to prevent).
+6. **Same fs discipline as `shell_write`**: utf8, same path resolution/containment, same
+   error surfaces.
+
+### Acceptance criteria (all FAIL-able)
+
+1. **The economy claim, measured not asserted:** one-line edit on an 800-line file completes in
+   a round whose OUTPUT tokens are **< 500** (whole-file `shell_write` baseline on the same
+   file: > 8,000). Measure both on the real API.
+2. `oldText` not present → refusal returned as a tool RESULT (loop continues; not a throw, not
+   a crash), file mtime unchanged.
+3. `oldText` present twice → refusal **names the count**; no write occurs.
+4. Missing/empty `oldText`, or missing `newText` → throws (BA-4 class); explicit `newText: ""`
+   deletes the anchored text.
+5. Path outside the consumer's writeScope → denied by the gate with an audit line carrying
+   `{type:'edit', path}` — proven with bareguard as shipped, no bareguard change.
+6. Atomicity under injected fs failure: the file afterward is byte-identical to either the old
+   or the fully-patched content — never partial.
+7. **Negative control:** `shell_write` behavior byte-identical before/after the change; a
+   consumer granting only `write` sees no new tool.
+
+### bareloop-side consumption plan (recorded now, executed on version bump)
+
+`TOOL_BY_VERB` gains `edit → shell_edit` (`src/interpret.js`); `toolAction` maps it to
+`{type:'edit', path}`; job specs may then grant `"edit"` (operator territory, as ever — the
+agent never widens its own menu). The battery becomes the validation bed: criterion 1 gets
+measured on P5/P7's `ingest.js` edits, and the P2/P3 broken-tree class gets a direct
+before/after comparison across battery passes.
+
+**Priority: economy + risk, not blocker.** With `maxTokens: 32000` the truncation deaths are
+gone (battery rerun: P1/P2 green). BA-13 cuts the per-edit output tax ~100× and shrinks the
+broken-tree surface — it makes the loop *cheaper and safer*, not merely possible.
+
+---
 
 ## WITHDRAWN (2026-07-12) — bareguard secret redaction is already exported
 

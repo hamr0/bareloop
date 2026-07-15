@@ -1214,3 +1214,50 @@ shell territory.
 
 **Rule honored:** stop at infra defect, fix, log, rerun — the $10 pass-1 stop and the
 autopsy-before-label rule both did their jobs. The battery reruns clean from P1.
+
+---
+
+## F31 — battery pass 1 complete: the easy tier is real (2 clean greens), the loop tier is STILL unobserved, and one routing gap ate every row that needed a second attempt
+
+**The pass (runid `mrm8dr1l`, $1.65; $2.52 cumulative with the F30 half-pass).** All 7 plants,
+frozen order, maxTokens fix live, every sanity close matched its prereg set before spend.
+
+| plant | outcome | attempts | writes | rounds | spent | class after autopsy (frozen rule: autopsy before label) |
+|---|---|---|---|---|---|---|
+| P1 | **green** | 1 | 1 | 15 | $0.22 | **easy tier** — anchor now 2/2 on valid runs |
+| P2 | **green** | 1 | 1 | 13 | $0.16 | **easy tier** — F30's truncation casualty, clean once it could emit |
+| P3 | step-red | — | 1 | 24 | $0.35 | **worker-crash** (judged 258/300) — INVALID as tier |
+| P4 | step-red | — | 1 | 21 | $0.21 | **worker-crash** (258) — invalid |
+| P5 | step-red | — | 1 | 6 | $0.04 | **worker-crash** (258) — invalid |
+| P6 | step-red | — | 1 | 24 | $0.23 | **worker-crash** (295 — five short of the floor) — invalid |
+| P7 | step-red | — | 0 | 40 | $0.44 | attempt 1: honest red, bounded, ZERO writes; attempt 2 died `read ETIMEDOUT` → provider-red — invalid as tier, but attempt 1 is real data |
+
+**Headline 1 — the worker-crash routing gap is the product's live ceiling.** 4 of 7 rows: the
+worker whole-file-rewrites a big orchestrator (`create.js`/`ingest.js`/`completion.js`), the
+rewrite breaks imports, the close crashes under the judged floor, and the run ESCALATES — the
+worker is never told "your edit crashed the suite." F17's forbidden zone (a crash is not a
+verdict) was built against instrument crashes and cannot see worker-attributable ones. The
+design fix was proposed under F30 (attribute by the F13 precheck baseline + gate-audit writes;
+feed back as a `worker-crash` gap; escalate only instrument crashes); it is now measured as
+**the** blocker: no plant that needed iteration ever got it.
+
+**Headline 2 — whole-file rewrite is measurably unreliable at size (BA-13's risk argument, now
+with numbers).** Big-file whole-writes broke the tree in 4 of 5 attempts that made one
+(the exception: P2). The 100-loc `notify.js` rewrites (P1, F29) never crashed. Writing 800
+reconstructed lines to change one is not a transport problem — it is the verb. Filed upstream
+as **BA-13 (`shell_edit`)** with the economy numbers and 7 FAIL-able criteria.
+
+**Headline 3 — P7's trap is validated.** Attempt 1: 24 bounded rounds, **13 reads of
+`crypto.js` (the correct-but-innocent engine) vs 3 of `ingest.js` (the culprit)**, zero writes —
+exactly the F27-predicted misdirection, surviving a full attempt with tools. P7 is the
+ratchet-grade candidate. Its tier stays unlabeled (provider blip on attempt 2), but the trap
+mechanism is proven.
+
+**Headline 4 — the loop tier (green on attempt 2–3, the thesis) has STILL never been observed.**
+Not because it is false — because nothing has yet completed a second attempt: four rows lost it
+to the routing gap, one to a timeout. The thesis test is now gated squarely on the worker-crash
+fix plus ordinary retry luck.
+
+**Reading-rule compliance:** every red was autopsied before labeling; provider blips (P7 att. 2)
+are retries, not evidence; no tier rates claimed (n=1–2). The two greens replicate F29's cost
+shape (~$0.20/green, attempt 1).
