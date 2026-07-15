@@ -1179,3 +1179,38 @@ verification: `npm test` re-run by hand on the tree, 317/317. The worker's fix r
 
 **n=1.** One green on a nondeterministic worker is an anecdote (doctrine); the paired contrast is
 the finding, the green rate is not yet a number. Replication belongs to the arm suite.
+
+---
+
+## F30 — battery pass 1, halted at the frozen rule: the worker's rounds had a 4096-token output cap nobody chose — a whole-file write cannot fit, so three of three rows died in infra before any tier could be measured
+
+**The runs (runid `mrm7ozef`, $0.87, stopped by hand at the frozen reading rule after 3/3
+invalid rows; P4 killed pre-spend).** P1: `provider-red: truncated:max_tokens` at 19 rounds —
+one write landed, then a round was cut. P3: same, 24 rounds. P2: one write landed, attempt
+bounded 24/24, then the close **crashed** — `judged 258 of a declared floor of 300` — and the
+run escalated. Zero valid tier rows; the anchor P1's F29 green stays the only valid loop result.
+
+**Root cause (found, fixed, watched-fail-tested).** The Loop was constructed without
+`maxTokens`, so the provider defaulted to **4096 output tokens per round**. A whole-file
+`shell_write` of `create.js` or `ingest.js` cannot fit in 4096 tokens; the API cuts the round;
+bare-agent 0.27.0 (BA-6, working exactly as asked) surfaces `truncated:max_tokens`; doctrine
+(F25, correctly) classes the cut provider-red — no verdict, run over. Fix: the shell now passes
+`maxTokens: 32000` on every worker round (`interpret.js`, F30 regression test asserts ≥16384;
+292/292). Note the shape: **every component behaved to spec and the run still died** — the
+defect lived in a default nobody had claimed as territory. Output budget is now explicitly
+shell territory.
+
+**Two design gaps harvested, logged OPEN — decisions for the operator, not patches:**
+1. **A worker-caused close-crash gives the worker no feedback.** P2's edit broke test files at
+   load; the judged floor (F17) correctly refused to call that a verdict — but the run then
+   ESCALATED. "Your edit crashed the suite, revert it" is the most recoverable red there is,
+   and it is the one red the loop cannot feed back: the forbidden zone cannot tell *the
+   instrument crashed* from *the worker broke the tree*. (P2's write content being itself a
+   truncation casualty is plausible — the same 4096 cap mid-file — but unproven; the crash
+   routing is the finding either way.)
+2. **The attempt bound can cut mid-edit** (P2: bounded 24/24 with one write landed), leaving a
+   broken tree for the close to judge. Interacts with #1: bound-cut → broken tree → crash →
+   escalation, a chain where each link is individually correct.
+
+**Rule honored:** stop at infra defect, fix, log, rerun — the $10 pass-1 stop and the
+autopsy-before-label rule both did their jobs. The battery reruns clean from P1.

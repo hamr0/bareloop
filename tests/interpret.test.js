@@ -570,6 +570,27 @@ test('F10: text mode is NOT told a root — it writes one shell-chosen target an
   assert.ok(!/Repository root/.test(provider.calls[0]), 'no dead prompt weight where there are no tools');
 });
 
+test('F30: worker rounds carry an output budget that fits a whole-file write — the provider default (4096) truncates any real edit', async () => {
+  // battery pass 1: three of three rows died to `truncated:max_tokens` (or its
+  // downstream close-crash) because the Loop was built with NO maxTokens, so the
+  // provider defaulted to 4096 output tokens per round — a whole-file shell_write
+  // of create.js/ingest.js cannot fit, the API cuts the round, and doctrine
+  // (correctly) reads the cut as provider-red: run over, zero valid rows. The
+  // output budget is shell territory; it must be set where the shell runs the loop.
+  const seen = { options: null };
+  const optCapture = {
+    async generate(messages, _tools, options) {
+      seen.options = options;
+      return { text: 'looked around, nothing to do', toolCalls: [], usage: { inputTokens: 5, outputTokens: 5 }, costUsd: 0.001, model: null };
+    },
+  };
+  const { workdir, target, close } = makeWork('tools-maxtokens');
+  const file = join(workdir, 'run.jsonl');
+  await interpret(config(), { task: TASK, target, close, workdir, capRuns: 1, emit: makeSpine(file), provider: optCapture, mode: 'tools' });
+  assert.ok(seen.options?.maxTokens >= 16384,
+    `worker rounds must budget for whole-file writes: maxTokens=${seen.options?.maxTokens ?? 'unset (provider defaults to 4096)'}`);
+});
+
 test('F11: a transport throw in the WORKER path is provider-red, not interpreter-red (a network error is not a broken middle)', async () => {
   // the real run died `read ENETUNREACH` mid-worker-call and was filed
   // interpreter-red — telling the operator to "fix the interpreter" when the

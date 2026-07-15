@@ -395,7 +395,13 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
       // one write. Opt-in and provider-routed (loop.run forwards options to generate): a
       // non-Anthropic binding ignores it, and it is safe because bareloop wires no trim/compaction
       // fold — the one interaction (a fold that rewrites the cached prefix) that would defeat it.
-      r = await loop.run([{ role: 'user', content: prompt }], toolDefs, { cacheMessages: true });
+      // maxTokens (F30): the provider's 4096 default cannot hold a whole-file
+      // shell_write of a real source file — the API cuts the round, BA-6 surfaces
+      // `truncated:max_tokens`, and doctrine reads it provider-red: run over.
+      // Battery pass 1 lost 3/3 rows to exactly this. Output budget is shell
+      // territory (never the config's); 32k fits any single-file write the
+      // writeScope admits, and output tokens are only paid when generated.
+      r = await loop.run([{ role: 'user', content: prompt }], toolDefs, { cacheMessages: true, maxTokens: 32000 });
     } catch (e) {
       const err = /** @type {CategorizedError} */ (e);
       // A throw OUT OF loop.run() is provider/loop territory by definition — the
