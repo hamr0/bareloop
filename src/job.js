@@ -39,8 +39,14 @@ export const STEP_MODES = Object.freeze(['text', 'tools']);
  * `run` lock: the worker still cannot execute anything, so it still cannot run
  * its own close (the arbiter). F19: `shell_read` starts at byte ZERO and cannot
  * seek, so a pointer was INERT — the worker paged 1.37 MB of source through
- * context to reach 8 lines. The ranged read is the pager. */
-export const TOOL_MENU = Object.freeze(['read', 'grep', 'write', 'recall', 'get']);
+ * context to reach 8 lines. The ranged read is the pager.
+ *
+ * `edit` (BA-13, bare-agent 0.29.0) is the anchored exact-once replace — a
+ * WRITE-class verb judged by the SAME writeScope fence as `write` (bareguard
+ * action type 'edit'). Admitted because whole-file rewrite is measurably
+ * unreliable at size (F31: 4 of 5 big-file whole-writes broke the tree) and
+ * taxes output tokens ∝ file size. It admits no execution either. */
+export const TOOL_MENU = Object.freeze(['read', 'grep', 'write', 'edit', 'recall', 'get']);
 /** locked-but-listed tools: real capabilities deliberately outside the grant
  * menu. Requesting one is a DISTINCT `request-red` (module 4) — the ledger
  * counts admission demand, and a generic invalid-value would bury it as a typo. */

@@ -323,6 +323,95 @@ test('the judged count is read from a REDACTED stream — a secret in the close 
   assert.doesNotMatch(v.gap, /sk-ant-api03/);
 });
 
+// ─── worker-crash attribution (F32, from battery pass 1 / F31) ──────────────
+// A crash is not a verdict (F17) — but battery pass 1 measured that 4 of 7 rows
+// crashed the close because of the WORKER'S OWN EDIT, and the forbidden zone
+// escalated every one without ever telling the worker. With a clean precheck
+// baseline (run.js escalates a crash-at-precheck before tokens), a crash that
+// follows worker writes is the worker's broken edit: the most recoverable red
+// there is. Attribution is INJECTED (`workerWrites`, answered by the runner from
+// the gate audit); no seam or zero writes keeps the old behavior: escalate.
+
+test('F32: a close crash AFTER worker writes is worker-crash — fed back as a gap, retried, recoverable to green', async () => {
+  const state = join(dir, 'wc-state');
+  writeFileSync(state, 'pristine');
+  // crashes under the judged floor while the "edit" is broken; judges honestly once fixed
+  const close = ['node', '-e', `const s=require('node:fs').readFileSync(${JSON.stringify(state)},'utf8').trim(); if(s==="broken"){console.log("tests 1");process.exit(1)} console.log("tests 3"); process.exit(0)`];
+  const file = join(dir, 'worker-crash-recovers.jsonl');
+  /** @type {(string|undefined)[]} */
+  const gaps = [];
+  const middle = (/** @type {number} */ i, /** @type {string|undefined} */ gap) => {
+    gaps.push(gap);
+    writeFileSync(state, i === 1 ? 'broken' : 'fixed');
+  };
+  const outcome = await ralph({
+    middle, close, capRuns: 3, emit: makeSpine(file), judged: JUDGED,
+    workerWrites: () => [state], // the runner's answer from the gate audit: the worker wrote this
+  });
+  const events = readFileSync(file, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l));
+  assert.equal(outcome, 'green', 'the crash was the worker\'s own edit — recoverable, and recovered');
+  assert.equal(events.filter((e) => e.type === 'iteration-start').length, 2, 'the run CONTINUED past the crash');
+  const wc = events.find((e) => e.type === 'worker-crash');
+  assert.ok(wc, 'the attribution is a visible spine record');
+  assert.equal(wc.category, 'worker-crash');
+  assert.ok(wc.files.includes(state), 'the record names the files the worker touched');
+  assert.match(String(gaps[1]), /crashed/i, 'the worker is TOLD its edit crashed the suite');
+  assert.ok(String(gaps[1]).includes(state), 'and WHICH files it wrote');
+  assert.ok(!events.some((e) => e.type === 'escalation'), 'no escalation — this red never was decision-ready');
+});
+
+test('F32 control: a crash with ZERO worker writes stays an instrument stop — close-crashed, never retried', async () => {
+  const file = join(dir, 'worker-crash-zero-writes.jsonl');
+  const outcome = await ralph({
+    middle: noop, close: judgedClose(1, 1), capRuns: 3, emit: makeSpine(file), judged: JUDGED,
+    workerWrites: () => [], // the audit has no writes: the worker did not do this
+  });
+  const events = readFileSync(file, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l));
+  assert.equal(outcome, 'escalated');
+  assert.equal(events.find((e) => e.type === 'escalation').category, 'close-crashed');
+  assert.equal(events.filter((e) => e.type === 'iteration-start').length, 1, 'an instrument crash is never retried');
+  assert.ok(!events.some((e) => e.type === 'worker-crash'), 'nothing to attribute');
+});
+
+test('F32: a worker that keeps crashing the suite is bounded by the SAME cap — worker-crash verdicts, cap-halt stop', async () => {
+  const file = join(dir, 'worker-crash-cap.jsonl');
+  const outcome = await ralph({
+    middle: noop, close: judgedClose(1, 1), capRuns: 2, emit: makeSpine(file), judged: JUDGED,
+    workerWrites: () => ['/repo/src/broken.js'],
+  });
+  const events = readFileSync(file, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l));
+  assert.equal(outcome, 'escalated');
+  const esc = events.find((e) => e.type === 'escalation');
+  assert.equal(esc.category, 'cap-halt', 'the stop is a budget story, not a crash story');
+  assert.deepEqual(esc.verdicts, ['worker-crash', 'worker-crash'], 'the routed verdict is DISTINCT on the record — never plain crashed, never needs_revision');
+});
+
+test('F32: a fake green the worker caused (exit 0, judged nothing, writes exist) is worker-crash — NEVER green', async () => {
+  const file = join(dir, 'worker-crash-fake-green.jsonl');
+  const outcome = await ralph({
+    middle: noop, close: judgedClose(0, 0), capRuns: 1, emit: makeSpine(file), judged: JUDGED,
+    workerWrites: () => ['/repo/src/broken.js'],
+  });
+  const events = readFileSync(file, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l));
+  assert.equal(outcome, 'escalated', 'cap-halt after the one attempt — but never green');
+  assert.ok(events.some((e) => e.type === 'worker-crash'), 'the exit-0 crash is attributed and fed back like any other');
+  assert.ok(!events.some((e) => e.type === 'run-end' && e.outcome === 'green'), 'law #8: a green that judged nothing stays not-a-green');
+});
+
+test('F32: the gap announces a trimmed file list, never silently truncates it', async () => {
+  const file = join(dir, 'worker-crash-many-files.jsonl');
+  /** @type {(string|undefined)[]} */
+  const gaps = [];
+  await ralph({
+    middle: (/** @type {number} */ _i, /** @type {string|undefined} */ gap) => gaps.push(gap),
+    close: judgedClose(1, 1), capRuns: 2, emit: makeSpine(file), judged: JUDGED,
+    workerWrites: () => Array.from({ length: 45 }, (_, i) => `/repo/src/f${i}.js`),
+  });
+  const g = String(gaps[1]);
+  assert.ok(g.includes('/repo/src/f0.js'), 'the head of the list is present');
+  assert.match(g, /and 15 more/, 'the trim is announced — silent truncation is the F28 disease');
+});
+
 // ─── the kept-failures gap bound (F28) ───────────────────────────────────────
 // The gap is the worker's ONLY feedback channel. `boundGap` head/tail-elides a
 // big stream, and a large TAP suite prints its `not ok` lines in the MIDDLE — so

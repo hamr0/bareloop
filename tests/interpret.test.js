@@ -667,6 +667,127 @@ test('F16: the tool persona states the LOOP contract — the worker knows it wil
   assert.match(system, /budget|exhaust/i, 'and that reading exhaustively can burn the run before it ever writes');
 });
 
+// ─── worker-crash attribution end to end (F32, from battery pass 1 / F31) ───
+// Battery pass 1: 4 of 7 rows whole-file-rewrote an orchestrator, broke imports,
+// the close crashed under the judged floor, and the run ESCALATED — the worker
+// was never told "your edit crashed the suite". The instrument is the gate
+// audit's allow-decision writes (run_id-scoped); ralph consumes it only at a
+// crashed verdict. Everything here is real except the scripted provider: real
+// Gate, real audit file, real node --test close with a real judged floor.
+
+test('F32 end to end: a worker edit that crashes the suite comes back as a worker-crash gap (gate audit is the instrument), and the next attempt recovers', async () => {
+  const wd = twd('tools-worker-crash');
+  mkdirSync(join(wd, 'src'), { recursive: true });
+  const suite = join(wd, 'two.test.mjs');
+  // TWO tests, floor 2: a crash-at-load synthesizes ONE failing test (# tests 1),
+  // so the floor separates "suite cannot load" from an honest red (# tests 2)
+  writeFileSync(suite, `import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { sum } from './src/sum.mjs';
+test('adds', () => assert.equal(sum(2, 3), 5));
+test('adds negatives', () => assert.equal(sum(-2, -3), -5));`);
+  writeFileSync(join(wd, 'src', 'sum.mjs'), BAD_SUM); // baseline: the suite RUNS (honest red) before the worker breaks it
+  const target = join(wd, 'src', 'sum.mjs');
+  const provider = stubProvider([
+    // attempt 1: the "big rewrite" that breaks the tree at load
+    { toolCalls: [tcall('t1', 'shell_write', { path: target, content: 'not an export;;;\n' })] },
+    { text: 'rewrote sum.mjs' },
+    // attempt 2: told the suite crashed, the worker repairs its own edit
+    { toolCalls: [tcall('t2', 'shell_write', { path: target, content: GOOD_SUM })] },
+    { text: 'fixed sum.mjs' },
+  ]);
+  const file = join(wd, 'run.jsonl');
+  const outcome = await interpret(config(), {
+    task: TASK, close: ['node', '--test', suite], workdir: wd, capRuns: 3,
+    emit: makeSpine(file), provider, mode: 'tools',
+    closeJudged: { pattern: '^# tests (\\d+)$', min: 2 },
+  });
+  const events = readSpine(file);
+  assert.equal(outcome, 'green', 'the worker-caused crash was fed back and the next attempt recovered');
+  const wc = events.find((e) => e.type === 'worker-crash');
+  assert.ok(wc, 'the attribution is a visible spine record');
+  assert.ok(wc.files.some((/** @type {string} */ f) => f.endsWith('src/sum.mjs')), 'the gate audit named the worker\'s own write');
+  const crashPrompt = provider.calls.find((c) => /CRASHED the test suite/.test(c));
+  assert.ok(crashPrompt, 'the worker was TOLD its edit crashed the suite');
+  assert.ok(crashPrompt.includes(target), 'and which file it wrote');
+  assert.ok(!events.some((e) => e.type === 'escalation'), 'no escalation — the run recovered on its own');
+});
+
+// ─── shell_edit consumption (BA-13, bare-agent 0.29.0) ──────────────────────
+// The anchored edit verb: changing one line no longer costs a whole-file rewrite
+// (battery pass 1: 4 of 5 big-file whole-writes broke the tree — the verb, not
+// the transport). Same fence as write: bareguard judges type 'edit' under
+// writeScope, and the F32 attribution instrument counts edits as worker writes.
+
+test('BA-13: the worker fixes the file THROUGH the gated edit verb — anchored replace, exact bytes, green', async () => {
+  const wd = twd('tools-edit-green');
+  const { workdir, target, close } = makeWork('tools-edit-green');
+  writeFileSync(target, BAD_SUM); // the file exists; the fix is ONE span, not a rewrite
+  const provider = stubProvider([
+    { toolCalls: [tcall('t1', 'shell_edit', { path: target, oldText: 'return a - b;', newText: 'return a + b;' })] },
+    { text: 'flipped the operator' },
+  ]);
+  const file = join(workdir, 'run.jsonl');
+  const outcome = await interpret(config(), {
+    task: TASK, close, workdir, capRuns: 2, emit: makeSpine(file), provider,
+    mode: 'tools', tools: ['read', 'edit'],
+  });
+  assert.equal(outcome, 'green');
+  assert.equal(readFileSync(target, 'utf8'), GOOD_SUM, 'the anchored splice landed verbatim');
+  assert.ok(wd === workdir, 'twd/makeWork agree'); // twd is the same deterministic path
+});
+
+test('BA-13: an edit OUTSIDE writeScope is denied by the SAME fence as write — nothing lands', async () => {
+  const wd = twd('tools-edit-deny');
+  const { outcome } = await run('tools-edit-deny', config(), {
+    mode: 'tools', tools: ['edit', 'write'],
+    script: [
+      { toolCalls: [tcall('t1', 'shell_edit', { path: join(wd, 'escape.txt'), oldText: 'x', newText: 'y' })] },
+      { toolCalls: [tcall('t2', 'shell_write', { path: join(wd, 'src', 'sum.mjs'), content: GOOD_SUM })] },
+      { text: 'done' },
+    ],
+  });
+  assert.equal(outcome, 'green', 'the denied edit fed back mid-attempt and the run recovered');
+  assert.ok(!existsSync(join(wd, 'escape.txt')), 'the out-of-scope path was never touched');
+  // the deny must be REAL (a fence decision), not vacuous (an ungranted tool):
+  // the gate audit carries an edit action denied by fs.writeScope
+  const audit = readFileSync(join(wd, 'gate-audit.jsonl'), 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l));
+  const denied = audit.find((r) => r.phase === 'gate' && r.action?.type === 'edit' && r.decision === 'deny');
+  assert.ok(denied, 'the edit reached the gate as type "edit" and was denied there — the same fence as write');
+});
+
+test('BA-13 × F32: a crash caused through shell_edit is ATTRIBUTED — the instrument sees edit actions, not only writes', async () => {
+  const wd = twd('tools-edit-crash');
+  mkdirSync(join(wd, 'src'), { recursive: true });
+  const suite = join(wd, 'two.test.mjs');
+  writeFileSync(suite, `import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { sum } from './src/sum.mjs';
+test('adds', () => assert.equal(sum(2, 3), 5));
+test('adds negatives', () => assert.equal(sum(-2, -3), -5));`);
+  const target = join(wd, 'src', 'sum.mjs');
+  writeFileSync(target, BAD_SUM); // baseline: the suite runs (honest red)
+  const provider = stubProvider([
+    // attempt 1: a one-span edit that breaks the file at load
+    { toolCalls: [tcall('t1', 'shell_edit', { path: target, oldText: 'return a - b;', newText: 'return a -;;- b;' })] },
+    { text: 'edited sum.mjs' },
+    // attempt 2: told the suite crashed, repairs its own edit
+    { toolCalls: [tcall('t2', 'shell_edit', { path: target, oldText: 'return a -;;- b;', newText: 'return a + b;' })] },
+    { text: 'repaired the edit' },
+  ]);
+  const file = join(wd, 'run.jsonl');
+  const outcome = await interpret(config(), {
+    task: TASK, close: ['node', '--test', suite], workdir: wd, capRuns: 3,
+    emit: makeSpine(file), provider, mode: 'tools', tools: ['read', 'edit'],
+    closeJudged: { pattern: '^# tests (\\d+)$', min: 2 },
+  });
+  const events = readSpine(file);
+  assert.equal(outcome, 'green', 'the edit-caused crash was fed back and repaired');
+  const wc = events.find((e) => e.type === 'worker-crash');
+  assert.ok(wc, 'the edit action was visible to the attribution instrument');
+  assert.ok(wc.files.some((/** @type {string} */ f) => f.endsWith('src/sum.mjs')));
+});
+
 // ─── worker-round carries the FULL usage breakdown (F18) ────────────────────
 // `inputTokens` is the UNCACHED prompt remainder. A round that re-pays for half
 // the repo (billed as cache READ) and a round that reads it fresh can carry the

@@ -1261,3 +1261,61 @@ fix plus ordinary retry luck.
 **Reading-rule compliance:** every red was autopsied before labeling; provider blips (P7 att. 2)
 are retries, not evidence; no tier rates claimed (n=1–2). The two greens replicate F29's cost
 shape (~$0.20/green, attempt 1).
+
+---
+
+## F32 — worker-crash attribution built and validated live: the crash routes, the feedback lands, the loop continues — and at n=1 the worker did not yet convert the chance it was given
+
+**The change (approved by hamr 2026-07-15; arbiter territory, never unilateral).** F31's
+headline blocker closed as designed under F30: when the close returns `crashed` (judged
+below the declared floor) and the gate audit records allow-decision worker writes this run
+(run_id-scoped; `write` and `edit` actions both count), the verdict routes as the DISTINCT
+**`worker-crash`** — non-terminal. The gap says what happened and names the files the worker
+wrote ("fix or revert"); the loop continues under the unchanged caps. Escalation is
+untouched for true instrument crashes: crash at precheck (no worker exists yet — run.js
+already stops there for zero tokens) or crash with zero writes stays `close-crashed`, never
+retried. The attribution seam (`workerWrites`) is INJECTED into ralph like `redact`, so the
+dumb shell stays stdlib-only and never reads the audit itself; an unreadable audit
+attributes nothing — the failure mode is the OLD behavior, never a swallowed instrument
+stop. TDD: 7 new tests watched failing first (routing, zero-writes control, cap interplay,
+exit-0 fake-green-by-crash, announced file-list trim, precheck boundary, end-to-end through
+the real Gate audit); 292 → 299 green before consumption work.
+
+**Validated against the real instrument (P3 rerun, runid `mrmau676`, sonnet, $0.7665).**
+The same plant that died in pass 1 as an attempt-1 escalation:
+
+| | pass 1 (F31) | with F32 |
+|---|---|---|
+| attempt 1 close crash (258/300) | **run ESCALATED**, worker never told | routed `worker-crash`, gap named `create.js` |
+| attempts 2–3 | never happened | happened — same routing each time, worker re-told |
+| terminal | `step-red` via close-crashed escalation | `step-red` via honest **cap-halt**, `verdicts: [worker-crash ×3]` |
+
+The mechanism claim is fully validated: no escalation ate a recoverable row, the feedback
+channel exists, the stop is a budget story. **The capability claim is NOT made:** the worker
+wrote once (attempt 1, the tree-breaking rewrite), then spent attempts 2 and 3 as bounded
+24/24 read-only rounds against a byte-identical 258/300 crash — told twice which file it
+broke, it never reverted or re-edited it. n=1 on a nondeterministic worker is an anecdote,
+not a rate; whether workers CONVERT the chance the routing now gives them is exactly what
+battery pass 2 measures. (Watch this shape though: it rhymes with F27/P7's read-heavy
+no-write misdirection, and "revert the file you broke" is about the cheapest instruction a
+gap can carry.)
+
+**BA-13 consumed in the same session (bare-agent 0.29.0, verified against shipped source,
+never a stale clone).** `shell_edit` landed exactly per the ask: anchored exact-once
+replace, BA-4 param guards from birth, atomic rename, anchor-miss as a refusal RESULT (the
+worker re-anchors; throws stay reserved for the param-guard class). Consumption:
+`TOOL_MENU` + `TOOL_BY_VERB` gain `edit`, judged as bareguard's own `'edit'` action under
+the SAME writeScope fence (upstream vocabulary already had it), the F32 instrument counts
+edits as writes, and the persona carries the use-the-edit-verb strategy (F19's lesson:
+capability without strategy is inert). The frozen battery spec pins its tool grant
+explicitly, so the menu widening changes nothing the signed hash bought — granting `edit`
+for pass 2/3 is a NEW spec version for the operator to sign. 303/303 green.
+
+**Lessons minted.**
+- The fix for "the worker is never told" is necessary but not sufficient: telling a worker
+  its edit crashed the suite does not make it act. Feedback delivery and feedback
+  conversion are separate axes — pre-register that split before reading pass 2.
+- An attribution instrument must see every write-class verb, not just the one that existed
+  when it was built: `shell_edit` would have been invisible to `workerWrites` had both
+  landed independently. Consuming a new verb means re-auditing every instrument that
+  claims to observe "writes".

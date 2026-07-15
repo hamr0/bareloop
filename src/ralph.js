@@ -242,9 +242,14 @@ export const CLOSE_FAULTS = Object.freeze({
  * @param {{pattern: string, min: number}} [opts.judged] the judgment-rendered signal
  * @param {string} [opts.gapKeep] kept-failures pattern (F28): matching close-output
  *   lines survive the gap bound so a large suite's `not ok` names reach the worker
+ * @param {() => string[]} [opts.workerWrites] the crash-attribution instrument (F32):
+ *   answers "which files has the WORKER written so far this run?" — the runner wires
+ *   it to the gate audit's allow-decision writes. Injected like `redact` so the shell
+ *   stays stdlib-only and dumb; consulted ONLY at a crashed verdict. With no seam, or
+ *   with zero writes, a crash stays what it always was: an instrument stop.
  * @returns {Promise<'green'|'escalated'>}
  */
-export async function ralph({ middle, close, capRuns, emit, redact, closeTimeoutMs, cwd, expect, judged, gapKeep }) {
+export async function ralph({ middle, close, capRuns, emit, redact, closeTimeoutMs, cwd, expect, judged, gapKeep, workerWrites }) {
   emit('run-start', { capRuns, close: close.join(' ') });
   // The blind spot is NAMED, never hidden: with no judgment-rendered signal this
   // close cannot tell a crash from an honest red (they are byte-identical at the
@@ -285,11 +290,30 @@ export async function ralph({ middle, close, capRuns, emit, redact, closeTimeout
     }
     emit('middle-done', { iteration });
     const v = runClose(close, redact, { timeoutMs: closeTimeoutMs ?? 120_000, cwd, expect, judged, gapKeep });
-    verdicts.push(v.verdict);
+    // Worker-crash attribution (F32, measured in F31: 4 of 7 battery rows). A crash is
+    // still not a verdict (F17) — but a crash that FOLLOWS worker writes, on a run whose
+    // precheck proved the close judged at baseline (run.js escalates a crash-at-precheck
+    // before any tokens), is the worker's own broken edit: the most recoverable red there
+    // is, and the one red this loop could never feed back. The close's raw reading stays
+    // 'crashed' on the record; the ROUTING is what attribution changes. Decided before
+    // the satisfied check so an exit-0 crash (fake green, law #8) is caught the same way.
+    const crashFiles = v.verdict === 'crashed' && workerWrites ? workerWrites() : [];
+    const workerCrashed = crashFiles.length > 0;
+    verdicts.push(workerCrashed ? 'worker-crash' : v.verdict);
     emit('close-verdict', { iteration, ...v });
     if (v.verdict === 'satisfied') {
       emit('run-end', { outcome: 'green', iterations: iteration });
       return 'green';
+    }
+    if (workerCrashed) {
+      emit('worker-crash', { iteration, category: 'worker-crash', files: crashFiles, detail: v.detail });
+      // the file list is bounded and the trim ANNOUNCED — silent truncation is the F28 disease
+      const shown = crashFiles.slice(0, 30);
+      const more = crashFiles.length - shown.length;
+      gap = `Your edit CRASHED the test suite — it can no longer even load and judge (${v.detail}). `
+        + `Files you have written this run: ${shown.join(', ')}${more > 0 ? ` (and ${more} more)` : ''}. `
+        + 'Fix or revert your change so the suite can run again — nothing can pass while the suite cannot load.';
+      continue;
     }
     // Forbidden zone: no judgment was rendered, so there is no verdict. Escalate
     // by the outcome's OWN name and never retry — retrying a broken arbiter is

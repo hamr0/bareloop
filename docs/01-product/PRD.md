@@ -936,6 +936,30 @@ across-run inheritance are different scopes, now formally separated) → Layer 2
 micro-wheels → Layer 3, N3 inheritance.
 
 ---
+## Addendum v1.14 — 2026-07-15 (worker-crash attribution: one carve-out from the forbidden zone; approved by hamr)
+
+**The rule (F32, measured need in F31: 4 of 7 battery rows).** A `crashed` close verdict is
+still not a verdict (v1.11 stands) — but it no longer always escalates. When the arbiter's
+own books prove the worker wrote files this run (the gate audit's allow-decision write/edit
+lines, run_id-scoped) and the precheck proved the close judged at baseline (a crash at
+precheck still stops for zero tokens), the crash is attributed to the worker's edit and
+routed as the DISTINCT verdict **`worker-crash`**: non-terminal, fed back as a gap naming
+the files, retried under the unchanged caps. Instrument crashes — crash at precheck, crash
+with zero writes, or an unreadable audit — keep their forbidden-zone names and never retry.
+The attribution seam is injected into the dumb shell like the redactor: ralph consults it,
+never reads the audit itself, and the fail mode is always the OLD behavior (escalate).
+
+**Why this does not weaken the arbiter split:** nothing emergent touches the routing — the
+seam is wired by the interpreter from the gate's own audit, the verdict vocabulary is shell
+territory, and the worker gains no new capability, only information about its own effect on
+the tree. The verdict stays distinct (never plain `crashed`, never `needs_revision`) so no
+contrast downstream can confuse "the suite failed" with "the worker broke the suite".
+Validated live the day it landed: P3 rerun routed all three crashes, fed back the file list
+each time, and stopped at an honest cap-halt — pass 1's same plant died at attempt 1 with
+the worker never told. Feedback DELIVERY is now proven; feedback CONVERSION is battery
+pass 2's question, pre-registered as a separate axis (F32 lesson).
+
+---
 *Seed written 2026-07-10 in adaptlearn (v0.11.0). Named `bareloop` 2026-07-11 (npm-free at
 check time; suite-family name chosen deliberately — the product is the bare suite's flagship
 consumer, and "bare loop" states the §8 minimalism: no swarm, no orchestrator, one process

@@ -51,7 +51,7 @@ const PERSONA_TOOLS = 'You are a senior engineer working in a repository through
 // ---- tool mode (2b): the spec-side grant menu mapped to the underlying tools ----
 // read/grep/write are bare-agent's shell tools; recall/get are litectx's retrieval
 // verbs (F19), composed from the SAME LiteCtx the memory hooks already use.
-const TOOL_BY_VERB = Object.freeze({ read: 'shell_read', grep: 'shell_grep', write: 'shell_write', recall: 'ctx_recall', get: 'ctx_get' });
+const TOOL_BY_VERB = Object.freeze({ read: 'shell_read', grep: 'shell_grep', write: 'shell_write', edit: 'shell_edit', recall: 'ctx_recall', get: 'ctx_get' });
 const CTX_TOOLS = Object.freeze(['ctx_recall', 'ctx_get']);
 
 /**
@@ -145,6 +145,11 @@ const expandHome = (p) => (p === '~' || p.startsWith('~/')) ? join(homedir(), p.
 /** @param {string} name @param {any} args @param {string} [workdir] */
 const toolAction = (name, args, workdir) => {
   if (name === 'shell_write') return { type: 'write', path: resolve(expandHome(String(args?.path ?? ''))), args: { bytes: String(args?.content ?? '').length } };
+  // shell_edit (BA-13) is judged as bareguard's own 'edit' action type — the SAME
+  // fs.writeScope fence as write, decided upstream (bareguard FS_TYPES). `bytes` is
+  // the replacement's size so the audit can read the edit economy (a 40-byte splice
+  // vs an 8KB rewrite is the variable BA-13 exists to move — F18 blindness rule).
+  if (name === 'shell_edit') return { type: 'edit', path: resolve(expandHome(String(args?.path ?? ''))), args: { bytes: String(args?.newText ?? '').length } };
   // `tool` rides the action so the AUDIT can tell the read tools apart. Without it every
   // read tool collapses to {type:'read', path} and a whole-file shell_read is
   // indistinguishable from a bounded ctx_get chunk — the ledger cannot see the one
@@ -271,6 +276,29 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     humanChannel: async () => ({ decision: 'terminate' }), // no human mid-run: a tripped cap terminates → decision-ready escalation
   });
   await gate.init();
+  // The crash-attribution instrument (F32): which files has the worker written this
+  // run? Answered from the arbiter's OWN books — the gate audit's allow-decision
+  // write lines, run_id-scoped because the audit file appends across steps and runs.
+  // Both middles land here: tool-mode writes are policy-checked, text-mode writes go
+  // through gate.check. Read on demand (only ever at a crashed verdict) and
+  // fail-closed: an unreadable audit attributes nothing, so the crash escalates
+  // exactly as it did before F32 — attribution can only ADD a recovery path, never
+  // swallow an instrument stop.
+  const auditPath = join(workdir, 'gate-audit.jsonl');
+  const workerWrites = () => {
+    try {
+      const paths = new Set();
+      for (const line of readFileSync(auditPath, 'utf8').split('\n')) {
+        if (!line) continue;
+        let rec;
+        try { rec = JSON.parse(line); } catch { continue; }
+        if (rec.run_id === gate.runId && rec.phase === 'gate' && rec.decision === 'allow'
+            && (rec.action?.type === 'write' || rec.action?.type === 'edit')
+            && typeof rec.action.path === 'string') paths.add(rec.action.path);
+      }
+      return [...paths];
+    } catch { return []; }
+  };
   const { policy, onLlmResult } = wireGate(gate, mode === 'tools' ? { actionTranslator: (/** @type {string} */ n, /** @type {any} */ a) => toolAction(n, a, workdir) } : {});
   // Money is metered as it is SPENT — per ROUND, not per attempt (F12). A
   // multi-round attempt that halts (or throws) never returns, so its rounds
@@ -372,10 +400,17 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     + 'Reserve shell_read for whole files that are genuinely small, and for files you cannot name a symbol in yet. '
     + 'Search only finds what you can NAME: a failing test names the symptom, not the cause, so read the failing test first, '
     + 'see which function it calls, and recall THAT.';
+  // BA-13: like retrieval, the edit verb only pays if the worker reaches for it INSTEAD
+  // of a whole-file rewrite. F31 measured the default: 4 of 5 big-file whole-writes
+  // broke the tree, and every one was a rewrite to change ~one line. The tool
+  // description carries the mechanics; the persona carries the strategy.
+  const EDIT_STRATEGY = '\nPrefer the edit tool over whole-file writes: quote the EXACT text to change (it must match exactly once) and its replacement. '
+    + 'Rewriting a whole file to change one line is how trees get broken and budgets get burned — reserve the write tool for genuinely new files.';
   const usesCtx = toolDefs.some((/** @type {{name: string}} */ t) => CTX_TOOLS.includes(t.name));
+  const usesEdit = toolDefs.some((/** @type {{name: string}} */ t) => t.name === 'shell_edit');
   const loop = new Loop({
     provider,
-    system: mode === 'tools' ? PERSONA_TOOLS + (usesCtx ? RETRIEVAL_STRATEGY : '') : PERSONA,
+    system: mode === 'tools' ? PERSONA_TOOLS + (usesEdit ? EDIT_STRATEGY : '') + (usesCtx ? RETRIEVAL_STRATEGY : '') : PERSONA,
     policy,
     onLlmResult: meteredOnLlmResult,
   });
@@ -623,7 +658,7 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   // config cannot express any of them (they are arbiter territory, PRD v1.11; F28
   // for gapKeep, which keeps a large suite's failure NAMES in the gap the worker
   // sees instead of letting the bound elide them into a bare "N fail").
-  const outcome = await ralph({ middle, close, capRuns: effectiveCap, emit, closeTimeoutMs, cwd: workdir, expect: closeExpect, judged: closeJudged, gapKeep: closeGapKeep, redact: (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS }) });
+  const outcome = await ralph({ middle, close, capRuns: effectiveCap, emit, closeTimeoutMs, cwd: workdir, expect: closeExpect, judged: closeJudged, gapKeep: closeGapKeep, workerWrites, redact: (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS }) });
   if (outcome === 'green') {
     // The close already passed — a retention hiccup must not un-green a real
     // green (it would corrupt the learning curve). It degrades loudly:

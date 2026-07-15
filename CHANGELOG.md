@@ -7,6 +7,35 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+
+- **F32 — worker-crash attribution: a close crash the worker caused is a gap, not a stop.**
+  Battery pass 1 (F31) measured the gap: 4 of 7 rows whole-file-rewrote an orchestrator,
+  broke imports, the close crashed under the judged floor, and the run **escalated** — the
+  worker was never told "your edit crashed the suite", so no plant that needed a second
+  attempt ever got one. F17's forbidden zone was built against instrument crashes and could
+  not see worker-attributable ones. Now: a `crashed` verdict with worker writes on record
+  routes as the DISTINCT verdict **`worker-crash`** (spine event with the file list), the
+  gap tells the worker which files it wrote and to fix or revert, and the loop continues
+  under the same caps. Attribution instrument: the gate audit's allow-decision write/edit
+  lines, run_id-scoped, read through an injected `workerWrites` seam (`ralph` stays
+  stdlib-only and dumb). Escalation is UNCHANGED for true instrument crashes: crash at
+  precheck (structurally pre-worker) or crash with zero writes stays `close-crashed`, never
+  retried; an unreadable audit attributes nothing (fail toward the old behavior). Validated
+  against the real instrument (P3 rerun, sonnet, $0.77): all three crashes routed and fed
+  back, zero escalations-eaten rows, honest `cap-halt` stop — pass 1's same plant died at
+  attempt 1 with the worker never told. TDD, suite 292 → 299.
+- **BA-13 consumed — the anchored edit verb (`bare-agent` 0.27.0 → 0.29.0).** `TOOL_MENU`
+  gains **`edit`** (job-spec grantable; `run` stays locked), `TOOL_BY_VERB` maps it to
+  `shell_edit` (anchored exact-once replace: BA-4 param guards, atomic rename, anchor-miss
+  as a refusal RESULT so the worker re-anchors). Judged by the SAME `writeScope` fence as
+  `write` (bareguard action type `'edit'`, already in its FS vocabulary); the F32
+  attribution instrument counts edit actions as worker writes; the tool-mode persona
+  carries the strategy (prefer the edit verb — F31: 4 of 5 big-file whole-writes broke the
+  tree). The frozen battery spec pins its grant explicitly, so the menu widening does NOT
+  change what the signed hash buys — granting `edit` to the battery is a new spec version.
+  Suite 299 → 303.
+
 ### Fixed
 
 - **F28 — the gap bound cut every failure line out of the worker's feedback.** The first

@@ -295,13 +295,22 @@ test('explicit mode "text" is legal (the default, spelled out)', () => {
   assert.equal(validateJob(j).ok, true);
 });
 
-test('TOOL_MENU ships frozen: file tools + the two retrieval verbs — run is NOT in the menu', () => {
-  assert.deepEqual([...TOOL_MENU], ['read', 'grep', 'write', 'recall', 'get']);
+test('TOOL_MENU ships frozen: file tools + the two retrieval verbs + the edit verb — run is NOT in the menu', () => {
+  assert.deepEqual([...TOOL_MENU], ['read', 'grep', 'write', 'edit', 'recall', 'get']);
   assert.ok(Object.isFrozen(TOOL_MENU));
   // The line the menu exists to hold (F19): admitting retrieval must NOT admit execution.
   // A worker that can run commands can run its own close — it grades its own exam.
+  // `edit` (BA-13) is a WRITE-class verb bounded by the same fence as write — it
+  // admits no execution either.
   assert.ok(!TOOL_MENU.includes('run'), 'run stays locked — retrieval is read-only, not a foot in the door');
   assert.deepEqual([...LOCKED_TOOLS], ['run']);
+});
+
+test('BA-13: an "edit" grant validates green — the anchored edit verb is spec-grantable', () => {
+  const j = mut((x) => { x.steps[1] = { ...x.steps[1], mode: 'tools', tools: ['read', 'edit'] }; });
+  const r = validateJob(j);
+  assert.deepEqual(r.reds, []);
+  assert.equal(r.ok, true);
 });
 
 test('request-red detail names the locked verb in quotes (the ledger extracts it)', () => {

@@ -19,16 +19,17 @@ it · the fix (upstream commit/PR) · the version bareloop consumed.**
 
 ## Status at a glance (2026-07-15)
 
-**One OPEN ask: BA-13** (`shell_edit` — the anchored edit verb; filed 2026-07-15 from battery
-pass-1 evidence, F30). Everything prior is closed: `bare-agent@0.27.0` and `litectx 0.29.1`
-cleared the whole earlier queue. Delivery **verified by reading the shipped source in
-`node_modules`** (versions confirmed: `bare-agent 0.27.0`, `litectx 0.29.1`) — file/line cites
-below are the acceptance evidence, not a changelog's word. Withdrawn/superseded entries stay in
-the record with their reason.
+**The queue is EMPTY: BA-13 delivered in `bare-agent@0.29.0`** (same day it was filed) and
+consumed by bareloop the same session (TOOL_MENU/TOOL_BY_VERB gain `edit`; F32). Everything
+prior was already closed: `bare-agent@0.27.0` and `litectx 0.29.1` cleared the earlier queue.
+Delivery **verified by reading the shipped source in `node_modules`** (versions confirmed:
+`bare-agent 0.29.0`, `litectx 0.29.1`) and by executing the deterministic acceptance criteria
+against the shipped tool — file/line cites below are the acceptance evidence, not a
+changelog's word. Withdrawn/superseded entries stay in the record with their reason.
 
 | Ask | Package | Status | Delivered in | Acceptance — how verified |
 |---|---|---|---|---|
-| **BA-13** `shell_edit` anchored edit verb | bare-agent | **OPEN** | — | Full entry below: semantics (anchored exact-once replace, BA-4 param guards, atomic apply, gate `edit` action), 7 FAIL-able criteria, bareloop consumption plan. |
+| **BA-13** `shell_edit` anchored edit verb | bare-agent | **DELIVERED** | 0.29.0 | Anchored exact-once replace with BA-4 param guards, atomic temp+rename (mode preserved, 0o600 window), anchor-miss/multi-match as refusal RESULTS naming the count, compact receipt (`tools/shell.js:134-231`). Criteria 2/3/4/6 executed against the shipped tool (all green); C5 pinned by bareloop's own gate test (audit line `{type:'edit'}` denied by writeScope); C7 by the full suite on 0.29.0. C1 (economy) staged, pending a key unlock — see the entry. Consumed: `TOOL_MENU`/`TOOL_BY_VERB` gain `edit`, persona carries the strategy (F32 session). |
 | **BA-1** transcript caching | bare-agent | **DELIVERED** | 0.27.0 | `cacheMessages` opt-in rolls `cache_control` onto the last block (`provider-anthropic.js:102-111`). Shipped **opt-in, not default-on as asked** (it changes the wire format); bareloop wires `cacheMessages:true`. Source-verified. |
 | **BA-3** stop() bogus error | bare-agent | **SUPERSEDED by BA-5** | — | Mechanism re-verified at 0.26.2; the fix ships as the BA-5 852 sub-case. |
 | **BA-4** shell_write zeroes files | bare-agent | **DELIVERED** | 0.27.0 | `content` required-string guard, throws when absent/null/non-string; explicit `content:""` still empties; schema `required:['path','content']` (`tools/shell.js:107-126, :449`). All 4 criteria re-verified locally against the tarball (F27) + source-verified here. |
@@ -46,7 +47,28 @@ Also **checked and NOT filed** (our errors, no ask): bareguard `limits.maxTurns`
 semantics (documented in its own source — we misread it) and the planner's budget blindness
 (`Planner` already takes `onLlmResult` — we never wired it). Both recorded below.
 
-## OPEN (2026-07-15) — BA-13: bare-agent has no edit verb — changing one line costs a whole-file rewrite (an output-token tax ∝ file size, and the maximal broken-tree surface)
+## DELIVERED in 0.29.0, same day (2026-07-15) — BA-13: bare-agent has no edit verb — changing one line costs a whole-file rewrite (an output-token tax ∝ file size, and the maximal broken-tree surface)
+
+> **Delivery record (2026-07-15).** Shipped in `bare-agent@0.29.0` exactly per the semantics
+> below, plus hardening the ask did not require: literal splice (never `String.replace`, so a
+> `$` in `newText` cannot corrupt the edit), 0o600 temp before chmod-to-original-mode (no
+> world-readable window), `wx` flag (a pre-planted symlink at the temp path fails instead of
+> being followed). The anchor-miss/multi-match refusals return as tool RESULTS per the
+> interview answer (refine-your-guess is worker feedback; throws stay BA-4 territory) — with
+> the documented tradeoff that a byte-identical repeated wrong anchor does not feed the BA-12
+> spin guard (bounded by maxTurns/budget instead). Acceptance: criteria 2/3/4 executed
+> against the shipped tool 2026-07-15 (refusal wording, mtime/content untouched, all three
+> param-guard throws, `newText:""` deletes); 6 verified in source (temp+rename+cleanup-on-throw)
+> plus a live mode-preservation check; 5 pinned by bareloop's consumption test (gate audit line
+> `{type:'edit'}`, denied by the same writeScope as write, zero bareguard changes); 7 by the
+> full bareloop suite green on 0.29.0. **Criterion 1 (the economy claim): measurement staged**
+> (`scratchpad/ba13-economy-poc.mjs`, paired one-line-edit arms on the real 708-line
+> `ingest.js`) and not yet run — blocked on a key unlock at session end; the two numbers land
+> here when it fires. One honest note from the real spines meanwhile: NO archived run contains
+> a faithful whole-file rewrite to measure (the landed "rewrites" were 150–1900-output-token
+> stubs over 300–700-line files — the broken-tree mechanism was partial emission, which is the
+> risk argument in different clothes, not the >8k baseline). Consumed per the plan:
+> `TOOL_MENU`/`TOOL_BY_VERB` gain `edit` (F32 session, suite 303/303).
 
 **Package:** bare-agent (`tools/shell.js`). **Surfaced by:** battery pass 1 (bareloop F30) and
 its rerun (F31, pending) — real sonnet runs against real planted bugs.

@@ -77,7 +77,7 @@ unknown-field reds.
 | `writeScope` | array of contained globs | the operator's outer fence; same containment law as the workflow layer, same code |
 | `steps` | array of `{ id, close, class, mode?, tools? }` | unique slug ids; every step names its close |
 | `steps[].mode` | `text` (default) \| `tools` | `text`: the worker returns ONE artifact written to the shell's `target`; `tools`: the worker drives Gate-governed file tools (multi-file). Illegal on `hitl` steps (they run no loop) |
-| `steps[].tools` | unique subset of `read\|grep\|write` | the SPEC-side tool grant (`TOOL_MENU`, frozen; defaults to all three) — the drafted config cannot express mode or tools; requesting `run` (`LOCKED_TOOLS`) reds with the DISTINCT code `request-red` (locked-but-listed: the red IS the admission evidence the ledger tallies; a typo stays `invalid-value`) |
+| `steps[].tools` | unique subset of `read\|grep\|write\|edit\|recall\|get` | the SPEC-side tool grant (`TOOL_MENU`, frozen; defaults to the full menu) — the drafted config cannot express mode or tools; `edit` (BA-13) is the anchored exact-once replace, judged by the SAME writeScope fence as `write`; requesting `run` (`LOCKED_TOOLS`) reds with the DISTINCT code `request-red` (locked-but-listed: the red IS the admission evidence the ledger tallies; a typo stays `invalid-value`) |
 | `escalation` | `{ mode: "decision-ready" }` | the pain channel is not optional |
 
 **Close types and the hierarchy** (a close is data, never code; verdict-class laundering
@@ -150,7 +150,7 @@ Append-only JSONL event emitter bound to one file. `seq` monotonic per spine, `t
 last. Consumers are pure listeners; nothing reads the file back. Returns each event as
 written.
 
-### `ralph({ middle, close, capRuns, emit, redact?, closeTimeoutMs?, cwd?, expect?, judged?, gapKeep? })` → `'green' | 'escalated'` — `src/ralph.js`
+### `ralph({ middle, close, capRuns, emit, redact?, closeTimeoutMs?, cwd?, expect?, judged?, gapKeep?, workerWrites? })` → `'green' | 'escalated'` — `src/ralph.js`
 
 The dumb outer shell: `while close-red and under-cap: run the middle`. `close` is an argv
 whose exit code is truth (`runClose` is also exported); the red gap text feeds the next
@@ -184,6 +184,17 @@ runner's pre-token precheck uses the *same* map — two maps would be two instru
 `close-timeout` is deliberately **not** pooled into `broken-close`: "raise the timeout" and
 "fix the command" are different human answers, and pooling them erases the decision
 information the escalation exists to carry.
+
+**Worker-crash attribution (F32).** One carve-out from the table above: a `crashed` verdict
+does **not** escalate when the injected `workerWrites?: () => string[]` seam reports the
+worker has written files this run — with a clean precheck baseline (`runJob` escalates a
+crash-at-precheck before any tokens), that crash is the worker's own broken edit, the most
+recoverable red there is. The routed verdict is the DISTINCT `worker-crash` (spine event
+`worker-crash` with the file list; never plain `crashed`, never `needs_revision`), and the
+gap tells the worker which files it wrote and to fix or revert. `interpret` wires the seam
+to the gate audit's allow-decision write/edit lines (run_id-scoped); no seam or zero writes
+keeps the old behavior — an instrument crash still escalates `close-crashed`, never retried.
+Measured motivation: battery pass 1 (F31) lost 4 of 7 rows to exactly this escalation.
 
 Escalations are decision-ready (category, options, spend); cap-halt is its own
 category, never merged with "wrong". A thrown middle is relayed by its `category`
@@ -247,12 +258,17 @@ a fence counts as the artifact's wrapper only when it opens within the first 5 l
 (the chatty-preamble shape); deeper fences are the artifact's OWN content and the whole
 reply is the artifact (fence-heavy artifacts — doc generators, markdown emitters —
 belong in tool mode, where nothing is parsed);
-**tools** offers only the granted shell tools (`read|grep|write`) to the worker's Loop,
-every call policy-checked against the SAME fence (tool-call paths resolve exactly as the
-tools resolve them — workers must use absolute paths; a relative spelling reds at the
-fence and the deny reason teaches the retry), reads pinned to the workdir, a denial
-streak stopping as `gate-red`. In tool mode there is no artifact to extract — the close
-judges the tree; on-green `remember` retains the worker's change summary.
+**tools** offers only the granted tools (`read|grep|write|edit|recall|get`) to the
+worker's Loop, every call policy-checked against the SAME fence (tool-call paths resolve
+exactly as the tools resolve them — workers must use absolute paths; a relative spelling
+reds at the fence and the deny reason teaches the retry), reads pinned to the workdir, a
+denial streak stopping as `gate-red`. `edit` maps to bare-agent's `shell_edit` (BA-13,
+0.29.0): an anchored exact-once replace judged as bareguard's `edit` action under the same
+writeScope — and the persona carries the strategy (prefer the edit verb; whole-file
+rewrites are how trees get broken, F31). In tool mode there is no artifact to extract —
+the close judges the tree; on-green `remember` retains the worker's change summary.
+Worker-caused close crashes feed back as `worker-crash` gaps via the gate audit (F32 —
+see `ralph` above).
 
 ### `runJob(spec, { approvals, workdir, provider, emit, target?, capRuns?, shellCapUsd?, closeTimeoutMs?, execCmd? })` → outcome — `src/run.js`
 

@@ -605,6 +605,27 @@ test('a close that cannot RUN is a broken-close stop BEFORE any provider call (r
   assert.equal(end.cause, 'broken-close');
 });
 
+test('F32 boundary: a close that crashes at PRECHECK is an instrument stop — close-crashed, zero tokens, never attributed to a worker', async () => {
+  // the other half of the F32 attribution rule: worker-crash exists ONLY for a
+  // crash that follows worker writes. Before any tokens there is no worker to
+  // blame, so the precheck's crash keeps its instrument name and stops the job.
+  const { workdir, target } = makeWork('precheck-crashed');
+  const crashy = join(workdir, 'crashy.mjs');
+  writeFileSync(crashy, 'console.log("# tests 1"); process.exit(1);'); // under the declared floor: judged nothing
+  const provider = stubProvider();
+  const s = spec(`node ${crashy}`, {
+    steps: [{ id: 'fix', close: { type: 'predicate', cmd: `node ${crashy}`, expect: 0, judged: { pattern: '^# tests (\\d+)$', min: 2 } }, class: 'hard' }],
+  });
+  const file = join(workdir, 'run.jsonl');
+  const outcome = await runJob(s, { approvals: approve(s), workdir, target, provider, emit: makeSpine(file), capRuns: 2 });
+  const events = readSpine(file);
+  assert.equal(outcome, 'step-red:fix');
+  assert.equal(provider.calls.draft.length + provider.calls.work.length, 0, 'zero tokens on a crashed arbiter');
+  const esc = events.find((e) => e.type === 'escalation');
+  assert.equal(esc.category, 'close-crashed', 'the crash keeps its instrument name');
+  assert.ok(!events.some((e) => e.type === 'worker-crash'), 'no worker exists yet — nothing to attribute');
+});
+
 test('a cadenced no-op run opens NO PR: nothing changed in the fence → nothing for a human to review, job ends green', async () => {
   // found by the REAL job #1 rung-exit run on litectx (2026-07-13): with every
   // step already-green, the hitl step still branched/added/committed — and `git
