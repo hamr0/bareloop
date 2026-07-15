@@ -29,7 +29,7 @@ changelog's word. Withdrawn/superseded entries stay in the record with their rea
 
 | Ask | Package | Status | Delivered in | Acceptance — how verified |
 |---|---|---|---|---|
-| **BA-13** `shell_edit` anchored edit verb | bare-agent | **DELIVERED** | 0.29.0 | Anchored exact-once replace with BA-4 param guards, atomic temp+rename (mode preserved, 0o600 window), anchor-miss/multi-match as refusal RESULTS naming the count, compact receipt (`tools/shell.js:134-231`). Criteria 2/3/4/6 executed against the shipped tool (all green); C5 pinned by bareloop's own gate test (audit line `{type:'edit'}` denied by writeScope); C7 by the full suite on 0.29.0. C1 (economy) staged, pending a key unlock — see the entry. Consumed: `TOOL_MENU`/`TOOL_BY_VERB` gain `edit`, persona carries the strategy (F32 session). |
+| **BA-13** `shell_edit` anchored edit verb | bare-agent | **DELIVERED** | 0.29.0 | Anchored exact-once replace with BA-4 param guards, atomic temp+rename (mode preserved, 0o600 window), anchor-miss/multi-match as refusal RESULTS naming the count, compact receipt (`tools/shell.js:134-231`). Criteria 2/3/4/6 executed against the shipped tool (all green); C5 pinned by bareloop's own gate test (audit line `{type:'edit'}` denied by writeScope); C7 by the full suite on 0.29.0. C1 (economy) measured live: 229 vs 12,887 output tokens (56.3×), both bounds pass — see the entry. Consumed: `TOOL_MENU`/`TOOL_BY_VERB` gain `edit`, persona carries the strategy (F32 session). |
 | **BA-1** transcript caching | bare-agent | **DELIVERED** | 0.27.0 | `cacheMessages` opt-in rolls `cache_control` onto the last block (`provider-anthropic.js:102-111`). Shipped **opt-in, not default-on as asked** (it changes the wire format); bareloop wires `cacheMessages:true`. Source-verified. |
 | **BA-3** stop() bogus error | bare-agent | **SUPERSEDED by BA-5** | — | Mechanism re-verified at 0.26.2; the fix ships as the BA-5 852 sub-case. |
 | **BA-4** shell_write zeroes files | bare-agent | **DELIVERED** | 0.27.0 | `content` required-string guard, throws when absent/null/non-string; explicit `content:""` still empties; schema `required:['path','content']` (`tools/shell.js:107-126, :449`). All 4 criteria re-verified locally against the tarball (F27) + source-verified here. |
@@ -61,14 +61,16 @@ semantics (documented in its own source — we misread it) and the planner's bud
 > param-guard throws, `newText:""` deletes); 6 verified in source (temp+rename+cleanup-on-throw)
 > plus a live mode-preservation check; 5 pinned by bareloop's consumption test (gate audit line
 > `{type:'edit'}`, denied by the same writeScope as write, zero bareguard changes); 7 by the
-> full bareloop suite green on 0.29.0. **Criterion 1 (the economy claim): measurement staged**
-> (`scratchpad/ba13-economy-poc.mjs`, paired one-line-edit arms on the real 708-line
-> `ingest.js`) and not yet run — blocked on a key unlock at session end; the two numbers land
-> here when it fires. One honest note from the real spines meanwhile: NO archived run contains
-> a faithful whole-file rewrite to measure (the landed "rewrites" were 150–1900-output-token
-> stubs over 300–700-line files — the broken-tree mechanism was partial emission, which is the
-> risk argument in different clothes, not the >8k baseline). Consumed per the plan:
-> `TOOL_MENU`/`TOOL_BY_VERB` gain `edit` (F32 session, suite 303/303).
+> full bareloop suite green on 0.29.0. **Criterion 1 (the economy claim), MEASURED on the real
+> API 2026-07-15** (paired one-line-edit arms, same prompt/model/maxTokens, on the real
+> 708-line `ingest.js`, sonnet): `shell_edit` arm **229 output tokens** ($0.0073, change
+> landed, file intact); `shell_write` arm **12,887 output tokens** ($0.1855, change landed) —
+> **both bounds pass (<500 / >8000), ratio 56.3×**. The write arm's single mutation round was
+> 12,695 output tokens: the criterion's whole-file tax, observed directly. One honest note
+> from the real battery spines: no ARCHIVED run contains a faithful whole-file rewrite (the
+> landed "rewrites" were 150–1900-output-token stubs over 300–700-line files — the
+> broken-tree mechanism was partial emission, the risk argument in different clothes).
+> Consumed per the plan: `TOOL_MENU`/`TOOL_BY_VERB` gain `edit` (F32 session, suite 303/303).
 
 **Package:** bare-agent (`tools/shell.js`). **Surfaced by:** battery pass 1 (bareloop F30) and
 its rerun (F31, pending) — real sonnet runs against real planted bugs.
