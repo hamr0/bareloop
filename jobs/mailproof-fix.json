@@ -11,7 +11,7 @@
     {
       "id": "suite",
       "mode": "tools",
-      "tools": ["read", "grep", "write", "recall", "get"],
+      "tools": ["read", "grep", "write", "edit", "recall", "get"],
       "close": {
         "type": "predicate",
         "cmd": "npm test",

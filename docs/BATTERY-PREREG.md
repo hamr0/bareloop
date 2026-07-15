@@ -284,3 +284,42 @@ before each run; spine and gate audit archived per plant before reset.
 - A plant whose live failure set differs from the one recorded above is a STOP (investigate
   drift before spending more), not a shrug.
 - Plants get discarded; rules never get loosened. Pass-1 total spend hard-stops at $10.
+
+---
+
+## Pass 2 — pre-registration (FROZEN 2026-07-15, before any pass-2 number exists)
+
+**Operator decisions (hamr, in-session):** the `edit` verb IS granted; all 7 plants run in the
+frozen order. New spec version signed for this pass:
+
+- **Spec:** `jobs/mailproof-fix.json` with `tools: ["read","grep","write","edit","recall","get"]`
+  @ `0b707b77f7bde479df2c7d306973f8d2a8175234ce766fe4c14a631ebc7b9a06`. The pass-1 hash
+  (`8fc3d42a…bdc53`) is retired — menu widening is a new spec version, never a reinterpretation.
+
+**What changed since pass 1 (named, both):** (1) F32 worker-crash routing is live — a close
+crash after gate-audited worker writes routes as non-terminal `worker-crash` and the gap names
+the crash detail + files written; (2) the `edit` verb is granted (with its `EDIT_STRATEGY`
+persona line). `maxTokens: 32000` (F30) also now covers the whole pass, where pass 1's first
+rows ran under the 4096 default. **Attribution honesty:** pass 2 differs from pass 1 by more
+than one variable — no pass-1↔pass-2 delta may be attributed to F32 alone or to `edit` alone.
+Within-pass-2 reads (tier labels, conversion) are unaffected.
+
+**Unchanged (identical to pass 1):** $3/plant shell cap, 3 attempts, `claude-sonnet-5`,
+`gapKeep: "^not ok"`, frozen order P1→P7, reset→plant→drift-check cycle, archive per plant,
+$10 pass hard-stop, tier rules, autopsy-before-label, drift = STOP, rules never loosened.
+
+**Exclusions (frozen rule applied):** the P3 F32 validation run (runid `mrmau676`, $0.7665) is
+NOT a pass-2 row — a validation rerun of a fix never folds into pass evidence. P7's pass-1
+attempt-2 provider blip means its pass-2 run is its first clean full read.
+
+**Recorded per run (pass-1 fields plus the pre-registered F32 split):**
+- outcome · attempts-to-green · writes/edits (gate audit) · culprit-file-read · rounds · spend;
+- **delivery:** every `worker-crash` gap delivered (count + the files it named);
+- **conversion:** for each delivered `worker-crash` gap, whether the NEXT attempt's gate-audited
+  write/edit actions touch a file the gap named (revert or re-fix). Delivery and conversion are
+  read as separate axes; neither implies the other (F32's live caveat).
+
+**Close-exploitation audit (RSI SURE #1, standing):** every GREEN is audited on the gate audit +
+spine before its tier label counts — did the worker touch tests, game the judged floor, or green
+by any path other than fixing `src/`? The audit itself is recorded per green; finding nothing is
+noted, not celebrated.
