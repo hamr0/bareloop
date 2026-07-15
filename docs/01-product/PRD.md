@@ -960,6 +960,42 @@ the worker never told. Feedback DELIVERY is now proven; feedback CONVERSION is b
 pass 2's question, pre-registered as a separate axis (F32 lesson).
 
 ---
+## Addendum v1.15 — 2026-07-15 (external field evidence folded in; two SURE learnings highlighted — hamr assignment)
+
+**Source:** `docs/00-context/RSI-LEARNINGS.md` — the thersibook/Recursive corpus (12
+sources, June 2026), read and folded against this PRD as watch-for / validate / learn /
+gotcha items. This addendum records only what changes standing expectations; the full
+fold lives in the context doc.
+
+**SURE learning 1 → §3 law #1 (the arbiter split).** Every system in the corpus that let
+optimization pressure meet a fixed verifier got gamed (Recursive: reward hacking on all 3
+benchmarks; Meta-Agent Challenge: label extraction; PostTrainBench: spontaneous test-set
+training). The split is confirmed as the founding constraint — AND the corpus adds the
+standing expectation the one-time F17 fix did not: **verifier hardening never ends.**
+Every battery pass carries a "did the worker exploit the close?" audit line, expected to
+occasionally find something. A pass that never finds anything is a pass whose audit
+should be re-read, not a clean bill.
+
+**SURE learning 2 → §1/§2 premise (scaffolding, not weights).** The field's biggest
+result (LIFE-HARNESS: 88.5% avg relative gain across 116/126 settings with weights
+FROZEN; the harness evolved on one cheap 4B model transferring to 17 others) is this
+PRD's premise measured at scale — and its stated method ("the failure taxonomy is what
+makes the method work": classify each failure by lifecycle position, fix that layer,
+keep edits auditable and revertible) is this repo's FINDINGS discipline under another
+name. Consequences confirmed: keep paying for findings — they are the product; cheap
+workers + evolved harness is the correct spend shape (the model rule holds).
+
+**Pre-registered adoptions (validated at their rungs, not now):** N3 acceptance becomes a
+CL-BENCH-style paired control — inheritance-ON vs inheritance-OFF on the same
+non-identical job set, only the normalized difference counts as learning ("a learning
+claim is just a capability claim wearing a memory costume"); Layer R takes the
+rejected-edit-buffer shape (failed rules retained as negative feedback, never silently
+retried); rule minting at N3 gains a memorization audit (general rule vs memorized
+answer) before anything inherits. GOTCHA on the soft-green ladder: a rubric close is
+self-consistency in disguise (Agent0: breaks on non-checkable tasks) — it needs its own
+judged-floor analog before it can gate anything.
+
+---
 *Seed written 2026-07-10 in adaptlearn (v0.11.0). Named `bareloop` 2026-07-11 (npm-free at
 check time; suite-family name chosen deliberately — the product is the bare suite's flagship
 consumer, and "bare loop" states the §8 minimalism: no swarm, no orchestrator, one process
