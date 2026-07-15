@@ -1010,3 +1010,172 @@ strictly better than one that hides them — it is merely **not sufficient**, an
 
 **Honest limits:** `PC` is n=5 and the negative controls are n=3 — thin. The 0/140 is not, and the
 nomination-distribution result does not depend on either.
+
+---
+
+## F27 — job #2: the NAV axis is CONNECTED (job #2 ≠ job #1), but the one-shot FIX ceiling is 0% — and both models misdiagnose the fix the SAME way
+
+**Context.** BA-4/5/6/7/1 landed in `bare-agent@0.27.0` (consumed here; the N2 build gate is cleared,
+acceptance re-verified locally). With the primitive confounds gone, job #2 (the elimination-reachable
+replacement benchmark, pre-registered and FROZEN in `docs/JOB2-PREREG.md` before any number existed)
+was calibrated exactly as pre-registered — two probes × two tiers, EFFORT=low, n=15, $3.02 total.
+Patient: `mailproof` @ `091027d`; plant: one line in `src/notify.js` (`if (custom) body = custom;` →
+`body = custom;`), which violates the file's OWN header contract ("a hook throw or falsy return falls
+back to the neutral default"). NAV probe is BLIND (culprit file withheld); FIX probe is OPEN (culprit
+shown in full). Both graders frozen before any run.
+
+**The numbers (frozen analyser, Wilson 95% CI):**
+
+| cell | hits/valid | rate | 95% CI |
+|---|---|---|---|
+| NAV sonnet | 15/15 | **100.0%** | [79.6%, 100%] |
+| NAV haiku | 15/15 | **100.0%** | [79.6%, 100%] |
+| FIX sonnet | 0/15 | **0.0%** | [0.0%, 20.4%] |
+| FIX haiku | 2/15 | **13.3%** | [3.7%, 37.9%] |
+
+**The headline — job #2's aim axis is CONNECTED, and it settles F26's open question.** Both tiers
+nominate `src/notify.js` **blind, every single time** — the file was NOT shown, and they found it by
+eliminating the failing-test surface. Against job #1's **0/140** (the dial was never attached to the
+engine, F26) this is categorical: **the benchmark's navigation gradient is real and honest.** hamr's
+hypothesis — *most of the prior failing was primitives, not model* — is substantially **vindicated on
+navigation**: clean primitives + a benchmark that needs elimination (not induction) makes the model
+find the right file reliably. This is a no-harness API probe (one call each, `maxTokens` high, a
+`truncated` flag excluding cut-off rounds), so it is BA-6-clean by construction — the result is a
+property of model+prompt, not of the middle.
+
+**The verdict — DISCARD, by the FROZEN rule 2 (fixS < 20%).** The one-shot FIX ceiling is 0% on
+sonnet. The rule was frozen before the number and is NOT loosened (that is the anti-fit-to-pass
+guard). So the specific plant is discarded **as a one-shot-calibrated target**. Not a grader artifact
+(the misses target line 73 — the `composeNotification(...)` call — while the plant is line 74; a
+line-73 rewrite leaves the bug intact, so the close genuinely stays red) and not primitives (no
+harness).
+
+**The new mechanism — F26 extended to the FIX axis: surface-feature triage, not semantic reasoning.**
+Every sonnet miss (15/15) and 13/13 haiku misses are **right-file-wrong-fix**. The models converge on
+the SAME wrong hypothesis: they rewrite the `composeNotification(...)` **call** (arg-spread order),
+because they triage from the failing-test **titles** ("composeNotification overrides the body; neutral
+default otherwise") and conclude the bug is in how the hook is *called* — never reading the file's
+header contract three lines up, which states the exact invariant the plant broke (falsy return →
+neutral default). This is F26's mechanism (triage from titles, not from the semantic contract) on the
+fix axis, and it is **model, not primitive** — reproducible across both tiers.
+
+**What it means, and what it does NOT license.** The calibration proved what it had to: **NAV is
+honest** (job #2 discriminates on the axis job #1 could not). The FIX rule discards the plant for
+**one-shot** use — but probe B was pre-registered as bounding *"the CEILING, not loop behaviour."* A
+bug that is hard one-shot but solvable-with-feedback is the *ideal* discriminator for a **loop**
+product (an easy bug would let every arm green on attempt 1 and wash out all workflow differences);
+what rule 2 cannot distinguish is *loop-solvable-hard* from *loop-unsolvable-hard* (the latter is job
+#1 redux on the fix axis). **Only a loop run can tell those apart** — which is the open question this
+finding hands forward. The DISCARD is NOT loosened, and the loop test (if run) is a DIFFERENT
+experiment (the thesis probe), never the 7-arm suite rule 2 governs.
+
+**Honest limits.** n=15/cell. `gradeB` accepts a guarded assignment without RUNNING the fix (the 2
+haiku "hits" restore the `if (custom)` guard, which is the correct shape, but were not executed); the
+stronger check — apply the model's line, re-run the close — is deferred to the loop, where it is native.
+
+---
+
+## F28 — first real firing of the wheel: the MACHINE works, but `boundGap` cut every failure line out of the gap — the worker was told "5 fail" and never WHICH
+
+**The run.** First end-to-end firing of the N2 loop ever (job #2 patient: `mailproof` @ `091027d`
++ the F27 falsy-guard plant; spec `mailproof-fix` @ `08f5ad59…`, tools mode, `npm test` close,
+$3 cap, sonnet; spine `…/mailproof-job2-bareloop/job2-mrlwbou4.jsonl`, 135 events). Outcome:
+**`step-red:suite` at the 3-attempt cap, $1.0521 spent, ZERO writes** (gate audit contains no
+write actions; the tree's only diff is the plant itself — checked by reading the diff CONTENT,
+not `git status`, the exact blind-instrument trap the harness fell into once already).
+
+**The machine — every F-fix held in live fire, first time all at once:**
+- the close ran after EVERY attempt (3 verdicts + the F13 pre-check; F20's bound is real: all
+  three attempts cut at 24/24 rounds, `attempt-bounded` on the spine each time);
+- per-round metering priced every round, `unpricedRounds: 0` (F12/F6);
+- the judged floor extracted `# tests 317` every close (F17 — no fake-green surface);
+- cap-halt escalated decision-ready with honest spend; spine terminal, secrets-clean.
+
+**The defect — the feedback channel dropped its payload.** `ralph.js` `boundGap` bounds the gap
+as `head(400) + …truncated… + tail(1500)`. `npm test` TAP output here is ~67KB: the head is the
+npm banner + the first passing tests, the tail is the summary (`# pass 312 / # fail 5`) — and
+**all five `not ok` lines live in the elided middle**. Verified on the spine: every delivered
+gap is 1,927 chars with **zero `not ok` lines**. The pre-token close-state shown to attempt 1
+(F13) was bounded the same way. So the worker was told the suite fails — and *nothing else*,
+three attempts running.
+
+**The behaviour downstream is now fully explained, and it is not a model failure.** The gate
+audit shows the worker never read `notify.js` and never read any of the 3 failing test files —
+it wandered `event-store.js`/`gitrepo.js`/neighbouring tests for 24 rounds × 3 and never formed
+a hypothesis worth writing. Against the calibration this is a clean natural contrast: **with**
+the `not ok` lines in the prompt, both tiers navigated to `notify.js` 15/15 (F27, one-shot);
+**without** them, 72 rounds of tool access never touched it. The failing-test NAMES are the
+causal input the whole navigation gradient runs on — and the shell deleted them in transit.
+
+**The doctrine already existed; the code violated it.** "The close's OUTPUT FORMAT is part of
+the job's contract with the worker — a gap-bound that buries failures silently defeats the
+arbiter" was minted from adaptlearn's record and sits in this repo's memory verbatim. `boundGap`
+is that named failure, shipped. Fifth blind-instrument instance (ledger/cache-tiers,
+gate-audit/read-shape, harness/git-status, aim/nomination, now gap/failure-elision) — and the
+first one caught by the product's OWN spine on its first real run, which is what the spine is for.
+
+**What this run does and does not license.** It does NOT answer the thesis question (is the
+plant loop-solvable with feedback?) — no feedback carrying information ever reached the worker,
+so the loop has still never been tested with a live gap. It DOES retire "the middle/machine is
+the blocker": every arbiter component behaved exactly to spec. The experiment reruns after the
+fix; ~$1 per firing.
+
+**Adjacent hazard, logged not fixed:** `runClose` feeds `boundGap(err || out)` — whichever
+single stream is non-empty wins. A close that writes failures to stdout while emitting any
+stderr noise would lose the failures entirely, before any bounding. Same class; needs its own
+test when the gap path is reworked.
+
+**Side facts:** the gate audit and the litectx index live INSIDE the patient tree
+(`gate-audit.jsonl`, `.litectx` — read-denied to the worker as designed, but they dirty
+`git status` in the repo under repair; F14 moved the spine out for exactly this reason).
+One denied read of `.litectx` on the audit confirms the fence held.
+
+---
+
+## F29 — the paired contrast: blind gap → 3 attempts, 0 writes, cap-red; named failures → GREEN on attempt 1, $0.30. The information was the variable — and the 0% one-shot ceiling fell to tools, not to verdict feedback
+
+**The pair.** Same patient, same plant, same spec shape, same model (sonnet), same $3 cap — the
+ONLY delta between run 1 (`job2-mrlwbou4`) and run 2 (`job2-mrlxl0q5`) is the F28 fix: the gap
+(and the F13 pre-run close-state) now carries the five `not ok` lines via `close.gapKeep`.
+
+| | run 1 (blind gap) | run 2 (failures named) |
+|---|---|---|
+| outcome | `step-red` at 3-attempt cap | **green** |
+| attempts | 3 × 24/24 rounds, all bounded | **1**, 30 tool calls |
+| writes | **zero** | 2 (both `src/notify.js`) |
+| culprit file ever read | never | found, fixed |
+| spend | $1.0521 | **$0.2991** |
+
+Two should-differ conditions differed — the instrument sees the variable. Independent
+verification: `npm test` re-run by hand on the tree, 317/317. The worker's fix restores a guard:
+`if (custom != null) body = custom;`.
+
+**What it settles.**
+1. **F27's open question — the plant is NOT loop-unsolvable.** The one-shot DISCARD (fixS 0%)
+   bounded the wrong ceiling: with tools and the failing-test names, the model reads the failing
+   tests, walks the wiring, reads the culprit, and lands a green fix in ONE attempt for 30¢.
+   **Job #2 is admitted as the loop benchmark** — it discriminates hard (informational gap:
+   red↔green swing on one variable), which is exactly what job #1 could never do (0/140 flat).
+2. **The gapKeep fix is validated end-to-end,** not just unit-tested: the F28 regression pair is
+   this table.
+3. **The wheel works whole:** draft → validate → attempt (bounded) → close → verdict → green
+   minted → terminal spine, secrets-clean, all priced.
+
+**What it does NOT settle — stated before anyone asks.**
+- **The across-attempt ratchet (Layer R) was never engaged.** Green on attempt 1 means no gap
+  ever fed a second attempt; the thesis "verdict feedback breaks a misdiagnosis basin" remains
+  untested. What beat the 0% one-shot ceiling was **multi-round tool use within one attempt**
+  (the worker revised its own edit once before finishing — two writes, zero close verdicts in
+  between). One-shot-hard ≠ loop-hard: the calibration's FIX probe denied the model tools, and
+  tools were the whole difference.
+- **A new benchmark worry, logged not decided:** if the flat loop greens job #2 on attempt 1 at
+  $0.30, the 7-arm suite may not separate workflows on green/red — the discriminator may need to
+  be cost/rounds, or a harder plant. Decide at suite design, not now.
+- **Fix-shape nuance:** the worker wrote `!= null`, narrower than the original falsy guard — a
+  hook returning `''` would still clobber the body, which the file's header contract forbids but
+  NO test pins. By the product's frozen pass criterion (green/not-green, hamr's call #4) this is
+  a clean pass; the uncovered `''` branch is a mailproof test-suite gap, noted for upstream, not
+  relitigated here.
+
+**n=1.** One green on a nondeterministic worker is an anecdote (doctrine); the paired contrast is
+the finding, the green rate is not yet a number. Replication belongs to the arm suite.

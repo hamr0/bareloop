@@ -263,6 +263,9 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
   const drafter = new Loop({ provider, system: 'You draft workflow configs as pure JSON. Output only the JSON object.' });
   /** @type {string|null} a transport throw from the drafting call — spend UNKNOWN, terminal */
   let transportRed = null;
+  /** @type {string|null} a drafting round the API TRUNCATED (BA-6, bare-agent 0.27.0) — provider-red like
+   * a throw, but the round WAS metered so spend is known; must never launder into a config-red (F25). */
+  let draftTruncated = null;
   /** @param {Red[]|null} reds */
   const draft = async (reds) => {
     let r;
@@ -280,6 +283,11 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
     account(costUsd);
     if (unpricedRounds > 0) unpriced = true;
     emit('draft-result', { costUsd, redraft: reds !== null, error: r.error ?? null });
+    // BA-6: the API cut the drafting round off mid-JSON. That is provider-red (the API's
+    // fault, not the drafter's), so it must NOT be laundered into a config-red blaming the
+    // drafter (F25's class) and must NOT consume the redraft — retrying a truncation blindly
+    // just burns budget; the human decides. Metered above, so unlike transportRed spend is known.
+    if (typeof r.error === 'string' && r.error.startsWith('truncated:')) { draftTruncated = r.error; return null; }
     return r.error ? null : (extractArtifact(r.text).code ?? '');
   };
   const providerRed = () => {
@@ -313,12 +321,20 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
     // the redraft only fires when it can still help: not over a transport red,
     // not over unpriced spend, and never over an already-blown budget (a paid
     // call against a negative cap can only red again — budget story, not drafter)
-    if (!cv.ok && !unpriced && !transportRed && capNow() > 0) {
+    if (!cv.ok && !unpriced && !transportRed && !draftTruncated && capNow() > 0) {
       text = await draft(cv.reds);
       cv = validateConfig(text ?? '', cOpts());
       emit('config-validate', { ok: cv.ok, reds: cv.reds, phase: 'draft-2' });
     }
     if (transportRed) return providerRed();
+    if (draftTruncated) {
+      // A truncated draft is provider-red, NOT config-red — the API cut it off; the drafter is
+      // not on trial. Mirrors the worker path (interpret.js) and the human's options: the round
+      // was metered, so this is a fault with a known cost, not a spend-unknown transport throw.
+      emit('escalation', { category: 'provider-red', decisionReady: true, decision: 'The drafting round was truncated at the output cap (BA-6) — the API cut the config off mid-generation, so no valid config exists. Not the drafter\'s competence (never a config-red), and not silently retried.', options: ['raise the drafting cap and rerun', 'retry the run', 'abandon the run'], detail: draftTruncated, spentUsd });
+      emit('job-end', { outcome: 'provider-red' });
+      return 'provider-red';
+    }
     if (unpriced) return pricingRed();
     if (!cv.ok) {
       if (capNow() <= 0) {
@@ -393,7 +409,7 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
     // trim before splitting: validateJob reds whitespace-padded cmds, but an
     // empty argv[0] would THROW at spawn — belt for any path around the validator
     const closeArgv = step.close.cmd.trim().split(/\s+/);
-    const closeOpts = { timeoutMs: closeTimeoutMs, cwd: workdir, expect: step.close.expect, judged: step.close.judged };
+    const closeOpts = { timeoutMs: closeTimeoutMs, cwd: workdir, expect: step.close.expect, judged: step.close.judged, gapKeep: step.close.gapKeep };
     const pre = runClose(closeArgv, (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS }), closeOpts);
     emit('close-precheck', { step: step.id, ...pre });
     if (pre.verdict === 'satisfied') {
@@ -425,9 +441,10 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
         emit: meter, provider, ...cOpts(), closeTimeoutMs, closeState: pre.gap,
         // the SPEC's grant, threaded verbatim (2b decision #2) — the drafted
         // config cannot express mode or tools, so there is nothing to merge.
-        // expect/judged ride the same rail for the same reason (PRD v1.11).
+        // expect/judged/gapKeep ride the same rail for the same reason: they are
+        // arbiter territory (PRD v1.11; F28 for gapKeep).
         mode: step.mode ?? 'text', tools: step.tools,
-        closeExpect: step.close.expect, closeJudged: step.close.judged,
+        closeExpect: step.close.expect, closeJudged: step.close.judged, closeGapKeep: step.close.gapKeep,
       });
     } catch (e) {
       // ralph belts throws INSIDE the loop; this belts the interpreter's own

@@ -7,7 +7,41 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Fixed
+
+- **F28 — the gap bound cut every failure line out of the worker's feedback.** The first
+  real end-to-end firing of the N2 loop delivered a 1,927-char gap containing **zero**
+  `not ok` lines: `ralph`'s `boundGap` keeps a head sample + elided middle + tail, and a
+  large TAP suite (`npm test`, ~67KB) prints its failing tests in the *middle* — so the
+  worker was told "5 fail" and never *which*, three attempts running, and never navigated to
+  the culprit file. New optional **`close.gapKeep`** (job-spec, `predicate` only): a regex
+  **source** whose matching close-output lines are preserved in a capped, clearly-delimited
+  kept-failures block between head and tail — the failing-test NAMES reach the worker
+  regardless of where they print. Hard-capped (50 lines / 8192 bytes, whichever binds) so a
+  pathological close cannot rebuild the bloat; a trimmed block announces the trim (no silent
+  truncation). Validated like `judged.pattern` (must compile as a RegExp, else a spec red
+  before any tokens); **arbiter territory** — the drafted workflow config cannot express it.
+  Also fixed the adjacent hazard: the gap now combines **both** streams (stdout + stderr), so
+  a failure on stdout survives stderr noise (the old `err || out` returned stderr alone and
+  lost it). `jobs/mailproof-fix.json` gains `"gapKeep": "^not ok"` (spec re-signed). Threaded
+  spec → `runJob` → `interpret` → `ralph` parallel to `judged`. TDD, suite 281 → 291.
+
 ### Changed
+
+- **Consume `bare-agent@0.27.0` — the N2 build gate (BA-4) is cleared.** 0.27.0 ("Provider
+  Fidelity & Honest Termination") shipped the entire upstream ask queue this rung filed:
+  BA-4, BA-5, BA-3, BA-6, BA-7, BA-1 (+ BA-10/BA-12). **BA-4** (`shell_write` truncating a
+  file to zero bytes on absent `content`) was the hard N2-exit blocker — its four acceptance
+  criteria are re-verified locally against the published tarball, so a write-granting tool
+  mode can ship honestly. The tool-mode middle (`src/interpret.js`) is updated to the new
+  contract: a **`truncated:max_tokens`** round (BA-6 — a round the API cut off, previously
+  laundered into a clean `error:null` finish, F25) now escalates as **provider-red** (retry,
+  the F11 transport class) instead of being scored as an empty attempt; **`loop.stop()`**'s
+  new `error:null`+text return (BA-3/BA-5) let the `stoppedByBound` shim be **deleted** (it
+  was dead under the new contract and could have swallowed a genuine halt); and
+  **`cacheMessages: true`** (BA-1) is wired on the worker loop — the transcript cache the
+  job #1 cost wall (F18: 754k full-price tokens, died at cap) needed. Regression test for
+  the truncation path added (mutation-checked). Suite 280/280, typecheck clean.
 
 - **Agent/IDE scratch gitignored and de-tracked.** `.gitignore` now default-denies every dot-directory (`.*/`), re-admitting only what ships (`.github/`). Per-machine agent/IDE state (`.claude/`, `.litectx/`, `.idea/`, …) regenerates locally and only added noise and churn; any already-committed copies are removed from tracking (local files kept on disk). Repo hygiene only.
 

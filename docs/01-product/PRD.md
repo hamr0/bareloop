@@ -914,6 +914,28 @@ Headless first. UI when the spine is good — no early read-only viewer unless t
 earns it sooner. When the panel lands, everything above is the starting layout.
 
 ---
+## Addendum v1.13 — 2026-07-15 (the layer map + the stage-verdict rule; hamr)
+
+**`docs/01-product/LAYERS.md` is the canonical plain-language map** — the flow, the wheel,
+the verbs, the verdicts, and the four layers, stated without package names (primitive vs
+implementation was a real source of confusion; the map's appendix is the ONE place the
+mapping appears). It renames nothing and adds no doctrine beyond the one decision below;
+where it and the PRD could ever disagree, the PRD wins and the map gets fixed.
+
+**Stage verdicts for micro-wheels (decided 2026-07-15):** a micro-wheel (a plan-v1 step's
+inner loop) validates against **its own eval where one exists** — a mechanical check the
+stage cannot game; where none exists it **inherits judgment from the parent wheel's verdict
+chain** (green / soft-green / hitl). Learning credit mints only at an honest close: a stage
+may declare itself settled to move on, but it cannot mint inheritance from its own say-so.
+(This closes the open question the layer map calls "the hard one" — who judges a stage that
+has no exit code.)
+
+**Build order confirmed:** fire Layer 1 end-to-end on the job #2 patient (first real turn of
+the wheel) → Layer R, the within-run root/ratchet (the F21 fix; within-run scratch and
+across-run inheritance are different scopes, now formally separated) → Layer 2, plan-v1
+micro-wheels → Layer 3, N3 inheritance.
+
+---
 *Seed written 2026-07-10 in adaptlearn (v0.11.0). Named `bareloop` 2026-07-11 (npm-free at
 check time; suite-family name chosen deliberately — the product is the bare suite's flagship
 consumer, and "bare loop" states the §8 minimalism: no swarm, no orchestrator, one process

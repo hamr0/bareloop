@@ -161,6 +161,28 @@ test('interpreter crash mid-run → interpreter-red, never masquerading as bad h
   assert.equal(events.find((e) => e.type === 'escalation').category, 'interpreter-red', 'a broken middle is still its own category — the class did not collapse into provider-red');
 });
 
+test('BA-6: a truncated round (stopReason max_tokens) → provider-red, never scored as an empty attempt', async () => {
+  // The real Loop reads stopReason and returns error:'truncated:max_tokens' with the partial
+  // text preserved (BA-6/BA-5, bare-agent 0.27.0). Before the fix this laundered into a clean
+  // finish with error:null (F25) — an empty attempt indistinguishable from "the worker chose to
+  // stop", which may have corrupted every prior sonnet arm. bareloop must escalate it as
+  // provider-red (retry), the transport-failure class (F11), NOT interpreter-red (fix the middle)
+  // and NOT a silent empty write. The provider is the shell-owned seam, so a scripted max_tokens
+  // stopReason is the honest way to drive the real Loop's truncation path.
+  const { workdir, target, close } = makeWork('truncated');
+  const file = join(workdir, 'run.jsonl');
+  const outcome = await interpret(config(), {
+    task: TASK, target, close, workdir, capRuns: 3, emit: makeSpine(file),
+    provider: stubProvider([{ text: 'I was thinking about the sum when I got cut o', stopReason: 'max_tokens' }]),
+  });
+  const events = readSpine(file);
+  assert.equal(outcome, 'escalated');
+  const esc = events.find((e) => e.type === 'escalation');
+  assert.equal(esc.category, 'provider-red', 'a truncation is a transport-class failure (retry), not a broken middle');
+  assert.match(esc.detail, /truncated:max_tokens/, 'the escalation names the real cause');
+  assert.ok(!existsSync(target), 'a truncated round writes NOTHING — no empty/partial artifact reaches disk (F25/BA-4 class)');
+});
+
 // ---- mid-run revision (stall → revisor → interpreter-owned acceptance) ----
 // The revisor is a stub seam here, same doctrine as the provider. What CI
 // protects: stall detection fires once and only under a real stall; the

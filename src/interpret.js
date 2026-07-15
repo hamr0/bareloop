@@ -176,6 +176,10 @@ const toolAction = (name, args, workdir) => {
  *   judgment-rendered signal — proof the close actually judged something before
  *   its exit code is believed in EITHER direction (PRD v1.11; the drafted config
  *   cannot express it, and must not: it is the arbiter's own honesty check)
+ * @param {string} [opts.closeGapKeep] the signed spec's kept-failures pattern (F28):
+ *   close-output lines matching it survive the gap bound, so a large suite's
+ *   `not ok` names reach the worker instead of being elided into "N fail" — also
+ *   arbiter territory, inexpressible in the drafted config
  * @param {string} opts.workdir run directory (litectx root, gate audit, scope base)
  * @param {number} opts.capRuns shell iteration budget; the config may tighten via loop.maxIterations, never exceed
  * @param {(type: string, data?: object) => object} opts.emit spine emitter
@@ -205,7 +209,7 @@ const toolAction = (name, args, workdir) => {
  *        job-v1 validated); defaults to the full menu in tool mode
  * @returns {Promise<'green'|'escalated'|'config-red'>}
  */
-export async function interpret(configRaw, { task, target, close, workdir, capRuns, emit, provider, shellCapUsd = 2, jobWriteScope, revisor, closeTimeoutMs, mode = 'text', tools, closeState, closeExpect, closeJudged }) {
+export async function interpret(configRaw, { task, target, close, workdir, capRuns, emit, provider, shellCapUsd = 2, jobWriteScope, revisor, closeTimeoutMs, mode = 'text', tools, closeState, closeExpect, closeJudged, closeGapKeep }) {
   // Reds-before-tokens: text mode writes ONE artifact — a missing target is a
   // caller bug that must be loud NOW, not a TypeError after a paid worker call
   // that ralph would misfile as interpreter-red (the gate skips an absent path,
@@ -286,17 +290,19 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   // ONCE (zero verdicts, zero gaps, zero writes). The loop's whole premise — a cheap wrong
   // attempt corrected by the next round — was unreachable, and the persona's promise ("a test
   // suite runs and you are called again") was a lie the shell never kept.
-  // `loop.stop()` breaks at the round boundary and returns the transcript with NO error, so the
-  // attempt ends cleanly, its summary stands, and the close renders the verdict that feeds the
-  // next attempt. Per-attempt, because each attempt is a FRESH conversation (the context resets),
-  // which is what keeps four bounded attempts inside a budget one unbounded attempt exhausts.
+  // `loop.stop()` breaks at the round boundary and — since bare-agent 0.27.0 (BA-3/BA-5) —
+  // returns the transcript with `error: null` and the produced text preserved, so the attempt
+  // ends cleanly, its summary stands, and the close renders the verdict that feeds the next
+  // attempt. (Before 0.27.0 stop() fell through to a HARD_ROUND_LIMIT return carrying a bogus
+  // error, which bareloop had to un-lie behind a `stoppedByBound` flag — the upgrade removed
+  // both the lie and the shim; see ask().) Per-attempt, because each attempt is a FRESH
+  // conversation (the context resets), which is what keeps four bounded attempts inside a
+  // budget one unbounded attempt exhausts.
   const TURNS_PER_ATTEMPT = mode === 'tools' ? 24 : 8;
   /** rounds spent inside the CURRENT attempt (reset per attempt, unlike the gate's run-wide tick) */
   let roundsThisAttempt = 0;
   /** @type {number|undefined} the attempt that was cut short by the bound (spine + gap note) */
   let attemptBounded;
-  /** set when WE call loop.stop() — bare-agent surfaces our stop as an error return (see ask()) */
-  let stoppedByBound = false;
   // `tokens` alone cannot answer the question the ledger exists to answer.
   // bare-agent's `inputTokens` is the UNCACHED prompt remainder — re-sent context
   // is billed as a cache READ and never appears in it. So a round that re-pays for
@@ -325,11 +331,11 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     if ((arg?.kind ?? 'turn') === 'turn' && mode === 'tools') {
       roundsThisAttempt += 1;
       if (roundsThisAttempt >= TURNS_PER_ATTEMPT) {
-        // Clean stop at the round boundary: run() returns the transcript with error=null,
-        // so this is an attempt that ENDED, not an attempt that FAILED. The close now runs
-        // and its verdict becomes the next attempt's gap — which is the entire point.
+        // Clean stop at the round boundary: since 0.27.0 (BA-3/BA-5) run() returns the
+        // transcript with error=null and the text preserved, so this is an attempt that
+        // ENDED, not one that FAILED. The close now runs and its verdict becomes the next
+        // attempt's gap — which is the entire point.
         attemptBounded = roundIteration;
-        stoppedByBound = true;
         emit('attempt-bounded', { iteration: roundIteration, rounds: roundsThisAttempt, cap: TURNS_PER_ATTEMPT });
         loop.stop();
       }
@@ -383,7 +389,13 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   async function ask(prompt) {
     let r;
     try {
-      r = await loop.run([{ role: 'user', content: prompt }], toolDefs);
+      // cacheMessages (BA-1, bare-agent 0.27.0): roll an Anthropic cache breakpoint onto the
+      // transcript so a tool loop stops re-buying its whole growing history at full price every
+      // round — F18 measured 754k full-price tokens, $1.55, and the job died at the cap without
+      // one write. Opt-in and provider-routed (loop.run forwards options to generate): a
+      // non-Anthropic binding ignores it, and it is safe because bareloop wires no trim/compaction
+      // fold — the one interaction (a fold that rewrites the cached prefix) that would defeat it.
+      r = await loop.run([{ role: 'user', content: prompt }], toolDefs, { cacheMessages: true });
     } catch (e) {
       const err = /** @type {CategorizedError} */ (e);
       // A throw OUT OF loop.run() is provider/loop territory by definition — the
@@ -401,21 +413,23 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     // blind and a cap story masquerades as a worker result (design law #8).
     // A denial streak ('denied:<tool>', BA-11) is a governance deny, not a
     // broken interpreter — gate-red, same category as text mode's fence deny.
-    // OUR OWN stop is not a fault (F20). `loop.stop()` breaks bare-agent's round loop, which
-    // falls through to its HARD_ROUND_LIMIT return — so a deliberate stop comes back carrying
-    // the internal-safety-limit warning as `error`, indistinguishable from a runaway. Read
-    // literally, the interpreter escalates `interpreter-red` and the RUN dies at attempt 1:
-    // the bound would end the attempt and kill the loop in the same breath. bareloop knows it
-    // stopped the loop — it does not need bare-agent to tell it — so a bounded attempt is a
-    // clean end here, and the close renders the verdict that feeds the next attempt.
-    // (Filed upstream: stop() should return `error: null` and keep the run's text.)
-    if (r.error && stoppedByBound) {
-      stoppedByBound = false;
-      return r;
-    }
+    // A TRUNCATED round ('truncated:max_tokens', BA-6, bare-agent 0.27.0) is the
+    // API cutting the generation off at the output cap — not a middle fault. It is
+    // provider-red (retry), the same class as an ENETUNREACH transport failure
+    // (F11): no verdict exists and the failed round's spend is only partly known.
+    // Before 0.27.0 this round was laundered into a clean finish with error:null
+    // (F25) — every prior sonnet arm ran on that bug; the fix surfaces it as its
+    // own error, so the middle can escalate instead of scoring an empty attempt.
+    // OUR OWN stop is not a fault (F20), and since 0.27.0 (BA-3/BA-5) `loop.stop()`
+    // returns `error: null` with the run's text preserved — so a bounded attempt
+    // lands on the clean-return path below with no special-casing (the 0.26.2
+    // `stoppedByBound` shim that un-lied the HARD_ROUND_LIMIT return is gone).
     if (r.error) {
       const err = /** @type {CategorizedError} */ (new Error(`worker loop: ${r.error}`));
-      err.category = r.error.startsWith('halt:') ? 'cap-halt' : r.error.startsWith('denied:') ? 'gate-red' : 'interpreter-red';
+      err.category = r.error.startsWith('halt:') ? 'cap-halt'
+        : r.error.startsWith('denied:') ? 'gate-red'
+        : r.error.startsWith('truncated:') ? 'provider-red'
+        : 'interpreter-red';
       throw err;
     }
     return r;
@@ -599,9 +613,11 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   // cwd: workdir — the close judges the tree the work happened in (F8). A close
   // is a repository command (`npm test`); run from anywhere else it silently
   // judges another repo and exit-code-is-truth stops being true.
-  // expect/judged are the SIGNED spec's, threaded verbatim — the drafted config
-  // cannot express either (they are arbiter territory, PRD v1.11).
-  const outcome = await ralph({ middle, close, capRuns: effectiveCap, emit, closeTimeoutMs, cwd: workdir, expect: closeExpect, judged: closeJudged, redact: (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS }) });
+  // expect/judged/gapKeep are the SIGNED spec's, threaded verbatim — the drafted
+  // config cannot express any of them (they are arbiter territory, PRD v1.11; F28
+  // for gapKeep, which keeps a large suite's failure NAMES in the gap the worker
+  // sees instead of letting the bound elide them into a bare "N fail").
+  const outcome = await ralph({ middle, close, capRuns: effectiveCap, emit, closeTimeoutMs, cwd: workdir, expect: closeExpect, judged: closeJudged, gapKeep: closeGapKeep, redact: (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS }) });
   if (outcome === 'green') {
     // The close already passed — a retention hiccup must not un-green a real
     // green (it would corrupt the learning curve). It degrades loudly:

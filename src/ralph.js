@@ -53,19 +53,26 @@ import { spawnSync } from 'node:child_process';
  * The default (the runner's own cwd) exists only for callers with an absolute
  * close; the runner and the interpreter always pass the workdir.
  *
+ * `gapKeep` (F28) is a regex SOURCE whose matching lines are PRESERVED through
+ * the gap bound in addition to the head/tail sample: a large TAP suite prints
+ * its `not ok` lines in the middle of the stream, exactly where `boundGap`
+ * elides — so the failing-test NAMES (the causal input the worker navigates on)
+ * were deleted in transit and the worker was told "5 fail" and never WHICH. It
+ * is arbiter territory like the rest here: the drafted config cannot express it.
+ *
  * @param {string[]} close argv, e.g. ['node', '--test', 'close/']
  * @param {(s: string) => string} [redact] source scrubber; identity by default
- * @param {{ timeoutMs?: number, cwd?: string, expect?: number, judged?: {pattern: string, min: number} }} [opts]
+ * @param {{ timeoutMs?: number, cwd?: string, expect?: number, judged?: {pattern: string, min: number}, gapKeep?: string }} [opts]
  *   close wall-clock cap (operator-set via the runner, never the config's — the
  *   agent must not author its arbiter's clock), the directory the close runs in
  *   (the workdir — the tree it is judging), the exit code the SIGNED spec calls
- *   success, and the judgment-rendered signal. All four are arbiter territory:
- *   the drafted workflow config cannot express any of them.
+ *   success, the judgment-rendered signal, and the kept-failures pattern. All
+ *   five are arbiter territory: the drafted workflow config cannot express any.
  * @returns {{verdict: 'satisfied'|'needs_revision'|'failed'|'timed-out'|'killed'|'crashed',
  *   gap?: string, exitCode?: number, signal?: string, detail?: string,
  *   judgedCount?: number|null, unaudited?: boolean}}
  */
-export function runClose(close, redact = (s) => s, { timeoutMs = 120_000, cwd, expect = 0, judged } = {}) {
+export function runClose(close, redact = (s) => s, { timeoutMs = 120_000, cwd, expect = 0, judged, gapKeep } = {}) {
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT; // a `node --test` close inherits this from a test runner and silently no-ops — a fake green
   const r = spawnSync(close[0], close.slice(1), { env, cwd, encoding: 'utf8', timeout: timeoutMs });
@@ -110,9 +117,15 @@ export function runClose(close, redact = (s) => s, { timeoutMs = 120_000, cwd, e
   // empty-output red would silently kill gap feedback, after-red hooks, AND
   // stall detection, leaving the worker re-prompted byte-identically to the cap.
   // Bound AFTER redaction so a token straddling the bound can't survive.
+  // BOTH streams, not one (F28 hazard): the old `err || out` returned stderr
+  // ALONE whenever it was non-empty, so a close writing its `not ok` lines to
+  // stdout while emitting any stderr noise lost the failures entirely, before
+  // the bound ever ran. Combine them (out then err, matching the judged path's
+  // `${out}\n${err}`); both empty still falls to the no-output message.
+  const combined = [out, err].filter(Boolean).join('\n');
   return {
     verdict: 'needs_revision',
-    gap: boundGap(err || out) || `(close exited ${r.status}, expected ${expect}, with no output)`,
+    gap: boundGap(combined, gapKeep) || `(close exited ${r.status}, expected ${expect}, with no output)`,
     exitCode: r.status,
     ...(judged ? { judgedCount } : { unaudited: true }),
   };
@@ -121,11 +134,47 @@ export function runClose(close, redact = (s) => s, { timeoutMs = 120_000, cwd, e
 // Tail-biased bound: a test runner's useful output (the assertion diff, the
 // failing case name) is at the END; head-only truncation fed the worker the
 // preamble and dropped the cause (N2 queue, F2). Head sample kept so "what ran"
-// stays visible; the marker is hygiene, not load-bearing (F3).
+// stays visible; the truncation marker is hygiene, not load-bearing (F3).
 const GAP_HEAD = 400, GAP_TAIL = 1500;
-function boundGap(s) {
+// The keep-block cap (F28): a large suite's `not ok` lines live in the elided
+// middle, so gapKeep re-surfaces them — but a pathological close (thousands of
+// matching lines) could rebuild the very 67KB bloat the bound exists to prevent.
+// Hard-capped by BOTH lines and bytes, whichever binds first; when the cap trims
+// matches it says so with an explicit marker — silent truncation is the disease
+// this whole fix cures (F28), never a cure that truncates silently in turn.
+const GAP_KEEP_MAX_LINES = 50, GAP_KEEP_MAX_BYTES = 8192;
+
+/**
+ * Bound an over-long close stream to a head sample + elided middle + tail. When
+ * `keepPattern` is set (F28), lines of the WHOLE stream matching it are also
+ * carried in a clearly-delimited block between head and tail — capped — so the
+ * failing-test names buried in the middle still reach the worker.
+ * @param {string} s the (redacted) close output
+ * @param {string} [keepPattern] regex source; matching lines survive the elision
+ */
+function boundGap(s, keepPattern) {
   if (s.length <= GAP_HEAD + GAP_TAIL + 100) return s;
-  return `${s.slice(0, GAP_HEAD)}\n…[${s.length - GAP_HEAD - GAP_TAIL} chars truncated]…\n${s.slice(-GAP_TAIL)}`;
+  const head = s.slice(0, GAP_HEAD);
+  const tail = s.slice(-GAP_TAIL);
+  const elided = s.length - GAP_HEAD - GAP_TAIL;
+  const base = `${head}\n…[${elided} chars truncated]…`;
+  if (!keepPattern) return `${base}\n${tail}`;
+
+  // Scan the WHOLE stream, keep matching lines in original order, cap by lines
+  // AND bytes. `re.test` with no `g` flag is stateless, so reuse is safe.
+  const re = new RegExp(keepPattern, 'm');
+  /** @type {string[]} */
+  const matched = [];
+  let bytes = 0, trimmed = 0;
+  for (const line of s.split('\n')) {
+    if (!re.test(line)) continue;
+    if (matched.length >= GAP_KEEP_MAX_LINES || bytes + line.length + 1 > GAP_KEEP_MAX_BYTES) { trimmed += 1; continue; }
+    matched.push(line);
+    bytes += line.length + 1;
+  }
+  if (!matched.length) return `${base}\n${tail}`; // pattern matched nothing — behave as the plain bound
+  const label = `kept failures matching /${keepPattern}/ (${matched.length}${trimmed ? `, ${trimmed} more elided by the ${GAP_KEEP_MAX_LINES}-line/${GAP_KEEP_MAX_BYTES}-byte cap` : ''})`;
+  return `${base}\n── ${label} ──\n${matched.join('\n')}\n── end kept failures ──\n${tail}`;
 }
 
 /**
@@ -191,9 +240,11 @@ export const CLOSE_FAULTS = Object.freeze({
  *   judging (F8: a cwd-relative close run elsewhere judges the wrong repository)
  * @param {number} [opts.expect] the exit code the SIGNED spec calls success
  * @param {{pattern: string, min: number}} [opts.judged] the judgment-rendered signal
+ * @param {string} [opts.gapKeep] kept-failures pattern (F28): matching close-output
+ *   lines survive the gap bound so a large suite's `not ok` names reach the worker
  * @returns {Promise<'green'|'escalated'>}
  */
-export async function ralph({ middle, close, capRuns, emit, redact, closeTimeoutMs, cwd, expect, judged }) {
+export async function ralph({ middle, close, capRuns, emit, redact, closeTimeoutMs, cwd, expect, judged, gapKeep }) {
   emit('run-start', { capRuns, close: close.join(' ') });
   // The blind spot is NAMED, never hidden: with no judgment-rendered signal this
   // close cannot tell a crash from an honest red (they are byte-identical at the
@@ -233,7 +284,7 @@ export async function ralph({ middle, close, capRuns, emit, redact, closeTimeout
       return 'escalated';
     }
     emit('middle-done', { iteration });
-    const v = runClose(close, redact, { timeoutMs: closeTimeoutMs ?? 120_000, cwd, expect, judged });
+    const v = runClose(close, redact, { timeoutMs: closeTimeoutMs ?? 120_000, cwd, expect, judged, gapKeep });
     verdicts.push(v.verdict);
     emit('close-verdict', { iteration, ...v });
     if (v.verdict === 'satisfied') {

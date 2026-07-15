@@ -392,6 +392,45 @@ test('judged is inexpressible on a hitl close — a human IS the judgment, there
   assert.ok(r.reds.some((x) => x.code === 'unknown-field' && x.path === 'steps.2.close.judged'));
 });
 
+// ─── the kept-failures pattern (F28, optional, validated like judged.pattern) ─
+// The gap bound (ralph.boundGap) elides the middle of a large close stream, and a
+// big TAP suite prints its `not ok` lines THERE — so the failing-test names never
+// reach the worker. gapKeep is a regex SOURCE whose matching lines are preserved.
+
+test('a close may declare gapKeep — a regex source whose matching lines survive the gap bound (F28)', () => {
+  const j = mut((s) => { s.steps[0].close.gapKeep = '^not ok'; });
+  const r = validateJob(j);
+  assert.deepEqual(r.reds, []);
+  assert.equal(r.job.steps[0].close.gapKeep, '^not ok');
+});
+
+test('gapKeep is OPTIONAL — a close without it validates and keeps exactly today\'s bound', () => {
+  assert.equal(validateJob(JOB1).ok, true, 'job #1 declares no gapKeep and must still validate');
+});
+
+test('a gapKeep that does not compile reds at validation, not at run time (mirrors judged.pattern)', () => {
+  const j = mut((s) => { s.steps[0].close.gapKeep = '^not ok ('; });
+  const r = validateJob(j);
+  assert.equal(r.ok, false);
+  assert.ok(r.reds.some((x) => x.path === 'steps.0.close.gapKeep' && /RegExp/.test(x.detail)),
+    'reds-before-tokens: an invalid keep pattern is a spec red, never a runtime crash');
+});
+
+test('an empty or non-string gapKeep reds — it is a regex SOURCE, not an object or blank', () => {
+  for (const bad of ['', { pattern: 'x' }, 3]) {
+    const r = validateJob(mut((s) => { s.steps[0].close.gapKeep = bad; }));
+    assert.equal(r.ok, false, `${JSON.stringify(bad)} must red`);
+    assert.ok(r.reds.some((x) => x.path === 'steps.0.close.gapKeep'));
+  }
+});
+
+test('gapKeep is inexpressible on a hitl close — a human close renders no stream to keep lines from', () => {
+  const j = mut((s) => { s.steps[2].close.gapKeep = '^not ok'; });
+  const r = validateJob(j);
+  assert.equal(r.ok, false);
+  assert.ok(r.reds.some((x) => x.code === 'unknown-field' && x.path === 'steps.2.close.gapKeep'));
+});
+
 test('judged is inexpressible in the AGENT-drafted workflow config — the arbiter stays out of reach', () => {
   const cfg = {
     schema: 'v1', loop: { shape: 'refine', maxIterations: 3 },

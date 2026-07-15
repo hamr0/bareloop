@@ -38,7 +38,10 @@ function stubProvider({ drafts = [draftedConfig()], worker = [GOOD_SUM], draftCo
       const prompt = messages.at(-1).content;
       if (prompt.startsWith('DRAFT-CONFIG')) {
         calls.draft.push(prompt);
-        return reply({ text: drafts[Math.min(d++, drafts.length - 1)], costUsd: draftCostUsd });
+        const dEntry = drafts[Math.min(d++, drafts.length - 1)];
+        // a draft entry may be a bare JSON string OR an object (e.g. {text, stopReason}) so a
+        // test can drive the real Loop's truncation path (BA-6) — mirrors the worker branch below
+        return reply({ ...(typeof dEntry === 'string' ? { text: dEntry } : dEntry), costUsd: draftCostUsd });
       }
       calls.work.push(prompt);
       const s = worker[Math.min(w++, worker.length - 1)];
@@ -175,6 +178,22 @@ test('drafting: a red first draft gets its reds fed back for ONE redraft; two re
   assert.equal(dead.outcome, 'config-red');
   assert.equal(dead.provider.calls.draft.length, 2, 'never a third shot');
   assert.equal(dead.provider.calls.work.length, 0, 'zero worker tokens on a dead draft');
+});
+
+test('BA-6: a TRUNCATED drafting round → provider-red, never a config-red blaming the drafter, and no redraft', async () => {
+  // The API cut the config off mid-JSON (bare-agent 0.27.0 returns error:'truncated:max_tokens').
+  // That is the API's fault, not the drafter's: it must NOT launder into a config-red (F25's class,
+  // one level up in the drafting path), and it must NOT consume the redraft — retrying a truncation
+  // blindly just burns budget; the human decides. Symmetric with the worker path (interpret.js).
+  const provider = stubProvider({ drafts: [{ text: '{ "schema": "job-v1", "loop": { "sha', stopReason: 'max_tokens' }] });
+  const { outcome, events } = await run('draft-truncated', { provider });
+  assert.equal(outcome, 'provider-red', 'a truncated draft is provider-red, not config-red');
+  assert.equal(provider.calls.draft.length, 1, 'a truncation is NOT retried — the redraft is for the drafter\'s reds, not the API\'s cutoff');
+  assert.equal(provider.calls.work.length, 0, 'zero worker tokens — the job never got a config');
+  assert.ok(!events.some((e) => e.type === 'config-red'), 'the drafter is never put on trial for an API cutoff');
+  const esc = events.find((e) => e.type === 'escalation');
+  assert.equal(esc.category, 'provider-red');
+  assert.match(esc.detail, /truncated:max_tokens/, 'the escalation names the real cause');
 });
 
 test('F6 — unpriced is never free: a null-cost drafting call halts pricing-red before any step', async () => {

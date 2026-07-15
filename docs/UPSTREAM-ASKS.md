@@ -12,6 +12,37 @@ reds have different resolutions and must not be collapsed (PRD addendum v1.1 §3
 Format per entry: **which package · what's missing/broken · the run/finding that surfaced
 it · the fix (upstream commit/PR) · the version bareloop consumed.**
 
+> **Absorbed `UPSTREAM-FIXES.md` on 2026-07-15.** The handoff spec (per-implementer evidence +
+> acceptance criteria, once a separate file) is folded in here — this is now the single upstream
+> record. Every entry keeps its acceptance criteria inline; the resolution/scoreboard the handoff
+> carried is folded into the closing section. `docs/UPSTREAM-FIXES.md` is deleted.
+
+## Status at a glance (2026-07-15)
+
+**No OPEN asks remain.** `bare-agent@0.27.0` and `litectx 0.29.1` closed the entire queue.
+Delivery **verified by reading the shipped source in `node_modules`** (versions confirmed:
+`bare-agent 0.27.0`, `litectx 0.29.1`) — file/line cites below are the acceptance evidence,
+not a changelog's word. Withdrawn/superseded entries stay in the record with their reason.
+
+| Ask | Package | Status | Delivered in | Acceptance — how verified |
+|---|---|---|---|---|
+| **BA-1** transcript caching | bare-agent | **DELIVERED** | 0.27.0 | `cacheMessages` opt-in rolls `cache_control` onto the last block (`provider-anthropic.js:102-111`). Shipped **opt-in, not default-on as asked** (it changes the wire format); bareloop wires `cacheMessages:true`. Source-verified. |
+| **BA-3** stop() bogus error | bare-agent | **SUPERSEDED by BA-5** | — | Mechanism re-verified at 0.26.2; the fix ships as the BA-5 852 sub-case. |
+| **BA-4** shell_write zeroes files | bare-agent | **DELIVERED** | 0.27.0 | `content` required-string guard, throws when absent/null/non-string; explicit `content:""` still empties; schema `required:['path','content']` (`tools/shell.js:107-126, :449`). All 4 criteria re-verified locally against the tarball (F27) + source-verified here. |
+| **BA-5** halts discard text | bare-agent | **DELIVERED** | 0.27.0 | All five return paths preserve `lastText`; `stop()` returns `error:null` + text (`loop.js:466,694,771,900,974,1010`); negative control (halt before any text) still `''`. Source-verified. |
+| **BA-6** truncation reads as finish | bare-agent | **DELIVERED** | 0.27.0 | `stopReason` on `GenerateResult` (`provider-anthropic.js:176`); `isTruncated`→`error:'truncated:max_tokens'` (`loop.js:762,771`); `end_turn`+zero-tools still a clean finish (`:791`). Source-verified incl. negative control. |
+| **BA-7** thinking blocks dropped | bare-agent | **DELIVERED** | 0.27.0 | Opt-in `thinking`→`body.thinking` (`provider-anthropic.js:133`); `providerBlocks` preserve/replay thinking verbatim incl. `signature`, model-bound drop on mismatch (`:156,:245`). Source-verified. **Moved no outcome** (its own honesty note). |
+| **BA-10** temperature drop | bare-agent | **DELIVERED** | 0.27.0 | `temperatureDropped` surfaced sticky across rounds (`loop.js:430-433`). Found by bare-agent's **own review**, not a bareloop ask. |
+| **BA-12** identical-call spin | bare-agent | **DELIVERED** | 0.27.0 | `maxIdenticalToolErrors` spin guard, default 3 (`loop.js:53,261,446`). Found by bare-agent's **own review**. |
+| **BA-2** ranged read | bare-agent | **WITHDRAWN — misfiled** | — | Ranged read was never `shell_read`'s job; it is litectx's `get(range)`, shipped 0.29.0 / consumed 0.29.1 (F19 `ctx_get`). |
+| **LC-1** hit triage + chunk fetch | litectx | **DELIVERED (part 2); part 1 declined** | 0.29.0 (consumed 0.29.1) | `get(path,{startLine,endLine})` returns one chunk (`store.js:1322`, CHANGELOG 0.29.0). Snippet-on-hit **declined on measurement**; decline confirmed by F19 trace (0.2 fetches/recall — triage is not the bottleneck). |
+| **LC-2** dropped docstrings | litectx | **WITHDRAWN — phantom** | — | Stale-index artefact from a global litectx 0.5.0 SessionStart hook; attachment was already fixed upstream. Local fix, not a defect. |
+| **BG-1** secret redaction | bareguard | **WITHDRAWN — already exported** | — | `redact` already shipped; `src/interpret.js` consumes it directly (F5). No upstream change needed. |
+
+Also **checked and NOT filed** (our errors, no ask): bareguard `limits.maxTurns`/`maxToolRounds`
+semantics (documented in its own source — we misread it) and the planner's budget blindness
+(`Planner` already takes `onLlmResult` — we never wired it). Both recorded below.
+
 ## WITHDRAWN (2026-07-12) — bareguard secret redaction is already exported
 
 Filed then withdrawn same day after reading bareguard's source. bareguard **already
@@ -24,11 +55,36 @@ positive rate, while **redaction tolerates false-positives** (masking a package 
 failure log blocks nothing). bareguard's own `sk-[\w-]{16,}` has the same missing-left-
 boundary the validator fix corrected — one more reason the validator does not bind it.
 
-> **Handoff spec: [`UPSTREAM-FIXES.md`](UPSTREAM-FIXES.md)** — the asks below that are still
-> OPEN (BA-1, BA-4, BA-5, BA-6, BA-7), written for the implementer: evidence, the exact change, and
-> acceptance criteria that can fail. This file stays the fix *queue* (status + the version
-> bareloop consumed); that file is what gets handed to each repo. Withdrawn/closed/superseded
-> entries stay legible here — a misfiled ask is itself a finding.
+> **Handoff detail folded in (2026-07-15).** The implementer-facing evidence, exact change, and
+> fail-able acceptance criteria that once lived in a separate `UPSTREAM-FIXES.md` are now inline
+> on each entry below. Withdrawn/closed/superseded entries stay legible here — a misfiled ask is
+> itself a finding.
+
+## CLOSED (2026-07-15) — bare-agent 0.27.0 shipped the ENTIRE open queue (BA-1/3/4/5/6/7 + BA-10/12)
+
+**One release closed every open ask below.** `bare-agent@0.27.0` ("Provider Fidelity & Honest
+Termination", commit `7372fb1`, published to the registry) landed BA-4, BA-5, BA-3, BA-6, BA-7,
+BA-1, plus BA-12/BA-10 found by its own review. bareloop now consumes it (`bare-agent: ^0.27.0`,
+`package.json`). The per-ask entries below are kept OPEN-labelled for their evidence and acceptance
+criteria — read each with this banner: **status is CLOSED, verified as noted.**
+
+- **BA-4 (the N2 gate) — VERIFIED LOCALLY against the published tarball**, not taken on the
+  changelog's word. All four acceptance criteria pass through bareloop's own `node_modules` copy:
+  omit-`content` throws + file byte-identical; `content:null` throws + intact; `content:""` still
+  empties deliberately; non-string throws + intact. **The N2 rung's hard blocker is cleared** — a
+  write-granting tool mode can ship honestly.
+- **BA-6 / BA-3 / BA-5 — consumed in `src/interpret.js`** (this session): a `truncated:max_tokens`
+  round now escalates as **provider-red** (retry, the F11 transport class), never a scored empty
+  attempt or a masquerading `interpreter-red`; `loop.stop()`'s new `error:null`+text contract let
+  the `stoppedByBound` shim be **deleted** (it was dead and latently able to swallow a genuine halt);
+  the `interpret.js:289` comment (OUR-SIDE §5 doc debt) is now true and corrected. New regression
+  test (mutation-checked) covers the truncation path.
+- **BA-1 — consumed:** `loop.run(..., { cacheMessages: true })` is wired in `ask()`, the transcript
+  cache the job #1 cost wall (F18) needed; provider-routed and safe (bareloop wires no trim fold).
+- **BA-7 (thinking blocks) / BA-10 (temperature) / BA-12 (identical-call spin)** — shipped upstream;
+  no bareloop consumption needed (BA-7 moved no outcome, per its own honesty note).
+
+Full suite green on 0.27.0 (280/280, typecheck clean). *(Entries below retained verbatim.)*
 
 ## OPEN (2026-07-14) — BA-6: a silently TRUNCATED round is indistinguishable from a completed one
 
@@ -597,3 +653,37 @@ and every experimental arm is unreadable. *"Never a local shim" binds shipped `s
 experimental bench.*
 
 *(No other open asks from this repo.)*
+
+---
+
+## RESOLVED — order the queue landed in, and where bareloop stands (folded from UPSTREAM-FIXES.md, 2026-07-15)
+
+The handoff spec carried a dependency diagram — *what unblocks what*. It is now history: **one
+release closed it.** `bare-agent@0.27.0` shipped BA-4, BA-6, BA-1, BA-5, BA-7 (plus BA-10/BA-12
+from its own review), and litectx 0.29.0/0.29.1 shipped the ranged read the retrieval track needed.
+
+```
+bare-agent 0.27.0 ── BA-4  shell_write rejects absent/null/non-string content   [was the N2-exit blocker]
+                  ├─ BA-6  reads stop_reason; a truncated round no longer reads as a clean finish
+                  ├─ BA-1  cacheMessages breakpoint (opt-in); bareloop wires it true
+                  ├─ BA-5  all four discard paths preserve text; stop() → error:null   (supersedes BA-3)
+                  └─ BA-7  thinking blocks preserved + replayed (opt-in request); moved no outcome
+
+litectx 0.29.0/0.29.1 ── get(path,{startLine,endLine}) — one chunk, hash-gated   (closed LC-1 pt2 / withdrawn BA-2)
+
+withdrawn/not-a-defect: LC-2 (stale-index phantom) · bareguard limits semantics · planner budget hook (ours)
+```
+
+- **BA-4 was the hard N2-exit blocker; it is cleared.** The rung STOPPED on bare-agent by design
+  (build-ladder discipline, hamr 2026-07-14 — *no local shim even for a safety bug*); the stop was
+  the result, and 0.27.0 is what lifts it. F27 records the version consumed + acceptance re-verified.
+- **BA-7 landed last and by its own honesty note moved no outcome** — filed as protocol/correctness,
+  not a capability fix.
+
+**Where bareloop stood when the primitives landed** (the scoreboard the handoff carried, kept for
+the record): control **0/2**, caching alone **1/2**, retrieval **0/1**, bounded+retrieval **0/1**.
+The retrieval verbs landed and were run — whole-file reads 41→11, re-reads 42→7 — and **moved the
+outcome zero** (still cap-halt, zero writes). The bottleneck was never the primitives: the close had
+never run (F20) and the loop has no ratchet (F21), of which **BA-5 is the library-side half**. The
+next move is plan-v1 (PRD Addendum v1.12), **not** another primitive. bareloop's own-side debt from
+the same run is tracked under *"OUR SIDE"* above.

@@ -322,3 +322,67 @@ test('the judged count is read from a REDACTED stream — a secret in the close 
   assert.equal(v.judgedCount, 391);
   assert.doesNotMatch(v.gap, /sk-ant-api03/);
 });
+
+// ─── the kept-failures gap bound (F28) ───────────────────────────────────────
+// The gap is the worker's ONLY feedback channel. `boundGap` head/tail-elides a
+// big stream, and a large TAP suite prints its `not ok` lines in the MIDDLE — so
+// the shell deleted the failing-test NAMES in transit and the worker was told
+// "5 fail" and never WHICH. gapKeep (spec-owned) preserves matching lines.
+
+// A ~67KB TAP-like stream with `notOk` failing lines buried dead-centre, well
+// past the 400-byte head and 1500-byte tail the bound keeps.
+const tapClose = (notOk = 5, lines = 750) => ['node', '-e',
+  `const L=[];for(let i=1;i<=${lines};i++){if(i===${Math.floor(lines / 2)}){for(let k=1;k<=${notOk};k++)L.push("not ok "+k+" - notify falsy guard wrongly rejects a valid empty batch, case "+k);}L.push("ok "+i+" - passing subtest number "+i+" in the mailproof suite covering assorted behaviour paths");}console.log(L.join("\\n"));console.log("# tests "+(${lines}+${notOk}));console.log("# pass ${lines}");console.log("# fail "+${notOk});process.exit(1);`];
+
+test('F28: without gapKeep a big TAP stream buries every `not ok` in the elided middle — ZERO reach the gap (the shipped default, locked)', () => {
+  const v = runClose(tapClose(5));
+  assert.equal(v.verdict, 'needs_revision');
+  assert.ok(v.gap.length > 0);
+  assert.equal((v.gap.match(/not ok/g) ?? []).length, 0,
+    'the failure lines are cut out — this IS the F28 defect, kept as the documented default so the fix is contrastable');
+  assert.match(v.gap, /# fail 5/, 'the tail summary still survives (tail-biased bound)');
+});
+
+test('F28 fix: gapKeep "^not ok" carries ALL five failure lines verbatim, plus the tail summary and the elision marker', () => {
+  const v = runClose(tapClose(5), undefined, { gapKeep: '^not ok' });
+  assert.equal(v.verdict, 'needs_revision');
+  const kept = v.gap.match(/^not ok \d+ - notify falsy guard/gm) ?? [];
+  assert.equal(kept.length, 5, 'every failing test NAME reaches the worker — the causal navigation input (F28)');
+  assert.match(v.gap, /# fail 5/, 'the tail summary is still present');
+  assert.match(v.gap, /truncated/, 'the head/tail middle is still bounded — gapKeep ADDS to the bound, it does not remove it');
+});
+
+test('F28 hazard: failures on STDOUT survive even when STDERR is non-empty — the gap sees BOTH streams', () => {
+  // The old `err || out` returned stderr ALONE when it was non-empty, silently
+  // losing a stdout-printed failure. Small output (no bounding) — this isolates
+  // the stream-combination, not the keep pattern.
+  const close = ['node', '-e', 'console.log("not ok 1 - the real failure the worker must see"); console.error("npm warn deprecated something unrelated"); process.exit(1)'];
+  const v = runClose(close);
+  assert.equal(v.verdict, 'needs_revision');
+  assert.match(v.gap, /not ok 1 - the real failure/, 'the stdout failure is not clobbered by stderr noise');
+  assert.match(v.gap, /npm warn deprecated/, 'and the stderr noise is still present — both streams, never one');
+});
+
+test('F28: the kept-failures block is HARD-capped at 50 lines and ANNOUNCES the trim — a pathological close cannot rebuild the bloat', () => {
+  // 200 matching lines fenced by ok filler (so head and tail hold no `not ok` and
+  // the count reflects ONLY the keep block). Silent truncation is the disease this
+  // fix cures, so a trimmed block must say so.
+  const many = ['node', '-e',
+    'const L=[];for(let i=1;i<=300;i++)L.push("ok "+i+" - leading filler passing test number "+i);'
+    + 'for(let i=1;i<=200;i++)L.push("not ok "+i+" - failing case number "+i+" that must be capped");'
+    + 'for(let i=1;i<=300;i++)L.push("ok "+(i+300)+" - trailing filler passing test number "+(i+300));'
+    + 'console.log(L.join("\\n"));console.log("# fail 200");process.exit(1)'];
+  const v = runClose(many, undefined, { gapKeep: '^not ok' });
+  const kept = v.gap.match(/^not ok /gm) ?? [];
+  assert.equal(kept.length, 50, `keep block capped at 50 lines, got ${kept.length}`);
+  assert.match(v.gap, /more elided/, 'the cap trim is announced with an explicit marker, never silent');
+});
+
+test('F28: ralph threads gapKeep into every close it runs — the loop\'s feedback channel carries the failure names', async () => {
+  const file = join(dir, 'gapkeep-thread.jsonl');
+  const outcome = await ralph({ middle: noop, close: tapClose(3), capRuns: 1, emit: makeSpine(file), gapKeep: '^not ok' });
+  const events = readFileSync(file, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l));
+  assert.equal(outcome, 'escalated');
+  const verdict = events.find((e) => e.type === 'close-verdict');
+  assert.equal((verdict.gap.match(/^not ok/gm) ?? []).length, 3, 'gapKeep reached runClose through ralph — the failure names are on the spine');
+});

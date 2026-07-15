@@ -131,3 +131,35 @@ does with tools over many turns; they bound the *ceiling* (can the model do it a
 retrieval), not the loop's actual behaviour. And the FIX grader accepts any guarded assignment, so
 it credits a fix that is correct-in-shape without running it — a follow-up that actually applies the
 model's line and re-runs the close is the stronger check, deferred to when the loop exists.
+
+---
+
+## RESULT (2026-07-15) — calibration run, frozen rules applied, DISCARD (see FINDINGS F27)
+
+Ran exactly as pre-registered (EFFORT=low, n=15/cell, $3.02). **NAV sonnet 15/15, NAV haiku 15/15
+(both 100%); FIX sonnet 0/15 (0%, CI [0,20.4%]), FIX haiku 2/15 (13.3%).**
+
+Frozen rules applied WITHOUT amendment:
+1. `navS==0`? **no** (100%) — job #2 is categorically ≠ job #1's 0/140; the aim axis is connected.
+2. `fixS<20%`? **YES (0%) → THROW.**
+3. `navH>=90% & fixH>=90%`? no (13.3%).
+
+**==> DISCARD the specific plant as a one-shot-calibrated target.** The rule is NOT loosened — that
+is the anti-fit-to-pass guard, honored. The DISCARD governs the 7-arm suite decision; it does not
+speak to loop behaviour, which probe B explicitly did not measure. Every FIX miss is
+right-file-wrong-fix (both tiers rewrite the `composeNotification(...)` call, not the falsy guard on
+line 74) — F26's title-triage mechanism, on the fix axis. Full write-up: **FINDINGS F27.**
+
+---
+
+## LOOP-TEST RESULT (2026-07-15) — the different experiment, run; plant ADMITTED for the loop
+
+The thesis probe F27 handed forward was run (twice — the first firing found and was invalidated
+by F28, the gap bound eliding every `not ok` line; fixed via spec-owned `close.gapKeep`, then
+re-fired). Result: **green on attempt 1, $0.2991** (vs blind-gap run: 3 attempts, 0 writes,
+cap-red, $1.05). The one-shot DISCARD stands as written — and is now scoped precisely: it bounded
+the *tool-free* ceiling. With tools + the failing-test names the plant is solvable in one bounded
+attempt, so **job #2 is admitted as the loop benchmark on the loop's own evidence.** Full
+write-up: FINDINGS **F28** (the gap defect) and **F29** (the paired contrast + what stays open:
+the across-attempt ratchet never engaged; possible too-easy-for-arms concern deferred to suite
+design).

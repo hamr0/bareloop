@@ -85,7 +85,7 @@ is a named red `close-hierarchy`):
 
 | type | fields (exact — extras red) | legal class |
 |---|---|---|
-| `predicate` | `cmd`, `expect` (int exit code), `judged?` | `hard` |
+| `predicate` | `cmd`, `expect` (int exit code), `judged?`, `gapKeep?` | `hard` |
 | `gold` | `expected`, `compare: exact\|json-equal` | `hard` |
 | `rubric` | `criteria` | `soft` only — can never mint automatically |
 | `hitl` | `prompt` | `hitl` — a human IS the close |
@@ -113,6 +113,24 @@ named, never assumed away.** The agent-drafted workflow config cannot express `j
 it is the arbiter's own honesty check (unknown-field red, enforced per section at every
 depth).
 
+**`gapKeep` — the kept-failures pattern (optional, `predicate` only; F28).** A regex
+**source** string (e.g. `"^not ok"`). The close's output is the worker's ONLY feedback
+channel, and `ralph`'s gap bound keeps a head sample + an elided middle + the tail — but a
+large TAP suite prints its `not ok` lines in the **middle**, exactly where the bound elides.
+The first real firing of the loop delivered a 1,927-char gap with **zero** failure lines:
+the worker was told "5 fail" and never *which*, three attempts running (F28). `gapKeep`
+preserves every close-output line matching it in a clearly-delimited **kept-failures block**
+between head and tail, so the failing-test NAMES — the causal input navigation runs on —
+reach the worker. It is **hard-capped** (max 50 kept lines / 8192 bytes, whichever binds
+first) so a pathological close cannot rebuild the very bloat the bound exists to prevent;
+when the cap trims matches it **says so** with an explicit marker (silent truncation is the
+disease this cures, never a cure that truncates silently). Validated like `judged.pattern`:
+a non-empty string that must **compile as a RegExp**, else a spec red before any tokens.
+Omitting it is exactly today's bound. Like `judged`, it is **arbiter territory** — the
+drafted workflow config cannot express it (unknown-field red). The gap path also combines
+**both** streams (stdout + stderr), so a failure printed to stdout survives stderr noise
+(F28's adjacent hazard — the old `err || out` returned stderr alone and lost it).
+
 Red vocabulary (both validators): `parse-error`, `unknown-field`, `missing-required`,
 `invalid-value`, `bounds`, `duplicate-id`, `close-type`, `close-hierarchy`,
 `secret-literal`, `scope-escape`, `fence-invalid` (a malformed `jobWriteScope` fence — attributed to `jobWriteScope`, never the workflow config), plus the workflow-side verb reds (`verb-illegal`,
@@ -132,7 +150,7 @@ Append-only JSONL event emitter bound to one file. `seq` monotonic per spine, `t
 last. Consumers are pure listeners; nothing reads the file back. Returns each event as
 written.
 
-### `ralph({ middle, close, capRuns, emit, redact?, closeTimeoutMs?, cwd?, expect?, judged? })` → `'green' | 'escalated'` — `src/ralph.js`
+### `ralph({ middle, close, capRuns, emit, redact?, closeTimeoutMs?, cwd?, expect?, judged?, gapKeep? })` → `'green' | 'escalated'` — `src/ralph.js`
 
 The dumb outer shell: `while close-red and under-cap: run the middle`. `close` is an argv
 whose exit code is truth (`runClose` is also exported); the red gap text feeds the next
@@ -140,9 +158,13 @@ iteration, tail-biased when bounded (400 head + 1500 tail — the assertion diff
 the end). **`cwd` is where the close RUNS, and it is load-bearing (F8):** a close is a
 repository command (`npm test`, `make check`) and every one of them is cwd-relative — run
 it anywhere but the workdir and the arbiter judges the wrong tree. `interpret`/`runJob`
-always pass the workdir. **Corollary for job authors (F15):** the gap bound keeps the head
-and the TAIL, so a close whose failures print mid-stream (a 391-subtest TAP dump) tells the
-worker only the summary counts — pick a reporter whose failures land at the end.
+always pass the workdir. **Corollary for job authors (F15/F28):** the gap bound keeps the
+head and the TAIL, so a close whose failures print mid-stream (a 391-subtest TAP dump) tells
+the worker only the summary counts — pick a reporter whose failures land at the end, **or**
+set the close's `gapKeep` (job-spec, arbiter territory) to a regex like `"^not ok"` so the
+matching failure lines are preserved in a capped kept-failures block regardless of where
+they print (F28: the first real firing delivered a gap with zero failure names). The gap
+also combines stdout+stderr, so a stdout failure survives stderr noise.
 `closeTimeoutMs` caps the close's wall clock (default 120s) — shell/operator
 territory, inexpressible in any config.
 
@@ -254,8 +276,10 @@ green. The PR step **hands the checkout back**: the starting branch is read befo
 anything moves and restored on every path; a failed restore is a loud `workdir-red`
 naming the stranded branch (it never un-opens a real PR). Outcomes: `green | escalated | unapproved-spec | job-red |
 smoke-red | config-red | pricing-red | provider-red | cap-halt | close-unsupported |
-step-red:<id>` — `provider-red` is a transport throw from the drafting call (spend
-unknown, F6); `cap-halt` is drafting spend consuming the whole job budget before a
+step-red:<id>` — `provider-red` is a transport throw from the drafting call, OR a worker
+round the API cut off mid-generation (`truncated:max_tokens`, bare-agent 0.27.0/BA-6 —
+before which it laundered into a clean finish, F25); in both cases no verdict exists and the
+failed round's spend is only partly known (F6). `cap-halt` is drafting spend consuming the whole job budget before a
 valid config existed. Both are decision-ready escalations with a terminal `job-end`:
 the spine never dangles. A text-mode job invoked without `opts.target` is a `job-red`
 before ANY provider call (and `interpret` itself throws a TypeError for direct

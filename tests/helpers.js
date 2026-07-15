@@ -15,7 +15,7 @@ export const BAD_SUM = 'export function sum(a, b) { return a - b; }\n';
 
 /**
  * The ONE provider response envelope every stub returns.
- * @param {{text?: string, toolCalls?: object[], costUsd?: number|null, usage?: object}} entry
+ * @param {{text?: string, toolCalls?: object[], costUsd?: number|null, usage?: object, stopReason?: string}} entry
  * @param {number} [fallbackCostUsd] priced default when the entry stays silent
  */
 export const reply = (entry, fallbackCostUsd = 0.001) => ({
@@ -26,6 +26,9 @@ export const reply = (entry, fallbackCostUsd = 0.001) => ({
   // re-sent context hides (F18)
   usage: { inputTokens: 10, outputTokens: 10, ...(entry.usage ?? {}) },
   costUsd: 'costUsd' in entry ? entry.costUsd : fallbackCostUsd,
+  // BA-6: the real Loop reads stopReason to detect a truncated round. Default null
+  // reproduces pre-BA-6 behaviour (a finished turn), so existing scripts are unaffected.
+  stopReason: entry.stopReason ?? null,
   model: null,
 });
 

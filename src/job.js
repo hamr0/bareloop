@@ -55,7 +55,7 @@ const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'conditions', 'c
 /** exact field set per close type — anything else is an unknown-field red
  * (freeform code, script bodies, and minting claims all land there) */
 const CLOSE_FIELDS = {
-  predicate: ['type', 'cmd', 'expect', 'judged'],
+  predicate: ['type', 'cmd', 'expect', 'judged', 'gapKeep'],
   gold: ['type', 'expected', 'compare'],
   rubric: ['type', 'criteria'],
   hitl: ['type', 'prompt'],
@@ -243,6 +243,22 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
             if (!Number.isInteger(j.min) || j.min < 1) {
               red('invalid-value', `${at}.close.judged.min`, 'integer >= 1 — a floor of 0 is satisfied by judging nothing, which is the check it is meant to make');
             }
+          }
+        }
+        // The kept-failures pattern (F28, optional). ralph's gap bound head/tail-
+        // elides a large close stream, and a big TAP suite prints its `not ok`
+        // lines in the MIDDLE — so the failing-test NAMES (the causal navigation
+        // input the worker runs on) were deleted in transit and the worker was
+        // told "5 fail" and never WHICH. gapKeep is a regex SOURCE whose matching
+        // lines are PRESERVED in the gap in addition to head+tail. Same discipline
+        // as judged.pattern: a non-empty string that must compile as a RegExp, or
+        // it is a spec red before any tokens burn (reds-before-tokens) — an invalid
+        // keep pattern must never surface as a runtime crash inside the arbiter.
+        if (close.gapKeep !== undefined) {
+          if (!isNonEmptyString(close.gapKeep)) red('invalid-value', `${at}.close.gapKeep`, 'regex source string — lines matching it survive the gap bound (F28)');
+          else {
+            try { new RegExp(close.gapKeep, 'm'); }
+            catch { red('invalid-value', `${at}.close.gapKeep`, 'must compile as a RegExp'); }
           }
         }
       } else if (close.type === 'gold') {
