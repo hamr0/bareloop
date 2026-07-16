@@ -230,6 +230,25 @@ or not. The find must come from the gap's failing-test names.
   thesis); cap-red = ratchet-grade candidate; all single-pass labels provisional at n=1.
 - **Pass = green only:** worker fixes source through gated verbs and the FULL close
   exits 0 above the judged floor. `already-green` is never `green`.
+- **Amendment 2026-07-16a (after A1, before any A2 number — instrument fix, not a rule
+  change):** the first battery launch STOPPED at A2's sanity with the close killed at
+  the 15-min clock. Autopsy (frozen drift rule honored — investigated before further
+  spend): the A2 plant was innocent; the expected failing test fails correctly in 0.16s.
+  The hang is `aur init`'s memory-indexing step doing an online HuggingFace
+  model-freshness check with NO timeout inside an UNMARKED integration test
+  (`test_init_tool_selection.py` — `-m "not ml"` does not deselect it); when the hub
+  edge stops answering (huggingface.co itself was 200/0.12s; a deeper hub/CDN call
+  accepted TLS and never sent headers, faulthandler-verified), the whole close hangs.
+  Measured: online >15 min, `HF_HUB_OFFLINE=1` 12.8s, model locally cached. Two fixes,
+  both operator-territory: (1) `close.sh` exports `HF_HUB_OFFLINE=1` — the close's
+  determinism must not depend on a third party's uptime; the cached model is the frozen
+  dependency; (2) the runner's sanity instrument now labels a clock-kill
+  `sanity-timeout`, never `sanity-drift` (a killed close renders no failing set — the
+  first launch conflated the two). A1's green (judged by the pre-amendment close while
+  the hub was answering) stands: the env flag cannot change any test's verdict, only
+  remove the network wait. The battery resumes `--only A2,A3,A4` under the amended
+  close after a green-band revalidation. Aurora-owner finding: an integration test that
+  phones home with no timeout is a CI outage waiting to happen.
 - **Pre-registered reads (before any number):** (1) the F32 delivery/conversion split
   on any multi-attempt row — did the gap reach the worker, and did the worker act on
   it; (2) the close-exploitation audit on every green (judged floor, write locations,

@@ -196,18 +196,24 @@ function applyPlant(/** @type {(typeof PLANTS)[number]} */ p) {
 
 /** run the patient's close ONCE, directly — the sanity instrument (token-free).
  *  pytest exits non-zero on red: a red suite is a normal RETURN, not a throw.
- *  Failing tests are read off pytest's short-summary `FAILED <nodeid> - …` lines. */
+ *  Failing tests are read off pytest's short-summary `FAILED <nodeid> - …` lines.
+ *  A kill at the clock is its OWN state (timedOut), never conflated with a
+ *  drifted failing set — a killed close renders no summary, so `0 FAILED`
+ *  under a timeout is the instrument dying, not the plant changing (the first
+ *  battery launch mislabeled exactly this as sanity-drift). */
 function sanityClose() {
-  let out, status;
+  let out, status, timedOut = false;
   try {
     out = execFileSync(closeSh, [], { cwd: wd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: CLOSE_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 });
     status = 0;
   } catch (e) {
-    status = /** @type {any} */ (e).status ?? 1;
-    out = `${/** @type {any} */ (e).stdout ?? ''}${/** @type {any} */ (e).stderr ?? ''}`;
+    const err = /** @type {any} */ (e);
+    timedOut = err.status == null && err.signal != null; // killed by the clock, never exited
+    status = err.status ?? 1;
+    out = `${err.stdout ?? ''}${err.stderr ?? ''}`;
   }
   const fails = [...out.matchAll(/^FAILED (\S+)/gm)].map((m) => m[1]);
-  return { status, fails };
+  return { status, fails, timedOut };
 }
 
 /** compare the live failing set to the prereg's recorded set — order-free, exact */
@@ -278,7 +284,12 @@ for (const p of roster) {
   const t0 = Date.now();
   const s = sanityClose();
   const m = failsMatch(s.fails, p.fails);
-  console.log(`  sanity  exit ${s.status}, ${s.fails.length} FAILED (prereg: ${p.fails.length}) in ${((Date.now() - t0) / 60000).toFixed(1)}min — ${m.ok ? 'MATCH' : 'DRIFT'}`);
+  console.log(`  sanity  exit ${s.status}${s.timedOut ? ' (KILLED at the clock)' : ''}, ${s.fails.length} FAILED (prereg: ${p.fails.length}) in ${((Date.now() - t0) / 60000).toFixed(1)}min — ${s.timedOut ? 'TIMEOUT' : m.ok ? 'MATCH' : 'DRIFT'}`);
+  if (s.timedOut) {
+    stop = `${p.id} sanity timeout: the close exceeded ${CLOSE_TIMEOUT_MS / 60000}min and was killed — the instrument rendered no verdict (not a drift)`;
+    rows.push({ plant: p.id, outcome: 'sanity-timeout', liveFails: s.fails });
+    break; // same frozen rule as drift: investigate before spending more
+  }
   if (s.status === 0 || !m.ok) {
     stop = `${p.id} sanity drift: live failing set differs from the prereg`;
     rows.push({ plant: p.id, outcome: 'sanity-drift', liveFails: s.fails, missing: m.missing, extra: m.extra });
