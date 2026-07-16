@@ -274,6 +274,47 @@ over graded rows.
 - Existing guards unchanged per arm: mean ≥85 no-headroom STOP; mean ==0 autopsy;
   <3 graded after extension → that arm is unreadable.
 
+## Amendment 2026-07-16e — the curve is in: both arms unreadable, STOP (the bound binds independent of prompting)
+
+Ran 2026-07-16 under amendment 2026-07-16d's frozen rules. Arm B took two invocations
+(runid `mrnnq9ea` was killed mid-arm by API credit exhaustion — its C1 is the only valid
+row; C2/C3 were provider-red casualties and enter nothing; runid `mrno2s0b` completed
+n=6). Arm A completed in one invocation (runid `mrnpo2jm`, n=6).
+
+**The three-point curve (write-producing runs / graded runs):**
+
+| point | rows | writes | graded | texture |
+|---|---|---|---|---|
+| naked (v2) | 6 | 0/6 | 0 | all 24-round read-deaths |
+| B: disclosure-only | 7 ($5.89) | **3/7** | 0 | audit-red ×1 (`environ-enumeration` in conftest); form-red with 23 unit / 0 integration ×1; **clean-red ×1 (C4: 24 unit + 8 integration on disk by round 16, form floor PASSED)**; read-deaths ×4 |
+| A: disclosure+strategy | 6 ($2.90) | **0/6** | 0 | all 24-round read-deaths; zero write attempts, zero denies — the round-8 mandate was violated 6/6 |
+
+**Frozen-rule outcomes:**
+- *Disclosure adds up*: **TRUE** (3/7 > 0/6).
+- *Strategy makes a diff*: the point estimate is NEGATIVE (0/6 vs 3/7) — descriptive
+  only, n forbids any stronger claim; at minimum the strategy-as-written does not
+  reliably install the behavior it mandates (if the true write rate under A were ≥40%,
+  P(0 of 6) ≈ 4.7%).
+- *Both arms unreadable* (0 graded everywhere) → **STOP: the 24-round bound binds
+  independent of prompting. The `TURNS_PER_ATTEMPT` decision goes to hamr with this
+  curve as evidence.** No threshold exists; no battery fires without one.
+
+**Interpretation (readings, not rules):**
+- The variance is the story: same spec, same model — B flipped strategy in 3 of 7 runs
+  and not the other 4. Advisory prose is a coin-flip lever, not an installer.
+- Arm A's 6/6 mandate violation is the counterpoint to F19: capability without strategy
+  is inert, but **strategy as prose is also inert — pacing needs enforcement, not
+  rhetoric**. The enforced version of this strategy is exactly plan-v1's shape (bounded
+  steps with declarative form-check exits: `artifact-written` by step k). Layer 2
+  evidence, minted at calibration price.
+- C4 is the existence proof: when the model commits early, a form-passing suite fits in
+  16 rounds. The job is not too big for the bound when the strategy fires; the strategy
+  just doesn't fire on prompt alone.
+- Delivery of the description channel is not in doubt: arm B differs from naked by ONE
+  sentence in that channel and its behavior moved.
+
+Calibration spend to date across all attempts: $4.61 (v2) + $5.89 (B) + $2.90 (A) = $13.40.
+
 ## 9. Sequencing
 
 Calibration fires on hamr's word (harness prints plan + hash, spends nothing without
