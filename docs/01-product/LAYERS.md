@@ -154,8 +154,12 @@ self-raise.
 The **shell** is the fixed frame around every wheel: **judge + gap + cap** (plus the fence,
 the ledger, and escalation-to-human). It is not a layer. Every wheel at every layer runs
 inside it, and no layer ever changes it. **Layers are build stages of the product, not an
-escalation ladder inside a run** — a red at cap escalates to the HUMAN at every layer,
-never "up a layer." What each layer changes is only: who arranges the wheels, and what
+escalation ladder inside a run and not a menu of modes** — a red at cap escalates to the
+HUMAN at every layer, never "up a layer," and users never pick a layer. The finished
+product is all four composed into one machine: a run inherits the last green road (3),
+walks it as small wheels (2), remembers what it tried as it goes (R), and every wheel is
+the same engine (1) — inside the same shell. The user hands a job and a budget; that is
+the whole interface. What each layer changes is only: who arranges the wheels, and what
 survives.
 
 | layer | wheels | arranged by | survives attempts (within one run) | survives runs |
