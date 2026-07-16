@@ -210,3 +210,31 @@ config had no live surface on a never-green job (F22). The pivot:
 (2) one replan per run; (3) the first experiment stays job #1 (litectx planted bug), with a
 scratch POC of Planner + feed-forward BEFORE the rewrite. Full record: **PRD Addendum v1.12**
 (`docs/01-product/PRD.md`) and **FINDINGS F19–F22** (`docs/FINDINGS.md`).
+
+## 2026-07-16 addendum — Layer 2 direction: borrow the RLM shape (buffer + refine-leaf)
+
+hamr's direction (not yet a locked design — interview before locking still applies when
+Layer 2 is designed): plan-v1's execution shape should borrow from Recursive Language
+Models — a persistent **buffer** plus **refine-leaf** steps — because it matches what
+every finding to date has been converging on independently:
+
+- plan-v1 is already a depth-1 RLM with the recursion boundary arbiter-owned: SCOUT =
+  the root's bounded peek, PLAN = the decomposition, EXECUTE (fresh Loop+Gate per step) =
+  leaf calls with fresh context, ONE replan = bounded refinement. What plan-v1 lacks and
+  RLM has is the buffer — mutable state threading the leaves.
+- The buffer's absence is the single most-paid-for gap in the record: F21 (never-green
+  runs have NO channel between attempts — `stash` write-only, `remember` on-green-only),
+  F32 (feedback delivered ≠ acted on: nothing carries the lesson forward), and TESTGEN v2
+  (the worker holds its understanding in context, the 24-round bound kills the attempt,
+  the understanding evaporates — zero writes, zero residue).
+- The borrow, doctrine-shaped: the buffer is an agent-writable, arbiter-fenced artifact
+  (inside writeScope, gate-audited like any write) that persists across rounds AND
+  attempts; each leaf step refines the buffer/artifact instead of re-deriving in-context.
+  The agent gets RLM's shape; the arbiter keeps RLM's control flow — leaves never spawn
+  leaves (`spawn_child` stays inexpressible, the F20 class), step bounds and budgets stay
+  validator-enforced. Layer R's rejected-edit buffer (RSI fold) is this same shape's
+  within-run special case.
+- Live probe already in flight: the TESTGEN curve (prereg amendment 2026-07-16d) measures
+  exactly whether the worker adopts the buffer shape spontaneously (arm B) or needs it
+  prescribed (arm A) — which is the Layer 2 question in miniature: does the plan have to
+  AUTHOR the buffer discipline, or does the model default to it once the bound is visible?

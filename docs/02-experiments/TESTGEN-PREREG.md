@@ -234,6 +234,46 @@ faithful form-red gap ("collected unit=0 integration=0") — in the battery, att
 acting on that gap is itself a conversion observation. The loop can fire on form/clean
 reds, not only on kill-rate reds.
 
+## Amendment 2026-07-16d — calibration attempt 3: the three-point curve (frozen BEFORE any run)
+
+hamr's direction, verbatim intent: "b then a — we need to kill testing this and every
+other thing to understand what is the curve here, if disclosure (rounds) adds up and if
+strategy makes diff." Frozen design, written before any v3-generation number exists:
+
+**The curve.** Three points, one lever apart each:
+
+| point | spec | hash | what it adds over the previous point |
+|---|---|---|---|
+| naked | v2 (already run, runid `mrnkxb5a`) | — | baseline: 0/6 writes, 0 graded, 24-round deaths |
+| arm B | v3b, disclosure-only | `ed5abf3830af042f732741b68b6e8b32e31aaa9d3661b354723fbf73ff74ec68` | ONE sentence: "The attempt has a HARD limit of 24 tool rounds." (advertised=enforced doctrine applied to the round axis; nothing else changed) |
+| arm A | v3, disclosure+strategy | `a93db6c3fc31c7f783f5876f29a1901ab2ccbbc80dada60353472a79c4b8b286` | the pacing strategy (write early, first file by round 8, both dirs by 16, read only what the next test needs) |
+
+**Mechanics (unchanged §7, one invocation per arm):** n=5 (+≤3 extension to reach ≥3
+graded), $1.25/run, $8 per-arm hard stop, capRuns=1, claude-sonnet-5, full patient reset
+between runs. Order: B first, then A. **A runs regardless of B's outcome** — the curve is
+the deliverable — except on hard-line stops (secret leak, unpriced spend). An arm may be
+re-invoked only on an instrument stop (close-crashed class), never on outcome. No mid-arm
+spec edits; each arm's rows bind to its spec hash.
+
+**Frozen readouts per arm:** (i) write-producing runs — runs whose gate audit contains ≥1
+allowed write/edit action; (ii) graded runs (mutation phase reached); (iii) mean kill-rate
+over graded rows.
+
+**Frozen reading rules:**
+- *Disclosure adds up* iff arm B's write-producing count exceeds the naked baseline's 0/6.
+- *Strategy makes a diff* = arm A vs arm B on all three readouts, reported as descriptive
+  counts only — n≤8 per cell supports no significance claim.
+- **N mints from the MINIMAL readable arm**: if B reaches ≥3 graded, N = formula(B mean)
+  and the battery runs under spec v3b; only if B is unreadable and A readable does N come
+  from A with the battery under v3. Rationale: the battery must measure the loop teaching
+  strategy through gaps, not the operator's prompt — the strategy stays out of the battery
+  spec whenever the curve shows it isn't needed for readability. A's delta is curve
+  knowledge; it never enters the threshold of a readable-B world.
+- Both arms unreadable → STOP: the round bound binds independent of prompting; the
+  `TURNS_PER_ATTEMPT` decision goes to hamr with the curve as evidence.
+- Existing guards unchanged per arm: mean ≥85 no-headroom STOP; mean ==0 autopsy;
+  <3 graded after extension → that arm is unreadable.
+
 ## 9. Sequencing
 
 Calibration fires on hamr's word (harness prints plan + hash, spends nothing without
