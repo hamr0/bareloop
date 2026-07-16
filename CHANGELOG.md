@@ -7,6 +7,16 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Changed
+
+- **Tool-mode attempt bound raised 24→40 rounds (F37).** The TESTGEN calibration curve
+  measured that no prompt condition (bound undisclosed / disclosed / disclosed+pacing
+  strategy) produced a graded one-shot at 24 rounds — the worker's read-first prelude
+  eats the window — while one run proved a form-passing suite fits when writing starts
+  by mid-attempt. The per-attempt cutoff and the Gate's run-wide `maxTurns` now derive
+  from ONE hoisted `TURNS_PER_ATTEMPT` constant (they must agree or the enforced bound
+  drifts from the advertised one).
+
 ### Added
 
 - **F32 — worker-crash attribution: a close crash the worker caused is a gap, not a stop.**

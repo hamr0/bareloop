@@ -321,3 +321,21 @@ Calibration fires on hamr's word (harness prints plan + hash, spends nothing wit
 `--approve`). After the battery: results feed Layer R's design (RSI §3.3: ratchet
 cost-neutral when inert), NOT a mid-battery capability add — read the findings first,
 always.
+
+## Amendment 2026-07-16f — calibration attempt 4 (frozen BEFORE the run): the 40-round package
+
+hamr's go, verbatim scope: "go on all three." The package: (1) `TURNS_PER_ATTEMPT` 24→40
+in `interpret.js` (one hoisted constant feeds the Gate's `maxTurns` and the per-attempt
+cutoff; F20 regression test updated to pin 40; 303/303 green); (2) **spec v4**, hash
+`dcd69b0151cb15e4c6310d1ee2bb70a391e89cdffcbc673d2b657389ed04752f` — disclosure-only
+description ("The attempt has a HARD limit of 40 tool rounds."), `budgetUsd` $2.00
+(measured burn ~$0.033/round: 40 rounds ≈ $1.32 would re-bind money at the old $1.25);
+(3) calibration stop $12.
+
+Mechanics otherwise unchanged (§7): n=5 (+≤3 extension to ≥3 graded), capRuns=1,
+claude-sonnet-5, full reset between rows, provider-red rows are casualties not evidence.
+Frozen readouts and guards unchanged (16d/§7): write-producing count, graded count, mean
+kill-rate; mean ≥85 no-headroom STOP; mean ==0 autopsy; <3 graded after extension →
+STOP. The bet, falsifiable: 40 rounds fits the read-first prelude PLUS a write phase, so
+≥3 rows reach grading. If rows still die read-only at 40, prompting AND capacity are both
+exonerated and the missing piece is the loop/plan (workflow enforcement), not the bound.

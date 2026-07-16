@@ -453,8 +453,8 @@ test('F20 tools mode: an attempt that never stops reading is BOUNDED — the clo
 
   const bounded = events.filter((e) => e.type === 'attempt-bounded');
   assert.ok(bounded.length >= 1, 'the runaway attempt was cut off at its bound');
-  assert.equal(bounded[0].cap, 24, 'tool mode bounds an attempt at 24 rounds');
-  assert.equal(bounded[0].rounds, 24, 'it stopped AT the bound, not past it');
+  assert.equal(bounded[0].cap, 40, 'tool mode bounds an attempt at 40 rounds');
+  assert.equal(bounded[0].rounds, 40, 'it stopped AT the bound, not past it');
 
   // The point of bounding: the verdict gets rendered and the loop gets its second attempt.
   const attempts = events.filter((e) => e.type === 'iteration-start');
@@ -463,7 +463,7 @@ test('F20 tools mode: an attempt that never stops reading is BOUNDED — the clo
   // and the next attempt is TOLD it was cut off — otherwise it reads its own truncated
   // transcript as a finished one and stops exactly as short next time.
   // (the LAST recorded call is a mid-loop tool result; the note rides the attempt's OPENING prompt)
-  assert.ok(provider.calls.some((c) => /CUT OFF after 24 tool rounds/.test(c)), 'the bound is fed back to the worker as evidence, not applied silently');
+  assert.ok(provider.calls.some((c) => /CUT OFF after 40 tool rounds/.test(c)), 'the bound is fed back to the worker as evidence, not applied silently');
 });
 
 test('tools mode: the spec grant is the menu — an ungranted tool is never offered', async () => {

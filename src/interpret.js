@@ -250,6 +250,12 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     emit('run-end', { outcome: 'config-red', iterations: 0 });
     return 'config-red';
   }
+  // The attempt's round bound — ONE number for the Gate's run-wide maxTurns and the
+  // per-attempt cutoff below (two literals here once drifted apart in kind: the
+  // advertised/enforced class). 24→40 on hamr's word 2026-07-16 (TESTGEN amendment
+  // 2026-07-16e): the curve measured that prompting cannot buy readability at 24 —
+  // the read-first prelude eats the window before the first write.
+  const TURNS_PER_ATTEMPT = mode === 'tools' ? 40 : 8;
   const gate = new Gate({
     // bareguard fs.writeScope is prefix-containment, not glob (adaptlearn F4); globToPrefix
     // is the ONE transform shared with the validator's legality rule — mid-path wildcards
@@ -271,7 +277,7 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     },
     budget: { maxCostUsd: config.gate.budgetUsd },
     // text mode is ~1-2 rounds per attempt; tool mode is N rounds (read→write→…)
-    limits: { maxTurns: (mode === 'tools' ? 24 : 8) * (capRuns + 1) },
+    limits: { maxTurns: TURNS_PER_ATTEMPT * (capRuns + 1) },
     audit: { path: join(workdir, 'gate-audit.jsonl') },
     humanChannel: async () => ({ decision: 'terminate' }), // no human mid-run: a tripped cap terminates → decision-ready escalation
   });
@@ -326,7 +332,6 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   // both the lie and the shim; see ask().) Per-attempt, because each attempt is a FRESH
   // conversation (the context resets), which is what keeps four bounded attempts inside a
   // budget one unbounded attempt exhausts.
-  const TURNS_PER_ATTEMPT = mode === 'tools' ? 24 : 8;
   /** rounds spent inside the CURRENT attempt (reset per attempt, unlike the gate's run-wide tick) */
   let roundsThisAttempt = 0;
   /** @type {number|undefined} the attempt that was cut short by the bound (spine + gap note) */

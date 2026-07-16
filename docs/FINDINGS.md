@@ -1606,3 +1606,47 @@ defect class that survives a direct test-import trail.
 - A STOP that pattern-matches "drift" can be the instrument dying — the drift label must
   be reserved for a close that RENDERED a differing verdict, never one that rendered
   nothing.
+
+## F37 — the TESTGEN curve: disclosure of a bound is a coin-flip lever, strategy-as-prose is inert, and the bound binds independent of prompting
+
+Job #4's calibration could not produce one graded row in 19 one-shots, and decomposing
+the failure into a pre-registered three-point curve (amendments 2026-07-16d/e) isolated
+each prompt lever the way no single arm could:
+
+| point (spec delta) | rows | write-producing | graded |
+|---|---|---|---|
+| naked (v2) | 6 (runid `mrnkxb5a`) | 0/6 | 0 |
+| + bound disclosed, one sentence (v3b `ed5abf38…`) | 7 (`mrnnq9ea` C1 + `mrno2s0b`) | **3/7** | 0 |
+| + full pacing strategy (v3 `a93db6c3…`) | 6 (`mrnpo2jm`) | **0/6** | 0 |
+
+**Disclosure adds up — as variance, not as a fix.** One sentence ("the attempt has a
+HARD limit of 24 tool rounds") moved the worker from never-writes to writes-in-3-of-7.
+The three writing runs died differently and informatively: one D1 audit red
+(`environ-enumeration` in a conftest), one at 23 unit / 0 integration tests, and one —
+C4 — with a **form-passing suite (24 unit + 8 integration) on disk by round 16**, red
+only at the clean phase. C4 is the existence proof: the job fits inside 24 rounds when
+the model commits early.
+
+**Strategy-as-prose is inert — F19's mirror.** The v3 spec mandated "first test file on
+disk by round 8" and all six runs violated it: zero write attempts, zero gate denies,
+pure read-loops to the bound. F19 established that capability without strategy is inert;
+this curve establishes that **strategy without enforcement is also inert**. Advisory
+prose neither installs a workflow nor even reliably nudges it (the disclosure-only arm
+outperformed the arm that contained the same disclosure plus instructions). The enforced
+form of this strategy is exactly plan-v1's shape — bounded steps with declarative
+form-check exits (`artifact-written` by step k) — and the RLM buffer direction
+(design record 2026-07-16): the buffer discipline must be structural, not rhetorical.
+Layer 2's load-bearing premise, measured at calibration price before Layer 2 exists.
+
+**The bound binds independent of prompting.** Zero graded rows across every prompt
+condition tripped the frozen both-unreadable STOP; the parked `TURNS_PER_ATTEMPT`
+question went to hamr with the curve as evidence and came back approved as a package:
+bound 24→40 (`interpret.js`, one hoisted constant now feeds both the Gate's `maxTurns`
+and the per-attempt cutoff — two literals that must agree, the advertised/enforced
+class), spec v4 (`dcd69b01…`) saying 40 with `budgetUsd` $1.25→$2.00 (measured burn
+~$0.033/round: 40 rounds ≈ $1.32 would re-bind money — the v1→v2 lesson run forward),
+calibration stop $12.
+
+Method note minted en route: an arm killed mid-invocation by API credit exhaustion
+(`mrnnq9ea` C2/C3) produces provider-red casualties, not evidence — rows enter the curve
+only from completed, priced runs.

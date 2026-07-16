@@ -1003,3 +1003,28 @@ per run). Bloat-audited and locked v1 2026-07-11: the seed was already lean — 
 changes were the §6→§9 dedup, the §4 secrets invariant, and the §5 mobile mandate. §3's
 citations stay: every parenthetical is a load-bearing F-ref. Amendments from here are dated
 addenda, not rewrites.*
+
+## Addendum v1.16 — 2026-07-16 (F37: strategy-as-prose is inert — plan-v1's premise measured before plan-v1 exists; hamr go on the bound package)
+
+The TESTGEN calibration curve (F37, TESTGEN-PREREG amendments 2026-07-16d/e) read out
+three prompt levers against the same 24-round attempt bound: disclosing the bound moved a
+never-writing worker to writes-in-3-of-7 (a coin flip, not a fix); adding an explicit
+pacing strategy in the spec description moved nothing (0/6 wrote, the mandate violated
+every run); no prompt condition produced a graded row.
+
+Two consequences land in doctrine:
+
+1. **F19 gets its mirror: capability without strategy is inert, and strategy without
+   ENFORCEMENT is inert.** A persona/strategy line can activate a verb; it cannot install
+   a workflow. Workflow discipline (write-early, buffer-on-disk, bounded reading) must be
+   structural — plan-v1's bounded steps with declarative form-check exits, the RLM
+   buffer + refine-leaf shape (design record 2026-07-16) — never advisory prose. This is
+   Layer 2's load-bearing premise, now measured (cheaply, at calibration) rather than
+   assumed.
+2. **Budget-class bounds move together or they lie.** Raising the round bound without the
+   dollar budget would have re-bound money at ~round 38 (measured ~$0.033/round) — the
+   same constraint-decomposition lesson as v1→v2, run forward. hamr's approved package:
+   `TURNS_PER_ATTEMPT` 24→40 (one hoisted constant now feeds the Gate's `maxTurns` and
+   the per-attempt cutoff), spec v4 with the disclosure sentence saying 40 and
+   `budgetUsd` $2.00, calibration stop $12. The advertised bound and the enforced bound
+   stay the same numbers on both axes.
