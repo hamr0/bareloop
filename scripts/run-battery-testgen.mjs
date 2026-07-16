@@ -46,6 +46,10 @@ const spec = JSON.parse(readFileSync(new URL('../jobs/aurora-testgen.json', impo
 const specHash = jobSpecHash(spec);
 const dry = has('dry');
 
+// --runs N: run only N rows this invocation (amendment 16h: casualty rows are re-run to
+// keep n=5 — the babysitter passes the REMAINING count so valid rows never exceed 5)
+const runsRequested = Math.max(1, Math.min(N_RUNS, Number(arg('runs') ?? N_RUNS)));
+
 const approved = arg('approve');
 if (approved !== specHash) {
   console.log(`job:       ${spec.job} — BATTERY (loop runs, §8 + 16h)`);
@@ -132,7 +136,7 @@ const rows = [];
 let cumulativeUsd = 0;
 let stop = null;
 
-for (let i = 1; i <= N_RUNS; i++) {
+for (let i = 1; i <= runsRequested; i++) {
   // the cap binds INSIDE the sequence (2026-07-16b lesson): launch only if the whole budget fits
   if (cumulativeUsd + spec.budgetUsd > BATTERY_CAP_USD) {
     stop = `battery cap: cumulative $${cumulativeUsd.toFixed(4)} + $${spec.budgetUsd}/run would exceed $${BATTERY_CAP_USD} — run ${i} not launched`;
@@ -172,13 +176,14 @@ for (let i = 1; i <= N_RUNS; i++) {
   }
   const green = attempts.some((a) => a.verdict === 'satisfied' || (a.rate != null && a.rate >= THRESHOLD));
 
+  const casualty = events.some((e) => e.type === 'escalation' && e.category === 'provider-red');
   const row = {
-    run: `B${i}`, outcome, attempts, deliveredGaps, conversionPrimary, conversionLadder, green,
+    run: `B${i}`, outcome, casualty, attempts, deliveredGaps, conversionPrimary, conversionLadder, green,
     spentUsd, secretsClean: leaks.length === 0, spine: spineFile, audit,
   };
   rows.push(row);
   cumulativeUsd += row.spentUsd ?? 0;
-  console.log(`  row     outcome=${row.outcome} attempts=${attempts.map((a) => `${a.phase}${a.rate != null ? ':' + a.rate + '%' : ''}(r${a.rank})`).join(' → ') || '-'} spent=${row.spentUsd == null ? 'UNKNOWN' : `$${row.spentUsd.toFixed(4)}`}`);
+  console.log(`  row     outcome=${row.outcome}${casualty ? ' CASUALTY' : ''} attempts=${attempts.map((a) => `${a.phase}${a.rate != null ? ':' + a.rate + '%' : ''}(r${a.rank})`).join(' → ') || '-'} spent=${row.spentUsd == null ? 'UNKNOWN' : `$${row.spentUsd.toFixed(4)}`}`);
   console.log(`  read    conversion primary=${conversionPrimary} ladder=${conversionLadder} green=${green}`);
   if (!row.secretsClean) { stop = `B${i}: SPINE LEAK — the hard line is broken`; break; }
   if (!dry && row.spentUsd == null) { stop = `B${i}: spend unknown — the cap cannot govern unpriced spend`; break; }
@@ -194,6 +199,8 @@ const results = {
   batteryCapUsd: BATTERY_CAP_USD, cumulativeUsd, stop, rows,
   summary: {
     runs: rows.length,
+    valid: rows.filter((r) => !r.casualty).length,
+    casualties: rows.filter((r) => r.casualty).length,
     greens: rows.filter((r) => r.green).length,
     conversionPrimary: rows.filter((r) => r.conversionPrimary).length,
     conversionLadder: rows.filter((r) => r.conversionLadder).length,
@@ -207,7 +214,7 @@ for (const r of rows) {
   const a = r.attempts.map((/** @type {any} */ x) => `${x.phase}${x.rate != null ? ':' + x.rate + '%' : ''}`).join('→');
   console.log(`${r.run.padEnd(4)} ${String(r.outcome).padEnd(14)} ${a.padEnd(41)} ${String(r.conversionPrimary).padEnd(13)} ${String(r.conversionLadder).padEnd(12)} ${String(r.green).padEnd(6)} ${r.spentUsd == null ? '-' : `$${r.spentUsd.toFixed(4)}`}`);
 }
-console.log(`\nruns ${results.summary.runs}   greens ${results.summary.greens}   conversion primary ${results.summary.conversionPrimary}/${results.summary.runs}   ladder ${results.summary.conversionLadder}/${results.summary.runs}   spend $${cumulativeUsd.toFixed(4)} of $${BATTERY_CAP_USD}`);
+console.log(`\nruns ${results.summary.runs} (valid ${results.summary.valid}, casualties ${results.summary.casualties})   greens ${results.summary.greens}   conversion primary ${results.summary.conversionPrimary}/${results.summary.runs}   ladder ${results.summary.conversionLadder}/${results.summary.runs}   spend $${cumulativeUsd.toFixed(4)} of $${BATTERY_CAP_USD}`);
 if (stop) console.log(`STOP: ${stop}`);
 console.log(`results: ${resultsFile}`);
 process.exit(0);
