@@ -163,6 +163,29 @@ Defenses (all mechanical, all frozen):
   named thin functions (gap utilization); every green gets the standing exploit audit
   (which D4/D5 have, by then, proven CAN fire).
 
+## Amendment 2026-07-16a — pre-calibration corrections and results of the $0 controls
+
+Recorded BEFORE any API call; nothing here loosens a decision rule.
+
+- **Patient fact corrected**: `src/aurora_soar` is a SYMLINK to
+  `packages/soar/src/aurora_soar` — ONE real file, git-tracked, not two untracked copies.
+  §3's "apply to both copies" collapses to "apply to the real path"; the import-resolution
+  assert stays as the belt. (The symlink also explains the generator's first-launch drift
+  crash: writing "copy 1" mutated "copy 2" before its compare.)
+- **Calibration reading rule (new outcome class, frozen before numbers)**: a run whose
+  close reds before the mutation phase (gate/form/clean) yields NO kill-rate — it is
+  recorded with its phase, never as rate 0 (the truncation-denominator rule applied to this
+  instrument). The base-rate mean uses mutation-graded rows only; if fewer than 3 of 5 are
+  graded, extend by up to 3 runs (within the $2 cap); still fewer than 3 → STOP.
+- **Judged stamp contract**: the grader prints `TESTGEN judged=1` on every verdict IT
+  renders (red or green) and stays silent on instrument-stops (exit 97), so grader crashes
+  and stops route as `close-crashed` escalations, never as worker feedback. Spec floor:
+  `judged: {pattern: 'TESTGEN judged=(\d+)', min: 1}`.
+- **D4 controls executed ($0), all three passed**: (a) vacuous 17-test suite → clean-green,
+  killed 0/40, verdict RED; (b) hash-cheat suite → `gate-red: hashlib` caught before any
+  grading (0.4s); (c) one real behavior test → killed 1/40 (the kill counter is connected,
+  both directions checked). Full 40-mutant grade: 17.7s wall (~100× clock headroom).
+
 ## 9. Sequencing
 
 Calibration fires on hamr's word (harness prints plan + hash, spends nothing without
