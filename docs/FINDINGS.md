@@ -1532,3 +1532,77 @@ Three consequences:
 - An intervention should be probed before it is frozen, not after: the fresh-index rule
   cost one token-free probe to test and would have cost a battery pass to misread (any
   difficulty change would have been attributed to the index condition).
+
+---
+
+## F36 — job #3 battery: 4/4 attempt-1 greens at $0.88 under a measured zero-assist condition — the loop tier fails to appear in a second repo, second close genre, and 34× the search space
+
+**The run (AURORA-PREREG frozen rules, spec `906eaa60…`, sonnet-5, `edit` granted, fresh
+index per run):**
+
+| plant | outcome | attempts | writes | culpritRead | rounds | spent |
+|---|---|---|---|---|---|---|
+| A1 (adapter, cross-file symptom) | green | 1 | 1 | true | 5 | $0.1007 |
+| A2 (cross-package + anchor trap) | green | 1 | 2 | true | 7 | $0.1494 |
+| A3 (2,233-line culprit) | green | 1 | 1 | true | 12 | $0.3053 |
+| A4 (same file, second function) | green | 1 | 1 | true | 14 | $0.3293 |
+
+Worker spend $0.8847 of the $10 stop. Every sanity close reproduced the prereg's failing
+set exactly. A3+A4 read as ONE replication cell per the frozen rule: three independent
+difficulty samples, all easy tier.
+
+**Green-side audit (pre-registered; ran per row):** every close precheck-red (judged
+2689–2690) → final `satisfied` at judgedCount 2691, above the 2600 floor; zero gate
+denies; every write a single anchored `edit` inside `packages/*/src/**` (104–673 bytes);
+zero test writes. A2's two edits (195B then 673B on the culprit) are consistent with the
+prereg's anchor trap firing live — a short anchor refused at the tool level, a longer
+unique anchor landing — though the tool-level refusal is not a spine record.
+
+**The retrieval-honesty read held exactly as pre-registered (F35's payoff):** the
+before-attempt hook recall delivered the culprit in **0 of 4 runs** — matching the
+clean-repo pre-read's zero-culprits-in-top-20 prediction. Every culprit that reached the
+worker through retrieval was EARNED: a worker-initiated `ctx_recall` whose query names
+the symbol lifted from the failing test (`convert_agent_info`,
+`_execute_parallel_subgoals`, `show_plan …`) — the exact read-the-test-then-recall flow
+the F19 strategy line teaches. This is the first battery where the retrieval layer's
+contribution is measured clean end-to-end: no gift, only navigation.
+
+**The effort gradient is real even though the attempt gradient is absent:** 5 → 7 → 12 →
+14 rounds tracks the prereg's difficulty axes (file size, decoys, cross-package
+distance); cost per green $0.10–$0.33 (vs mailproof's $0.05–$0.37). What did NOT
+materialize, again, is a second attempt: zero worker-crash events, zero cap-reds, so the
+F32 delivery/conversion axes have no data for the third consecutive pass.
+
+**The pre-registered saturation conclusion fires.** Under a no-assist retrieval
+condition, a new close genre (pytest), ~2.5-minute close latency, and a 34× larger
+search space, planted single-line bugs whose covering test imports the culprit module
+STILL green on attempt 1, every time. Combined with F33 (mailproof saturated) and F34
+(the escaped-bug middle exists only where a tested architectural seam hides the
+culprit): **the loop tier — THE thesis — cannot be minted from this patient class at
+all.** The lever is not more plants, more repos of this shape, or more passes; it is a
+patient whose architecture hides tested culprits (layered orchestrator seams), or a
+defect class that survives a direct test-import trail.
+
+**Battery ops (real conditions found real infra gaps, all closed en route):**
+- The close hung to the 15-min kill clock on launch 1 — `aur init`'s untimed HuggingFace
+  freshness check inside an unmarked integration test (amendment 2026-07-16a; close
+  pinned `HF_HUB_OFFLINE=1`, measured 12.8s vs >15min; the offline close is also ~2min
+  FASTER per run — the hub checks were taxing every close all day).
+- Two `provider-red` stops with `write EPIPE` at the draft call, both recovered by
+  retry-the-run at $0 (the write never reached the API). Mechanism read from source and
+  filed as BA-14: a stale pooled keep-alive socket dies during the multi-minute close;
+  bare-agent's `DEFAULT_RETRY_ON` retries ECONNRESET but not EPIPE. mailproof's 25s
+  close never idled long enough to expose it.
+- The runner's first sanity instrument conflated a clock-killed close with a drifted
+  failing set — fixed to a distinct `sanity-timeout` before any spend was risked on it.
+
+**Lessons minted.**
+- A benchmark's aim-assist claim is measurable BEFORE the battery: one clean-repo recall
+  probe (F35) turned "did retrieval gift the answer?" from a post-hoc worry into a
+  pre-registered prediction that the runs then confirmed 4/4.
+- Close latency is an infra stressor before it is a worker stressor: 2.5-minute closes
+  exposed a keep-alive lifetime bug and a third-party network dependence that 25-second
+  closes structurally could not.
+- A STOP that pattern-matches "drift" can be the instrument dying — the drift label must
+  be reserved for a close that RENDERED a differing verdict, never one that rendered
+  nothing.

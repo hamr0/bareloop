@@ -771,6 +771,42 @@ POC/scratch harness **does** guard `content` and **does** carry a shrink-blocker
 and every experimental arm is unreadable. *"Never a local shim" binds shipped `src/`, not the
 experimental bench.*
 
+---
+
+## BA-14 — `EPIPE` is not in `DEFAULT_RETRY_ON`, and the provider's pooled socket goes stale across multi-minute idle gaps (2026-07-16, job #3 battery)
+
+**Symptom, observed 2/2 times it could occur:** in a battery process that makes provider
+calls, then sits idle through a ~2.5-minute close, the NEXT provider call dies with
+`write EPIPE` — terminal, routed `provider-red`. Pattern across three launches: every
+plant whose draft call was the process's FIRST provider call succeeded (A1, A2, A3);
+every draft that followed an earlier plant's calls plus a multi-minute idle gap EPIPE'd
+(A3 in launch 2, A4 in launch 3). mailproof never hit this: its close runs ~25s, under
+the keep-alive window. The mechanism is a stale pooled keep-alive connection: the server
+closed it during the idle close; the client wrote the next request into the dead socket.
+
+**Source read before filing (the BA-2 lesson):**
+- `retry.js` `DEFAULT_RETRY_ON` retries `ECONNRESET`, `ETIMEDOUT`, `ENOTFOUND` — but not
+  `EPIPE`. An EPIPE on a kept-alive socket is the SAME transient class as ECONNRESET
+  (the kernel raced our write against the server's FIN); it differs only in which
+  syscall surfaced first.
+- `loop.js:702` applies retry only when the caller passes `options.retry` (opt-in, fine)
+  — but even a wired `Retry` would not retry this failure because of the predicate gap.
+
+**Ask (FAIL-able):** add `EPIPE` to `DEFAULT_RETRY_ON`'s transient codes. Acceptance: a
+test that makes `generate()`'s underlying transport throw `{code: 'EPIPE'}` once and
+succeed on the second attempt must return the success under a wired `Retry`, and must
+rethrow under `retryOn: () => false`. (A fresh-connection retry after EPIPE cannot
+double-bill: the request died on WRITE — it never reached the API.)
+
+**Not asked (recorded):** connection-pool keep-alive tuning (agent timeouts) — that is
+SDK/undici territory and version-fragile; the retry predicate is the durable fix.
+
+**bareloop's own side:** the drafting path calls `generate()` bare (no `Retry`), so a
+transport blip at draft is a full `provider-red` stop. Correct per doctrine (the
+escalation's own option — "retry the run" — recovered both cases at $0 lost, the failed
+write never reached the API), but once BA-14 lands, wiring a small `Retry` into the
+draft call is worth revisiting.
+
 *(No other open asks from this repo.)*
 
 ---
