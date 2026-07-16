@@ -186,6 +186,29 @@ Recorded BEFORE any API call; nothing here loosens a decision rule.
   grading (0.4s); (c) one real behavior test → killed 1/40 (the kill counter is connected,
   both directions checked). Full 40-mutant grade: 17.7s wall (~100× clock headroom).
 
+## Amendment 2026-07-16b — calibration attempt 1: STOP (base rate unreadable at $0.40/run)
+
+Run 2026-07-16 (runid mrnk7dx4), n=6 (5 + 1 extension), $2.40 spent. **All six runs
+cap-halted on the $0.40 budget with ZERO writes** (gate audits: 0 write, 0 edit across all
+six; 6–15 rounds each; escalation category `cap-halt` at iteration 1). The close's form
+floor read unit=0/integration=0 every time — nothing was ever written to grade. The frozen
+reading rule held: 0 of 6 rows mutation-graded → **STOP, hand the design back.**
+
+What this reading IS: the $0.40 calibration budget starves a test-WRITING one-shot inside
+its read/understand phase on a 2,455-line module — the run dies before the first write.
+What it is NOT: evidence about sonnet's fault-detection base rate (nothing was graded), and
+NOT a loop observation. Do not fold these six rows into any later pass evidence.
+
+Also measured en route: **the calibration cap binds only BETWEEN runs** — C6 launched at
+cumulative $1.995 and finished at $2.40, a 20% overshoot of the $2 stop. Same class as
+OUR SIDE #2 (every nesting level needs a bound that binds inside it); harness fixed to
+check projected (cumulative + budget) spend before launching a run.
+
+Proposed remedy (PARKED — budgets are operator territory, never self-adjusted): raise the
+per-run one-shot budget to $1.25 and the calibration stop to $8 (5 runs + extension
+headroom), same spec otherwise; a new spec version = a new hash hamr signs. Basis: the read
+phase alone consumed $0.40; a 17-test suite is thousands of output tokens on top.
+
 ## 9. Sequencing
 
 Calibration fires on hamr's word (harness prints plan + hash, spends nothing without

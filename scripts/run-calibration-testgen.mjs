@@ -129,8 +129,11 @@ for (let i = 1; i <= N_RUNS + MAX_EXTENSION; i++) {
   const graded = rows.filter((r) => r.rate != null).length;
   if (i > N_RUNS && (graded >= MIN_GRADED || graded + (N_RUNS + MAX_EXTENSION - i + 1) < MIN_GRADED)) break;
   if (i > N_RUNS) console.log(`  (extension run — only ${graded}/${MIN_GRADED} graded rows so far)`);
-  if (cumulativeUsd >= CALIBRATION_CAP_USD) {
-    stop = `calibration cap: cumulative $${cumulativeUsd.toFixed(4)} >= $${CALIBRATION_CAP_USD} before run ${i}`;
+  // the cap must bind INSIDE the sequence, not at its seams (amendment 2026-07-16b:
+  // C6 launched at $1.995 cumulative and closed at $2.40): a run may only launch
+  // if its WHOLE budget still fits under the stop
+  if (cumulativeUsd + spec.budgetUsd > CALIBRATION_CAP_USD) {
+    stop = `calibration cap: cumulative $${cumulativeUsd.toFixed(4)} + $${spec.budgetUsd}/run would exceed $${CALIBRATION_CAP_USD} — run ${i} not launched`;
     break;
   }
   console.log(`\n== C${i} ==`);
