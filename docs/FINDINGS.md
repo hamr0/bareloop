@@ -1650,3 +1650,13 @@ calibration stop $12.
 Method note minted en route: an arm killed mid-invocation by API credit exhaustion
 (`mrnnq9ea` C2/C3) produces provider-red casualties, not evidence — rows enter the curve
 only from completed, priced runs.
+
+**F37 postscript (attempt 4, runid `mrnrxr91`):** the 40-round package produced the
+confirming failure from the other direction. Reads scaled with the allowance (~50 at 24
+rounds → 86–91 at 40 — the prelude is Parkinsonian, it fills the window); the one run
+that transitioned to writing did so at round ~36 and was halted mid-write-phase by the
+money cap ("spent $1.9086 >= cap $1.90"). Rounds → money → rounds: the caps take turns
+binding because the workflow, not the capacity, is the constraint. 23 valid one-shots,
+four conditions, zero graded rows — the one-shot instrument is closed for this job; the
+loop (fresh-context attempts fed by gaps) is the remaining instrument, exactly as
+designed.

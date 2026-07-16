@@ -339,3 +339,39 @@ kill-rate; mean ≥85 no-headroom STOP; mean ==0 autopsy; <3 graded after extens
 STOP. The bet, falsifiable: 40 rounds fits the read-first prelude PLUS a write phase, so
 ≥3 rows reach grading. If rows still die read-only at 40, prompting AND capacity are both
 exonerated and the missing piece is the loop/plan (workflow enforcement), not the bound.
+
+## Amendment 2026-07-16g — calibration attempt 4: STOP again, and the mechanism is now fully decomposed
+
+Runid `mrnrxr91`, spec v4 (40 rounds disclosed, $2/run), $4.80 spent. Three valid rows;
+C4 (round 20) and C5 (round 0) were provider-red casualties (Anthropic "Overloaded"),
+not evidence. Zero graded → the frozen <3-graded STOP fires a fourth time.
+
+| row | rounds | reads | writes | end |
+|---|---|---|---|---|
+| C1 | 38 | 66 | **1 write + 2 edit attempts** | **budget-terminated mid-write-phase**: `budget.maxCostUsd` halted the edit at "$1.9086 >= cap $1.90" (the drafter-tightened 95% of $2) |
+| C2 | 40 | 86 | 0 | bound-death |
+| C3 | 40 | 91 | 0 | bound-death |
+
+**The 16f bet lost, informatively.** 40 rounds did not fit prelude + write phase, because
+the prelude is not fixed-size: reads scaled with the allowance (~50 at 24 rounds → 86–91
+at 40). The model reads until the window it believes it has is nearly spent, then writes
+at the edge — C1 wrote its first file (8.9KB conftest) around round 36 of 40, exactly
+where the money cap (which grows with accumulated context) also lands. **Constraint
+whack-a-mole is the finding: rounds → money → rounds. No one-shot allowance produces a
+readable base rate for this job, because the workflow — not the capacity — is the
+binding constraint** (F37 confirmed from a second direction).
+
+23 valid one-shots across four prompt/bound conditions, zero graded. The one-shot
+instrument has reached its design limit. The remaining instrument is the pre-registered
+battery itself: attempt 2 opens a FRESH conversation carrying the gap — no accumulated
+read context — so its write phase can start at round 1. That is the loop's own economic
+argument (the F20 doctrine: four bounded attempts inside a budget one unbounded attempt
+exhausts), now with a measured one-shot failure mode behind it.
+
+**Handed back to hamr (this amendment decides nothing):** the battery needs (a) a green
+bar N with no calibrated mean behind it — the defensible candidate is the formula on the
+operational zero (N=45), which requires a signed rules amendment because ungraded rows
+were frozen out of the mean; (b) battery budget sizing for 3×40-round attempts under one
+per-run budget; (c) confirmation that the primary endpoint stays conversion
+(attempt-over-attempt improvement, F32 split), which 23/23 one-shot reds now guarantee
+fires on a live gradient.
