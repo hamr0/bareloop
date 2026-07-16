@@ -1,0 +1,38 @@
+{
+  "schema": "job-v1",
+  "job": "aurora-fix",
+  "description": "Keep aurora green: the pytest suite is the hard close. The suite is currently red — trace the failing tests to their root cause in the packages' source and fix it through the file tools, then stop. Do not edit tests; make the suite pass by fixing the source. Merge stays human, forever.",
+  "provider": "anthropic-api",
+  "conditions": { "closeVerbosity": "names-failing-tests" },
+  "cadence": { "unit": "day", "every": 1 },
+  "budgetUsd": 3,
+  "writeScope": [
+    "packages/cli/src/**",
+    "packages/context-code/src/**",
+    "packages/context-doc/src/**",
+    "packages/core/src/**",
+    "packages/implement/src/**",
+    "packages/lsp/src/**",
+    "packages/planning/src/**",
+    "packages/reasoning/src/**",
+    "packages/soar/src/**",
+    "packages/spawner/src/**",
+    "packages/testing/src/**"
+  ],
+  "steps": [
+    {
+      "id": "suite",
+      "mode": "tools",
+      "tools": ["read", "grep", "write", "edit", "recall", "get"],
+      "close": {
+        "type": "predicate",
+        "cmd": "/home/hamr/PycharmProjects/bareloop-patients/aurora-soar-bareloop/close.sh",
+        "expect": 0,
+        "judged": { "pattern": "(\\d+) passed[^\\n]* in [0-9.]+s", "min": 2600 },
+        "gapKeep": "^FAILED "
+      },
+      "class": "hard"
+    }
+  ],
+  "escalation": { "mode": "decision-ready" }
+}
