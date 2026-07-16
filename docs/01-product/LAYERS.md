@@ -149,6 +149,42 @@ self-raise.
 
 ---
 
+## The kid version (start here whenever the map stops making sense)
+
+A kid builds a LEGO castle. Mom pays for the bricks and decides if it goes on the shelf.
+That part never changes — mom is the **shell** (judge + cap + merge).
+
+- **Layer 1 — trying.** Kid builds, mom looks, says "the tower is crooked," kid tries
+  again. Try → check → hear what's wrong → try again. That's the wheel — the smallest
+  piece of the whole story.
+- **Layer R — the notebook.** Without it the kid has goldfish memory: each try, they only
+  remember mom's last "it's crooked," so they glue the same wrong piece three times. The
+  notebook says *"already tried the blue piece — didn't work."* It lasts one day, then
+  it's thrown away.
+- **Layer 2 — the plan.** Instead of one giant build, the kid writes steps first: find
+  pieces → sort → walls → tower. Each step is its own little try-check-retry loop. The
+  kid writes the plan; mom still does all the checking.
+- **Layer 3 — the recipe box.** A finished castle's plan goes in the box; tomorrow starts
+  from the recipe, not from zero. Failed plans never go in the box.
+
+Nucleus to the outside — note the layers are numbered by build order, not by position:
+
+```
+EVERY DAY, FOREVER ──────────── keep recipes that worked        = Layer 3
+ └─ TODAY (one run) ─────────── one notebook for the whole day  = Layer R
+     └─ the plan: step→step→step ─ order of work                = Layer 2
+         └─ each step: try→check→try again ─ THE ATOM           = Layer 1
+mom (checks everything, holds the money, owns the shelf)         = the shell
+```
+
+Each layer answers one kid-question: **How do I try?** (1) · **What do I remember
+today?** (R) · **What order do I work in?** (2) · **What do I keep for tomorrow?** (3).
+A notebook is useless if trying doesn't work; a plan is useless if you forget what you
+tried; a recipe box is useless if the plans in it never worked. That is the build order,
+and it is why everything currently waits on one question about the atom: **when mom says
+what's wrong, does the kid fix THAT THING — or just start over the same way?** (The
+battery. Delivery vs conversion, F32.)
+
 ## The shell vs the layers — who has what
 
 The **shell** is the fixed frame around every wheel: **judge + gap + cap** (plus the fence,
