@@ -1,4 +1,4 @@
-// Plant battery runner — the frozen 7-plant battery of docs/BATTERY-PREREG.md
+// Plant battery runner — the frozen 7-plant battery of docs/02-experiments/BATTERY-PREREG.md
 // against the frozen mailproof patient. One human signature (the spec hash)
 // covers all 7 runs: the spec, the $3 cap, the 3 attempts, and the model are
 // identical per plant BY THE FROZEN RULES — nothing here is a knob.
@@ -30,14 +30,14 @@ import { SECRET_PATTERNS } from '../src/validate.js';
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
 
-// ---- the frozen facts (docs/BATTERY-PREREG.md — transcribed, never edited) ----
+// ---- the frozen facts (docs/02-experiments/BATTERY-PREREG.md — transcribed, never edited) ----
 const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/mailproof-job2';
 const COMMIT = '091027d4d88922a451752f08d019c81736b09873';
 const MODEL = 'claude-sonnet-5';
 const BATTERY_CAP_USD = 10; // pass-1 total spend hard-stop (frozen)
 
 /**
- * The frozen plant table, transcribed EXACTLY from docs/BATTERY-PREREG.md
+ * The frozen plant table, transcribed EXACTLY from docs/02-experiments/BATTERY-PREREG.md
  * ("Accepted plants"). `before` must occur EXACTLY ONCE in `file` at the frozen
  * commit (verified 2026-07-15 against `git show` at the commit — each at the
  * recorded line). `fails` are the verbatim `not ok` subtest names the prereg

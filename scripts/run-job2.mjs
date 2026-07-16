@@ -1,6 +1,6 @@
 // Job #2 — the first real end-to-end firing of the N2 headless loop:
 // `mailproof-fix` against a planted regression on a frozen `mailproof` checkout
-// (docs/JOB2-PREREG.md). At N2 a human starts a run by calling runJob() from a
+// (docs/02-experiments/JOB2-PREREG.md). At N2 a human starts a run by calling runJob() from a
 // script (decision #1: no CLI until N5) — this is that script, and nothing
 // more: it binds the shell-owned pieces (provider, workdir, spine, approvals,
 // the hard USD cap) and gets out of the way.

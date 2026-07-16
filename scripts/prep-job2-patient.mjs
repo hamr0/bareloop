@@ -1,6 +1,6 @@
 // Job #2 patient preparation — idempotent, token-free, spends nothing.
 // Stands up the `mailproof` patient for the N2 loop test EXACTLY as the frozen
-// pre-registration (docs/JOB2-PREREG.md) specifies, and refuses to proceed if
+// pre-registration (docs/02-experiments/JOB2-PREREG.md) specifies, and refuses to proceed if
 // reality drifts from the prereg by one test.
 //
 // The real ~/PycharmProjects/mailproof is NEVER mutated: this clones it to a
@@ -17,7 +17,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-// ---- the frozen facts (docs/JOB2-PREREG.md) ------------------------------
+// ---- the frozen facts (docs/02-experiments/JOB2-PREREG.md) ------------------------------
 const SOURCE = '/home/hamr/PycharmProjects/mailproof';
 const DEST = '/home/hamr/PycharmProjects/bareloop-patients/mailproof-job2';
 const COMMIT = '091027d4d88922a451752f08d019c81736b09873';

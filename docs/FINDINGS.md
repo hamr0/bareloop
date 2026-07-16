@@ -961,7 +961,7 @@ sees (`ledgerDrift: 0` in both arms). **Fold this into BA-6 when it is filed.**
 
 ## F26 — the aim axis was never connected; job #1 is the wrong benchmark
 
-**Full write-up: `docs/REPORT-AIM.md`.** 151 no-harness API samples (one Anthropic call each — no
+**Full write-up: `docs/02-experiments/REPORT-AIM.md`.** 151 no-harness API samples (one Anthropic call each — no
 bare-agent, no tool loop, no gate), $4.99, `claude-sonnet-5` fixed throughout.
 
 **The result: 0/140 across every legitimate intervention** — baseline, root-cause reframe,
@@ -1017,7 +1017,7 @@ nomination-distribution result does not depend on either.
 
 **Context.** BA-4/5/6/7/1 landed in `bare-agent@0.27.0` (consumed here; the N2 build gate is cleared,
 acceptance re-verified locally). With the primitive confounds gone, job #2 (the elimination-reachable
-replacement benchmark, pre-registered and FROZEN in `docs/JOB2-PREREG.md` before any number existed)
+replacement benchmark, pre-registered and FROZEN in `docs/02-experiments/JOB2-PREREG.md` before any number existed)
 was calibrated exactly as pre-registered — two probes × two tiers, EFFORT=low, n=15, $3.02 total.
 Patient: `mailproof` @ `091027d`; plant: one line in `src/notify.js` (`if (custom) body = custom;` →
 `body = custom;`), which violates the file's OWN header contract ("a hook throw or falsy return falls
@@ -1420,7 +1420,7 @@ what it needs (layered orchestrator/pure-module seams, high integration-to-unit 
 ## F34 — the aurora enumeration measures the benchmark paradox: a bug a test can see is a bug whose home the test imports; the genuinely hard code is exactly the code no close can gate
 
 **Assignment (hamr): harder patient — copy the local aurora repo, inspect the SOAR
-package for plant sites.** Full enumeration in `docs/AURORA-PREREG.md` (DRAFT; decision
+package for plant sites.** Full enumeration in `docs/02-experiments/AURORA-PREREG.md` (DRAFT; decision
 rules stay with the operator). Patient copied by local clone, frozen at `d661e50`, own
 venv, close green at HEAD both scopes: soar-only (172 tests, 0.5s) and full repo
 (2,691 tests, ~4.5–6.5 min), 3× deterministic, tree clean through runs.
