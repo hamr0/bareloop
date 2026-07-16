@@ -5,7 +5,7 @@
   "provider": "anthropic-api",
   "conditions": { "closeVerbosity": "scoreboard" },
   "cadence": { "unit": "day", "every": 1 },
-  "budgetUsd": 2,
+  "budgetUsd": 5,
   "writeScope": ["tests/testgen/**"],
   "steps": [
     {

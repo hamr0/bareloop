@@ -375,3 +375,37 @@ were frozen out of the mean; (b) battery budget sizing for 3×40-round attempts 
 per-run budget; (c) confirmation that the primary endpoint stays conversion
 (attempt-over-attempt improvement, F32 split), which 23/23 one-shot reds now guarantee
 fires on a live gradient.
+
+## Amendment 2026-07-16h — the battery fires: N=45 minted from the operational zero (frozen BEFORE any battery number)
+
+hamr's go ("go for next experiment"), following the three-option handoff in 16g. Decisions,
+recorded plainly including the post-hoc one:
+
+- **N = 45**, by the frozen formula on the operational zero: 23 valid one-shots across
+  four conditions produced zero kill-rate — ceil((0+90)/2) = 45. §7 froze ungraded rows
+  OUT of the mean, so designating the operational zero as the mean input is a post-hoc
+  rules decision — made by hamr, not the operator harness, and biased AGAINST easy greens
+  (45% is the hardest defensible bar; a fit-to-pass would have argued the bar DOWN).
+  `testgen-threshold.txt` written (45); the close now grades in battery mode, not 101-mode.
+- **Battery numbers** (supersede §8's $3/run and $20 experiment cap, which predate the
+  40-round bound): spec v5 hash
+  `8ab3aa189278869b71e9be8c33b41a4976e2f4c0b85ac856a029db18753813c3` — identical to v4
+  except `budgetUsd` $5; n=5 runs × 3 attempts (capRuns=3); battery hard-stop $30;
+  runner `scripts/run-battery-testgen.mjs` (launch-only-if-whole-budget-fits, 16b lesson).
+- **Endpoints.** Primary unchanged (§8): conversion = kill-rate strictly increases
+  attempt-over-attempt where consecutive attempts are both graded. Pre-registered NOW for
+  the ungraded case the one-shots proved dominant — the **ladder**: rank 0 form-red with
+  zero tests collected · rank 1 audit-red OR form-red with >0 tests · rank 2 clean-red
+  (form floor passed) · rank 3 graded. Ladder-conversion = rank strictly increases
+  attempt-over-attempt. Both reported per run; neither substitutes for the other.
+  Delivery (gap reached attempt N+1) is mechanical under F20's bound and reported as
+  deliveredGaps. By-construction check unchanged: attempt-1 green = threshold drift =
+  STOP, battery invalid.
+- **Superseded §8 lines, named:** (a) `output_config.effort: low` — the consumed provider
+  (bare-agent 0.29.0) has no output_config passthrough; all 23 curve rows ran without it,
+  the battery keeps identical conditions; F30's maxTokens=32000 covers the truncation
+  mode and truncations route provider-red (standing). (b) the persona "strategy line" —
+  measured inert at F37 (0/6 compliance); the battery spec inherits the v4 disclosure-only
+  lineage. The Testing-Standards digest stays (it is in the description).
+- Provider-red rows remain casualties, not evidence (16e standing); a casualty row is
+  re-run to keep n=5, funded under the same $30 stop.
