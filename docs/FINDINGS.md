@@ -1660,3 +1660,36 @@ binding because the workflow, not the capacity, is the constraint. 23 valid one-
 four conditions, zero graded rows — the one-shot instrument is closed for this job; the
 loop (fresh-context attempts fed by gaps) is the remaining instrument, exactly as
 designed.
+
+## F38 — first observed conversion: the wheel turns on mechanical gaps and stalls on the semantic one (job #4 battery)
+
+The Layer 1 thesis — red → gap → a better next attempt — was finally observed on
+2026-07-16 (TESTGEN battery, amendment 2026-07-16i, runid `mrnwm5o8`, n=5 valid, $20.37):
+**ladder conversion 3/5**, attempt-1 red 5/5 (the manufactured gradient held), greens 0/5
+at the 45% bar, kill-rate conversion 0/5.
+
+The split that matters is gap GENRE, not gap delivery:
+
+- **Mechanical gaps convert.** "collected unit=0 integration=0", "audit rejected pattern
+  environ-enumeration" — every row with attempts left cleared the named wall on the next
+  attempt (form → audit → clean in B1; audit → audit → graded in B3; form → graded 26
+  unit + 8 integration in B4's attempt 2). The wheel is REAL: these attempts were better
+  BECAUSE of the gap.
+- **The semantic gap did not.** B4's attempt 3 held the close's richest feedback —
+  killed=7/40 with per-function survivor counts and the instruction to strengthen
+  assertions — and wrote nothing at all (gate audit: zero write/edit actions in iteration
+  3; the identical suite regraded 17.5%). One cell, an anecdote by the n=1 rule — but the
+  inaction is a fact, not a rate estimate, and it replays F32's P3 (told twice, zero
+  reverts) and the F26/F27 surface-triage mechanism in a third context.
+
+Layer 1's qualification question ("does feedback buy improvement at all?") now has a
+measured answer: **yes, for feedback that names a wall; unobserved-and-once-refused for
+feedback that names a deficiency.** The boundary is exactly where the next layers aim:
+the root (Layer R) so attempt N+1 knows what attempt N already did, and enforced step
+structure (Layer 2) so "improve the suite" becomes bounded steps with form-checkable
+exits instead of an open semantic ask.
+
+Instrument note: the battery survived a provider Overloaded evening only via operator-side
+orchestration (11 casualty rows across five invocations, probe-gated re-fires, cross-
+invocation spend ledger). Load-shedding is per-model — a haiku 200 proves nothing about
+sonnet capacity; probe with the battery's own model.

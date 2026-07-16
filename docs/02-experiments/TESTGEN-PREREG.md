@@ -409,3 +409,39 @@ recorded plainly including the post-hoc one:
   lineage. The Testing-Standards digest stays (it is in the description).
 - Provider-red rows remain casualties, not evidence (16e standing); a casualty row is
   re-run to keep n=5, funded under the same $30 stop.
+
+## Amendment 2026-07-16i — BATTERY COMPLETE: the wheel turns on mechanical gaps and stalls on the semantic one
+
+Runid `mrnwm5o8` (5 valid rows in one invocation, after 11 provider-red casualties across
+five invocations — an Anthropic Overloaded evening; babysitter orchestration, semantics
+unchanged). Total spend $20.37 of the $30 authorization, prior casualties included.
+
+| row | attempt chain (phase:rate, ladder rank) | primary | ladder | spent |
+|---|---|---|---|---|
+| B1 | form 0 tests (r0) → audit-red (r1) → clean-red (r2) | — | **TRUE** | $3.38 |
+| B2 | form 0 (r0) → form 0 (r0), money-ended | false | false | $4.76 |
+| B3 | audit-red (r1) → audit-red (r1) → **graded 22.5%** (r3) | — | **TRUE** | $2.50 |
+| B4 | form 0 (r0) → **graded 17.5%** (r3) → graded 17.5% (r3) | **false** | **TRUE** | $3.34 |
+| B5 | audit-red (r1) → form-with-tests (r1), money-ended | false | false | $4.79 |
+
+**Frozen endpoints:** attempt-1 red 5/5 (no drift — the manufactured gradient held).
+Greens 0/5 at the 45% bar (best observed 22.5%). **Ladder conversion 3/5 — the first
+conversion ever observed in this program**: attempt N+1 measurably further along BECAUSE
+of the gap (B1 cleared form then audit; B3 cleared audit into grading; B4 jumped r0→r3 off
+a form gap). **Primary (kill-rate) conversion 0/5**, with exactly ONE readable
+consecutive-graded cell (B4) — n=1, an anecdote by standing rule, but its autopsy is not:
+**every B4 write landed in attempt 2; attempt 3, holding the survivor-by-function
+scoreboard, wrote NOTHING** (gate audit: 6 write/edit actions 20:24–20:28, iteration 3
+ran 20:30–20:34 read-only). The suite was regraded unchanged — 17.5% → 17.5% is the
+worker's inaction, not its ceiling.
+
+**The reading (F38): gap GENRE splits conversion.** Mechanical gaps — "collected unit=0",
+"audit pattern X rejected", counts and named walls — converted in every row that had
+attempts left to spend (3/3). The semantic gap — "your tests pass but miss faults in
+these functions, strengthen assertions" — converted 0/1, by inaction. Consistent with
+F26/F27 (surface-signal triage) and F32's delivery≠conversion split, now observed inside
+one battery with the same worker, same close, same run.
+
+Texture for the next design round: $5 funds ~2.3 forty-round attempts (B2/B5 died on
+money mid-loop); audit-reds are a live wall the D1 defenses produce and workers DO clear
+them next attempt; the form floor converts on attempt 2 in every row that reached it.
