@@ -114,10 +114,10 @@ Layer 1   ONE WHEEL      a single loop over the whole task                     (
 
 ### Layer 1 — one wheel
 One loop over the entire job: attempt → judge → gap → retry, under one budget. This is the
-engine every higher layer is made of. **Status: built, but it has never completed one real
-end-to-end firing** — every historical run was secretly one-shot (F20: nothing bounded an
-attempt, so the judge never ran). The bound is fixed; the first real firing is the current
-step.
+engine every higher layer is made of. **Status: built; the wheel has turned mechanically
+(F32 rerun: gaps delivered across attempts) but CONVERSION — an attempt measurably better
+BECAUSE of the gap — has never been observed.** Delivery and conversion are separate axes
+(F32); the TESTGEN battery (job #4) is the first conversion firing.
 
 ### Layer R — the root (the ratchet)
 Today, each attempt starts as a **fresh conversation**; the only thing that crosses attempts
@@ -161,9 +161,11 @@ self-raise.
 
 ## Where we are, and the build order
 
-1. **Fire Layer 1 once, for real** — the job #2 patient (a real planted bug in a real repo,
-   calibrated: the culprit is findable, the one-shot fix rate is 0%). This is the first
-   end-to-end turn of the wheel *and* the test of whether feedback breaks the misdiagnosis.
+1. **Fire Layer 1 once, for real** — job #4 (TESTGEN: write a killing test suite for an
+   untested 2,455-line module; the judge is mutation kill-rate). Jobs #2/#3 could not
+   host the firing (discarded / saturated at attempt-1 greens, F34); job #4 manufactures
+   the guaranteed attempt-1 red (23/23 one-shots red across four conditions, F37). The
+   battery = the firing; it reads ONE thing: does kill-rate climb attempt-over-attempt.
 2. **Build Layer R** — the root, so attempts stop repeating themselves.
 3. **Build Layer 2** — the micro-wheel road (plan-v1), with the stage-verdict rule above.
 4. **Build Layer 3** — inheritance with ledger attribution (N3, kill-switch: rules must
