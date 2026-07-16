@@ -149,6 +149,64 @@ self-raise.
 
 ---
 
+## The shell vs the layers — who has what
+
+The **shell** is the fixed frame around every wheel: **judge + gap + cap** (plus the fence,
+the ledger, and escalation-to-human). It is not a layer. Every wheel at every layer runs
+inside it, and no layer ever changes it. **Layers are build stages of the product, not an
+escalation ladder inside a run** — a red at cap escalates to the HUMAN at every layer,
+never "up a layer." What each layer changes is only: who arranges the wheels, and what
+survives.
+
+| layer | wheels | arranged by | survives attempts (within one run) | survives runs |
+|---|---|---|---|---|
+| **1** | one | human | the gap text + the tree (files written stay on disk) | **nothing** |
+| **R** | one | human | + **the root**: the plan, what was tried, what it changed | nothing |
+| **2** | many small (the road) | **the agent** (validator-gated draft) | root + each step's artifact feeds the next | nothing yet |
+| **3** | many small | the agent | same as Layer 2 | **the road that greened**, with receipts |
+
+## Worked example — the same job at every layer
+
+Job: *"fix aurora — some tests fail."* Budget $N. What carries, layer by layer:
+
+**Layer 1 (today):**
+```
+attempt 1 → judge: 6 pass, 1 fail → red
+   what attempt 2 gets: the GAP (judge's failure text, verbatim)
+                        + the TREE (files attempt 1 wrote are still on disk)
+                        and NOTHING else — fresh conversation; it does not know
+                        what attempt 1 read, tried, or ruled out
+… retry until green or cap.
+red at cap → escalate to the human: top up or stop. Top-up resumes THIS run
+             (the stop is the checkpoint) — it does not change layers.
+green      → done; and the job is below the value line (one wheel sufficed).
+NEXT RUN: starts from zero either way.
+```
+
+**Layer R adds the root (fixes F21 — runs that repeat themselves):**
+```
+same one wheel, but a root survives attempts:
+attempt 2 also gets: "tried Y; the reds did not move — do not retry Y."
+NEXT RUN: still from zero. The root is within-run scratch, never across-run memory.
+```
+
+**Layer 2 adds the road (the agent designs, THEN walks — one replan allowed):**
+```
+scout (read-only, bounded) → agent DRAFTS the road: locate → understand → write → verify
+→ validator gates the draft BEFORE execution tokens burn
+→ walk it: one small wheel per step, each step's artifact feeds the next
+→ mid-run, at most ONE replan (unlimited replanning launders thrash as adaptation)
+red at cap → still escalates to the human.
+NEXT RUN: drafts a fresh road from zero.
+```
+
+**Layer 3 adds inheritance (the first thing that survives a run):**
+```
+the road that GREENED is carried to the next run — as executed, with receipts
+(which green minted each rule, which contrast attributed it).
+run 2 starts from run 1's road and improves it; a red run inherits nothing.
+```
+
 ## Hard lines (unchanged, restated)
 
 - The agent authors its **workflow**, never its **judge** — at every layer.
