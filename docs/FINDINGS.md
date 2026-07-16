@@ -1414,3 +1414,63 @@ what it needs (layered orchestrator/pure-module seams, high integration-to-unit 
   for.
 - Economy note, not a claim: 7 greens for $0.94 (~$0.13/green, vs ~$0.20–0.30 pre-edit) —
   consistent with BA-13's measured 56.3× output economy, not attributed (two variables).
+
+---
+
+## F34 — the aurora enumeration measures the benchmark paradox: a bug a test can see is a bug whose home the test imports; the genuinely hard code is exactly the code no close can gate
+
+**Assignment (hamr): harder patient — copy the local aurora repo, inspect the SOAR
+package for plant sites.** Full enumeration in `docs/AURORA-PREREG.md` (DRAFT; decision
+rules stay with the operator). Patient copied by local clone, frozen at `d661e50`, own
+venv, close green at HEAD both scopes: soar-only (172 tests, 0.5s) and full repo
+(2,691 tests, ~4.5–6.5 min), 3× deterministic, tree clean through runs.
+
+**The instrumented sweep** (one full-suite run with per-test coverage contexts) gave the
+repo-wide map: for every source file, which test files execute it. Candidate sites =
+meaningfully-covered files with no name-mapped coverer. Twelve one-line plants were then
+probed live (apply alone → run → record verbatim fails → revert), mailproof method.
+
+**Accepted: 4 plants, 3 files, 3 packages** — each reds exactly its recorded failing set
+against the FULL close (1/1/1/2 fails), no explosion, no name-map. One cross-package cell
+(cli symptom ↔ soar culprit), one within-file replication cell in a 2,233-line file, one
+anchor-trap (the culprit guard line exists twice; a short `edit` anchor multi-matches —
+the exactly-once discipline caught this in the verification harness itself).
+
+**Rejected: 6 site families, all by GREEN probes** — the fixtures never exercise the
+behavior (lowercase-only categories, no boundary test at exactly 50%, no re-init, no
+cache-path assertion). A probe that cannot fail is not a probe; every green is recorded.
+
+**The finding.** In aurora's TESTED regions there is no P7-analog seam: every accepted
+plant's covering test imports the culprit module directly (one navigation hop after
+reading the failing test). The one structural layered candidate (tests import
+`embedding_provider`, which internally uses `model_utils`) greened — its behavioral
+branches are unexercised. Meanwhile the code that IS the P7 shape — `orchestrator.py`,
+2,455 lines precomputing everything the phases consume — is executed by NOTHING in the
+repo (6% coverage = imports), so plants there green the close. Generalization, now
+measured in a second repo: **the escaped-bug middle (visible symptom, obscured cause)
+exists only where a tested architectural layer hides the culprit. mailproof had exactly
+one such seam; aurora's tested regions have zero.** Well-disciplined per-module suites
+destroy the middle from one side; coverage holes destroy it from the other.
+
+**What aurora actually offers as a harder patient:** scale (281 source files — 34×
+mailproof's search space), file scale (1,050/2,233-line culprits — the LINE hunt is real
+even when the file is known), close latency (~5 min — thrash costs wall-clock, a
+production-like pressure mailproof never applied), a duplicate-package decoy, the
+anchor-trap, and the first non-TAP close (pytest: judged `(\d+) passed` floor ~2600,
+gapKeep `^FAILED `). NOT deep causal misdirection — pre-registered expectation: if the
+loop tier fails to appear here too, the lever is latency+scale, not plant depth.
+
+**Aurora-owner side findings (real, hamr's repo):** the SOAR orchestrator is untested in
+any package; three core tests are skipped with literal "MemoryStore has known bug"
+annotations; `aurora_cli.planning` and `aurora_planning` carry duplicated parser files.
+
+**Lessons minted.**
+- Enumerate with an instrument, verify with probes: the coverage-context map nominated
+  12 candidates cheaply; only live probes separated the 4 real plants from 6 that green.
+- The riskiest probe assumption is fixture reach — five rejections came from fixtures
+  that never leave the canonical path. Coverage says a line RAN; only an assertion makes
+  it a gate.
+- Benchmark design now has a measured ceiling: harder-than-mailproof means latency,
+  scale, and anchor discipline — or building/finding a patient whose ARCHITECTURE hides
+  tested culprits (a layered repo with orchestrator-level integration tests), which
+  neither mailproof nor aurora is.
