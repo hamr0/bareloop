@@ -1,0 +1,372 @@
+{
+  "prereg": "docs/02-experiments/TESTGEN-PREREG.md",
+  "seed": 42,
+  "k": 40,
+  "file": "src/aurora_soar/orchestrator.py",
+  "mirror": "packages/soar/src/aurora_soar/orchestrator.py",
+  "fileSha256": "b75a7fe7f71199f85e2f8d964c4414e2b94caa986ac6802920941319a3428cd5",
+  "poolSize": 419,
+  "importRejected": 0,
+  "mutants": [
+    {
+      "id": "M01",
+      "decile": 0,
+      "line": 198,
+      "cls": "int-const",
+      "before": "                check_interval=early_config_dict.get(\"check_interval\", 2.0),",
+      "after": "                check_interval=early_config_dict.get(\"check_interval\", 3.0),",
+      "func": "_configure_health_monitoring"
+    },
+    {
+      "id": "M02",
+      "decile": 0,
+      "line": 179,
+      "cls": "bool-lit",
+      "before": "                enabled=True,",
+      "after": "                enabled=False,",
+      "func": "_configure_health_monitoring"
+    },
+    {
+      "id": "M03",
+      "decile": 0,
+      "line": 224,
+      "cls": "return-none",
+      "before": "        return self.agent_registry.list_all()",
+      "after": "        return None",
+      "func": "_list_agents"
+    },
+    {
+      "id": "M04",
+      "decile": 0,
+      "line": 199,
+      "cls": "int-const",
+      "before": "                stall_threshold=early_config_dict.get(\"stall_threshold\", 15.0),",
+      "after": "                stall_threshold=early_config_dict.get(\"stall_threshold\", 16.0),",
+      "func": "_configure_health_monitoring"
+    },
+    {
+      "id": "M05",
+      "decile": 1,
+      "line": 285,
+      "cls": "bool-lit",
+      "before": "        stop_after_verify: bool = False,",
+      "after": "        stop_after_verify: bool = True,",
+      "func": "execute"
+    },
+    {
+      "id": "M06",
+      "decile": 1,
+      "line": 400,
+      "cls": "bool-lit",
+      "before": "                        {\"query\": query, \"cached\": True},",
+      "after": "                        {\"query\": query, \"cached\": False},",
+      "func": "execute"
+    },
+    {
+      "id": "M07",
+      "decile": 1,
+      "line": 327,
+      "cls": "int-const",
+      "before": "        self._token_usage = {\"input\": 0, \"output\": 0}",
+      "after": "        self._token_usage = {\"input\": 1, \"output\": 0}",
+      "func": "execute"
+    },
+    {
+      "id": "M08",
+      "decile": 1,
+      "line": 431,
+      "cls": "is-none",
+      "before": "            if phase3_result.get(\"_error\") is not None:",
+      "after": "            if phase3_result.get(\"_error\") is None:",
+      "func": "execute"
+    },
+    {
+      "id": "M09",
+      "decile": 2,
+      "line": 715,
+      "cls": "return-none",
+      "before": "        return self.agent_registry.list_all()",
+      "after": "        return None",
+      "func": "_get_available_agents"
+    },
+    {
+      "id": "M10",
+      "decile": 2,
+      "line": 627,
+      "cls": "int-const",
+      "before": "                    \"auth_failure_count\": 0,",
+      "after": "                    \"auth_failure_count\": 1,",
+      "func": "execute"
+    },
+    {
+      "id": "M11",
+      "decile": 2,
+      "line": 556,
+      "cls": "int-const",
+      "before": "                    \"_timing_ms\": 0,",
+      "after": "                    \"_timing_ms\": 1,",
+      "func": "execute"
+    },
+    {
+      "id": "M12",
+      "decile": 2,
+      "line": 718,
+      "cls": "int-const",
+      "before": "        \"\"\"Create progress callback for streaming agent execution updates (Task 5.5).",
+      "after": "        \"\"\"Create progress callback for streaming agent execution updates (Task 6.5).",
+      "func": "_get_progress_callback"
+    },
+    {
+      "id": "M13",
+      "decile": 3,
+      "line": 898,
+      "cls": "int-const",
+      "before": "                \"_timing_ms\": (time.time() - start_time) * 1000,",
+      "after": "                \"_timing_ms\": (time.time() - start_time) * 1001,",
+      "func": "_phase3_decompose"
+    },
+    {
+      "id": "M14",
+      "decile": 3,
+      "line": 804,
+      "cls": "arith",
+      "before": "            chunks_count = len(result.get(\"code_chunks\", [])) + len(",
+      "after": "            chunks_count = len(result.get(\"code_chunks\", [])) - len(",
+      "func": "_phase2_retrieve"
+    },
+    {
+      "id": "M15",
+      "decile": 3,
+      "line": 762,
+      "cls": "int-const",
+      "before": "        \"\"\"Inject explicit context files into phase 2 results.",
+      "after": "        \"\"\"Inject explicit context files into phase 3 results.",
+      "func": "_inject_context_files"
+    },
+    {
+      "id": "M16",
+      "decile": 3,
+      "line": 851,
+      "cls": "int-const",
+      "before": "            self._invoke_callback(\"decompose\", \"after\", {\"subgoal_count\": 0, \"error\": reason})",
+      "after": "            self._invoke_callback(\"decompose\", \"after\", {\"subgoal_count\": 1, \"error\": reason})",
+      "func": "_phase3_decompose"
+    },
+    {
+      "id": "M17",
+      "decile": 4,
+      "line": 1113,
+      "cls": "int-const",
+      "before": "                timing={\"record_ms\": (time.time() - start_time) * 1000, \"error\": str(e)},",
+      "after": "                timing={\"record_ms\": (time.time() - start_time) * 1001, \"error\": str(e)},",
+      "func": "_phase7_record"
+    },
+    {
+      "id": "M18",
+      "decile": 4,
+      "line": 1111,
+      "cls": "bool-lit",
+      "before": "                pattern_marked=False,",
+      "after": "                pattern_marked=True,",
+      "func": "_phase7_record"
+    },
+    {
+      "id": "M19",
+      "decile": 4,
+      "line": 993,
+      "cls": "cmp",
+      "before": "                if early_term_count > 0:",
+      "after": "                if early_term_count >= 0:",
+      "func": "_phase5_collect"
+    },
+    {
+      "id": "M20",
+      "decile": 4,
+      "line": 1082,
+      "cls": "int-const",
+      "before": "        \"\"\"Execute Phase 7: Pattern Recording with lightweight record (Task 5.6).",
+      "after": "        \"\"\"Execute Phase 7: Pattern Recording with lightweight record (Task 6.6).",
+      "func": "_phase7_record"
+    },
+    {
+      "id": "M21",
+      "decile": 5,
+      "line": 1448,
+      "cls": "bool-lit",
+      "before": "            \"critical_failure\": True,",
+      "after": "            \"critical_failure\": False,",
+      "func": "_handle_critical_failure"
+    },
+    {
+      "id": "M22",
+      "decile": 5,
+      "line": 1249,
+      "cls": "int-const",
+      "before": "                        pattern = chunk.get(\"pattern\", str(chunk)[:200])",
+      "after": "                        pattern = chunk.get(\"pattern\", str(chunk)[:201])",
+      "func": "_execute_simple_path"
+    },
+    {
+      "id": "M23",
+      "decile": 5,
+      "line": 1370,
+      "cls": "int-const",
+      "before": "            activation_update=0.0,",
+      "after": "            activation_update=1.0,",
+      "func": "_handle_verification_failure"
+    },
+    {
+      "id": "M24",
+      "decile": 5,
+      "line": 1244,
+      "cls": "int-const",
+      "before": "                for chunk in reasoning_chunks[:3]:  # Limit to top 3",
+      "after": "                for chunk in reasoning_chunks[:4]:  # Limit to top 3",
+      "func": "_execute_simple_path"
+    },
+    {
+      "id": "M25",
+      "decile": 6,
+      "line": 1554,
+      "cls": "return-none",
+      "before": "        return cost",
+      "after": "        return None",
+      "func": "_track_llm_cost"
+    },
+    {
+      "id": "M26",
+      "decile": 6,
+      "line": 1499,
+      "cls": "int-const",
+      "before": "            confidence=0.0,",
+      "after": "            confidence=0.1,",
+      "func": "_handle_execution_error"
+    },
+    {
+      "id": "M27",
+      "decile": 6,
+      "line": 1509,
+      "cls": "int-const",
+      "before": "            activation_update=0.0,",
+      "after": "            activation_update=0.1,",
+      "func": "_handle_execution_error"
+    },
+    {
+      "id": "M28",
+      "decile": 6,
+      "line": 1668,
+      "cls": "bool-lit",
+      "before": "        \"\"\"Build result for goals-only mode (stop_after_verify=True).",
+      "after": "        \"\"\"Build result for goals-only mode (stop_after_verify=False).",
+      "func": "_build_verify_only_result"
+    },
+    {
+      "id": "M29",
+      "decile": 7,
+      "line": 1820,
+      "cls": "bool-op",
+      "before": "                    or chunk.get(\"activation\", 0.5)",
+      "after": "                    and chunk.get(\"activation\", 0.5)",
+      "func": "_build_cached_verify_result"
+    },
+    {
+      "id": "M30",
+      "decile": 7,
+      "line": 1723,
+      "cls": "bool-op",
+      "before": "                    or chunk.get(\"activation\", 0.5)",
+      "after": "                    and chunk.get(\"activation\", 0.5)",
+      "func": "_build_verify_only_result"
+    },
+    {
+      "id": "M31",
+      "decile": 7,
+      "line": 1779,
+      "cls": "bool-op",
+      "before": "            agent_id = sg.get(\"assigned_agent\") or sg.get(\"agent\") or \"@code-developer\"",
+      "after": "            agent_id = sg.get(\"assigned_agent\") and sg.get(\"agent\") or \"@code-developer\"",
+      "func": "_build_cached_verify_result"
+    },
+    {
+      "id": "M32",
+      "decile": 7,
+      "line": 1905,
+      "cls": "int-const",
+      "before": "                current_header = line.strip()[3:]",
+      "after": "                current_header = line.strip()[4:]",
+      "func": "_split_large_chunk_by_sections"
+    },
+    {
+      "id": "M33",
+      "decile": 8,
+      "line": 2102,
+      "cls": "bool-op",
+      "before": "                file_path = chunk.get(\"file_path\") or chunk.get(\"metadata\", {}).get(\"file_path\", \"\")",
+      "after": "                file_path = chunk.get(\"file_path\") and chunk.get(\"metadata\", {}).get(\"file_path\", \"\")",
+      "func": "_check_soar_cache_hit"
+    },
+    {
+      "id": "M34",
+      "decile": 8,
+      "line": 2138,
+      "cls": "return-none",
+      "before": "            return parsed",
+      "after": "            return None",
+      "func": "_check_soar_cache_hit"
+    },
+    {
+      "id": "M35",
+      "decile": 8,
+      "line": 2075,
+      "cls": "bool-op",
+      "before": "        \"\"\"Check for cached decomposition from conversation logs or existing goals.json.",
+      "after": "        \"\"\"Check for cached decomposition from conversation logs and existing goals.json.",
+      "func": "_check_soar_cache_hit"
+    },
+    {
+      "id": "M36",
+      "decile": 8,
+      "line": 2100,
+      "cls": "int-const",
+      "before": "                score = getattr(chunk, \"activation\", 0.0)",
+      "after": "                score = getattr(chunk, \"activation\", 0.1)",
+      "func": "_check_soar_cache_hit"
+    },
+    {
+      "id": "M37",
+      "decile": 9,
+      "line": 2223,
+      "cls": "bool-op",
+      "before": "                            \"description\": sg.get(\"description\") or sg.get(\"title\") or \"\",",
+      "after": "                            \"description\": sg.get(\"description\") and sg.get(\"title\") or \"\",",
+      "func": "_check_goals_json_cache"
+    },
+    {
+      "id": "M38",
+      "decile": 9,
+      "line": 2224,
+      "cls": "bool-op",
+      "before": "                            \"depends_on\": sg.get(\"dependencies\") or [],",
+      "after": "                            \"depends_on\": sg.get(\"dependencies\") and [],",
+      "func": "_check_goals_json_cache"
+    },
+    {
+      "id": "M39",
+      "decile": 9,
+      "line": 2353,
+      "cls": "bool-op",
+      "before": "            or \"out of\" in msg",
+      "after": "            and \"out of\" in msg",
+      "func": "_classify_api_error"
+    },
+    {
+      "id": "M40",
+      "decile": 9,
+      "line": 2355,
+      "cls": "bool-op",
+      "before": "            or \"quota\" in msg",
+      "after": "            and \"quota\" in msg",
+      "func": "_classify_api_error"
+    }
+  ]
+}
