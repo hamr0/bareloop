@@ -209,6 +209,31 @@ per-run one-shot budget to $1.25 and the calibration stop to $8 (5 runs + extens
 headroom), same spec otherwise; a new spec version = a new hash hamr signs. Basis: the read
 phase alone consumed $0.40; a 17-test suite is thousands of output tokens on top.
 
+## Amendment 2026-07-16c — calibration attempt 2: STOP (the binding constraint is ROUNDS, not money)
+
+Run 2026-07-16 (runid mrnkxb5a), n=6, $4.61 of the hamr-approved $8. **All six runs ended
+`attempt-bounded` at exactly 24 rounds** (the F20 bound, `TURNS_PER_ATTEMPT=24`,
+`interpret.js:329`) having spent only $0.68–0.87 of their $1.25 — **zero writes, zero
+edits, zero gate denies; 39–71 reads per run.** The budget raise worked and thereby
+decomposed the constraint: money stopped binding and exposed the round bound behind it.
+Mechanism: the worker front-loads full-module understanding and the round bound arrives
+before the first write. Base rate still unreadable; frozen guard fired again (0 of 6
+graded → STOP). These rows enter no later evidence.
+
+Two levers, split by territory:
+- **Strategy (workflow side, staged in spec v3)**: the description now names the finite
+  round bound and mandates incremental writing (first test files on disk by ~round 8,
+  read only what the next test needs). Nothing previously told the worker rounds were
+  finite — it budgeted tokens, not turns (F19: capability without strategy is inert).
+- **The bound itself (arbiter side, PARKED)**: raising `TURNS_PER_ATTEMPT` is a
+  budget-class src change affecting every job — only on hamr's explicit word, and not
+  recommended until the strategy lever is measured.
+
+Side-reading worth keeping: a bounded attempt-1 that writes nothing still produces a
+faithful form-red gap ("collected unit=0 integration=0") — in the battery, attempt 2
+acting on that gap is itself a conversion observation. The loop can fire on form/clean
+reds, not only on kill-rate reds.
+
 ## 9. Sequencing
 
 Calibration fires on hamr's word (harness prints plan + hash, spends nothing without
