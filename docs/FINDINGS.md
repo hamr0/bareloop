@@ -1474,3 +1474,61 @@ annotations; `aurora_cli.planning` and `aurora_planning` carry duplicated parser
   scale, and anchor discipline — or building/finding a patient whose ARCHITECTURE hides
   tested culprits (a layered repo with orchestrator-level integration tests), which
   neither mailproof nor aurora is.
+
+---
+
+## F35 — the recency boost never existed: F33's mechanism story falsified by a token-free probe; the P5 delivery was a relevance lottery, and a fresh index is a ranking no-op
+
+**Trigger.** hamr's job-#3 challenge ("the bugs you plant are discoverable because
+litectx finds them — what needs testing?") was answered in-session with F33's mechanism
+story: reset→plant makes the culprit the most-recently-changed chunk and "litectx's
+recency boost" ranks it into the hook's hits, so job #3 should wipe the index per run to
+kill the assist. Before freezing that rule, the mechanism was audited against litectx
+source — the standing "audit a surprising mechanism before trusting the story" rule,
+applied one finding too late (F33 asserted the mechanism without reading the ranking
+code).
+
+**The audit: litectx has no recency signal anywhere in the recall path.** `store.search`
+is BM25 + 1-hop import-spreading (additive, pool-bounded); gitsig rows are documented
+and implemented as "grounding, never scored"; chunk localization (`attachChunks`) is
+pure term overlap; `recentMemory`/`recentActivity` are separate verbs precisely so
+recency never mixes into a relevance ranking. Nothing in the ranking reads `indexed_at`,
+mtime, or git activity.
+
+**The probe (token-free, mailproof patient, P5, same job-query recall the hook runs):**
+
+| condition | top-8 code hits |
+|---|---|
+| C1 clean repo, incremental index | culprit chunk (`ingest.js handleInitiatorCommand`) at rank 7 |
+| C2 P5 planted, incremental index | IDENTICAL set and order (culprit BM25 0.7780→0.7782) |
+| C3 P5 planted, fresh index | IDENTICAL set and order |
+
+Three consequences:
+- **F33's mechanism is corrected, not its observation.** The hook really did hand P5's
+  worker the culprit body pre-round-1 (recall_log fact, stands). But the delivery was
+  the generic job query's plain BM25/spread relevance — the culprit chunk is in the
+  top-8 ON THE CLEAN REPO. The plant contributed nothing; reset→plant manufactures no
+  assist; which plants get "aim assist" is a fixed property of (query, corpus), a
+  lottery drawn once per patient, not per plant.
+- **"Fresh index per run" is a ranking no-op** (C2==C3, measured). Job #3 keeps the
+  condition with an honest rationale: it wipes the written-memory store (row
+  independence by construction instead of by F33's key-collision accident) and starts
+  each run's recall_log clean. It kills no assist, because there is none.
+- **Aurora pre-read, recorded before any battery number:** the aurora job query returns
+  ZERO culprit chunks in the top-20 on the clean patient (top-8 = generic CLI noise).
+  By the invariance above this predicts every run: job #3's worker gets no retrieval
+  gift; the find must come from the gap's failing-test names. The battery's difficulty
+  read is honest at the retrieval layer — measured, not assumed.
+
+**Lessons minted.**
+- A mechanism claim about a dependency is unverified until the dependency's code is
+  read — F33 shipped a ranking story litectx's source contradicts in three separate
+  places, and the story survived into a freeze proposal and an answer to hamr before
+  anything checked it.
+- The two-should-differ-conditions rule cuts both ways: it caught the embeddings no-op
+  (index 7ms tell) when conditions that should differ matched, and here it caught a
+  correction the same way — conditions the STORY said should differ (planted vs clean,
+  fresh vs incremental) matched exactly, so the story was wrong.
+- An intervention should be probed before it is frozen, not after: the fresh-index rule
+  cost one token-free probe to test and would have cost a battery pass to misread (any
+  difficulty change would have been attributed to the index condition).

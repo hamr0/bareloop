@@ -1,7 +1,9 @@
-# Aurora battery (job #3) — pre-registration (DRAFT 2026-07-16, sites + evidence; decision rules FROZEN only by the operator)
+# Aurora battery (job #3) — pre-registration (FROZEN 2026-07-16)
 
-**Status: DRAFT** — enumeration and per-plant verification by agent; the decision rules
-section at the bottom stays EMPTY until hamr freezes it. Same anti-fit-to-pass discipline
+**Status: FROZEN** — enumeration and per-plant verification by agent; decision rules
+approved by hamr in-chat 2026-07-16 ("cont from here and cont with the next test,
+approved", given against the verbatim freeze proposal) and transcribed below before any
+battery number exists. Same anti-fit-to-pass discipline
 as `BATTERY-PREREG.md`: every site and its evidence is recorded before any rule exists, so
 no plant is ever selected to make a rule pass. Direction set by hamr in-session
 ("harder patient — copy aurora, inspect soar for bugs"; battery composition
@@ -156,8 +158,82 @@ no plant is ever selected to make a rule pass. Direction set by hamr in-session
 
 ---
 
-## Decision rules — EMPTY until the operator freezes them
+## Pre-freeze instrument audit (2026-07-16, token-free — run BEFORE the rules below)
 
-(Composition, order, caps, attempts, model, tier rules, reading rules — hamr's
-signature. The agent does not propose values here; precedent lives in
-`BATTERY-PREREG.md`.)
+The freeze proposal's retrieval condition rested on F33's mechanism story ("litectx's
+recency boost ranks the freshly-planted chunk into the hook's hits"). Audited against
+litectx source before freezing: **the recency boost does not exist.** Recall ranking is
+BM25 + 1-hop import-spreading only; gitsig is "grounding, never scored"; chunk
+localization is term overlap. Measured on the mailproof patient (probe, three
+conditions, same job-query recall):
+
+| condition | top-8 code hits |
+|---|---|
+| clean repo, incremental index | identical set, culprit chunk at rank 7 |
+| P5 planted, incremental index | identical (culprit score 0.7780→0.7782, rank unchanged) |
+| P5 planted, FRESH index | identical |
+
+So: the plant never moved the ranking; P5's pre-round-1 culprit delivery (F33) was the
+generic job query's plain BM25/spread relevance — a per-plant lottery that exists on the
+CLEAN repo too, not a harness-manufactured recency assist. A fresh index is a ranking
+NO-OP. Full correction recorded as F35.
+
+**Aurora pre-read (recorded before any run, prediction not post-hoc):** fresh index
+(3.2s), job-query recall on the clean patient — **zero culprit chunks in the top-20**
+(the top-8 the hook would hand the worker is generic CLI noise: init_helpers, errors,
+init, memory display). Per the invariance above, this one clean-repo read predicts every
+run: on this patient the hook recall provides NO aim assist for any plant, fresh index
+or not. The find must come from the gap's failing-test names.
+
+## Decision rules — FROZEN by hamr 2026-07-16
+
+- **Composition & order:** A1 → A2 → A3 → A4, all four; A3+A4 read as ONE
+  within-file replication cell (one difficulty sample, n=2).
+- **Per plant:** $3.00 budget (`budgetUsd` — advertised == enforced), 3 attempts
+  (`capRuns` default), worker model `claude-sonnet-5`, tool menu
+  `read/grep/write/edit/recall/get` (the pass-2 menu; `run` stays locked).
+- **Battery hard stop:** $10 cumulative (frozen; the stop is a result).
+- **Fresh litectx index per run:** the runner deletes the patient's `.litectx` before
+  each run; `runJob`'s own `lc.index()` rebuilds (3.2s measured). Rationale as
+  corrected by the audit above: NOT an aim-assist kill (there is none to kill) — it
+  wipes the written-memory store so no `remember`→`recall` channel carries answers
+  across runs (row independence; F33's key-collision made this ~true by accident, this
+  makes it true by construction) and each run's `recall_log` starts clean for forensics.
+- **Close (arbiter-owned, quote-inexpressibility carrier):** job-v1 `close.cmd` splits
+  on whitespace with no shell, so the `-m` marker expression cannot ride inline. The
+  spec's `cmd` is the absolute path of an operator-owned wrapper script OUTSIDE the
+  patient tree (`../aurora-soar-bareloop/close.sh`, alongside the spines) carrying the
+  frozen invocation verbatim:
+  `.venv/bin/python -m pytest packages -p no:cacheprovider --no-cov -q -m "not slow and
+  not ml and not real_api"`. The worker's readScope is the workdir — it can never read
+  or edit the wrapper.
+- **Judged floor:** pattern `(\d+) passed[^\n]* in [0-9.]+s`, min **2600**. The
+  prereg's candidate `(\d+) passed` is first-match and could read a stray "N passed"
+  inside a failing test's captured output (aurora's `testing` package runs pytest in
+  subprocesses); requiring the same-line ` in <seconds>s` tail pins it to pytest's final
+  summary line on both bands ("2691 passed, 3 skipped in 390s" green; "1 failed, 2690
+  passed, 3 skipped in 274s" red). Residual risk (a failing test whose captured output
+  embeds a full nested pytest summary line) routes as `crashed` → F32 worker-crash, a
+  non-terminal — noted, accepted.
+- **gapKeep:** `^FAILED ` (pytest names failing tests on FAILED lines; the close names
+  tests, never the culprit file).
+- **closeTimeoutMs:** 900,000 (15 min) — shell territory; the green close runs ~6.5
+  min, a red ~4.5 min; the 120s default would kill every close.
+- **writeScope:** all 11 `packages/<pkg>/src/**` prefixes, enumerated (cli,
+  context-code, context-doc, core, implement, lsp, planning, reasoning, soar, spawner,
+  testing) — tests are unwritable.
+- **Stop rules (carried from BATTERY-PREREG):** per-plant sanity close must reproduce
+  the prereg's recorded failing set exactly — drift = STOP; autopsy-before-label on any
+  cap-red; a validation rerun is never a battery row; frozen rules are never loosened
+  post-hoc.
+- **Tier rules (carried):** attempt-1 green = easy; attempt-2/3 green = loop tier (THE
+  thesis); cap-red = ratchet-grade candidate; all single-pass labels provisional at n=1.
+- **Pass = green only:** worker fixes source through gated verbs and the FULL close
+  exits 0 above the judged floor. `already-green` is never `green`.
+- **Pre-registered reads (before any number):** (1) the F32 delivery/conversion split
+  on any multi-attempt row — did the gap reach the worker, and did the worker act on
+  it; (2) the close-exploitation audit on every green (judged floor, write locations,
+  no test edits), where finding nothing is itself checked; (3) if all four plants green
+  attempt-1 UNDER the measured no-assist condition, the conclusion is that the loop
+  tier does not exist at planted-bug difficulty on this patient class — a result, not a
+  failure of the battery.
