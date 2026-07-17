@@ -1,0 +1,26 @@
+{
+  "schema": "job-v1",
+  "job": "aurora-testgen-probe",
+  "description": "An existing pytest test suite for the SOAR orchestrator at packages/soar/src/aurora_soar/orchestrator.py (2,455 lines) already lives at tests/testgen/ — conftest.py with working injected fakes, tests/testgen/unit/ (29 tests), tests/testgen/integration/ (10 tests), all passing. Repository root: /home/hamr/PycharmProjects/bareloop-patients/aurora-soar. An external close you cannot run has ALREADY graded this suite: every test passes against the current source and the shape floor is met, but the suite detects only 15% of hidden planted faults — the passing bar is 45%. Your job is to STRENGTHEN the existing suite so it detects more faults. Read the current tests first, then sharpen weak assertions and add behavior-asserting tests that target the functions where planted faults currently survive. The grader's survivor scoreboard (function name: undetected planted faults): execute: 4, _check_soar_cache_hit: 4, _configure_health_monitoring: 3, _phase7_record: 3, _phase3_decompose: 2, _execute_simple_path: 2, _handle_execution_error: 2, _build_verify_only_result: 2, _build_cached_verify_result: 2, _check_goals_json_cache: 2, _get_progress_callback: 1, _phase2_retrieve: 1, _inject_context_files: 1, _phase5_collect: 1, _handle_critical_failure: 1, _handle_verification_failure: 1, _split_large_chunk_by_sections: 1, _classify_api_error: 1. Planted faults are small behavioral changes inside those functions (flipped comparisons, off-by-one constants, swapped booleans, dropped return values) — a test detects one by asserting the SPECIFIC current behavior: exact return values, state transitions, error routing, call delegation through the class's methods. The attempt has a HARD limit of 40 tool rounds. The class takes injected dependencies (store, config, reasoning_llm, solving_llm, agent_registry) — the existing conftest.py already provides working fakes; drive everything offline, no network, no real models; pytest and pytest-asyncio are installed. Testing standards: test behavior, not implementation; smoke asserts (not-None, no-exception) are worthless here; every test is self-contained (tmp_path, monkeypatch, fakes) and deterministic; parametrize only where it multiplies coverage of real behavior. Only tests/testgen/** is writable — never modify source files; tests must never read source files off the filesystem, hash them, touch os.environ, or spawn subprocesses (the close rejects the suite if they do). All existing tests must KEEP passing against the current source. Stop when the suite is strengthened.",
+  "provider": "anthropic-api",
+  "conditions": { "closeVerbosity": "scoreboard" },
+  "cadence": { "unit": "day", "every": 1 },
+  "budgetUsd": 2,
+  "writeScope": ["tests/testgen/**"],
+  "steps": [
+    {
+      "id": "testgen-probe",
+      "mode": "tools",
+      "tools": ["read", "grep", "write", "edit", "recall", "get"],
+      "close": {
+        "type": "predicate",
+        "cmd": "/home/hamr/PycharmProjects/bareloop-patients/aurora-soar-bareloop/testgen-close.sh",
+        "expect": 0,
+        "judged": { "pattern": "TESTGEN judged=(\\d+)", "min": 1 },
+        "gapKeep": "^TESTGEN "
+      },
+      "class": "hard"
+    }
+  ],
+  "escalation": { "mode": "decision-ready" }
+}

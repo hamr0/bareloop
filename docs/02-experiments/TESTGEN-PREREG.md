@@ -515,3 +515,33 @@ baseline) · P-ACT-UP (acted; graded > seed baseline).
 truncations excluded from denominators; secrets scrub on the spine; judged stamp;
 probe rows enter no battery evidence and no pass row ever folds in a validation run.
 Budget exhausted before 4 valid rows → report the rows in hand, no top-up without hamr.
+
+## Amendment 2026-07-17b — seed measured in-band, spec v6-probe signed, $0 controls passed
+
+Recorded after the seed was built and graded at $0, before any API call.
+
+- **Seed suite** (operator-authored under 17a's frozen band): 39 tests (29 unit / 10
+  integration), frozen at `docs/02-experiments/testgen-seed-suite/` with
+  `MANIFEST.sha256` (conftest `a1d4c78f…`, unit `a5d06d73…`, integration `619dbf3a…`).
+- **Measured on the frozen close, twice**: clean-green, form unit=29/integ=10,
+  kill-rate **15% (killed 6/40)**, 34 survivors across 18 functions — regrade
+  identical on killed count, rate, and survivorsByFunc (determinism holds). Every
+  band criterion passes (≥2.5% ✓, ≤35% ✓, ≥5 survivors across ≥3 functions ✓). No
+  tuning in either direction: the honest first grade landed in-band. Close
+  wall-clock ~35s.
+- **The seed's survivor scoreboard** (embedded verbatim in the spec description):
+  execute: 4, _check_soar_cache_hit: 4, _configure_health_monitoring: 3,
+  _phase7_record: 3, _phase3_decompose: 2, _execute_simple_path: 2,
+  _handle_execution_error: 2, _build_verify_only_result: 2,
+  _build_cached_verify_result: 2, _check_goals_json_cache: 2,
+  _get_progress_callback: 1, _phase2_retrieve: 1, _inject_context_files: 1,
+  _phase5_collect: 1, _handle_critical_failure: 1, _handle_verification_failure: 1,
+  _split_large_chunk_by_sections: 1, _classify_api_error: 1.
+- **Spec v6-probe**: `jobs/aurora-testgen-probe.json`, hash
+  `197ae26e1e425ffe4257681ae50eeac129aff63aa416f148fa38a56ea135122a`, budgetUsd $2,
+  capRuns=1, n=4 valid rows, $10 hard stop (hamr's "go for the probe", 2026-07-17).
+- **Runner**: `scripts/run-probe-testgen.mjs` — seed copy + manifest verify per row;
+  precheck-drift guard (each row's precheck must regrade the seed at exactly 15%);
+  frozen row classes; gap-utilization grep of changed files for survivor function
+  names; casualty and instrument-stop rows re-run inside the $10 stop, never counted
+  valid.
