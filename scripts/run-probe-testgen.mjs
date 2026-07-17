@@ -27,9 +27,7 @@ const { AnthropicProvider } = require('bare-agent/providers');
 const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/aurora-soar';
 const COMMIT = 'd661e507c5cd0981368d90ed3e3abf6e2bb9ed18';
 const MODEL = 'claude-sonnet-5';
-const PROBE_CAP_USD = 10; // hamr-approved 2026-07-17 ("go for the probe", amendment 2026-07-17a)
 const CLOSE_TIMEOUT_MS = 1_800_000;
-const N_VALID_ROWS = 4;
 const MAX_LAUNCHES = 12; // casualty/instrument re-run backstop, still under the $ cap
 const CAP_RUNS = 1; // ONE attempt — the probe has no gap channel
 const FROZEN_SHA_PREFIX = 'b75a7fe7f71199f8';
@@ -51,6 +49,10 @@ const arg = (/** @type {string} */ name) => {
   return i === -1 ? null : (process.argv[i + 1] ?? '');
 };
 const has = (/** @type {string} */ name) => process.argv.includes(`--${name}`);
+
+// 17a defaults; 17d extension overrides (--valid 1 --cap 6) — mechanical, no semantic change
+const N_VALID_ROWS = Math.max(1, Number(arg('valid') ?? 4));
+const PROBE_CAP_USD = Math.max(0, Number(arg('cap') ?? 10)); // hamr-approved: $10 (17a), $6 extension (17d)
 
 const spec = JSON.parse(readFileSync(new URL('../jobs/aurora-testgen-probe.json', import.meta.url), 'utf8'));
 const specHash = jobSpecHash(spec);

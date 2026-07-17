@@ -585,3 +585,21 @@ Autopsies (readings on rows in hand, not the frozen verdict):
   functions. The third stalled exactly like B4. Nothing in hand supports the
   memory-class reading; what is in hand points at skill/verification structure, but
   the frozen rule holds: INCOMPLETE, decision to hamr.
+
+## Amendment 2026-07-17d — extension authorized: one more VALID row (frozen before the run)
+
+hamr's go, verbatim: "4th valid, test one more" (2026-07-18). Frozen extension rules:
+
+- Same spec v6-probe, same hash `197ae26e…` — no spec change; hamr did not sign a
+  budget change, so the observed ~50% instrument-stop rate is accepted instead.
+- The runner gains two mechanical args (`--valid N`, `--cap USD`), no semantic change.
+  Extension invocation: `--valid 1 --cap 6` — stop at the FIRST valid row; extension
+  hard stop $6 (3 launches worst case at the observed rate).
+- The extension's valid row joins P1/P2/P4; 17a's frozen reading rules then apply to
+  the four. Stated before the run: with 2×P-ACT-BROKE + 1×P-INERT in hand, neither
+  the ≥3 ACT-UP nor the ≥3 INERT verdict is reachable — every completion lands in
+  17a's third bucket. The extension exists to (a) complete the frozen n so a verdict
+  is MINTED rather than INCOMPLETE, and (b) answer the open existence question (a
+  P-ACT-UP would prove conversion is possible under this framing).
+- Standing rules unchanged: casualties/instrument-stops re-run within the cap, never
+  valid; precheck-drift guard; provider health probe before firing.
