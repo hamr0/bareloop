@@ -445,3 +445,73 @@ one battery with the same worker, same close, same run.
 Texture for the next design round: $5 funds ~2.3 forty-round attempts (B2/B5 died on
 money mid-loop); audit-reds are a live wall the D1 defenses produce and workers DO clear
 them next attempt; the form floor converts on attempt 2 in every row that reached it.
+
+## Amendment 2026-07-17a — the semantic-stall probe (frozen BEFORE any number)
+
+hamr's go, verbatim: "go for the probe" (2026-07-17), approving the shape offered after
+F38: hand a fresh worker an existing below-bar suite plus the survivor scoreboard, one
+attempt, ~$2/run, ~$10 total. Purpose: split B4's semantic stall (attempt 3 held the
+richest gap and wrote NOTHING) into its two candidate mechanisms —
+
+- **memory-class**: the worker didn't know what the prior attempt did and what is still
+  owed (a suite exists → "job done"). Fix would be Layer R's notebook channel.
+- **skill-class**: the worker cannot act on "strengthen assertions on these functions"
+  regardless of framing. The notebook won't help; the fix is Layer 2 structure and/or a
+  different gap genre.
+
+The probe is a **Wizard-of-Oz Layer R**: the spec description hand-carries exactly what
+the notebook would carry (a suite exists at tests/testgen/, it grades X% against a 45%
+bar, survivors by function are these, your job is to STRENGTHEN it).
+
+**Named constraint, not papered over: B4's actual 17.5% suite is unrecoverable.** The
+spine records costs/paths, the gate audit records byte counts (secrets-never-in-the-
+ledger design), and the battery runner's patient reset wiped the tree. Substitute: an
+**operator-authored seed suite**, mechanically constrained to B4's situation, with the
+crafted-seed caveat carried by name in every readout. Directionally: a stall on a clean
+operator-authored seed is STRONGER stall evidence; an improvement carries the caveat
+(the seed may be easier to extend than a worker's own).
+
+**Seed acceptance band (frozen before the seed exists; measured values recorded in a
+dated addendum, never tuned toward a target):** form-pass (≥10 unit, ≥7 integration);
+D1-audit clean; clean-green; kill-rate ≥2.5% and ≤35% (meaningfully below the 45 bar);
+≥5 surviving mutants spread across ≥3 functions; two consecutive $0 regrades identical
+(killed count + survivorsByFunc byte-identical). The seed ships in bareloop (files +
+sha256 manifest), committed BEFORE any API call; the runner copies it into the patient
+and verifies hashes. No-fit-to-pass: whatever kill-rate the honest seed measures inside
+the band is the baseline; if it lands outside the band it is reworked for honesty
+(fixing vacuous or failing tests), never nudged toward a chosen number.
+
+**Design:** n=4 probe rows, capRuns=1 (ONE attempt, no gap channel), $2/run, hard stop
+$10 including casualty re-runs. Spec v6-probe = v5 except `budgetUsd: 2` and the
+description rewritten to carry the seed disclosure + measured baseline + verbatim
+survivor scoreboard + the explicit strengthen instruction (40-round disclosure and
+Testing-Standards digest retained; tools/writeScope/model/threshold unchanged; worker
+claude-sonnet-5). Full patient reset + seed re-copy between rows.
+
+**Manipulated levers vs B4-attempt-3, both named (inseparable at this n):** (1) framing
+content — state + what-is-owed in the description, vs "write a suite" + gap; (2) seed
+provenance — operator-authored vs the worker's own prior work.
+
+**Frozen row classes:** P-INERT (zero allowed write/edit actions in the gate audit) ·
+P-ACT-BROKE (acted; close reds at audit/form/clean) · P-ACT-FLAT (acted; graded ≤ seed
+baseline) · P-ACT-UP (acted; graded > seed baseline).
+
+**Frozen reading rules (descriptive counts; n=4 supports no significance claim):**
+- ≥3 of 4 valid rows P-ACT-UP → the stall reads memory-class; Layer R's channel is a
+  live lever (caveat carried).
+- ≥3 of 4 P-INERT → explicit framing does not move the worker; the stall is NOT
+  memory-class; the notebook alone is insufficient (Layer 2 / gap-genre evidence).
+- Anything else → delivery without conversion: the worker engages but cannot lift
+  kill-rate — skill-class evidence at the assertion level; notebook alone won't move it.
+- **A green (≥45%) is NOT drift here** — the battery's attempt-1-green STOP does not
+  apply: the probe manufactures no red (the seed is below bar by measurement, not by
+  construction). A green is the strongest P-ACT-UP.
+- Secondary read (gap utilization): do new/changed tests reference the named survivor
+  functions (mechanical grep of written files).
+- Precheck doubles as a drift guard: each row's precheck grade must equal the frozen
+  seed baseline, else instrument-stop for that row (never worker feedback).
+
+**Standing rules unchanged:** provider-red rows are casualties re-run within the stop;
+truncations excluded from denominators; secrets scrub on the spine; judged stamp;
+probe rows enter no battery evidence and no pass row ever folds in a validation run.
+Budget exhausted before 4 valid rows → report the rows in hand, no top-up without hamr.
