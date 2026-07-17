@@ -1693,3 +1693,49 @@ Instrument note: the battery survived a provider Overloaded evening only via ope
 orchestration (11 casualty rows across five invocations, probe-gated re-fires, cross-
 invocation spend ledger). Load-shedding is per-model — a haiku 200 proves nothing about
 sonnet capacity; probe with the battery's own model.
+
+## F39 — the semantic-stall probe: hand-delivered state does not buy conversion (Wizard-of-Oz Layer R)
+
+The probe (amendments 2026-07-17a–e, every rule frozen before its number) split F38's
+semantic stall into its two candidate mechanisms: **memory-class** (the worker didn't
+know what the prior attempt did and what was owed — Layer R's notebook would fix it)
+vs **skill-class** (the worker cannot act on "strengthen assertions on these
+functions" — the notebook won't help). Method: hand-carry the notebook's entire
+content in the spec description — an existing suite at tests/testgen/ (operator-
+authored seed, frozen at 15% kill 6/40, clean-green, deterministic regrade, B4's
+suite being unrecoverable from any artifact), the 45% bar, the per-function survivor
+scoreboard, and the explicit instruction to strengthen — one attempt per row, no gap
+channel. n=4 valid rows, worker claude-sonnet-5, $11.39 total across 7 launches
+(runids `mrpf6h2k`, `mrpia2tz`), 0 casualties, prechecks regraded the seed at exactly
+15% on all seven launches.
+
+**Result: P-ACT-UP 0 · P-ACT-FLAT 0 · P-ACT-BROKE 3 · P-INERT 1 · greens 0. Minted
+verdict (frozen third bucket): skill-class/mixed — engagement without conversion;
+the notebook alone will not move kill-rate on the semantic gap.**
+
+Two mechanisms, both grounded in the audits:
+
+- **Aim is not the problem — verification is.** All three ACT rows targeted 14–18 of
+  the 18 named survivor functions (mechanical grep of their written files): the
+  scoreboard steers essentially perfectly. All three died at the clean wall with
+  F27's fingerprint — tests asserting imagined behavior (`KeyError:
+  'subgoals_total'`, wrong ValueError expectations, `_error` mismatches). The
+  structural cause: the worker has no `run` verb (hard line, correctly), so it
+  authors tests it can never execute, and in a one-attempt row its first contact
+  with reality is the close that ends the row.
+- **The stall reproduced under hand-delivered state.** P4 read the seed suite and
+  orchestrator.py (30 reads) across all 40 rounds and wrote nothing; the untouched
+  suite regraded 15% by construction. Second observed instance of the genre (B4
+  attempt 3 was the first) — and this one cannot be memory-class, because everything
+  the notebook would say was already in the description.
+
+What this buys the build map: Layer R stays justified by F21/F38 (mechanical
+continuity across attempts) but is now measured NOT to be the fix for the semantic
+stall. The fix is Layer 2-shaped: bounded steps whose exits verify test correctness
+in-run — a clean-run form check the worker can hit before the grading close —
+turning "improve the suite" from an open semantic ask into walls the worker
+demonstrably clears (F38's convertible genre). Secondary instrument lesson, 16g
+reproduced: 3 of 7 launches died at rounds 33–39 on the drafter-tightened $1.90
+money cap before the attempt close could run — $5.82 of unreadable spend. Budget
+sizing must fund the attempt PLUS its close, or the instrument quietly eats the
+experiment.

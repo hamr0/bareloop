@@ -607,3 +607,22 @@ hamr's go, verbatim: "4th valid, test one more" (2026-07-18). Frozen extension r
   need one more to close it cleanly" (2026-07-18) — if this $6 extension exhausts
   with zero valid rows, ONE further identical extension (`--valid 1 --cap 6`, same
   spec/hash) may fire before returning to hamr. It covers nothing else.
+
+## Amendment 2026-07-17e — PROBE COMPLETE: n=4 valid, verdict minted (skill-class/mixed)
+
+Extension runid `mrpia2tz`: the 4th valid row landed on the first launch (E1:
+P-ACT-BROKE — 5 write/edit actions, 40 rounds, clean-red with imagined-behavior
+asserts, one new file targeting all 18 survivor functions, $1.62). The contingent
+second extension was not needed. Probe totals: 7 launches, $11.39 of the $16
+authorized ($10 + $6), 0 casualties, 3 instrument-stops, prechecks at 15% on all
+seven launches, secrets clean throughout.
+
+**Frozen endpoints over the 4 valid rows: P-ACT-UP 0 · P-ACT-FLAT 0 ·
+P-ACT-BROKE 3 · P-INERT 1 · greens 0.** Neither crisp verdict's ≥3 bar is met →
+17a's third bucket is the minted verdict: **skill-class/mixed — the worker engages
+(3 of 4 rows acted, aim excellent) but cannot convert engagement into kill-rate;
+hand-delivered state did not prevent one stall (P4) and did not lift a single row
+above the 15% baseline. The notebook alone will not move kill-rate on the semantic
+gap.** Full mechanism read: FINDINGS F39. Crafted-seed caveat (17a): no improvement
+was observed, so the caveat attaches to nothing; the stall-direction evidence is the
+strong-direction case 17a pre-registered.
