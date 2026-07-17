@@ -545,3 +545,43 @@ Recorded after the seed was built and graded at $0, before any API call.
   frozen row classes; gap-utilization grep of changed files for survivor function
   names; casualty and instrument-stop rows re-run inside the $10 stop, never counted
   valid.
+
+## Amendment 2026-07-17c — probe readout: 3 of 4 valid rows, INCOMPLETE by the frozen rule
+
+Runid `mrpf6h2k`: 6 launches, $9.7638 of $10, 0 casualties, 3 instrument-stops.
+Prechecks graded 15% on all six launches (no drift); secrets clean on every spine;
+every dollar priced. The frozen reading requires 4 valid rows → **INCOMPLETE is the
+recorded verdict**; no reading is minted. Extension is hamr's call (standing rule:
+no top-up without hamr). Rows in hand:
+
+| row | class | acted | rounds | attempt | spent |
+|---|---|---|---|---|---|
+| P1 | P-ACT-BROKE | 10 | 40 | clean-red | $1.66 |
+| P2 | P-ACT-BROKE | 2 | 17 | clean-red | $1.28 |
+| P4 | **P-INERT** | 0 | 40 | verdict 15% (unchanged by construction) | $1.00 |
+| P3/P5/P6 | INSTRUMENT-STOP(no-attempt-close) | 11/5/9 | 35/33/39 | — | $5.82 |
+
+Autopsies (readings on rows in hand, not the frozen verdict):
+
+- **P4 reproduces B4's semantic stall UNDER the Wizard-of-Oz framing.** It read the
+  seed suite (all three files) and orchestrator.py (30 reads) across 40 rounds and
+  wrote nothing; the attempt close regraded the untouched seed at 15%. In this row
+  the state and what-is-owed were hand-delivered in the description — the stall here
+  cannot be a missing-state (memory) problem. n=1, an anecdote by standing rule, but
+  it is the second observed instance of the genre (B4 att-3 being the first).
+- **P1/P2 broke at clean with the F27 fingerprint**: the new tests assert imagined
+  behavior (`KeyError: 'subgoals_total'` — asserting keys that don't exist;
+  `_error is None` vs the real error text). Structural note: the worker has no `run`
+  verb, so it authors tests it can never execute — in a one-attempt probe the
+  clean-red arrives only after the row is over. A plan-v1 micro-wheel with a
+  clean-run exit is the shaped fix (Layer 2 evidence, same lesson as 16e's C4).
+- **P3/P5/P6 are 16g's rounds→money whack-a-mole reproduced on the probe**: the $2
+  budget (drafter-tightened to $1.90) dies mid-attempt at rounds 33–39, before the
+  attempt close can grade. $5.82 of the $10 bought no readable rows. If hamr extends,
+  the choices are: accept the ~50% stop rate, or sign spec v6.1 with budgetUsd $2.50
+  (a new hash) so a 40-round writing attempt plus close fits.
+- Engagement split, descriptive only: 2 of 3 valid rows ACTED (unlike B4's zero) and
+  died on test *correctness*, not aim — both targeted 14–17 of the 18 survivor
+  functions. The third stalled exactly like B4. Nothing in hand supports the
+  memory-class reading; what is in hand points at skill/verification structure, but
+  the frozen rule holds: INCOMPLETE, decision to hamr.
