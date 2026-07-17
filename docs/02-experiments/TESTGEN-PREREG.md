@@ -603,3 +603,7 @@ hamr's go, verbatim: "4th valid, test one more" (2026-07-18). Frozen extension r
   P-ACT-UP would prove conversion is possible under this framing).
 - Standing rules unchanged: casualties/instrument-stops re-run within the cap, never
   valid; precheck-drift guard; provider health probe before firing.
+- Contingent authorization, hamr verbatim: "ok, open to one more if you realize you
+  need one more to close it cleanly" (2026-07-18) — if this $6 extension exhausts
+  with zero valid rows, ONE further identical extension (`--valid 1 --cap 6`, same
+  spec/hash) may fire before returning to hamr. It covers nothing else.
