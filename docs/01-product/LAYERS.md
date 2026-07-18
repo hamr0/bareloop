@@ -181,9 +181,20 @@ Each layer answers one kid-question: **How do I try?** (1) · **What do I rememb
 today?** (R) · **What order do I work in?** (2) · **What do I keep for tomorrow?** (3).
 A notebook is useless if trying doesn't work; a plan is useless if you forget what you
 tried; a recipe box is useless if the plans in it never worked. That is the build order,
-and it is why everything currently waits on one question about the atom: **when mom says
+and it is why everything currently waited on one question about the atom: **when mom says
 what's wrong, does the kid fix THAT THING — or just start over the same way?** (The
 battery. Delivery vs conversion, F32.)
+
+That question now has a measured answer (F38 + F39). When mom names a **thing** ("there
+are no tests", "that piece is banned"), the kid fixes THAT THING — every time it has
+tries left. When mom names a **quality** ("make it sturdier, these walls are weak"), the
+kid either freezes or runs at the right walls with braces that don't fit — because the
+kid is never allowed to push on a wall to test a brace before mom inspects (and mom's
+inspection ends the try). Even pinning the full note to the castle — score, target, every
+weak wall — didn't change that (the F39 probe). So: the notebook (R) keeps the kid from
+repeating itself; but turning "make it sturdier" into small walls the kid can push on
+itself before mom looks — that is Layer 2's job, and it is the one piece of the thesis
+not yet observed working.
 
 ## The shell vs the layers — who has what
 
@@ -259,13 +270,25 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
 
 ## Where we are, and the build order
 
-1. **Fire Layer 1 once, for real** — job #4 (TESTGEN: write a killing test suite for an
-   untested 2,455-line module; the judge is mutation kill-rate). Jobs #2/#3 could not
-   host the firing (discarded / saturated at attempt-1 greens, F34); job #4 manufactures
-   the guaranteed attempt-1 red (23/23 one-shots red across four conditions, F37). The
-   battery = the firing; it reads ONE thing: does kill-rate climb attempt-over-attempt.
-2. **Build Layer R** — the root, so attempts stop repeating themselves.
+1. **Fire Layer 1 once, for real** — ✅ **FIRED 2026-07-16 (F38)**. Job #4 (TESTGEN:
+   write a killing test suite for an untested 2,455-line module; the judge is mutation
+   kill-rate) manufactured the guaranteed attempt-1 red (23/23 one-shots red, F37) after
+   jobs #2/#3 could not host the firing (discarded / saturated at attempt-1 greens, F34).
+   The battery read: **the wheel turns — ladder conversion 3/5 on mechanical gaps**
+   (counts and named walls convert every time attempts remain); **kill-rate conversion
+   0/5** — the semantic gap ("strengthen assertions on these functions") stalled. The
+   follow-up probe (F39) hand-delivered the notebook's content in the description and
+   measured the stall is NOT a memory problem: aim becomes perfect (14–18 of 18 named
+   functions targeted) but every acting row died at the clean wall, authoring tests it
+   cannot execute — and one row stalled anyway. No green at the 45% bar exists yet.
+2. **Build Layer R** — the root, so attempts stop repeating themselves. Role sharpened
+   by F39: continuity across attempts (justified by F21/F38), NOT the fix for the
+   semantic stall — the probe measured that hand-delivered state does not buy conversion.
 3. **Build Layer 2** — the micro-wheel road (plan-v1), with the stage-verdict rule above.
+   Now carries a MEASURED requirement (F39): steps whose exits verify test correctness
+   in-run (e.g. "your new tests pass on untouched source" as a form-checkable exit),
+   converting the semantic ask into F38's convertible mechanical genre. This is the
+   untested piece of the thesis: "notes + self-check" has never been observed succeeding.
 4. **Build Layer 3** — inheritance with ledger attribution (N3, kill-switch: rules must
    transmit across non-identical runs).
 

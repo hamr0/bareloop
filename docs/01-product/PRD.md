@@ -1028,3 +1028,34 @@ Two consequences land in doctrine:
    the per-attempt cutoff), spec v4 with the disclosure sentence saying 40 and
    `budgetUsd` $2.00, calibration stop $12. The advertised bound and the enforced bound
    stay the same numbers on both axes.
+
+## Addendum v1.17 — 2026-07-18 (F38 + F39: the wheel is real, gap GENRE is the boundary, and Layer 2 inherits a measured requirement)
+
+The TESTGEN battery (F38, first conversion ever observed in this program) and the
+semantic-stall probe (F39, a Wizard-of-Oz Layer R) close Layer 1's qualification
+question and mint three doctrine points:
+
+1. **Feedback buys improvement — for feedback that names a wall.** Mechanical gaps
+   (counts, named forbidden patterns, form floors) converted 3/3 in battery rows with
+   attempts left. This is the load-bearing validation of the entire loop premise: the
+   attempt after the gap was better BECAUSE of the gap.
+2. **Semantic gaps do not convert, and it is not a memory problem.** "Strengthen
+   assertions on these functions" produced inaction (B4 att-3; probe P4) or
+   well-aimed tests asserting imagined behavior (probe: 3/3 acting rows died at the
+   clean wall, F27's fingerprint). The probe hand-delivered everything a Layer R
+   notebook would carry — state, score, bar, per-function scoreboard — and no row
+   lifted kill-rate above baseline. The scoreboard fixes AIM completely (14–18 of 18
+   named functions targeted); it does not fix verification. Structural cause: the
+   worker authors tests it can never execute (no `run` verb — the hard line stands),
+   so its first contact with reality is the close that ends the attempt.
+3. **Layer roles, sharpened by measurement.** Layer R = continuity (attempts stop
+   repeating themselves, F21/F38) — justified, but measured NOT to be the semantic
+   fix. Layer 2 = the semantic fix's shape: bounded steps with in-run verifiable
+   exits (e.g. clean-run-passes as a form check) that convert a quality ask into the
+   mechanical genre the wheel demonstrably handles. "Notes + self-check succeeds" is
+   now the single untested claim of the thesis — it becomes testable the day Layer 2
+   exists, and its test is already designed (same job, same close, same frozen bar).
+
+Cost note for future harnesses (16g reproduced on the probe): budgets must fund the
+attempt PLUS its close — 3 of 7 probe launches died at the money cap rounds 33–39,
+before grading, turning $5.82 into unreadable rows.
