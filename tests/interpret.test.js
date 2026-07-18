@@ -295,6 +295,39 @@ test('revision: a candidate arriving as a JSON string is judged on its PARSED fo
   assert.ok(events.some((e) => e.type === 'config-final' && e.config?.loop?.shape === 'plan'), 'the PARSED candidate is installed, never the string');
 });
 
+test('revision: revisor rounds are METERED but never spend the WORKER\'s per-attempt bound (advertised == enforced)', async () => {
+  // The counter resets once, BEFORE the revisor phase, and revisor turns share
+  // the worker's metered handler — so R revisor rounds silently left the worker
+  // 40−R, and a revisor burning the whole bound called loop.stop() on the worker
+  // loop before its FIRST tool call. The worker is TOLD 40 rounds; it must get 40.
+  // Money is the other axis and is unaffected: every revisor round still meters
+  // (F12). Same principle the summarizer-fold carve-out already states.
+  const wd = twd('rev-bound');
+  const cheap = { generate: async () => ({ text: JSON.stringify(config()), toolCalls: [], usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0.0001, model: null }) };
+  const revisor = async ({ policy, onLlmResult }) => {
+    // burn the ENTIRE per-attempt bound inside the revisor
+    for (let i = 0; i < 40; i += 1) await onLlmResult({ costUsd: 0.0001, usage: { inputTokens: 1, outputTokens: 1 } });
+    const loop = new Loop({ provider: cheap, system: 'revise', policy });
+    const r = await loop.run([{ role: 'user', content: 'revise' }]);
+    return { candidate: JSON.parse(r.text), costUsd: r.cost ?? null };
+  };
+  const { events } = await run('rev-bound', config(), {
+    mode: 'tools', capRuns: 3, revisor,
+    // reds forever: two consecutive reds stall the run, and attempt 3 consults
+    // the revisor (the script sticks on its last entry, so every attempt is
+    // write-BAD then stop — two worker rounds, nowhere near the 40 bound)
+    script: [
+      { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'src', 'sum.mjs'), content: BAD_SUM })] },
+      { text: 'wrote it' },
+    ],
+  });
+  assert.ok(events.some((e) => e.type === 'stall-detected'), 'the revisor did fire');
+  assert.ok(!events.some((e) => e.type === 'attempt-bounded'),
+    'the revisor burned 40 rounds — the WORKER must still get its full bound, not zero');
+  // money is still metered on the same axis: the revisor's rounds reach the spine
+  assert.ok(events.filter((e) => e.type === 'worker-round').length > 40, 'revisor rounds are still metered (F12)');
+});
+
 test('revision: an UNPRICED revisor records costUsd null on the spine, never a laundered $0 (F6)', async () => {
   // `?? 0` on the revision events restated an unknown spend as free on the
   // append-only record — the one F6 laundering left in the file. Governance is

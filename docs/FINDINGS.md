@@ -1803,11 +1803,18 @@ clean, all five shipped job specs revalidated green under their real caps):
    conflates "did the close judge" with "did the tests pass", so an honestly-red tree
    printing `2580 passed` is escalated `close-crashed` at precheck and the worker hired
    to fix that red is never invoked. The job spec is the arbiter's rulebook.
-3. **Revisor rounds are charged to the worker's per-attempt bound.** `roundsThisAttempt`
-   resets once, BEFORE the revisor phase, and revisor turns share the worker's metered
-   handler — so R revisor rounds leave the worker 40−R, and at R=40 `loop.stop()` fires
-   before the worker's first tool call. Dormant today (`run.js` threads no revisor; only
-   tests exercise the seam), but it is cap-enforcement, so it is parked not patched.
+3. ~~**Revisor rounds are charged to the worker's per-attempt bound.**~~ **UNPARKED and
+   fixed same session** — parking this was the review's own error. It is not a judgment
+   call between defensible options: PRD (Addendum, TESTGEN 2026-07-16e) states *"the
+   advertised bound and the enforced bound stay the same numbers on both axes"*, and
+   `interpret.js` already carves out exactly this case for the summarizer fold (*"an LLM
+   call but not a worker ROUND — counting it would let a fold shorten the attempt that
+   paid for it"*). The revisor is that same case wearing `kind: 'turn'`. Current state
+   IS the violation; the fix restores the invariant rather than choosing a new one.
+   Fixed with an `inRevisor` phase flag: money still meters on the run's axis (F12),
+   rounds no longer charge the worker. `finally`, not a trailing assignment — a revisor
+   that throws (cap-halt is the expected one) must not leave the bound uncounted for the
+   rest of the run, which would convert the fix into an unbounded attempt.
 4. **`extractArtifact` takes the first in-window fence even when it is a command
    block.** `'Run this:\n```bash\nnpm test\n```\nHere is the file:\n```js\n<module>\n```'`
    extracts `npm test`, writes it to target with `red: null`, and the close reds against
@@ -1827,6 +1834,21 @@ carry no test coverage to catch a mistake. New scripts use the helper.
 **One PLAUSIBLE, latent:** a single `opts.target` threads to every text-mode step, so
 two text-mode predicate steps would clobber each other's artifact. The schema permits
 it; no shipped job comes near it; single-artifact text mode is documented intent.
+
+**Correction, same session.** Challenged on why four items were parked rather than
+fixed, three of the four reasons survived checking and one did not (see item 3). A
+second reason was also wrong on the facts and is corrected here: `jobs/aurora-fix.json`
+was said to be blocked because editing a job spec breaks its approval signature — it is
+not. The battery runners compute `specHash` over the spec at launch and self-sign
+(`run-battery-aurora.mjs:133`), so an edited spec re-signs itself. The REAL blocker is
+narrower and was found by probing the actual instrument: the close is `pytest -q`, and
+**`-q` prints no executed-count line at all** — only `120 failed, 2580 passed in 45.3s`,
+whose executed count is a SUM that one capture group cannot express. So no pattern edit
+can fix it; the operator's close wrapper must change (verified against the patient's own
+venv: dropping `-q` restores `collected 2700 items`, and `-ra` must be added or the
+existing `gapKeep "^FAILED "` loses its lines). That wrapper lives outside this repo and
+outside the worker's readScope by design — operator territory, hamr's call.
+**Parking is a judgment, and a wrong reason for parking is as much a finding as a bug.**
 
 **Lesson.** The two highest-severity defects were both *fake-verdict generators* —
 a green stamped `crashed` (group-1 read) and a red escalated as an instrument crash

@@ -336,6 +336,12 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   let roundsThisAttempt = 0;
   /** @type {number|undefined} the attempt that was cut short by the bound (spine + gap note) */
   let attemptBounded;
+  /** true while the REVISOR holds the metered handler: its rounds are real money on
+   * the run's axis (F12) but they are not the WORKER's rounds, and charging them to
+   * the per-attempt bound silently handed the worker 40−R turns while the prompt
+   * still advertised 40 (advertised == enforced, PRD; a revisor that burned the whole
+   * bound stopped the worker loop before its first tool call) */
+  let inRevisor = false;
   // `tokens` alone cannot answer the question the ledger exists to answer.
   // bare-agent's `inputTokens` is the UNCACHED prompt remainder — re-sent context
   // is billed as a cache READ and never appears in it. So a round that re-pays for
@@ -360,8 +366,9 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
       },
     });
     // The attempt's own bound (F20). A summarizer fold is an LLM call but not a worker
-    // ROUND — counting it would let a fold shorten the attempt that paid for it.
-    if ((arg?.kind ?? 'turn') === 'turn' && mode === 'tools') {
+    // ROUND — counting it would let a fold shorten the attempt that paid for it. The
+    // revisor is the same case wearing `kind: 'turn'`: metered above, never charged here.
+    if ((arg?.kind ?? 'turn') === 'turn' && mode === 'tools' && !inRevisor) {
       roundsThisAttempt += 1;
       if (roundsThisAttempt >= TURNS_PER_ATTEMPT) {
         // Clean stop at the round boundary: since 0.27.0 (BA-3/BA-5) run() returns the
@@ -571,10 +578,16 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
         // budget axis as the worker; a budget halt mid-revision is a cap story,
         // not a revision bug
         // the METERED handler: revisor rounds are real money on the same axis (F12)
+        inRevisor = true;
         rv = await revisor({ config, gaps: [...gaps], policy, onLlmResult: meteredOnLlmResult });
       } catch (e) {
         if (e instanceof HaltError) /** @type {CategorizedError} */ (e).category = 'cap-halt';
         throw e;
+      } finally {
+        // `finally`, not a trailing assignment: a revisor that throws (cap-halt is
+        // the expected one) must not leave the worker's rounds uncounted for the
+        // rest of the run — that would turn this fix into an unbounded attempt.
+        inRevisor = false;
       }
       const rr = acceptRevision(rv.candidate);
       if (rr.red) {

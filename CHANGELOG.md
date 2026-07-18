@@ -26,6 +26,13 @@ feature lands, **patch** = docs, fixes, scaffolding.
   dispatch keyed on four bare literals with no default, so a new or renamed category
   vanished exactly like a deliberate exclusion. Exclusions are now an executable set;
   anything outside {classified} ∪ {excluded} is charged to bareloop as a stale mapping.
+- **Revisor rounds no longer spend the worker's per-attempt bound (F40).**
+  `roundsThisAttempt` resets once, *before* the revisor phase, and revisor turns share
+  the worker's metered handler — so R revisor rounds silently left the worker 40−R while
+  the prompt still advertised 40, and a revisor burning the bound stopped the worker loop
+  before its first tool call. Money still meters on the run's axis (F12); only the round
+  charge moved. Restores "the advertised bound and the enforced bound stay the same
+  numbers on both axes", and matches the carve-out the summarizer fold already had.
 - **Two F6 cost launderings closed (F40).** `run-job1`/`run-job2` printed
   `spent: $0.0000` for provider-red/pricing-red runs (whose `job-end` carries no
   `spentUsd`, and which can end after real priced spend) — now `UNKNOWN`, the
