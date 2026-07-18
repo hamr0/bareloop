@@ -19,7 +19,7 @@ import { LiteCtx, compress } from 'litectx';
 import { validateConfig, diffPaths, globToPrefix, SECRET_PATTERNS } from './validate.js';
 import { ralph } from './ralph.js';
 
-/** @typedef {Error & {category?: string}} CategorizedError the failure map's carrier: ralph relays by `category` */
+/** @typedef {Error & {category?: string, lib?: string}} CategorizedError the failure map's carrier: ralph relays by `category`, and by `lib` when the thrower knows which library owns the failure (the ledger prefers it over prose) */
 
 // consecutive close reds that count as a stall; one revision per run
 export const STALL_REDS = 2;
@@ -476,6 +476,13 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
         : r.error.startsWith('denied:') ? 'gate-red'
         : r.error.startsWith('truncated:') ? 'provider-red'
         : 'interpreter-red';
+      // Attribute at the THROW site, where the owner is known, instead of
+      // leaving the ledger to sniff the prose downstream: this error came out
+      // of bare-agent's loop, whatever words it happens to carry. A litectx
+      // hook throw (runOps) reaches the same escalation with no lib field and
+      // keeps its verb→lib mapping. Review 2026-07-18: prose-sniffing billed a
+      // transport failure to litectx whenever the text said "recall".
+      err.lib = 'bare-agent';
       throw err;
     }
     return r;
@@ -571,9 +578,12 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
       }
       const rr = acceptRevision(rv.candidate);
       if (rr.red) {
-        emit('revision-red', { iteration, ...rr.red, detail: rv.parseError ?? undefined, costUsd: rv.costUsd ?? 0 });
+        // `?? null`, never `?? 0`: an unpriced revisor's spend is UNKNOWN, and
+        // the spine is the permanent record (F6 — the cap is governed honestly
+        // by the metered worker-round path, but $0 on the record is a lie).
+        emit('revision-red', { iteration, ...rr.red, detail: rv.parseError ?? undefined, costUsd: rv.costUsd ?? null });
       } else {
-        emit('revision-accepted', { iteration, changedPaths: diffPaths(config, rr.config), costUsd: rv.costUsd ?? 0 });
+        emit('revision-accepted', { iteration, changedPaths: diffPaths(config, rr.config), costUsd: rv.costUsd ?? null });
         config = rr.config;
       }
     }

@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { validateConfig, diffPaths, globToPrefix, scopeContained } from '../src/validate.js';
+import { validateConfig, diffPaths, globToPrefix, scopeContained, scanSecrets } from '../src/validate.js';
 import { validConfig } from './helpers.js';
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
@@ -324,4 +324,21 @@ test('every nested config section reds unknown fields — the arbiter is unreach
 test('the legal config still validates green — the section guard does not over-trigger', () => {
   const r = validateConfig(validConfig(), { shellCapUsd: 2 });
   assert.deepEqual(r.reds, []);
+});
+
+test('scanSecrets returns the LITERAL matches, sharing the ONE shape inventory with the sweep', () => {
+  // Seven scripts hand-rolled this scan off SECRET_PATTERNS (review 2026-07-18).
+  // Detection and redaction must never disagree about what a secret looks like,
+  // so the scan gets ONE spelling next to the inventory it reads.
+  const raw = 'log line\nAuthorization: Bearer ghp_' + 'A'.repeat(24) + '\nharmless flask-sqlalchemy\n';
+  const hits = scanSecrets(raw);
+  assert.equal(hits.length, 1);
+  assert.match(hits[0], /^ghp_A+$/);
+  assert.deepEqual(scanSecrets('nothing to see, sk-not (too short)'), []);
+  assert.deepEqual(scanSecrets(null), [], 'never throws on a missing stream');
+});
+
+test('scanSecrets finds EVERY occurrence, not just the first (a global scan, not a probe)', () => {
+  const raw = ['AKIA' + 'B'.repeat(16), 'AKIA' + 'C'.repeat(16)].join('\n');
+  assert.equal(scanSecrets(raw).length, 2);
 });

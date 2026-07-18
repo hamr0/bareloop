@@ -24,7 +24,7 @@ import { join, resolve } from 'node:path';
 import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
 import { makeSpine } from '../src/spine.js';
-import { SECRET_PATTERNS } from '../src/validate.js';
+import { scanSecrets } from '../src/validate.js';
 
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
@@ -95,11 +95,14 @@ const outcome = await runJob(spec, { approvals, workdir: wd, provider, emit: mak
 // ---- the run's result, checked as data (never a claim in prose) ----
 const events = readFileSync(spineFile, 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
 const raw = readFileSync(spineFile, 'utf8');
-const leaks = SECRET_PATTERNS.map((p) => new RegExp(p.source, p.flags.replace('g', '') + 'g')).flatMap((re) => raw.match(re) ?? []);
-const spend = events.findLast((e) => e.type === 'job-end')?.spentUsd ?? 0;
+const leaks = scanSecrets(raw);
+// `?? null`, NEVER `?? 0`: provider-red/pricing-red job-end carries no
+// spentUsd, and those runs can end AFTER real priced spend has accrued —
+// printing $0.0000 asserts a failed run was free (F6, the run-battery spelling)
+const spend = events.findLast((e) => e.type === 'job-end')?.spentUsd ?? null;
 
 console.log(`\noutcome:   ${outcome}`);
-console.log(`spent:     $${Number(spend).toFixed(4)} of $${spec.budgetUsd}`);
+console.log(`spent:     ${spend == null ? 'UNKNOWN (unpriced — never $0)' : `$${Number(spend).toFixed(4)}`} of $${spec.budgetUsd}`);
 console.log(`steps:     ${events.filter((e) => e.type === 'step-end').map((e) => `${e.step}=${e.outcome}`).join('  ') || '(none)'}`);
 console.log(`spine:     ${events.length} events, terminal=${events.at(-1)?.type === 'job-end'}, secrets-clean=${leaks.length === 0}`);
 if (leaks.length) console.error(`SPINE LEAK — ${leaks.length} secret-shaped match(es): the hard line is broken`);

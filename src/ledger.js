@@ -53,6 +53,21 @@ const sigOf = (/** @type {string} */ normalized) => createHash('sha256').update(
 const VERB_RE = new RegExp(`\\b(${VERBS.join('|')})\\b`);
 const QUOTED_VERB_RE = /"([a-z0-9-]+)"/;
 
+/** The deliberate escalation exclusions as a RUNTIME set, not prose: anything
+ * outside {classified} ∪ {this} is an unmapped class and gets counted (see the
+ * escalation branch). Kept beside the doc comment on classifyIncidents, which
+ * explains WHY each one classifies to nothing. */
+const EXCLUDED_ESCALATIONS = new Set([
+  'cap-halt',           // a budget story, not a lib bug
+  'gate-red',           // governance working as intended
+  'smoke-red',          // already counted via primitive-smoke
+  'hitl-close',         // by design: a human is the close
+  'close-unsupported',  // honest refusal, by design
+  'close-timeout',      // close-verdict reds: the arbiter's own named terminals
+  'close-killed',       // (F17) — operator/environment stories, never a suite lib
+  'close-crashed',
+]);
+
 /** suggestedAsk templates — seeds for UPSTREAM-ASKS entries, never auto-filed */
 const ASKS = /** @type {Record<string, (o: {lib: string, verb: string, detail: string}) => string>} */ ({
   'silent-degradation': (o) => `${o.lib}: \`${o.verb}\` failed its known-answer smoke — ${o.detail}`,
@@ -116,10 +131,28 @@ export function classifyIncidents(events, { spine = 'spine' } = {}) {
         // map); a worker-loop/provider failure → provider-red; neither is
         // still counted (runtime-red, lib unknown) — never silently dropped
         const detail = String(ev.detail ?? '');
-        const verb = (detail.match(VERB_RE) ?? [])[1];
-        if (verb || /\blitectx\b/.test(detail)) add(ev, 'runtime-red', 'litectx', verb ?? 'store', detail);
-        else if (/worker loop|provider/i.test(detail)) add(ev, 'provider-red', 'bare-agent', 'provider', detail);
-        else add(ev, 'runtime-red', 'unknown', 'middle', detail);
+        // The STRUCTURED field wins, prose stays the fallback for spines written
+        // before it existed (the request-red contract above). Prose alone
+        // misfiled deterministically: interpret.js prefixes every worker-loop
+        // error with "worker loop:", and the verb sniff ran first, so a
+        // bare-agent transport failure whose text merely said "recall" was
+        // billed to litectx — wrong upstream asked, real regression hidden.
+        if (ev.lib === 'bare-agent') add(ev, 'provider-red', 'bare-agent', 'provider', detail);
+        else if (ev.lib === 'litectx') add(ev, 'runtime-red', 'litectx', (detail.match(VERB_RE) ?? [])[1] ?? 'store', detail);
+        else {
+          const verb = (detail.match(VERB_RE) ?? [])[1];
+          if (verb || /\blitectx\b/.test(detail)) add(ev, 'runtime-red', 'litectx', verb ?? 'store', detail);
+          else if (/worker loop|provider/i.test(detail)) add(ev, 'provider-red', 'bare-agent', 'provider', detail);
+          else add(ev, 'runtime-red', 'unknown', 'middle', detail);
+        }
+      } else if (!EXCLUDED_ESCALATIONS.has(String(ev.category))) {
+        // The exclusions above are DELIBERATE and now executable (see the set):
+        // a category that is neither classified nor named there is a NEW or
+        // renamed failure class, and the four-way chain used to drop it into
+        // exactly the same silence as a deliberate skip — a whole class could
+        // leave the ledger with no red, no count, nothing to notice. Counted
+        // against bareloop: a stale emit→classify mapping is OUR bug.
+        add(ev, 'runtime-red', 'bareloop', 'escalation', `unclassified escalation category "${ev.category}": ${ev.detail ?? ev.decision ?? ''}`);
       }
     }
   }

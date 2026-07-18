@@ -283,6 +283,10 @@ export async function ralph({ middle, close, capRuns, emit, redact, closeTimeout
       emit('escalation', {
         category, decisionReady: true, verdicts,
         spend: { runs: iteration, capRuns },
+        // the thrower names its OWNER too when it knows one (interpret's worker
+        // loop → bare-agent): the ledger prefers the typed field over sniffing
+        // this detail string for library names
+        ...(e && typeof e.lib === 'string' ? { lib: e.lib } : {}),
         decision, options, detail: String(e.message || e),
       });
       emit('run-end', { outcome: 'escalated', iterations: iteration });

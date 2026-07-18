@@ -295,6 +295,20 @@ test('revision: a candidate arriving as a JSON string is judged on its PARSED fo
   assert.ok(events.some((e) => e.type === 'config-final' && e.config?.loop?.shape === 'plan'), 'the PARSED candidate is installed, never the string');
 });
 
+test('revision: an UNPRICED revisor records costUsd null on the spine, never a laundered $0 (F6)', async () => {
+  // `?? 0` on the revision events restated an unknown spend as free on the
+  // append-only record — the one F6 laundering left in the file. Governance is
+  // unaffected (revisor rounds meter through worker-round), but the spine is
+  // the permanent record and null is the honest unknown.
+  const candidate = config();
+  candidate.loop.shape = 'plan';
+  const revisor = async () => ({ candidate }); // nothing priced: no costUsd field at all
+  const { events } = await run('rev-unpriced', config(), { ...stalling(), revisor, script: [{ text: BAD_SUM }, { text: BAD_SUM }, { text: GOOD_SUM }] });
+  const rev = events.find((e) => e.type === 'revision-accepted' || e.type === 'revision-red');
+  assert.ok(rev, 'expected a revision event');
+  assert.equal(rev.costUsd, null, 'unknown revisor spend is null, not 0');
+});
+
 test('revision: accepted free-axis revision changes behavior mid-run (shape swap observable)', async () => {
   const candidate = config();
   candidate.loop.shape = 'plan';

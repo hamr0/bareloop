@@ -7,6 +7,38 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A `close.judged` pattern with more than one capture group now reds at validation
+  (F40).** `runClose` reads capture group 1 only, so an alternation carrying the count
+  in another branch left group 1 `undefined` → `NaN` → `judgedCount` null → an exit-0
+  **green stamped `crashed`** (the mirror of the fake green the floor exists to catch);
+  at precheck that escalates `close-crashed` before the worker runs. The validator's
+  message already promised ONE group and only enforced "not zero". Alternation stays
+  expressible with non-capturing branches: `(?:a|b) (\d+)`.
+- **Upstream-ledger attribution reads a typed `lib` field instead of sniffing error
+  prose (F40).** `interpret` prefixes every worker-loop error with `worker loop:`, and
+  the verb sniff ran first — so a bare-agent transport failure whose text merely
+  contained "recall" was billed to litectx. The throw site now stamps the owner it
+  knows, `ralph` relays it, and prose remains the fallback for older spines (the
+  `request-red` contract).
+- **An unrecognised escalation category is counted, not silently dropped (F40).** The
+  dispatch keyed on four bare literals with no default, so a new or renamed category
+  vanished exactly like a deliberate exclusion. Exclusions are now an executable set;
+  anything outside {classified} ∪ {excluded} is charged to bareloop as a stale mapping.
+- **Two F6 cost launderings closed (F40).** `run-job1`/`run-job2` printed
+  `spent: $0.0000` for provider-red/pricing-red runs (whose `job-end` carries no
+  `spentUsd`, and which can end after real priced spend) — now `UNKNOWN`, the
+  `run-battery` spelling. The `revision-red`/`revision-accepted` spine events recorded
+  `costUsd: 0` for an unpriced revisor — now the honest null.
+
+### Added
+
+- **`scanSecrets(raw)` — the ONE spelling of the raw-text secret scan (F40).** The scan
+  was hand-rolled at seven call sites off `SECRET_PATTERNS`; detection and redaction
+  must never disagree about what a secret looks like. Exported beside the inventory,
+  `sweepSecretLiterals`'s text-side twin.
+
 ### Changed
 
 - **Tool-mode attempt bound raised 24→40 rounds (F37).** The TESTGEN calibration curve

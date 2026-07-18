@@ -1739,3 +1739,97 @@ reproduced: 3 of 7 launches died at rounds 33–39 on the drafter-tightened $1.9
 money cap before the attempt close could run — $5.82 of unreadable spend. Budget
 sizing must fund the attempt PLUS its close, or the instrument quietly eats the
 experiment.
+
+## F40 — branch review before the N2 rung exit: eleven confirmed defects, five fixed, four parked in arbiter territory
+
+A medium-effort review of the whole `n2-headless-loop` branch (65 files, ~14.2k
+insertions vs `main`) run as 8 independent finder angles → 1-vote adversarial verify.
+**27 candidates → 11 CONFIRMED · 1 PLAUSIBLE · 4 REFUTED.** The refutations are the
+useful half of the calibration: three of the four "defects" were paid-for doctrine the
+finder mistook for a regression (the terminal `killed` verdict is F17's never-retry
+line; the `close.cmd` quote ban rejects a shape that was never runtime-expressible
+under whitespace-split argv; withholding the gap from the plan call would blind the
+planner to the failure it must plan around). **A review that cannot refute its own
+findings is a review that will mint doctrine violations as bugs.**
+
+**Fixed this pass** (TDD, every test watched failing first; suite 303 → 311, typecheck
+clean, all five shipped job specs revalidated green under their real caps):
+
+- **A `judged.pattern` with >1 capture group is now a spec red.** `runClose` reads
+  group 1 ONLY, so an alternation carrying the count in another branch leaves group 1
+  `undefined` → `NaN` → `judgedCount` null → **an exit-0 GREEN stamped `crashed`**:
+  the exact mirror of the fake green the judged floor exists to catch, and at precheck
+  it escalates `close-crashed` before the worker ever runs. The validator's own message
+  already promised "ONE capture group"; it only ever enforced "not zero". Alternation
+  stays fully expressible via non-capturing branches — `(?:a|b) (\d+)`.
+- **The ledger attributes by a TYPED field, not by sniffing prose.** `interpret.js`
+  prefixes every worker-loop error with `worker loop:`, and the classifier's verb sniff
+  ran FIRST — so any bare-agent transport failure whose text merely contained "recall"
+  was billed to **litectx**: the wrong upstream gets the ask and the real regression
+  never surfaces. The throw site now stamps `lib` (it knows the owner; the ledger does
+  not), ralph relays it, and prose stays the fallback for spines written before the
+  field existed — the same contract `request-red` already used. Verified end-to-end
+  through the real interpret→ralph→spine→ledger chain, both directions.
+- **An unrecognised escalation category is counted, never silently dropped.** The
+  dispatch keyed on four bare literals with no default, so a new or renamed category
+  classified to zero occurrences — byte-indistinguishable from a *deliberate*
+  exclusion. A whole failure class could leave the ledger with no red and nothing to
+  notice. The exclusions are now an executable `EXCLUDED_ESCALATIONS` set rather than
+  prose, and anything outside {classified} ∪ {excluded} is charged to bareloop as a
+  stale emit→classify mapping — OUR bug, which is the point.
+- **Two F6 launderings closed.** `run-job1`/`run-job2` printed `spent: $0.0000` for
+  provider-red/pricing-red runs, whose `job-end` carries no `spentUsd` and which can
+  terminate *after* real priced spend has accrued — asserting a failed run was free.
+  Now `?? null` → `UNKNOWN`, the spelling `run-battery` already used. The revision
+  spine events did the same with `?? 0`; governance was never affected (revisor rounds
+  meter through `worker-round`), but the spine is the permanent record.
+- **`scanSecrets` joins the ONE shape inventory.** The raw-text secret scan was
+  hand-rolled at seven call sites off `SECRET_PATTERNS`; detection and redaction must
+  never disagree about what a secret looks like, and seven copies is seven chances to
+  drift on the very output the scan guards. Now exported beside the inventory and wired
+  into the two job runners.
+
+**PARKED for hamr's explicit go — arbiter territory, named and scoped, not shipped:**
+
+1. **A reused config dies against a shrinking ceiling (budgets).** The workflow config
+   is drafted ONCE, but every step re-validates it against `ceilingNow()`, which shrinks
+   as `spentUsd` grows. Traced: budget $1.50 → drafted `gate.budgetUsd` 1.425 (legal at
+   step 1) → step 1 spends $0.60 → step 2's ceiling is 0.9 → `bounds` red → `step-red`
+   with **$0.90 unspent** and a config that was never over the total budget. No redraft
+   path exists. Fix touches budget semantics (redraft per step, or draft against a
+   worst-case per-step ceiling) — the agent may only TIGHTEN, so this is hamr's call.
+2. **`jobs/aurora-fix.json`'s judged pattern is a passed-count floor** (`(\d+) passed…`,
+   min 2600) where every sibling job counts tests EXECUTED (`# tests (\d+)`). It
+   conflates "did the close judge" with "did the tests pass", so an honestly-red tree
+   printing `2580 passed` is escalated `close-crashed` at precheck and the worker hired
+   to fix that red is never invoked. The job spec is the arbiter's rulebook.
+3. **Revisor rounds are charged to the worker's per-attempt bound.** `roundsThisAttempt`
+   resets once, BEFORE the revisor phase, and revisor turns share the worker's metered
+   handler — so R revisor rounds leave the worker 40−R, and at R=40 `loop.stop()` fires
+   before the worker's first tool call. Dormant today (`run.js` threads no revisor; only
+   tests exercise the seam), but it is cap-enforcement, so it is parked not patched.
+4. **`extractArtifact` takes the first in-window fence even when it is a command
+   block.** `'Run this:\n```bash\nnpm test\n```\nHere is the file:\n```js\n<module>\n```'`
+   extracts `npm test`, writes it to target with `red: null`, and the close reds against
+   a corrupted file as though the worker failed. The selection rule is a PINNED,
+   tested decision ("multiple fenced blocks: the FIRST is the artifact") on the ONE
+   parser used by the artifact, the rules, and the drafted config — changing it is a
+   design change, not a bug fix. Low urgency: no shipped job runs text mode.
+
+**Not fixed, deliberately, and not papered over:** the JSONL spine-reader idiom is
+duplicated at ~10 sites across `scripts/` with no reader in `src/spine.js` (the test
+suite already consolidated its own at `tests/helpers.js`), and five of the seven
+`scanSecrets` call sites remain hand-rolled. Those five are **frozen battery
+instruments** whose recorded runs are pre-registered evidence; behaviour-preserving or
+not, rewriting them post-hoc muddies the record for a drift-prevention win, and they
+carry no test coverage to catch a mistake. New scripts use the helper.
+
+**One PLAUSIBLE, latent:** a single `opts.target` threads to every text-mode step, so
+two text-mode predicate steps would clobber each other's artifact. The schema permits
+it; no shipped job comes near it; single-artifact text mode is documented intent.
+
+**Lesson.** The two highest-severity defects were both *fake-verdict generators* —
+a green stamped `crashed` (group-1 read) and a red escalated as an instrument crash
+(passed-count floor) — and neither was reachable by any test that asserts on a
+verdict's happy path. The arbiter's failure modes are symmetric, and the suite was
+only ever checking one side of each.

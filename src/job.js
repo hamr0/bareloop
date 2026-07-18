@@ -245,6 +245,13 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
               // would read as crashed — a dead arbiter that reds forever. Red the
               // spec, not every run.
               if (groups === 0) red('invalid-value', `${at}.close.judged.pattern`, 'no capture group — the count is read from group 1, so this pattern would crash every close');
+              // More than one is the same defect wearing a subtler hat: runClose
+              // reads group 1 ONLY, so an alternation whose other branch carries
+              // the count leaves group 1 undefined → NaN → judgedCount null →
+              // an exit-0 GREEN stamped 'crashed' (a fake crash, the mirror of
+              // the fake green this floor exists to catch). Alternation stays
+              // fully expressible with non-capturing branches: `(?:a|b) (\d+)`.
+              else if (groups > 1) red('invalid-value', `${at}.close.judged.pattern`, `${groups} capture groups — the count is read from group 1 only; use exactly one capture group and non-capturing (?:…) branches`);
             }
             if (!Number.isInteger(j.min) || j.min < 1) {
               red('invalid-value', `${at}.close.judged.min`, 'integer >= 1 — a floor of 0 is satisfied by judging nothing, which is the check it is meant to make');

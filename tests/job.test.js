@@ -373,6 +373,24 @@ test('a judged pattern with no capture group reds — it would crash EVERY close
     'the count is read from group 1 — a pattern that captures nothing is a dead arbiter');
 });
 
+test('a judged pattern with MORE than one capture group reds — runClose reads group 1 only', () => {
+  // alternation whose branches carry the count in different groups: group 1 is
+  // undefined whenever the second branch matches, so Number(undefined) is NaN,
+  // judgedCount lands null, and an exit-0 GREEN is stamped 'crashed' (review
+  // 2026-07-18). The validator's own message already promised ONE group; it
+  // only ever enforced "not zero". Red the spec, not every run.
+  const j = mut((s) => { s.steps[0].close.judged = { pattern: '(?:tests (\\d+)|passed: (\\d+))', min: 3 }; });
+  const r = validateJob(j);
+  assert.equal(r.ok, false);
+  assert.ok(r.reds.some((x) => x.path === 'steps.0.close.judged.pattern' && /one capture group/.test(x.detail)),
+    'two capture groups is a fake-crash generator, not a valid count pattern');
+});
+
+test('alternation stays expressible with ONE capture group around non-capturing branches', () => {
+  const j = mut((s) => { s.steps[0].close.judged = { pattern: '(?:tests|passed:) (\\d+)', min: 3 }; });
+  assert.deepEqual(validateJob(j).reds, []);
+});
+
 test('a judged pattern that does not compile reds at validation, not at run time', () => {
   const j = mut((s) => { s.steps[0].close.judged = { pattern: '^tests ((\\d+$', min: 3 }; });
   const r = validateJob(j);

@@ -91,9 +91,12 @@ is a named red `close-hierarchy`):
 | `hitl` | `prompt` | `hitl` — a human IS the close |
 
 **`judged` — the judgment-rendered signal (optional, `predicate` only; PRD v1.11 / F17).**
-`{ pattern: string, min: int >= 1 }` — a regex with ONE capture group, run over the close's
-own (redacted) output to extract how many things it actually judged, against a declared
-floor. **Why it exists:** an exit code cannot distinguish "the suite ran and failed" from
+`{ pattern: string, min: int >= 1 }` — a regex with **exactly one** capture group (zero and
+more-than-one both red at validation), run over the close's own (redacted) output to extract
+how many things it actually judged, against a declared floor. The count is read from group 1
+only, so an alternation must use non-capturing branches — `(?:tests|passed:) (\d+)`, never
+`(?:tests (\d+)|passed: (\d+))`, whose second branch would leave group 1 undefined and stamp
+an exit-0 green as `crashed` (F40). **Why it exists:** an exit code cannot distinguish "the suite ran and failed" from
 "the suite crashed at load" — and it cannot distinguish a real green from a close that ran
 **no tests at all**. Pointed at a tree with no suite, `node --test` exits 0, and without
 `judged` the arbiter returns `satisfied`: a fake green (law #8's only real failure). The
@@ -106,6 +109,12 @@ test, so "zero executed" never fires. Declare it against the suite's real size
 `--test-reporter=spec`, which prints both the counts and the failures at the end). It
 catches *"the arbiter did not run"* — wrong tree, broken argv, a failed shared import — not
 *"one test file is broken"*, which is an honest red the worker should fix.
+
+**Capture the count of tests EXECUTED, never tests PASSED.** A passed-count pattern
+conflates "did the close judge?" with "did the tests pass?", so a genuinely red tree —
+exactly the state a fix job starts from — falls under the floor and is escalated as an
+instrument crash at precheck, before the worker it hired ever runs. `# tests (\d+)` and
+`^ℹ tests (\d+)$` hold on a red tree; `(\d+) passed` does not (F40).
 
 Omitting it is legal (a linter, a `hitl` close, have nothing to count) and stamps
 `unaudited: true` on the verdict plus a `close-unaudited` spine event: **the blind spot is
@@ -214,6 +223,12 @@ inside `src`) or it reds `scope-escape`; pass `min(shell cap, job budgetUsd)` as
 `shellCapUsd` to complete the ceiling chain. Verb vocabulary bound from litectx
 (`LOOP_SHAPES`, `SLOTS`, `VERBS` exported). `diffPaths(a, b)` returns changed JSON paths —
 the one-knob mutation checker.
+
+`scanSecrets(raw)` → `string[]` is the same module's text-side scan: every known
+secret-shape match in a raw stream (a spine file, a close's output), `[]` when clean,
+never throws. Use it instead of re-deriving a scan from `SECRET_PATTERNS` — detection
+and redaction share ONE shape inventory, and a hand-rolled copy that misses a shape is
+a leak on the very output it was guarding.
 
 ### `validateJob(input, { shellCapUsd? })` → `{ ok, reds, job }` — `src/job.js`
 

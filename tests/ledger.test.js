@@ -124,6 +124,42 @@ test('config-red → drafting friction, attributed to bareloop itself, verb from
   assert.equal(occs[0].verb, 'gate');
 });
 
+test('interpreter-red: the TYPED lib beats the prose sniff — a worker-loop error naming a store verb is bare-agent', () => {
+  reset();
+  // the misfile this fixes (review 2026-07-18): interpret.js prefixes EVERY
+  // worker-loop error with "worker loop:", and the verb sniff ran FIRST, so a
+  // bare-agent transport failure whose text merely contained "recall" was
+  // billed to litectx — the wrong upstream gets the ask, the real regression
+  // never surfaces. Same contract as request-red: the field wins, prose falls back.
+  const occs = classifyIncidents([ev('escalation', {
+    category: 'interpreter-red', lib: 'bare-agent', decisionReady: true,
+    detail: 'worker loop: recall tool failed: read ENETUNREACH',
+  })]);
+  assert.equal(occs.length, 1);
+  assert.equal(occs[0].lib, 'bare-agent', 'typed field wins over the "recall" in the prose');
+  assert.equal(occs[0].class, 'provider-red');
+});
+
+test('interpreter-red: with NO typed field the prose sniff still attributes litectx hook throws', () => {
+  reset();
+  const occs = classifyIncidents([ev('escalation', { category: 'interpreter-red', decisionReady: true, detail: 'recall failed: index corrupt' })]);
+  assert.equal(occs.length, 1);
+  assert.equal(occs[0].lib, 'litectx', 'pre-field spines keep classifying');
+  assert.equal(occs[0].verb, 'recall');
+});
+
+test('an UNRECOGNISED escalation category is counted, not silently dropped', () => {
+  reset();
+  // the dispatch keyed on four bare literals with no default: a renamed or new
+  // category classified to zero occurrences, byte-indistinguishable from a
+  // DELIBERATE exclusion. A whole failure class could vanish from the ledger
+  // with no red — the anti-silent-drop line the interpreter-red branch holds.
+  const occs = classifyIncidents([ev('escalation', { category: 'quota-red', decisionReady: true, detail: 'org spend limit reached' })]);
+  assert.equal(occs.length, 1, 'a new category must surface, not vanish');
+  assert.equal(occs[0].lib, 'bareloop', 'the stale emit→classify mapping is bareloop’s own bug');
+  assert.match(occs[0].detail, /quota-red/, 'the unclassified category name rides in the detail');
+});
+
 test('deliberate exclusions classify to NOTHING: governance working, worker stories, environment', () => {
   reset();
   const occs = classifyIncidents([
@@ -133,6 +169,9 @@ test('deliberate exclusions classify to NOTHING: governance working, worker stor
     ev('escalation', { category: 'smoke-red', decisionReady: true, detail: 'dup of primitive-smoke' }), // counted via primitive-smoke
     ev('escalation', { category: 'hitl-close', decisionReady: true, step: 'pr' }), // by design
     ev('escalation', { category: 'close-unsupported', decisionReady: true, step: 'x' }), // honest refusal
+    ev('escalation', { category: 'close-timeout', decisionReady: true, step: 'x' }), // close-verdict red (worker/operator story)
+    ev('escalation', { category: 'close-killed', decisionReady: true, step: 'x' }), // F17 named terminal, not a lib bug
+    ev('escalation', { category: 'close-crashed', decisionReady: true, step: 'x' }), // ditto
     ev('close-verdict', { iteration: 1, verdict: 'needs_revision', gap: 'test failed', exitCode: 1 }), // worker story
     ev('artifact-red', { iteration: 1, category: 'artifact-red', reason: 'prose-only' }), // worker story
     ev('pr-red', { step: 'pr', argv: 'git push -u origin b', detail: 'git push failed: no remote' }), // environment

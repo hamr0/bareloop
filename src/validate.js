@@ -149,6 +149,24 @@ export const SECRET_PATTERNS = [
 const SECRET_RE = new RegExp(SECRET_PATTERNS.map((r) => r.source).join('|'));
 
 /**
+ * Scan a RAW text stream (a spine file, a close's output, a transcript) for
+ * known secret shapes and return the literal matches. The ONE spelling of the
+ * text-side scan, for the same reason SECRET_PATTERNS is the ONE inventory: a
+ * hand-rolled copy that misses a shape is a leak on the very output it guards
+ * (seven copies of this expression lived in scripts/ before it landed here).
+ * `sweepSecretLiterals` is the config-tree twin — same shapes, tree walk.
+ * Never throws; returns [] for a missing stream.
+ * @param {unknown} raw
+ * @returns {string[]} every match, in stream order per pattern
+ */
+export function scanSecrets(raw) {
+  const text = String(raw ?? '');
+  // a fresh global clone per call: a shared /g regex carries lastIndex between
+  // calls and would skip matches on the next stream
+  return SECRET_PATTERNS.flatMap((re) => text.match(new RegExp(re.source, `${re.flags.replace('g', '')}g`)) ?? []);
+}
+
+/**
  * Red every string in a config tree that carries a known secret-token shape.
  * @param {any} root
  * @param {(code: string, path: string, detail?: string) => void} red
