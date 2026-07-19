@@ -146,6 +146,34 @@ nothing external is touched. Spec approval: hash unchanged from the release amen
 (gapKeep `^✖ ` + edit grant); signature = hamr's in-turn order, recorded in the
 approvals array.
 
+## Addendum 4 — probe RESULT (2026-07-19): INCOMPLETE by frozen rule; fixation currently unobservable anywhere
+
+Three runs, $3.75 of the $6 cap, secrets clean, all spines archived
+(`litectx-job1-bareloop/layer-r-probe-P{1,2,3}-*.jsonl`):
+
+- P1: attempt 1 judged red ($1.43); the $1.50 spec budget died MID-attempt-2
+  (`halt:gate.terminated`) — one judged attempt, zero pairs. The spec as signed funds
+  exactly one judged attempt: **job #1 cannot produce pair data at $1.50/run.**
+- P2, P3: **attempt-1 GREEN** ($1.06, $1.26) — the worker fixed the planted off-by-one
+  first try; the hitl PR step escalated by design (origin stripped, nothing external).
+  Zero pairs by construction.
+
+Frozen decision: **INCOMPLETE (<4 eligible pairs) — extension is the operator's call.**
+
+Combined with addendum 2 (archive: 0/10 fixated across jobs #2/#4), the state of
+evidence is: the disease Layer R treats has not been observed under current code on any
+job — F21's fixation was a symptom of the broken-loop era (no attempt bound, no gap
+delivery, no edit verb; all since fixed), and job #1 itself now greens attempt-1 in 2 of
+3 runs (the F33/F34 saturation pattern arriving here). Options, operator's choice:
+(a) raise budgetUsd ≈ $4.50 (new hash, re-sign) and extend the probe — expensive per
+pair (only ~1/3 of runs red at all, ≤2 pairs each); (b) design a harder plant —
+re-enters the F34 benchmark-hunting trap, and a manufactured disease would not prove
+field value; (c) accept the finding: Layer R ships as armed-and-inert (its cost when
+the disease is absent is zero BY MEASUREMENT now, not just by design), field acceptance
+DEFERS, and the `root-injected` spine event is the standing tripwire that names the
+first real run that fixates — revisit at Layer 2, whose micro-wheel steps are where
+repetition pressure is next expected.
+
 ## Not in scope / parked
 
 - No temperature escalation exists in our ralph, so the BA-14 antagonism (buffer vs

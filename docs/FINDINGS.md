@@ -1908,3 +1908,45 @@ build order item 3), and **genre-aware extraction** keyed on close class (green 
 tool mode, nothing parsed; hitl/document → the whole reply is the deliverable) at
 the non-code rung, to be designed against real document-job replies — this finding's
 own `collected`-pattern lesson applied forward.
+
+## F41 — fixation is currently extinct: the disease Layer R treats is unobservable on every existing job at current code
+
+**Setup.** Layer R (the within-run ratchet, design record 2026-07-19) was built to stop
+F21's disease: a never-green run rewriting the same file against an unmoving red set.
+Before freezing its ON/OFF acceptance battery, two pre-registered $0/cheap reads asked
+whether the disease still exists to be treated.
+
+**Read 1 — the archive ($0, `poc/layer-r-base-rate.mjs`).** All 109 surviving spines
+(jobs #2 + #4; every row pre-Layer-R, therefore OFF-arm by construction) swept with the
+detector's own definition over the real gate audits: 9 multi-attempt rows → 10 judged
+red→red pairs → **fixated 0** (inaction 4, moved 3, different-file 3). The instrument is
+connected — it populates every other class — and the pre-gapKeep rows bias TOWARD
+fixation (empty kept-sets compare equal), so the zero survives its own bias.
+
+**Read 2 — the job #1 probe ($3.75, frozen pre-numbers in
+`scripts/run-probe-layer-r.mjs`, N=3, root OFF, fresh patient: local litectx @0.30.0,
+F18-era plant `keywords() >= 3 → > 3`, 407/3, judged 410).** Zero pairs produced,
+INCOMPLETE by the frozen rule — but the two zero-pair MODES are themselves the finding:
+one run's $1.50 budget died mid-attempt-2 (the spec funds exactly ONE judged attempt —
+job #1 as signed cannot produce pair data), and **two of three runs greened on attempt
+1** ($1.06, $1.26): the job that hosted nine defect-finding runs and F21 itself is now
+mostly easy-tier. The F33/F34 saturation pattern has reached job #1.
+
+**The finding.** F21's fixation was a symptom of the broken-loop era — no attempt
+bound (F20), no gap delivery (F21), no edit verb, 4096-token truncation (F30) — and
+the cures for those defects appear to have cured the repetition disease itself, on
+every job shape we own. A ratchet built for a disease is not invalidated by the
+disease's remission: Layer R is mechanically validated (14 unit + 4 integration tests,
+mutation-checked), measured inert when the worker is not stuck (its design condition,
+now observed in the field: 0 injections across every probe run), and its
+`root-injected` spine event is a standing tripwire that will NAME the first real run
+that fixates. Field acceptance (the repetition-drop ON/OFF read) DEFERS to the first
+job that exhibits the disease — expected next at Layer 2's micro-wheels, where
+narrow-scope steps put repetition pressure back on the worker. Deferral is recorded,
+never papered: no learning claim is minted for Layer R, and LAYERS.md keeps its rung
+open.
+
+**Lesson.** Measure the base rate of the disease before running the cure's trial — two
+cheap reads ($0 + $3.75) prevented a ~$30 battery that would have compared two arms of
+zero against each other and could have been narrated as "no significant difference"
+instead of "nothing to measure."
