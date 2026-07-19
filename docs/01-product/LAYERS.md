@@ -289,6 +289,10 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
    in-run (e.g. "your new tests pass on untouched source" as a form-checkable exit),
    converting the semantic ask into F38's convertible mechanical genre. This is the
    untested piece of the thesis: "notes + self-check" has never been observed succeeding.
+   Also carries (F40 latent, PRD v1.18): **each step declares its own deliverable
+   target** — today one target path threads to every text-mode step (fine for
+   successive gates over one artifact, the only shape job-v1 can express; a clobber
+   the day two steps carry distinct deliverables).
 4. **Build Layer 3** — inheritance with ledger attribution (N3, kill-switch: rules must
    transmit across non-identical runs).
 

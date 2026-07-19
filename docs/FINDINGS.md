@@ -1893,3 +1893,18 @@ a green stamped `crashed` (group-1 read) and a red escalated as an instrument cr
 (passed-count floor) — and neither was reachable by any test that asserts on a
 verdict's happy path. The arbiter's failure modes are symmetric, and the suite was
 only ever checking one side of each.
+
+**Follow-up 2026-07-19 (hamr review — items 4 and the PLAUSIBLE get destinations).**
+A proposed tripwire for the single-target latent — red any spec with ≥2 text-mode
+predicate steps — was REFUTED before landing by the suite's own rows: six passing
+run tests (including the pre-registered cap-not-estimate test) deliberately run two
+text steps as successive gates refining ONE artifact, and the PRD §6 job
+(review→fix) is that shape. Same class as item 1's refuted relax-validation fix,
+caught pre-landing this time. The clobber is a defect only for DISTINCT
+deliverables, which job-v1 cannot express — so no code ships now, and both latents
+are named requirements at the rung that builds the capability (PRD Addendum v1.18):
+**per-step deliverable targets** in the plan-v1 step schema (Layer 2, LAYERS.md
+build order item 3), and **genre-aware extraction** keyed on close class (green →
+tool mode, nothing parsed; hitl/document → the whole reply is the deliverable) at
+the non-code rung, to be designed against real document-job replies — this finding's
+own `collected`-pattern lesson applied forward.

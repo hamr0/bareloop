@@ -1059,3 +1059,31 @@ question and mint three doctrine points:
 Cost note for future harnesses (16g reproduced on the probe): budgets must fund the
 attempt PLUS its close — 3 of 7 probe launches died at the money cap rounds 33–39,
 before grading, turning $5.82 into unreadable rows.
+
+## Addendum v1.18 — 2026-07-19 (two F40 latents become named future-rung requirements; the tripwire fix refuted by the suite's own rows — hamr review)
+
+F40 left two text-mode defects parked. hamr's challenge ("which is it?") forced both
+into a named destination, and checking the first proposed fix against the real code
+killed it — the same class as F40 item 1, caught before landing this time:
+
+1. **Per-step deliverable targets — a Layer 2 (plan-v1) step-schema requirement.**
+   Today ONE `opts.target` threads to every text-mode step — **by design**: successive
+   steps are gates refining the SAME artifact (fix→style under suite-then-lint; §6's
+   review→fix is this shape), and six passing run rows — including the pre-registered
+   cap-not-estimate test — deliberately use it. So the proposed validator tripwire
+   (red on ≥2 text-mode predicate steps) was REFUTED before landing: it would invert
+   tested, designed behavior. The clobber is a defect only when two steps carry
+   DISTINCT deliverables — which job-v1 cannot even express. The capability and the
+   fix are the same thing and land together: **plan-v1 steps declare their own target
+   path**, killing the clobber class and enabling multi-deliverable jobs.
+2. **Genre-aware extraction — a non-code-rung requirement (hamr's framing).** The
+   artifact parser must key on the job's close class: green/predicate → tool mode,
+   nothing parsed; soft-green → mixed (text + gated tool calls); hitl/document → the
+   WHOLE reply is the deliverable — no fence hunt at all. This is where the F40
+   preamble-fence defect (a helper fence in the 5-line window mistaken for the
+   artifact) gets fixed — designed against REAL document-job replies, never imagined
+   shapes (the F40 `collected`-pattern lesson: a rule validated only against a
+   fixture is wrong against the instrument).
+
+Neither ships code now; both are requirements at the rung that builds them, recorded
+here and in LAYERS.md so no one has to remember this conversation.
