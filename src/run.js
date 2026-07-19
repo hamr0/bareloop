@@ -194,12 +194,15 @@ async function openDraftPr({ workdir, branch, title, body, addPaths, exec }) {
  * @param {number} [opts.shellCapUsd] the shell's hard USD ceiling
  * @param {number} [opts.closeTimeoutMs] close wall-clock cap (shell territory)
  * @param {ExecCmd} [opts.execCmd] process runner for the hitl PR mechanics
+ * @param {boolean} [opts.layerRoot=true] Layer R (within-run ratchet) — shell
+ *        territory, threaded to every predicate step's interpreter; `false` is
+ *        the acceptance battery's OFF arm (design record 2026-07-19)
  *        (shell-owned seam, same doctrine as the provider binding)
  * @returns {Promise<string>} outcome: 'green' | 'escalated' | 'unapproved-spec' |
  *   'job-red' | 'smoke-red' | 'config-red' | 'pricing-red' | 'provider-red' |
  *   'cap-halt' | 'close-unsupported' | `step-red:<id>`
  */
-export async function runJob(rawSpec, { approvals, workdir, target, provider, emit, capRuns = 3, shellCapUsd = 2, closeTimeoutMs, execCmd = defaultExec }) {
+export async function runJob(rawSpec, { approvals, workdir, target, provider, emit, capRuns = 3, shellCapUsd = 2, closeTimeoutMs, execCmd = defaultExec, layerRoot = true }) {
   // 1. human-signs-always — before ANY provider call (N1 decision #1)
   if (!checkApproval(rawSpec, approvals)) {
     emit('job-end', { outcome: 'unapproved-spec', detail: 'no approval record matches this exact spec version' });
@@ -458,6 +461,7 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
         // arbiter territory (PRD v1.11; F28 for gapKeep).
         mode: step.mode ?? 'text', tools: step.tools,
         closeExpect: step.close.expect, closeJudged: step.close.judged, closeGapKeep: step.close.gapKeep,
+        layerRoot,
       });
     } catch (e) {
       // ralph belts throws INSIDE the loop; this belts the interpreter's own

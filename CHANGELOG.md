@@ -5,6 +5,27 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Added
+
+- **Layer R — the root, the within-run ratchet (`src/root.js`; design record
+  `docs/plans/2026-07-19-layer-r-design.md`, interview-locked 2026-07-19).** The shell
+  mechanically detects fixation — consecutive attempts rewriting the same file(s)
+  without moving the close's kept-failure set — and injects an escalating note into the
+  next attempt's prompt: a capped summary first, then the worker's own prior failed
+  edit content verbatim (the BA-14 rejected-edit-buffer shape, rewritten for our
+  attempt loop). Fixation-gated (inert when not stuck — RSI §3.3: the lift is a
+  fixation phenomenon, an honest null on a strong unstuck model), shell-authored (the
+  worker authors nothing, gains no verb), within-run only (state dies with the run;
+  inheritance stays verdict-gated). Red-set comparison strips the spec-reporter's
+  per-run duration stamps (POC-measured: kept lines are never byte-stable) —
+  comparison-only, the delivered gap is untouched. Spine event `root-injected` carries
+  stage/mode/streak/paths, never content (append-only law). `layerRoot: false` on
+  `runJob`/`interpret` is the acceptance battery's OFF arm; acceptance is a
+  pre-registered repetition-drop read on job #4, ON vs OFF — green-rate is recorded
+  but is explicitly not the bar (F39: continuity, not conversion, is Layer R's claim).
+
 ## [0.3.0] — 2026-07-19
 
 ### Fixed

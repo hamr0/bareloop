@@ -285,7 +285,21 @@ the close judges the tree; on-green `remember` retains the worker's change summa
 Worker-caused close crashes feed back as `worker-crash` gaps via the gate audit (F32 —
 see `ralph` above).
 
-### `runJob(spec, { approvals, workdir, provider, emit, target?, capRuns?, shellCapUsd?, closeTimeoutMs?, execCmd? })` → outcome — `src/run.js`
+**Layer R — the within-run ratchet (`layerRoot`, default `true`; design record
+2026-07-19).** The shell mechanically detects fixation across attempts — consecutive
+attempts that rewrote the same file(s) without moving the close's kept-failure set
+(`closeGapKeep` lines, duration stamps stripped before comparing; without a gapKeep the
+detector degrades to write-overlap alone and the spine event names the mode) — and
+injects an escalating note into the next prompt: first a capped summary naming the
+repeated files, then (if still stuck) the worker's OWN prior failed edit content
+verbatim, scrubbed and capped with trims announced. Inert unless stuck; the worker
+authors nothing and gains no verb. Spine event `root-injected` carries
+`{stage, mode, streak, paths, redSetSize}` — counts and paths only, NEVER content (the
+spine is append-only). State dies with the run: this is within-run scratch, not
+across-run memory. `layerRoot: false` (also on `runJob`) is the acceptance battery's
+OFF arm.
+
+### `runJob(spec, { approvals, workdir, provider, emit, target?, capRuns?, shellCapUsd?, closeTimeoutMs?, execCmd?, layerRoot? })` → outcome — `src/run.js`
 
 The N2 runner — the shell's top layer; composes everything below it and interprets
 nothing itself. Sequence: **approval gate** (human-signs-always — refuses an unapproved

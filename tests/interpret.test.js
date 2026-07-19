@@ -885,3 +885,61 @@ test('worker-round records the four priced tiers separately — cache reads are 
   assert.equal(round.tokens, 120, 'the legacy sum stays input+output — cache tiers never inflate it');
   assert.equal(round.kind, 'turn', 'a worker turn is tagged as such');
 });
+
+// ---- Layer R: the root (within-run ratchet, design record 2026-07-19) ----
+// Shell-assembled fixation detection wired through the middle: consecutive
+// attempts rewriting the same file without moving the reds get an escalating
+// summary→verbatim note in the next prompt. Everything real except the
+// scripted provider; the close is a real `node --test` (TAP: `not ok` lines
+// are byte-stable, unlike the spec reporter's duration-stamped ✖ lines).
+
+test('Layer R tools mode: fixation → summary at attempt 3, verbatim at attempt 4; events carry no content', async () => {
+  const wd = twd('root-fixation');
+  const w = () => ({ toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'src', 'sum.mjs'), content: BAD_SUM })] });
+  const { outcome, events, provider } = await run('root-fixation', config(), {
+    mode: 'tools', capRuns: 4, closeGapKeep: '^not ok ',
+    script: [w(), { text: 'done' }, w(), { text: 'done' }, w(), { text: 'done' }, w(), { text: 'done' }],
+  });
+  assert.equal(outcome, 'escalated', 'still red at cap — the ratchet informs, never judges');
+  // attempts are fresh conversations: calls 0-1 attempt 1, 2-3 attempt 2, …
+  assert.ok(!provider.calls[2].includes('RATCHET'), 'attempt 2: one data point, no ratchet');
+  assert.match(provider.calls[4], /RATCHET: you are repeating yourself/, 'attempt 3 gets the summary');
+  assert.match(provider.calls[4], /sum\.mjs/, 'the summary names the repeated file');
+  assert.ok(!provider.calls[4].includes('return a - b'), 'summary stage carries no verbatim content');
+  assert.match(provider.calls[6], /STRUCTURALLY DIFFERENT/, 'attempt 4 escalates to verbatim');
+  assert.ok(provider.calls[6].includes('return a - b'), 'verbatim surfaces the worker\'s own failed content');
+  const inj = events.filter((e) => e.type === 'root-injected');
+  assert.deepEqual(inj.map((e) => e.stage), ['summary', 'verbatim'], 'both stages on the spine, in order');
+  assert.equal(inj[0].mode, 'reds+writes', 'the detector mode is named');
+  assert.ok(!JSON.stringify(inj).includes('return a - b'), 'spine events never carry content');
+});
+
+test('Layer R OFF arm: layerRoot false → no injection, no events (the acceptance battery control)', async () => {
+  const wd = twd('root-off');
+  const w = () => ({ toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'src', 'sum.mjs'), content: BAD_SUM })] });
+  const { events, provider } = await run('root-off', config(), {
+    mode: 'tools', capRuns: 4, closeGapKeep: '^not ok ', layerRoot: false,
+    script: [w(), { text: 'done' }, w(), { text: 'done' }, w(), { text: 'done' }, w(), { text: 'done' }],
+  });
+  assert.ok(provider.calls.every((c) => !c.includes('RATCHET')), 'no ratchet note in any prompt');
+  assert.ok(!events.some((e) => e.type === 'root-injected'), 'no root events on the spine');
+});
+
+test('Layer R text mode: the one-target rewrite loop is the same fixation, teed at the write site', async () => {
+  const { events, provider } = await run('root-text', config(), {
+    capRuns: 3, closeGapKeep: '^not ok ',
+    script: [{ text: BAD_SUM }, { text: BAD_SUM }, { text: BAD_SUM }],
+  });
+  assert.match(provider.calls[2], /RATCHET: you are repeating yourself/, 'attempt 3 gets the summary');
+  assert.equal(events.find((e) => e.type === 'root-injected').stage, 'summary');
+});
+
+test('Layer R stays inert on progress: a red that moves to green never sees the ratchet', async () => {
+  const { outcome, events, provider } = await run('root-inert', config(), {
+    capRuns: 3, closeGapKeep: '^not ok ',
+    script: [{ text: BAD_SUM }, { text: GOOD_SUM }],
+  });
+  assert.equal(outcome, 'green');
+  assert.ok(provider.calls.every((c) => !c.includes('RATCHET')), 'cost-neutral when not stuck (RSI §3.3)');
+  assert.ok(!events.some((e) => e.type === 'root-injected'));
+});

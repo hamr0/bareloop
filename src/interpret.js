@@ -18,6 +18,7 @@ import { Gate, redact } from 'bareguard';
 import { LiteCtx, compress } from 'litectx';
 import { validateConfig, diffPaths, globToPrefix, SECRET_PATTERNS } from './validate.js';
 import { ralph } from './ralph.js';
+import { createRoot } from './root.js';
 
 /** @typedef {Error & {category?: string, lib?: string}} CategorizedError the failure map's carrier: ralph relays by `category`, and by `lib` when the thrower knows which library owns the failure (the ledger prefers it over prose) */
 
@@ -213,11 +214,16 @@ const toolAction = (name, args, workdir) => {
  * @param {'text'|'tools'} [opts.mode] middle mode (2b): 'text' (default) writes the ONE
  *        target from the response artifact; 'tools' gives the worker Gate-governed file
  *        tools — SPEC-side territory (the step declares it; the config cannot express it)
+ * @param {boolean} [opts.layerRoot=true] Layer R (the within-run ratchet, src/root.js):
+ *        shell-assembled fixation detection over the run's own books, injecting an
+ *        escalating summary→verbatim note when consecutive attempts rewrite the same
+ *        files without moving the reds. Inert when the worker is not stuck (RSI §3.3);
+ *        `false` is the acceptance battery's OFF arm — never a worker-visible knob
  * @param {string[]} [opts.tools] the spec's tool grant (subset of read|grep|write,
  *        job-v1 validated); defaults to the full menu in tool mode
  * @returns {Promise<'green'|'escalated'|'config-red'>}
  */
-export async function interpret(configRaw, { task, target, close, workdir, capRuns, emit, provider, shellCapUsd = 2, jobWriteScope, revisor, closeTimeoutMs, mode = 'text', tools, closeState, closeExpect, closeJudged, closeGapKeep }) {
+export async function interpret(configRaw, { task, target, close, workdir, capRuns, emit, provider, shellCapUsd = 2, jobWriteScope, revisor, closeTimeoutMs, mode = 'text', tools, closeState, closeExpect, closeJudged, closeGapKeep, layerRoot = true }) {
   // Reds-before-tokens: text mode writes ONE artifact — a missing target is a
   // caller bug that must be loud NOW, not a TypeError after a paid worker call
   // that ralph would misfile as interpreter-red (the gate skips an absent path,
@@ -308,7 +314,25 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
       return [...paths];
     } catch { return []; }
   };
-  const { policy, onLlmResult } = wireGate(gate, mode === 'tools' ? { actionTranslator: (/** @type {string} */ n, /** @type {any} */ a) => toolAction(n, a, workdir) } : {});
+  // Layer R — the root (within-run ratchet, design record 2026-07-19). Shell-
+  // assembled from the arbiter's own books: per-attempt write-sets come from
+  // the SAME workerWrites audit read (allow-decision only, so a denied write is
+  // never counted), red-sets from the close's kept-failure lines. The verbatim
+  // stage needs the content the audit deliberately does not keep (bytes-only),
+  // so it is teed below at the one seam that sees it — memory-only, scrubbed,
+  // never the spine.
+  const root = layerRoot ? createRoot({ gapKeep: closeGapKeep, redact: (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS }) }) : null;
+  // The tee rides the translator (fires before the gate decides — harmless: the
+  // root only ever surfaces paths the audit later shows as LANDED) and resolves
+  // paths exactly as toolAction does, so tee keys match audit paths byte-for-byte.
+  /** @param {string} n @param {any} a */
+  const teeingTranslator = (n, a) => {
+    if (root && (n === 'shell_write' || n === 'shell_edit')) {
+      root.noteWrite(resolve(expandHome(String(a?.path ?? ''))), String((n === 'shell_write' ? a?.content : a?.newText) ?? ''));
+    }
+    return toolAction(n, a, workdir);
+  };
+  const { policy, onLlmResult } = wireGate(gate, mode === 'tools' ? { actionTranslator: teeingTranslator } : {});
   // Money is metered as it is SPENT — per ROUND, not per attempt (F12). A
   // multi-round attempt that halts (or throws) never returns, so its rounds
   // never reach `worker-result`: the real run bought $1.4375 of tokens inside a
@@ -576,6 +600,11 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   const middle = async (iteration, gap) => {
     roundIteration = iteration; // stamps every round of this attempt (F12)
     roundsThisAttempt = 0;      // the bound is PER ATTEMPT — a fresh conversation, a fresh budget (F20)
+    // Layer R: finalize the previous attempt from the books and ask the ratchet.
+    // Inert (null) unless consecutive attempts rewrote the same files without
+    // moving the reds; the event carries stage/paths/counts, NEVER content.
+    const rootInj = root ? root.observe({ iteration, gap, writes: workerWrites() }) : null;
+    if (rootInj) emit('root-injected', rootInj.event);
     if (gap) gaps.push(gap);
     if (revisor && !revised && gaps.length >= STALL_REDS) {
       emit('stall-detected', { iteration, consecutiveReds: gaps.length });
@@ -632,6 +661,9 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
       // attempt and describing the tree are different claims; this is the second.
       !gap && closeState && `The close is currently failing. This is its output on the tree as it stands (not an attempt of yours):\n${closeState}`,
       context.text && `Possibly relevant notes:\n${context.text}`, gap && `Previous attempt failed the test suite:\n${gap}`,
+      // Layer R: the ratchet note rides directly after the gap it qualifies —
+      // same channel discipline as the gap itself (bounded, trims announced)
+      rootInj && rootInj.note,
       artifactNote && `Previous attempt never reached the close:\n${artifactNote}`,
       // F20: a bounded attempt must SAY it was bounded. Otherwise the worker reads its own
       // truncated transcript as a finished one, learns nothing from being cut off, and spends
@@ -682,6 +714,7 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
       throw err;
     }
     writeFileSync(t, code);
+    root?.noteWrite(t, code); // Layer R tee, text mode: same seam role as the translator's
     emit('artifact-written', { iteration, path: t });
   };
 

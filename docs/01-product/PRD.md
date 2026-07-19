@@ -1087,3 +1087,30 @@ killed it — the same class as F40 item 1, caught before landing this time:
 
 Neither ships code now; both are requirements at the rung that builds them, recorded
 here and in LAYERS.md so no one has to remember this conversation.
+
+---
+## Addendum v1.19 — 2026-07-19 (Layer R design locked by interview; built same day; acceptance pre-registered)
+
+**Interview decisions (hamr, 2026-07-19; full record + POC results in
+`docs/plans/2026-07-19-layer-r-design.md`):** the root is (1) SHELL-authored — assembled
+mechanically from the arbiter's own books (F32 write audit + kept-failure lines), the
+worker authors nothing and gains no verb; (2) FIXATION-GATED — inert until consecutive
+attempts rewrite the same files without moving the reds (RSI §3.3: cost-neutral when
+inert, the lift is a fixation phenomenon); (3) ESCALATING summary→verbatim — both stages
+field-tested, per-stage attribution pre-registered (stages fire on different attempts),
+with a revert path to whichever stage the battery proves is the lever; (4) accepted by a
+REPETITION-DROP read, ON vs OFF, on job #4 — green-rate recorded but never the bar
+(F39: Layer R's claim is continuity, not conversion).
+
+**Built (`src/root.js`, wired in `interpret`/`runJob` as `layerRoot`, default on):**
+detection compares normalized kept-failure lines (POC-measured: spec-reporter lines are
+never byte-stable — duration stamps; normalization is comparison-only, the delivered gap
+untouched) plus per-attempt write-sets from the allow-decision audit (a denied write is
+never counted). Verbatim content is teed at the translator seam memory-only, scrubbed,
+capped, trims announced; spine event `root-injected` carries counts and paths, NEVER
+content (append-only law). Within-run scratch only: state dies with the run, inheritance
+stays verdict-gated (v1.13 scope separation unchanged).
+
+**The rung is NOT closed by the build.** It closes at the pre-registered acceptance
+battery (repetition metric + read rules frozen in a commit before any number exists).
+LAYERS.md's Layer R status line moves only then.
