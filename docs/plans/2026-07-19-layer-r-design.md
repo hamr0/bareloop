@@ -129,6 +129,23 @@ record which detector mode ran; and the POC proves MECHANICS only — the effect
   THAT is a finding (the disease may have died with the edit verb + F30/F32 fixes), and
   Layer R's field read defers to the first job that exhibits it — recorded, not papered.
 
+## Addendum 3 — base-rate probe FROZEN (2026-07-19, hamr's in-turn go: "run the experiment, and probe")
+
+Design frozen in `scripts/run-probe-layer-r.mjs` BEFORE any number exists; this section
+is the record, the script is the instrument. Question: does job #1 (litectx patient at
+0.30.0, planted `keywords()` off-by-one `>= 3 → > 3`, commit
+`a6004d3d9ddb6bd00a992cec34e7fc9c5d7320ad`; suite 407 pass / 3 fail, judged 410 ≥ floor
+300) exhibit fixation with the root OFF? N=3 · sonnet-5 · $1.5/run (spec) · probe cap $6
+· per-run reset to the planted commit · provider health 2×200 first · provider-red rows
+are casualties (rerun, never evidence). Read rules and the decision table are frozen in
+the script header verbatim: ≥1 fixated pair → battery freezes on job #1; 0 fixated over
+≥4 eligible pairs → job #1 no longer exhibits (a finding; field read defers); <4
+eligible pairs → INCOMPLETE, extension is the operator's call. Patient safety: `origin`
+remote stripped from the copy — a green run's draft-PR step fails as honest `pr-red`,
+nothing external is touched. Spec approval: hash unchanged from the release amendments
+(gapKeep `^✖ ` + edit grant); signature = hamr's in-turn order, recorded in the
+approvals array.
+
 ## Not in scope / parked
 
 - No temperature escalation exists in our ralph, so the BA-14 antagonism (buffer vs
