@@ -182,3 +182,15 @@ repetition pressure is next expected.
 - Arbiter surface: this build touches ralph/interpret (shell code) but not verdicts,
   budgets, close semantics, or the fence. The interview is the go for exactly this
   scope; anything beyond it gets named and parked per standing rule.
+
+## Addendum 5 — probe 2 FROZEN (2026-07-19, hamr's in-turn go: "one more probe and harder close")
+
+Probe 1's two zero-pair modes each get a targeted fix, nothing else moves:
+**harder tree** — planted v2, commit `c1202c4949d1b19fd96215e630f65e05d91c195b`: three
+stacked plants in three subsystems (tokenize `keywords()` `>= 3 → > 3` · store
+`related()` hops `Math.min → Math.max` · assemble budget `<= → <`), 410 judged / 8
+fail, each plant independently redding its own subsystem's tests — one fix cannot
+green the run; **judged attempts funded** — spec `budgetUsd` 1.5 → 4.5 (new hash,
+re-signed by hamr's in-turn order), so attempts 2–3 reach their close instead of dying
+at the gate. N=3 · root OFF · sonnet-5 · probe cap $15 · same per-run reset · same
+provider-health rule · read rules and decision table UNCHANGED from addendum 3.

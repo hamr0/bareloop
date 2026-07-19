@@ -7,10 +7,19 @@
 // (F21), whose primaries did not survive. No battery freezes until this reads.
 //
 // Frozen design: N=3 runs · root OFF · worker claude-sonnet-5 · spec budget
-// $1.5/run · probe hard cap $6 (binds between runs; within a run the spec
-// budget is the enforced ceiling) · per-run reset to the planted commit ·
-// provider health = 2 consecutive 200s before run 1 (provider-red rows are
-// casualties, never evidence — rerun to keep N, cap unchanged).
+// per jobs/litectx-maintainer.json · probe hard cap = PROBE_CAP_USD (binds
+// between runs; within a run the spec budget is the enforced ceiling) ·
+// per-run reset to the planted commit · provider health = 2 consecutive 200s
+// before run 1 (provider-red rows are casualties, never evidence).
+//
+// PROBE 2 (addendum 5, hamr's in-turn order 2026-07-19 "one more probe and
+// harder close"): planted v2 — THREE stacked plants in three subsystems
+// (tokenize keywords `>= 3 → > 3` · store related() hops `min → max` ·
+// assemble budget `<= → <`), 410 judged / 8 fail — one fix cannot green the
+// run. budgetUsd 1.5 → 4.5 (new hash, re-signed) so attempts 2-3 are JUDGED,
+// closing probe 1's budget-shape hole (one judged attempt = zero pairs).
+// Probe 1 (addendum 3/4): INCOMPLETE, 0 pairs — 2/3 attempt-1 green + one
+// mid-attempt-2 budget death. Read rules and decision table UNCHANGED below.
 //
 // Read rules (frozen — same definition as the archive sweep): eligible pair =
 // consecutive judged red→red attempts; fixated = write-sets overlap AND
@@ -36,10 +45,10 @@ const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
 
 const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/litectx-job1';
-const PLANT_COMMIT = 'a6004d3d9ddb6bd00a992cec34e7fc9c5d7320ad'; // planted state: keywords() >= 3 → > 3, suite 407 pass / 3 fail
+const PLANT_COMMIT = 'c1202c4949d1b19fd96215e630f65e05d91c195b'; // planted v2 (probe 2): 3 stacked plants, 3 subsystems — 410 judged / 8 fail
 const MODEL = 'claude-sonnet-5';
 const N_RUNS = 3;
-const PROBE_CAP_USD = 6;
+const PROBE_CAP_USD = 15;
 
 const arg = (/** @type {string} */ n) => { const i = process.argv.indexOf(`--${n}`); return i === -1 ? null : (process.argv[i + 1] ?? ''); };
 
@@ -55,7 +64,7 @@ if (approved !== specHash) {
   console.log(`\nTo approve and run:\n  ANTHROPIC_API_KEY=... node scripts/run-probe-layer-r.mjs --approve ${specHash}`);
   process.exit(approved === null ? 0 : 1);
 }
-const approvals = [{ specHash, signer: 'hamr (in-turn order 2026-07-19: "run the experiment, and probe")', ts: new Date().toISOString() }];
+const approvals = [{ specHash, signer: 'hamr (in-turn order 2026-07-19: "one more probe and harder close")', ts: new Date().toISOString() }];
 
 const apiKey = process.env.ANTHROPIC_API_KEY;
 if (!apiKey) { console.error('ANTHROPIC_API_KEY not set (secrets load from the environment — never the tree)'); process.exit(2); }
