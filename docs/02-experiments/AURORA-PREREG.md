@@ -256,3 +256,50 @@ or not. The find must come from the gap's failing-test names.
   attempt-1 UNDER the measured no-assist condition, the conclusion is that the loop
   tier does not exist at planted-bug difficulty on this patient class — a result, not a
   failure of the battery.
+
+---
+
+- **Amendment 2026-07-19 (post-battery; instrument fix, no rule loosened — F40):** the
+  frozen close's judged pattern counted tests **PASSED**, not tests **EXECUTED**
+  (`(\d+) passed[^\n]* in [0-9.]+s`, min 2600, recorded above in "Decision rules"). That
+  conflates *"did the close render judgment?"* with *"did the tests pass?"* — and this job
+  is only ever pointed at a RED tree. A bug failing more than ~91 tests drops the passed
+  count below 2600, so `runClose` returns `crashed`, and at the **precheck** (structurally
+  pre-worker) that routes `close-crashed` → `step-red` before the worker it hired is ever
+  started. The job that exists to fix a red suite refuses to run *because* the suite is
+  red, and it presents as broken equipment rather than a spec defect. Found by branch
+  review, not by a run.
+  **Why no pattern edit could fix it, and what changed instead.** The frozen invocation
+  used `-q`, and quiet mode prints NO executed-count line at all — only
+  `120 failed, 2580 passed in 45.3s`, whose executed count is a SUM that one capture group
+  cannot express (and the schema now reds patterns with more than one group, F40). So the
+  operator-owned wrapper changed: **`-q` → `-ra`**. Dropping `-q` restores the collection
+  line; `-ra` is REQUIRED, not cosmetic — without it the short-summary section disappears
+  and this job's `gapKeep "^FAILED "` loses every line it carries to the worker. New
+  judged pattern: **`collected (\d+) items`**, floor **2600 unchanged**. The wrapper stays
+  outside the patient tree and outside the worker's readScope; `HF_HUB_OFFLINE=1` (amendment
+  2026-07-16a) is untouched.
+  **Measured against the REAL instrument, because the first proposal was refuted by it.**
+  A candidate `^collected (\d+) items`, verified only against a hand-authored 3-test
+  directory, is WRONG on this suite two ways: the real line is
+  `collecting ... collected 2712 items / 18 deselected / 2694 selected`, so the `^` anchor
+  never matches (the line opens with the progress prefix), and the `-m` marker expression
+  adds a deselection clause the toy fixture could not produce. A fixture cannot validate a
+  check; only the instrument can. Full-close measurement (green band, 175s):
+  collected 2712 / 18 deselected / 2694 selected, 2691 passed, 3 skipped.
+  **The nested-subprocess hazard (raised above for the passed-count pattern) does not
+  transfer.** aurora's `testing` package runs pytest in subprocesses, so captured output
+  can embed a nested summary — which is why the old pattern needed its ` in <seconds>s`
+  tail. Measured on a full green close: **exactly ONE line in the entire output matches
+  `collected`** (line 8), the parent's own. Structurally it cannot lose even on the red
+  band: `exec` returns the FIRST match, and the parent emits its collection line before any
+  test — and therefore before any nested output — exists. Residual risk (a red-band run was
+  not measured) is bounded by that ordering, and a genuine collection failure still reads
+  `crashed`, which is the fake-green case the floor exists for.
+  **Standing on prior results:** the clean tree reports 2691 passed, above the 2600 floor,
+  so the pre-amendment pattern only misfired past ~91 failures. Job #3's recorded 4/4
+  attempt-1 greens were judged correctly and stand unchanged.
+  **Durability note (not a rule):** `bareloop-patients` is not a git repo, so this
+  amendment is the only versioned record of the wrapper's contents. A patient rebuild that
+  restores `close.sh` from anywhere else silently reinstates the precheck defect — re-apply
+  `-ra` from here.
