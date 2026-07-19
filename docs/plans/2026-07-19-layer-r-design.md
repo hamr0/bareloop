@@ -105,6 +105,30 @@ always), making the detector write-set-only and more trigger-happy — the build
 record which detector mode ran; and the POC proves MECHANICS only — the effect claim
 (repetition drop) is exactly what the acceptance battery measures, by design.
 
+## Addendum 2 — $0 pre-battery reads (2026-07-19, later same day)
+
+- **Grader-close stability: PASS.** Job #4's real close run twice on an identical tree →
+  `^TESTGEN ` kept lines byte-identical (the grader emits counts, not timings — we own
+  the format). One branch remains suspect by inspection: the clean-red fallback
+  (`lines.slice(-40)`) can carry pytest's `in N.NNs` summary — that branch can only make
+  the detector UNDER-fire (false movement → silence), never false-fire. Named, accepted.
+- **Fixation base rate in the archive: 0/10 — the planned job #4 battery would be
+  UNREADABLE as designed.** All 109 surviving spines (jobs #2 + #4; every one pre-Layer-R
+  = OFF-arm) swept with the detector's own definition over the real gate audits: 9
+  multi-attempt rows, 10 red→red pairs, fixated 0, inaction 4, moved 3, different-file 3.
+  The instrument is connected (it populates the other classes), and the pre-gapKeep rows
+  bias TOWARD fixation (empty kept-sets compare equal) — the zero survives the bias.
+  Job #4's measured disease is inaction/semantic-stall (F38/F39), which the ratchet
+  deliberately does not treat. Fixation was observed on JOB #1 (F21: "did the SAME THING
+  three times") — whose spines did not survive (the patient clone died with /tmp).
+- **Consequence for decision 4:** the acceptance read stays repetition-drop ON/OFF, but
+  the JOB must be one with a non-zero fixation base rate. Before freezing any battery:
+  a small base-rate probe on job #1 (litectx-maintainer, root OFF, n≈3) to re-establish
+  F21's fixation under current code — cap-not-estimate, operator-approved. If job #1
+  still fixates, the battery freezes there; if nothing fixates anywhere at current code,
+  THAT is a finding (the disease may have died with the edit verb + F30/F32 fixes), and
+  Layer R's field read defers to the first job that exhibits it — recorded, not papered.
+
 ## Not in scope / parked
 
 - No temperature escalation exists in our ralph, so the BA-14 antagonism (buffer vs
