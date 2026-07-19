@@ -296,8 +296,11 @@ verbatim, scrubbed and capped with trims announced. Inert unless stuck; the work
 authors nothing and gains no verb. Spine event `root-injected` carries
 `{stage, mode, streak, paths, redSetSize}` — counts and paths only, NEVER content (the
 spine is append-only). State dies with the run: this is within-run scratch, not
-across-run memory. `layerRoot: false` (also on `runJob`) is the acceptance battery's
-OFF arm.
+across-run memory. `layerRoot: false` (also on `runJob`) is the field experiment's OFF
+arm. Status (F41): the ratchet is MEASURED inert on every current job — two frozen
+probes + an archive sweep read 0 fixated pairs in 14 (the F21 repetition disease was a
+broken-loop symptom, since cured) — so it ships ON at zero observed cost, and a
+`root-injected` event on your spine is a signal worth reading, not routine noise.
 
 ### `runJob(spec, { approvals, workdir, provider, emit, target?, capRuns?, shellCapUsd?, closeTimeoutMs?, execCmd?, layerRoot? })` → outcome — `src/run.js`
 

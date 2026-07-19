@@ -22,9 +22,26 @@ feature lands, **patch** = docs, fixes, scaffolding.
   per-run duration stamps (POC-measured: kept lines are never byte-stable) —
   comparison-only, the delivered gap is untouched. Spine event `root-injected` carries
   stage/mode/streak/paths, never content (append-only law). `layerRoot: false` on
-  `runJob`/`interpret` is the acceptance battery's OFF arm; acceptance is a
-  pre-registered repetition-drop read on job #4, ON vs OFF — green-rate is recorded
-  but is explicitly not the bar (F39: continuity, not conversion, is Layer R's claim).
+  `runJob`/`interpret` is the field experiment's OFF arm.
+- **F41 — the disposition: armed-and-inert, field read deferred.** Before any ON/OFF
+  battery spent money, two cheap reads measured the disease's base rate: the archive
+  sweep (`poc/layer-r-base-rate.mjs`, $0 — every surviving spine is OFF-arm by
+  construction) read 0 fixated in 10 pairs on jobs #2/#4; two frozen probes on a
+  rebuilt job #1 patient (`scripts/run-probe-layer-r.mjs`, $10.12 total) read 0
+  fixated in 4 pairs — including against a three-plant tree (three subsystems, one fix
+  cannot green) that forced a full 8→4→green ladder across three judged attempts.
+  Every pair was healthy navigation. F21's fixation was a broken-loop symptom, cured
+  by the F20/F21/F30/BA-13 fixes. Layer R ships ON by default (measured cost-free
+  when the worker is healthy — zero injections across all probe runs); the
+  repetition-drop ON/OFF read defers to the first run whose spine records
+  `root-injected`. No learning claim is minted.
+
+### Changed
+
+- **`jobs/litectx-maintainer.json` `budgetUsd` 1.5 → 4.5** (probe 2, re-signed): $1.50
+  funded exactly ONE judged attempt on the real patient — a run could red at attempt 1
+  and die at the gate mid-attempt-2, structurally unable to produce across-attempt
+  evidence. The advertised budget must fund the attempts the cap promises.
 
 ## [0.3.0] — 2026-07-19
 

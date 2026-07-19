@@ -108,7 +108,7 @@ verb blocks the work, the worker files a *request-red* and a human decides.
 ```
 Layer 3   INHERITANCE    the road survives runs, with receipts; self-heals    (not built — N3)
 Layer 2   MICRO-WHEELS   the road itself: locate → understand → write → verify (designed — plan-v1)
-Layer R   THE ROOT       memory that survives attempts inside one run          (not built — next)
+Layer R   THE ROOT       memory that survives attempts inside one run          (built — armed-and-inert, F41)
 Layer 1   ONE WHEEL      a single loop over the whole task                     (built; first real firing NOW)
 ```
 
@@ -128,6 +128,17 @@ was tried, what it changed, what greened — while worker conversations stay dis
 is the shape borrowed from recursive-LM designs: a durable root; cheap, throwaway
 sub-contexts.) Verdict-gated inheritance is untouched: the root is *within-run scratch*, a
 different scope from *across-run memory*, and only a green mints the latter.
+
+**Status: built 2026-07-19 (design record `docs/plans/2026-07-19-layer-r-design.md`),
+armed-and-inert.** The shell detects fixation from its own books (same-file rewrites with
+the kept-failure set unmoved) and injects escalating feedback — a capped summary, then
+the worker's own failed edits verbatim. But two frozen probes (F41, $10.12) found the
+disease in REMISSION: 0 fixated pairs in 14 across jobs #1/#2/#4, even against a
+three-plant tree the worker had to grind through in three judged attempts — F21's
+repetition was a broken-loop symptom, cured by the F20/F21/F30/BA-13 fixes. The ratchet
+ships ON by default, measured cost-free when the worker is healthy; its field read
+(repetition drop, ON vs OFF) DEFERS to the first run whose spine records
+`root-injected` — expected pressure point: Layer 2's narrow micro-wheel steps.
 
 ### Layer 2 — micro-wheels (the road)
 The workflow becomes a **sequence of small wheels**, each with one goal and only the verbs
@@ -281,9 +292,14 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
    measured the stall is NOT a memory problem: aim becomes perfect (14–18 of 18 named
    functions targeted) but every acting row died at the clean wall, authoring tests it
    cannot execute — and one row stalled anyway. No green at the 45% bar exists yet.
-2. **Build Layer R** — the root, so attempts stop repeating themselves. Role sharpened
-   by F39: continuity across attempts (justified by F21/F38), NOT the fix for the
-   semantic stall — the probe measured that hand-delivered state does not buy conversion.
+2. **Build Layer R** — ✅ **BUILT 2026-07-19, armed-and-inert (F41)**. The root's
+   fixation detector + escalating rejected-edit feedback landed (design record
+   2026-07-19); two frozen probes then found the disease it treats in REMISSION —
+   0 fixated pairs in 14 across every job we own, including a three-plant tree that
+   forced three judged red rounds. F21's repetition was a broken-loop symptom, already
+   cured by the F20/F21/F30/BA-13 fixes. Ships ON (measured cost-free when healthy);
+   the field read defers to the first `root-injected` spine event. Role stays as F39
+   sharpened it: continuity, never the semantic-stall fix.
 3. **Build Layer 2** — the micro-wheel road (plan-v1), with the stage-verdict rule above.
    Now carries a MEASURED requirement (F39): steps whose exits verify test correctness
    in-run (e.g. "your new tests pass on untouched source" as a form-checkable exit),

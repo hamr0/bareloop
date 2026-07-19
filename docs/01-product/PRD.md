@@ -1114,3 +1114,33 @@ stays verdict-gated (v1.13 scope separation unchanged).
 **The rung is NOT closed by the build.** It closes at the pre-registered acceptance
 battery (repetition metric + read rules frozen in a commit before any number exists).
 LAYERS.md's Layer R status line moves only then.
+
+---
+## Addendum v1.20 — 2026-07-20 (F41: fixation in remission; Layer R ships armed-and-inert, field read deferred — supersedes v1.19's battery plan)
+
+**The measured fact (F41 + follow-up).** Before v1.19's ON/OFF battery spent a dollar,
+base-rate reads asked whether the disease Layer R treats still exists: the $0 archive
+sweep (109 spines, jobs #2/#4, all structurally OFF-arm) read 0 fixated in 10 red→red
+pairs; probe 1 (job #1 rebuilt, F18-era plant) read INCOMPLETE — 2/3 attempt-1 greens
+plus a $1.50 budget that funded exactly one judged attempt; probe 2 (hamr-ordered
+"harder close": THREE stacked plants across three subsystems, budgetUsd re-signed to
+$4.50) read CONCLUSIVE — 4 eligible pairs, 0 fixated, all 4 different-file. The worker
+cleared roughly one subsystem per judged attempt and never repeated itself. Total
+evidence spend: $10.12.
+
+**The interpretation, bounded.** F21's fixation was a symptom of the broken-loop era —
+no attempt bound (F20), no gap channel (F21), no edit verb (BA-13), 4096-token output
+truncation (F30). Curing the loop cured the repetition, on every job shape this repo
+owns. This does NOT validate the ratchet's effect (nothing fired); it validates its
+COST: zero injections, zero tokens, zero interference across every probe run — the
+design condition "inert when not stuck" observed in the field.
+
+**Disposition (per the frozen decision table, operator-accepted).** Layer R ships ON by
+default, armed-and-inert. The pre-registered repetition-drop ON/OFF read is DEFERRED —
+not cancelled — to the first run whose spine records `root-injected` (expected pressure
+point: Layer 2's narrow micro-wheel steps, where per-step scopes concentrate rewrites).
+The rung mints no learning claim; v1.19's job #4 battery plan is superseded (its
+patient's failure genre is inaction/semantic-stall, which the ratchet deliberately does
+not treat — F38/F39). Spec change recorded: `litectx-maintainer` `budgetUsd` 1.5 → 4.5
+(re-signed) — the advertised budget must fund the attempts the cap promises; $1.50
+funded one judged attempt and made across-attempt evidence structurally impossible.
