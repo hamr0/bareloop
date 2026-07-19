@@ -163,3 +163,29 @@ test('a NEW episode after progress starts back at summary — the streak truly r
   assert.equal(inj.stage, 'summary', 'a fresh episode starts at summary, never inherits the old streak');
   assert.equal(inj.event.streak, 1);
 });
+
+// Edge, pinned: a worker-crash gap (ralph's synthetic message) contains no
+// kept-failure lines. Two in a row after same-file writes → empty red-set
+// equals empty red-set → the ratchet fires on write-overlap, ON TOP of the
+// crash gap's own revert instruction — compatible, and now deliberate.
+test('two consecutive crash-style gaps (no kept lines) + same file → ratchet fires', () => {
+  const root = createRoot({ gapKeep: KEEP });
+  const CRASH = 'Your edit CRASHED the test suite — it can no longer even load and judge (…).';
+  root.observe({ iteration: 1, writes: [] });
+  root.noteWrite('/r/src/x.js', 'a');
+  root.observe({ iteration: 2, gap: CRASH, writes: ['/r/src/x.js'] });
+  root.noteWrite('/r/src/x.js', 'b');
+  const inj = root.observe({ iteration: 3, gap: CRASH, writes: ['/r/src/x.js'] });
+  assert.ok(inj, 'repeated crash after repeated same-file writes is fixation');
+  assert.equal(inj.stage, 'summary');
+});
+
+test('honest red then crash → red-sets differ → no fixation (the crash is new information)', () => {
+  const root = createRoot({ gapKeep: KEEP });
+  root.observe({ iteration: 1, writes: [] });
+  root.noteWrite('/r/src/x.js', 'a');
+  root.observe({ iteration: 2, gap: GAP_A, writes: ['/r/src/x.js'] });
+  root.noteWrite('/r/src/x.js', 'b');
+  const inj = root.observe({ iteration: 3, gap: 'Your edit CRASHED the test suite …', writes: ['/r/src/x.js'] });
+  assert.equal(inj, null);
+});
