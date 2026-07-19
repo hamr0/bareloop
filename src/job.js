@@ -24,6 +24,33 @@ export const CLASSES = Object.freeze(['hard', 'soft', 'hitl']);
 /** the hierarchy: which verdict classes a close type may claim (PRD §7) */
 export const CLASS_BY_CLOSE = Object.freeze({ predicate: Object.freeze(['hard']), gold: Object.freeze(['hard']), rubric: Object.freeze(['soft']), hitl: Object.freeze(['hitl']) });
 export const GOLD_COMPARE = Object.freeze(['exact', 'json-equal']);
+/** step middle modes (2b): text = single-target artifact; tools = Gate-governed file tools */
+export const STEP_MODES = Object.freeze(['text', 'tools']);
+/** the tool grant menu (2b interview #1): read/grep/write, plus the two litectx
+ * RETRIEVAL verbs (F19) — `run` stays locked-but-listed; a spec requesting it
+ * reds, and that red IS the request-red evidence admission waits on (curation
+ * doctrine, PRD F2).
+ *
+ * `recall`/`get` are READ-ONLY BY CONSTRUCTION, not by promise: `recall` returns
+ * pointers (path/symbol/line-range, no bodies) and `get` trades ONE pointer for
+ * ONE chunk — it refuses any range that is not a chunk boundary, so it cannot be
+ * widened into a whole-file read, and it is content-hash gated (a drifted file
+ * throws rather than serving a stale body). Admitting them does NOT weaken the
+ * `run` lock: the worker still cannot execute anything, so it still cannot run
+ * its own close (the arbiter). F19: `shell_read` starts at byte ZERO and cannot
+ * seek, so a pointer was INERT — the worker paged 1.37 MB of source through
+ * context to reach 8 lines. The ranged read is the pager.
+ *
+ * `edit` (BA-13, bare-agent 0.29.0) is the anchored exact-once replace — a
+ * WRITE-class verb judged by the SAME writeScope fence as `write` (bareguard
+ * action type 'edit'). Admitted because whole-file rewrite is measurably
+ * unreliable at size (F31: 4 of 5 big-file whole-writes broke the tree) and
+ * taxes output tokens ∝ file size. It admits no execution either. */
+export const TOOL_MENU = Object.freeze(['read', 'grep', 'write', 'edit', 'recall', 'get']);
+/** locked-but-listed tools: real capabilities deliberately outside the grant
+ * menu. Requesting one is a DISTINCT `request-red` (module 4) — the ledger
+ * counts admission demand, and a generic invalid-value would bury it as a typo. */
+export const LOCKED_TOOLS = Object.freeze(['run']);
 export const CADENCE_UNITS = Object.freeze(['hour', 'day', 'week']);
 export const PROVIDERS = Object.freeze(['anthropic-api']); // SP-2: API-first; local deferred (PRD §5/§8)
 /** V3 environment label: declared keys only — every field is a lineage-key
@@ -34,14 +61,14 @@ const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'conditions', 'c
 /** exact field set per close type — anything else is an unknown-field red
  * (freeform code, script bodies, and minting claims all land there) */
 const CLOSE_FIELDS = {
-  predicate: ['type', 'cmd', 'expect'],
+  predicate: ['type', 'cmd', 'expect', 'judged', 'gapKeep'],
   gold: ['type', 'expected', 'compare'],
   rubric: ['type', 'criteria'],
   hitl: ['type', 'prompt'],
 };
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
 
-/** @typedef {{code: string, path: string, detail?: string}} Red */
+/** @typedef {{code: string, path: string, detail?: string, verb?: string}} Red — `verb` rides request-reds as structured data (the ledger keys on it, never on prose) */
 
 /**
  * Validate an operator-owned job spec (`schema: "job-v1"`). Never throws on
@@ -139,7 +166,33 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
       const at = `steps.${i}`;
       if (!isObj(s)) { red('invalid-value', at, 'step must be an object'); return; }
       for (const key of Object.keys(s)) {
-        if (!['id', 'close', 'class'].includes(key)) red('unknown-field', `${at}.${key}`);
+        if (!['id', 'close', 'class', 'mode', 'tools'].includes(key)) red('unknown-field', `${at}.${key}`);
+      }
+      // mode/tools — the spec-side tool grant (2b decision #2: the human job
+      // spec owns mode + menu; the drafted config cannot express either)
+      const isHitl = isObj(s.close) && s.close.type === 'hitl';
+      if ((s.mode !== undefined || s.tools !== undefined) && isHitl) {
+        red('invalid-value', `${at}.mode`, 'hitl steps run no loop — mode/tools do not apply');
+      } else {
+        if (s.mode !== undefined && !STEP_MODES.includes(s.mode)) red('invalid-value', `${at}.mode`, STEP_MODES.join('|'));
+        if (s.tools !== undefined) {
+          if (s.mode !== 'tools') red('invalid-value', `${at}.tools`, 'a tool grant requires mode "tools" — a grant without the mode is incoherent');
+          else if (!(Array.isArray(s.tools) && s.tools.length > 0
+                     && s.tools.every((/** @type {unknown} */ t) => typeof t === 'string')
+                     && new Set(s.tools).size === s.tools.length)) {
+            red('invalid-value', `${at}.tools`, `non-empty unique subset of ${TOOL_MENU.join('|')}`);
+          } else {
+            // locked-but-listed asks red DISTINCTLY: request-red is the admission
+            // evidence the ledger tallies (two-red routing); a typo stays invalid-value
+            for (const t of s.tools.filter((/** @type {string} */ t) => LOCKED_TOOLS.includes(t))) {
+              // verb as a structured field: the ledger keys admission demand on it;
+              // parsing it back out of the prose detail would break on a rewording
+              reds.push({ code: 'request-red', path: `${at}.tools`, verb: t, detail: `"${t}" is locked-but-listed — this red IS the admission evidence, never a grant; granted menu: ${TOOL_MENU.join('|')}` });
+            }
+            const unknown = s.tools.filter((/** @type {string} */ t) => !TOOL_MENU.includes(t) && !LOCKED_TOOLS.includes(t));
+            if (unknown.length) red('invalid-value', `${at}.tools`, `unknown tool(s) ${unknown.join(', ')} — menu: ${TOOL_MENU.join('|')}`);
+          }
+        }
       }
       if (!isNonEmptyString(s.id) || !SLUG_RE.test(s.id)) red('invalid-value', `${at}.id`, 'kebab-case slug');
       else if (seen.has(s.id)) red('duplicate-id', `${at}.id`, s.id);
@@ -157,7 +210,70 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
       // per-type contracts — fixed menus only
       if (close.type === 'predicate') {
         if (!isNonEmptyString(close.cmd)) red('missing-required', `${at}.close.cmd`);
+        // the runner executes cmd as whitespace-split argv with NO shell: quote
+        // characters imply shell semantics the split cannot honor — honest
+        // refusal beats silent misparse (N2 design default)
+        else if (/["']/.test(close.cmd)) red('invalid-value', `${at}.close.cmd`, 'quote characters are inexpressible: cmd runs as whitespace-split argv, no shell');
+        else if (close.cmd !== close.cmd.trim()) red('invalid-value', `${at}.close.cmd`, 'leading/trailing whitespace — argv splits on whitespace and an empty argv[0] cannot spawn; honest refusal beats a silent misparse');
         if (!Number.isInteger(close.expect)) red('invalid-value', `${at}.close.expect`, 'integer exit code');
+        // The judgment-rendered signal (PRD v1.11, optional). Exit code alone
+        // cannot separate "the suite ran and failed" from "the suite crashed at
+        // load" — they are byte-identical at the seam, and against `node --test`
+        // so are the raw counts (a crashed file is reported as ONE failing test).
+        // So the signal is a FLOOR, not a zero-check: a close declares how many
+        // things it must judge before its exit code means anything at all.
+        if (close.judged !== undefined) {
+          const j = close.judged;
+          if (!isObj(j)) red('invalid-value', `${at}.close.judged`, 'object {pattern, min} — proof the close actually judged something');
+          else {
+            for (const key of Object.keys(j)) {
+              if (!['pattern', 'min'].includes(key)) red('unknown-field', `${at}.close.judged.${key}`);
+            }
+            if (!isNonEmptyString(j.pattern)) red('missing-required', `${at}.close.judged.pattern`, 'regex over the close output with ONE capture group yielding the count');
+            else {
+              let groups = 0;
+              try {
+                // `p|` always matches the empty string, so exec() returns an array
+                // whose length is 1 + the number of capture groups — the only way
+                // to count groups without executing the pattern against real output.
+                groups = (new RegExp(`${j.pattern}|`).exec('')?.length ?? 1) - 1;
+              } catch {
+                red('invalid-value', `${at}.close.judged.pattern`, 'must compile as a RegExp');
+                groups = -1;
+              }
+              // A pattern with no capture group extracts nothing, so EVERY close
+              // would read as crashed — a dead arbiter that reds forever. Red the
+              // spec, not every run.
+              if (groups === 0) red('invalid-value', `${at}.close.judged.pattern`, 'no capture group — the count is read from group 1, so this pattern would crash every close');
+              // More than one is the same defect wearing a subtler hat: runClose
+              // reads group 1 ONLY, so an alternation whose other branch carries
+              // the count leaves group 1 undefined → NaN → judgedCount null →
+              // an exit-0 GREEN stamped 'crashed' (a fake crash, the mirror of
+              // the fake green this floor exists to catch). Alternation stays
+              // fully expressible with non-capturing branches: `(?:a|b) (\d+)`.
+              else if (groups > 1) red('invalid-value', `${at}.close.judged.pattern`, `${groups} capture groups — the count is read from group 1 only; use exactly one capture group and non-capturing (?:…) branches`);
+            }
+            if (!Number.isInteger(j.min) || j.min < 1) {
+              red('invalid-value', `${at}.close.judged.min`, 'integer >= 1 — a floor of 0 is satisfied by judging nothing, which is the check it is meant to make');
+            }
+          }
+        }
+        // The kept-failures pattern (F28, optional). ralph's gap bound head/tail-
+        // elides a large close stream, and a big TAP suite prints its `not ok`
+        // lines in the MIDDLE — so the failing-test NAMES (the causal navigation
+        // input the worker runs on) were deleted in transit and the worker was
+        // told "5 fail" and never WHICH. gapKeep is a regex SOURCE whose matching
+        // lines are PRESERVED in the gap in addition to head+tail. Same discipline
+        // as judged.pattern: a non-empty string that must compile as a RegExp, or
+        // it is a spec red before any tokens burn (reds-before-tokens) — an invalid
+        // keep pattern must never surface as a runtime crash inside the arbiter.
+        if (close.gapKeep !== undefined) {
+          if (!isNonEmptyString(close.gapKeep)) red('invalid-value', `${at}.close.gapKeep`, 'regex source string — lines matching it survive the gap bound (F28)');
+          else {
+            try { new RegExp(close.gapKeep, 'm'); }
+            catch { red('invalid-value', `${at}.close.gapKeep`, 'must compile as a RegExp'); }
+          }
+        }
       } else if (close.type === 'gold') {
         if (close.expected === undefined) red('missing-required', `${at}.close.expected`);
         if (!GOLD_COMPARE.includes(close.compare)) red('invalid-value', `${at}.close.compare`, GOLD_COMPARE.join('|'));

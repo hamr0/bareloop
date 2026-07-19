@@ -1,0 +1,31 @@
+{
+  "schema": "job-v1",
+  "job": "litectx-maintainer",
+  "description": "Keep litectx green: the suite is the hard close. Fix any failure in src/ through the file tools, then open a draft PR for human review. Merge stays human, forever.",
+  "provider": "anthropic-api",
+  "conditions": { "closeVerbosity": "counts-only" },
+  "cadence": { "unit": "day", "every": 1 },
+  "budgetUsd": 1.5,
+  "writeScope": ["src/**"],
+  "steps": [
+    {
+      "id": "suite",
+      "mode": "tools",
+      "tools": ["read", "grep", "write", "edit", "recall", "get"],
+      "close": {
+        "type": "predicate",
+        "cmd": "node --test --test-reporter=spec",
+        "expect": 0,
+        "judged": { "pattern": "^ℹ tests (\\d+)$", "min": 300 },
+        "gapKeep": "^✖ "
+      },
+      "class": "hard"
+    },
+    {
+      "id": "pr",
+      "close": { "type": "hitl", "prompt": "bareloop greened the litectx suite — review the draft PR and merge?" },
+      "class": "hitl"
+    }
+  ],
+  "escalation": { "mode": "decision-ready" }
+}

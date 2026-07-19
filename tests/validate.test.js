@@ -8,7 +8,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { validateConfig, diffPaths, globToPrefix, scopeContained } from '../src/validate.js';
+import { validateConfig, diffPaths, globToPrefix, scopeContained, scanSecrets } from '../src/validate.js';
+import { validConfig } from './helpers.js';
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const load = (name) => JSON.parse(readFileSync(join(fixtures, name), 'utf8'));
@@ -292,4 +293,52 @@ test('doc stays gated out of v1 remember even though litectx accepts it', () => 
   const r = validateConfig(cfg);
   assert.equal(r.ok, false);
   assert.equal(r.reds[0].code, 'verb-params');
+});
+
+// ─── inexpressibility is guarded PER SECTION, not just at the top (F17) ──────
+// The arbiter split rests on the drafted config being UNABLE to say certain
+// things. A guard that stops at the top level does not deliver that: `gate` and
+// friends accepted arbitrary keys, so `gate.judged` (the close's own honesty
+// check) validated green. Nothing consumed it — the point is that nothing ever can.
+
+test('every nested config section reds unknown fields — the arbiter is unreachable at ANY depth', () => {
+  /** @type {[string, (c: any) => void][]} */
+  const smuggles = [
+    ['loop.maxTurns', (c) => { c.loop.maxTurns = 999; }],
+    ['memory.ceilingTokens', (c) => { c.memory.ceilingTokens = 200000; }],
+    ['memory.recall.limit', (c) => { c.memory.recall.limit = 99; }],
+    ['gate.judged', (c) => { c.gate.judged = { pattern: '(\\d+)', min: 1 }; }],
+    ['gate.maxCostUsd', (c) => { c.gate.maxCostUsd = 100; }],
+    ['escalation.channel', (c) => { c.escalation.channel = 'silent'; }],
+  ];
+  for (const [path, smuggle] of smuggles) {
+    const c = validConfig();
+    smuggle(c);
+    const r = validateConfig(c, { shellCapUsd: 2 });
+    assert.equal(r.ok, false, `${path} must not validate green`);
+    assert.ok(r.reds.some((x) => x.code === 'unknown-field' && x.path === path),
+      `${path} must red as unknown-field, got ${JSON.stringify(r.reds)}`);
+  }
+});
+
+test('the legal config still validates green — the section guard does not over-trigger', () => {
+  const r = validateConfig(validConfig(), { shellCapUsd: 2 });
+  assert.deepEqual(r.reds, []);
+});
+
+test('scanSecrets returns the LITERAL matches, sharing the ONE shape inventory with the sweep', () => {
+  // Seven scripts hand-rolled this scan off SECRET_PATTERNS (review 2026-07-18).
+  // Detection and redaction must never disagree about what a secret looks like,
+  // so the scan gets ONE spelling next to the inventory it reads.
+  const raw = 'log line\nAuthorization: Bearer ghp_' + 'A'.repeat(24) + '\nharmless flask-sqlalchemy\n';
+  const hits = scanSecrets(raw);
+  assert.equal(hits.length, 1);
+  assert.match(hits[0], /^ghp_A+$/);
+  assert.deepEqual(scanSecrets('nothing to see, sk-not (too short)'), []);
+  assert.deepEqual(scanSecrets(null), [], 'never throws on a missing stream');
+});
+
+test('scanSecrets finds EVERY occurrence, not just the first (a global scan, not a probe)', () => {
+  const raw = ['AKIA' + 'B'.repeat(16), 'AKIA' + 'C'.repeat(16)].join('\n');
+  assert.equal(scanSecrets(raw).length, 2);
 });

@@ -70,3 +70,53 @@ Two row types; current state is a FOLD, never a mutation:
 - Not a metrics system — it's an incident ledger; rates/dashboards are folds someone else runs.
 - Never a mutation of spines — spines stay the ground truth; the ledger is derived and
   reconstructible from them (delete it and re-run the collector: same fold).
+
+---
+
+## Addendum 2026-07-13 — the bareloop rewrite (module 4, `src/ledger.js`)
+
+Graduation is a REWRITE, never a copy: the table above is adaptlearn's spine vocabulary;
+this addendum locks the mapping onto bareloop's actual events (interview decisions with
+hamr, 3 locked). The POC stays adaptlearn-side; the reference implementation is now
+`src/ledger.js` + `tests/ledger.test.js`.
+
+### Sources → classes, bareloop vocabulary
+
+| bareloop spine evidence | class | lib attribution |
+|---|---|---|
+| `primitive-smoke{ok:false}` | `silent-degradation` | the event's `primitive` |
+| `escalation{category: interpreter-red}`, detail names a store verb (`VERBS`) or litectx | `runtime-red` | litectx |
+| `escalation{category: interpreter-red}`, detail names the worker loop / provider | `provider-red` | bare-agent |
+| `escalation{category: interpreter-red}`, neither | `runtime-red` | `unknown` — counted, never dropped |
+| `escalation{category: pricing-red}` | `pricing-red` | bare-agent (pricing-table gap; F6 — **new vs the 07-11 table**) |
+| `escalation{category: provider-red}` (the runner's transport-throw seam, review 2026-07-13) | `provider-red` | bare-agent |
+| `escalation{category: broken-close}` | `broken-close` | consumer (job owner) |
+| `retention-red` | `retention-red` | litectx (`remember`) |
+| `job-red{code: request-red}` | `request-red` | the requested verb — the red's structured `verb` field (review 2026-07-13); quoted-detail parse kept only as the fallback for older spines |
+| `cap-halt` in a spine that also carries request-reds | `capability-gap` | the requested verb |
+| `config-red` | `config-red` | **bareloop itself** — the config is model-drafted against OUR schema description; a repeated signature indicts the drafting prompt/schema |
+
+### Decisions locked (interview 2026-07-13)
+
+1. **request-red gets a distinct red code in job-v1** (`src/job.js`): a locked-but-listed
+   ask (`LOCKED_TOOLS`, frozen `['run']`) reds `request-red`, never the generic
+   `invalid-value` — a generic code buried admission demand as a typo, and detail-string
+   matching would break silently on a rewording. A typo (unknown tool name) stays
+   `invalid-value`. `capability-gap` ships but is dormant in N2: request-red is a
+   job-validation red today, so the job never runs and never cap-halts in the same
+   spine; it goes live when in-loop admission lands (2b deferral).
+2. **New-event ruling:** `pricing-red` is IN (a lib incident — the provider path carried
+   no priced cost; exactly what upstream asks are made of). Excluded, with the 07-11
+   exclusions carrying over: `gate-red` (governance working as intended), `artifact-red`
+   (worker story, same family as close-verdict reds), `pr-red` (operator environment —
+   git/gh, not a suite lib).
+3. **Shape:** pure pieces (`classifyIncidents`, `foldLedger`, `ledgerDeltas`) + ONE
+   convenience collector `updateLedger({ledgerFile, spineFiles})`. The CLI in the flow
+   sketch above lands at N5; the panel reads the same file at N6.
+
+### Collector contract (sharpened from the flow sketch)
+
+Idempotence over the corpus: pass ALL spines each time — occurrence counts are totals
+computed from what you pass, and a row appends only when a key is new or its count grew.
+`seq` continues monotonically across appends; rows keep spine conventions (`type` first,
+`ts` stamped last). The `--status` append stays human/manual (no API — the arbiter line).

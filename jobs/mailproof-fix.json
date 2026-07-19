@@ -1,0 +1,26 @@
+{
+  "schema": "job-v1",
+  "job": "mailproof-fix",
+  "description": "Keep mailproof green: the test suite is the hard close. The suite is currently red — trace the failing tests to their root cause in src/ and fix it through the file tools, then stop. Do not edit tests; make the suite pass by fixing the source. Merge stays human, forever.",
+  "provider": "anthropic-api",
+  "conditions": { "closeVerbosity": "names-failing-tests" },
+  "cadence": { "unit": "day", "every": 1 },
+  "budgetUsd": 3,
+  "writeScope": ["src/**"],
+  "steps": [
+    {
+      "id": "suite",
+      "mode": "tools",
+      "tools": ["read", "grep", "write", "edit", "recall", "get"],
+      "close": {
+        "type": "predicate",
+        "cmd": "npm test",
+        "expect": 0,
+        "judged": { "pattern": "^# tests (\\d+)$", "min": 300 },
+        "gapKeep": "^not ok"
+      },
+      "class": "hard"
+    }
+  ],
+  "escalation": { "mode": "decision-ready" }
+}

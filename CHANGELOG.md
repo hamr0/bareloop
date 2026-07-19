@@ -5,6 +5,349 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.3.0] — 2026-07-19
+
+### Fixed
+
+- **A `close.judged` pattern with more than one capture group now reds at validation
+  (F40).** `runClose` reads capture group 1 only, so an alternation carrying the count
+  in another branch left group 1 `undefined` → `NaN` → `judgedCount` null → an exit-0
+  **green stamped `crashed`** (the mirror of the fake green the floor exists to catch);
+  at precheck that escalates `close-crashed` before the worker runs. The validator's
+  message already promised ONE group and only enforced "not zero". Alternation stays
+  expressible with non-capturing branches: `(?:a|b) (\d+)`.
+- **Upstream-ledger attribution reads a typed `lib` field instead of sniffing error
+  prose (F40).** `interpret` prefixes every worker-loop error with `worker loop:`, and
+  the verb sniff ran first — so a bare-agent transport failure whose text merely
+  contained "recall" was billed to litectx. The throw site now stamps the owner it
+  knows, `ralph` relays it, and prose remains the fallback for older spines (the
+  `request-red` contract).
+- **An unrecognised escalation category is counted, not silently dropped (F40).** The
+  dispatch keyed on four bare literals with no default, so a new or renamed category
+  vanished exactly like a deliberate exclusion. Exclusions are now an executable set;
+  anything outside {classified} ∪ {excluded} is charged to bareloop as a stale mapping.
+- **The drafter is offered a PER-STEP share of the budget, not the whole pot (F40).** The
+  config is drafted once and re-validated at every step against what is left, so a ceiling
+  sized to the whole budget went stale the moment step 1 spent: step 2 then red `bounds` on
+  an unchanged config with money still in the pot. The advertised ceiling is now
+  `(budgetUsd − drafting reserve) ÷ predicate steps`, which still fits after earlier steps
+  have spent (the shares sum to the reserve-less budget). A drafting bound, not an
+  enforcement one — cap-not-estimate is unchanged and still tested, and a step needing more
+  than its share cap-halts cleanly rather than starving the steps after it. **Every shipped
+  job has one predicate step and is arithmetically identical.**
+- **`jobs/aurora-fix.json` counts tests EXECUTED, not tests PASSED (F40).** A passed-count
+  floor conflated "did the close judge?" with "did the tests pass?", so the red tree the job
+  exists to fix fell under the floor and escalated as an instrument crash at precheck,
+  before the worker ever ran. Pattern is now `collected (\d+) items`; the patient's
+  `close.sh` swaps `-q` for `-ra` (`-q` prints no executed-count line at all, and `-ra` is
+  required or the job's `gapKeep "^FAILED "` loses every line it carries to the worker).
+- **Revisor rounds no longer spend the worker's per-attempt bound (F40).**
+  `roundsThisAttempt` resets once, *before* the revisor phase, and revisor turns share
+  the worker's metered handler — so R revisor rounds silently left the worker 40−R while
+  the prompt still advertised 40, and a revisor burning the bound stopped the worker loop
+  before its first tool call. Money still meters on the run's axis (F12); only the round
+  charge moved. Restores "the advertised bound and the enforced bound stay the same
+  numbers on both axes", and matches the carve-out the summarizer fold already had.
+- **Two F6 cost launderings closed (F40).** `run-job1`/`run-job2` printed
+  `spent: $0.0000` for provider-red/pricing-red runs (whose `job-end` carries no
+  `spentUsd`, and which can end after real priced spend) — now `UNKNOWN`, the
+  `run-battery` spelling. The `revision-red`/`revision-accepted` spine events recorded
+  `costUsd: 0` for an unpriced revisor — now the honest null.
+
+### Added
+
+- **`scanSecrets(raw)` — the ONE spelling of the raw-text secret scan (F40).** The scan
+  was hand-rolled at seven call sites off `SECRET_PATTERNS`; detection and redaction
+  must never disagree about what a secret looks like. Exported beside the inventory,
+  `sweepSecretLiterals`'s text-side twin.
+
+### Changed
+
+- **Tool-mode attempt bound raised 24→40 rounds (F37).** The TESTGEN calibration curve
+  measured that no prompt condition (bound undisclosed / disclosed / disclosed+pacing
+  strategy) produced a graded one-shot at 24 rounds — the worker's read-first prelude
+  eats the window — while one run proved a form-passing suite fits when writing starts
+  by mid-attempt. The per-attempt cutoff and the Gate's run-wide `maxTurns` now derive
+  from ONE hoisted `TURNS_PER_ATTEMPT` constant (they must agree or the enforced bound
+  drifts from the advertised one).
+
+### Added
+
+- **F32 — worker-crash attribution: a close crash the worker caused is a gap, not a stop.**
+  Battery pass 1 (F31) measured the gap: 4 of 7 rows whole-file-rewrote an orchestrator,
+  broke imports, the close crashed under the judged floor, and the run **escalated** — the
+  worker was never told "your edit crashed the suite", so no plant that needed a second
+  attempt ever got one. F17's forbidden zone was built against instrument crashes and could
+  not see worker-attributable ones. Now: a `crashed` verdict with worker writes on record
+  routes as the DISTINCT verdict **`worker-crash`** (spine event with the file list), the
+  gap tells the worker which files it wrote and to fix or revert, and the loop continues
+  under the same caps. Attribution instrument: the gate audit's allow-decision write/edit
+  lines, run_id-scoped, read through an injected `workerWrites` seam (`ralph` stays
+  stdlib-only and dumb). Escalation is UNCHANGED for true instrument crashes: crash at
+  precheck (structurally pre-worker) or crash with zero writes stays `close-crashed`, never
+  retried; an unreadable audit attributes nothing (fail toward the old behavior). Validated
+  against the real instrument (P3 rerun, sonnet, $0.77): all three crashes routed and fed
+  back, zero escalations-eaten rows, honest `cap-halt` stop — pass 1's same plant died at
+  attempt 1 with the worker never told. TDD, suite 292 → 299.
+- **BA-13 consumed — the anchored edit verb (`bare-agent` 0.27.0 → 0.29.0).** `TOOL_MENU`
+  gains **`edit`** (job-spec grantable; `run` stays locked), `TOOL_BY_VERB` maps it to
+  `shell_edit` (anchored exact-once replace: BA-4 param guards, atomic rename, anchor-miss
+  as a refusal RESULT so the worker re-anchors). Judged by the SAME `writeScope` fence as
+  `write` (bareguard action type `'edit'`, already in its FS vocabulary); the F32
+  attribution instrument counts edit actions as worker writes; the tool-mode persona
+  carries the strategy (prefer the edit verb — F31: 4 of 5 big-file whole-writes broke the
+  tree). The frozen battery spec pins its grant explicitly, so the menu widening does NOT
+  change what the signed hash buys — granting `edit` to the battery is a new spec version.
+  Suite 299 → 303.
+
+### Fixed
+
+- **F33 — two verb-blind reporting instruments (battery pass 2's audit).** Pass 2 ran
+  7/7 attempt-1 green at $0.94 under the newly signed `edit`-granting spec — and the
+  battery's printed table said `writes=0` on a pass whose every fix was one anchored edit:
+  the collector counted only `write` actions, built before the `edit` verb existed and
+  never re-audited when the menu widened (F32's lesson, re-learned at the reporting layer
+  in the same session it was minted). `culpritRead` was equally blind to the retrieval
+  channels: P5 greened with the culprit's body handed to it by the drafted config's
+  `before-attempt` recall hook (`body: true` + litectx recency boost ranking the
+  just-planted chunk into the hits) — invisible to an instrument that only saw gated
+  reads. Fixed: the collector counts write AND edit as write-class; `culpritRead` sees
+  every read-class channel; both recall emit sites (`ctx-tool`, `hook-op`) now carry
+  `paths` so downstream instruments can see what reached the worker's context. The
+  archived pass-2 results JSON keeps its wrong zeros; FINDINGS F33 is the corrected read.
+
+- **F28 — the gap bound cut every failure line out of the worker's feedback.** The first
+  real end-to-end firing of the N2 loop delivered a 1,927-char gap containing **zero**
+  `not ok` lines: `ralph`'s `boundGap` keeps a head sample + elided middle + tail, and a
+  large TAP suite (`npm test`, ~67KB) prints its failing tests in the *middle* — so the
+  worker was told "5 fail" and never *which*, three attempts running, and never navigated to
+  the culprit file. New optional **`close.gapKeep`** (job-spec, `predicate` only): a regex
+  **source** whose matching close-output lines are preserved in a capped, clearly-delimited
+  kept-failures block between head and tail — the failing-test NAMES reach the worker
+  regardless of where they print. Hard-capped (50 lines / 8192 bytes, whichever binds) so a
+  pathological close cannot rebuild the bloat; a trimmed block announces the trim (no silent
+  truncation). Validated like `judged.pattern` (must compile as a RegExp, else a spec red
+  before any tokens); **arbiter territory** — the drafted workflow config cannot express it.
+  Also fixed the adjacent hazard: the gap now combines **both** streams (stdout + stderr), so
+  a failure on stdout survives stderr noise (the old `err || out` returned stderr alone and
+  lost it). `jobs/mailproof-fix.json` gains `"gapKeep": "^not ok"` (spec re-signed). Threaded
+  spec → `runJob` → `interpret` → `ralph` parallel to `judged`. TDD, suite 281 → 291.
+
+### Changed
+
+- **Consume `bare-agent@0.27.0` — the N2 build gate (BA-4) is cleared.** 0.27.0 ("Provider
+  Fidelity & Honest Termination") shipped the entire upstream ask queue this rung filed:
+  BA-4, BA-5, BA-3, BA-6, BA-7, BA-1 (+ BA-10/BA-12). **BA-4** (`shell_write` truncating a
+  file to zero bytes on absent `content`) was the hard N2-exit blocker — its four acceptance
+  criteria are re-verified locally against the published tarball, so a write-granting tool
+  mode can ship honestly. The tool-mode middle (`src/interpret.js`) is updated to the new
+  contract: a **`truncated:max_tokens`** round (BA-6 — a round the API cut off, previously
+  laundered into a clean `error:null` finish, F25) now escalates as **provider-red** (retry,
+  the F11 transport class) instead of being scored as an empty attempt; **`loop.stop()`**'s
+  new `error:null`+text return (BA-3/BA-5) let the `stoppedByBound` shim be **deleted** (it
+  was dead under the new contract and could have swallowed a genuine halt); and
+  **`cacheMessages: true`** (BA-1) is wired on the worker loop — the transcript cache the
+  job #1 cost wall (F18: 754k full-price tokens, died at cap) needed. Regression test for
+  the truncation path added (mutation-checked). Suite 280/280, typecheck clean.
+
+- **Agent/IDE scratch gitignored and de-tracked.** `.gitignore` now default-denies every dot-directory (`.*/`), re-admitting only what ships (`.github/`). Per-machine agent/IDE state (`.claude/`, `.litectx/`, `.idea/`, …) regenerates locally and only added noise and churn; any already-committed copies are removed from tracking (local files kept on disk). Repo hygiene only.
+
+### Added
+- **N2 — the headless single-job loop (rung 3 of the ladder), modules 1–4 + 2b.**
+  - **`runJob(spec, opts)`** (`src/run.js`): the runner — approval gate (human-signs-always,
+    refuses before ANY token: `unapproved-spec`) → litectx known-answer smoke before tokens
+    (`smoke-red`, adaptlearn A3) → config drafting through the PRICED path, one sealed shot
+    + one redraft with reds fed back (`config-red` on a second red, zero grinding) →
+    sequential per-step interpret loops under the ONE cumulative ledger (a step-red stops
+    the job with attribution: `step-red:<id>`) → the hitl step opens a **draft PR
+    deterministically** (branch → stage the job fence ONLY → commit → push →
+    `gh pr create --draft`, through an injectable shell-owned exec seam — model tools never
+    touch git; a failure is `pr-red` + the escalation still fires) and ends `escalated` by
+    design, the PR URL riding the decision-ready escalation. New spine vocabulary:
+    `job-start/end`, `step-start/end`, `primitive-smoke`, `draft-result`, `pr-opened`,
+    `pr-red`.
+  - **Tool-mode middle** (module 2b): `job-v1` steps gain `mode: "text"|"tools"` and
+    `tools` (unique subset of `read|grep|write` — `TOOL_MENU`, frozen; requesting `run`
+    reds: locked-but-listed, admission waits on request-red evidence). The SPEC owns the
+    grant; the drafted config cannot express either. In tool mode the worker drives
+    bare-agent's shell tools with every call policy-checked against the same fence
+    (`actionTranslator` maps tool calls onto write/read actions; paths resolve exactly as
+    the tools resolve them), reads pinned to the workdir (`readScope`), a denial streak
+    stopping as `gate-red`. `STEP_MODES`/`TOOL_MENU` exported.
+  - **`artifact-red` + fence-robust extraction** (module 3): ONE parser (`extractArtifact`)
+    for every model-output parse — prose-wrapped and mid-text fences extract clean; a
+    non-artifact response reds on its OWN axis, writes nothing, and the retry is told why
+    (non-terminal, under ralph's cap). Text mode only — in tool mode the tools write
+    directly and the close judges the tree (there is no response artifact to red).
+  - **ralph options** (module 1): `closeTimeoutMs` (close wall-clock cap, was hardcoded
+    120s) and the tail-biased gap bound (400 head + 1500 tail — the assertion diff lives
+    at the end; head-only truncation fed the worker pure preamble).
+  - **The upstream ledger** (module 4): `updateLedger({ledgerFile, spineFiles})`
+    (`src/ledger.js`) folds run spines into ONE append-only incident JSONL — the
+    A1/A2/A3 upstream-ask flow, mechanized: evidence in, human judgment out
+    (`suggestedAsk` is a template seed, never an auto-file; status rows
+    `filed → fixed → consumed` stay human-appended). Keys `lib:verb:class:sig` dedupe
+    the same bug across runs (short hash of the path/number-normalized detail); rows
+    are cumulative deltas, the fold is current state, and the collector is idempotent
+    over the same corpus — the ledger is derived and reconstructible, spines stay
+    ground truth. Classes worst-first (`LEDGER_CLASSES`, frozen): `silent-degradation`,
+    `runtime-red`, `provider-red`, `pricing-red` (added vs the design doc — F6),
+    `capability-gap` (ships dormant until in-loop admission), `broken-close`,
+    `request-red`, `retention-red`, `config-red` (attributed to bareloop's own
+    drafting schema). Excluded by doctrine: bare `cap-halt` (budget story),
+    `close-verdict`/`artifact-red` (worker stories), `gate-red` (governance working
+    as intended), `pr-red` (operator environment). Pure pieces exported:
+    `classifyIncidents`, `foldLedger`, `ledgerDeltas`. Design record:
+    `docs/plans/2026-07-11-upstream-ledger-design.md` + 2026-07-13 addendum (the
+    bareloop event mapping). CLI lands at N5; the panel reads the same file at N6.
+  - **Resume-to-cap: close-first skip** (module 4.5): every predicate step runs its
+    close BEFORE any tokens (`close-precheck` on the spine, output scrubbed at capture
+    like every close). Already-green skips the step for zero tokens as a DISTINCT
+    record (`step-end` outcome `already-green`, never plain `green` — nothing was done,
+    so it mints no learning credit and runs no on-green retention); a close that cannot
+    RUN stops `broken-close` before any provider call. Config drafting is deferred to
+    the first step that actually needs a worker (still one sealed shot + one redraft,
+    always drafted fresh per run) — so the resume story is: a `cap-halt` stop is the
+    checkpoint (the workdir + the closes), the human raises `budgetUsd` (new spec hash,
+    re-sign) and reruns, finished steps skip in seconds, and a clean cadenced rerun
+    costs ZERO provider calls. Design record: the 2026-07-13 addendum on
+    `docs/plans/2026-07-12-n2-headless-loop-design.md`.
+  - **The cadenced no-op is silent (F7).** A `hitl` step now checks the fence
+    (`git status --porcelain -- <fence>`) before touching git: an affirmatively-clean
+    fence emits `pr-skipped` + `step-end: already-green` and the job ends **green** —
+    no PR, no escalation. (Before: a green-repo cadence opened a branch, and `git
+    commit` correctly failed "nothing added to commit" → a broken-PR escalation every
+    single day. A hitl close is a human decision point; with no changes there is no
+    decision.) A FAILED check — not a repo, broken git — falls through to the PR path
+    and reds honestly: an unknown fence state is never a green.
+  - **The PR step hands the checkout back (F7).** The starting branch is read before
+    anything moves and restored on every path, success or failure; a restore that fails
+    is a loud `workdir-red` naming the stranded branch, and never un-opens a real PR.
+    (Before: the workdir was left on `bareloop/<job>-<id>`, so the next cadenced run
+    branched off the previous run's unmerged branch and judged its close against that
+    state.) New spine vocabulary: `close-precheck`, `pr-skipped`, `workdir-red`;
+    `step-end` gains the `already-green` outcome.
+
+  - **Nine defects found by the first REAL-MODEL runs of job #1 (F8–F16)** — all fixed
+    TDD-first, all invisible to a stubbed seam:
+    - **`cwd` (F8):** `runClose` spawned the close with NO cwd, so a cwd-relative close
+      (`npm test`) ran in the RUNNER's directory — the arbiter judged the wrong repository.
+      `cwd` now threads runner → `ralph` → `spawnSync` (`ralph({cwd})`, `runClose(…, {cwd})`).
+    - **Drafting ceiling (F9):** the prompt advertised the JOB budget while the validator
+      enforced budget − drafting-spend — a bound the drafter was never told, so every real run
+      (the model claims the ceiling it is given) deadlocked `config-red`. The shell now reserves
+      its own drafting allowance and advertises `budget − reserve`: one number, advertised and
+      enforced.
+    - **Repository root (F10):** tool mode now tells the worker the absolute workdir. bare-agent's
+      shell tools resolve relative paths against the PROCESS cwd, so a worker with no root is
+      blind — the real one groped `/home/…`, the runner's dir, then `/`, and the fence denied it.
+    - **`provider-red` in the worker path (F11):** a transport throw out of `loop.run()` (the real
+      run: `read ENETUNREACH`) was filed `interpreter-red` ("fix the middle"). It is a provider
+      failure — retry, don't debug.
+    - **Per-round metering (F12):** the ledger accounted `worker-result`, emitted only after
+      `loop.run()` RETURNS — so an attempt that HALTS reported nothing: the real run spent $1.4375
+      and the ledger said $0.0048. Money is now metered per ROUND (`worker-round`, at
+      `onLlmResult`), including the round that trips the cap. Unpriced is never free (F6).
+    - **The close's current output (F13):** the precheck's gap now reaches the first attempt as the
+      tree's state (never as "your previous attempt"). The `run` verb is locked, so without it the
+      worker cannot see the failure it was hired to fix.
+    - **The arbiter's books (F14):** tool mode denies reads of `gate-audit.jsonl`, `.smoke` and
+      `.litectx` — the real worker read its own gate audit and spine. The agent does not author its
+      arbiter, and does not read its records.
+    - **The loop contract (F16):** the tool persona now tells the worker it is ONE attempt inside
+      `while close-red and under-cap` and will be re-run with the close's verdict. Without it a
+      model one-shots — the real run read for 12 rounds, never wrote, and ate the whole budget.
+    - **Job #1's close (F15):** `node --test --test-reporter=dot`, not `npm test` — the tail-biased
+      gap bound buries mid-stream failures in a 391-test TAP stream, so the worker was told "3
+      failed" and nothing else. A close's output format is part of its contract with the worker.
+
+### Changed
+- **`job-v1`: requesting a locked tool is now a DISTINCT red.** `tools` containing
+  `run` reds with code `request-red` (was a generic `invalid-value`) so the ledger can
+  tally admission demand — a generic code buried the evidence as a typo. An unknown
+  tool name stays `invalid-value`. `LOCKED_TOOLS` (frozen, `['run']`) exported.
+- **`interpret` opts:** `target` is now optional (required in text mode only); new
+  `mode`/`tools` opts thread the spec's grant. Additive — existing callers unchanged.
+- **Cost contract:** `extractRules` returns `costUsd: number|null` — null is the honest
+  "spend unknown" (F6); callers must not coerce it to 0.
+
+### Fixed
+- **Review round 2026-07-13 (8 confirmed findings, all execution-verified):**
+  - **extractArtifact wrapper-vs-content gate:** a fence counts as the artifact's
+    wrapper only when it opens within the first 5 lines of the response; a fence
+    buried deeper inside an unfenced reply is the artifact's OWN content and the
+    whole reply is the artifact, verbatim. Before: an unfenced doc-generator module
+    containing a ```js example``` was silently truncated to the 2-line fragment
+    with `red: null`, corrupting the close signal. Trade-off pinned in tests:
+    past the window, prose + fence is treated as the artifact (rare under the
+    no-fences persona); fence-heavy artifacts belong in tool mode.
+  - **Secret-leak channel closed:** `openDraftPr` now scrubs git/gh subprocess output
+    with the ONE shape inventory (`SECRET_PATTERNS`) at capture — a credentialed
+    remote URL echoed by a failed `git push` never reaches `pr-red`/the escalation's
+    `pr.error` on the append-only spine (same doctrine as the close path).
+  - **Plan-shape spend is metered:** the job ledger accounts `worker-plan` events too
+    (a separate `loop.run` whose metrics never fold into the implement call's) —
+    plan calls now drain `spentUsd` and an unpriced plan call halts `pricing-red`.
+  - **The spine never dangles:** a provider transport throw during drafting is a
+    decision-ready **`provider-red`** terminal (new outcome + escalation category,
+    classified by the ledger); an interpreter throw outside the loop (e.g. a broken
+    gate audit path) escalates `interpreter-red` with a terminal `job-end`.
+  - **Reds-before-tokens for the call, not just the spec:** a text-mode job invoked
+    without `opts.target` is a `job-red` before ANY provider call (`interpret`
+    throws a loud TypeError for direct callers); previously it burned a draft + a
+    worker call, the gate default-allowed the absent path, and `writeFileSync`
+    crashed as a misfiled interpreter-red.
+  - **Whitespace-padded `close.cmd` reds** (`invalid-value`) — a leading space made
+    `spawnSync('')` throw synchronously past every belt; the runner also trims
+    before splitting (defense in depth). **`cap-halt` job outcome:** drafting spend
+    that consumes the whole budget stops honestly (no paid redraft over a blown
+    budget, no config-red blaming the drafter).
+  - **One instrument for the F6 cost read:** `priceOf(result)` (`src/text.js`)
+    replaces four hand-copied `metrics ? costUsd : (cost ?? null)` spellings;
+    `REMEMBER_KINDS` is exported from the validator so the drafting prompt
+    advertises the menu the validator enforces (no drift). `request-red` reds carry
+    the locked verb as a **structured `verb` field** — the ledger keys on it (prose
+    stays a legacy fallback). Stale "clamped by validation" JSDoc corrected (the
+    validator REDS bounds; it never clamps).
+- **Three silent $0 cost launderings (the F6 class) in shipped code:** `interpret`'s
+  worker cost emit (`?? cost` chain), `extract.js`'s rules-path cost (`?? cost ?? 0`),
+  and `extract.js`'s transport-throw path reporting unmeasured spend as `$0`. All now
+  carry the honest null + `unpricedRounds`; `runJob` halts `pricing-red` on either
+  signal (unpriced is never free — F6, PRD v1.8).
+
+### Fixed (release review, 2026-07-19 — fresh full gates over the whole branch)
+
+- **The plan-only call no longer carries the tool menu.** In tool mode with a drafted
+  `loop.shape: 'plan'`, the decompose call ("Plan only, no code") was offered the full
+  granted menu — a model calling `shell_write` during the plan round mutates the tree
+  before the implement round exists. The menu IS the grant (2b): the plan call now gets
+  an empty menu. Reachable by any tool-mode job on any run (the drafter picks the shape);
+  the combination was unexercised by any test until now.
+- **`extractRules` consumes the parser's own red.** It took `extractArtifact(...).code`
+  and dropped `.red`, so an empty model response surfaced as a generic JSON
+  `parse-error` instead of the already-computed `'empty response'` — the ONE-parser
+  doctrine requires both callers to consume the red field (`interpret` already did).
+  Now a distinct `artifact-red`.
+- **`run-job1` couples `shellCapUsd` to `spec.budgetUsd`** like every sibling runner —
+  the library default cap of $2 was a second, silent ceiling: a signed resume top-up
+  above $2 would red `bounds` on a budget the human explicitly approved (the advertised
+  budget must BE the enforced one).
+- **`ctx_get`'s repo-relative conversion is boundary-aware** (`workdir + sep`): a bare
+  prefix match would garble a sibling path like `<workdir>-backup/x`. Defense in depth —
+  the gate independently denies such paths before the tool executes.
+- **`jobs/litectx-maintainer.json`: `gapKeep "^✖ "` + the `edit` grant** — the two
+  omissions vs every sibling spec. The keep pattern is derived from the real
+  `--test-reporter=spec` red output (failing tests repeat unindented in the summary
+  block, so each failing-test NAME survives the gap bound exactly once — F28). Spec
+  edit = new hash; `run-job1` refuses until re-approved.
+- **`scanSecrets` + `CLOSE_FAULTS` are exported from the package root.**
+  `bareloop.context.md` documented both as public API; the exports map admits only
+  `"."`, so neither was actually reachable by an adopter. The contract is now true.
+- **Recorded, parked (arbiter territory):** symlink write-through is bareloop's
+  caller-contract debt — bareguard documents that its fence resolves lexical traversal
+  only and callers must canonicalise. No granted verb can create a symlink; the vector
+  needs a pre-existing one inside the patient's writeScope. UPSTREAM-ASKS "OUR SIDE" §7.
+
 ## [0.2.0] — 2026-07-12
 
 ### Added

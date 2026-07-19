@@ -18,6 +18,11 @@ accounting rule).
 > results); the bareloop-facing items are predictions for the successor repo and count as
 > pre-registration there.
 
+> **Addendum 2026-07-13** (§"The Boolean floor", V9–V13): registered after F23 closed the
+> assigned probe track. Mappings citing F5/F18/F19/F23 are `[confirms]` (post-hoc naming);
+> the five V-items are new candidates, assigned by hamr, with V9 nominated first (the
+> F21/F22/F23 sandbox pattern: POC here, spec consumed by bareloop).
+
 ---
 
 ## The core mappings
@@ -239,6 +244,75 @@ green and jointly incoherent. Never tested anywhere; job #1 is the test.
 
 ---
 
+## The Boolean floor — what gate-level digital design lends the experiments (registered 2026-07-13)
+
+One rung below the cybernetics of Wiener and Ashby sits the engineering discipline that made
+computing physically reliable: digital logic. A transistor is an analog, noisy, drifting
+device, and AND/OR/NOT circuits built from them essentially never make a logic error — because
+gate-level design answers the exact question this project's machinery answers: **how do you
+build a reliable system out of unreliable components?** The borrows below are architectural
+(restoration, clocking, gated writes, fault models, design-for-test), never the gate zoo
+itself — composing LLM calls like boolean gates multiplies variance instead of canceling it,
+because gates compose only where each component is deterministic and fully characterized.
+
+### B1. Signal restoration = the predicate close `[confirms]`
+
+Digital beat analog computing for one reason: every gate **re-quantizes** its output. A
+degraded input (0.7 of a "1") leaves as a full-strength "1", so noise never accumulates
+across stages. A worker's artifact is analog — plausible-looking, degraded in unknowable
+ways — and the predicate close is the restoring gate: it collapses the artifact to one clean
+bit before anything downstream consumes it. The inverse rule is the doctrine: **no unrestored
+signal crosses a stage boundary.** Rubric scores, confidence estimates, "mostly passing" are
+analog levels in transit — advisory only, never a close (§4), never an input to selection.
+"Green gates, cost ranks" is not a preference; it is why digital works at all. → V12
+
+### B2. Noise margins and the forbidden zone = §5b's own-category discipline `[confirms → predicts]`
+
+A logic family defines a band for 0, a band for 1, and a **forbidden zone** between them — a
+voltage in the gap is a fault, never rounded to the nearest value. Cap-halt as its own
+category ("not under $2", never merged with "wrong") is a forbidden-zone read. The F5 class
+(validated green, crashed post-green) is a forbidden-zone voltage read as a 1 — the exact
+failure noise margins exist to prevent. Prediction worth making structural: every close can
+enumerate its forbidden-zone outcomes in advance, and each maps to a named red or escalation;
+any coercion to a verdict is itself the fault. → V10
+
+### B3. Edge-triggered registers vs transparent latches = F18/F19 named structurally `[confirms]`
+
+Sequential logic advances state only on a clock edge, through a flip-flop with a write-enable;
+a **transparent latch** passes input straight through while open and causes race conditions
+where a signal sneaks around the clocked path. Verdict-gated inheritance is a D flip-flop:
+run end = clock edge, green = write-enable, the store = the register. In-run revision was a
+transparent latch racing that register — an unclocked path letting information flow
+continuously, masking the clocked channel entirely (F18's confound, F19's isolation).
+Circuit designers ban mixed latch/flip-flop paths for exactly this reason. The rule as a
+lint: every information path in a claim instrument is **clocked-and-gated or metered** — an
+unmetered continuous path is the F18 confound named before tokens burn. → V11
+
+### B4. Stuck-at faults and BIST = the instrument self-test F23 was missing `[predicts → V9]`
+
+Chip testing never asks "does the circuit seem fine?" — it enumerates a fault model (every
+node stuck-at-0 / stuck-at-1) and generates vectors guaranteed to *distinguish* the faulty
+circuit from the good one; a built-in self-test (BIST) runs them before the part is trusted.
+The POC bar (machinery negatives + control + falsifier, "the test must be able to fail") is
+informal ATPG. F23's contaminated instrument cell was precisely an **undetected stuck-at
+fault inside the instrument** — caught only by a replication rep after the tokens were spent.
+The borrow: a stuck-at catalog for the harness machinery itself (close stuck-at-green /
+stuck-at-red / broken, spine dropping or mis-stamping events, validator stuck-at-green,
+escalation channel summarizing) plus a token-free vector suite run **before a probe's results
+are trusted**. Nominated first of the five. → V9
+
+### B5. Truth-table probing = the contrast check generalized `[confirms → budgets]`
+
+Verifying a gate means toggling one input and watching the output switch — if it doesn't
+switch, that input is not wired in. M3's contrast check (two opposed configs MUST differ
+measurably or STOP) and one-knob mutation are single-input toggles; the kill-switch is a
+truth-table row. The budget extension: **toggle coverage** — per config knob, does the ledger
+hold ≥1 observed toggle (output changed when only that knob changed)? A knob claimed
+load-bearing with zero observed toggles is unwired-until-proven. Extends V2's contrast-bit
+rule from a minting requirement into an ongoing coverage metric. → V13
+
+---
+
 ## V-items — what the frame says to validate or try (registered)
 
 - **V1 (SP-3 readout rule, pre-registered at g7):** read the readout Conant–Ashby-first.
@@ -273,6 +347,50 @@ green and jointly incoherent. Never tested anywhere; job #1 is the test.
   verdict and cost travel as separate values end-to-end; no function in the selection path
   combines them into one scalar. Testable mechanically (type/lint the selection seam) and by
   review: any PR introducing a combined score is the S5-collapse smell, rejected on sight.
+- **V9 (NOMINATED — adaptlearn sandbox, token-free):** instrument BIST (§B4) — a stuck-at
+  catalog over the real instrument components (close stuck-at-green / stuck-at-red / broken,
+  spine dropping events / freezing seq / mis-stamping ts, validator stuck-at-green,
+  escalation channel summarizing detail) with one detection vector per fault, run as a
+  pre-flight before any probe's results are trusted. Control arm: every vector passes the
+  good instrument (zero false positives). Falsifier arm: each vector, sabotaged, must MISS
+  its fault (mutation-validated — detection power lives in the vector, not in incidental
+  crashes). POC in adaptlearn `poc/`; bareloop rewrites against the spec (upstream-ledger
+  pattern, 0.11.4).
+  **ANSWERED 2026-07-13 (adaptlearn F24, 0.11.6): GREEN** — control 7/7, 7/7 faults
+  detected by their own assertions, falsifier 8/8 sabotaged vectors miss; run 1's control
+  arm caught a real fixture bug (dir-argv close redding everything, VEC-1 passing for the
+  wrong reason) before anything trusted the instrument. Spec carried to this repo's
+  `docs/plans/2026-07-13-instrument-bist-spec.md`; rewrite lands with N-ladder instrument
+  hygiene (PRD v1.10 item 1).
+- **V10 (bareloop, per close):** forbidden-zone audit (§B2) — each close enumerates outcomes
+  that are neither clean green nor clean red (the F5 validate-then-crash class, unparseable
+  artifacts, partial suites); each maps to a named red or escalation; coercing one to a
+  verdict is itself the instrument fault.
+  **ANSWERED 2026-07-13 (adaptlearn F25, 0.11.7): GAP** — control 2/2, falsifier 6/6
+  classifiers flip; one live coercion (signal-killed close → `needs_revision
+  exitCode=null`, retried to cap), one collapse (timeout pooled into broken-close), one
+  coercion invisible at the seam (crash-at-load ≡ honest red by exit code). Build rules
+  carried to this repo's `docs/plans/2026-07-13-forbidden-zone-audit-spec.md`
+  (`close-killed`, `close-timeout`, judgment-rendered signal); they land with the
+  N-ladder close work (PRD v1.10 item 2).
+- **V11 (any claim instrument):** transparent-path lint (§B3) — the instrument's declared
+  condition list marks every information path as clocked (advances only at run boundary,
+  write-enabled by verdict) or metered; an unmetered continuous path is the F18 confound,
+  named before tokens burn.
+- **V12 (bareloop, stage seams):** restoration boundary (§B1) — no analog value (rubric
+  score, confidence, partial-pass fraction) crosses a stage boundary as an input to any
+  decision; only quantized verdicts travel. V8's sibling: V8 bans combining two clean
+  signals into one scalar; V12 bans propagating an unclean signal at all.
+- **V13 (bareloop, ledger):** toggle coverage (§B5) — computable per knob from the existing
+  ledger: ≥1 observed contrast toggle, or the knob is flagged unwired-until-proven. Extends
+  V2 from minting requirement to ongoing coverage metric.
+  **ANSWERED 2026-07-13 (adaptlearn F26, 0.11.8): METRIC VALIDATED, ARCHIVE INSUFFICIENT** —
+  control exact, 3/3 comparison rules falsifier-proven, `hooks.on-green` UNWIRED in every
+  world, F15's lock toggle-visible; but the unconfounded tier was barren across the whole
+  archive and a re-authoring arm's toggle carried the wrong sign. Correction to the
+  registration: coverage is a ledger **design** requirement, not a post-hoc query, and no
+  toggle counts across a re-authoring boundary. Spec:
+  `docs/plans/2026-07-13-toggle-coverage-spec.md`.
 
 
 ## Orchestration vs self-healing workflows — bareloop registration (2026-07-11)

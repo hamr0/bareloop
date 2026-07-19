@@ -13,7 +13,7 @@
 <p align="center">
   <img src="https://img.shields.io/github/package-json/v/hamr0/bareloop?label=version&color=2a4f8c" alt="version (auto from package.json)">
   <img src="https://img.shields.io/badge/license-Apache%202.0-2a4f8c" alt="license: Apache 2.0">
-  <img src="https://img.shields.io/badge/status-pre--code%20%C2%B7%20PRD%20locked-8a6d1a" alt="status: pre-code, PRD locked">
+  <img src="https://img.shields.io/badge/status-N2%20%C2%B7%20headless%20loop-2a6d3a" alt="status: N2, headless loop">
 </p>
 
 **"Automate this job — I don't know the best workflow."** For tasks that are **repeated,
@@ -25,8 +25,10 @@ inheritance with ledger-counted attribution.
 The pitch in one line: **workflows that earn their own design, with receipts** — every
 inherited rule carries the green that minted it and the contrast that attributed it.
 
-> **Status: pre-code.** The name is reserved, the PRD is locked, and the build ladder is
-> in flight (roadmap below). The first usable release is the headless loop.
+> **Status: N2 — the headless loop is real.** `runJob()` takes a signed job spec through
+> draft → per-step worker loops → close verdicts → draft PR, under one budget the agent
+> can only tighten. Rungs N0–N2 have landed (roadmap below); next is executed
+> inheritance (N3), where the ladder's kill-switch question gets its answer.
 
 ## Quick start
 
@@ -93,9 +95,9 @@ ladder, and the stop is a result.
 
 | Rung | What lands |
 |---|---|
-| **N0** | Port + outer shell + spine (token-free) |
-| **N1** | Job/close schema + validator |
-| **N2** | Single-job headless loop — job #1 minimal (review→fix→PR, hard greens only) |
+| **N0** ✅ | Port + outer shell + spine (token-free) — v0.1.0 |
+| **N1** ✅ | Job/close schema + validator — v0.2.0 |
+| **N2** ✅ | Single-job headless loop — job #1 minimal (review→fix→PR, hard greens only) — v0.3.0 |
 | **N3** | Executed inheritance + contrast-bit extractor — **kill-switch: rules must transmit across non-identical runs** |
 | **N4** | Verdict classes complete (soft/HITL minting) |
 | **N5** | Scheduler + budget ops |

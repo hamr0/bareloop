@@ -8,17 +8,11 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { extractRules, MAX_RULES, MAX_RULE_CHARS } from '../src/extract.js';
+import { scriptedProvider, validConfig } from './helpers.js';
 
-const stub = (text) => {
-  const calls = [];
-  return {
-    calls,
-    generate: async (opts) => { calls.push(opts); return { text, usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0.01, toolCalls: [] }; },
-  };
-};
-const config = () => JSON.parse(readFileSync(new URL('./fixtures/valid.json', import.meta.url), 'utf8'));
+const stub = (/** @type {string} */ text) => scriptedProvider([{ text }]);
+const config = validConfig;
 const GOOD = JSON.stringify(['prefer refine on this family', 'recall with high k went green']);
 
 test('valid rules list → carried through with cost', async () => {
@@ -39,6 +33,18 @@ test('non-JSON output → parse-error red as data, rules null, never a throw', a
   assert.equal(r.valid, false);
   assert.equal(r.rules, null);
   assert.equal(r.reds[0].code, 'parse-error');
+});
+
+test('empty response → the parser\'s OWN named red (artifact-red), not a generic JSON parse error', async () => {
+  // extractArtifact already diagnoses '' as {code: null, red: 'empty response'};
+  // collapsing that to raw='' and letting JSON.parse('') throw would bury the
+  // computed diagnosis under "Unexpected end of JSON input" (ONE-parser doctrine:
+  // its red field is part of the contract, both callers must consume it)
+  const r = await extractRules({ config: config(), provider: stub(''), priorRules: null });
+  assert.equal(r.valid, false);
+  assert.equal(r.rules, null);
+  assert.equal(r.reds[0].code, 'artifact-red');
+  assert.match(r.reds[0].detail, /empty response/);
 });
 
 test('non-array / non-string elements → shape red', async () => {

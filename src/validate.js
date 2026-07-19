@@ -15,6 +15,20 @@ export const LOOP_SHAPES = Object.freeze(['refine', 'plan']);
 export const SLOTS = Object.freeze(['before-attempt', 'after-red', 'on-green']);
 export const VERBS = Object.freeze(['recall', 'compress', 'stash', 'remember']);
 const TOP_FIELDS = ['schema', 'loop', 'memory', 'hooks', 'gate', 'escalation'];
+// Unknown-field guard, PER SECTION — not just at the top (F17). The arbiter
+// split is guarded "both directions by inexpressibility": the drafted config
+// must be UNABLE to say certain things. A guard that stops at the top level
+// does not deliver that — `gate: { judged: {...} }` (the close's own honesty
+// check) validated green, as would `gate.maxCostUsd`. Nothing consumed those
+// keys, so nothing broke; the guarantee is that nothing ever can. Hook ops are
+// guarded separately by VERB_PARAMS.
+const SECTION_FIELDS = Object.freeze({
+  loop: ['shape', 'maxIterations'],
+  memory: ['store', 'recall', 'compressLevel'],
+  'memory.recall': ['k', 'kinds'],
+  gate: ['budgetUsd', 'writeScope'],
+  escalation: ['mode'],
+});
 const MAX_OPS_PER_SLOT = 2;
 
 // per-verb parameter contracts: name → check(value) (op field itself excluded).
@@ -22,7 +36,7 @@ const MAX_OPS_PER_SLOT = 2;
 // (the set remember() itself validates against — adaptlearn F5's drift lesson:
 // the export you bind can be wider than the function you call), minus doc:
 // the doc/upload axis stays gated out deliberately.
-const REMEMBER_KINDS = WRITE_KINDS.filter((k) => k !== 'doc');
+export const REMEMBER_KINDS = WRITE_KINDS.filter((k) => k !== 'doc'); // exported: the drafting prompt advertises THIS menu (one source, no drift)
 const VERB_PARAMS = {
   recall: { k: (v) => Number.isInteger(v) && v >= 1 && v <= 20, kinds: isKinds },
   compress: { level: (v) => COMPRESS_LEVELS.includes(v) },
@@ -133,6 +147,24 @@ export const SECRET_PATTERNS = [
   /(?<![A-Za-z0-9_-])xox[bap]-[A-Za-z0-9-]{10,}/,
 ];
 const SECRET_RE = new RegExp(SECRET_PATTERNS.map((r) => r.source).join('|'));
+
+/**
+ * Scan a RAW text stream (a spine file, a close's output, a transcript) for
+ * known secret shapes and return the literal matches. The ONE spelling of the
+ * text-side scan, for the same reason SECRET_PATTERNS is the ONE inventory: a
+ * hand-rolled copy that misses a shape is a leak on the very output it guards
+ * (seven copies of this expression lived in scripts/ before it landed here).
+ * `sweepSecretLiterals` is the config-tree twin — same shapes, tree walk.
+ * Never throws; returns [] for a missing stream.
+ * @param {unknown} raw
+ * @returns {string[]} every match, in stream order per pattern
+ */
+export function scanSecrets(raw) {
+  const text = String(raw ?? '');
+  // a fresh global clone per call: a shared /g regex carries lastIndex between
+  // calls and would skip matches on the next stream
+  return SECRET_PATTERNS.flatMap((re) => text.match(new RegExp(re.source, `${re.flags.replace('g', '')}g`)) ?? []);
+}
 
 /**
  * Red every string in a config tree that carries a known secret-token shape.
@@ -284,6 +316,15 @@ export function validateConfig(input, { shellCapUsd = 2, jobWriteScope } = {}) {
           else if (!params[key](value)) red('verb-params', `${opAt}.${key}`, `invalid value for ${op.op}.${key}`);
         }
       });
+    }
+  }
+
+  // 4b. inexpressibility, at every depth the arbiter can be reached from
+  for (const [section, allowed] of Object.entries(SECTION_FIELDS)) {
+    const obj = section === 'memory.recall' ? memory.recall : c[section];
+    if (!isObj(obj)) continue;
+    for (const key of Object.keys(obj)) {
+      if (!allowed.includes(key)) red('unknown-field', `${section}.${key}`);
     }
   }
 

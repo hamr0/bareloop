@@ -398,6 +398,471 @@ registration (same-day) is updated in place to match; this addendum is the chang
    ledger design doc's field table is the template), and an attenuation point without one
    is a **review blocker**, not merely unfinished.
 
+## Addendum v1.8 — 2026-07-12 (pricing-red: unpriced is never free — F6, N2 commitment)
+
+Minted by F6: the N2 drafting probe reported `spent=$0.0000` for a real API call because
+an unpriced `costUsd` was `?? 0`-coerced — a harness confound that named a real hole in
+§10's budget discipline. **Cap-not-estimate must close over pricing:** a ledger that
+counts an unpriced result as $0 makes the hard cap gameable by any unpriced model or
+provider path. This is pricing-red's product-level filing, same tier as its sibling
+artifact-red (v1.4 §5); it answers the v1.6 standing rule — loop 1 (within-run), red
+named `pricing-red`, signal on the spine as a decision-ready halt.
+
+1. **The honest null:** cost is `number|null` end-to-end; null means "spend unknown,"
+   never $0. No `?? cost` / `?? 0` fallback may launder it — a transport failure's spend
+   is unknown, not zero.
+2. **The runner halts `pricing-red`** on a null cost OR `unpricedRounds > 0` (a
+   partially-unpriced run — finite but under-counted — is also never free). Drafting
+   calls route through the same accounting, never around it.
+3. **The class is real, not theoretical:** within one day of minting, the rule caught
+   three silent $0 launderings in shipped code (interpret's cost emit; two in extract.js,
+   including a transport throw reported as $0) — F6 addenda hold the evidence.
+
+## Addendum v1.9 — 2026-07-13 (the tool grant: capability is spec territory — N2 module 2b, hamr interview)
+
+Job #1's find-and-fix work spans many files; the single-target text middle cannot carry
+it. The tool-mode middle (design record: N2 addendum 2026-07-12b, POC 6/6) lands with
+three product-level commitments:
+
+1. **The agent never authors its own capabilities (hard-line corollary).** A step's
+   middle mode (`text`|`tools`) and its tool menu live in the JOB SPEC — human territory,
+   validated — and are inexpressible in the drafted workflow config, same guard as
+   close/provider (inexpressibility, both directions). The runner threads the grant
+   verbatim.
+2. **The menu is read/grep/write only; the close remains the ONLY executor.**
+   `run`-command is locked-but-listed: a spec requesting it reds, and that red is the
+   request-red evidence its admission waits on — the product's own curation doctrine
+   (F2 rules) applied to its own toolbox. No executor enters the fence on intuition.
+3. **Both middles stay, chosen by step shape.** Single-target steps keep the text middle
+   and artifact-red (the v1.4 §5 commitment holds there). In tool mode artifact-red
+   genuinely does not exist — the tools write directly under per-call fence checks
+   (write scope AND read scope), and "wrote junk" is the close's verdict. The hitl
+   step's PR mechanics (branch/commit/draft PR) are deterministic runner code; the model
+   never sees a git surface, and a PR failure can never swallow the escalation (law #7).
+
+## Addendum v1.10 — 2026-07-13 (the Boolean floor: five gate-level borrows, things to try — hamr assignment)
+
+Registered in CYBERNETICS (§"The Boolean floor", V9–V13, both repos): digital logic is the
+solved instance of this product's problem — reliable systems from unreliable components —
+and five of its disciplines port as candidate experiments. Borrows are architectural
+(restoration, clocking, fault models, design-for-test), never boolean-composing LLM calls.
+None is a build commitment; each fires on its named trigger, and a null is a result.
+
+Things to try, in nominated order:
+
+1. **V9 — instrument BIST (NOMINATED FIRST; adaptlearn-sandbox POC, token-free).**
+   Stuck-at catalog over the real instrument components (close stuck-at-green/-red/broken,
+   spine dropping events / freezing seq / mis-stamping ts, validator stuck-at-green,
+   escalation channel summarizing detail) + one detection vector per fault, run as a
+   pre-flight before any probe's results are trusted. Control: zero false positives on the
+   good instrument. Falsifier: each vector, sabotaged, must MISS its fault
+   (mutation-validated, F4 pattern). Motivation: F23's contaminated cell was an undetected
+   instrument fault found only after tokens burned. Consumption: upstream-ledger pattern —
+   POC stays in adaptlearn `poc/`, bareloop rewrites against the spec and checks against
+   the POC.
+   **ANSWERED 2026-07-13 (adaptlearn F24, 0.11.6): GREEN** — control 7/7, 7/7 faults
+   detected by their own assertions, falsifier 8/8 sabotaged vectors miss; run 1's control
+   arm caught a real fixture bug (`node --test <dir>` = entry-file red) before anything
+   trusted the instrument. Spec carried to
+   `docs/plans/2026-07-13-instrument-bist-spec.md`; the pre-flight rewrite lands with
+   N-ladder instrument hygiene, timing owned by this repo's session.
+2. **V10 — forbidden-zone audit (per close, lands with N-ladder close work).** Each close
+   enumerates outcomes that are neither clean green nor clean red (F5 validate-then-crash
+   class, unparseable artifacts, partial suites); each maps to a named red/escalation;
+   coercing one to a verdict is itself the instrument fault. Kin to v1.6's named-red map:
+   this names the *gap between* verdicts.
+   **ANSWERED 2026-07-13 (adaptlearn F25, 0.11.7): GAP** — audited against adaptlearn's
+   real close chain (control 2/2, falsifier 6/6 classifiers flip): one live coercion
+   (signal-killed close read as `needs_revision exitCode=null`, then retried to cap —
+   broken-close-must-escalate violated in behavior), one collapse (timeout pooled into
+   broken-close), one coercion INVISIBLE at the seam (crash-at-load ≡ honest red by exit
+   code; no mapping can separate them). Three build rules carried to
+   `docs/plans/2026-07-13-forbidden-zone-audit-spec.md`: `close-killed`, `close-timeout`,
+   and a judgment-rendered signal (executed-test count / structured verdict) so
+   `close-crashed` is auditable at all; they land with the N-ladder close work, timing
+   owned by this repo's session.
+3. **V11 — transparent-path lint (any claim instrument).** The declared-condition list
+   marks every information path as clocked (advances only at run boundary, write-enabled
+   by verdict) or metered; an unmetered continuous path is the F18 revision-confound named
+   before tokens burn. Design law #6 made checkable.
+4. **V12 — restoration boundary (stage seams).** No analog value (rubric score,
+   confidence, partial-pass fraction) crosses a stage boundary as an input to any
+   decision; only quantized verdicts travel. V8's sibling: V8 bans combining two clean
+   signals; V12 bans propagating an unclean one.
+5. **V13 — toggle coverage (ledger, post-N4).** Per config knob: ≥1 observed contrast
+   toggle in the ledger, or the knob is flagged unwired-until-proven. Extends the F2
+   contrast-bit minting rule into an ongoing coverage metric.
+   **ANSWERED 2026-07-13 (adaptlearn F26, 0.11.8): metric VALIDATED, archive INSUFFICIENT** —
+   control exact, all three comparison rules falsifier-proven, `hooks.on-green` flagged
+   UNWIRED in every world, F15's lock found toggle-visible. But the clean tier (one-knob
+   sibling cells at a fixed task) is **barren across the whole archive**: toggle coverage is
+   a ledger *design* requirement, not a post-hoc query, and a "toggle" across a re-authoring
+   boundary can carry the **wrong sign** (demonstrated live: −episode reading as an
+   improvement). Spec carried to `docs/plans/2026-07-13-toggle-coverage-spec.md`; binds the
+   N3/N4 ledger shape. Folded into doctrine in **Addendum v1.11**.
+
+> **All three consumed 2026-07-13 — see Addendum v1.11.** With V9, V10 and V13 answered and
+> V11/V12 transferred as registered build rules, adaptlearn's sandbox is **closed**.
+   **ANSWERED 2026-07-13 (adaptlearn F26, 0.11.8): METRIC VALIDATED, ARCHIVE
+   INSUFFICIENT** — the metric passes as an instrument (control exact; all three comparison
+   rules falsifier-proven; `hooks.on-green` flagged UNWIRED in every archived world; F15's
+   lock found toggle-visible), but adaptlearn's ledgers could not support clean attribution:
+   the unconfounded tier (sibling cells one knob apart at the same task/gen/arm) was BARREN
+   everywhere, and a re-authored pair's "toggle" was caught carrying the WRONG SIGN. Build
+   rules carried to `docs/plans/2026-07-13-toggle-coverage-spec.md`: coverage is a ledger
+   **design** requirement (cohorts must emit one-knob sibling cells), never count a toggle
+   across a re-authoring boundary (require `knobMutated`), ship the UNWIRED default, keep
+   the three proven comparison rules. Lands with the ledger/selection work.
+
+**Boolean-floor track complete (2026-07-13).** All five items resolved: V9 answered GREEN
+(F24), V10 answered GAP (F25), V13 answered (F26) — each with its spec in `docs/plans/`;
+V11 (transparent-path lint) and V12 (restoration boundary) stand as registered build rules
+here, firing when the N-ladder builds the seams they constrain. adaptlearn's sandbox is
+closed with nothing structurally hostable left; further probes ride bareloop's own jobs.
+
+---
+
+## Addendum v1.11 — 2026-07-13 (the Boolean floor CONSUMED: three adaptlearn specs land as doctrine — hamr)
+
+The three sandbox probes registered in v1.10 have all read out, and their specs are carried into
+this repo (`docs/plans/2026-07-13-{instrument-bist,forbidden-zone-audit,toggle-coverage}-spec.md`).
+adaptlearn's sandbox is now **closed**: every Boolean-floor V-item is either answered (V9, V10,
+V13) or transferred here as a registered build rule (V11, V12). This addendum folds what they
+bought into doctrine. Where a rule was *corrected* by contact with real code in this repo, the
+correction is named — the spec travels, but it does not outrank the evidence.
+
+### The forbidden zone (V10 / adaptlearn F25 / this repo's F17) — design law #8, generalized
+
+Law #8 says reds are evidence, never verdicts, and cap-halt is its own category. The forbidden
+zone is the same law applied to **the gap between the bands**:
+
+> **A close that rendered NO JUDGMENT produced NO VERDICT — in either direction.** The two clean
+> bands are green (exit == the signed `expect`, judgment rendered) and red (exit != `expect`,
+> judgment rendered). Every other outcome gets its own name, its own escalation, and its own
+> human decision — and is NEVER retried. Coercing one into a verdict *is* the instrument fault.
+
+Named, never pooled: **`broken-close`** (cannot run) · **`close-timeout`** (ran, never finished
+judging) · **`close-killed`** (died by signal) · **`close-crashed`** (ran, exited, judged nothing).
+`close-timeout` is split out of `broken-close` because "raise the timeout" and "fix the argv" are
+different human answers, and an escalation exists to carry exactly that distinction.
+
+**The judgment-rendered signal.** Exit code alone cannot separate a crash-at-load from an honest
+red — they are byte-identical at the seam. So a close may declare, in the **signed job spec**, how
+it evidences that judgment occurred (`close.judged: {pattern, min}` — one integer extracted from
+its own output, against a declared floor). Three things about it are doctrine:
+
+1. **It is a FLOOR, not a zero-check.** adaptlearn's rule 3 ("exit nonzero ∧ *zero* tests executed")
+   is **not buildable** — against `node --test` a crashed file is reported as one failing test, so
+   the count is never zero. The spec was corrected against a real runner (F17). *A rule validated
+   only against a fixture is a rule that has not met its instrument.*
+2. **It is checked on the GREEN band too.** This goes beyond what adaptlearn found, and it earned
+   its place immediately: pointed at a tree with no test suite (the F8 wrong-repository class),
+   `node --test` **exits 0** and the shipped arbiter returned **`satisfied`** — a fake green,
+   law #8's only real failure, live. A red-side-only guard cannot see it.
+3. **It is arbiter territory, and it is optional.** The agent-drafted config cannot express it
+   (inexpressibility, both directions). A close with nothing to count — a linter, a `hitl` close
+   where a human *is* the judgment — stays writable, and its absence is stamped `unaudited` and
+   announced on the spine. **A blind spot is named, never assumed away.**
+
+**Inexpressibility is only as deep as its unknown-field check** (F17, minted here). The workflow
+validator guarded unknown fields at the top level only; every nested block (`gate`, `loop`,
+`memory`, `escalation`) accepted arbitrary keys. Nothing consumed them — but "the arbiter split is
+guarded both directions by inexpressibility" was, as written, false below depth one. The guard is
+now per-section. **Any claim of inexpressibility must name the depth at which it is enforced.**
+
+### Instrument BIST (V9 / adaptlearn F24) — a pre-flight, before any instrument is trusted
+
+READOUT GREEN (control 7/7, 7/7 faults detected, falsifier 8/8 sabotaged vectors miss). The spec
+(`instrument-bist-spec.md`) carries a stuck-at fault catalog + one detection vector per fault over
+the real components (`runClose`/`ralph`, `makeSpine`, `validateConfig`). It lands with N-ladder
+instrument hygiene, and it lands as a **rewrite against this repo's components — never a copy**
+(graduation is always a rewrite). Two rules ride with it, both paid for:
+
+- **One shared read-back function against good AND faulted components** — a replica check is a
+  second instrument, and two instruments that disagree about the same seam are the fault itself.
+- **Keep the falsifier arm.** A vector whose sabotage still "detects" was detecting a crash, not
+  asserting anything; it is not load-bearing and must not ship. (V9's own run 1 proved this on
+  itself: its control arm caught a real fixture bug — a `node --test <dir>` argv redding every
+  close — *before* any probe trusted the instrument. The mechanism worked one level early.)
+
+### Toggle coverage (V13 / adaptlearn F26) — the metric is valid; the LEDGER must be designed for it
+
+READOUT: the metric works and discriminates (control exact; all three comparison rules
+falsifier-proven; `hooks.on-green` flagged UNWIRED in every archived world; F15's lock found
+toggle-visible) — **but adaptlearn's archived ledgers cannot support clean attribution**, and that
+is the lesson bareloop inherits. This binds N3/N4 (the ledger and the extractor), not N2:
+
+1. **Toggle coverage is a ledger DESIGN requirement, not a post-hoc query.** The clean tier
+   (sibling cells at the same task/generation/arm, configs one knob apart) was **barren in every
+   archived world** — sibling lineages had divergent mutation histories, so they virtually never
+   differed by exactly one knob. **bareloop's cohorts must deliberately EMIT one-knob sibling
+   cells.** Retrofitting the metric onto a ledger not designed for it yields a barren clean tier
+   and a confounded one. *This is a constraint on how runs are scheduled, and it must be settled
+   before the ledger's shape is locked — not after.*
+2. **Never count a toggle across a re-authoring boundary.** A lineage pair is one-knob only if the
+   ledger says it *was* a mutation step (`knobMutated` set). Demonstrated live and unpleasantly: a
+   re-authored pair produced a "toggle" attributing improvement to **removing** episode-recall —
+   **the wrong sign**, against the strongest result the project has. An arm that re-authors between
+   generations silently breaks the one-knob semantics.
+3. **Ship the UNWIRED-until-proven flag.** Zero observed toggles ⇒ the knob is unwired-until-proven,
+   by default. `hooks.on-green` is the worked example: an axis in the schema, in the mutation
+   catalog, and in every config, with **zero ledger evidence it ever changed an outcome**.
+4. **Keep all three comparison rules** — each is falsifier-proven load-bearing: single-knob
+   strictness, outcome-class sensitivity, and kinds-as-sets with mirror coupling.
+
+This extends design law #3 (*verdict admits, contrast attributes*) with its ongoing coverage
+counterpart: **a knob with no observed toggle has no standing to be claimed load-bearing** — and
+the ledger only produces toggles if it was built to.
+
+---
+
+## Addendum v1.12 — 2026-07-14 (config-v1 retired, plan-v1 replaces it — the pivot record; hamr interview)
+
+The N2 loop was made to actually loop (F20: nothing had bounded a tool-mode attempt, so the
+close had never run, in any arm ever), and with it looping it repeated itself byte-for-byte
+three times (F21) because the drafted config had no channel from attempt N to attempt N+1 on a
+run that never greens. F22 named the deeper problem: of the drafted config's seven knobs,
+exactly one (`loop.shape`) can change what the worker experiences on a never-green job — **the
+emergent middle, as shipped, has no live surface, and "the agent authors its workflow" was
+near-empty.** This addendum records the pivot the evidence forces. It amends §3–§4 and §10; it
+does not touch the design laws' intent — it makes the middle finally express something the laws
+permit.
+
+### The law, restated (hamr-confirmed, verbatim)
+
+> **The agent may author anything whose only verbs are gated primitives. It may never author
+> the arbiter: the close, the budget, the fence, the merge.**
+
+This **RESTATES** §3 law #1's constrained-config rule — it does not repeal it. The danger was
+always in the ACTIONS, not the syntax: the inexpressibility guard (two docs, two validators,
+the arbiter unreachable at every depth — F17/v1.11) stays exactly as it is. config-v1 was too
+inert to be dangerous *and* too inert to be useful; plan-v1 gives the agent a real surface
+whose every verb still bottoms out in a gated primitive.
+
+### config-v1 is RETIRED
+
+The hooks/slots/knobs schema (`recall`/`compress`/`stash`/`remember` bound to
+`before-attempt`/`after-red`/`on-green`) is retired on the evidence of F21/F22. **Its code
+moves to an archive when plan-v1 lands — not before:** the suite still runs through it today,
+and a rung is never left un-runnable. `stash` in particular is a **decoy verb** (F21) — it
+looks like a ratchet and an agent drafts it every time, but it writes to a table nothing reads.
+
+### plan-v1 — the replacement shape
+
+Signed job spec (goal, budget, final close, tool ceiling — **all human, unchanged**) → the loop:
+
+1. **Preflight.** v1: a job whose final close is not a deterministic predicate escalates
+   **decision-ready** with a question — *"this is a chat, not a job"*. (A close compiling from
+   prose is N4, not now.)
+2. **SCOUT** — a read-only worker, **hard-bounded rounds + a reserved budget slice**, produces
+   a context blob. It cannot write; it cannot run.
+3. **PLAN** — `bareagent Planner.plan(goal, {info: scoutBlob})`, the decompose LLM call,
+   emitting a step DAG. A **new plan-v1 validator** gates it before tokens burn: each step's
+   verbs ⊆ the spec's tool ceiling; each step's bounds ≤ the shell caps; each scope inside the
+   fence; the arbiter untouchable and inexpressible (the F17 depth rule, carried). **The DAG is
+   executed in topological order, STRICTLY SEQUENTIALLY in v1** (fan-out is deferred — see
+   below).
+4. **Per-step micro-loops** — `ralph()` with the judge generalized to a **shell-owned seam**:
+   the outer close is the human's `runClose` (unchanged, the only truth). For a *step*, the
+   agent picks from a **CLOSED MENU of declarative inner exits the shell evaluates with its own
+   fixed code, never a command**: `artifact-written(path, pattern?)`, `tree-changed(scope)`,
+   `json-valid(path)`. `run` stays locked — an agent-authored command executed by the shell
+   would be arbitrary execution laundered through the arbiter, so it is **structurally
+   inexpressible**, not merely disallowed.
+5. **Feed-forward.** Each step's artifact feeds the next step's prompt (the bareagent BA-9
+   `withContext` shape) — this is the F21 wire: the channel from step to step that config-v1
+   never had.
+6. **ONE replan per run** — mirrors the one-revision rule (v1.9 / M5). Unlimited replanning
+   would launder thrash as adaptation.
+7. **The human-signed outer close is the only truth.** plan-AS-EXECUTED + a per-step ledger are
+   written to the spine; a **GREEN run's plan is minted for inheritance** (verdict-gated,
+   doctrine untouched — law #2/#3), a red run's is not. **N3's kill-switch now has a real
+   subject: does a minted plan transmit to a non-identical run?**
+
+### The plan-v1 run, end to end
+
+Written for someone who was not in the interview. Nothing here is new doctrine — it is the
+above, spelled out at the level of one run.
+
+#### 1. The flow
+
+```
+OPERATOR signs the job spec:
+   goal · budgetUsd (tighten-only below) · the final close (a command,
+   exit code = truth) · tool ceiling [read,grep,write,recall,get] · cadence
+        │
+        ▼
+0. PREFLIGHT — "does this job close deterministically?"
+   yes → proceed. no/unsure → decision-ready escalation WITH A QUESTION
+   (it's a chat). v1 never compiles a close from prose (N4).
+        │
+        ▼
+1. SCOUT — one read-only worker, hard-bounded (own rounds cap + reserved
+   budget slice, same pattern as the draft reserve). Output: a context
+   blob (repo layout, failing tests, best cause hypothesis). Never writes.
+        │
+        ▼
+2. PLAN — one decompose LLM call: Planner.plan(goal, {info: scoutBlob}).
+   Returns a step DAG [{id, action, dependsOn}]. The plan-v1 VALIDATOR
+   then enforces: per-step verbs ⊆ the spec's tool ceiling · per-step
+   bounds ≤ shell caps · scopes inside the job fence · inner exits from
+   the closed menu only · the arbiter (close/budget/fence/merge) is
+   INEXPRESSIBLE in the plan vocabulary. DAG executed in topological
+   order, strictly sequentially in v1.
+        │
+        ▼
+3. EXECUTE — each step is a micro-loop (the same ralph(), judge injected):
+     while inner-exit red and under step-bound:
+         worker(step.action, step's narrowed tools, gap)
+   · fresh Loop + fresh Gate per step — the Gate's maxTurns IS the step
+     bound (per-attempt bounding is native, no stop() machinery)
+   · the step's ARTIFACT (its final text / named file) feeds forward:
+     the next step's prompt opens with "Working context (read-only):"
+     + goal + repo root + close output + all prior steps' artifacts,
+     labeled by step id. No step starts blind. (The F21 wire.)
+   · a step that exhausts its bound → ONE replan per run
+     (Planner again, {info: scoutBlob + artifacts + what failed});
+     still red after the replanned steps → escalate. The stop is a result.
+        │
+        ▼
+4. THE CLOSE — the operator's signed command runs (shell territory,
+   unchanged from today: runClose, forbidden zone, judged floor, redaction).
+   exit==expect → green. red → the gap feeds one bounded fix loop.
+   still red → decision-ready escalation.
+        │
+        ▼
+5. FEED-FORWARD ACROSS RUNS (what makes this bareloop, not relayfact):
+   plan-AS-EXECUTED + per-step ledger (cost, rounds, exit outcome,
+   replans) → the spine. GREEN run → the plan is MINTED for inheritance
+   (verdict-gated, unchanged doctrine); next cadenced run starts from the
+   minted plan and may revise (prune a step that never helped, tighten a
+   bound never hit — self-heal). RED run → nothing minted; only the
+   decision-ready escalation survives.
+```
+
+#### 2. Privileges — who may author what, who may see what
+
+| | shell (`ralph`/`runJob`, code, no LLM) | scout | planner (the decompose call) | step workers | operator (human) |
+|---|---|---|---|---|---|
+| **runs the close** | **yes — only here** | no | no | no | no (they *sign* it) |
+| **sets the budget** | enforces it | may only tighten | may only tighten | may only tighten | **yes — only here** |
+| **sees the repository** | no | yes, via gated tools | **no — only the scout blob** | yes, via gated tools (step's narrowed grant) | yes |
+| **writes files** | no | no | no | **WRITE steps only, inside the fence** | yes |
+| **authors the plan** | validates it | no | **yes — only here** | no | reads it |
+| **authors inner exits** | evaluates them | no | **yes — closed menu only** | no | reads them |
+| **authors the arbiter** (close/budget/fence/merge) | **NOBODY** — structurally inexpressible in the plan vocabulary | | | | signs it out-of-band |
+| **merges** | no | no | no | no | **yes — forever** |
+
+The row that matters: **no self-adjusted budgets, ever** (§8). Everything below the operator may
+TIGHTEN `budgetUsd`, never raise it. And the planner never touches the repository — it sees the
+scout's blob and nothing else, which is what keeps the plan a *plan* and not a second worker.
+
+#### 3. The inner-exit closed menu
+
+A step's exit is picked from three declarative checks, **evaluated by the shell with its own
+fixed code — never a command**:
+
+| exit | means | typical step |
+|---|---|---|
+| `artifact-written(path, pattern?)` | the named file exists, and (optionally) matches the pattern | ISOLATE / diagnose |
+| `tree-changed(scope)` | the working tree changed inside `scope` | WRITE |
+| `json-valid(path)` | the named file parses as JSON | structured hand-off |
+
+**`run` stays locked forever.** An agent-authored command executed by the shell would be
+arbitrary execution laundered through the arbiter, so it is not merely disallowed — it is
+**structurally inexpressible in the plan vocabulary**, the same both-directions inexpressibility
+guard as the two-validator split (F17 / v1.11).
+
+`tree-changed` as a WRITE step's exit makes **"the attempt wrote nothing" a NAMED red by
+construction** — the F21 null-attempt hole, closed. Three attempts that read for 72 rounds and
+wrote nothing would now red at the step, not drift to the cap.
+
+**The known bound, stated plainly:** inner exits verify **FORM, not TRUTH**. A confident-but-wrong
+step artifact satisfies its exit and then propagates downstream through feed-forward. The
+containment is the **outer close plus the one replan**. Inner exits are **progress gates**; there
+is exactly **ONE arbiter, and it is the operator's close**.
+
+#### 4. Worked example
+
+> **Job:** "memory loading in gitdone is slow — make the load benchmark pass."
+> **Signed close:** `node bench/load.test.js`, expect exit 0.
+
+| step | verb | tools | inner exit | bound | what flows |
+|---|---|---|---|---|---|
+| s1 | ISOLATE | `recall`, `get` | `artifact-written(cause.md)` — must name a path and a symbol | 6 rounds | hands forward: *"src/memory/loader.ts: `loadIndex()` reads 400 blobs serially, no index"* |
+| s2 | WRITE | `get`, `write` | `tree-changed(src/**)` | 10 rounds | opens with s1's artifact in its working context — it does **not** re-derive the cause |
+| s3 | CLOSE | — (shell) | the operator's signed command | — | `node bench/load.test.js` → exit 0 → **green** |
+| s4 | PR | deterministic git | hitl close | — | **merge stays human, forever** |
+
+**The contrast with config-v1 is the point.** Under config-v1 this same job **could not even
+START**: a diagnosis goal has no predicate close, so it lands `close-unsupported` at validation.
+And if it had started, its worker would have been handed all five tools at once, with no plan, no
+step boundary, and **no wire between attempts** (F21) — which is precisely the run we measured
+three times.
+
+#### 5. What each attempt sees — the prompt contract
+
+F10, F13 and F21 all lived here, so it is stated precisely. A step worker's prompt contains:
+
+- **the step's action** — the task, and only this step's task;
+- **the ABSOLUTE repository root** — F10: bare-agent's shell tools resolve relative paths against
+  the *process* cwd, so a worker not told the root works blind (and, once, closed in bareloop's
+  own directory);
+- **the close's current output on the tree, or the gap from the previous attempt** — F13: a worker
+  asked to fix a failure it cannot see is a worker guessing;
+- **the "Working context (read-only)" block** — every prior step's artifact, labeled by step id.
+  This is F21's wire: the channel from attempt N to attempt N+1, and from step to step, that
+  config-v1 structurally lacked;
+- **a cut-off notice** if the previous attempt hit its bound (F20).
+
+And what it **NEVER** sees: the **budget**; the **close command**; the **plan validator**; **other
+steps' tool grants**; and the arbiter's own books — the **gate audit**, the **spine**, the
+**`.smoke` store** (explicit `fs.deny`, unchanged). **The emergent middle does not read the
+arbiter's books.**
+
+### Doctrine that rides with plan-v1
+
+- **Per-step Gate.** Each step gets a **fresh Gate**, so `limits.maxTurns` IS the step bound
+  natively — this **retires the F20 `loop.stop()`/`stoppedByBound` workaround (BA-3)** at the
+  bareloop layer. The one run ledger still meters per round across gates (F12 stays).
+- **`tree-changed` as a WRITE step's exit makes "the attempt wrote nothing" a named red by
+  construction** — the F21 null-attempt problem becomes a structural red, not a silent
+  non-event.
+- **Verdict classes, restated for plan-v1:** **green** (predicate closed) / **soft-green**
+  (only advisory/rubric checks passed — NAMED now, executed at N4; rule adopted verbatim from
+  the sibling repo relayfact: *a rubric can OPEN a question, it can never CLOSE the loop*) /
+  **hitl**.
+- **Known bound, stated plainly:** inner exits verify **FORM, not truth** — a confident wrong
+  step artifact poisons downstream steps via feed-forward. Containment is the **outer close +
+  the one replan**; inner exits are **progress gates**, and there is **exactly one arbiter**.
+
+### Differentiation vs relayfact (sibling repo) — recorded so we don't rebuild it
+
+relayfact solves a task **once and discards the plan**. bareloop learns a **JOB** — the plan is
+the **persistent, improving, ledger-attributed artifact** across cadenced runs. **If bareloop
+threw the plan away each run it would BE relayfact and should be archived.** The persistent,
+minted, contrast-attributed plan is the whole reason this repo exists.
+
+### Deliberately NOT adopted in v1 (bareagent surfaces held back)
+
+- `recurse()`'s `spawn_child` self-recursion and forced fan-out — **a worker that spawns
+  children is a worker whose bound we cannot yet reason about (the F20 class)**. Planner's flat
+  DAG only, executed sequentially.
+- `refineLeaf`'s lesson **IS** adopted as doctrine: the fed-back gap critique is the primary
+  correction lever (adaptlearn F14, re-confirmed).
+
+### Decisions locked by interview 2026-07-14
+
+1. **config-v1 dies; plan-v1 replaces it.**
+2. **One replan per run** (mirrors one-revision).
+3. **The first experiment stays job #1** (litectx planted bug), with a **scratch POC of
+   Planner + feed-forward BEFORE the rewrite** — prove the wire moves the outcome before
+   building the schema around it (POC-first; the F19/F20 lesson that a fixed mechanism need not
+   move the outcome applies directly).
+
+No rung is renumbered: plan-v1 is what N2 becomes, N3 keeps its kill-switch (now with a real
+subject), §10 stands.
+
 ---
 
 ## Appendix A — Panel spec (provisional)
@@ -449,6 +914,88 @@ Headless first. UI when the spine is good — no early read-only viewer unless t
 earns it sooner. When the panel lands, everything above is the starting layout.
 
 ---
+## Addendum v1.13 — 2026-07-15 (the layer map + the stage-verdict rule; hamr)
+
+**`docs/01-product/LAYERS.md` is the canonical plain-language map** — the flow, the wheel,
+the verbs, the verdicts, and the four layers, stated without package names (primitive vs
+implementation was a real source of confusion; the map's appendix is the ONE place the
+mapping appears). It renames nothing and adds no doctrine beyond the one decision below;
+where it and the PRD could ever disagree, the PRD wins and the map gets fixed.
+
+**Stage verdicts for micro-wheels (decided 2026-07-15):** a micro-wheel (a plan-v1 step's
+inner loop) validates against **its own eval where one exists** — a mechanical check the
+stage cannot game; where none exists it **inherits judgment from the parent wheel's verdict
+chain** (green / soft-green / hitl). Learning credit mints only at an honest close: a stage
+may declare itself settled to move on, but it cannot mint inheritance from its own say-so.
+(This closes the open question the layer map calls "the hard one" — who judges a stage that
+has no exit code.)
+
+**Build order confirmed:** fire Layer 1 end-to-end on the job #2 patient (first real turn of
+the wheel) → Layer R, the within-run root/ratchet (the F21 fix; within-run scratch and
+across-run inheritance are different scopes, now formally separated) → Layer 2, plan-v1
+micro-wheels → Layer 3, N3 inheritance.
+
+---
+## Addendum v1.14 — 2026-07-15 (worker-crash attribution: one carve-out from the forbidden zone; approved by hamr)
+
+**The rule (F32, measured need in F31: 4 of 7 battery rows).** A `crashed` close verdict is
+still not a verdict (v1.11 stands) — but it no longer always escalates. When the arbiter's
+own books prove the worker wrote files this run (the gate audit's allow-decision write/edit
+lines, run_id-scoped) and the precheck proved the close judged at baseline (a crash at
+precheck still stops for zero tokens), the crash is attributed to the worker's edit and
+routed as the DISTINCT verdict **`worker-crash`**: non-terminal, fed back as a gap naming
+the files, retried under the unchanged caps. Instrument crashes — crash at precheck, crash
+with zero writes, or an unreadable audit — keep their forbidden-zone names and never retry.
+The attribution seam is injected into the dumb shell like the redactor: ralph consults it,
+never reads the audit itself, and the fail mode is always the OLD behavior (escalate).
+
+**Why this does not weaken the arbiter split:** nothing emergent touches the routing — the
+seam is wired by the interpreter from the gate's own audit, the verdict vocabulary is shell
+territory, and the worker gains no new capability, only information about its own effect on
+the tree. The verdict stays distinct (never plain `crashed`, never `needs_revision`) so no
+contrast downstream can confuse "the suite failed" with "the worker broke the suite".
+Validated live the day it landed: P3 rerun routed all three crashes, fed back the file list
+each time, and stopped at an honest cap-halt — pass 1's same plant died at attempt 1 with
+the worker never told. Feedback DELIVERY is now proven; feedback CONVERSION is battery
+pass 2's question, pre-registered as a separate axis (F32 lesson).
+
+---
+## Addendum v1.15 — 2026-07-15 (external field evidence folded in; two SURE learnings highlighted — hamr assignment)
+
+**Source:** `docs/00-context/RSI-LEARNINGS.md` — the thersibook/Recursive corpus (12
+sources, June 2026), read and folded against this PRD as watch-for / validate / learn /
+gotcha items. This addendum records only what changes standing expectations; the full
+fold lives in the context doc.
+
+**SURE learning 1 → §3 law #1 (the arbiter split).** Every system in the corpus that let
+optimization pressure meet a fixed verifier got gamed (Recursive: reward hacking on all 3
+benchmarks; Meta-Agent Challenge: label extraction; PostTrainBench: spontaneous test-set
+training). The split is confirmed as the founding constraint — AND the corpus adds the
+standing expectation the one-time F17 fix did not: **verifier hardening never ends.**
+Every battery pass carries a "did the worker exploit the close?" audit line, expected to
+occasionally find something. A pass that never finds anything is a pass whose audit
+should be re-read, not a clean bill.
+
+**SURE learning 2 → §1/§2 premise (scaffolding, not weights).** The field's biggest
+result (LIFE-HARNESS: 88.5% avg relative gain across 116/126 settings with weights
+FROZEN; the harness evolved on one cheap 4B model transferring to 17 others) is this
+PRD's premise measured at scale — and its stated method ("the failure taxonomy is what
+makes the method work": classify each failure by lifecycle position, fix that layer,
+keep edits auditable and revertible) is this repo's FINDINGS discipline under another
+name. Consequences confirmed: keep paying for findings — they are the product; cheap
+workers + evolved harness is the correct spend shape (the model rule holds).
+
+**Pre-registered adoptions (validated at their rungs, not now):** N3 acceptance becomes a
+CL-BENCH-style paired control — inheritance-ON vs inheritance-OFF on the same
+non-identical job set, only the normalized difference counts as learning ("a learning
+claim is just a capability claim wearing a memory costume"); Layer R takes the
+rejected-edit-buffer shape (failed rules retained as negative feedback, never silently
+retried); rule minting at N3 gains a memorization audit (general rule vs memorized
+answer) before anything inherits. GOTCHA on the soft-green ladder: a rubric close is
+self-consistency in disguise (Agent0: breaks on non-checkable tasks) — it needs its own
+judged-floor analog before it can gate anything.
+
+---
 *Seed written 2026-07-10 in adaptlearn (v0.11.0). Named `bareloop` 2026-07-11 (npm-free at
 check time; suite-family name chosen deliberately — the product is the bare suite's flagship
 consumer, and "bare loop" states the §8 minimalism: no swarm, no orchestrator, one process
@@ -456,3 +1003,87 @@ per run). Bloat-audited and locked v1 2026-07-11: the seed was already lean — 
 changes were the §6→§9 dedup, the §4 secrets invariant, and the §5 mobile mandate. §3's
 citations stay: every parenthetical is a load-bearing F-ref. Amendments from here are dated
 addenda, not rewrites.*
+
+## Addendum v1.16 — 2026-07-16 (F37: strategy-as-prose is inert — plan-v1's premise measured before plan-v1 exists; hamr go on the bound package)
+
+The TESTGEN calibration curve (F37, TESTGEN-PREREG amendments 2026-07-16d/e) read out
+three prompt levers against the same 24-round attempt bound: disclosing the bound moved a
+never-writing worker to writes-in-3-of-7 (a coin flip, not a fix); adding an explicit
+pacing strategy in the spec description moved nothing (0/6 wrote, the mandate violated
+every run); no prompt condition produced a graded row.
+
+Two consequences land in doctrine:
+
+1. **F19 gets its mirror: capability without strategy is inert, and strategy without
+   ENFORCEMENT is inert.** A persona/strategy line can activate a verb; it cannot install
+   a workflow. Workflow discipline (write-early, buffer-on-disk, bounded reading) must be
+   structural — plan-v1's bounded steps with declarative form-check exits, the RLM
+   buffer + refine-leaf shape (design record 2026-07-16) — never advisory prose. This is
+   Layer 2's load-bearing premise, now measured (cheaply, at calibration) rather than
+   assumed.
+2. **Budget-class bounds move together or they lie.** Raising the round bound without the
+   dollar budget would have re-bound money at ~round 38 (measured ~$0.033/round) — the
+   same constraint-decomposition lesson as v1→v2, run forward. hamr's approved package:
+   `TURNS_PER_ATTEMPT` 24→40 (one hoisted constant now feeds the Gate's `maxTurns` and
+   the per-attempt cutoff), spec v4 with the disclosure sentence saying 40 and
+   `budgetUsd` $2.00, calibration stop $12. The advertised bound and the enforced bound
+   stay the same numbers on both axes.
+
+## Addendum v1.17 — 2026-07-18 (F38 + F39: the wheel is real, gap GENRE is the boundary, and Layer 2 inherits a measured requirement)
+
+The TESTGEN battery (F38, first conversion ever observed in this program) and the
+semantic-stall probe (F39, a Wizard-of-Oz Layer R) close Layer 1's qualification
+question and mint three doctrine points:
+
+1. **Feedback buys improvement — for feedback that names a wall.** Mechanical gaps
+   (counts, named forbidden patterns, form floors) converted 3/3 in battery rows with
+   attempts left. This is the load-bearing validation of the entire loop premise: the
+   attempt after the gap was better BECAUSE of the gap.
+2. **Semantic gaps do not convert, and it is not a memory problem.** "Strengthen
+   assertions on these functions" produced inaction (B4 att-3; probe P4) or
+   well-aimed tests asserting imagined behavior (probe: 3/3 acting rows died at the
+   clean wall, F27's fingerprint). The probe hand-delivered everything a Layer R
+   notebook would carry — state, score, bar, per-function scoreboard — and no row
+   lifted kill-rate above baseline. The scoreboard fixes AIM completely (14–18 of 18
+   named functions targeted); it does not fix verification. Structural cause: the
+   worker authors tests it can never execute (no `run` verb — the hard line stands),
+   so its first contact with reality is the close that ends the attempt.
+3. **Layer roles, sharpened by measurement.** Layer R = continuity (attempts stop
+   repeating themselves, F21/F38) — justified, but measured NOT to be the semantic
+   fix. Layer 2 = the semantic fix's shape: bounded steps with in-run verifiable
+   exits (e.g. clean-run-passes as a form check) that convert a quality ask into the
+   mechanical genre the wheel demonstrably handles. "Notes + self-check succeeds" is
+   now the single untested claim of the thesis — it becomes testable the day Layer 2
+   exists, and its test is already designed (same job, same close, same frozen bar).
+
+Cost note for future harnesses (16g reproduced on the probe): budgets must fund the
+attempt PLUS its close — 3 of 7 probe launches died at the money cap rounds 33–39,
+before grading, turning $5.82 into unreadable rows.
+
+## Addendum v1.18 — 2026-07-19 (two F40 latents become named future-rung requirements; the tripwire fix refuted by the suite's own rows — hamr review)
+
+F40 left two text-mode defects parked. hamr's challenge ("which is it?") forced both
+into a named destination, and checking the first proposed fix against the real code
+killed it — the same class as F40 item 1, caught before landing this time:
+
+1. **Per-step deliverable targets — a Layer 2 (plan-v1) step-schema requirement.**
+   Today ONE `opts.target` threads to every text-mode step — **by design**: successive
+   steps are gates refining the SAME artifact (fix→style under suite-then-lint; §6's
+   review→fix is this shape), and six passing run rows — including the pre-registered
+   cap-not-estimate test — deliberately use it. So the proposed validator tripwire
+   (red on ≥2 text-mode predicate steps) was REFUTED before landing: it would invert
+   tested, designed behavior. The clobber is a defect only when two steps carry
+   DISTINCT deliverables — which job-v1 cannot even express. The capability and the
+   fix are the same thing and land together: **plan-v1 steps declare their own target
+   path**, killing the clobber class and enabling multi-deliverable jobs.
+2. **Genre-aware extraction — a non-code-rung requirement (hamr's framing).** The
+   artifact parser must key on the job's close class: green/predicate → tool mode,
+   nothing parsed; soft-green → mixed (text + gated tool calls); hitl/document → the
+   WHOLE reply is the deliverable — no fence hunt at all. This is where the F40
+   preamble-fence defect (a helper fence in the 5-line window mistaken for the
+   artifact) gets fixed — designed against REAL document-job replies, never imagined
+   shapes (the F40 `collected`-pattern lesson: a rule validated only against a
+   fixture is wrong against the instrument).
+
+Neither ships code now; both are requirements at the rung that builds them, recorded
+here and in LAYERS.md so no one has to remember this conversation.

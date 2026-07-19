@@ -183,3 +183,58 @@ the next commit that matters is in the new repo.
   Suite-family name chosen deliberately: the product is the bare suite's flagship consumer,
   and "bare loop" states the non-goals (no swarm, no orchestrator, one process per run).
   PRD renamed to `docs/01-product/PRD.md`, header updated to v0.2.
+
+## 2026-07-14 addendum — the config→plan pivot (interview outcome; this record stays closed above)
+
+Appended, not edited — the design above is a closed record. N2's headless loop, once it
+actually looped (F20: nothing had bounded a tool-mode attempt, so the close had never run in
+any arm), repeated itself byte-for-byte three times (F21) and exposed that the agent-authored
+config had no live surface on a never-green job (F22). The pivot:
+
+- **config-v1 is retired; plan-v1 replaces it.** The law is restated, not repealed (hamr,
+  verbatim): *"The agent may author anything whose only verbs are gated primitives. It may
+  never author the arbiter: the close, the budget, the fence, the merge."* The
+  inexpressibility guard stays; the danger was always in the actions, not the syntax.
+- **plan-v1 shape:** signed spec → preflight → read-only SCOUT → `Planner.plan` (validated
+  step DAG, sequential in v1) → per-step micro-loops whose inner exits are a CLOSED MENU of
+  declarative checks the shell evaluates (`artifact-written`/`tree-changed`/`json-valid` —
+  never a command; `run` stays locked) → step artifacts feed forward (the F21 wire) → one
+  replan per run → the human-signed outer close, the only truth; a green run's plan is minted
+  for inheritance (verdict-gated, doctrine untouched). Each step gets a fresh Gate, so
+  `maxTurns` is the step bound natively (retires the F20 workaround).
+- **Differentiation held:** relayfact solves a task once and discards the plan; bareloop learns
+  a JOB — the plan is the persistent, ledger-attributed artifact across cadenced runs. Throw it
+  away and bareloop *is* relayfact.
+
+**Three decisions locked (interview 2026-07-14):** (1) config-v1 dies, plan-v1 replaces;
+(2) one replan per run; (3) the first experiment stays job #1 (litectx planted bug), with a
+scratch POC of Planner + feed-forward BEFORE the rewrite. Full record: **PRD Addendum v1.12**
+(`docs/01-product/PRD.md`) and **FINDINGS F19–F22** (`docs/FINDINGS.md`).
+
+## 2026-07-16 addendum — Layer 2 direction: borrow the RLM shape (buffer + refine-leaf)
+
+hamr's direction (not yet a locked design — interview before locking still applies when
+Layer 2 is designed): plan-v1's execution shape should borrow from Recursive Language
+Models — a persistent **buffer** plus **refine-leaf** steps — because it matches what
+every finding to date has been converging on independently:
+
+- plan-v1 is already a depth-1 RLM with the recursion boundary arbiter-owned: SCOUT =
+  the root's bounded peek, PLAN = the decomposition, EXECUTE (fresh Loop+Gate per step) =
+  leaf calls with fresh context, ONE replan = bounded refinement. What plan-v1 lacks and
+  RLM has is the buffer — mutable state threading the leaves.
+- The buffer's absence is the single most-paid-for gap in the record: F21 (never-green
+  runs have NO channel between attempts — `stash` write-only, `remember` on-green-only),
+  F32 (feedback delivered ≠ acted on: nothing carries the lesson forward), and TESTGEN v2
+  (the worker holds its understanding in context, the 24-round bound kills the attempt,
+  the understanding evaporates — zero writes, zero residue).
+- The borrow, doctrine-shaped: the buffer is an agent-writable, arbiter-fenced artifact
+  (inside writeScope, gate-audited like any write) that persists across rounds AND
+  attempts; each leaf step refines the buffer/artifact instead of re-deriving in-context.
+  The agent gets RLM's shape; the arbiter keeps RLM's control flow — leaves never spawn
+  leaves (`spawn_child` stays inexpressible, the F20 class), step bounds and budgets stay
+  validator-enforced. Layer R's rejected-edit buffer (RSI fold) is this same shape's
+  within-run special case.
+- Live probe already in flight: the TESTGEN curve (prereg amendment 2026-07-16d) measures
+  exactly whether the worker adopts the buffer shape spontaneously (arm B) or needs it
+  prescribed (arm A) — which is the Layer 2 question in miniature: does the plan have to
+  AUTHOR the buffer discipline, or does the model default to it once the bound is visible?
