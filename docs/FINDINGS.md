@@ -1950,3 +1950,14 @@ open.
 cheap reads ($0 + $3.75) prevented a ~$30 battery that would have compared two arms of
 zero against each other and could have been narrated as "no significant difference"
 instead of "nothing to measure."
+
+**Follow-up 2026-07-20 (probe 2, hamr's order "one more probe and harder close"):
+CONCLUSIVE.** Both starvation causes removed — planted v2 stacked THREE plants in three
+subsystems (tokenize `>=` flip · store `related()` hops `min→max` · assemble budget
+`<=→<`; 410 judged / 8 fail, one fix cannot green) and `budgetUsd` 1.5→4.5 (re-signed)
+funded three judged attempts. Result ($6.37, frozen rules): **4 eligible red→red pairs,
+0 fixated, 4 different-file** — the worker cleared roughly one subsystem per attempt,
+moving files every time (P3: 8→4→green across 3 judged attempts). The frozen decision
+fired: job #1 no longer exhibits fixation under current code. F41's remission claim is
+now probe-confirmed, not INCOMPLETE-supported; Layer R ships armed-and-inert and its
+field read defers to the first run whose spine says `root-injected`.

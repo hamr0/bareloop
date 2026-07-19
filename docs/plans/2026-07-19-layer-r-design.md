@@ -194,3 +194,25 @@ green the run; **judged attempts funded** — spec `budgetUsd` 1.5 → 4.5 (new 
 re-signed by hamr's in-turn order), so attempts 2–3 reach their close instead of dying
 at the gate. N=3 · root OFF · sonnet-5 · probe cap $15 · same per-run reset · same
 provider-health rule · read rules and decision table UNCHANGED from addendum 3.
+
+## Addendum 6 — probe 2 RESULT (2026-07-20): CONCLUSIVE — fixation extinct on job #1 under current code
+
+Three runs, $6.37 of the $15 cap, secrets clean, spines archived
+(`layer-r-probe-P{1,2,3}-mrsb*/mrsc*.jsonl`). Against the three-plant tree (8 fails,
+three subsystems, one fix cannot green):
+
+- P1: red(5 remaining)→green in 2 judged attempts, $1.36 — 1 pair, differentFile.
+- P2: same shape, $1.62 — 1 pair, differentFile.
+- P3: the full ladder — 8 fails → 4 → green in 3 judged attempts, $3.38 — 2 pairs,
+  both differentFile. The worker cleared one subsystem per attempt, moving files every
+  time.
+
+**Frozen decision fired: 0 fixated over ≥4 eligible pairs → job #1 no longer exhibits
+fixation under current code.** Both probe-1 starvation causes were removed (resistant
+tree; budget funding 3 judged attempts) and the worker still never repeated itself —
+every pair is healthy navigation. F41 upgrades from INCOMPLETE-supported to
+probe-confirmed: the F21 disease was a broken-loop symptom, and the current loop does
+not reproduce it on any job we own. Layer R's disposition per the frozen table:
+armed-and-inert, field acceptance DEFERRED to the first job that exhibits the disease
+(`root-injected` is the standing tripwire; next expected pressure point is Layer 2's
+micro-wheels). The rung stays OPEN in LAYERS.md — no learning credit minted.
