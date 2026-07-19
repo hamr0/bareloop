@@ -5,7 +5,7 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.3.0] — 2026-07-19
 
 ### Fixed
 
@@ -314,6 +314,39 @@ feature lands, **patch** = docs, fixes, scaffolding.
   and `extract.js`'s transport-throw path reporting unmeasured spend as `$0`. All now
   carry the honest null + `unpricedRounds`; `runJob` halts `pricing-red` on either
   signal (unpriced is never free — F6, PRD v1.8).
+
+### Fixed (release review, 2026-07-19 — fresh full gates over the whole branch)
+
+- **The plan-only call no longer carries the tool menu.** In tool mode with a drafted
+  `loop.shape: 'plan'`, the decompose call ("Plan only, no code") was offered the full
+  granted menu — a model calling `shell_write` during the plan round mutates the tree
+  before the implement round exists. The menu IS the grant (2b): the plan call now gets
+  an empty menu. Reachable by any tool-mode job on any run (the drafter picks the shape);
+  the combination was unexercised by any test until now.
+- **`extractRules` consumes the parser's own red.** It took `extractArtifact(...).code`
+  and dropped `.red`, so an empty model response surfaced as a generic JSON
+  `parse-error` instead of the already-computed `'empty response'` — the ONE-parser
+  doctrine requires both callers to consume the red field (`interpret` already did).
+  Now a distinct `artifact-red`.
+- **`run-job1` couples `shellCapUsd` to `spec.budgetUsd`** like every sibling runner —
+  the library default cap of $2 was a second, silent ceiling: a signed resume top-up
+  above $2 would red `bounds` on a budget the human explicitly approved (the advertised
+  budget must BE the enforced one).
+- **`ctx_get`'s repo-relative conversion is boundary-aware** (`workdir + sep`): a bare
+  prefix match would garble a sibling path like `<workdir>-backup/x`. Defense in depth —
+  the gate independently denies such paths before the tool executes.
+- **`jobs/litectx-maintainer.json`: `gapKeep "^✖ "` + the `edit` grant** — the two
+  omissions vs every sibling spec. The keep pattern is derived from the real
+  `--test-reporter=spec` red output (failing tests repeat unindented in the summary
+  block, so each failing-test NAME survives the gap bound exactly once — F28). Spec
+  edit = new hash; `run-job1` refuses until re-approved.
+- **`scanSecrets` + `CLOSE_FAULTS` are exported from the package root.**
+  `bareloop.context.md` documented both as public API; the exports map admits only
+  `"."`, so neither was actually reachable by an adopter. The contract is now true.
+- **Recorded, parked (arbiter territory):** symlink write-through is bareloop's
+  caller-contract debt — bareguard documents that its fence resolves lexical traversal
+  only and callers must canonicalise. No granted verb can create a symlink; the vector
+  needs a pre-existing one inside the patient's writeScope. UPSTREAM-ASKS "OUR SIDE" §7.
 
 ## [0.2.0] — 2026-07-12
 
