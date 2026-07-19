@@ -65,8 +65,10 @@ Required top-level fields (no others exist):
 Hard constraints from the job spec (violations are rejected):
 - Every writeScope entry must fit INSIDE the job's writeScope (${JSON.stringify(job.writeScope)}).
   No "..", no absolute paths, no mid-path wildcards.
-- gate.budgetUsd must be <= ${ceiling}. (This is the job's $${job.budgetUsd} budget minus the
-  shell's own drafting allowance — claiming exactly ${ceiling} is legal and validates.)
+- gate.budgetUsd must be <= ${ceiling}. (This is ONE STEP's share of the job's
+  $${job.budgetUsd} budget, minus the shell's own drafting allowance: this config is drafted
+  once and reused for every step, so the number must still fit after earlier steps have
+  spent. Claiming exactly ${ceiling} is legal and validates.)
 - The config CANNOT contain close commands, provider choice, retry caps, or minting claims.
 
 Job spec:
@@ -302,7 +304,18 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
   // the ceiling it was given always validates. (Before: the prompt advertised the
   // whole job budget while the validator enforced budget − drafting-spend, a bound
   // the drafter was never told and could not satisfy.)
-  const workerCeiling = floor4(job.budgetUsd * (1 - DRAFT_RESERVE_FRAC));
+  // ...and a PER-STEP share of it, not the whole pot. The config is drafted ONCE
+  // and re-validated at every step against what is LEFT, so a ceiling sized to the
+  // whole budget is stale the moment step 1 spends: step 2 then reds `bounds` on an
+  // unchanged config with plenty of money still in the pot (review 2026-07-18).
+  // Dividing by the steps that will actually run a worker makes the number the
+  // drafter is handed one that still fits after its predecessors have spent —
+  // sum(shares) = budget − reserve, so every step can claim its share. This is a
+  // DRAFTING change, not an enforcement one: cap-not-estimate is untouched, and a
+  // step that needs more than its share still cap-halts cleanly with a resume
+  // point. Single-step jobs (every shipped job today) are arithmetically unchanged.
+  const loopSteps = Math.max(1, job.steps.filter((s) => s.close.type === 'predicate').length);
+  const workerCeiling = floor4(job.budgetUsd * (1 - DRAFT_RESERVE_FRAC) / loopSteps);
   const ceilingNow = () => Math.min(workerCeiling, capNow());
   const cOpts = () => ({ shellCapUsd: ceilingNow(), jobWriteScope: job.writeScope });
   // Drafting is DEFERRED to the first step that needs a worker (resume model,

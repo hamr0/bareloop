@@ -336,8 +336,17 @@ $0.0048). Any round whose cost is the honest null halts `pricing-red`, decision-
 null never accumulates as $0, so the hard cap cannot be gamed by an unpriced provider path.
 The drafting call is metered on its own priced path, and the shell **reserves a drafting
 allowance** from the job budget (F9): the ceiling advertised to the drafter is
-`budgetUsd − reserve`, so a drafter that claims the ceiling it is given always validates
-(the prompt and the validator must never enforce different numbers).
+`(budgetUsd − reserve) ÷ predicate steps`, so a drafter that claims the ceiling it is given
+always validates (the prompt and the validator must never enforce different numbers).
+
+The **÷ steps** is F40: the config is drafted once and re-validated at every step against
+what is LEFT, so a ceiling sized to the whole pot goes stale the moment step 1 spends and
+the next step reds `bounds` on an unchanged config with money still available. A per-step
+share still fits after its predecessors have spent (the shares sum to `budgetUsd − reserve`).
+Single-predicate-step jobs are arithmetically unchanged. This is a DRAFTING bound, not an
+enforcement one: cap-not-estimate is intact, and a step that genuinely needs more than its
+share still cap-halts cleanly with a resume point rather than silently borrowing from the
+steps after it.
 
 **What the worker is told (tool mode):** the absolute repository root (F10 — bare-agent's
 shell tools resolve relative paths against the PROCESS cwd, so a worker with no root is

@@ -28,7 +28,7 @@
         "type": "predicate",
         "cmd": "/home/hamr/PycharmProjects/bareloop-patients/aurora-soar-bareloop/close.sh",
         "expect": 0,
-        "judged": { "pattern": "(\\d+) passed[^\\n]* in [0-9.]+s", "min": 2600 },
+        "judged": { "pattern": "collected (\\d+) items", "min": 2600 },
         "gapKeep": "^FAILED "
       },
       "class": "hard"

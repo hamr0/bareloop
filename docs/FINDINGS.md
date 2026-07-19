@@ -1791,18 +1791,56 @@ clean, all five shipped job specs revalidated green under their real caps):
 
 **PARKED for hamr's explicit go — arbiter territory, named and scoped, not shipped:**
 
-1. **A reused config dies against a shrinking ceiling (budgets).** The workflow config
+1. ~~**A reused config dies against a shrinking ceiling (budgets).**~~ **RESOLVED — by
+   per-step drafting, NOT by the fix first proposed.** The workflow config
    is drafted ONCE, but every step re-validates it against `ceilingNow()`, which shrinks
    as `spentUsd` grows. Traced: budget $1.50 → drafted `gate.budgetUsd` 1.425 (legal at
    step 1) → step 1 spends $0.60 → step 2's ceiling is 0.9 → `bounds` red → `step-red`
    with **$0.90 unspent** and a config that was never over the total budget. No redraft
    path exists. Fix touches budget semantics (redraft per step, or draft against a
    worst-case per-step ceiling) — the agent may only TIGHTEN, so this is hamr's call.
-2. **`jobs/aurora-fix.json`'s judged pattern is a passed-count floor** (`(\d+) passed…`,
+
+   Two things surfaced when hamr picked the relax-validation option, and together they
+   killed it. **(a) The behaviour already had a pre-registered test.**
+   `tests/run.test.js` carries *"mid-job budget exhaustion: the drained ledger reds the
+   next step BEFORE tokens (cap-not-estimate)"* — my scenario in miniature (budget
+   $0.50, ceiling $0.40, step 1 spends $0.151, step 2 reds on the remaining $0.349) —
+   asserting that outcome is CORRECT, down to *"step 2 burned zero worker tokens"*.
+   Relaxing validation inverts a named, tested decision. **(b) My safety claim for it
+   was false.** I said the real protection was untouched; it is not. `interpret` builds
+   each step's gate from `config.gate.budgetUsd` and the job pot is only checked BETWEEN
+   steps — so the validation red IS the only mid-step bound. Relaxed alone, a step gets
+   a $1.425 gate with $0.90 left and nothing stops it.
+   **Shipped instead: the drafter is offered `(budget − reserve) ÷ predicate steps`.**
+   The shares sum to the reserve-less budget, so every step can claim its share and the
+   false positive cannot arise; cap-not-estimate keeps its test (numbers re-based, since
+   under per-step shares a single step can no longer drain the pot below its successor's
+   claim unless drafting overruns the reserve); enforcement is untouched. Verified: all
+   five shipped jobs have ONE predicate step and their ceilings are byte-identical.
+   Mutation-checked — restoring the whole-pot divisor fails the new test on its own
+   assertion. The real lesson is the question underneath: `gate.budgetUsd` is a CEILING
+   ("may spend up to"), and the old code read it as a REQUIREMENT ("needs this much"),
+   which is why a stale ceiling looked like infeasibility.
+2. ~~**`jobs/aurora-fix.json`'s judged pattern is a passed-count floor**~~ **FIXED** — (`(\d+) passed…`,
    min 2600) where every sibling job counts tests EXECUTED (`# tests (\d+)`). It
    conflates "did the close judge" with "did the tests pass", so an honestly-red tree
    printing `2580 passed` is escalated `close-crashed` at precheck and the worker hired
    to fix that red is never invoked. The job spec is the arbiter's rulebook.
+
+   **The first proposed fix was POC-grade and WRONG — the real instrument refuted it.**
+   Having verified `-q`/`-ra` behaviour against a hand-made 3-test directory, I proposed
+   `^collected (\d+) items`. Running the ACTUAL patient suite (2712 tests, 175s) printed
+   `collecting ... collected 2712 items / 18 deselected / 2694 selected` — the anchor
+   never matches, because the line begins `collecting ... `, and the marker filter adds a
+   three-part shape the toy fixture could not produce. This is the repo's own rule paid
+   for a second time: **a check is validated only against its REAL instrument, never a
+   fixture.** Shipped after measurement: pattern `collected (\d+) items` (unanchored),
+   floor 2600 unchanged, and `close.sh` swaps `-q` for `-ra`. Exercised against all four
+   real output shapes — green tree, red tree, no-deselection, and a collection error
+   (which correctly still reads `crashed`, the fake-green case the floor exists for).
+   Also measured: the clean tree reports 2691 passed, so the old pattern only broke once
+   more than ~91 tests failed — which is why the job #3 battery never tripped it, and the
+   recorded 4/4 greens stand.
 3. ~~**Revisor rounds are charged to the worker's per-attempt bound.**~~ **UNPARKED and
    fixed same session** — parking this was the review's own error. It is not a judgment
    call between defensible options: PRD (Addendum, TESTGEN 2026-07-16e) states *"the

@@ -18,7 +18,7 @@ import { GOOD_SUM, reply, makeSumWork, readSpine } from './helpers.js';
 const base = mkdtempSync(join(tmpdir(), 'run-test-'));
 
 // a legal drafted config (the stub "drafter" emits it; fits inside the fence)
-const draftedConfig = (budgetUsd = 1) => JSON.stringify({
+const draftedConfig = (budgetUsd = 0.7) => JSON.stringify({
   schema: 'v1',
   loop: { shape: 'refine', maxIterations: 3 },
   memory: { store: 'litectx' },
@@ -29,6 +29,31 @@ const draftedConfig = (budgetUsd = 1) => JSON.stringify({
 // Runner-specific stub: routes by the DRAFT-CONFIG sentinel the runner prefixes
 // drafting prompts with; the response envelope is the shared `reply` (helpers.js).
 // Worker entries are strings (text mode) or { text, toolCalls } objects (2b tool mode).
+/**
+ * A drafter that claims EXACTLY the ceiling the prompt advertises — which is
+ * what the prompt tells it to do ("claiming exactly N is legal and validates"),
+ * and therefore the only stub that can exercise the ceiling arithmetic at all.
+ * A stub that hardcodes a safe number validates under any ceiling and so cannot
+ * tell a per-step share from a whole-pot one.
+ */
+function ceilingClaimingProvider({ draftCostUsd = 0.001, workCostUsd = 0.001 } = {}) {
+  const calls = { draft: [], work: [] };
+  return {
+    calls,
+    async generate(messages) {
+      const prompt = messages.at(-1).content;
+      if (prompt.startsWith('DRAFT-CONFIG')) {
+        calls.draft.push(prompt);
+        const ceiling = Number((prompt.match(/must be <= ([0-9]+(?:\.[0-9]+)?)/) ?? [])[1]);
+        assert.ok(Number.isFinite(ceiling) && ceiling > 0, `draft prompt must advertise a ceiling, got: ${ceiling}`);
+        return reply({ text: draftedConfig(ceiling), costUsd: draftCostUsd });
+      }
+      calls.work.push(prompt);
+      return reply({ text: GOOD_SUM, costUsd: workCostUsd });
+    },
+  };
+}
+
 function stubProvider({ drafts = [draftedConfig()], worker = [GOOD_SUM], draftCostUsd = 0.001, workCostUsd = 0.001 } = {}) {
   const calls = { draft: [], work: [] };
   let d = 0; let w = 0;
@@ -147,8 +172,38 @@ test('a step that cannot green stops the job and names itself; later steps never
   assert.ok(!events.some((e) => e.type === 'step-start' && e.step === 'style'));
 });
 
+test('multi-step: an AMPLE budget survives step 2 — a reused ceiling is not a per-step requirement', async () => {
+  // The config is drafted ONCE and re-validated at every step against what is
+  // LEFT, so a ceiling drafted for the whole pot reds later steps that had
+  // plenty of money (review 2026-07-18). The ceiling now offered to the drafter
+  // is a per-step SHARE, so the number it claims still fits after earlier steps
+  // have spent. This is the false positive; the drained-ledger red below is the
+  // true one and must keep firing.
+  // step 2 keeps its OWN still-red close (a shared one already-greens after step
+  // 1 and skips, proving nothing). The verdict here is NOT the outcome — step 2
+  // can never green — it is whether step 2 got to spend a single token at all.
+  const provider = ceilingClaimingProvider({ workCostUsd: 0.05 });
+  const { events } = await run('budget-ample', {
+    provider,
+    specOver: {
+      budgetUsd: 0.5,
+      steps: [
+        { id: 'fix', close: { type: 'predicate', cmd: `node --test ${join(base, 'budget-ample', 'sum.test.mjs')}`, expect: 0 }, class: 'hard' },
+        { id: 'style', close: { type: 'predicate', cmd: 'node -e process.exit(1)', expect: 0 }, class: 'hard' },
+      ],
+    },
+  });
+  assert.ok(!events.some((e) => e.type === 'config-red' && e.code === 'bounds' && e.path === 'gate.budgetUsd'),
+    'a ceiling drafted before earlier steps spent is stale, not out of bounds — $0.449 remained');
+  assert.ok(provider.calls.work.length > 1, 'step 2 must actually run: it had money and a job to do');
+});
+
 test('mid-job budget exhaustion: the drained ledger reds the next step BEFORE tokens (cap-not-estimate)', async () => {
-  const provider = stubProvider({ drafts: [draftedConfig(0.4)], workCostUsd: 0.15 });
+  // numbers re-based for per-step drafting (the share is 0.2375, so the drafted
+  // 0.2 is legal at step 1): step 1's 0.3 of work drains the pot to ~0.199,
+  // BELOW the config's claim, and step 2 reds before buying a single round.
+  // The behaviour under test is unchanged — only the arithmetic that reaches it.
+  const provider = ceilingClaimingProvider({ draftCostUsd: 0.2, workCostUsd: 0.1 });
   // step 2 gets its OWN still-red close: a shared close would already-green
   // after step 1 and skip — this test is about a step that NEEDS work finding
   // the ledger drained before tokens
@@ -343,7 +398,7 @@ const planConfig = () => JSON.stringify({
   schema: 'v1',
   loop: { shape: 'plan', maxIterations: 3 },
   memory: { store: 'litectx' },
-  gate: { budgetUsd: 1, writeScope: ['src/**'] },
+  gate: { budgetUsd: 0.7, writeScope: ['src/**'] },
   escalation: { mode: 'decision-ready' },
 });
 
@@ -541,26 +596,10 @@ test('F9: a drafter that claims the WHOLE advertised ceiling greens — the shel
   // the run died config-red having burned two paid calls. A rational drafter
   // claims the ceiling — so EVERY real run deadlocked. The stub never saw it
   // because it drafts $1.00, comfortably under.
-  const ceilingClaimer = {
-    calls: { draft: [], work: [] },
-    async generate(messages) {
-      const prompt = messages.at(-1).content;
-      if (!prompt.startsWith('DRAFT-CONFIG')) {
-        this.calls.work.push(prompt);
-        return reply({ text: GOOD_SUM, costUsd: 0.001 });
-      }
-      this.calls.draft.push(prompt);
-      // read the ceiling the shell advertised and claim exactly it
-      const ceiling = Number(prompt.match(/gate\.budgetUsd must be <= (\d+(?:\.\d+)?)/)[1]);
-      return reply({
-        text: JSON.stringify({
-          schema: 'v1', loop: { shape: 'refine', maxIterations: 3 }, memory: { store: 'litectx' },
-          gate: { budgetUsd: ceiling, writeScope: ['src/**'] }, escalation: { mode: 'decision-ready' },
-        }),
-        costUsd: 0.0053, // a real drafting call is not free — this is what invalidated the bound
-      });
-    },
-  };
+  // the shared ceiling-claiming stub: one spelling of "claim exactly what the
+  // prompt advertises", which is what the prompt instructs (0.0053 = a real
+  // drafting call is not free — this is what invalidated the bound)
+  const ceilingClaimer = ceilingClaimingProvider({ draftCostUsd: 0.0053 });
   const { outcome, events } = await run('ceiling-claim', { provider: ceilingClaimer });
   assert.equal(outcome, 'escalated', `claiming the advertised ceiling must VALIDATE (got ${outcome}: ${JSON.stringify(events.filter((e) => e.type === 'config-red'))})`);
   assert.equal(ceilingClaimer.calls.draft.length, 1, 'and it greens on the first shot — no redraft over a bound the shell itself broke');

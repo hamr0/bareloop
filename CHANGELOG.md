@@ -26,6 +26,21 @@ feature lands, **patch** = docs, fixes, scaffolding.
   dispatch keyed on four bare literals with no default, so a new or renamed category
   vanished exactly like a deliberate exclusion. Exclusions are now an executable set;
   anything outside {classified} ∪ {excluded} is charged to bareloop as a stale mapping.
+- **The drafter is offered a PER-STEP share of the budget, not the whole pot (F40).** The
+  config is drafted once and re-validated at every step against what is left, so a ceiling
+  sized to the whole budget went stale the moment step 1 spent: step 2 then red `bounds` on
+  an unchanged config with money still in the pot. The advertised ceiling is now
+  `(budgetUsd − drafting reserve) ÷ predicate steps`, which still fits after earlier steps
+  have spent (the shares sum to the reserve-less budget). A drafting bound, not an
+  enforcement one — cap-not-estimate is unchanged and still tested, and a step needing more
+  than its share cap-halts cleanly rather than starving the steps after it. **Every shipped
+  job has one predicate step and is arithmetically identical.**
+- **`jobs/aurora-fix.json` counts tests EXECUTED, not tests PASSED (F40).** A passed-count
+  floor conflated "did the close judge?" with "did the tests pass?", so the red tree the job
+  exists to fix fell under the floor and escalated as an instrument crash at precheck,
+  before the worker ever ran. Pattern is now `collected (\d+) items`; the patient's
+  `close.sh` swaps `-q` for `-ra` (`-q` prints no executed-count line at all, and `-ra` is
+  required or the job's `gapKeep "^FAILED "` loses every line it carries to the worker).
 - **Revisor rounds no longer spend the worker's per-attempt bound (F40).**
   `roundsThisAttempt` resets once, *before* the revisor phase, and revisor turns share
   the worker's metered handler — so R revisor rounds silently left the worker 40−R while
