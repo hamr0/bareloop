@@ -110,8 +110,11 @@ function createCtxTools(lc, workdir, emit) {
       },
       execute: async (/** @type {{path: string, startLine: number, endLine: number}} */ { path: p, startLine, endLine }) => {
         // The path is spelled as recall printed it (repo-relative); the gate judges the
-        // resolved absolute path, exactly as toolAction resolves it.
-        const rel = String(p).startsWith(workdir) ? String(p).slice(workdir.length + 1) : String(p);
+        // resolved absolute path, exactly as toolAction resolves it. Boundary-aware
+        // prefix (workdir + sep, the line-247 pattern): bare startsWith would garble a
+        // sibling like `${workdir}-backup/x` into `ackup/x` — the gate independently
+        // denies such a path before execute() runs, so this is defense in depth only.
+        const rel = String(p).startsWith(workdir + sep) ? String(p).slice(workdir.length + 1) : String(p);
         try {
           const item = lc.get(rel, { startLine: Number(startLine), endLine: Number(endLine) });
           if (!item?.text) {
@@ -432,8 +435,13 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   /** @param {{kinds?: string[]}} op */
   const recallKinds = (op) => op.kinds ?? config.memory.recall?.kinds ?? ['fact'];
 
-  /** @param {string} prompt */
-  async function ask(prompt) {
+  /**
+   * @param {string} prompt
+   * @param {typeof toolDefs} [defs] the tool menu for THIS call — defaults to the
+   *   step's grant; the plan-only call passes [] (its own prompt says "no code",
+   *   and the menu is the grant: a tool it isn't offered cannot be called)
+   */
+  async function ask(prompt, defs = toolDefs) {
     let r;
     try {
       // cacheMessages (BA-1, bare-agent 0.27.0): roll an Anthropic cache breakpoint onto the
@@ -448,7 +456,7 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
       // Battery pass 1 lost 3/3 rows to exactly this. Output budget is shell
       // territory (never the config's); 32k fits any single-file write the
       // writeScope admits, and output tokens are only paid when generated.
-      r = await loop.run([{ role: 'user', content: prompt }], toolDefs, { cacheMessages: true, maxTokens: 32000 });
+      r = await loop.run([{ role: 'user', content: prompt }], defs, { cacheMessages: true, maxTokens: 32000 });
     } catch (e) {
       const err = /** @type {CategorizedError} */ (e);
       // A throw OUT OF loop.run() is provider/loop territory by definition — the
@@ -634,7 +642,10 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
 
     if (config.loop.shape === 'plan') {
       // plan-then-execute: one call to decompose, one to implement following the plan
-      const p = await ask([`Produce a SHORT numbered implementation plan (2-4 steps) for this task. Plan only, no code.`, ...parts.slice(1), parts[0]].filter(Boolean).join('\n\n'));
+      // Plan only, no code — so no tools either: the menu IS the grant (2b), and a
+      // plan call offered shell_write can mutate the tree before the implement
+      // round exists (release review 2026-07-19; unexercised combination until then)
+      const p = await ask([`Produce a SHORT numbered implementation plan (2-4 steps) for this task. Plan only, no code.`, ...parts.slice(1), parts[0]].filter(Boolean).join('\n\n'), []);
       emit('worker-plan', { iteration, ...priceOf(p) }); // priceOf: the ONE honest-null cost read (F6)
       parts.push(`Follow this plan:\n${p.text}`);
     }

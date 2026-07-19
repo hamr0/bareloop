@@ -77,12 +77,17 @@ characters. No markdown fences, no commentary.`;
     return { rules: null, valid: false, reds: [{ code: 'provider-error', detail: String(/** @type {Error} */ (e).message ?? e) }], costUsd: null, raw: '' };
   }
   const { costUsd } = priceOf(r); // the ONE honest-null cost read (F6)
-  const raw = extractArtifact(r.text ?? '').code ?? '';
+  const ex = extractArtifact(r.text ?? '');
+  const raw = ex.code ?? '';
   if (r.error) {
     return { rules: null, valid: false, reds: [{ code: 'provider-error', detail: String(r.error) }], costUsd, raw };
   }
   /** @type {(code: string, detail: string) => {rules: null, valid: false, reds: Array<object>, costUsd: number|null, raw: string}} */
   const red = (code, detail) => ({ rules: null, valid: false, reds: [{ code, detail }], costUsd, raw });
+  // ONE-parser doctrine: extractArtifact's red field is part of its contract —
+  // dropping it here buried 'empty response' under JSON.parse's generic
+  // "Unexpected end of JSON input" (interpret.js consumes ex.red the same way)
+  if (ex.red) return red('artifact-red', ex.red);
 
   let rules;
   try { rules = JSON.parse(raw); } catch (e) {

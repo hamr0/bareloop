@@ -78,7 +78,11 @@ console.log(`spec ${specHash} approved by ${approvals[0].signer}`);
 console.log(`workdir ${wd}${dry ? '   [DRY: provider throws if called]' : `   model ${provider.model ?? ''}`}`);
 console.log(`spine   ${spineFile}\n`);
 
-const outcome = await runJob(spec, { approvals, workdir: wd, provider, emit: makeSpine(spineFile) });
+// shellCapUsd: spec.budgetUsd — coupling the two keeps ONE number the human signs
+// (the run-job2/battery spelling). Without it the library's default cap of 2 is a
+// SECOND, silent ceiling: a signed resume top-up above $2 would red on bounds even
+// though the human approved the figure (advertised budget must BE the enforced one).
+const outcome = await runJob(spec, { approvals, workdir: wd, provider, emit: makeSpine(spineFile), shellCapUsd: spec.budgetUsd });
 
 // ---- the rung-exit criteria, checked as data (never a claim in prose) ----
 const events = readFileSync(spineFile, 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));

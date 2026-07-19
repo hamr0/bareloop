@@ -42,14 +42,21 @@ export function scriptedProvider(script) {
   const calls = [];
   /** @type {string[]} the system prompt per call — Loop prepends it as messages[0] (the persona IS shell territory, F16) */
   const systems = [];
+  /** @type {string[][]} the tool names OFFERED per call — the menu is the grant (2b), so what reaches the provider is the observable */
+  const toolsOffered = [];
   return {
     calls,
     systems,
-    /** @param {Array<{role?: string, content: string}>} messages */
-    async generate(messages) {
+    toolsOffered,
+    /**
+     * @param {Array<{role?: string, content: string}>} messages
+     * @param {Array<{name: string}>} [tools] loop.run forwards its toolDefs here (bare-agent loop.js: provider.generate(toSend, activeTools, options))
+     */
+    async generate(messages, tools) {
       const s = script[Math.min(calls.length, script.length - 1)];
       if (messages[0]?.role === 'system') systems.push(messages[0].content);
       calls.push(messages.at(-1).content);
+      toolsOffered.push((tools ?? []).map((t) => t.name));
       return reply(s);
     },
   };

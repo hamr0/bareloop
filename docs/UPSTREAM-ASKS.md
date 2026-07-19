@@ -771,6 +771,19 @@ POC/scratch harness **does** guard `content` and **does** carry a shrink-blocker
 and every experimental arm is unreadable. *"Never a local shim" binds shipped `src/`, not the
 experimental bench.*
 
+**7. Symlink write-through — the fence's caller contract is OURS to honor, and `toolAction`
+doesn't.** (Surfaced by the 2026-07-19 release security review.) bareguard `fs.js` *documents*
+its boundary: *"this resolves lexical traversal only — it does NOT follow symlinks … callers
+needing symlink-proofing must canonicalise before the gate."* Documented contract on the caller →
+two-red routing says **our side, not an ask**. The vector is narrow and latent: no granted verb
+can CREATE a symlink (`write`/`edit` produce regular files), so it needs a **pre-existing**
+symlink inside the patient's writeScope pointing outside the fence — a `shell_write` to that path
+passes lexical containment and writes through to the real target outside. No current patient
+ships one; no shipped run was exposed. Fix shape (**the fence is the arbiter's — PARKED for
+hamr's explicit go**): canonicalise in `toolAction` before `gate.check` — realpath the deepest
+*existing* ancestor of the target (the file itself may not exist yet on a write) and re-run
+containment on the canonical path.
+
 ---
 
 ## BA-14 — `EPIPE` is not in `DEFAULT_RETRY_ON`, and the provider's pooled socket goes stale across multi-minute idle gaps (2026-07-16, job #3 battery)

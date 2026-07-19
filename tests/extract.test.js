@@ -35,6 +35,18 @@ test('non-JSON output → parse-error red as data, rules null, never a throw', a
   assert.equal(r.reds[0].code, 'parse-error');
 });
 
+test('empty response → the parser\'s OWN named red (artifact-red), not a generic JSON parse error', async () => {
+  // extractArtifact already diagnoses '' as {code: null, red: 'empty response'};
+  // collapsing that to raw='' and letting JSON.parse('') throw would bury the
+  // computed diagnosis under "Unexpected end of JSON input" (ONE-parser doctrine:
+  // its red field is part of the contract, both callers must consume it)
+  const r = await extractRules({ config: config(), provider: stub(''), priorRules: null });
+  assert.equal(r.valid, false);
+  assert.equal(r.rules, null);
+  assert.equal(r.reds[0].code, 'artifact-red');
+  assert.match(r.reds[0].detail, /empty response/);
+});
+
 test('non-array / non-string elements → shape red', async () => {
   for (const bad of ['{"rules": []}', '[1, 2]', '["ok", null]']) {
     const r = await extractRules({ config: config(), provider: stub(bad), priorRules: null });

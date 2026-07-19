@@ -95,6 +95,27 @@ test('loop.shape is wired in: plan makes a plan call before the implement call',
   assert.match(provider.calls[1], /Follow this plan/, 'implement call carries the plan');
 });
 
+// The plan call's own prompt says "Plan only, no code" — offering it the write
+// tools contradicts that contract: a model that calls shell_write during the
+// plan round mutates the tree (and burns budget) before the implement round
+// exists. The menu IS the grant (2b): the plan call gets an EMPTY menu.
+test('tools mode + plan shape: the plan-only call is offered NO tools; the implement call keeps the grant', async () => {
+  const wd = twd('tools-plan');
+  const planned = config();
+  planned.loop.shape = 'plan';
+  const { outcome, provider } = await run('tools-plan', planned, {
+    mode: 'tools',
+    script: [
+      { text: '1. write sum\n2. export it' }, // the plan round: text only
+      { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'src', 'sum.mjs'), content: GOOD_SUM })] },
+      { text: 'done — wrote sum.mjs' },
+    ],
+  });
+  assert.equal(outcome, 'green');
+  assert.deepEqual(provider.toolsOffered[0], [], 'plan-only call: no tools in the menu');
+  assert.ok(provider.toolsOffered[1].includes('shell_write'), 'implement call: the granted menu is intact');
+});
+
 test('config maxIterations tightens the shell cap, never exceeds it', async () => {
   const short = config();
   short.loop.maxIterations = 2;
