@@ -25,6 +25,12 @@
 // is worker-authored and the spine is append-only (what a log captures, it
 // captures forever).
 
+// The shell's kept-failures trim announcement (ralph): its presence in a gap means
+// failures were dropped past the gap cap, so the visible kept lines are an
+// UNRELIABLE red-set for comparison. Imported (never re-spelled) so the detector
+// keys off the exact string the shell emits — a magic string here would drift.
+import { GAP_KEEP_TRIM_MARKER } from './ralph.js';
+
 /**
  * Strip a trailing duration stamp from a kept-failure line. Real `node --test`
  * spec-reporter lines are NEVER byte-stable across runs (`✖ multiplies
@@ -59,10 +65,22 @@ const SUMMARY_MAX_PATHS = 10; // paths named in the summary line
  */
 export function createRoot({ gapKeep, redact = (s) => s } = {}) {
   const keepRe = gapKeep ? new RegExp(gapKeep, 'm') : null;
-  /** @param {string} gap @returns {string[]|null} normalized kept lines, or null when no pattern */
-  const keptSet = (gap) => keepRe
-    ? [...new Set(gap.split('\n').filter((l) => keepRe.test(l)).map(normalizeRedLine))].sort()
-    : null;
+  /**
+   * The comparable red-set, or null when it CANNOT be trusted — one clean UNKNOWN
+   * covering three cases, so the detector honestly degrades to write-overlap alone
+   * rather than making the strong "reds unchanged" claim off a blind instrument:
+   *   - no gapKeep pattern at all (no red-set instrument);
+   *   - a TRIMMED window (ralph dropped failures past the cap): failures beyond the
+   *     window can move while the visible lines stay identical (Finding 5);
+   *   - zero matches on a judged gap: an empty kept-set is UNKNOWN, not "zero
+   *     failures" — [] === [] would false-read as "reds unchanged" (Finding 2).
+   * @param {string} gap @returns {string[]|null} normalized kept lines, or null when untrustworthy
+   */
+  const keptSet = (gap) => {
+    if (!keepRe || gap.includes(GAP_KEEP_TRIM_MARKER)) return null;
+    const lines = [...new Set(gap.split('\n').filter((l) => keepRe.test(l)).map(normalizeRedLine))].sort();
+    return lines.length ? lines : null;
+  };
 
   /** @type {{writes: string[], reds: string[]|null, tee: Map<string, {content: string, trimmed: boolean}>}[]} finalized attempts */
   const attempts = [];
@@ -80,8 +98,14 @@ export function createRoot({ gapKeep, redact = (s) => s } = {}) {
      * @param {string} path @param {string} content
      */
     noteWrite(path, content) {
-      const trimmed = content.length > TEE_CAP_BYTES;
-      tee.set(path, { content: content.slice(0, TEE_CAP_BYTES), trimmed });
+      // Scrub at CAPTURE, BEFORE truncating (repo doctrine: secrets scrub at the
+      // source). Every SECRET_PATTERN is a prefix+min-length shape (sk-…{16,}), so
+      // a secret straddling the cap would lose the bytes that make it match and a
+      // partial token would ride the note unredacted — redact the FULL content
+      // first, then cap the already-scrubbed string.
+      const scrubbed = redact(content);
+      const trimmed = scrubbed.length > TEE_CAP_BYTES;
+      tee.set(path, { content: scrubbed.slice(0, TEE_CAP_BYTES), trimmed });
     },
 
     /**
@@ -110,8 +134,13 @@ export function createRoot({ gapKeep, redact = (s) => s } = {}) {
       if (attempts.length < 2) return null;
       const [prev, last] = attempts.slice(-2);
       const overlap = last.writes.filter((p) => prev.writes.includes(p));
-      const redsSame = last.reds === null || prev.reds === null
-        ? null // no red-set instrument — write-overlap alone decides, named below
+      // Both UNKNOWN → no trustworthy red-set either side: write-overlap alone
+      // decides (writes-only mode, named below). One known and one UNKNOWN → the
+      // red-set is not provably the same, so it counts as MOVEMENT, never a fire
+      // (a real red-set followed by a crash/empty gap is new information, not
+      // repetition). Both known → the honest set comparison.
+      const redsSame = last.reds === null && prev.reds === null ? null
+        : last.reds === null || prev.reds === null ? false
         : JSON.stringify(last.reds) === JSON.stringify(prev.reds);
       const fixated = overlap.length > 0 && redsSame !== false;
       if (!fixated) { streak = 0; return null; }

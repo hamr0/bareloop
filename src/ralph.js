@@ -143,6 +143,12 @@ const GAP_HEAD = 400, GAP_TAIL = 1500;
 // matches it says so with an explicit marker — silent truncation is the disease
 // this whole fix cures (F28), never a cure that truncates silently in turn.
 const GAP_KEEP_MAX_LINES = 50, GAP_KEEP_MAX_BYTES = 8192;
+// The exact phrase the trim announcement carries when kept failures are dropped
+// by the cap above. Exported so Layer R's detector (src/root.js) keys off the
+// SAME string the shell emits — a magic string on the reading side would drift
+// silently the day this wording changes (the blind-instrument class). Reference
+// only: the shell's behavior is unchanged, the label below is byte-identical.
+export const GAP_KEEP_TRIM_MARKER = 'more elided by the';
 
 /**
  * Bound an over-long close stream to a head sample + elided middle + tail. When
@@ -173,7 +179,7 @@ function boundGap(s, keepPattern) {
     bytes += line.length + 1;
   }
   if (!matched.length) return `${base}\n${tail}`; // pattern matched nothing — behave as the plain bound
-  const label = `kept failures matching /${keepPattern}/ (${matched.length}${trimmed ? `, ${trimmed} more elided by the ${GAP_KEEP_MAX_LINES}-line/${GAP_KEEP_MAX_BYTES}-byte cap` : ''})`;
+  const label = `kept failures matching /${keepPattern}/ (${matched.length}${trimmed ? `, ${trimmed} ${GAP_KEEP_TRIM_MARKER} ${GAP_KEEP_MAX_LINES}-line/${GAP_KEEP_MAX_BYTES}-byte cap` : ''})`;
   return `${base}\n── ${label} ──\n${matched.join('\n')}\n── end kept failures ──\n${tail}`;
 }
 

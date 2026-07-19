@@ -327,10 +327,21 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   // paths exactly as toolAction does, so tee keys match audit paths byte-for-byte.
   /** @param {string} n @param {any} a */
   const teeingTranslator = (n, a) => {
-    if (root && (n === 'shell_write' || n === 'shell_edit')) {
-      root.noteWrite(resolve(expandHome(String(a?.path ?? ''))), String((n === 'shell_write' ? a?.content : a?.newText) ?? ''));
+    // Classify ONCE and decide by the action TYPE, not a hardcoded name list — a
+    // third enumeration of the write verbs (workerWrites already filters on
+    // action.type write|edit) would let a future granted write-class verb enter
+    // the gate audit but silently bypass the tee (the recurring blind-instrument
+    // class). Reuse act.path so the tee key matches the audit path byte-for-byte
+    // (both from this same resolution). Content is read off the RAW args and never
+    // put on the action object — the gate audit stays bytes-only (the secrets law:
+    // what an append-only log captures, it captures forever).
+    const act = toolAction(n, a, workdir);
+    if (root && (act.type === 'write' || act.type === 'edit')) {
+      // act.path is always present on the write/edit branch (cast: toolAction's
+      // object literals widen `type` to string, so tsc cannot narrow the union)
+      root.noteWrite(/** @type {string} */ (act.path), String((act.type === 'edit' ? a?.newText : a?.content) ?? ''));
     }
-    return toolAction(n, a, workdir);
+    return act;
   };
   const { policy, onLlmResult } = wireGate(gate, mode === 'tools' ? { actionTranslator: teeingTranslator } : {});
   // Money is metered as it is SPENT — per ROUND, not per attempt (F12). A

@@ -943,3 +943,31 @@ test('Layer R stays inert on progress: a red that moves to green never sees the 
   assert.ok(provider.calls.every((c) => !c.includes('RATCHET')), 'cost-neutral when not stuck (RSI §3.3)');
   assert.ok(!events.some((e) => e.type === 'root-injected'));
 });
+
+// Finding 4 (Layer R × BA-13): the tee decides write-class by toolAction's action
+// TYPE, not by a hardcoded tool-name list (a third enumeration of write verbs that
+// a future granted verb would silently bypass). Driven through shell_edit — an
+// idempotent anchored edit (newText === oldText) lands every attempt AND keeps its
+// anchor matchable, so the same file is re-written with the same failing content →
+// fixation. The verbatim note surfaces the edit's content only if the tee KEY
+// (act.path) matches the gate-audit path the overlap is read from — i.e. only if
+// the tee provably flows through the same toolAction resolution as the audit.
+test('Finding 4: a shell_edit fixation is teed via toolAction (action type, not tool name) — newText surfaces verbatim', async () => {
+  const { workdir, target, close } = makeWork('root-edit-fixation');
+  writeFileSync(target, BAD_SUM); // the file exists; each attempt re-applies the SAME anchored edit
+  const e = () => ({ toolCalls: [tcall('t1', 'shell_edit', { path: target, oldText: 'return a - b;', newText: 'return a - b;' })] });
+  const provider = stubProvider([e(), { text: 'done' }, e(), { text: 'done' }, e(), { text: 'done' }, e(), { text: 'done' }]);
+  const file = join(workdir, 'run.jsonl');
+  const outcome = await interpret(config(), {
+    task: TASK, target, close, workdir, capRuns: 4,
+    emit: makeSpine(file), provider, mode: 'tools', tools: ['read', 'edit'], closeGapKeep: '^not ok ',
+  });
+  const events = readSpine(file);
+  assert.equal(outcome, 'escalated', 'still red at cap — the ratchet informs, never judges');
+  assert.match(provider.calls[4], /RATCHET: you are repeating yourself/, 'attempt 3 gets the summary');
+  assert.match(provider.calls[6], /STRUCTURALLY DIFFERENT/, 'attempt 4 escalates to verbatim');
+  assert.ok(provider.calls[6].includes('return a - b'),
+    'the edit content (newText) is teed and surfaced — the tee key matched the audit path, so it flowed through toolAction');
+  const inj = events.filter((ev) => ev.type === 'root-injected');
+  assert.deepEqual(inj.map((x) => x.stage), ['summary', 'verbatim'], 'both stages on the spine, in order');
+});
