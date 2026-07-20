@@ -329,7 +329,15 @@ round the API cut off mid-generation (`truncated:max_tokens`, bare-agent 0.27.0/
 before which it laundered into a clean finish, F25); in both cases no verdict exists and the
 failed round's spend is only partly known (F6). `cap-halt` is drafting spend consuming the whole job budget before a
 valid config existed. Both are decision-ready escalations with a terminal `job-end`:
-the spine never dangles. A text-mode job invoked without `opts.target` is a `job-red`
+the spine never dangles. **Every `job-end` carries the money, on every path**:
+`{ outcome, spentUsd, spendComplete }` (plus `step`/`cause`/`detail` where the outcome has
+them). `spentUsd` is the accumulated sum of PRICED rounds ONLY — never an estimate from
+token counts or averages (cap-not-estimate) — and it is stated even on the pre-token reds,
+where the honest figure is a real `0`. `spendComplete` says whether that figure is EXACT:
+`false` means one or more rounds came back unpriced (F6), so `spentUsd` is a FLOOR
+("at least $X", true total unknowable) and must not be read as a total. Both fields are
+present on all outcomes, so a consumer never branches on field presence and never has to
+launder a missing `spentUsd` into `$0`. A text-mode job invoked without `opts.target` is a `job-red`
 before ANY provider call (and `interpret` itself throws a TypeError for direct
 callers) — reds-before-tokens applies to the call, not just the spec.
 

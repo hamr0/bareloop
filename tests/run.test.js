@@ -716,3 +716,68 @@ test('the skip-check close output is scrubbed at the source — a secret it echo
   assert.ok(raw.includes('close-precheck'), 'the precheck is a visible spine record');
   assert.ok(!raw.includes(token), 'the token never enters the append-only spine');
 });
+
+// ---- money visibility on EVERY job-end (F12-class: a blank is not a zero) ----
+// The terminal record is the one line a consumer reads for the money. Some
+// job-end paths omitted `spentUsd` entirely — including the outcomes where the
+// figure matters most (cap-halt: the run stopped BECAUSE money ran out) — so a
+// consumer got `undefined` and either crashed or laundered it to $0. Every
+// job-end now STATES the figure, and states whether it is exact: `spentUsd` is
+// the sum of PRICED rounds only (never an estimate), and `spendComplete: false`
+// marks it a FLOOR when any round came back unpriced (F6).
+
+test('money on the job-end: a cap-halt STATES the spend that consumed the budget — never a blank', async () => {
+  const provider = stubProvider({ drafts: [draftedConfig(0.4)], draftCostUsd: 0.6 });
+  const { outcome, events } = await run('caphalt-spend', { provider, specOver: { budgetUsd: 0.5 } });
+  assert.equal(outcome, 'cap-halt');
+  const end = events.find((e) => e.type === 'job-end');
+  assert.equal(end.outcome, 'cap-halt');
+  assert.ok(Math.abs(end.spentUsd - 0.6) < 1e-9,
+    `the stop-because-money record must carry the money — expected 0.6, got ${JSON.stringify(end.spentUsd)}`);
+  assert.equal(end.spendComplete, true, 'every round was priced, so the figure is exact');
+});
+
+test('money on the job-end: a pricing-red carries the PRICED floor and is marked incomplete — a floor is never presented as exact', async () => {
+  const provider = stubProvider({ draftCostUsd: 0.001, workCostUsd: null });
+  const { outcome, events } = await run('pricingred-spend', { provider });
+  assert.equal(outcome, 'pricing-red');
+  const end = events.find((e) => e.type === 'job-end');
+  assert.equal(end.outcome, 'pricing-red');
+  assert.ok(Math.abs(end.spentUsd - 0.001) < 1e-9,
+    `the priced drafting round is real money and must be stated — expected 0.001, got ${JSON.stringify(end.spentUsd)}`);
+  assert.equal(end.spendComplete, false,
+    'an unpriced round means the sum is a FLOOR — "at least $X", true total unknowable');
+});
+
+test('money on the job-end: a fully priced green is marked complete — "exactly $X"', async () => {
+  const { workdir, target, suiteCmd } = makeWork('green-spend');
+  const s = spec(suiteCmd, {
+    steps: [{ id: 'fix', close: { type: 'predicate', cmd: suiteCmd, expect: 0 }, class: 'hard' }],
+  });
+  const provider = stubProvider({ draftCostUsd: 0.001, workCostUsd: 0.02 });
+  const file = join(workdir, 'run.jsonl');
+  const outcome = await runJob(s, { approvals: approve(s), workdir, target, provider, emit: makeSpine(file), capRuns: 2 });
+  const events = readSpine(file);
+  assert.equal(outcome, 'green');
+  const end = events.find((e) => e.type === 'job-end');
+  assert.ok(end.spentUsd > 0, `a green that bought rounds reports them, got ${JSON.stringify(end.spentUsd)}`);
+  assert.equal(end.spendComplete, true);
+});
+
+test('money on the job-end: a pre-spend red states a REAL zero and is complete — the field is never simply absent', async () => {
+  const { workdir, suiteCmd } = makeWork('prespend-zero');
+  const s = spec(suiteCmd);
+  const provider = stubProvider();
+  const file = join(workdir, 'run.jsonl');
+  const outcome = await runJob(s, { approvals: approve(s), workdir, provider, emit: makeSpine(file), capRuns: 2 });
+  const jobRed = readSpine(file).find((e) => e.type === 'job-end');
+  assert.equal(outcome, 'job-red');
+  assert.equal(jobRed.spentUsd, 0, 'zero tokens were bought, so the honest figure is a stated 0');
+  assert.equal(jobRed.spendComplete, true, 'nothing unpriced happened — the zero is exact');
+
+  const un = await run('prespend-unapproved', { approvals: [] });
+  const unEnd = un.events.find((e) => e.type === 'job-end');
+  assert.equal(unEnd.outcome, 'unapproved-spec');
+  assert.equal(unEnd.spentUsd, 0);
+  assert.equal(unEnd.spendComplete, true);
+});
