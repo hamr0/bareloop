@@ -322,9 +322,15 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   // so it is teed below at the one seam that sees it — memory-only, scrubbed,
   // never the spine.
   const root = layerRoot ? createRoot({ gapKeep: closeGapKeep, redact: (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS }) }) : null;
-  // The tee rides the translator (fires before the gate decides — harmless: the
-  // root only ever surfaces paths the audit later shows as LANDED) and resolves
-  // paths exactly as toolAction does, so tee keys match audit paths byte-for-byte.
+  // The tee rides the translator and resolves paths exactly as toolAction does,
+  // so tee keys match audit paths byte-for-byte. The translator fires BEFORE the
+  // gate decides (wireGate calls translate() inside its policy, then awaits
+  // gate.check), so it can only STAGE: the audit-path filter downstream is not
+  // enough on its own, because the tee is last-write-wins PER PATH and a path the
+  // audit legitimately lists as allowed can end the attempt holding the content
+  // of a LATER write the gate rejected — the verbatim note would then swear that
+  // code landed when it is not in the file (Finding 6, 2026-07-20). The verdict
+  // settles the stage: commit on allow, discard on deny and on halt (below).
   /** @param {string} n @param {any} a */
   const teeingTranslator = (n, a) => {
     // Classify ONCE and decide by the action TYPE, not a hardcoded name list — a
@@ -339,11 +345,30 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     if (root && (act.type === 'write' || act.type === 'edit')) {
       // act.path is always present on the write/edit branch (cast: toolAction's
       // object literals widen `type` to string, so tsc cannot narrow the union)
-      root.noteWrite(/** @type {string} */ (act.path), String((act.type === 'edit' ? a?.newText : a?.content) ?? ''));
+      root.stageWrite(/** @type {string} */ (act.path), String((act.type === 'edit' ? a?.newText : a?.content) ?? ''));
     }
     return act;
   };
-  const { policy, onLlmResult } = wireGate(gate, mode === 'tools' ? { actionTranslator: teeingTranslator } : {});
+  const { policy: gatePolicy, onLlmResult } = wireGate(gate, mode === 'tools' ? { actionTranslator: teeingTranslator } : {});
+  // Settle the stage on the verdict. wireGate's policy returns true on allow,
+  // a string on deny, and THROWS HaltError on halt — and bare-agent processes
+  // tool calls strictly sequentially (`for (const tc of result.toolCalls) { …
+  // await this.policy(…) }`, loop.js), so at most one stage is ever in flight.
+  // The catch discards and RE-THROWS: cap-halt routing reads that throw, and a
+  // swallowed halt would launder a tripped budget into a plain deny. A non-write
+  // action stages nothing, so both settlements are no-ops for it.
+  const policy = root && mode === 'tools'
+    ? async (/** @type {string} */ n, /** @type {any} */ a, /** @type {any} */ c) => {
+      try {
+        const verdict = await gatePolicy(n, a, c);
+        if (verdict === true) root.commitWrite(); else root.discardWrite();
+        return verdict;
+      } catch (e) {
+        root.discardWrite();
+        throw e;
+      }
+    }
+    : gatePolicy;
   // Money is metered as it is SPENT — per ROUND, not per attempt (F12). A
   // multi-round attempt that halts (or throws) never returns, so its rounds
   // never reach `worker-result`: the real run bought $1.4375 of tokens inside a

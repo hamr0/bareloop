@@ -971,3 +971,52 @@ test('Finding 4: a shell_edit fixation is teed via toolAction (action type, not 
   const inj = events.filter((ev) => ev.type === 'root-injected');
   assert.deepEqual(inj.map((x) => x.stage), ['summary', 'verbatim'], 'both stages on the spine, in order');
 });
+
+// Finding 6 (2026-07-20): the tool-mode tee ran inside the actionTranslator,
+// which wireGate calls BEFORE gate.check settles — so a write the gate went on
+// to REJECT was captured all the same, and (last-write-wins per path) could
+// end the attempt sitting on a path the audit legitimately lists as allowed.
+// The capture is now two-phase: stage in the translator, commit only when the
+// policy returns true, discard on deny AND on halt. These two pin the wiring
+// end-to-end: the commit must not be lost when a deny shares the round, and the
+// discard must never swallow the HaltError that cap-halt routing depends on.
+
+test('Finding 6: a denied write in the same round never costs the ALLOWED write its teed content', async () => {
+  const wd = twd('root-deny-round');
+  const round = () => ({
+    toolCalls: [
+      // denied: outside the config writeScope — staged, then discarded
+      tcall('t1', 'shell_write', { path: join(wd, 'outside', 'evil.mjs'), content: 'REJECTED BY THE FENCE' }),
+      // allowed: lands, and is the fixation the ratchet reads
+      tcall('t2', 'shell_write', { path: join(wd, 'src', 'sum.mjs'), content: BAD_SUM }),
+    ],
+  });
+  const { events, provider } = await run('root-deny-round', config(), {
+    mode: 'tools', capRuns: 4, closeGapKeep: '^not ok ',
+    script: [round(), { text: 'done' }, round(), { text: 'done' }, round(), { text: 'done' }, round(), { text: 'done' }],
+  });
+  assert.match(provider.calls[6], /STRUCTURALLY DIFFERENT/, 'attempt 4 escalates to verbatim');
+  assert.ok(provider.calls[6].includes('return a - b'), 'the ALLOWED write\'s content survived the denied sibling');
+  assert.ok(provider.calls.every((c) => !c.includes('REJECTED BY THE FENCE')),
+    'the denied write never reaches the worker as something that "landed"');
+  assert.ok(!existsSync(join(wd, 'outside', 'evil.mjs')), 'and it never reached the tree');
+  assert.ok(!JSON.stringify(events).includes('REJECTED BY THE FENCE'), 'nor the spine');
+});
+
+test('Finding 6: a HALT on a staged write still propagates as cap-halt (discard never swallows it)', async () => {
+  const wd = twd('root-halt-write');
+  const tiny = config();
+  tiny.gate.budgetUsd = 0.02;
+  const { outcome, events } = await run('root-halt-write', tiny, {
+    mode: 'tools', capRuns: 4, closeGapKeep: '^not ok ',
+    script: [
+      { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'src', 'sum.mjs'), content: BAD_SUM })], costUsd: 0.05 },
+      { text: 'done' },
+    ],
+  });
+  assert.equal(outcome, 'escalated');
+  const esc = events.find((e) => e.type === 'escalation');
+  assert.equal(esc.category, 'cap-halt', 'the halt reached ralph as a cap story, not a swallowed deny');
+  assert.ok(events.some((e) => e.type === 'cap-halt'), 'cap-halt event on the spine');
+  assert.ok(!existsSync(join(wd, 'src', 'sum.mjs')), 'the halted write never landed');
+});

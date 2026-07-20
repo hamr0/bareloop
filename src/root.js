@@ -88,24 +88,57 @@ export function createRoot({ gapKeep, redact = (s) => s } = {}) {
   let prevCumulative = new Set();
   /** @type {Map<string, {content: string, trimmed: boolean}>} tee for the attempt currently running */
   let tee = new Map();
+  /** @type {{path: string, entry: {content: string, trimmed: boolean}}|null} the write awaiting its gate verdict */
+  let pending = null;
   let streak = 0;
 
+  /**
+   * Capture a write/edit's content as PENDING — staged against the gate verdict
+   * that has not been rendered yet (Finding 6). Scrub at CAPTURE, BEFORE
+   * truncating (repo doctrine: secrets scrub at the source, and staging IS the
+   * source — a staged secret must be scrubbed even if the write is later
+   * discarded). Every SECRET_PATTERN is a prefix+min-length shape (sk-…{16,}),
+   * so a secret straddling the cap would lose the bytes that make it match and a
+   * partial token would ride the note unredacted — redact the FULL content
+   * first, then cap the already-scrubbed string.
+   * @param {string} path @param {string} content
+   */
+  const stageWrite = (path, content) => {
+    const scrubbed = redact(content);
+    const trimmed = scrubbed.length > TEE_CAP_BYTES;
+    pending = { path, entry: { content: scrubbed.slice(0, TEE_CAP_BYTES), trimmed } };
+  };
+
   return {
+    stageWrite,
+
     /**
-     * Retain a landed write/edit's content for the verbatim stage. Memory-only
-     * — never the spine. Last write per path wins (the tree's final state for
-     * that attempt is what failed the close).
+     * The staged write was ALLOWED and landed: retain it for the verbatim stage.
+     * Memory-only — never the spine. Last LANDED write per path wins (the tree's
+     * final state for that attempt is what failed the close). A no-op when
+     * nothing is staged, so a read/grep/recall verdict costs nothing.
+     */
+    commitWrite() {
+      if (pending) tee.set(pending.path, pending.entry);
+      pending = null;
+    },
+
+    /**
+     * The staged write was DENIED or HALTED: it is not in the file, so it must
+     * never be surfaced as "your own change that landed". Drops the stage and
+     * leaves whatever DID land for that path untouched.
+     */
+    discardWrite() { pending = null; },
+
+    /**
+     * Stage and commit in one call — the post-allow write site (text mode
+     * gate-checks and writes before it calls this, so the verdict is already in).
      * @param {string} path @param {string} content
      */
     noteWrite(path, content) {
-      // Scrub at CAPTURE, BEFORE truncating (repo doctrine: secrets scrub at the
-      // source). Every SECRET_PATTERN is a prefix+min-length shape (sk-…{16,}), so
-      // a secret straddling the cap would lose the bytes that make it match and a
-      // partial token would ride the note unredacted — redact the FULL content
-      // first, then cap the already-scrubbed string.
-      const scrubbed = redact(content);
-      const trimmed = scrubbed.length > TEE_CAP_BYTES;
-      tee.set(path, { content: scrubbed.slice(0, TEE_CAP_BYTES), trimmed });
+      stageWrite(path, content);
+      if (pending) tee.set(pending.path, pending.entry);
+      pending = null;
     },
 
     /**
@@ -120,6 +153,7 @@ export function createRoot({ gapKeep, redact = (s) => s } = {}) {
       if (!gap) { // first attempt: nothing judged yet, nothing to compare
         prevCumulative = cumulative;
         tee = new Map();
+        pending = null;
         return null;
       }
       // finalize the attempt that just failed: its writes are the audit delta
@@ -130,6 +164,9 @@ export function createRoot({ gapKeep, redact = (s) => s } = {}) {
       attempts.push({ writes: delta, reds: gap ? keptSet(gap) : null, tee });
       prevCumulative = cumulative;
       tee = new Map();
+      // a stage whose verdict never arrived (the attempt ended mid-flight) is not
+      // a landed write and must not survive into the next attempt's tee
+      pending = null;
 
       if (attempts.length < 2) return null;
       const [prev, last] = attempts.slice(-2);

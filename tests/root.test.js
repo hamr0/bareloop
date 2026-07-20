@@ -288,3 +288,91 @@ test('Finding 5 regression: an UNtrimmed gapKeep window keeps the strong reds+wr
   const inj = root.observe({ iteration: 3, gap: GAP_A2, writes: ['/r/src/x.js'] });
   assert.equal(inj.event.mode, 'reds+writes', 'no trim marker → trustworthy red-set → strong mode preserved');
 });
+
+// ---- Finding 6 (2026-07-20): the tee captured content the gate REJECTED ----
+// In tool mode the tee fired inside the actionTranslator, which wireGate calls
+// BEFORE `gate.check` settles — so every attempted write was captured, landed or
+// not. The tee is last-write-wins per path, so a path legitimately in the gate
+// audit (allowed earlier) could end the attempt holding the content of a LATER
+// write the gate rejected. The verbatim note then tells the worker "these are
+// your OWN previous changes — they landed" over code that is not in the file: a
+// FALSE statement in the one channel whose entire value is being trustworthy.
+// The capture is therefore two-phase: stage on the attempt, commit only on an
+// ALLOW verdict, discard on deny and on halt. Only what LANDED is ever surfaced.
+
+test('Finding 6: a REJECTED write never overwrites the landed content for the same path', () => {
+  const root = createRoot({ gapKeep: KEEP });
+  root.observe({ iteration: 1, writes: [] });
+  root.stageWrite('/r/src/x.js', 'first failed edit'); root.commitWrite();
+  root.observe({ iteration: 2, gap: GAP_A, writes: ['/r/src/x.js'] });
+  root.stageWrite('/r/src/x.js', 'second failed edit'); root.commitWrite();
+  root.observe({ iteration: 3, gap: GAP_A2, writes: ['/r/src/x.js'] });
+  // the attempt writes the SAME path twice: the first lands, the second is denied
+  root.stageWrite('/r/src/x.js', 'THE EDIT THAT LANDED'); root.commitWrite();
+  root.stageWrite('/r/src/x.js', 'THE EDIT THE GATE REJECTED'); root.discardWrite();
+  const inj = root.observe({ iteration: 4, gap: GAP_A, writes: ['/r/src/x.js'] });
+  assert.equal(inj.stage, 'verbatim');
+  assert.ok(inj.note.includes('THE EDIT THAT LANDED'), 'the landed content is what the worker is shown');
+  assert.ok(!inj.note.includes('REJECTED'), 'a rejected write is not in the file — the note must never claim it landed');
+});
+
+test('Finding 6: a write discarded on HALT leaves the path with no teed content for that attempt', () => {
+  const root = createRoot({ gapKeep: KEEP });
+  root.observe({ iteration: 1, writes: [] });
+  root.stageWrite('/r/src/x.js', 'first failed edit'); root.commitWrite();
+  root.observe({ iteration: 2, gap: GAP_A, writes: ['/r/src/x.js'] });
+  root.stageWrite('/r/src/x.js', 'second failed edit'); root.commitWrite();
+  root.observe({ iteration: 3, gap: GAP_A2, writes: ['/r/src/x.js'] });
+  // the attempt lands one write, then a second write to the SAME path trips the
+  // budget cap mid-attempt — HaltError, nothing written
+  root.stageWrite('/r/src/x.js', 'THE EDIT THAT LANDED'); root.commitWrite();
+  root.stageWrite('/r/src/x.js', 'HALTED MID-ATTEMPT'); root.discardWrite();
+  const inj = root.observe({ iteration: 4, gap: GAP_A, writes: ['/r/src/x.js'] });
+  assert.equal(inj.stage, 'verbatim');
+  assert.ok(!inj.note.includes('HALTED MID-ATTEMPT'), 'halted content never landed, so it is never surfaced');
+  assert.ok(inj.note.includes('THE EDIT THAT LANDED'), 'the content that DID land is what the worker is shown');
+});
+
+test('Finding 6: commit/discard with nothing staged are no-ops (read/grep/recall stage nothing)', () => {
+  const root = createRoot({ gapKeep: KEEP });
+  root.observe({ iteration: 1, writes: [] });
+  root.stageWrite('/r/src/x.js', 'a'); root.commitWrite();
+  root.observe({ iteration: 2, gap: GAP_A, writes: ['/r/src/x.js'] });
+  root.stageWrite('/r/src/x.js', 'LANDED CONTENT'); root.commitWrite();
+  root.commitWrite(); root.discardWrite(); root.commitWrite(); // a run of non-write actions
+  root.observe({ iteration: 3, gap: GAP_A2, writes: ['/r/src/x.js'] });
+  root.stageWrite('/r/src/x.js', 'LANDED AGAIN'); root.commitWrite();
+  const inj = root.observe({ iteration: 4, gap: GAP_A, writes: ['/r/src/x.js'] });
+  assert.equal(inj.stage, 'verbatim');
+  assert.ok(inj.note.includes('LANDED AGAIN'), 'a bare commit/discard neither loses nor resurrects a tee entry');
+});
+
+test('Finding 6: an attempt boundary drops a stale pending stage — it can never land later', () => {
+  const root = createRoot({ gapKeep: KEEP });
+  root.observe({ iteration: 1, writes: [] });
+  root.stageWrite('/r/src/x.js', 'a'); root.commitWrite();
+  root.observe({ iteration: 2, gap: GAP_A, writes: ['/r/src/x.js'] });
+  root.stageWrite('/r/src/x.js', 'b'); root.commitWrite();
+  root.stageWrite('/r/src/x.js', 'STRANDED BY THE ATTEMPT END'); // never settled: the attempt ended
+  root.observe({ iteration: 3, gap: GAP_A2, writes: ['/r/src/x.js'] });
+  root.stageWrite('/r/src/x.js', 'c'); root.commitWrite();
+  const inj = root.observe({ iteration: 4, gap: GAP_A, writes: ['/r/src/x.js'] });
+  assert.equal(inj.stage, 'verbatim');
+  assert.ok(!inj.note.includes('STRANDED'), 'a pending stage does not survive the attempt it was made in');
+});
+
+test('Finding 6: staging still scrubs at CAPTURE, before the cap (Finding 1 order preserved)', () => {
+  const secret = `sk-${'x'.repeat(24)}`;
+  const redact = (/** @type {string} */ s) => s.replace(/sk-\w{16,}/g, '[REDACTED]');
+  const root = createRoot({ gapKeep: KEEP, redact });
+  root.observe({ iteration: 1, writes: [] });
+  root.stageWrite('/r/src/x.js', 'a'); root.commitWrite();
+  root.observe({ iteration: 2, gap: GAP_A, writes: ['/r/src/x.js'] });
+  root.stageWrite('/r/src/x.js', 'b'); root.commitWrite();
+  root.observe({ iteration: 3, gap: GAP_A2, writes: ['/r/src/x.js'] });
+  // the secret straddles the 2000-byte cap: a scrub AFTER truncation would leave a fragment
+  root.stageWrite('/r/src/x.js', `${'A'.repeat(1990)}${secret}tail`); root.commitWrite();
+  const inj = root.observe({ iteration: 4, gap: GAP_A, writes: ['/r/src/x.js'] });
+  assert.ok(!inj.note.includes('sk-x'), 'no secret fragment rides the note');
+  assert.ok(inj.note.includes('[REDACTED]'), 'the whole shape was matched because the scrub ran first');
+});
