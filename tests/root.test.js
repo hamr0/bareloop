@@ -303,12 +303,12 @@ test('Finding 5 regression: an UNtrimmed gapKeep window keeps the strong reds+wr
 test('Finding 6: a REJECTED write never overwrites the landed content for the same path', () => {
   const root = createRoot({ gapKeep: KEEP });
   root.observe({ iteration: 1, writes: [] });
-  root.stageWrite('/r/src/x.js', 'first failed edit'); root.commitWrite();
+  root.stageWrite('/r/src/x.js', 'first failed edit'); root.settleWrite(true);
   root.observe({ iteration: 2, gap: GAP_A, writes: ['/r/src/x.js'] });
-  root.stageWrite('/r/src/x.js', 'second failed edit'); root.commitWrite();
+  root.stageWrite('/r/src/x.js', 'second failed edit'); root.settleWrite(true);
   root.observe({ iteration: 3, gap: GAP_A2, writes: ['/r/src/x.js'] });
   // the attempt writes the SAME path twice: the first lands, the second is denied
-  root.stageWrite('/r/src/x.js', 'THE EDIT THAT LANDED'); root.commitWrite();
+  root.stageWrite('/r/src/x.js', 'THE EDIT THAT LANDED'); root.settleWrite(true);
   root.stageWrite('/r/src/x.js', 'THE EDIT THE GATE REJECTED'); root.discardWrite();
   const inj = root.observe({ iteration: 4, gap: GAP_A, writes: ['/r/src/x.js'] });
   assert.equal(inj.stage, 'verbatim');
@@ -319,13 +319,13 @@ test('Finding 6: a REJECTED write never overwrites the landed content for the sa
 test('Finding 6: a write discarded on HALT leaves the path with no teed content for that attempt', () => {
   const root = createRoot({ gapKeep: KEEP });
   root.observe({ iteration: 1, writes: [] });
-  root.stageWrite('/r/src/x.js', 'first failed edit'); root.commitWrite();
+  root.stageWrite('/r/src/x.js', 'first failed edit'); root.settleWrite(true);
   root.observe({ iteration: 2, gap: GAP_A, writes: ['/r/src/x.js'] });
-  root.stageWrite('/r/src/x.js', 'second failed edit'); root.commitWrite();
+  root.stageWrite('/r/src/x.js', 'second failed edit'); root.settleWrite(true);
   root.observe({ iteration: 3, gap: GAP_A2, writes: ['/r/src/x.js'] });
   // the attempt lands one write, then a second write to the SAME path trips the
   // budget cap mid-attempt — HaltError, nothing written
-  root.stageWrite('/r/src/x.js', 'THE EDIT THAT LANDED'); root.commitWrite();
+  root.stageWrite('/r/src/x.js', 'THE EDIT THAT LANDED'); root.settleWrite(true);
   root.stageWrite('/r/src/x.js', 'HALTED MID-ATTEMPT'); root.discardWrite();
   const inj = root.observe({ iteration: 4, gap: GAP_A, writes: ['/r/src/x.js'] });
   assert.equal(inj.stage, 'verbatim');
@@ -336,12 +336,12 @@ test('Finding 6: a write discarded on HALT leaves the path with no teed content 
 test('Finding 6: commit/discard with nothing staged are no-ops (read/grep/recall stage nothing)', () => {
   const root = createRoot({ gapKeep: KEEP });
   root.observe({ iteration: 1, writes: [] });
-  root.stageWrite('/r/src/x.js', 'a'); root.commitWrite();
+  root.stageWrite('/r/src/x.js', 'a'); root.settleWrite(true);
   root.observe({ iteration: 2, gap: GAP_A, writes: ['/r/src/x.js'] });
-  root.stageWrite('/r/src/x.js', 'LANDED CONTENT'); root.commitWrite();
-  root.commitWrite(); root.discardWrite(); root.commitWrite(); // a run of non-write actions
+  root.stageWrite('/r/src/x.js', 'LANDED CONTENT'); root.settleWrite(true);
+  root.settleWrite(true); root.discardWrite(); root.settleWrite(true); // a run of non-write actions
   root.observe({ iteration: 3, gap: GAP_A2, writes: ['/r/src/x.js'] });
-  root.stageWrite('/r/src/x.js', 'LANDED AGAIN'); root.commitWrite();
+  root.stageWrite('/r/src/x.js', 'LANDED AGAIN'); root.settleWrite(true);
   const inj = root.observe({ iteration: 4, gap: GAP_A, writes: ['/r/src/x.js'] });
   assert.equal(inj.stage, 'verbatim');
   assert.ok(inj.note.includes('LANDED AGAIN'), 'a bare commit/discard neither loses nor resurrects a tee entry');
@@ -350,12 +350,12 @@ test('Finding 6: commit/discard with nothing staged are no-ops (read/grep/recall
 test('Finding 6: an attempt boundary drops a stale pending stage — it can never land later', () => {
   const root = createRoot({ gapKeep: KEEP });
   root.observe({ iteration: 1, writes: [] });
-  root.stageWrite('/r/src/x.js', 'a'); root.commitWrite();
+  root.stageWrite('/r/src/x.js', 'a'); root.settleWrite(true);
   root.observe({ iteration: 2, gap: GAP_A, writes: ['/r/src/x.js'] });
-  root.stageWrite('/r/src/x.js', 'b'); root.commitWrite();
+  root.stageWrite('/r/src/x.js', 'b'); root.settleWrite(true);
   root.stageWrite('/r/src/x.js', 'STRANDED BY THE ATTEMPT END'); // never settled: the attempt ended
   root.observe({ iteration: 3, gap: GAP_A2, writes: ['/r/src/x.js'] });
-  root.stageWrite('/r/src/x.js', 'c'); root.commitWrite();
+  root.stageWrite('/r/src/x.js', 'c'); root.settleWrite(true);
   const inj = root.observe({ iteration: 4, gap: GAP_A, writes: ['/r/src/x.js'] });
   assert.equal(inj.stage, 'verbatim');
   assert.ok(!inj.note.includes('STRANDED'), 'a pending stage does not survive the attempt it was made in');
@@ -366,13 +366,98 @@ test('Finding 6: staging still scrubs at CAPTURE, before the cap (Finding 1 orde
   const redact = (/** @type {string} */ s) => s.replace(/sk-\w{16,}/g, '[REDACTED]');
   const root = createRoot({ gapKeep: KEEP, redact });
   root.observe({ iteration: 1, writes: [] });
-  root.stageWrite('/r/src/x.js', 'a'); root.commitWrite();
+  root.stageWrite('/r/src/x.js', 'a'); root.settleWrite(true);
   root.observe({ iteration: 2, gap: GAP_A, writes: ['/r/src/x.js'] });
-  root.stageWrite('/r/src/x.js', 'b'); root.commitWrite();
+  root.stageWrite('/r/src/x.js', 'b'); root.settleWrite(true);
   root.observe({ iteration: 3, gap: GAP_A2, writes: ['/r/src/x.js'] });
   // the secret straddles the 2000-byte cap: a scrub AFTER truncation would leave a fragment
-  root.stageWrite('/r/src/x.js', `${'A'.repeat(1990)}${secret}tail`); root.commitWrite();
+  root.stageWrite('/r/src/x.js', `${'A'.repeat(1990)}${secret}tail`); root.settleWrite(true);
   const inj = root.observe({ iteration: 4, gap: GAP_A, writes: ['/r/src/x.js'] });
   assert.ok(!inj.note.includes('sk-x'), 'no secret fragment rides the note');
   assert.ok(inj.note.includes('[REDACTED]'), 'the whole shape was matched because the scrub ran first');
+});
+
+// ─── Finding 7: intent and outcome are two questions, not one ───────────────
+// The gate allows BEFORE the tool runs, and shell_edit returns an anchor miss as
+// a refusal RESULT (bare-agent tools/shell.js:190) — file untouched. Validated
+// end-to-end 2026-07-20: three allowed edits, zero bytes changed, and the
+// verbatim note swore "they landed" over content provably not in the file.
+// The split: the DETECTOR keys off intent (the worker did reach for the same
+// file again — that IS repetition, and a disk-diff detector goes blind to it,
+// measured null on every attempt); the NOTE keys off outcome (a claim about
+// what is in the file must be true). settleWrite(landed) carries the outcome.
+
+test('Finding 7: an ATTEMPTED-but-unapplied write still counts as repetition — the detector never goes blind', () => {
+  const root = createRoot({ gapKeep: KEEP });
+  root.observe({ iteration: 1, writes: [] });
+  root.stageWrite('/r/src/x.js', 'anchor that misses'); root.settleWrite(false);
+  root.observe({ iteration: 2, gap: GAP_A, writes: ['/r/src/x.js'] });
+  root.stageWrite('/r/src/x.js', 'anchor that misses'); root.settleWrite(false);
+  const inj = root.observe({ iteration: 3, gap: GAP_A2, writes: ['/r/src/x.js'] });
+  assert.ok(inj, 'a worker repeating an edit that never applies is still fixated');
+  assert.equal(inj.stage, 'summary');
+});
+
+test('Finding 7: the summary note does not claim a rewrite when nothing applied', () => {
+  const root = createRoot({ gapKeep: KEEP });
+  root.observe({ iteration: 1, writes: [] });
+  root.stageWrite('/r/src/x.js', 'miss'); root.settleWrite(false);
+  root.observe({ iteration: 2, gap: GAP_A, writes: ['/r/src/x.js'] });
+  root.stageWrite('/r/src/x.js', 'miss'); root.settleWrite(false);
+  const inj = root.observe({ iteration: 3, gap: GAP_A2, writes: ['/r/src/x.js'] });
+  assert.ok(!/rewrote/.test(inj.note), 'never asserts a rewrite that did not happen');
+  assert.match(inj.note, /NEITHER EDIT APPLIED/, 'names the real failure: the edit did not land');
+});
+
+test('Finding 7: the verbatim note never presents unapplied content as landed', () => {
+  const root = createRoot({ gapKeep: KEEP });
+  root.observe({ iteration: 1, writes: [] });
+  root.stageWrite('/r/src/x.js', 'PHANTOM'); root.settleWrite(false);
+  root.observe({ iteration: 2, gap: GAP_A, writes: ['/r/src/x.js'] });
+  root.stageWrite('/r/src/x.js', 'PHANTOM'); root.settleWrite(false);
+  root.observe({ iteration: 3, gap: GAP_A2, writes: ['/r/src/x.js'] });
+  root.stageWrite('/r/src/x.js', 'PHANTOM'); root.settleWrite(false);
+  const inj = root.observe({ iteration: 4, gap: GAP_A, writes: ['/r/src/x.js'] });
+  assert.equal(inj.stage, 'verbatim');
+  assert.ok(!inj.note.includes('they landed'), 'the false claim is gone');
+  assert.match(inj.note, /did NOT apply|never applied/i, 'the worker is told its anchor missed');
+  assert.ok(inj.note.includes('PHANTOM'), 'it still sees the text it kept trying');
+});
+
+test('Finding 7: content that DID land keeps the landed wording', () => {
+  const root = createRoot({ gapKeep: KEEP });
+  root.observe({ iteration: 1, writes: [] });
+  root.stageWrite('/r/src/x.js', 'REAL'); root.settleWrite(true);
+  root.observe({ iteration: 2, gap: GAP_A, writes: ['/r/src/x.js'] });
+  root.stageWrite('/r/src/x.js', 'REAL'); root.settleWrite(true);
+  root.observe({ iteration: 3, gap: GAP_A2, writes: ['/r/src/x.js'] });
+  root.stageWrite('/r/src/x.js', 'REAL'); root.settleWrite(true);
+  const inj = root.observe({ iteration: 4, gap: GAP_A, writes: ['/r/src/x.js'] });
+  assert.equal(inj.stage, 'verbatim');
+  assert.match(inj.note, /they landed/, 'a real landed change is still reported as landed');
+  assert.ok(inj.note.includes('REAL'));
+});
+
+test('Finding 7: a byte-identical rewrite is LANDED (the content is in the file) — not a phantom', () => {
+  const root = createRoot({ gapKeep: KEEP });
+  root.observe({ iteration: 1, writes: [] });
+  root.stageWrite('/r/src/x.js', 'same'); root.settleWrite(true);
+  root.observe({ iteration: 2, gap: GAP_A, writes: ['/r/src/x.js'] });
+  root.stageWrite('/r/src/x.js', 'same'); root.settleWrite(true);
+  const inj = root.observe({ iteration: 3, gap: GAP_A2, writes: ['/r/src/x.js'] });
+  assert.match(inj.note, /rewrote/, 'repeating an identical write IS a rewrite and IS fixation');
+});
+
+test('Finding 7: a DENIED write never settles — discard still wins over any outcome', () => {
+  const root = createRoot({ gapKeep: KEEP });
+  root.observe({ iteration: 1, writes: [] });
+  root.stageWrite('/r/src/x.js', 'a'); root.settleWrite(true);
+  root.observe({ iteration: 2, gap: GAP_A, writes: ['/r/src/x.js'] });
+  root.stageWrite('/r/src/x.js', 'b'); root.settleWrite(true);
+  root.observe({ iteration: 3, gap: GAP_A2, writes: ['/r/src/x.js'] });
+  root.stageWrite('/r/src/x.js', 'c'); root.settleWrite(true);
+  root.stageWrite('/r/src/x.js', 'DENIED BY THE FENCE'); root.discardWrite();
+  const inj = root.observe({ iteration: 4, gap: GAP_A, writes: ['/r/src/x.js'] });
+  assert.equal(inj.stage, 'verbatim');
+  assert.ok(!inj.note.includes('DENIED'), 'a gate-denied write is never surfaced');
 });

@@ -2015,3 +2015,76 @@ rule "read the library source before filing an upstream ask" saved the ask; the 
 should have fired earlier is that an inherited constraint blocking a whole capability
 (here: running on the subscription at all) deserves a re-check against the CURRENT installed
 version before it hardens into architecture.
+
+## F43 — intent and outcome are two instruments: Layer R settled its note on the gate's allow, which is written before the tool runs
+
+**Trigger (2026-07-20).** Three consecutive patches to Layer R's tee each revealed the
+next defect (secret capture, gate-rejected content surfaced as landed, anchor-miss
+content surfaced as landed). hamr stopped the session on the pattern — "you are patching
+up shit on top of shit" — and demanded the feature be read end-to-end and VALIDATED
+rather than diagnosed by assertion. That instruction is what produced this finding; the
+three prior patches were each aimed at a symptom nobody had measured.
+
+**The mechanism, read from source.** `wireGate`'s policy runs `gate.check` BEFORE
+`tool.execute` (bare-agent `src/loop.js:913` → `:958`). An `allow` record is therefore a
+statement of INTENT — the gate permitted the action — and never a statement that bytes
+reached a file. Three post-allow paths leave the file untouched with the allow already
+on the audit: `shell_edit` returns a 0-match or 2+-match anchor failure as a refusal
+RESULT (`tools/shell.js:190,194`), a byte-cap overflow throws (`:204`), and a missing
+file throws at the read (`:186`). Layer R committed its tee on the gate verdict, so any
+of the three ended the attempt holding content it would later present to the worker as
+"your own previous changes — they landed".
+
+**Validated end-to-end, not argued** (`tests/interpret.test.js`, real Loop / real
+bareguard Gate / real `shell_edit` / real `node --test` close, scripted provider only).
+A worker repeats one anchor-miss edit across three attempts:
+
+| observable | reading |
+| --- | --- |
+| file on disk, every attempt | **unchanged** — zero bytes ever written |
+| gate audit, `type:'edit'`, `decision:'allow'` | **3** |
+| `root-injected` events | summary, then verbatim |
+| note delivered to the worker | *"These are your OWN previous changes — they landed"* + `return NEVER_LANDED;` |
+
+The claim was false in the strongest available sense: the quoted text was provably absent
+from the file the note named.
+
+**The proposed fix was wrong, and testing it is what proved it.** The first remedy
+drafted was to delete the interception entirely and diff the tree at attempt boundaries —
+"stop reconstructing reality, observe it". Run against the real detector, an attempt that
+changes nothing contributes an EMPTY write-set, and the detector returns `null` on every
+attempt: the rework would have gone completely blind to a worker re-firing an identical
+edit forever, which is the purest fixation the ratchet exists to catch. A cleaner-sounding
+architecture measured strictly worse than the thing it replaced.
+
+**The actual defect.** Layer R answered two different questions from one write-set.
+*"Is the worker repeating itself?"* is a question about what it REACHED FOR — the audit's
+allow-set is the correct instrument, and an edit that never applied is still repetition.
+*"Is this content in the file?"* is a question about OUTCOME — only the file can answer,
+and a note making that claim must be true. Neither axis substitutes for the other, which
+is why three patches to the content path kept not being enough: they were patching the
+wrong axis.
+
+**Shipped.** The detector is untouched (intent, no regression). The note settles on
+outcome via `Loop`'s `onToolResult` seam (post-execution, carries result AND error),
+which the interpreter had never wired. `landed` is `hash-changed OR content-now-present` —
+the second clause is not redundant: a byte-identical rewrite changes no hash yet genuinely
+leaves that content in the file, and calling it a phantom would mirror the original bug.
+An unapplied repeat now yields a strictly BETTER note than the old false one — it names
+the missed anchor, which is F38's mechanical genre (the genre that converts) rather than
+"form a different hypothesis", advice that would steer a worker away from a correct fix
+aimed at a wrong anchor. Four mutations (force-landed, force-unlanded, drop the
+byte-identical clause, ignore the settle argument) all killed; 358/358 green.
+
+**PARKED, not shipped (arbiter territory).** `wireGate` also returns an `onToolResult`
+that feeds `gate.record` per-tool records, and the interpreter has never wired it — so
+tool results and the per-run `ctx` never reach the gate's books. Wiring it changes what
+`limits.maxTurns` / `maxToolRounds` count and therefore WHEN A RUN HALTS. Cap semantics
+are the arbiter's, so this is named and left for hamr's explicit go rather than bundled
+into a Layer R fix.
+
+**Lesson.** Two questions answered from one number is a blind-instrument defect wearing
+different clothes — the class that has now shipped five times in this program. And the
+rule that a remedy must be tested as hard as the defect: the tree-diff proposal read as
+obviously correct, was argued confidently, and died the moment it was executed. A fix
+proposed from reading is a hypothesis, not a fix.

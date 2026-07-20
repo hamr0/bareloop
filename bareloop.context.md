@@ -293,7 +293,12 @@ detector degrades to write-overlap alone and the spine event names the mode) —
 injects an escalating note into the next prompt: first a capped summary naming the
 repeated files, then (if still stuck) the worker's OWN prior failed edit content
 verbatim, scrubbed and capped with trims announced. Inert unless stuck; the worker
-authors nothing and gains no verb. Spine event `root-injected` carries
+authors nothing and gains no verb. Two axes, deliberately separate (F43): the DETECTOR
+reads INTENT (the gate audit's allow-set — an edit whose anchor missed is still the
+worker reaching for that file again, and a tree-diff detector measured blind to exactly
+that), while the NOTE's claims about file contents read OUTCOME (settled post-execution
+through `Loop`'s `onToolResult`). So a repeat that never applied is told its anchor
+missed, and only content actually in the file is ever described as having landed. Spine event `root-injected` carries
 `{stage, mode, streak, paths, redSetSize}` — counts and paths only, NEVER content (the
 spine is append-only). State dies with the run: this is within-run scratch, not
 across-run memory. `layerRoot: false` (also on `runJob`) is the field experiment's OFF

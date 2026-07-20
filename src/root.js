@@ -43,6 +43,17 @@ export const normalizeRedLine = (line) => line.replace(/ \(\d+(?:\.\d+)?m?s\)\s*
 
 // Bounds — every trim is ANNOUNCED in the note (F28: silent truncation is the
 // disease; a cure that truncates silently is the same disease).
+/**
+ * A teed write: the content the worker emitted, plus whether it actually reached
+ * the file. `landed` is the OUTCOME axis (Finding 7) — the gate's allow is an
+ * intent record written before the tool runs, and a shell_edit whose anchor
+ * misses returns a refusal RESULT with the file untouched (bare-agent
+ * tools/shell.js:190). A note that says "these are your changes" is a claim
+ * about the file's contents and must be true, so it reads this flag, never the
+ * audit. The DETECTOR deliberately does not: see `observe`.
+ * @typedef {{content: string, trimmed: boolean, landed: boolean}} TeeEntry
+ */
+
 const TEE_CAP_BYTES = 2000;   // per-file content retained for the verbatim stage
 const VERBATIM_MAX_FILES = 3; // files surfaced per verbatim injection
 const SUMMARY_MAX_PATHS = 10; // paths named in the summary line
@@ -52,11 +63,22 @@ const SUMMARY_MAX_PATHS = 10; // paths named in the summary line
  *
  * Call order (wired by the interpreter's middle):
  *   observe({iteration: 1, writes})            → null (nothing to compare)
- *   noteWrite(path, content)                   → tee, per landed write/edit
+ *   stageWrite(path, content)                  → stage, before the tool runs
+ *   settleWrite(landed) | discardWrite()       → the outcome, after it ran
+ *   noteWrite(path, content)                   → stage+settle, text mode (which
+ *                                                writes before it reports)
  *   observe({iteration: N, gap, writes})       → null | {stage, note, event}
  * `writes` is the CUMULATIVE allow-decision write/edit path list from the gate
  * audit (the F32 instrument); the per-attempt set is the delta between calls —
- * so a gate-DENIED write is never counted and never surfaced (it never landed).
+ * so a gate-DENIED write is never counted (the tool never ran at all).
+ *
+ * Finding 7 — the two axes, deliberately NOT merged. An allow-decision records
+ * what the worker REACHED FOR, which is the right instrument for "is it
+ * repeating itself"; whether those bytes reached the file is a different
+ * question, and only the note (a claim about file contents) needs it. Collapsing
+ * them either way is a bug: settling the note on the allow makes it lie, and
+ * running the detector off the file makes it blind to a worker re-firing an
+ * identical edit whose anchor never matches — measured null on every attempt.
  *
  * @param {{gapKeep?: string, redact?: (s: string) => string}} [opts] the signed
  *   spec's kept-failures pattern (the red-set source; without it the detector
@@ -82,13 +104,13 @@ export function createRoot({ gapKeep, redact = (s) => s } = {}) {
     return lines.length ? lines : null;
   };
 
-  /** @type {{writes: string[], reds: string[]|null, tee: Map<string, {content: string, trimmed: boolean}>}[]} finalized attempts */
+  /** @type {{writes: string[], reds: string[]|null, tee: Map<string, TeeEntry>}[]} finalized attempts */
   const attempts = [];
   /** @type {Set<string>} cumulative audit write-set at the last observe */
   let prevCumulative = new Set();
-  /** @type {Map<string, {content: string, trimmed: boolean}>} tee for the attempt currently running */
+  /** @type {Map<string, TeeEntry>} tee for the attempt currently running */
   let tee = new Map();
-  /** @type {{path: string, entry: {content: string, trimmed: boolean}}|null} the write awaiting its gate verdict */
+  /** @type {{path: string, entry: TeeEntry}|null} the write awaiting its outcome */
   let pending = null;
   let streak = 0;
 
@@ -106,20 +128,25 @@ export function createRoot({ gapKeep, redact = (s) => s } = {}) {
   const stageWrite = (path, content) => {
     const scrubbed = redact(content);
     const trimmed = scrubbed.length > TEE_CAP_BYTES;
-    pending = { path, entry: { content: scrubbed.slice(0, TEE_CAP_BYTES), trimmed } };
+    pending = { path, entry: { content: scrubbed.slice(0, TEE_CAP_BYTES), trimmed, landed: false } };
   };
 
   return {
     stageWrite,
 
     /**
-     * The staged write was ALLOWED and landed: retain it for the verbatim stage.
-     * Memory-only — never the spine. Last LANDED write per path wins (the tree's
-     * final state for that attempt is what failed the close). A no-op when
-     * nothing is staged, so a read/grep/recall verdict costs nothing.
+     * The staged write RAN — record what it actually did (Finding 7). Retained
+     * either way: an attempted-but-unapplied edit is still the worker reaching
+     * for the same file, which is what the detector measures, and dropping it
+     * here would blind the ratchet to the purest fixation there is (a worker
+     * re-firing an identical edit whose anchor never matches — measured null on
+     * every attempt under a tree-diff detector, 2026-07-20). Only the NOTE's
+     * wording turns on `landed`. Last write per path wins (the tree's final
+     * state for that attempt is what failed the close).
+     * @param {boolean} landed whether the content is now in the file
      */
-    commitWrite() {
-      if (pending) tee.set(pending.path, pending.entry);
+    settleWrite(landed) {
+      if (pending) tee.set(pending.path, { ...pending.entry, landed });
       pending = null;
     },
 
@@ -137,7 +164,7 @@ export function createRoot({ gapKeep, redact = (s) => s } = {}) {
      */
     noteWrite(path, content) {
       stageWrite(path, content);
-      if (pending) tee.set(pending.path, pending.entry);
+      if (pending) tee.set(pending.path, { ...pending.entry, landed: true });
       pending = null;
     },
 
@@ -193,32 +220,64 @@ export function createRoot({ gapKeep, redact = (s) => s } = {}) {
         redSetSize: last.reds ? last.reds.length : null,
       };
 
+      // Finding 7: what the worker REACHED FOR fired the detector; what it
+      // ACHIEVED decides the wording. Only paths this attempt actually teed can
+      // answer the outcome question — a path known solely from the audit is
+      // unattributable, so it falls back to the neutral (landed) phrasing rather
+      // than guessing.
+      const attempted = overlap.filter((p) => last.tee.has(p));
+      const noneApplied = attempted.length > 0
+        && attempted.every((p) => !(/** @type {TeeEntry} */ (last.tee.get(p)).landed));
+
       if (stage === 'summary') {
         const redsClause = mode === 'reds+writes'
           ? 'and the set of failing tests did not change at all'
           : 'with no visible progress';
-        return {
-          stage, event,
-          note: `RATCHET: you are repeating yourself. Your last two attempts both rewrote ${shownPaths.join(', ')}`
+        // The unapplied case is the MECHANICAL genre (F38: gaps that name a wall
+        // convert; semantic ones stall) — naming the missed anchor is strictly
+        // more actionable than "form a different hypothesis", because the
+        // hypothesis may have been right and only the anchor wrong.
+        const body = noneApplied
+          ? `Your last two attempts both tried to change ${shownPaths.join(', ')}`
+            + `${morePaths > 0 ? ` (and ${morePaths} more)` : ''} and NEITHER EDIT APPLIED — `
+            + 'the text you anchored on was not found in the file, so nothing changed. '
+            + 'Re-read the file and quote the exact text (whitespace and indentation included) before editing again.'
+          : `Your last two attempts both rewrote ${shownPaths.join(', ')}`
             + `${morePaths > 0 ? ` (and ${morePaths} more)` : ''} ${redsClause}. `
-            + 'Do NOT retry the same change — form a DIFFERENT hypothesis before your next edit.',
-        };
+            + 'Do NOT retry the same change — form a DIFFERENT hypothesis before your next edit.';
+        return { stage, event, note: `RATCHET: you are repeating yourself. ${body}` };
       }
-      // verbatim: surface the worker's own last failed content for the repeated
-      // paths — scrubbed, capped, every trim announced
-      const files = overlap.filter((p) => last.tee.has(p)).slice(0, VERBATIM_MAX_FILES);
-      const moreFiles = overlap.filter((p) => last.tee.has(p)).length - files.length;
-      const blocks = files.map((p) => {
-        const t = /** @type {{content: string, trimmed: boolean}} */ (last.tee.get(p));
+      // verbatim: surface the worker's own last content for the repeated paths —
+      // scrubbed, capped, every trim announced. Grouped by OUTCOME, because the
+      // two groups need opposite advice: content that landed and failed must not
+      // be written again, while content that never applied may have been the
+      // right change aimed at the wrong anchor — telling that worker to "write
+      // something structurally different" would steer it away from a correct fix.
+      const files = attempted.slice(0, VERBATIM_MAX_FILES);
+      const moreFiles = attempted.length - files.length;
+      /** @param {string} p */
+      const block = (p) => {
+        const t = /** @type {TeeEntry} */ (last.tee.get(p));
         return `--- ${p}${t.trimmed ? ` (truncated to first ${TEE_CAP_BYTES} chars)` : ''} ---\n${redact(t.content)}`;
-      });
+      };
+      const landedFiles = files.filter((p) => /** @type {TeeEntry} */ (last.tee.get(p)).landed);
+      const unappliedFiles = files.filter((p) => !(/** @type {TeeEntry} */ (last.tee.get(p)).landed));
+      const sections = [];
+      if (landedFiles.length) {
+        sections.push('These are your OWN previous changes — they landed, and they did NOT fix the failing set:\n'
+          + landedFiles.map(block).join('\n')
+          + '\nDo not write these again. Write something STRUCTURALLY DIFFERENT, or change a different file.');
+      }
+      if (unappliedFiles.length) {
+        sections.push('This is text you tried to write, and it did NOT apply — the anchor was not found, '
+          + 'so the file is UNCHANGED and none of this is in it:\n'
+          + unappliedFiles.map(block).join('\n')
+          + '\nRe-read the file and copy the exact text you mean to replace, character for character, before editing again.');
+      }
       return {
         stage, event,
-        note: 'RATCHET: you are STILL repeating yourself. These are your OWN previous changes — they landed, '
-          + 'and they did NOT fix the failing set:\n'
-          + blocks.join('\n')
-          + (moreFiles > 0 ? `\n(and ${moreFiles} more repeated file${moreFiles > 1 ? 's' : ''}, elided)` : '')
-          + '\nDo not write these again. Write something STRUCTURALLY DIFFERENT, or change a different file.',
+        note: `RATCHET: you are STILL repeating yourself. ${sections.join('\n\n')}`
+          + (moreFiles > 0 ? `\n(and ${moreFiles} more repeated file${moreFiles > 1 ? 's' : ''}, elided)` : ''),
       };
     },
   };

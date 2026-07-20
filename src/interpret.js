@@ -12,6 +12,7 @@
 
 import { createRequire } from 'node:module';
 import { writeFileSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { Gate, redact } from 'bareguard';
@@ -329,8 +330,11 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   // enough on its own, because the tee is last-write-wins PER PATH and a path the
   // audit legitimately lists as allowed can end the attempt holding the content
   // of a LATER write the gate rejected — the verbatim note would then swear that
-  // code landed when it is not in the file (Finding 6, 2026-07-20). The verdict
-  // settles the stage: commit on allow, discard on deny and on halt (below).
+  // code landed when it is not in the file (Finding 6, 2026-07-20). Settlement
+  // is split across the two seams that actually know (Finding 7): the gate
+  // verdict can only DISCARD (a deny means the tool never runs), and the
+  // post-execution seam supplies the outcome an allow cannot — see `policy` and
+  // `onToolOutcome` below.
   /** @param {string} n @param {any} a */
   const teeingTranslator = (n, a) => {
     // Classify ONCE and decide by the action TYPE, not a hardcoded name list — a
@@ -345,10 +349,34 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     if (root && (act.type === 'write' || act.type === 'edit')) {
       // act.path is always present on the write/edit branch (cast: toolAction's
       // object literals widen `type` to string, so tsc cannot narrow the union)
-      root.stageWrite(/** @type {string} */ (act.path), String((act.type === 'edit' ? a?.newText : a?.content) ?? ''));
+      const path = /** @type {string} */ (act.path);
+      const content = String((act.type === 'edit' ? a?.newText : a?.content) ?? '');
+      root.stageWrite(path, content);
+      // Finding 7 — the OUTCOME probe. The gate's allow is an INTENT record
+      // written before the tool runs; shell_edit returns an anchor miss as a
+      // refusal RESULT (bare-agent tools/shell.js:190) and a byte-cap overflow
+      // as a throw (:204), both leaving the file untouched with the allow
+      // already on the audit. Snapshot the file HERE (pre-execution) so the
+      // post-execution seam can ask the only question that settles the note:
+      // is this content in the file now? Raw content, never the scrubbed copy —
+      // the comparison is against real bytes on disk; it is transient, and it
+      // never reaches a prompt, the spine, or the audit.
+      pendingProbe = { path, content, before: fileHash(path) };
     }
     return act;
   };
+  /**
+   * Content hash of a file, or null when it does not exist / cannot be read —
+   * null is the honest unknown here, and a missing file BEFORE a write is the
+   * normal new-file case (it compares unequal to the hash after, which is
+   * exactly right: the write landed).
+   * @param {string} p
+   */
+  const fileHash = (p) => {
+    try { return createHash('sha256').update(readFileSync(p)).digest('hex'); } catch { return null; }
+  };
+  /** @type {{path: string, content: string, before: string|null}|null} the write-class action awaiting its OUTCOME */
+  let pendingProbe = null;
   const { policy: gatePolicy, onLlmResult } = wireGate(gate, mode === 'tools' ? { actionTranslator: teeingTranslator } : {});
   // Settle the stage on the verdict. wireGate's policy returns true on allow,
   // a string on deny, and THROWS HaltError on halt — and bare-agent processes
@@ -361,14 +389,51 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     ? async (/** @type {string} */ n, /** @type {any} */ a, /** @type {any} */ c) => {
       try {
         const verdict = await gatePolicy(n, a, c);
-        if (verdict === true) root.commitWrite(); else root.discardWrite();
+        // A DENY is settled here and only here: the tool never executes, so the
+        // outcome seam below never fires for it. An ALLOW is deliberately NOT
+        // settled — the bytes have not been written yet, and settling on the
+        // verdict is precisely the Finding 7 defect (validated 2026-07-20: three
+        // allowed edits, zero bytes changed, and the note swore they landed).
+        if (verdict !== true) { root.discardWrite(); pendingProbe = null; }
         return verdict;
       } catch (e) {
         root.discardWrite();
+        pendingProbe = null;
         throw e;
       }
     }
     : gatePolicy;
+  /**
+   * Finding 7 — settle the staged write on what the tool ACTUALLY did. Fires
+   * after every `tool.execute` (bare-agent loop.js:986), success or error, and
+   * bare-agent processes tool calls strictly sequentially, so exactly one probe
+   * is ever in flight. A probe that never reaches here (the BA-12 spin-guard
+   * early return, or a HaltError out of a tool body) leaves the stage pending
+   * and unsettled — correct, because in both cases nothing landed, and the
+   * attempt boundary drops it.
+   *
+   * NOT wired: `wireGate`'s own `onToolResult`, which would start feeding
+   * `gate.record` per-tool records. That changes what `limits.maxTurns` /
+   * `maxToolRounds` count and therefore when a run halts — budget and cap
+   * semantics are arbiter territory, so it is named and PARKED, never bundled
+   * into a Layer R fix.
+   */
+  const onToolOutcome = async () => {
+    if (!root || !pendingProbe) return;
+    const { path: p, content, before } = pendingProbe;
+    pendingProbe = null;
+    // Landed iff the file changed, OR the emitted content is in the file now.
+    // The second clause is not redundant: a byte-identical rewrite changes no
+    // hash yet genuinely leaves that content in the file, and calling it a
+    // phantom would be the mirror of the bug being fixed. Empty content (a
+    // legal `newText:""` deletion) skips the substring test, which every string
+    // trivially satisfies — for a deletion, only the hash can answer.
+    let landed = fileHash(p) !== before;
+    if (!landed && content !== '') {
+      try { landed = readFileSync(p, 'utf8').includes(content); } catch { landed = false; }
+    }
+    root.settleWrite(landed);
+  };
   // Money is metered as it is SPENT — per ROUND, not per attempt (F12). A
   // multi-round attempt that halts (or throws) never returns, so its rounds
   // never reach `worker-result`: the real run bought $1.4375 of tokens inside a
@@ -488,6 +553,7 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     system: mode === 'tools' ? PERSONA_TOOLS + (usesEdit ? EDIT_STRATEGY : '') + (usesCtx ? RETRIEVAL_STRATEGY : '') : PERSONA,
     policy,
     onLlmResult: meteredOnLlmResult,
+    onToolResult: onToolOutcome,
   });
 
   /** @param {string} slot */

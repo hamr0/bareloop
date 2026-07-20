@@ -23,6 +23,21 @@ feature lands, **patch** = docs, fixes, scaffolding.
   comparison-only, the delivered gap is untouched. Spine event `root-injected` carries
   stage/mode/streak/paths, never content (append-only law). `layerRoot: false` on
   `runJob`/`interpret` is the field experiment's OFF arm.
+
+### Fixed
+
+- **Layer R settled its note on the gate's allow, which is written BEFORE the tool runs
+  (F43).** An `allow` record states INTENT, never that bytes reached a file:
+  `shell_edit` returns an anchor miss as a refusal *result* and a byte-cap overflow as a
+  throw, both leaving the file untouched with the allow already on the audit. The
+  verbatim note could therefore present content to the worker as "your own previous
+  changes — they landed" while that text was provably absent from the file it named
+  (reproduced end-to-end: 3 allowed edits, 0 bytes changed). Fixed by splitting the two
+  axes rather than merging them — the DETECTOR keeps reading intent (an edit that never
+  applied is still repetition; a tree-diff detector measured blind to it on every
+  attempt), while the NOTE settles on the observed file through `Loop`'s
+  `onToolResult` seam. An unapplied repeat now names the missed anchor instead, which is
+  the mechanical gap genre (F38). `commitWrite` is replaced by `settleWrite(landed)`.
 - **F41 — the disposition: armed-and-inert, field read deferred.** Before any ON/OFF
   battery spent money, two cheap reads measured the disease's base rate: the archive
   sweep (`poc/layer-r-base-rate.mjs`, $0 — every surviving spine is OFF-arm by

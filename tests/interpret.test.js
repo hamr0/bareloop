@@ -1020,3 +1020,67 @@ test('Finding 6: a HALT on a staged write still propagates as cap-halt (discard 
   assert.ok(events.some((e) => e.type === 'cap-halt'), 'cap-halt event on the spine');
   assert.ok(!existsSync(join(wd, 'src', 'sum.mjs')), 'the halted write never landed');
 });
+
+// ─── Finding 7: intent fires the detector, outcome words the note ───────────
+// The gate's allow is written BEFORE the tool runs, so it records intent, not
+// landing: shell_edit returns an anchor miss as a refusal RESULT (bare-agent
+// tools/shell.js:190) with the file untouched. Validated end-to-end 2026-07-20 —
+// three allowed edits, zero bytes changed, and the verbatim note swore the
+// content had landed. The fix keeps the DETECTOR on intent (a tree-diff detector
+// measured null on every attempt here: it would go blind to the purest fixation
+// there is) and settles the NOTE on the observed file via Loop's onToolResult.
+
+test('F7: an edit that the gate allows but the tool refuses — detector still fires, note never claims it landed', async () => {
+  const wd = twd('root-phantom');
+  const { workdir, target, close } = makeWork('root-phantom');
+  writeFileSync(target, BAD_SUM); // stays red all run; the anchor below never matches it
+  const phantom = tcall('t1', 'shell_edit', { path: target, oldText: 'return a * b;', newText: 'return NEVER_LANDED;' });
+  const provider = stubProvider([
+    { toolCalls: [phantom] }, { text: 'edited it' }, // attempt 1
+    { toolCalls: [phantom] }, { text: 'edited it' }, // attempt 2 → summary
+    { toolCalls: [phantom] }, { text: 'edited it' }, // attempt 3 → verbatim
+    { text: 'giving up' },
+  ]);
+  const file = join(workdir, 'run.jsonl');
+  await interpret(config(), {
+    task: TASK, target, close, workdir, capRuns: 4, emit: makeSpine(file), provider,
+    mode: 'tools', tools: ['read', 'edit'],
+  });
+
+  assert.equal(readFileSync(target, 'utf8'), BAD_SUM, 'GROUND TRUTH: nothing ever landed');
+  // intent axis untouched: the gate still allowed, and the ratchet still engaged
+  const audit = readFileSync(join(wd, 'gate-audit.jsonl'), 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  assert.ok(audit.some((r) => r.phase === 'gate' && r.action?.type === 'edit' && r.decision === 'allow'),
+    'the allow record is intent — it is still written for an edit that never applied');
+  const injected = readSpine(file).filter((e) => e.type === 'root-injected');
+  assert.deepEqual(injected.map((e) => e.stage), ['summary', 'verbatim'],
+    'the detector reads INTENT: a repeated unapplied edit is still fixation, both stages fire');
+  // outcome axis: every claim the note makes about the file must be true
+  const notes = provider.calls.filter((c) => c.includes('RATCHET'));
+  assert.equal(notes.length, 2);
+  assert.ok(!notes.some((n) => /rewrote/.test(n)), 'never asserts a rewrite that did not happen');
+  assert.ok(!notes.some((n) => n.includes('they landed')), 'never asserts a landing that did not happen');
+  assert.match(notes[0], /NEITHER EDIT APPLIED/, 'summary names the wall: the anchor missed');
+  assert.match(notes[1], /did NOT apply/, 'verbatim names the wall too');
+  assert.ok(notes[1].includes('NEVER_LANDED'), 'the worker still sees the text it kept retrying');
+});
+
+test('F7 control: edits that genuinely land keep the landed wording — the seam tells the two apart', async () => {
+  const { workdir, target, close } = makeWork('root-landed');
+  writeFileSync(target, BAD_SUM);
+  const provider = stubProvider([
+    { toolCalls: [tcall('r1', 'shell_edit', { path: target, oldText: 'a - b', newText: 'a * b' })] }, { text: 'edited' },
+    { toolCalls: [tcall('r2', 'shell_edit', { path: target, oldText: 'a * b', newText: 'a % b' })] }, { text: 'edited' },
+    { toolCalls: [tcall('r3', 'shell_edit', { path: target, oldText: 'a % b', newText: 'a - b' })] }, { text: 'edited' },
+    { text: 'giving up' },
+  ]);
+  const file = join(workdir, 'run.jsonl');
+  await interpret(config(), {
+    task: TASK, target, close, workdir, capRuns: 4, emit: makeSpine(file), provider,
+    mode: 'tools', tools: ['read', 'edit'],
+  });
+  const notes = provider.calls.filter((c) => c.includes('RATCHET'));
+  assert.ok(notes.length >= 1, 'repeated real edits to the same file still fire the ratchet');
+  assert.match(notes.join('\n'), /rewrote|they landed/, 'a real landing is still reported as one');
+  assert.ok(!/did NOT apply/.test(notes.join('\n')), 'no false "never applied" claim on edits that did apply');
+});
