@@ -1961,3 +1961,57 @@ moving files every time (P3: 8→4→green across 3 judged attempts). The frozen
 fired: job #1 no longer exhibits fixation under current code. F41's remission claim is
 now probe-confirmed, not INCOMPLETE-supported; Layer R ships armed-and-inert and its
 field read defers to the first run whose spine says `root-injected`.
+
+## F42 — the clipipe money blackout was fixed upstream and our copy of F2 went stale: bareloop can run on the subscription today
+
+**Trigger (2026-07-20).** hamr asked why bareloop is API-only — "because of budget?" — and
+whether clipipe has cost/budget to wire. The standing answer was adaptlearn's F2
+(`docs/00-context/FINDINGS.md`): `provider-clipipe.js` reports `usage: {inputTokens: 0,
+outputTokens: 0}` and `toolCalls: []` on every call, so the CLI path is money-blind, every
+round reds as unpriced (F6), and no run can satisfy the hard-cap law. That finding was
+inherited as closed context and never re-checked. An upstream ask against bare-agent was
+about to be filed on it.
+
+**Read the source first (the withdrawn-ask rule, applied and vindicated).** bare-agent
+**0.29.0 — the version bareloop already has installed** — ships an opt-in `parse` option on
+the clipipe provider. `parse: 'claude-json'` maps the `claude -p --output-format json`
+envelope onto `GenerateResult`: `text←result`, `usage←usage.*` (including
+`cacheReadTokens`/`cacheCreationTokens`), `model←`first `modelUsage` key, and
+**`costUsd←total_cost_usd`**. Its own comment: *"The CLI's own price is authoritative
+(subscription runs report an equivalent cost even at $0 marginal) — feeds bareguard's USD
+axis with no local rate table."* F2's ask therefore already exists, shipped. Filing it
+would have been the program's SECOND withdrawn ask for a capability that was already
+there.
+
+**Live probe (evidence, not the comment).** `claude -p --output-format json 'reply with
+exactly: ok'` returned `total_cost_usd: 0.36858949999999996` plus a full usage block
+(`input_tokens` 2, `output_tokens` 4, `cache_creation_input_tokens` 36093,
+`cache_read_input_tokens` 15099) and a per-model `modelUsage.costUSD`. Both the money and
+the tokens are real and present on a subscription run.
+
+**Why it stayed invisible:** the parse option is OPT-IN. Unset, the provider still returns
+stdout verbatim with zero usage — F2's exact behavior. **The default is the trap**, so the
+capability can ship for versions without any consumer noticing.
+
+**Consequences, stated honestly and NOT acted on:**
+1. The API-only posture is no longer forced by the instrument. Binding clipipe with
+   `parse: 'claude-json'` gives a working USD axis. bareloop needs NO library change for
+   this — the provider is caller-supplied and shell-owned (`runJob({provider})`).
+2. **The dollar figure is NOTIONAL, not billed.** On a subscription `total_cost_usd` is
+   API-equivalent value consumed; nothing leaves the account. A budget cap on that path
+   governs equivalent-value, not money. That is a BUDGET SEMANTIC — arbiter territory,
+   hamr's ruling, deliberately unmade here.
+3. **It is expensive in those notional terms.** A trivial one-word probe reported $0.369
+   because the CLI created 36k cache tokens for its own context. A run costing cents on the
+   API can read as dollars here and trip a cap early. Any clipipe battery must re-baseline
+   its budget before it means anything.
+4. The rounds-cap fallback drafted for "a provider that reports neither price nor tokens"
+   was DROPPED unbuilt — clipipe reports both, so that provider does not exist in our
+   stack, and building it would be speculative code for a hypothetical.
+
+**Lesson (a re-mint, not a new one).** A closed finding copied from a predecessor repo is a
+snapshot of a dependency at a moment, not a standing fact — and dependencies get fixed. The
+rule "read the library source before filing an upstream ask" saved the ask; the rule that
+should have fired earlier is that an inherited constraint blocking a whole capability
+(here: running on the subscription at all) deserves a re-check against the CURRENT installed
+version before it hardens into architecture.
