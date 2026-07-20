@@ -329,7 +329,16 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
    successive gates over one artifact, the only shape job-v1 can express; a clobber
    the day two steps carry distinct deliverables).
 4. **Build Layer 3** — inheritance with ledger attribution (N3, kill-switch: rules must
-   transmit across non-identical runs).
+   transmit across non-identical runs). Carries three v1.21 requirements (external-review
+   fold, 2026-07-21): **(a) the drift detector** — arbiter-side trailing green-rate vs
+   mint-time baseline, named red `drift-red`, flag-not-rollback (rollback is merge-class,
+   human), must-fail fixtures before trust, threshold from measured base rate never
+   guessed; **(b) the N3 control gains a third arm** — inheritance-ON+agent-readable
+   lineage vs ON-mechanical vs OFF, gated by a sub-dollar pre-probe (identical plans
+   with/without lineage in hand kills the arm), default prediction NO lift (F39);
+   **(c) bound-pressure ledger fold** — "step X capped M of N runs" for the trust
+   surface; acceptance = it can surface the F37/16g rounds-vs-money bind from archived
+   spines.
 
 ---
 

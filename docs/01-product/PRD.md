@@ -1155,3 +1155,112 @@ patient's failure genre is inaction/semantic-stall, which the ratchet deliberate
 not treat — F38/F39). Spec change recorded: `litectx-maintainer` `budgetUsd` 1.5 → 4.5
 (re-signed) — the advertised budget must fund the attempts the cap promises; $1.50
 funded one judged attempt and made across-attempt evidence structurally impossible.
+
+## Addendum v1.21 — 2026-07-21 (external PRD review folded: four adoptions placed at their rungs, six rejections recorded with reasons — hamr assignment)
+
+**Source:** an external model's assessment of this PRD (10 claimed gaps, framed as "safe
+config-inheritance vs self-healing agent"). Fold rule as v1.15: record only what changes
+standing expectations. The review's structural reading was sharp; its evidence reading was
+blind — most proposals re-request capabilities this program already measured inert (F39:
+hand-delivered state bought zero conversion; F22: agent-authored knobs were decoration)
+or re-propose what a design law exists to prevent (law #4). Four items survive; each is
+placed at its rung below **so the rung knows what to test and what to look for**. The
+rejections are recorded WITH reasons so the next reviewer doesn't re-find them.
+
+### Adoption 1 — drift detector + `drift-red` (rung: N3, lands with inheritance)
+
+The review's one genuine hole: it beat the PRD with its own rule. v1.6's standing law
+says every loop gets its named red and its undeletable signal — but loop 2 (across-run)
+has an **admission** gate only; nothing watches a MINTED plan degrade after admission.
+§9's fit-to-pass-drift handle said "measure retention/drift on job #1's real timeline"
+and named no instrument. v1.15's "verifier hardening never ends" makes the gap sharper:
+a plan can rot because the environment moved while the plan stood still.
+
+**Shape (arbiter-side, agent-inexpressible):** a ledger fold comparing trailing-window
+green-rate against the plan's mint-time baseline; a trip emits spine event `drift-red`
+and FLAGS on the trust surface. Rollback to last-known-good is merge-class — **human,
+never automatic**; the detector detects, the human decides.
+
+**What to test at the rung (v1.6 instrument obligation):** ships with must-fail
+fixtures — a synthetic ledger with real degradation MUST fire it; a noise-only ledger
+MUST NOT. The trip threshold is derived from the measured green base rate at that time,
+never guessed (F24/F41 discipline: a drift alarm over n=3 runs is an anecdote — the
+detector stays silent below the n its own fixture battery proves readable). Arbiter
+territory: the build lands only with hamr's explicit go at N3; this addendum scopes it.
+
+### Adoption 2 — bound-pressure reporting on the trust surface (fold: N3+; surface: N6)
+
+The legal form of the review's "budget proposal" ask. The hard line stands and includes
+proposal channels: **a proposal channel is a negotiation channel** (§8, agenticSeek
+smell) — the agent gets no verb. Instead the ledger's per-step cost rows fold into a
+trust-surface view: "step X hit its bound in M of N runs"; the human decides re-signing.
+Same information, zero agent capability.
+
+**What to test at the rung:** backtest against archived spines — the view MUST make the
+TESTGEN rounds-vs-money whack-a-mole (F37/16g: money cap binding at ~round 38 behind an
+advertised 40-round bound) visible from the rows we already have. A bound-pressure view
+that cannot surface a known historical bind fails its acceptance.
+
+### Adoption 3 — lineage-read as a pre-registered THIRD ARM of the N3 control (not a feature)
+
+The review asks for an agent-readable lineage API and assumes it helps. F39 measured the
+within-run version of that assumption dead: hand-delivering full state fixed AIM
+completely and moved conversion zero. The across-run version is a different claim — so
+it enters as an **arm of the v1.15 paired control**, never as a shipped capability:
+inheritance-ON+mechanical vs inheritance-ON+agent-readable-lineage (vs OFF). Read-only,
+attenuated, arbiter's books still denied; the lineage view is a summarizing point and
+carries its own attenuator manifest (v1.6 commitment #4).
+
+**Gate before any build:** a cheap pre-probe — the same planning prompt with and without
+lineage context in hand; if the drafted plans are identical, the variable isn't wired
+and the arm dies for under a dollar (two should-differ conditions matching is a finding).
+**Default prediction: NO lift** (F39, CL-BENCH). The arm exists to measure the claim,
+not to deliver the feature; a real normalized delta is the only thing that promotes it.
+
+### Adoption 4 — HITL protocol pins (rung: N6 panel; pinned now so the ladder inherits them)
+
+Two rules the soft-green/hitl ladder needs that no addendum had written down:
+
+1. **Confirm timeout = NO-MINT.** A soft-green awaiting HITL confirmation that times out
+   keeps its run verdict but mints nothing — silence is never consent; there is no
+   default-green path.
+2. **The human MAY edit a proposed plan before minting — but an edited plan is a
+   re-authoring boundary** (v1.11 rule #2): its toggle coverage resets and no contrast
+   bit may be counted across the edit. Human improvement is welcome; laundering it into
+   the lineage's attribution is not.
+
+### §8 clarification (recorded here; §8 stands as written)
+
+The review correctly observed the PRD never states whether "the agent builds its own
+workflows" means configuring or inventing. It means **configuring**: the agent proposes
+step DAGs, bounds, and tool selections from the closed, gated, admitted menu; it never
+invents primitives and never authors freeform scaffolding. This is a deliberate position
+paid for in F22 (of seven agent-authored knobs, one was live) and law #1 — not an
+oversight. Stated here so future reviewers read position, not omission.
+
+### Rejections (recorded with reasons — do not re-litigate without new evidence)
+
+1. **Scalar value function** — proposes exactly what law #4 forbids and v1.6 made
+   lintable (no function in the tree combines verdict and cost; CI-checked). A "learned"
+   value fit on single-digit greens per lineage is noise wearing a regression costume.
+   Cost already ranks among greens; that is the whole legal optimization surface.
+2. **Agent-driven reflection phase** — the extractor IS the between-run consolidation;
+   making it agent-driven is precisely the capability claim the N3 paired control exists
+   to measure, and its output is the semantic genre F38/F39 showed does not convert.
+3. **MCP bridge** — an arbitrary MCP tool is an untyped verb the gate cannot judge;
+   admitting one reopens the `run` lock (the danger is in the ACTIONS). Interop would
+   require per-tool action typing through the gate first — a real, separate, later
+   project, not a v1 gap.
+4. **Plan mutation/crossover search** — no readable base rate exists to score variants
+   against (F24/F41 discipline), and unlimited variant generation launders thrash as
+   adaptation (plan-v1's one-replan law). One-knob mutation IS the search operator until
+   Layer 2 makes greens cheap and frequent enough to read a delta.
+5. **closeProposer** — an agent proposing the judge it will be graded by is
+   judge-is-ceiling (v1.15 SURE #1) in its purest form. The proposing-vs-authoring
+   distinction is real and the request-red ladder is its shape; PARKED for hamr,
+   not before deterministic closes are boring.
+6. **Cross-job pattern transfer** — correctly observed as structurally prevented; that
+   is the founding attribution constraint working. The bridge already exists in
+   doctrine: a rule the N3 memorization audit certifies as GENERAL (not a memorized
+   answer) is the transfer candidate, and the lineage key already supports per-task-family
+   splits (§9/V3). Post-N3, evidence-gated.
