@@ -21,8 +21,11 @@ feature lands, **patch** = docs, fixes, scaffolding.
   inheritance stays verdict-gated). Red-set comparison strips the spec-reporter's
   per-run duration stamps (POC-measured: kept lines are never byte-stable) —
   comparison-only, the delivered gap is untouched. Spine event `root-injected` carries
-  stage/mode/streak/paths, never content (append-only law). `layerRoot: false` on
-  `runJob`/`interpret` is the field experiment's OFF arm.
+  stage/mode/streak/paths, never content (append-only law). Ships **OFF by default**
+  (`layerRoot: false` on `runJob`/`interpret`; pass `true` for the ON/experimental arm) —
+  decided 2026-07-21: fixation is extinct on every current job (F41), so ON has never won
+  its own A/B; the default flip to `true` defers to the first Layer 2 job that produces
+  natural fixation (see `docs/01-product/LAYERS.md` Layer R note).
 
 ### Fixed
 
@@ -38,6 +41,14 @@ feature lands, **patch** = docs, fixes, scaffolding.
   attempt), while the NOTE settles on the observed file through `Loop`'s
   `onToolResult` seam. An unapplied repeat now names the missed anchor instead, which is
   the mechanical gap genre (F38). `commitWrite` is replaced by `settleWrite(landed)`.
+- **Guarded the `maxTurns` LLM-round invariant (F43 follow-up).** bareguard's `maxTurns`
+  ticks on every `gate.record`; our cap means "LLM rounds" only because the sole record
+  path is the LLM one (tool calls take `gate.check`, which does not tick). That was
+  correct but unguarded — wiring tool results into `gate.record` would silently halve the
+  LLM budget (the F37 lower-silent-ceiling class). Added a guard test pinning "every
+  `gate.record` is `type:llm`" (mutation-proven: wiring tool records turns it red) and a
+  config comment marking the invariant load-bearing. No behavior change; no upstream ask —
+  bareguard already offers the correct counters.
 - **F41 — the disposition: armed-and-inert, field read deferred.** Before any ON/OFF
   battery spent money, two cheap reads measured the disease's base rate: the archive
   sweep (`poc/layer-r-base-rate.mjs`, $0 — every surviving spine is OFF-arm by
@@ -46,10 +57,11 @@ feature lands, **patch** = docs, fixes, scaffolding.
   fixated in 4 pairs — including against a three-plant tree (three subsystems, one fix
   cannot green) that forced a full 8→4→green ladder across three judged attempts.
   Every pair was healthy navigation. F21's fixation was a broken-loop symptom, cured
-  by the F20/F21/F30/BA-13 fixes. Layer R ships ON by default (measured cost-free
-  when the worker is healthy — zero injections across all probe runs); the
-  repetition-drop ON/OFF read defers to the first run whose spine records
-  `root-injected`. No learning claim is minted.
+  by the F20/F21/F30/BA-13 fixes. Because ON has therefore never won its own A/B,
+  Layer R ships **OFF by default** (decided 2026-07-21; `layerRoot: true` is the ON
+  arm) — measured cost-free when enabled and healthy (zero injections across all
+  probe runs); the repetition-drop ON/OFF read, and the default-flip decision, defer
+  to the first run whose spine records `root-injected`. No learning claim is minted.
 
 ### Changed
 

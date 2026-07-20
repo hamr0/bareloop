@@ -285,7 +285,7 @@ the close judges the tree; on-green `remember` retains the worker's change summa
 Worker-caused close crashes feed back as `worker-crash` gaps via the gate audit (F32 —
 see `ralph` above).
 
-**Layer R — the within-run ratchet (`layerRoot`, default `true`; design record
+**Layer R — the within-run ratchet (`layerRoot`, default `false`; design record
 2026-07-19).** The shell mechanically detects fixation across attempts — consecutive
 attempts that rewrote the same file(s) without moving the close's kept-failure set
 (`closeGapKeep` lines, duration stamps stripped before comparing; without a gapKeep the
@@ -301,11 +301,14 @@ through `Loop`'s `onToolResult`). So a repeat that never applied is told its anc
 missed, and only content actually in the file is ever described as having landed. Spine event `root-injected` carries
 `{stage, mode, streak, paths, redSetSize}` — counts and paths only, NEVER content (the
 spine is append-only). State dies with the run: this is within-run scratch, not
-across-run memory. `layerRoot: false` (also on `runJob`) is the field experiment's OFF
-arm. Status (F41): the ratchet is MEASURED inert on every current job — two frozen
-probes + an archive sweep read 0 fixated pairs in 14 (the F21 repetition disease was a
-broken-loop symptom, since cured) — so it ships ON at zero observed cost, and a
-`root-injected` event on your spine is a signal worth reading, not routine noise.
+across-run memory. `layerRoot: true` (on `interpret` and `runJob`) is the ON/experimental
+arm; the default is OFF. Status (F41): the ratchet is MEASURED inert on every current
+job — two frozen probes + an archive sweep read 0 fixated pairs in 14 (the F21 repetition
+disease was a broken-loop symptom, since cured). Because ON has therefore never won its
+own A/B, it ships **OFF by default (decided 2026-07-21)** — armed and correct, but not
+default-enabled until a stuck job (Layer 2, or a manufactured-fixation probe) shows ON
+beats OFF. Flip the default to `true` the day that evidence lands; a `root-injected` event
+on your spine (when you pass `layerRoot: true`) is a signal worth reading, not noise.
 
 ### `runJob(spec, { approvals, workdir, provider, emit, target?, capRuns?, shellCapUsd?, closeTimeoutMs?, execCmd?, layerRoot? })` → outcome — `src/run.js`
 

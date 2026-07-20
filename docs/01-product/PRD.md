@@ -1102,7 +1102,9 @@ with a revert path to whichever stage the battery proves is the lever; (4) accep
 REPETITION-DROP read, ON vs OFF, on job #4 — green-rate recorded but never the bar
 (F39: Layer R's claim is continuity, not conversion).
 
-**Built (`src/root.js`, wired in `interpret`/`runJob` as `layerRoot`, default on):**
+**Built (`src/root.js`, wired in `interpret`/`runJob` as `layerRoot`, default OFF —
+2026-07-21; ON is unproven while fixation is extinct (F41), so the field read defers to
+Layer 2 before the default flips):**
 detection compares normalized kept-failure lines (POC-measured: spec-reporter lines are
 never byte-stable — duration stamps; normalization is comparison-only, the delivered gap
 untouched) plus per-attempt write-sets from the allow-decision audit (a denied write is
@@ -1139,6 +1141,15 @@ design condition "inert when not stuck" observed in the field.
 default, armed-and-inert. The pre-registered repetition-drop ON/OFF read is DEFERRED —
 not cancelled — to the first run whose spine records `root-injected` (expected pressure
 point: Layer 2's narrow micro-wheel steps, where per-step scopes concentrate rewrites).
+
+> **SUPERSEDED 2026-07-21 (default flipped to OFF).** On review before release, the
+> "ships ON" call was reversed: since fixation is extinct (F41), ON has never won its own
+> A/B, and the doctrine is not to default-enable an unproven lever. `layerRoot` now
+> defaults `false` (armed but off; `true` is the ON arm). The deferred ON/OFF read is
+> unchanged AND now also decides the default: the first Layer 2 job that produces natural
+> fixation runs it, and the result flips the default to `true` (ON helps) or keeps it
+> `false` (no lift). See `docs/01-product/LAYERS.md` (Layer R note). F43 also split the
+> detector (intent) from the note (outcome) in the same review cycle.
 The rung mints no learning claim; v1.19's job #4 battery plan is superseded (its
 patient's failure genre is inaction/semantic-stall, which the ratchet deliberately does
 not treat — F38/F39). Spec change recorded: `litectx-maintainer` `budgetUsd` 1.5 → 4.5

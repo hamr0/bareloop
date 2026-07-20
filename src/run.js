@@ -200,15 +200,18 @@ async function openDraftPr({ workdir, branch, title, body, addPaths, exec }) {
  * @param {number} [opts.shellCapUsd] the shell's hard USD ceiling
  * @param {number} [opts.closeTimeoutMs] close wall-clock cap (shell territory)
  * @param {ExecCmd} [opts.execCmd] process runner for the hitl PR mechanics
- * @param {boolean} [opts.layerRoot=true] Layer R (within-run ratchet) — shell
- *        territory, threaded to every predicate step's interpreter; `false` is
- *        the acceptance battery's OFF arm (design record 2026-07-19)
- *        (shell-owned seam, same doctrine as the provider binding)
+ * @param {boolean} [opts.layerRoot=false] Layer R (within-run ratchet) — shell
+ *        territory, threaded to every predicate step's interpreter. Defaults OFF
+ *        (decided 2026-07-21): fixation is extinct on every current job (F41), so
+ *        ON has never won its own A/B — the acceptance read defers to Layer 2 (or
+ *        a manufactured-fixation probe). `true` is the ON/experimental arm; the
+ *        default is the OFF arm. (Shell-owned seam, same doctrine as the provider
+ *        binding.)
  * @returns {Promise<string>} outcome: 'green' | 'escalated' | 'unapproved-spec' |
  *   'job-red' | 'smoke-red' | 'config-red' | 'pricing-red' | 'provider-red' |
  *   'cap-halt' | 'close-unsupported' | `step-red:<id>`
  */
-export async function runJob(rawSpec, { approvals, workdir, target, provider, emit, capRuns = 3, shellCapUsd = 2, closeTimeoutMs, execCmd = defaultExec, layerRoot = true }) {
+export async function runJob(rawSpec, { approvals, workdir, target, provider, emit, capRuns = 3, shellCapUsd = 2, closeTimeoutMs, execCmd = defaultExec, layerRoot = false }) {
   // 0. the ledger's counters, declared FIRST so that every job-end — including
   // the pre-token reds below — can state a real figure. An omitted `spentUsd` is
   // not a zero: a consumer reads `undefined` and either crashes or launders it

@@ -897,7 +897,7 @@ test('Layer R tools mode: fixation → summary at attempt 3, verbatim at attempt
   const wd = twd('root-fixation');
   const w = () => ({ toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'src', 'sum.mjs'), content: BAD_SUM })] });
   const { outcome, events, provider } = await run('root-fixation', config(), {
-    mode: 'tools', capRuns: 4, closeGapKeep: '^not ok ',
+    mode: 'tools', capRuns: 4, closeGapKeep: '^not ok ', layerRoot: true,
     script: [w(), { text: 'done' }, w(), { text: 'done' }, w(), { text: 'done' }, w(), { text: 'done' }],
   });
   assert.equal(outcome, 'escalated', 'still red at cap — the ratchet informs, never judges');
@@ -927,7 +927,7 @@ test('Layer R OFF arm: layerRoot false → no injection, no events (the acceptan
 
 test('Layer R text mode: the one-target rewrite loop is the same fixation, teed at the write site', async () => {
   const { events, provider } = await run('root-text', config(), {
-    capRuns: 3, closeGapKeep: '^not ok ',
+    capRuns: 3, closeGapKeep: '^not ok ', layerRoot: true,
     script: [{ text: BAD_SUM }, { text: BAD_SUM }, { text: BAD_SUM }],
   });
   assert.match(provider.calls[2], /RATCHET: you are repeating yourself/, 'attempt 3 gets the summary');
@@ -936,7 +936,7 @@ test('Layer R text mode: the one-target rewrite loop is the same fixation, teed 
 
 test('Layer R stays inert on progress: a red that moves to green never sees the ratchet', async () => {
   const { outcome, events, provider } = await run('root-inert', config(), {
-    capRuns: 3, closeGapKeep: '^not ok ',
+    capRuns: 3, closeGapKeep: '^not ok ', layerRoot: true,
     script: [{ text: BAD_SUM }, { text: GOOD_SUM }],
   });
   assert.equal(outcome, 'green');
@@ -960,7 +960,7 @@ test('Finding 4: a shell_edit fixation is teed via toolAction (action type, not 
   const file = join(workdir, 'run.jsonl');
   const outcome = await interpret(config(), {
     task: TASK, target, close, workdir, capRuns: 4,
-    emit: makeSpine(file), provider, mode: 'tools', tools: ['read', 'edit'], closeGapKeep: '^not ok ',
+    emit: makeSpine(file), provider, mode: 'tools', tools: ['read', 'edit'], closeGapKeep: '^not ok ', layerRoot: true,
   });
   const events = readSpine(file);
   assert.equal(outcome, 'escalated', 'still red at cap — the ratchet informs, never judges');
@@ -992,7 +992,7 @@ test('Finding 6: a denied write in the same round never costs the ALLOWED write 
     ],
   });
   const { events, provider } = await run('root-deny-round', config(), {
-    mode: 'tools', capRuns: 4, closeGapKeep: '^not ok ',
+    mode: 'tools', capRuns: 4, closeGapKeep: '^not ok ', layerRoot: true,
     script: [round(), { text: 'done' }, round(), { text: 'done' }, round(), { text: 'done' }, round(), { text: 'done' }],
   });
   assert.match(provider.calls[6], /STRUCTURALLY DIFFERENT/, 'attempt 4 escalates to verbatim');
@@ -1008,7 +1008,7 @@ test('Finding 6: a HALT on a staged write still propagates as cap-halt (discard 
   const tiny = config();
   tiny.gate.budgetUsd = 0.02;
   const { outcome, events } = await run('root-halt-write', tiny, {
-    mode: 'tools', capRuns: 4, closeGapKeep: '^not ok ',
+    mode: 'tools', capRuns: 4, closeGapKeep: '^not ok ', layerRoot: true,
     script: [
       { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'src', 'sum.mjs'), content: BAD_SUM })], costUsd: 0.05 },
       { text: 'done' },
@@ -1044,7 +1044,7 @@ test('F7: an edit that the gate allows but the tool refuses — detector still f
   const file = join(workdir, 'run.jsonl');
   await interpret(config(), {
     task: TASK, target, close, workdir, capRuns: 4, emit: makeSpine(file), provider,
-    mode: 'tools', tools: ['read', 'edit'],
+    mode: 'tools', tools: ['read', 'edit'], layerRoot: true,
   });
 
   assert.equal(readFileSync(target, 'utf8'), BAD_SUM, 'GROUND TRUTH: nothing ever landed');
@@ -1077,10 +1077,62 @@ test('F7 control: edits that genuinely land keep the landed wording — the seam
   const file = join(workdir, 'run.jsonl');
   await interpret(config(), {
     task: TASK, target, close, workdir, capRuns: 4, emit: makeSpine(file), provider,
-    mode: 'tools', tools: ['read', 'edit'],
+    mode: 'tools', tools: ['read', 'edit'], layerRoot: true,
   });
   const notes = provider.calls.filter((c) => c.includes('RATCHET'));
   assert.ok(notes.length >= 1, 'repeated real edits to the same file still fire the ratchet');
   assert.match(notes.join('\n'), /rewrote|they landed/, 'a real landing is still reported as one');
   assert.ok(!/did NOT apply/.test(notes.join('\n')), 'no false "never applied" claim on edits that did apply');
+});
+
+// ─── maxTurns is an LLM-round bound, and it stays one (F43 follow-up) ────────
+// bareguard's maxTurns ticks on every gate.RECORD; our number means "LLM rounds"
+// ONLY because the sole record path is onLlmResult → gate.record{type:'llm'} and
+// tool calls take gate.CHECK (no tick). This guard fails the day someone wires
+// tool results into gate.record (e.g. wireGate's own onToolResult), which would
+// silently halve the LLM budget — the F37 lower-silent-ceiling class. It reads
+// the real gate audit: every RECORD row must be type 'llm'; tool actions may
+// appear only as CHECK rows (phase 'gate').
+test('maxTurns counts LLM rounds only: every gate.record is type:llm, tools are check-only', async () => {
+  const wd = twd('turns-llm-only');
+  const { workdir, target, close } = makeWork('turns-llm-only');
+  writeFileSync(target, BAD_SUM);
+  // a multi-round tool-mode attempt: read, then edit, then finish — several tool
+  // calls, so if any tool path recorded, a non-llm record row would appear
+  const provider = stubProvider([
+    { toolCalls: [tcall('a', 'shell_read', { path: join(wd, 'src') })] },
+    { toolCalls: [tcall('b', 'shell_edit', { path: target, oldText: 'a - b', newText: 'a + b' })] },
+    { text: 'done' },
+  ]);
+  const file = join(workdir, 'run.jsonl');
+  const outcome = await interpret(config(), {
+    task: TASK, target, close, workdir, capRuns: 2, emit: makeSpine(file), provider,
+    mode: 'tools', tools: ['read', 'edit'],
+  });
+  assert.equal(outcome, 'green');
+  const audit = readFileSync(join(wd, 'gate-audit.jsonl'), 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const records = audit.filter((r) => r.phase === 'record');
+  const checks = audit.filter((r) => r.phase === 'gate');
+  assert.ok(records.length > 0, 'the run recorded rounds');
+  assert.ok(records.every((r) => r.action?.type === 'llm'),
+    `every counter-ticking record must be type:llm — a tool record would silently eat the maxTurns budget (saw: ${[...new Set(records.map((r) => r.action?.type))].join(',')})`);
+  // and the tool actions DID happen — they are just check-only, proving the guard is not vacuous
+  assert.ok(checks.some((r) => r.action?.type === 'read' || r.action?.type === 'edit'),
+    'tool actions reach the gate as CHECK rows (which do not tick maxTurns)');
+});
+
+// The default is OFF (decided 2026-07-21): Layer R ships armed-and-inert until a
+// stuck job (Layer 2, or a manufactured-fixation probe) shows ON beats OFF — we
+// do not default-enable a lever that has never won its own A/B. This pins the
+// default so a silent flip-back to true is caught: the SAME fixation that fires
+// the ratchet when layerRoot:true is passed must stay silent when it is omitted.
+test('Layer R default is OFF: an omitted layerRoot never engages the ratchet, even under fixation', async () => {
+  const wd = twd('root-default-off');
+  const w = () => ({ toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'src', 'sum.mjs'), content: BAD_SUM })] });
+  const { events, provider } = await run('root-default-off', config(), {
+    mode: 'tools', capRuns: 4, closeGapKeep: '^not ok ', // NO layerRoot: the production default must govern
+    script: [w(), { text: 'x' }, w(), { text: 'x' }, w(), { text: 'x' }, w(), { text: 'x' }],
+  });
+  assert.ok(provider.calls.every((c) => !c.includes('RATCHET')), 'default OFF: no ratchet note in any prompt');
+  assert.ok(!events.some((e) => e.type === 'root-injected'), 'default OFF: no root-injected on the spine');
 });

@@ -215,16 +215,18 @@ const toolAction = (name, args, workdir) => {
  * @param {'text'|'tools'} [opts.mode] middle mode (2b): 'text' (default) writes the ONE
  *        target from the response artifact; 'tools' gives the worker Gate-governed file
  *        tools — SPEC-side territory (the step declares it; the config cannot express it)
- * @param {boolean} [opts.layerRoot=true] Layer R (the within-run ratchet, src/root.js):
+ * @param {boolean} [opts.layerRoot=false] Layer R (the within-run ratchet, src/root.js):
  *        shell-assembled fixation detection over the run's own books, injecting an
  *        escalating summary→verbatim note when consecutive attempts rewrite the same
- *        files without moving the reds. Inert when the worker is not stuck (RSI §3.3);
- *        `false` is the acceptance battery's OFF arm — never a worker-visible knob
+ *        files without moving the reds. Inert when the worker is not stuck (RSI §3.3).
+ *        Defaults OFF (decided 2026-07-21): fixation is extinct on every current job
+ *        (F41), so ON is unproven — the field read defers to Layer 2. `true` is the
+ *        ON/experimental arm; never a worker-visible knob
  * @param {string[]} [opts.tools] the spec's tool grant (subset of read|grep|write,
  *        job-v1 validated); defaults to the full menu in tool mode
  * @returns {Promise<'green'|'escalated'|'config-red'>}
  */
-export async function interpret(configRaw, { task, target, close, workdir, capRuns, emit, provider, shellCapUsd = 2, jobWriteScope, revisor, closeTimeoutMs, mode = 'text', tools, closeState, closeExpect, closeJudged, closeGapKeep, layerRoot = true }) {
+export async function interpret(configRaw, { task, target, close, workdir, capRuns, emit, provider, shellCapUsd = 2, jobWriteScope, revisor, closeTimeoutMs, mode = 'text', tools, closeState, closeExpect, closeJudged, closeGapKeep, layerRoot = false }) {
   // Reds-before-tokens: text mode writes ONE artifact — a missing target is a
   // caller bug that must be loud NOW, not a TypeError after a paid worker call
   // that ralph would misfile as interpreter-red (the gate skips an absent path,
@@ -286,7 +288,17 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
         : {}),
     },
     budget: { maxCostUsd: config.gate.budgetUsd },
-    // text mode is ~1-2 rounds per attempt; tool mode is N rounds (read→write→…)
+    // text mode is ~1-2 rounds per attempt; tool mode is N rounds (read→write→…).
+    // maxTurns ticks on every gate.RECORD (bareguard limits.js:88), and this
+    // number means "LLM rounds" ONLY because the sole record path is the LLM one
+    // (onLlmResult → gate.record{type:'llm'}); tool calls take gate.CHECK, which
+    // does not tick. That invariant is load-bearing: wiring wireGate's own
+    // onToolResult into gate.record would silently start ticking maxTurns on
+    // tools and halve the LLM budget (the F37 lower-silent-ceiling class). It is
+    // pinned by the "every record is type:llm" guard test — do not wire tool
+    // records without switching this bound (bareguard offers no llm-only counter;
+    // it has maxTurns=all and maxToolRounds=tools-only, neither of which is
+    // llm-only once tools also record). Cap semantics are arbiter territory.
     limits: { maxTurns: TURNS_PER_ATTEMPT * (capRuns + 1) },
     audit: { path: join(workdir, 'gate-audit.jsonl') },
     humanChannel: async () => ({ decision: 'terminate' }), // no human mid-run: a tripped cap terminates → decision-ready escalation

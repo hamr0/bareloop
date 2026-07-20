@@ -2076,12 +2076,31 @@ the missed anchor, which is F38's mechanical genre (the genre that converts) rat
 aimed at a wrong anchor. Four mutations (force-landed, force-unlanded, drop the
 byte-identical clause, ignore the settle argument) all killed; 358/358 green.
 
-**PARKED, not shipped (arbiter territory).** `wireGate` also returns an `onToolResult`
-that feeds `gate.record` per-tool records, and the interpreter has never wired it — so
-tool results and the per-run `ctx` never reach the gate's books. Wiring it changes what
-`limits.maxTurns` / `maxToolRounds` count and therefore WHEN A RUN HALTS. Cap semantics
-are the arbiter's, so this is named and left for hamr's explicit go rather than bundled
-into a Layer R fix.
+**The `maxTurns` follow-up — RESOLVED, not parked (2026-07-21).** The fix wires `Loop`'s
+own `onToolResult` (my callback, `onToolOutcome`), NOT `wireGate`'s — mine calls
+`root.settleWrite` and never `gate.record`, so no tool record is created. That was worth
+verifying rather than asserting: a real tool-mode run's gate audit shows every
+counter-ticking `record` row is `type:llm` and the `read`/`edit` actions appear only as
+`gate` (check) rows, which do not tick (bareguard `limits.js:88`). So `maxTurns` already
+counts LLM rounds only — the desired semantic is the live behavior, not a change to make.
+The residual risk was purely latent: a FUTURE wiring of `wireGate`'s `onToolResult` into
+`gate.record` would start ticking `maxTurns` on tools and silently halve the LLM budget
+(the F37 lower-silent-ceiling class). bareguard is not the place to fix — it offers
+`maxTurns` (all records) and `maxToolRounds` (tool records only), neither an llm-only
+counter, and we do not need one because we never record tools. So the fix is a bareloop
+GUARD: a test pinning "every `gate.record` is `type:llm`" (mutation-proven — wiring tool
+records turns it red) plus a load-bearing comment at the config site. No behavior change,
+no upstream ask. Correcting the earlier writeup: this was never arbiter territory — it is
+a guarded invariant, and calling it "parked for hamr's go" overstated a two-minute check.
+
+**Layer R ships OFF by default (decided 2026-07-21).** Fixation is extinct on every
+current job (F41), so ON has never won its own A/B; `layerRoot` defaults `false` (pass
+`true` for the ON arm). The default-flip decision is assigned to Layer 2: the first Layer 2
+job that produces natural fixation runs the pre-registered ON-vs-OFF acceptance read, and
+that result flips the default to `true` (ON helps) or keeps it `false` (no lift). A cheaper
+manufactured-fixation probe could answer it sooner, caveated by F41 (strong models resist
+fixating, so the probe may struggle to produce its own precondition). Recorded in
+`docs/01-product/LAYERS.md` (Layer R note) as a Layer 2 TODO.
 
 **Lesson.** Two questions answered from one number is a blind-instrument defect wearing
 different clothes — the class that has now shipped five times in this program. And the
