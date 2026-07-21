@@ -110,10 +110,11 @@ test('tree-changed: a DELETED file counts as change; a scope dir that does not e
   assert.equal(emptySnap.size, 0, 'missing scope dir = empty snapshot, never a throw');
 });
 
-test('tree-changed without a snapshot in ctx fails CLOSED with an instrument detail (a blind instrument must never read "changed")', async (t) => {
+test('tree-changed without a snapshot in ctx fails CLOSED as a fault (a blind instrument must never read "changed" — and never feed a worker gap)', async (t) => {
   const dir = makeDir(t);
   const r = await evalExits([{ type: 'tree-changed', scope: 'tests/**' }], { dir });
   assert.equal(r.pass, false);
+  assert.equal(r.results[0].fault, 'failed');
   assert.match(r.results[0].detail, /snapshot/i);
 });
 
@@ -147,18 +148,39 @@ test('check-passes delegates to ctx.runCheck and carries its gap through verbati
   assert.equal(green.pass, true);
 });
 
-test('check-passes without a wired runCheck fails CLOSED (broken-close class: an unrunnable check is an instrument stop, never a silent pass)', async (t) => {
+test('check-passes without a wired runCheck fails CLOSED as a FAULT (broken-close class: an instrument stop, never worker feedback)', async (t) => {
   const dir = makeDir(t);
   const r = await evalExits([{ type: 'check-passes', name: 'clean-run' }], { dir });
   assert.equal(r.pass, false);
+  assert.equal(r.results[0].fault, 'failed', 'fault carries the runClose verdict name so the loop escalates instead of retrying');
   assert.match(r.results[0].detail, /runCheck|not wired/i);
 });
 
-test('a THROWING runCheck fails closed with the error in the detail — never an unhandled rejection', async (t) => {
+test('a THROWING runCheck fails closed as a fault with the error in the detail — never an unhandled rejection', async (t) => {
   const dir = makeDir(t);
   const r = await evalExits([{ type: 'check-passes', name: 'clean-run' }], { dir, runCheck: async () => { throw new Error('spawn ENOENT'); } });
   assert.equal(r.pass, false);
+  assert.equal(r.results[0].fault, 'failed');
   assert.match(r.results[0].detail, /spawn ENOENT/);
+});
+
+test('a runCheck result carrying a forbidden-zone fault rides through — a crashed check stays crashed (F32 routing input), a timeout stays a timeout', async (t) => {
+  const dir = makeDir(t);
+  const crashed = await evalExits([{ type: 'check-passes', name: 'clean-run' }],
+    { dir, runCheck: async () => ({ pass: false, fault: 'crashed', gap: 'check judged 0 of a declared floor of 5' }) });
+  assert.equal(crashed.pass, false);
+  assert.equal(crashed.results[0].fault, 'crashed', 'the verdict name survives so ralph routes it (worker-crash after writes, instrument stop otherwise)');
+  assert.match(crashed.results[0].detail, /floor of 5/);
+  const timed = await evalExits([{ type: 'check-passes', name: 'clean-run' }],
+    { dir, runCheck: async () => ({ pass: false, fault: 'timed-out', gap: 'check exceeded 120000ms' }) });
+  assert.equal(timed.results[0].fault, 'timed-out');
+});
+
+test('an honest check RED carries NO fault — it is worker feedback, not an instrument stop', async (t) => {
+  const dir = makeDir(t);
+  const r = await evalExits([{ type: 'check-passes', name: 'clean-run' }],
+    { dir, runCheck: async () => ({ pass: false, gap: '2 failed: FAILED test_a' }) });
+  assert.equal(r.results[0].fault, undefined);
 });
 
 // ─── composition (AND-only, decision 8) ───

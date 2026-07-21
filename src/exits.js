@@ -21,7 +21,12 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { globToPrefix } from './validate.js';
 
-/** @typedef {{ type: string, pass: boolean, detail?: string }} ExitResult */
+/** @typedef {{ type: string, pass: boolean, detail?: string, fault?: string }} ExitResult
+ * `fault` present means the INSTRUMENT could not judge (unwired snapshot/seam,
+ * a check in runClose's forbidden zone) — it carries the runClose verdict name
+ * ('failed'|'timed-out'|'killed'|'crashed') so the micro-loop escalates through
+ * the same CLOSE_FAULTS taxonomy instead of feeding a fake gap to the worker.
+ * A plain pass:false with no fault is honest worker feedback. */
 
 /**
  * Snapshot the file state under a scope prefix — the "before" side of
@@ -92,9 +97,10 @@ async function evalOne(e, { dir, snapshot, runCheck }) {
 
   if (e.type === 'tree-changed') {
     if (!(snapshot instanceof Map)) {
-      // fail CLOSED: without the before-side this instrument is blind, and a
-      // blind instrument must never read "changed" (the F45 class)
-      return { type: e.type, pass: false, detail: `no pre-step snapshot for ${e.scope} — the tree-changed instrument is unwired (instrument fault, not worker inaction)` };
+      // fail CLOSED as a FAULT: without the before-side this instrument is
+      // blind — it must never read "changed" (F45) and never feed the miss to
+      // the worker as if it were inaction
+      return { type: e.type, pass: false, fault: 'failed', detail: `no pre-step snapshot for ${e.scope} — the tree-changed instrument is unwired (instrument fault, not worker inaction)` };
     }
     const now = await snapshotScope(dir, e.scope);
     let changed = 0;
@@ -119,18 +125,24 @@ async function evalOne(e, { dir, snapshot, runCheck }) {
 
   if (e.type === 'check-passes') {
     if (typeof runCheck !== 'function') {
-      return { type: e.type, pass: false, detail: `check "${e.name}" cannot run — runCheck is not wired (instrument fault: an unrunnable check is a stop, never a silent pass)` };
+      return { type: e.type, pass: false, fault: 'failed', detail: `check "${e.name}" cannot run — runCheck is not wired (instrument fault: an unrunnable check is a stop, never a silent pass)` };
     }
     try {
       const r = await runCheck(e.name);
       if (r.pass) return { type: e.type, pass: true };
+      // the seam's fault (a runClose forbidden-zone verdict) rides through by
+      // NAME: 'crashed' keeps its F32 routing (worker-crash after writes —
+      // the F46 broken-test mechanism), 'timed-out' keeps its own decision
+      if (typeof (/** @type {any} */ (r).fault) === 'string') {
+        return { type: e.type, pass: false, fault: /** @type {any} */ (r).fault, detail: `check "${e.name}": ${(r.gap ?? '').slice(0, 400)}` };
+      }
       return { type: e.type, pass: false, detail: `check "${e.name}" red: ${(r.gap ?? '').slice(0, 400)}` };
     } catch (err) {
-      return { type: e.type, pass: false, detail: `check "${e.name}" crashed: ${String(/** @type {Error} */ (err).message).slice(0, 200)}` };
+      return { type: e.type, pass: false, fault: 'failed', detail: `check "${e.name}" crashed the seam: ${String(/** @type {Error} */ (err).message).slice(0, 200)}` };
     }
   }
 
   // belt — the validator already reds unknown types; the evaluator must not
   // silently pass what it cannot judge
-  return { type: String(e.type), pass: false, detail: `unknown exit type "${e.type}" — the evaluator cannot judge it (fail closed)` };
+  return { type: String(e.type), pass: false, fault: 'failed', detail: `unknown exit type "${e.type}" — the evaluator cannot judge it (fail closed)` };
 }
