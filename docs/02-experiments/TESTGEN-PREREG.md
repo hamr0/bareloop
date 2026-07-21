@@ -726,3 +726,24 @@ No relaunch under this amendment: harness fixes land first, and re-sized caps (o
 a provider change back to `anthropic-api`, where F39 itself is the baseline) are
 hamr's call. Suggestive-unminted (n=2): both completed rows quit without writing
 on a spec that produced 3/4 acting rows on the API.
+
+## Amendment 2026-07-21c — CHECK arm re-fired on `anthropic-api` (frozen BEFORE any number; hamr's call, verbatim: "run API probe for original experiment")
+
+The premise test moves to the surface where every baseline lives. **No baseline
+arm: F39 IS the baseline** — same provider (`anthropic-api`), same worker
+(claude-sonnet-5), byte-identical description body, same seed, same grader, same
+45 bar; its measured clean-wall record (3/3 acting rows died at the clean wall,
+1 stall) is the pre-registered comparison. The clipipe track continues separately
+(MCP-native probe → upstream ask), decoupled from this read.
+
+**Design:** spec `aurora-testgen-l2poc-check-api` = 21a's check spec except
+`provider: anthropic-api` and `budgetUsd: 8` (REAL dollars — sized from F39's
+measured $1.62–2.00/attempt × capRuns 4, funding attempts PLUS every check run,
+16g). capRuns=4, in-row close = the same frozen check
+(changed-from-seed → D1 → form → clean), check-green → the FROZEN grader once,
+harness-run. Row classes, primary read (≥2/3 ACT rows L-CLEAN-PASS = premise
+holds; 0/3 = fails; 1/3 = mixed, report), axis split (kill-rate recorded, never
+acceptance), grader-precheck-at-15 drift stop, casualty and 16g mid-cut detector
+rules all carried unchanged from 21a/21b (harness fixes `4c89942` in force).
+**Money:** $8/row, hard-stop $30 real, max 6 launches. Budget exhausted before 3
+ACT rows → report rows in hand, no top-up without hamr.

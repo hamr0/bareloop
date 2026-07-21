@@ -26,7 +26,7 @@ import { makeSpine } from '../src/spine.js';
 import { SECRET_PATTERNS } from '../src/validate.js';
 
 const require = createRequire(import.meta.url);
-const { CLIPipeProvider } = require('bare-agent/providers');
+const { CLIPipeProvider, AnthropicProvider } = require('bare-agent/providers');
 
 const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/aurora-soar';
 const COMMIT = 'd661e507c5cd0981368d90ed3e3abf6e2bb9ed18';
@@ -59,28 +59,47 @@ const arg = (/** @type {string} */ name) => {
   return i === -1 ? null : (process.argv[i + 1] ?? '');
 };
 
+// --api (amendment 2026-07-21c): CHECK arm only, on anthropic-api, REAL dollars.
+// F39 IS the baseline on this surface (same provider/model/description/close) —
+// no baseline arm, transport pre-confirmed by F39's own record.
+const apiMode = has('api');
 const baseSpec = JSON.parse(readFileSync(new URL('../jobs/aurora-testgen-l2poc-baseline.json', import.meta.url), 'utf8'));
-const checkSpec = JSON.parse(readFileSync(new URL('../jobs/aurora-testgen-l2poc-check.json', import.meta.url), 'utf8'));
+const checkSpec = JSON.parse(readFileSync(new URL(apiMode ? '../jobs/aurora-testgen-l2poc-check-api.json' : '../jobs/aurora-testgen-l2poc-check.json', import.meta.url), 'utf8'));
 const baseHash = jobSpecHash(baseSpec);
 const checkHash = jobSpecHash(checkSpec);
 const dry = has('dry');
+const capUsd = apiMode ? 30 : POC_CAP_USD; // 21c: $30 REAL hard-stop in api mode
+const moneyWord = apiMode ? 'REAL' : 'notional';
 
 const approved = arg('approve');
-const wanted = `${baseHash},${checkHash}`;
+const wanted = apiMode ? checkHash : `${baseHash},${checkHash}`;
 if (approved !== wanted) {
-  console.log('LAYER 2 POC (prereg 2026-07-21a) — two arms, clipipe-subscription (NOTIONAL dollars)');
-  console.log(`  BASELINE ${baseSpec.job}  $${baseSpec.budgetUsd}/row capRuns=1  hash ${baseHash}`);
-  console.log(`  CHECK    ${checkSpec.job}  $${checkSpec.budgetUsd}/row capRuns=4  hash ${checkHash}`);
-  console.log(`  ${N_ACT} ACT rows/arm, ${ARM_MAX_LAUNCHES} launches/arm, ${MAX_LAUNCHES} total, POC hard-stop $${POC_CAP_USD} notional`);
-  if (approved !== null) console.error(`\nREFUSED: --approve does not match this spec pair.`);
-  console.log(`\nTo approve and run:\n  node scripts/run-poc-layer2.mjs --approve ${wanted}`);
+  if (apiMode) {
+    console.log('LAYER 2 POC (prereg 2026-07-21c) — CHECK arm on anthropic-api (REAL dollars; F39 is the baseline)');
+    console.log(`  CHECK    ${checkSpec.job}  $${checkSpec.budgetUsd}/row capRuns=4  hash ${checkHash}`);
+    console.log(`  ${N_ACT} ACT rows, ${ARM_MAX_LAUNCHES} launches max, hard-stop $${capUsd} REAL`);
+  } else {
+    console.log('LAYER 2 POC (prereg 2026-07-21a) — two arms, clipipe-subscription (NOTIONAL dollars)');
+    console.log(`  BASELINE ${baseSpec.job}  $${baseSpec.budgetUsd}/row capRuns=1  hash ${baseHash}`);
+    console.log(`  CHECK    ${checkSpec.job}  $${checkSpec.budgetUsd}/row capRuns=4  hash ${checkHash}`);
+    console.log(`  ${N_ACT} ACT rows/arm, ${ARM_MAX_LAUNCHES} launches/arm, ${MAX_LAUNCHES} total, POC hard-stop $${POC_CAP_USD} notional`);
+  }
+  if (approved !== null) console.error(`\nREFUSED: --approve does not match this spec version.`);
+  console.log(`\nTo approve and run:\n  node scripts/run-poc-layer2.mjs ${apiMode ? '--api ' : ''}--approve ${wanted}`);
   process.exit(approved === null ? 0 : 1);
 }
 const ts = () => new Date().toISOString();
 const mkApprovals = (/** @type {string} */ h) => [{ specHash: h, signer: process.env.USER ?? 'human', ts: ts() }];
 
+const apiKey = process.env.ANTHROPIC_API_KEY;
+if (apiMode && !dry && !apiKey) {
+  console.error('ANTHROPIC_API_KEY not set (secrets load from the environment — never the tree)');
+  process.exit(2);
+}
 const provider = dry
   ? /** @type {any} */ ({ async generate() { throw new Error('DRY RUN: provider called'); } })
+  : apiMode
+  ? new AnthropicProvider({ apiKey, model: MODEL })
   : new CLIPipeProvider({
       command: 'claude',
       // --output-format json REQUIRED on base args for the plain-text (drafting)
@@ -188,8 +207,8 @@ function runGrader() {
   return { code: r.status, entry: last };
 }
 
-console.log(`spec pair approved   runid ${runid}${dry ? '   [DRY]' : `   model ${MODEL} via clipipe`}`);
-console.log(`caps  baseline $${baseSpec.budgetUsd}/row · check $${checkSpec.budgetUsd}/row · POC hard-stop $${POC_CAP_USD} NOTIONAL · threshold ${THRESHOLD}% · seed ${SEED_BASELINE_RATE}%\n`);
+console.log(`spec approved   runid ${runid}${dry ? '   [DRY]' : `   model ${MODEL} via ${apiMode ? 'anthropic-api' : 'clipipe'}`}`);
+console.log(`caps  ${apiMode ? '' : `baseline $${baseSpec.budgetUsd}/row · `}check $${checkSpec.budgetUsd}/row · hard-stop $${capUsd} ${moneyWord} · threshold ${THRESHOLD}% · seed ${SEED_BASELINE_RATE}%\n`);
 
 /** @type {any[]} */
 const rows = [];
@@ -202,8 +221,8 @@ async function runRow(/** @type {'B'|'C'} */ arm, /** @type {number} */ i) {
   const spec = arm === 'B' ? baseSpec : checkSpec;
   const capRuns = arm === 'B' ? 1 : 4;
   if (launches >= MAX_LAUNCHES) { stop = `launch backstop ${MAX_LAUNCHES} reached`; return null; }
-  if (cumulativeUsd + spec.budgetUsd > POC_CAP_USD) {
-    stop = `POC cap: $${cumulativeUsd.toFixed(4)} + $${spec.budgetUsd}/row would exceed $${POC_CAP_USD} — ${arm}${i} not launched`;
+  if (cumulativeUsd + spec.budgetUsd > capUsd) {
+    stop = `POC cap: $${cumulativeUsd.toFixed(4)} + $${spec.budgetUsd}/row would exceed $${capUsd} — ${arm}${i} not launched`;
     return null;
   }
   launches++;
@@ -303,15 +322,19 @@ async function runRow(/** @type {'B'|'C'} */ arm, /** @type {number} */ i) {
   return row;
 }
 
-// ---- BASELINE arm -----------------------------------------------------------
+// ---- BASELINE arm (skipped in --api mode: F39 IS the baseline, 21c) ---------
 const isB = (/** @type {any} */ r) => r.valid && r.cls.startsWith('B-ACT');
-for (let i = 1; rows.filter(isB).length < N_ACT && i <= ARM_MAX_LAUNCHES && !stop; i++) {
-  await runRow('B', i);
+if (!apiMode) {
+  for (let i = 1; rows.filter(isB).length < N_ACT && i <= ARM_MAX_LAUNCHES && !stop; i++) {
+    await runRow('B', i);
+  }
 }
 const bAct = rows.filter(isB);
 const bCleanDeaths = bAct.filter((r) => r.cleanDeath).length;
-const transported = bAct.length >= N_ACT && bCleanDeaths >= 2;
-console.log(`\nBASELINE: ${bAct.length} ACT rows, clean-wall deaths ${bCleanDeaths}/${bAct.length} → transport ${transported ? 'CONFIRMED' : 'NOT confirmed'}`);
+const transported = apiMode || (bAct.length >= N_ACT && bCleanDeaths >= 2);
+console.log(apiMode
+  ? '\nBASELINE: F39 (native to this provider — 3/3 acting rows died at the clean wall) → transport pre-confirmed'
+  : `\nBASELINE: ${bAct.length} ACT rows, clean-wall deaths ${bCleanDeaths}/${bAct.length} → transport ${transported ? 'CONFIRMED' : 'NOT confirmed'}`);
 
 // ---- CHECK arm (only behind the transport gate) -----------------------------
 const isC = (/** @type {any} */ r) => r.valid && (r.cls === 'C-CLEAN-PASS' || r.cls === 'C-CLEAN-FAIL');
@@ -339,9 +362,9 @@ else reading = 'MIXED (1 of 3) — report to hamr, no unilateral extension';
 
 const results = {
   runid, baseHash, checkHash, commit: COMMIT, dry, model: dry ? null : MODEL,
-  provider: 'clipipe-subscription', notional: true,
+  provider: apiMode ? 'anthropic-api' : 'clipipe-subscription', notional: !apiMode,
   threshold: THRESHOLD, seedBaselineRate: SEED_BASELINE_RATE,
-  pocCapUsd: POC_CAP_USD, cumulativeUsd, stop, launches, rows,
+  pocCapUsd: capUsd, cumulativeUsd, stop, launches, rows,
   summary: {
     baseline: { act: bAct.length, cleanDeaths: bCleanDeaths, transported, inert: rows.filter((r) => r.cls === 'B-INERT').length },
     check: { act: cAct.length, cleanPass: cPass, cleanFail: cAct.length - cPass, inert: cInert,
@@ -361,7 +384,7 @@ for (const r of rows) {
     : r.grade ? `${r.grade.phase}${r.grade.rate != null ? ':' + r.grade.rate + '%' : ''}` : '-';
   console.log(`${r.run.padEnd(4)} ${String(r.outcome ?? '-').padEnd(14)} ${String(r.cls).padEnd(30)} ${String(r.acted ?? '-').padEnd(6)} ${String(r.rounds ?? '-').padEnd(7)} ${ag.padEnd(18)} ${r.spentUsd == null ? '-' : `$${r.spentUsd.toFixed(4)}`}`);
 }
-console.log(`\nbaseline ACT ${bAct.length} (clean-deaths ${bCleanDeaths}) · check ACT ${cAct.length} (CLEAN-PASS ${cPass}, INERT ${cInert}) · spend $${cumulativeUsd.toFixed(4)} of $${POC_CAP_USD} notional`);
+console.log(`\nbaseline ACT ${bAct.length} (clean-deaths ${bCleanDeaths}) · check ACT ${cAct.length} (CLEAN-PASS ${cPass}, INERT ${cInert}) · spend $${cumulativeUsd.toFixed(4)} of $${capUsd} ${moneyWord}`);
 console.log(`reading: ${reading}`);
 if (stop) console.log(`STOP: ${stop}`);
 console.log(`results: ${resultsFile}`);
