@@ -793,3 +793,123 @@ test('money on the job-end: a provider-red TRANSPORT THROW marks spend incomplet
   assert.equal(end.spendComplete, false,
     'a transport throw means the total is a floor, never exact — spendComplete:true would launder unknown into known (F6)');
 });
+
+// ─── Layer 2 (module 4c): the plan-shape dispatch — runJob() stays the ONE
+// entry (N2 lock); a four-field spec routes to the plan executor under the
+// same approval gate, smoke, and ledger. Every provider round lands on the
+// one ledger; the job-end money contract is unchanged.
+
+import { scriptedProvider } from './helpers.js';
+
+const tcall2 = (id, name, args) => ({ id, name, arguments: args });
+
+function makePlanWork(name) {
+  const workdir = join(base, name);
+  mkdirSync(join(workdir, 'tests'), { recursive: true });
+  mkdirSync(join(workdir, 'src'), { recursive: true });
+  writeFileSync(join(workdir, 'src', 'mod.mjs'), 'export const x = 1;\n');
+  const probe = `import { existsSync, readFileSync } from 'node:fs';
+const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
+if (existsSync(p) && readFileSync(p, 'utf8').includes('ok')) process.exit(0);
+console.log('FAILED tests/test_x.mjs missing'); process.exit(1);\n`;
+  writeFileSync(join(workdir, 'close.mjs'), probe);
+  writeFileSync(join(workdir, 'check.mjs'), probe);
+  return workdir;
+}
+
+const planJob = () => ({
+  schema: 'job-v1',
+  job: 'plan-dispatch',
+  description: 'plan-shape job through the one runJob entry',
+  provider: 'anthropic-api',
+  cadence: { unit: 'day', every: 1 },
+  budgetUsd: 1.5,
+  writeScope: ['tests/**'],
+  goal: 'Write tests/test_x.mjs with an ok assertion.',
+  verdictType: 'green',
+  close: { type: 'predicate', cmd: 'node close.mjs', expect: 0 },
+  checks: [{ name: 'clean-run', cmd: 'node check.mjs', expect: 0, gapKeep: '^FAILED' }],
+  tools: ['read', 'write'],
+  escalation: { mode: 'decision-ready' },
+});
+
+test('plan dispatch: a four-field spec runs SCOUT→PLAN→EXECUTE→close through runJob; job-end money contract intact', async () => {
+  const wd = makePlanWork('plan-green');
+  const job = planJob();
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write the missing test.', tools: ['write'], rounds: 6,
+      target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    }],
+  });
+  const provider = scriptedProvider([
+    { text: 'no tests exist yet' },
+    { text: plan },
+    { toolCalls: [tcall2('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'wrote it' },
+  ]);
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file),
+  });
+  assert.equal(outcome, 'green');
+  const events = readSpine(file);
+  assert.equal(events.find((e) => e.type === 'job-start').shape, 'plan');
+  const end = events.find((e) => e.type === 'job-end');
+  assert.equal(end.outcome, 'green');
+  assert.ok(end.spentUsd > 0, 'the plan flow\'s rounds landed on the ONE ledger');
+  assert.equal(end.spendComplete, true);
+  assert.ok(events.some((e) => e.type === 'plan-executed'));
+});
+
+test('plan dispatch: an unapproved plan spec spends zero tokens (the approval gate is shape-agnostic)', async () => {
+  const wd = makePlanWork('plan-unapproved');
+  const provider = scriptedProvider([{ text: 'never' }]);
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(planJob(), { approvals: [], workdir: wd, provider, emit: makeSpine(file) });
+  assert.equal(outcome, 'unapproved-spec');
+  assert.equal(provider.calls.length, 0);
+});
+
+test('plan dispatch: no opts.target required — the target red is a text-mode-steps rule only', async () => {
+  const wd = makePlanWork('plan-no-target');
+  const job = planJob();
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: JSON.stringify({ schema: 'plan-v1', steps: [{ id: 's', action: 'write it', tools: ['write'], rounds: 4, target: 'tests/test_x.mjs', exit: [{ type: 'tree-changed', scope: 'tests/**' }] }] }) },
+    { toolCalls: [tcall2('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'done' },
+  ]);
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file),
+  });
+  assert.equal(outcome, 'green', 'a plan job with no opts.target must not red — its steps are tool-mode by construction');
+});
+
+test('plan dispatch: a step-red plan outcome lands on job-end as outcome step-red with the step named', async () => {
+  const wd = makePlanWork('plan-stepred');
+  const job = planJob();
+  const stubbornPlan = JSON.stringify({ schema: 'plan-v1', steps: [{ id: 'never-writes', action: 'do', tools: ['write'], rounds: 4, target: 'tests/test_x.mjs', exit: [{ type: 'tree-changed', scope: 'tests/**' }] }] });
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: stubbornPlan },
+    { text: 'thinking only' }, { text: 'thinking only' },   // plan A exhausts (capRuns 2)
+    { text: stubbornPlan },                                  // the one replan: same plan
+    { text: 'thinking only' },                               // plan B exhausts too (sticks)
+  ]);
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file), capRuns: 2,
+  });
+  assert.match(outcome, /^step-red:/);
+  const end = readSpine(file).find((e) => e.type === 'job-end');
+  assert.equal(end.outcome, 'step-red');
+  assert.equal(end.step, 'never-writes');
+  assert.equal(typeof end.spentUsd, 'number');
+});

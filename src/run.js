@@ -13,6 +13,7 @@ import { redact } from 'bareguard';
 import { validateJob, jobSpecHash, checkApproval } from './job.js';
 import { validateConfig, LOOP_SHAPES, SLOTS, VERBS, globToPrefix, SECRET_PATTERNS, REMEMBER_KINDS } from './validate.js';
 import { interpret } from './interpret.js';
+import { runPlan } from './planrun.js';
 import { runClose, CLOSE_FAULTS } from './ralph.js';
 import { extractArtifact, priceOf } from './text.js';
 
@@ -238,16 +239,23 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
     return 'job-red';
   }
   const job = /** @type {any} */ (jv.job);
+  // Layer 2: the two exclusive shapes (decision 6). A plan-shape spec (goal/
+  // verdictType/close/checks[]) has no steps[] and its steps are tool-mode by
+  // construction — the text-mode target rule below is a legacy-steps rule only.
+  const planShape = job.goal !== undefined;
   // Reds-before-tokens: a text-mode predicate step writes ONE artifact — with
   // no target it would burn a draft + a worker call and then crash inside the
   // middle as a misfiled interpreter-red. The spec is fine; the CALL is not.
-  if ((typeof target !== 'string' || !target)
+  if (!planShape && (typeof target !== 'string' || !target)
       && job.steps.some((/** @type {any} */ s) => s.close.type === 'predicate' && (s.mode ?? 'text') === 'text')) {
     emit('job-red', { code: 'missing-required', path: 'opts.target', detail: 'text-mode steps write ONE artifact — pass opts.target (reds-before-tokens)' });
     emit('job-end', { outcome: 'job-red', ...spend() });
     return 'job-red';
   }
-  emit('job-start', { job: job.job, specHash: jobSpecHash(job), budgetUsd: job.budgetUsd, steps: job.steps.map((/** @type {any} */ s) => s.id) });
+  emit('job-start', {
+    job: job.job, specHash: jobSpecHash(job), budgetUsd: job.budgetUsd,
+    ...(planShape ? { shape: 'plan', goal: job.goal } : { steps: job.steps.map((/** @type {any} */ s) => s.id) }),
+  });
 
   // 2. known-answer smoke before tokens (A3: silent degradation throws nothing)
   const smoke = await primitiveSmoke(workdir);
@@ -283,6 +291,25 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
     emit('job-end', { outcome: 'pricing-red', ...spend() });
     return 'pricing-red';
   };
+
+  // ── Layer 2 dispatch: the plan flow (SCOUT → PLAN → EXECUTE → close) under
+  // the SAME approval gate, smoke, and ledger — runJob stays the one entry
+  // (N2 lock). runPlan emits every provider round as worker-round, so the
+  // metered emit above accounts the plan flow natively (F12); the job-end
+  // money contract is identical to the legacy path.
+  if (planShape) {
+    const outcome = await runPlan(job, {
+      workdir, provider, emit: meter, capRuns, closeTimeoutMs,
+      remainingUsd: () => Math.min(shellCapUsd, job.budgetUsd - spentUsd),
+    });
+    if (unpriced) return pricingRed();
+    if (outcome.startsWith('step-red:')) {
+      emit('job-end', { outcome: 'step-red', step: outcome.slice('step-red:'.length), ...spend() });
+    } else {
+      emit('job-end', { outcome, ...spend() });
+    }
+    return outcome;
+  }
 
   // 4. sealed drafting: one shot + one redraft, reds fed back, PRICED path
   // (through Loop, the same accounting the worker uses — never around it, F6)
