@@ -626,3 +626,83 @@ above the 15% baseline. The notebook alone will not move kill-rate on the semant
 gap.** Full mechanism read: FINDINGS F39. Crafted-seed caveat (17a): no improvement
 was observed, so the caveat attaches to nothing; the stall-direction evidence is the
 strong-direction case 17a pre-registered.
+
+## Amendment 2026-07-21a — the Layer 2 POC: in-run clean-run check (frozen BEFORE any number)
+
+hamr's go, verbatim: "go" (2026-07-21), on the design interviewed the same day
+(`docs/plans/2026-07-21-layer-2-plan-v1-design.md`, decision 3). The POC tests the
+thesis's single untested claim (F39): **does an in-run verifiable check convert the
+clean-wall death?** F39's acting rows died 3/3 at the clean wall authoring tests they
+could never execute; Layer 2's premise is that a bounded loop against a cheap
+operator-signed check ("your suite passes on untouched source") turns the semantic
+ask into F38's convertible mechanical genre. Throwaway harness — no Planner, no
+validator, no plan schema; the composition is hardwired and never ships.
+
+**Provider: `clipipe-subscription`** (F42 + bare-agent 0.32.0 tool emulation; smoke
+2026-07-21: green end-to-end through the real middle, every round priced,
+spendComplete true, ~$0.010–0.018/round notional on a trivial transcript). All caps
+below are NOTIONAL (subscription-equivalent) dollars — clipipe rows never pool with
+anthropic-api rows on the cost axis, and F39's API-measured costs do not transfer.
+
+**Provider confound, named and killed by design:** F39's baseline was measured over
+the API with native tool calls; clipipe tool mode is schema-emulated — a different
+prompting surface. Two levers in one delta is unreadable, so the POC runs its own
+**BASELINE arm on clipipe** and reads check-vs-baseline within-provider.
+
+**BASELINE arm (F39 replication on clipipe):** spec `aurora-testgen-l2poc-baseline`
+= 17a's v6-probe except provider `clipipe-subscription`, `budgetUsd: 3` (notional
+re-baseline), job slug. Same description byte-for-byte, same seed, same grader close,
+same capRuns=1, same row classes (P-INERT / P-ACT-BROKE / P-ACT-FLAT / P-ACT-UP).
+Launch until **3 ACT rows** (P-ACT-*) or 6 baseline launches or the POC cap.
+**Transport gate (frozen):** ≥2 of 3 ACT rows dead at the clean wall (grader log
+`phase: 'clean'`) → F39 transported, proceed to the CHECK arm. Fewer → the baseline
+did not transport to this provider; STOP, report, no check rows fire.
+
+**CHECK arm (the lever):** spec `aurora-testgen-l2poc-check` = baseline spec except
+(1) `budgetUsd: 12` notional; (2) the in-row close is the operator-signed CHECK
+(`l2poc-check-close.sh`), not the grader; (3) ONE added disclosure sentence in the
+description naming the loop: after each attempt an automatic check runs the suite
+against the untouched source and its failures come back; multiple bounded attempts.
+capRuns=4 (attempt 1 + 3 check-fed retries). The check is the grader's deterministic
+prefix plus a changed-from-seed stage, in order: **changed-from-seed** (suite
+byte-identical to the seed manifest reds — this makes the seed's clean-green
+non-exploitable: without it the row would be `already-green` at precheck and mint
+nothing, F17) → **D1 static audit** (same frozen pattern list) → **form floor**
+(same mins) → **clean run** (same timeout). Same `TESTGEN ` gap prefix, same judged
+stamp, same gapKeep. The check decides nothing and mints nothing: row green at the
+check ⇒ the harness runs the FROZEN grader exactly once for the rate; the grader
+stays the only truth. In plan-v1 vocabulary this composition is
+`tree-changed(tests/testgen) ∧ check-passes(clean-run)` — the POC hardwires it; the
+build expresses it as step exits.
+
+**Frozen CHECK-arm row classes:** L-INERT (zero allowed write/edit actions across
+all attempts) · L-CLEAN-FAIL (acted; never check-green within capRuns) ·
+L-CLEAN-PASS (check-green; graded once — rate recorded, and vs-baseline direction
+UP/FLAT recorded). Launch until **3 ACT rows** (acted > 0) or 6 check launches or
+the POC cap.
+
+**Primary read (the POC's acceptance — clean-wall survival ONLY):**
+- ≥2 of 3 ACT rows L-CLEAN-PASS → **premise holds**; proceed to design the real
+  build (design record step 2).
+- 0 of 3 → **premise fails**; the stop is the result; findings entry; redesign with
+  hamr.
+- 1 of 3, or INERT-dominated arms → mixed; report, decide with hamr, no unilateral
+  extension.
+
+**Pre-registered axis split (F32/F39 discipline):** clean-wall survival and
+kill-rate lift are SEPARATE axes. Kill-rate, greens (≥45), which attempt reached
+check-green, and gap utilization (survivor-function grep, 17a's mechanical read)
+are all RECORDED and none are acceptance. A kill-rate null with clean-wall
+survival is a POC pass with an honest open question — not a fail, and not spin.
+
+**Money rules (frozen):** POC hard-stop $50 notional cumulative across both arms
+including casualties. Per-row caps $3 / $12. spendComplete=false or null spentUsd →
+STOP (spend not governable). Money binding mid-attempt before that attempt's close
+ran (16g's class) → INSTRUMENT-STOP, re-size with hamr; the row is a casualty,
+never evidence, and caps are never widened silently. MAX_LAUNCHES 12 total.
+
+**Standing rules unchanged:** worker `claude-sonnet-5` (pinned via `--model`);
+full patient reset + seed re-copy + fresh litectx index per row; per-row grader
+precheck must read exactly 15% (drift = instrument-stop); provider-red rows are
+casualties; secrets scrub on the spine; POC rows enter no battery evidence; budget
+exhausted before the row quota → report rows in hand, no top-up without hamr.
