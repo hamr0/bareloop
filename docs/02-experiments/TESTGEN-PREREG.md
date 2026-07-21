@@ -706,3 +706,23 @@ full patient reset + seed re-copy + fresh litectx index per row; per-row grader
 precheck must read exactly 15% (drift = instrument-stop); provider-red rows are
 casualties; secrets scrub on the spine; POC rows enter no battery evidence; budget
 exhausted before the row quota → report rows in hand, no top-up without hamr.
+
+## Amendment 2026-07-21b — first firing readout: VOID, two harness instrument bugs, notional cost wall (F45)
+
+Run `mrugee8z`, six baseline launches, $16.09 notional, 0 casualties by
+provider, secrets clean, all prechecks at 15%. **As printed: 6/6 B-INERT →
+transport NOT confirmed → CHECK arm never fired → VOID.** Autopsy before any
+conclusion found two instrument bugs in the POC harness (full record: FINDINGS
+F45): the grader-log slice read the PRECHECK entry as the attempt grade (blind
+instrument), and 21a's frozen 16g money rule had no wired detector — B3–B6 were
+money-cut mid-attempt (`cap-halt`, no `worker-result`) and should have
+instrument-stopped the run at B3 as casualties.
+
+**Corrected readout (binding): 2 valid rows (B1, B2 — voluntary INERT), 4
+casualties, transport UNREAD, premise UNREAD, VOID stands.** Measured
+re-baseline: $0.25–0.55/round notional on the real transcript (8–16× API) — a
+40-round attempt ≈ $10–22 notional; 21a's $3/$12 caps cannot fund the job shape.
+No relaunch under this amendment: harness fixes land first, and re-sized caps (or
+a provider change back to `anthropic-api`, where F39 itself is the baseline) are
+hamr's call. Suggestive-unminted (n=2): both completed rows quit without writing
+on a spec that produced 3/4 acting rows on the API.

@@ -2173,3 +2173,59 @@ commit view would catch — a whole-branch fresh gate is a different instrument 
 per-commit review. And "state the money on every path" is right only if "state whether
 it is COMPLETE" travels with it; a bare floor that reads as exact is the F6 laundering
 bug wearing a more-honest-looking coat.
+
+## F45 — the Layer 2 POC's first firing: two harness instrument bugs, and clipipe's notional cost wall measured on a real transcript
+
+**Setup (prereg 2026-07-21a, frozen f5d2329).** First firing of the Layer 2 POC:
+BASELINE arm (F39 replication over `clipipe-subscription`, capRuns=1, $3/row
+notional) gating a CHECK arm (in-run clean-run check, capRuns=4, $12/row) behind a
+transport gate. Worker claude-sonnet-5 via bare-agent 0.32.0 tool emulation. Six
+baseline launches, $16.09 notional, 0 API dollars, secrets clean, spendComplete
+true on every row, all six grader prechecks at exactly 15%.
+
+**As printed: 6/6 B-INERT, 0 ACT rows, transport NOT confirmed, CHECK arm never
+fired, reading VOID.** The stop mechanism worked. The numbers behind it did not
+survive autopsy — two instrument bugs, both in the POC harness, both mine:
+
+1. **Grader-log slice off-by-precheck (blind instrument, the 6th shipping of the
+   class).** `runJob` prechecks with the grader, so the harness's "attempt grade"
+   slice began at the PRECHECK entry — every row's `attempt=verdict:15%` was the
+   precheck re-read as if it were the attempt's grade. B1/B2's real attempt grades
+   exist one entry later (both regraded the unchanged seed at 15%); B3–B6 have no
+   attempt grade at all.
+2. **The frozen 16g rule had no detector.** The prereg says money binding
+   mid-attempt before that attempt's close is an INSTRUMENT-STOP and the row a
+   casualty. B3–B6's spines show exactly that signature — `cap-halt` with no
+   `worker-result` and no `close-verdict`: the $3 cap cut the worker mid-read at
+   rounds 6–11. The harness classed them valid B-INERT and kept launching; per the
+   frozen rule the run should have stopped at B3. A frozen rule without a wired
+   detector is prose, not protection (F37's mirror, instrument-side).
+
+**Corrected readout: 2 valid rows (B1, B2 — honest voluntary INERT: worker-result
+present, quit at rounds 8/5 with zero write/edit actions, gate audits show
+reads-only over the seed suite), 4 casualties (money-cut), transport UNREAD (not
+refuted), premise UNREAD. VOID stands, for the corrected reason.**
+
+**The measured wall (the F42 re-baseline, now with a real number):** notional cost
+on a real TESTGEN transcript is **$0.25–0.55/round** — 8–16× the API's measured
+~$0.033/round (F37, cacheMessages on). The smoke's $0.010–0.018/round was a
+trivial-transcript floor; sizing caps from it repeated 16g's estimate-not-cap
+error in a new coat. At real rates a 40-round attempt costs ~$10–22 notional: the
+approved $3 baseline row cannot fund even the reading phase of the job shape, and
+a $12 check row funds barely one attempt of four. clipipe at this transcript
+weight is notionally EXPENSIVE; its $0-marginal advantage is real but the
+subscription headroom it consumes is not free.
+
+**Suggestive, explicitly unminted (n=2):** both completed rows quit voluntarily
+after ~5–8 reads without writing, on a spec byte-identical to F39's — where the
+API-native worker acted in 3 of 4 rows. A surface-driven action-rate drop on the
+emulated path is plausible and cheap to test, but two rows are an anecdote by the
+n=1 rule and the four cut rows cannot vouch either way.
+
+**Lesson.** Decompose-before-diagnose held (the autopsy caught both bugs before
+any conclusion shipped), but both bugs were preventable at authoring time: a
+harness that reads a shared append-only log must account for every writer inside
+the window it slices, and every frozen money rule needs its detector wired the
+day the rule is frozen — compliance by intention does not exist. And a cost
+re-baseline done on a floor-shaped workload is not a re-baseline (16g, third
+appearance): measure on the real transcript before a cap means anything.

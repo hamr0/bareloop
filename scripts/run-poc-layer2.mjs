@@ -245,6 +245,13 @@ async function runRow(/** @type {'B'|'C'} */ arm, /** @type {number} */ i) {
   const auditEntries = audit ? logLines(audit).map((l) => JSON.parse(l)) : [];
   const acted = auditEntries.filter((e) => e.decision === 'allow' && (e.action?.type === 'write' || e.action?.type === 'edit')).length;
   const rounds = events.filter((ev) => ev.type === 'worker-round' && ev.kind === 'turn').length;
+  // 16g detector (F45 fix 2): an attempt cut by the money cap mid-run leaves an
+  // iteration-start with no matching worker-result. Such a row is a CASUALTY per
+  // the frozen rule — the worker never chose to stop — and the whole run
+  // instrument-stops for re-sizing (caps are never widened silently).
+  const iterStarts = events.filter((ev) => ev.type === 'iteration-start').length;
+  const workerResults = events.filter((ev) => ev.type === 'worker-result').length;
+  const midCut = iterStarts > workerResults;
 
   /** @type {any} */
   const row = {
@@ -253,11 +260,14 @@ async function runRow(/** @type {'B'|'C'} */ arm, /** @type {number} */ i) {
   };
 
   if (arm === 'B') {
-    // F39 classes; clean-wall death = grader attempt entry phase 'clean'
+    // F39 classes; clean-wall death = grader attempt entry phase 'clean'.
+    // F45 fix 1: runJob's own precheck writes the FIRST post-slice grader entry —
+    // the attempt's grade (if any) is the entry AFTER it, never entries[0].
     const attempts = logLines(graderLog).slice(beforeGrader).map((l) => JSON.parse(l));
-    const attempt = attempts[0] ?? null; // capRuns=1: at most one post-precheck grade
+    const attempt = attempts[1] ?? null; // [0] = runJob precheck; [1] = the attempt grade
     row.attempt = attempt ? { phase: attempt.phase, rate: attempt.rate ?? null, killed: attempt.killed ?? null } : null;
     if (casualty) row.cls = 'CASUALTY';
+    else if (midCut) { row.cls = 'CASUALTY(cap-mid-attempt)'; row.valid = false; stop = `${arm}${i}: money cap bound mid-attempt (16g) — re-size with hamr, caps are never widened silently`; }
     else if (acted === 0) row.cls = 'B-INERT';
     else if (attempt == null) row.cls = 'INSTRUMENT-STOP(no-attempt-close)';
     else if (attempt.phase !== 'verdict') row.cls = 'B-ACT-BROKE';
@@ -269,6 +279,7 @@ async function runRow(/** @type {'B'|'C'} */ arm, /** @type {number} */ i) {
     const checks = logLines(checkLog).slice(beforeCheck).map((l) => JSON.parse(l));
     row.checks = checks.map((c) => ({ phase: c.phase, verdict: c.verdict }));
     if (casualty) { row.cls = 'CASUALTY'; row.valid = false; }
+    else if (midCut) { row.cls = 'CASUALTY(cap-mid-attempt)'; row.valid = false; stop = `${arm}${i}: money cap bound mid-attempt (16g) — re-size with hamr, caps are never widened silently`; }
     else if (acted === 0) { row.cls = 'C-INERT'; row.valid = true; }
     else if (outcome === 'green') {
       // check settled green → the FROZEN grader runs exactly once for the rate
