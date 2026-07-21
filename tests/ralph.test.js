@@ -475,3 +475,79 @@ test('F28: ralph threads gapKeep into every close it runs — the loop\'s feedba
   const verdict = events.find((e) => e.type === 'close-verdict');
   assert.equal((verdict.gap.match(/^not ok/gm) ?? []).length, 3, 'gapKeep reached runClose through ralph — the failure names are on the spine');
 });
+
+// ─── Layer 2: the judge seam (PRD v1.12 §4 — "ralph() with the judge
+// generalized to a shell-owned seam"). A plan STEP's micro-loop judges by the
+// exit evaluator instead of a close command; the seam is injected by the
+// SHELL (run.js wires evalExits) and is inexpressible in any config or plan.
+// The outer close path is byte-identical when no judge is passed.
+
+test('judge seam: an injected judge replaces runClose — satisfied greens, needs_revision feeds its gap to the middle', async () => {
+  const file = join(dir, 'judge-green.jsonl');
+  const gapsSeen = [];
+  let calls = 0;
+  const judge = async () => (++calls < 2 ? { verdict: 'needs_revision', gap: '0 files changed under tests/** — the tree is byte-identical' } : { verdict: 'satisfied' });
+  const outcome = await ralph({
+    middle: (i, gap) => { gapsSeen.push(gap); },
+    judge, capRuns: 3, emit: makeSpine(file),
+  });
+  assert.equal(outcome, 'green');
+  assert.equal(calls, 2);
+  assert.equal(gapsSeen[0], undefined, 'attempt 1 has no gap');
+  assert.match(gapsSeen[1], /0 files changed/, 'the exit gap reaches attempt 2 verbatim (the F46 mechanism)');
+  const events = readFileSync(file, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(events.filter((e) => e.type === 'close-verdict').map((e) => e.verdict), ['needs_revision', 'satisfied']);
+});
+
+test('judge seam: a forbidden-zone verdict from the judge escalates by its own name and never retries (an instrument fault is a stop)', async () => {
+  const file = join(dir, 'judge-fault.jsonl');
+  let middleRuns = 0;
+  const outcome = await ralph({
+    middle: () => { middleRuns++; },
+    judge: async () => ({ verdict: 'failed', detail: 'check "clean-run" cannot run — runCheck is not wired' }),
+    capRuns: 3, emit: makeSpine(file),
+  });
+  assert.equal(outcome, 'escalated');
+  assert.equal(middleRuns, 1, 'never retried past the fault');
+  const events = readFileSync(file, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l));
+  const esc = events.find((e) => e.type === 'escalation');
+  assert.equal(esc.category, 'broken-close');
+  assert.match(esc.detail, /clean-run/);
+});
+
+test('judge seam: a crashed judge verdict AFTER worker writes routes as worker-crash and loops (F32 carried to plan steps — the F46 broken-test mechanism)', async () => {
+  const file = join(dir, 'judge-crash.jsonl');
+  let calls = 0;
+  const judge = async () => (++calls < 2
+    ? { verdict: 'crashed', detail: 'check judged 0 of a declared floor of 5 — pytest died at collection' }
+    : { verdict: 'satisfied' });
+  const gapsSeen = [];
+  const outcome = await ralph({
+    middle: (i, gap) => { gapsSeen.push(gap); },
+    judge, capRuns: 3, emit: makeSpine(file),
+    workerWrites: () => ['/w/tests/test_orchestrator.py'],
+  });
+  assert.equal(outcome, 'green');
+  assert.match(gapsSeen[1], /CRASHED/, 'the crash routes as feedback, not an instrument stop — the worker broke its own test file');
+  assert.match(gapsSeen[1], /test_orchestrator\.py/);
+});
+
+test('judge seam: cap-halt when the judge stays red — same taxonomy as the close path', async () => {
+  const file = join(dir, 'judge-cap.jsonl');
+  const outcome = await ralph({
+    middle: noop,
+    judge: async () => ({ verdict: 'needs_revision', gap: 'check "clean-run" red: 2 failed' }),
+    capRuns: 2, emit: makeSpine(file),
+  });
+  assert.equal(outcome, 'escalated');
+  const events = readFileSync(file, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l));
+  assert.equal(events.find((e) => e.type === 'escalation').category, 'cap-halt');
+});
+
+test('judge seam: run-start labels the judge (no close argv exists to print); no close-unaudited noise', async () => {
+  const file = join(dir, 'judge-label.jsonl');
+  await ralph({ middle: noop, judge: async () => ({ verdict: 'satisfied' }), capRuns: 1, emit: makeSpine(file) });
+  const events = readFileSync(file, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l));
+  assert.match(events.find((e) => e.type === 'run-start').close, /judge/);
+  assert.equal(events.find((e) => e.type === 'close-unaudited'), undefined, 'the judged-floor story belongs to closes, not the exit judge');
+});
