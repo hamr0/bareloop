@@ -325,6 +325,15 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
    the exact F39 death mid-run — and kill-rate rose 3/3 (no 45-green yet; that question
    belongs to the build's battery). "Notes + self-check succeeds" is now observed at POC
    tier; the build designs it properly (design record 2026-07-21).**
+   **Build core LANDED 2026-07-21 (branch `layer-2-plan-v1`, second interview locked
+   decisions 6–9):** the four-field job shape (goal/verdictType/close/checks[], exclusive
+   with `steps[]` under a staged sunset), the plan-v1 validator (`verb-escape` /
+   `exit-illegal` / `check-unknown`, F17 pairing law), the exit evaluator (outcome-reading
+   snapshots, fault propagation), ralph's judge seam, the plan executor (scout → validated
+   plan → micro-loops with check-gap feedback → one replan → close + one fix loop), and
+   the runJob dispatch — 503 tests, TDD, mutation-spot-checked. Scripted-provider
+   evidence only so far: **the rung's acceptance gate is the real-model battery (job #4,
+   same close, same frozen 45 bar, read against F39's baseline), which has NOT yet run.**
    **Also owns the Layer R default decision:** the first Layer 2 job that produces natural
    fixation runs the ON-vs-OFF acceptance read, and that result flips `layerRoot` to `true`
    (ON helps) or keeps it `false` (no lift) — see the Layer R ⚠ note above.

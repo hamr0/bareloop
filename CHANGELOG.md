@@ -7,6 +7,50 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+
+- **Layer 2 core — the plan-v1 flow (design record
+  `docs/plans/2026-07-21-layer-2-plan-v1-design.md`; premise validated in F46).**
+  The semantic converter, built:
+  - **job-v1 four-field plan shape** (`src/job.js`): `goal` / `verdictType`
+    (`green|soft-green|hitl` frozen radio — v1 admits `green` only; a locked type is a
+    `request-red` with the type as a structured `verb` field) / `close` / `checks[]`
+    (operator-SIGNED named checks: the predicate-close body + a slug name, same
+    validation, same runClose machinery; checks decide nothing and mint nothing) /
+    `tools` (the plan ceiling). Exclusive with legacy `steps[]` (`shape-conflict` red);
+    `steps[]` is co-existing scaffolding with a staged sunset — archives alongside
+    config-v1 when the Layer 2 path proves itself in its battery.
+  - **plan-v1 validator** (`src/plan.js`, `validatePlan`): gates the AGENT-authored
+    plan against the SIGNED spec — verbs ⊆ ceiling (`verb-escape`, verb as structured
+    data), rounds ≤ shell cap, targets/scopes inside the fence, exits from the closed
+    menu only (`exit-illegal`), `check-passes` resolving against the signed menu
+    (`check-unknown` names the menu), no `dependsOn` (strictly sequential — an inert
+    knob is a fake contrast lever), AND-only exit composition max 2, and the F17
+    pairing law (check-passes on a write step demands tree-changed — the seed tree is
+    green). Fails CLOSED on a missing/non-plan-shape job (`job-invalid`).
+  - **exit evaluator** (`src/exits.js`, `snapshotScope`/`evalExits`): the shell's own
+    fixed code for `artifact-written` / `tree-changed` / `json-valid` /
+    `check-passes`. Outcome, never intent: sha256 snapshots, identical re-writes are
+    not changes (F43), git status never consulted (F45). Instrument faults ride out as
+    `fault` by runClose verdict name — escalated, never fed to the worker as a gap.
+  - **the judge seam** (`src/ralph.js`): `ralph({ judge })` — the PRD v1.12 §4
+    generalization; shell-injected, inexpressible in any config or plan. Same verdict
+    vocabulary, so the forbidden zone, F32 worker-crash routing (a check crashed by the
+    worker's own test feeds back — the F46 mechanism), and cap taxonomy are unchanged.
+  - **the plan executor** (`src/planrun.js`, `runPlan`): close precheck
+    (`already-green` distinct, F17) → checks preflight ($0, before tokens) → read-only
+    SCOUT → PLAN (one redraft with reds fed back) → sequential micro-loops with
+    exit-gap feedback → ONE replan (exhaustion only) → the operator's close with one
+    bounded fix loop. Every round metered `worker-round` with a phase label (F12);
+    prompt contract v1.12 §5 mutation-proven; `plan-executed` (plan-as-executed,
+    design law #2) on the spine.
+  - **runJob dispatch** (`src/run.js`): a plan-shape spec routes through the ONE
+    runJob entry — same approval gate, smoke, ledger, and job-end money contract.
+    New outcomes: `already-green | plan-red | check-red | close-red`.
+  - 139 new tests (503 total), TDD throughout, 3 targeted mutations fired and killed.
+    Built and integration-tested against scripted providers; the real-model battery
+    (job #4 vs F39's baseline) is the rung's acceptance gate and has NOT yet run.
+
 ## [0.4.0] — 2026-07-21
 
 ### Added
