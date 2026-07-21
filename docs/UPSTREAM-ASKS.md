@@ -820,6 +820,68 @@ escalation's own option — "retry the run" — recovered both cases at $0 lost,
 write never reached the API), but once BA-14 lands, wiring a small `Retry` into the
 draft call is worth revisiting.
 
+## BA-16 — CLIPipe tool mode should offer a NATIVE path (`claude -p --mcp-config`) beside the envelope emulation (2026-07-21, Layer 2 POC firing 1 / F45)
+
+**Symptom, measured (F45):** the 0.32.0 envelope emulation carries a gated worker
+mechanically (smoke: green end-to-end) but is the wrong instrument for real jobs on two
+axes at once:
+1. **Cost** — each turn re-spawns the CLI and re-sends the whole rendered transcript:
+   **$0.25–0.55/round notional** on a real ~40-round job transcript (8–16× the API's
+   measured ~$0.033/round), because every turn pays fresh `cache_creation` on the full
+   prefix.
+2. **Behavior (suggestive, n=2, explicitly unminted)** — on a spec byte-identical to one
+   that produced 3/4 acting rows over the native API (F39), both completed emulation rows
+   quit after ~5–8 reads with zero writes. A model filling a JSON questionnaire with
+   `final_answer` one field away is a different animal from one flying native tool_use;
+   0.32.0's own notes document the surface-sensitivity in the weak-model direction.
+
+**The native path exists and was probed live before filing (the BA-2/withdrawn-ask rule;
+~$0.20 notional, artifacts in bareloop scratch `mcp-probe/`):** a minimal stdio MCP server
+(vanilla node, newline-delimited JSON-RPC) + `claude -p --mcp-config <cfg> --tools ''
+--strict-mcp-config --setting-sources '' --allowedTools 'mcp__probe__*'`:
+- **A. Native tool_use reaches the caller's handler:** unknowable-info question, one
+  `tools/call` in the server log, answer carries the server's value. 2 turns, $0.067.
+- **B1. `run` stays structurally absent:** asked to shell out, model answers
+  CANNOT-RUN-SHELL and lists exactly the three granted MCP tools; server log empty.
+- **B2. Gate-in-handler works:** an out-of-scope `write_file` returned a DENIED tool
+  result (file provably never created), the in-scope retry landed — the caller's fence
+  (bareguard, in bareloop's case) rides inside the tool handler, denial-as-result.
+- **C. Bounds:** `--max-turns 2` stopped a 3-call task after 2 calls with the NAMED stop
+  `subtype: error_max_turns` — never a silent success.
+- **D. Metering + the cost mechanism:** `--output-format stream-json --verbose` exposes
+  per-assistant-message usage (all four cache tiers); an 8-tool-turn session ran at
+  **$0.0074/turn** with `cache_creation` ~140–200 tokens/turn after turn 1 — the
+  session-incremental caching the emulation structurally cannot have.
+
+**Ask (FAIL-able):** a second CLIPipe tool mode — e.g. `toolProtocol: 'claude-mcp'` —
+where the provider (or a sibling adapter) runs ONE CLI session per attempt, exposes the
+caller's `tools` to it as an MCP stdio server whose handlers call back into the caller,
+strips everything else (`--tools '' --strict-mcp-config`), maps `--max-turns` to the
+caller's turn bound, and parses stream-json into per-turn usage/cost. Acceptance, each
+independently falsifiable on a live subscription session:
+1. A Loop-mounted tool called through the native path executes the CALLER's handler
+   (assert on the handler's own side effect, not the model's claim).
+2. A denied handler result reaches the model as a tool result and the loop continues
+   (no crash, no silent drop).
+3. With tools stripped, a shell-out request produces no execution (assert no side
+   effect, not just refusal prose).
+4. The advertised turn bound and the enforced bound are the same number, and the bound
+   stop is a distinct named stop reason, never a clean empty success (the BA-6 class).
+5. Per-turn usage including cache tiers lands on the per-round result the caller meters
+   (F12/F18: a cost instrument must see cache tiers), and a multi-turn session's
+   per-turn cost is measured — not asserted — against the same job shape on the
+   emulation path.
+
+**Not asked (recorded):** retiring the envelope emulation — it stays the right tool for
+CLIs with no MCP support (the seam 0.32.0 built is exactly where a sibling adapter
+slots); and MCP-over-network/HTTP — stdio is sufficient and keeps the fence local.
+
+**bareloop's own side:** loop-ownership semantics shift on the native path (the CLI owns
+the inner cycle; bareloop's shell keeps the money cap, per-attempt bound via
+`--max-turns`, the gate inside tool handlers, and the close — the arbiter split is
+unchanged). bareloop consumes this behind its existing caller-supplied `provider` seam;
+no library change expected beyond the provider construction.
+
 *(No other open asks from this repo.)*
 
 ---
