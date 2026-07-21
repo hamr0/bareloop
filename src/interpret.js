@@ -12,12 +12,14 @@
 
 import { createRequire } from 'node:module';
 import { writeFileSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { Gate, redact } from 'bareguard';
 import { LiteCtx, compress } from 'litectx';
 import { validateConfig, diffPaths, globToPrefix, SECRET_PATTERNS } from './validate.js';
 import { ralph } from './ralph.js';
+import { createRoot } from './root.js';
 
 /** @typedef {Error & {category?: string, lib?: string}} CategorizedError the failure map's carrier: ralph relays by `category`, and by `lib` when the thrower knows which library owns the failure (the ledger prefers it over prose) */
 
@@ -213,11 +215,18 @@ const toolAction = (name, args, workdir) => {
  * @param {'text'|'tools'} [opts.mode] middle mode (2b): 'text' (default) writes the ONE
  *        target from the response artifact; 'tools' gives the worker Gate-governed file
  *        tools — SPEC-side territory (the step declares it; the config cannot express it)
+ * @param {boolean} [opts.layerRoot=false] Layer R (the within-run ratchet, src/root.js):
+ *        shell-assembled fixation detection over the run's own books, injecting an
+ *        escalating summary→verbatim note when consecutive attempts rewrite the same
+ *        files without moving the reds. Inert when the worker is not stuck (RSI §3.3).
+ *        Defaults OFF (decided 2026-07-21): fixation is extinct on every current job
+ *        (F41), so ON is unproven — the field read defers to Layer 2. `true` is the
+ *        ON/experimental arm; never a worker-visible knob
  * @param {string[]} [opts.tools] the spec's tool grant (subset of read|grep|write,
  *        job-v1 validated); defaults to the full menu in tool mode
  * @returns {Promise<'green'|'escalated'|'config-red'>}
  */
-export async function interpret(configRaw, { task, target, close, workdir, capRuns, emit, provider, shellCapUsd = 2, jobWriteScope, revisor, closeTimeoutMs, mode = 'text', tools, closeState, closeExpect, closeJudged, closeGapKeep }) {
+export async function interpret(configRaw, { task, target, close, workdir, capRuns, emit, provider, shellCapUsd = 2, jobWriteScope, revisor, closeTimeoutMs, mode = 'text', tools, closeState, closeExpect, closeJudged, closeGapKeep, layerRoot = false }) {
   // Reds-before-tokens: text mode writes ONE artifact — a missing target is a
   // caller bug that must be loud NOW, not a TypeError after a paid worker call
   // that ralph would misfile as interpreter-red (the gate skips an absent path,
@@ -279,7 +288,17 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
         : {}),
     },
     budget: { maxCostUsd: config.gate.budgetUsd },
-    // text mode is ~1-2 rounds per attempt; tool mode is N rounds (read→write→…)
+    // text mode is ~1-2 rounds per attempt; tool mode is N rounds (read→write→…).
+    // maxTurns ticks on every gate.RECORD (bareguard limits.js:88), and this
+    // number means "LLM rounds" ONLY because the sole record path is the LLM one
+    // (onLlmResult → gate.record{type:'llm'}); tool calls take gate.CHECK, which
+    // does not tick. That invariant is load-bearing: wiring wireGate's own
+    // onToolResult into gate.record would silently start ticking maxTurns on
+    // tools and halve the LLM budget (the F37 lower-silent-ceiling class). It is
+    // pinned by the "every record is type:llm" guard test — do not wire tool
+    // records without switching this bound (bareguard offers no llm-only counter;
+    // it has maxTurns=all and maxToolRounds=tools-only, neither of which is
+    // llm-only once tools also record). Cap semantics are arbiter territory.
     limits: { maxTurns: TURNS_PER_ATTEMPT * (capRuns + 1) },
     audit: { path: join(workdir, 'gate-audit.jsonl') },
     humanChannel: async () => ({ decision: 'terminate' }), // no human mid-run: a tripped cap terminates → decision-ready escalation
@@ -294,6 +313,13 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   // exactly as it did before F32 — attribution can only ADD a recovery path, never
   // swallow an instrument stop.
   const auditPath = join(workdir, 'gate-audit.jsonl');
+  // NOTE (Finding 4, deferred): this re-reads and re-parses the whole audit each
+  // call. That is O(1) reads when Layer R is OFF (called only at the rare crashed
+  // verdict), but O(attempts) when Layer R is ON, and the audit can accumulate
+  // across steps/runs. An incremental byte-cursor reader would make it O(total)
+  // — deferred as cleanup-tier (only bites the OFF-by-default arm) until it can
+  // carry its own multi-path-accumulation tests; the simple full-parse is kept
+  // because it is obviously correct.
   const workerWrites = () => {
     try {
       const paths = new Set();
@@ -308,7 +334,135 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
       return [...paths];
     } catch { return []; }
   };
-  const { policy, onLlmResult } = wireGate(gate, mode === 'tools' ? { actionTranslator: (/** @type {string} */ n, /** @type {any} */ a) => toolAction(n, a, workdir) } : {});
+  // Layer R — the root (within-run ratchet, design record 2026-07-19). Shell-
+  // assembled from the arbiter's own books: per-attempt write-sets come from
+  // the SAME workerWrites audit read (allow-decision only, so a denied write is
+  // never counted), red-sets from the close's kept-failure lines. The verbatim
+  // stage needs the content the audit deliberately does not keep (bytes-only),
+  // so it is teed below at the one seam that sees it — memory-only, scrubbed,
+  // never the spine.
+  const root = layerRoot ? createRoot({ gapKeep: closeGapKeep, redact: (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS }), writesInformative: mode === 'tools' }) : null;
+  // The tee rides the translator and resolves paths exactly as toolAction does,
+  // so tee keys match audit paths byte-for-byte. The translator fires BEFORE the
+  // gate decides (wireGate calls translate() inside its policy, then awaits
+  // gate.check), so it can only STAGE: the audit-path filter downstream is not
+  // enough on its own, because the tee is last-write-wins PER PATH and a path the
+  // audit legitimately lists as allowed can end the attempt holding the content
+  // of a LATER write the gate rejected — the verbatim note would then swear that
+  // code landed when it is not in the file (Finding 6, 2026-07-20). Settlement
+  // is split across the two seams that actually know (Finding 7): the gate
+  // verdict can only DISCARD (a deny means the tool never runs), and the
+  // post-execution seam supplies the outcome an allow cannot — see `policy` and
+  // `onToolOutcome` below.
+  /** @param {string} n @param {any} a */
+  const teeingTranslator = (n, a) => {
+    // Classify ONCE and decide by the action TYPE, not a hardcoded name list — a
+    // third enumeration of the write verbs (workerWrites already filters on
+    // action.type write|edit) would let a future granted write-class verb enter
+    // the gate audit but silently bypass the tee (the recurring blind-instrument
+    // class). Reuse act.path so the tee key matches the audit path byte-for-byte
+    // (both from this same resolution). Content is read off the RAW args and never
+    // put on the action object — the gate audit stays bytes-only (the secrets law:
+    // what an append-only log captures, it captures forever).
+    const act = toolAction(n, a, workdir);
+    if (root && (act.type === 'write' || act.type === 'edit')) {
+      // act.path is always present on the write/edit branch (cast: toolAction's
+      // object literals widen `type` to string, so tsc cannot narrow the union)
+      const path = /** @type {string} */ (act.path);
+      const content = String((act.type === 'edit' ? a?.newText : a?.content) ?? '');
+      root.stageWrite(path, content);
+      // Finding 7 — the OUTCOME probe. The gate's allow is an INTENT record
+      // written before the tool runs; shell_edit returns an anchor miss as a
+      // refusal RESULT (bare-agent tools/shell.js:190) and a byte-cap overflow
+      // as a throw (:204), both leaving the file untouched with the allow
+      // already on the audit. Snapshot the file hash HERE (pre-execution) so the
+      // post-execution seam can settle the note against ground truth. Carry the
+      // action TYPE: for the file-unchanged case, a write and an edit answer
+      // "did it land?" differently (Finding 2). Raw content, never the scrubbed
+      // copy — the comparison is against real bytes; transient, never on a
+      // prompt, the spine, or the audit.
+      pendingProbe = { path, content, type: act.type, before: fileHash(path) };
+    }
+    return act;
+  };
+  /**
+   * Content hash of a file, or null when it does not exist / cannot be read —
+   * null is the honest unknown here, and a missing file BEFORE a write is the
+   * normal new-file case (it compares unequal to the hash after, which is
+   * exactly right: the write landed).
+   * @param {string} p
+   */
+  const fileHash = (p) => {
+    try { return createHash('sha256').update(readFileSync(p)).digest('hex'); } catch { return null; }
+  };
+  /** @type {{path: string, content: string, type: string, before: string|null}|null} the write-class action awaiting its OUTCOME */
+  let pendingProbe = null;
+  const { policy: gatePolicy, onLlmResult } = wireGate(gate, mode === 'tools' ? { actionTranslator: teeingTranslator } : {});
+  // Settle the stage on the verdict. wireGate's policy returns true on allow,
+  // a string on deny, and THROWS HaltError on halt — and bare-agent processes
+  // tool calls strictly sequentially (`for (const tc of result.toolCalls) { …
+  // await this.policy(…) }`, loop.js), so at most one stage is ever in flight.
+  // The catch discards and RE-THROWS: cap-halt routing reads that throw, and a
+  // swallowed halt would launder a tripped budget into a plain deny. A non-write
+  // action stages nothing, so both settlements are no-ops for it.
+  const policy = root && mode === 'tools'
+    ? async (/** @type {string} */ n, /** @type {any} */ a, /** @type {any} */ c) => {
+      try {
+        const verdict = await gatePolicy(n, a, c);
+        // A DENY is settled here and only here: the tool never executes, so the
+        // outcome seam below never fires for it. An ALLOW is deliberately NOT
+        // settled — the bytes have not been written yet, and settling on the
+        // verdict is precisely the Finding 7 defect (validated 2026-07-20: three
+        // allowed edits, zero bytes changed, and the note swore they landed).
+        if (verdict !== true) { root.discardWrite(); pendingProbe = null; }
+        return verdict;
+      } catch (e) {
+        root.discardWrite();
+        pendingProbe = null;
+        throw e;
+      }
+    }
+    : gatePolicy;
+  /**
+   * Finding 7 — settle the staged write on what the tool ACTUALLY did. Fires
+   * after every `tool.execute` (bare-agent loop.js:986), success or error, and
+   * bare-agent processes tool calls strictly sequentially, so exactly one probe
+   * is ever in flight. A probe that never reaches here (the BA-12 spin-guard
+   * early return, or a HaltError out of a tool body) leaves the stage pending
+   * and unsettled — correct, because in both cases nothing landed, and the
+   * attempt boundary drops it.
+   *
+   * NOT wired: `wireGate`'s own `onToolResult`, which would start feeding
+   * `gate.record` per-tool records. That changes what `limits.maxTurns` /
+   * `maxToolRounds` count and therefore when a run halts (the guarded
+   * llm-only-turns invariant at the Gate config above) — cap semantics are
+   * arbiter territory, so it is deliberately not wired here.
+   * @param {{result?: any}} [info] the tool's return value (bare-agent loop.js:988)
+   */
+  const onToolOutcome = async (info) => {
+    if (!root || !pendingProbe) return;
+    const { path: p, content, type, before } = pendingProbe;
+    pendingProbe = null;
+    // ONE read serves both the after-hash and the content check (Finding 5: the
+    // old path read the file twice). null = unreadable/absent.
+    let after = null;
+    try { after = readFileSync(p, 'utf8'); } catch { /* absent → after stays null */ }
+    let landed = after !== null && createHash('sha256').update(after, 'utf8').digest('hex') !== before;
+    if (!landed && after !== null) {
+      // The bytes did not change — but the action may still have left `content`
+      // in the file, and write vs edit answer that differently (Finding 2):
+      //   - write: a whole-file write always writes; identical bytes means the
+      //     content genuinely IS the file (exact equality, never a substring —
+      //     substring false-positived when newText appeared elsewhere).
+      //   - edit: a no-byte-change edit is EITHER an idempotent apply (newText===
+      //     oldText, "edited …: 1 replacement") OR a missed anchor ("shell_edit:
+      //     … no change made") — indistinguishable on disk, so the tool RESULT is
+      //     the only honest signal. An anchor miss is NOT landed.
+      if (type === 'write') landed = after === content;
+      else landed = typeof info?.result === 'string' && info.result.startsWith('edited ');
+    }
+    root.settleWrite(landed);
+  };
   // Money is metered as it is SPENT — per ROUND, not per attempt (F12). A
   // multi-round attempt that halts (or throws) never returns, so its rounds
   // never reach `worker-result`: the real run bought $1.4375 of tokens inside a
@@ -428,6 +582,7 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     system: mode === 'tools' ? PERSONA_TOOLS + (usesEdit ? EDIT_STRATEGY : '') + (usesCtx ? RETRIEVAL_STRATEGY : '') : PERSONA,
     policy,
     onLlmResult: meteredOnLlmResult,
+    onToolResult: onToolOutcome,
   });
 
   /** @param {string} slot */
@@ -576,6 +731,11 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   const middle = async (iteration, gap) => {
     roundIteration = iteration; // stamps every round of this attempt (F12)
     roundsThisAttempt = 0;      // the bound is PER ATTEMPT — a fresh conversation, a fresh budget (F20)
+    // Layer R: finalize the previous attempt from the books and ask the ratchet.
+    // Inert (null) unless consecutive attempts rewrote the same files without
+    // moving the reds; the event carries stage/paths/counts, NEVER content.
+    const rootInj = root ? root.observe({ iteration, gap, writes: workerWrites() }) : null;
+    if (rootInj) emit('root-injected', rootInj.event);
     if (gap) gaps.push(gap);
     if (revisor && !revised && gaps.length >= STALL_REDS) {
       emit('stall-detected', { iteration, consecutiveReds: gaps.length });
@@ -632,6 +792,9 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
       // attempt and describing the tree are different claims; this is the second.
       !gap && closeState && `The close is currently failing. This is its output on the tree as it stands (not an attempt of yours):\n${closeState}`,
       context.text && `Possibly relevant notes:\n${context.text}`, gap && `Previous attempt failed the test suite:\n${gap}`,
+      // Layer R: the ratchet note rides directly after the gap it qualifies —
+      // same channel discipline as the gap itself (bounded, trims announced)
+      rootInj && rootInj.note,
       artifactNote && `Previous attempt never reached the close:\n${artifactNote}`,
       // F20: a bounded attempt must SAY it was bounded. Otherwise the worker reads its own
       // truncated transcript as a finished one, learns nothing from being cut off, and spends
@@ -682,6 +845,7 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
       throw err;
     }
     writeFileSync(t, code);
+    root?.noteWrite(t, code); // Layer R tee, text mode: same seam role as the translator's
     emit('artifact-written', { iteration, path: t });
   };
 

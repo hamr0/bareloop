@@ -183,6 +183,12 @@ async function openDraftPr({ workdir, branch, title, body, addPaths, exec }) {
  * boundary — the Gate still caps within a step, but an unpriced result cannot
  * be summed, so the run stops rather than counting it $0 (F6).
  *
+ * EVERY terminal `job-end` states the money: `spentUsd` (the sum of PRICED
+ * rounds only — never an estimate; a real 0 on the pre-token reds) plus
+ * `spendComplete`, false when any round came back unpriced and the figure is
+ * therefore a FLOOR, not the total. Both are always present, so a consumer
+ * never branches on field presence nor launders a blank into $0.
+ *
  * @param {object|string} rawSpec the job spec (job-v1), text or parsed
  * @param {object} opts
  * @param {unknown} opts.approvals `{ specHash, signer, ts }` records (from OUTSIDE the spec)
@@ -194,21 +200,41 @@ async function openDraftPr({ workdir, branch, title, body, addPaths, exec }) {
  * @param {number} [opts.shellCapUsd] the shell's hard USD ceiling
  * @param {number} [opts.closeTimeoutMs] close wall-clock cap (shell territory)
  * @param {ExecCmd} [opts.execCmd] process runner for the hitl PR mechanics
- *        (shell-owned seam, same doctrine as the provider binding)
+ * @param {boolean} [opts.layerRoot=false] Layer R (within-run ratchet) — shell
+ *        territory, threaded to every predicate step's interpreter. Defaults OFF
+ *        (decided 2026-07-21): fixation is extinct on every current job (F41), so
+ *        ON has never won its own A/B — the acceptance read defers to Layer 2 (or
+ *        a manufactured-fixation probe). `true` is the ON/experimental arm; the
+ *        default is the OFF arm. (Shell-owned seam, same doctrine as the provider
+ *        binding.)
  * @returns {Promise<string>} outcome: 'green' | 'escalated' | 'unapproved-spec' |
  *   'job-red' | 'smoke-red' | 'config-red' | 'pricing-red' | 'provider-red' |
  *   'cap-halt' | 'close-unsupported' | `step-red:<id>`
  */
-export async function runJob(rawSpec, { approvals, workdir, target, provider, emit, capRuns = 3, shellCapUsd = 2, closeTimeoutMs, execCmd = defaultExec }) {
+export async function runJob(rawSpec, { approvals, workdir, target, provider, emit, capRuns = 3, shellCapUsd = 2, closeTimeoutMs, execCmd = defaultExec, layerRoot = false }) {
+  // 0. the ledger's counters, declared FIRST so that every job-end — including
+  // the pre-token reds below — can state a real figure. An omitted `spentUsd` is
+  // not a zero: a consumer reads `undefined` and either crashes or launders it
+  // into $0 (F12's class, at the terminal record instead of mid-attempt).
+  let spentUsd = 0;
+  let unpriced = false;
+  // The money on the terminal record, and whether the money is EXACT. `spentUsd`
+  // is the accumulated sum of PRICED rounds ONLY — never an estimate derived
+  // from tokens or averages (cap-not-estimate). When any round came back
+  // unpriced (F6) that sum is a FLOOR, not the total, and `spendComplete: false`
+  // says so machine-readably instead of dressing a floor up as exact. Emitted on
+  // EVERY job-end (true when everything was priced) so no consumer ever has to
+  // branch on field presence.
+  const spend = () => ({ spentUsd, spendComplete: !unpriced });
   // 1. human-signs-always — before ANY provider call (N1 decision #1)
   if (!checkApproval(rawSpec, approvals)) {
-    emit('job-end', { outcome: 'unapproved-spec', detail: 'no approval record matches this exact spec version' });
+    emit('job-end', { outcome: 'unapproved-spec', detail: 'no approval record matches this exact spec version', ...spend() });
     return 'unapproved-spec';
   }
   const jv = validateJob(rawSpec, { shellCapUsd });
   if (!jv.ok) {
     for (const r of jv.reds) emit('job-red', r);
-    emit('job-end', { outcome: 'job-red' });
+    emit('job-end', { outcome: 'job-red', ...spend() });
     return 'job-red';
   }
   const job = /** @type {any} */ (jv.job);
@@ -218,7 +244,7 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
   if ((typeof target !== 'string' || !target)
       && job.steps.some((/** @type {any} */ s) => s.close.type === 'predicate' && (s.mode ?? 'text') === 'text')) {
     emit('job-red', { code: 'missing-required', path: 'opts.target', detail: 'text-mode steps write ONE artifact — pass opts.target (reds-before-tokens)' });
-    emit('job-end', { outcome: 'job-red' });
+    emit('job-end', { outcome: 'job-red', ...spend() });
     return 'job-red';
   }
   emit('job-start', { job: job.job, specHash: jobSpecHash(job), budgetUsd: job.budgetUsd, steps: job.steps.map((/** @type {any} */ s) => s.id) });
@@ -228,14 +254,12 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
   emit('primitive-smoke', smoke);
   if (!smoke.ok) {
     emit('escalation', { category: 'smoke-red', decisionReady: true, decision: `The ${smoke.primitive} primitive failed its known-answer check — no run verdict is trustworthy on a degraded primitive.`, options: ['fix the primitive/store', 'abandon the run'], detail: smoke.detail });
-    emit('job-end', { outcome: 'smoke-red' });
+    emit('job-end', { outcome: 'smoke-red', ...spend() });
     return 'smoke-red';
   }
 
   // 3. the ONE ledger. Unpriced is never free (F6): a null cost can't be
   // summed, so it flags a stop instead of accumulating $0.
-  let spentUsd = 0;
-  let unpriced = false;
   /** @param {number|null|undefined} c */
   const account = (c) => { if (typeof c === 'number' && Number.isFinite(c)) spentUsd += c; else unpriced = true; };
   /** @type {(type: string, data?: object) => object} */
@@ -256,7 +280,7 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
   };
   const pricingRed = () => {
     emit('escalation', { category: 'pricing-red', decisionReady: true, decision: 'A provider result carried no priced cost — the hard cap cannot govern spend it cannot see (unpriced is never free, F6).', options: ['bind a priced provider/model', 'abandon the run'], spentUsd });
-    emit('job-end', { outcome: 'pricing-red' });
+    emit('job-end', { outcome: 'pricing-red', ...spend() });
     return 'pricing-red';
   };
 
@@ -294,7 +318,11 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
   };
   const providerRed = () => {
     emit('escalation', { category: 'provider-red', decisionReady: true, decision: 'The provider path threw before a result existed — spend for the failed call is unknown (F6), and no drafting verdict exists.', options: ['fix the provider binding', 'retry the run', 'abandon the run'], detail: transportRed, spentUsd });
-    emit('job-end', { outcome: 'provider-red' });
+    // A transport THROW never returned a usage figure, so the floor is NOT the total
+    // (F6): spendComplete must be false — spend()'s `!unpriced` only knows about priced
+    // rounds that came back unpriced, not a call that never returned at all. Leaving it
+    // true would have the job-end contradict the escalation's own "spend … is unknown".
+    emit('job-end', { outcome: 'provider-red', ...spend(), spendComplete: false });
     return 'provider-red';
   };
   const capNow = () => Math.min(shellCapUsd, job.budgetUsd - spentUsd);
@@ -345,7 +373,7 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
       // not on trial. Mirrors the worker path (interpret.js) and the human's options: the round
       // was metered, so this is a fault with a known cost, not a spend-unknown transport throw.
       emit('escalation', { category: 'provider-red', decisionReady: true, decision: 'The drafting round was truncated at the output cap (BA-6) — the API cut the config off mid-generation, so no valid config exists. Not the drafter\'s competence (never a config-red), and not silently retried.', options: ['raise the drafting cap and rerun', 'retry the run', 'abandon the run'], detail: draftTruncated, spentUsd });
-      emit('job-end', { outcome: 'provider-red' });
+      emit('job-end', { outcome: 'provider-red', ...spend() });
       return 'provider-red';
     }
     if (unpriced) return pricingRed();
@@ -355,11 +383,11 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
         // the honest stop is a cap story, never a config-red blaming the drafter
         emit('cap-halt', { category: 'cap-halt', meaning: 'not under cap — not "can\'t"', spentUsd, budgetUsd: job.budgetUsd });
         emit('escalation', { category: 'cap-halt', decisionReady: true, decision: `Drafting spend ($${spentUsd.toFixed(4)}) consumed the job budget ($${job.budgetUsd}) before a valid config existed.`, options: ['raise the job budget and rerun', 'abandon the run'], spentUsd });
-        emit('job-end', { outcome: 'cap-halt' });
+        emit('job-end', { outcome: 'cap-halt', ...spend() });
         return 'cap-halt';
       }
       for (const r of cv.reds) emit('config-red', r);
-      emit('job-end', { outcome: 'config-red' });
+      emit('job-end', { outcome: 'config-red', ...spend() });
       return 'config-red';
     }
     config = cv.config;
@@ -402,14 +430,14 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
       // baseline — loud, and never allowed to un-open a real PR
       if (pr.strandedOn) emit('workdir-red', { step: step.id, branch: pr.strandedOn, detail: 'the run could not return the checkout to its starting branch — the next run would build on this one' });
       emit('escalation', { category: 'hitl-close', decisionReady: true, step: step.id, prompt: step.close.prompt, spentUsd, decision: step.close.prompt, options: ['approve', 'reject'], pr: { url: pr.url, branch, error: pr.red?.detail ?? null } });
-      emit('job-end', { outcome: 'escalated', step: step.id, spentUsd });
+      emit('job-end', { outcome: 'escalated', step: step.id, ...spend() });
       return 'escalated'; // by design: the human acts outside the run, forever
     }
     if (step.close.type !== 'predicate') {
       // honest refusal: gold/rubric EXECUTION lands with the verdict classes
       // (N4); a fake verdict here would poison every contrast downstream
       emit('escalation', { category: 'close-unsupported', decisionReady: true, step: step.id, decision: `Step "${step.id}" has a ${step.close.type} close — N2 executes predicate and hitl closes only.`, options: ['restate the close as a predicate', 'wait for the verdict-classes rung'] });
-      emit('job-end', { outcome: 'close-unsupported', step: step.id });
+      emit('job-end', { outcome: 'close-unsupported', step: step.id, ...spend() });
       return 'close-unsupported';
     }
     emit('step-start', { step: step.id, remainingUsd: job.budgetUsd - spentUsd, spentUsd, mode: step.mode ?? 'text' });
@@ -436,7 +464,7 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
     const fault = Object.hasOwn(CLOSE_FAULTS, pre.verdict) ? CLOSE_FAULTS[pre.verdict] : undefined;
     if (fault) {
       emit('escalation', { category: fault.category, decisionReady: true, step: step.id, decision: fault.decision, options: fault.options, detail: pre.detail, spentUsd });
-      emit('job-end', { outcome: 'step-red', step: step.id, cause: fault.category, spentUsd });
+      emit('job-end', { outcome: 'step-red', step: step.id, cause: fault.category, ...spend() });
       return `step-red:${step.id}`;
     }
     // The precheck's gap goes to the worker as what it IS: the close's output on
@@ -458,21 +486,22 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
         // arbiter territory (PRD v1.11; F28 for gapKeep).
         mode: step.mode ?? 'text', tools: step.tools,
         closeExpect: step.close.expect, closeJudged: step.close.judged, closeGapKeep: step.close.gapKeep,
+        layerRoot,
       });
     } catch (e) {
       // ralph belts throws INSIDE the loop; this belts the interpreter's own
       // setup (gate.init, store ctor) — the spine must terminate, never dangle
       emit('escalation', { category: 'interpreter-red', decisionReady: true, step: step.id, decision: 'The interpreter broke outside the loop — no harness verdict is trustworthy until it is fixed.', options: ['fix the interpreter/run directory', 'abandon the run'], detail: String(/** @type {Error} */ (e)?.message ?? e), spentUsd });
-      emit('job-end', { outcome: 'step-red', step: step.id, cause: 'interpreter-red', spentUsd });
+      emit('job-end', { outcome: 'step-red', step: step.id, cause: 'interpreter-red', ...spend() });
       return `step-red:${step.id}`;
     }
     emit('step-end', { step: step.id, outcome, spentUsd });
     if (unpriced) return pricingRed();
     if (outcome !== 'green') {
-      emit('job-end', { outcome: 'step-red', step: step.id, cause: outcome, spentUsd });
+      emit('job-end', { outcome: 'step-red', step: step.id, cause: outcome, ...spend() });
       return `step-red:${step.id}`;
     }
   }
-  emit('job-end', { outcome: 'green', spentUsd });
+  emit('job-end', { outcome: 'green', ...spend() });
   return 'green';
 }

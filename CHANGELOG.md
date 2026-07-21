@@ -5,6 +5,89 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+## [0.4.0] — 2026-07-21
+
+### Added
+
+- **Layer R — the root, the within-run ratchet (`src/root.js`; design record
+  `docs/plans/2026-07-19-layer-r-design.md`, interview-locked 2026-07-19).** The shell
+  mechanically detects fixation — consecutive attempts rewriting the same file(s)
+  without moving the close's kept-failure set — and injects an escalating note into the
+  next attempt's prompt: a capped summary first, then the worker's own prior failed
+  edit content verbatim (the BA-14 rejected-edit-buffer shape, rewritten for our
+  attempt loop). Fixation-gated (inert when not stuck — RSI §3.3: the lift is a
+  fixation phenomenon, an honest null on a strong unstuck model), shell-authored (the
+  worker authors nothing, gains no verb), within-run only (state dies with the run;
+  inheritance stays verdict-gated). Red-set comparison strips the spec-reporter's
+  per-run duration stamps (POC-measured: kept lines are never byte-stable) —
+  comparison-only, the delivered gap is untouched. Spine event `root-injected` carries
+  stage/mode/streak/paths, never content (append-only law). Ships **OFF by default**
+  (`layerRoot: false` on `runJob`/`interpret`; pass `true` for the ON/experimental arm) —
+  decided 2026-07-21: fixation is extinct on every current job (F41), so ON has never won
+  its own A/B; the default flip to `true` defers to the first Layer 2 job that produces
+  natural fixation (see `docs/01-product/LAYERS.md` Layer R note).
+
+### Fixed
+
+- **F44 — fresh whole-branch review: three correctness bugs + cleanups, all validated and
+  mutation-proven.** (1) A casualty job-end laundered unknown spend as complete: `1b0720c`
+  put `spentUsd` on every path, so a provider-red TRANSPORT THROW reported
+  `spendComplete: true` (F6 violation — the failed call's cost is unknown) and the battery
+  scripts' `spentUsd == null` casualty-STOP never fired. Fixed both sides: the transport
+  provider-red now reports `spendComplete: false` (the metered draft-truncation keeps
+  `true`), and the frozen battery/probe scripts key their STOP on
+  `spendComplete === false || spentUsd == null`. (2) Layer R's outcome probe mislabeled a
+  missed-anchor edit as "landed" when its `newText` appeared elsewhere (substring
+  false-positive) — now discriminated by the tool result, exact-equality for writes, one
+  read not two. (3) Layer R false-fired on a progressing text-mode worker with no gapKeep
+  (write-overlap is constant-true when the single target is rewritten every attempt) — a
+  `writesInformative` flag now requires a known-unmoved red-set when writes carry no
+  information. Cleanups: double redaction, unbounded `attempts` retention, a dead ternary.
+  (2) and (3) are latent behind the OFF-by-default `layerRoot`.
+
+- **Layer R settled its note on the gate's allow, which is written BEFORE the tool runs
+  (F43).** An `allow` record states INTENT, never that bytes reached a file:
+  `shell_edit` returns an anchor miss as a refusal *result* and a byte-cap overflow as a
+  throw, both leaving the file untouched with the allow already on the audit. The
+  verbatim note could therefore present content to the worker as "your own previous
+  changes — they landed" while that text was provably absent from the file it named
+  (reproduced end-to-end: 3 allowed edits, 0 bytes changed). Fixed by splitting the two
+  axes rather than merging them — the DETECTOR keeps reading intent (an edit that never
+  applied is still repetition; a tree-diff detector measured blind to it on every
+  attempt), while the NOTE settles on the observed file through `Loop`'s
+  `onToolResult` seam. An unapplied repeat now names the missed anchor instead, which is
+  the mechanical gap genre (F38). `commitWrite` is replaced by `settleWrite(landed)`.
+- **Guarded the `maxTurns` LLM-round invariant (F43 follow-up).** bareguard's `maxTurns`
+  ticks on every `gate.record`; our cap means "LLM rounds" only because the sole record
+  path is the LLM one (tool calls take `gate.check`, which does not tick). That was
+  correct but unguarded — wiring tool results into `gate.record` would silently halve the
+  LLM budget (the F37 lower-silent-ceiling class). Added a guard test pinning "every
+  `gate.record` is `type:llm`" (mutation-proven: wiring tool records turns it red) and a
+  config comment marking the invariant load-bearing. No behavior change; no upstream ask —
+  bareguard already offers the correct counters.
+- **F41 — the disposition: armed-and-inert, field read deferred.** Before any ON/OFF
+  battery spent money, two cheap reads measured the disease's base rate: the archive
+  sweep (`poc/layer-r-base-rate.mjs`, $0 — every surviving spine is OFF-arm by
+  construction) read 0 fixated in 10 pairs on jobs #2/#4; two frozen probes on a
+  rebuilt job #1 patient (`scripts/run-probe-layer-r.mjs`, $10.12 total) read 0
+  fixated in 4 pairs — including against a three-plant tree (three subsystems, one fix
+  cannot green) that forced a full 8→4→green ladder across three judged attempts.
+  Every pair was healthy navigation. F21's fixation was a broken-loop symptom, cured
+  by the F20/F21/F30/BA-13 fixes. Because ON has therefore never won its own A/B,
+  Layer R ships **OFF by default** (decided 2026-07-21; `layerRoot: true` is the ON
+  arm) — measured cost-free when enabled and healthy (zero injections across all
+  probe runs); the repetition-drop ON/OFF read, and the default-flip decision, defer
+  to the first run whose spine records `root-injected`. No learning claim is minted.
+
+### Changed
+
+- **`jobs/litectx-maintainer.json` `budgetUsd` 1.5 → 4.5** (probe 2, re-signed): $1.50
+  funded exactly ONE judged attempt on the real patient — a run could red at attempt 1
+  and die at the gate mid-attempt-2, structurally unable to produce across-attempt
+  evidence. The advertised budget must fund the attempts the cap promises.
+
 ## [0.3.0] — 2026-07-19
 
 ### Fixed

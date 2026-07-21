@@ -1908,3 +1908,268 @@ build order item 3), and **genre-aware extraction** keyed on close class (green 
 tool mode, nothing parsed; hitl/document → the whole reply is the deliverable) at
 the non-code rung, to be designed against real document-job replies — this finding's
 own `collected`-pattern lesson applied forward.
+
+## F41 — fixation is currently extinct: the disease Layer R treats is unobservable on every existing job at current code
+
+**Setup.** Layer R (the within-run ratchet, design record 2026-07-19) was built to stop
+F21's disease: a never-green run rewriting the same file against an unmoving red set.
+Before freezing its ON/OFF acceptance battery, two pre-registered $0/cheap reads asked
+whether the disease still exists to be treated.
+
+**Read 1 — the archive ($0, `poc/layer-r-base-rate.mjs`).** All 109 surviving spines
+(jobs #2 + #4; every row pre-Layer-R, therefore OFF-arm by construction) swept with the
+detector's own definition over the real gate audits: 9 multi-attempt rows → 10 judged
+red→red pairs → **fixated 0** (inaction 4, moved 3, different-file 3). The instrument is
+connected — it populates every other class — and the pre-gapKeep rows bias TOWARD
+fixation (empty kept-sets compare equal), so the zero survives its own bias.
+
+**Read 2 — the job #1 probe ($3.75, frozen pre-numbers in
+`scripts/run-probe-layer-r.mjs`, N=3, root OFF, fresh patient: local litectx @0.30.0,
+F18-era plant `keywords() >= 3 → > 3`, 407/3, judged 410).** Zero pairs produced,
+INCOMPLETE by the frozen rule — but the two zero-pair MODES are themselves the finding:
+one run's $1.50 budget died mid-attempt-2 (the spec funds exactly ONE judged attempt —
+job #1 as signed cannot produce pair data), and **two of three runs greened on attempt
+1** ($1.06, $1.26): the job that hosted nine defect-finding runs and F21 itself is now
+mostly easy-tier. The F33/F34 saturation pattern has reached job #1.
+
+**The finding.** F21's fixation was a symptom of the broken-loop era — no attempt
+bound (F20), no gap delivery (F21), no edit verb, 4096-token truncation (F30) — and
+the cures for those defects appear to have cured the repetition disease itself, on
+every job shape we own. A ratchet built for a disease is not invalidated by the
+disease's remission: Layer R is mechanically validated (14 unit + 4 integration tests,
+mutation-checked), measured inert when the worker is not stuck (its design condition,
+now observed in the field: 0 injections across every probe run), and its
+`root-injected` spine event is a standing tripwire that will NAME the first real run
+that fixates. Field acceptance (the repetition-drop ON/OFF read) DEFERS to the first
+job that exhibits the disease — expected next at Layer 2's micro-wheels, where
+narrow-scope steps put repetition pressure back on the worker. Deferral is recorded,
+never papered: no learning claim is minted for Layer R, and LAYERS.md keeps its rung
+open.
+
+**Lesson.** Measure the base rate of the disease before running the cure's trial — two
+cheap reads ($0 + $3.75) prevented a ~$30 battery that would have compared two arms of
+zero against each other and could have been narrated as "no significant difference"
+instead of "nothing to measure."
+
+**Follow-up 2026-07-20 (probe 2, hamr's order "one more probe and harder close"):
+CONCLUSIVE.** Both starvation causes removed — planted v2 stacked THREE plants in three
+subsystems (tokenize `>=` flip · store `related()` hops `min→max` · assemble budget
+`<=→<`; 410 judged / 8 fail, one fix cannot green) and `budgetUsd` 1.5→4.5 (re-signed)
+funded three judged attempts. Result ($6.37, frozen rules): **4 eligible red→red pairs,
+0 fixated, 4 different-file** — the worker cleared roughly one subsystem per attempt,
+moving files every time (P3: 8→4→green across 3 judged attempts). The frozen decision
+fired: job #1 no longer exhibits fixation under current code. F41's remission claim is
+now probe-confirmed, not INCOMPLETE-supported; Layer R ships armed-and-inert and its
+field read defers to the first run whose spine says `root-injected`.
+
+## F42 — the clipipe money blackout was fixed upstream and our copy of F2 went stale: bareloop can run on the subscription today
+
+**Trigger (2026-07-20).** hamr asked why bareloop is API-only — "because of budget?" — and
+whether clipipe has cost/budget to wire. The standing answer was adaptlearn's F2
+(`docs/00-context/FINDINGS.md`): `provider-clipipe.js` reports `usage: {inputTokens: 0,
+outputTokens: 0}` and `toolCalls: []` on every call, so the CLI path is money-blind, every
+round reds as unpriced (F6), and no run can satisfy the hard-cap law. That finding was
+inherited as closed context and never re-checked. An upstream ask against bare-agent was
+about to be filed on it.
+
+**Read the source first (the withdrawn-ask rule, applied and vindicated).** bare-agent
+**0.29.0 — the version bareloop already has installed** — ships an opt-in `parse` option on
+the clipipe provider. `parse: 'claude-json'` maps the `claude -p --output-format json`
+envelope onto `GenerateResult`: `text←result`, `usage←usage.*` (including
+`cacheReadTokens`/`cacheCreationTokens`), `model←`first `modelUsage` key, and
+**`costUsd←total_cost_usd`**. Its own comment: *"The CLI's own price is authoritative
+(subscription runs report an equivalent cost even at $0 marginal) — feeds bareguard's USD
+axis with no local rate table."* F2's ask therefore already exists, shipped. Filing it
+would have been the program's SECOND withdrawn ask for a capability that was already
+there.
+
+**Live probe (evidence, not the comment).** `claude -p --output-format json 'reply with
+exactly: ok'` returned `total_cost_usd: 0.36858949999999996` plus a full usage block
+(`input_tokens` 2, `output_tokens` 4, `cache_creation_input_tokens` 36093,
+`cache_read_input_tokens` 15099) and a per-model `modelUsage.costUSD`. Both the money and
+the tokens are real and present on a subscription run.
+
+**Why it stayed invisible:** the parse option is OPT-IN. Unset, the provider still returns
+stdout verbatim with zero usage — F2's exact behavior. **The default is the trap**, so the
+capability can ship for versions without any consumer noticing.
+
+**Consequences, stated honestly and NOT acted on:**
+1. The API-only posture is no longer forced by the instrument. Binding clipipe with
+   `parse: 'claude-json'` gives a working USD axis. bareloop needs NO library change for
+   this — the provider is caller-supplied and shell-owned (`runJob({provider})`).
+2. **The dollar figure is NOTIONAL, not billed.** On a subscription `total_cost_usd` is
+   API-equivalent value consumed; nothing leaves the account. A budget cap on that path
+   governs equivalent-value, not money. That is a BUDGET SEMANTIC — arbiter territory,
+   hamr's ruling, deliberately unmade here.
+3. **It is expensive in those notional terms.** A trivial one-word probe reported $0.369
+   because the CLI created 36k cache tokens for its own context. A run costing cents on the
+   API can read as dollars here and trip a cap early. Any clipipe battery must re-baseline
+   its budget before it means anything.
+4. The rounds-cap fallback drafted for "a provider that reports neither price nor tokens"
+   was DROPPED unbuilt — clipipe reports both, so that provider does not exist in our
+   stack, and building it would be speculative code for a hypothetical.
+
+**Lesson (a re-mint, not a new one).** A closed finding copied from a predecessor repo is a
+snapshot of a dependency at a moment, not a standing fact — and dependencies get fixed. The
+rule "read the library source before filing an upstream ask" saved the ask; the rule that
+should have fired earlier is that an inherited constraint blocking a whole capability
+(here: running on the subscription at all) deserves a re-check against the CURRENT installed
+version before it hardens into architecture.
+
+## F43 — intent and outcome are two instruments: Layer R settled its note on the gate's allow, which is written before the tool runs
+
+**Trigger (2026-07-20).** Three consecutive patches to Layer R's tee each revealed the
+next defect (secret capture, gate-rejected content surfaced as landed, anchor-miss
+content surfaced as landed). hamr stopped the session on the pattern — "you are patching
+up shit on top of shit" — and demanded the feature be read end-to-end and VALIDATED
+rather than diagnosed by assertion. That instruction is what produced this finding; the
+three prior patches were each aimed at a symptom nobody had measured.
+
+**The mechanism, read from source.** `wireGate`'s policy runs `gate.check` BEFORE
+`tool.execute` (bare-agent `src/loop.js:913` → `:958`). An `allow` record is therefore a
+statement of INTENT — the gate permitted the action — and never a statement that bytes
+reached a file. Three post-allow paths leave the file untouched with the allow already
+on the audit: `shell_edit` returns a 0-match or 2+-match anchor failure as a refusal
+RESULT (`tools/shell.js:190,194`), a byte-cap overflow throws (`:204`), and a missing
+file throws at the read (`:186`). Layer R committed its tee on the gate verdict, so any
+of the three ended the attempt holding content it would later present to the worker as
+"your own previous changes — they landed".
+
+**Validated end-to-end, not argued** (`tests/interpret.test.js`, real Loop / real
+bareguard Gate / real `shell_edit` / real `node --test` close, scripted provider only).
+A worker repeats one anchor-miss edit across three attempts:
+
+| observable | reading |
+| --- | --- |
+| file on disk, every attempt | **unchanged** — zero bytes ever written |
+| gate audit, `type:'edit'`, `decision:'allow'` | **3** |
+| `root-injected` events | summary, then verbatim |
+| note delivered to the worker | *"These are your OWN previous changes — they landed"* + `return NEVER_LANDED;` |
+
+The claim was false in the strongest available sense: the quoted text was provably absent
+from the file the note named.
+
+**The proposed fix was wrong, and testing it is what proved it.** The first remedy
+drafted was to delete the interception entirely and diff the tree at attempt boundaries —
+"stop reconstructing reality, observe it". Run against the real detector, an attempt that
+changes nothing contributes an EMPTY write-set, and the detector returns `null` on every
+attempt: the rework would have gone completely blind to a worker re-firing an identical
+edit forever, which is the purest fixation the ratchet exists to catch. A cleaner-sounding
+architecture measured strictly worse than the thing it replaced.
+
+**The actual defect.** Layer R answered two different questions from one write-set.
+*"Is the worker repeating itself?"* is a question about what it REACHED FOR — the audit's
+allow-set is the correct instrument, and an edit that never applied is still repetition.
+*"Is this content in the file?"* is a question about OUTCOME — only the file can answer,
+and a note making that claim must be true. Neither axis substitutes for the other, which
+is why three patches to the content path kept not being enough: they were patching the
+wrong axis.
+
+**Shipped.** The detector is untouched (intent, no regression). The note settles on
+outcome via `Loop`'s `onToolResult` seam (post-execution, carries result AND error),
+which the interpreter had never wired. `landed` is `hash-changed OR content-now-present` —
+the second clause is not redundant: a byte-identical rewrite changes no hash yet genuinely
+leaves that content in the file, and calling it a phantom would mirror the original bug.
+An unapplied repeat now yields a strictly BETTER note than the old false one — it names
+the missed anchor, which is F38's mechanical genre (the genre that converts) rather than
+"form a different hypothesis", advice that would steer a worker away from a correct fix
+aimed at a wrong anchor. Four mutations (force-landed, force-unlanded, drop the
+byte-identical clause, ignore the settle argument) all killed; 358/358 green.
+
+**The `maxTurns` follow-up — RESOLVED, not parked (2026-07-21).** The fix wires `Loop`'s
+own `onToolResult` (my callback, `onToolOutcome`), NOT `wireGate`'s — mine calls
+`root.settleWrite` and never `gate.record`, so no tool record is created. That was worth
+verifying rather than asserting: a real tool-mode run's gate audit shows every
+counter-ticking `record` row is `type:llm` and the `read`/`edit` actions appear only as
+`gate` (check) rows, which do not tick (bareguard `limits.js:88`). So `maxTurns` already
+counts LLM rounds only — the desired semantic is the live behavior, not a change to make.
+The residual risk was purely latent: a FUTURE wiring of `wireGate`'s `onToolResult` into
+`gate.record` would start ticking `maxTurns` on tools and silently halve the LLM budget
+(the F37 lower-silent-ceiling class). bareguard is not the place to fix — it offers
+`maxTurns` (all records) and `maxToolRounds` (tool records only), neither an llm-only
+counter, and we do not need one because we never record tools. So the fix is a bareloop
+GUARD: a test pinning "every `gate.record` is `type:llm`" (mutation-proven — wiring tool
+records turns it red) plus a load-bearing comment at the config site. No behavior change,
+no upstream ask. Correcting the earlier writeup: this was never arbiter territory — it is
+a guarded invariant, and calling it "parked for hamr's go" overstated a two-minute check.
+
+**Layer R ships OFF by default (decided 2026-07-21).** Fixation is extinct on every
+current job (F41), so ON has never won its own A/B; `layerRoot` defaults `false` (pass
+`true` for the ON arm). The default-flip decision is assigned to Layer 2: the first Layer 2
+job that produces natural fixation runs the pre-registered ON-vs-OFF acceptance read, and
+that result flips the default to `true` (ON helps) or keeps it `false` (no lift). A cheaper
+manufactured-fixation probe could answer it sooner, caveated by F41 (strong models resist
+fixating, so the probe may struggle to produce its own precondition). Recorded in
+`docs/01-product/LAYERS.md` (Layer R note) as a Layer 2 TODO.
+
+**Lesson.** Two questions answered from one number is a blind-instrument defect wearing
+different clothes — the class that has now shipped five times in this program. And the
+rule that a remedy must be tested as hard as the defect: the tree-diff proposal read as
+obviously correct, was argued confidently, and died the moment it was executed. A fix
+proposed from reading is a hypothesis, not a fix.
+
+## F44 — the F43 review pass: three real correctness bugs (all in F42/F43 commits), five cleanups
+
+**Trigger (2026-07-21).** A fresh high-effort workflow code-review of the whole
+`main..layer-r-root` branch (the F43 fix + the F42 money-visibility work) surfaced 3
+correctness bugs and 5 cleanups. Every finding was VALIDATED by an executable
+reproduction before any fix, and every fix mutation-proven (revert the fix → the new
+test fails). All three correctness bugs were introduced by THIS branch's own commits —
+fresh full gates finding real issues after prior review rounds, again.
+
+**Finding 1 (serious, shipped code + frozen harness) — a casualty job-end laundered
+unknown spend as complete, and defeated the battery casualty-STOP.** `1b0720c` ("every
+job-end states the money") added `...spend()` to all 15 job-end paths, including the two
+CASUALTY paths (provider-red, pricing-red). Two consequences, both empirically captured:
+- The frozen battery scripts halt the battery on `job-end.spentUsd == null` ("spend
+  unknown — the cap cannot govern it"). With a number now always present, that guard
+  never fired: a provider-red/pricing-red casualty no longer STOPPED the battery — it
+  summed an understated floor against the cap and counted the casualty as a row,
+  breaking "provider-red rows are casualties, never evidence" and the F6 spend line.
+- A provider-red TRANSPORT THROW reported `spendComplete: true` — an F6 honesty
+  violation: the failed call never returned a usage figure, so the total is a floor, not
+  exact; the job-end contradicted its own escalation's "spend … is unknown".
+  Fix, decomposed: (a) LIBRARY — the transport-throw provider-red now reports
+  `spendComplete: false` (the draft-TRUNCATED provider-red keeps `true`: that round WAS
+  metered, spend is known). (b) FROZEN SCRIPTS — the casualty-STOP now keys on
+  `spendComplete === false || spentUsd == null` (new floor signal, or the pre-F43 bare
+  null), which is strictly more correct than the old null-only guard (it no longer
+  hard-stops on a draft-truncation whose spend is known, while still halting on genuinely
+  ungovernable spend). Validated end-to-end: provider-red `{0, false}` and pricing-red
+  `{0.001, false}` both re-fire the STOP; a complete-spend row never does.
+
+**Finding 2 (Layer R, experimental arm) — the outcome probe mislabeled a missed-anchor
+edit as "landed".** `onToolOutcome`'s hash-unchanged fallback used
+`readFileSync().includes(newText)`, which false-positives when the edit's `newText`
+already appears elsewhere in the file — the note then tells the worker "you wrote this,
+it didn't fix it, try something else", the exact mis-steer the intent/outcome split
+exists to prevent. Fix: discriminate by the TOOL RESULT (`shell_edit` success returns
+`edited …`, an anchor miss returns `shell_edit: … no change made`), and use exact
+equality (never substring) for a byte-identical whole-file write. One read now serves
+both the after-hash and the check (was two — Finding 5).
+
+**Finding 3 (Layer R, experimental arm) — the ratchet false-fired on a progressing
+worker in text mode.** With no `gapKeep` the red-set is always UNKNOWN, and in TEXT mode
+the single target is rewritten every attempt by construction, so write-overlap is
+constant-true → `fixated` unconditionally true from attempt 3, steering a worker that was
+making progress off course (violating "inert when not stuck"). Fix: `writesInformative`
+(true in tool mode, where the worker CHOOSES files; false in text mode). When writes
+carry no information, only a KNOWN-unmoved red-set can establish fixation — the degraded
+writes-only path fires only when writes are informative. The intended tool-mode
+crash-gap writes-only firing (a deliberately-tested case) is preserved.
+
+**Cleanups.** Double redaction in the verbatim block (content is scrubbed once at
+capture); the `attempts` array retained every attempt's teed content though only the last
+two are read (now bounded to 2); a dead `gap ?` ternary (gap is guaranteed truthy).
+Finding 4 (the audit re-parse per attempt) was VALIDATED but its incremental-cursor fix
+was DEFERRED, not shipped: it is cleanup-tier, bites only the OFF-by-default arm, and the
+incremental reader's multi-path accumulation is not yet test-covered — "simple > clever"
+won over shipping a clever reader thin tests can't guard. Recorded in the source with its
+reason. Finding 5 folded into the Finding 2 fix.
+
+**Lesson.** The review's own top finding was a tension between two of this session's
+commits (F42's money-visibility vs the frozen scripts' casualty signal) that no single-
+commit view would catch — a whole-branch fresh gate is a different instrument from
+per-commit review. And "state the money on every path" is right only if "state whether
+it is COMPLETE" travels with it; a bare floor that reads as exact is the F6 laundering
+bug wearing a more-honest-looking coat.

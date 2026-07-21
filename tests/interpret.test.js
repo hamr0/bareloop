@@ -885,3 +885,299 @@ test('worker-round records the four priced tiers separately — cache reads are 
   assert.equal(round.tokens, 120, 'the legacy sum stays input+output — cache tiers never inflate it');
   assert.equal(round.kind, 'turn', 'a worker turn is tagged as such');
 });
+
+// ---- Layer R: the root (within-run ratchet, design record 2026-07-19) ----
+// Shell-assembled fixation detection wired through the middle: consecutive
+// attempts rewriting the same file without moving the reds get an escalating
+// summary→verbatim note in the next prompt. Everything real except the
+// scripted provider; the close is a real `node --test` (TAP: `not ok` lines
+// are byte-stable, unlike the spec reporter's duration-stamped ✖ lines).
+
+test('Layer R tools mode: fixation → summary at attempt 3, verbatim at attempt 4; events carry no content', async () => {
+  const wd = twd('root-fixation');
+  const w = () => ({ toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'src', 'sum.mjs'), content: BAD_SUM })] });
+  const { outcome, events, provider } = await run('root-fixation', config(), {
+    mode: 'tools', capRuns: 4, closeGapKeep: '^not ok ', layerRoot: true,
+    script: [w(), { text: 'done' }, w(), { text: 'done' }, w(), { text: 'done' }, w(), { text: 'done' }],
+  });
+  assert.equal(outcome, 'escalated', 'still red at cap — the ratchet informs, never judges');
+  // attempts are fresh conversations: calls 0-1 attempt 1, 2-3 attempt 2, …
+  assert.ok(!provider.calls[2].includes('RATCHET'), 'attempt 2: one data point, no ratchet');
+  assert.match(provider.calls[4], /RATCHET: you are repeating yourself/, 'attempt 3 gets the summary');
+  assert.match(provider.calls[4], /sum\.mjs/, 'the summary names the repeated file');
+  assert.ok(!provider.calls[4].includes('return a - b'), 'summary stage carries no verbatim content');
+  assert.match(provider.calls[6], /STRUCTURALLY DIFFERENT/, 'attempt 4 escalates to verbatim');
+  assert.ok(provider.calls[6].includes('return a - b'), 'verbatim surfaces the worker\'s own failed content');
+  const inj = events.filter((e) => e.type === 'root-injected');
+  assert.deepEqual(inj.map((e) => e.stage), ['summary', 'verbatim'], 'both stages on the spine, in order');
+  assert.equal(inj[0].mode, 'reds+writes', 'the detector mode is named');
+  assert.ok(!JSON.stringify(inj).includes('return a - b'), 'spine events never carry content');
+});
+
+test('Layer R OFF arm: layerRoot false → no injection, no events (the acceptance battery control)', async () => {
+  const wd = twd('root-off');
+  const w = () => ({ toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'src', 'sum.mjs'), content: BAD_SUM })] });
+  const { events, provider } = await run('root-off', config(), {
+    mode: 'tools', capRuns: 4, closeGapKeep: '^not ok ', layerRoot: false,
+    script: [w(), { text: 'done' }, w(), { text: 'done' }, w(), { text: 'done' }, w(), { text: 'done' }],
+  });
+  assert.ok(provider.calls.every((c) => !c.includes('RATCHET')), 'no ratchet note in any prompt');
+  assert.ok(!events.some((e) => e.type === 'root-injected'), 'no root events on the spine');
+});
+
+test('Layer R text mode: the one-target rewrite loop is the same fixation, teed at the write site', async () => {
+  const { events, provider } = await run('root-text', config(), {
+    capRuns: 3, closeGapKeep: '^not ok ', layerRoot: true,
+    script: [{ text: BAD_SUM }, { text: BAD_SUM }, { text: BAD_SUM }],
+  });
+  assert.match(provider.calls[2], /RATCHET: you are repeating yourself/, 'attempt 3 gets the summary');
+  assert.equal(events.find((e) => e.type === 'root-injected').stage, 'summary');
+});
+
+test('Layer R stays inert on progress: a red that moves to green never sees the ratchet', async () => {
+  const { outcome, events, provider } = await run('root-inert', config(), {
+    capRuns: 3, closeGapKeep: '^not ok ', layerRoot: true,
+    script: [{ text: BAD_SUM }, { text: GOOD_SUM }],
+  });
+  assert.equal(outcome, 'green');
+  assert.ok(provider.calls.every((c) => !c.includes('RATCHET')), 'cost-neutral when not stuck (RSI §3.3)');
+  assert.ok(!events.some((e) => e.type === 'root-injected'));
+});
+
+// Finding 4 (Layer R × BA-13): the tee decides write-class by toolAction's action
+// TYPE, not by a hardcoded tool-name list (a third enumeration of write verbs that
+// a future granted verb would silently bypass). Driven through shell_edit — an
+// idempotent anchored edit (newText === oldText) lands every attempt AND keeps its
+// anchor matchable, so the same file is re-written with the same failing content →
+// fixation. The verbatim note surfaces the edit's content only if the tee KEY
+// (act.path) matches the gate-audit path the overlap is read from — i.e. only if
+// the tee provably flows through the same toolAction resolution as the audit.
+test('Finding 4: a shell_edit fixation is teed via toolAction (action type, not tool name) — newText surfaces verbatim', async () => {
+  const { workdir, target, close } = makeWork('root-edit-fixation');
+  writeFileSync(target, BAD_SUM); // the file exists; each attempt re-applies the SAME anchored edit
+  const e = () => ({ toolCalls: [tcall('t1', 'shell_edit', { path: target, oldText: 'return a - b;', newText: 'return a - b;' })] });
+  const provider = stubProvider([e(), { text: 'done' }, e(), { text: 'done' }, e(), { text: 'done' }, e(), { text: 'done' }]);
+  const file = join(workdir, 'run.jsonl');
+  const outcome = await interpret(config(), {
+    task: TASK, target, close, workdir, capRuns: 4,
+    emit: makeSpine(file), provider, mode: 'tools', tools: ['read', 'edit'], closeGapKeep: '^not ok ', layerRoot: true,
+  });
+  const events = readSpine(file);
+  assert.equal(outcome, 'escalated', 'still red at cap — the ratchet informs, never judges');
+  assert.match(provider.calls[4], /RATCHET: you are repeating yourself/, 'attempt 3 gets the summary');
+  assert.match(provider.calls[6], /STRUCTURALLY DIFFERENT/, 'attempt 4 escalates to verbatim');
+  assert.ok(provider.calls[6].includes('return a - b'),
+    'the edit content (newText) is teed and surfaced — the tee key matched the audit path, so it flowed through toolAction');
+  const inj = events.filter((ev) => ev.type === 'root-injected');
+  assert.deepEqual(inj.map((x) => x.stage), ['summary', 'verbatim'], 'both stages on the spine, in order');
+});
+
+// Finding 6 (2026-07-20): the tool-mode tee ran inside the actionTranslator,
+// which wireGate calls BEFORE gate.check settles — so a write the gate went on
+// to REJECT was captured all the same, and (last-write-wins per path) could
+// end the attempt sitting on a path the audit legitimately lists as allowed.
+// The capture is now two-phase: stage in the translator, commit only when the
+// policy returns true, discard on deny AND on halt. These two pin the wiring
+// end-to-end: the commit must not be lost when a deny shares the round, and the
+// discard must never swallow the HaltError that cap-halt routing depends on.
+
+test('Finding 6: a denied write in the same round never costs the ALLOWED write its teed content', async () => {
+  const wd = twd('root-deny-round');
+  const round = () => ({
+    toolCalls: [
+      // denied: outside the config writeScope — staged, then discarded
+      tcall('t1', 'shell_write', { path: join(wd, 'outside', 'evil.mjs'), content: 'REJECTED BY THE FENCE' }),
+      // allowed: lands, and is the fixation the ratchet reads
+      tcall('t2', 'shell_write', { path: join(wd, 'src', 'sum.mjs'), content: BAD_SUM }),
+    ],
+  });
+  const { events, provider } = await run('root-deny-round', config(), {
+    mode: 'tools', capRuns: 4, closeGapKeep: '^not ok ', layerRoot: true,
+    script: [round(), { text: 'done' }, round(), { text: 'done' }, round(), { text: 'done' }, round(), { text: 'done' }],
+  });
+  assert.match(provider.calls[6], /STRUCTURALLY DIFFERENT/, 'attempt 4 escalates to verbatim');
+  assert.ok(provider.calls[6].includes('return a - b'), 'the ALLOWED write\'s content survived the denied sibling');
+  assert.ok(provider.calls.every((c) => !c.includes('REJECTED BY THE FENCE')),
+    'the denied write never reaches the worker as something that "landed"');
+  assert.ok(!existsSync(join(wd, 'outside', 'evil.mjs')), 'and it never reached the tree');
+  assert.ok(!JSON.stringify(events).includes('REJECTED BY THE FENCE'), 'nor the spine');
+});
+
+test('Finding 6: a HALT on a staged write still propagates as cap-halt (discard never swallows it)', async () => {
+  const wd = twd('root-halt-write');
+  const tiny = config();
+  tiny.gate.budgetUsd = 0.02;
+  const { outcome, events } = await run('root-halt-write', tiny, {
+    mode: 'tools', capRuns: 4, closeGapKeep: '^not ok ', layerRoot: true,
+    script: [
+      { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'src', 'sum.mjs'), content: BAD_SUM })], costUsd: 0.05 },
+      { text: 'done' },
+    ],
+  });
+  assert.equal(outcome, 'escalated');
+  const esc = events.find((e) => e.type === 'escalation');
+  assert.equal(esc.category, 'cap-halt', 'the halt reached ralph as a cap story, not a swallowed deny');
+  assert.ok(events.some((e) => e.type === 'cap-halt'), 'cap-halt event on the spine');
+  assert.ok(!existsSync(join(wd, 'src', 'sum.mjs')), 'the halted write never landed');
+});
+
+// ─── Finding 7: intent fires the detector, outcome words the note ───────────
+// The gate's allow is written BEFORE the tool runs, so it records intent, not
+// landing: shell_edit returns an anchor miss as a refusal RESULT (bare-agent
+// tools/shell.js:190) with the file untouched. Validated end-to-end 2026-07-20 —
+// three allowed edits, zero bytes changed, and the verbatim note swore the
+// content had landed. The fix keeps the DETECTOR on intent (a tree-diff detector
+// measured null on every attempt here: it would go blind to the purest fixation
+// there is) and settles the NOTE on the observed file via Loop's onToolResult.
+
+test('F7: an edit that the gate allows but the tool refuses — detector still fires, note never claims it landed', async () => {
+  const wd = twd('root-phantom');
+  const { workdir, target, close } = makeWork('root-phantom');
+  writeFileSync(target, BAD_SUM); // stays red all run; the anchor below never matches it
+  const phantom = tcall('t1', 'shell_edit', { path: target, oldText: 'return a * b;', newText: 'return NEVER_LANDED;' });
+  const provider = stubProvider([
+    { toolCalls: [phantom] }, { text: 'edited it' }, // attempt 1
+    { toolCalls: [phantom] }, { text: 'edited it' }, // attempt 2 → summary
+    { toolCalls: [phantom] }, { text: 'edited it' }, // attempt 3 → verbatim
+    { text: 'giving up' },
+  ]);
+  const file = join(workdir, 'run.jsonl');
+  await interpret(config(), {
+    task: TASK, target, close, workdir, capRuns: 4, emit: makeSpine(file), provider,
+    mode: 'tools', tools: ['read', 'edit'], layerRoot: true,
+  });
+
+  assert.equal(readFileSync(target, 'utf8'), BAD_SUM, 'GROUND TRUTH: nothing ever landed');
+  // intent axis untouched: the gate still allowed, and the ratchet still engaged
+  const audit = readFileSync(join(wd, 'gate-audit.jsonl'), 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  assert.ok(audit.some((r) => r.phase === 'gate' && r.action?.type === 'edit' && r.decision === 'allow'),
+    'the allow record is intent — it is still written for an edit that never applied');
+  const injected = readSpine(file).filter((e) => e.type === 'root-injected');
+  assert.deepEqual(injected.map((e) => e.stage), ['summary', 'verbatim'],
+    'the detector reads INTENT: a repeated unapplied edit is still fixation, both stages fire');
+  // outcome axis: every claim the note makes about the file must be true
+  const notes = provider.calls.filter((c) => c.includes('RATCHET'));
+  assert.equal(notes.length, 2);
+  assert.ok(!notes.some((n) => /rewrote/.test(n)), 'never asserts a rewrite that did not happen');
+  assert.ok(!notes.some((n) => n.includes('they landed')), 'never asserts a landing that did not happen');
+  assert.match(notes[0], /NEITHER EDIT APPLIED/, 'summary names the wall: the anchor missed');
+  assert.match(notes[1], /did NOT apply/, 'verbatim names the wall too');
+  assert.ok(notes[1].includes('NEVER_LANDED'), 'the worker still sees the text it kept retrying');
+});
+
+test('F7 control: edits that genuinely land keep the landed wording — the seam tells the two apart', async () => {
+  const { workdir, target, close } = makeWork('root-landed');
+  writeFileSync(target, BAD_SUM);
+  const provider = stubProvider([
+    { toolCalls: [tcall('r1', 'shell_edit', { path: target, oldText: 'a - b', newText: 'a * b' })] }, { text: 'edited' },
+    { toolCalls: [tcall('r2', 'shell_edit', { path: target, oldText: 'a * b', newText: 'a % b' })] }, { text: 'edited' },
+    { toolCalls: [tcall('r3', 'shell_edit', { path: target, oldText: 'a % b', newText: 'a - b' })] }, { text: 'edited' },
+    { text: 'giving up' },
+  ]);
+  const file = join(workdir, 'run.jsonl');
+  await interpret(config(), {
+    task: TASK, target, close, workdir, capRuns: 4, emit: makeSpine(file), provider,
+    mode: 'tools', tools: ['read', 'edit'], layerRoot: true,
+  });
+  const notes = provider.calls.filter((c) => c.includes('RATCHET'));
+  assert.ok(notes.length >= 1, 'repeated real edits to the same file still fire the ratchet');
+  assert.match(notes.join('\n'), /rewrote|they landed/, 'a real landing is still reported as one');
+  assert.ok(!/did NOT apply/.test(notes.join('\n')), 'no false "never applied" claim on edits that did apply');
+});
+
+// ─── maxTurns is an LLM-round bound, and it stays one (F43 follow-up) ────────
+// bareguard's maxTurns ticks on every gate.RECORD; our number means "LLM rounds"
+// ONLY because the sole record path is onLlmResult → gate.record{type:'llm'} and
+// tool calls take gate.CHECK (no tick). This guard fails the day someone wires
+// tool results into gate.record (e.g. wireGate's own onToolResult), which would
+// silently halve the LLM budget — the F37 lower-silent-ceiling class. It reads
+// the real gate audit: every RECORD row must be type 'llm'; tool actions may
+// appear only as CHECK rows (phase 'gate').
+test('maxTurns counts LLM rounds only: every gate.record is type:llm, tools are check-only', async () => {
+  const wd = twd('turns-llm-only');
+  const { workdir, target, close } = makeWork('turns-llm-only');
+  writeFileSync(target, BAD_SUM);
+  // a multi-round tool-mode attempt: read, then edit, then finish — several tool
+  // calls, so if any tool path recorded, a non-llm record row would appear
+  const provider = stubProvider([
+    { toolCalls: [tcall('a', 'shell_read', { path: join(wd, 'src') })] },
+    { toolCalls: [tcall('b', 'shell_edit', { path: target, oldText: 'a - b', newText: 'a + b' })] },
+    { text: 'done' },
+  ]);
+  const file = join(workdir, 'run.jsonl');
+  const outcome = await interpret(config(), {
+    task: TASK, target, close, workdir, capRuns: 2, emit: makeSpine(file), provider,
+    mode: 'tools', tools: ['read', 'edit'],
+  });
+  assert.equal(outcome, 'green');
+  const audit = readFileSync(join(wd, 'gate-audit.jsonl'), 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const records = audit.filter((r) => r.phase === 'record');
+  const checks = audit.filter((r) => r.phase === 'gate');
+  assert.ok(records.length > 0, 'the run recorded rounds');
+  assert.ok(records.every((r) => r.action?.type === 'llm'),
+    `every counter-ticking record must be type:llm — a tool record would silently eat the maxTurns budget (saw: ${[...new Set(records.map((r) => r.action?.type))].join(',')})`);
+  // and the tool actions DID happen — they are just check-only, proving the guard is not vacuous
+  assert.ok(checks.some((r) => r.action?.type === 'read' || r.action?.type === 'edit'),
+    'tool actions reach the gate as CHECK rows (which do not tick maxTurns)');
+});
+
+// The default is OFF (decided 2026-07-21): Layer R ships armed-and-inert until a
+// stuck job (Layer 2, or a manufactured-fixation probe) shows ON beats OFF — we
+// do not default-enable a lever that has never won its own A/B. This pins the
+// default so a silent flip-back to true is caught: the SAME fixation that fires
+// the ratchet when layerRoot:true is passed must stay silent when it is omitted.
+test('Layer R default is OFF: an omitted layerRoot never engages the ratchet, even under fixation', async () => {
+  const wd = twd('root-default-off');
+  const w = () => ({ toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'src', 'sum.mjs'), content: BAD_SUM })] });
+  const { events, provider } = await run('root-default-off', config(), {
+    mode: 'tools', capRuns: 4, closeGapKeep: '^not ok ', // NO layerRoot: the production default must govern
+    script: [w(), { text: 'x' }, w(), { text: 'x' }, w(), { text: 'x' }, w(), { text: 'x' }],
+  });
+  assert.ok(provider.calls.every((c) => !c.includes('RATCHET')), 'default OFF: no ratchet note in any prompt');
+  assert.ok(!events.some((e) => e.type === 'root-injected'), 'default OFF: no root-injected on the spine');
+});
+
+// ─── F43 review follow-ups: onToolOutcome discriminator + text-mode false-fire ──
+// Finding 2: an anchor-miss edit whose newText already occurs elsewhere in the file
+// was mislabeled "landed" by a substring includes() fallback. The honest signal is
+// the tool RESULT ("shell_edit: …no change" vs "edited …").
+test('F2: a missed-anchor edit whose newText exists elsewhere is NOT reported as landed', async () => {
+  const wd = twd('root-phantom-substr');
+  const { workdir, target, close } = makeWork('root-phantom-substr');
+  // the file already CONTAINS the newText string, so a naive includes() would say "landed"
+  writeFileSync(target, 'export function sum(a, b) { return a - b; } // return a + b;\n');
+  // anchor 'ZZZ' is not in the file → shell_edit refuses, file untouched; but newText
+  // 'return a + b;' IS already present as a comment → includes() would false-positive
+  const miss = tcall('t1', 'shell_edit', { path: target, oldText: 'ZZZ', newText: 'return a + b;' });
+  const provider = stubProvider([
+    { toolCalls: [miss] }, { text: 'edited' },
+    { toolCalls: [miss] }, { text: 'edited' },
+    { toolCalls: [miss] }, { text: 'edited' },
+    { text: 'giving up' },
+  ]);
+  const file = join(workdir, 'run.jsonl');
+  await interpret(config(), {
+    task: TASK, target, close, workdir, capRuns: 4, emit: makeSpine(file), provider,
+    mode: 'tools', tools: ['read', 'edit'], layerRoot: true,
+  });
+  const notes = provider.calls.filter((c) => c.includes('RATCHET'));
+  assert.ok(notes.length >= 1, 'the repeated missed edit still fires the ratchet (intent axis)');
+  assert.ok(!notes.some((n) => n.includes('they landed')),
+    'a missed-anchor edit is never reported as landed, even when newText appears elsewhere');
+  assert.ok(notes.some((n) => /did NOT apply|NEITHER EDIT APPLIED/.test(n)), 'the note names the real failure');
+});
+
+// Finding 3: text mode + no gapKeep + a PROGRESSING worker. The single target is
+// rewritten every attempt (structurally forced), so write-overlap is always true;
+// with no red-set, the ratchet must NOT fire — it cannot see the progress and would
+// steer a working attempt off course ("inert when not stuck").
+test('F3: text mode without gapKeep never false-fires on a progressing worker', async () => {
+  const { events, provider } = await run('root-text-progress', config(), {
+    capRuns: 4, layerRoot: true, // NO closeGapKeep → no trustworthy red-set
+    // three DIFFERENT rewrites (the worker is trying new things, i.e. progressing), still red
+    script: [{ text: 'export const sum = 1;\n' }, { text: 'export const sum = 2;\n' }, { text: 'export const sum = 3;\n' }, { text: GOOD_SUM }],
+  });
+  assert.ok(provider.calls.every((c) => !c.includes('RATCHET')),
+    'text mode + no red-set: the ratchet cannot confirm fixation, so it stays inert');
+  assert.ok(!events.some((e) => e.type === 'root-injected'), 'no root-injected without a trustworthy red-set in text mode');
+});

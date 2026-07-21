@@ -230,7 +230,9 @@ function failsMatch(/** @type {string[]} */ live, /** @type {readonly string[]} 
 function readRow(/** @type {string} */ spineFile, /** @type {string|null} */ auditFile, /** @type {(typeof PLANTS)[number]} */ p, /** @type {string} */ outcome) {
   const raw = readFileSync(spineFile, 'utf8');
   const events = raw.trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
-  const spentUsd = events.findLast((e) => e.type === 'job-end')?.spentUsd ?? null; // honest null, never 0 (F6)
+  const je = events.findLast((e) => e.type === 'job-end');
+  const spentUsd = je?.spentUsd ?? null; // honest null on pre-F43 spines, never 0 (F6)
+  const spendComplete = je?.spendComplete; // F43: false = the figure is a floor (casualty); undefined pre-F43
   const rounds = events.filter((e) => e.type === 'worker-round').length;
   const runEnd = events.findLast((e) => e.type === 'run-end');
   const attemptsToGreen = runEnd?.outcome === 'green' ? runEnd.iterations : null;
@@ -244,7 +246,7 @@ function readRow(/** @type {string} */ spineFile, /** @type {string|null} */ aud
       || events.some((e) => e.type === 'ctx-tool' && e.tool === 'ctx_recall' && (e.paths ?? []).includes(p.culprit))
       || events.some((e) => e.type === 'hook-op' && e.op === 'recall' && (e.paths ?? []).includes(p.culprit));
   }
-  return { plant: p.id, outcome, attemptsToGreen, writes, culpritRead, rounds, spentUsd, secretsClean: leaks.length === 0, spine: spineFile, audit: auditFile };
+  return { plant: p.id, outcome, attemptsToGreen, writes, culpritRead, rounds, spentUsd, spendComplete, secretsClean: leaks.length === 0, spine: spineFile, audit: auditFile };
 }
 
 // ---- the battery ----------------------------------------------------------
@@ -308,15 +310,16 @@ for (const p of roster) {
   const row = readRow(spineFile, audit, p, outcome);
   rows.push(row);
   cumulativeUsd += row.spentUsd ?? 0;
-  console.log(`  row     outcome=${row.outcome} attempts=${row.attemptsToGreen ?? '-'} writes=${row.writes ?? '-'} culpritRead=${row.culpritRead ?? '-'} rounds=${row.rounds} spent=${row.spentUsd == null ? 'UNKNOWN' : `$${row.spentUsd.toFixed(4)}`}`);
+  console.log(`  row     outcome=${row.outcome} attempts=${row.attemptsToGreen ?? '-'} writes=${row.writes ?? '-'} culpritRead=${row.culpritRead ?? '-'} rounds=${row.rounds} spent=${row.spentUsd == null ? 'UNKNOWN' : `${row.spendComplete === false ? '≥' : ''}$${row.spentUsd.toFixed(4)}${row.spendComplete === false ? ' (floor)' : ''}`}`);
   if (!row.secretsClean) {
     stop = `${p.id}: SPINE LEAK — the hard line is broken`;
     break;
   }
-  // unpriced is never free (F6): a real run whose spend is unknown cannot be
-  // summed against the battery cap — the cap cannot govern spend it cannot see
-  if (!dry && row.spentUsd == null) {
-    stop = `${p.id}: spend unknown (${row.outcome}) — the $${BATTERY_CAP_USD} cap cannot govern unpriced spend`;
+  // unpriced is never free (F6): a real run whose spend is not fully known cannot be
+  // summed against the battery cap. Since F43 the signal is spendComplete === false (an
+  // incomplete floor); pre-F43 spines carried a bare null. Either halts.
+  if (!dry && (row.spendComplete === false || row.spentUsd == null)) {
+    stop = `${p.id}: spend not governable (${row.outcome}) — the $${BATTERY_CAP_USD} cap cannot govern an unpriced/floor spend`;
     break;
   }
 }

@@ -108,7 +108,7 @@ verb blocks the work, the worker files a *request-red* and a human decides.
 ```
 Layer 3   INHERITANCE    the road survives runs, with receipts; self-heals    (not built — N3)
 Layer 2   MICRO-WHEELS   the road itself: locate → understand → write → verify (designed — plan-v1)
-Layer R   THE ROOT       memory that survives attempts inside one run          (not built — next)
+Layer R   THE ROOT       memory that survives attempts inside one run          (built — armed-and-inert, F41)
 Layer 1   ONE WHEEL      a single loop over the whole task                     (built; first real firing NOW)
 ```
 
@@ -128,6 +128,32 @@ was tried, what it changed, what greened — while worker conversations stay dis
 is the shape borrowed from recursive-LM designs: a durable root; cheap, throwaway
 sub-contexts.) Verdict-gated inheritance is untouched: the root is *within-run scratch*, a
 different scope from *across-run memory*, and only a green mints the latter.
+
+**Status: built 2026-07-19 (design record `docs/plans/2026-07-19-layer-r-design.md`),
+armed-and-inert, default OFF.** The shell detects fixation from its own books (same-file
+rewrites with the kept-failure set unmoved) and injects escalating feedback — a capped
+summary, then the worker's own failed edits verbatim. Detector and note read separate
+axes: the detector keys off INTENT (what the worker reached for), the note off OUTCOME
+(what actually reached the file) — F43. But two frozen probes (F41, $10.12) found the
+disease in REMISSION: 0 fixated pairs in 14 across jobs #1/#2/#4, even against a
+three-plant tree the worker had to grind through in three judged attempts — F21's
+repetition was a broken-loop symptom, cured by the F20/F21/F30/BA-13 fixes.
+
+**Default OFF (decided 2026-07-21).** Because fixation is extinct on every current job,
+ON has never won its own A/B — so the ratchet ships armed and correct but NOT
+default-enabled (`layerRoot: false`; pass `true` for the ON/experimental arm). Its field
+read (repetition drop, ON vs OFF) DEFERS to the first run whose spine records
+`root-injected`.
+
+> **⚠ Layer 2 TODO — decide the Layer R default.** Layer 2's narrow micro-wheel steps are
+> the expected pressure point that finally produces natural fixation (a stuck run). The
+> day a Layer 2 job records `root-injected`, run the pre-registered ON-vs-OFF acceptance
+> read on it. **That result decides whether the `layerRoot` default flips to `true`
+> (ON helps → keep it on) or stays `false` (no lift → keep it off).** Until then the
+> default is provisional, not settled. (A cheaper alternative that does NOT need Layer 2:
+> a manufactured-fixation probe — force a real worker to repeat and measure whether the
+> note breaks the loop; caveat F41 — strong models resist fixating, so the probe may
+> struggle to produce its own precondition honestly.)
 
 ### Layer 2 — micro-wheels (the road)
 The workflow becomes a **sequence of small wheels**, each with one goal and only the verbs
@@ -281,20 +307,38 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
    measured the stall is NOT a memory problem: aim becomes perfect (14–18 of 18 named
    functions targeted) but every acting row died at the clean wall, authoring tests it
    cannot execute — and one row stalled anyway. No green at the 45% bar exists yet.
-2. **Build Layer R** — the root, so attempts stop repeating themselves. Role sharpened
-   by F39: continuity across attempts (justified by F21/F38), NOT the fix for the
-   semantic stall — the probe measured that hand-delivered state does not buy conversion.
+2. **Build Layer R** — ✅ **BUILT 2026-07-19, armed-and-inert (F41), default OFF
+   (2026-07-21)**. The root's fixation detector + escalating rejected-edit feedback
+   landed (design record 2026-07-19); two frozen probes then found the disease it treats
+   in REMISSION — 0 fixated pairs in 14 across every job we own, including a three-plant
+   tree that forced three judged red rounds. F21's repetition was a broken-loop symptom,
+   already cured by the F20/F21/F30/BA-13 fixes. F43 split its two axes (detector reads
+   intent, note reads outcome). Because ON has never won its own A/B, it ships OFF by
+   default (`layerRoot: false`); the field read defers to the first `root-injected`
+   spine event. Role stays as F39 sharpened it: continuity, never the semantic-stall fix.
 3. **Build Layer 2** — the micro-wheel road (plan-v1), with the stage-verdict rule above.
    Now carries a MEASURED requirement (F39): steps whose exits verify test correctness
    in-run (e.g. "your new tests pass on untouched source" as a form-checkable exit),
    converting the semantic ask into F38's convertible mechanical genre. This is the
    untested piece of the thesis: "notes + self-check" has never been observed succeeding.
+   **Also owns the Layer R default decision:** the first Layer 2 job that produces natural
+   fixation runs the ON-vs-OFF acceptance read, and that result flips `layerRoot` to `true`
+   (ON helps) or keeps it `false` (no lift) — see the Layer R ⚠ note above.
    Also carries (F40 latent, PRD v1.18): **each step declares its own deliverable
    target** — today one target path threads to every text-mode step (fine for
    successive gates over one artifact, the only shape job-v1 can express; a clobber
    the day two steps carry distinct deliverables).
 4. **Build Layer 3** — inheritance with ledger attribution (N3, kill-switch: rules must
-   transmit across non-identical runs).
+   transmit across non-identical runs). Carries three v1.21 requirements (external-review
+   fold, 2026-07-21): **(a) the drift detector** — arbiter-side trailing green-rate vs
+   mint-time baseline, named red `drift-red`, flag-not-rollback (rollback is merge-class,
+   human), must-fail fixtures before trust, threshold from measured base rate never
+   guessed; **(b) the N3 control gains a third arm** — inheritance-ON+agent-readable
+   lineage vs ON-mechanical vs OFF, gated by a sub-dollar pre-probe (identical plans
+   with/without lineage in hand kills the arm), default prediction NO lift (F39);
+   **(c) bound-pressure ledger fold** — "step X capped M of N runs" for the trust
+   surface; acceptance = it can surface the F37/16g rounds-vs-money bind from archived
+   spines.
 
 ---
 

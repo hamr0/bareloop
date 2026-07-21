@@ -285,7 +285,32 @@ the close judges the tree; on-green `remember` retains the worker's change summa
 Worker-caused close crashes feed back as `worker-crash` gaps via the gate audit (F32 —
 see `ralph` above).
 
-### `runJob(spec, { approvals, workdir, provider, emit, target?, capRuns?, shellCapUsd?, closeTimeoutMs?, execCmd? })` → outcome — `src/run.js`
+**Layer R — the within-run ratchet (`layerRoot`, default `false`; design record
+2026-07-19).** The shell mechanically detects fixation across attempts — consecutive
+attempts that rewrote the same file(s) without moving the close's kept-failure set
+(`closeGapKeep` lines, duration stamps stripped before comparing; without a gapKeep the
+detector degrades to write-overlap alone and the spine event names the mode) — and
+injects an escalating note into the next prompt: first a capped summary naming the
+repeated files, then (if still stuck) the worker's OWN prior failed edit content
+verbatim, scrubbed and capped with trims announced. Inert unless stuck; the worker
+authors nothing and gains no verb. Two axes, deliberately separate (F43): the DETECTOR
+reads INTENT (the gate audit's allow-set — an edit whose anchor missed is still the
+worker reaching for that file again, and a tree-diff detector measured blind to exactly
+that), while the NOTE's claims about file contents read OUTCOME (settled post-execution
+through `Loop`'s `onToolResult`). So a repeat that never applied is told its anchor
+missed, and only content actually in the file is ever described as having landed. Spine event `root-injected` carries
+`{stage, mode, streak, paths, redSetSize}` — counts and paths only, NEVER content (the
+spine is append-only). State dies with the run: this is within-run scratch, not
+across-run memory. `layerRoot: true` (on `interpret` and `runJob`) is the ON/experimental
+arm; the default is OFF. Status (F41): the ratchet is MEASURED inert on every current
+job — two frozen probes + an archive sweep read 0 fixated pairs in 14 (the F21 repetition
+disease was a broken-loop symptom, since cured). Because ON has therefore never won its
+own A/B, it ships **OFF by default (decided 2026-07-21)** — armed and correct, but not
+default-enabled until a stuck job (Layer 2, or a manufactured-fixation probe) shows ON
+beats OFF. Flip the default to `true` the day that evidence lands; a `root-injected` event
+on your spine (when you pass `layerRoot: true`) is a signal worth reading, not noise.
+
+### `runJob(spec, { approvals, workdir, provider, emit, target?, capRuns?, shellCapUsd?, closeTimeoutMs?, execCmd?, layerRoot? })` → outcome — `src/run.js`
 
 The N2 runner — the shell's top layer; composes everything below it and interprets
 nothing itself. Sequence: **approval gate** (human-signs-always — refuses an unapproved
@@ -312,7 +337,15 @@ round the API cut off mid-generation (`truncated:max_tokens`, bare-agent 0.27.0/
 before which it laundered into a clean finish, F25); in both cases no verdict exists and the
 failed round's spend is only partly known (F6). `cap-halt` is drafting spend consuming the whole job budget before a
 valid config existed. Both are decision-ready escalations with a terminal `job-end`:
-the spine never dangles. A text-mode job invoked without `opts.target` is a `job-red`
+the spine never dangles. **Every `job-end` carries the money, on every path**:
+`{ outcome, spentUsd, spendComplete }` (plus `step`/`cause`/`detail` where the outcome has
+them). `spentUsd` is the accumulated sum of PRICED rounds ONLY — never an estimate from
+token counts or averages (cap-not-estimate) — and it is stated even on the pre-token reds,
+where the honest figure is a real `0`. `spendComplete` says whether that figure is EXACT:
+`false` means one or more rounds came back unpriced (F6), so `spentUsd` is a FLOOR
+("at least $X", true total unknowable) and must not be read as a total. Both fields are
+present on all outcomes, so a consumer never branches on field presence and never has to
+launder a missing `spentUsd` into `$0`. A text-mode job invoked without `opts.target` is a `job-red`
 before ANY provider call (and `interpret` itself throws a TypeError for direct
 callers) — reds-before-tokens applies to the call, not just the spec.
 
