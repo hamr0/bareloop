@@ -95,6 +95,47 @@ exists to test it.
    rung later fills a declared slot instead of reshaping the schema. All four fields
    live in the human-signed doc; the plan doc can express none of them.
 
+## Addendum 2026-07-21 — build-design interview (schema-level decisions, LOCKED)
+
+Second interview of the rung (step 2 of the build order). Four decisions, all locked:
+
+6. **Job shape: exclusive shapes inside job-v1, staged sunset (hamr).** job-v1 gains
+   `goal` / `verdictType` / `checks[]`. A spec declares EITHER the four-field plan shape
+   (goal + verdictType + close + checks[]) OR the legacy operator-authored `steps[]`
+   chain — both present is a named red; existing job specs keep validating unchanged
+   DURING the rung only. **`steps[]` is co-existing scaffolding, not a permanent second
+   shape: the day the Layer 2 path closes green end-to-end (the rung's battery),
+   `steps[]` archives alongside config-v1** (the same "not before: the suite still runs
+   through it today" precedent, PRD v1.12) — hamr: "co-exist until the new proves
+   itself then sunset, i don't need multiple shapes that won't get used." The non-code
+   rung later fills the declared `verdictType` slot without reshaping the schema
+   (decision 5's intent).
+7. **Plan step schema: ordered array, NO `dependsOn`.** v1 is strictly sequential, so
+   array order IS the execution order; `dependsOn` would be a live-looking knob with
+   zero effect (the F16/inert-op class the config validator itself reds). Step fields:
+   `id` (kebab slug, unique) · `action` (task text) · `tools` (⊆ the spec grant) ·
+   `rounds` (≤ shell cap) · `target` (v1.18 deliverable path, inside the fence;
+   required on write-class steps) · `exit` (decision 8).
+8. **Exit composition: AND-only array, max 2.** `exit: [tree-changed(scope),
+   check-passes(name)]` — ALL listed exits must pass; no OR, no NOT (disjunction would
+   let a weak arm launder the exit). This makes the POC's winning composition
+   expressible and closes the F17 already-green trap a lone `check-passes` on a WRITE
+   step would re-open (the seed tree is green). The plan-as-executed spine record
+   states the real exit — nothing hardwired in shell code.
+9. **Red taxonomy: reuse the shipped vocabulary + 3 plan-specific codes.** Same
+   `{code, path, detail}` shape; `unknown-field`/`invalid-value`/`bounds`/
+   `scope-escape`/etc. reused as-is; new codes `verb-escape` (step tools beyond the
+   spec ceiling — distinct from `request-red`: the ceiling exists, the plan
+   overreached), `exit-illegal` (exit not in the closed menu, or an illegal
+   composition), `check-unknown` (`check-passes` names a check the spec never signed).
+   The ledger keys on codes (the request-red precedent), so each class it should count
+   separately gets its own code.
+
+**Stated default (flag to change): a check's schema reuses the predicate-close shape** —
+`{name, cmd, expect, judged?, gapKeep?}` — validated by the same rules and executed
+under the same `runClose` machinery (decision 1 already requires the machinery; a
+second command shape would be the F9 two-transforms class one level up).
+
 ## Build order within the rung
 
 1. **POC** (decision 3) — throwaway; freezes its read rules first; answers "does the
