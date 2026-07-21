@@ -1,0 +1,113 @@
+# Layer 2 — plan-v1 micro-wheels: design record
+
+2026-07-21 · interview with hamr, decisions LOCKED · status: POC pending, build not started.
+Amend with dated addenda, never rewrite.
+
+## Role (fixed by measurement — do not relitigate)
+
+Layer 2 is **the semantic converter** (F38/F39): bounded steps whose exits verify
+correctness in-run turn a quality ask ("strengthen assertions") into the mechanical
+genre the wheel demonstrably converts (counts, named walls). The measured mechanism:
+the worker authors tests it can never execute (no `run` verb — the hard line stands),
+so its first contact with reality is the close that ends the attempt; every F39 acting
+row died at that clean wall. Layer 2's job is to give it a wall it can push on
+mid-plan — without ever letting it author the pusher.
+
+**"Notes + self-check succeeds" is the thesis's single untested claim.** This rung
+exists to test it.
+
+## Already locked before this interview (anchors, not new doctrine)
+
+- **Shape** (PRD v1.12): PREFLIGHT → SCOUT (read-only, hard-bounded, reserved budget
+  slice) → PLAN (`Planner.plan(goal, {info: scoutBlob})`; the planner never sees the
+  repo) → plan-v1 VALIDATOR gates before tokens burn (verbs ⊆ spec ceiling, bounds ≤
+  shell caps, scopes in fence, arbiter inexpressible at every depth) → EXECUTE (fresh
+  Loop + fresh Gate per step; `maxTurns` IS the step bound; flat DAG, strictly
+  sequential) → ONE replan per run → the operator's close is the only truth.
+- **Feed-forward prompt contract** (v1.12 §5): absolute repo root, gap/close output,
+  prior step artifacts labeled by id, cut-off notice; NEVER the budget, the close
+  command, the validator, other steps' grants, or the arbiter's books.
+- **Inner exits verify FORM, not truth** — progress gates; containment is the outer
+  close + the one replan; there is exactly ONE arbiter.
+- **Stage verdicts** (v1.13): own eval where one exists, else inherit the parent
+  wheel's verdict chain; learning credit mints only at an honest close.
+- **Per-step deliverable targets** (v1.18 req 1): each step declares its own target
+  path — lands in the step schema at this rung.
+- **No `spawn_child`/recursion; config-v1 archives when plan-v1 lands; two docs, two
+  validators, NO schema v2** (the job doc and the plan doc never merge).
+
+## Decisions (locked 2026-07-21)
+
+1. **The self-check exit: operator-signed named checks (Q1 = a).** The human-signed
+   job spec carries a small menu of NAMED check commands (e.g.
+   `clean-run: <cmd>, expect 0`). The plan may REFERENCE a named check as a step's
+   inner exit — the closed exit menu gains one form, `check-passes(name)` — but the
+   agent can never author, edit, or compose one: a check the spec doesn't sign does
+   not exist. The shell executes a referenced check under the full runClose machinery
+   (forbidden zone, judged floor, redaction, metered rounds/cost). Same grant model as
+   the tool menu: the human authors the list, the agent selects from it; `run` stays
+   structurally inexpressible. Exposure note: a check executes worker-authored test
+   files — the outer TESTGEN close already does exactly that; what changes is only
+   WHEN, not the exposure class.
+   **Checks decide nothing and mint nothing.** Passing every check confers zero
+   credit; only the one signed close mints green. A check result is a progress gate
+   and a gap source, nothing more.
+2. **First firing target: job #4 (TESTGEN)** — same job, same close, same frozen 45%
+   bar, read against F39's baseline (0 conversion; 3/3 acting rows died at the clean
+   wall; 1 stall). SUPERSEDES the 2026-07-14 lock ("first experiment stays job #1"),
+   which predates F34 (job #1 undiscriminating), F38, and F39.
+3. **POC-first, aimed at the thesis, not the machinery.** "Can the model emit a valid
+   DAG" was proven shot-1 in the config-v1 era and is not the risk. The riskiest
+   assumption is F39's fix direction itself: does an in-run clean-run check convert
+   the clean-wall death? POC: hand-authored plan (no Planner, no validator —
+   throwaway harness, never shipped), one WRITE step whose inner loop feeds the
+   clean-run result back as a gap, on job #4. Read: clean-wall deaths among acting
+   rows vs F39's 3/3 baseline. If the premise doesn't move, the rung's design is
+   wrong and we learn it for a few dollars before building the schema. POC read
+   rules freeze in a commit BEFORE any number exists (standing discipline).
+4. **Money: one wallet per run (Q4).** One `budgetUsd` (operator-signed,
+   cap-not-estimate), ONE ledger metering per round across all gates (F12). Steps get
+   ROUND bounds only — planner proposes, validator enforces ≤ shell caps. The scout's
+   reserved slice is carved first (v1.12). No per-step money slices; money binding
+   mid-plan stops the run — the stop is the checkpoint (resume-to-cap). Sizing rule
+   rides along (F39/16g, twice-paid): the budget must fund the attempts PLUS every
+   check execution PLUS the close, or the instrument eats the experiment.
+5. **The spec shape fits ALL verdict classes from day one (hamr).** The job spec's
+   surface is four explicit, separate, never-inferred fields:
+   - **goal** (text)
+   - **verdictType** — declared, radio-style: `green` | `soft-green` | `hitl`
+   - **close** — the command, for green (exit code = truth)
+   - **checks[]** — the named quick-check menu (decision 1)
+   v1 ADMITS ONLY `green`: declaring soft-green/hitl gets a clear
+   "not at this rung" red, never silent acceptance (disclosure ≠ admission —
+   locked-but-listed, same as the tool menu). PREFLIGHT flips from inferring the
+   job's class to VALIDATING the declaration: declared green + no runnable
+   deterministic close = named validation red before any token burns. The non-code
+   rung later fills a declared slot instead of reshaping the schema. All four fields
+   live in the human-signed doc; the plan doc can express none of them.
+
+## Build order within the rung
+
+1. **POC** (decision 3) — throwaway; freezes its read rules first; answers "does the
+   premise hold" on job #4.
+2. Premise holds → design the step schema + plan-v1 validator properly (POC-first
+   rule: never ship the POC); premise fails → STOP, the stop is the result, findings
+   entry, redesign with hamr.
+3. Build carries: per-step targets (v1.18), spine events (plan-as-executed + per-step
+   ledger), config-v1 archived on landing.
+
+## Riding items (owned by this rung, not part of the POC)
+
+- **Layer R default-flip read** (LAYERS.md ⚠): the first Layer 2 job that records
+  `root-injected` runs the pre-registered ON-vs-OFF acceptance read; that result
+  flips `layerRoot` to `true` or keeps `false`.
+- **F38's designed test** becomes runnable the day the rung lands: same job #4, same
+  close, same frozen bar — the direct falsification of "notes + self-check succeeds".
+
+## Deferred, explicitly NOT this rung
+
+- Soft-green/hitl execution (non-code rung; declared-but-locked here).
+- Genre-aware artifact extraction (v1.18 req 2 — non-code rung).
+- Fan-out / parallel DAG execution (v1.12: strictly sequential in v1).
+- N3 inheritance of minted plans (Layer 3; this rung only writes plan-as-executed to
+  the spine).
