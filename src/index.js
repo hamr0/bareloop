@@ -21,6 +21,7 @@ export { validateJob, jobSpecHash, checkApproval, CLOSE_TYPES, CLASSES, CLASS_BY
 // two-doc split's third validator never happens (plan-v1 gates the PLAN, the
 // job spec stays the arbiter's only home).
 export { validatePlan, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, WRITE_VERBS } from './plan.js';
+export { snapshotScope, evalExits } from './exits.js';
 export { interpret, STALL_REDS } from './interpret.js';
 export { extractRules, MAX_RULES, MAX_RULE_CHARS } from './extract.js';
 export { runJob } from './run.js';
