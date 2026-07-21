@@ -7,6 +7,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-07-21
+
 ### Added
 
 - **Layer R — the root, the within-run ratchet (`src/root.js`; design record

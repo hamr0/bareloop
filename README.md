@@ -103,7 +103,7 @@ ladder, and the stop is a result.
 | **N0** ✅ | Port + outer shell + spine (token-free) — v0.1.0 |
 | **N1** ✅ | Job/close schema + validator — v0.2.0 |
 | **N2** ✅ | Single-job headless loop — job #1 minimal (review→fix→PR, hard greens only) — v0.3.0 |
-| **Layer R** ✅ | Within-run ratchet: shell-side fixation detector + rejected-edit feedback, armed-and-inert (F41: fixation in remission; field read defers to the first tripped run) — v0.4.0 |
+| **Layer R** ✅ | Within-run ratchet: shell-side fixation detector (intent) + rejected-edit feedback (outcome), **shipped OFF by default** (F41: fixation in remission, so ON has never won its A/B; F43 split the two axes; field read + default decision defer to Layer 2) — v0.4.0 |
 | **Layer 2** | plan-v1 micro-wheels — the road: bounded steps with in-run verifiable exits (the F39-measured semantic converter) |
 | **N3** | Executed inheritance + contrast-bit extractor — **kill-switch: rules must transmit across non-identical runs** |
 | **N4** | Verdict classes complete (soft/HITL minting) |
