@@ -52,7 +52,12 @@ export const TOOL_MENU = Object.freeze(['read', 'grep', 'write', 'edit', 'recall
  * counts admission demand, and a generic invalid-value would bury it as a typo. */
 export const LOCKED_TOOLS = Object.freeze(['run']);
 export const CADENCE_UNITS = Object.freeze(['hour', 'day', 'week']);
-export const PROVIDERS = Object.freeze(['anthropic-api']); // SP-2: API-first; local deferred (PRD §5/§8)
+/** SP-2: API-first; local deferred (PRD §5/§8). `clipipe-subscription` (F42,
+ * bare-agent 0.32.0 tool mode): the CLI as a bare turn-provider on a Claude
+ * subscription — its costUsd axis is NOTIONAL (API-equivalent value, not
+ * billed), so it is a DISTINCT condition: rows never pool with anthropic-api
+ * rows on the cost axis, and budgets sized for one do not transfer. */
+export const PROVIDERS = Object.freeze(['anthropic-api', 'clipipe-subscription']);
 /** V3 environment label: declared keys only — every field is a lineage-key
  * candidate at N3. `provider` is part of the key by definition (top-level,
  * not duplicated here). */

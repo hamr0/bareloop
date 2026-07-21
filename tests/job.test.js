@@ -43,6 +43,12 @@ test('job #1 validates green and returns the normalized spec', () => {
   assert.deepEqual(r.job, JOB1);
 });
 
+test('clipipe-subscription is an admitted provider (F42: subscription runs viable; distinct condition key — notional vs billed cost)', () => {
+  const r = validateJob(mut((j) => { j.provider = 'clipipe-subscription'; }));
+  assert.deepEqual(r.reds, []);
+  assert.equal(r.ok, true);
+});
+
 test('string input single-parses; invalid JSON is a parse-error red, job null', () => {
   const ok = validateJob(JSON.stringify(JOB1));
   assert.equal(ok.ok, true);
