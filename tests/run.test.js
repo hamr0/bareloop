@@ -781,3 +781,15 @@ test('money on the job-end: a pre-spend red states a REAL zero and is complete �
   assert.equal(unEnd.spentUsd, 0);
   assert.equal(unEnd.spendComplete, true);
 });
+
+test('money on the job-end: a provider-red TRANSPORT THROW marks spend incomplete — the failed call cost is unknown (F6)', async () => {
+  // a throw during drafting: the call never returned a usage figure, so the floor
+  // is NOT the total — spendComplete must be false (the escalation already admits
+  // "spend for the failed call is unknown (F6)"; the job-end must not contradict it)
+  const provider = { async generate() { throw new Error('401 invalid x-api-key'); } };
+  const { outcome, events } = await run('providerred-incomplete', { provider });
+  assert.equal(outcome, 'provider-red');
+  const end = events.find((e) => e.type === 'job-end');
+  assert.equal(end.spendComplete, false,
+    'a transport throw means the total is a floor, never exact — spendComplete:true would launder unknown into known (F6)');
+});

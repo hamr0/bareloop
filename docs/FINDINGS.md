@@ -2107,3 +2107,69 @@ different clothes — the class that has now shipped five times in this program.
 rule that a remedy must be tested as hard as the defect: the tree-diff proposal read as
 obviously correct, was argued confidently, and died the moment it was executed. A fix
 proposed from reading is a hypothesis, not a fix.
+
+## F44 — the F43 review pass: three real correctness bugs (all in F42/F43 commits), five cleanups
+
+**Trigger (2026-07-21).** A fresh high-effort workflow code-review of the whole
+`main..layer-r-root` branch (the F43 fix + the F42 money-visibility work) surfaced 3
+correctness bugs and 5 cleanups. Every finding was VALIDATED by an executable
+reproduction before any fix, and every fix mutation-proven (revert the fix → the new
+test fails). All three correctness bugs were introduced by THIS branch's own commits —
+fresh full gates finding real issues after prior review rounds, again.
+
+**Finding 1 (serious, shipped code + frozen harness) — a casualty job-end laundered
+unknown spend as complete, and defeated the battery casualty-STOP.** `1b0720c` ("every
+job-end states the money") added `...spend()` to all 15 job-end paths, including the two
+CASUALTY paths (provider-red, pricing-red). Two consequences, both empirically captured:
+- The frozen battery scripts halt the battery on `job-end.spentUsd == null` ("spend
+  unknown — the cap cannot govern it"). With a number now always present, that guard
+  never fired: a provider-red/pricing-red casualty no longer STOPPED the battery — it
+  summed an understated floor against the cap and counted the casualty as a row,
+  breaking "provider-red rows are casualties, never evidence" and the F6 spend line.
+- A provider-red TRANSPORT THROW reported `spendComplete: true` — an F6 honesty
+  violation: the failed call never returned a usage figure, so the total is a floor, not
+  exact; the job-end contradicted its own escalation's "spend … is unknown".
+  Fix, decomposed: (a) LIBRARY — the transport-throw provider-red now reports
+  `spendComplete: false` (the draft-TRUNCATED provider-red keeps `true`: that round WAS
+  metered, spend is known). (b) FROZEN SCRIPTS — the casualty-STOP now keys on
+  `spendComplete === false || spentUsd == null` (new floor signal, or the pre-F43 bare
+  null), which is strictly more correct than the old null-only guard (it no longer
+  hard-stops on a draft-truncation whose spend is known, while still halting on genuinely
+  ungovernable spend). Validated end-to-end: provider-red `{0, false}` and pricing-red
+  `{0.001, false}` both re-fire the STOP; a complete-spend row never does.
+
+**Finding 2 (Layer R, experimental arm) — the outcome probe mislabeled a missed-anchor
+edit as "landed".** `onToolOutcome`'s hash-unchanged fallback used
+`readFileSync().includes(newText)`, which false-positives when the edit's `newText`
+already appears elsewhere in the file — the note then tells the worker "you wrote this,
+it didn't fix it, try something else", the exact mis-steer the intent/outcome split
+exists to prevent. Fix: discriminate by the TOOL RESULT (`shell_edit` success returns
+`edited …`, an anchor miss returns `shell_edit: … no change made`), and use exact
+equality (never substring) for a byte-identical whole-file write. One read now serves
+both the after-hash and the check (was two — Finding 5).
+
+**Finding 3 (Layer R, experimental arm) — the ratchet false-fired on a progressing
+worker in text mode.** With no `gapKeep` the red-set is always UNKNOWN, and in TEXT mode
+the single target is rewritten every attempt by construction, so write-overlap is
+constant-true → `fixated` unconditionally true from attempt 3, steering a worker that was
+making progress off course (violating "inert when not stuck"). Fix: `writesInformative`
+(true in tool mode, where the worker CHOOSES files; false in text mode). When writes
+carry no information, only a KNOWN-unmoved red-set can establish fixation — the degraded
+writes-only path fires only when writes are informative. The intended tool-mode
+crash-gap writes-only firing (a deliberately-tested case) is preserved.
+
+**Cleanups.** Double redaction in the verbatim block (content is scrubbed once at
+capture); the `attempts` array retained every attempt's teed content though only the last
+two are read (now bounded to 2); a dead `gap ?` ternary (gap is guaranteed truthy).
+Finding 4 (the audit re-parse per attempt) was VALIDATED but its incremental-cursor fix
+was DEFERRED, not shipped: it is cleanup-tier, bites only the OFF-by-default arm, and the
+incremental reader's multi-path accumulation is not yet test-covered — "simple > clever"
+won over shipping a clever reader thin tests can't guard. Recorded in the source with its
+reason. Finding 5 folded into the Finding 2 fix.
+
+**Lesson.** The review's own top finding was a tension between two of this session's
+commits (F42's money-visibility vs the frozen scripts' casualty signal) that no single-
+commit view would catch — a whole-branch fresh gate is a different instrument from
+per-commit review. And "state the money on every path" is right only if "state whether
+it is COMPLETE" travels with it; a bare floor that reads as exact is the F6 laundering
+bug wearing a more-honest-looking coat.

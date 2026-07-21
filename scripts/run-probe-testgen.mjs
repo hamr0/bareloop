@@ -196,7 +196,9 @@ for (let i = 1; validRows < N_VALID_ROWS && i <= MAX_LAUNCHES; i++) {
 
   const raw = readFileSync(spineFile, 'utf8');
   const events = raw.trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
-  const spentUsd = events.findLast((e) => e.type === 'job-end')?.spentUsd ?? null;
+  const je = events.findLast((e) => e.type === 'job-end');
+  const spentUsd = je?.spentUsd ?? null;
+  const spendComplete = je?.spendComplete; // F43: false = a floor (casualty/unpriced); undefined pre-F43
   const leaks = SECRET_PATTERNS.map((re) => new RegExp(re.source, re.flags.replace('g', '') + 'g')).flatMap((re) => raw.match(re) ?? []);
   const casualty = events.some((e) => e.type === 'escalation' && e.category === 'provider-red');
 
@@ -225,14 +227,15 @@ for (let i = 1; validRows < N_VALID_ROWS && i <= MAX_LAUNCHES; i++) {
     run: `P${i}`, outcome, cls, valid, casualty, acted, rounds,
     precheck: precheck ? { phase: precheck.phase, rate: precheck.rate ?? null } : null,
     attempt: attempt ? { phase: attempt.phase, rate: attempt.rate ?? null, killed: attempt.killed ?? null, form: attempt.form ?? null, auditHit: attempt.auditHit ?? null } : null,
-    green, delta, spentUsd, secretsClean: leaks.length === 0, spine: spineFile, audit,
+    green, delta, spentUsd, spendComplete, secretsClean: leaks.length === 0, spine: spineFile, audit,
   };
   rows.push(row);
   cumulativeUsd += row.spentUsd ?? 0;
-  console.log(`  row     outcome=${outcome} class=${cls} acted=${acted} rounds=${rounds} attempt=${attempt ? `${attempt.phase}${attempt.rate != null ? ':' + attempt.rate + '%' : ''}` : '-'} spent=${row.spentUsd == null ? 'UNKNOWN' : `$${row.spentUsd.toFixed(4)}`}`);
+  console.log(`  row     outcome=${outcome} class=${cls} acted=${acted} rounds=${rounds} attempt=${attempt ? `${attempt.phase}${attempt.rate != null ? ':' + attempt.rate + '%' : ''}` : '-'} spent=${row.spentUsd == null ? 'UNKNOWN' : `${row.spendComplete === false ? '≥' : ''}$${row.spentUsd.toFixed(4)}${row.spendComplete === false ? ' (floor)' : ''}`}`);
   console.log(`  delta   changed=${JSON.stringify(delta.changed)} targeted=${delta.targeted.join(',') || '-'}`);
   if (!row.secretsClean) { stop = `P${i}: SPINE LEAK — the hard line is broken`; break; }
-  if (!dry && row.spentUsd == null) { stop = `P${i}: spend unknown — the cap cannot govern unpriced spend`; break; }
+  // Since F43 an unpriced/casualty run states a FLOOR with spendComplete:false (pre-F43: bare null); either halts.
+  if (!dry && (row.spendComplete === false || row.spentUsd == null)) { stop = `P${i}: spend not governable — the cap cannot govern an unpriced/floor spend`; break; }
 }
 
 resetPatient();

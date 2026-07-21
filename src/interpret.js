@@ -313,6 +313,13 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   // exactly as it did before F32 — attribution can only ADD a recovery path, never
   // swallow an instrument stop.
   const auditPath = join(workdir, 'gate-audit.jsonl');
+  // NOTE (Finding 4, deferred): this re-reads and re-parses the whole audit each
+  // call. That is O(1) reads when Layer R is OFF (called only at the rare crashed
+  // verdict), but O(attempts) when Layer R is ON, and the audit can accumulate
+  // across steps/runs. An incremental byte-cursor reader would make it O(total)
+  // — deferred as cleanup-tier (only bites the OFF-by-default arm) until it can
+  // carry its own multi-path-accumulation tests; the simple full-parse is kept
+  // because it is obviously correct.
   const workerWrites = () => {
     try {
       const paths = new Set();
@@ -334,7 +341,7 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   // stage needs the content the audit deliberately does not keep (bytes-only),
   // so it is teed below at the one seam that sees it — memory-only, scrubbed,
   // never the spine.
-  const root = layerRoot ? createRoot({ gapKeep: closeGapKeep, redact: (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS }) }) : null;
+  const root = layerRoot ? createRoot({ gapKeep: closeGapKeep, redact: (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS }), writesInformative: mode === 'tools' }) : null;
   // The tee rides the translator and resolves paths exactly as toolAction does,
   // so tee keys match audit paths byte-for-byte. The translator fires BEFORE the
   // gate decides (wireGate calls translate() inside its policy, then awaits
@@ -368,12 +375,13 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
       // written before the tool runs; shell_edit returns an anchor miss as a
       // refusal RESULT (bare-agent tools/shell.js:190) and a byte-cap overflow
       // as a throw (:204), both leaving the file untouched with the allow
-      // already on the audit. Snapshot the file HERE (pre-execution) so the
-      // post-execution seam can ask the only question that settles the note:
-      // is this content in the file now? Raw content, never the scrubbed copy —
-      // the comparison is against real bytes on disk; it is transient, and it
-      // never reaches a prompt, the spine, or the audit.
-      pendingProbe = { path, content, before: fileHash(path) };
+      // already on the audit. Snapshot the file hash HERE (pre-execution) so the
+      // post-execution seam can settle the note against ground truth. Carry the
+      // action TYPE: for the file-unchanged case, a write and an edit answer
+      // "did it land?" differently (Finding 2). Raw content, never the scrubbed
+      // copy — the comparison is against real bytes; transient, never on a
+      // prompt, the spine, or the audit.
+      pendingProbe = { path, content, type: act.type, before: fileHash(path) };
     }
     return act;
   };
@@ -387,7 +395,7 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
   const fileHash = (p) => {
     try { return createHash('sha256').update(readFileSync(p)).digest('hex'); } catch { return null; }
   };
-  /** @type {{path: string, content: string, before: string|null}|null} the write-class action awaiting its OUTCOME */
+  /** @type {{path: string, content: string, type: string, before: string|null}|null} the write-class action awaiting its OUTCOME */
   let pendingProbe = null;
   const { policy: gatePolicy, onLlmResult } = wireGate(gate, mode === 'tools' ? { actionTranslator: teeingTranslator } : {});
   // Settle the stage on the verdict. wireGate's policy returns true on allow,
@@ -426,23 +434,32 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
    *
    * NOT wired: `wireGate`'s own `onToolResult`, which would start feeding
    * `gate.record` per-tool records. That changes what `limits.maxTurns` /
-   * `maxToolRounds` count and therefore when a run halts — budget and cap
-   * semantics are arbiter territory, so it is named and PARKED, never bundled
-   * into a Layer R fix.
+   * `maxToolRounds` count and therefore when a run halts (the guarded
+   * llm-only-turns invariant at the Gate config above) — cap semantics are
+   * arbiter territory, so it is deliberately not wired here.
+   * @param {{result?: any}} [info] the tool's return value (bare-agent loop.js:988)
    */
-  const onToolOutcome = async () => {
+  const onToolOutcome = async (info) => {
     if (!root || !pendingProbe) return;
-    const { path: p, content, before } = pendingProbe;
+    const { path: p, content, type, before } = pendingProbe;
     pendingProbe = null;
-    // Landed iff the file changed, OR the emitted content is in the file now.
-    // The second clause is not redundant: a byte-identical rewrite changes no
-    // hash yet genuinely leaves that content in the file, and calling it a
-    // phantom would be the mirror of the bug being fixed. Empty content (a
-    // legal `newText:""` deletion) skips the substring test, which every string
-    // trivially satisfies — for a deletion, only the hash can answer.
-    let landed = fileHash(p) !== before;
-    if (!landed && content !== '') {
-      try { landed = readFileSync(p, 'utf8').includes(content); } catch { landed = false; }
+    // ONE read serves both the after-hash and the content check (Finding 5: the
+    // old path read the file twice). null = unreadable/absent.
+    let after = null;
+    try { after = readFileSync(p, 'utf8'); } catch { /* absent → after stays null */ }
+    let landed = after !== null && createHash('sha256').update(after, 'utf8').digest('hex') !== before;
+    if (!landed && after !== null) {
+      // The bytes did not change — but the action may still have left `content`
+      // in the file, and write vs edit answer that differently (Finding 2):
+      //   - write: a whole-file write always writes; identical bytes means the
+      //     content genuinely IS the file (exact equality, never a substring —
+      //     substring false-positived when newText appeared elsewhere).
+      //   - edit: a no-byte-change edit is EITHER an idempotent apply (newText===
+      //     oldText, "edited …: 1 replacement") OR a missed anchor ("shell_edit:
+      //     … no change made") — indistinguishable on disk, so the tool RESULT is
+      //     the only honest signal. An anchor miss is NOT landed.
+      if (type === 'write') landed = after === content;
+      else landed = typeof info?.result === 'string' && info.result.startsWith('edited ');
     }
     root.settleWrite(landed);
   };

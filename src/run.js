@@ -318,7 +318,11 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
   };
   const providerRed = () => {
     emit('escalation', { category: 'provider-red', decisionReady: true, decision: 'The provider path threw before a result existed — spend for the failed call is unknown (F6), and no drafting verdict exists.', options: ['fix the provider binding', 'retry the run', 'abandon the run'], detail: transportRed, spentUsd });
-    emit('job-end', { outcome: 'provider-red', ...spend() });
+    // A transport THROW never returned a usage figure, so the floor is NOT the total
+    // (F6): spendComplete must be false — spend()'s `!unpriced` only knows about priced
+    // rounds that came back unpriced, not a call that never returned at all. Leaving it
+    // true would have the job-end contradict the escalation's own "spend … is unknown".
+    emit('job-end', { outcome: 'provider-red', ...spend(), spendComplete: false });
     return 'provider-red';
   };
   const capNow = () => Math.min(shellCapUsd, job.budgetUsd - spentUsd);

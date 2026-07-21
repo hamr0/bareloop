@@ -147,7 +147,9 @@ for (let i = 1; i <= N_RUNS + MAX_EXTENSION; i++) {
 
   const raw = readFileSync(spineFile, 'utf8');
   const events = raw.trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
-  const spentUsd = events.findLast((e) => e.type === 'job-end')?.spentUsd ?? null;
+  const je = events.findLast((e) => e.type === 'job-end');
+  const spentUsd = je?.spentUsd ?? null;
+  const spendComplete = je?.spendComplete; // F43: false = a floor (casualty/unpriced); undefined pre-F43
   const rounds = events.filter((e) => e.type === 'worker-round').length;
   const leaks = SECRET_PATTERNS.map((re) => new RegExp(re.source, re.flags.replace('g', '') + 'g')).flatMap((re) => raw.match(re) ?? []);
 
@@ -161,13 +163,14 @@ for (let i = 1; i <= N_RUNS + MAX_EXTENSION; i++) {
     rate: last?.phase === 'verdict' ? last.rate : null,
     killed: last?.phase === 'verdict' ? last.killed : null,
     form: last?.form ?? null, auditHit: last?.auditHit ?? null, tamper: last?.tamper ?? false,
-    rounds, spentUsd, secretsClean: leaks.length === 0, spine: spineFile, audit,
+    rounds, spentUsd, spendComplete, secretsClean: leaks.length === 0, spine: spineFile, audit,
   };
   rows.push(row);
   cumulativeUsd += row.spentUsd ?? 0;
-  console.log(`  row     outcome=${row.outcome} phase=${row.phase ?? '-'} rate=${row.rate ?? 'UNREADABLE'} rounds=${row.rounds} spent=${row.spentUsd == null ? 'UNKNOWN' : `$${row.spentUsd.toFixed(4)}`}`);
+  console.log(`  row     outcome=${row.outcome} phase=${row.phase ?? '-'} rate=${row.rate ?? 'UNREADABLE'} rounds=${row.rounds} spent=${row.spentUsd == null ? 'UNKNOWN' : `${row.spendComplete === false ? '≥' : ''}$${row.spentUsd.toFixed(4)}${row.spendComplete === false ? ' (floor)' : ''}`}`);
   if (!row.secretsClean) { stop = `C${i}: SPINE LEAK — the hard line is broken`; break; }
-  if (!dry && row.spentUsd == null) { stop = `C${i}: spend unknown — the cap cannot govern unpriced spend`; break; }
+  // Since F43 an unpriced/casualty run states a FLOOR with spendComplete:false (pre-F43: bare null); either halts.
+  if (!dry && (row.spendComplete === false || row.spentUsd == null)) { stop = `C${i}: spend not governable — the cap cannot govern an unpriced/floor spend`; break; }
 }
 
 resetPatient();

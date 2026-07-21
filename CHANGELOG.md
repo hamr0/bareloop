@@ -29,6 +29,22 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **F44 — fresh whole-branch review: three correctness bugs + cleanups, all validated and
+  mutation-proven.** (1) A casualty job-end laundered unknown spend as complete: `1b0720c`
+  put `spentUsd` on every path, so a provider-red TRANSPORT THROW reported
+  `spendComplete: true` (F6 violation — the failed call's cost is unknown) and the battery
+  scripts' `spentUsd == null` casualty-STOP never fired. Fixed both sides: the transport
+  provider-red now reports `spendComplete: false` (the metered draft-truncation keeps
+  `true`), and the frozen battery/probe scripts key their STOP on
+  `spendComplete === false || spentUsd == null`. (2) Layer R's outcome probe mislabeled a
+  missed-anchor edit as "landed" when its `newText` appeared elsewhere (substring
+  false-positive) — now discriminated by the tool result, exact-equality for writes, one
+  read not two. (3) Layer R false-fired on a progressing text-mode worker with no gapKeep
+  (write-overlap is constant-true when the single target is rewritten every attempt) — a
+  `writesInformative` flag now requires a known-unmoved red-set when writes carry no
+  information. Cleanups: double redaction, unbounded `attempts` retention, a dead ternary.
+  (2) and (3) are latent behind the OFF-by-default `layerRoot`.
+
 - **Layer R settled its note on the gate's allow, which is written BEFORE the tool runs
   (F43).** An `allow` record states INTENT, never that bytes reached a file:
   `shell_edit` returns an anchor miss as a refusal *result* and a byte-cap overflow as a

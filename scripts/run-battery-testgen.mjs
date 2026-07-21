@@ -153,7 +153,9 @@ for (let i = 1; i <= runsRequested; i++) {
 
   const raw = readFileSync(spineFile, 'utf8');
   const events = raw.trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
-  const spentUsd = events.findLast((e) => e.type === 'job-end')?.spentUsd ?? null;
+  const je = events.findLast((e) => e.type === 'job-end');
+  const spentUsd = je?.spentUsd ?? null;
+  const spendComplete = je?.spendComplete; // F43: false = a floor (casualty/unpriced); undefined pre-F43
   const leaks = SECRET_PATTERNS.map((re) => new RegExp(re.source, re.flags.replace('g', '') + 'g')).flatMap((re) => raw.match(re) ?? []);
 
   // per-attempt readout: close entries appended during THIS run, minus the precheck
@@ -179,14 +181,15 @@ for (let i = 1; i <= runsRequested; i++) {
   const casualty = events.some((e) => e.type === 'escalation' && e.category === 'provider-red');
   const row = {
     run: `B${i}`, outcome, casualty, attempts, deliveredGaps, conversionPrimary, conversionLadder, green,
-    spentUsd, secretsClean: leaks.length === 0, spine: spineFile, audit,
+    spentUsd, spendComplete, secretsClean: leaks.length === 0, spine: spineFile, audit,
   };
   rows.push(row);
   cumulativeUsd += row.spentUsd ?? 0;
-  console.log(`  row     outcome=${row.outcome}${casualty ? ' CASUALTY' : ''} attempts=${attempts.map((a) => `${a.phase}${a.rate != null ? ':' + a.rate + '%' : ''}(r${a.rank})`).join(' → ') || '-'} spent=${row.spentUsd == null ? 'UNKNOWN' : `$${row.spentUsd.toFixed(4)}`}`);
+  console.log(`  row     outcome=${row.outcome}${casualty ? ' CASUALTY' : ''} attempts=${attempts.map((a) => `${a.phase}${a.rate != null ? ':' + a.rate + '%' : ''}(r${a.rank})`).join(' → ') || '-'} spent=${row.spentUsd == null ? 'UNKNOWN' : `${row.spendComplete === false ? '≥' : ''}$${row.spentUsd.toFixed(4)}${row.spendComplete === false ? ' (floor)' : ''}`}`);
   console.log(`  read    conversion primary=${conversionPrimary} ladder=${conversionLadder} green=${green}`);
   if (!row.secretsClean) { stop = `B${i}: SPINE LEAK — the hard line is broken`; break; }
-  if (!dry && row.spentUsd == null) { stop = `B${i}: spend unknown — the cap cannot govern unpriced spend`; break; }
+  // Since F43 an unpriced/casualty run states a FLOOR with spendComplete:false (pre-F43: bare null); either halts.
+  if (!dry && (row.spendComplete === false || row.spentUsd == null)) { stop = `B${i}: spend not governable — the cap cannot govern an unpriced/floor spend`; break; }
   // §8 by-construction check: attempt-1 green = the threshold formula failed = drift = STOP
   if (attempts.length >= 1 && attempts[0].verdict === 'satisfied') { stop = `B${i}: ATTEMPT-1 GREEN — threshold drift, battery invalid, re-derive (§8)`; break; }
 }

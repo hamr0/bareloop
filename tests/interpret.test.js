@@ -1136,3 +1136,48 @@ test('Layer R default is OFF: an omitted layerRoot never engages the ratchet, ev
   assert.ok(provider.calls.every((c) => !c.includes('RATCHET')), 'default OFF: no ratchet note in any prompt');
   assert.ok(!events.some((e) => e.type === 'root-injected'), 'default OFF: no root-injected on the spine');
 });
+
+// ─── F43 review follow-ups: onToolOutcome discriminator + text-mode false-fire ──
+// Finding 2: an anchor-miss edit whose newText already occurs elsewhere in the file
+// was mislabeled "landed" by a substring includes() fallback. The honest signal is
+// the tool RESULT ("shell_edit: …no change" vs "edited …").
+test('F2: a missed-anchor edit whose newText exists elsewhere is NOT reported as landed', async () => {
+  const wd = twd('root-phantom-substr');
+  const { workdir, target, close } = makeWork('root-phantom-substr');
+  // the file already CONTAINS the newText string, so a naive includes() would say "landed"
+  writeFileSync(target, 'export function sum(a, b) { return a - b; } // return a + b;\n');
+  // anchor 'ZZZ' is not in the file → shell_edit refuses, file untouched; but newText
+  // 'return a + b;' IS already present as a comment → includes() would false-positive
+  const miss = tcall('t1', 'shell_edit', { path: target, oldText: 'ZZZ', newText: 'return a + b;' });
+  const provider = stubProvider([
+    { toolCalls: [miss] }, { text: 'edited' },
+    { toolCalls: [miss] }, { text: 'edited' },
+    { toolCalls: [miss] }, { text: 'edited' },
+    { text: 'giving up' },
+  ]);
+  const file = join(workdir, 'run.jsonl');
+  await interpret(config(), {
+    task: TASK, target, close, workdir, capRuns: 4, emit: makeSpine(file), provider,
+    mode: 'tools', tools: ['read', 'edit'], layerRoot: true,
+  });
+  const notes = provider.calls.filter((c) => c.includes('RATCHET'));
+  assert.ok(notes.length >= 1, 'the repeated missed edit still fires the ratchet (intent axis)');
+  assert.ok(!notes.some((n) => n.includes('they landed')),
+    'a missed-anchor edit is never reported as landed, even when newText appears elsewhere');
+  assert.ok(notes.some((n) => /did NOT apply|NEITHER EDIT APPLIED/.test(n)), 'the note names the real failure');
+});
+
+// Finding 3: text mode + no gapKeep + a PROGRESSING worker. The single target is
+// rewritten every attempt (structurally forced), so write-overlap is always true;
+// with no red-set, the ratchet must NOT fire — it cannot see the progress and would
+// steer a working attempt off course ("inert when not stuck").
+test('F3: text mode without gapKeep never false-fires on a progressing worker', async () => {
+  const { events, provider } = await run('root-text-progress', config(), {
+    capRuns: 4, layerRoot: true, // NO closeGapKeep → no trustworthy red-set
+    // three DIFFERENT rewrites (the worker is trying new things, i.e. progressing), still red
+    script: [{ text: 'export const sum = 1;\n' }, { text: 'export const sum = 2;\n' }, { text: 'export const sum = 3;\n' }, { text: GOOD_SUM }],
+  });
+  assert.ok(provider.calls.every((c) => !c.includes('RATCHET')),
+    'text mode + no red-set: the ratchet cannot confirm fixation, so it stays inert');
+  assert.ok(!events.some((e) => e.type === 'root-injected'), 'no root-injected without a trustworthy red-set in text mode');
+});

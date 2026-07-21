@@ -80,12 +80,19 @@ const SUMMARY_MAX_PATHS = 10; // paths named in the summary line
  * running the detector off the file makes it blind to a worker re-firing an
  * identical edit whose anchor never matches — measured null on every attempt.
  *
- * @param {{gapKeep?: string, redact?: (s: string) => string}} [opts] the signed
- *   spec's kept-failures pattern (the red-set source; without it the detector
- *   degrades to write-overlap alone and the event says so) and the shell's
- *   secret scrubber (verbatim content is scrubbed before it rides a prompt).
+ * @param {{gapKeep?: string, redact?: (s: string) => string, writesInformative?: boolean}} [opts]
+ *   the signed spec's kept-failures pattern (the red-set source; without it the
+ *   detector degrades to write-overlap alone and the event says so), the shell's
+ *   secret scrubber (verbatim content is scrubbed before it rides a prompt), and
+ *   `writesInformative` (Finding 3, default true): whether the per-attempt
+ *   write-set carries information. In TOOL mode the worker CHOOSES which files to
+ *   write, so re-writing the same file is a real repetition signal; in TEXT mode
+ *   the one target is rewritten every attempt by construction, so write-overlap
+ *   is constant-true and carries none — with no red-set to compare, the detector
+ *   cannot tell repetition from progress and must stay inert (it would otherwise
+ *   steer a progressing worker off course, violating "inert when not stuck").
  */
-export function createRoot({ gapKeep, redact = (s) => s } = {}) {
+export function createRoot({ gapKeep, redact = (s) => s, writesInformative = true } = {}) {
   const keepRe = gapKeep ? new RegExp(gapKeep, 'm') : null;
   /**
    * The comparable red-set, or null when it CANNOT be trusted — one clean UNKNOWN
@@ -188,7 +195,12 @@ export function createRoot({ gapKeep, redact = (s) => s } = {}) {
       // an edit to a file already written in an earlier attempt is not in the
       // delta — the tee saw it, and a teed landed path IS this attempt's work
       for (const p of tee.keys()) if (cumulative.has(p) && !delta.includes(p)) delta.push(p);
-      attempts.push({ writes: delta, reds: gap ? keptSet(gap) : null, tee });
+      // `gap` is guaranteed truthy here (the `if (!gap) return` guard above handled
+      // the empty case); reds === null comes only from keptSet's own UNKNOWN logic.
+      attempts.push({ writes: delta, reds: keptSet(gap), tee });
+      // The detector only ever compares the last two finalized attempts, so older
+      // ones (and their teed content) are dead state — keep just the two (Finding 7).
+      if (attempts.length > 2) attempts.shift();
       prevCumulative = cumulative;
       tee = new Map();
       // a stage whose verdict never arrived (the attempt ended mid-flight) is not
@@ -206,7 +218,14 @@ export function createRoot({ gapKeep, redact = (s) => s } = {}) {
       const redsSame = last.reds === null && prev.reds === null ? null
         : last.reds === null || prev.reds === null ? false
         : JSON.stringify(last.reds) === JSON.stringify(prev.reds);
-      const fixated = overlap.length > 0 && redsSame !== false;
+      // Finding 3: when writes carry no information (text mode — the one target is
+      // rewritten every attempt regardless of progress), write-overlap alone can
+      // never establish fixation; only a KNOWN-unmoved red-set can. So the
+      // degraded writes-only path (redsSame === null) is available to fire only
+      // when writes ARE informative (tool mode). With informative writes the prior
+      // behavior stands: overlap + reds-not-known-to-have-moved.
+      const redsGate = writesInformative ? redsSame !== false : redsSame === true;
+      const fixated = overlap.length > 0 && redsGate;
       if (!fixated) { streak = 0; return null; }
       streak += 1;
 
@@ -258,7 +277,9 @@ export function createRoot({ gapKeep, redact = (s) => s } = {}) {
       /** @param {string} p */
       const block = (p) => {
         const t = /** @type {TeeEntry} */ (last.tee.get(p));
-        return `--- ${p}${t.trimmed ? ` (truncated to first ${TEE_CAP_BYTES} chars)` : ''} ---\n${redact(t.content)}`;
+        // t.content was already scrubbed by redact() in stageWrite before storage
+        // (Finding 6): re-redacting here is redundant work over already-masked text.
+        return `--- ${p}${t.trimmed ? ` (truncated to first ${TEE_CAP_BYTES} chars)` : ''} ---\n${t.content}`;
       };
       const landedFiles = files.filter((p) => /** @type {TeeEntry} */ (last.tee.get(p)).landed);
       const unappliedFiles = files.filter((p) => !(/** @type {TeeEntry} */ (last.tee.get(p)).landed));
