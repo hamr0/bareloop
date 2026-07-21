@@ -319,8 +319,12 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
 3. **Build Layer 2** — the micro-wheel road (plan-v1), with the stage-verdict rule above.
    Now carries a MEASURED requirement (F39): steps whose exits verify test correctness
    in-run (e.g. "your new tests pass on untouched source" as a form-checkable exit),
-   converting the semantic ask into F38's convertible mechanical genre. This is the
-   untested piece of the thesis: "notes + self-check" has never been observed succeeding.
+   converting the semantic ask into F38's convertible mechanical genre. **The premise is
+   POC-VALIDATED (F46, 2026-07-21): with an operator-signed in-run clean-run check as
+   the step exit, 3/3 rows cleared the wall F39's baseline died at 3/3 — two converted
+   the exact F39 death mid-run — and kill-rate rose 3/3 (no 45-green yet; that question
+   belongs to the build's battery). "Notes + self-check succeeds" is now observed at POC
+   tier; the build designs it properly (design record 2026-07-21).**
    **Also owns the Layer R default decision:** the first Layer 2 job that produces natural
    fixation runs the ON-vs-OFF acceptance read, and that result flips `layerRoot` to `true`
    (ON helps) or keeps it `false` (no lift) — see the Layer R ⚠ note above.

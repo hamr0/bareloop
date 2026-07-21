@@ -1,7 +1,16 @@
 # Layer 2 — plan-v1 micro-wheels: design record
 
-2026-07-21 · interview with hamr, decisions LOCKED · status: POC pending, build not started.
-Amend with dated addenda, never rewrite.
+2026-07-21 · interview with hamr, decisions LOCKED · status: **POC PASSED (F46) — build
+design is next; build not started.** Amend with dated addenda, never rewrite.
+
+> **Addendum 2026-07-21 (same day): POC verdict — PREMISE HOLDS.** The decision-3 POC
+> ran on `anthropic-api` (prereg amendments 2026-07-21a–d; clipipe firing 1 was VOID,
+> F45, and spawned upstream ask BA-16). Result: 3/3 acting rows cleared the clean wall
+> the F39 baseline died at 3/3; two rows hit the exact F39 death mid-run and converted
+> it via the check's mechanical gap; kill-rate 3/3 UP (27.5/40/37.5 vs 15 seed, 0 at
+> the 45 bar — recorded, not acceptance). $5.24 of $30. Full record: FINDINGS F46.
+> **Step 2 of the build order below is GO: design the step schema + plan-v1 validator +
+> checks menu properly. The POC harness ships nothing.**
 
 ## Role (fixed by measurement — do not relitigate)
 

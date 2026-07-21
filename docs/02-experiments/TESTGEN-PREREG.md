@@ -747,3 +747,35 @@ acceptance), grader-precheck-at-15 drift stop, casualty and 16g mid-cut detector
 rules all carried unchanged from 21a/21b (harness fixes `4c89942` in force).
 **Money:** $8/row, hard-stop $30 real, max 6 launches. Budget exhausted before 3
 ACT rows → report rows in hand, no top-up without hamr.
+
+## Amendment 2026-07-21d — 21c readout: PREMISE HOLDS (3/3 C-CLEAN-PASS, first clean-wall conversions ever observed)
+
+Run `mrui5bd9`, 3 launches, 3 valid ACT rows, **$5.24 of $30**, 0 casualties, 0
+INERT, 0 instrument stops, secrets clean, spendComplete true on all rows, all
+prechecks at 15%.
+
+**Frozen endpoints: C-CLEAN-PASS 3 · C-CLEAN-FAIL 0 · C-INERT 0 → ≥2/3 bar met →
+PREMISE HOLDS.** Row detail (grades by the frozen grader, harness-run once per
+green):
+
+| row | acted | rounds | check sequence | grade | vs seed |
+|---|---|---|---|---|---|
+| C1 | 9 | 40 | unchanged → check-green | 27.5% | UP |
+| C2 | 6 | 72 | unchanged → **clean-red** → check-green | 40% | UP |
+| C3 | 4 | 48 | unchanged → **clean-red** → check-green | 37.5% | UP |
+
+**The decisive observation:** C2 and C3 each hit the exact F39 death mid-run — a
+clean-red from tests asserting imagined behavior — received the pytest failures
+as the check's mechanical gap, and FIXED them in the next attempt. The event that
+killed 3/3 acting rows in F39 (same provider, same model, same description body,
+same seed, same grader) was observed twice and converted twice.
+
+**Axis split honored (pre-registered):** kill-rate was NOT acceptance and is
+reported as the secondary read: 3/3 UP (27.5 / 40 / 37.5 vs the 15% seed), 0
+greens at the 45 bar, survivor targeting 12–18 of 18. The open question "does
+clean-wall survival eventually buy a 45 green" belongs to the real build's
+battery, not this POC.
+
+**Disposition:** design record step 2 fires — design the real plan-v1 build
+(step schema + validator + checks menu); the POC harness is throwaway and ships
+nothing. Full record: FINDINGS F46.

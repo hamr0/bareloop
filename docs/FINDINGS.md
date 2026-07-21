@@ -2229,3 +2229,50 @@ the window it slices, and every frozen money rule needs its detector wired the
 day the rule is frozen — compliance by intention does not exist. And a cost
 re-baseline done on a floor-shaped workload is not a re-baseline (16g, third
 appearance): measure on the real transcript before a cap means anything.
+
+## F46 — the Layer 2 premise validated: an in-run operator-signed check converts the clean-wall death, 3/3
+
+**Setup (prereg 2026-07-21c, frozen 3f29b95; harness fixes 4c89942 in force).**
+CHECK arm on `anthropic-api` — the surface where the baseline natively lives:
+F39 (same provider, same claude-sonnet-5 worker, byte-identical description
+body, same 15% seed, same frozen grader and 45 bar) measured 3/3 acting rows
+dying at the clean wall and 0 kill-rate lift under hand-delivered state. The one
+lever added here: the row's in-run close is an operator-signed CHECK
+(changed-from-seed → D1 → form floor → clean run) with capRuns=4, and a
+check-green row faces the frozen grader exactly once, harness-run. In plan-v1
+vocabulary: `tree-changed ∧ check-passes(clean-run)` as a step exit.
+
+**Result: 3/3 C-CLEAN-PASS, $5.24 of $30, zero casualties, zero INERT.**
+C1: 9 acts, 40 rounds, graded 27.5%. C2: 6 acts, 72 rounds, 40%. C3: 4 acts,
+48 rounds, 37.5%. All three UP from the 15% seed; 0 greens at the 45 bar
+(recorded, never acceptance — the pre-registered axis split held).
+
+**The mechanism, observed directly in the check logs:** C2 and C3 each hit the
+EXACT F39 death mid-run — clean-red, tests asserting imagined behavior — and the
+check fed the pytest failure lines back as a mechanical gap (`FAILED
+test::name - AssertionError`, F38's convertible genre). Both rows fixed their
+imagined-behavior asserts on the next attempt and settled check-green. The event
+that was 100% fatal in F39 converted 2/2 times it occurred. C1 never hit the
+wall (cleared inside attempt 1). Aim stayed excellent as F39 found (12–18/18
+survivor functions targeted); what changed is that verification moved IN-RUN,
+where the worker can act on it before the verdict ends the attempt.
+
+**What this validates and what it does not.** Validated: "notes + self-check
+succeeds" — the thesis's single untested claim (F39/LAYERS.md) — at POC tier:
+the semantic ask ("strengthen assertions") became clearable mechanical walls,
+and the wheel converted them exactly as F38 predicted for that genre. NOT
+validated: reaching the 45 bar (0/3; whether iterated check-loops close the
+remaining 5–17.5 points is the real build's battery question); any clipipe-path
+claim (this ran on the API; the clipipe track is BA-16); and n=3 supports no
+rate estimate — the claim is existence and direction, not a percentage.
+
+**Cost note:** $1.39–2.03/row at capRuns=4 — the $8/row cap never came close to
+binding (16g margin held); the whole premise read cost $5.24.
+
+**Lesson.** The program's costliest question ("why doesn't feedback convert?")
+resolved into genre, twice: F38 showed mechanical gaps convert and semantic ones
+don't; F39 showed delivery isn't the gap; F46 shows a cheap operator-signed
+in-run check TRANSLATES the semantic ask into the mechanical genre — and the
+same worker that stalled 4/4 (F39) then went 3/3. Structure, not memory and not
+more state, was the missing piece — measured at $5.24 after $30+ of instruments
+that had to be built and broken to make this read possible.
