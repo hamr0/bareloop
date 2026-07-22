@@ -779,3 +779,85 @@ battery, not this POC.
 **Disposition:** design record step 2 fires — design the real plan-v1 build
 (step schema + validator + checks menu); the POC harness is throwaway and ships
 nothing. Full record: FINDINGS F46.
+
+## Amendment 2026-07-22a — the Layer 2 rung ACCEPTANCE battery (frozen BEFORE any number)
+
+The build landed (branch `layer-2-plan-v1`, 517 tests: four-field shape, plan-v1
+validator, exit evaluator, plan executor, runJob dispatch, native clipipe surface).
+This is the rung's exit gate: **job #4 through the REAL plan flow**, not the POC's
+throwaway harness. Driver `scripts/run-battery-l2accept.mjs`, spec
+`jobs/aurora-testgen-l2accept.json` (four-field plan shape, specHash
+`af338c9b3227da6a25846188721397f681e6fa69a7f9100de432227f24bcd53a`).
+
+**hamr's authorization (2026-07-22, AskUserQuestion):** surface `anthropic-api`;
+`$8/row`, target `n=3` valid rows; **draft + freeze + STOP for sign-off before any
+spend** (this amendment is that freeze). The acceptance-vs-recorded read split below
+is the one load-bearing choice carried into sign-off — confirm or override it.
+
+**What is NEW vs the POC (F46):** the POC HARDWIRED the winning composition
+(`tree-changed ∧ check-passes(clean-run)`) in a throwaway harness. Here the
+four-field spec dispatches `runJob → runPlan`: **scout → the Planner drafts a plan-v1
+DAG → the validator gates it → the per-step Loop+Gate executor runs it → the outer
+grader close (the only truth) + its bounded fix loop.** Two things the POC never
+tested now ride the read: (1) **does the Planner itself compose the check exit?**
+(it is told the check NAMES and the tree-changed pairing rule, never the command —
+recorded per row as `planReferencedCheck`); (2) the flow runs TWO mechanical feedback
+channels — the `clean-run` check DURING the steps, then the grader's survivor-count
+gap in the fix loop — strictly more than the POC's single check loop. The grade comes
+from the outer grader auto-run by the flow (POC harness-ran it once).
+
+**Surface / worker / patient (unchanged from 21c/d — behavioral reads live where the
+baselines live):** `anthropic-api`, worker `claude-sonnet-5`. F39 IS the baseline (0
+conversion; 3/3 acting rows died at the clean wall; same provider/model/seed/grader);
+the POC's 3/3 hardwired conversions (27.5/40/37.5, 0 at 45) are the second comparison.
+Full patient reset + manifest-verified seed re-copy + fresh litectx index per row.
+Per-row grader precheck must read exactly `verdict:15%` (drift = INSTRUMENT-STOP,
+re-derive). capRuns=4 (mirrors the POC check loop; bounds each step AND the fix loop).
+
+**PRIMARY read (acceptance — clean-wall conversion reproduced through the real flow):**
+- **L2-CONVERT** = an acting row (>0 gate-audited write/edit) whose outer grader
+  reaches `phase: 'verdict'` (a clean, graded suite — the flow drove the worker past
+  the clean wall F39 died at). **≥2 of 3 acting rows L2-CONVERT → ACCEPTANCE MET**:
+  the built machinery reproduces the POC's conversion; the Layer 2 path holds.
+- **0 of 3 → ACCEPTANCE FAILS**: the build broke the premise; the stop is the result;
+  findings entry; redesign with hamr.
+- **1 of 3, or INERT-dominated → MIXED**: report, decide with hamr, no unilateral
+  extension.
+
+**SECONDARY read (RECORDED, never acceptance — the pre-registered F32/F39 axis split):**
+kill-rate distribution, greens at the 45 bar (F38's single untested claim gets its
+first REAL-FLOW data), `planReferencedCheck` rate, vs-seed direction, vs the POC's
+27.5/40/37.5. Reaching 45 is a worker-CAPABILITY question, not a Layer 2 STRUCTURE
+question — so a conversion-positive battery with 0 greens at 45 is an honest open
+question, exactly as the POC recorded it, NOT a rung fail and NOT spin. **Milestone
+note (flagged for hamr):** the design record's "the Layer 2 path closes green
+end-to-end" (§110, the trigger that sunsets `steps[]`) additionally wants ≥1 genuine
+green (grader ≥45) through the plan flow. That is RECORDED here and, if achieved,
+additionally satisfies the sunset milestone — but per the axis split it does NOT gate
+acceptance. If 0/3 hit 45, acceptance can still be MET on conversion while the
+`steps[]` sunset waits for a later green.
+
+**Row classes (frozen):** CASUALTY (provider-red — never evidence) · INSTRUMENT-STOP
+(precheck drift, or cap bound mid-attempt/16g, or spend not governable) · L2-INERT
+(zero allowed write/edit across the run — valid, non-acting) · L2-PLAN-RED (the
+drafter never produced a validator-green plan in its two tries — a real build concern,
+valid, non-acting) · L2-CONVERT (acting + graded) · L2-NO-CONVERT (acting, never
+reached a graded suite — died at the clean wall / cap-halt / step-red).
+
+**Money (frozen):** `$8/row` REAL (operator-signed `budgetUsd`), `$30` cumulative
+hard-stop across all launches incl. casualties, max 6 launches. The budget must fund
+the plan steps PLUS the grader fix loop PLUS every check/grader run (16g sizing rule,
+twice-paid) — and because the real flow runs BOTH loops it may spend more per row than
+the POC's single loop. **If a row cap-halts before converting, that is a SIZING
+finding (re-size with hamr, caps never widened silently), reported distinctly from a
+premise fail.** `spendComplete:false` or null `spentUsd` → STOP (spend not governable,
+F43/F45). A cap binding mid-attempt (iteration-start with no worker-result, F45 fix 2)
+is a casualty and instrument-stops the run.
+
+**Standing rules unchanged:** provider-red rows are casualties (probe with the
+battery's own model before firing during instability); secrets scrub on the spine (a
+leak is the hard line broken → STOP); POC rows enter no battery evidence and vice
+versa; budget exhausted before 3 acting rows → report rows in hand, no top-up without
+hamr. Harness pre-validated $0 (2026-07-22, run `mrvp7tsq`, `--dry`): reset/seed/
+dispatch/precheck-at-15/spine-read all green; the scout throw relayed to provider-red
+cleanly. No worker round has run; no number exists.
