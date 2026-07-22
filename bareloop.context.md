@@ -380,7 +380,7 @@ default-enabled until a stuck job (Layer 2, or a manufactured-fixation probe) sh
 beats OFF. Flip the default to `true` the day that evidence lands; a `root-injected` event
 on your spine (when you pass `layerRoot: true`) is a signal worth reading, not noise.
 
-### `runJob(spec, { approvals, workdir, provider, emit, target?, capRuns?, shellCapUsd?, closeTimeoutMs?, execCmd?, layerRoot? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, emit, target?, capRuns?, shellCapUsd?, closeTimeoutMs?, execCmd?, layerRoot? })` → outcome — `src/run.js`
 
 The N2 runner — the shell's top layer; composes everything below it and interprets
 nothing itself. Sequence: **approval gate** (human-signs-always — refuses an unapproved
@@ -440,6 +440,27 @@ spine on every path that executed steps. Additional outcomes: `already-green |
 plan-red | check-red | close-red`. Worker prompts hold the v1.12 §5 contract
 (mutation-proven): the absolute repo root, the step's action/target, prior artifacts,
 the gap — NEVER the budget, the close command, a check's command, or the arbiter's books.
+
+**Two worker surfaces — API and native clipipe (BA-16, module 4d).** The plan flow is
+provider-agnostic: the close, the checks, and the exit evaluator are commands and form
+checks, so ONLY the worker differs. `job.provider === 'clipipe-subscription'` drives tools
+NATIVELY (the `claude` CLI owns the turn cycle) instead of through the `Loop`; every other
+provider runs the Loop unchanged (byte-identical — the API path cannot regress). Native
+governance is **constructor-time and per-worker**, so the runner cannot reuse one injected
+instance: pass `opts.nativeProvider`, a FACTORY the runner calls fresh per worker as
+`({ policy, onTurn?, maxTurns, hasTools }) => provider`. Return the right mode by `hasTools`:
+`true` → native tool mode (`toolProtocol:'claude-mcp'`, wire the gate's `policy` + `onTurn` +
+`maxTurns` onto the provider — the SAME `wireGate` fence, so a write outside the scope is
+DENIED at the bridge, live-proven); `false` → the toolless drafter, where a native session
+reports NO cost, so return a metered claude-json TEXT provider (`--output-format json`,
+`parse:'claude-json'`) — never an unmetered, invisible-spend session. A missing factory on a
+`clipipe-subscription` job is `interpreter-red`, never a silent fall-back to the metered API.
+Money reconciles PER SESSION (the CLI prices the session, `costUsd` null per turn,
+authoritative at close): the accounted `worker-round` is the session total, per-turn
+`worker-turn` events are attribution only. `maxTurns` (→ CLI `--max-turns`) is the
+per-attempt bound and surfaces `max_turns` as a BOUNDED attempt (judged, gap fed forward),
+the native analog of `loop.stop()`. Live-validated green end-to-end on the real CLI; the
+Loop path is untouched.
 
 **Resume-to-cap (close-first skip):** every predicate step runs its close FIRST, before
 any tokens (`close-precheck` on the spine, output scrubbed at capture like every close).

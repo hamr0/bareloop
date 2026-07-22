@@ -195,7 +195,11 @@ async function openDraftPr({ workdir, branch, title, body, addPaths, exec }) {
  * @param {unknown} opts.approvals `{ specHash, signer, ts }` records (from OUTSIDE the spec)
  * @param {string} opts.workdir the run directory (the fence's root)
  * @param {string} [opts.target] the step artifact path (text-mode steps; unused by tool-mode steps)
- * @param {any} opts.provider shell-owned LLM binding (never the config's)
+ * @param {any} opts.provider shell-owned LLM binding (never the config's; the Loop path)
+ * @param {(o: {policy: Function, onTurn?: Function, maxTurns: number, hasTools: boolean}) => any} [opts.nativeProvider]
+ *   native clipipe provider factory (BA-16), required for a `clipipe-subscription` plan-shape job —
+ *   threaded to runPlan, which builds one per worker (native tool mode when `hasTools`, else a
+ *   metered claude-json text provider for the toolless drafter); ignored on every Loop-driven provider
  * @param {(type: string, data?: object) => object} opts.emit spine emitter
  * @param {number} [opts.capRuns] shell-owned per-step iteration cap
  * @param {number} [opts.shellCapUsd] the shell's hard USD ceiling
@@ -212,7 +216,7 @@ async function openDraftPr({ workdir, branch, title, body, addPaths, exec }) {
  *   'job-red' | 'smoke-red' | 'config-red' | 'pricing-red' | 'provider-red' |
  *   'cap-halt' | 'close-unsupported' | `step-red:<id>`
  */
-export async function runJob(rawSpec, { approvals, workdir, target, provider, emit, capRuns = 3, shellCapUsd = 2, closeTimeoutMs, execCmd = defaultExec, layerRoot = false }) {
+export async function runJob(rawSpec, { approvals, workdir, target, provider, nativeProvider, emit, capRuns = 3, shellCapUsd = 2, closeTimeoutMs, execCmd = defaultExec, layerRoot = false }) {
   // 0. the ledger's counters, declared FIRST so that every job-end — including
   // the pre-token reds below — can state a real figure. An omitted `spentUsd` is
   // not a zero: a consumer reads `undefined` and either crashes or launders it
@@ -299,7 +303,7 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
   // money contract is identical to the legacy path.
   if (planShape) {
     const outcome = await runPlan(job, {
-      workdir, provider, emit: meter, capRuns, closeTimeoutMs,
+      workdir, provider, nativeProvider, emit: meter, capRuns, closeTimeoutMs,
       remainingUsd: () => Math.min(shellCapUsd, job.budgetUsd - spentUsd),
       isUnpriced: () => unpriced, // F6: let the plan flow bail in-flight, not just after it returns
     });

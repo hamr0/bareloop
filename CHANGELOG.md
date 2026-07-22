@@ -50,6 +50,34 @@ feature lands, **patch** = docs, fixes, scaffolding.
   - 139 new tests (503 total), TDD throughout, 3 targeted mutations fired and killed.
     Built and integration-tested against scripted providers; the real-model battery
     (job #4 vs F39's baseline) is the rung's acceptance gate and has NOT yet run.
+- **Module 4d — native clipipe worker surface (BA-16; `bare-agent` → `^0.33.0`).** The
+  plan flow now runs on TWO surfaces: the `Loop` (API, unchanged) and, when
+  `job.provider === 'clipipe-subscription'`, the `claude` CLI's NATIVE tool channel — the
+  subscription path (no metered API). Since native governance is constructor-time and
+  per-worker, the runner takes a `nativeProvider` FACTORY (`{policy, onTurn?, maxTurns,
+  hasTools}) => provider`) it calls fresh per worker: `hasTools:true` → native tool mode
+  (the SAME `wireGate` fence clips onto the provider — a live POC proved an out-of-scope
+  write is DENIED); `hasTools:false` → the toolless drafter runs metered claude-json TEXT
+  mode (a native session reports no cost — this path keeps the drafter's spend visible).
+  Money reconciles per session (accounted `worker-round` = session total; `worker-turn` =
+  attribution); `max_turns` is a bounded attempt, not an escalation; a missing factory is
+  `interpreter-red`, never a silent fall-back to the API. 5 native tests + a live
+  end-to-end smoke on the real CLI (green, all workers metered, `spendComplete` honest).
+
+### Fixed
+
+- **Layer 2 whole-branch review — 8 doctrine-restoring fixes to the plan flow** (all in the
+  graduated Layer 2 code, none in pre-existing modules; validated against source with 0
+  refuted, a failing-then-passing test each): a `gold` close validated under `verdictType:
+  green` crashed `runPlan` with no `job-end` (now `close-unsupported` before tokens); the
+  `check-passes` gap was re-truncated to 400 chars, deleting the gapKeep failing-test names
+  (F28 reintroduced — now carried whole); no in-flight `pricing-red` (F6 — now bails at
+  scout/plan/step); the plan drafter's Gate budget was frozen pre-execute and reused for the
+  replan (now a fresh drafter per `obtainPlan`); a money-gate halt triggered a replan instead
+  of stopping (F45 — now gated on funds, drained → honest `cap-halt`); the step-setup catch
+  recorded a category the escalation contradicted (F11 — now agreed); the plan branch dropped
+  F44's `spendComplete:false` on a transport-throw `provider-red`; a write-only tool ceiling
+  validated, blinding the scout (now requires ≥1 read-capable verb).
 
 ## [0.4.0] — 2026-07-21
 

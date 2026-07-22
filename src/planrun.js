@@ -99,7 +99,14 @@ ${scoutBlob || '(no scout notes)'}`;
  * @param {any} job the validated plan-shape spec
  * @param {object} opts
  * @param {string} opts.workdir the run directory (the fence's root)
- * @param {any} opts.provider shell-owned LLM binding
+ * @param {any} opts.provider shell-owned LLM binding (the Loop path — `anthropic-api`)
+ * @param {(o: {policy: Function, onTurn?: Function, maxTurns: number, hasTools: boolean}) => any} [opts.nativeProvider]
+ *   NATIVE clipipe factory (BA-16): required when `job.provider === 'clipipe-subscription'`.
+ *   The runner builds a FRESH provider per worker and picks the mode by `hasTools`:
+ *   `true` → native tool mode (`toolProtocol:'claude-mcp'`, wire `policy`+`onTurn`+`maxTurns`);
+ *   `false` → the drafter has no tools, so a native session would report NO cost — return a
+ *   metered claude-json TEXT provider (`--output-format json`, `parse:'claude-json'`) instead,
+ *   so its spend is never invisible. The Loop path (`anthropic-api`) never touches this.
  * @param {(type: string, data?: object) => object} opts.emit spine emitter (the caller's METERED emit)
  * @param {() => number} opts.remainingUsd the one wallet: what is left of the signed budget right now
  * @param {() => boolean} [opts.isUnpriced] has any round come back with a null cost? (F6) — the
@@ -111,9 +118,15 @@ ${scoutBlob || '(no scout notes)'}`;
  *   'check-red' | 'close-red' | 'close-unsupported' | 'pricing-red' | 'cap-halt' |
  *   'provider-red' | 'interpreter-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, emit, remainingUsd, isUnpriced = () => false, capRuns = 3, closeTimeoutMs, maxStepRounds = 40 }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, emit, remainingUsd, isUnpriced = () => false, capRuns = 3, closeTimeoutMs, maxStepRounds = 40 }) {
   workdir = resolve(workdir);
   const scrub = (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS });
+
+  // Which worker surface? `clipipe-subscription` drives tools NATIVELY (the CLI
+  // owns the turn cycle, BA-16); every other provider runs the Loop. The close,
+  // the checks, and the exit evaluator are provider-independent (commands and
+  // form checks) — ONLY the worker differs, so the whole plan flow is shared.
+  const native = job.provider === 'clipipe-subscription';
 
   // ── close-unsupported (F17 guard, mirrored from the legacy path at run.js):
   // the plan flow executes a PREDICATE close only — a command whose exit code is
@@ -129,6 +142,21 @@ export async function runPlan(job, { workdir, provider, emit, remainingUsd, isUn
     });
     return 'close-unsupported';
   }
+
+  // ── native wiring: a clipipe-subscription job needs the native provider
+  // FACTORY (native governance is constructor-time + per-worker, so the runner
+  // cannot reuse one injected instance). A missing factory is an adopter wiring
+  // gap, never a silent fall-back to the Loop path (that would run a
+  // subscription job on the metered API — the wrong bill on the wrong surface).
+  if (native && typeof nativeProvider !== 'function') {
+    emit('escalation', {
+      category: 'interpreter-red', decisionReady: true,
+      decision: 'This job declares provider clipipe-subscription (native tool mode), but no native provider factory was wired into the runner.',
+      options: ['wire a native CLIPipeProvider factory (opts.nativeProvider)', 'change the job provider to a Loop-driven one'],
+    });
+    return 'interpreter-red';
+  }
+
   const closeArgv = job.close.cmd.trim().split(/\s+/);
   const closeOpts = { timeoutMs: closeTimeoutMs, cwd: workdir, expect: job.close.expect, judged: job.close.judged, gapKeep: job.close.gapKeep };
 
@@ -224,14 +252,95 @@ export async function runPlan(job, { workdir, provider, emit, remainingUsd, isUn
     let roundsThisAttempt = 0;
     /** @type {number|string|undefined} */
     let attemptBounded;
+    const grantedNames = new Set(granted.map((v) => /** @type {Record<string, string>} */ (TOOL_BY_VERB)[v]));
+    const shell = createShellTools().tools.filter((/** @type {{name: string}} */ t) => grantedNames.has(t.name));
+    const ctx = [...CTX_TOOLS].some((t) => grantedNames.has(t))
+      ? createCtxTools(lc, workdir, emit).filter((t) => grantedNames.has(t.name))
+      : [];
+    if (ctx.length) await lc.index();
+    const toolDefs = [...shell, ...ctx];
+    const system = PERSONA_TOOLS + (granted.includes('edit') ? EDIT_STRATEGY : '') + (ctx.length ? RETRIEVAL_STRATEGY : '');
+    /** @param {any} u @returns {{inputTokens: number, outputTokens: number, cacheReadTokens: number, cacheCreationTokens: number}} */
+    const usageOf = (u) => ({ inputTokens: u?.inputTokens ?? 0, outputTokens: u?.outputTokens ?? 0, cacheReadTokens: u?.cacheReadTokens ?? 0, cacheCreationTokens: u?.cacheCreationTokens ?? 0 });
+
+    if (native && toolDefs.length > 0) {
+      // ── NATIVE clipipe TOOL session (BA-16): the CLI owns the turn cycle, so
+      // the arbiter clips onto the PROVIDER — policy (the SAME wireGate fence,
+      // proven to deny out-of-scope), onTurn (metering), maxTurns (the
+      // per-session round bound). Money is null per turn and AUTHORITATIVE at
+      // session close (the round-level F12 figure the CLI does not expose; the
+      // session total is honest — the per-session reconciliation). Only workers
+      // WITH tools take this path: a native session with NO tools fires no
+      // onTurn and reports no cost (live-verified), so the toolless drafter runs
+      // the metered claude-json TEXT path below instead (never unmetered spend).
+      /** @param {{costUsd?: number|null, pricing?: string|null, usage?: any, kind?: string}} arg */
+      const nativeMetered = async (arg) => {
+        const session = (arg?.kind ?? 'turn') === 'session';
+        // per-turn events are ATTRIBUTION ONLY (`worker-turn`, never accounted —
+        // a native turn's cost is null BY DESIGN and F6 must not read it as
+        // unpriced); the session-close event carries the authoritative cost and
+        // IS the one accounted `worker-round` the ledger sums (F12 at the surface
+        // the CLI actually meters).
+        emit(session ? 'worker-round' : 'worker-turn', {
+          phase, iteration: roundIteration, kind: arg?.kind ?? 'turn',
+          costUsd: session ? (arg?.costUsd ?? null) : null, pricing: arg?.pricing ?? null,
+          tokens: (arg?.usage?.inputTokens ?? 0) + (arg?.usage?.outputTokens ?? 0),
+          usage: usageOf(arg?.usage),
+        });
+        return onLlmResult(arg);
+      };
+      const provider2 = /** @type {any} */ (nativeProvider)({ policy, onTurn: nativeMetered, maxTurns: attemptRounds, hasTools: true });
+      const loop = new Loop({ provider: provider2, system }); // no Loop policy / no cacheMessages: the CLI owns the transcript
+      /** @param {string} prompt @param {typeof toolDefs} [defs] */
+      const ask = async (prompt, defs = toolDefs) => {
+        let r;
+        try {
+          r = await loop.run([{ role: 'user', content: prompt }], defs, { maxTokens: 32000 });
+        } catch (e) {
+          const err = /** @type {CategorizedError} */ (e);
+          err.category = e instanceof HaltError ? 'cap-halt' : (err.category ?? 'provider-red');
+          throw err;
+        }
+        // a maxTurns session is a BOUNDED attempt, not an escalation — the same
+        // role loop.stop() plays on the Loop path: judge the partial work and
+        // feed the gap forward (the CLI preserves lastText, BA-5).
+        if (r.error === 'max_turns') {
+          attemptBounded = roundIteration;
+          emit('attempt-bounded', { phase, iteration: roundIteration, cap: attemptRounds, native: true });
+          return r;
+        }
+        if (r.error) {
+          const err = /** @type {CategorizedError} */ (new Error(`native session: ${r.error}`));
+          // halt → cap-halt, denial streak → gate-red; a bridge/session terminal
+          // (bridge-failed, session_timeout, session:*) is provider-owned transport
+          err.category = r.error.startsWith('halt:') ? 'cap-halt'
+            : r.error.startsWith('denied:') ? 'gate-red'
+            : 'provider-red';
+          err.lib = 'bare-agent';
+          throw err;
+        }
+        return r;
+      };
+      return { ask, workerWrites, setIteration: (/** @type {number|string} */ i) => { roundIteration = i; roundsThisAttempt = 0; }, wasBounded: () => attemptBounded };
+    }
+
+    // ── LOOP path: the injected provider (anthropic-api and every other
+    // Loop-driven binding), OR — for a native worker with NO tools (the plan
+    // drafter) — a claude-json structured-output CLIPipe from the factory. Native
+    // tool mode cannot meter a toolless session (no onTurn, no cost); the
+    // claude-json TEXT path reports a real per-call cost that the Loop's
+    // onLlmResult meters exactly like an API round, so the drafter's spend is
+    // never invisible (F6/F44). The gate policy is wired but idle (no tools).
+    const loopProvider = native
+      ? /** @type {any} */ (nativeProvider)({ policy, maxTurns: attemptRounds * (attempts + 1), hasTools: false })
+      : provider;
     /** @param {{costUsd?: number|null, pricing?: string|null, usage?: any, kind?: string}} arg */
     const metered = async (arg) => {
-      const u = arg?.usage ?? {};
       emit('worker-round', {
         phase, iteration: roundIteration, kind: arg?.kind ?? 'turn',
         costUsd: arg?.costUsd ?? null, pricing: arg?.pricing ?? null,
-        tokens: (u.inputTokens ?? 0) + (u.outputTokens ?? 0),
-        usage: { inputTokens: u.inputTokens ?? 0, outputTokens: u.outputTokens ?? 0, cacheReadTokens: u.cacheReadTokens ?? 0, cacheCreationTokens: u.cacheCreationTokens ?? 0 },
+        tokens: (arg?.usage?.inputTokens ?? 0) + (arg?.usage?.outputTokens ?? 0),
+        usage: usageOf(arg?.usage),
       });
       if ((arg?.kind ?? 'turn') === 'turn') {
         roundsThisAttempt += 1;
@@ -243,19 +352,7 @@ export async function runPlan(job, { workdir, provider, emit, remainingUsd, isUn
       }
       return onLlmResult(arg);
     };
-    const grantedNames = new Set(granted.map((v) => /** @type {Record<string, string>} */ (TOOL_BY_VERB)[v]));
-    const shell = createShellTools().tools.filter((/** @type {{name: string}} */ t) => grantedNames.has(t.name));
-    const ctx = [...CTX_TOOLS].some((t) => grantedNames.has(t))
-      ? createCtxTools(lc, workdir, emit).filter((t) => grantedNames.has(t.name))
-      : [];
-    if (ctx.length) await lc.index();
-    const toolDefs = [...shell, ...ctx];
-    const loop = new Loop({
-      provider,
-      system: PERSONA_TOOLS + (granted.includes('edit') ? EDIT_STRATEGY : '') + (ctx.length ? RETRIEVAL_STRATEGY : ''),
-      policy,
-      onLlmResult: metered,
-    });
+    const loop = new Loop({ provider: loopProvider, system, policy, onLlmResult: metered });
     /** @param {string} prompt @param {typeof toolDefs} [defs] */
     const ask = async (prompt, defs = toolDefs) => {
       let r;

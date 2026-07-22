@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runPlan } from '../src/planrun.js';
 import { validateJob } from '../src/job.js';
-import { scriptedProvider } from './helpers.js';
+import { scriptedProvider, scriptedNativeFactory } from './helpers.js';
 
 const tcall = (id, name, args) => ({ id, name, arguments: args });
 
@@ -365,4 +365,87 @@ test('a step SETUP fault is recorded on the plan-executed spine with the SAME ca
   assert.equal(exec.steps.at(-1).outcome, esc.category, 'the recorded step outcome MATCHES the escalation category (no contradiction)');
   assert.equal(esc.category, 'interpreter-red', 'an uncategorized setup throw is interpreter-red (infra), not provider-red');
   assert.equal(outcome, 'interpreter-red');
+});
+
+// ── module 4d: NATIVE clipipe (BA-16). The plan flow is provider-agnostic —
+// only the WORKER differs. Live-POC-proven that the REAL provider+gate governs;
+// these drive OUR executor branch deterministically via a scripted native
+// factory. The Loop path (anthropic-api) above is untouched (parity by design).
+
+test('NATIVE clipipe: the SAME plan flow runs green — the CLI executes the gated write, exits green, close green (module 4d)', async (t) => {
+  const wd = makePatient(t);
+  const jv = validateJob(JOB(wd, { provider: 'clipipe-subscription' }));
+  assert.deepEqual(jv.reds, [], 'clipipe-subscription is an admitted provider');
+  const nativeProvider = scriptedNativeFactory([
+    { turns: [{ text: 'src/mod.mjs exports x; tests/ is empty' }] },   // scout session
+    { turns: [{ text: PLAN(wd) }] },                                   // plan-draft session
+    { turns: [{ tool: 'shell_write', args: { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok — asserts x\n' } }, { text: 'wrote it' }] },
+  ]);
+  const { events, emit } = collector();
+  const outcome = await runPlan(jv.job, { workdir: wd, nativeProvider, emit, capRuns: 3, remainingUsd: () => 1.5 });
+  assert.equal(outcome, 'green');
+  assert.ok(existsSync(join(wd, 'tests', 'test_x.mjs')), 'the native session executed the gated write');
+  assert.ok(events.find((e) => e.type === 'plan-executed'), 'the SAME plan-executed spine record (design law #2)');
+});
+
+test('NATIVE clipipe: the gate DENIES an out-of-fence write — the same fence that held in the live POC, now in-suite (module 4d)', async (t) => {
+  const wd = makePatient(t);
+  const jv = validateJob(JOB(wd, { provider: 'clipipe-subscription' }));
+  const outPath = join(wd, 'secret', 'leak.txt'); // OUTSIDE writeScope tests/**
+  const nativeProvider = scriptedNativeFactory([
+    { turns: [{ text: 'scout' }] },
+    { turns: [{ text: PLAN(wd) }] },
+    { turns: [{ tool: 'shell_write', args: { path: outPath, content: 'leak\n' } }, { text: 'tried to escape' }] },
+  ]);
+  const { events, emit } = collector();
+  await runPlan(jv.job, { workdir: wd, nativeProvider, emit, capRuns: 1, remainingUsd: () => 1.5 });
+  assert.ok(!existsSync(outPath), 'the out-of-fence write was DENIED by the provider policy — the fence is real, not a fence-that-isn\'t-there');
+});
+
+test('NATIVE clipipe: money is metered at SESSION close (worker-round); per-turn events are attribution-only — the per-session reconciliation (module 4d)', async (t) => {
+  const wd = makePatient(t);
+  const jv = validateJob(JOB(wd, { provider: 'clipipe-subscription' }));
+  const nativeProvider = scriptedNativeFactory([
+    { turns: [{ text: 'scout' }], cost: 0.02 },
+    { turns: [{ text: PLAN(wd) }], cost: 0.01 },
+    { turns: [{ tool: 'shell_write', args: { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' } }, { text: 'done' }], cost: 0.03 },
+  ]);
+  let spent = 0;
+  const { events, emit } = collector();
+  const meter = (/** @type {string} */ type, /** @type {any} */ data = {}) => {
+    if (type === 'worker-round' && typeof data.costUsd === 'number') spent += data.costUsd; // mirror run.js's ledger
+    return emit(type, data);
+  };
+  const outcome = await runPlan(jv.job, { workdir: wd, nativeProvider, emit: meter, capRuns: 3, remainingUsd: () => 1.5 });
+  assert.equal(outcome, 'green');
+  const rounds = events.filter((e) => e.type === 'worker-round');
+  const turnEvents = events.filter((e) => e.type === 'worker-turn');
+  assert.ok(turnEvents.length >= 3, 'per-turn attribution rides the spine as worker-turn');
+  assert.ok(rounds.every((r) => typeof r.costUsd === 'number'), 'every ACCOUNTED worker-round carries a real session cost — never a null-per-turn (F6 not tripped)');
+  assert.ok(Math.abs(spent - 0.06) < 1e-9, `the ledger sums SESSION totals only (0.02+0.01+0.03), got ${spent}`);
+});
+
+test('NATIVE clipipe: a maxTurns session is a BOUNDED attempt (judged, gap forward), not an escalation — the loop.stop() analog (module 4d)', async (t) => {
+  const wd = makePatient(t);
+  const jv = validateJob(JOB(wd, { provider: 'clipipe-subscription' }));
+  const nativeProvider = scriptedNativeFactory([
+    { turns: [{ text: 'scout' }] },
+    { turns: [{ text: PLAN(wd) }] },
+    // 7 text turns with the step round-bound at 6 → max_turns, and NOTHING written
+    { turns: Array.from({ length: 7 }, (_, i) => ({ text: `thinking ${i}` })) },
+    { turns: [{ tool: 'shell_write', args: { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' } }, { text: 'now wrote it' }] },
+  ]);
+  const { events, emit } = collector();
+  const outcome = await runPlan(jv.job, { workdir: wd, nativeProvider, emit, capRuns: 3, remainingUsd: () => 1.5 });
+  assert.ok(events.some((e) => e.type === 'attempt-bounded' && e.native === true), 'the maxTurns session emitted attempt-bounded, not an escalation');
+  assert.equal(outcome, 'green', 'the bounded attempt fed its gap forward and attempt 2 converted');
+});
+
+test('NATIVE clipipe: a clipipe-subscription job with NO native factory wired is interpreter-red — never a silent fall-back to the metered API (module 4d)', async (t) => {
+  const wd = makePatient(t);
+  const jv = validateJob(JOB(wd, { provider: 'clipipe-subscription' }));
+  const { events, emit } = collector();
+  const outcome = await runPlan(jv.job, { workdir: wd, emit, capRuns: 3, remainingUsd: () => 1.5 }); // no nativeProvider
+  assert.equal(outcome, 'interpreter-red', 'a missing factory is a wiring stop, before any tokens or the close');
+  assert.equal(events.filter((e) => e.type === 'escalation').at(-1)?.category, 'interpreter-red');
 });
