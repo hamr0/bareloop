@@ -13,7 +13,7 @@
 <p align="center">
   <img src="https://img.shields.io/github/package-json/v/hamr0/bareloop?label=version&color=2a4f8c" alt="version (auto from package.json)">
   <img src="https://img.shields.io/badge/license-Apache%202.0-2a4f8c" alt="license: Apache 2.0">
-  <img src="https://img.shields.io/badge/status-Layer%20R%20%C2%B7%20ratchet%20armed-2a6d3a" alt="status: Layer R, ratchet armed">
+  <img src="https://img.shields.io/badge/status-Layer%202%20%C2%B7%20accepted-2a6d3a" alt="status: Layer 2, accepted">
 </p>
 
 **"Automate this job — I don't know the best workflow."** For tasks that are **repeated,
@@ -25,15 +25,15 @@ inheritance with ledger-counted attribution.
 The pitch in one line: **workflows that earn their own design, with receipts** — every
 inherited rule carries the green that minted it and the contrast that attributed it.
 
-> **Status: Layer R — the within-run ratchet is built and armed.** `runJob()` takes a
-> signed job spec through draft → per-step worker loops → close verdicts → draft PR,
-> under one budget the agent can only tighten; the shell now also detects a worker
-> stuck repeating itself and feeds back its own failed attempts (escalating
-> summary→verbatim). Two frozen probes found the disease in remission under the current
-> loop (F41: 0 fixated pairs in 14, jobs #1/#2/#4), so the ratchet ships inert-by-
-> measurement with its field read deferred to the first run that trips it. Next is
-> Layer 2 (plan-v1 micro-wheels), then executed inheritance (N3) — the ladder's
-> kill-switch question.
+> **Status: Layer 2 — accepted.** The agent now authors its own workflow: `runJob()`
+> takes a signed job spec, surveys the repo, **drafts a validated plan of bounded steps**
+> (each with an operator-signed self-check it may reference but never author), and runs it
+> under an un-gameable outer close and one budget it can only tighten. On the real-model
+> acceptance battery (F47) the emergent flow converted a job the same worker failed 4/4
+> before — 3/3 runs, clearing the owned bar every time, composing its own check exits. The
+> within-run ratchet (Layer R) ships armed-and-inert by measurement (F41). Next: **N3 —
+> executed inheritance**, where the workflow persists and improves across runs (the
+> ladder's kill-switch question).
 
 ## Quick start
 

@@ -1,11 +1,16 @@
 # bareloop — Integration Guide
 
-> **Current through N2 + the Layer 2 core** (headless single-job loop: `runJob`, text +
+> **Current through Layer 2 (ACCEPTED, F47)** (headless single-job loop: `runJob`, text +
 > tool middles, the draft-PR hitl step; the plan-v1 flow — four-field job shape, agent-
-> authored validated plans, in-run check exits); API sections fill in as build-ladder
-> rungs land (PRD §10). What is settled — the boundary, the architecture, the refusals,
-> the constraints — is settled for good. Per LIBRARY_CONVENTIONS §3 this file ships with
-> the package and is the complete adopter contract; the README is only the pitch.
+> authored validated plans, in-run check exits — validated end-to-end on the real-model
+> acceptance battery: 3/3 conversion, 3/3 over the owned bar, the agent composing its own
+> check exits). The plan shape is the primary path; legacy `steps[]` co-exists but sunsets
+> on landing. Runs on two worker surfaces — the API `Loop` and, for
+> `clipipe-subscription`, the CLI's native tool channel (module 4d). API sections fill in
+> as build-ladder rungs land (PRD §10). What is settled — the boundary, the architecture,
+> the refusals, the constraints — is settled for good. Per LIBRARY_CONVENTIONS §3 this
+> file ships with the package and is the complete adopter contract; the README is only
+> the pitch.
 
 ## What this is
 

@@ -48,8 +48,21 @@ feature lands, **patch** = docs, fixes, scaffolding.
     runJob entry — same approval gate, smoke, ledger, and job-end money contract.
     New outcomes: `already-green | plan-red | check-red | close-red`.
   - 139 new tests (503 total), TDD throughout, 3 targeted mutations fired and killed.
-    Built and integration-tested against scripted providers; the real-model battery
-    (job #4 vs F39's baseline) is the rung's acceptance gate and has NOT yet run.
+    Built and integration-tested against scripted providers.
+- **Layer 2 rung ACCEPTED — the real-model acceptance battery (F47; prereg
+  `docs/02-experiments/TESTGEN-PREREG.md` §2026-07-22a/b).** Job #4 (TESTGEN) run
+  through the REAL plan flow (`runJob → runPlan`: scout → the agent DRAFTS the plan →
+  validator gates → per-step check-loops → outer grader), on `anthropic-api`,
+  claude-sonnet-5, vs F39's baseline (0 conversion) and the F46 POC (hardwired).
+  **3/3 valid acting rows converted (≥2/3 bar) → accepted; 3/3 cleared the 45% bar
+  (67.5/55/55, vs the POC's 27.5/40/37.5 with 0 at 45); 3/3 the agent composed the
+  `check-passes(clean-run)` exit ITSELF** (the one thing the POC could not test). Every
+  green driven by the step check-loop alone; all writes fenced, source frozen, secrets
+  clean; the F45 spend guard stopped an unpriced casualty. 7 provider-red casualties
+  across an Overloaded window (excluded as evidence), $27.36 of a $30 cap. This trips
+  the "path closes green end-to-end" milestone: **`steps[]` and config-v1 sunset on
+  landing.** Driver `scripts/run-battery-l2accept.mjs` (gained `--need`/`--priorUsd`
+  for a multi-run continuation under one governed cap).
 - **Module 4d — native clipipe worker surface (BA-16; `bare-agent` → `^0.33.0`).** The
   plan flow now runs on TWO surfaces: the `Loop` (API, unchanged) and, when
   `job.provider === 'clipipe-subscription'`, the `claude` CLI's NATIVE tool channel — the
