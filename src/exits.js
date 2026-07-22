@@ -21,6 +21,15 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { globToPrefix } from './validate.js';
 
+/** The check gap is ALREADY bounded upstream by runClose's boundGap (head +
+ * gapKeep block ≤ 8192 + tail ≈ 10KB, with the failing-test NAMES preserved).
+ * The evaluator must NOT re-truncate it: a 400-char clamp deletes exactly those
+ * `not ok`/`FAILED` names — the mechanical gap the F46 conversion mechanism
+ * feeds the worker (F28 reintroduced). This cap is a defensive backstop above
+ * boundGap's own envelope: a normal bounded gap passes through intact, and only
+ * a pathological seam that returned an unbounded gap would ever be trimmed. */
+const CHECK_GAP_MAX = 12000;
+
 /** @typedef {{ type: string, pass: boolean, detail?: string, fault?: string }} ExitResult
  * `fault` present means the INSTRUMENT could not judge (unwired snapshot/seam,
  * a check in runClose's forbidden zone) — it carries the runClose verdict name
@@ -134,9 +143,9 @@ async function evalOne(e, { dir, snapshot, runCheck }) {
       // NAME: 'crashed' keeps its F32 routing (worker-crash after writes —
       // the F46 broken-test mechanism), 'timed-out' keeps its own decision
       if (typeof (/** @type {any} */ (r).fault) === 'string') {
-        return { type: e.type, pass: false, fault: /** @type {any} */ (r).fault, detail: `check "${e.name}": ${(r.gap ?? '').slice(0, 400)}` };
+        return { type: e.type, pass: false, fault: /** @type {any} */ (r).fault, detail: `check "${e.name}": ${(r.gap ?? '').slice(0, CHECK_GAP_MAX)}` };
       }
-      return { type: e.type, pass: false, detail: `check "${e.name}" red: ${(r.gap ?? '').slice(0, 400)}` };
+      return { type: e.type, pass: false, detail: `check "${e.name}" red: ${(r.gap ?? '').slice(0, CHECK_GAP_MAX)}` };
     } catch (err) {
       return { type: e.type, pass: false, fault: 'failed', detail: `check "${e.name}" crashed the seam: ${String(/** @type {Error} */ (err).message).slice(0, 200)}` };
     }

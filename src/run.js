@@ -301,10 +301,16 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, em
     const outcome = await runPlan(job, {
       workdir, provider, emit: meter, capRuns, closeTimeoutMs,
       remainingUsd: () => Math.min(shellCapUsd, job.budgetUsd - spentUsd),
+      isUnpriced: () => unpriced, // F6: let the plan flow bail in-flight, not just after it returns
     });
     if (unpriced) return pricingRed();
     if (outcome.startsWith('step-red:')) {
       emit('job-end', { outcome: 'step-red', step: outcome.slice('step-red:'.length), ...spend() });
+    } else if (outcome === 'provider-red') {
+      // F44: a transport-throw provider-red never returned a usage figure for the
+      // failed call, so the priced sum is a FLOOR, not the total — mirror the
+      // legacy providerRed(): spendComplete false, never overclaim an exact total.
+      emit('job-end', { outcome, ...spend(), spendComplete: false });
     } else {
       emit('job-end', { outcome, ...spend() });
     }

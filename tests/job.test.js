@@ -569,6 +569,7 @@ const PLAN_RED_CASES = [
   ['unknown tool in the ceiling', (j) => { j.tools = ['read', 'bash']; }, 'invalid-value:tools'],
   ['empty tool ceiling is ungrantable', (j) => { j.tools = []; }, 'invalid-value:tools'],
   ['duplicate ceiling entries', (j) => { j.tools = ['read', 'read']; }, 'invalid-value:tools'],
+  ['a write-only ceiling leaves the scout blind (no read-capable verb) — review #8', (j) => { j.tools = ['write', 'edit']; }, 'invalid-value:tools'],
 
   // -- secrets sweep covers the new fields --
   ['inline key in the goal', (j) => { j.goal = 'auth with sk-ant-api03-abcdefghijklmnop then write tests'; }, 'secret-literal:goal'],

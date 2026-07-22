@@ -436,6 +436,13 @@ function validatePlanShape(spec, red, reds) {
       }
       const unknown = spec.tools.filter((/** @type {string} */ t) => !TOOL_MENU.includes(t) && !LOCKED_TOOLS.includes(t));
       if (unknown.length) red('invalid-value', 'tools', `unknown tool(s) ${unknown.join(', ')} — menu: ${TOOL_MENU.join('|')}`);
+      // a plan-shape ceiling must grant ≥1 READ-capable verb (review #8): the
+      // scout surveys read-only (the write-class verbs are filtered out of its
+      // menu), so a write-only ceiling hands the scout an EMPTY menu and it
+      // surveys blind — a degradation the validator catches at sign time.
+      else if (!spec.tools.some((/** @type {string} */ t) => TOOL_MENU.includes(t) && !['write', 'edit'].includes(t))) {
+        red('invalid-value', 'tools', 'a plan-shape ceiling must grant ≥1 read-capable verb (read/grep/recall/get) — the scout surveys read-only; a write-only ceiling leaves it blind');
+      }
     }
   }
 }

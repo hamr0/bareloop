@@ -222,3 +222,23 @@ test('evaluator results carry NO file contents — details are counts and names 
     assert.ok(!(res.detail ?? '').includes('SECRETISH'), 'file bodies never ride the result');
   }
 });
+
+test('check-passes: a red check gap is carried WHOLE, not clamped to 400 chars — the gapKeep failing-test NAMES survive to the worker (review #2, F28 must not reappear)', async () => {
+  // runClose already bounds the gap (~10KB head+keepblock+tail); the evaluator
+  // must NOT re-truncate to 400 and delete the `FAILED`/`not ok` names that ARE
+  // the worker's aim — the F46 conversion mechanism depends on them reaching it.
+  const names = Array.from({ length: 40 }, (_, i) => `FAILED tests/test_mod_${i}.mjs — assertion failed`).join('\n');
+  const longGap = `${'preamble line that eats the first four hundred characters. '.repeat(10)}\n${names}`;
+  assert.ok(longGap.indexOf('test_mod_39') > 400, 'the last name lives well past char 400 (the test would be vacuous otherwise)');
+  const runCheck = async () => ({ pass: false, gap: longGap });
+  const { results } = await evalExits([{ type: 'check-passes', name: 'clean-run' }], { dir: '/tmp', runCheck });
+  assert.ok(results[0].detail.includes('test_mod_39'), 'the last failing-test name reaches the detail — not sliced off');
+});
+
+test('check-passes fault path also carries the whole bounded gap (the forbidden-zone branch, not only needs_revision) (review #2)', async () => {
+  const longGap = `crash detail: ${'x'.repeat(1200)}`;
+  const runCheck = async () => ({ pass: false, fault: 'crashed', gap: longGap });
+  const { results } = await evalExits([{ type: 'check-passes', name: 'c' }], { dir: '/tmp', runCheck });
+  assert.equal(results[0].fault, 'crashed', 'the forbidden-zone verdict still rides through by name (F32 routing input)');
+  assert.ok(results[0].detail.length > 1000, 'a crashed check carries its full bounded gap, not a 400 clamp');
+});

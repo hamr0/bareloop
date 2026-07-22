@@ -37,6 +37,11 @@ const SCOUT_ROUNDS = 8;
 const SCOUT_BLOB_MAX = 8000;
 /** feed-forward artifact bound per step (prompt ingredient, spine-bound) */
 const ARTIFACT_MAX = 2000;
+/** the wallet floor below which a replan is a stop, not an adaptation (review
+ * #5): a money-gate halt drains the wallet to ~0, so replanning against dust
+ * just burns another draft and mislabels the money-cut as "exits still red"
+ * (F45 class) — the honest terminal there is cap-halt. */
+const MONEY_MIN = 0.001;
 
 /** @typedef {Error & {category?: string, lib?: string}} CategorizedError */
 
@@ -97,15 +102,33 @@ ${scoutBlob || '(no scout notes)'}`;
  * @param {any} opts.provider shell-owned LLM binding
  * @param {(type: string, data?: object) => object} opts.emit spine emitter (the caller's METERED emit)
  * @param {() => number} opts.remainingUsd the one wallet: what is left of the signed budget right now
+ * @param {() => boolean} [opts.isUnpriced] has any round come back with a null cost? (F6) — the
+ *   plan flow bails IN-FLIGHT on the first unpriced round instead of burning the whole plan
  * @param {number} [opts.capRuns] shell-owned per-step attempt cap
  * @param {number} [opts.closeTimeoutMs] close/check wall-clock cap (shell territory)
  * @param {number} [opts.maxStepRounds] the shell's per-step rounds ceiling (validatePlan's bound)
  * @returns {Promise<string>} 'green' | 'already-green' | 'escalated' | 'plan-red' |
- *   'check-red' | 'close-red' | 'cap-halt' | 'provider-red' | `step-red:<id>`
+ *   'check-red' | 'close-red' | 'close-unsupported' | 'pricing-red' | 'cap-halt' |
+ *   'provider-red' | 'interpreter-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, emit, remainingUsd, capRuns = 3, closeTimeoutMs, maxStepRounds = 40 }) {
+export async function runPlan(job, { workdir, provider, emit, remainingUsd, isUnpriced = () => false, capRuns = 3, closeTimeoutMs, maxStepRounds = 40 }) {
   workdir = resolve(workdir);
   const scrub = (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS });
+
+  // ── close-unsupported (F17 guard, mirrored from the legacy path at run.js):
+  // the plan flow executes a PREDICATE close only — a command whose exit code is
+  // truth. validateJob admits a GOLD close under verdictType green (gold is
+  // hard-class), and a gold close carries no `cmd`; running `close.cmd.trim()`
+  // on it would TypeError out of runJob with NO job-end (the spine would dangle,
+  // no spend recorded). Refuse a non-predicate close cleanly, before any tokens.
+  if (job.close.type !== 'predicate') {
+    emit('escalation', {
+      category: 'close-unsupported', decisionReady: true,
+      decision: `The job's close is a ${job.close.type} close — the plan flow executes a predicate close only (a command whose exit code is truth).`,
+      options: ['restate the close as a predicate', 'wait for the verdict-classes rung'],
+    });
+    return 'close-unsupported';
+  }
   const closeArgv = job.close.cmd.trim().split(/\s+/);
   const closeOpts = { timeoutMs: closeTimeoutMs, cwd: workdir, expect: job.close.expect, judged: job.close.judged, gapKeep: job.close.gapKeep };
 
@@ -291,25 +314,34 @@ export async function runPlan(job, { workdir, provider, emit, remainingUsd, capR
     return relay(e, 'scout');
   }
   emit('scout-result', { bytes: Buffer.byteLength(scoutBlob) });
+  // F6 in-flight: an unpriced round means the cap cannot govern spend it cannot
+  // see — halt at the boundary rather than run the whole plan blind (the caller
+  // emits pricing-red; runPlan just stops burning tokens). Legacy halts per-step.
+  if (isUnpriced()) return 'pricing-red';
 
   // ── 2. PLAN — the decompose call; the planner NEVER sees the repo (no tools,
   // scout blob only — what keeps the plan a plan and not a second worker).
   // One shot + one redraft with the reds fed back (the drafting precedent).
-  const drafter = await mkWorker({ granted: [], phase: 'plan', attemptRounds: 2, attempts: 3, writable: false });
-  /** @param {any[]|null} reds @param {string|null} failure */
-  const draftPlan = async (reds, failure) => {
-    drafter.setIteration(reds ? 'redraft' : 'draft');
-    const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure), []);
-    return extractArtifact(r.text).code ?? '';
-  };
-  /** draft + validate with one redraft; emits plan-validate per phase
+  /** draft + validate with one redraft; emits plan-validate per phase. The
+   * drafter is built FRESH per call (review #4): its Gate budget snapshots the
+   * CURRENT wallet, never a stale pre-execute allocation. A replan draft after
+   * the steps have spent is therefore bounded by what is ACTUALLY left, so the
+   * total run spend can never exceed the signed budget (advertised == enforced,
+   * the hard line) — a drafter built once at full budget would let the replan
+   * draft spend against money the steps had already consumed.
    * @param {string} phase @param {string|null} failure */
   const obtainPlan = async (phase, failure) => {
-    let text = await draftPlan(null, failure);
+    const drafter = await mkWorker({ granted: [], phase: 'plan', attemptRounds: 2, attempts: 3, writable: false });
+    const draftPlan = async (/** @type {any[]|null} */ reds) => {
+      drafter.setIteration(reds ? 'redraft' : 'draft');
+      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure), []);
+      return extractArtifact(r.text).code ?? '';
+    };
+    let text = await draftPlan(null);
     let pv = validatePlan(text, { job, maxStepRounds });
     emit('plan-validate', { ok: pv.ok, reds: pv.reds, phase: `${phase}-1` });
     if (!pv.ok) {
-      text = await draftPlan(pv.reds, failure);
+      text = await draftPlan(pv.reds);
       pv = validatePlan(text, { job, maxStepRounds });
       emit('plan-validate', { ok: pv.ok, reds: pv.reds, phase: `${phase}-2` });
     }
@@ -327,6 +359,7 @@ export async function runPlan(job, { workdir, provider, emit, remainingUsd, capR
   } catch (e) {
     return relay(e, 'plan');
   }
+  if (isUnpriced()) return 'pricing-red'; // F6: the plan drafting round came back unpriced — halt before steps
 
   // ── 3. EXECUTE — strictly sequential micro-loops; judge = the exit
   // evaluator through ralph's shell-owned seam; artifacts feed forward (F21)
@@ -386,22 +419,46 @@ export async function runPlan(job, { workdir, provider, emit, remainingUsd, capR
     try {
       res = await executeStep(step);
     } catch (e) {
-      // mkWorker/gate setup faults — the spine must terminate, never dangle
-      stepOutcomes.push({ id: step.id, outcome: 'interpreter-red' });
+      // Reachable ONLY by mkWorker/gate/index SETUP faults: ralph catches middle
+      // throws and returns 'escalated', so a provider throw never reaches here.
+      // An uncategorized setup fault is interpreter-red (broken infra), never
+      // relay's provider-red default — and the RECORDED outcome must match the
+      // escalation the human reads (review #6, F11 misfiling: a spine that says
+      // interpreter-red while the escalation says provider-red is two
+      // instruments disagreeing about the same event).
+      const err = /** @type {CategorizedError} */ (e);
+      const category = err instanceof HaltError ? 'cap-halt' : (typeof err.category === 'string' ? err.category : 'interpreter-red');
+      stepOutcomes.push({ id: step.id, outcome: category });
+      if (category === 'cap-halt') emit('cap-halt', { category, meaning: 'not under cap — not "can\'t"', detail: String(err?.message ?? err) });
+      emit('escalation', {
+        category, decisionReady: true, phase: `step:${step.id}`,
+        decision: category === 'cap-halt'
+          ? `The budget gate tripped while building step "${step.id}" — the wallet cannot fund the plan flow.`
+          : `Step "${step.id}" could not be set up (${category}) — the worker, gate, or index failed before the step ran.`,
+        options: category === 'cap-halt' ? ['raise the job budget and rerun', 'abandon the run'] : ['fix the interpreter/environment', 'retry the run', 'abandon the run'],
+        detail: String(err?.message ?? err),
+        ...(typeof err?.lib === 'string' ? { lib: err.lib } : {}),
+      });
       planExecuted();
-      return relay(e, `step:${step.id}`);
+      return category;
     }
     stepOutcomes.push({ id: step.id, outcome: res.outcome });
     emit('step-end', { step: step.id, outcome: res.outcome });
+    if (isUnpriced()) { planExecuted(); return 'pricing-red'; } // F6: a step round came back unpriced — halt before the next
     if (res.outcome === 'green') {
       artifacts.push({ id: step.id, text: res.artifact });
       idx += 1;
       continue;
     }
-    // ONE replan, and only for EXHAUSTION (cap-halt): an instrument stop or a
-    // governance halt is a stop — replanning around a broken instrument would
-    // launder the fault (F45's class). Unlimited replanning launders thrash.
-    if (!replanned && lastEscalation?.category === 'cap-halt') {
+    // ONE replan, and only for EXHAUSTION with FUNDS LEFT (review #5): ralph
+    // emits cap-halt for BOTH attempt-exhaustion AND a money-gate halt
+    // mid-attempt — but a drained wallet is a stop, not an adaptation. A
+    // money-gate halt necessarily drained the wallet (the worker's cap WAS the
+    // whole remaining wallet), so replanning against it burns another draft and
+    // mislabels the money-cut as "exits still red" (F45 class); attempt-
+    // exhaustion leaves money on the table. An instrument/governance stop that
+    // is not cap-halt never replans either.
+    if (!replanned && lastEscalation?.category === 'cap-halt' && !isUnpriced() && remainingUsd() > MONEY_MIN) {
       replanned = true;
       emit('replan', { step: step.id, reason: 'step exhausted its attempts with exits still red' });
       const failure = `Step "${step.id}" (${step.action}) ran ${capRuns} attempts and its exits were still red. `
@@ -423,6 +480,14 @@ export async function runPlan(job, { workdir, provider, emit, remainingUsd, capR
       emit('plan-accepted', { plan, phase: 'replan' });
       idx = 0;
       continue;
+    }
+    // A money-gate halt (wallet drained or unpriced) is an honest cap-halt
+    // terminal, never a step-red: the exits never ran because the money ran out,
+    // not because the work failed. Attempt-exhaustion WITH funds after the one
+    // replan is spent stays a step-red (the stop is a result).
+    if (lastEscalation?.category === 'cap-halt' && (isUnpriced() || remainingUsd() <= MONEY_MIN)) {
+      planExecuted();
+      return 'cap-halt';
     }
     planExecuted();
     return `step-red:${step.id}`;

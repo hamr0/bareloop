@@ -277,3 +277,92 @@ test('the scout is read-only by construction: its tool menu carries no write-cla
   const planMenu = provider.toolsOffered[1];
   assert.deepEqual(planMenu, [], 'the planner sees the scout blob only — never the repo (no tools at all)');
 });
+
+// ── review 2026-07-21: doctrine-restoring fixes to the graduated plan flow ──
+
+test('a GOLD close that validates under verdictType green is refused close-unsupported by the plan flow — never a TypeError on close.cmd (review #1)', async (t) => {
+  const wd = makePatient(t);
+  const job = JOB(wd, { close: { type: 'gold', expected: 'x', compare: 'exact' }, checks: undefined });
+  const jv = validateJob(job);
+  assert.deepEqual(jv.reds, [], 'green + gold-close validates (gold is hard-class) — the hazard is real, not hypothetical');
+  const provider = scriptedProvider([{ text: 'never reached' }]);
+  const { events, emit } = collector();
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 3, remainingUsd: () => 1.5 });
+  assert.equal(outcome, 'close-unsupported', 'a non-predicate close is a clean refusal, not a crash');
+  assert.equal(provider.calls.length, 0, 'refused before any tokens');
+  assert.equal(events.filter((e) => e.type === 'escalation').at(-1)?.category, 'close-unsupported');
+});
+
+test('an unpriced round halts the plan flow IN-FLIGHT (pricing-red) instead of burning the whole plan — F6 at the plan boundary (review #3)', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([{ text: 'scout notes' }, { text: PLAN(wd) }]);
+  const { events, emit } = collector();
+  const jv = validateJob(JOB(wd));
+  const outcome = await runPlan(jv.job, {
+    workdir: wd, provider, emit, capRuns: 3, remainingUsd: () => 1.5,
+    isUnpriced: () => provider.calls.length >= 1, // flips true once the scout round returns unpriced
+  });
+  assert.equal(outcome, 'pricing-red');
+  assert.equal(provider.calls.length, 1, 'bailed right after the scout — the plan was never drafted, no steps ran');
+});
+
+test('a step that money-halts (wallet drained) returns cap-halt and does NOT replan — a drained wallet is a stop, not an adaptation (review #5, F45 class)', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'nope\n' })] },
+    { text: 'attempt' },
+  ]);
+  const { events, emit } = collector();
+  const jv = validateJob(JOB(wd));
+  let calls = 0;
+  // ample for scout(1) + plan-drafter(2) construction; drained by the step worker(3) and the replan check(4)
+  const remainingUsd = () => (++calls <= 2 ? 1.5 : 0.0001);
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 3, remainingUsd });
+  assert.equal(outcome, 'cap-halt', 'a money-gate halt is its own honest terminal, not a mislabeled step-red');
+  assert.ok(!events.find((e) => e.type === 'replan'), 'no replan burns tokens against a drained wallet');
+});
+
+test('the replan drafter is bounded by the CURRENT wallet, not a stale pre-execute allocation — advertised budget == enforced budget (review #4)', async (t) => {
+  const wd = makePatient(t);
+  const step = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{ id: 'w', action: 'Write tests/test_x.mjs.', tools: ['write'], rounds: 1, target: 'tests/test_x.mjs', exit: [{ type: 'artifact-written', path: 'tests/test_x.mjs' }] }],
+  });
+  const provider = scriptedProvider([
+    { text: 'scout', costUsd: 0.001 },              // 0 scout
+    { text: step, costUsd: 0.001 },                 // 1 initial plan draft
+    { text: 'attempt 1 — no write', costUsd: 0.6 }, // 2 step attempt 1 (writes nothing → artifact-written red)
+    { text: 'attempt 2 — no write', costUsd: 0.6 }, // 3 step attempt 2 → exhaustion, funds partly drained
+    { text: step, costUsd: 0.6 },                    // 4 replan draft — a fresh drafter can no longer afford this round
+  ]);
+  const { events, emit } = collector();
+  const jv = validateJob(JOB(wd, { checks: undefined }));
+  let spent = 0;
+  const emit2 = (/** @type {string} */ type, /** @type {any} */ data = {}) => {
+    if (type === 'worker-round' && typeof data.costUsd === 'number') spent += data.costUsd;
+    return emit(type, data);
+  };
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit: emit2, capRuns: 2, remainingUsd: () => 1.5 - spent });
+  assert.ok(events.find((e) => e.type === 'replan'), 'exhaustion with funds left DID trigger the one replan');
+  assert.equal(outcome, 'cap-halt', 'the replan draft cap-halts against the drained wallet — a stale full-budget drafter would have proceeded');
+});
+
+test('a step SETUP fault is recorded on the plan-executed spine with the SAME category the escalation carries — never a self-contradicting record (review #6, F11 misfiling)', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([{ text: 'scout' }, { text: PLAN(wd) }, { text: 'x' }]);
+  const { events, emit } = collector();
+  const jv = validateJob(JOB(wd));
+  let n = 0;
+  // throw at the STEP worker's construction (call 3): scout(1) + drafter(2) succeed first,
+  // and ralph catches middle throws — so this catch is reachable ONLY by a setup fault
+  const remainingUsd = () => { n += 1; if (n >= 3) throw new Error('boom: cannot size the wallet'); return 1.5; };
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 3, remainingUsd });
+  const exec = events.find((e) => e.type === 'plan-executed');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.ok(exec, 'plan-executed is on the spine — the record never dangles');
+  assert.equal(exec.steps.at(-1).outcome, esc.category, 'the recorded step outcome MATCHES the escalation category (no contradiction)');
+  assert.equal(esc.category, 'interpreter-red', 'an uncategorized setup throw is interpreter-red (infra), not provider-red');
+  assert.equal(outcome, 'interpreter-red');
+});

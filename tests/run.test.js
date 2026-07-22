@@ -913,3 +913,20 @@ test('plan dispatch: a step-red plan outcome lands on job-end as outcome step-re
   assert.equal(end.step, 'never-writes');
   assert.equal(typeof end.spentUsd, 'number');
 });
+
+test('plan dispatch: a transport-throw provider-red reports spendComplete:false — an unknown floor is never laundered as exact (review #7, F44)', async () => {
+  const wd = makePlanWork('plan-provider-red');
+  const job = planJob();
+  // the close is red at precheck (src/... has no test yet), so the scout RUNS — and the
+  // provider throws there: a transport failure that never returned a usage figure.
+  const provider = { calls: [], async generate() { this.calls.push(1); throw new Error('ENETUNREACH transport'); } };
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file), capRuns: 2,
+  });
+  assert.equal(outcome, 'provider-red');
+  const end = readSpine(file).find((e) => e.type === 'job-end');
+  assert.equal(end.outcome, 'provider-red');
+  assert.equal(end.spendComplete, false, 'the priced sum is a FLOOR, not the total — mirror the legacy providerRed()');
+});
