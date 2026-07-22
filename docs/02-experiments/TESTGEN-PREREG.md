@@ -861,3 +861,45 @@ versa; budget exhausted before 3 acting rows → report rows in hand, no top-up 
 hamr. Harness pre-validated $0 (2026-07-22, run `mrvp7tsq`, `--dry`): reset/seed/
 dispatch/precheck-at-15/spine-read all green; the scout throw relayed to provider-red
 cleanly. No worker round has run; no number exists.
+
+## Amendment 2026-07-22b — ACCEPTANCE MET: 3/3 CONVERT, 3/3 green at the 45 bar (F47)
+
+Three runs across an Overloaded provider window (runids `mrvpteca`, `mrvwjrop`,
+`mrvyexy4`), each a full patient reset + manifest-verified seed + fresh index per
+row. **Frozen n=3 read, valid acting rows only (casualties excluded per the
+standing rule):**
+
+| row | class | grade | plan-composed-check | targeted |
+|---|---|---|---|---|
+| mrvpteca L1 | L2-CONVERT | 67.5% | yes | 18/18 |
+| mrvwjrop L1 | L2-CONVERT | 55% | yes | 18/18 |
+| mrvyexy4 L3 | L2-CONVERT | 55% | yes | 16/18 |
+
+**PRIMARY (acceptance): 3/3 acting rows L2-CONVERT ≥ the 2/3 bar → ACCEPTANCE
+MET.** The built plan flow (Planner drafts + composes the check exit ITSELF,
+per-step check-loops, one replan on two rows) reproduces the clean-wall
+conversion the F46 POC hardwired. **SECONDARY (recorded): 3/3 green above the 45
+bar (67.5/55/55 vs the POC's 27.5/40/37.5, 0 at 45)** — F38's single untested
+claim ("notes + self-check reaches the bar") confirmed on the real flow; the
+"path closes green end-to-end" milestone (design record §110, steps[] sunset) is
+additionally satisfied. All three greens hit `satisfied` on the FIRST outer
+grading — the step check-loop alone drove them, no grader fix loop fired.
+
+**Casualties / cost:** 7 provider-red transport casualties (never evidence) + 1
+valid-inert (plan stalled on a read step) alongside the 3 acting rows; $27.36 of
+the $30 frozen cap. All writes fenced to `tests/testgen/**`; source at the frozen
+SHA every row; secrets clean; the F45 spend-governability guard STOPPED an
+unpriced casualty (run 2) exactly as designed.
+
+**Process notes (F47):** (a) run 1 fired without the frozen pre-fire health probe
+— 4 casualties, ~$6.69; owned. (b) The single-message health probe read 2/2 200s
+while multi-round runs still caught mid-flight transport failures — a liveness
+check is not a sustained-throughput check. (c) Harness continuation: driver
+gained `--need N` (acting-row target this invocation) and `--priorUsd X` (fold
+prior spend into the $30 cap) so the frozen n=3 read combines across runs under
+one governed cap; neither touches the spec hash or the read rules.
+
+**Disposition:** Layer 2 rung ACCEPTED. `steps[]` and config-v1 sunset on
+landing (design record decision 6 / §110). No `root-injected` on any row → Layer
+R ON/OFF flip did not trigger, `layerRoot` stays OFF. Next: whole-branch
+code-review before release.

@@ -2276,3 +2276,68 @@ in-run check TRANSLATES the semantic ask into the mechanical genre — and the
 same worker that stalled 4/4 (F39) then went 3/3. Structure, not memory and not
 more state, was the missing piece — measured at $5.24 after $30+ of instruments
 that had to be built and broken to make this read possible.
+
+## F47 — Layer 2 rung ACCEPTED: the real plan flow converts 3/3 and clears the 45 bar 3/3
+
+**Setup (prereg 2026-07-22a, frozen before any number; spec hash
+`af338c9b…`).** The rung's exit gate: job #4 (TESTGEN) through the REAL plan
+flow — `runJob → runPlan`: scout → the Planner drafts a plan-v1 DAG → the
+validator gates it → the per-step Loop+Gate executor runs it (the operator-signed
+`clean-run` check referenced as a step exit) → the outer grader close + its fix
+loop. This is NOT the F46 POC, which HARDWIRED the winning composition; here the
+Planner must author it. Same surface as F39/F46 (`anthropic-api`, claude-sonnet-5,
+byte-identical goal body, 15% seed, frozen grader, 45 bar). hamr-authorized
+$8/row, n=3, draft-and-freeze-then-sign-off.
+
+**Result: 3/3 valid acting rows L2-CONVERT, all three green ABOVE the 45 bar
+(67.5% · 55% · 55%), $27.36 of $30 across three runs.** Primary read (≥2/3
+convert) MET; the secondary "path closes green end-to-end" milestone (steps[]
+sunset, design record §110) ALSO met — every acting row hit the bar, surpassing
+the POC (which never reached 45). Frozen axis split honored: the 45-bar greens
+were RECORDED as secondary, not the acceptance gate; acceptance is the conversion
+read alone.
+
+**The three build-specific things the POC could not test, all positive:**
+(1) **The Planner composed `tree-changed ∧ check-passes(clean-run)` itself,
+3/3** — it is told the check NAMES and the pairing rule, never the command, and
+authored the winning exit every time. (2) The flow's per-step decomposition
+worked: 5–6 steps, one replan on two rows, 131–222 rounds. (3) Notably NONE of
+the three greens needed the outer grader's fix loop — all were `satisfied` on the
+first outer grading, so the STEP check-loop alone drove 55–67.5%. Aim stayed
+excellent (16–18/18 survivor functions targeted). All writes fenced to
+`tests/testgen/**`; source at the frozen SHA on every row; secrets clean
+throughout; the grader's D1 + pristine-source guards gate exploitation, and
+22–27 of 40 mutants killed on pristine source is real behavior-assertion by
+construction (a vacuous suite kills ~0).
+
+**What this does NOT claim.** n=3 supports existence + direction, never a rate
+estimate. And the delta vs the POC's 0/45 is NOT attributed: the real flow gives
+the worker far more total rounds (131–222 vs the POC's 40–72) AND per-step
+decomposition — a rounds-vs-structure confound left explicitly unminted. The
+acceptance question ("does the built flow reproduce conversion and reach the
+bar") is answered yes; WHY it beats the single-loop POC is a separate,
+unresolved recorded observation.
+
+**Provider instability, and two process notes.** The battery ran across an
+Overloaded window: 7 provider-red transport casualties (never evidence) against
+4 valid rows, requiring a continuation to reach n=3. (a) The FIRST run fired
+WITHOUT the frozen pre-fire health probe (operator go taken as sufficient) — 4
+casualties, ~$6.69, the cost of skipping it; owned. (b) The single-message health
+probe is a WEAK instrument for sustained-load instability: it read 2/2 200s while
+subsequent multi-round runs still caught mid-flight transport failures — a cheap
+liveness check is not a sustained-throughput check. The spend-governability guard
+(F45) worked: an unpriced casualty (`spendComplete:false`) correctly STOPPED a
+run rather than passing as evidence.
+
+**Layer R riding item:** no row recorded `root-injected` (converts don't
+fixate — consistent with F41, fixation extinct on healthy jobs); the ON/OFF
+default-flip read did not trigger, `layerRoot` stays OFF, decision unchanged.
+
+**Lesson.** Layer 2 is accepted on its own terms: the built machinery — Planner
+authoring the plan and the check composition, bounded per-step check-loops — did
+what the hardwired POC only proved was possible, and then cleared the bar the POC
+never reached. The genre chain closes end to end: F38 (mechanical converts) →
+F39 (delivery/state is not the gap) → F46 (an in-run check TRANSLATES semantic →
+mechanical, hardwired) → F47 (the emergent flow does it itself, and reaches the
+bar). Structure was the missing piece, and the agent can author the structure
+under an inexpressible arbiter.

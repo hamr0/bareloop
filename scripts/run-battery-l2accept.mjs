@@ -76,6 +76,12 @@ const specHash = jobSpecHash(spec);
 const dry = has('dry');
 // --runs N: run only N launches this invocation (casualty rows re-run to keep n=3)
 const runsRequested = Math.max(1, Math.min(MAX_LAUNCHES, Number(arg('runs') ?? MAX_LAUNCHES)));
+// --need N: acting-row target THIS invocation (continuation: prior valid acting rows
+// banked in an earlier results file; the frozen n=3 read is combined across runs).
+const need = Math.max(1, Number(arg('need') ?? N_ACT));
+// --priorUsd X: prior cumulative battery spend to fold into the $30 hard-stop, so the
+// frozen cap governs across invocations (never widened silently).
+const priorUsd = Math.max(0, Number(arg('priorUsd') ?? 0));
 
 const approved = arg('approve');
 if (approved !== specHash) {
@@ -192,13 +198,13 @@ console.log(`caps  $${spec.budgetUsd}/row capRuns=${CAP_RUNS} · hard-stop $${HA
 
 /** @type {any[]} */
 const rows = [];
-let cumulativeUsd = 0;
+let cumulativeUsd = priorUsd;
 let stop = null;
 let launches = 0;
 
 const isAct = (/** @type {any} */ r) => r.valid && r.acted > 0;
 
-for (let i = 1; rows.filter(isAct).length < N_ACT && launches < runsRequested && !stop; i++) {
+for (let i = 1; rows.filter(isAct).length < need && launches < runsRequested && !stop; i++) {
   if (launches >= MAX_LAUNCHES) { stop = `launch backstop ${MAX_LAUNCHES} reached`; break; }
   if (cumulativeUsd + spec.budgetUsd > HARD_STOP_USD) {
     stop = `battery cap: $${cumulativeUsd.toFixed(4)} + $${spec.budgetUsd}/row would exceed $${HARD_STOP_USD} — row ${i} not launched`;
@@ -284,6 +290,7 @@ const inert = rows.filter((r) => r.cls === 'L2-INERT').length;
 const greens45 = rows.filter((r) => r.green45).length;
 let reading;
 if (stop && stop.includes('precheck-drift')) reading = 'VOID: grader precheck drift — instrument, no premise read';
+else if (need !== N_ACT) reading = `CONTINUATION: ${actRows.length} acting row(s) collected this invocation — combine with prior banked rows for the frozen n=${N_ACT} read (do not read acceptance from this run alone)`;
 else if (actRows.length < N_ACT) reading = `INCOMPLETE (${actRows.length}/${N_ACT} acting rows) — report rows in hand, no top-up without hamr`;
 else if (converts >= 2) reading = 'ACCEPTANCE MET: the real plan flow reproduces the clean-wall conversion (>=2/3 acting rows reach a graded suite) — Layer 2 machinery holds';
 else if (converts === 0) reading = 'ACCEPTANCE FAILS: the built flow did not reproduce conversion — the stop is the result; findings entry; redesign with hamr';
