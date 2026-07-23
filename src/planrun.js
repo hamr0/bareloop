@@ -585,8 +585,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
     // whole remaining wallet), so replanning against it burns another draft and
     // mislabels the money-cut as "exits still red" (F45 class); attempt-
     // exhaustion leaves money on the table. An instrument/governance stop that
-    // is not cap-halt never replans either.
-    if (!replanned && lastEscalation?.category === 'cap-halt' && !isUnpriced() && remainingUsd() > MONEY_MIN) {
+    // is not cap-halt never replans either. (An unpriced step already returned
+    // pricing-red at the step-end guard above, so isUnpriced() is false here.)
+    const cat = lastEscalation?.category;
+    if (!replanned && cat === 'cap-halt' && remainingUsd() > MONEY_MIN) {
       replanned = true;
       emit('replan', { step: step.id, reason: 'step exhausted its attempts with exits still red' });
       const failure = `Step "${step.id}" (${step.action}) ran ${capRuns} attempts and its exits were still red. `
@@ -606,19 +608,29 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
       }
       plan = /** @type {any} */ (pv.plan);
       emit('plan-accepted', { plan, phase: 'replan' });
+      // the new plan's steps are NOT the old plan's steps — its abandoned greens
+      // must not ride forward as this plan's "prior steps' results" (stale, and
+      // it names steps the current plan does not contain)
+      artifacts.length = 0;
       idx = 0;
       continue;
     }
-    // A money-gate halt (wallet drained or unpriced) is an honest cap-halt
-    // terminal, never a step-red: the exits never ran because the money ran out,
-    // not because the work failed. Attempt-exhaustion WITH funds after the one
-    // replan is spent stays a step-red (the stop is a result).
-    if (lastEscalation?.category === 'cap-halt' && (isUnpriced() || remainingUsd() <= MONEY_MIN)) {
+    // A money-gate halt (wallet drained) is an honest cap-halt terminal, never a
+    // step-red: the exits never ran because the money ran out, not because the
+    // work failed. Attempt-exhaustion WITH funds after the one replan is spent
+    // stays a step-red (the stop is a result).
+    if (cat === 'cap-halt') {
       planExecuted();
-      return 'cap-halt';
+      return remainingUsd() <= MONEY_MIN ? 'cap-halt' : `step-red:${step.id}`;
     }
+    // Any OTHER terminal escalation category is NOT a capability failure: a
+    // provider-red is a transport CASUALTY, a gate-red/interpreter-red/close
+    // fault is an instrument stop. Each rides out under its OWN name (F11: the
+    // returned outcome and the emitted escalation must agree) so run.js labels
+    // it honestly — a provider-red carries the F44 spendComplete:false floor,
+    // never laundered into step-red tier data. Mirrors the setup-fault catch.
     planExecuted();
-    return `step-red:${step.id}`;
+    return typeof cat === 'string' ? cat : `step-red:${step.id}`;
   }
 
   // ── 4. THE CLOSE — the operator's signed command, the only truth. Red →

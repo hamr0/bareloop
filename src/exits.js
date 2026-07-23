@@ -112,9 +112,15 @@ async function evalOne(e, { dir, snapshot, runCheck }) {
       return { type: e.type, pass: false, fault: 'failed', detail: `no pre-step snapshot for ${e.scope} — the tree-changed instrument is unwired (instrument fault, not worker inaction)` };
     }
     const now = await snapshotScope(dir, e.scope);
+    // deletions count only WITHIN this exit's own scope: the step's `snapshot`
+    // is merged across every tree-changed scope, so an unscoped keys() walk
+    // would read a SIBLING scope's files (absent from this re-scan) as deletions
+    // and pass an unchanged scope by borrowing the other's change.
+    const prefix = globToPrefix(e.scope);
+    const underScope = (/** @type {string} */ p) => p === prefix || p.startsWith(`${prefix}/`);
     let changed = 0;
     for (const [path, hash] of now) if (snapshot.get(path) !== hash) changed++;
-    for (const path of snapshot.keys()) if (!now.has(path)) changed++; // deletions are real changes
+    for (const path of snapshot.keys()) if (underScope(path) && !now.has(path)) changed++; // deletions are real changes
     if (changed === 0) {
       return { type: e.type, pass: false, detail: `0 files changed under ${e.scope} — the tree is byte-identical to the step start (an identical re-write is not a change)` };
     }

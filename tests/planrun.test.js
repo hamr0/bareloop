@@ -199,6 +199,26 @@ test('a second exhaustion after the replan escalates — the stop is a result', 
   assert.equal(events.filter((e) => e.type === 'replan').length, 1, 'never a second replan');
 });
 
+test('a mid-step provider-red is a CASUALTY, not a step-red: runPlan returns provider-red so the outcome and the escalation agree (F11/F44)', async (t) => {
+  const wd = makePatient(t);
+  // scout + a valid plan, then the STEP worker's provider throws a transport
+  // error (category provider-red) — a casualty, never a capability failure. It
+  // must NOT be laundered into step-red (the outcome the driver reads as tier data).
+  const base = scriptedProvider([{ text: 'scout notes' }, { text: PLAN(wd) }]);
+  let n = 0;
+  const provider = {
+    calls: base.calls,
+    async generate(/** @type {any} */ messages, /** @type {any} */ tools) {
+      if (n++ >= 2) { const e = /** @type {any} */ (new Error('ECONNRESET mid-step')); e.category = 'provider-red'; e.lib = 'bare-agent'; throw e; }
+      return base.generate(messages, tools);
+    },
+  };
+  const { outcome, events } = await go(wd, provider);
+  assert.equal(outcome, 'provider-red', 'a transport throw during a step is a provider-red casualty, never step-red');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'provider-red', 'the returned outcome and the spine escalation name the SAME category (F11)');
+});
+
 test('preflight: a signed check that cannot RUN escalates broken-close before any tokens', async (t) => {
   const wd = makePatient(t);
   const provider = scriptedProvider([{ text: 'never reached' }]);

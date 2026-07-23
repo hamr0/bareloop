@@ -98,6 +98,26 @@ test('tree-changed: an identical re-write (same bytes) is NOT a change — outco
   assert.equal(r.pass, false, 'same bytes = no outcome, whatever the write intent was');
 });
 
+test('tree-changed: TWO tree-changed exits in one step — an UNCHANGED scope must NOT pass by borrowing the other scope\'s change (merged-snapshot deletion contamination)', async (t) => {
+  const dir = makeDir(t);
+  mkdirSync(join(dir, 'a'));
+  mkdirSync(join(dir, 'b'));
+  writeFileSync(join(dir, 'a/keep.txt'), 'a original\n');
+  writeFileSync(join(dir, 'b/keep.txt'), 'b original\n');
+  // planrun builds ONE merged snapshot across every tree-changed scope of the step
+  const snapshot = new Map();
+  for (const scope of ['a/**', 'b/**']) for (const [k, v] of await snapshotScope(dir, scope)) snapshot.set(k, v);
+  // the worker changes ONLY b; a is byte-identical to the step start
+  writeFileSync(join(dir, 'b/keep.txt'), 'b CHANGED\n');
+  const { pass, results } = await evalExits(
+    [{ type: 'tree-changed', scope: 'a/**' }, { type: 'tree-changed', scope: 'b/**' }],
+    { dir, snapshot },
+  );
+  assert.equal(results[0].pass, false, 'a/** did not change — it must not count b/**\'s files as its own deletions');
+  assert.equal(results[1].pass, true, 'b/** genuinely changed');
+  assert.equal(pass, false, 'AND-only: one unchanged scope fails the step');
+});
+
 test('tree-changed: a DELETED file counts as change; a scope dir that does not exist yet snapshots empty', async (t) => {
   const dir = makeDir(t);
   mkdirSync(join(dir, 'tests'));

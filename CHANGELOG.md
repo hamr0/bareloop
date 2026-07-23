@@ -93,6 +93,16 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **Layer 2 pre-release review (F48) — 4 fixes, 2 correctness** (TDD, failing-then-passing
+  test each; full suite 519/519): (1) a provider-red/gate-red raised DURING a step's micro-loop
+  was collapsed to `step-red:<id>` — a transport CASUALTY recorded as a capability failure and
+  missing the F44 `spendComplete:false` floor; each terminal category now rides out under its own
+  name so the returned outcome and the emitted escalation agree (F11). (2) `tree-changed` counted
+  a sibling scope's files as deletions when a step had ≥2 tree-changed exits (merged snapshot),
+  falsely passing an unchanged scope — deletions are now scoped to the exit's own prefix. (3)
+  abandoned-plan artifacts no longer ride forward as the new plan's "prior steps' results" after a
+  replan. (4) dead `isUnpriced()` sub-conditions removed from the replan/cap-halt terminal (the
+  step-end guard already returns `pricing-red` first).
 - **Layer 2 whole-branch review — 8 doctrine-restoring fixes to the plan flow** (all in the
   graduated Layer 2 code, none in pre-existing modules; validated against source with 0
   refuted, a failing-then-passing test each): a `gold` close validated under `verdictType:
