@@ -35,6 +35,19 @@ const { createShellTools } = require('bare-agent/tools');
 const SCOUT_ROUNDS = 8;
 /** blob bound: the scout's output is a PROMPT ingredient for every later call */
 const SCOUT_BLOB_MAX = 8000;
+/**
+ * NATIVE-ONLY read cap (F48/BA-16). On the clipipe-subscription surface the claude CLI
+ * TRUNCATES a large tool result before the model ever sees it (~40-50KB / ~line 550,
+ * measured), spilling the remainder to a `~/.claude/.../tool-results/` file the fence denies
+ * AND wrapping it in a "read this in chunks" notice the model correctly distrusts as prompt
+ * injection — so a whole-file `shell_read` of a large file blinds the worker (0-write stall,
+ * F48). We bound OUR read result below the CLI cap and hand back a TRUSTED notice steering to
+ * `ctx_get` (ranged retrieval survives the cap: one function per fetch). API path is untouched
+ * — there the full result rides straight into context, so no cap and RETRIEVAL_STRATEGY alone.
+ */
+const NATIVE_READ_CAP = 24 * 1024;
+/** native-only strategy: tell the worker WHY whole-file reads fail here and to navigate by symbol */
+const NATIVE_READ_STRATEGY = '\nINTERFACE LIMIT: on this surface a whole-file read of a large file is TRUNCATED before you see it — a shell_read of a file over ~24KB returns only its start followed by a truncation notice. This is NOT the whole file. To read a function IN FULL, always use ctx_recall(<symbol>) then ctx_get(<pointer>) — that returns the entire function no matter how large the file is. To locate a line, use shell_grep(<pattern>). Never try to understand a file over ~400 lines by reading it whole; recall its symbols instead.';
 /** feed-forward artifact bound per step (prompt ingredient, spine-bound) */
 const ARTIFACT_MAX = 2000;
 /** the wallet floor below which a replan is a stop, not an adaptation (review
@@ -254,12 +267,30 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
     let attemptBounded;
     const grantedNames = new Set(granted.map((v) => /** @type {Record<string, string>} */ (TOOL_BY_VERB)[v]));
     const shell = createShellTools().tools.filter((/** @type {{name: string}} */ t) => grantedNames.has(t.name));
+    // F48: on native, bound shell_read below the CLI's tool-result display cap and hand back a
+    // TRUSTED truncation notice steering to ctx_get — the CLI's own truncation blinds the worker
+    // (spilled + injection-flagged). Fresh tool objects per mkWorker call, so mutating is per-worker.
+    if (native) {
+      const rd = shell.find((/** @type {{name: string}} */ t) => t.name === TOOL_BY_VERB.read);
+      if (rd) {
+        const inner = rd.execute;
+        rd.execute = async (/** @type {any} */ args) => {
+          const r = await inner(args);
+          if (typeof r === 'string' && Buffer.byteLength(r, 'utf8') > NATIVE_READ_CAP) {
+            const head = Buffer.from(r, 'utf8').subarray(0, NATIVE_READ_CAP).toString('utf8');
+            return head + `\n\n[bareloop: file truncated at ${NATIVE_READ_CAP} bytes — this interface will not display more of a single read. To read a specific function IN FULL use ctx_recall(<symbol>) then ctx_get(<pointer>); to find a line use shell_grep(<pattern>).]`;
+          }
+          return r;
+        };
+      }
+    }
     const ctx = [...CTX_TOOLS].some((t) => grantedNames.has(t))
       ? createCtxTools(lc, workdir, emit).filter((t) => grantedNames.has(t.name))
       : [];
     if (ctx.length) await lc.index();
     const toolDefs = [...shell, ...ctx];
-    const system = PERSONA_TOOLS + (granted.includes('edit') ? EDIT_STRATEGY : '') + (ctx.length ? RETRIEVAL_STRATEGY : '');
+    const system = PERSONA_TOOLS + (granted.includes('edit') ? EDIT_STRATEGY : '') + (ctx.length ? RETRIEVAL_STRATEGY : '')
+      + (native && grantedNames.has(TOOL_BY_VERB.read) ? NATIVE_READ_STRATEGY : '');
     /** @param {any} u @returns {{inputTokens: number, outputTokens: number, cacheReadTokens: number, cacheCreationTokens: number}} */
     const usageOf = (u) => ({ inputTokens: u?.inputTokens ?? 0, outputTokens: u?.outputTokens ?? 0, cacheReadTokens: u?.cacheReadTokens ?? 0, cacheCreationTokens: u?.cacheCreationTokens ?? 0 });
 
