@@ -2467,8 +2467,8 @@ after the compile check and reds an `invalid-value:…pattern` when a group repe
 skips escaped atoms and character classes (so `\(a+\)+` and `[a+]+` are safe), treats bounded
 outer repeats (`(a+)?`, `(a+){2}`, `(a+){1,3}`) as safe (polynomial, self-authored body), and
 is honest about its bound — exotic overlapping-alternation blowup is out of scope BY DECISION
-(self-DoS only, no arbiter compromise). TDD: a 12-bad / 17-good detector battery + a validator
-red-case + a detail-names-the-footgun test (31 tests), plus the empirical 33-char hang above
+(self-DoS only, no arbiter compromise). TDD: a 17-bad / 17-good detector battery + a validator
+red-case + a detail-names-the-footgun test, plus the empirical 33-char hang above
 as the "the test can fail" proof. Full suite green.
 
 **Named over-rejection (review 2026-07-23).** The shape-only scan also has a false-POSITIVE
@@ -2481,6 +2481,23 @@ real engine we declined, and a wrong guess would admit an exponential pattern, s
 stands. Three `REDOS_OVERREJECTED` regression tests lock these as accepted limitations — they must
 stay flagged, because a future "smarter" detector turning them into false NEGATIVES is the
 dangerous direction.
+
+**Review-caught FALSE NEGATIVE, closed monotonically (2026-07-24, `/code-review medium branch`).**
+The first (flat-only) scan claimed the redundant-wrapper class was covered, but it was NOT: a
+group repeating unboundedly is the SAME exponential class whether the outer quantifier sits
+directly on it (`(a+)+`) or one level of wrapping away (`((a+))+`, `(?:(a+))*`, `(((a+)))+`,
+`((\w+))*`), and the shape scan only propagated the inner repeat when the group was DIRECTLY
+re-quantified — so the wrapped forms slipped through and validated. Each was MEASURED to hang
+`RegExp.test` >8s on ~29 chars (the `((\d*))*` reading needed a digit body — a letter body and a
+dropped backslash made it read "fast", a harness confound caught before believing it). Fix: on a
+group close, propagate the inner-repeat flag up through the enclosing group when the group's own
+body already repeats (not only when it is directly re-quantified). The change is MONOTONIC — it
+only ever SETS `quant=true`, so it can only ever ADD rejections: it widens over-rejection (the
+fail-safe direction) and provably CANNOT introduce a new false negative (the dangerous one). All
+17 `REDOS_GOOD` and 3 `REDOS_OVERREJECTED` cases stay unchanged; 5 wrapper cases added to
+`REDOS_BAD`. This is distinct from the "never sharpen the detector" rule above: that rule bars
+chasing false POSITIVES (which risks false negatives); closing a false NEGATIVE by adding
+rejections is the same fail-safe direction the rule protects.
 
 **Lesson.** A security scan's value is the coverage table, not just the hits: the one
 finding here is a LOW self-DoS, and naming it against a CLEAN arbiter-integrity sweep is

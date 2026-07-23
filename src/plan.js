@@ -64,7 +64,10 @@ function unboundedQuantLen(src, i) {
 /**
  * F49 — a heuristic reject for the catastrophic-backtracking footgun: an
  * unbounded quantifier applied to a group whose body itself repeats unboundedly
- * (`(a+)+`, `(\d*)*`, `([a-z]+){1,}`). Such a pattern can hang `RegExp.test` for
+ * (`(a+)+`, `(\d*)*`, `([a-z]+){1,}`) — including through a redundant wrapping
+ * group (`((a+))+`, `(?:(a+))*`), which is the SAME exponential class as `(a+)+`
+ * and is caught by propagating the inner repeat up through the wrapper. Such a
+ * pattern can hang `RegExp.test` for
  * seconds on a short crafted body, and `evalExits` runs the agent-authored
  * `artifact-written` pattern with NO timeout. This is self-DoS only — the agent
  * authors both the pattern and (via the worker) the artifact, so a hang burns
@@ -111,7 +114,15 @@ export function hasNestedQuantifier(src) {
       const g = stack.pop();
       const qlen = unboundedQuantLen(src, i + 1);
       if (g && g.quant && qlen) return true;    // group repeats unboundedly AND its body did too
-      if (qlen && stack.length) stack[stack.length - 1].quant = true; // the group is an unbounded-repeated atom of its parent
+      // The group is an unbounded-repeated atom of its parent when it is directly
+      // re-quantified (qlen) OR its own body already repeats unboundedly (g.quant):
+      // a redundant wrapper — ((a+))+ , (?:(a+))* , (((\d*)))+ — is the SAME
+      // exponential class as (a+)+, so an inner repeat must propagate THROUGH the
+      // enclosing group or the outer quantifier's close never sees it. Propagation
+      // is MONOTONIC (it only ever SETS quant=true → only ever adds rejections): it
+      // can widen over-rejection — the named FAIL-SAFE direction — but can never
+      // introduce a false negative, which is the dangerous one (F49).
+      if ((qlen || (g && g.quant)) && stack.length) stack[stack.length - 1].quant = true;
       i += qlen;
       continue;
     }

@@ -1366,5 +1366,8 @@ now emit `root-injected`, making the pre-registered ON-vs-OFF default-flip read 
 possible on the accepted surface; default stays OFF until that evidence lands (F41). F49
 hardened the agent-authored `artifact-written` exit regex — a nested-quantifier ReDoS reject
 at the validation gate (LOW self-DoS, no arbiter compromise; input-bounding refuted as
-theater by a 33-char-body hang). After v0.5.1, the ONLY legacy-unique surface left is the two
+theater by a 33-char-body hang), extended after a follow-up review that caught a false
+negative in the flat-only scan (redundant-wrapper forms like `((a+))+` slipped through and
+still hang >8s) — closed monotonically by propagating an inner repeat up through the
+wrapping group, the fail-safe direction that only ever adds rejections. After v0.5.1, the ONLY legacy-unique surface left is the two
 locked verdicts above — so the sunset gate is exactly (1)+(2).

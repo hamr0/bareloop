@@ -19,9 +19,13 @@ feature lands, **patch** = docs, fixes, scaffolding.
 ### Fixed
 - **F49 (security-hardening): the agent-authored `artifact-written` regex can no longer hang
   the exit evaluator.** `plan.js` rejects nested-quantifier ReDoS patterns (`(a+)+`, `(\d*)*`,
-  `(x+){1,}`) at the validation gate, before any tokens burn. LOW self-DoS, no arbiter
-  compromise; input-bounding was rejected as theater (a 33-char body hangs) and a JS regex
-  timeout as disproportionate (worker/RE2 dep).
+  `(x+){1,}`, and redundant-wrapper forms like `((a+))+` / `(?:(a+))*` / `(((a+)))+`) at the
+  validation gate, before any tokens burn. The wrapper class was a review-caught false negative
+  in the first (flat-only) scan — each measured to hang `RegExp.test` >8s on ~29 chars — closed
+  by propagating an inner repeat up through the enclosing group; the change is MONOTONIC (it only
+  ever adds rejections, the fail-safe direction, and cannot introduce a new false negative). LOW
+  self-DoS, no arbiter compromise; input-bounding was rejected as theater (a 33-char body hangs)
+  and a JS regex timeout as disproportionate (worker/RE2 dep).
 - **F50: `runJob` no longer silently ignores `layerRoot` for plan-shape jobs** (was accepted
   and dropped — an advertised no-op).
 

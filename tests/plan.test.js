@@ -262,6 +262,12 @@ for (const [name, fn, want] of RED_CASES) {
 const REDOS_BAD = [
   '(a+)+', '(a+)*', '(a*)+', '(a*)*$', '(\\d+)+', '([a-z]+)*', '(\\w+){1,}',
   '((a+)+)', '(a+\\w*)+', '(a+?)+?', '(foo|ba+r)+', '(\\s+)*end',
+  // redundant WRAPPING group — the inner repeat is nested one level deeper than
+  // the outer quantifier, the same exponential class as (a+)+ (measured: each
+  // hangs RegExp.test >10s on ~29 chars). Caught by propagating the inner
+  // repeat up through the wrapper; a false-negative here is the dangerous
+  // direction (F49, review 2026-07-23).
+  '((a+))+', '(?:(a+))+', '((\\d*))*', '(((a+)))+', '((\\w+))*',
 ];
 const REDOS_GOOD = [
   'def ', 'a+', '(abc)+', '(a+)', '(a+)?', '(a+){2}', '(a+){1,3}',
