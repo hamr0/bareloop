@@ -77,6 +77,20 @@ feature lands, **patch** = docs, fixes, scaffolding.
   `interpreter-red`, never a silent fall-back to the API. 5 native tests + a live
   end-to-end smoke on the real CLI (green, all workers metered, `spendComplete` honest).
 
+- **Native read-cap — the CLI truncation fix (F48; `bare-agent` → `^0.33.1`, BA-17
+  ranged read).** On the `clipipe-subscription` surface the `claude` CLI truncates a large
+  tool result (~40–50KB, measured) BEFORE the model sees it — spilling the remainder to a
+  fenced-off `tool-results/` file and wrapping it in a "read in chunks" notice the model
+  distrusts as injection — so a whole-file `shell_read` of a large file blinded the native
+  worker (0-write stall). The runner now bounds the native `shell_read` result below the CLI
+  cap (`NATIVE_READ_CAP`) and returns a TRUSTED notice steering to `ctx_get` ranged retrieval,
+  plus a native-only strategy line; the API path is untouched (full result rides into context).
+  Measured: **0 → 7 writes** on the real job. Cross-surface verdict (F48): the native surface
+  is capable at the STEP but did not carry job #4 to a grade — 0/2 acting rows vs the API's
+  3/3, and a 3.5× budget raise ($8→$28) was refuted (escalated on the F39 semantic-stall at
+  $7). IN only as a babysat, $0-marginal-billing fallback; **only the `anthropic-api` surface
+  is guaranteed.** Local LLMs remain deferred and unmeasured.
+
 ### Fixed
 
 - **Layer 2 whole-branch review — 8 doctrine-restoring fixes to the plan flow** (all in the
