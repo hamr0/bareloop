@@ -10,7 +10,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validatePlan, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, WRITE_VERBS } from '../src/plan.js';
+import { validatePlan, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, WRITE_VERBS, hasNestedQuantifier } from '../src/plan.js';
 import { validateJob } from '../src/job.js';
 
 // The signed side: a validateJob-green four-field spec (job #4's shape) — the
@@ -231,6 +231,7 @@ const RED_CASES = [
   ['artifact-written path outside the fence', (p) => { p.steps[0].exit[0] = { type: 'artifact-written', path: 'docs/notes.md' }; }, 'scope-escape:steps.0.exit.0.path'],
   ['artifact-written path escaping the run dir', (p) => { p.steps[0].exit[0] = { type: 'artifact-written', path: '../notes.md' }; }, 'invalid-value:steps.0.exit.0.path'],
   ['artifact-written pattern that does not compile', (p) => { p.steps[0].exit[0].pattern = 'def ('; }, 'invalid-value:steps.0.exit.0.pattern'],
+  ['artifact-written pattern with a nested unbounded quantifier (ReDoS footgun, F49)', (p) => { p.steps[0].exit[0].pattern = '(a+)+$'; }, 'invalid-value:steps.0.exit.0.pattern'],
   ['tree-changed without a scope', (p) => { p.steps[0].exit[1] = { type: 'tree-changed' }; }, 'invalid-value:steps.0.exit.1.scope'],
   ['tree-changed scope outside the fence', (p) => { p.steps[0].exit[1] = { type: 'tree-changed', scope: 'src/**' }; }, 'scope-escape:steps.0.exit.1.scope'],
   ['tree-changed scope escaping the run dir', (p) => { p.steps[0].exit[1] = { type: 'tree-changed', scope: '../**' }; }, 'invalid-value:steps.0.exit.1.scope'],
@@ -251,6 +252,38 @@ for (const [name, fn, want] of RED_CASES) {
     assert.equal(r.plan, null);
   });
 }
+
+// F49 — the catastrophic-backtracking detector. A pure-logic algorithm, so a
+// direct good/bad battery is the right instrument (Testing Trophy: unit tests
+// for algorithms). BAD = an unbounded quantifier applied to a group that
+// already repeats unboundedly (the exponential class); GOOD = everything the
+// agent legitimately writes, including bounded repetition and escaped/classed
+// quantifier chars that must NOT be read as nesting.
+const REDOS_BAD = [
+  '(a+)+', '(a+)*', '(a*)+', '(a*)*$', '(\\d+)+', '([a-z]+)*', '(\\w+){1,}',
+  '((a+)+)', '(a+\\w*)+', '(a+?)+?', '(foo|ba+r)+', '(\\s+)*end',
+];
+const REDOS_GOOD = [
+  'def ', 'a+', '(abc)+', '(a+)', '(a+)?', '(a+){2}', '(a+){1,3}',
+  '\\(a+\\)+', '[a+]+', '[+*]{2,}', 'foo|bar', '^\\d{3}-\\d{4}$',
+  '(a+)b+', '(a+)(b+)', '(?:abc)+', 'class \\w+\\(', '(a{2,4})+',
+];
+for (const src of REDOS_BAD) {
+  test(`hasNestedQuantifier flags the footgun: ${src}`, () => {
+    assert.equal(hasNestedQuantifier(src), true, `${src} should be flagged`);
+  });
+}
+for (const src of REDOS_GOOD) {
+  test(`hasNestedQuantifier passes the safe pattern: ${src}`, () => {
+    assert.equal(hasNestedQuantifier(src), false, `${src} should NOT be flagged`);
+  });
+}
+
+test('the ReDoS red detail names the footgun (the gap must let the replan rewrite, not guess)', () => {
+  const r = validatePlan(mut((p) => { p.steps[0].exit[0].pattern = '(a+)+$'; }), OPTS);
+  assert.match(r.reds[0].detail ?? '', /quantifier/i);
+  assert.match(r.reds[0].detail ?? '', /F49/);
+});
 
 test('check-unknown detail names the SIGNED menu (the gap must aim the replan, not taunt it)', () => {
   const r = validatePlan(mut((p) => { p.steps[1].exit[1] = { type: 'check-passes', name: 'my-clever-check' }; }), OPTS);
