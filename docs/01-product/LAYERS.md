@@ -107,7 +107,7 @@ verb blocks the work, the worker files a *request-red* and a human decides.
 
 ```
 Layer 3   INHERITANCE    the road survives runs, with receipts; self-heals    (not built — N3)
-Layer 2   MICRO-WHEELS   the road itself: locate → understand → write → verify (designed — plan-v1)
+Layer 2   MICRO-WHEELS   the road itself: locate → understand → write → verify (built + ACCEPTED — F47, v0.5.0)
 Layer R   THE ROOT       memory that survives attempts inside one run          (built — armed-and-inert, F41)
 Layer 1   ONE WHEEL      a single loop over the whole task                     (built; first real firing NOW)
 ```
@@ -159,6 +159,13 @@ read (repetition drop, ON vs OFF) DEFERS to the first run whose spine records
 The workflow becomes a **sequence of small wheels**, each with one goal and only the verbs
 that goal needs (locate gets `grep`/`recall`; write gets `write`; nobody gets `run`). The
 agent drafts this road per job; a validator gates the draft before any tokens burn.
+
+**Status: built + ACCEPTED 2026-07-22 (F47), shipped v0.5.0.** The real plan flow
+(SCOUT → PLAN → per-step micro-loops judged by the exit evaluator → one replan → the
+operator's close) converts job #4 3/3 and clears the 45 bar 3/3 on the API surface; the
+in-run operator-signed check TRANSLATES the semantic ask into the mechanical genre (F46).
+Cross-surface (clipipe) reads OUT-as-peer (F48): only the API is a guaranteed surface. Open
+follow-up: F49 (bound the agent-authored exit regex).
 
 **Stage verdicts (decided 2026-07-15, hamr):** a micro-wheel validates against **its own
 eval** where one exists — a mechanical check the stage cannot game; where none exists, it
@@ -325,6 +332,15 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
    the exact F39 death mid-run — and kill-rate rose 3/3 (no 45-green yet; that question
    belongs to the build's battery). "Notes + self-check succeeds" is now observed at POC
    tier; the build designs it properly (design record 2026-07-21).**
+   **Build core LANDED 2026-07-21 (branch `layer-2-plan-v1`, second interview locked
+   decisions 6–9):** the four-field job shape (goal/verdictType/close/checks[], exclusive
+   with `steps[]` under a staged sunset), the plan-v1 validator (`verb-escape` /
+   `exit-illegal` / `check-unknown`, F17 pairing law), the exit evaluator (outcome-reading
+   snapshots, fault propagation), ralph's judge seam, the plan executor (scout → validated
+   plan → micro-loops with check-gap feedback → one replan → close + one fix loop), and
+   the runJob dispatch — 503 tests, TDD, mutation-spot-checked. Scripted-provider
+   evidence only so far: **the rung's acceptance gate is the real-model battery (job #4,
+   same close, same frozen 45 bar, read against F39's baseline), which has NOT yet run.**
    **Also owns the Layer R default decision:** the first Layer 2 job that produces natural
    fixation runs the ON-vs-OFF acceptance read, and that result flips `layerRoot` to `true`
    (ON helps) or keeps it `false` (no lift) — see the Layer R ⚠ note above.

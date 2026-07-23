@@ -235,7 +235,15 @@ export const CLOSE_FAULTS = Object.freeze({
  *
  * @param {object} opts
  * @param {(iteration: number, gap?: string) => void|Promise<void>} opts.middle the emergent middle; never sees close/cap
- * @param {string[]} opts.close argv whose exit code is truth
+ * @param {string[]} [opts.close] argv whose exit code is truth (required unless `judge` is injected)
+ * @param {() => Promise<{verdict: string, gap?: string, detail?: string}>|{verdict: string, gap?: string, detail?: string}} [opts.judge]
+ *   Layer 2 (PRD v1.12 §4): the judge generalized to a SHELL-owned seam. When
+ *   present it replaces runClose for this loop — a plan STEP's micro-loop is
+ *   judged by the exit evaluator (declarative form checks), not a command. It
+ *   returns the same verdict vocabulary runClose renders, so the forbidden
+ *   zone, worker-crash routing (F32), and the cap taxonomy apply unchanged.
+ *   Injected by run.js only; inexpressible in any config or plan — the agent
+ *   never authors its judge any more than its close.
  * @param {number} opts.capRuns budget: max middle runs
  * @param {(type: string, data?: object) => object} opts.emit a spine emitter
  * @param {(s: string) => string} [opts.redact] source scrubber for close output
@@ -255,13 +263,15 @@ export const CLOSE_FAULTS = Object.freeze({
  *   with zero writes, a crash stays what it always was: an instrument stop.
  * @returns {Promise<'green'|'escalated'>}
  */
-export async function ralph({ middle, close, capRuns, emit, redact, closeTimeoutMs, cwd, expect, judged, gapKeep, workerWrites }) {
-  emit('run-start', { capRuns, close: close.join(' ') });
+export async function ralph({ middle, close, judge, capRuns, emit, redact, closeTimeoutMs, cwd, expect, judged, gapKeep, workerWrites }) {
+  emit('run-start', { capRuns, close: judge ? 'judge:injected' : /** @type {string[]} */ (close).join(' ') });
   // The blind spot is NAMED, never hidden: with no judgment-rendered signal this
   // close cannot tell a crash from an honest red (they are byte-identical at the
   // exit-code seam), so the record says so out loud rather than passing the exit
-  // code off as trustworthy (PRD v1.11).
-  if (!judged) emit('close-unaudited', { close: close.join(' '), meaning: 'no judgment-rendered signal declared — a crash-at-load is indistinguishable from an honest red for this close' });
+  // code off as trustworthy (PRD v1.11). The judged-floor story belongs to
+  // CLOSES: an injected judge (Layer 2 exit evaluation) owns its own honesty
+  // reads, so the note would be noise there.
+  if (!judged && !judge) emit('close-unaudited', { close: /** @type {string[]} */ (close).join(' '), meaning: 'no judgment-rendered signal declared — a crash-at-load is indistinguishable from an honest red for this close' });
   const verdicts = [];
   let gap;
   for (let iteration = 1; iteration <= capRuns; iteration++) {
@@ -299,7 +309,9 @@ export async function ralph({ middle, close, capRuns, emit, redact, closeTimeout
       return 'escalated';
     }
     emit('middle-done', { iteration });
-    const v = runClose(close, redact, { timeoutMs: closeTimeoutMs ?? 120_000, cwd, expect, judged, gapKeep });
+    const v = judge
+      ? await judge()
+      : runClose(/** @type {string[]} */ (close), redact, { timeoutMs: closeTimeoutMs ?? 120_000, cwd, expect, judged, gapKeep });
     // Worker-crash attribution (F32, measured in F31: 4 of 7 battery rows). A crash is
     // still not a verdict (F17) — but a crash that FOLLOWS worker writes, on a run whose
     // precheck proved the close judged at baseline (run.js escalates a crash-at-precheck

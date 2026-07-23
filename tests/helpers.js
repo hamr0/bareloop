@@ -83,6 +83,81 @@ test('adds', () => assert.equal(sum(2, 3), 5));`);
   return { workdir, target: join(workdir, 'src', 'sum.mjs'), close: ['node', '--test', suite], suiteCmd: `node --test ${suite}` };
 }
 
+/**
+ * Scripted NATIVE clipipe provider factory (BA-16 shape) — the analog of
+ * `scriptedProvider` for the surface where the CLI owns the turn cycle. The
+ * factory receives `{policy, onTurn, maxTurns}` (the per-worker governance the
+ * runner clips onto the PROVIDER, not the Loop); the returned provider's
+ * `generate()` runs ONE session per call: it meters each scripted turn through
+ * `onTurn` (costUsd `null` — the CLI prices the SESSION), honors the gate
+ * `policy` on tool turns (a deny SKIPS the tool, exactly as the bridge does),
+ * bounds at `maxTurns` (surfacing `error:'max_turns'`), and closes with one
+ * authoritative `kind:'session'` cost. `ownsCycle` + `session.usageReported`
+ * reproduce the real provider's contract, so the real Loop drives it identically
+ * (the live POC proved the REAL provider+gate; this drives OUR executor branch).
+ * @param {Array<{turns: Array<{text?: string, tool?: string, args?: any}>, cost?: number}>} sessions
+ *   one entry per `generate()` call (sticks on the last)
+ */
+export function scriptedNativeFactory(sessions) {
+  // ONE script tape shared across every worker's provider (the runner builds a
+  // fresh native provider per worker, so `s` must live OUT here — the analog of
+  // scriptedProvider's single shared `calls` cursor; a per-provider counter
+  // would replay scout→plan→step from the top for each worker).
+  let s = 0;
+  return ({ policy, onTurn, maxTurns, hasTools }) => {
+    // FAITHFUL to the live-verified reality: a native session with NO tools fires
+    // ZERO onTurn events and reports no cost, so the runner routes a toolless
+    // worker (the drafter) through claude-json TEXT mode — a plain metered
+    // result cost, exactly like an API round (via the Loop's onLlmResult). A fake
+    // that fired onTurn for a toolless session would MASK the unmetered-spend bug
+    // the live smoke caught (validate against the real instrument, not a fixture).
+    if (!hasTools) {
+      return {
+        name: 'clipipe-native-text-stub',
+        async generate() {
+          const plan = sessions[Math.min(s++, sessions.length - 1)];
+          const text = plan.turns.map((/** @type {any} */ t) => t.text ?? '').filter(Boolean).join('\n');
+          return { text, toolCalls: [], usage: { inputTokens: 5, outputTokens: 5 }, model: 'clipipe', costUsd: plan.cost ?? 0.01, stopReason: null };
+        },
+      };
+    }
+    return {
+      name: 'clipipe-native-stub',
+      ownsCycle: true,
+      /** @param {any} _messages @param {Array<{name: string, execute: Function}>} [tools] */
+      async generate(_messages, tools = []) {
+        const plan = sessions[Math.min(s++, sessions.length - 1)];
+        let turns = 0; let toolCalls = 0; let lastText = ''; let error = null;
+        const meter = async (/** @type {object} */ arg) => {
+          try { await onTurn(arg); } catch (e) {
+            if (e && /** @type {any} */ (e).name === 'HaltError') { error = error ?? `halt:${/** @type {any} */ (e).message}`; return false; }
+            throw e;
+          }
+          return true;
+        };
+        for (const step of plan.turns) {
+          if (turns >= maxTurns) { error = 'max_turns'; break; }
+          turns += 1;
+          if (!(await meter({ usage: { inputTokens: 5, outputTokens: 5 }, costUsd: null, pricing: null, kind: 'turn' }))) break;
+          if (step.text !== undefined) { lastText = step.text; continue; }
+          if (step.tool) {
+            toolCalls += 1;
+            let verdict;
+            try { verdict = await policy(step.tool, step.args, undefined); }
+            catch (e) { if (e && /** @type {any} */ (e).name === 'HaltError') { error = `halt:${/** @type {any} */ (e).message}`; break; } throw e; }
+            if (verdict !== true) continue; // deny is advisory — the tool never runs (the fence held)
+            const tool = tools.find((t) => t.name === step.tool);
+            if (tool) await tool.execute(step.args);
+          }
+        }
+        // the authoritative session cost (the CLI prices the whole session)
+        await meter({ usage: {}, costUsd: plan.cost ?? 0.01, pricing: 'priced', kind: 'session' });
+        return { text: lastText, toolCalls: [], usage: { inputTokens: 5, outputTokens: 5 }, model: 'clipipe', session: { turns, toolCalls, error, usageReported: true }, error };
+      },
+    };
+  };
+}
+
 /** ONE spine reader: parsed events in seq order. @param {string} file */
 export const readSpine = (file) => readFileSync(file, 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
 

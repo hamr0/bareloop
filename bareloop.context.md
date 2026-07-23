@@ -1,10 +1,16 @@
 # bareloop — Integration Guide
 
-> **Current through N2** (headless single-job loop: `runJob`, text + tool middles, the
-> draft-PR hitl step); API sections fill in as build-ladder rungs land (PRD §10). What is
-> settled — the boundary, the architecture, the refusals, the constraints — is settled
-> for good. Per LIBRARY_CONVENTIONS §3 this file ships with the package and is the
-> complete adopter contract; the README is only the pitch.
+> **Current through Layer 2 (ACCEPTED, F47)** (headless single-job loop: `runJob`, text +
+> tool middles, the draft-PR hitl step; the plan-v1 flow — four-field job shape, agent-
+> authored validated plans, in-run check exits — validated end-to-end on the real-model
+> acceptance battery: 3/3 conversion, 3/3 over the owned bar, the agent composing its own
+> check exits). The plan shape is the primary path; legacy `steps[]` co-exists but sunsets
+> on landing. Runs on two worker surfaces — the API `Loop` and, for
+> `clipipe-subscription`, the CLI's native tool channel (module 4d). API sections fill in
+> as build-ladder rungs land (PRD §10). What is settled — the boundary, the architecture,
+> the refusals, the constraints — is settled for good. Per LIBRARY_CONVENTIONS §3 this
+> file ships with the package and is the complete adopter contract; the README is only
+> the pitch.
 
 ## What this is
 
@@ -80,6 +86,22 @@ unknown-field reds.
 | `steps[].tools` | unique subset of `read\|grep\|write\|edit\|recall\|get` | the SPEC-side tool grant (`TOOL_MENU`, frozen; defaults to the full menu) — the drafted config cannot express mode or tools; `edit` (BA-13) is the anchored exact-once replace, judged by the SAME writeScope fence as `write`; requesting `run` (`LOCKED_TOOLS`) reds with the DISTINCT code `request-red` (locked-but-listed: the red IS the admission evidence the ledger tallies; a typo stays `invalid-value`) |
 | `escalation` | `{ mode: "decision-ready" }` | the pain channel is not optional |
 
+**The plan shape (Layer 2, design record 2026-07-21).** A job-v1 spec declares EITHER the
+`steps[]` chain above OR the four-field plan shape — never both (`shape-conflict` red).
+In the plan shape the AGENT authors the step plan at run time (gated by `validatePlan`);
+the human signs only:
+
+| field | shape | notes |
+|---|---|---|
+| `goal` | non-empty text | what the agent plans against |
+| `verdictType` | `green` \| `soft-green` \| `hitl` | declared radio, never inferred (`VERDICT_TYPES`, frozen). v1 ADMITS only `green`; declaring `soft-green`/`hitl` reds `request-red` with the type as a structured `verb` field (declared-but-locked — the tool-menu pattern) |
+| `close` | a close object (table below) | ONE close, the only truth; `green` demands a hard-class close (`close-hierarchy` red on a rubric/hitl close) |
+| `checks` | optional array of `{ name, cmd, expect, judged?, gapKeep? }` | the operator-SIGNED named-check menu: the predicate-close body plus a kebab slug `name`, validated by the same rules, executed under the same runClose machinery. Plans reference them via the `check-passes(name)` exit; the agent can never author, edit, or compose one. **Checks decide nothing and mint nothing** — a check result is a progress gate and a gap source only |
+| `tools` | optional unique subset of `TOOL_MENU` | the CEILING every plan step's grant must fit inside (defaults to the full menu); `run` reds `request-red` here exactly as on a step grant. On a legacy `steps[]` spec this field is an `invalid-value` red (steps grant tools per step) |
+
+`steps[]` is co-existing scaffolding with a staged sunset: it archives alongside
+config-v1 once the Layer 2 path proves itself in its battery — not before.
+
 **Close types and the hierarchy** (a close is data, never code; verdict-class laundering
 is a named red `close-hierarchy`):
 
@@ -140,18 +162,36 @@ drafted workflow config cannot express it (unknown-field red). The gap path also
 **both** streams (stdout + stderr), so a failure printed to stdout survives stderr noise
 (F28's adjacent hazard — the old `err || out` returned stderr alone and lost it).
 
-Red vocabulary (both validators): `parse-error`, `unknown-field`, `missing-required`,
+**The plan document (`schema: "plan-v1"`, AGENT-authored — the only document the emergent
+middle writes; `validatePlan` gates it against the SIGNED job spec before tokens burn):**
+
+| field | shape | notes |
+|---|---|---|
+| `steps` | ordered array, 1..8 (`MAX_PLAN_STEPS`) | strictly sequential — array order IS the order; no `dependsOn` (unknown-field red: an inert knob is a fake contrast lever) |
+| `steps[].id` | kebab slug, unique | |
+| `steps[].action` | non-empty text | the step's task — the worker sees only this step |
+| `steps[].tools` | non-empty unique subset of the SPEC ceiling | a verb beyond the ceiling reds `verb-escape` with the verb as structured data (overreach, distinct from the operator-side `request-red`); `run` is `verb-escape` at every layer |
+| `steps[].rounds` | int 1..shell cap (default 40) | the step's per-attempt tool-round bound (the Gate's `maxTurns` natively) |
+| `steps[].target` | path inside the fence | v1.18 deliverable; REQUIRED on write-granted steps |
+| `steps[].exit` | 1..2 items (`MAX_EXITS_PER_STEP`), ALL must pass (AND-only, no OR/NOT) | closed menu (`EXIT_TYPES`): `artifact-written(path, pattern?)` · `tree-changed(scope)` · `json-valid(path)` · `check-passes(name)`. `check-passes` must name a SIGNED check (`check-unknown` red names the signed menu); on a write-granted step it must be paired with `tree-changed` (`exit-illegal` — the seed tree is green, a lone check would pass untouched, F17/F46). Exits verify FORM, not truth — progress gates; the operator's close stays the one arbiter |
+
+Red vocabulary (all three validators): `parse-error`, `unknown-field`, `missing-required`,
 `invalid-value`, `bounds`, `duplicate-id`, `close-type`, `close-hierarchy`,
-`secret-literal`, `scope-escape`, `fence-invalid` (a malformed `jobWriteScope` fence — attributed to `jobWriteScope`, never the workflow config), plus the workflow-side verb reds (`verb-illegal`,
-`verb-placement`, `verb-params`, `slot-overflow`). The `secret-literal` sweep is
+`secret-literal`, `scope-escape`, `fence-invalid` (a malformed `jobWriteScope` fence — attributed to `jobWriteScope`, never the workflow config), `shape-conflict` (both job shapes declared),
+`request-red` (locked-but-listed: a locked tool or verdictType — admission demand the
+ledger tallies), plus the workflow-side verb reds (`verb-illegal`,
+`verb-placement`, `verb-params`, `slot-overflow`) and the plan-side reds (`verb-escape`,
+`exit-illegal`, `check-unknown`, `job-invalid` — a plan validated against a missing or
+non-plan-shape job fails CLOSED). The `secret-literal` sweep is
 defense-in-depth against known token shapes — env-only loading remains the law, not the
 sweep.
 
 ## Public API
 
-*Landed through N2 (spine + shell + both validators + interpreter with text/tool middles
-+ extractor + runJob). Still TBD: N3 (contrast-bit extractor live), N4 (verdict classes —
-gold/rubric close EXECUTION), N5 (scheduler + budget ops + CLI), N6 (panel).*
+*Landed through N2 + the Layer 2 core (spine + shell + three validators + interpreter
+with text/tool middles + the plan executor + extractor + runJob). Still TBD: N3
+(contrast-bit extractor live), N4 (verdict classes — gold/rubric close EXECUTION), N5
+(scheduler + budget ops + CLI), N6 (panel).*
 
 ### `makeSpine(file)` → `emit(type, data?)` — `src/spine.js`
 
@@ -159,7 +199,7 @@ Append-only JSONL event emitter bound to one file. `seq` monotonic per spine, `t
 last. Consumers are pure listeners; nothing reads the file back. Returns each event as
 written.
 
-### `ralph({ middle, close, capRuns, emit, redact?, closeTimeoutMs?, cwd?, expect?, judged?, gapKeep?, workerWrites? })` → `'green' | 'escalated'` — `src/ralph.js`
+### `ralph({ middle, close?, judge?, capRuns, emit, redact?, closeTimeoutMs?, cwd?, expect?, judged?, gapKeep?, workerWrites? })` → `'green' | 'escalated'` — `src/ralph.js`
 
 The dumb outer shell: `while close-red and under-cap: run the middle`. `close` is an argv
 whose exit code is truth (`runClose` is also exported); the red gap text feeds the next
@@ -205,6 +245,15 @@ to the gate audit's allow-decision write/edit lines (run_id-scoped); no seam or 
 keeps the old behavior — an instrument crash still escalates `close-crashed`, never retried.
 Measured motivation: battery pass 1 (F31) lost 4 of 7 rows to exactly this escalation.
 
+**The judge seam (Layer 2, PRD v1.12 §4).** `judge?: async () => {verdict, gap?, detail?}`
+— a SHELL-injected replacement for `runClose`, so a plan step's micro-loop is judged by
+the exit evaluator instead of a command. It returns the same verdict vocabulary, so the
+forbidden zone, F32 worker-crash routing (a check crashed by the worker's own broken test
+feeds back — the F46 mechanism), and the cap taxonomy apply unchanged. `close` becomes
+optional when `judge` is present; the seam is wired by `runPlan` only and is
+inexpressible in any config or plan — the agent never authors its judge any more than
+its close.
+
 Escalations are decision-ready (category, options, spend); cap-halt is its own
 category, never merged with "wrong". A thrown middle is relayed by its `category`
 property (`cap-halt`, `gate-red`, …); an unnamed throw is `interpreter-red`. Close output
@@ -235,9 +284,35 @@ a leak on the very output it was guarding.
 The operator-owned sibling (never an extension) of `validateConfig`: validates a
 `job-v1` spec — see **All options** for the full schema, close types, and hierarchy.
 Never throws on JSON text or plain parsed data (the ingest contract); returns the
-parsed spec on ok, `null` on any red. Menus exported:
+parsed spec on ok, `null` on any red. Validates BOTH job shapes (legacy `steps[]` and
+the Layer 2 plan shape — see the option tables above). Menus exported:
 `CLOSE_TYPES`, `CLASSES`, `CLASS_BY_CLOSE`, `GOLD_COMPARE`, `CADENCE_UNITS`,
-`PROVIDERS`, `CONDITION_KEYS`, `STEP_MODES`, `TOOL_MENU`, `LOCKED_TOOLS`.
+`PROVIDERS`, `CONDITION_KEYS`, `STEP_MODES`, `TOOL_MENU`, `LOCKED_TOOLS`,
+`VERDICT_TYPES`, `LOCKED_VERDICTS`.
+
+### `validatePlan(input, { job, maxStepRounds? })` → `{ ok, reds, plan }` — `src/plan.js`
+
+The third validator: gates the AGENT-authored plan doc (`schema: "plan-v1"`) against the
+SIGNED job spec before tokens burn — the ceiling, the fence, and the checks menu all come
+from `job` (a missing or non-plan-shape job fails CLOSED, `job-invalid`). Never throws;
+same `{ code, path, detail }` red shape as its siblings; `verb-escape` reds carry the
+escaping verb as a structured `verb` field (the ledger keys on it). `maxStepRounds`
+(default 40 — the shell's tool-mode per-attempt bound) ceilings every step's `rounds`.
+Menus exported: `EXIT_TYPES`, `MAX_EXITS_PER_STEP`, `MAX_PLAN_STEPS`, `WRITE_VERBS`.
+
+### `snapshotScope(dir, scope)` / `evalExits(exits, { dir, snapshot?, runCheck? })` — `src/exits.js`
+
+The shell's own fixed code for the closed exit menu — nothing here executes
+agent-authored text. `snapshotScope` hashes every file under a scope prefix (the
+"before" side of `tree-changed`; a missing dir snapshots empty). `evalExits` is AND-only
+and never short-circuits — the result names EVERY failing wall (`{ pass, results }`,
+each result `{ type, pass, detail?, fault? }`). `tree-changed` reads OUTCOME (bytes vs
+the snapshot): an identical re-write is NOT a change (F43) and git status is never
+consulted (F45). `artifact-written` rejects zero-byte files. `check-passes` delegates
+through the `runCheck` seam (the runner wires runClose); an unwired or crashed seam
+fails CLOSED with `fault` carrying a runClose verdict name — an instrument fault
+escalates through `CLOSE_FAULTS`, never masquerades as worker feedback. Failing details
+are counts and names only, never file bodies (they ride the append-only spine).
 
 ### `jobSpecHash(job)` / `checkApproval(job, approvals)` — `src/job.js`
 
@@ -310,7 +385,7 @@ default-enabled until a stuck job (Layer 2, or a manufactured-fixation probe) sh
 beats OFF. Flip the default to `true` the day that evidence lands; a `root-injected` event
 on your spine (when you pass `layerRoot: true`) is a signal worth reading, not noise.
 
-### `runJob(spec, { approvals, workdir, provider, emit, target?, capRuns?, shellCapUsd?, closeTimeoutMs?, execCmd?, layerRoot? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, emit, target?, capRuns?, shellCapUsd?, closeTimeoutMs?, execCmd?, layerRoot? })` → outcome — `src/run.js`
 
 The N2 runner — the shell's top layer; composes everything below it and interprets
 nothing itself. Sequence: **approval gate** (human-signs-always — refuses an unapproved
@@ -348,6 +423,49 @@ present on all outcomes, so a consumer never branches on field presence and neve
 launder a missing `spentUsd` into `$0`. A text-mode job invoked without `opts.target` is a `job-red`
 before ANY provider call (and `interpret` itself throws a TypeError for direct
 callers) — reds-before-tokens applies to the call, not just the spec.
+
+**The plan flow (Layer 2).** A plan-shape spec routes through the SAME `runJob` entry —
+same approval gate, same smoke, same metered ledger, same job-end money contract
+(`job-start` carries `shape: 'plan'` + the goal instead of a steps list; no `opts.target`
+needed — plan steps are tool-mode by construction). The flow (`runPlan`, also exported
+for direct callers who own their own ledger): **close precheck** (`already-green` is a
+DISTINCT zero-token outcome; a forbidden-zone verdict escalates before spend) → **checks
+preflight** (every SIGNED check runs once at $0 — an unrunnable check is a `check-red`
+stop before tokens, not a fault mid-plan) → **SCOUT** (read-only by construction: the
+write verbs are not in its menu; hard-bounded rounds) → **PLAN** (the decompose call —
+the planner never sees the repo, only the scout blob; drafted against a schema
+description with check NAMES only; `validatePlan` gates it, one redraft with the reds
+fed back, then `plan-red`) → **EXECUTE** (strictly sequential micro-loops: `ralph` with
+the exit-evaluator judge; tree snapshots at step start; the gap names every failing
+wall — mechanical genre, F46's measured mechanism; artifacts feed forward labeled by
+step id) → **ONE replan**, triggered by exhaustion only (an instrument stop never
+replans) → **the operator's close**, a red feeding ONE bounded fix loop judged by the
+REAL close. `plan-executed` (the plan-as-executed record, design law #2) lands on the
+spine on every path that executed steps. Additional outcomes: `already-green |
+plan-red | check-red | close-red`. Worker prompts hold the v1.12 §5 contract
+(mutation-proven): the absolute repo root, the step's action/target, prior artifacts,
+the gap — NEVER the budget, the close command, a check's command, or the arbiter's books.
+
+**Two worker surfaces — API and native clipipe (BA-16, module 4d).** The plan flow is
+provider-agnostic: the close, the checks, and the exit evaluator are commands and form
+checks, so ONLY the worker differs. `job.provider === 'clipipe-subscription'` drives tools
+NATIVELY (the `claude` CLI owns the turn cycle) instead of through the `Loop`; every other
+provider runs the Loop unchanged (byte-identical — the API path cannot regress). Native
+governance is **constructor-time and per-worker**, so the runner cannot reuse one injected
+instance: pass `opts.nativeProvider`, a FACTORY the runner calls fresh per worker as
+`({ policy, onTurn?, maxTurns, hasTools }) => provider`. Return the right mode by `hasTools`:
+`true` → native tool mode (`toolProtocol:'claude-mcp'`, wire the gate's `policy` + `onTurn` +
+`maxTurns` onto the provider — the SAME `wireGate` fence, so a write outside the scope is
+DENIED at the bridge, live-proven); `false` → the toolless drafter, where a native session
+reports NO cost, so return a metered claude-json TEXT provider (`--output-format json`,
+`parse:'claude-json'`) — never an unmetered, invisible-spend session. A missing factory on a
+`clipipe-subscription` job is `interpreter-red`, never a silent fall-back to the metered API.
+Money reconciles PER SESSION (the CLI prices the session, `costUsd` null per turn,
+authoritative at close): the accounted `worker-round` is the session total, per-turn
+`worker-turn` events are attribution only. `maxTurns` (→ CLI `--max-turns`) is the
+per-attempt bound and surfaces `max_turns` as a BOUNDED attempt (judged, gap fed forward),
+the native analog of `loop.stop()`. Live-validated green end-to-end on the real CLI; the
+Loop path is untouched.
 
 **Resume-to-cap (close-first skip):** every predicate step runs its close FIRST, before
 any tokens (`close-precheck` on the spine, output scrubbed at capture like every close).

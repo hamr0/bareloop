@@ -7,6 +7,117 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-07-23
+
+### Added
+
+- **Layer 2 core — the plan-v1 flow (design record
+  `docs/plans/2026-07-21-layer-2-plan-v1-design.md`; premise validated in F46).**
+  The semantic converter, built:
+  - **job-v1 four-field plan shape** (`src/job.js`): `goal` / `verdictType`
+    (`green|soft-green|hitl` frozen radio — v1 admits `green` only; a locked type is a
+    `request-red` with the type as a structured `verb` field) / `close` / `checks[]`
+    (operator-SIGNED named checks: the predicate-close body + a slug name, same
+    validation, same runClose machinery; checks decide nothing and mint nothing) /
+    `tools` (the plan ceiling). Exclusive with legacy `steps[]` (`shape-conflict` red);
+    `steps[]` is co-existing scaffolding with a staged sunset — archives alongside
+    config-v1 when the Layer 2 path proves itself in its battery.
+  - **plan-v1 validator** (`src/plan.js`, `validatePlan`): gates the AGENT-authored
+    plan against the SIGNED spec — verbs ⊆ ceiling (`verb-escape`, verb as structured
+    data), rounds ≤ shell cap, targets/scopes inside the fence, exits from the closed
+    menu only (`exit-illegal`), `check-passes` resolving against the signed menu
+    (`check-unknown` names the menu), no `dependsOn` (strictly sequential — an inert
+    knob is a fake contrast lever), AND-only exit composition max 2, and the F17
+    pairing law (check-passes on a write step demands tree-changed — the seed tree is
+    green). Fails CLOSED on a missing/non-plan-shape job (`job-invalid`).
+  - **exit evaluator** (`src/exits.js`, `snapshotScope`/`evalExits`): the shell's own
+    fixed code for `artifact-written` / `tree-changed` / `json-valid` /
+    `check-passes`. Outcome, never intent: sha256 snapshots, identical re-writes are
+    not changes (F43), git status never consulted (F45). Instrument faults ride out as
+    `fault` by runClose verdict name — escalated, never fed to the worker as a gap.
+  - **the judge seam** (`src/ralph.js`): `ralph({ judge })` — the PRD v1.12 §4
+    generalization; shell-injected, inexpressible in any config or plan. Same verdict
+    vocabulary, so the forbidden zone, F32 worker-crash routing (a check crashed by the
+    worker's own test feeds back — the F46 mechanism), and cap taxonomy are unchanged.
+  - **the plan executor** (`src/planrun.js`, `runPlan`): close precheck
+    (`already-green` distinct, F17) → checks preflight ($0, before tokens) → read-only
+    SCOUT → PLAN (one redraft with reds fed back) → sequential micro-loops with
+    exit-gap feedback → ONE replan (exhaustion only) → the operator's close with one
+    bounded fix loop. Every round metered `worker-round` with a phase label (F12);
+    prompt contract v1.12 §5 mutation-proven; `plan-executed` (plan-as-executed,
+    design law #2) on the spine.
+  - **runJob dispatch** (`src/run.js`): a plan-shape spec routes through the ONE
+    runJob entry — same approval gate, smoke, ledger, and job-end money contract.
+    New outcomes: `already-green | plan-red | check-red | close-red`.
+  - 139 new tests (503 total), TDD throughout, 3 targeted mutations fired and killed.
+    Built and integration-tested against scripted providers.
+- **Layer 2 rung ACCEPTED — the real-model acceptance battery (F47; prereg
+  `docs/02-experiments/TESTGEN-PREREG.md` §2026-07-22a/b).** Job #4 (TESTGEN) run
+  through the REAL plan flow (`runJob → runPlan`: scout → the agent DRAFTS the plan →
+  validator gates → per-step check-loops → outer grader), on `anthropic-api`,
+  claude-sonnet-5, vs F39's baseline (0 conversion) and the F46 POC (hardwired).
+  **3/3 valid acting rows converted (≥2/3 bar) → accepted; 3/3 cleared the 45% bar
+  (67.5/55/55, vs the POC's 27.5/40/37.5 with 0 at 45); 3/3 the agent composed the
+  `check-passes(clean-run)` exit ITSELF** (the one thing the POC could not test). Every
+  green driven by the step check-loop alone; all writes fenced, source frozen, secrets
+  clean; the F45 spend guard stopped an unpriced casualty. 7 provider-red casualties
+  across an Overloaded window (excluded as evidence), $27.36 of a $30 cap. This trips
+  the "path closes green end-to-end" milestone: **`steps[]` and config-v1 sunset on
+  landing.** Driver `scripts/run-battery-l2accept.mjs` (gained `--need`/`--priorUsd`
+  for a multi-run continuation under one governed cap).
+- **Module 4d — native clipipe worker surface (BA-16; `bare-agent` → `^0.33.0`).** The
+  plan flow now runs on TWO surfaces: the `Loop` (API, unchanged) and, when
+  `job.provider === 'clipipe-subscription'`, the `claude` CLI's NATIVE tool channel — the
+  subscription path (no metered API). Since native governance is constructor-time and
+  per-worker, the runner takes a `nativeProvider` FACTORY (`{policy, onTurn?, maxTurns,
+  hasTools}) => provider`) it calls fresh per worker: `hasTools:true` → native tool mode
+  (the SAME `wireGate` fence clips onto the provider — a live POC proved an out-of-scope
+  write is DENIED); `hasTools:false` → the toolless drafter runs metered claude-json TEXT
+  mode (a native session reports no cost — this path keeps the drafter's spend visible).
+  Money reconciles per session (accounted `worker-round` = session total; `worker-turn` =
+  attribution); `max_turns` is a bounded attempt, not an escalation; a missing factory is
+  `interpreter-red`, never a silent fall-back to the API. 5 native tests + a live
+  end-to-end smoke on the real CLI (green, all workers metered, `spendComplete` honest).
+
+- **Native read-cap — the CLI truncation fix (F48; `bare-agent` → `^0.33.1`, BA-17
+  ranged read).** On the `clipipe-subscription` surface the `claude` CLI truncates a large
+  tool result (~40–50KB, measured) BEFORE the model sees it — spilling the remainder to a
+  fenced-off `tool-results/` file and wrapping it in a "read in chunks" notice the model
+  distrusts as injection — so a whole-file `shell_read` of a large file blinded the native
+  worker (0-write stall). The runner now bounds the native `shell_read` result below the CLI
+  cap (`NATIVE_READ_CAP`) and returns a TRUSTED notice steering to `ctx_get` ranged retrieval,
+  plus a native-only strategy line; the API path is untouched (full result rides into context).
+  Measured: **0 → 7 writes** on the real job. Cross-surface verdict (F48): the native surface
+  is capable at the STEP but did not carry job #4 to a grade — 0/2 acting rows vs the API's
+  3/3, and a 3.5× budget raise ($8→$28) was refuted (escalated on the F39 semantic-stall at
+  $7). IN only as a babysat, $0-marginal-billing fallback; **only the `anthropic-api` surface
+  is guaranteed.** Local LLMs remain deferred and unmeasured.
+
+### Fixed
+
+- **Layer 2 pre-release review (F48) — 4 fixes, 2 correctness** (TDD, failing-then-passing
+  test each; full suite 519/519): (1) a provider-red/gate-red raised DURING a step's micro-loop
+  was collapsed to `step-red:<id>` — a transport CASUALTY recorded as a capability failure and
+  missing the F44 `spendComplete:false` floor; each terminal category now rides out under its own
+  name so the returned outcome and the emitted escalation agree (F11). (2) `tree-changed` counted
+  a sibling scope's files as deletions when a step had ≥2 tree-changed exits (merged snapshot),
+  falsely passing an unchanged scope — deletions are now scoped to the exit's own prefix. (3)
+  abandoned-plan artifacts no longer ride forward as the new plan's "prior steps' results" after a
+  replan. (4) dead `isUnpriced()` sub-conditions removed from the replan/cap-halt terminal (the
+  step-end guard already returns `pricing-red` first).
+- **Layer 2 whole-branch review — 8 doctrine-restoring fixes to the plan flow** (all in the
+  graduated Layer 2 code, none in pre-existing modules; validated against source with 0
+  refuted, a failing-then-passing test each): a `gold` close validated under `verdictType:
+  green` crashed `runPlan` with no `job-end` (now `close-unsupported` before tokens); the
+  `check-passes` gap was re-truncated to 400 chars, deleting the gapKeep failing-test names
+  (F28 reintroduced — now carried whole); no in-flight `pricing-red` (F6 — now bails at
+  scout/plan/step); the plan drafter's Gate budget was frozen pre-execute and reused for the
+  replan (now a fresh drafter per `obtainPlan`); a money-gate halt triggered a replan instead
+  of stopping (F45 — now gated on funds, drained → honest `cap-halt`); the step-setup catch
+  recorded a category the escalation contradicted (F11 — now agreed); the plan branch dropped
+  F44's `spendComplete:false` on a transport-throw `provider-red`; a write-only tool ceiling
+  validated, blinding the scout (now requires ≥1 read-capable verb).
+
 ## [0.4.0] — 2026-07-21
 
 ### Added

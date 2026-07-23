@@ -43,18 +43,38 @@ const PERSONA = 'You are a senior engineer. Reply with ONLY the complete content
 // compound: that run's context grew 2k → 121k tokens and its last round cost $0.25.
 // Telling the worker it will be re-run with the close's verdict makes an early,
 // cheap, wrong attempt the rational move — which is exactly what the loop wants.
-const PERSONA_TOOLS = 'You are a senior engineer working in a repository through file tools. '
+export const PERSONA_TOOLS = 'You are a senior engineer working in a repository through file tools. '
   + 'ALWAYS use absolute paths — relative paths resolve against the process, not the repository, and will be denied. '
   + 'You are ONE attempt inside an automated loop: when you finish, a test suite runs and, if it still fails, you are called again with its output. '
   + 'So do not try to be certain before acting. Read only what you need to form your best hypothesis, make the change with the write tool, and stop. '
   + 'A wrong cheap attempt is corrected by the next round; exhaustive reading is not — every file you read is re-sent on every later round and the run has a hard budget it can exhaust before you ever write. '
   + 'Make the required changes with the write tool, then reply with a short summary of what you changed. Never put file contents in your reply.';
 
+// The retrieval verbs only pay if the worker reaches for them INSTEAD of paging a file.
+// F18 measured the failure they exist to fix: the worker read one 117 KB file NINE times
+// and dragged 1.37 MB of source through context to reach an 8-line function. The tool
+// descriptions carry the mechanics; the persona has to carry the STRATEGY, or a model
+// with a familiar `read` and an unfamiliar `recall` will simply keep reading.
+// (Module-level + exported since Layer 2: the plan-step worker shares the SAME
+// personas/strategies — two spellings of the loop contract would drift, F16.)
+export const RETRIEVAL_STRATEGY = '\nYou also have a repository index. To read a function, do NOT read its whole file: '
+  + 'call ctx_recall with the function name to get a pointer, then ctx_get with that pointer to read that function alone '
+  + '(it comes with its doc-comment, which states what the function is SUPPOSED to do — compare it against what the code does). '
+  + 'Reserve shell_read for whole files that are genuinely small, and for files you cannot name a symbol in yet. '
+  + 'Search only finds what you can NAME: a failing test names the symptom, not the cause, so read the failing test first, '
+  + 'see which function it calls, and recall THAT.';
+// BA-13: like retrieval, the edit verb only pays if the worker reaches for it INSTEAD
+// of a whole-file rewrite. F31 measured the default: 4 of 5 big-file whole-writes
+// broke the tree, and every one was a rewrite to change ~one line. The tool
+// description carries the mechanics; the persona carries the strategy.
+export const EDIT_STRATEGY = '\nPrefer the edit tool over whole-file writes: quote the EXACT text to change (it must match exactly once) and its replacement. '
+  + 'Rewriting a whole file to change one line is how trees get broken and budgets get burned — reserve the write tool for genuinely new files.';
+
 // ---- tool mode (2b): the spec-side grant menu mapped to the underlying tools ----
 // read/grep/write are bare-agent's shell tools; recall/get are litectx's retrieval
 // verbs (F19), composed from the SAME LiteCtx the memory hooks already use.
-const TOOL_BY_VERB = Object.freeze({ read: 'shell_read', grep: 'shell_grep', write: 'shell_write', edit: 'shell_edit', recall: 'ctx_recall', get: 'ctx_get' });
-const CTX_TOOLS = Object.freeze(['ctx_recall', 'ctx_get']);
+export const TOOL_BY_VERB = Object.freeze({ read: 'shell_read', grep: 'shell_grep', write: 'shell_write', edit: 'shell_edit', recall: 'ctx_recall', get: 'ctx_get' });
+export const CTX_TOOLS = Object.freeze(['ctx_recall', 'ctx_get']);
 
 /**
  * The retrieval pair (F19). `shell_read` cannot seek — it starts at byte zero — so a
@@ -70,7 +90,7 @@ const CTX_TOOLS = Object.freeze(['ctx_recall', 'ctx_get']);
  *   bad range) looks exactly like one that worked, and the worker's fallback to a
  *   whole-file read looks like a free choice instead of a forced one.
  */
-function createCtxTools(lc, workdir, emit) {
+export function createCtxTools(lc, workdir, emit) {
   return [
     {
       name: 'ctx_recall',
@@ -148,7 +168,7 @@ function createCtxTools(lc, workdir, emit) {
 /** @param {string} p */
 const expandHome = (p) => (p === '~' || p.startsWith('~/')) ? join(homedir(), p.slice(1)) : p;
 /** @param {string} name @param {any} args @param {string} [workdir] */
-const toolAction = (name, args, workdir) => {
+export const toolAction = (name, args, workdir) => {
   if (name === 'shell_write') return { type: 'write', path: resolve(expandHome(String(args?.path ?? ''))), args: { bytes: String(args?.content ?? '').length } };
   // shell_edit (BA-13) is judged as bareguard's own 'edit' action type — the SAME
   // fs.writeScope fence as write, decided upstream (bareguard FS_TYPES). `bytes` is
@@ -558,23 +578,6 @@ export async function interpret(configRaw, { task, target, close, workdir, capRu
     })()
     : [];
 
-  // The retrieval verbs only pay if the worker reaches for them INSTEAD of paging a file.
-  // F18 measured the failure they exist to fix: the worker read one 117 KB file NINE times
-  // and dragged 1.37 MB of source through context to reach an 8-line function. The tool
-  // descriptions carry the mechanics; the persona has to carry the STRATEGY, or a model
-  // with a familiar `read` and an unfamiliar `recall` will simply keep reading.
-  const RETRIEVAL_STRATEGY = '\nYou also have a repository index. To read a function, do NOT read its whole file: '
-    + 'call ctx_recall with the function name to get a pointer, then ctx_get with that pointer to read that function alone '
-    + '(it comes with its doc-comment, which states what the function is SUPPOSED to do — compare it against what the code does). '
-    + 'Reserve shell_read for whole files that are genuinely small, and for files you cannot name a symbol in yet. '
-    + 'Search only finds what you can NAME: a failing test names the symptom, not the cause, so read the failing test first, '
-    + 'see which function it calls, and recall THAT.';
-  // BA-13: like retrieval, the edit verb only pays if the worker reaches for it INSTEAD
-  // of a whole-file rewrite. F31 measured the default: 4 of 5 big-file whole-writes
-  // broke the tree, and every one was a rewrite to change ~one line. The tool
-  // description carries the mechanics; the persona carries the strategy.
-  const EDIT_STRATEGY = '\nPrefer the edit tool over whole-file writes: quote the EXACT text to change (it must match exactly once) and its replacement. '
-    + 'Rewriting a whole file to change one line is how trees get broken and budgets get burned — reserve the write tool for genuinely new files.';
   const usesCtx = toolDefs.some((/** @type {{name: string}} */ t) => CTX_TOOLS.includes(t.name));
   const usesEdit = toolDefs.some((/** @type {{name: string}} */ t) => t.name === 'shell_edit');
   const loop = new Loop({

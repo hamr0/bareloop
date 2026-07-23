@@ -1,7 +1,10 @@
 # Layer 2 — plan-v1 micro-wheels: design record
 
-2026-07-21 · interview with hamr, decisions LOCKED · status: **POC PASSED (F46) — build
-design is next; build not started.** Amend with dated addenda, never rewrite.
+2026-07-21 · interview with hamr, decisions LOCKED · status: **BUILD CORE LANDED
+(branch `layer-2-plan-v1`, 2026-07-21 — modules: four-field shape, plan-v1 validator,
+exit evaluator, ralph judge seam, plan executor, runJob dispatch; 503 tests). The rung's
+acceptance gate — the real-model battery vs F39's baseline — has NOT yet run.** Amend
+with dated addenda, never rewrite.
 
 > **Addendum 2026-07-21 (same day): POC verdict — PREMISE HOLDS.** The decision-3 POC
 > ran on `anthropic-api` (prereg amendments 2026-07-21a–d; clipipe firing 1 was VOID,

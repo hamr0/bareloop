@@ -133,6 +133,14 @@ place where *repeated, verifiable* jobs get better at themselves.
 - **The close chain is wrong/gameable for a real job** → close-authoring hierarchy + the §4b
   channel declaration; a close the operator can't explain is a close the product shouldn't
   trust.
+- **Cheaper worker surfaces as API substitutes** → RESOLVED for clipipe (F48): only the
+  `anthropic-api` surface is guaranteed. The `clipipe-subscription` (Claude CLI) surface is
+  capable at the step level but did not carry job #4 to a grade in 2 rows (0/2 vs API 3/3),
+  and a 3.5× budget raise ($8→$28) was REFUTED — it escalated on the F39 semantic-stall at
+  $7 of $28, not on money. It buys $0-marginal billing at a permanent tax (~2.5–3× notional
+  effort, always slower, no resume, same F39 ceiling): IN only as a babysat fallback, never a
+  peer. Local LLMs remain deferred and UNMEASURED — no local surface exists; the reasoned
+  (unproven) expectation is the same or worse F39 ceiling plus tool-call-fidelity risk.
 
 ## §10 Build order (module ladder, sketch — each rung POCs its riskiest assumption)
 
@@ -1264,3 +1272,44 @@ oversight. Stated here so future reviewers read position, not omission.
    doctrine: a rule the N3 memorization audit certifies as GENERAL (not a memorized
    answer) is the transfer candidate, and the lineage key already supports per-task-family
    splits (§9/V3). Post-N3, evidence-gated.
+
+## Addendum v1.22 — 2026-07-22 (Layer 2 ACCEPTED: the agent authors a workflow that clears the bar — F47)
+
+The Layer 2 rung passed its pre-registered acceptance gate (TESTGEN-PREREG §2026-07-22a/b,
+FINDINGS F47). Job #4 ran through the REAL plan flow — the agent surveys, **drafts the
+plan itself**, the validator gates it against the signed spec, per-step check-loops run,
+the operator's grader closes — on `anthropic-api` / claude-sonnet-5, read against F39's
+0-conversion baseline and the F46 hardwired POC.
+
+**Result (frozen n=3, valid acting rows only):** 3/3 L2-CONVERT (≥2/3 bar → accepted);
+3/3 green above the 45% bar (67.5/55/55, surpassing the POC's 27.5/40/37.5 with 0 at 45);
+**3/3 the agent composed the `check-passes(clean-run)` exit itself** — the build-specific
+claim the POC (which hardwired the composition) could not test. The step check-loop alone
+drove every green (no grader fix loop fired). All writes fenced, source frozen, secrets
+clean; the F45 spend guard stopped an unpriced casualty; 7 provider-red casualties across
+an Overloaded window (never evidence), $27.36 of $30.
+
+**What this settles.** The thesis's single untested claim — "notes + self-check succeeds"
+(F38/F39) — holds on the emergent flow, not just a hardwired one: the agent authors the
+workflow structure (a plan of bounded steps, each with an operator-signed self-check it
+selects but cannot author) under an inexpressible arbiter, and that structure converts a
+job the same worker failed 4/4 in F39 AND reaches the owned bar. The genre chain closes:
+F38 (mechanical converts) → F39 (delivery/state is not the gap) → F46 (an in-run check
+translates semantic→mechanical, hardwired) → **F47 (the agent does it itself, and clears
+the bar).**
+
+**What it does NOT claim.** n=3 is existence + direction, never a rate; the delta over the
+POC's 0/45 is an unminted rounds-vs-decomposition confound (the real flow gives far more
+total rounds AND per-step structure). Acceptance is the conversion read; the 45-bar greens
+are the recorded secondary.
+
+**Consequences (landing).** The "Layer 2 path closes green end-to-end" milestone is met, so
+**`steps[]` and config-v1 sunset on landing** (design record decision 6 / §110). No row
+recorded `root-injected` → Layer R's ON/OFF flip did not trigger; `layerRoot` stays OFF,
+decision unchanged (F41 consistent). Next rung: **N3 — executed inheritance** (the workflow
+persists and improves across runs; the paired inheritance-ON/OFF kill-switch, v1.15). Two
+gaps named by this battery, carried forward: **within-run resume** from a transport-hit
+plan (the plan-as-executed spine already holds the checkpoint; not yet wired), and a
+**separate clipipe-subscription battery** to validate the native surface (module 4d) on its
+own baseline. Process note (F47): run 1 fired without the frozen pre-fire health probe (4
+casualties), and a single-message liveness probe is not a sustained-load throughput check.

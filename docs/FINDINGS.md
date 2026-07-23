@@ -2276,3 +2276,188 @@ in-run check TRANSLATES the semantic ask into the mechanical genre — and the
 same worker that stalled 4/4 (F39) then went 3/3. Structure, not memory and not
 more state, was the missing piece — measured at $5.24 after $30+ of instruments
 that had to be built and broken to make this read possible.
+
+## F47 — Layer 2 rung ACCEPTED: the real plan flow converts 3/3 and clears the 45 bar 3/3
+
+**Setup (prereg 2026-07-22a, frozen before any number; spec hash
+`af338c9b…`).** The rung's exit gate: job #4 (TESTGEN) through the REAL plan
+flow — `runJob → runPlan`: scout → the Planner drafts a plan-v1 DAG → the
+validator gates it → the per-step Loop+Gate executor runs it (the operator-signed
+`clean-run` check referenced as a step exit) → the outer grader close + its fix
+loop. This is NOT the F46 POC, which HARDWIRED the winning composition; here the
+Planner must author it. Same surface as F39/F46 (`anthropic-api`, claude-sonnet-5,
+byte-identical goal body, 15% seed, frozen grader, 45 bar). hamr-authorized
+$8/row, n=3, draft-and-freeze-then-sign-off.
+
+**Result: 3/3 valid acting rows L2-CONVERT, all three green ABOVE the 45 bar
+(67.5% · 55% · 55%), $27.36 of $30 across three runs.** Primary read (≥2/3
+convert) MET; the secondary "path closes green end-to-end" milestone (steps[]
+sunset, design record §110) ALSO met — every acting row hit the bar, surpassing
+the POC (which never reached 45). Frozen axis split honored: the 45-bar greens
+were RECORDED as secondary, not the acceptance gate; acceptance is the conversion
+read alone.
+
+**The three build-specific things the POC could not test, all positive:**
+(1) **The Planner composed `tree-changed ∧ check-passes(clean-run)` itself,
+3/3** — it is told the check NAMES and the pairing rule, never the command, and
+authored the winning exit every time. (2) The flow's per-step decomposition
+worked: 5–6 steps, one replan on two rows, 131–222 rounds. (3) Notably NONE of
+the three greens needed the outer grader's fix loop — all were `satisfied` on the
+first outer grading, so the STEP check-loop alone drove 55–67.5%. Aim stayed
+excellent (16–18/18 survivor functions targeted). All writes fenced to
+`tests/testgen/**`; source at the frozen SHA on every row; secrets clean
+throughout; the grader's D1 + pristine-source guards gate exploitation, and
+22–27 of 40 mutants killed on pristine source is real behavior-assertion by
+construction (a vacuous suite kills ~0).
+
+**What this does NOT claim.** n=3 supports existence + direction, never a rate
+estimate. And the delta vs the POC's 0/45 is NOT attributed: the real flow gives
+the worker far more total rounds (131–222 vs the POC's 40–72) AND per-step
+decomposition — a rounds-vs-structure confound left explicitly unminted. The
+acceptance question ("does the built flow reproduce conversion and reach the
+bar") is answered yes; WHY it beats the single-loop POC is a separate,
+unresolved recorded observation.
+
+**Provider instability, and two process notes.** The battery ran across an
+Overloaded window: 7 provider-red transport casualties (never evidence) against
+4 valid rows, requiring a continuation to reach n=3. (a) The FIRST run fired
+WITHOUT the frozen pre-fire health probe (operator go taken as sufficient) — 4
+casualties, ~$6.69, the cost of skipping it; owned. (b) The single-message health
+probe is a WEAK instrument for sustained-load instability: it read 2/2 200s while
+subsequent multi-round runs still caught mid-flight transport failures — a cheap
+liveness check is not a sustained-throughput check. The spend-governability guard
+(F45) worked: an unpriced casualty (`spendComplete:false`) correctly STOPPED a
+run rather than passing as evidence.
+
+**Layer R riding item:** no row recorded `root-injected` (converts don't
+fixate — consistent with F41, fixation extinct on healthy jobs); the ON/OFF
+default-flip read did not trigger, `layerRoot` stays OFF, decision unchanged.
+
+**Lesson.** Layer 2 is accepted on its own terms: the built machinery — Planner
+authoring the plan and the check composition, bounded per-step check-loops — did
+what the hardwired POC only proved was possible, and then cleared the bar the POC
+never reached. The genre chain closes end to end: F38 (mechanical converts) →
+F39 (delivery/state is not the gap) → F46 (an in-run check TRANSLATES semantic →
+mechanical, hardwired) → F47 (the emergent flow does it itself, and reaches the
+bar). Structure was the missing piece, and the agent can author the structure
+under an inexpressible arbiter.
+
+## F48 — clipipe cross-surface verdict: the native subscription surface is capable at the step but does not finish the job; only the API is guaranteed
+
+**The question.** F47 accepted Layer 2 on the `anthropic-api` surface (3/3 convert,
+3/3 at the 45 bar). Does the same built machinery reproduce on the
+`clipipe-subscription` surface (BA-16 native MCP: the `claude` CLI drives the turn
+cycle, notional dollars, flat subscription instead of per-token billing)? Same job
+#4 (TESTGEN), same frozen seed (15% baseline), same operator-signed check, same
+grader, same 45 bar. Notional dollars NEVER pool with API rows (F42/job-v1
+doctrine); F47's API numbers are a cross-surface REFERENCE, not a baseline on this
+surface.
+
+**The enabler (measured).** The native worker could not write at all (0/158 reads,
+0 writes) because the `claude` CLI TRUNCATES a large tool result (~40–50KB / ~line
+550, measured) before the model sees it, spills the remainder to a
+`~/.claude/.../tool-results/` file the fence denies, AND wraps it in a "read this in
+chunks" notice the model correctly distrusts as prompt injection — so a whole-file
+`shell_read` of the 2,455-line orchestrator blinded it. Fix (`planrun.js`,
+`NATIVE_READ_CAP=24KB` + a trusted truncation notice steering to `ctx_get` ranged
+retrieval + a native-only strategy line; API path untouched, `bare-agent` 0.33.1
+for the native ranged read, BA-17). Effect: **0 → 7 writes**, 137 bounded reads, no
+stall. My earlier "it's behavioral / it can't write" was FALSIFIED — the blocker
+was read-blinding, mechanical.
+
+**The two acting rows (0/2 graded).**
+
+| | API (F47) — guaranteed | clipipe row A ($8) | clipipe row B ($28) |
+|---|---|---|---|
+| outcome | 3/3 CONVERT | cap-halt | step-red escalate |
+| grade | 67.5 / 55 / 55 (all ≥45) | null | null |
+| notional $ | $4.73 / $6.46 / $6.48 | $8.61 (overshot $8) | **$7.12 of $28** |
+| $/LLM-call | ~$0.029 | ~$0.074 (~2.5×) | ~2.5× |
+| wall-clock | 34–41 min | ~57 min | escalated early |
+| writes | 11–15 acted | 7 (3 files, 1 step GREEN) | 6 (1 file) |
+| why not graded | — | budget bound mid-plan | **non-change stall, budget to spare** |
+
+Row A (`mrxd0c4l`) wrote 7 real tests, drove one step to `satisfied` (green), and
+its check-loop iterated 4× on genuine MECHANICAL gaps (forbidden pattern
+`environ-enumeration` → `subprocess` → `clean-red` ×2), the worker revising each
+time — then cap-halted before the outer grade. Row B (`mrxkj6ik`, the funded shot)
+read the seed tests fine (conftest 9×, `test_execute_behavior` 11×,
+`test_orchestrator_helpers` 8×) and aimed well (11/18 survivor functions recalled),
+but produced a NON-CHANGED suite: plan attempt 1 = 4 iterations `unchanged-red`
+(byte-identical to the seed); after replan, attempt 2 = 4 iterations `0 files
+changed — identical re-write is not a change`; 4/4 attempts each, close still red →
+escalate → job `step-red` at **$7.12 of $28**. Casualties across the campaign were
+transport flakes (`provider-red`, $2.6 / $0.43) and a `pricing-red` — with NO
+resume, a multi-hour row can be lost near the end.
+
+**What the funded shot proved (the decisive result).** The budget hypothesis is
+REFUTED. Raising the per-row cap 8 → $28 (3.5× the API's ~$6 rows) spent only $7
+and did NOT convert — it escalated on BEHAVIOR, not money. More budget is not the
+blocker. The read-cap is exonerated (it read everything and aimed correctly). The
+$28 failure is the **F39 semantic-stall reproduced on native**: the worker converts
+MECHANICAL gaps (row A's four distinct forbidden-pattern gaps) but stalls on the
+SEMANTIC "make it meaningfully different / it's unchanged" gap — the same ceiling
+frontier Claude hits on the API (F38/F39). Native is NOT behaviorally worse and NOT
+a plumbing bug — it delivers feedback correctly (row A's differentiated iteration
+proves it); it is the same worker with the same semantic limit, plus a cost/time/
+reliability tax. `layerRoot` unchanged (converts don't fixate; no `root-injected`).
+
+**The verdict: only the API is guaranteed.** Across every native row, 0 reached a
+grade vs the API's 3/3. clipipe is capable at the STEP level (row A: 7 writes, a
+green step) but does not reliably carry a long JOB across the line, and the one
+lever — budget — is spent and refuted. Its cost is NOTIONAL (subscription-
+equivalent under the "cost is cost" ruling); the ACTUAL billed cost is the flat
+subscription, $0 marginal — that is its ONLY advantage, and it is bought with a
+permanent tax: ~2.5–3× notional effort, always slower (~23s/turn subprocess, never
+faster), no resume on transport flakes, and the inherited F39 semantic ceiling with
+no offsetting gain. clipipe is IN only as a babysat, $0-marginal-billing fallback
+for jobs one is willing to re-run — never an API peer on result, cost, or time.
+(Caveat: n=2 native acting rows, two different non-converting modes; the OUT-as-peer
+call holds because no native row has ever graded and budget is refuted, but it is
+n=2, not a rate.)
+
+**Local LLMs — not this surface, and not a surface at all yet.** clipipe is the
+`claude` CLI = Claude models via subscription; it does NOT run local models. Local
+LLMs are DEFERRED by decision (PRD: "no local-LLM work until the API path earns
+it") — no local surface is built or measured, so no claim is made. The reasoned
+expectation, flagged UNMEASURED: a local model would face the same F39 semantic-
+conversion ceiling that even frontier Claude stalls on (§F38/F39), likely worse,
+plus tool-call-fidelity risk — a research bet, not a drop-in. Today the guarantee
+lives on the API alone.
+
+**Lesson.** "Cost and capability are separate axes," applied to SURFACES: a cheaper
+transport buys $0 marginal billing and nothing else — not speed, not reliability,
+not completion, and it inherits the frontier model's semantic ceiling. The funded
+$28 shot was the right instrument: it converted the open "cap-halt → fund more"
+hypothesis into a refutation (spent $7, escalated on behavior), which no cheaper run
+could have settled. The API is the only guaranteed surface; clipipe is a taxed
+Claude-only fallback; local LLMs are an unbuilt, unmeasured future bet.
+
+## F49 — OPEN (logged follow-up): the agent-authored `artifact-written` regex runs unbounded in the exit evaluator
+
+**The gap (security scan, v0.5.0 pre-release).** `src/exits.js` evaluates an
+`artifact-written` exit's optional `pattern` with `new RegExp(e.pattern, 'm').test(body)`
+against the worker-written file. The pattern is AGENT-authored (it rides the plan, not
+the signed spec), and `evalExits` has no wall-clock bound — so a catastrophic-backtracking
+pattern (e.g. `(a+)+$`) against a large body could hang the evaluator. The plan validator
+(`plan.js`) only COMPILES the pattern; compilation does not detect ReDoS.
+
+**Severity: LOW, and NOT an arbiter compromise.** The "attacker" is the model authoring a
+pathological pattern in its OWN plan; the blast radius is the operator's own run hanging
+(self-DoS). It cannot escape the write fence, forge a green, widen a budget, or leak a
+secret — every arbiter-integrity threat (secrets, fence, close, budget, argv injection,
+path traversal) scanned CLEAN. This is a robustness gap (unbounded CPU on a semi-trusted
+author's input), filed as the honest "bound every reachable path" invariant applied to
+CPU, not a privilege/exposure vuln. Operator-authored regex (`judged.pattern`, `gapKeep`,
+check bodies) is out of scope — the operator is trusted and those are signed.
+
+**Fix DEFERRED (multiple shapes, needs a decision — hamr's call at v0.5.0):** (a) bound the
+tested input size, (b) run the match under a timeout (needs a worker/subprocess in JS), or
+(c) reject nested-quantifier patterns at validation (incomplete). (a) changes match
+semantics for patterns meant to hit late in a large file; (b) is the most faithful but the
+heaviest; (c) cannot be complete. Recorded as the next Layer 2 hardening item; the v0.5.0
+release proceeded because the arbiter is uncompromised.
+
+**Lesson.** A security scan's value is the coverage table, not just the hits: the one
+finding here is a LOW self-DoS, and naming it against a CLEAN arbiter-integrity sweep is
+what makes "clean" auditable rather than asserted.
