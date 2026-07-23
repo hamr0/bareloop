@@ -1313,3 +1313,74 @@ plan (the plan-as-executed spine already holds the checkpoint; not yet wired), a
 **separate clipipe-subscription battery** to validate the native surface (module 4d) on its
 own baseline. Process note (F47): run 1 fired without the frozen pre-fire health probe (4
 casualties), and a single-message liveness probe is not a sustained-load throughput check.
+
+## Addendum v1.23 — 2026-07-23 (the two workflow shapes: plan-v1 is the target for ALL verdicts; legacy `steps[]` sunsets at the verdict-classes rung, not at Layer 2 landing — F49/F50, hamr)
+
+**Corrects v1.22.** v1.22 recorded "`steps[]` and config-v1 sunset on landing." That was
+premature for `steps[]` (config-v1 is genuinely dead — F22). Layer 2 landed for the **green
+verdict only**: plan-v1 v1 admits `green` and LOCKS `soft-green`/`hitl` (`LOCKED_VERDICTS` —
+declaring one is a `request-red`). So the legacy `steps[]` path could NOT retire at landing —
+it uniquely hosts the two locked verdicts, and one of them (`hitl`) is the only *working*
+human-verdict path (the draft-PR flow, `run.js` `openDraftPr`).
+
+**The mapping today (honest, no papering over):**
+
+| verdict | shape it runs on | status |
+|---|---|---|
+| `green` | **plan-v1** (`planrun.js`, agent-authored plan) | shipped v0.5.0, ACCEPTED (F47) |
+| `soft-green` (rubric) | legacy `steps[]` (`interpret.js`, operator-authored) | locked in plan-v1 |
+| `hitl` (draft-PR) | legacy `steps[]` (`interpret.js`) | locked in plan-v1 |
+
+**Is the split principled? No — it is a build-order artifact, not a design.** There is no
+reason `soft-green`/`hitl` "belong" on the old shape; plan-v1 is the go-forward home for ALL
+three verdicts. The new way is better on the product's own thesis — **the agent authors the
+workflow** (validator-gated before tokens, one wallet, in-run self-checks F46/F47, and now
+Layer R F50). Legacy is operator-HARDCODED steps: a human writes the workflow, the exact
+thing bareloop exists to not require ("automate this — I don't know the best workflow"). If
+you already know the steps you do not need the emergence; that is relayfact's job, not
+bareloop's (§8). **Nothing about legacy is better for the product's goals.** The one real
+reason it stays is pragmatic sequencing: its hitl middle is working code today, and hitl is
+not needed until the non-code-jobs goal (§8 later-goal) — keeping it is cheaper than
+rebuilding hitl before it is wanted, NOT a reason to preserve the split.
+
+**Sunset criteria (the honest gate — supersedes v1.22's "on landing"):** legacy `steps[]`
+retires when plan-v1 **admits AND implements** both locked verdicts:
+1. **`hitl` in the plan flow** — the draft-PR / human-verdict path ported onto `planrun.js`
+   (the door to non-code jobs: resume/LinkedIn, §8 later-goal).
+2. **`soft-green` in the plan flow** — a rubric close, WITH its RSI caveat first: a rubric
+   close is self-consistency in disguise and needs a judged-floor analog before it can gate
+   anything (RSI-LEARNINGS / v1.21).
+
+That is the **verdict-classes rung**, sequenced after Layer 3 (the soft-green/hitl ladder
+follows the deterministic-close infra, §8/§10). Retirement is a **rewrite-deletion** (the
+`run.js` legacy for-loop, `interpret.js`'s legacy dispatch, `job.js`'s `steps[]` validation,
+`interpret.test.js`) done in one deliberate gated pass — never a copy (graduation is a
+rewrite). It is a **product-shape decision parked for hamr's explicit go**, not shipped
+unilaterally.
+
+**This session (F49/F50), landing in v0.5.1.** Layer R was wired onto plan-v1 — one root per
+EXECUTE step (red-set = the exit evaluator's own gap) and one in the outer close-fix loop
+(red-set = the close's own `gapKeep`) — moving the **last capability that was stranded on
+legacy** onto the go-forward surface (so it does not retire with legacy). A plan-flow job can
+now emit `root-injected`, making the pre-registered ON-vs-OFF default-flip read (v1.20)
+possible on the accepted surface; default stays OFF until that evidence lands (F41). F49
+hardened the agent-authored `artifact-written` exit regex — a nested-quantifier ReDoS reject
+at the validation gate (LOW self-DoS, no arbiter compromise; input-bounding refuted as
+theater by a 33-char-body hang), extended after a follow-up review that caught a false
+negative in the flat-only scan (redundant-wrapper forms like `((a+))+` slipped through and
+still hang >8s) — closed monotonically by propagating an inner repeat up through the
+wrapping group, the fail-safe direction that only ever adds rejections. After v0.5.1, the ONLY legacy-unique surface left is the two
+locked verdicts above — so the sunset gate is exactly (1)+(2).
+
+**Parked (medium review #2, 2026-07-24): the Layer R tee wiring is duplicated across
+`interpret.js` (legacy) and `planrun.js` (plan-v1)** — `fileHash` / `teeingTranslator` /
+the deny-discard `policy` wrapper / `onToolOutcome` (the Finding 6/7 settle logic), ~60
+lines, currently faithful (no live defect). NOT extracted into a shared helper, deliberately:
+legacy is a scheduled **rewrite-deletion** at the verdict-classes rung (above), so one of the
+two copies is *deleted*, not refactored — extracting shared arbiter-adjacent wiring out of code
+slated for deletion is negative-value, and reconciling the two shapes (interpret gates on
+`mode === 'tools'`; planrun is tool-only) risks reintroducing the blind-instrument class the tee
+guards against (a future write-class verb bypassing the tee). Accepted cost: a **drift window**
+until legacy retires — any Finding-6/7 change or new write-class verb must be applied to BOTH
+files. The clean resolution is the legacy deletion itself; revisit only if legacy outlives
+Layer 3 or the tee logic starts changing often.

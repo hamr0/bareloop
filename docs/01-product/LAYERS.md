@@ -145,15 +145,27 @@ default-enabled (`layerRoot: false`; pass `true` for the ON/experimental arm). I
 read (repetition drop, ON vs OFF) DEFERS to the first run whose spine records
 `root-injected`.
 
-> **⚠ Layer 2 TODO — decide the Layer R default.** Layer 2's narrow micro-wheel steps are
-> the expected pressure point that finally produces natural fixation (a stuck run). The
-> day a Layer 2 job records `root-injected`, run the pre-registered ON-vs-OFF acceptance
-> read on it. **That result decides whether the `layerRoot` default flips to `true`
-> (ON helps → keep it on) or stays `false` (no lift → keep it off).** Until then the
-> default is provisional, not settled. (A cheaper alternative that does NOT need Layer 2:
-> a manufactured-fixation probe — force a real worker to repeat and measure whether the
-> note breaks the loop; caveat F41 — strong models resist fixating, so the probe may
-> struggle to produce its own precondition honestly.)
+**Wired into the plan-v1 flow (2026-07-23, F50).** Until then the ratchet was wired only
+into the legacy `steps[]` path (`interpret.js`); the accepted plan flow silently ignored
+`layerRoot`, so it could never emit `root-injected`. Now `runPlan` engages one root per
+EXECUTE step (each micro-wheel is the Layer-1 atom; red-set = the exit evaluator's own gap,
+`gapKeep '\S'`, the whole normalized complaint — since a check's `^`-anchored gapKeep does
+not survive the exit wrapper `check "x" red: …`) AND one in the outer close-fix loop (red-set
+= the close's own `gapKeep`, the raw close output where the anchor works). The write-tee is
+wired so same-path target rewrites are visible to the detector (the cumulative audit dedups
+by path and cannot see them alone). Excluded on native/clipipe (no `onToolResult` seam; F48
+fallback surface, not the experiment surface).
+
+> **⚠ Layer 2/3 TODO — decide the Layer R default.** The wiring now EXISTS on the accepted
+> surface (F50); the experiment is possible but not yet run. Layer 2's narrow micro-wheel
+> steps are the expected pressure point that finally produces natural fixation (a stuck
+> run). The day a real plan-flow job records `root-injected`, run the pre-registered
+> ON-vs-OFF acceptance read on it. **That result decides whether the `layerRoot` default
+> flips to `true` (ON helps → keep it on) or stays `false` (no lift → keep it off).** Until
+> then the default is provisional, not settled. (A cheaper alternative that does NOT need a
+> natural stuck run: a manufactured-fixation probe — force a real worker to repeat and
+> measure whether the note breaks the loop; caveat F41 — strong models resist fixating, so
+> the probe may struggle to produce its own precondition honestly.)
 
 ### Layer 2 — micro-wheels (the road)
 The workflow becomes a **sequence of small wheels**, each with one goal and only the verbs

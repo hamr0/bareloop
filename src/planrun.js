@@ -15,6 +15,7 @@
 
 import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { Gate, redact } from 'bareguard';
 import { LiteCtx } from 'litectx';
@@ -22,6 +23,7 @@ import { runClose, ralph, CLOSE_FAULTS } from './ralph.js';
 import { validatePlan } from './plan.js';
 import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS } from './plan.js';
 import { snapshotScope, evalExits } from './exits.js';
+import { createRoot } from './root.js';
 import { TOOL_MENU } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, RETRIEVAL_STRATEGY, EDIT_STRATEGY } from './interpret.js';
 import { globToPrefix, SECRET_PATTERNS } from './validate.js';
@@ -127,11 +129,20 @@ ${scoutBlob || '(no scout notes)'}`;
  * @param {number} [opts.capRuns] shell-owned per-step attempt cap
  * @param {number} [opts.closeTimeoutMs] close/check wall-clock cap (shell territory)
  * @param {number} [opts.maxStepRounds] the shell's per-step rounds ceiling (validatePlan's bound)
+ * @param {boolean} [opts.layerRoot=false] Layer R — the within-run ratchet (src/root.js),
+ *   scoped PER STEP's ralph loop (each micro-wheel is the Layer-1 atom). Shell-assembled from
+ *   the step's own books: per-attempt write-sets from the F32 workerWrites audit (teed for
+ *   same-path rewrites, which the cumulative audit alone cannot see) and the red-set from the
+ *   exit evaluator's own gap. Defaults OFF (decided 2026-07-21, F41): fixation is extinct on
+ *   every current job, so ON has never won its A/B; `true` is the ON/experimental arm, and the
+ *   first plan-flow job to emit `root-injected` runs the pre-registered ON-vs-OFF acceptance
+ *   read (the Layer R default-flip, LAYERS.md ⚠). Excluded on native (clipipe): the native
+ *   worker has no onToolResult seam, so the tee cannot settle and same-path rewrites are blind.
  * @returns {Promise<string>} 'green' | 'already-green' | 'escalated' | 'plan-red' |
  *   'check-red' | 'close-red' | 'close-unsupported' | 'pricing-red' | 'cap-halt' |
  *   'provider-red' | 'interpreter-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, emit, remainingUsd, isUnpriced = () => false, capRuns = 3, closeTimeoutMs, maxStepRounds = 40 }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, emit, remainingUsd, isUnpriced = () => false, capRuns = 3, closeTimeoutMs, maxStepRounds = 40, layerRoot = false }) {
   workdir = resolve(workdir);
   const scrub = (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS });
 
@@ -228,9 +239,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
    * denied, the wallet as its budget), granted tools only (the menu IS the
    * grant), per-attempt round bound via loop.stop() (F20), every round metered
    * with a phase label (F12).
-   * @param {{granted: string[], phase: string, attemptRounds: number, attempts: number, writable: boolean}} o
+   * @param {{granted: string[], phase: string, attemptRounds: number, attempts: number, writable: boolean, root?: ReturnType<typeof createRoot>|null}} o
+   *   `root` (Layer R): when present, the worker's write-class actions are teed
+   *   for the within-run ratchet — staged before the gate decides, discarded on
+   *   deny/halt, settled to landed-or-not after execution (the two axes, F43/F7).
+   *   Wired ONLY on the Loop path: the native session exposes no onToolResult seam.
    */
-  async function mkWorker({ granted, phase, attemptRounds, attempts, writable }) {
+  async function mkWorker({ granted, phase, attemptRounds, attempts, writable, root = null }) {
     const gate = new Gate({
       fs: {
         writeScope: writable ? fencePrefixes : [],
@@ -259,7 +274,69 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
         return [...paths];
       } catch { return []; }
     };
-    const { policy, onLlmResult } = wireGate(gate, { actionTranslator: (/** @type {string} */ n, /** @type {any} */ a) => toolAction(n, a, workdir) });
+    // Layer R tee (design record 2026-07-19; created per-step by executeStep).
+    // The translator STAGES write/edit content and snapshots the pre-write hash
+    // BEFORE the gate decides (Finding 6); the policy wrapper DISCARDS on a deny
+    // or a halt (the tool never runs); onToolOutcome SETTLES landed-vs-not after
+    // execution (Finding 7 — the gate's allow is intent, the file is outcome).
+    // All no-ops when root is null: every scout/drafter and every native worker.
+    const fileHash = (/** @type {string} */ p) => {
+      try { return createHash('sha256').update(readFileSync(p)).digest('hex'); } catch { return null; }
+    };
+    /** @type {{path: string, content: string, type: string, before: string|null}|null} the write-class action awaiting its OUTCOME */
+    let pendingProbe = null;
+    const teeingTranslator = (/** @type {string} */ n, /** @type {any} */ a) => {
+      // classify by action TYPE, never a name list (the workerWrites filter uses
+      // the same write|edit test — a third enumeration would let a future
+      // write-class verb bypass the tee, the blind-instrument class)
+      const act = toolAction(n, a, workdir);
+      if (root && (act.type === 'write' || act.type === 'edit')) {
+        const path = /** @type {string} */ (act.path);
+        const content = String((act.type === 'edit' ? a?.newText : a?.content) ?? '');
+        root.stageWrite(path, content); // content read off RAW args, never onto the action (the audit stays bytes-only)
+        pendingProbe = { path, content, type: act.type, before: fileHash(path) };
+      }
+      return act;
+    };
+    const { policy: gatePolicy, onLlmResult } = wireGate(gate, { actionTranslator: teeingTranslator });
+    // Settle the stage on the verdict. A DENY/HALT means the tool never runs, so
+    // the outcome seam below never fires for it — discard here (an allow is NOT
+    // settled here: the bytes are not written yet; settling on the verdict is the
+    // exact Finding 7 defect). The catch RE-THROWS so cap-halt routing still reads
+    // the throw. Non-write actions stage nothing, so both settlements are no-ops.
+    const policy = root
+      ? async (/** @type {string} */ n, /** @type {any} */ a, /** @type {any} */ c) => {
+        try {
+          const verdict = await gatePolicy(n, a, c);
+          if (verdict !== true) { root.discardWrite(); pendingProbe = null; }
+          return verdict;
+        } catch (e) { root.discardWrite(); pendingProbe = null; throw e; }
+      }
+      : gatePolicy;
+    /**
+     * Finding 7 — settle the staged write on what the tool ACTUALLY did. Fires
+     * after every tool.execute (bare-agent loop.js), success or error, and tool
+     * calls run strictly sequentially, so exactly one probe is ever in flight. A
+     * probe that never reaches here (a halt out of a tool body) leaves the stage
+     * unsettled — correct: nothing landed, and the attempt boundary drops it.
+     * @param {{result?: any}} [info] the tool's return value
+     */
+    const onToolOutcome = async (info) => {
+      if (!root || !pendingProbe) return;
+      const { path: p, content, type, before } = pendingProbe;
+      pendingProbe = null;
+      let after = null;
+      try { after = readFileSync(p, 'utf8'); } catch { /* absent → after stays null */ }
+      let landed = after !== null && createHash('sha256').update(after, 'utf8').digest('hex') !== before;
+      if (!landed && after !== null) {
+        // no-byte-change: a write always writes (identical bytes ⇒ content IS the
+        // file, exact-equal never substring); a no-op edit is an idempotent apply
+        // OR a missed anchor — the tool RESULT is the only honest signal (F2)
+        if (type === 'write') landed = after === content;
+        else landed = typeof info?.result === 'string' && info.result.startsWith('edited ');
+      }
+      root.settleWrite(landed);
+    };
     /** @type {number|string|undefined} */
     let roundIteration;
     let roundsThisAttempt = 0;
@@ -383,7 +460,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
       }
       return onLlmResult(arg);
     };
-    const loop = new Loop({ provider: loopProvider, system, policy, onLlmResult: metered });
+    const loop = new Loop({ provider: loopProvider, system, policy, onLlmResult: metered, onToolResult: onToolOutcome });
     /** @param {string} prompt @param {typeof toolDefs} [defs] */
     const ask = async (prompt, defs = toolDefs) => {
       let r;
@@ -507,13 +584,33 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
     for (const e of step.exit) {
       if (e.type === 'tree-changed') for (const [k, v] of await snapshotScope(workdir, e.scope)) snapshot.set(k, v);
     }
-    const w = await mkWorker({ granted: step.tools, phase: `step:${step.id}`, attemptRounds: step.rounds, attempts: capRuns, writable: true });
+    // Layer R — one root per step's ralph loop (each micro-wheel is the Layer-1
+    // atom, LAYERS.md). The red-set is the exit evaluator's OWN gap: fixation
+    // here means "the worker rewrote the same file(s) AND the exit evaluator's
+    // complaint is byte-identical" — so the whole normalized gap is the
+    // comparable set (gapKeep `\S` = every non-blank line). That is more robust
+    // than reusing a check's `^`-anchored gapKeep, which the exit wrapper
+    // (`check "x" red: …`) would break. writesInformative is true (tool mode,
+    // always) but never fires on write-overlap ALONE — a plan step rewrites its
+    // one target every attempt, so only a KNOWN-unmoved red-set can distinguish
+    // repetition from progress (Finding 3). Native is excluded (no onToolResult
+    // seam → the tee cannot settle → same-path rewrites are blind).
+    const root = layerRoot && !native
+      ? createRoot({ gapKeep: '\\S', redact: scrub, writesInformative: true })
+      : null;
+    const w = await mkWorker({ granted: step.tools, phase: `step:${step.id}`, attemptRounds: step.rounds, attempts: capRuns, writable: true, root });
     let lastText = '';
     let iterationNow = 0;
     /** @param {number} iteration @param {string} [gap] */
     const middle = async (iteration, gap) => {
       w.setIteration(iteration);
       iterationNow = iteration;
+      // Layer R observe: finalize the prior attempt from the books (workerWrites
+      // audit + teed same-path rewrites), run the fixation detector, and inject
+      // its escalating note into THIS attempt's prompt (null = inert). The event
+      // carries counts and paths only — never content (the spine is forever).
+      const rootInj = root ? root.observe({ iteration, gap, writes: w.workerWrites() }) : null;
+      if (rootInj) emit('root-injected', { step: step.id, ...rootInj.event });
       const r = await w.ask([
         step.action,
         `Repository root (absolute): ${workdir}\nEvery path you pass to a tool MUST be absolute and inside this root — a relative path resolves against a different directory and will be denied by the gate.`,
@@ -522,6 +619,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
         gap && `Previous attempt failed this step's checks:\n${gap}`,
         w.wasBounded() === iteration - 1
           && `Your previous attempt was CUT OFF after ${step.rounds} tool rounds. Reading is bounded; writing is not. Form a hypothesis EARLY and make the change.`,
+        rootInj && rootInj.note,
       ].filter(Boolean).join('\n\n'));
       lastText = scrub(r.text ?? '').slice(0, ARTIFACT_MAX);
     };
@@ -651,16 +749,29 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
   emit('fix-loop', { gapBytes: Buffer.byteLength(post.gap ?? '') });
   let fixOutcome;
   try {
-    const w = await mkWorker({ granted: ceiling, phase: 'fix', attemptRounds: maxStepRounds, attempts: capRuns, writable: true });
+    // Layer R for the close-fix loop — the plan flow's single ralph loop judged
+    // by the REAL close (the closest analog to interpret.js's loop, and the
+    // likeliest place fixation manifests: the fix worker has the full menu and
+    // is judged by a command, not a form-only exit). The red-set is the CLOSE's
+    // own gapKeep (the gap here is the raw close output, unwrapped — so the
+    // `^`-anchored pattern matches, unlike the exec steps' exit-eval gap). Same
+    // native exclusion (no onToolResult seam ⇒ the tee cannot settle).
+    const fixRoot = layerRoot && !native
+      ? createRoot({ gapKeep: job.close.gapKeep, redact: scrub, writesInformative: true })
+      : null;
+    const w = await mkWorker({ granted: ceiling, phase: 'fix', attemptRounds: maxStepRounds, attempts: capRuns, writable: true, root: fixRoot });
     /** @param {number} iteration @param {string} [gap] */
     const middle = async (iteration, gap) => {
       w.setIteration(iteration);
+      const rootInj = fixRoot ? fixRoot.observe({ iteration, gap, writes: w.workerWrites() }) : null;
+      if (rootInj) emit('root-injected', { phase: 'fix', ...rootInj.event });
       await w.ask([
         'The job\'s final verification is failing. Fix the repository so it passes.',
         `Repository root (absolute): ${workdir}\nEvery path you pass to a tool MUST be absolute and inside this root.`,
         artifacts.length > 0 && `Working context (read-only) — the plan's steps produced:\n${artifacts.map((a) => `[${a.id}] ${a.text}`).join('\n\n')}`,
         !gap && post.gap && `The verification's output on the tree as it stands (not an attempt of yours):\n${post.gap}`,
         gap && `Previous attempt failed the verification:\n${gap}`,
+        rootInj && rootInj.note,
       ].filter(Boolean).join('\n\n'));
     };
     fixOutcome = await ralph({

@@ -7,6 +7,30 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-07-24
+
+### Added
+- **Layer R wired into the plan-v1 flow** (F50). The within-run ratchet (`layerRoot`) now
+  engages in `runPlan` — one root per EXECUTE step (red-set = the exit evaluator's own gap)
+  AND in the outer close-fix loop (red-set = the close's own `gapKeep`) — not only on the
+  legacy `steps[]` path. So a plan-shape job can emit `root-injected` and the pre-registered
+  ON-vs-OFF default-flip read becomes possible on the accepted surface. The write-tee is wired
+  so same-path target rewrites are visible to the detector. Still OFF by default (`layerRoot:
+  false`, F41). Excluded on native/clipipe (no `onToolResult` seam — F48 fallback surface).
+
+### Fixed
+- **F49 (security-hardening): the agent-authored `artifact-written` regex can no longer hang
+  the exit evaluator.** `plan.js` rejects nested-quantifier ReDoS patterns (`(a+)+`, `(\d*)*`,
+  `(x+){1,}`, and redundant-wrapper forms like `((a+))+` / `(?:(a+))*` / `(((a+)))+`) at the
+  validation gate, before any tokens burn. The wrapper class was a review-caught false negative
+  in the first (flat-only) scan — each measured to hang `RegExp.test` >8s on ~29 chars — closed
+  by propagating an inner repeat up through the enclosing group; the change is MONOTONIC (it only
+  ever adds rejections, the fail-safe direction, and cannot introduce a new false negative). LOW
+  self-DoS, no arbiter compromise; input-bounding was rejected as theater (a 33-char body hangs)
+  and a JS regex timeout as disproportionate (worker/RE2 dep).
+- **F50: `runJob` no longer silently ignores `layerRoot` for plan-shape jobs** (was accepted
+  and dropped — an advertised no-op).
+
 ## [0.5.0] — 2026-07-23
 
 ### Added

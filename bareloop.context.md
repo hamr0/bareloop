@@ -173,7 +173,7 @@ middle writes; `validatePlan` gates it against the SIGNED job spec before tokens
 | `steps[].tools` | non-empty unique subset of the SPEC ceiling | a verb beyond the ceiling reds `verb-escape` with the verb as structured data (overreach, distinct from the operator-side `request-red`); `run` is `verb-escape` at every layer |
 | `steps[].rounds` | int 1..shell cap (default 40) | the step's per-attempt tool-round bound (the Gate's `maxTurns` natively) |
 | `steps[].target` | path inside the fence | v1.18 deliverable; REQUIRED on write-granted steps |
-| `steps[].exit` | 1..2 items (`MAX_EXITS_PER_STEP`), ALL must pass (AND-only, no OR/NOT) | closed menu (`EXIT_TYPES`): `artifact-written(path, pattern?)` · `tree-changed(scope)` · `json-valid(path)` · `check-passes(name)`. `check-passes` must name a SIGNED check (`check-unknown` red names the signed menu); on a write-granted step it must be paired with `tree-changed` (`exit-illegal` — the seed tree is green, a lone check would pass untouched, F17/F46). Exits verify FORM, not truth — progress gates; the operator's close stays the one arbiter |
+| `steps[].exit` | 1..2 items (`MAX_EXITS_PER_STEP`), ALL must pass (AND-only, no OR/NOT) | closed menu (`EXIT_TYPES`): `artifact-written(path, pattern?)` · `tree-changed(scope)` · `json-valid(path)` · `check-passes(name)`. `check-passes` must name a SIGNED check (`check-unknown` red names the signed menu); on a write-granted step it must be paired with `tree-changed` (`exit-illegal` — the seed tree is green, a lone check would pass untouched, F17/F46). `artifact-written.pattern` must compile AND survive a ReDoS shape check — an unbounded quantifier over a group that itself repeats unboundedly (`(a+)+`, `(\d*)*`, even wrapped: `((a+))+`) is an `invalid-value` red (F49, catastrophic-backtracking footgun; rewrite without a repeated group inside a repeat). Exits verify FORM, not truth — progress gates; the operator's close stays the one arbiter |
 
 Red vocabulary (all three validators): `parse-error`, `unknown-field`, `missing-required`,
 `invalid-value`, `bounds`, `duplicate-id`, `close-type`, `close-hierarchy`,
@@ -376,14 +376,19 @@ through `Loop`'s `onToolResult`). So a repeat that never applied is told its anc
 missed, and only content actually in the file is ever described as having landed. Spine event `root-injected` carries
 `{stage, mode, streak, paths, redSetSize}` — counts and paths only, NEVER content (the
 spine is append-only). State dies with the run: this is within-run scratch, not
-across-run memory. `layerRoot: true` (on `interpret` and `runJob`) is the ON/experimental
-arm; the default is OFF. Status (F41): the ratchet is MEASURED inert on every current
-job — two frozen probes + an archive sweep read 0 fixated pairs in 14 (the F21 repetition
-disease was a broken-loop symptom, since cured). Because ON has therefore never won its
-own A/B, it ships **OFF by default (decided 2026-07-21)** — armed and correct, but not
-default-enabled until a stuck job (Layer 2, or a manufactured-fixation probe) shows ON
-beats OFF. Flip the default to `true` the day that evidence lands; a `root-injected` event
-on your spine (when you pass `layerRoot: true`) is a signal worth reading, not noise.
+across-run memory. `layerRoot: true` is the ON/experimental arm; the default is OFF. It is
+wired on BOTH surfaces (F50): the legacy `steps[]` path (`interpret`) and the accepted
+plan-v1 flow (`runPlan`, one root per EXECUTE step plus one in the outer close-fix loop). On
+the plan flow the per-step red-set is the exit evaluator's OWN gap (the whole normalized
+complaint) rather than a single close's gapKeep, while the fix loop uses the close's own
+gapKeep (raw close output); the write-tee makes same-path target rewrites visible to the
+detector. It is NOT wired on the native/clipipe worker (no `onToolResult` seam — F48 fallback). Status (F41):
+the ratchet is MEASURED inert on every current job — two frozen probes + an archive sweep
+read 0 fixated pairs in 14 (the F21 repetition disease was a broken-loop symptom, since
+cured). Because ON has therefore never won its own A/B, it ships **OFF by default (decided
+2026-07-21)** — armed and correct, but not default-enabled until a stuck job shows ON beats
+OFF. Flip the default to `true` the day that evidence lands; a `root-injected` event on your
+spine (when you pass `layerRoot: true`) is a signal worth reading, not noise.
 
 ### `runJob(spec, { approvals, workdir, provider, nativeProvider?, emit, target?, capRuns?, shellCapUsd?, closeTimeoutMs?, execCmd?, layerRoot? })` → outcome — `src/run.js`
 
