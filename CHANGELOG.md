@@ -7,6 +7,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-07-24
+
 ### Added
 - **Layer R wired into the plan-v1 flow** (F50). The within-run ratchet (`layerRoot`) now
   engages in `runPlan` — one root per EXECUTE step (red-set = the exit evaluator's own gap)
