@@ -378,10 +378,11 @@ missed, and only content actually in the file is ever described as having landed
 spine is append-only). State dies with the run: this is within-run scratch, not
 across-run memory. `layerRoot: true` is the ON/experimental arm; the default is OFF. It is
 wired on BOTH surfaces (F50): the legacy `steps[]` path (`interpret`) and the accepted
-plan-v1 flow (`runPlan`, one root per step). On the plan flow the red-set is the exit
-evaluator's OWN gap (the whole normalized complaint) rather than a single close's gapKeep,
-and the write-tee makes same-path target rewrites visible to the detector; it is NOT wired
-on the native/clipipe worker (no `onToolResult` seam — F48 fallback surface). Status (F41):
+plan-v1 flow (`runPlan`, one root per EXECUTE step plus one in the outer close-fix loop). On
+the plan flow the per-step red-set is the exit evaluator's OWN gap (the whole normalized
+complaint) rather than a single close's gapKeep, while the fix loop uses the close's own
+gapKeep (raw close output); the write-tee makes same-path target rewrites visible to the
+detector. It is NOT wired on the native/clipipe worker (no `onToolResult` seam — F48 fallback). Status (F41):
 the ratchet is MEASURED inert on every current job — two frozen probes + an archive sweep
 read 0 fixated pairs in 14 (the F21 repetition disease was a broken-loop symptom, since
 cured). Because ON has therefore never won its own A/B, it ships **OFF by default (decided

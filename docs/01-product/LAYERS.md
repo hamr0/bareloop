@@ -148,12 +148,13 @@ read (repetition drop, ON vs OFF) DEFERS to the first run whose spine records
 **Wired into the plan-v1 flow (2026-07-23, F50).** Until then the ratchet was wired only
 into the legacy `steps[]` path (`interpret.js`); the accepted plan flow silently ignored
 `layerRoot`, so it could never emit `root-injected`. Now `runPlan` engages one root per
-step (each micro-wheel is the Layer-1 atom): red-set = the exit evaluator's own gap
-(`gapKeep '\S'`, the whole normalized complaint — format-independent, since a check's
-`^`-anchored gapKeep does not survive the exit wrapper `check "x" red: …`), and the
-write-tee is wired so same-path target rewrites are visible to the detector (the cumulative
-audit dedups by path and cannot see them alone). Excluded on native/clipipe (no
-`onToolResult` seam; F48 fallback surface, not the experiment surface).
+EXECUTE step (each micro-wheel is the Layer-1 atom; red-set = the exit evaluator's own gap,
+`gapKeep '\S'`, the whole normalized complaint — since a check's `^`-anchored gapKeep does
+not survive the exit wrapper `check "x" red: …`) AND one in the outer close-fix loop (red-set
+= the close's own `gapKeep`, the raw close output where the anchor works). The write-tee is
+wired so same-path target rewrites are visible to the detector (the cumulative audit dedups
+by path and cannot see them alone). Excluded on native/clipipe (no `onToolResult` seam; F48
+fallback surface, not the experiment surface).
 
 > **⚠ Layer 2/3 TODO — decide the Layer R default.** The wiring now EXISTS on the accepted
 > surface (F50); the experiment is possible but not yet run. Layer 2's narrow micro-wheel

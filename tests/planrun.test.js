@@ -456,6 +456,35 @@ test('Layer R OFF (default): the SAME fixation script emits NO root-injected —
   assert.equal(outcome, 'green');
 });
 
+test('Layer R ON: the outer close-fix loop ALSO ratchets — fixation there (judged by the REAL close) fires root-injected with phase:fix', async (t) => {
+  const wd = makePatient(t);
+  // the check greens on "ok" (so the step greens), but the CLOSE additionally
+  // wants a DONE marker — so the step passes, the outer close reds, and the fix
+  // loop runs. The fix worker rewrites the file twice without DONE (same close
+  // red-set) then adds it: the fix loop's own ratchet must fire at attempt 3.
+  writeFileSync(join(wd, 'close.mjs'), `import { existsSync, readFileSync } from 'node:fs';
+const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
+const t = existsSync(p) ? readFileSync(p, 'utf8') : '';
+if (t.includes('DONE')) process.exit(0);
+console.log('FAILED close: the test is missing the DONE marker'); process.exit(1);\n`);
+  const job = JOB(wd, { close: { type: 'predicate', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' } });
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok — asserts x\n' })] }, { text: 'step done' },
+    // fix loop: two rewrites still missing DONE (fixation), then the fix
+    { toolCalls: [tcall('t2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok stub 1\n' })] }, { text: 'f1' },
+    { toolCalls: [tcall('t3', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok stub 2\n' })] }, { text: 'f2' },
+    { toolCalls: [tcall('t4', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok DONE\n' })] }, { text: 'f3' },
+  ]);
+  const { outcome, events } = await go(wd, provider, { job, layerRoot: true });
+  const inj = events.filter((e) => e.type === 'root-injected');
+  assert.ok(inj.some((e) => e.phase === 'fix' && e.stage === 'summary'),
+    `the fix loop ratchets under fixation; got ${JSON.stringify(inj)}`);
+  assert.ok(provider.calls.some((p) => typeof p === 'string' && p.includes('RATCHET')), 'the note reached the fix worker');
+  assert.equal(outcome, 'green');
+});
+
 test('Layer R + NATIVE (clipipe): excluded — the native worker has no onToolResult seam, so the ratchet stays inert even under fixation', async (t) => {
   const wd = makePatient(t);
   const jv = validateJob(JOB(wd, { provider: 'clipipe-subscription' }));

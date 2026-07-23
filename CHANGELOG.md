@@ -9,10 +9,11 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 - **Layer R wired into the plan-v1 flow** (F50). The within-run ratchet (`layerRoot`) now
-  engages per step in `runPlan`, not only on the legacy `steps[]` path — so a plan-shape job
-  can emit `root-injected` and the pre-registered ON-vs-OFF default-flip read becomes possible
-  on the accepted surface. Red-set = the exit evaluator's own gap; the write-tee is wired so
-  same-path target rewrites are visible to the detector. Still OFF by default (`layerRoot:
+  engages in `runPlan` — one root per EXECUTE step (red-set = the exit evaluator's own gap)
+  AND in the outer close-fix loop (red-set = the close's own `gapKeep`) — not only on the
+  legacy `steps[]` path. So a plan-shape job can emit `root-injected` and the pre-registered
+  ON-vs-OFF default-flip read becomes possible on the accepted surface. The write-tee is wired
+  so same-path target rewrites are visible to the detector. Still OFF by default (`layerRoot:
   false`, F41). Excluded on native/clipipe (no `onToolResult` seam — F48 fallback surface).
 
 ### Fixed

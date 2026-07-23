@@ -749,16 +749,29 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
   emit('fix-loop', { gapBytes: Buffer.byteLength(post.gap ?? '') });
   let fixOutcome;
   try {
-    const w = await mkWorker({ granted: ceiling, phase: 'fix', attemptRounds: maxStepRounds, attempts: capRuns, writable: true });
+    // Layer R for the close-fix loop — the plan flow's single ralph loop judged
+    // by the REAL close (the closest analog to interpret.js's loop, and the
+    // likeliest place fixation manifests: the fix worker has the full menu and
+    // is judged by a command, not a form-only exit). The red-set is the CLOSE's
+    // own gapKeep (the gap here is the raw close output, unwrapped — so the
+    // `^`-anchored pattern matches, unlike the exec steps' exit-eval gap). Same
+    // native exclusion (no onToolResult seam ⇒ the tee cannot settle).
+    const fixRoot = layerRoot && !native
+      ? createRoot({ gapKeep: job.close.gapKeep, redact: scrub, writesInformative: true })
+      : null;
+    const w = await mkWorker({ granted: ceiling, phase: 'fix', attemptRounds: maxStepRounds, attempts: capRuns, writable: true, root: fixRoot });
     /** @param {number} iteration @param {string} [gap] */
     const middle = async (iteration, gap) => {
       w.setIteration(iteration);
+      const rootInj = fixRoot ? fixRoot.observe({ iteration, gap, writes: w.workerWrites() }) : null;
+      if (rootInj) emit('root-injected', { phase: 'fix', ...rootInj.event });
       await w.ask([
         'The job\'s final verification is failing. Fix the repository so it passes.',
         `Repository root (absolute): ${workdir}\nEvery path you pass to a tool MUST be absolute and inside this root.`,
         artifacts.length > 0 && `Working context (read-only) — the plan's steps produced:\n${artifacts.map((a) => `[${a.id}] ${a.text}`).join('\n\n')}`,
         !gap && post.gap && `The verification's output on the tree as it stands (not an attempt of yours):\n${post.gap}`,
         gap && `Previous attempt failed the verification:\n${gap}`,
+        rootInj && rootInj.note,
       ].filter(Boolean).join('\n\n'));
     };
     fixOutcome = await ralph({

@@ -75,6 +75,19 @@ function unboundedQuantLen(src, i) {
  * (an external native dep we do not take for a LOW issue); exotic
  * overlapping-alternation blowup is out of scope by decision.
  *
+ * SCOPE IS ASYMMETRIC, both directions named on purpose:
+ *   - false NEGATIVE: overlapping-alternation blowup (`(a|ab)+`-class) is not
+ *     detected — out of scope (self-DoS only, no arbiter compromise).
+ *   - false POSITIVE: a group whose repetitions are disambiguated by a literal
+ *     anchor/delimiter (`(?:^- .+$\n?)+`, `(?:CHANGELOG:.+\n)+`) is FLAGGED even
+ *     though a real engine runs it linearly — the scan sees the nested-quantifier
+ *     SHAPE, not the disambiguation. Rejecting it is the FAIL-SAFE direction (it
+ *     never admits an unsafe pattern), and the cost is bounded: the plan drafter
+ *     gets a mechanical gap and rewrites (drop the outer `+`, or match once).
+ *     Detecting "safe because anchored" needs the same real engine we declined,
+ *     and guessing it wrong would ADMIT an exponential pattern — so the shape
+ *     reject stands, and the over-rejection is a named, accepted limitation.
+ *
  * The input is guaranteed to compile as a RegExp (checked first by the caller),
  * so this scan assumes valid, balanced JS regex syntax.
  * @param {string} src a compiled regex source string

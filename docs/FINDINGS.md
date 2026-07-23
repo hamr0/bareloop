@@ -2471,6 +2471,17 @@ is honest about its bound — exotic overlapping-alternation blowup is out of sc
 red-case + a detail-names-the-footgun test (31 tests), plus the empirical 33-char hang above
 as the "the test can fail" proof. Full suite green.
 
+**Named over-rejection (review 2026-07-23).** The shape-only scan also has a false-POSITIVE
+class, now documented symmetrically with the false-negative one: anchor/delimiter-disambiguated
+repeated-record patterns (`(?:^- .+$\n?)+`, `(?:CHANGELOG:.+\n)+`) run LINEARLY in a real engine
+(review measured 100k reps → 6ms) but are flagged by the nested-quantifier SHAPE. This is the
+FAIL-SAFE direction — the reject never ADMITS an exponential pattern — and the cost is a single
+mechanical redraft (the drafter drops the outer `+`). Detecting "safe because anchored" needs the
+real engine we declined, and a wrong guess would admit an exponential pattern, so the shape reject
+stands. Three `REDOS_OVERREJECTED` regression tests lock these as accepted limitations — they must
+stay flagged, because a future "smarter" detector turning them into false NEGATIVES is the
+dangerous direction.
+
 **Lesson.** A security scan's value is the coverage table, not just the hits: the one
 finding here is a LOW self-DoS, and naming it against a CLEAN arbiter-integrity sweep is
 what makes "clean" auditable rather than asserted. And the fix-shape choice was itself an
@@ -2507,6 +2518,15 @@ from `interpret.js` into `mkWorker`; `executeStep` creates one root per step and
   `target` every attempt; the cumulative gate audit dedups by path, so a same-path rewrite adds
   nothing to the write-set and the detector would see an empty delta. The tee is what makes the
   rewrite visible — so without it the summary stage never fires either (traced, then tested).
+
+**The close-fix loop is wired too (review 2026-07-23).** The first cut wired only the EXECUTE
+micro-wheels; the QA pass caught that `runPlan`'s outer close-fix loop (a full ralph loop judged
+by the REAL close after all steps green) still ran root-less — the SAME silent-no-op this finding
+exists to kill, and arguably the likeliest place fixation manifests (the fix worker holds the
+full menu and is judged by a command, not a form-only exit). Now wired with its red-set = the
+CLOSE's own `gapKeep` (the gap here is the raw close output, unwrapped, so the `^`-anchored
+pattern matches — unlike the exec steps' exit-eval gap, which uses `\S`). Its event carries
+`phase: 'fix'`; a dedicated test drives a fix-loop fixation end-to-end.
 
 **Native excluded, by construction.** The clipipe native worker exposes no `onToolResult`
 seam, so the tee cannot settle and same-path rewrites are blind — `root` is `null` for native

@@ -279,6 +279,21 @@ for (const src of REDOS_GOOD) {
   });
 }
 
+// Named, ACCEPTED over-rejection (F49 false-positive class, review 2026-07-23):
+// anchor/delimiter-disambiguated repeated-record patterns run LINEARLY in a real
+// engine (measured: `(?:^- .+$\n?)+` on 100k reps → 6ms) but the shape-only scan
+// flags them. This is the FAIL-SAFE direction — it never admits an exponential
+// pattern — and the cost is one mechanical redraft. Locked here so the reject is
+// a documented limitation, not a silent surprise: if a future change makes the
+// detector "smarter", these must stay SAFE (false-negatives are the dangerous
+// direction). The drafter's escape hatch: drop the outer `+` (match one record).
+const REDOS_OVERREJECTED = ['(?:^- .+$\\n?)+', '(?:CHANGELOG:.+\\n)+', '(\\d+\\.\\d+)+'];
+for (const src of REDOS_OVERREJECTED) {
+  test(`hasNestedQuantifier over-rejects (accepted, fail-safe): ${src}`, () => {
+    assert.equal(hasNestedQuantifier(src), true, `${src} is flagged by shape — an accepted over-rejection, never a false negative`);
+  });
+}
+
 test('the ReDoS red detail names the footgun (the gap must let the replan rewrite, not guess)', () => {
   const r = validatePlan(mut((p) => { p.steps[0].exit[0].pattern = '(a+)+$'; }), OPTS);
   assert.match(r.reds[0].detail ?? '', /quantifier/i);
