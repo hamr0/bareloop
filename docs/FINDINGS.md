@@ -2432,3 +2432,32 @@ $28 shot was the right instrument: it converted the open "cap-halt → fund more
 hypothesis into a refutation (spent $7, escalated on behavior), which no cheaper run
 could have settled. The API is the only guaranteed surface; clipipe is a taxed
 Claude-only fallback; local LLMs are an unbuilt, unmeasured future bet.
+
+## F49 — OPEN (logged follow-up): the agent-authored `artifact-written` regex runs unbounded in the exit evaluator
+
+**The gap (security scan, v0.5.0 pre-release).** `src/exits.js` evaluates an
+`artifact-written` exit's optional `pattern` with `new RegExp(e.pattern, 'm').test(body)`
+against the worker-written file. The pattern is AGENT-authored (it rides the plan, not
+the signed spec), and `evalExits` has no wall-clock bound — so a catastrophic-backtracking
+pattern (e.g. `(a+)+$`) against a large body could hang the evaluator. The plan validator
+(`plan.js`) only COMPILES the pattern; compilation does not detect ReDoS.
+
+**Severity: LOW, and NOT an arbiter compromise.** The "attacker" is the model authoring a
+pathological pattern in its OWN plan; the blast radius is the operator's own run hanging
+(self-DoS). It cannot escape the write fence, forge a green, widen a budget, or leak a
+secret — every arbiter-integrity threat (secrets, fence, close, budget, argv injection,
+path traversal) scanned CLEAN. This is a robustness gap (unbounded CPU on a semi-trusted
+author's input), filed as the honest "bound every reachable path" invariant applied to
+CPU, not a privilege/exposure vuln. Operator-authored regex (`judged.pattern`, `gapKeep`,
+check bodies) is out of scope — the operator is trusted and those are signed.
+
+**Fix DEFERRED (multiple shapes, needs a decision — hamr's call at v0.5.0):** (a) bound the
+tested input size, (b) run the match under a timeout (needs a worker/subprocess in JS), or
+(c) reject nested-quantifier patterns at validation (incomplete). (a) changes match
+semantics for patterns meant to hit late in a large file; (b) is the most faithful but the
+heaviest; (c) cannot be complete. Recorded as the next Layer 2 hardening item; the v0.5.0
+release proceeded because the arbiter is uncompromised.
+
+**Lesson.** A security scan's value is the coverage table, not just the hits: the one
+finding here is a LOW self-DoS, and naming it against a CLEAN arbiter-integrity sweep is
+what makes "clean" auditable rather than asserted.

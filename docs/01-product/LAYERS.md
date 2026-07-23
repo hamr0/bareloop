@@ -107,7 +107,7 @@ verb blocks the work, the worker files a *request-red* and a human decides.
 
 ```
 Layer 3   INHERITANCE    the road survives runs, with receipts; self-heals    (not built — N3)
-Layer 2   MICRO-WHEELS   the road itself: locate → understand → write → verify (designed — plan-v1)
+Layer 2   MICRO-WHEELS   the road itself: locate → understand → write → verify (built + ACCEPTED — F47, v0.5.0)
 Layer R   THE ROOT       memory that survives attempts inside one run          (built — armed-and-inert, F41)
 Layer 1   ONE WHEEL      a single loop over the whole task                     (built; first real firing NOW)
 ```
@@ -159,6 +159,13 @@ read (repetition drop, ON vs OFF) DEFERS to the first run whose spine records
 The workflow becomes a **sequence of small wheels**, each with one goal and only the verbs
 that goal needs (locate gets `grep`/`recall`; write gets `write`; nobody gets `run`). The
 agent drafts this road per job; a validator gates the draft before any tokens burn.
+
+**Status: built + ACCEPTED 2026-07-22 (F47), shipped v0.5.0.** The real plan flow
+(SCOUT → PLAN → per-step micro-loops judged by the exit evaluator → one replan → the
+operator's close) converts job #4 3/3 and clears the 45 bar 3/3 on the API surface; the
+in-run operator-signed check TRANSLATES the semantic ask into the mechanical genre (F46).
+Cross-surface (clipipe) reads OUT-as-peer (F48): only the API is a guaranteed surface. Open
+follow-up: F49 (bound the agent-authored exit regex).
 
 **Stage verdicts (decided 2026-07-15, hamr):** a micro-wheel validates against **its own
 eval** where one exists — a mechanical check the stage cannot game; where none exists, it

@@ -7,6 +7,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-07-23
+
 ### Added
 
 - **Layer 2 core — the plan-v1 flow (design record
