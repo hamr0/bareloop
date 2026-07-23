@@ -1371,3 +1371,16 @@ negative in the flat-only scan (redundant-wrapper forms like `((a+))+` slipped t
 still hang >8s) — closed monotonically by propagating an inner repeat up through the
 wrapping group, the fail-safe direction that only ever adds rejections. After v0.5.1, the ONLY legacy-unique surface left is the two
 locked verdicts above — so the sunset gate is exactly (1)+(2).
+
+**Parked (medium review #2, 2026-07-24): the Layer R tee wiring is duplicated across
+`interpret.js` (legacy) and `planrun.js` (plan-v1)** — `fileHash` / `teeingTranslator` /
+the deny-discard `policy` wrapper / `onToolOutcome` (the Finding 6/7 settle logic), ~60
+lines, currently faithful (no live defect). NOT extracted into a shared helper, deliberately:
+legacy is a scheduled **rewrite-deletion** at the verdict-classes rung (above), so one of the
+two copies is *deleted*, not refactored — extracting shared arbiter-adjacent wiring out of code
+slated for deletion is negative-value, and reconciling the two shapes (interpret gates on
+`mode === 'tools'`; planrun is tool-only) risks reintroducing the blind-instrument class the tee
+guards against (a future write-class verb bypassing the tee). Accepted cost: a **drift window**
+until legacy retires — any Finding-6/7 change or new write-class verb must be applied to BOTH
+files. The clean resolution is the legacy deletion itself; revisit only if legacy outlives
+Layer 3 or the tee logic starts changing often.
