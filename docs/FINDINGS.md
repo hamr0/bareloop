@@ -2341,3 +2341,94 @@ F39 (delivery/state is not the gap) → F46 (an in-run check TRANSLATES semantic
 mechanical, hardwired) → F47 (the emergent flow does it itself, and reaches the
 bar). Structure was the missing piece, and the agent can author the structure
 under an inexpressible arbiter.
+
+## F48 — clipipe cross-surface verdict: the native subscription surface is capable at the step but does not finish the job; only the API is guaranteed
+
+**The question.** F47 accepted Layer 2 on the `anthropic-api` surface (3/3 convert,
+3/3 at the 45 bar). Does the same built machinery reproduce on the
+`clipipe-subscription` surface (BA-16 native MCP: the `claude` CLI drives the turn
+cycle, notional dollars, flat subscription instead of per-token billing)? Same job
+#4 (TESTGEN), same frozen seed (15% baseline), same operator-signed check, same
+grader, same 45 bar. Notional dollars NEVER pool with API rows (F42/job-v1
+doctrine); F47's API numbers are a cross-surface REFERENCE, not a baseline on this
+surface.
+
+**The enabler (measured).** The native worker could not write at all (0/158 reads,
+0 writes) because the `claude` CLI TRUNCATES a large tool result (~40–50KB / ~line
+550, measured) before the model sees it, spills the remainder to a
+`~/.claude/.../tool-results/` file the fence denies, AND wraps it in a "read this in
+chunks" notice the model correctly distrusts as prompt injection — so a whole-file
+`shell_read` of the 2,455-line orchestrator blinded it. Fix (`planrun.js`,
+`NATIVE_READ_CAP=24KB` + a trusted truncation notice steering to `ctx_get` ranged
+retrieval + a native-only strategy line; API path untouched, `bare-agent` 0.33.1
+for the native ranged read, BA-17). Effect: **0 → 7 writes**, 137 bounded reads, no
+stall. My earlier "it's behavioral / it can't write" was FALSIFIED — the blocker
+was read-blinding, mechanical.
+
+**The two acting rows (0/2 graded).**
+
+| | API (F47) — guaranteed | clipipe row A ($8) | clipipe row B ($28) |
+|---|---|---|---|
+| outcome | 3/3 CONVERT | cap-halt | step-red escalate |
+| grade | 67.5 / 55 / 55 (all ≥45) | null | null |
+| notional $ | $4.73 / $6.46 / $6.48 | $8.61 (overshot $8) | **$7.12 of $28** |
+| $/LLM-call | ~$0.029 | ~$0.074 (~2.5×) | ~2.5× |
+| wall-clock | 34–41 min | ~57 min | escalated early |
+| writes | 11–15 acted | 7 (3 files, 1 step GREEN) | 6 (1 file) |
+| why not graded | — | budget bound mid-plan | **non-change stall, budget to spare** |
+
+Row A (`mrxd0c4l`) wrote 7 real tests, drove one step to `satisfied` (green), and
+its check-loop iterated 4× on genuine MECHANICAL gaps (forbidden pattern
+`environ-enumeration` → `subprocess` → `clean-red` ×2), the worker revising each
+time — then cap-halted before the outer grade. Row B (`mrxkj6ik`, the funded shot)
+read the seed tests fine (conftest 9×, `test_execute_behavior` 11×,
+`test_orchestrator_helpers` 8×) and aimed well (11/18 survivor functions recalled),
+but produced a NON-CHANGED suite: plan attempt 1 = 4 iterations `unchanged-red`
+(byte-identical to the seed); after replan, attempt 2 = 4 iterations `0 files
+changed — identical re-write is not a change`; 4/4 attempts each, close still red →
+escalate → job `step-red` at **$7.12 of $28**. Casualties across the campaign were
+transport flakes (`provider-red`, $2.6 / $0.43) and a `pricing-red` — with NO
+resume, a multi-hour row can be lost near the end.
+
+**What the funded shot proved (the decisive result).** The budget hypothesis is
+REFUTED. Raising the per-row cap 8 → $28 (3.5× the API's ~$6 rows) spent only $7
+and did NOT convert — it escalated on BEHAVIOR, not money. More budget is not the
+blocker. The read-cap is exonerated (it read everything and aimed correctly). The
+$28 failure is the **F39 semantic-stall reproduced on native**: the worker converts
+MECHANICAL gaps (row A's four distinct forbidden-pattern gaps) but stalls on the
+SEMANTIC "make it meaningfully different / it's unchanged" gap — the same ceiling
+frontier Claude hits on the API (F38/F39). Native is NOT behaviorally worse and NOT
+a plumbing bug — it delivers feedback correctly (row A's differentiated iteration
+proves it); it is the same worker with the same semantic limit, plus a cost/time/
+reliability tax. `layerRoot` unchanged (converts don't fixate; no `root-injected`).
+
+**The verdict: only the API is guaranteed.** Across every native row, 0 reached a
+grade vs the API's 3/3. clipipe is capable at the STEP level (row A: 7 writes, a
+green step) but does not reliably carry a long JOB across the line, and the one
+lever — budget — is spent and refuted. Its cost is NOTIONAL (subscription-
+equivalent under the "cost is cost" ruling); the ACTUAL billed cost is the flat
+subscription, $0 marginal — that is its ONLY advantage, and it is bought with a
+permanent tax: ~2.5–3× notional effort, always slower (~23s/turn subprocess, never
+faster), no resume on transport flakes, and the inherited F39 semantic ceiling with
+no offsetting gain. clipipe is IN only as a babysat, $0-marginal-billing fallback
+for jobs one is willing to re-run — never an API peer on result, cost, or time.
+(Caveat: n=2 native acting rows, two different non-converting modes; the OUT-as-peer
+call holds because no native row has ever graded and budget is refuted, but it is
+n=2, not a rate.)
+
+**Local LLMs — not this surface, and not a surface at all yet.** clipipe is the
+`claude` CLI = Claude models via subscription; it does NOT run local models. Local
+LLMs are DEFERRED by decision (PRD: "no local-LLM work until the API path earns
+it") — no local surface is built or measured, so no claim is made. The reasoned
+expectation, flagged UNMEASURED: a local model would face the same F39 semantic-
+conversion ceiling that even frontier Claude stalls on (§F38/F39), likely worse,
+plus tool-call-fidelity risk — a research bet, not a drop-in. Today the guarantee
+lives on the API alone.
+
+**Lesson.** "Cost and capability are separate axes," applied to SURFACES: a cheaper
+transport buys $0 marginal billing and nothing else — not speed, not reliability,
+not completion, and it inherits the frontier model's semantic ceiling. The funded
+$28 shot was the right instrument: it converted the open "cap-halt → fund more"
+hypothesis into a refutation (spent $7, escalated on behavior), which no cheaper run
+could have settled. The API is the only guaranteed surface; clipipe is a taxed
+Claude-only fallback; local LLMs are an unbuilt, unmeasured future bet.

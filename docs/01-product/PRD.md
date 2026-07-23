@@ -133,6 +133,14 @@ place where *repeated, verifiable* jobs get better at themselves.
 - **The close chain is wrong/gameable for a real job** → close-authoring hierarchy + the §4b
   channel declaration; a close the operator can't explain is a close the product shouldn't
   trust.
+- **Cheaper worker surfaces as API substitutes** → RESOLVED for clipipe (F48): only the
+  `anthropic-api` surface is guaranteed. The `clipipe-subscription` (Claude CLI) surface is
+  capable at the step level but did not carry job #4 to a grade in 2 rows (0/2 vs API 3/3),
+  and a 3.5× budget raise ($8→$28) was REFUTED — it escalated on the F39 semantic-stall at
+  $7 of $28, not on money. It buys $0-marginal billing at a permanent tax (~2.5–3× notional
+  effort, always slower, no resume, same F39 ceiling): IN only as a babysat fallback, never a
+  peer. Local LLMs remain deferred and UNMEASURED — no local surface exists; the reasoned
+  (unproven) expectation is the same or worse F39 ceiling plus tool-call-fidelity risk.
 
 ## §10 Build order (module ladder, sketch — each rung POCs its riskiest assumption)
 
