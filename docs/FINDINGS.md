@@ -2433,7 +2433,7 @@ hypothesis into a refutation (spent $7, escalated on behavior), which no cheaper
 could have settled. The API is the only guaranteed surface; clipipe is a taxed
 Claude-only fallback; local LLMs are an unbuilt, unmeasured future bet.
 
-## F49 — OPEN (logged follow-up): the agent-authored `artifact-written` regex runs unbounded in the exit evaluator
+## F49 — RESOLVED (2026-07-23): the agent-authored `artifact-written` regex runs unbounded in the exit evaluator
 
 **The gap (security scan, v0.5.0 pre-release).** `src/exits.js` evaluates an
 `artifact-written` exit's optional `pattern` with `new RegExp(e.pattern, 'm').test(body)`
@@ -2451,13 +2451,80 @@ author's input), filed as the honest "bound every reachable path" invariant appl
 CPU, not a privilege/exposure vuln. Operator-authored regex (`judged.pattern`, `gapKeep`,
 check bodies) is out of scope — the operator is trusted and those are signed.
 
-**Fix DEFERRED (multiple shapes, needs a decision — hamr's call at v0.5.0):** (a) bound the
-tested input size, (b) run the match under a timeout (needs a worker/subprocess in JS), or
-(c) reject nested-quantifier patterns at validation (incomplete). (a) changes match
-semantics for patterns meant to hit late in a large file; (b) is the most faithful but the
-heaviest; (c) cannot be complete. Recorded as the next Layer 2 hardening item; the v0.5.0
-release proceeded because the arbiter is uncompromised.
+**Fix shapes weighed (three, at v0.5.0):** (a) bound the tested input size, (b) run the
+match under a timeout (a JS worker/subprocess), or (c) reject nested-quantifier patterns at
+validation. Two were disqualified on evidence: (a) is THEATER for classic exponential ReDoS
+— the blowup needs only tens of characters (measured: `(a+)+$` did NOT finish on a **33-char**
+body in 120s), so a length cap does nothing; (b) needs `worker_threads` or an external RE2
+engine — disproportionate weight (and a new native dep) for a LOW self-DoS. That leaves (c),
+which is the doctrine-clean place anyway: a mechanical reject at the validation gate, before
+any tokens burn, that the replan can rewrite.
+
+**Fix SHIPPED (2026-07-23), option (c):** `plan.js` now runs `hasNestedQuantifier(pattern)`
+after the compile check and reds an `invalid-value:…pattern` when a group repeating unboundedly
+(`*`, `+`, `{n,}`) is itself wrapped in an unbounded quantifier (`(a+)+`, `(\d*)*`,
+`(x+){1,}`) — the dominant exponential class. It is a vanilla state-machine scan (no dep):
+skips escaped atoms and character classes (so `\(a+\)+` and `[a+]+` are safe), treats bounded
+outer repeats (`(a+)?`, `(a+){2}`, `(a+){1,3}`) as safe (polynomial, self-authored body), and
+is honest about its bound — exotic overlapping-alternation blowup is out of scope BY DECISION
+(self-DoS only, no arbiter compromise). TDD: a 12-bad / 17-good detector battery + a validator
+red-case + a detail-names-the-footgun test (31 tests), plus the empirical 33-char hang above
+as the "the test can fail" proof. Full suite green.
 
 **Lesson.** A security scan's value is the coverage table, not just the hits: the one
 finding here is a LOW self-DoS, and naming it against a CLEAN arbiter-integrity sweep is
-what makes "clean" auditable rather than asserted.
+what makes "clean" auditable rather than asserted. And the fix-shape choice was itself an
+evidence call — two of the three candidates died to a 2-line measurement (input-bounding is
+theater; a 33-char body hangs), which is cheaper than shipping the wrong remedy.
+
+## F50 — RESOLVED (2026-07-23): Layer R was silently unwired on the accepted plan-v1 flow
+
+**The gap.** Layer R (`layerRoot`) was wired only into the LEGACY `steps[]` path
+(`interpret.js` → `createRoot`, on staged sunset). The ACCEPTED plan-v1 flow that shipped
+v0.5.0 (`runPlan`/`planrun.js`) never created a root — `runJob` accepted `layerRoot` and
+silently IGNORED it for plan-shape jobs. Two consequences, both real: a Layer 2 job could
+NEVER emit `root-injected`, so the LAYERS.md ⚠ pre-registered ON-vs-OFF default-flip read was
+impossible to satisfy on the go-forward surface; and `layerRoot: true` on a plan job was a
+silent no-op — an advertised capability that did not fire. The blind-instrument class in its
+plainest form: the ratchet lived only on the path that is being retired.
+
+**Why it mattered now.** The legacy `steps[]` path is a sunset candidate but NOT yet
+retirable — plan-v1 admits only the `green` verdict, so `hitl` (the draft-PR flow) and
+`soft-green` still run ONLY on the legacy path (the later non-code-jobs goal). So the ratchet
+was stranded on the exact path scheduled to disappear.
+
+**Fix (2026-07-23).** Wired Layer R into the plan flow, scoped PER STEP (each micro-wheel is
+the Layer-1 atom). The tee (stage/settle/discard + `onToolResult` outcome probe) is mirrored
+from `interpret.js` into `mkWorker`; `executeStep` creates one root per step and calls
+`observe` + injects its note in the middle. Two design calls specific to the plan flow:
+
+- **The red-set is the exit evaluator's OWN gap** (`gapKeep: '\S'` — every non-blank line),
+  not a reused check gapKeep. A check's `^`-anchored `gapKeep` (`^FAILED`) does not match once
+  the exit wrapper prefixes it (`check "x" red: FAILED …`), which would silently degrade the
+  detector to the dangerous writes-only mode. "The exit evaluator's complaint is byte-identical"
+  is the honest, format-independent red-set for a step.
+- **The tee is REQUIRED here, not just for the verbatim stage.** A plan step rewrites its ONE
+  `target` every attempt; the cumulative gate audit dedups by path, so a same-path rewrite adds
+  nothing to the write-set and the detector would see an empty delta. The tee is what makes the
+  rewrite visible — so without it the summary stage never fires either (traced, then tested).
+
+**Native excluded, by construction.** The clipipe native worker exposes no `onToolResult`
+seam, so the tee cannot settle and same-path rewrites are blind — `root` is `null` for native
+(documented, not silent; F48 already ruled native OUT-as-peer, so this is the fallback surface,
+not the experiment surface).
+
+**Validation.** 5 TDD tests through the REAL plan flow (real gate, real spawned close/check,
+real audit + tee): summary fires on an unmoved-red-set same-file rewrite and is injected into
+the next attempt; a third consecutive fixation escalates to VERBATIM surfacing the worker's own
+teed bytes back; OFF by default emits nothing; native stays inert. 555/555, typecheck + build
+clean.
+
+**Status of the default-flip.** Still deferred, but now POSSIBLE: the day a real plan-flow job
+emits `root-injected`, run the pre-registered ON-vs-OFF acceptance read (LAYERS.md ⚠). F41
+stands — fixation is extinct on every current job — so the default remains `false` until that
+evidence lands.
+
+**Lesson.** "Wired into the shipped path" is a separate claim from "the code exists," and the
+gap hid because the parameter threaded cleanly to a DIFFERENT (legacy) path. When a capability
+has two dispatch paths, check which one the ACCEPTED surface actually takes — a silently-ignored
+optional param is the blind-instrument class wearing an API's clothes.

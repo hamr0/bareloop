@@ -71,11 +71,11 @@ const collector = () => {
   return { events, emit: (type, data = {}) => { const e = { type, ...data }; events.push(e); return e; } };
 };
 
-async function go(wd, provider, { job = JOB(wd), capRuns = 3 } = {}) {
+async function go(wd, provider, { job = JOB(wd), capRuns = 3, layerRoot = false } = {}) {
   const jv = validateJob(job);
   assert.deepEqual(jv.reds, [], 'the test job must be validateJob-green');
   const { events, emit } = collector();
-  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns, remainingUsd: () => 1.5 });
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns, layerRoot, remainingUsd: () => 1.5 });
   return { outcome, events };
 }
 
@@ -385,6 +385,91 @@ test('a step SETUP fault is recorded on the plan-executed spine with the SAME ca
   assert.equal(exec.steps.at(-1).outcome, esc.category, 'the recorded step outcome MATCHES the escalation category (no contradiction)');
   assert.equal(esc.category, 'interpreter-red', 'an uncategorized setup throw is interpreter-red (infra), not provider-red');
   assert.equal(outcome, 'interpreter-red');
+});
+
+// ── Layer R (the within-run ratchet, src/root.js) wired into the plan flow.
+// A fixation script: the worker rewrites its ONE target with non-'ok' content
+// twice (same file, same failing check ⇒ identical red-set), then converts on
+// attempt 3. The detector must fire the SUMMARY stage at the start of attempt 3
+// (comparing attempts 1 and 2), inject its note, and stay OFF by default.
+// NOTE: content must not contain the substring 'ok' (the check greens on it) —
+// and 'broken' does, so the stubs read 'placeholder N'.
+const fixationScript = (wd) => scriptedProvider([
+  { text: 'src/mod.mjs exports x; tests/ is empty.' },                              // scout
+  { text: PLAN(wd) },                                                               // plan draft
+  { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'placeholder 1 — no assertion yet\n' })] },
+  { text: 'attempt 1' },
+  { toolCalls: [tcall('t2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'placeholder 2 — still no assertion\n' })] },
+  { text: 'attempt 2' },
+  { toolCalls: [tcall('t3', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok — asserts x now\n' })] },
+  { text: 'attempt 3 fixed it' },
+]);
+
+test('Layer R ON: a worker that rewrites the same file with an unmoved red-set fires the SUMMARY ratchet, injected into the next attempt', async (t) => {
+  const wd = makePatient(t);
+  const { outcome, events } = await go(wd, fixationScript(wd), { layerRoot: true });
+  const inj = events.filter((e) => e.type === 'root-injected');
+  assert.ok(inj.length >= 1, 'the ratchet fired at least once');
+  assert.equal(inj[0].stage, 'summary', 'first fire is the capped summary (streak 1)');
+  assert.equal(inj[0].step, 'write-test', 'the event names its step');
+  assert.equal(outcome, 'green', 'the ratchet does not break convergence — attempt 3 still greens');
+});
+
+test('Layer R ON: the ratchet note is injected into the third attempt\'s prompt (the worker actually sees it)', async (t) => {
+  const wd = makePatient(t);
+  const provider = fixationScript(wd);
+  await go(wd, provider, { layerRoot: true });
+  // provider.calls: [scout, plan, a1-turn1, a1-turn2, a2-turn1, a2-turn2, a3-turn1, ...]
+  // the attempt-3 opening prompt is the one carrying the ratchet note
+  assert.ok(provider.calls.some((p) => typeof p === 'string' && p.includes('RATCHET')),
+    'the worker was told, in-prompt, that it is repeating itself');
+});
+
+test('Layer R ON: a THIRD consecutive fixated attempt escalates to VERBATIM — the worker\'s own teed content is surfaced back (the full tee path, end-to-end)', async (t) => {
+  const wd = makePatient(t);
+  // four attempts: three non-'ok' rewrites of the one target (fixation each
+  // comparison), then the fix. streak 1 (summary) at attempt 3, streak 2
+  // (verbatim) at attempt 4 — the verbatim note carries attempt 3's own bytes.
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'placeholder 1\n' })] }, { text: 'a1' },
+    { toolCalls: [tcall('t2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'placeholder 2\n' })] }, { text: 'a2' },
+    { toolCalls: [tcall('t3', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'SENTINEL placeholder 3\n' })] }, { text: 'a3' },
+    { toolCalls: [tcall('t4', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok — fixed\n' })] }, { text: 'a4' },
+  ]);
+  const { outcome, events } = await go(wd, provider, { layerRoot: true, capRuns: 4 });
+  const stages = events.filter((e) => e.type === 'root-injected').map((e) => e.stage);
+  assert.deepEqual(stages, ['summary', 'verbatim'], 'the ratchet escalated summary → verbatim across two stuck episodes');
+  // the verbatim note carries the worker's OWN previous content (attempt 3's bytes)
+  assert.ok(provider.calls.some((p) => typeof p === 'string' && p.includes('STILL repeating') && p.includes('SENTINEL placeholder 3')),
+    'the verbatim stage surfaced the worker\'s own teed content back to it');
+  assert.equal(outcome, 'green');
+});
+
+test('Layer R OFF (default): the SAME fixation script emits NO root-injected — armed only when asked', async (t) => {
+  const wd = makePatient(t);
+  const provider = fixationScript(wd);
+  const { outcome, events } = await go(wd, provider); // layerRoot defaults false
+  assert.equal(events.filter((e) => e.type === 'root-injected').length, 0, 'inert by default');
+  assert.ok(!provider.calls.some((p) => typeof p === 'string' && p.includes('RATCHET')), 'no note reaches the worker');
+  assert.equal(outcome, 'green');
+});
+
+test('Layer R + NATIVE (clipipe): excluded — the native worker has no onToolResult seam, so the ratchet stays inert even under fixation', async (t) => {
+  const wd = makePatient(t);
+  const jv = validateJob(JOB(wd, { provider: 'clipipe-subscription' }));
+  const nativeProvider = scriptedNativeFactory([
+    { turns: [{ text: 'scout' }] },
+    { turns: [{ text: PLAN(wd) }] },
+    { turns: [{ tool: 'shell_write', args: { path: join(wd, 'tests', 'test_x.mjs'), content: 'placeholder 1\n' } }, { text: 'a1' }] },
+    { turns: [{ tool: 'shell_write', args: { path: join(wd, 'tests', 'test_x.mjs'), content: 'placeholder 2\n' } }, { text: 'a2' }] },
+    { turns: [{ tool: 'shell_write', args: { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok now\n' } }, { text: 'a3' }] },
+  ]);
+  const { events, emit } = collector();
+  const outcome = await runPlan(jv.job, { workdir: wd, nativeProvider, emit, capRuns: 3, layerRoot: true, remainingUsd: () => 1.5 });
+  assert.equal(events.filter((e) => e.type === 'root-injected').length, 0, 'Layer R is not wired on the native surface (F48 fallback, not the experiment surface)');
+  assert.equal(outcome, 'green');
 });
 
 // ── module 4d: NATIVE clipipe (BA-16). The plan flow is provider-agnostic —

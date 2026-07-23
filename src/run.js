@@ -303,7 +303,7 @@ export async function runJob(rawSpec, { approvals, workdir, target, provider, na
   // money contract is identical to the legacy path.
   if (planShape) {
     const outcome = await runPlan(job, {
-      workdir, provider, nativeProvider, emit: meter, capRuns, closeTimeoutMs,
+      workdir, provider, nativeProvider, emit: meter, capRuns, closeTimeoutMs, layerRoot,
       remainingUsd: () => Math.min(shellCapUsd, job.budgetUsd - spentUsd),
       isUnpriced: () => unpriced, // F6: let the plan flow bail in-flight, not just after it returns
     });
