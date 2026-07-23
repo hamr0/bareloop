@@ -17,7 +17,13 @@ it · the fix (upstream commit/PR) · the version bareloop consumed.**
 > record. Every entry keeps its acceptance criteria inline; the resolution/scoreboard the handoff
 > carried is folded into the closing section. `docs/UPSTREAM-FIXES.md` is deleted.
 
-## Status at a glance (2026-07-15)
+## Status at a glance (2026-07-15; updated 2026-07-22)
+
+> **2026-07-22 update:** BA-16 (native `claude-mcp` tool mode) **delivered in
+> `bare-agent@0.33.0`** and consumed (module 4d). One follow-up is now **OPEN — BA-17**: the
+> native turn bound counts tool-calling turns and did not enforce at real-job scale, blocking
+> the clipipe cross-surface battery (F48). Full entry at the end of the queue. The
+> 2026-07-15 snapshot below stands for everything prior.
 
 **The queue is EMPTY: BA-13 delivered in `bare-agent@0.29.0`** (same day it was filed) and
 consumed by bareloop the same session (TOOL_MENU/TOOL_BY_VERB gain `edit`; F32). Everything
@@ -822,6 +828,12 @@ draft call is worth revisiting.
 
 ## BA-16 — CLIPipe tool mode should offer a NATIVE path (`claude -p --mcp-config`) beside the envelope emulation (2026-07-21, Layer 2 POC firing 1 / F45)
 
+> **DELIVERED in `bare-agent@0.33.0`** (`toolProtocol:'claude-mcp'`), consumed in bareloop
+> module 4d (native clipipe worker surface, commit `2c81b57`). Criteria 1/2/3/5 verified by
+> the live 4d smoke. **Criterion 4 (advertised bound == enforced bound) held in the trivial
+> smoke but FAILED at real-job scale** — the native `--max-turns` bound counts tool-calling
+> turns and did not stop an 8-turn scout at 8. That failure is the follow-up **BA-17 below**.
+
 **Symptom, measured (F45):** the 0.32.0 envelope emulation carries a gated worker
 mechanically (smoke: green end-to-end) but is the wrong instrument for real jobs on two
 axes at once:
@@ -882,7 +894,100 @@ the inner cycle; bareloop's shell keeps the money cap, per-attempt bound via
 unchanged). bareloop consumes this behind its existing caller-supplied `provider` seam;
 no library change expected beyond the provider construction.
 
-*(No other open asks from this repo.)*
+## BA-17 — native (`claude-mcp`) `onTurn` fired once per content BLOCK, inflating a caller's turn and token counters ~4–5× (2026-07-22, Layer 2 clipipe cross-surface battery / F48)
+
+> **DELIVERED in `bare-agent@0.33.1`** (commit `bbeba7d`, consumed here 2026-07-23; source-
+> verified: adjacent-run `message.id` dedup at `provider-clipipe-mcp.js:330-420`; +34 tests,
+> 19 mutations red both directions; bareloop suite 517/517 green on 0.33.1). **The real
+> mechanism — and the correction of this ask's own diagnosis:** the claude CLI emits a
+> separate `assistant` stream event **per content block**, each repeating the message's
+> `usage`. `createSessionStream` fired one `onTurn` per event, so a caller counting LLM turns
+> saw **35 events for 8 real turns** (4.4×) and summed the same usage per block (**5.04×**
+> token inflation). Our gate net (16) was tripped at ~4 real turns by inflated ticks → on
+> native that routed `humanChannel → terminate` → work discarded → the INERT battery.
+>
+> **Both defects this ask filed were measured FALSE on the wire** (bare-agent probed them
+> directly — the BA-2 misfile pattern, owned): `--max-turns` **does enforce** (a 12-step task
+> under `--max-turns 4` stopped at 4 with named `error_max_turns`) and **does count assistant
+> turns** (12 tool-calls across 2 turns inside `--max-turns 3`). My "16 LLM turns / 26 reads /
+> `--max-turns 8` never bound" reading was **counting the inflated per-block events** — a
+> confounded instrument (the scout barely reached ~4 real turns before the inflated net killed
+> it). Fix also reconciles the TOKEN axis (closing `kind:'session'` event carries the per-tier
+> residual → a wired gate's tokens sum to the CLI's own total, live-verified 821) and lands
+> BA-5-on-native (a bounded session returns the last turn's text, terminal `stopReason:
+> 'max_turns'`). Acceptance re-smoke on our stack folded in below once green.
+
+**Original ask as filed 2026-07-22 (diagnosis since corrected above — kept for the record):**
+
+**Context.** BA-16's native mode (delivered 0.33.0, consumed module 4d) maps the caller's
+`maxTurns` to the CLI's `--max-turns`. bare-agent's own record says that bound counts
+**tool-calling turns** — `bareagent.context.md:77` ("cap total tool-calling **rounds**"),
+`:437` ("`limits.maxTurns` ticks on every `gate.record` — LLM **+ tool**"), and BA-16
+criteria C/D (`--max-turns 2` "stopped a 3-**call** task after 2 **calls**"; an
+"8-**tool-turn** session"). That unit conflicts with a caller's attempt-bound semantics on
+the Loop path, and at real-job scale the flag did not enforce at all.
+
+**Symptom, measured (job #4 TESTGEN native scout, runid `mrwdtjpd`, gate audit
+`l2clip-L1-mrwdtjpd-gate-audit.jsonl`).** The scout was built with `maxTurns: 8` →
+`--max-turns 8` (bareloop driver forwards it correctly,
+`scripts/run-battery-l2accept-clipipe.mjs:89`; `provider-clipipe-mcp.js:449` pushes the
+flag). The session then:
+- ran **16 LLM/assistant turns** and **26 read tool-calls** before any bound fired;
+- **never emitted `error:'max_turns'`** — `--max-turns 8` did not stop it at 8 in ANY unit
+  (not 8 tool-calls: 26 reads happened; not 8 assistant turns: 16 happened; 35 `onTurn`
+  events total across the whole session);
+- what finally stopped it was the CALLER's bareguard net at `maxTurns 16` (`limits.maxTurns`,
+  reason `turns 16 >= max 16`) — an `askHuman` halt that on native routes to
+  `humanChannel:{decision:'terminate'}`, **discarding the scout's work → INERT**. 6/6 rows,
+  $0 graded, a blind-instrument battery.
+
+So BA-16 criterion 4 held in the 3-call smoke and FAILED on a real read-heavy job — the
+"smoke misses what a real run finds" class.
+
+**Two coupled defects.**
+1. **Enforcement** — `--max-turns N` on a native `claude-mcp` session does not stop the
+   session at N when the task naturally exceeds N (real run overran 8 by ~2× before an
+   external bound intervened). Root cause is bare-agent's to bisect (flag not honored under
+   `-p`/`--strict-mcp-config` MCP mode? a claude-CLI turn unit a single `-p` prompt never
+   increments?) — it owns the native seam.
+2. **Unit** — even enforced, the bound counts **tool-calling turns**, but a caller's attempt
+   bound is an **LLM/assistant-turn** count (bareloop F37: the caller records only
+   `type:'llm'` to the gate, precisely so a read-heavy attempt is not guillotined by
+   tool-call counting). `maxTurns: N` must mean the same unit on native as on the Loop path,
+   or the two surfaces silently disagree.
+
+**Ask (FAIL-able), each independently falsifiable on a live subscription `claude-mcp`
+session:**
+1. **Enforce at N.** A task that would naturally take ≥ 2N turns, given `maxTurns: N`, stops
+   at N — asserted from the session's turn record, not the model's claim. (Today: N=8 → 16
+   LLM / 26 tool-calls, unbounded.)
+2. **Named stop, work preserved.** The stop surfaces as the distinct named `error:'max_turns'`
+   (never a silent success, never a caller-side terminate), so the caller's graceful
+   attempt-bounded path fires — bareloop already routes `r.error === 'max_turns'` this way
+   (`planrun.js:307`), feeding `lastText` forward.
+3. **LLM-turn unit.** A session that makes M tool-calls across N assistant turns (M ≫ N) is
+   bounded at **N assistant/LLM turns**, not at the M-th tool-call — matching the Loop path
+   where `maxTurns` ticks per LLM round. The provider already streams one `onTurn` per
+   assistant turn (`bareagent.context.md:821`); counting THAT is the natural enforcement
+   point, independent of the CLI flag's unit.
+4. **Parity both surfaces.** With the same caller `maxTurns: N`, the native path and a Loop
+   path bound at the same N — the advertised == enforced criterion (BA-16 #4), re-run on a
+   non-trivial job, not a 3-call smoke.
+
+**Not asked (recorded).** Removing `--max-turns` — if the provider counts LLM turns to a
+named stop, the flag can stay as a coarse CLI-side backstop. And no change to the caller-side
+gate net: bareloop's `maxTurns` backstop is correct as a loose LLM-turn net (it counts the
+right unit — 16 LLM records ticked, the 26 tool-calls did not, per F37). The bug is that on
+native it is currently the ONLY bound and it *terminates* rather than *bounds* — which this
+ask fixes at the source by giving native a real named `max_turns`.
+
+**bareloop's own side (interim, not shipped).** Until this lands the native cross-surface
+battery is **PARKED**. F47 / the API acceptance is untouched (Loop path, `loop.stop()` in the
+LLM-turn unit, byte-identical). No bareloop turn-bounding stopgap will be built
+(turn-bounding "should be bareagent"); when the native named `max_turns` ships, bareloop
+consumes it with zero code change beyond the version bump. Logged as **F48**.
+
+*(BA-17 is the one open ask from this repo; BA-16 delivered, criterion 4 excepted.)*
 
 ---
 
