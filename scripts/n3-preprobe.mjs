@@ -98,6 +98,15 @@ const targetSpec = {
   verdictType: 'green',
 };
 
+// ── STRIPPED target spec (F51 re-aim, candidate A): the operator knows WHAT counts as
+// success but NOT HOW. Classification line — what the GRADER measures is KEPT (target,
+// arbiter territory: scoreboard, bar, fault types, fence rules, close mechanism, patient
+// facts); HOW TO SUCCEED at it is STRIPPED (strategy: "a test detects one by asserting the
+// SPECIFIC current behavior…", the testing-standards paragraph, and the
+// read-then-sharpen-then-add sequence). Nothing else differs from targetSpec.
+const strippedGoal = `An existing pytest test suite for the complexity-assessment phase at packages/soar/src/aurora_soar/phases/assess.py (1,148 lines) already lives at tests/testgen_assess/ — conftest.py with fixtures and passing unit tests. Repository root: /home/hamr/PycharmProjects/bareloop-patients/aurora-soar. An external close you cannot run has ALREADY graded this suite: every test passes against the current source and the shape floor is met, but the suite detects only 15% of hidden planted faults — the passing bar is 45%. Your job is to STRENGTHEN the existing suite so it detects more faults. The grader's survivor scoreboard (function name: undetected planted faults): _score_lexical: 4, _detect_critical: 4, _score_keywords: 3, _calculate_confidence: 3, _score_scope: 2, _score_constraints: 2, _score_structure: 2, _score_domain: 2, _score_question_type: 2, _calculate_multiplier: 2, assess: 1, _assess_tier1_keyword: 1, _assess_tier2_llm: 1, assess_complexity: 1, to_dict: 1. Planted faults are small behavioral changes inside those functions (flipped comparisons, off-by-one constants, swapped booleans, dropped return values). The ComplexityAssessor takes only a debug flag; the scoring methods are pure and deterministic — no network, no real models; pytest is installed. Only tests/testgen_assess/** is writable — never modify source files; tests must never read source files off the filesystem, hash them, touch os.environ, or spawn subprocesses. All existing tests must KEEP passing against the current source. After each attempt, an automatic check runs your suite against the untouched source — a suite identical to the existing one, or one with failing tests, comes back to you as the failure output, and you get another bounded attempt to fix it. Stop when the suite is strengthened.`;
+const strippedSpec = { ...targetSpec, job: 'aurora-testgen-assess-stripped', goal: strippedGoal };
+
 // ── Lineage payloads (from the greened source run mrvwjrop: outcome green, $4.73, 6 steps, no replan).
 const stepLine = (s) => `  * ${s.id} [tools ${JSON.stringify(s.tools)}, rounds ${s.rounds}] -> ${s.target}\n    action: ${String(s.action).replace(/\s+/g, ' ').slice(0, 240)}...\n    exit: ${JSON.stringify(s.exit)}`;
 const planBlock = sourcePlan.steps.map(stepLine).join('\n');
@@ -127,6 +136,9 @@ const ARMS = {
   Tplan: { spec: targetSpec, scout: targetScout, lineage: LINEAGE.plan, kind: 'on-nonidentical-plan' },
   Tlesson: { spec: targetSpec, scout: targetScout, lineage: LINEAGE.lesson, kind: 'on-nonidentical-lesson' },
   Tcheck: { spec: targetSpec, scout: targetScout, lineage: LINEAGE.check, kind: 'on-nonidentical-check' },
+  // F51 re-aim (candidate A) — strategy withheld from the spec:
+  S0: { spec: strippedSpec, scout: targetScout, lineage: null, kind: 'off-stripped(screen)' },
+  Sfull: { spec: strippedSpec, scout: targetScout, lineage: LINEAGE.full, kind: 'on-stripped-full' },
 };
 
 // ── CLI.

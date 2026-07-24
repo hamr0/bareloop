@@ -276,3 +276,63 @@ OFF, judged on faults caught) can mint it.
    this repo forbids. A0/P/Tfull are n=8 as frozen.
 3. **No provider-red casualties occurred** (§6's casualty rule never fired): 39/39 drafts
    returned priced, non-truncated responses.
+
+---
+
+# RE-AIM SCREEN — candidate A (FROZEN 2026-07-24, before any number)
+
+F51's scope limitation is the target: job #4's spec hands the planner the STRATEGY, so the
+control arm sits at ceiling and no lineage arm is readable. Candidate A withholds the
+strategy and asks whether that creates room.
+
+## The manipulation (one variable)
+
+`strippedSpec` = `targetSpec` with the strategy removed and nothing else changed.
+**Classification line — what the GRADER MEASURES is kept; HOW TO SUCCEED is stripped.**
+
+- **KEPT (target / arbiter / patient facts):** the goal ("strengthen the suite so it detects
+  more faults"), the 15% current / 45 bar, the full survivor scoreboard (WHICH functions),
+  the fault-type description (what the grader plants), the fence rules (writeScope, no source
+  edits, no env/subprocess), "all existing tests must keep passing", the check/close
+  mechanism, and the patient facts (debug flag, pure deterministic scoring, no network).
+- **STRIPPED (strategy / method):** (1) "a test detects one by asserting the SPECIFIC current
+  behavior: exact scores, tuple return values, threshold boundaries, tier routing"; (2) the
+  whole "Testing standards: test behavior, not implementation; smoke asserts … are worthless;
+  self-contained and deterministic" paragraph; (3) the prescribed sequence "Read the current
+  tests first, then sharpen weak assertions and add behavior-asserting tests …".
+
+This models the founding case: the operator specifies WHAT counts as success (always
+operator-owned) but not HOW to get there.
+
+## Screen design (cheap gate, ~$0.30)
+
+- **Arm `S0`** — stripped spec, NO lineage, n=8. **Baseline for comparison = the existing
+  `A0` rows (n=7 valid), already collected and paid for**, which used the identical spec WITH
+  the strategy. One variable differs.
+- Run `S0` ONLY. `Sfull` (stripped + lineage) is NOT run at the screen — it fires only if
+  the screen shows room.
+
+## FROZEN read + decision rule (the new pre-flight this run exists to apply)
+
+The pre-flight F51 minted: **is the CONTROL arm below ceiling on the outcome-relevant axis?**
+
+Measured deterministically on the plan JSON, over the concatenated step `action` text:
+- **strategyExplicit** — the plan states WHAT to assert, via any of these specificity markers:
+  `exact`, `specific`, `precise`, `return value`/`returns`, `boundary`, `threshold`,
+  `tuple`, `expected value`. Reported as the rate of plans carrying ≥2 distinct markers.
+- **weakStrategy** — the plan shows a known-worthless method: `not None`, `no exception`,
+  `smoke`, or generic-only test prose with zero specificity markers.
+- Plus the unchanged F51 rubric (winShape, aim, pairing) for continuity.
+
+**Decision (frozen):**
+- **S0 ≈ A0** (strategyExplicit still high, aim still ~1.00) → **stripping did NOT create
+  room; the ceiling is the MODEL's own competence, not the spec.** Candidate A is DEAD as a
+  probe patient. That is a real finding: on this job shape the planner supplies the strategy
+  itself, so readable notes have no strategic niche here — escalate to candidate B (a patient
+  whose obvious strategy structurally fails).
+- **S0 materially below A0** (strategyExplicit drops, or weakStrategy appears) → **room
+  exists.** Candidate A is a valid patient; freeze and run `Sfull` vs `S0` as the real ON/OFF
+  read.
+
+Budget: screen ≤ $0.50; the follow-on ON/OFF read ≤ $0.50 (both inside the original $2 cap,
+of which $1.31 is spent).
