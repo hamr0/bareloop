@@ -198,3 +198,81 @@ Read in this order:
   here).
 - A NO-lift result does not close Layer 3 — it selects the Mechanical-only shape and saves
   the Readable build.
+
+---
+
+# AMENDMENT — 2026-07-24 (post-run; RESULT + a scope limitation in the frozen design)
+
+The frozen design above was executed as written. Nothing below loosens a frozen rule
+retroactively; this records what the run returned and what the design could not see.
+
+## Result (Stage 1, 39 drafts, $1.31 of the $2 cap, 0 errors, 0 truncations)
+
+Full readout: `docs/FINDINGS.md` F51. Evidence archived at
+`docs/02-experiments/n3-preprobe-data/` (`stage1-raw.jsonl`, `stage1-grade.txt`,
+`source-lineage-plan.json`) — moved out of gitignored scratch so it survives.
+
+- **Positive-control gate (§8 rule 1): PASSED.** P moved vs A1 (winShape 3.00 → 4.00), so
+  the channel is live and the reading is VALID — not the unreadable blind-zero case.
+- **Movement exists, but it is shape mimicry.** Tfull 4.88 vs A0 4.14; subtract the single
+  lineage-named structural feature (`edit`-to-sharpen) and the arms collapse to 4.00 vs 3.86.
+  `memoHits 0/8` — structural copying, not nominal copying.
+- **Verdict against §8 rule 2:** the clean KILL did not fire (there IS movement), but the
+  movement does not support building a readable arm — mechanical plan-reuse reproduces the
+  same shape deterministically at $0. **Readable arm DEMOTED, not dead.**
+
+## Scope limitation in this frozen design (logged, not smoothed over)
+
+**§4's patient choice pre-solved the axis under test.** Job #4's spec hands the planner BOTH
+the target (the survivor scoreboard) and an obvious strategy (assert exact current behavior).
+The OFF arm therefore plans at near-ceiling COLD (aim 1.00, clean-run 1.00) — leaving no room
+for lineage to lift the outcome-relevant axis. So this probe answered **"does lineage help
+when the operator already knows the strategy?"** (no, only cosmetically) rather than the
+question §1 framed. The untested case is bareloop's founding one: operator specifies the
+target but NOT the strategy, and the strategy is non-obvious.
+
+**The missing pre-flight.** §9 asked "can the test show the negative?" and that was satisfied.
+It did NOT ask **"is there ROOM for the treated variable to move — is the CONTROL arm below
+ceiling on the outcome-relevant axis?"** That check is added to the re-aim's freeze and should
+be standing practice: a ceiling effect in the control arm makes every treatment arm unreadable.
+
+**Instrument caveat (documented, never a result):** the `aim` rubric string-matches
+`assess.py`'s inventory, so it reads 0.00 BY CONSTRUCTION for the source-spec arms (A1/P).
+It cancels in the P-vs-A1 difference and is interpretable only on A0/Tfull.
+
+## Stage 2: SUPERSEDED, retired unrun
+
+§5's Stage 2 (payload localization — plan-only / one-line lesson / check-only) is formally
+triggered (Tfull moved) and is RETIRED WITHOUT RUNNING: localizing which payload induces
+cosmetic shape-copying does not inform the rung when shape-copying is not the deciding axis.
+Recorded here rather than left dangling (the dead-pointer class this repo just cleaned out of
+the Layer R default). If the re-aimed probe revives the readable arm, payload localization is
+re-frozen then.
+
+## Successor instrument (to be frozen separately, NOT authorized by this document)
+
+A **hard-strategy pre-probe**: a job where COLD planning visibly picks the wrong/weak
+strategy, plus a related prior run that discovered the right one; control-arm-below-ceiling
+verified BEFORE firing. If lineage cannot improve the plan even there, the readable arm dies
+cheaply. If it can, only the outcome-judged three-arm battery (ON+lineage / ON-mechanical /
+OFF, judged on faults caught) can mint it.
+
+## Execution deviations from the frozen text (logged, not smoothed)
+
+1. **Model effort: §3 specified `output_config.effort:'low'`; the run used the provider
+   DEFAULT (adaptive thinking).** The harness never wired the effort param. Impact assessed:
+   (a) it is UNIFORM across all four arms, so every between-arm comparison — the entire read —
+   is internally valid; (b) it is MORE faithful to the instrument under test, because the
+   shipped drafter (`src/planrun.js`) does not set effort either — so §3's line was itself the
+   error, imported from a memory about a different (cost-calibration) context; (c) cost impact
+   was measured, not assumed: $0.035/call, and Stage 1 landed at $1.31, inside the $2 hard cap.
+   No result is withdrawn; the frozen text is what was wrong, and it is corrected here rather
+   than quietly conformed to.
+2. **A1 ran n=15, not n=8.** The first launch was killed mid-run by a `timeout 600` wrapper
+   (a harness-shell artifact, not a provider event: 0 errors, all rows priced and complete),
+   leaving A0=8/A1=7; the completion launch re-ran A1 at n=8. All 15 A1 rows are valid drafts
+   from an identical prompt and are kept — a larger OFF-source baseline is strictly more
+   information, and discarding rows post-hoc to hit a round number is the fit-to-pass move
+   this repo forbids. A0/P/Tfull are n=8 as frozen.
+3. **No provider-red casualties occurred** (§6's casualty rule never fired): 39/39 drafts
+   returned priced, non-truncated responses.

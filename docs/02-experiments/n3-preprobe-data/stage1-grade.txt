@@ -1,0 +1,17 @@
+
+=== N3 pre-probe grade — scratch-n3-raw.jsonl ===
+arm       n  ok  winShape  hasClean allPaired  aim>=3  edit   memoHits  nSteps
+A0        8   7   4.14     1.00    0.86    1.00  0.29   0.00    5.57   [err 0 trunc 0 invalid 1]
+A1       15  12   3.00     1.00    0.75    0.00  0.25   0.00    5.67   [err 0 trunc 0 invalid 3]
+P         8   8   4.00     1.00    1.00    0.00  1.00   0.00    6.00
+Tfull     8   8   4.88     1.00    1.00    1.00  0.88   0.00    6.00
+
+=== Gate 1 — movement (mean |feature-rate ON - OFF|; higher = lineage moved the plan) ===
+  P vs A1    (identical, POSITIVE CONTROL): 0.21
+  Tfull vs A0 (non-identical, full)       : 0.16
+
+=== Memorization audit (source-only function names on a TARGET plan; >0 = copying) ===
+  Tfull: 0/8 plans reference source-only fns
+
+(Decision per §8: positive-control gate first — if P≈A1 the NO-lift read is UNREADABLE.
+ Then Gate-2 lift on any T arm, general (memoHits≈0) not copied. Analyst applies the frozen rules.)

@@ -1,0 +1,131 @@
+{
+  "schema": "plan-v1",
+  "steps": [
+    {
+      "id": "add-cache-hit-tests",
+      "action": "Read tests/testgen/conftest.py to understand build_orchestrator, FakeStore, aurora_dir fixture, and DISABLED_MONITORING_CONFIG. Read the _check_soar_cache_hit and _check_goals_json_cache methods in packages/soar/src/aurora_soar/orchestrator.py to learn exact behavior: goals.json lookup precedes log-chunk scan, exact-match title matching after whitespace/case normalization, score threshold >= 0.90 (0.89 must miss), requirement that file_path contain '/logs/conversations/', requirement of non-empty subgoals and _error is None, _cache_source field, and the goals.json-to-phase3-subgoals field mapping (assigned_agent<-agent, suggested_agent<-ideal_agent, match_quality default 'excellent', is_critical default True). Create a new test file tests/testgen/unit/test_cache_hits.py with deterministic pytest tests (using tmp_path-based .aurora/plans/active/<id>/goals.json fixtures and monkeypatch only, no os.environ, no source reads at runtime) asserting these exact behaviors and score-threshold boundary cases for both _check_goals_json_cache and _check_soar_cache_hit. Do not modify orchestrator.py or any other source file.",
+      "tools": [
+        "read",
+        "grep",
+        "write"
+      ],
+      "rounds": 18,
+      "target": "tests/testgen/unit/test_cache_hits.py",
+      "exit": [
+        {
+          "type": "tree-changed",
+          "scope": "tests/testgen/unit/**"
+        },
+        {
+          "type": "check-passes",
+          "name": "clean-run"
+        }
+      ]
+    },
+    {
+      "id": "add-health-monitoring-tests",
+      "action": "Read the _configure_health_monitoring method in packages/soar/src/aurora_soar/orchestrator.py and the get_health_monitor/reset_early_detection_monitor imports it uses, plus DISABLED_MONITORING_CONFIG in tests/testgen/conftest.py. Create tests/testgen/unit/test_health_monitoring.py with deterministic tests that monkeypatch get_health_monitor (and reset_early_detection_monitor if used) with a fake object, build an orchestrator via build_orchestrator with a config enabling proactive_health_checks/early_detection with explicit check_interval/no_output_threshold/failure_threshold values, and assert the fake monitor's _proactive_config (or equivalent attributes) is set to those exact values (and default values 5.0/15.0/3 when omitted); also assert that when enabled is False the monitor is not reconfigured (or left with defaults). Never modify source files, never touch os.environ, use only tmp_path/monkeypatch.",
+      "tools": [
+        "read",
+        "grep",
+        "write"
+      ],
+      "rounds": 16,
+      "target": "tests/testgen/unit/test_health_monitoring.py",
+      "exit": [
+        {
+          "type": "tree-changed",
+          "scope": "tests/testgen/unit/**"
+        },
+        {
+          "type": "check-passes",
+          "name": "clean-run"
+        }
+      ]
+    },
+    {
+      "id": "add-phase-helper-tests",
+      "action": "Read the _phase2_retrieve, _phase3_decompose, _phase5_collect, _phase7_record, _inject_context_files, and _split_large_chunk_by_sections methods in packages/soar/src/aurora_soar/orchestrator.py plus how conftest.py's fakes (FakeStore, FakeAgentRegistry, build_orchestrator) can drive them directly. Create tests/testgen/unit/test_phase_helpers.py with focused unit tests calling these private methods directly (monkeypatching orchestrator_module.decompose/collect/record/circuit-breaker as needed, never real I/O) asserting: _phase3_decompose exact success dict shape (subgoals_total, _error None) plus circuit-breaker-skip and exception-fallback classification; _phase2_retrieve success path chunks_count as sum of code+reasoning chunks and callback content; _phase5_collect delegation to execute_agents/PoliciesEngine and failure categorization; _phase7_record success dict plus exception fallback RecordResult and cached flag propagation; _inject_context_files prepending loaded chunks before existing ones and swallowing exceptions; _split_large_chunk_by_sections no-split-under-max-chars, H2-splitting, truncation suffix, and preserved chunk.type. Use only tmp_path/monkeypatch fixtures, never read source files at test runtime, never touch os.environ.",
+      "tools": [
+        "read",
+        "grep",
+        "write"
+      ],
+      "rounds": 22,
+      "target": "tests/testgen/unit/test_phase_helpers.py",
+      "exit": [
+        {
+          "type": "tree-changed",
+          "scope": "tests/testgen/unit/**"
+        },
+        {
+          "type": "check-passes",
+          "name": "clean-run"
+        }
+      ]
+    },
+    {
+      "id": "add-verify-result-and-error-handler-tests",
+      "action": "Read the _build_verify_only_result, _build_cached_verify_result, _handle_execution_error, _handle_critical_failure, and _handle_verification_failure methods in packages/soar/src/aurora_soar/orchestrator.py. Create tests/testgen/unit/test_verify_results_and_handlers.py with unit tests calling these private methods directly on an orchestrator built via build_orchestrator, asserting exact dict shape/keys for _build_verify_only_result and _build_cached_verify_result (stop_after_verify True, match_quality/is_spawn defaults, memory_context extraction ordered and limited to top 10, cache_source/_cache_source naming), and for the three handlers asserting exact answer text, confidence == 0.0, and the specific _phase_metadata keys set (error_details, critical_failure, verification_failure) given crafted exception/result inputs. Use only monkeypatch/tmp_path, never touch os.environ, never read source files from within the tests themselves.",
+      "tools": [
+        "read",
+        "grep",
+        "write"
+      ],
+      "rounds": 18,
+      "target": "tests/testgen/unit/test_verify_results_and_handlers.py",
+      "exit": [
+        {
+          "type": "tree-changed",
+          "scope": "tests/testgen/unit/**"
+        },
+        {
+          "type": "check-passes",
+          "name": "clean-run"
+        }
+      ]
+    },
+    {
+      "id": "add-nonsimple-path-integration-tests",
+      "action": "Read tests/testgen/integration/test_execute_simple_path.py to reuse its monkeypatching conventions, and read the execute() method's non-SIMPLE branch in packages/soar/src/aurora_soar/orchestrator.py (decompose->verify->collect->synthesize->record->respond, retry-on-verify-fail, stop_after_verify branch for both fresh decomposition and cache-hit, exception routing to _handle_decomposition_failure/_handle_critical_failure/_handle_verification_failure/_handle_execution_error, and BudgetExceededError re-raise vs other exceptions being swallowed). Create tests/testgen/integration/test_execute_nonsimple_path.py with deterministic async tests (monkeypatching orchestrator_module.decompose/verify/collect/synthesize/record functions with fakes) asserting exact answer strings, confidence values, phase metadata keys, and exact routing/handler selection per exception type, plus BudgetExceededError propagating out of execute() while other exceptions are handled via _handle_execution_error. Only use tmp_path/monkeypatch, no os.environ, no subprocess, no network, do not modify any source file.",
+      "tools": [
+        "read",
+        "grep",
+        "write"
+      ],
+      "rounds": 22,
+      "target": "tests/testgen/integration/test_execute_nonsimple_path.py",
+      "exit": [
+        {
+          "type": "tree-changed",
+          "scope": "tests/testgen/integration/**"
+        },
+        {
+          "type": "check-passes",
+          "name": "clean-run"
+        }
+      ]
+    },
+    {
+      "id": "sharpen-existing-assertions",
+      "action": "Read tests/testgen/unit/test_orchestrator_helpers.py and tests/testgen/integration/test_execute_simple_path.py in full. Edit both files to sharpen weak or smoke-only assertions into exact-value behavior assertions (e.g., assert exact prompt truncation to 5 code_chunks/3 reasoning_chunks in _execute_simple_path's context building, assert the except-branch of _execute_simple_path when the solving LLM raises returns confidence 0.0 with an exact error answer, assert _get_progress_callback returns a fresh distinct callable per call and prints with flush=True, and add any missing exact field checks in the existing SIMPLE-path happy-flow test) without removing or weakening any currently-passing assertion. Do not modify any source file, and keep every existing test passing.",
+      "tools": [
+        "read",
+        "grep",
+        "edit"
+      ],
+      "rounds": 18,
+      "target": "tests/testgen/unit/test_orchestrator_helpers.py",
+      "exit": [
+        {
+          "type": "tree-changed",
+          "scope": "tests/testgen/**"
+        },
+        {
+          "type": "check-passes",
+          "name": "clean-run"
+        }
+      ]
+    }
+  ]
+}

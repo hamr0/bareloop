@@ -2565,3 +2565,95 @@ evidence lands.
 gap hid because the parameter threaded cleanly to a DIFFERENT (legacy) path. When a capability
 has two dispatch paths, check which one the ACCEPTED surface actually takes — a silently-ignored
 optional param is the blind-instrument class wearing an API's clothes.
+
+---
+
+## F51 — the N3 lineage pre-probe: readable lineage moves plan SHAPE, not aim — and the probe answered a NARROWER question than it was frozen to ask
+
+**Status: minted 2026-07-24 (Layer 3 opening gate). Disposition: mechanical-first
+PROVISIONAL; the readable arm is DEMOTED, not dead — its real niche is untested.**
+
+**Setup (prereg `docs/02-experiments/N3-PREPROBE-PREREG.md`, frozen 44a5062 BEFORE any
+number).** The Layer 3 opening gate: before building any inheritance machinery, does
+prior-run lineage in the drafter's hands change the plan it writes — and change it the
+right way (a general lesson, not a copied answer)? Instrument = the REAL plan drafter
+(`AnthropicProvider` claude-sonnet-5, `PERSONA_TOOLS` system, the real `planPrompt()`,
+`loop.run` with `cacheMessages`/`maxTokens:32000`), lineage appended the way `failure`/`reds`
+already append. No loop fires; the drafted plan-v1 JSON is the only graded artifact. Source
+lineage = the greened run `mrvwjrop` (green, $4.73, 6 steps, no replan) on the orchestrator;
+non-identical target = `phases/assess.py` (1,148 lines, disjoint function-set).
+Predicted (F39/CL-BENCH): NO lift.
+
+**Result — Stage 1, 39 drafts, $1.31 of the $2 cap, 0 provider errors, 0 truncations.**
+
+| arm | n(ok) | winShape /5 | hasClean | allPaired | aim≥3 | uses `edit` | memoHits |
+|---|---|---|---|---|---|---|---|
+| A0 OFF-target | 7 | 4.14 | 1.00 | 0.86 | 1.00 | 0.29 | 0.00 |
+| A1 OFF-source | 12 | 3.00 | 1.00 | 0.75 | 0.00* | 0.25 | 0.00 |
+| P ON-identical (pos. control) | 8 | 4.00 | 1.00 | 1.00 | 0.00* | 1.00 | 0.00 |
+| Tfull ON-non-identical | 8 | 4.88 | 1.00 | 1.00 | 1.00 | 0.88 | 0.00 |
+
+*\*Instrument caveat (documented, not a result): `aim` string-matches `assess.py`'s function
+inventory, so it reads 0.00 BY CONSTRUCTION for the source-spec arms (A1/P), which plan over
+the orchestrator. It cancels in the P-vs-A1 difference (both 0) and is interpretable only on
+the target-spec arms (A0/Tfull). Never read "P had zero aim" as a finding.*
+
+**The positive control PASSED — so the read is valid, not a blind zero.** P moved vs A1
+(winShape 3.00 → 4.00). The drafter demonstrably READS lineage and reshapes its plan; the
+§8 readability gate (which would have WITHDRAWN a no-lift reading as unreadable) is
+satisfied.
+
+**But the movement is surface mimicry, not capability.** Subtract the single
+lineage-named structural feature (`edit`-to-sharpen, the source plan's final step) and the
+arms collapse together: **A0 3.86 vs Tfull 4.00** — a 0.14/5 residual carried entirely by
+the pairing rate (0.86 → 1.00). The same holds for the positive control: P vs A1 minus-edit
+is 3.00 vs 2.75. What lineage transfers is the prior plan's STEP SHAPE (five write-steps
+grouped by function-cluster + one closing `edit` step), not any improvement in what the plan
+aims at. `memoHits 0/8` — Tfull never leaked orchestrator function names, so the copying is
+structural, not nominal; general at the name level, mimicry at the shape level.
+
+**Why there was no room to help — the SCOPE LIMITATION, and it is the finding's most
+important half.** A0 plans at near-ceiling COLD: aim 1.00 (it names ≥3 real survivor
+functions every single valid draft), clean-run present 1.00, pairing 0.86. Aim is FREE here
+because job #4's spec HANDS the planner both halves of the problem: the survivor scoreboard
+(WHAT to target) and an obvious strategy (assert exact current behavior — HOW). Lineage
+cannot lift an axis that is already maxed by the spec. **The probe therefore answered
+"does lineage help when the operator already knows the strategy?" (answer: no, only
+cosmetically) — NOT the question it was frozen to ask.** The untested case is the one
+bareloop exists for ("Automate this job — I don't know the best workflow"): the operator
+specifies the target (arbiter territory, always operator-owned) but NOT the strategy, and
+the strategy is non-obvious. There, a prior run that DISCOVERED the right strategy carries
+knowledge no spec contains. This probe says nothing about that case. (Credit: hamr caught
+the gap on the readout — "if operator doesn't know, this is where it would help.")
+
+**What it concludes.** (1) On jobs whose spec already carries the strategy — which every
+current bareloop benchmark is, by construction — readable lineage adds only shape mimicry,
+and mechanical plan-reuse delivers that same shape deterministically, for $0, with no model
+reading anything. Mechanical is the right PRIMARY arm. (2) The readable arm is DEMOTED to a
+secondary arm in the outcome-judged battery, NOT killed — the frozen §8 kill did not cleanly
+fire (there IS movement), and its niche is untested.
+
+**What it does NOT conclude.** It does not show notes are worthless; it does not test
+hard-strategy jobs; and per §10 it cannot show that shape mimicry helps or hurts KILL-RATE —
+plan quality is not outcome (F39's whole lesson: perfect aim, zero outcome change). Only an
+outcome-judged battery settles that.
+
+**Stage 2 SUPERSEDED (not silently dropped).** The frozen protocol triggers Stage 2
+(payload localization: plan-only / one-line lesson / check-only) because Tfull showed
+movement. It is retired unrun: localizing WHICH payload induces cosmetic shape-copying is
+not worth $0.60 when shape-copying is not the axis that decides the rung. If the re-aimed
+probe revives the readable arm, payload localization can be re-frozen then.
+
+**Next instrument (the re-aim).** A hard-strategy probe: a job where COLD planning visibly
+picks the wrong or weak strategy, plus a related prior run that discovered the right one. If
+lineage cannot improve the PLAN even there, the readable arm dies cheaply and no machinery
+is built. If it can, the outcome battery (three-arm ON+lineage / ON-mechanical / OFF, judged
+on faults caught) is the only thing that can mint it.
+
+**Lesson.** A probe can pass every one of its own frozen checks and still answer the wrong
+question — because the FROZEN DESIGN chose a patient whose spec pre-solved the axis under
+test. "Can the instrument show the negative?" was satisfied; "is there ROOM for the treated
+variable to move?" was not asked, and it is a distinct pre-flight. Ceiling effects in the
+CONTROL arm are the tell: when the OFF arm already scores near-max on the outcome-relevant
+axis, no ON arm can demonstrate anything, and the honest move is to re-aim the probe rather
+than report its narrow answer as the broad one.
