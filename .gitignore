@@ -11,6 +11,9 @@ node_modules/
 
 *.log
 
+# Probe scratch data at repo root (raw model outputs, extracted traces) — never commit
+scratch-*
+
 # Agent / IDE / tooling scratch — ignore EVERY dot-directory by default
 # (.claude, .litectx, .idea, .barebrowse, .vscode, and whatever the next tool
 # invents), then re-admit only the ones we actually ship. Default-deny beats
