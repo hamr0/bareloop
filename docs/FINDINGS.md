@@ -2657,3 +2657,75 @@ variable to move?" was not asked, and it is a distinct pre-flight. Ceiling effec
 CONTROL arm are the tell: when the OFF arm already scores near-max on the outcome-relevant
 axis, no ON arm can demonstrate anything, and the honest move is to re-aim the probe rather
 than report its narrow answer as the broad one.
+
+---
+
+## F52 — the re-aim screen (candidate A): you cannot manufacture a strategy gap by withholding strategy — the model supplies it
+
+**Status: minted 2026-07-24. Decision: candidate A DEAD as a probe patient (by the frozen
+rule); escalate to candidate B. Continues F51.**
+
+**Why this ran.** F51's readable-lineage probe was unreadable on the axis that matters
+because job #4's spec HANDS the planner the strategy, putting the control arm at ceiling.
+hamr's insight on the readout named the untested case — the operator knows the target but
+not the workflow. Candidate A tests the cheapest model of it: withhold the strategy from the
+spec and see whether that creates room for notes to matter.
+
+**Design (frozen 4d10af7 BEFORE any number; screen-only, ~$0.30).** One variable.
+`strippedSpec` = the F51 target spec with the METHOD removed and nothing else changed.
+Classification line: **what the GRADER MEASURES is kept** (goal, 15%/45 bar, the full
+survivor scoreboard, fault types, fence rules, "existing tests must keep passing", the check
+mechanism, patient facts) — **HOW TO SUCCEED is stripped** (the "a test detects one by
+asserting the SPECIFIC current behavior: exact scores, tuple return values, threshold
+boundaries, tier routing" clause; the entire testing-standards paragraph; the prescribed
+read-then-sharpen-then-add sequence). Baseline = the already-paid `A0` rows (identical spec
+WITH the strategy). Scout blob identical across arms.
+
+**Result: `S0` n=8, 8/8 valid, 0 truncations, $0.26.**
+
+| arm | n | strategyExplicit (≥2 markers) | mean markers | aim≥3 | winShape | uses `edit` | nSteps |
+|---|---|---|---|---|---|---|---|
+| A0 (strategy GIVEN) | 7 | **1.00** | 6.86 | 1.00 | 4.14 | 0.29 | 5.57 |
+| S0 (strategy WITHHELD) | 8 | **1.00** | 5.63 | 1.00 | 3.88 | 0.00 | 4.63 |
+
+**The model writes the withheld strategy back in, unprompted and nearly verbatim.** Read
+directly from the S0 plans (not inferred from the metric): *"assert exact boolean/int return
+values"*; *"Write precise, exact-value tests (not just range/type checks) … assert exact
+scores"*; *"exact score integers and exact reasons lists plus boundary-straddling cases"*;
+*"extract the exact logic, thresholds, and constants"*. This is the deleted clause,
+reconstructed by the planner from the goal alone. strategyExplicit is 1.00 in BOTH arms.
+
+**Verdict by the frozen rule: candidate A is DEAD as a probe patient.** S0 ≈ A0 on the
+outcome-relevant axis, so stripping created NO room — **the ceiling is the MODEL's own
+competence, not the spec's generosity.** F51's ceiling was therefore never an artifact of
+how job #4 was written; it is a property of the job GENRE. Withholding information the model
+already has cannot manufacture a gap for lineage to fill.
+
+**The sharpened hypothesis this leaves (candidate B).** Two different mechanisms were being
+conflated under "notes help when the operator doesn't know the workflow":
+- **strategy MISSING from the spec** — tested here, DEAD: the model fills it in correctly.
+- **the model's DEFAULT strategy is WRONG** — untested: notes would have to OVERRIDE a
+  confident prior, not fill a void. This is the only remaining niche, and it is a
+  categorically different ask.
+
+Candidate B is therefore not "a harder version of A" but a different mechanism: a patient
+whose OBVIOUS strategy structurally fails (e.g. faults reachable only through an integration
+path, so per-function unit tests — the model's default — cannot kill them).
+
+**Instrument artifact (logged, did not affect the decision).** The `weakStrategy` marker
+read 0.43 on A0 vs 0.00 on S0 — a FALSE POSITIVE, not a result: A0's spec contains "smoke
+asserts … are worthless", so its plans echo "smoke" while telling the worker to AVOID smoke
+asserts, and the substring match cannot tell prohibition from prescription. The metric is
+invalid for any spec that names its own anti-patterns. `strategyExplicit` (the primary,
+pre-registered axis) is unaffected and carried the decision.
+
+**What this does NOT conclude.** One job genre (pytest TESTGEN), one model (claude-sonnet-5).
+A less capable model, or a domain with genuinely unusual method, could still have a real
+strategy gap. It does not show notes are useless — it shows this particular route to
+creating a niche for them is closed.
+
+**Lesson.** "The operator doesn't know the workflow" is not automatically a gap the system
+can exploit: if the MODEL knows the workflow, the operator's ignorance costs nothing and
+memory has nothing to add. A memory system's niche requires knowledge that is absent from
+BOTH the spec AND the weights — and the cheapest way to find out is to delete the knowledge
+from the spec and watch whether the model puts it back. It did, in 8 of 8.

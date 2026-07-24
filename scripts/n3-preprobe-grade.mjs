@@ -24,7 +24,7 @@ const SOURCE_ONLY_FNS = ['_check_soar_cache_hit', '_check_goals_json_cache', '_c
   '_build_cached_verify_result', '_split_large_chunk_by_sections', '_parse_soar_log', '_classify_api_error',
   '_index_conversation_log', '_inject_context_files', '_get_progress_callback', 'orchestrator.py'];
 // arms whose spec is the TARGET (assess.py) — memorization audit applies to these
-const TARGET_ARMS = new Set(['A0', 'Tfull', 'Tplan', 'Tlesson', 'Tcheck']);
+const TARGET_ARMS = new Set(['A0', 'Tfull', 'Tplan', 'Tlesson', 'Tcheck', 'S0', 'Sfull']);
 
 const planText = (p) => JSON.stringify(p ?? {});
 const namesHit = (p, list) => { const t = planText(p); return list.filter((fn) => t.includes(fn)); };
@@ -109,3 +109,25 @@ for (const t of ['Tfull', 'Tplan', 'Tlesson', 'Tcheck']) {
   console.log(`  ${t}: ${copiers.length}/${s.length} plans reference source-only fns` + (copiers.length ? ` e.g. ${[...new Set(copiers.flatMap((x) => x.memoNames))].slice(0, 6).join(', ')}` : ''));
 }
 console.log(`\n(Decision per §8: positive-control gate first — if P≈A1 the NO-lift read is UNREADABLE.\n Then Gate-2 lift on any T arm, general (memoHits≈0) not copied. Analyst applies the frozen rules.)`);
+
+// ── RE-AIM SCREEN read (frozen 2026-07-24): is the CONTROL arm below ceiling?
+const MARKERS = ['exact', 'specific', 'precise', 'return value', 'returns', 'boundary', 'threshold', 'tuple', 'expected value'];
+const WEAK = ['not none', 'no exception', 'smoke'];
+const actionText = (p) => (p?.steps ?? []).map((s) => String(s.action ?? '')).join(' ').toLowerCase();
+const screen = {};
+for (const row of rows) {
+  if (!row.plan || row.valid === false || row.truncated) continue;
+  const t = actionText(row.plan);
+  const hits = MARKERS.filter((m) => t.includes(m)).length;
+  const weak = WEAK.some((w) => t.includes(w)) || hits === 0;
+  (screen[row.arm] ??= []).push({ hits, explicit: hits >= 2, weak });
+}
+if (screen.S0) {
+  console.log(`\n=== RE-AIM SCREEN — strategy withheld (S0) vs strategy given (A0) ===`);
+  console.log(`arm    n   strategyExplicit(>=2 markers)  meanMarkers  weakStrategy`);
+  for (const a of ['A0', 'S0', 'Sfull']) {
+    const v = screen[a]; if (!v) continue;
+    console.log(`${a.padEnd(6)} ${String(v.length).padStart(2)}   ${fmt(rate(v, (x) => x.explicit))}                    ${fmt(mean(v.map((x) => x.hits)))}       ${fmt(rate(v, (x) => x.weak))}`);
+  }
+  console.log(`\n(Frozen rule: S0 ~ A0 => stripping created NO room; the ceiling is the model's own\n competence => candidate A DEAD as a patient, escalate to candidate B.\n S0 materially below A0 => room exists => run Sfull vs S0.)`);
+}

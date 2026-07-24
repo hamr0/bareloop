@@ -336,3 +336,22 @@ Measured deterministically on the plan JSON, over the concatenated step `action`
 
 Budget: screen ≤ $0.50; the follow-on ON/OFF read ≤ $0.50 (both inside the original $2 cap,
 of which $1.31 is spent).
+
+## RE-AIM SCREEN — RESULT (2026-07-24): candidate A DEAD, escalate to B
+
+`S0` n=8, 8/8 valid, 0 truncations, $0.26. Full readout: `docs/FINDINGS.md` F52.
+
+**strategyExplicit: A0 1.00 vs S0 1.00 — identical; aim 1.00 in both.** By the frozen rule
+that is "S0 ≈ A0" → stripping created NO room → **candidate A DEAD as a probe patient.** The
+S0 plans reconstruct the deleted method themselves ("assert exact boolean/int return values",
+"precise, exact-value tests (not just range/type checks)", "boundary-straddling cases"), so
+the ceiling is the MODEL's competence, not the spec's generosity. `Sfull` is therefore NOT
+run — the frozen rule gates it on room existing, and it does not.
+
+**Instrument artifact logged:** `weakStrategy` (A0 0.43 / S0 0.00) is a FALSE POSITIVE — A0's
+spec names "smoke asserts" as worthless, so its plans echo the term while prohibiting it, and
+substring matching cannot separate prohibition from prescription. Invalid for any spec that
+names its own anti-patterns; the primary axis (`strategyExplicit`) carried the decision.
+
+**Spend:** $1.57 of the $2 cap ($1.31 Stage 1 + $0.26 screen). Candidate B needs its own
+freeze and its own budget — it is NOT authorized by this document.
