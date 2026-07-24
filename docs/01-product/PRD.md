@@ -1384,3 +1384,32 @@ guards against (a future write-class verb bypassing the tee). Accepted cost: a *
 until legacy retires — any Finding-6/7 change or new write-class verb must be applied to BOTH
 files. The clean resolution is the legacy deletion itself; revisit only if legacy outlives
 Layer 3 or the tee logic starts changing often.
+
+## Addendum v1.24 — 2026-07-24 (Layer R default SETTLED OFF: the passive trigger was a dead pointer — cleanup before opening Layer 3, hamr)
+
+**What changed.** The Layer R default-flip decision (`layerRoot`), left "provisional" since
+v1.20, is now **settled OFF** and the passive trigger is retired. No disposition of Layer R
+itself changes — the default was already `false` in code and stays there; what is removed is
+a **dangling dependency** that would otherwise trail into Layer 3.
+
+**Why it was a dead pointer.** v1.20 (as superseded 2026-07-21) deferred the ON-vs-OFF
+default-flip read to "the first Layer 2 job that produces natural fixation," naming Layer 2's
+narrow micro-wheel steps as the expected pressure point. Layer 2 is now ACCEPTED (F47,
+v0.5.0) — those exact steps ran their full acceptance battery and **no natural fixation
+appeared**. Fixation is extinct on every job shape this repo owns (F41). So the trigger waits
+on an event the whole evidence base says will not occur passively: it can never fire on its
+own, which is the blind-instrument / papering-over class in a scheduling coat.
+
+**The settled disposition.** (1) `layerRoot` defaults **false**, settled — doctrine forbids
+default-enabling a lever that has never won its own A/B, and there is now positive evidence
+(all of Layer 2's runs) that the disease it treats does not occur on current jobs. (2) The
+pre-registered ON-vs-OFF read is **not cancelled** — it is de-coupled from the dead passive
+trigger and re-homed on a **deliberate manufactured-fixation probe**: force a real worker to
+repeat, measure whether the note breaks the loop. Caveat F41 stands — strong models resist
+fixating, so the probe may struggle to produce its own precondition honestly, and that
+difficulty is itself evidence OFF is correct. (3) The Layer R wiring stays as F50 left it
+(armed, correct, on the accepted surface); this is a decision-cleanup, not a code change.
+
+**Scope note.** This is within-lane: Layer R is *within-run scratch*, not the arbiter (close
+/ budget / fence / merge), and the settled value is the status-quo conservative direction
+(OFF). Recorded here so Layer 3 opens with no Layer-R dependency dangling.

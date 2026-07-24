@@ -156,16 +156,20 @@ wired so same-path target rewrites are visible to the detector (the cumulative a
 by path and cannot see them alone). Excluded on native/clipipe (no `onToolResult` seam; F48
 fallback surface, not the experiment surface).
 
-> **⚠ Layer 2/3 TODO — decide the Layer R default.** The wiring now EXISTS on the accepted
-> surface (F50); the experiment is possible but not yet run. Layer 2's narrow micro-wheel
-> steps are the expected pressure point that finally produces natural fixation (a stuck
-> run). The day a real plan-flow job records `root-injected`, run the pre-registered
-> ON-vs-OFF acceptance read on it. **That result decides whether the `layerRoot` default
-> flips to `true` (ON helps → keep it on) or stays `false` (no lift → keep it off).** Until
-> then the default is provisional, not settled. (A cheaper alternative that does NOT need a
-> natural stuck run: a manufactured-fixation probe — force a real worker to repeat and
-> measure whether the note breaks the loop; caveat F41 — strong models resist fixating, so
-> the probe may struggle to produce its own precondition honestly.)
+> **Layer R default — SETTLED OFF (2026-07-24).** The wiring EXISTS on the accepted surface
+> (F50), armed and correct; the default is `layerRoot: false` and is now **settled, not
+> provisional**. The old passive trigger ("the first plan-flow job that records
+> `root-injected` flips the default") was a **dead pointer**: Layer 2's narrow micro-wheel
+> steps were the exact predicted pressure point, and across ALL of Layer 2's accepted
+> acceptance runs (F47) natural fixation never appeared — fixation is extinct on every job
+> shape this repo owns (F41), and doctrine forbids default-enabling a lever that has never
+> won its own A/B. So the default does not wait on an event the evidence says won't occur
+> passively. **Reconsidering ON is now a DELIBERATE act, not a passive wait:** run a
+> manufactured-fixation probe (force a real worker to repeat, measure whether the note
+> breaks the loop) and read the pre-registered ON-vs-OFF result. Caveat F41 — strong models
+> resist fixating, so the probe may struggle to produce its own precondition honestly; that
+> difficulty is itself current evidence that OFF is correct. The pre-registered ON/OFF read
+> is not cancelled — it is simply no longer a passive dependency dangling into Layer 3.
 
 ### Layer 2 — micro-wheels (the road)
 The workflow becomes a **sequence of small wheels**, each with one goal and only the verbs
@@ -333,8 +337,9 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
    tree that forced three judged red rounds. F21's repetition was a broken-loop symptom,
    already cured by the F20/F21/F30/BA-13 fixes. F43 split its two axes (detector reads
    intent, note reads outcome). Because ON has never won its own A/B, it ships OFF by
-   default (`layerRoot: false`); the field read defers to the first `root-injected`
-   spine event. Role stays as F39 sharpened it: continuity, never the semantic-stall fix.
+   default (`layerRoot: false`) — SETTLED OFF (2026-07-24), not provisional: revisiting ON
+   is a deliberate manufactured-fixation probe, never a passive wait on `root-injected`.
+   Role stays as F39 sharpened it: continuity, never the semantic-stall fix.
 3. **Build Layer 2** — the micro-wheel road (plan-v1), with the stage-verdict rule above.
    Now carries a MEASURED requirement (F39): steps whose exits verify test correctness
    in-run (e.g. "your new tests pass on untouched source" as a form-checkable exit),
