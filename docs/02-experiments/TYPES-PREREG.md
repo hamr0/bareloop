@@ -380,3 +380,47 @@ axis looks good.)*
   **D5 controls, all eight passing as run:** V1 RED(63) · V2 RED(D1c) · V3 RED(D1d) ·
   V4 RED(scope) · V5 RED(D3, after fix) · V6 RED(suite, names the failing test) ·
   V7 RED(55<63) · V8 GREEN(410 tests, 0 fails, 31 exports).
+
+- 2026-07-25b — **screen attempt 1 (`ms0k88ck`): ARM C is a CASUALTY; a SIZING problem and
+  an instrument defect are the readable results. No gate is loosened; no arm is admitted or
+  discarded on merit.**
+
+  **The row.** ARM C, `read ETIMEDOUT` at 16:59 after ~54 minutes → `provider-red`,
+  `spendComplete:false`, **$2.97 of the $4 row cap**. Casualties are never evidence, so H1/H2
+  do not read and `admit` is `null` (the driver classes it correctly and stopped rather than
+  launching ARM F). Cumulative $2.97 of the $8 frozen ceiling.
+
+  **SIZING — reported, not silently absorbed (F45's 16g class, 4th appearance).** The row
+  consumed 74% of its cap and was still inside **step 3 of 5**; steps 4–5 (which carry the
+  real checks) never started, and the outer close never ran once. $4/row cannot fund a
+  complete row of this job shape. The prereg says a cap that binds mid-attempt is a SIZING
+  finding to take back to hamr, never a premise fail and never a unilateral widening —
+  budgets are arbiter territory permanently. **The screen therefore STOPS here.** With $5.03
+  left under the frozen ceiling, two more $4 rows are not fundable, and a re-run at the same
+  cap would most likely buy a second incomplete row.
+
+  **INSTRUMENT DEFECT (mine) — the trajectory reader was blind, and it is the same class this
+  programme has now shipped eight times.** The screen reported `readings=[63,63]`,
+  `decreases=0`, `H2=FAIL(no gradient)` for a run that did **96 rounds and 20 gate-allowed
+  write/edit actions**. Both readings were taken BEFORE any byte was written: one was
+  runPlan's close precheck, the other was the `check-preflight` validation pass that runs
+  every composed check once before any token. The instrument never observed the 54 minutes of
+  actual work, and `resetPatient()` then destroyed the evidence. An H2 verdict from it is
+  unreadable, and is reported as such rather than as a flat gradient. Three fixes, landed:
+  (1) preflight readings are dropped using the spine's own `check-preflight` count;
+  (2) the trajectory is ordered by timestamp instead of concatenated by source;
+  (3) the patient's strict-error count is measured BEFORE the reset, so a row that dies
+  mid-flight still yields a gradient. Spec hashes are unchanged by this (driver-only), so no
+  re-approval is required.
+
+  **OBSERVATION, explicitly UNMINTED (n=1, and on a casualty row — a red at n=1 is exactly as
+  much an anecdote as a green).** The agent composed **all three** signed checks, but placed
+  every one of them in terminal verification steps:
+  `fix-pass-1 [tree-changed] → fix-pass-2 [tree-changed] → cleanup [tree-changed] →
+  verify-strict [check-passes(typecheck-clean) + check-passes(no-suppressions)] →
+  verify-tests [check-passes(suite-green)]`.
+  The three fix steps exit on `tree-changed`, a FORM check satisfied by any edit at all — so
+  the worker iterated with no error-count feedback whatsoever, and the run died before
+  reaching the steps that carried the real ones. Whether this is characteristic of the genre
+  or a one-off needs valid rows; it mints nothing now, and it is recorded so it cannot be
+  retro-fitted into a finding later.

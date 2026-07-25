@@ -1,0 +1,76 @@
+{
+  "runid": "ms0k88ck",
+  "dry": false,
+  "model": "claude-sonnet-5",
+  "provider": "anthropic-api",
+  "seedRef": "ca1af8a",
+  "seedErrors": 63,
+  "hardStopUsd": 8,
+  "capRuns": 4,
+  "cumulativeUsd": 2.970909,
+  "stop": "ARM C: spend not governable (floor/unpriced) — the cap cannot govern it",
+  "rows": [
+    {
+      "arm": "C",
+      "label": "counts-only",
+      "outcome": "provider-red",
+      "casualty": true,
+      "acted": 20,
+      "rounds": 96,
+      "planSteps": 5,
+      "composedChecks": [
+        "typecheck-clean",
+        "no-suppressions",
+        "suite-green"
+      ],
+      "replanned": false,
+      "precheck": {
+        "phase": "typecheck",
+        "errors": 63
+      },
+      "attempts": [],
+      "checkRuns": [
+        {
+          "check": "typecheck-clean",
+          "pass": false,
+          "errors": 63
+        },
+        {
+          "check": "suite-green",
+          "pass": true,
+          "errors": null
+        },
+        {
+          "check": "no-suppressions",
+          "pass": true,
+          "errors": null
+        }
+      ],
+      "readings": [
+        63,
+        63
+      ],
+      "decreases": 0,
+      "firstAttemptGreen": false,
+      "converged": false,
+      "h1": true,
+      "h2": false,
+      "spentUsd": 2.970909,
+      "spendComplete": false,
+      "secretsClean": true,
+      "spine": "/home/hamr/PycharmProjects/bareloop-patients/litectx-types-bareloop/types-screen-C-ms0k88ck.jsonl",
+      "audit": "/home/hamr/PycharmProjects/bareloop-patients/litectx-types-bareloop/types-screen-C-ms0k88ck-gate-audit.jsonl",
+      "cls": "CASUALTY",
+      "valid": false,
+      "admit": null
+    }
+  ],
+  "selected": null,
+  "summary": {
+    "admitted": [],
+    "unread": [
+      "C"
+    ],
+    "reading": "INCOMPLETE — 1/2 rows, unread arms [C]. Re-run only the unread arms; never let a casualty shrink coverage."
+  }
+}

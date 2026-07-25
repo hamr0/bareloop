@@ -83,6 +83,20 @@ const runid = Date.now().toString(36);
 const git = (/** @type {string[]} */ a) => execFileSync('git', ['-C', wd, ...a], { encoding: 'utf8' }).trim();
 const logLines = (/** @type {string} */ f) => existsSync(f) ? readFileSync(f, 'utf8').trimEnd().split('\n').filter(Boolean) : [];
 
+/** Strict-error count in the patient RIGHT NOW, or null if tsc could not be read.
+ *  Called before resetPatient() so a row that dies mid-flight still yields its gradient —
+ *  the reset would otherwise destroy the only evidence of what the worker achieved. */
+function measureErrors() {
+  try {
+    const o = execFileSync('npx', ['tsc', '--noEmit', '--strict'], { cwd: wd, encoding: 'utf8', timeout: 180_000, stdio: ['ignore', 'pipe', 'pipe'] });
+    return (o.match(/error TS\d+/g) ?? []).length;
+  } catch (e) {
+    const err = /** @type {any} */ (e);
+    if (err?.killed || err?.signal) return null;
+    return ((String(err?.stdout ?? '') + String(err?.stderr ?? '')).match(/error TS\d+/g) ?? []).length;
+  }
+}
+
 function resetPatient() {
   const stray = join(wd, 'gate-audit.jsonl');
   if (existsSync(stray)) renameSync(stray, join(SPINE_DIR, `types-${runid}-orphan-gate-audit-${Date.now().toString(36)}.jsonl`));
@@ -150,17 +164,27 @@ for (const s of specs) {
   const attempts = closeSlice.slice(1);
   const precheckOk = precheck != null && precheck.phase === 'typecheck' && precheck.errors === SEED_ERRORS;
 
-  // H2 reads the error count wherever it was measured, in order: the close's own attempt
-  // grades AND every typecheck-clean check the agent composed. Either channel counts —
-  // an arm that only ever iterates through checks is still showing a gradient.
+  // H2 reads the error count wherever it was measured — the close's own attempt grades AND
+  // every typecheck-clean the agent composed. Three corrections, each paid for by the first
+  // screen row (ms0k88ck), where the instrument read a flat [63,63] across a run that did 96
+  // rounds and 20 gate-allowed edits:
+  //
+  //  1. PREFLIGHT IS NOT ITERATION. runPlan validates every composed check once, before any
+  //     token — those readings are the SEED state by construction. Counting them as
+  //     trajectory made a blind instrument look like a flat gradient. Dropped by the spine's
+  //     own `check-preflight` count, not by guesswork.
+  //  2. ORDER BY TIME, not by source. Concatenating close grades then check grades invents a
+  //     chronology; a strictly-decreasing test over an invented order is meaningless.
+  //  3. MEASURE AT THE END. A row that dies mid-flight (provider-red, cap-halt) otherwise
+  //     loses its gradient entirely — and the reset that follows destroys the evidence.
+  const preflightCount = events.filter((e) => e.type === 'check-preflight').length;
+  const iterChecks = checkSlice.slice(preflightCount);
   const trajectory = [
-    ...(precheck?.errors != null ? [{ src: 'precheck', errors: precheck.errors }] : []),
-    ...attempts.filter((a) => a.errors != null).map((a) => ({ src: 'close', errors: a.errors })),
-    ...checkSlice.filter((c) => c.check === 'typecheck-clean' && c.errors != null).map((c) => ({ src: 'check', errors: c.errors })),
-  ];
-  // strictly-decreasing pair count over the ORDERED readings after the precheck
-  const post = trajectory.filter((t) => t.src !== 'precheck').map((t) => t.errors);
-  const readings = [SEED_ERRORS, ...post];
+    ...attempts.filter((a) => a.errors != null).map((a) => ({ ts: a.ts, src: 'close', errors: a.errors })),
+    ...iterChecks.filter((c) => c.check === 'typecheck-clean' && c.errors != null).map((c) => ({ ts: c.ts, src: 'check', errors: c.errors })),
+  ].sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
+  const finalErrors = measureErrors();
+  const readings = [SEED_ERRORS, ...trajectory.map((t) => t.errors), ...(finalErrors == null ? [] : [finalErrors])];
   let decreases = 0;
   for (let i = 1; i < readings.length; i++) if (readings[i] < readings[i - 1]) decreases++;
 
@@ -177,7 +201,7 @@ for (const s of specs) {
     precheck: precheck ? { phase: precheck.phase, errors: precheck.errors ?? null } : null,
     attempts: attempts.map((a) => ({ phase: a.phase, verdict: a.verdict, errors: a.errors ?? null, tests: a.tests ?? null, fails: a.fails ?? null })),
     checkRuns: checkSlice.map((c) => ({ check: c.check, pass: c.pass, errors: c.errors ?? null })),
-    readings, decreases, firstAttemptGreen, converged, h1, h2,
+    readings, trajectory, preflightCount, finalErrors, decreases, firstAttemptGreen, converged, h1, h2,
     spentUsd, spendComplete, secretsClean: leaks.length === 0, spine: spineFile, audit,
   };
 
