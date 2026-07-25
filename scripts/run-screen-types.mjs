@@ -36,7 +36,7 @@ const SEED_ERRORS = 63;          // frozen §3 baseline — the precheck must re
 const CLOSE_TIMEOUT_MS = 900_000; // close = tsc + 410-test suite + emit (~90s); checks up to 5min
 const CAP_RUNS = 4;
 const HARD_STOP_USD = 25;        // hamr 2026-07-25, verbatim: "approved bydget up to 25"
-const PRIOR_SPENT_USD = 2.9709;  // screen attempt 1 (ms0k88ck, ARM C casualty) — folded in so the
+const PRIOR_SPENT_USD = 7.0598;  // screen attempts 1+2 (both ARM C casualties) — folded in so the
                                  // approved ceiling governs ACROSS invocations, never silently widened
 
 const ARMS = [
@@ -69,9 +69,57 @@ if (!dry && !apiKey) {
   console.error('ANTHROPIC_API_KEY not set (secrets load from the environment — never the tree)');
   process.exit(2);
 }
-const provider = dry
+const baseProvider = dry
   ? /** @type {any} */ ({ async generate() { throw new Error('DRY RUN: the provider was called — this run was supposed to spend nothing'); } })
   : new AnthropicProvider({ apiKey, model: MODEL });
+
+// ---- stale-socket guard (harness-side; touches no arbiter surface) ----------
+// Both screen casualties died `read ETIMEDOUT` with the SAME signature: the last worker
+// round landed, then a single generate() hung until the OS-level TCP timeout — 38 minutes
+// on ms0k88ck, 2h24m on ms0q4ok5 — burning the wall clock and killing an otherwise healthy
+// row (63 -> 7 errors at the time of death). This is the BA-14 class (stale pooled
+// keep-alive sockets after an idle gap), and this job is its ideal aggravator: the
+// operator-signed checks idle the connection ~40-56s between LLM turns, every turn.
+//
+// There is no per-request timeout on the provider call, so a dead socket costs hours
+// instead of failing fast. This wrapper is bounded retry ONLY — it changes no budget, no
+// verdict, no close, and it re-throws once the retries are spent so a genuine provider
+// failure still routes as provider-red. Spend for a timed-out call is unknown, not zero
+// (F6): such a call almost certainly never completed server-side, and the wrapper never
+// launders it into the ledger.
+const CALL_TIMEOUT_MS = 600_000; // a real round here runs <90s; 10min is pure slack
+const CALL_RETRIES = 3;
+let timeoutRetries = 0;
+async function generateWithTimeout(/** @type {any[]} */ ...args) {
+  let lastErr;
+  for (let attempt = 1; attempt <= CALL_RETRIES; attempt++) {
+    /** @type {any} */ let timer;
+    try {
+      return await Promise.race([
+        baseProvider.generate(...args),
+        new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`harness: generate() exceeded ${CALL_TIMEOUT_MS}ms — presumed stale socket`)), CALL_TIMEOUT_MS); }),
+      ]);
+    } catch (e) {
+      lastErr = e;
+      const msg = String(/** @type {any} */ (e)?.message ?? e);
+      const stale = msg.includes('presumed stale socket') || msg.includes('ETIMEDOUT') || msg.includes('ECONNRESET') || msg.includes('EPIPE');
+      if (!stale || attempt === CALL_RETRIES) throw e;
+      timeoutRetries++;
+      console.log(`  provider retry ${attempt}/${CALL_RETRIES - 1} after: ${msg.slice(0, 70)}`);
+    } finally { clearTimeout(timer); }
+  }
+  throw lastErr;
+}
+
+// A Proxy, not a spread: AnthropicProvider is a class instance, so `{...p}` would copy only
+// own enumerable props and silently drop every prototype method the loop relies on.
+const provider = dry ? baseProvider : new Proxy(baseProvider, {
+  get(target, prop, recv) {
+    if (prop === 'generate') return generateWithTimeout;
+    const v = Reflect.get(target, prop, recv);
+    return typeof v === 'function' ? v.bind(target) : v;
+  },
+});
 
 const wd = resolve(WORKDIR);
 mkdirSync(SPINE_DIR, { recursive: true });
@@ -250,7 +298,8 @@ if (rows.length < ARMS.length || unread.length) {
 const results = {
   runid, dry, model: dry ? null : MODEL, provider: 'anthropic-api', seedRef: SEED_REF,
   seedErrors: SEED_ERRORS, hardStopUsd: HARD_STOP_USD, capRuns: CAP_RUNS,
-  cumulativeUsd, priorSpentUsd: PRIOR_SPENT_USD, approvalVerbatim: 'approved bydget up to 25', stop, rows, selected,
+  cumulativeUsd, priorSpentUsd: PRIOR_SPENT_USD, approvalVerbatim: 'approved bydget up to 25',
+  timeoutRetries, callTimeoutMs: CALL_TIMEOUT_MS, stop, rows, selected,
   summary: { admitted, unread, reading },
 };
 const resultsFile = join(SPINE_DIR, `types-screen-results-${runid}.json`);
