@@ -1494,3 +1494,62 @@ pre-registered here so it cannot be rationalised later.
 firing any arm, ask **"is the CONTROL arm below ceiling on the outcome-relevant axis?"** —
 distinct from "can the test show the negative?", and the check that would have caught F51's
 design before it spent. A ceiling in the control makes every treatment arm unreadable.
+
+## Addendum v1.26 — 2026-07-25 (Layer 3 probe programme closes: readable-lineage dead on four axes, plan surface tiny — but ALL findings are GENRE-BOUND; rung PARKED, next move is a full-cycle e2e on a second genre — hamr)
+
+**The programme.** Five pre-registered experiments, $2.29 total, each frozen before any
+number: F51 (lineage on a clear ask) · F52 (method withheld) · F53 (target withheld) · F54
+(real prior-run failures — the scout-unreachable class) · F55 ($0 archival plan-share).
+
+**What they establish.** The readable-lineage arm is DEAD on every axis the programme could
+construct. The positive control PASSED (lineage transmits fine), so the blocker was never
+delivery — **there was nothing left to transmit**: the cold planner already supplies the
+method (F52, 8/8), already finds the targets (F53), and already does what the prior run's
+failures would have taught (F54, control at 1.00). F55 then removed the fallback
+justifications for the MECHANICAL arm: on completed runs, producing the plan is **~1–2% of
+spend** and caused **0 of 15** terminations, with a 4% first-draft redraft rate — so
+inheritance cannot pay for itself on planning cost or planning reliability.
+
+**What they do NOT establish — three limits, stated so they cannot be quietly dropped.**
+1. **Plan-level only.** Every arm measured the DRAFTED PLAN. No experiment ran a job to
+   completion with vs without inheritance. "No difference in solving" is UNPROVEN; what is
+   shown is "no difference in planning". Only the outcome battery can close this.
+2. **Production cost ≠ leverage (F55).** Execution is 80.87% of spend and the plan steers it.
+   A cheap-to-produce artifact can still be highly leveraged.
+3. **GENRE-BOUND — the binding limitation, caught by hamr 2026-07-25.** Every experiment in
+   this programme, AND Layer 2's entire acceptance (F47), ran on ONE job genre: TESTGEN
+   (write pytest tests to kill mutants) on one patient family. Nine of ten job specs in
+   `jobs/` are `aurora-testgen-*`. **"The planner is at ceiling" may simply mean "the model
+   knows pytest test-writing cold."** On a genre the model does not know well, planning may
+   NOT be at ceiling — and inheritance may matter there. Every F51–F55 claim carries an
+   unstated "…on TESTGEN", and that qualifier is now explicit.
+
+**Disposition: Layer 3 is PARKED, not stopped.** The evidence against the readable arm is
+real and was cheaply bought, but it is visibly genre-bound, so a STOP would be minted on one
+genre's evidence — the same over-reach this repo's doctrine exists to prevent. The
+pre-registered STOP branch (v1.25) stays available and is NOT exercised yet.
+
+**The product claim that is actually untested.** bareloop's pitch is "Automate this job — I
+don't know the best workflow", and the agent-authors-its-own-workflow claim is DEMONSTRATED
+ON ONE GENRE ONLY. The library itself is real and shipped (v0.5.1 on npm: ~4,750 lines across
+14 modules, 393 tests; Layers 1/R/2 built, Layer 3 unbuilt by design) — but its central claim
+has never been exercised outside TESTGEN.
+
+**Next move (agreed with hamr): a FULL-CYCLE e2e run on a SECOND GENRE.** Not a memory
+experiment — a product test. It answers three things at once: (a) can the agent author a
+complete, workable workflow for a job that is not TESTGEN; (b) is "planner at ceiling"
+general or genre-specific; (c) if the ceiling does not hold on a new genre, the inheritance
+question reopens with a second genre to test it on. Candidate specs already in `jobs/` and
+unused: `aurora-fix.json` (bug-fix genre) and `litectx-maintainer.json`. Design, patient
+choice, and close must be frozen before firing, as every rung has been.
+
+**Method notes minted this programme (standing).**
+- **Is the CONTROL below ceiling on the outcome-relevant axis?** — a pre-flight distinct from
+  "can the test show the negative"; a ceiling in the control makes every treatment unreadable.
+- **A pre-flight must use the SAME metric the treatment will be judged by**, capturing the
+  functional construct, not a prose shadow of it (F54: the pre-flight passed at ~72% while
+  the real behaviour sat at 1.00, green-lighting an already-unreadable experiment).
+- **Measure the SURFACE before building the feature** — F55 cost $0 from data already on
+  disk and retired two comfortable justifications before a line was written.
+- **Audit a phase-share denominator for populations that lack the phase** (F55: 59% of
+  archived spend belonged to a code path that structurally cannot have a plan).
