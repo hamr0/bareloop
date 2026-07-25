@@ -35,7 +35,9 @@ const MODEL = 'claude-sonnet-5';
 const SEED_ERRORS = 63;          // frozen §3 baseline — the precheck must read exactly this
 const CLOSE_TIMEOUT_MS = 900_000; // close = tsc + 410-test suite + emit (~90s); checks up to 5min
 const CAP_RUNS = 4;
-const HARD_STOP_USD = 8;         // 2 rows x $4/row, frozen §6.1
+const HARD_STOP_USD = 25;        // hamr 2026-07-25, verbatim: "approved bydget up to 25"
+const PRIOR_SPENT_USD = 2.9709;  // screen attempt 1 (ms0k88ck, ARM C casualty) — folded in so the
+                                 // approved ceiling governs ACROSS invocations, never silently widened
 
 const ARMS = [
   { id: 'C', spec: '../jobs/litectx-types-screen-c.json', label: 'counts-only' },
@@ -55,7 +57,7 @@ const specs = ARMS.map((a) => {
 if (!specs.every((s, i) => approvedHashes[i] === s.hash)) {
   console.log('JOB #5 TYPES hardness screen (TYPES-PREREG.md §6) — anthropic-api, REAL dollars');
   console.log(`  patient  ${WORKDIR} @ seed ${SEED_REF} (${SEED_ERRORS} strict errors, suite 410/409/0)`);
-  console.log(`  ${specs.length} rows, $${specs[0].spec.budgetUsd}/row, hard-stop $${HARD_STOP_USD}, capRuns=${CAP_RUNS}, model ${MODEL}`);
+  console.log(`  ${specs.length} rows, $${specs[0].spec.budgetUsd}/row, ceiling $${HARD_STOP_USD} (prior $${PRIOR_SPENT_USD.toFixed(2)} folded in), capRuns=${CAP_RUNS}, model ${MODEL}`);
   for (const s of specs) console.log(`  ARM ${s.id}  ${s.label.padEnd(12)} ${s.hash}`);
   if (approvedHashes.length) console.error('\nREFUSED: --approve hashes do not match these spec versions.');
   console.log(`\nTo approve and run:\n  ANTHROPIC_API_KEY=... node scripts/run-screen-types.mjs --approve ${specs.map((s) => s.hash).join(' ')}`);
@@ -114,7 +116,7 @@ console.log(`caps   $${specs[0].spec.budgetUsd}/row · hard-stop $${HARD_STOP_US
 
 /** @type {any[]} */
 const rows = [];
-let cumulativeUsd = 0;
+let cumulativeUsd = PRIOR_SPENT_USD;
 let stop = null;
 
 for (const s of specs) {
@@ -248,7 +250,7 @@ if (rows.length < ARMS.length || unread.length) {
 const results = {
   runid, dry, model: dry ? null : MODEL, provider: 'anthropic-api', seedRef: SEED_REF,
   seedErrors: SEED_ERRORS, hardStopUsd: HARD_STOP_USD, capRuns: CAP_RUNS,
-  cumulativeUsd, stop, rows, selected,
+  cumulativeUsd, priorSpentUsd: PRIOR_SPENT_USD, approvalVerbatim: 'approved bydget up to 25', stop, rows, selected,
   summary: { admitted, unread, reading },
 };
 const resultsFile = join(SPINE_DIR, `types-screen-results-${runid}.json`);

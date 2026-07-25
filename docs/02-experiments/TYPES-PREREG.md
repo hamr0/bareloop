@@ -390,14 +390,40 @@ axis looks good.)*
   do not read and `admit` is `null` (the driver classes it correctly and stopped rather than
   launching ARM F). Cumulative $2.97 of the $8 frozen ceiling.
 
-  **SIZING — reported, not silently absorbed (F45's 16g class, 4th appearance).** The row
-  consumed 74% of its cap and was still inside **step 3 of 5**; steps 4–5 (which carry the
-  real checks) never started, and the outer close never ran once. $4/row cannot fund a
-  complete row of this job shape. The prereg says a cap that binds mid-attempt is a SIZING
-  finding to take back to hamr, never a premise fail and never a unilateral widening —
-  budgets are arbiter territory permanently. **The screen therefore STOPS here.** With $5.03
-  left under the frozen ceiling, two more $4 rows are not fundable, and a re-run at the same
-  cap would most likely buy a second incomplete row.
+  **SIZING — first stated as a finding, then CORRECTED by a $0 measurement. The corrected
+  version is the record.**
+
+  *What was first claimed (WRONG, and withdrawn):* "the row consumed 74% of its cap while
+  still inside step 3 of 5, therefore $4/row cannot fund a complete row of this job shape."
+
+  *Why it was wrong:* it counted STEPS, not WORK. The agent's own authored bounds are
+  `30 / 30 / 20 / 10 / 5` rounds, so steps 1–3 are **80 of 95 planned rounds (84%)** and the
+  two unreached steps are small read-only ones. Reading "3 of 5 steps" as "60% done" silently
+  assumed steps are equal-sized. They are not.
+
+  *Measured breakdown ($0, from the archived spine — all 96 rounds priced, summing exactly to
+  $2.9709):* scout 8 rounds **$0.2640** (8.9%) · plan 1 round **$0.0686** (2.3%, consistent
+  with F55's 1–2% plan share on a third genre) · fix-pass-1 30 rounds **$1.2632** ·
+  fix-pass-2 30 rounds **$0.8415** · cleanup 27 rounds **$0.5337** (20-round bound + a
+  7-round retry). Per-round cost FALLS as the cache warms: $0.041/round over rounds 1–16
+  down to $0.022/round over rounds 81–96.
+
+  *Corrected conclusion:* steps 4–5 project to ~$0.35, so **one complete pass of this plan is
+  ~$3.3 and fits inside $4.** The row was killed by TRANSPORT (`read ETIMEDOUT`) with 26% of
+  its cap unspent — not by the cap. What $4/row genuinely does not fund is the OUTER CLOSE
+  FIX LOOP after the plan pass, which is why a raise is still warranted; the raise is not
+  justified by the plan pass itself.
+
+  *Disposition:* the screen stopped for hamr rather than widening itself (budgets are arbiter
+  territory permanently). hamr authorised a raise on 2026-07-25, verbatim: **"approved bydget
+  up to 25"**. Row cap $4 → **$10**, ceiling **$25** with the prior $2.9709 folded in so the
+  approved ceiling governs ACROSS invocations. The budget edit changes both spec hashes, and
+  hamr's in-turn order is the signature (recorded verbatim in the results file).
+
+  **Method note this cost:** a phase-share denominator must be weighted by the phase's own
+  BOUND, not by its step index — the F55 "audit a denominator for populations that lack the
+  phase" lesson, arriving from the opposite direction. Counting units of plan structure as if
+  they were units of work produced a confident, wrong budget claim.
 
   **INSTRUMENT DEFECT (mine) — the trajectory reader was blind, and it is the same class this
   programme has now shipped eight times.** The screen reported `readings=[63,63]`,
