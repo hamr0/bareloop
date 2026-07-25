@@ -1063,7 +1063,11 @@ EXISTS and WORKS: bareloop now wraps `generate()` in a bounded timeout + retry
 ask is for the durable fix in the right layer, not a rescue. Two further honest counterweights:
 `provider-clipipe.js` already has a timeout, so the suite is not uniformly missing the
 concept; and the failure needs an aggravator (multi-minute idle gaps between turns) that many
-consumers will never produce — this job's signed checks are an unusually good generator of it.
+consumers will never produce — this job's signed checks are an unusually good generator of it. **Corrected 2026-07-26 (F57):** an
+earlier draft of this ask said the checks idle the connection "40-56s between every LLM turn" —
+the archive says median **3.8s**, max **48.6s** on this job. The idle aggravator is the TAIL, not
+the typical round; job #4's **561s** maximum check is the stronger example. The premise holds, the
+frequency claim did not, and it is corrected here before the ask is implemented.
 
 **Related.** BA-14 (2026-07-16) is the same family one layer down — a stale pooled keep-alive
 socket surfacing as `EPIPE`, fixed by widening the retry predicate. BA-18 is the case that

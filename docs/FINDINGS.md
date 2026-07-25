@@ -3025,3 +3025,73 @@ choosing from six verbs while the design record said twelve, and no instrument c
 caught it, because the missing verbs generate no events. When a kill decision is made on
 inertness, record the CONDITIONS that made it inert (broken loop, empty store) and re-open it
 when they lift — an inert-under-conditions finding is not a permanent verdict on the feature.
+
+## F57 — T1: a per-round rate IS quotable (~$0.019 and ~5.4s per execute round), but a STATIC one would be wrong — the check axis swings 3.8s to 561s, so the meter has to run live
+
+**Status: minted 2026-07-26. $0, archival. Applies the frozen rule of
+`docs/02-experiments/MATERIALS-PREREG.md` (T1). Gates the "inform" half of the
+materials/metering design (PRD v1.27).**
+
+**Why this ran.** hamr's materials framing hands the agent time and money to allocate up
+front, with ralph metering consumption and informing it. But the agent can count rounds and
+cannot feel a dollar or a minute — so the loop must convert. T1 asks whether a conversion rate
+exists at all, from data already on disk.
+
+**Population.** 264 archived spine files → 145 after excluding native/clipipe (11) →
+**18 plan-v1 runs, 1213 worker rounds**. Legacy `steps[]` runs are excluded by the frozen
+confound list, and the denominator audit backs that: **all 2567 unlabeled rounds are legacy
+(`interpret.js` emits no phase); plan-flow has ZERO unlabeled.** F55's finding replicates
+exactly, and the "audit the denominator for populations lacking the phase" rule fired again.
+
+**Result (plan-v1, priced rounds only).**
+
+| phase | n | median $/round | IQR width ÷ median | n | median s/round | IQR width ÷ median |
+|---|---|---|---|---|---|---|
+| scout | 102 | 0.0129 | 1.25 | 89 | 6.0 | 0.55 |
+| plan | 22 | 0.0399 | 0.31 | 13 | 44.8 | 0.22 |
+| **step (execute)** | **1058** | **0.0189** | **1.61** | **965** | **5.4** | **1.24** |
+
+**Frozen rule verdict: QUOTABLE, comfortably.** The rule declared the rate unquotable if the
+execute-phase IQR spanned more than 10× its median. It spans **1.61×** on cost and **1.24×**
+on seconds — passing on the literal reading, and on the alternative p75/p25 reading (4.8× and
+2.9×) as well. Both are reported so the pass cannot be attributed to a convenient statistic.
+
+**The conversion the agent would be told:** at the execute phase, **~53 rounds per $1** and
+**~11 rounds per minute** of model time.
+
+**Zero unpriced rounds in 1213.** The F6 honest-null discipline is holding end to end — no
+`?? 0` laundering anywhere in the metered population.
+
+**The finding that changes the design: a static rate would be wrong, because the CHECK axis is
+not the model axis and does not behave like it.** Round-to-round model time is tight (5.4s,
+IQR 1.24×). The gap that spans a close or check is not:
+
+| job | n | median | max |
+|---|---|---|---|
+| #5 TYPES | 12 | 3.8s | 48.6s |
+| #4 TESTGEN | 82 | 8.4s | **561.6s** |
+
+A 9.4-minute check sits in the same distribution as a 4-second one. So handing the planner a
+constant up front cannot work — **the loop must meter the live job and update the rate
+in-flight**, which is precisely the "ralph counts that and informs" half of hamr's framing
+rather than the simpler "hand it a bill of materials" half. The mechanism is validated over
+its cheaper alternative, for $0.
+
+**Instrument correction to an ask already filed (BA-18).** The ask states job #5's signed
+checks "idle the connection 40–56s between **every** LLM turn." The archive says otherwise:
+median 3.8s, with 48.6s as the **maximum**. The aggravator is real but it is the TAIL, not the
+typical case — and job #4's 561s max is the stronger example. BA-18's premise survives; its
+wording overstated frequency and is corrected in place before the ask goes upstream.
+
+**And the hang is structurally invisible to the spine — confirmed, not assumed.** The frozen
+confound list expected >5-minute within-attempt gaps from job #5's BA-18 hangs. **There are
+zero.** A hung `generate()` never returns, so it never emits a `worker-round` row: the 38-min
+and 2h24m stalls leave no trace on the axis that would show them. This is the empirical
+version of the claim made earlier from reasoning alone — every detector we own reads events,
+and this failure produces none. **A wall-clock deadline (T) is not a cost feature; it is the
+only instrument that can fire on the ABSENCE of events.**
+
+**Lesson.** Measuring the surface before designing on it paid a third time (F55, F45, now
+F57): it validated the expensive half of the mechanism, killed the cheap-constant version,
+corrected a filed upstream ask, and confirmed a blind spot empirically — all before a design
+record was written.
