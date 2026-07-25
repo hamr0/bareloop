@@ -135,6 +135,38 @@ ${planBlock}`,
   check: `PRIOR RUN LINEAGE — the per-step EXIT composition a related TESTGEN run greened with: every write step used exit [{"type":"tree-changed","scope":"<inside writeScope>"},{"type":"check-passes","name":"clean-run"}].`,
 };
 
+
+// ── T4: PATIENT-QUIRK / FAILURE-LINEAGE arms (F53 successor, frozen 2026-07-25).
+// The only knowledge class a scout structurally CANNOT reach: what FAILED in a prior run
+// (an event, not a file). Target framing uses the REAL repo state (assess tests really live
+// in packages/soar/tests/unit/; there is NO local conftest — the ROOT conftest does sys.path
+// setup; pytest.ini sets testpaths/addopts). Lineage payload is EXTRACTED VERBATIM from the
+// green run's spine (mrvwjrop close-verdict gaps), never authored to contain the answer.
+const quirkGoal = `The complexity-assessment phase at packages/soar/src/aurora_soar/phases/assess.py (1,148 lines) is under-tested. Repository root: /home/hamr/PycharmProjects/bareloop-patients/aurora-soar. Existing tests for it live at packages/soar/tests/unit/ (test_phase_assess.py, test_assess_types.py, test_corpus_assess.py) and currently pass. An external close you cannot run has ALREADY graded them: the suite detects only 15% of hidden planted faults — the passing bar is 45%. Your job is to STRENGTHEN the tests so they detect more faults. Planted faults are small behavioral changes in that module (flipped comparisons, off-by-one constants, swapped booleans, dropped return values). Only packages/soar/tests/unit/** is writable — never modify source files. All existing tests must KEEP passing against the current source. After each attempt, an automatic check runs the suite against the untouched source; a suite identical to the existing one, or one with failing tests, comes back to you as the failure output, and you get another bounded attempt. Stop when the suite is strengthened.`;
+const quirkScout = `Repository root: /home/hamr/PycharmProjects/bareloop-patients/aurora-soar
+Target module: packages/soar/src/aurora_soar/phases/assess.py (1,148 lines) — Phase 1 complexity assessment.
+@dataclass AssessmentResult: to_dict, __str__.
+class ComplexityAssessor(debug=False): assess(prompt)->AssessmentResult; pure scoring methods:
+  _detect_critical, _score_lexical, _score_keywords, _score_scope, _score_constraints,
+  _score_structure, _score_domain, _score_question_type, _calculate_multiplier, _calculate_confidence.
+Module functions: _assess_tier1_keyword, _assess_tier2_llm, assess_complexity.
+Existing tests: packages/soar/tests/unit/test_phase_assess.py (318 lines), test_assess_types.py (71), test_corpus_assess.py (335). No conftest.py under packages/soar; the ROOT conftest.py inserts package src paths into sys.path. pytest.ini sets testpaths=packages src, python_files=test_*.py, and addopts with -ra --strict-config --cov.`;
+const quirkSpec = {
+  schema: 'job-v1', job: 'aurora-testgen-assess-real', provider: 'anthropic-api',
+  writeScope: ['packages/soar/tests/unit/**'],
+  tools: ['read', 'grep', 'write', 'edit', 'recall', 'get'],
+  checks: [{ name: 'clean-run' }], verdictType: 'green', goal: quirkGoal,
+};
+// VERBATIM prior-run failures (spine mrvwjrop close-verdict gaps) — extracted, not authored.
+const FAILURE_LINEAGE = `PRIOR RUN LINEAGE — a previous run of this same TESTGEN job family (different module) GREENED, but only after these attempts were REJECTED. The rejections, verbatim from that run's own close:
+
+1. check "clean-run" red: TESTGEN gate-red: forbidden pattern "environ-enumeration" in tests/testgen/unit/test_health_monitoring.py — tests assert behavior through the module's API, never through the filesystem, environment, or subprocesses
+
+2. check "clean-run" red: TESTGEN clean-red: your tests must all pass against the CURRENT untouched source before they count — fix or remove the failing assertions
+   TESTGEN | E       AssertionError: assert {'phase8_resp...tion_failure'} == {'verification_failure'}
+
+3. exit not satisfied: 0 files changed under tests/testgen/unit/** — the tree is byte-identical to the step start (an identical re-write is not a change)`;
+
 // ── Arms.
 const ARMS = {
   A0: { spec: targetSpec, scout: targetScout, lineage: null, kind: 'off-target' },
@@ -150,6 +182,9 @@ const ARMS = {
   // F52 successor — target withheld (vague ask), method intact:
   V0: { spec: vagueSpec, scout: targetScout, lineage: null, kind: 'off-vague(screen)' },
   Vfull: { spec: vagueSpec, scout: targetScout, lineage: LINEAGE.full, kind: 'on-vague-full' },
+  // T4 — failure-lineage (the scout-unreachable knowledge class):
+  Q0: { spec: quirkSpec, scout: quirkScout, lineage: null, kind: 'off-real-patient' },
+  Qfail: { spec: quirkSpec, scout: quirkScout, lineage: FAILURE_LINEAGE, kind: 'on-failure-lineage' },
 };
 
 // ── CLI.
