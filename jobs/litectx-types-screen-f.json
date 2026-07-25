@@ -1,0 +1,44 @@
+{
+  "schema": "job-v1",
+  "job": "litectx-types-screen-f",
+  "description": "Job #5 (TYPES) hardness screen, ARM F — full-error gap channel. Second-genre e2e per PRD v1.26: can the agent author a complete workable workflow for a job that is NOT TESTGEN? Screen decides ADMISSION only (gates H1/H2, TYPES-PREREG.md §6); it never mints a capability finding at n=1. Prereg: docs/02-experiments/TYPES-PREREG.md.",
+  "provider": "anthropic-api",
+  "conditions": { "closeVerbosity": "full-errors" },
+  "cadence": { "unit": "day", "every": 1 },
+  "budgetUsd": 4,
+  "writeScope": ["src/**"],
+  "escalation": { "mode": "decision-ready" },
+  "goal": "Repository root: /home/hamr/PycharmProjects/bareloop-patients/litectx-types. This is litectx, a shipped pure-ESM JavaScript library that types itself with JSDoc and no build step for consumers; tsc is used only to check those JSDoc types and to emit the published .d.ts. Today the project typechecks under a deliberately partial strictness setting. Your job is to make it typecheck under FULL TypeScript strictness — the exact command the grader runs is `npx tsc --noEmit --strict`, and it must exit 0 — while the library's behaviour stays byte-for-byte identical. Only files under src/** are writable. tsconfig.json, package.json and test/** are NOT writable and NOT negotiable: the strictness settings are the contract, so making the compiler quieter is never the job. You may not run any command — there is no shell verb in your tool menu, so you cannot run tsc or the test suite yourself. Feedback reaches you only between attempts, from an automatic grader you cannot see or run. The grader enforces four things beyond the strict typecheck: (1) the existing test suite must still pass with no test lost — it is the behaviour oracle, and a type annotation must describe what the code ALREADY does; (2) no suppression may be added — @ts-ignore, @ts-expect-error and @ts-nocheck counts must not rise anywhere, and neither may JSDoc types containing `any` or the `{*}` wildcard; `unknown` IS allowed and is often the honest answer, because it forces you to narrow at the use site; (3) the published .d.ts must still build; (4) every symbol the package's public entry point exported before must still be exported — deleting code removes its errors but is not the job. Between your attempts an operator-signed check may run against the tree; you may reference the signed checks by name in your plan but you may never author one. Stop when the library typechecks under full strictness with the suite still green.",
+  "verdictType": "green",
+  "close": {
+    "type": "predicate",
+    "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/types-close.mjs full",
+    "expect": 0,
+    "judged": { "pattern": "TYPES judged=(\\d+)", "min": 1 },
+    "gapKeep": "^TYPES "
+  },
+  "checks": [
+    {
+      "name": "typecheck-clean",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/types-check.mjs typecheck-clean full",
+      "expect": 0,
+      "judged": { "pattern": "TYPES-CHECK judged=(\\d+)", "min": 1 },
+      "gapKeep": "TYPES-CHECK "
+    },
+    {
+      "name": "suite-green",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/types-check.mjs suite-green full",
+      "expect": 0,
+      "judged": { "pattern": "TYPES-CHECK judged=(\\d+)", "min": 1 },
+      "gapKeep": "TYPES-CHECK "
+    },
+    {
+      "name": "no-suppressions",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/types-check.mjs no-suppressions full",
+      "expect": 0,
+      "judged": { "pattern": "TYPES-CHECK judged=(\\d+)", "min": 1 },
+      "gapKeep": "TYPES-CHECK "
+    }
+  ],
+  "tools": ["read", "grep", "write", "edit", "recall", "get"]
+}

@@ -339,3 +339,44 @@ structurally incapable of catching a fake green).
 axis looks good.)*
 
 - 2026-07-25 — frozen.
+- 2026-07-25a — **corrections and instrument fixes from the $0 D5 control battery.** None
+  of these loosen a decision rule; the H1/H2 gates and the §6.1 selection rule are untouched.
+
+  **Record corrections (transcription, not re-measurement):**
+  - §3's per-file seed distribution listed `store.js` at 10 and summed to 64. That figure
+    predated the `@types/better-sqlite3` devDep, which removes the `TS7016` in `store.js:6`.
+    The correct frozen distribution is `chunker.js` 30 · `store.js` **9** · `edges.js` 8 ·
+    `tsalias.js` 3 · `index.js` 3 · `impact.js` 3 · `assemble.js` 3 · `docparse.js` 2 ·
+    `indexer.js` 1 · `langdef.js` 1 = **63**. The 63 total was always right.
+  - §8's V7 was written as "count 54"; the control as run applies the `edges.js` fix only
+    and reads **55**. The frozen requirement was `< 63` and is met. Recorded as run.
+
+  **A control caught a fake-green channel in the close's own API guard (D3).**
+  V5 — drop `ftsMatch` from `index.js`'s public re-export on an otherwise-green tree —
+  returned **GREEN**. D3 collected exported symbols from *every* `.d.ts` in the tree, so a
+  genuinely shrunken public API still read as intact because `ftsMatch` remained declared in
+  `tokenize.d.ts`. D3 is now scoped to the package's declared `types` entry point
+  (`types/index.d.ts`, which lists names explicitly — no `export *`), and the frozen baseline
+  was regenerated from that entry: **31 symbols**, down from the 83 the tree-wide version
+  produced. Remedy tested as hard as the defect: V5 now RED (`missing-export ftsMatch`) and
+  V8 still GREEN. This is the red-side-only-guard lesson landing on the green side, and it is
+  exactly why controls run before money.
+
+  **The check menu leaked around the screened variable.** `typecheck-clean` emitted verbatim
+  `tsc` error lines regardless of arm, so an agent composing that check under ARM C would
+  have received full error text inside a counts-only run — a second, wider feedback path the
+  arm never authorised, silently destroying the §6.1 contrast. Checks now take the arm as
+  argv[3] and render counts-only or full to match the close.
+
+  **The screen was blind to its own gate variable.** Checks logged nothing, so if an arm did
+  most of its iterating through `check-passes(typecheck-clean)` the error-count trajectory —
+  the H2 variable — would have been invisible in the close log. Checks now append to
+  `types-check-log.jsonl` (arbiter's book, worker-denied), and H2 reads the trajectory from
+  the close grades AND the composed checks, in order.
+
+  **Spec slugs** renamed `screenC`/`screenF` → `screen-c`/`screen-f`; the job-v1 validator
+  rejected the capitalised form as a non-kebab slug. Both specs now validate.
+
+  **D5 controls, all eight passing as run:** V1 RED(63) · V2 RED(D1c) · V3 RED(D1d) ·
+  V4 RED(scope) · V5 RED(D3, after fix) · V6 RED(suite, names the failing test) ·
+  V7 RED(55<63) · V8 GREEN(410 tests, 0 fails, 31 exports).
