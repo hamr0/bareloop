@@ -2873,3 +2873,69 @@ lineage fails to transmit — the positive control proved it transmits — but t
 nothing left to transmit. And an instrument built to detect a behaviour must be validated
 against the FORMS that behaviour actually takes: mine could not see a two-step pattern
 compressed into one, and would have reported a strong negative that the data does not support.
+
+---
+
+## F55 — T10 plan-share: producing the plan is ~1–2% of a completed run and causes 0 of 15 terminations — inheritance cannot pay for itself on the planning surface
+
+**Status: minted 2026-07-25. $0, archival. Applies the frozen rule of
+`docs/02-experiments/N3-T10-PLAN-SHARE-PREREG.md`. Evidence toward a Layer 3 STOP —
+bounded by one caveat that keeps the battery necessary.**
+
+**Why this ran.** F51–F54 killed the readable-lineage arm on four axes. Layer 3's only
+remaining arm is MECHANICAL plan reuse. Before building it: how much of a run IS the plan?
+Inheritance of plans can only pay where plans are costly, variable, or a failure source.
+Answerable at $0 from 115 archived spines.
+
+**Instrument correction made mid-analysis (logged, blind-instrument class, 7th shipping).**
+The first pass read plan share at 1.43% mean — but the phase buckets summed to only 21%.
+Audit: **59.1% of archived spend carries NO phase label**, because legacy `steps[]` runs
+(`interpret.js`) do not emit one and have no plan phase BY CONSTRUCTION. Including them
+corrupted the denominator. Corrected by restricting to the plan-v1 flow (`plan-accepted` /
+`plan-validate` present): **n=15 runs, buckets now sum to 100%.**
+
+**Result (plan-v1 runs that reached execution, n=15, $51.18 metered).**
+
+| phase | mean share |
+|---|---|
+| plan (draft + redraft) | 6.79% (median 3.74%, max 40.83%) |
+| scout | 12.34% |
+| execute + fix | **80.87%** |
+
+**The mean is inflated by early deaths, and the audit shows it plainly.** Plan share is
+mechanically higher when a run dies before execution accumulates: the 40.83% outlier is a
+`pricing-red` run that spent $0.43 total across 1 step. Sorted by share, **the three GREEN
+(completed) runs occupy the three LOWEST positions: 1.1%, 1.3%, 1.7%.** For runs that
+actually finish the job — the population inheritance exists to improve — **planning is
+~1–2% of spend.**
+
+- **Q2 — plan as a failure source: 0 of 15.** Terminals were step-red 9, green 3, cap-halt 1,
+  pricing-red 1, unknown 1. No run ever died of `plan-red`.
+- **Q3 — first-draft validation: 1/23 failed (4%).** Drafting is already reliable in the
+  real flow (this is the honest counterweight to F53/F54's validity hypothesis, which was
+  measured on probe drafts, not shipped runs).
+
+**Frozen-rule verdict, reported without rounding to the tidier story.** The rule set
+"negligible" at <2% share AND <10% plan-caused terminations. On completed runs both fire
+(1.1–1.7%; 0%). Across all 15 runs the mean (6.79%) sits in the middle band the rule said to
+"report as-is" — so both numbers are reported, and the completed-run figure is the
+decision-relevant one because it is the population the feature targets. **Mechanical plan
+inheritance addresses ~1–2% of a successful run's cost and 0% of its failures. It therefore
+cannot justify itself on planning cost or planning reliability — those surfaces are already
+tiny.**
+
+**The caveat that keeps the battery necessary — stated so this is not overclaimed.** This
+measures the plan's PRODUCTION COST, never its LEVERAGE. Execution is 80.87% of spend, and a
+plan is the thing that steers execution: a better plan could make that 81% cheaper or more
+likely to green, which no archival share can see. "Cheap to produce" does not imply "low
+impact". So F55 does not kill the mechanical arm — it removes the two easy justifications
+(cost, reliability) and forces the arm to stand or fall on an OUTCOME lift alone, which is
+exactly what the paired battery measures and what F51–F54 give no reason to expect.
+
+**Limits.** n=15 plan-v1 runs, 3 green; one patient family; correlational by construction.
+
+**Lesson.** Before building a feature, measure the SURFACE it acts on — it is often available
+for $0 in data already on disk, and it can retire the comfortable justifications ("it'll be
+cheaper", "it'll be more reliable") before a line is written. And a phase-share denominator
+must be audited for populations that lack the phase entirely: 59% of the spend here belonged
+to a code path that structurally cannot have a plan.
