@@ -68,7 +68,7 @@ const MONEY_MIN = 0.001;
  * @param {any} job @param {string} scoutBlob @param {any[]|null} reds
  * @param {number} maxStepRounds @param {string|null} failure replan context
  */
-function planPrompt(job, scoutBlob, reds, maxStepRounds, failure) {
+export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure) {
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
   const checkNames = (job.checks ?? []).map((/** @type {any} */ c) => c.name);
   const doc = `DRAFT-PLAN

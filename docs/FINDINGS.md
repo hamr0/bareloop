@@ -3138,3 +3138,70 @@ cost, with no divergence risk between the ruler and the real inspection.
 strict SUBSET of it — the operator carved the three stages he happened to think of. When a
 scaffold duplicates a source of truth, check whether the source is richer than the copy
 before defending the copy's existence.
+
+## F59 — the SCOUT returns nothing on 15 of 18 runs: the round bound cuts it off before it writes its summary, and the planner has been drafting blind for ~12% of every run's budget
+
+**Status: minted 2026-07-26. $0 archival + a $0.39 live reproduction. Found by accident while
+building the T2/P1 probe driver — not the question that was being asked.**
+
+**What happened.** The probe driver's own scout printed `scout blob 0 bytes` after spending
+$0.2288. Auditing that degenerate number (rather than proceeding) sent me to the archive,
+where the shipped flow does the same thing.
+
+**The archive, all 18 plan-v1 runs that emitted `scout-result`.**
+
+| scout finished | n | blob bytes |
+|---|---|---|
+| hit its round bound (`attempt-bounded`) | 16 | **13 × 0 bytes**, 3 stubs (74, 86, 86), 1 × 7073 |
+| finished on its own (7 of 8 rounds) | 2 | 8056 and 5991 — full surveys |
+
+**2 of 2 unbounded scouts produced a real survey. 15 of 16 bounded scouts produced nothing
+usable.** `planPrompt` then substitutes the literal string `(no scout notes)` — so on 15 of 18
+runs **the planner drafted with no view of the repository at all**, working from the goal text
+alone.
+
+**Mechanism.** `SCOUT_ROUNDS = 8`, and the bound is enforced from the metering callback:
+when the round count reaches the cap, `loop.stop()` fires. A scout that is still calling tools
+on round 8 is halted mid-tool-use, and `r.text` is whatever the last assistant message held —
+for a tool-use turn, empty. The scout spends its entire allowance exploring and never gets a
+round in which to write the summary that is its only deliverable. The single bounded
+exception (7073 bytes) is consistent: it emitted text on the same turn the bound fired.
+Message-level confirmation is not in the spine, but the correlation is 15/16 vs 2/2 and the
+probe driver reproduced it live at 8 rounds on a different patient.
+
+**What it costs.** F55 measured the scout at **12.34% of run spend**. So roughly an eighth of
+every run's budget buys a survey that is discarded five times in six — and the discard is
+silent, because `(no scout notes)` is a legal prompt.
+
+**What it does NOT establish, stated because the temptation runs the other way.** Empty scouts
+do **not** predict failure. Of the 5 runs whose final close was `satisfied`, **3 had 0-byte
+scouts**; full-blob runs appear on both sides. So this is not "the thing that broke Layer 2",
+and F47's acceptance is not withdrawn — its greens are real and were audited. The honest read
+is narrower and still serious: a paid-for phase is delivering nothing most of the time, and
+nobody noticed.
+
+**It re-bounds the ceiling claim a third way.** F51–F55 concluded "workflow generation is at
+ceiling". Those probes fed the planner **hand-written scout blobs** (`sourceScout` /
+`targetScout`, hardcoded in `scripts/n3-preprobe.mjs`) — a rich survey production almost never
+delivers. So "at ceiling" was measured on a *better-informed* planner than the shipped flow
+produces. The claim now carries three qualifiers, not one: **on TESTGEN · on a six-field
+vocabulary (F56) · with a scout the real run usually does not get.**
+
+**A new sub-class of the blind-instrument family — the UNREAD instrument.** The previous six
+shippings were instruments that could not see the variable. This one saw it perfectly:
+`scout-result {bytes: 0}` was emitted faithfully, 18 times out of 18, run after run, including
+through the F47 acceptance battery and three job-#5 rows read closely enough to produce a
+stash. The instrument worked and reported into the void. **An emitted number nobody reads is
+not evidence — it is a log line.** Any metric that exists to catch a silent failure needs a
+consumer that fails loudly, not merely an emitter.
+
+**Fix direction (not yet built, and it touches the F47-accepted path).** Two candidates, both
+cheap: give the scout a round it cannot spend on tools (reserve the last one for the summary),
+or make an empty scout blob a loud condition rather than a silent `(no scout notes)`. The
+second is the F17 lesson applied to a phase instead of a verdict — check the green side too.
+Which one ships is a design call, and the probe driver works around it harness-side meanwhile.
+
+**Lesson.** Auditing a degenerate number instead of routing around it is the whole of this
+finding: `0 bytes` could have been dismissed as a quirk of a probe harness in thirty seconds.
+The rule that says *debug the test before believing it* paid for itself, and then paid again —
+the harness was fine and the product was not.

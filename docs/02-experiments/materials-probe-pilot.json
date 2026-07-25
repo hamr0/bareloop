@@ -1,0 +1,426 @@
+{
+  "runid": "pilot",
+  "model": "claude-sonnet-5",
+  "n": 1,
+  "spentUsd": 0.3886672,
+  "calls": 12,
+  "timeoutRetries": 0,
+  "unpricedRounds": 0,
+  "scoutBytes": 0,
+  "rows": [
+    {
+      "label": "control-1",
+      "ok": false,
+      "reds": [
+        {
+          "code": "scope-escape",
+          "path": "steps.0.exit.0.path",
+          "detail": "\"tsconfig.json\" is outside the signed fence [src/**]"
+        },
+        {
+          "code": "scope-escape",
+          "path": "steps.1.exit.0.path",
+          "detail": "\"package.json\" is outside the signed fence [src/**]"
+        }
+      ],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "survey-src",
+            "action": "Read all files under src/** to inventory modules, existing JSDoc type annotations, and the public entry point's exported symbols, noting patterns likely to violate full TypeScript strictness (implicit any, missing null/undefined narrowing, unsafe casts).",
+            "tools": [
+              "read",
+              "grep"
+            ],
+            "rounds": 15,
+            "exit": [
+              {
+                "type": "json-valid",
+                "path": "tsconfig.json"
+              }
+            ]
+          },
+          {
+            "id": "catalog-suppressions-and-any",
+            "action": "Grep across src/** for existing @ts-ignore, @ts-expect-error, @ts-nocheck comments and any JSDoc using `any` or `{*}`, and list every symbol exported from the package's public entry point so none can be lost later.",
+            "tools": [
+              "grep",
+              "read"
+            ],
+            "rounds": 10,
+            "exit": [
+              {
+                "type": "json-valid",
+                "path": "package.json"
+              }
+            ]
+          },
+          {
+            "id": "annotate-strict-types",
+            "action": "Edit JSDoc type annotations and add necessary null/undefined narrowing throughout src/** so the code satisfies full TypeScript strictness (strictNullChecks, noImplicitAny, strictFunctionTypes, etc.) without changing runtime behavior, without using `any` or `{*}` in JSDoc, and without adding any new @ts-ignore, @ts-expect-error, or @ts-nocheck suppressions.",
+            "tools": [
+              "read",
+              "edit"
+            ],
+            "rounds": 35,
+            "target": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              }
+            ]
+          },
+          {
+            "id": "fix-remaining-errors-preserve-exports",
+            "action": "Resolve any remaining strict-mode typecheck errors across src/**, ensuring every symbol previously exported from the package's public entry point is still exported and no suppression comments or `any`/`{*}` JSDoc types were introduced.",
+            "tools": [
+              "read",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "final-verification",
+            "action": "Confirm the full strict typecheck passes cleanly, the published .d.ts still builds, and the existing test suite remains green with no tests lost.",
+            "tools": [
+              "read"
+            ],
+            "rounds": 10,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              }
+            ]
+          }
+        ]
+      },
+      "raw": "{\n  \"schema\": \"plan-v1\",\n  \"steps\": [\n    {\n      \"id\": \"survey-src\",\n      \"action\": \"Read all files under src/** to inventory modules, existing JSDoc type annotations, and the public entry point's exported symbols, noting patterns likely to violate full TypeScript strictness (implicit any, missing null/undefined narrowing, unsafe casts).\",\n      \"tools\": [\"read\", \"grep\"],\n      \"rounds\": 15,\n      \"exit\": [\n        {\"type\": \"json-valid\", \"path\": \"tsconfig.json\"}\n      ]\n    },\n    {\n      \"id\": \"catalog-suppressions-and-any\",\n      \"action\": \"Grep across src/** for existing @ts-ignore, @ts-expect-error, @ts-nocheck comments and any JSDoc using `any` or `{*}`, and list every symbol exported from the package's public entry point so none can be lost later.\",\n      \"tools\": [\"grep\", \"read\"],\n      \"rounds\": 10,\n      \"exit\": [\n        {\"type\": \"json-valid\", \"path\": \"package.json\"}\n      ]\n    },\n    {\n      \"id\": \"annotate-strict-types\",\n      \"action\": \"Edit JSDoc type annotations and add necessary null/undefined narrowing throughout src/** so the code satisfies full TypeScript strictness (strictNullChecks, noImplicitAny, strictFunctionTypes, etc.) without changing runtime behavior, without using `any` or `{*}` in JSDoc, and without adding any new @ts-ignore, @ts-expect-error, or @ts-nocheck suppressions.\",\n      \"tools\": [\"read\", \"edit\"],\n      \"rounds\": 35,\n      \"target\": \"src/**\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"},\n        {\"type\": \"check-passes\", \"name\": \"typecheck-clean\"}\n      ]\n    },\n    {\n      \"id\": \"fix-remaining-errors-preserve-exports\",\n      \"action\": \"Resolve any remaining strict-mode typecheck errors across src/**, ensuring every symbol previously exported from the package's public entry point is still exported and no suppression comments or `any`/`{*}` JSDoc types were introduced.\",\n      \"tools\": [\"read\", \"edit\"],\n      \"rounds\": 30,\n      \"target\": \"src/**\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"},\n        {\"type\": \"check-passes\", \"name\": \"no-suppressions\"}\n      ]\n    },\n    {\n      \"id\": \"final-verification\",\n      \"action\": \"Confirm the full strict typecheck passes cleanly, the published .d.ts still builds, and the existing test suite remains green with no tests lost.\",\n      \"tools\": [\"read\"],\n      \"rounds\": 10,\n      \"exit\": [\n        {\"type\": \"check-passes\", \"name\": \"suite-green\"}\n      ]\n    }\n  ]\n}"
+    },
+    {
+      "label": "T2B-materials-1",
+      "ok": false,
+      "reds": [
+        {
+          "code": "scope-escape",
+          "path": "steps.0.exit.0.path",
+          "detail": "\"package.json\" is outside the signed fence [src/**]"
+        }
+      ],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "survey-source",
+            "action": "Read every file under src/** plus the package entry point and its package.json 'exports'/'main' field to catalog: (a) every currently exported public symbol, (b) all existing JSDoc type annotations, (c) any existing @ts-ignore/@ts-expect-error/@ts-nocheck comments, (d) any JSDoc types using 'any' or the '{*}' wildcard. Note which files will need annotation fixes to satisfy `tsc --noEmit --strict` (strictNullChecks, noImplicitAny, strictFunctionTypes, etc.) while preserving runtime behavior exactly.",
+            "tools": [
+              "read",
+              "grep"
+            ],
+            "rounds": 20,
+            "exit": [
+              {
+                "type": "json-valid",
+                "path": "package.json"
+              }
+            ]
+          },
+          {
+            "id": "fix-primary-modules",
+            "action": "Edit the main/core JavaScript source files under src/** to add or correct JSDoc type annotations so they satisfy `tsc --noEmit --strict`. Use precise JSDoc types (@param, @returns, @typedef, generics, union types) and use 'unknown' plus narrowing at use sites where the true type is not statically knowable. Do not introduce any @ts-ignore, @ts-expect-error, or @ts-nocheck, and do not introduce any JSDoc type containing 'any' or '{*}'. Do not change any runtime logic, control flow, or exported symbol names/signatures — only add/correct type annotations that describe existing behavior.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 40,
+            "target": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              }
+            ]
+          },
+          {
+            "id": "fix-remaining-modules",
+            "action": "Continue fixing any remaining files under src/** that still produce errors under `tsc --noEmit --strict` (e.g. helper/utility modules, internal submodules not covered in the previous pass). Same constraints apply: only JSDoc annotation fixes, no suppressions, no 'any' or '{*}' types, 'unknown' allowed with narrowing, no behavior changes, no removed exports.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 40,
+            "target": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              }
+            ]
+          },
+          {
+            "id": "final-strictness-pass",
+            "action": "Perform a final cleanup pass over src/**: resolve any lingering strict-mode typecheck errors (e.g. from edge cases like optional chaining, nullable properties, or generic inference gaps), double-check no @ts-ignore/@ts-expect-error/@ts-nocheck or 'any'/'{*}' JSDoc types were introduced anywhere, and confirm every previously exported public symbol from the entry point is still exported unchanged. Only touch src/** and only via type annotations, never behavior.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              }
+            ]
+          },
+          {
+            "id": "verify-behavior-and-suite",
+            "action": "Read through the modified src/** files and confirm the test suite's behavior oracle still holds and no suppressions or 'any'/'{*}' types were left in place; rely on the automatic checks to confirm the suite is green and no suppressions were added.",
+            "tools": [
+              "read",
+              "grep"
+            ],
+            "rounds": 15,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          }
+        ]
+      },
+      "raw": "{\n  \"schema\": \"plan-v1\",\n  \"steps\": [\n    {\n      \"id\": \"survey-source\",\n      \"action\": \"Read every file under src/** plus the package entry point and its package.json 'exports'/'main' field to catalog: (a) every currently exported public symbol, (b) all existing JSDoc type annotations, (c) any existing @ts-ignore/@ts-expect-error/@ts-nocheck comments, (d) any JSDoc types using 'any' or the '{*}' wildcard. Note which files will need annotation fixes to satisfy `tsc --noEmit --strict` (strictNullChecks, noImplicitAny, strictFunctionTypes, etc.) while preserving runtime behavior exactly.\",\n      \"tools\": [\"read\", \"grep\"],\n      \"rounds\": 20,\n      \"exit\": [\n        {\"type\": \"json-valid\", \"path\": \"package.json\"}\n      ]\n    },\n    {\n      \"id\": \"fix-primary-modules\",\n      \"action\": \"Edit the main/core JavaScript source files under src/** to add or correct JSDoc type annotations so they satisfy `tsc --noEmit --strict`. Use precise JSDoc types (@param, @returns, @typedef, generics, union types) and use 'unknown' plus narrowing at use sites where the true type is not statically knowable. Do not introduce any @ts-ignore, @ts-expect-error, or @ts-nocheck, and do not introduce any JSDoc type containing 'any' or '{*}'. Do not change any runtime logic, control flow, or exported symbol names/signatures — only add/correct type annotations that describe existing behavior.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 40,\n      \"target\": \"src/**\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"},\n        {\"type\": \"check-passes\", \"name\": \"typecheck-clean\"}\n      ]\n    },\n    {\n      \"id\": \"fix-remaining-modules\",\n      \"action\": \"Continue fixing any remaining files under src/** that still produce errors under `tsc --noEmit --strict` (e.g. helper/utility modules, internal submodules not covered in the previous pass). Same constraints apply: only JSDoc annotation fixes, no suppressions, no 'any' or '{*}' types, 'unknown' allowed with narrowing, no behavior changes, no removed exports.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 40,\n      \"target\": \"src/**\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"},\n        {\"type\": \"check-passes\", \"name\": \"typecheck-clean\"}\n      ]\n    },\n    {\n      \"id\": \"final-strictness-pass\",\n      \"action\": \"Perform a final cleanup pass over src/**: resolve any lingering strict-mode typecheck errors (e.g. from edge cases like optional chaining, nullable properties, or generic inference gaps), double-check no @ts-ignore/@ts-expect-error/@ts-nocheck or 'any'/'{*}' JSDoc types were introduced anywhere, and confirm every previously exported public symbol from the entry point is still exported unchanged. Only touch src/** and only via type annotations, never behavior.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 30,\n      \"target\": \"src/**\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"},\n        {\"type\": \"check-passes\", \"name\": \"typecheck-clean\"}\n      ]\n    },\n    {\n      \"id\": \"verify-behavior-and-suite\",\n      \"action\": \"Read through the modified src/** files and confirm the test suite's behavior oracle still holds and no suppressions or 'any'/'{*}' types were left in place; rely on the automatic checks to confirm the suite is green and no suppressions were added.\",\n      \"tools\": [\"read\", \"grep\"],\n      \"rounds\": 15,\n      \"exit\": [\n        {\"type\": \"check-passes\", \"name\": \"suite-green\"},\n        {\"type\": \"check-passes\", \"name\": \"no-suppressions\"}\n      ]\n    }\n  ]\n}"
+    },
+    {
+      "label": "P1B-catalog-1",
+      "ok": false,
+      "reds": [
+        {
+          "code": "invalid-value",
+          "path": "steps.0.tools",
+          "detail": "unknown tool(s) impact — menu: read|grep|write|edit|recall|get"
+        },
+        {
+          "code": "scope-escape",
+          "path": "steps.0.exit.0.path",
+          "detail": "\"tsconfig.json\" is outside the signed fence [src/**]"
+        }
+      ],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "audit-repo",
+            "action": "Read tsconfig.json, package.json, and all files under src/** to catalog: (a) the exact strictness flags currently enabled vs full --strict, (b) every symbol exported from the package's public entry point (the file referenced by package.json 'main'/'exports'), (c) every JSDoc type annotation on functions, params, returns, and object shapes across src/**, and (d) every existing @ts-ignore/@ts-expect-error/@ts-nocheck and any use of 'any' or '{*}' in JSDoc. Record this inventory (via stash) noting exact file:line locations most likely to fail under `tsc --noEmit --strict` (implicit any params, missing return types, strictNullChecks mismatches, unchecked optional properties, unsafe narrowing). Do not modify any file.",
+            "tools": [
+              "read",
+              "grep",
+              "recall",
+              "impact"
+            ],
+            "rounds": 20,
+            "exit": [
+              {
+                "type": "json-valid",
+                "path": "tsconfig.json"
+              }
+            ]
+          },
+          {
+            "id": "fix-core-strictness",
+            "action": "In src/**, edit JSDoc type annotations to satisfy full TypeScript strict mode (strictNullChecks, noImplicitAny, strictFunctionTypes, etc.) for the most common/obvious cases: add explicit @param/@returns types to functions lacking them, add '| undefined' / '| null' to types where the code already checks for or can receive those values, and add explicit types to object literals and class fields. Never use 'any' or '{*}' in JSDoc; use 'unknown' plus a narrowing check at the use site when the true type cannot be stated precisely. Never add @ts-ignore, @ts-expect-error, or @ts-nocheck. Do not change any runtime behavior, only type annotations/JSDoc comments and, where unavoidable, minimal defensive narrowing that preserves existing behavior on all inputs. Preserve every currently exported symbol from the public entry point exactly.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "target": "src/**",
+            "rounds": 35,
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              }
+            ]
+          },
+          {
+            "id": "fix-remaining-strictness",
+            "action": "Re-run through src/** (using grep to locate remaining JSDoc types lacking full-strict coverage) and fix residual `tsc --noEmit --strict` failures left after the previous pass: unions missing null/undefined branches, functions returning implicit any, generic type parameters left unconstrained, array/object index access needing narrowing, and mismatched optional vs required properties. Continue to avoid 'any', '{*}', and any suppression comments; prefer 'unknown' with narrowing. Do not alter runtime behavior or remove/rename any exported symbol.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "target": "src/**",
+            "rounds": 35,
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              }
+            ]
+          },
+          {
+            "id": "polish-exports-and-safety",
+            "action": "Do a final pass over src/**: confirm and, if needed, restore/fix JSDoc so that every symbol previously exported from the public entry point is still exported with an unchanged name and shape; confirm no @ts-ignore/@ts-expect-error/@ts-nocheck was introduced anywhere and none previously present were removed-and-replaced by unsafe casts; confirm no JSDoc type contains 'any' or '{*}'. Make any small remaining edits needed purely to keep `tsc --noEmit --strict` green without changing behavior.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "target": "src/**",
+            "rounds": 20,
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              }
+            ]
+          },
+          {
+            "id": "verify-suite-green",
+            "action": "Read the test/** suite structure and the edited src/** files to confirm the test suite still exercises the same behavior and would pass unchanged; do not modify any file.",
+            "tools": [
+              "read",
+              "grep"
+            ],
+            "rounds": 15,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              }
+            ]
+          },
+          {
+            "id": "verify-no-suppressions",
+            "action": "Read through src/** one final time to confirm no @ts-ignore, @ts-expect-error, or @ts-nocheck exists anywhere, and no JSDoc type contains 'any' or the '{*}' wildcard; do not modify any file.",
+            "tools": [
+              "read",
+              "grep"
+            ],
+            "rounds": 10,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          }
+        ]
+      },
+      "raw": "{\n  \"schema\": \"plan-v1\",\n  \"steps\": [\n    {\n      \"id\": \"audit-repo\",\n      \"action\": \"Read tsconfig.json, package.json, and all files under src/** to catalog: (a) the exact strictness flags currently enabled vs full --strict, (b) every symbol exported from the package's public entry point (the file referenced by package.json 'main'/'exports'), (c) every JSDoc type annotation on functions, params, returns, and object shapes across src/**, and (d) every existing @ts-ignore/@ts-expect-error/@ts-nocheck and any use of 'any' or '{*}' in JSDoc. Record this inventory (via stash) noting exact file:line locations most likely to fail under `tsc --noEmit --strict` (implicit any params, missing return types, strictNullChecks mismatches, unchecked optional properties, unsafe narrowing). Do not modify any file.\",\n      \"tools\": [\"read\", \"grep\", \"recall\", \"impact\"],\n      \"rounds\": 20,\n      \"exit\": [\n        {\"type\": \"json-valid\", \"path\": \"tsconfig.json\"}\n      ]\n    },\n    {\n      \"id\": \"fix-core-strictness\",\n      \"action\": \"In src/**, edit JSDoc type annotations to satisfy full TypeScript strict mode (strictNullChecks, noImplicitAny, strictFunctionTypes, etc.) for the most common/obvious cases: add explicit @param/@returns types to functions lacking them, add '| undefined' / '| null' to types where the code already checks for or can receive those values, and add explicit types to object literals and class fields. Never use 'any' or '{*}' in JSDoc; use 'unknown' plus a narrowing check at the use site when the true type cannot be stated precisely. Never add @ts-ignore, @ts-expect-error, or @ts-nocheck. Do not change any runtime behavior, only type annotations/JSDoc comments and, where unavoidable, minimal defensive narrowing that preserves existing behavior on all inputs. Preserve every currently exported symbol from the public entry point exactly.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"target\": \"src/**\",\n      \"rounds\": 35,\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"},\n        {\"type\": \"check-passes\", \"name\": \"typecheck-clean\"}\n      ]\n    },\n    {\n      \"id\": \"fix-remaining-strictness\",\n      \"action\": \"Re-run through src/** (using grep to locate remaining JSDoc types lacking full-strict coverage) and fix residual `tsc --noEmit --strict` failures left after the previous pass: unions missing null/undefined branches, functions returning implicit any, generic type parameters left unconstrained, array/object index access needing narrowing, and mismatched optional vs required properties. Continue to avoid 'any', '{*}', and any suppression comments; prefer 'unknown' with narrowing. Do not alter runtime behavior or remove/rename any exported symbol.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"target\": \"src/**\",\n      \"rounds\": 35,\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"},\n        {\"type\": \"check-passes\", \"name\": \"typecheck-clean\"}\n      ]\n    },\n    {\n      \"id\": \"polish-exports-and-safety\",\n      \"action\": \"Do a final pass over src/**: confirm and, if needed, restore/fix JSDoc so that every symbol previously exported from the public entry point is still exported with an unchanged name and shape; confirm no @ts-ignore/@ts-expect-error/@ts-nocheck was introduced anywhere and none previously present were removed-and-replaced by unsafe casts; confirm no JSDoc type contains 'any' or '{*}'. Make any small remaining edits needed purely to keep `tsc --noEmit --strict` green without changing behavior.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"target\": \"src/**\",\n      \"rounds\": 20,\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"},\n        {\"type\": \"check-passes\", \"name\": \"typecheck-clean\"}\n      ]\n    },\n    {\n      \"id\": \"verify-suite-green\",\n      \"action\": \"Read the test/** suite structure and the edited src/** files to confirm the test suite still exercises the same behavior and would pass unchanged; do not modify any file.\",\n      \"tools\": [\"read\", \"grep\""
+    },
+    {
+      "label": "U0B-onesentence-1",
+      "ok": true,
+      "reds": [],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "fix-type-errors",
+            "action": "Read all source files under src/ and use grep to locate every type-related issue reported by `tsc --noEmit --strict`. Edit the source files to add correct, precise TypeScript type annotations (interfaces, generics, proper null/undefined handling, etc.) that resolve all strict-mode type errors. Do not introduce any suppression mechanisms (no @ts-ignore, @ts-expect-error, or unsafe `any` casts used to silence errors) and do not change runtime behavior/logic, only type-level annotations and declarations.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              }
+            ]
+          },
+          {
+            "id": "confirm-no-suppressions",
+            "action": "Read through the modified source files under src/ and grep for any suppression patterns (@ts-ignore, @ts-expect-error, eslint-disable for type rules, unsafe any casts) that may have been introduced while fixing type errors. Confirm none are present.",
+            "tools": [
+              "read",
+              "grep"
+            ],
+            "rounds": 10,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "confirm-tests-pass",
+            "action": "Read the test suite and verify, by inspection and by referencing prior changes, that the type annotation fixes made to src/ did not alter runtime behavior and that the full test suite still passes.",
+            "tools": [
+              "read",
+              "grep"
+            ],
+            "rounds": 10,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              }
+            ]
+          }
+        ]
+      },
+      "raw": "{\n  \"schema\": \"plan-v1\",\n  \"steps\": [\n    {\n      \"id\": \"fix-type-errors\",\n      \"action\": \"Read all source files under src/ and use grep to locate every type-related issue reported by `tsc --noEmit --strict`. Edit the source files to add correct, precise TypeScript type annotations (interfaces, generics, proper null/undefined handling, etc.) that resolve all strict-mode type errors. Do not introduce any suppression mechanisms (no @ts-ignore, @ts-expect-error, or unsafe `any` casts used to silence errors) and do not change runtime behavior/logic, only type-level annotations and declarations.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 30,\n      \"target\": \"src/**\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"},\n        {\"type\": \"check-passes\", \"name\": \"typecheck-clean\"}\n      ]\n    },\n    {\n      \"id\": \"confirm-no-suppressions\",\n      \"action\": \"Read through the modified source files under src/ and grep for any suppression patterns (@ts-ignore, @ts-expect-error, eslint-disable for type rules, unsafe any casts) that may have been introduced while fixing type errors. Confirm none are present.\",\n      \"tools\": [\"read\", \"grep\"],\n      \"rounds\": 10,\n      \"exit\": [\n        {\"type\": \"check-passes\", \"name\": \"no-suppressions\"}\n      ]\n    },\n    {\n      \"id\": \"confirm-tests-pass\",\n      \"action\": \"Read the test suite and verify, by inspection and by referencing prior changes, that the type annotation fixes made to src/ did not alter runtime behavior and that the full test suite still passes.\",\n      \"tools\": [\"read\", \"grep\"],\n      \"rounds\": 10,\n      \"exit\": [\n        {\"type\": \"check-passes\", \"name\": \"suite-green\"}\n      ]\n    }\n  ]\n}"
+    }
+  ]
+}
