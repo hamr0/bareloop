@@ -1022,3 +1022,49 @@ outcome zero** (still cap-halt, zero writes). The bottleneck was never the primi
 never run (F20) and the loop has no ratchet (F21), of which **BA-5 is the library-side half**. The
 next move is plan-v1 (PRD Addendum v1.12), **not** another primitive. bareloop's own-side debt from
 the same run is tracked under *"OUR SIDE"* above.
+
+## BA-18 — `AnthropicProvider` sets no request/idle timeout, and `withRetry` has zero call sites — an idle-stalled socket hangs the caller until the OS TCP timeout (2026-07-26, job #5 TYPES screen)
+
+**Symptom, observed 3/3 times it could occur.** A job whose signed checks idle the connection
+40–56s between every LLM turn. In each of three runs, the last worker round lands normally,
+then a single `generate()` never returns: **38 minutes** in two rows, **2h24m** in the third
+— with zero rounds recorded between the final turn and the eventual escalation. The caller
+has no way to distinguish this from a slow model; there is no event, no error, and no
+progress. It presents as a hang, not a failure, so every retry/casualty policy above it is
+inert by construction.
+
+**Source read before filing (the BA-2 lesson).**
+- `provider-anthropic.js:_request` calls `transport.request(url, { method, headers })` and
+  wires `req.on('error')` only. **No `timeout` option, no `req.setTimeout`, no
+  `AbortSignal`.** A socket that the server has silently dropped, or a response that never
+  starts, is therefore bounded only by the OS TCP timeout (~2h on Linux defaults).
+- `retry.js:21` already classifies `ETIMEDOUT` as transient — but **`withRetry` has zero call
+  sites in `bare-agent/src`**. Grepped the whole source tree. The classification is dead code
+  on this path, so even a caller who wires `Retry` gets no protection against this failure.
+- `provider-clipipe.js` DOES bound its child process. The gap is provider-specific, not a
+  design position.
+
+**Ask (FAIL-able), two parts.**
+1. **A configurable request/idle timeout on `AnthropicProvider`,** defaulting to a finite
+   value. Acceptance: with `timeoutMs: 100` against a transport that accepts the request and
+   never responds, `generate()` must reject within ~100ms with an error carrying
+   `code: 'ETIMEDOUT'` (or an equivalently classified transient code) — and must NOT reject
+   when the response arrives inside the window. A test that hangs the transport and asserts
+   the caller regains control is the whole criterion.
+2. **Wire `withRetry` around `provider.generate`, or document the seam.** Acceptance: a
+   transport that throws `{code:'ETIMEDOUT'}` once then succeeds must return the success
+   under a wired `Retry`, and must rethrow under `retryOn: () => false`. If the intended
+   contract is caller-side wiring, that is a fine answer — but then `retry.js`'s transient
+   table needs a documented consumer, because today nothing reaches it.
+
+**Disconfirming evidence, filed WITH the ask (the standing rule).** A caller-side workaround
+EXISTS and WORKS: bareloop now wraps `generate()` in a bounded timeout + retry
+(`228b016`), and it caught the condition on the next run. So this is not blocking, and the
+ask is for the durable fix in the right layer, not a rescue. Two further honest counterweights:
+`provider-clipipe.js` already has a timeout, so the suite is not uniformly missing the
+concept; and the failure needs an aggravator (multi-minute idle gaps between turns) that many
+consumers will never produce — this job's signed checks are an unusually good generator of it.
+
+**Related.** BA-14 (2026-07-16) is the same family one layer down — a stale pooled keep-alive
+socket surfacing as `EPIPE`, fixed by widening the retry predicate. BA-18 is the case that
+predicate cannot reach: the socket does not error, it simply never answers.

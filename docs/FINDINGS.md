@@ -2939,3 +2939,89 @@ for $0 in data already on disk, and it can retire the comfortable justifications
 cheaper", "it'll be more reliable") before a line is written. And a phase-share denominator
 must be audited for populations that lack the phase entirely: 59% of the spend here belonged
 to a code path that structurally cannot have a plan.
+
+## F56 — the agreed write · select · compress · isolate palette died with config-v1 and was never re-expressed; the agent's whole authorship surface is six fields, and nothing in the system bounds TIME
+
+**Status: minted 2026-07-26. $0, source-read + archival, from hamr's realignment challenge
+after job #5's three void rows. Not an experiment — a structural audit of what the agent is
+actually allowed to author, prompted by the question "read, grep, edit are not all
+primitives; where are the rest?"**
+
+**Why this ran.** Job #5 (TYPES, the second-genre e2e) produced three rows, zero valid,
+$7.06, over runs that hung for up to 2h24m. hamr stopped it and asked whether the build had
+deviated from the product: *an agent handed a problem, choosing from a library of primitives,
+building its own bridge.* The honest answer required reading what the plan schema admits, not
+recalling what the design intended.
+
+**Finding 1 — the palette. The four-component vocabulary is LIVE upstream and absent here.**
+`litectx` (installed, v0.30.x) exports today:
+
+```
+PRIMITIVES        ["Write","Select","Compress","Isolate"]
+VERBS_BY_PRIMITIVE Write:   remember · forget · write-gate
+                   Select:  recall · impact
+                   Compress: assemble · compress · summaryWindow
+                   Isolate: stash · peek · evict · scope
+COMPRESS_LEVELS   verbatim · signature · drop
+```
+
+Twelve verbs. adaptlearn's F1 already ruled **"consume, don't build — no invention needed"**,
+and PRD §"Primitive menu presentation" binds the catalog (Select→recall, Compress→compress,
+Isolate→stash, Write→remember). **plan-v1 exposes two of the twelve** (`recall`, and `get`,
+which is a litectx method rather than a catalog verb). Zero Compress verbs, zero Isolate
+verbs, zero Write verbs reach the agent.
+
+**How it was lost — and why the loss was invisible.** Those verbs lived in config-v1 as
+shell-invoked CONFIG HOOKS, and F22 killed config-v1 on the finding that of 7 knobs only
+`loop.shape` was ever live: `stash` was write-only, `remember` fired on-green-only on a
+never-green run, `recall` searched an empty store. **That finding was correct and its reading
+was wrong.** The knobs were inert *because the loop was broken and the store was empty* —
+F20 (the close had never run), F21 (no channel between attempts), an unpopulated index. The
+inference drawn was "the agent does not author context config"; the evidence only supported
+"we could not attribute context config on a loop that never greened." plan-v1 then rebuilt
+the vocabulary from scratch as a step list and never re-litigated the palette. Greens now
+exist (F47) and the store is populated — the condition that made F22's measurement inert is
+gone, and nothing re-opened the question. **Blind-instrument class, 8th shipping, in its
+rarest form: the instrument was not misreading a variable, it had silently stopped offering
+one.**
+
+**Finding 2 — the authorship surface is six fields.** `src/plan.js:43` —
+`STEP_FIELDS = ['id','action','tools','rounds','target','exit']`. That is the complete
+vocabulary the agent may author, enforced by `unknown-field` at every depth. No model tier,
+no effort, no attempt cap, no retrieval policy, no compression level, no scope narrowing, no
+rationale. `tools` draws from `TOOL_MENU` (`src/job.js:49`) = 6 worker verbs, `run` locked
+forever. So "the agent authors its workflow" currently means: it names steps, orders them,
+picks a subset of six verbs, sets a round bound, names a target, composes exits.
+
+**Finding 3 — nothing in the system bounds TIME.** Grepped: no wall-clock cap exists in the
+library. Bounds are money (`budgetUsd`), rounds per step (`maxStepRounds`, default 40),
+attempts per step (`capRuns`, default 3), and `closeTimeoutMs` — which bounds a single close,
+not a run. Job #5's own agent-authored plan therefore authorised, inside every rule,
+**7 steps × 3 attempts × 30 rounds ≈ 630 worker turns**, with a 40–56s signed check between
+iterations. Multi-hour wall-clock is not a malfunction of that design; it is what the design
+permits. The 2h24m hang was an upstream transport bug (BA-18) stacked on top of a shape that
+had no time answer of its own.
+
+**Finding 4 — a replan has never fired, in the entire programme.** `planrun.js` triggers a
+replan only on step exhaustion, and an instrument stop is explicitly not exhaustion
+(`planrun.js:231` and the `lastEscalation` category read). Both job #5 rows recorded
+`replanned:false` after dying provider-red — mechanically correct, and the consequence is
+that **"the agent adapts its workflow as it goes" has zero observations across every battery
+this repo has run.** Layer 2's acceptance gate (F47) never required one. "Authors a workflow"
+is evidenced by contrast (same spec, same model, two materially different plans — job #5
+stash). "Adapts it" is not evidenced at all.
+
+**What this does to prior claims.** Nothing is withdrawn on evidence, but two labels are
+narrowed:
+- **"Layer 2 ACCEPTED" (F47) means: converts on ONE genre, with the adaptation half untested.**
+  v1.26 already flagged the genre bound; this adds the adaptation bound.
+- **"The planner is at ceiling" (F51–F53) was measured on a six-field surface.** A ceiling
+  found inside a six-field vocabulary says nothing about a twelve-verb one. The ceiling claim
+  is now bounded by palette as well as by genre.
+
+**Lesson.** A capability that is *never offered* leaves no failure trace — it looks exactly
+like a capability that was offered and not needed. Every battery since F22 measured an agent
+choosing from six verbs while the design record said twelve, and no instrument could have
+caught it, because the missing verbs generate no events. When a kill decision is made on
+inertness, record the CONDITIONS that made it inert (broken loop, empty store) and re-open it
+when they lift — an inert-under-conditions finding is not a permanent verdict on the feature.

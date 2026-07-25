@@ -89,6 +89,15 @@ verb blocks the work, the worker files a *request-red* and a human decides.
 | `get` | trade one pointer for exactly one chunk of code (the function + its doc comment) |
 | `run` | **LOCKED, forever.** A worker that can run commands can run its own judge and grade its own exam |
 
+> **⚠ This table is the CURRENT six, not the intended palette (F56, 2026-07-26).** The agreed
+> vocabulary is four components — **write · select · compress · isolate** — each with its own
+> verb list, which the agent picks from as it sees fit. Those twelve verbs ship upstream today
+> and were bound by the PRD's primitive-menu section; they were lost as collateral when
+> config-v1 died (F22 measured them inert — on a loop that never greened and a store that was
+> empty, conditions that have since lifted). Restoring them is move **P** of the v1.27 course
+> correction. The hard line is unchanged either way: the agent may pick and tighten, never
+> widen; the menu is signed; `run` stays locked.
+
 ---
 
 ## The verdicts
@@ -365,7 +374,31 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
    target** — today one target path threads to every text-mode step (fine for
    successive gates over one artifact, the only shape job-v1 can express; a clobber
    the day two steps carry distinct deliverables).
-4. **Build Layer 3** — inheritance with ledger attribution (N3, kill-switch: rules must
+4. **COURSE CORRECTION — T · A · P · U** (PRD v1.27, 2026-07-26, hamr). Inserted ahead of
+   Layer 3 after job #5's realignment audit (F56) found the build had narrowed without a
+   decision: the agent's whole authorship surface is six fields, the four-component palette
+   was never re-expressed after config-v1 died, nothing in the system bounds TIME, and a
+   replan has fired **zero times in the programme** — so "adapts as it goes", half the product
+   claim, has no observations at all.
+   - **T — time is a cap, like money.** A run-level wall-clock bound the agent is told at plan
+     time and plans against; operator-set, tighten-only, never self-raised. A run that cannot
+     fit is a stop. The read it buys: given a time budget, does the agent RUSH or build a
+     bridge that carries it? (Auto-sizing from complexity is later; v1 is operator-set.)
+   - **A — replan on TIME, not exhaustion only.** A step burning a declared share of remaining
+     time with exits unmoved triggers the replan. The count ceiling stays — trigger changes,
+     ceiling never does.
+   - **P — restore the palette** (write · select · compress · isolate, per-step and
+     agent-selected, not shell hooks) and widen the step vocabulary past six fields
+     (model tier / effort, attempt cap, scope narrowing). The arbiter stays inexpressible.
+   - **U — one full-cycle e2e in USER MODE:** one sentence of problem, a budget, a time cap,
+     one close, no operator hand-solve or arms. This is v1.26's second-genre e2e with the
+     scaffolding stripped — the first run that tests the product rather than the atom.
+   - **Acceptance is redefined (hamr):** a workflow need not green everything — it must green
+     **ONE job end to end**, which graduates the bridge; the bridge is then reused on the next
+     job of the same shape and improves. This makes Layer 3's paired control fall out of normal
+     operation (reuse = the ON arm, from-scratch = the OFF arm) instead of needing a battery.
+   - Order: **T + A → U → P**. P last so the widening has a baseline to be attributed against.
+5. **Build Layer 3** — inheritance with ledger attribution (N3, kill-switch: rules must
    transmit across non-identical runs). Carries three v1.21 requirements (external-review
    fold, 2026-07-21): **(a) the drift detector** — arbiter-side trailing green-rate vs
    mint-time baseline, named red `drift-red`, flag-not-rollback (rollback is merge-class,

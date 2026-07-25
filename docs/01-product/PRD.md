@@ -1553,3 +1553,97 @@ choice, and close must be frozen before firing, as every rung has been.
   disk and retired two comfortable justifications before a line was written.
 - **Audit a phase-share denominator for populations that lack the phase** (F55: 59% of
   archived spend belonged to a code path that structurally cannot have a plan).
+
+---
+## Addendum v1.27 — 2026-07-26 (course correction: TIME is a cap, replan is time-relative, the four-component palette comes back, and acceptance becomes ONE green end-to-end that graduates a reusable bridge — hamr)
+
+**Why this addendum exists.** hamr stopped job #5 mid-programme and challenged the build's
+direction: *"is the agent still handed a problem and a set of primitives to choose from to
+build its own bridge, or have we deviated?"* The audit (F56) says the direction is intact but
+the surface has narrowed without anyone deciding to narrow it. This addendum is the
+correction, and it supersedes v1.26's "next move" only in sequencing — the second-genre e2e
+survives, as move **U** below.
+
+**The premise behind all of it, stated by hamr:** *an LLM given open-ended scope exhausts it;
+given bounds it uses all of them.* Every cap in this system is therefore also a steering
+input, not merely a safety limit — which is why a missing cap (time) is a missing design
+decision, not a missing guardrail.
+
+### The four moves
+
+**T — TIME is a first-class cap, alongside money.** A run carries a wall-clock bound. The
+agent is TOLD its time budget at plan time exactly as it is told its round bound, and plans
+against it. A run that cannot fit is a stop, and the stop is the result (build-ladder
+discipline, unchanged). Shell/arbiter territory: operator-set, agent may only tighten, never
+self-raised — identical to money (`budgetUsd`). Eventual, explicitly NOT v1: auto-sizing the
+time cap from query complexity; v1 is operator-set so the first reads are clean.
+**The read T buys:** given an explicit time budget, does the agent RUSH (front-load, shallow
+steps, thin exits) or does it BUILD A BRIDGE THAT CARRIES IT (decompose to fit, spend the
+budget it was given)? That question is unanswerable today because the variable does not exist.
+
+**A — replan becomes TIME-relative, not exhaustion-only.** Today replan fires only when a
+step exhausts its attempts, and an instrument stop is not exhaustion — so a replan has fired
+**zero times in this programme** (F56). Retrigger it on time evidence: a step consuming a
+declared share of the run's REMAINING time with its exits unmoved. The hard cap on replan
+count stays (unlimited replanning launders thrash as adaptation, v1.12) — this changes the
+trigger, never the ceiling.
+
+**P — the primitive palette returns to what was agreed.** The build offers the agent
+**write · select · compress · isolate**, each with its own verb list, and the agent chooses
+per step as it sees fit. This is not new design: adaptlearn's F1 ruled "consume, don't build",
+litectx ships all twelve verbs today, and the PRD's primitive-menu section already binds the
+catalog — plan-v1 simply never re-expressed it after F22 killed config-v1 (F56). Two
+corrections ride with it:
+- **These are WORKER/STEP primitives the agent selects, not shell-invoked config hooks.**
+  Hooks at fixed points is what F22 correctly killed; per-step selection is a different
+  mechanism and the vocabulary-hygiene split (hook verbs vs worker tools) is retired in favour
+  of one plan-level palette.
+- **The step vocabulary widens beyond six fields** (`src/plan.js:43`) to admit what the agent
+  needs to shape work: per-step model tier / effort, per-step attempt cap (tightening only),
+  and per-step scope narrowing. Standing goal, hamr: *"offer it a library with everything it
+  may need"* — the agent may always tighten, never widen, and the menu itself stays signed.
+- **Unchanged and non-negotiable:** the arbiter is still inexpressible. Budget, close, fence,
+  merge are never in the plan vocabulary. `run` stays locked forever. Widening the MENU
+  remains an operator act requiring a fresh signature.
+
+**U — one full-cycle e2e in USER MODE.** One sentence of problem statement, the way a user
+would say it. A budget. A time cap. One close. No operator hand-solve, no arms, no genre
+screen, no 400-word goal enumerating the grader's requirements. This is v1.26's second-genre
+e2e with the operator scaffolding stripped, and it is the first run that tests the product
+rather than the atom.
+
+### The revised acceptance definition (hamr, this session)
+
+**A workflow does not have to green everything. It has to green ONE job end to end.** That
+one green graduates the bridge; the bridge is then REUSED on the following job of the same
+shape and improves from there. The assumption, stated plainly: *if you have a problem and
+want a workflow for it, one pass proves the bridge carries — the same bridge then serves the
+same job again and gets enhanced.*
+
+This replaces "prove it statistically before anything inherits" as the gate, and it makes
+Layer 3's test dramatically cheaper: **the reuse run IS the inheritance-ON arm, and a
+from-scratch run on the same job IS the OFF arm** — the paired control (v1.21 requirement b)
+falls out of normal operation instead of needing a bespoke battery.
+
+**Two conditions the operator proposes and hamr has NOT yet ruled on** (recorded here so
+they cannot be quietly assumed):
+1. **Graduation is to CANDIDATE, and reuse is the replication.** n=1 on a nondeterministic
+   worker is this repo's own hard-won anecdote rule (F24 was withdrawn on exactly it). One
+   green graduating a bridge is fine — provided a bridge that fails to carry the next job is
+   DEMOTED, not defended. This costs nothing and adds no gate; it only names what the second
+   run means.
+2. **"The same job" must mean the same SHAPE, not the same instance.** A bridge reused only
+   on a byte-identical job is a lookup table, and the memorization audit (v1.15) kills it.
+   The value — and the only thing that can honestly be called learning — is transfer to a
+   non-identical job of the same genre.
+
+### Sequencing
+
+**T and A first** (both small, both shell-side, both answer the live complaints: hours, and
+never adapts) → **U** (the product test, now readable because time is bounded) → **P** sized
+by what U shows the agent pressing against. P before U would widen the palette with no
+baseline to attribute the widening to — the F22 mistake in the opposite direction.
+
+**Prerequisite, not optional:** BA-18 (the provider has no request/idle timeout and
+`withRetry` has no call sites) is filed upstream this session. The harness guard works, so it
+does not block T/A/U, but every long run on that surface is a coin flip until it lands.
