@@ -355,3 +355,44 @@ names its own anti-patterns; the primary axis (`strategyExplicit`) carried the d
 
 **Spend:** $1.57 of the $2 cap ($1.31 Stage 1 + $0.26 screen). Candidate B needs its own
 freeze and its own budget — it is NOT authorized by this document.
+
+---
+
+# VAGUE-ASK SCREEN — target withheld (FROZEN 2026-07-25, before any number)
+
+F52 closed the METHOD axis (the model supplies a withheld method). This closes the other
+half of "the ask could/couldn't be clear": the operator knows the BAR but not WHICH parts
+are weak — the realistic form of "automate this job, I don't know the workflow".
+
+## Manipulation (one variable)
+
+`vagueSpec` = `targetSpec` minus the **survivor scoreboard** and the "target the functions
+where planted faults currently survive" pointer. **The method stays** (F52 settled that
+axis; changing two levers at once makes the delta unattributable). Kept, as always: the
+15%/45 bar, the close/check mechanism, the fence, the fault-type facts, patient facts —
+operator territory, never removable. Baseline = the already-paid `A0` rows.
+
+**Design fact, not a confound:** the scout blob still lists the module's functions, because
+a read-only scout is what the REAL flow provides. The withheld knowledge is which functions
+are WEAK, not which exist — exactly the real asymmetry.
+
+## FROZEN read
+
+Applying F51's pre-flight (is the CONTROL below ceiling?), measured on the plan JSON:
+- **discoversTargets** — names ≥3 real survivor functions (the unchanged aim metric).
+- **topSurvivorFocus** — names ≥2 of the four highest-survivor functions
+  (`_score_lexical` 4, `_detect_critical` 4, `_score_keywords` 3, `_calculate_confidence` 3).
+  Without the scoreboard the planner cannot know these; concentration is the discrimination.
+- **addsDiscoveryStep** — the plan opens with a read-only step to FIND the weak spots
+  (a well-formed workflow for a vague ask should discover before it writes).
+- Unchanged F51 rubric (winShape, pairing) for continuity.
+
+**Decision (frozen):**
+- **V0 ≈ A0** → target-vagueness does NOT degrade workflow generation. Room does not exist
+  here either; `Vfull` is not run. That is a strong PRODUCT finding (plan-v1 handles a vague
+  ask unaided) and it pushes the readable arm to near-dead across every clarity axis —
+  leaving only candidate B (the model's default is WRONG, not missing).
+- **V0 materially below A0** (aim or concentration drops, or no discovery step appears) →
+  room exists; freeze and run `Vfull` vs `V0` as the real ON/OFF read.
+
+Budget: ≤$0.40 (cap now $2.50 across the whole pre-probe programme; $1.57 spent).
