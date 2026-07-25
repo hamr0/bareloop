@@ -225,6 +225,35 @@ That part never changes — mom is the **shell** (judge + cap + merge).
 - **Layer 3 — the recipe box.** A finished castle's plan goes in the box; tomorrow starts
   from the recipe, not from zero. Failed plans never go in the box.
 
+**The ruler (what a *check* is, decided 2026-07-26 — PRD v1.28).** Mom inspects at the end,
+so the kid can build for hours before finding out a wall is crooked. A **check** is a ruler
+the kid may use on its own, mid-build, to test one wall before mom ever looks. It settles
+nothing — mom's inspection is still the only verdict — it just turns "make it sturdier" into
+"this wall is 2cm short", which is the kind of thing the kid can actually act on (F46: the
+failure that was fatal 3/3 converted 2/2 once the ruler was in the kid's hands; F47: the kid
+picked which ruler to use at which step, itself, 3/3).
+
+**Where the rulers come from: mom's own checklist, not carved by hand.** Mom's inspection is
+already a list of things she looks at. The kid borrows one item off THAT list — nobody carves
+a custom ruler per castle. Two consequences worth stating plainly:
+- **The kid knowing what's on mom's list is not cheating.** Passing every item IS a good
+  castle. What would be cheating is mom saying *"the third wall from the left is crooked"* —
+  that hands over the answer, and the rule against it (the close's output never names the
+  culprit) is unchanged.
+- **A hand-carved ruler is the more dangerous option.** A copy whittled beside the real
+  inspection can drift softer than mom's eye, so the kid passes the copy and fails her. Job
+  #5's three hand-written checks were re-implementations of three stages the close already
+  ran. Borrowing removes that whole class.
+
+For mom to lend an item, she has to say her checklist out loud as numbered items instead of
+keeping it in her head — that is the one mechanical change (`close: [{name, cmd}, …]`). Items
+that cannot stand alone ("does the whole thing hold together") stay mom-only; a partial ruler
+menu is the expected case.
+
+**And who says what "done" means at all?** The user — that is the ONE thing authored by hand.
+*"I don't know the best workflow"* is not *"I don't know what done looks like."* The user
+points at the far bank; the agent builds every pier.
+
 Nucleus to the outside — note the layers are numbered by build order, not by position:
 
 ```

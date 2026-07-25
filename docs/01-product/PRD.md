@@ -1647,3 +1647,82 @@ baseline to attribute the widening to — the F22 mistake in the opposite direct
 **Prerequisite, not optional:** BA-18 (the provider has no request/idle timeout and
 `withRetry` has no call sites) is filed upstream this session. The harness guard works, so it
 does not block T/A/U, but every long run on that surface is a coin flip until it lands.
+
+---
+## Addendum v1.28 — 2026-07-26 (the user authors the DESTINATION, never the road: the check menu DERIVES from the close, and the close becomes declared stages — hamr)
+
+**Approval.** Arbiter-shape change, approved by hamr in-turn this session; his words, verbatim:
+*"i have no idea what ypu're talking about"* → after the kid/mom explanation and the evidence
+audit → *"ok, whats next? #2 update docs"*, following *"agreed to all"* on v1.27's moves. The
+challenge that forced it, verbatim: **"there shouldn't be user authoring anywhere, that defies
+the point of bareloop."**
+
+### The principle
+
+**The user authors the destination. Never the road.** *"I don't know the best workflow"* is
+not the same statement as *"I don't know what done looks like."* A user who is oblivious to
+the method can still say what success is — `tsc --strict is clean and the tests pass`. That
+one statement is the whole legitimate user input. Steps, order, verbs, bounds, and checks are
+all road, and the agent authors all of them.
+
+This does NOT relax the arbiter rule. The close is still operator/user territory and can
+never be agent-authored — a judge the agent writes is self-consistency in a judge's coat
+(v1.15, the RSI ceiling finding). What changes is that the destination is the ONLY thing
+authored by hand, and everything downstream of it is derived.
+
+### The decision
+
+1. **A close is declared as an ordered list of NAMED STAGES**, not one opaque command:
+   `close: [{name, cmd, ...}, ...]`. The shell runs them in order as the close; it can also
+   run any single stage alone.
+2. **The check menu DERIVES from those stages.** No operator authors checks per job, ever.
+   The agent picks which stage gates which step, by name, exactly as today
+   (`check-passes(name)`) — it is told the names and the pairing rule, never the command.
+3. **A stage that cannot stand alone is simply not in the menu** (job #5's D1 gaming audit
+   needs the whole diff). A partial menu is the expected case, not a failure.
+4. **Unchanged:** checks decide nothing and mint nothing; the close is the only truth; `run`
+   stays locked; the close's OUTPUT still never names the culprit file (v1.12/F28 — that rule
+   governs the failure message, not the checklist).
+
+### Why this is with the grain, not against it — the evidence audit
+
+The hazard the operator raised ("it leaks the close's structure to the agent") is not
+supported by this repo's own record, and was withdrawn:
+
+- **F46** — the in-run operator-signed check IS the mechanism that works. The exact failure
+  fatal 3/3 in F39 converted 2/2 times it occurred once the worker could run mom's own ruler
+  mid-build. The check was a piece of the close (a clean pytest run).
+- **F47** — the planner composed `tree-changed ∧ check-passes(clean-run)` **itself, 3/3**,
+  told only the NAMES and the pairing rule; the step check-loop alone drove 55–67.5% and the
+  outer grader's fix loop never fired.
+- **The green-side audits** (F33, F47) chased close exploitation under the standing rule that
+  finding nothing is suspicious, and found none — job #4's 22–27 of 40 mutants killed on
+  pristine source is behaviour the worker could not have faked.
+
+**And the hand-authored alternative is the MORE dangerous one.** Job #5's three operator
+checks (`typecheck-clean`, `suite-green`, `no-suppressions`) were re-implementations of three
+stages the close already ran (tsc, the suite, the D1 audit) in a separate file. A hand-carved
+copy can drift LENIENT — the worker passes the operator's ruler and fails the real inspection.
+Derivation removes that divergence class by construction.
+
+### The three real fit-to-pass risks, and where each is defended
+
+Naming them so the withdrawn one is not confused with the live ones:
+1. **A check that measures the wrong thing** ("a file exists" standing in for "the tests
+   catch bugs") — defended by the close's own anti-gaming stages (D1–D5), which is precisely
+   why deriving from the close beats authoring beside it.
+2. **A subjective close** — a rubric self-checked by the worker IS self-consistency (v1.15
+   gotcha). Applies to `soft-green`, which is declared-but-locked and unbuilt. A deterministic
+   exit code cannot be argued with.
+3. **Handing over the ANSWER** — "the third wall is crooked" vs "walls must be straight". The
+   existing rule (the close's output never names the culprit) already governs this, and is
+   untouched here.
+
+**Not a risk, withdrawn:** the worker knowing WHICH requirements exist. Passing every stage of
+the close is passing the close — that is succeeding, not gaming.
+
+### Consequence for U
+
+U (v1.27's user-mode e2e) can now run with **zero operator-authored checks**. Whether job
+#5's existing close actually decomposes into stages is the free half of probe U0 — a code
+question, answerable before any spend.
