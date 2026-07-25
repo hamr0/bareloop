@@ -2729,3 +2729,72 @@ can exploit: if the MODEL knows the workflow, the operator's ignorance costs not
 memory has nothing to add. A memory system's niche requires knowledge that is absent from
 BOTH the spec AND the weights — and the cheapest way to find out is to delete the knowledge
 from the spec and watch whether the model puts it back. It did, in 8 of 8.
+
+---
+
+## F53 — the vague-ask screen: withholding the TARGET does not degrade workflow generation either — but the mechanism is exhaustive coverage, not discovery
+
+**Status: minted 2026-07-25. Decision: no room on the target axis either; `Vfull` NOT run
+(frozen gate). Continues F51/F52. Carries one NEW unregistered hypothesis (below).**
+
+**Why this ran.** hamr's reframe sharpened the question: the operator gives ONE prompt, the
+ask may or may not be clear, and the system must generate a workflow either way. F52 closed
+the METHOD half. This closes the TARGET half — the realistic vague ask ("my tests are weak,
+get detection above 45%") where the operator does not know WHICH parts are weak.
+
+**Design (frozen 67aa3c3 before any number; ~$0.23).** One variable: `vagueSpec` =
+`targetSpec` minus the survivor scoreboard and the "target the functions where planted
+faults currently survive" pointer. The METHOD stays (F52 settled that axis; two levers at
+once makes a delta unattributable). Bar, close, fence, fault-type and patient facts stay —
+operator territory. Baseline = the already-paid `A0` rows. The scout still lists the module's
+functions, because a read-only scout is what the real flow provides: the withheld knowledge
+is which functions are WEAK, not which exist.
+
+**Result: `V0` n=8, 5 valid, $0.23.**
+
+| arm | n(ok) | discoversTargets | topSurvivorFocus | mean top-4 | adds discovery step | invalid |
+|---|---|---|---|---|---|---|
+| A0 (target GIVEN) | 7 | 1.00 | 1.00 | 4.00 | 0.71 | 1/8 |
+| V0 (target WITHHELD) | 5 | 1.00 | 1.00 | 3.60 | **0.80** | **3/8** |
+
+By the frozen rule this is **V0 ≈ A0 → no room; `Vfull` is not run.** Vagueness about the
+target does not degrade the plan's aim: without the scoreboard the planner still names the
+high-survivor functions, and it adds a read-only discovery step MORE often than the informed
+arm (0.80 vs 0.71) — a sensible response to a vaguer ask.
+
+**But the mechanism is COVERAGE, not discovery — and that bounds the claim.** Per-plan
+function coverage: **A0 names all 15/15 target functions in every single plan** (15,15,15,
+15,15,15,15); V0 names (14,6,13,14,14). The scoreboard was never buying *concentration on
+the weak ones* — it was buying *completeness and consistency*. V0 succeeds by testing
+essentially everything, which works only because `assess.py` exposes ~15 testable functions,
+small enough to cover exhaustively inside an 8-step plan. **On a large surface, exhaustive
+coverage is not available and the scoreboard would carry real information.** So the honest
+scope is: target-vagueness is free ON A SMALL TARGET SURFACE — the same class of limitation
+F51 hit, caught this time by auditing the mechanism instead of trusting the metric.
+
+**Variance, not mean, is where vagueness costs.** V0's first-draft invalid rate is 3/8 vs
+A0's 1/8, and its coverage carries an outlier (one plan at 6/15 vs A0's uniform 15/15). The
+central tendency is unchanged; the spread widens. Not fatal in the real flow — the drafter
+gets one redraft with the reds fed back — but a malformed draft is real spend.
+
+**NEW, UNREGISTERED observation → hypothesis ONLY, not minted.** Across the whole probe
+programme, first-draft schema validity splits with lineage: **0/16 invalid WITH lineage
+(P, Tfull) vs 7/39 (18%) WITHOUT (A0, A1, S0, V0)** — reds almost all `missing-required` on
+`steps[].exit`. This was NOT pre-registered (the frozen rubric graded only VALID plans, so
+the instrument was structurally blind to it — the "check both reds and greens" lesson, again).
+It is also CONFOUNDED by construction: the lineage payload contains a fully-formed valid plan
+with exits, so the drafter may simply be copying valid structure. **It is therefore recorded
+as a hypothesis to pre-register and test, never as a result.** If it survives its own frozen
+test it matters: it would mean F51's "shape mimicry" is not worthless after all — mimicry
+that buys first-draft VALIDITY saves a redraft, which is real money on the efficiency axis
+(distinct from the capability axis, which stays flat).
+
+**What this does NOT conclude.** One small module, one genre, one model. It does not show
+vague asks are always free — it shows they are free when the target surface is small enough
+to cover exhaustively.
+
+**Lesson.** A metric can read "no degradation" while the underlying mechanism is completely
+different from the one assumed: aim looked equal because BOTH arms covered everything, not
+because the vague arm discovered anything. Audit the mechanism behind a null result before
+banking it — and note that the frozen rubric, by grading only valid plans, could not see the
+one axis where the arms actually differed.

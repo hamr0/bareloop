@@ -6,6 +6,7 @@ A1       15  12   3.00     1.00    0.75    0.00  0.25   0.00    5.67   [err 0 tr
 P         8   8   4.00     1.00    1.00    0.00  1.00   0.00    6.00
 Tfull     8   8   4.88     1.00    1.00    1.00  0.88   0.00    6.00
 S0        8   8   3.88     1.00    0.88    1.00  0.00   0.00    4.63
+V0        8   5   4.60     1.00    0.80    1.00  0.80   0.00    3.60   [err 0 trunc 0 invalid 3]
 
 === Gate 1 — movement (mean |feature-rate ON - OFF|; higher = lineage moved the plan) ===
   P vs A1    (identical, POSITIVE CONTROL): 0.21
@@ -25,3 +26,11 @@ S0      8   1.00                    5.63       0.00
 (Frozen rule: S0 ~ A0 => stripping created NO room; the ceiling is the model's own
  competence => candidate A DEAD as a patient, escalate to candidate B.
  S0 materially below A0 => room exists => run Sfull vs S0.)
+
+=== VAGUE-ASK SCREEN — target withheld (V0) vs target given (A0) ===
+arm     n   discoversTargets  topSurvivorFocus  meanTop/4  addsDiscoveryStep
+A0       7   1.00              1.00             4.00       0.71
+V0       5   1.00              1.00             3.60       0.80
+
+(Frozen rule: V0 ~ A0 => vagueness does NOT degrade workflow generation; Vfull not run;
+ readable arm near-dead across clarity axes. V0 below A0 => room => run Vfull.)

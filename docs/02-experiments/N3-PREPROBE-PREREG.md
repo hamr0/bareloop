@@ -396,3 +396,28 @@ Applying F51's pre-flight (is the CONTROL below ceiling?), measured on the plan 
   room exists; freeze and run `Vfull` vs `V0` as the real ON/OFF read.
 
 Budget: ≤$0.40 (cap now $2.50 across the whole pre-probe programme; $1.57 spent).
+
+## VAGUE-ASK SCREEN — RESULT (2026-07-25): no room here either; programme closes
+
+`V0` n=8, 5 valid, $0.23. Full readout: `docs/FINDINGS.md` F53.
+
+**discoversTargets 1.00 (A0) vs 1.00 (V0); topSurvivorFocus 1.00 vs 1.00; discovery step
+0.71 vs 0.80.** By the frozen rule that is V0 ≈ A0 → no room → **`Vfull` NOT run.**
+
+**Mechanism audit (the part the metric could not see):** both arms succeed by COVERING
+EVERYTHING — A0 names 15/15 target functions in every plan, V0 13–14 with one outlier at
+6/15. The scoreboard buys completeness and consistency, not concentration. Valid only on a
+SMALL target surface; a large module would not admit exhaustive coverage.
+
+**Variance is where vagueness costs:** V0 first-draft invalid 3/8 vs A0 1/8; coverage
+outlier at 6/15. Central tendency unchanged, spread wider. Recoverable in the real flow (one
+redraft) but real spend.
+
+**Unregistered observation → HYPOTHESIS, not a result:** first-draft validity 0/16 WITH
+lineage vs 7/39 WITHOUT. Confounded (the payload contains a valid plan to copy) and outside
+the frozen rubric (which graded only valid plans — structurally blind to it). Needs its own
+freeze before it counts.
+
+**Programme spend: $1.80** ($1.31 Stage 1 + $0.26 F52 screen + $0.23 this). This document is
+CLOSED. Successors (patient-quirk lineage; wrong-default; the validity hypothesis) each need
+their own freeze — none is authorized here.

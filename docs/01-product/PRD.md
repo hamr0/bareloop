@@ -1413,3 +1413,84 @@ difficulty is itself evidence OFF is correct. (3) The Layer R wiring stays as F5
 **Scope note.** This is within-lane: Layer R is *within-run scratch*, not the arbiter (close
 / budget / fence / merge), and the settled value is the status-quo conservative direction
 (OFF). Recorded here so Layer 3 opens with no Layer-R dependency dangling.
+
+## Addendum v1.25 — 2026-07-25 (the N3 pre-probe programme reports: workflow generation is at ceiling; Layer 3's shape and test programme revised — F51/F52/F53, hamr)
+
+**What ran.** Adoption 3 (v1.21) gated the agent-readable-lineage arm behind "a cheap
+pre-probe … if the drafted plans are identical, the arm dies for under a dollar." That gate
+has now RUN — three frozen screens, 55 real drafts of the SHIPPED plan drafter, **$1.80
+total** — and it returns a more useful answer than the binary it was designed for.
+
+**The three results.**
+1. **F51 — lineage on a clear ask:** the positive control PASSED (the drafter does read
+   lineage), but the movement is SHAPE MIMICRY: subtract the one lineage-named structural
+   feature and the arms collapse (4.00 vs 3.86). No aim improvement; `memoHits` 0/8.
+2. **F52 — method withheld:** the model WRITES THE STRATEGY BACK IN, near-verbatim, 8/8.
+   You cannot manufacture a strategy gap by withholding strategy.
+3. **F53 — target withheld:** aim does not degrade either; the vague arm even adds a
+   discovery step more often. Mechanism audit: both arms simply cover EVERYTHING (A0 names
+   15/15 functions in every plan), so this holds only on a small target surface.
+
+**The load-bearing conclusion: plan-v1's workflow generation is at CEILING on every clarity
+axis we can manipulate.** Clear ask, method withheld, target withheld — the drafted workflow
+stays good. That is a strong PRODUCT result for the "Automate this job — I don't know the
+best workflow" pitch: the pitch holds, unaided, today. It is simultaneously a hard constraint
+on Layer 3, because **inheritance cannot lift an axis that is already maxed.** F51's ceiling
+was not an artifact of how job #4 was written (F52 refuted that); it is a property of the
+genre and the model.
+
+**Where inheritance could still earn its keep — the revised hypothesis set.** Everything
+tested so far is GENERAL METHOD, which lives in the weights, and memory reliably loses to ICL
+on general capability (CL-BENCH). The remaining candidates are knowledge that is absent from
+BOTH the spec AND the weights:
+- **(i) Patient-specific facts** — "this repo's conftest fakes are sync-only", "that fixture
+  is required", "the last attempt died on X". Local, undiscoverable from weights, only
+  partly visible to a bounded scout. **This is the strongest remaining candidate and it is
+  untested.** CL-BENCH's verdict does not reach it, because it is not capability.
+- **(ii) A WRONG default** — the model's obvious strategy structurally fails, so notes must
+  OVERRIDE a confident prior rather than fill a void. A different mechanism from anything
+  tested; needs patient engineering.
+- **(iii) Variance and efficiency, not mean quality** — F53's unregistered observation
+  (0/16 invalid first drafts WITH lineage vs 7/39 WITHOUT) is a HYPOTHESIS, confounded and
+  not minted; if it survives a frozen test, inheritance's value is fewer malformed drafts and
+  lower spend-to-green, NOT better plans. Cost and capability stay separate axes (F51
+  doctrine) — but a real cost win is still a win for "repeated, long" jobs.
+
+**Adoption 3 status: NOT promoted, NOT killed — narrowed.** The arm does not enter the
+battery on the strength of plan-shape movement, which mechanical reuse reproduces
+deterministically for $0. It re-enters only if (i) or (ii) shows room in its own frozen
+screen. Default prediction stays NO lift.
+
+**Layer 3's revised shape.** Mechanical inheritance is the PRIMARY arm (it delivers the only
+thing that demonstrably transfers — the plan skeleton — without a model reading anything).
+Its own marginal value is small at the planning layer (cold drafting already scores 4.14/5)
+and remains UNPROVEN on outcome. What mechanical reuse carries across NON-identical jobs is a
+design question the probes answered incidentally: the SHAPE, never the content.
+
+**The test programme (revised, ordered, with gates).**
+- *Phase 0 — cheap planning gates (~$1 each, decide which arms are alive).* T1 clear-ask
+  ✅F51 · T2 method-withheld ✅F52 · T3 target-withheld ✅F53 · **T4 patient-quirk lineage
+  (candidate (i)) — next, highest value** · T5 wrong-default (candidate (ii)) — costliest,
+  lowest priority.
+- *Phase 1 — build + guards.* **T6 `drift-red`** (Adoption 1) with MUST-FAIL fixtures before
+  trust, threshold from a MEASURED base rate never guessed · **T7 bound-pressure ledger fold**
+  (Adoption 2) — feasibility CONFIRMED at $0: 115 archived spines carry 79 `attempt-bounded`
+  + 63 `cap-halt` events, so its acceptance (surface the F37/16g rounds-vs-money bind) has
+  real data and can proceed independently of the inheritance verdict · **T8 mechanical
+  inheritance** (carry the skeleton).
+- *Phase 2 — the verdict.* **T9 the paired battery**: ON-mechanical vs OFF (plus ON-lineage
+  only if Phase 0 revives it), non-identical job set, judged on FAULTS CAUGHT — never plan
+  shape — with **spend-to-green pre-registered as a secondary axis**, and the memorization
+  audit at mint time.
+
+**Two gaps named, not papered over.** (1) **Patient inventory**: a non-identical battery
+wants ≥3 distinct jobs; we own 2 (orchestrator, assess.py). Either build more patients or
+state the limitation in the acceptance. (2) **A FLAT battery is a live possibility** — with
+cold planning already near-ceiling, both arms may fail to beat OFF on outcome. Per
+build-ladder discipline that is a legitimate rung STOP and the stop is a result; it is
+pre-registered here so it cannot be rationalised later.
+
+**Method note minted by this programme (added to the standing pre-flight list).** Before
+firing any arm, ask **"is the CONTROL arm below ceiling on the outcome-relevant axis?"** —
+distinct from "can the test show the negative?", and the check that would have caught F51's
+design before it spent. A ceiling in the control makes every treatment arm unreadable.

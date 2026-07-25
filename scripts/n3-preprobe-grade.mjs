@@ -131,3 +131,30 @@ if (screen.S0) {
   }
   console.log(`\n(Frozen rule: S0 ~ A0 => stripping created NO room; the ceiling is the model's own\n competence => candidate A DEAD as a patient, escalate to candidate B.\n S0 materially below A0 => room exists => run Sfull vs S0.)`);
 }
+
+// ── VAGUE-ASK SCREEN read (frozen 2026-07-25): target withheld, method intact.
+const TOP_SURVIVORS = ['_score_lexical', '_detect_critical', '_score_keywords', '_calculate_confidence'];
+const DISCOVERY = ['read ', 'review', 'survey', 'inspect', 'analyz', 'examine', 'identify', 'find '];
+const vague = {};
+for (const row of rows) {
+  if (!row.plan || row.valid === false || row.truncated) continue;
+  const steps = row.plan.steps ?? [];
+  const t = JSON.stringify(row.plan);
+  const first = String(steps[0]?.action ?? '').toLowerCase();
+  const firstIsReadOnly = (steps[0]?.tools ?? []).every((v) => !['write', 'edit'].includes(v));
+  (vague[row.arm] ??= []).push({
+    discovers: TARGET_FNS.filter((fn) => t.includes(fn)).length >= 3,
+    topFocus: TOP_SURVIVORS.filter((fn) => t.includes(fn)).length >= 2,
+    discoveryStep: firstIsReadOnly && DISCOVERY.some((d) => first.includes(d)),
+    nTop: TOP_SURVIVORS.filter((fn) => t.includes(fn)).length,
+  });
+}
+if (vague.V0) {
+  console.log(`\n=== VAGUE-ASK SCREEN — target withheld (V0) vs target given (A0) ===`);
+  console.log(`arm     n   discoversTargets  topSurvivorFocus  meanTop/4  addsDiscoveryStep`);
+  for (const a of ['A0', 'V0', 'Vfull']) {
+    const v = vague[a]; if (!v) continue;
+    console.log(`${a.padEnd(7)} ${String(v.length).padStart(2)}   ${fmt(rate(v, (x) => x.discovers))}              ${fmt(rate(v, (x) => x.topFocus))}             ${fmt(mean(v.map((x) => x.nTop)))}       ${fmt(rate(v, (x) => x.discoveryStep))}`);
+  }
+  console.log(`\n(Frozen rule: V0 ~ A0 => vagueness does NOT degrade workflow generation; Vfull not run;\n readable arm near-dead across clarity axes. V0 below A0 => room => run Vfull.)`);
+}
