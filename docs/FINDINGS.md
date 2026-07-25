@@ -3095,3 +3095,46 @@ only instrument that can fire on the ABSENCE of events.**
 F57): it validated the expensive half of the mechanism, killed the cheap-constant version,
 corrected a filed upstream ask, and confirmed a blind spot empirically — all before a design
 record was written.
+
+## F58 — U0(a): job #5's close decomposes into 7 borrowable stages, not the 3 the operator hand-wrote — derivation gives the agent MORE rulers than authoring did
+
+**Status: minted 2026-07-26. $0, code read. Applies the frozen rule of
+`docs/02-experiments/MATERIALS-PREREG.md` (U0 part a). U0(b) — the one-sentence goal probe —
+is NOT run and nothing here speaks to it.**
+
+**Question (PRD v1.28).** Can `scripts/types-close.mjs` be expressed as `close: [{name, cmd}, …]`
+so the check menu derives from it and no operator authors checks per job?
+
+**Result: yes. Eight stages, seven of them borrowable.**
+
+| # | stage | standalone? |
+|---|---|---|
+| 1 | instrument preconditions (seed commit exists) | **no — and correctly so**: a precondition guard, not a check |
+| 2 | changed-file set vs the frozen seed | yes |
+| 3 | D2 scope audit (only `src/**` may change) | yes |
+| 4 | D1 static gaming audit (diff-based) | yes |
+| 5 | `tsc --noEmit --strict` | yes |
+| 6 | suite + executed-count floor | yes |
+| 7 | declaration emit (`.d.ts` builds) | yes |
+| 8 | D3 public-API superset | yes, but **only after 7** — it reads 7's build output |
+
+**Correction to PRD v1.28, made against source.** The addendum's own example of a
+non-decomposable stage was D1, on the reasoning that a gaming audit "needs the whole diff."
+Reading it: D1 re-derives everything from the frozen seed ref (`git diff --name-only SEED_REF`
+then `git show SEED_REF:<file>` per changed file). The seed ref is a constant, so D1 is fully
+self-contained. **The claim was made from recollection of the design, not from the code**, and
+is corrected in place. The real non-borrowable classes are narrower than stated: instrument
+preconditions (stage 1) and stages consuming an earlier stage's build artifact (stage 8, which
+pairs with 7 rather than dropping out).
+
+**The result that matters for the doctrine.** The operator hand-wrote **three** checks
+(`typecheck-clean`, `suite-green`, `no-suppressions`) — which are stages 5, 6 and 4.
+Derivation yields **seven**, including three the agent never had: changed-from-seed, the scope
+audit, and the declaration emit. So removing the operator from the loop does not cost the
+agent rulers — **it hands it more than the operator thought to carve**, at zero authoring
+cost, with no divergence risk between the ruler and the real inspection.
+
+**Lesson.** The hand-authored artifact was not merely redundant with the close, it was a
+strict SUBSET of it — the operator carved the three stages he happened to think of. When a
+scaffold duplicates a source of truth, check whether the source is richer than the copy
+before defending the copy's existence.

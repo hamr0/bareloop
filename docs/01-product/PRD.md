@@ -1678,8 +1678,11 @@ authored by hand, and everything downstream of it is derived.
 2. **The check menu DERIVES from those stages.** No operator authors checks per job, ever.
    The agent picks which stage gates which step, by name, exactly as today
    (`check-passes(name)`) — it is told the names and the pairing rule, never the command.
-3. **A stage that cannot stand alone is simply not in the menu** (job #5's D1 gaming audit
-   needs the whole diff). A partial menu is the expected case, not a failure.
+3. **A stage that cannot stand alone is simply not in the menu.** A partial menu is an
+   acceptable case, not a failure. *(Corrected 2026-07-26 by U0(a)/F58: the example given here
+   in the first draft — job #5's D1 gaming audit — turned out to BE standalone-runnable, since
+   it re-derives its own diff from the frozen seed ref. The real non-borrowable classes are
+   instrument preconditions and stages that consume an earlier stage's build output.)*
 4. **Unchanged:** checks decide nothing and mint nothing; the close is the only truth; `run`
    stays locked; the close's OUTPUT still never names the culprit file (v1.12/F28 — that rule
    governs the failure message, not the checklist).
