@@ -70,3 +70,34 @@ Same model/effort/scout/spec; one variable.
 Plan-level only. A changed plan is not a better outcome (F39: perfect aim, zero conversion).
 Even a clean win here promotes the arm into the battery; it does not mint a learning claim.
 One patient family, one model, n=8.
+
+---
+
+# RESULT — 2026-07-25 (both arms complete, n=8 each, $0.49)
+
+Full readout: `docs/FINDINGS.md` F54. Evidence: `n3-preprobe-data/t4-raw.jsonl`.
+
+**Frozen primary `readBeforeWrite`: Q0 0.71 vs Qfail 0.25 → DECLARED UNREADABLE, not
+reported as a result.** The metric required a SEPARATE read-only step before the first write
+step; the Qfail plans fold the reading into the write step (`[read, grep, write]`, "Inspect
+assess.py to identify the exact numeric thresholds…"). Functionally identical reading,
+compressed into one step — the metric scored compaction as absence. The −0.46 is an artifact.
+
+**Readable axes: NO LIFT.** G1 0.43→0.50, G3 0.57→0.50 (flat). Post-hoc corrected primary
+(folded OR separate), labelled exploratory: **1.00 vs 1.00** — the control was at ceiling on
+the real construct.
+
+**Verdict by §5's frozen rule (Qfail ≈ Q0): the readable-lineage arm is DEAD** across every
+axis this programme could construct. Layer 3 proceeds mechanical-only, or STOPs (PRD v1.25).
+
+**§2.4 self-defect.** The control-headroom pre-flight PASSED (15/20, 14/20) but was computed
+with the crude PROSE proxy on older data, while the functional behaviour is at 1.00. The
+pre-flight must use the SAME metric the treatment is judged by, capturing the functional
+construct — recorded in F54 as a sharpening of the rule F51 minted.
+
+**Surviving hypothesis (unminted, now twice-observed):** lineage raises first-draft validity
+(0.88 → 1.00 here; 0/16 vs 7/39 in F53) and compacts plans (4.6 → 3.6 steps). Efficiency
+axis, confounded by the payload containing a well-formed plan. Settle via spend-to-green in
+the outcome battery, not another planning screen.
+
+**Programme total: $2.29** across four screens. This document is CLOSED.

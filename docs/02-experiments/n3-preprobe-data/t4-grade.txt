@@ -1,0 +1,10 @@
+
+=== T4 — failure-lineage (frozen read) — scratch-n3-t4.jsonl ===
+arm      n  ok   PRIMARY readBeforeWrite   G1 read-source   G3 tree-change   validity(1-invalid)
+Q0       8   7      0.71                0.43            0.57            0.88   [err 0 trunc 0 invalid 1]
+Qfail    8   8      0.25                0.50            0.50            1.00
+
+PRIMARY delta (Qfail - Q0): -0.46
+(Frozen rule: Qfail ~ Q0 => readable arm DEAD across every constructible axis.
+ Qfail materially above Q0 => promoted to a PLAN-LEVEL claim, enters the battery.
+ G2/environ is EXCLUDED by the freeze. Plan-level only — never an outcome claim.)

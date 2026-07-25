@@ -2798,3 +2798,78 @@ different from the one assumed: aim looked equal because BOTH arms covered every
 because the vague arm discovered anything. Audit the mechanism behind a null result before
 banking it — and note that the frozen rubric, by grading only valid plans, could not see the
 one axis where the arms actually differed.
+
+---
+
+## F54 — T4 failure-lineage: no lift on any readable axis; the frozen primary metric FAILED and is reported as unreadable
+
+**Status: minted 2026-07-25. Decision: the readable-lineage arm is DEAD across every axis
+this programme could construct. Completes F51/F52/F53. Carries one instrument self-defect
+and one surviving hypothesis.**
+
+**Why this ran.** F51–F53 killed every clarity axis, all of them GENERAL METHOD — which
+lives in the weights, where memory loses to ICL. T4 targeted the one knowledge class absent
+from BOTH weights AND repo: **what FAILED in a prior run** (an event, not a file; a scout
+with `read`/`grep` can read `pytest.ini` and every source line but cannot read "attempt 1
+was rejected because X"). If inheritance had a niche, it was here.
+
+**Design (frozen 24d4f1e before any number; $0.49, 16 drafts, both arms complete at n=8).**
+`Q0` (real-patient assess.py spec, verified repo state, no lineage) vs `Qfail` (identical +
+the three VERBATIM prior-run rejections extracted from the archived green run's own
+`close-verdict` gaps — gate-red forbidden pattern, clean-red imagined-behavior assertion,
+identical-rewrite exit). Anti-fit-to-pass measures were built into the freeze: lineage
+EXTRACTED not authored; the primary measure STRUCTURAL not prose (echoing a note is
+tautological); the environ guard declared INVALID UP FRONT as spec-confounded; control
+headroom measured at $0 first.
+
+**Result.**
+
+| axis | Q0 | Qfail | read |
+|---|---|---|---|
+| **PRIMARY** `readBeforeWrite` (frozen) | 0.71 | 0.25 | **UNREADABLE — see below** |
+| G1 read-source-for-exact-behavior | 0.43 | 0.50 | flat |
+| G3 tree-must-actually-change | 0.57 | 0.50 | flat |
+| first-draft validity | 0.88 | 1.00 | lineage higher |
+| mean steps | 4.6 | 3.6 | lineage compacts |
+
+**The frozen primary FAILED as an instrument, and the failure is mine.** `readBeforeWrite`
+required a SEPARATE read-only step ordered before the first write step. The `Qfail` plans
+FOLD the reading into the write step itself (`tools: [read, grep, write]`, action "Inspect
+assess.py to identify the exact numeric thresholds…") — functionally identical reading, one
+step instead of two. The metric therefore scored a compaction as an absence, producing an
+apparent −0.46. **The −0.46 is an artifact and is NOT reported as a result**; the primary
+axis is declared unreadable, the same disposition F51's positive-control gate would have
+forced. A post-hoc corrected version (reads source before asserting, folded OR separate) is
+labelled exploratory and reads **1.00 vs 1.00** — the control was at CEILING on the actual
+construct all along.
+
+**Verdict on the readable axes: NO LIFT.** G1 flat, G3 flat, corrected primary at ceiling in
+both arms. The behaviour the failure-lineage was supposed to teach — read the real source
+before asserting — the cold planner already does 100% of the time. **Fourth consecutive
+ceiling.** By the frozen rule (Qfail ≈ Q0), the readable arm is DEAD across every axis this
+programme could construct.
+
+**The pre-flight itself under-reported the ceiling — a lesson about the lesson.** F51's new
+pre-flight ("is the CONTROL below ceiling?") was applied and PASSED (15/20, 14/20 ≈ 72%
+headroom) — but it was computed with the crude PROSE proxy G1 on older probe data, while the
+functional behaviour sits at 1.00. **A pre-flight must measure the control on the SAME metric
+the treatment will be judged by, and that metric must capture the functional construct, not
+a prose shadow of it.** Otherwise the pre-flight green-lights an experiment that was already
+unreadable.
+
+**What survives.** One signal, still a hypothesis, now observed twice: lineage improves
+first-draft VALIDITY (F53: 0/16 vs 7/39; here: 1.00 vs 0.88) and COMPACTS plans (4.6 → 3.6
+steps). Both are efficiency-axis, not capability-axis, and both remain confounded (the
+payload contains a well-formed plan to imitate). Neither is minted; either would need its own
+freeze, and the honest place to settle them is spend-to-green in the outcome battery, where
+fewer redrafts and fewer steps are worth real money.
+
+**What this does NOT conclude.** Plan-level only, one patient family, one model, n=8. It does
+not show memory is useless in general — it shows that for THIS system, on every axis we could
+construct, the planner already knows what the memory would have told it.
+
+**Lesson.** Four screens, four ceilings, $2.29 total: the recurring blocker was never that
+lineage fails to transmit — the positive control proved it transmits — but that there was
+nothing left to transmit. And an instrument built to detect a behaviour must be validated
+against the FORMS that behaviour actually takes: mine could not see a two-step pattern
+compressed into one, and would have reported a strong negative that the data does not support.
