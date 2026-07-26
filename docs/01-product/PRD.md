@@ -1791,3 +1791,59 @@ F57's rate; check/close gaps cost $0 and are therefore invisible to the money ca
 them as high as 561 s each. The archived spines carry timestamps and answer this for $0. If the hours
 are in check gaps, the unit needing a bound is **check invocations, not the wall clock** — which
 would narrow T a third time.
+
+---
+## Addendum v1.30 — 2026-07-26 (correction: move A's premise was false, and A's chosen threshold is inert on every run we have — F63)
+
+**This addendum corrects v1.27, not on taste but on evidence.** It is written the same day the
+move it corrects was built, because the check that produced it (*is the thing I just built
+reachable?*) was run before any live spend.
+
+### What v1.27 claimed, and what is true
+
+v1.27's move **A** opens: *"Today replan fires only when a step exhausts its attempts, and an
+instrument stop is not exhaustion — so a replan has fired **zero times in this programme** (F56)."*
+
+**That is false.** F63 replayed all 18 archived plan-v1 spines: **8 replans fired**, each an
+accepted `phase: 'replan'` plan, all on the exhaustion trigger, in the L2 acceptance battery
+(2026-07-22) and the clipipe rows (2026-07-23) — four days before F56 asserted zero. F56's
+evidence was two job #5 rows that died `provider-red`, generalised without replaying the archive.
+
+So **the adaptation channel already existed and already fired.** "The agent adapts its workflow as
+it goes" has 8 observations, not none.
+
+### And A's threshold does not fire
+
+Replayed against every archived attempt boundary — the exact point the meter reads — **no step in
+54 (24 of them multi-attempt) ever consumed 50% of the run's remaining money with a further
+attempt pending.** Near misses: 0.35 · 0.35 · 0.40 · 0.45. The zero was audited before being
+believed: 18/18 spines carry `budgetUsd`, 1,212/1,213 rounds are priced, 101 judged attempts exist.
+
+A is therefore **built, tested, and adding nothing measurable** on the only workload with data —
+which is the F22 class this PRD already names: a live-looking knob with zero effect.
+
+### What is decided, and what is not
+
+- **T stands unchanged.** The clock, `wall-halt`, and the balance-at-draft never depended on the
+  replan premise. v1.29's balance rule is likewise untouched.
+- **A's 50% threshold is NOT changed here.** It is arbiter territory and hamr's number; and
+  lowering it to 0.35 because that is where those four points sit would be fitting the threshold to
+  the data, against the standing no-fit-to-pass rule. The distribution is on the record so the
+  decision can be made on evidence rather than on a fresh guess.
+- **A's motivation is re-stated honestly:** it is a guard against a step that eats the run, and no
+  archived step has done that. Whether that makes it inert or merely untriggered is not decided by
+  this addendum.
+
+### The question this re-opens, and it is now cheap
+
+v1.27 sequenced U partly to make adaptation observable. It already is. **Does replanning help?** is
+answerable from data that exists: replanned runs greened 2 of 8, non-replan runs 1 of 5 valid rows.
+**Unreadable at that n with unmatched rows** — different jobs, two provider surfaces, months apart —
+so nothing is claimed. But it is a $0 archive question, not a battery.
+
+### The process rule this mints
+
+**A premise cited to justify a build is replayed against the archive BEFORE the build.** F56's
+Finding 4 cost a design decision, a signed record section, and a day of implementation, while the
+disconfirming evidence sat in eight files. "Would this ever fire?" is cheap while it is still a
+question about code and expensive once it is a claim about a feature.

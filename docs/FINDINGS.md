@@ -3002,7 +3002,7 @@ iterations. Multi-hour wall-clock is not a malfunction of that design; it is wha
 permits. The 2h24m hang was an upstream transport bug (BA-18) stacked on top of a shape that
 had no time answer of its own.
 
-**Finding 4 — a replan has never fired, in the entire programme.** `planrun.js` triggers a
+**Finding 4 — a replan has never fired, in the entire programme.** **[CORRECTED 2026-07-26 by F63 — THIS CLAIM IS FALSE. Eight replans had already fired, in batteries that predate this finding by four days. The two job #5 rows cited below were generalised to the programme without replaying the archive. The rest of F56 stands; do not cite Finding 4.]** `planrun.js` triggers a
 replan only on step exhaustion, and an instrument stop is explicitly not exhaustion
 (`planrun.js:231` and the `lastEscalation` category read). Both job #5 rows recorded
 `replanned:false` after dying provider-red — mechanically correct, and the consequence is
