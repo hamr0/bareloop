@@ -1,6 +1,6 @@
 # Design record — materials & metering (T + A), and the choose-don't-describe correction
 
-**Status: DRAFT for hamr's sign-off. Nothing here is built.** Written 2026-07-26 against
+**Status: SIGNED by hamr 2026-07-26 (§6 answered below). Nothing here is built yet.** Written 2026-07-26 against
 measured numbers (F57, F60), not estimates — the probes ran first precisely so this record
 would record a shape rather than guess one. Frozen once signed; amend by dated addendum.
 
@@ -127,13 +127,19 @@ be handed the set. Audit the remaining fields against this before building (`tar
   against — though F60 moved it from "does it even reach?" (2 of 3 did) to a menu question.
 - **Auto-sizing the time cap.** Out of scope, named for later.
 
-## 6. Open for hamr
+## 6. Answered by hamr, 2026-07-26 — these three are DECIDED
 
-1. **`maxWallMs` default** — or is time always explicitly operator-set, with no default at all?
-   (A default is a silent second ceiling; the F45 lesson argues for none.)
-2. **The variance threshold that triggers a replan** — a fraction of remaining time/money. I'd
-   start at 50% of a step's declared allocation with exits unmoved, and treat the number as
-   provisional until a real run reads it.
-3. **Does the agent see money, time, or both?** Both is the honest bill. One argument for time
-   only: money is the arbiter's most sensitive axis, and F60 shows the planner spends toward
-   whatever it is shown.
+1. **`maxWallMs` has NO default.** Time is always explicitly operator-set. hamr: *"no default."*
+   A defaulted cap is a silent second ceiling, which is the F45 failure (a money rule with no
+   wired detector let 4 cut rows be classed as evidence). A run with no `maxWallMs` is therefore
+   time-unbounded **by explicit operator choice**, never by an unnoticed fallback — and the
+   absence must be visible in the spine, not inferred.
+2. **Replan variance threshold = 50%** of a step's declared allocation with its exits unmoved.
+   hamr: *"50% is fine."* Recorded as **provisional-by-construction**: it is a first number, not
+   a measured one, and the first real run that trips (or fails to trip) it is the read that
+   settles it. It must not harden into doctrine by surviving unexamined.
+3. **The agent sees BOTH money and time.** hamr: *"both money and time."* The counter-argument
+   is on the record and is not dismissed — F60 measured this planner allocating +62% toward
+   whatever bound it is shown, so showing it money predicts it will plan toward the money. That
+   is the behaviour the experiment exists to read, and the per-step cap plus the operator's
+   outer wall are what keep it honest while we read it.
