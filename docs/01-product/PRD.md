@@ -2044,3 +2044,78 @@ Everything above — the staged close itself, both decisions in this addendum, a
 supporting number — comes from scripted-provider tests. **The staged close has not yet run
 against a real model.** That run is the next real-model evidence this rung needs, same as
 every other build in this programme before its battery.
+
+---
+## Addendum v1.34 — 2026-07-27 (workflow REUSE: the goal stated, the missing machinery inventoried, the design deferred to its rung — hamr)
+
+**Approval.** hamr in-turn, verbatim: *"spill out missing specs and add it to later module as part
+of prd. goal is user can choose workflow for similar job and it would reuse the same plan and
+self-heal insteaf of starting from scratch"*, and on the design itself: *"speccs will be addressed
+when its turn"*. **This addendum NAMES the gap and parks it. It designs nothing** — the machinery
+below is deliberately left unspecified until the rung that builds it, which opens under Layer 3's
+own procedure (interview → design-freeze → sub-dollar lineage pre-probe BEFORE any machinery).
+
+### The goal, in the user's terms
+
+> A user picks a workflow for a **similar** job; the system **reuses that plan and self-heals**
+> instead of starting from scratch.
+
+This is the product's founding claim restated operationally (§2: bareloop learns a JOB — the plan
+is a persistent, ledger-attributed artifact; a bareloop that discards the plan each run IS
+relayfact and should be archived). What v1.27 added is that the reuse run doubles as Layer 3's
+inheritance-ON arm and a from-scratch run as the OFF arm, so the paired control falls out of
+normal operation.
+
+### What EXISTS today (2026-07-27, U's first green)
+
+- A green run emits its accepted plan on the spine, and the U runner persists it as
+  `bridge-<job>.json` with the spec hash and the green that minted it. **A file, not a mechanism:
+  nothing reads it back.**
+- Self-healing WITHIN a run is built and observed: a step that fails its own derived check gets
+  the gap and retries under bound (U run 1, step 2), and the outer close-fix loop catches a
+  close-level red. Layer R adds within-run repetition detection (default OFF).
+- Self-healing ACROSS runs does not exist in any form. A reused plan would either work or the run
+  would stop; nothing revises a bridge that failed.
+
+### The missing machinery — an INVENTORY, not a design
+
+Each line is a question the building rung must answer; none is answered here.
+
+1. **Storage.** Where a bridge lives, what it contains beyond the plan, and its relationship to
+   the ledger (every inherited rule carries the green that minted it and the contrast that
+   attributed it — §2).
+2. **Keying and matching.** What makes a job "similar" enough to offer a bridge. This is the
+   whole weight of the user's sentence and the hardest item: v1.27's unruled condition 2 says
+   same SHAPE, never same instance, or the bridge is a lookup table the memorization audit kills.
+3. **Selection.** Whether the USER picks the workflow (hamr's phrasing: *"user can choose"*),
+   the agent proposes, or the shell matches — and what the user is shown in order to choose.
+4. **Loading and re-validation.** A stored plan is never executed unchecked: it re-enters the
+   same validator (scopes, bounds, verbs, exits, check names derived from THIS job's close), and
+   a bridge that no longer validates is a distinct outcome, not a crash.
+5. **Adaptation — the self-heal.** What the agent may change in an inherited plan and when: after
+   a failed step, after a red close, before starting. The arbiter stays inexpressible either way;
+   unlimited revision launders thrash as adaptation (the v1.22 replan ceiling exists for exactly
+   this reason and must not be quietly reopened here).
+6. **Demotion.** v1.27's unruled condition 1: a green graduates a bridge to CANDIDATE, and a
+   bridge that fails to carry the next job is demoted, not defended.
+7. **Attribution.** What the ledger counts so reuse can be read as a lift and not a story —
+   the ON/OFF contrast on cost, wall time, rounds and outcome.
+8. **The scout under reuse.** The scout is load-bearing when planning cold (F60). Whether a
+   reused bridge still scouts, scouts less, or skips it, is unmeasured and unassumed.
+
+### The two conditions still awaiting hamr's ruling
+
+v1.27 recorded them so they could not be quietly assumed; they remain unruled and they gate the
+build, because they decide what the second run MEANS:
+
+1. graduation is to CANDIDATE, reuse is the replication, failure demotes;
+2. "the same job" means the same SHAPE, never the same instance.
+
+### Evidence this addendum rests on, and its limits
+
+U run 1 greened this job cold ($2.21 of $5, 8.9 min of 30) with a three-step plan the agent
+composed itself, and saved the first bridge. U run 2 (same job, same seed) drafted a **materially
+different** plan and was killed mid-flight by an operator tooling limit, not by the product — it
+is UNREAD, and no comparison may be drawn from it. That a second draft differs is expected of a
+probabilistic worker and is not evidence that one plan is worse; **more than one valid bridge
+almost certainly exists for a given job**, which is itself an input to items 2, 3 and 6 above.

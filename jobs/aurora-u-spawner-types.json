@@ -1,0 +1,71 @@
+{
+  "schema": "job-v1",
+  "job": "aurora-u-spawner-types",
+  "description": "U (user-mode e2e): one sentence of problem, a budget, a clock, one close. No arms, no operator-authored checks, no hand-solving.",
+  "provider": "anthropic-api",
+  "cadence": {
+    "unit": "day",
+    "every": 1
+  },
+  "budgetUsd": 5,
+  "maxWallMs": 1800000,
+  "writeScope": [
+    "packages/spawner/src/**"
+  ],
+  "goal": "Make packages/spawner pass mypy --strict without weakening the tests.",
+  "verdictType": "green",
+  "close": [
+    {
+      "name": "changed-from-seed",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-spawner-close.mjs changed-from-seed",
+      "expect": 0,
+      "judged": {
+        "pattern": "SPAWNER judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^SPAWNER ",
+      "offer": false
+    },
+    {
+      "name": "typecheck",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-spawner-close.mjs typecheck",
+      "expect": 0,
+      "judged": {
+        "pattern": "SPAWNER judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^SPAWNER "
+    },
+    {
+      "name": "suite-green",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-spawner-close.mjs suite-green",
+      "expect": 0,
+      "judged": {
+        "pattern": "SPAWNER judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^SPAWNER "
+    },
+    {
+      "name": "no-suppressions",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-spawner-close.mjs no-suppressions",
+      "expect": 0,
+      "judged": {
+        "pattern": "SPAWNER judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^SPAWNER "
+    }
+  ],
+  "tools": [
+    "read",
+    "grep",
+    "write",
+    "edit",
+    "recall",
+    "get"
+  ],
+  "escalation": {
+    "mode": "decision-ready"
+  }
+}

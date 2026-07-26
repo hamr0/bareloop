@@ -115,8 +115,14 @@ test('every shipped job spec validates, and none of them offers its grading stag
     staged += 1;
     const offered = checkMenu(r.job.close).map((m) => m.name);
     assert.ok(offered.length > 0, `${f}: a fully hidden menu would leave the agent no ruler at all`);
-    assert.ok(!offered.includes(j.close.at(-1).name),
-      `${f}: the grading stage "${j.close.at(-1).name}" must not be lendable — got menu [${offered}]`);
+    // Which stage renders the GRADE is a per-spec convention, not structure —
+    // proven the day this guard first met a fifth spec: `aurora-u-spawner-types`
+    // has no grading stage at all (passing every stage IS the grade), so its LAST
+    // stage is an ordinary ruler and hiding it would cost the agent a ruler for
+    // nothing. The rule is therefore stated over the convention that exists: a
+    // stage NAMED `verdict` is the grade, and the grade is never lendable.
+    assert.ok(!offered.includes('verdict'),
+      `${f}: a stage named "verdict" renders the grade and must not be lendable — got menu [${offered}]`);
   }
   assert.ok(staged >= 4, `the staged specs are actually being read (saw ${staged})`);
 });
