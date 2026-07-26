@@ -71,11 +71,11 @@ const collector = () => {
   return { events, emit: (type, data = {}) => { const e = { type, ...data }; events.push(e); return e; } };
 };
 
-async function go(wd, provider, { job = JOB(wd), capRuns = 3, layerRoot = false } = {}) {
+async function go(wd, provider, { job = JOB(wd), capRuns = 3, layerRoot = false, scoutRounds } = {}) {
   const jv = validateJob(job);
   assert.deepEqual(jv.reds, [], 'the test job must be validateJob-green');
   const { events, emit } = collector();
-  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns, layerRoot, remainingUsd: () => 1.5 });
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns, layerRoot, remainingUsd: () => 1.5, ...(scoutRounds ? { scoutRounds } : {}) });
   return { outcome, events };
 }
 
@@ -582,4 +582,47 @@ test('NATIVE clipipe: a clipipe-subscription job with NO native factory wired is
   const outcome = await runPlan(jv.job, { workdir: wd, emit, capRuns: 3, remainingUsd: () => 1.5 }); // no nativeProvider
   assert.equal(outcome, 'interpreter-red', 'a missing factory is a wiring stop, before any tokens or the close');
   assert.equal(events.filter((e) => e.type === 'escalation').at(-1)?.category, 'interpreter-red');
+});
+
+// ── F59: the scout's round bound cut it off mid-tool-use, so it never wrote the
+// survey that is its only deliverable — 15 of 18 archived runs handed the planner
+// "(no scout notes)" while still paying ~12% of the run for the walk. The bound is
+// mechanical (loop.stop from the metering callback), so the fix is mechanical too:
+// a TOOLLESS follow-up round on the same conversation, where text is the only
+// possible output. Prose ("remember to summarise") is the F19/F37 non-fix.
+test('F59: a scout that spends its rounds on tools gets ONE toolless summary round, and the blob survives', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { toolCalls: [tcall('s1', 'shell_grep', { pattern: 'export', path: wd })] }, // scout burns its round on a tool
+    // a REALISTIC survey: the archive's real ones are 5991-8056 bytes, so a fixture
+    // under the 200-byte floor would be indistinguishable from the truncation it models
+    { text: `Layout: src/mod.mjs (exports x), tests/ exists but is empty. ${'The suite runner is node --test over tests/**. '.repeat(4)}Hypothesis: the work needs one new test file under tests/ asserting on x; no source change is required, and the close greens only once that file contains an ok assertion.` },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok — asserts x\n' })] },
+    { text: 'wrote it' },
+  ]);
+  const { events } = await go(wd, provider, { scoutRounds: 1 });
+  const sr = events.find((e) => e.type === 'scout-result');
+  assert.ok(sr.bytes > 0, `the survey reached the planner (got ${sr.bytes} bytes)`);
+  assert.ok(!events.find((e) => e.type === 'scout-empty'), 'a recovered scout is not the loud condition');
+  // the recovery round is toolless BY CONSTRUCTION — the model cannot spend it exploring
+  assert.deepEqual(provider.toolsOffered[1], [], 'the reserved summary round offers no tools');
+  assert.ok(provider.calls[2].includes('Hypothesis: the work needs one new test file'), 'the planner received the recovered survey, not "(no scout notes)"');
+});
+
+test('F59: a scout still empty after its reserved round emits the LOUD scout-empty, and the run continues', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { toolCalls: [tcall('s1', 'shell_grep', { pattern: 'export', path: wd })] }, // burns the round
+    { text: '' },                                                                 // and says nothing even toolless
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok — asserts x\n' })] },
+    { text: 'wrote it' },
+  ]);
+  const { outcome, events } = await go(wd, provider, { scoutRounds: 1 });
+  const empty = events.find((e) => e.type === 'scout-empty');
+  assert.ok(empty, 'the silent failure is now a named event, not a log line nobody reads');
+  assert.equal(events.find((e) => e.type === 'scout-result').bytes, 0);
+  // F59's own evidence: empty scouts still green — so this is LOUD, never a halt
+  assert.equal(outcome, 'green', 'an empty survey is reported, not fatal (3 of 5 archived greens had one)');
 });

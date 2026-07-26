@@ -50,6 +50,11 @@ const SCOUT_BLOB_MAX = 8000;
 const NATIVE_READ_CAP = 24 * 1024;
 /** native-only strategy: tell the worker WHY whole-file reads fail here and to navigate by symbol */
 const NATIVE_READ_STRATEGY = '\nINTERFACE LIMIT: on this surface a whole-file read of a large file is TRUNCATED before you see it — a shell_read of a file over ~24KB returns only its start followed by a truncation notice. This is NOT the whole file. To read a function IN FULL, always use ctx_recall(<symbol>) then ctx_get(<pointer>) — that returns the entire function no matter how large the file is. To locate a line, use shell_grep(<pattern>). Never try to understand a file over ~400 lines by reading it whole; recall its symbols instead.';
+/** F59 — below this a scout survey is treated as absent. Sized off the archive, not
+ * taste: the 15 truncated scouts produced 0/74/86 bytes; every real survey was
+ * 5991-8056. 200 sits between the two populations with an order of magnitude of
+ * daylight on each side, so it cannot be a tuned-to-one-case threshold. */
+const SCOUT_MIN_BYTES = 200;
 /** feed-forward artifact bound per step (prompt ingredient, spine-bound) */
 const ARTIFACT_MAX = 2000;
 /** the wallet floor below which a replan is a stop, not an adaptation (review
@@ -129,6 +134,9 @@ ${scoutBlob || '(no scout notes)'}`;
  * @param {number} [opts.capRuns] shell-owned per-step attempt cap
  * @param {number} [opts.closeTimeoutMs] close/check wall-clock cap (shell territory)
  * @param {number} [opts.maxStepRounds] the shell's per-step rounds ceiling (validatePlan's bound)
+ * @param {number} [opts.scoutRounds] the read-only survey's round bound (F59: the LAST round is
+ *   reserved — a scout that spends every round on tools gets one toolless round to write its
+ *   survey, because the bound halts it mid-tool-use and text is its only deliverable)
  * @param {boolean} [opts.layerRoot=false] Layer R — the within-run ratchet (src/root.js),
  *   scoped PER STEP's ralph loop (each micro-wheel is the Layer-1 atom). Shell-assembled from
  *   the step's own books: per-attempt write-sets from the F32 workerWrites audit (teed for
@@ -142,7 +150,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   'check-red' | 'close-red' | 'close-unsupported' | 'pricing-red' | 'cap-halt' |
  *   'provider-red' | 'interpreter-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, emit, remainingUsd, isUnpriced = () => false, capRuns = 3, closeTimeoutMs, maxStepRounds = 40, layerRoot = false }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, emit, remainingUsd, isUnpriced = () => false, capRuns = 3, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS }) {
   workdir = resolve(workdir);
   const scrub = (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS });
 
@@ -400,6 +408,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
       const provider2 = /** @type {any} */ (nativeProvider)({ policy, onTurn: nativeMetered, maxTurns: attemptRounds, hasTools: true });
       const loop = new Loop({ provider: provider2, system }); // no Loop policy / no cacheMessages: the CLI owns the transcript
       /** @param {string} prompt @param {typeof toolDefs} [defs] */
+      /** F59: unavailable on native — a toolless native session fires no onTurn and
+       * reports NO cost (F48/BA-16 live-verified), so a recovery round there would be
+       * unmetered spend. The caller treats a null return as "no recovery possible". */
+      const askFrom = async () => null;
       const ask = async (prompt, defs = toolDefs) => {
         let r;
         try {
@@ -429,7 +441,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
         }
         return r;
       };
-      return { ask, workerWrites, setIteration: (/** @type {number|string} */ i) => { roundIteration = i; roundsThisAttempt = 0; }, wasBounded: () => attemptBounded };
+      return { ask, askFrom, workerWrites, setIteration: (/** @type {number|string} */ i) => { roundIteration = i; roundsThisAttempt = 0; }, wasBounded: () => attemptBounded };
     }
 
     // ── LOOP path: the injected provider (anthropic-api and every other
@@ -462,6 +474,24 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
     };
     const loop = new Loop({ provider: loopProvider, system, policy, onLlmResult: metered, onToolResult: onToolOutcome });
     /** @param {string} prompt @param {typeof toolDefs} [defs] */
+    /**
+     * F59 — continue an EXISTING conversation for exactly one TOOLLESS round.
+     * `defs` is `[]`, so text is the only output the model can produce: the summary
+     * round is guaranteed by CONSTRUCTION, never requested in prose (F19/F37 — a
+     * pacing mandate in the persona was violated 6/6). Meters like any other round
+     * (F12); the bound has already fired, so this is a deliberate +1 paid once.
+     * @param {any[]} msgs the prior conversation (loop.run's `msgs`)
+     * @param {string} prompt
+     */
+    const askFrom = async (msgs, prompt) => {
+      try {
+        return await loop.run([...msgs, { role: 'user', content: prompt }], [], { cacheMessages: true, maxTokens: 32000 });
+      } catch (e) {
+        const err = /** @type {CategorizedError} */ (e);
+        err.category = e instanceof HaltError ? 'cap-halt' : (err.category ?? 'provider-red');
+        throw err;
+      }
+    };
     const ask = async (prompt, defs = toolDefs) => {
       let r;
       try {
@@ -484,7 +514,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
       }
       return r;
     };
-    return { ask, workerWrites, setIteration: (/** @type {number|string} */ i) => { roundIteration = i; roundsThisAttempt = 0; }, wasBounded: () => attemptBounded };
+    return { ask, askFrom, workerWrites, setIteration: (/** @type {number|string} */ i) => { roundIteration = i; roundsThisAttempt = 0; }, wasBounded: () => attemptBounded };
   }
 
   /** relay a throw from OUTSIDE ralph (scout/plan drafting) as its honest category */
@@ -504,9 +534,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
   // ── 1. SCOUT — read-only by construction: the write-class verbs are simply
   // not in its menu (the menu is the grant), and its gate fences zero paths
   let scoutBlob = '';
-  emit('scout-start', { rounds: SCOUT_ROUNDS });
+  emit('scout-start', { rounds: scoutRounds });
   try {
-    const scout = await mkWorker({ granted: ceiling.filter((v) => !WRITE_VERBS.includes(v)), phase: 'scout', attemptRounds: SCOUT_ROUNDS, attempts: 1, writable: false });
+    const scout = await mkWorker({ granted: ceiling.filter((v) => !WRITE_VERBS.includes(v)), phase: 'scout', attemptRounds: scoutRounds, attempts: 1, writable: false });
     scout.setIteration(1);
     const r = await scout.ask([
       'Survey this repository READ-ONLY for the goal below. Report: the relevant layout, the key files and symbols, and your best hypothesis about what the work requires. Be concise — your notes brief a planner that cannot see the repository.',
@@ -515,10 +545,37 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
       pre.gap && `The job's verification is currently failing. Its output on the tree as it stands:\n${pre.gap}`,
     ].filter(Boolean).join('\n\n'));
     scoutBlob = scrub(r.text ?? '').slice(0, SCOUT_BLOB_MAX);
+    // F59 — RESERVE the summary round. The round bound is enforced from the
+    // metering callback (loop.stop), so a scout still calling tools on its last
+    // round is halted mid-tool-use and `text` is empty: it spends the whole
+    // allowance exploring and never writes the survey that is its ONLY
+    // deliverable. Measured on 15 of 18 archived runs, which then drafted from
+    // `(no scout notes)` while still paying ~12% of the run (F55) for the walk.
+    // The recovery is one TOOLLESS round on the SAME conversation (`r.msgs`
+    // carries the exploration): with no tools offered, text is the only possible
+    // output — a mechanical guarantee, never a prose plea to summarise (F19/F37:
+    // a pacing mandate in the persona was violated 6/6).
+    // The trigger is BOUNDED-and-short, never short alone: a terse survey that
+    // finished on its own was not cut off and has nothing to recover. The archive
+    // separates cleanly on exactly this pair — every truncated scout was bounded
+    // with 0-86 bytes, and the two that finished naturally wrote 5991/8056.
+    if (scout.wasBounded() && Buffer.byteLength(scoutBlob) < SCOUT_MIN_BYTES && Array.isArray(r.msgs) && r.msgs.length) {
+      emit('scout-truncated', { bytes: Buffer.byteLength(scoutBlob) });
+      const s2 = await scout.askFrom(r.msgs, 'You are out of exploration turns. Write your survey NOW, from what you have already read: the relevant layout, the key files and symbols, and your best hypothesis about what the work requires. Text only.');
+      const recovered = scrub(s2?.text ?? '').slice(0, SCOUT_BLOB_MAX);
+      if (Buffer.byteLength(recovered) > Buffer.byteLength(scoutBlob)) scoutBlob = recovered;
+    }
   } catch (e) {
     return relay(e, 'scout');
   }
   emit('scout-result', { bytes: Buffer.byteLength(scoutBlob) });
+  // F59 — the LOUD half. `scout-result {bytes: 0}` was emitted faithfully 18 times
+  // out of 18 and read by nobody: an instrument that works but has no consumer is a
+  // log line, not evidence. A survey that is still empty after its reserved round is
+  // now a NAMED condition. It is never a halt — F59's own evidence is that 3 of 5
+  // archived greens had an empty scout, so failing the run here would be a worse
+  // error than the one being fixed.
+  if (Buffer.byteLength(scoutBlob) < SCOUT_MIN_BYTES) emit('scout-empty', { bytes: Buffer.byteLength(scoutBlob), rounds: scoutRounds });
   // F6 in-flight: an unpriced round means the cap cannot govern spend it cannot
   // see — halt at the boundary rather than run the whole plan blind (the caller
   // emits pricing-red; runPlan just stops burning tokens). Legacy halts per-step.
