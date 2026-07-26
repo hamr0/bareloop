@@ -289,6 +289,12 @@ export async function ralph({ middle, close, judge, capRuns, emit, redact, close
           ['widen the write scope deliberately', 'change the middle/harness', 'abandon the task']],
         'provider-red': ['The provider path failed mid-run (transport, not logic) — no verdict exists and the spend for the failed call is unknown (F6).',
           ['retry the run', 'fix the provider binding', 'abandon the task']],
+        // A (PRD v1.27) — the METER stopped this attempt before it started: the
+        // step had already eaten a declared share of the run with its exits
+        // unmoved. Not a fault, not a cap: the caller reads this category and
+        // REPLANS, so the message must not say anything broke.
+        'step-variance': ['A step consumed a large share of the run with its exits still red — the meter stopped it before another attempt.',
+          ['let the planner re-allocate what is left (replan)', 'raise the budget and rerun', 'abandon the task']],
       };
       // Object.hasOwn, not bare lookup: a category named after an
       // Object.prototype member ("toString") would return the inherited

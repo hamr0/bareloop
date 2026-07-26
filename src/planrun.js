@@ -28,6 +28,7 @@ import { TOOL_MENU } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, RETRIEVAL_STRATEGY, EDIT_STRATEGY } from './interpret.js';
 import { globToPrefix, SECRET_PATTERNS } from './validate.js';
 import { extractArtifact } from './text.js';
+import { createClock } from './clock.js';
 
 const require = createRequire(import.meta.url);
 const { Loop, wireGate, HaltError } = require('bare-agent');
@@ -62,8 +63,54 @@ const ARTIFACT_MAX = 2000;
  * just burns another draft and mislabels the money-cut as "exits still red"
  * (F45 class) — the honest terminal there is cap-halt. */
 const MONEY_MIN = 0.001;
+/**
+ * A (PRD v1.27; design record §3.4, answered §6.2) — the replan trigger. A step
+ * that has consumed this share of the run's REMAINING money or time with its exits
+ * still red gets no further attempt; the planner re-allocates what is left instead.
+ *
+ * 50% is hamr's number (*"50% is fine"*) and is recorded as PROVISIONAL BY
+ * CONSTRUCTION: it is a first number, not a measured one, and the first real run
+ * that trips (or fails to trip) it is the read that settles it. It must not harden
+ * into doctrine by surviving unexamined.
+ *
+ * This changes the replan TRIGGER only. The hard ceiling of ONE replan is
+ * unchanged — unlimited replanning launders thrash as adaptation (v1.12).
+ */
+const VARIANCE_THRESHOLD = 0.5;
 
 /** @typedef {Error & {category?: string, lib?: string}} CategorizedError */
+
+/**
+ * The materials block: what the run has to spend, as a BALANCE and nothing else.
+ *
+ * hamr's correction (design record addendum 2, verbatim): *"why would you tell it
+ * every round that you have x time per round? what if there is a heavier round?
+ * why don't you tell it same like cost, you have x left from cost/time instead of
+ * making it race against time?"*
+ *
+ * So: NO rate, NO per-round allowance, NO derived round count. F57 measured a 150x
+ * spread on the verification gaps (3.8s to 561s), so a per-round constant
+ * describes almost no real round — a heavy round would break the planner's
+ * arithmetic with nothing to tell it. A balance is self-correcting: after a heavy
+ * round the number is simply lower. A rate is also a stopwatch, and racing a clock
+ * is the rush-or-fake incentive the v1.12 §5 prompt contract exists to remove.
+ *
+ * At DRAFT the balance is the total, so this is scale only — the planner is NOT
+ * asked to allocate time, because sizing time at draft requires the rate that was
+ * just removed. A plan that does not fit is what the meter is for (addendum 2).
+ * @param {{ balanceUsd?: number|null, remainingMs?: number|null, progress?: string }} [m]
+ */
+function materialsBlock(m) {
+  if (!m) return '';
+  const lines = [];
+  if (typeof m.balanceUsd === 'number') lines.push(`- money left for the whole run: $${m.balanceUsd.toFixed(2)}`);
+  if (typeof m.remainingMs === 'number') lines.push(`- time left for the whole run: ${Math.round(m.remainingMs / 60_000)} minutes`);
+  if (!lines.length) return '';
+  // The progress line only exists at REPLAN: it is the variance the meter read,
+  // and it is the adaptation channel (addendum 2). At draft there is no progress.
+  if (m.progress) lines.push(`- where the run got to: ${m.progress}`);
+  return `\nWhat this run has left to spend — plan within it:\n${lines.join('\n')}\nThese are totals for the run, not per-step allowances. Nothing here is a rate: a step's cost depends on what it does.\n`;
+}
 
 /**
  * The plan-drafting prompt: a schema DESCRIPTION built from the live validator
@@ -72,13 +119,16 @@ const MONEY_MIN = 0.001;
  * arbiter territory the planner never sees.
  * @param {any} job @param {string} scoutBlob @param {any[]|null} reds
  * @param {number} maxStepRounds @param {string|null} failure replan context
- * @param {string[]} [scopes] the offered `tree-changed` menu (`legalScopes`).
+ * @param {string[]|undefined} scopes the offered `tree-changed` menu (`legalScopes`).
  *   Choose-don't-describe (§4): the agent picks a value, never authors a glob and
  *   guesses its shape. Omitted, it derives from the signed fence — the SAME
  *   fail-closed derivation `validatePlan` uses, so prompt and validator can never
  *   disagree about what was offered.
+ * @param {{ balanceUsd?: number|null, remainingMs?: number|null, progress?: string }} [materials]
+ *   what the run has LEFT (T/A). Omitted → no materials block at all, which is the
+ *   pre-T behaviour and keeps every existing caller byte-identical.
  */
-export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes) {
+export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials) {
   const scopeMenu = Array.isArray(scopes) && scopes.length ? scopes : legalScopes(job.writeScope ?? []);
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
   const checkNames = (job.checks ?? []).map((/** @type {any} */ c) => c.name);
@@ -111,7 +161,7 @@ ${scopeMenu.map((s) => `  ${JSON.stringify(s)}`).join('\n')}
 
 Goal:
 ${job.goal}
-
+${materialsBlock(materials)}
 Repository survey (from a read-only scout):
 ${scoutBlob || '(no scout notes)'}`;
   let p = doc;
@@ -199,6 +249,27 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
     });
     return 'interpreter-red';
   }
+
+  // T (PRD v1.27/v1.29) — the run's wall clock, STARTED HERE, before the close
+  // precheck. The precheck is real wall time and F62 measured close/check gaps as
+  // high as 328s on an archived run: a clock created after it would under-report
+  // elapsed by that much and hand the planner a balance the run does not have. Time
+  // the operator's own instruments too, or the budget is measured against a
+  // different run than the one that happened.
+  //
+  // `job.maxWallMs` is operator input with budgetUsd's status and has NO DEFAULT
+  // (hamr's ruling): absent means honestly time-unbounded, and the record says so
+  // rather than leaving a reader to infer it. Both numbers are reported — addendum 1
+  // measured that a deadline is only readable BETWEEN rounds, so enforcement is
+  // requested + closeTimeoutMs and quoting one number would be F6 in a time coat.
+  const clock = createClock({ maxWallMs: job.maxWallMs ?? null });
+  const closeTimeoutForReport = closeTimeoutMs ?? 120_000;
+  emit('wall-clock', {
+    ...clock.report(closeTimeoutForReport),
+    meaning: clock.bounded
+      ? 'a between-round deadline; a close already in flight when it trips runs to completion'
+      : 'NO time cap was set — time-unbounded by explicit operator choice, never by a default',
+  });
 
   const closeArgv = job.close.cmd.trim().split(/\s+/);
   const closeOpts = { timeoutMs: closeTimeoutMs, cwd: workdir, expect: job.close.expect, judged: job.close.judged, gapKeep: job.close.gapKeep };
@@ -500,7 +571,17 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
       });
       if ((arg?.kind ?? 'turn') === 'turn') {
         roundsThisAttempt += 1;
-        if (roundsThisAttempt >= attemptRounds) {
+        // The wall deadline rides the SAME seam as the round bound, because it is
+        // the only seam that exists: loop.stop() is read at the round boundary and
+        // cannot cut an in-flight call (F61/C1, measured — fired at 500ms, returned
+        // at 4,018ms). Stopping here judges the partial work and feeds the gap
+        // forward exactly as a round-bounded attempt does; the run-level terminal is
+        // decided by the step loop, which reads the clock after the step returns.
+        if (clock.expired()) {
+          attemptBounded = roundIteration;
+          emit('wall-bounded', { phase, iteration: roundIteration, ...clock.report(closeTimeoutForReport) });
+          loop.stop();
+        } else if (roundsThisAttempt >= attemptRounds) {
           attemptBounded = roundIteration;
           emit('attempt-bounded', { phase, iteration: roundIteration, rounds: roundsThisAttempt, cap: attemptRounds });
           loop.stop();
@@ -521,7 +602,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
      */
     const askFrom = async (msgs, prompt) => {
       try {
-        return await loop.run([...msgs, { role: 'user', content: prompt }], [], { cacheMessages: true, maxTokens: 32000 });
+        return await loop.run([...msgs, { role: 'user', content: prompt }], [], { cacheMessages: true, maxTokens: 32000, timeoutMs: clock.callTimeoutMs() });
       } catch (e) {
         const err = /** @type {CategorizedError} */ (e);
         err.category = e instanceof HaltError ? 'cap-halt' : (err.category ?? 'provider-red');
@@ -531,7 +612,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
     const ask = async (prompt, defs = toolDefs) => {
       let r;
       try {
-        r = await loop.run([{ role: 'user', content: prompt }], defs, { cacheMessages: true, maxTokens: 32000 });
+        r = await loop.run([{ role: 'user', content: prompt }], defs, { cacheMessages: true, maxTokens: 32000, timeoutMs: clock.callTimeoutMs() });
       } catch (e) {
         const err = /** @type {CategorizedError} */ (e);
         err.category = e instanceof HaltError ? 'cap-halt' : (err.category ?? 'provider-red');
@@ -627,12 +708,18 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
    * total run spend can never exceed the signed budget (advertised == enforced,
    * the hard line) — a drafter built once at full budget would let the replan
    * draft spend against money the steps had already consumed.
-   * @param {string} phase @param {string|null} failure */
-  const obtainPlan = async (phase, failure) => {
+   * @param {string} phase @param {string|null} failure
+   * @param {string} [progress] the meter's read, replan only (A's adaptation channel) */
+  const obtainPlan = async (phase, failure, progress) => {
     const drafter = await mkWorker({ granted: [], phase: 'plan', attemptRounds: 2, attempts: 3, writable: false });
+    // The BALANCE, read live at each draft — never a snapshot and never a rate
+    // (addendum 2). At draft it is the whole budget (scale); at replan it is what
+    // is actually left, which is the adaptation channel.
+    const materials = { balanceUsd: remainingUsd(), remainingMs: clock.bounded ? clock.remainingMs() : null, ...(progress ? { progress } : {}) };
+    emit('materials', { phase, ...materials });
     const draftPlan = async (/** @type {any[]|null} */ reds) => {
       drafter.setIteration(reds ? 'redraft' : 'draft');
-      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu), []);
+      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials), []);
       return extractArtifact(r.text).code ?? '';
     };
     let text = await draftPlan(null);
@@ -694,8 +781,36 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
     const w = await mkWorker({ granted: step.tools, phase: `step:${step.id}`, attemptRounds: step.rounds, attempts: capRuns, writable: true, root });
     let lastText = '';
     let iterationNow = 0;
+    // The meter's baseline: what the RUN had left when this step began. Shares are
+    // computed against this, never against the original budget — a late step is
+    // measured against what actually remains for it, which is what "eating the run"
+    // means. Read once, here, so the denominator cannot drift mid-step.
+    const stepStartUsd = remainingUsd();
+    const stepStartMs = clock.bounded ? clock.remainingMs() : Infinity;
     /** @param {number} iteration @param {string} [gap] */
     const middle = async (iteration, gap) => {
+      // A — the variance check, at the HEAD of an attempt so no work is discarded
+      // (attempts 1..n-1 accrued the spend; their writes are already on disk). Never
+      // fires on attempt 1: the share is 0 there by construction. Throwing with a
+      // category is the seam ralph already owns; it routes the category and the step
+      // loop reads it as a REPLAN, not a stop.
+      if (iteration > 1) {
+        const moneyShare = stepStartUsd > 0 ? (stepStartUsd - remainingUsd()) / stepStartUsd : 0;
+        const timeShare = clock.bounded && stepStartMs > 0 ? (stepStartMs - clock.remainingMs()) / stepStartMs : 0;
+        if (moneyShare >= VARIANCE_THRESHOLD || timeShare >= VARIANCE_THRESHOLD) {
+          emit('variance', {
+            step: step.id, iteration, threshold: VARIANCE_THRESHOLD,
+            moneyShare: Number(moneyShare.toFixed(3)),
+            timeShare: clock.bounded ? Number(timeShare.toFixed(3)) : null,
+            axis: moneyShare >= VARIANCE_THRESHOLD ? 'money' : 'time',
+          });
+          const err = /** @type {CategorizedError} */ (new Error(
+            `step "${step.id}" consumed ${Math.round(Math.max(moneyShare, timeShare) * 100)}% of the run's remaining `
+            + `${moneyShare >= VARIANCE_THRESHOLD ? 'money' : 'time'} across ${iteration - 1} attempt(s) with its exits still red`));
+          err.category = 'step-variance';
+          throw err;
+        }
+      }
       w.setIteration(iteration);
       iterationNow = iteration;
       // Layer R observe: finalize the prior attempt from the books (workerWrites
@@ -767,6 +882,27 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
     if (res.outcome === 'green') {
       artifacts.push({ id: step.id, text: res.artifact });
       idx += 1;
+      // T's terminal: a run that cannot fit its time budget STOPS, and the stop is
+      // the result (build-ladder discipline, v1.27 — unchanged). Checked after a
+      // GREEN step too, not just a red one: the alternative silently starts a step
+      // it cannot fund, which is the same class as the money cap binding mid-attempt
+      // (F45). Resume-to-cap applies exactly as it does to money — the stop IS the
+      // checkpoint, so the completed steps are not wasted.
+      if (clock.expired() && idx < plan.steps.length) {
+        emit('wall-halt', {
+          ...clock.report(closeTimeoutForReport),
+          stepsDone: idx, stepsPlanned: plan.steps.length,
+          meaning: 'not under cap — not "can\'t"',
+        });
+        emit('escalation', {
+          category: 'wall-halt', decisionReady: true, phase: `step:${step.id}`,
+          decision: `The run reached its wall-clock cap after ${idx} of ${plan.steps.length} steps. Time ran out, not capability.`,
+          options: ['raise maxWallMs and rerun (resume-to-cap: the stop is the checkpoint)', 'abandon the run'],
+          detail: `requested ${clock.requestedMs}ms, elapsed ${clock.elapsedMs()}ms`,
+        });
+        planExecuted();
+        return 'wall-halt';
+      }
       continue;
     }
     // ONE replan, and only for EXHAUSTION with FUNDS LEFT (review #5): ralph
@@ -778,16 +914,32 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
     // exhaustion leaves money on the table. An instrument/governance stop that
     // is not cap-halt never replans either. (An unpriced step already returned
     // pricing-red at the step-end guard above, so isUnpriced() is false here.)
+    //
+    // A (PRD v1.27) adds the SECOND trigger: `step-variance` — the meter stopped a
+    // step that had eaten a declared share of the run with its exits unmoved. That
+    // is the case exhaustion-only could never reach (F56: a replan has fired zero
+    // times in the programme), and it is a genuine re-allocation rather than a stop.
+    // Both triggers still need FUNDS LEFT, and both are still bounded by the ONE
+    // replan ceiling — this changes the trigger, never the ceiling (v1.12).
     const cat = lastEscalation?.category;
-    if (!replanned && cat === 'cap-halt' && remainingUsd() > MONEY_MIN) {
+    const replanTrigger = cat === 'cap-halt' ? 'step exhausted its attempts with exits still red'
+      : cat === 'step-variance' ? 'the meter stopped a step that was consuming the run with its exits unmoved'
+      : null;
+    if (!replanned && replanTrigger && remainingUsd() > MONEY_MIN) {
       replanned = true;
-      emit('replan', { step: step.id, reason: 'step exhausted its attempts with exits still red' });
-      const failure = `Step "${step.id}" (${step.action}) ran ${capRuns} attempts and its exits were still red. `
+      emit('replan', { step: step.id, reason: replanTrigger, trigger: cat });
+      const failure = `Step "${step.id}" (${step.action}) did not reach its exits. `
+        + `${cat === 'step-variance' ? 'It was stopped by the run\'s meter for consuming too large a share of what was left.' : `It ran ${capRuns} attempts and its exits were still red.`}\n`
         + `Last exit state:\n${lastEscalation?.detail ?? '(none)'}\n`
         + `Steps completed so far: ${artifacts.map((a) => a.id).join(', ') || 'none'}.`;
+      // The progress line IS the adaptation channel (addendum 2): the balance rides
+      // in via obtainPlan's live read, and this says where the run got to. Both are
+      // the planner re-allocating what remains across what is left — never a rate.
+      const progress = `step ${idx + 1} of ${plan.steps.length} ("${step.id}") did not finish; `
+        + `${artifacts.length} step(s) completed before it`;
       let pv;
       try {
-        pv = await obtainPlan('replan', failure);
+        pv = await obtainPlan('replan', failure, progress);
       } catch (e) {
         planExecuted();
         return relay(e, 'replan');
@@ -813,6 +965,16 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
     if (cat === 'cap-halt') {
       planExecuted();
       return remainingUsd() <= MONEY_MIN ? 'cap-halt' : `step-red:${step.id}`;
+    }
+    // A second `step-variance` after the one replan is spent is a STOP, and the stop
+    // is the result — but it rides out as `step-red:<id>`, NOT as its own top-level
+    // outcome. The category is a replan TRIGGER, never a run verdict: leaking it
+    // upward would mint an outcome run.js and the ledger's class table do not know,
+    // and an unmapped category is counted as a library bug (ledger.js) when this is a
+    // planning story. The escalation ralph already emitted carries the real detail.
+    if (cat === 'step-variance') {
+      planExecuted();
+      return `step-red:${step.id}`;
     }
     // Any OTHER terminal escalation category is NOT a capability failure: a
     // provider-red is a transport CASUALTY, a gate-red/interpreter-red/close

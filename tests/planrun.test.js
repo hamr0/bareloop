@@ -374,11 +374,20 @@ test('a step SETUP fault is recorded on the plan-executed spine with the SAME ca
   const provider = scriptedProvider([{ text: 'scout' }, { text: PLAN(wd) }, { text: 'x' }]);
   const { events, emit } = collector();
   const jv = validateJob(JOB(wd));
-  let n = 0;
-  // throw at the STEP worker's construction (call 3): scout(1) + drafter(2) succeed first,
-  // and ralph catches middle throws — so this catch is reachable ONLY by a setup fault
-  const remainingUsd = () => { n += 1; if (n >= 3) throw new Error('boom: cannot size the wallet'); return 1.5; };
-  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 3, remainingUsd });
+  // Throw at the STEP worker's construction, and target it by the RUN'S OWN STATE
+  // (the plan has been accepted) rather than by counting wallet reads. A call-count
+  // trigger measures "how many times has remainingUsd been called", which is not the
+  // same question as "are we past drafting" — it silently retargets whenever the
+  // number of reads changes, and it did (T's materials block added one per draft).
+  // ralph catches middle throws, so with the plan accepted this catch is reachable
+  // only by a setup fault.
+  let planAccepted = false;
+  const emit2 = (/** @type {string} */ type, /** @type {any} */ data) => {
+    if (type === 'plan-accepted') planAccepted = true;
+    return emit(type, data);
+  };
+  const remainingUsd = () => { if (planAccepted) throw new Error('boom: cannot size the wallet'); return 1.5; };
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit: emit2, capRuns: 3, remainingUsd });
   const exec = events.find((e) => e.type === 'plan-executed');
   const esc = events.filter((e) => e.type === 'escalation').at(-1);
   assert.ok(exec, 'plan-executed is on the spine — the record never dangles');
@@ -625,4 +634,163 @@ test('F59: a scout still empty after its reserved round emits the LOUD scout-emp
   assert.equal(events.find((e) => e.type === 'scout-result').bytes, 0);
   // F59's own evidence: empty scouts still green — so this is LOUD, never a halt
   assert.equal(outcome, 'green', 'an empty survey is reported, not fatal (3 of 5 archived greens had one)');
+});
+
+// ── T + A: materials at the plan surface, the wall clock, and the variance
+// replan trigger (PRD v1.27/v1.29; materials design record + addenda 1-3).
+//
+// A replan has fired ZERO times in the programme (F56) because only step
+// exhaustion triggered one. A adds the second trigger: the meter stops a step that
+// has eaten a declared share of the run with its exits unmoved. These tests are
+// the first coverage of that path.
+
+test('T: the wall clock is reported BEFORE anything spends, and an unbounded run says so rather than leaving it to be inferred', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout' }, { text: PLAN(wd) },
+    { text: 'writing', toolCalls: [tcall('1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'done' },
+  ]);
+  const { events } = await go(wd, provider);
+  const wc = events.find((e) => e.type === 'wall-clock');
+  assert.ok(wc, 'the clock is on the spine');
+  assert.equal(wc.bounded, false);
+  assert.equal(wc.requestedMs, null, 'null is the honest no-cap — never a defaulted number (F45)');
+  assert.equal(wc.enforcedMs, null);
+  assert.match(wc.meaning, /explicit operator choice/, 'the absence is stated, not implied');
+  // it precedes every spending event
+  const firstRound = events.findIndex((e) => e.type === 'worker-round');
+  assert.ok(events.indexOf(wc) < firstRound, 'reported before the first metered round');
+});
+
+test('T: a bounded run reports BOTH numbers — requested and enforced — because a deadline is only readable between rounds (addendum 1, measured)', async (t) => {
+  const wd = makePatient(t, { closeGreen: true });
+  const provider = scriptedProvider([
+    { text: 'scout' }, { text: PLAN(wd) },
+    { text: 'writing', toolCalls: [tcall('1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'done' },
+  ]);
+  const { events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }) });
+  const wc = events.find((e) => e.type === 'wall-clock');
+  assert.equal(wc.bounded, true);
+  assert.equal(wc.requestedMs, 600_000);
+  assert.equal(wc.enforcedMs, 720_000, 'requested + one close timeout — quoting only the requested number is F6 in a time coat');
+});
+
+test('T: the materials handed to the planner are a BALANCE — no rate, no per-round allowance, no derived round count (hamr\'s correction; F57 measured a 150x spread on verification gaps)', async (t) => {
+  const wd = makePatient(t);
+  const prompts = [];
+  const provider = {
+    name: 'capture',
+    async generate(msgs) {
+      prompts.push(String(msgs.at(-1)?.content ?? ''));
+      const scripted = [
+        { text: 'scout' }, { text: PLAN(wd) },
+        { text: 'writing', toolCalls: [tcall('1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+        { text: 'done' },
+      ][prompts.length - 1] ?? { text: 'done' };
+      return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  await go(wd, provider, { job: JOB(wd, { maxWallMs: 2_700_000 }) });
+  const draft = prompts.find((p) => p.includes('DRAFT-PLAN'));
+  assert.ok(draft, 'the drafting prompt was captured');
+  assert.match(draft, /money left for the whole run: \$1\.50/);
+  assert.match(draft, /time left for the whole run: 45 minutes/);
+  assert.match(draft, /Nothing here is a rate/);
+  // The negative half, which is the whole point of addendum 2:
+  assert.doesNotMatch(draft, /per round/i, 'no per-round rate may reach the planner');
+  assert.doesNotMatch(draft, /affords roughly/, 'no derived round count (F60 T2B\'s framing, withdrawn)');
+  assert.doesNotMatch(draft, /seconds of model time/, 'no duration rate');
+});
+
+test('T: with no maxWallMs the materials block carries money only — an absent cap is never rendered as a number', async (t) => {
+  const wd = makePatient(t);
+  const prompts = [];
+  const provider = {
+    name: 'capture',
+    async generate(msgs) {
+      prompts.push(String(msgs.at(-1)?.content ?? ''));
+      const scripted = [
+        { text: 'scout' }, { text: PLAN(wd) },
+        { text: 'writing', toolCalls: [tcall('1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+        { text: 'done' },
+      ][prompts.length - 1] ?? { text: 'done' };
+      return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  await go(wd, provider);
+  const draft = prompts.find((p) => p.includes('DRAFT-PLAN'));
+  assert.match(draft, /money left for the whole run/);
+  assert.doesNotMatch(draft, /time left for the whole run/, 'no cap means no time line — not "0 minutes", not "unlimited"');
+});
+
+test('A: the variance trigger FIRES — a step that eats over half the run\'s remaining money with its exits still red gets no further attempt, and the planner re-allocates (the trigger exhaustion-only could never reach, F56)', async (t) => {
+  const wd = makePatient(t);
+  // Attempt 1 writes a NON-ok file: tree-changed passes, clean-run reds, so attempt 2
+  // is scheduled. The wallet is drained past the 50% threshold DURING attempt 1, so
+  // the meter must stop the step at the head of attempt 2 rather than fund it.
+  const provider = scriptedProvider([
+    { text: 'scout' }, { text: PLAN(wd) },
+    { text: 'writing', toolCalls: [tcall('1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'nope\n' })] },
+    { text: 'attempt 1 done' },
+    // the replan: a fresh plan whose one step greens
+    { text: PLAN(wd, [{ id: 'second-go', action: 'Write it properly.', tools: ['write'], rounds: 4, target: 'tests/test_x.mjs', exit: [{ type: 'artifact-written', path: 'tests/test_x.mjs', pattern: 'ok' }] }]) },
+    { text: 'writing', toolCalls: [tcall('2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'done' },
+  ]);
+  const jv = validateJob(JOB(wd));
+  const { events, emit } = collector();
+  // The drain is driven by the RUN'S OWN progress, not a call count: once the first
+  // step has been judged once, the wallet reports 40% of what the step started with
+  // (a 60% share, over the 50% threshold). Deterministic, and it cannot silently
+  // retarget if the number of wallet reads changes.
+  let judged = 0;
+  let balance = 1.5;
+  const emit2 = (/** @type {string} */ type, /** @type {any} */ data) => {
+    if (type === 'exit-eval') { judged += 1; if (judged === 1) balance = 0.6; }
+    return emit(type, data);
+  };
+  const outcome = await runPlan(jv.job, {
+    workdir: wd, provider, emit: emit2, capRuns: 3, remainingUsd: () => balance,
+  });
+
+  const variance = events.find((e) => e.type === 'variance');
+  assert.ok(variance, `the meter must fire — events: ${events.map((e) => e.type).join(' ')}`);
+  assert.equal(variance.axis, 'money');
+  assert.ok(variance.moneyShare >= 0.5, `share ${variance.moneyShare} must be at or over the threshold`);
+  assert.equal(variance.threshold, 0.5, 'hamr\'s number, provisional by construction');
+  assert.equal(variance.timeShare, null, 'no maxWallMs set — the time axis is null, never a fabricated 0');
+  assert.equal(variance.iteration, 2, 'stopped at the HEAD of attempt 2, so attempt 1\'s work is not discarded');
+
+  const replan = events.find((e) => e.type === 'replan');
+  assert.ok(replan, 'the variance routes to a REPLAN, not a stop — this is the adaptation channel (F56: zero replans in the programme)');
+  assert.equal(replan.trigger, 'step-variance');
+  assert.match(replan.reason, /consuming the run/);
+
+  // the escalation ralph emitted must NOT claim something broke
+  const esc = events.filter((e) => e.type === 'escalation').find((e) => e.category === 'step-variance');
+  assert.ok(esc, 'the category rides out by name');
+  assert.doesNotMatch(esc.decision, /broke/i, 'a metered stop is not a fault — the record must not say the middle broke');
+
+  // and the replan drafter was handed the DRAINED balance, not the original
+  const replanMaterials = events.filter((e) => e.type === 'materials').at(-1);
+  assert.equal(replanMaterials.phase, 'replan');
+  assert.equal(replanMaterials.balanceUsd, 0.6, 'the balance is read LIVE at the replan — a stale snapshot would let it plan against money already spent');
+  assert.match(replanMaterials.progress, /step 1 of 1/, 'the progress line is the other half of the adaptation channel');
+});
+
+test('A: the variance check NEVER fires on attempt 1 — the share is 0 by construction, so a first attempt can never be pre-empted', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout' }, { text: PLAN(wd) },
+    { text: 'writing', toolCalls: [tcall('1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'done' },
+  ]);
+  // a wallet that reports almost nothing left from the very start
+  const jv = validateJob(JOB(wd));
+  const { events, emit } = collector();
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 3, remainingUsd: () => 0.002 });
+  assert.equal(events.filter((e) => e.type === 'variance').length, 0, 'no variance event on a single-attempt step');
+  assert.equal(outcome, 'green');
 });

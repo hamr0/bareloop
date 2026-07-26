@@ -59,6 +59,8 @@ const QUOTED_VERB_RE = /"([a-z0-9-]+)"/;
  * explains WHY each one classifies to nothing. */
 const EXCLUDED_ESCALATIONS = new Set([
   'cap-halt',           // a budget story, not a lib bug
+  'wall-halt',          // the TIME budget's version of the same story (T, PRD v1.27)
+  'step-variance',      // A's replan trigger: a planning story, never a lib bug
   'gate-red',           // governance working as intended
   'smoke-red',          // already counted via primitive-smoke
   'hitl-close',         // by design: a human is the close

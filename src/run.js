@@ -214,7 +214,7 @@ async function openDraftPr({ workdir, branch, title, body, addPaths, exec }) {
  *        binding.)
  * @returns {Promise<string>} outcome: 'green' | 'escalated' | 'unapproved-spec' |
  *   'job-red' | 'smoke-red' | 'config-red' | 'pricing-red' | 'provider-red' |
- *   'cap-halt' | 'close-unsupported' | `step-red:<id>`
+ *   'cap-halt' | 'wall-halt' | 'close-unsupported' | `step-red:<id>`
  */
 export async function runJob(rawSpec, { approvals, workdir, target, provider, nativeProvider, emit, capRuns = 3, shellCapUsd = 2, closeTimeoutMs, execCmd = defaultExec, layerRoot = false }) {
   // 0. the ledger's counters, declared FIRST so that every job-end — including
