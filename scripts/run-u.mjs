@@ -88,14 +88,24 @@ console.log(`rounds    ${events.filter((e) => e.type === 'worker-round' && e.kin
 console.log(`writes    ${writes.length} allowed (${new Set(writes.map((e) => e.action?.path)).size} distinct files)`);
 console.log(`plan      ${plan ? `${plan.steps?.length ?? '?'} steps` : 'none validated'}`);
 console.log(`checks    ${events.filter((e) => e.type === 'check-run').length} runs · menu [${events.find((e) => e.type === 'check-menu')?.offered?.join(', ') ?? '-'}]`);
-console.log(`close     ${events.findLast((e) => e.type === 'outer-close')?.verdict ?? '-'} (stage ${events.findLast((e) => e.type === 'outer-close')?.stage ?? '-'})`);
+// the close as JUDGED FIRST, then whether the fix loop had to run. Printing only
+// the last outer-close reads as "close red" next to "outcome green" — the record
+// must not make the reader reconcile two numbers that mean different things.
+const oc = events.findLast((e) => e.type === 'outer-close');
+const fixed = events.some((e) => e.type === 'fix-loop');
+console.log(`close     first judgment ${oc?.verdict ?? '-'}${oc?.stage ? ` (stage ${oc.stage})` : ''}${fixed ? ` → fix loop ran → ${outcome}` : ''}`);
 console.log(`replan    ${events.some((e) => e.type === 'replan') ? 'YES' : 'no'}`);
 for (const e of events.filter((x) => x.type === 'escalation')) console.log(`ESCALATION ${e.category}: ${(e.decision ?? '').slice(0, 160)}`);
 if (leaks.length) console.log(`\nSPINE LEAK: ${leaks.length} secret-shaped strings — the hard line is broken`);
 
 // the BRIDGE: on a green the agent's own plan is kept as the reusable artifact
 if (outcome === 'green' && plan) {
-  const bridgeFile = join(spineDir, `bridge-${spec.job}.json`);
+  // one file PER GREEN, never one file per job: two cold runs of this job produced
+  // two DIFFERENT plans that both green (run 1: 3 steps, run 3: 2 steps), so a
+  // single `bridge-<job>.json` silently destroys the earlier bridge. WHICH bridge
+  // gets offered for reuse is a selection question the reuse rung answers
+  // (PRD v1.34 item 3) — the runner must not answer it by clobbering.
+  const bridgeFile = join(spineDir, `bridge-${spec.job}-${runid}.json`);
   writeFileSync(bridgeFile, `${JSON.stringify({ job: spec.job, specHash, runid, greenAt: new Date().toISOString(), plan }, null, 2)}\n`);
   console.log(`\nBRIDGE saved — ${bridgeFile}`);
   console.log('  the next run of this shape reuses this plan instead of starting cold');
