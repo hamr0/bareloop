@@ -21,7 +21,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createClock, MIN_CALL_TIMEOUT_MS, PROVIDER_TIMEOUT_MS } from '../src/clock.js';
+import { createClock, isWallTimeout, MIN_CALL_TIMEOUT_MS, PROVIDER_TIMEOUT_MS, TIMEOUT_CODE } from '../src/clock.js';
 
 /** a controllable clock: `at(ms)` moves it, so elapsed time is exact */
 function fakeNow(start = 1_000_000) {
@@ -127,4 +127,44 @@ test('report() carries both numbers and the bounded flag — one shape for the s
 test('report() renders unbounded remaining as null, NOT Infinity — Infinity does not survive JSON.stringify and would land in the append-only spine as the literal null anyway, or worse as 0 downstream', () => {
   const c = createClock({ now: fakeNow().now });
   assert.equal(JSON.parse(JSON.stringify(c.report(120_000))).remainingMs, null);
+});
+
+// ─── F64: telling the run's own deadline apart from a dead socket ───
+
+const etimedout = () => Object.assign(new Error('request timed out'), { code: TIMEOUT_CODE });
+
+test('isWallTimeout: a provider timeout on a BOUNDED, EXPIRED clock is the run\'s own deadline — the derived call bound came from the wall, so this is governance, not transport', () => {
+  const f = fakeNow();
+  const c = createClock({ maxWallMs: 600_000, now: f.now });
+  f.at(600_000);
+  assert.equal(isWallTimeout(etimedout(), c), true);
+});
+
+test('isWallTimeout: the SAME error with time still on the clock is transport — a real dead socket must never be laundered into a governance stop', () => {
+  const f = fakeNow();
+  const c = createClock({ maxWallMs: 600_000, now: f.now });
+  f.at(599_999);
+  assert.equal(isWallTimeout(etimedout(), c), false, 'one millisecond short of the cap is still a transport failure');
+});
+
+test('isWallTimeout: an UNBOUNDED run can never produce one — with no cap there is no wall for a timeout to be derived from', () => {
+  const f = fakeNow();
+  const c = createClock({ now: f.now });
+  f.at(99_000_000);
+  assert.equal(isWallTimeout(etimedout(), c), false);
+});
+
+test('isWallTimeout: only the provider timeout code counts — every other transport failure stays transport even past the cap', () => {
+  const f = fakeNow();
+  const c = createClock({ maxWallMs: 600_000, now: f.now });
+  f.at(700_000);
+  assert.equal(isWallTimeout(Object.assign(new Error('reset'), { code: 'ECONNRESET' }), c), false);
+  assert.equal(isWallTimeout(Object.assign(new Error('pipe'), { code: 'EPIPE' }), c), false);
+  assert.equal(isWallTimeout(new Error('no code at all'), c), false);
+  assert.equal(isWallTimeout(null, c), false, 'a null throw must not crash the classifier — it is on the escalation path');
+  assert.equal(isWallTimeout(undefined, c), false);
+});
+
+test('isWallTimeout: the code is bare-agent\'s own (BA-18) — pinned, because a rename upstream silently reopens F64', () => {
+  assert.equal(TIMEOUT_CODE, 'ETIMEDOUT');
 });

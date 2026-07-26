@@ -43,8 +43,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
     across 18 archived spines / 54 steps / 101 judged attempts it would have fired **0
     times** (near misses 0.35 · 0.35 · 0.40 · 0.45), and the premise it was built on —
     F56's *"a replan has never fired in the entire programme"* — is FALSE: eight replans had
-    already fired, four days before F56 was written. The threshold is arbiter territory and
-    stays hamr's; it was deliberately NOT lowered to fit those four points.
+    already fired, four days before F56 was written.
+  - **Threshold decided at 0.5 with that inertness on the table** (hamr, *"keep 0.5"*, PRD
+    v1.31). It is therefore a guard set ABOVE the observed population, not a tuned trigger —
+    moving it to 0.35 to catch those four points would be fitting the number to the data.
 
 ### Changed
 - **The `tree-changed` scope is now a MENU the agent picks from, not a glob it authors and
@@ -72,6 +74,27 @@ feature lands, **patch** = docs, fixes, scaffolding.
     fence enforces.
 
 ### Fixed
+- **F64 — a wall-derived call timeout was reported as a network failure**, so the operator's own
+  governance stop was filed as a transport casualty (never evidence, retried, carrying the F44
+  `spendComplete:false` floor) and the human was told to fix the provider binding. `clock.callTimeoutMs()`
+  bounds each provider call by the time left, and bare-agent's `TimeoutError` carries a code but no
+  category — which the runner defaulted to `provider-red` at four separate seams.
+  - New `isWallTimeout(err, clock)` + `TIMEOUT_CODE` (`src/clock.js`) is the whole discriminator: an
+    `ETIMEDOUT` on an **expired** clock is the wall's own stop. One `categorize()` inside `runPlan`
+    is now the ONLY place an uncategorised throw is classified, so the worker seam, the native seam,
+    the scout/drafting relay and the close-fix loop cannot drift apart. A throw that named its own
+    category still keeps it.
+  - Every wall stop emits ONE record shape, with `cutMidCall` splitting a deadline that landed
+    inside a provider call from one read between steps; `ralph` gained a `wall-halt` decision entry
+    so a governance stop no longer reads as "the middle broke", and its options are raise-the-cap,
+    not retry-the-provider. `runPlan` can now return `wall-halt` from the drafting and fix paths too.
+  - **The controls are part of the fix:** the same error with time still on the clock stays
+    `provider-red` (a real dead socket is never laundered into a governance stop), and an unbounded
+    run can never produce a `wall-halt`. Stated limit: a genuine hang on a run whose wall has ALSO
+    passed reads as `wall-halt` — the run is out of time either way and the remedy is identical.
+  - Also closed a coverage hole found en route: the **between-steps** wall terminal had no test at
+    all since it shipped. `runPlan` gains an injected `now` (the seam `createClock` already exposes)
+    because `maxWallMs`'s floor is one close timeout, so real time cannot exercise the terminal.
 - **F59 — the SCOUT returned nothing on 15 of 18 runs, so the planner drafted blind.** The
   round bound is enforced from the metering callback (`loop.stop`), so a scout still calling
   tools on its last round was halted mid-tool-use and its `text` was empty: it spent its whole

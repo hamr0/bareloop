@@ -39,6 +39,42 @@ export const PROVIDER_TIMEOUT_MS = 600_000;
  */
 export const MIN_CALL_TIMEOUT_MS = 30_000;
 
+/** bare-agent's rejection code when its request/idle timeout trips (BA-18,
+ * `provider-http.js` → `TimeoutError`). The error carries a `code` and NO
+ * `category`, so every consumer that defaults an uncategorised throw would file
+ * it as transport. */
+export const TIMEOUT_CODE = 'ETIMEDOUT';
+
+/**
+ * F64 — is this throw the run's OWN deadline coming back dressed as a provider
+ * error? `callTimeoutMs()` hands the provider a bound derived from the wall, so
+ * when the wall is what shrank that bound, the resulting `TimeoutError` is a
+ * GOVERNANCE stop, not a casualty. Filing it as `provider-red` would discard it
+ * (a casualty is never evidence, F45/F48) and attach the F44
+ * `spendComplete:false` floor to a run that simply ran out of time.
+ *
+ * The discriminator is the wall itself, not the derived number: on a bounded
+ * clock a trip can only precede expiry when the bound came from the provider's
+ * own default (`remainingMs() > PROVIDER_TIMEOUT_MS`), and that case is transport
+ * by construction. So "already expired" IS the wall-derived set. An unbounded run
+ * can never produce one, and needs no separate `bounded` term to say so —
+ * `expired()` is false by construction with no cap. (A mutation run proved the
+ * extra term inert; the unbounded case is guarded by its own test instead, which
+ * is where that invariant belongs.)
+ *
+ * A genuine dead socket on a run whose wall has ALSO passed reads as a wall-halt.
+ * That is deliberate and honest: the run is out of time either way, the remedy is
+ * the same (raise `maxWallMs`), and the alternative — calling a governance stop
+ * transport on the chance that it was — is the failure this closes.
+ *
+ * @param {any} err the throw as caught
+ * @param {Clock} clock the run's clock
+ * @returns {boolean}
+ */
+export function isWallTimeout(err, clock) {
+  return !!err && err.code === TIMEOUT_CODE && clock.expired();
+}
+
 /**
  * @typedef {object} Clock
  * @property {boolean} bounded whether the operator set a cap at all

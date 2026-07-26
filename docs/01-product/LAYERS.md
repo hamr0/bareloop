@@ -422,9 +422,10 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
      share of remaining money or time with exits unmoved triggers the replan. The count
      ceiling stays — trigger changes, ceiling never does. **F63 replayed it across 18 spines /
      54 steps: it would have fired 0 times at hamr's 0.5** (near misses 0.35 · 0.35 · 0.40 ·
-     0.45). Not lowered to fit those four points — the threshold is arbiter territory and
-     **is the one open decision blocking this item**; the two honest readings (inert vs
-     untriggered-not-inert) are in F63 and the finding does not choose between them.
+     0.45). Not lowered to fit those four points. **DECIDED 2026-07-26 (hamr, *"keep 0.5"*,
+     PRD v1.31) with the inertness on the table** — so A is a guard set above the observed
+     population, and the programme's eight real adaptation observations come from the
+     exhaustion trigger, not from this one.
    - **P — restore the palette** (write · select · compress · isolate, per-step and
      agent-selected, not shell hooks) and widen the step vocabulary past six fields
      (model tier / effort, attempt cap, scope narrowing). The arbiter stays inexpressible.
@@ -440,8 +441,9 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
      a close declared as an ordered list of NAMED STAGES, with the check menu DERIVED from
      those stages, so U runs with **zero operator-authored checks** (hamr: *"there shouldn't be
      user authoring anywhere, that defies the point of bareloop"*). Designed and signed in PRD
-     v1.28; unbuilt. **Status 2026-07-26: T built, A built-and-inert (awaiting the threshold
-     call), staged close / U / P not started.**
+     v1.28. **Status 2026-07-26: T built (F64 fixed — a wall stop is a governance stop, never
+     a transport casualty), A built-and-inert with its threshold decided at 0.5, staged close
+     IN BUILD, U / P not started.**
 5. **Build Layer 3** — inheritance with ledger attribution (N3, kill-switch: rules must
    transmit across non-identical runs). Carries three v1.21 requirements (external-review
    fold, 2026-07-21): **(a) the drift detector** — arbiter-side trailing green-rate vs

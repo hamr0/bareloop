@@ -3532,9 +3532,9 @@ belongs before the build, where "would this ever fire?" is still a cheap questio
 
 ## F64 — T's own governance stop can be recorded as a network failure: a wall-derived call timeout routes `provider-red`
 
-**Status: minted 2026-07-26, $0 (source + dependency-source trace, no run). PARKED for hamr's
-explicit go — verdict routing is arbiter territory. Found by auditing the reachability of the
-clock just built (the same question that produced F63).**
+**Status: minted 2026-07-26, $0 (source + dependency-source trace, no run). RESOLVED the same day
+on hamr's explicit go (*"fix F64 and keep 0.5"*), PRD v1.31. Found by auditing the reachability of
+the clock just built — the same question that produced F63.**
 
 ### The path
 
@@ -3568,13 +3568,31 @@ something it is not.
 `MIN_CALL_TIMEOUT_MS` bounds the damage — a call is never given a timeout it cannot survive — but
 does not close the class.
 
-### Shape of the fix, NOT applied
+### The fix, as shipped
 
-Stamp the derived-timeout throw at the throw site (the typed-`lib`/category discipline, never
-error-prose sniffing) so a **wall-derived** timeout routes as `wall-halt` with the requested vs
-elapsed numbers, while a genuine transport timeout stays `provider-red`. Needs a must-fail test
-per direction: a wall-derived trip that would previously have read `provider-red`, and a real
-transport timeout that must still read `provider-red`.
+`isWallTimeout(err, clock)` (`src/clock.js`) is the whole discriminator: an `ETIMEDOUT` on an
+**expired** clock is the wall's own stop. It needs no `bounded` term — `expired()` is false by
+construction with no cap, and a mutation run proved an added one inert, so the unbounded case is
+guarded by a test rather than by a redundant condition.
+
+One `categorize()` in `runPlan` is the only place a throw is classified, so the four seams that
+previously each defaulted to `provider-red` — the worker `ask`/`askFrom`, the native `ask`, the
+scout/drafting `relay`, and the close-fix loop — cannot drift apart. A named category still wins;
+only the UNNAMED throw is classified. `wall-halt` gained a `ralph` decision entry (a governance
+stop must not read "the middle broke"), and every wall stop now emits ONE record shape with
+`cutMidCall` splitting the deadline-inside-a-call reading from the between-steps reading.
+
+**Tested in both directions, and the controls are the point:** a wall-derived trip → `wall-halt`
+(previously `provider-red`); the identical error with time left → still `provider-red`; an
+unbounded run → still `provider-red`; a drafting-phase trip → `wall-halt` via the relay. Four
+mutants killed (drop the expiry check, restore the old default, conflate `cutMidCall`, delete the
+step-loop branch). En route the between-steps terminal itself turned out to have had **no test at
+all** since it shipped — that gap is now closed too, which needed a `now` injection seam on
+`runPlan` (the cap's floor is one close timeout, so real time cannot exercise it).
+
+**Stated limit, deliberate:** a genuine transport hang on a run whose wall has ALSO passed reads as
+a `wall-halt`. The run is out of time either way and the remedy is the same; resolving the
+ambiguity the other way is the failure this closes.
 
 ### Lesson
 

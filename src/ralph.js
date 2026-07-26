@@ -295,6 +295,12 @@ export async function ralph({ middle, close, judge, capRuns, emit, redact, close
         // REPLANS, so the message must not say anything broke.
         'step-variance': ['A step consumed a large share of the run with its exits still red — the meter stopped it before another attempt.',
           ['let the planner re-allocate what is left (replan)', 'raise the budget and rerun', 'abandon the task']],
+        // T/F64 — the run's WALL CLOCK stopped this, and the caller's deadline came
+        // back as the provider's own timeout. A governance stop, not a fault and not
+        // a transport casualty: the message must not send a human to debug a socket,
+        // and the remedy is the operator's cap, not a retry.
+        'wall-halt': ['The run reached its wall-clock cap mid-attempt — time ran out, not capability.',
+          ['raise maxWallMs and rerun (the stop is the checkpoint)', 'abandon the task']],
       };
       // Object.hasOwn, not bare lookup: a category named after an
       // Object.prototype member ("toString") would return the inherited

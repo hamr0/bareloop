@@ -71,11 +71,11 @@ const collector = () => {
   return { events, emit: (type, data = {}) => { const e = { type, ...data }; events.push(e); return e; } };
 };
 
-async function go(wd, provider, { job = JOB(wd), capRuns = 3, layerRoot = false, scoutRounds } = {}) {
+async function go(wd, provider, { job = JOB(wd), capRuns = 3, layerRoot = false, scoutRounds, now } = {}) {
   const jv = validateJob(job);
   assert.deepEqual(jv.reds, [], 'the test job must be validateJob-green');
   const { events, emit } = collector();
-  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns, layerRoot, remainingUsd: () => 1.5, ...(scoutRounds ? { scoutRounds } : {}) });
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns, layerRoot, remainingUsd: () => 1.5, ...(scoutRounds ? { scoutRounds } : {}), ...(now ? { now } : {}) });
   return { outcome, events };
 }
 
@@ -793,4 +793,146 @@ test('A: the variance check NEVER fires on attempt 1 — the share is 0 by const
   const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 3, remainingUsd: () => 0.002 });
   assert.equal(events.filter((e) => e.type === 'variance').length, 0, 'no variance event on a single-attempt step');
   assert.equal(outcome, 'green');
+});
+
+// ── F64: the wall clock's own stop must never be filed as a transport casualty.
+// A provider-red is a CASUALTY by doctrine — never evidence, retry, and it carries
+// the F44 spendComplete:false floor. So a run that correctly ran out of the
+// operator's TIME must not ride out under the label reserved for a dead socket.
+
+/** a fake clock the test drives: the provider advances it on the call it chooses */
+const fakeClock = (startMs = 1_000_000) => {
+  const state = { ms: startMs };
+  return { now: () => state.ms, advance: (by) => { state.ms += by; } };
+};
+
+/** bare-agent's TimeoutError shape (BA-18): a code, and NO category */
+const timeoutError = () => Object.assign(new Error('[AnthropicProvider] request timed out after 120000ms of socket inactivity'), { code: 'ETIMEDOUT' });
+
+test('F64: a wall-derived call timeout is a wall-halt, NOT a provider-red — the operator\'s governance stop is never filed as a network failure', async (t) => {
+  const wd = makePatient(t);
+  const clk = fakeClock();
+  // Call 3 is the worker's first round. The wall passes DURING it and the provider
+  // rejects with bare-agent's own timeout — which is exactly what clock.callTimeoutMs()
+  // asked it to do. That is the run's deadline coming back as a provider error.
+  let n = 0;
+  const provider = {
+    name: 'wall-timeout',
+    async generate() {
+      n += 1;
+      if (n === 3) { clk.advance(700_000); throw timeoutError(); }
+      const scripted = [{ text: 'scout' }, { text: PLAN(wd) }][n - 1] ?? { text: 'done' };
+      return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now });
+
+  assert.equal(outcome, 'wall-halt', 'time ran out — that is a governance stop, not a casualty');
+  const cats = events.filter((e) => e.type === 'escalation').map((e) => e.category);
+  assert.ok(cats.includes('wall-halt'), `the escalation names the same category the outcome does (F11) — saw ${cats.join(', ')}`);
+  assert.ok(!cats.includes('provider-red'), 'nothing on the spine may call this a transport failure');
+  const wh = events.filter((e) => e.type === 'wall-halt').at(-1);
+  assert.ok(wh, 'the run-level record carries the clock\'s numbers, not just ralph\'s escalation');
+  assert.equal(wh.requestedMs, 600_000);
+  assert.equal(wh.enforcedMs, 720_000, 'both numbers, always (addendum 1)');
+  assert.ok(wh.elapsedMs >= 600_000, 'the honest elapsed figure, overshoot included');
+  assert.equal(wh.cutMidCall, true, 'distinguishes a deadline that landed INSIDE a call from one read between steps');
+  const esc = events.filter((e) => e.type === 'escalation').find((e) => e.category === 'wall-halt');
+  assert.match(esc.options.join(' '), /maxWallMs/, 'the decision-ready option is raise-the-cap, not retry-the-provider');
+  assert.doesNotMatch(esc.decision, /transport|network|socket/i, 'the human must not be sent to debug the provider binding');
+});
+
+test('F64 control: the SAME timeout with time still on the clock stays a provider-red — the fix must not launder a real dead socket into a governance stop', async (t) => {
+  const wd = makePatient(t);
+  const clk = fakeClock();
+  let n = 0;
+  const provider = {
+    name: 'dead-socket',
+    async generate() {
+      n += 1;
+      // identical rejection, identical call position — the ONLY difference is that
+      // the clock is NOT expired, so the wall cannot have been what bound this call
+      if (n === 3) { clk.advance(1_000); throw timeoutError(); }
+      const scripted = [{ text: 'scout' }, { text: PLAN(wd) }][n - 1] ?? { text: 'done' };
+      return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now });
+
+  assert.equal(outcome, 'provider-red', 'a hang with time left is a transport casualty and must stay one');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'provider-red');
+  assert.equal(events.filter((e) => e.type === 'wall-halt').length, 0, 'no wall-halt record on a run that never ran out of time');
+});
+
+test('F64: an unbounded run can never produce a wall-halt — with no cap there is no deadline for a timeout to be derived from', async (t) => {
+  const wd = makePatient(t);
+  const clk = fakeClock();
+  let n = 0;
+  const provider = {
+    name: 'unbounded-timeout',
+    async generate() {
+      n += 1;
+      if (n === 3) { clk.advance(9_000_000); throw timeoutError(); }
+      const scripted = [{ text: 'scout' }, { text: PLAN(wd) }][n - 1] ?? { text: 'done' };
+      return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const { outcome, events } = await go(wd, provider, { now: clk.now }); // JOB() sets no maxWallMs
+  assert.equal(outcome, 'provider-red', 'the provider\'s own default timeout tripped — that is transport, and no clock claims it');
+  assert.equal(events.filter((e) => e.type === 'wall-halt').length, 0);
+});
+
+test('F64: a wall-derived timeout during PLAN DRAFTING is a wall-halt too — the relay path is not a second, blinder route', async (t) => {
+  const wd = makePatient(t);
+  const clk = fakeClock();
+  let n = 0;
+  const provider = {
+    name: 'draft-timeout',
+    async generate() {
+      n += 1;
+      if (n === 2) { clk.advance(700_000); throw timeoutError(); } // the drafting call
+      return { text: 'scout', usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now });
+  assert.equal(outcome, 'wall-halt');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'wall-halt');
+  assert.equal(esc.phase, 'plan', 'the phase says where the clock ran out');
+  assert.ok(events.find((e) => e.type === 'wall-halt'), 'the clock\'s numbers reach the spine on the drafting path too');
+});
+
+test('T: the between-steps wall terminal — a run whose clock expires after a green step STOPS, and the stop is the checkpoint', async (t) => {
+  // NOT closeGreen: an already-green close short-circuits the whole run at the
+  // precheck, so the terminal under test would never be reached (a green patient
+  // here reads `already-green` and proves nothing).
+  const wd = makePatient(t);
+  const clk = fakeClock();
+  const twoSteps = [
+    { id: 'one', action: 'Write tests/test_x.mjs.', tools: ['write'], rounds: 4, target: 'tests/test_x.mjs', exit: [{ type: 'tree-changed', scope: 'tests/**' }] },
+    { id: 'two', action: 'Write tests/test_y.mjs.', tools: ['write'], rounds: 4, target: 'tests/test_y.mjs', exit: [{ type: 'tree-changed', scope: 'tests/**' }] },
+  ];
+  let n = 0;
+  const provider = {
+    name: 'slow-step',
+    async generate() {
+      n += 1;
+      const scripted = [
+        { text: 'scout' },
+        { text: PLAN(wd, twoSteps) },
+        { text: 'writing', toolCalls: [tcall('1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+        { text: 'step one done' },
+      ][n - 1] ?? { text: 'done' };
+      if (n === 4) clk.advance(700_000); // step one greened, and the clock is now spent
+      return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now });
+  assert.equal(outcome, 'wall-halt', 'step two is never started — starting a step the run cannot fund is the F45 class');
+  const wh = events.find((e) => e.type === 'wall-halt');
+  assert.equal(wh.stepsDone, 1);
+  assert.equal(wh.stepsPlanned, 2);
+  assert.equal(wh.cutMidCall, false, 'read BETWEEN steps, not inside a call');
+  assert.match(wh.meaning, /not "can't"/, 'a time stop is not a capability read');
 });

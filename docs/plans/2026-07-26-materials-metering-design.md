@@ -368,10 +368,12 @@ readings — *inert* (buys no observation exhaustion did not) versus *untriggere
 guard against a step that eats the run; no archived step did that, and the 0.45 near-miss says
 the population is close to the wall) — and does not choose between them.
 
-### PARKED, not fixed — a wall stop can still be reported as a transport casualty
+### A wall stop can still be reported as a transport casualty — PARKED, then RESOLVED same day
 
-Found while auditing T's own reachability; **named and scoped here, deliberately untouched,
-because verdict routing is arbiter territory.**
+Found while auditing T's own reachability; named and scoped here and **deliberately untouched at
+the time, because verdict routing is arbiter territory.** hamr's go came in the next turn
+(*"fix F64 and keep 0.5"*) and it is now fixed — see F64 for the shipped shape and PRD v1.31 for
+the ruling. The description below is the defect as found.
 
 `clock.callTimeoutMs()` derives each provider call's timeout as
 `min(PROVIDER_TIMEOUT_MS, max(MIN_CALL_TIMEOUT_MS, remainingMs()))` and `planrun.js` passes it
@@ -388,6 +390,14 @@ as a *network* failure. That is the same laundering class F48's escalation-categ
 closed, pointed the other way. `MIN_CALL_TIMEOUT_MS` bounds the damage (a call is never given an
 impossible timeout) but does not close it.
 
-Shape of the fix, for hamr's call, not applied: stamp the derived-timeout throw at the throw site
-(the typed-`lib`/category discipline — never prose sniffing) so a wall-derived timeout routes as
-`wall-halt`, and only a genuine transport timeout stays `provider-red`.
+Shape of the fix, for hamr's call: stamp the derived-timeout throw at the throw site (the
+typed-`lib`/category discipline — never prose sniffing) so a wall-derived timeout routes as
+`wall-halt`, and only a genuine transport timeout stays `provider-red`. **Shipped exactly this
+way**, with the must-not-change direction (a real dead socket with time left) as a control test.
+
+### And §6.2's threshold: hamr kept 0.5, with the inertness on the table
+
+*"keep 0.5"* (2026-07-26, after F63's replay was put in front of him). That discharges the
+provisional-by-construction status of §6.2 — the number survived being examined rather than
+surviving unexamined — and fixes A's meaning as a **guard set above the observed population**,
+never a tuned trigger. PRD v1.31 carries the ruling.

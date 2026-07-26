@@ -28,7 +28,7 @@ import { TOOL_MENU } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, RETRIEVAL_STRATEGY, EDIT_STRATEGY } from './interpret.js';
 import { globToPrefix, SECRET_PATTERNS } from './validate.js';
 import { extractArtifact } from './text.js';
-import { createClock } from './clock.js';
+import { createClock, isWallTimeout } from './clock.js';
 
 const require = createRequire(import.meta.url);
 const { Loop, wireGate, HaltError } = require('bare-agent');
@@ -68,10 +68,16 @@ const MONEY_MIN = 0.001;
  * that has consumed this share of the run's REMAINING money or time with its exits
  * still red gets no further attempt; the planner re-allocates what is left instead.
  *
- * 50% is hamr's number (*"50% is fine"*) and is recorded as PROVISIONAL BY
- * CONSTRUCTION: it is a first number, not a measured one, and the first real run
- * that trips (or fails to trip) it is the read that settles it. It must not harden
- * into doctrine by surviving unexamined.
+ * 50% is hamr's number (*"50% is fine"*), and it was **re-confirmed with its own
+ * inertness on the table**: F63 replayed 18 archived spines / 54 steps / 101 judged
+ * attempts and found it would have fired 0 times (near misses 0.35 · 0.35 · 0.40 ·
+ * 0.45). Shown that, hamr's call was *"keep 0.5"* (2026-07-26).
+ *
+ * So this is a GUARD against a step that eats the run, deliberately set above the
+ * observed population rather than tuned to it — lowering it to 0.35 because that is
+ * where those four points sit would be fitting the number to the data (the standing
+ * no-fit-to-pass rule), and threshold-setting is arbiter territory either way. It
+ * has not hardened by surviving unexamined; it survived being examined.
  *
  * This changes the replan TRIGGER only. The hard ceiling of ONE replan is
  * unchanged — unlimited replanning launders thrash as adaptation (v1.12).
@@ -207,11 +213,15 @@ ${scoutBlob || '(no scout notes)'}`;
  *   first plan-flow job to emit `root-injected` runs the pre-registered ON-vs-OFF acceptance
  *   read (the Layer R default-flip, LAYERS.md ⚠). Excluded on native (clipipe): the native
  *   worker has no onToolResult seam, so the tee cannot settle and same-path rewrites are blind.
+ * @param {() => number} [opts.now] the wall clock's time source, injected. The real clock is the
+ *   default; a caller supplies this to drive time deterministically (the same seam `createClock`
+ *   already exposes — a run's terminal cannot otherwise be exercised without waiting out a cap
+ *   whose floor is one close timeout).
  * @returns {Promise<string>} 'green' | 'already-green' | 'escalated' | 'plan-red' |
  *   'check-red' | 'close-red' | 'close-unsupported' | 'pricing-red' | 'cap-halt' |
- *   'provider-red' | 'interpreter-red' | `step-red:<id>`
+ *   'wall-halt' | 'provider-red' | 'interpreter-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, emit, remainingUsd, isUnpriced = () => false, capRuns = 3, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, emit, remainingUsd, isUnpriced = () => false, capRuns = 3, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, now }) {
   workdir = resolve(workdir);
   const scrub = (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS });
 
@@ -262,7 +272,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
   // rather than leaving a reader to infer it. Both numbers are reported — addendum 1
   // measured that a deadline is only readable BETWEEN rounds, so enforcement is
   // requested + closeTimeoutMs and quoting one number would be F6 in a time coat.
-  const clock = createClock({ maxWallMs: job.maxWallMs ?? null });
+  const clock = createClock({ maxWallMs: job.maxWallMs ?? null, ...(now ? { now } : {}) });
   const closeTimeoutForReport = closeTimeoutMs ?? 120_000;
   emit('wall-clock', {
     ...clock.report(closeTimeoutForReport),
@@ -270,6 +280,41 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
       ? 'a between-round deadline; a close already in flight when it trips runs to completion'
       : 'NO time cap was set — time-unbounded by explicit operator choice, never by a default',
   });
+
+  /**
+   * F64 — ONE categoriser for a throw out of a provider call, so the seams cannot
+   * drift. A `HaltError` is the budget gate. The run's OWN deadline coming back as
+   * bare-agent's `TimeoutError` (`callTimeoutMs()` is derived from the wall) is a
+   * GOVERNANCE stop and rides out as `wall-halt` — filing it `provider-red` would
+   * discard the row as a casualty (never evidence, F45/F48) and hand the human a
+   * transport-debugging option list for a run that simply ran out of time. A
+   * thrower that named its own category keeps it (the standing typed-attribution
+   * rule); only an UNNAMED throw is classified here.
+   * @param {any} e
+   * @returns {{ err: CategorizedError, category: string }} the same throw, stamped,
+   *   plus the category as a plain string (so a caller reading it never has to
+   *   re-widen an optional field back to a value)
+   */
+  const categorize = (e) => {
+    const err = /** @type {CategorizedError} */ (e);
+    const category = e instanceof HaltError ? 'cap-halt'
+      : (err.category ?? (isWallTimeout(err, clock) ? 'wall-halt' : 'provider-red'));
+    err.category = category;
+    return { err, category };
+  };
+
+  /** the run-level TIME record, one shape wherever the wall stops the run.
+   * `cutMidCall` splits the two readings: `true` = the deadline landed INSIDE a
+   * provider call (F64, seen as its timeout), `false` = read between steps, the
+   * ordinary path. Both are the same stop; conflating them would hide which
+   * instrument saw it. */
+  const emitWallHalt = (/** @type {object} */ extra) => emit('wall-halt', {
+    ...clock.report(closeTimeoutForReport),
+    meaning: 'not under cap — not "can\'t"',
+    cutMidCall: false,
+    ...extra,
+  });
+  const WALL_OPTIONS = ['raise maxWallMs and rerun (resume-to-cap: the stop is the checkpoint)', 'abandon the run'];
 
   const closeArgv = job.close.cmd.trim().split(/\s+/);
   const closeOpts = { timeoutMs: closeTimeoutMs, cwd: workdir, expect: job.close.expect, judged: job.close.judged, gapKeep: job.close.gapKeep };
@@ -524,9 +569,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
         try {
           r = await loop.run([{ role: 'user', content: prompt }], defs, { maxTokens: 32000 });
         } catch (e) {
-          const err = /** @type {CategorizedError} */ (e);
-          err.category = e instanceof HaltError ? 'cap-halt' : (err.category ?? 'provider-red');
-          throw err;
+          throw categorize(e).err;
         }
         // a maxTurns session is a BOUNDED attempt, not an escalation — the same
         // role loop.stop() plays on the Loop path: judge the partial work and
@@ -604,9 +647,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
       try {
         return await loop.run([...msgs, { role: 'user', content: prompt }], [], { cacheMessages: true, maxTokens: 32000, timeoutMs: clock.callTimeoutMs() });
       } catch (e) {
-        const err = /** @type {CategorizedError} */ (e);
-        err.category = e instanceof HaltError ? 'cap-halt' : (err.category ?? 'provider-red');
-        throw err;
+        throw categorize(e).err;
       }
     };
     const ask = async (prompt, defs = toolDefs) => {
@@ -614,9 +655,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
       try {
         r = await loop.run([{ role: 'user', content: prompt }], defs, { cacheMessages: true, maxTokens: 32000, timeoutMs: clock.callTimeoutMs() });
       } catch (e) {
-        const err = /** @type {CategorizedError} */ (e);
-        err.category = e instanceof HaltError ? 'cap-halt' : (err.category ?? 'provider-red');
-        throw err;
+        throw categorize(e).err;
       }
       // same error-return taxonomy as interpret's ask (one map, same doctrine):
       // halt → cap-halt, denial streak → gate-red, API truncation → provider-red
@@ -634,18 +673,27 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
     return { ask, askFrom, workerWrites, setIteration: (/** @type {number|string} */ i) => { roundIteration = i; roundsThisAttempt = 0; }, wasBounded: () => attemptBounded };
   }
 
-  /** relay a throw from OUTSIDE ralph (scout/plan drafting) as its honest category */
+  /** relay a throw from OUTSIDE ralph (scout/plan drafting/fix) as its honest
+   * category. Three terminals, never collapsed: the budget gate, the wall clock
+   * (F64 — the scout and the drafter run under the same derived call timeout the
+   * worker does, so this path needs the same split or it is the blinder route),
+   * and transport. */
   const relay = (/** @type {any} */ e, /** @type {string} */ phase) => {
-    const category = e instanceof HaltError ? 'cap-halt' : (typeof e?.category === 'string' ? e.category : 'provider-red');
-    if (category === 'cap-halt') emit('cap-halt', { category, meaning: 'not under cap — not "can\'t"', detail: String(e?.message ?? e) });
+    const { category } = categorize(e);
+    const detail = String(e?.message ?? e);
+    if (category === 'cap-halt') emit('cap-halt', { category, meaning: 'not under cap — not "can\'t"', detail });
+    if (category === 'wall-halt') emitWallHalt({ cutMidCall: true, phase });
+    const DECIDE = {
+      'cap-halt': [`The budget gate tripped during ${phase} — the wallet cannot fund the plan flow.`, ['raise the job budget and rerun', 'abandon the run']],
+      'wall-halt': [`The run reached its wall-clock cap during ${phase}. Time ran out, not capability.`, WALL_OPTIONS],
+    };
+    const [decision, options] = (Object.hasOwn(DECIDE, category) ? DECIDE[category] : undefined)
+      ?? [`The ${phase} call failed (${category}) — no result exists.`, ['retry the run', 'fix the provider binding', 'abandon the run']];
     emit('escalation', {
-      category, decisionReady: true, phase,
-      decision: category === 'cap-halt' ? `The budget gate tripped during ${phase} — the wallet cannot fund the plan flow.` : `The ${phase} call failed (${category}) — no result exists.`,
-      options: category === 'cap-halt' ? ['raise the job budget and rerun', 'abandon the run'] : ['retry the run', 'fix the provider binding', 'abandon the run'],
-      detail: String(e?.message ?? e),
+      category, decisionReady: true, phase, decision, options, detail,
       ...(typeof e?.lib === 'string' ? { lib: e.lib } : {}),
     });
-    return category === 'cap-halt' ? 'cap-halt' : 'provider-red';
+    return category === 'cap-halt' || category === 'wall-halt' ? category : 'provider-red';
   };
 
   // ── 1. SCOUT — read-only by construction: the write-class verbs are simply
@@ -889,15 +937,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
       // (F45). Resume-to-cap applies exactly as it does to money — the stop IS the
       // checkpoint, so the completed steps are not wasted.
       if (clock.expired() && idx < plan.steps.length) {
-        emit('wall-halt', {
-          ...clock.report(closeTimeoutForReport),
-          stepsDone: idx, stepsPlanned: plan.steps.length,
-          meaning: 'not under cap — not "can\'t"',
-        });
+        emitWallHalt({ stepsDone: idx, stepsPlanned: plan.steps.length });
         emit('escalation', {
           category: 'wall-halt', decisionReady: true, phase: `step:${step.id}`,
           decision: `The run reached its wall-clock cap after ${idx} of ${plan.steps.length} steps. Time ran out, not capability.`,
-          options: ['raise maxWallMs and rerun (resume-to-cap: the stop is the checkpoint)', 'abandon the run'],
+          options: WALL_OPTIONS,
           detail: `requested ${clock.requestedMs}ms, elapsed ${clock.elapsedMs()}ms`,
         });
         planExecuted();
@@ -957,6 +1001,17 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
       artifacts.length = 0;
       idx = 0;
       continue;
+    }
+    // F64 — the wall stopped this attempt from INSIDE a provider call (the derived
+    // call timeout is the deadline in the provider's own coin). ralph already
+    // emitted the escalation under this category, so the outcome and the record
+    // agree (F11); what is still missing is the run-level TIME record, which the
+    // between-steps site emits and this path must too. Never a replan trigger and
+    // never a casualty: time ran out, and the stop IS the checkpoint.
+    if (cat === 'wall-halt') {
+      emitWallHalt({ cutMidCall: true, phase: `step:${step.id}`, stepsDone: idx, stepsPlanned: plan.steps.length });
+      planExecuted();
+      return 'wall-halt';
     }
     // A money-gate halt (wallet drained) is an honest cap-halt terminal, never a
     // step-red: the exits never ran because the money ran out, not because the
@@ -1039,5 +1094,12 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
     return relay(e, 'fix');
   }
   planExecuted();
+  if (fixOutcome !== 'green' && lastEscalation?.category === 'wall-halt') {
+    // F64 in the close-fix loop: the same governance stop, and it must not ride out
+    // as a bare `escalated` either — that reads as "the fix failed" when the fix was
+    // never given the time to run.
+    emitWallHalt({ cutMidCall: true, phase: 'fix' });
+    return 'wall-halt';
+  }
   return fixOutcome === 'green' ? 'green' : 'escalated';
 }

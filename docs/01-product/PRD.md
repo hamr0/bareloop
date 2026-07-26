@@ -1847,3 +1847,60 @@ so nothing is claimed. But it is a $0 archive question, not a battery.
 Finding 4 cost a design decision, a signed record section, and a day of implementation, while the
 disconfirming evidence sat in eight files. "Would this ever fire?" is cheap while it is still a
 question about code and expensive once it is a claim about a feature.
+
+---
+## Addendum v1.31 — 2026-07-26 (hamr's two calls: keep 0.5, and a wall stop is never a network failure)
+
+**Approval.** hamr in-turn, verbatim: *"fix F64 and keep 0.5, then build the staged close"* — given
+after v1.30 put A's inertness and F64's mislabel in front of him. Both items were arbiter territory
+and both were parked for exactly this.
+
+### 1. A's variance threshold stays 0.5
+
+Decided **with the inertness on the table**, which is the only way this number was ever going to be
+legitimate. F63 measured that 0.5 would have fired 0 times across 18 archived spines / 54 steps,
+with near misses at 0.35 · 0.35 · 0.40 · 0.45. hamr kept 0.5 anyway.
+
+That fixes A's meaning: it is a **guard set above the observed population**, not a tuned trigger.
+The alternative — moving it to 0.35 because that is where those four points sit — is fitting the
+threshold to the data, which this PRD prohibits. So A's honest description is *"no archived step has
+ever eaten half of what was left; if one does, the planner re-allocates instead of the step
+finishing the run"*. It is not evidence of adaptation and is not counted as such; **the eight
+replans F63 found are the programme's adaptation observations, and they came from the exhaustion
+trigger.** The provisional-by-construction status is discharged: it survived being examined, rather
+than surviving unexamined.
+
+### 2. F64 — a wall-derived call timeout routes `wall-halt`, not `provider-red`
+
+`clock.callTimeoutMs()` bounds each provider call by what is left of the wall, so on a tight run the
+deadline arrives as bare-agent's own `TimeoutError` — which carries a code and no category, and the
+plan runner defaulted every uncategorised throw to `provider-red`. A `provider-red` is a **casualty**
+by standing doctrine (never evidence, retry, F44 `spendComplete:false` floor), so a run that ran out
+of the operator's *time* was being discarded as a *network* failure, and the human was handed
+"fix the provider binding" as the remedy.
+
+**Fixed, and the fix is one decision made in one place** (`isWallTimeout` + a single `categorize` in
+the runner, so the worker seam, the scout/drafting relay, the step loop and the close-fix loop cannot
+drift apart):
+
+- an uncategorised `ETIMEDOUT` on an **expired** clock → `wall-halt`, with the run-level time record
+  (`requestedMs`/`enforcedMs`/`elapsedMs`) and a `cutMidCall` flag distinguishing a deadline that
+  landed inside a call from one read between steps;
+- the same error with **time still on the clock** → `provider-red`, unchanged. A real dead socket is
+  never laundered into a governance stop, and this direction is a pre-registered control test;
+- an **unbounded** run can never produce a `wall-halt` — with no cap the provider's own default is
+  what tripped, and that is transport;
+- a thrower that named its own category keeps it (the typed-attribution rule is untouched — this
+  classifies only the UNNAMED throw).
+
+**A deliberate, stated limit:** a genuine transport hang on a run whose wall has *also* passed reads
+as a `wall-halt`. The run is out of time either way and the remedy is identical (raise the cap), so
+the ambiguity is resolved toward the governance reading. Resolving it the other way is the failure
+being closed.
+
+### Why this belongs in the PRD rather than a changelog line
+
+The two verdict classes carry different downstream rights: a casualty is excluded from evidence and
+retried, a governance stop is a checkpoint the operator resumes from. A defect that moves rows
+between those classes is an **arbiter** defect, which is why it was parked rather than fixed on
+sight, and why the fix ships with a control test in the direction that must NOT change.
