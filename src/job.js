@@ -20,12 +20,13 @@ import { globToPrefix, scopeContained, isObj, isNonEmptyString, sweepSecretLiter
 // they are read at call time, so a mutable export would let adopter code
 // enable verdict-class laundering process-wide with one push().
 export const CLOSE_TYPES = Object.freeze(['predicate', 'gold', 'rubric', 'hitl']);
-export const CLASSES = Object.freeze(['hard', 'soft', 'hitl']);
-/** the hierarchy: which verdict classes a close type may claim (PRD §7) */
+/** the hierarchy: which verdict classes a close type may claim (PRD §7). Read by
+ * the verdictType check — a declared verdict may not demand a class its close
+ * type cannot legally claim (green-on-rubric is laundering). The `CLASSES`
+ * vocabulary export went with steps[] (PRD v1.32): a class was a STEP field, and
+ * nothing declares one now. */
 export const CLASS_BY_CLOSE = Object.freeze({ predicate: Object.freeze(['hard']), gold: Object.freeze(['hard']), rubric: Object.freeze(['soft']), hitl: Object.freeze(['hitl']) });
 export const GOLD_COMPARE = Object.freeze(['exact', 'json-equal']);
-/** step middle modes (2b): text = single-target artifact; tools = Gate-governed file tools */
-export const STEP_MODES = Object.freeze(['text', 'tools']);
 /** the tool grant menu (2b interview #1): read/grep/write, plus the two litectx
  * RETRIEVAL verbs (F19) — `run` stays locked-but-listed; a spec requesting it
  * reds, and that red IS the request-red evidence admission waits on (curation
@@ -82,6 +83,9 @@ export const PROVIDERS = Object.freeze(['anthropic-api', 'clipipe-subscription']
  * candidate at N3. `provider` is part of the key by definition (top-level,
  * not duplicated here). */
 export const CONDITION_KEYS = Object.freeze(['providerPath', 'closeVerbosity', 'taskFraming', 'scaffold']);
+// `steps` stays in the field list ONLY so a retired spec reds by name
+// (`shape-retired`) instead of falling through to a generic unknown-field —
+// the operator gets told what happened, not just that something is wrong.
 const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'conditions', 'cadence', 'budgetUsd', 'maxWallMs', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'checks', 'tools'];
 /** the four-field plan shape's core (decision 5) — presence of any of these
  * declares the shape; `tools` (the ceiling) rides the shape but alone does not
@@ -203,75 +207,18 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
     if (esc.mode !== 'decision-ready') red('invalid-value', 'escalation.mode', 'must be "decision-ready"');
   }
 
-  // 4. the two shapes (design record 2026-07-21, decisions 5+6): EITHER the
-  // legacy operator-authored steps[] chain (co-existing scaffolding, staged
-  // sunset — archives alongside config-v1 when the Layer 2 path proves itself)
-  // OR the four-field plan shape (goal/verdictType/close/checks[]) where the
-  // AGENT authors the step plan at run time. Never both: a spec carrying both
-  // would let one shape ride the other as a smuggle channel.
-  const hasSteps = spec.steps !== undefined;
-  const hasPlanCore = PLAN_CORE_FIELDS.some((f) => spec[f] !== undefined);
-  if (hasSteps && hasPlanCore) {
-    red('shape-conflict', 'steps', 'EITHER operator-authored steps[] OR the plan shape (goal/verdictType/close/checks[]) — never both (design record 2026-07-21, decision 6)');
-  } else if (!hasSteps) {
-    if (hasPlanCore || spec.tools !== undefined) validatePlanShape(spec, red, reds);
-    else red('missing-required', 'steps', 'one shape is required: operator-authored steps[] (legacy, staged sunset) or the plan shape goal/verdictType/close/checks[]');
-  } else if (spec.tools !== undefined) {
-    red('invalid-value', 'tools', 'the tool ceiling is a plan-shape field — a legacy steps[] spec grants tools per step');
-  } else if (!Array.isArray(spec.steps) || spec.steps.length === 0) {
-    red('missing-required', 'steps', 'non-empty array — a job without closes is ungated spend');
+  // 4. the plan shape — the ONLY shape (PRD v1.32, 2026-07-26). The legacy
+  // operator-authored steps[] chain was deleted with the rest of that path:
+  // hand-writing the workflow is the exact thing the product removes, and its
+  // co-existence forced every downstream schema decision to carry two spellings.
+  // `steps` is now an unknown field like any other, so an old spec reds by name
+  // rather than half-running.
+  if (spec.steps !== undefined) {
+    red('shape-retired', 'steps', 'operator-authored steps[] was deleted (PRD v1.32) — a job declares goal/verdictType/close/checks[] and the AGENT authors the steps. hitl and soft-green return as a Layer 3 decision, rebuilt in this shape');
+  } else if (PLAN_CORE_FIELDS.some((f) => spec[f] !== undefined) || spec.tools !== undefined) {
+    validatePlanShape(spec, red, reds);
   } else {
-    const seen = new Set();
-    spec.steps.forEach((/** @type {any} */ s, /** @type {number} */ i) => {
-      const at = `steps.${i}`;
-      if (!isObj(s)) { red('invalid-value', at, 'step must be an object'); return; }
-      for (const key of Object.keys(s)) {
-        if (!['id', 'close', 'class', 'mode', 'tools'].includes(key)) red('unknown-field', `${at}.${key}`);
-      }
-      // mode/tools — the spec-side tool grant (2b decision #2: the human job
-      // spec owns mode + menu; the drafted config cannot express either)
-      const isHitl = isObj(s.close) && s.close.type === 'hitl';
-      if ((s.mode !== undefined || s.tools !== undefined) && isHitl) {
-        red('invalid-value', `${at}.mode`, 'hitl steps run no loop — mode/tools do not apply');
-      } else {
-        if (s.mode !== undefined && !STEP_MODES.includes(s.mode)) red('invalid-value', `${at}.mode`, STEP_MODES.join('|'));
-        if (s.tools !== undefined) {
-          if (s.mode !== 'tools') red('invalid-value', `${at}.tools`, 'a tool grant requires mode "tools" — a grant without the mode is incoherent');
-          else if (!(Array.isArray(s.tools) && s.tools.length > 0
-                     && s.tools.every((/** @type {unknown} */ t) => typeof t === 'string')
-                     && new Set(s.tools).size === s.tools.length)) {
-            red('invalid-value', `${at}.tools`, `non-empty unique subset of ${TOOL_MENU.join('|')}`);
-          } else {
-            // locked-but-listed asks red DISTINCTLY: request-red is the admission
-            // evidence the ledger tallies (two-red routing); a typo stays invalid-value
-            for (const t of s.tools.filter((/** @type {string} */ t) => LOCKED_TOOLS.includes(t))) {
-              // verb as a structured field: the ledger keys admission demand on it;
-              // parsing it back out of the prose detail would break on a rewording
-              reds.push({ code: 'request-red', path: `${at}.tools`, verb: t, detail: `"${t}" is locked-but-listed — this red IS the admission evidence, never a grant; granted menu: ${TOOL_MENU.join('|')}` });
-            }
-            const unknown = s.tools.filter((/** @type {string} */ t) => !TOOL_MENU.includes(t) && !LOCKED_TOOLS.includes(t));
-            if (unknown.length) red('invalid-value', `${at}.tools`, `unknown tool(s) ${unknown.join(', ')} — menu: ${TOOL_MENU.join('|')}`);
-          }
-        }
-      }
-      if (!isNonEmptyString(s.id) || !SLUG_RE.test(s.id)) red('invalid-value', `${at}.id`, 'kebab-case slug');
-      else if (seen.has(s.id)) red('duplicate-id', `${at}.id`, s.id);
-      else seen.add(s.id);
-
-      if (s.class === undefined) red('missing-required', `${at}.class`);
-      else if (!CLASSES.includes(s.class)) red('invalid-value', `${at}.class`, CLASSES.join('|'));
-
-      if (!isObj(s.close)) { red('missing-required', `${at}.close`, 'every step names its close — a step without one is ungated spend'); return; }
-      const close = s.close;
-      if (!validateClose(close, `${at}.close`, red)) return;
-      // the hierarchy: one check covers both directions — a class outside the
-      // close type's menu is laundering (rubric-as-hard) or delegation
-      // (hitl-class on a script close); hitl ⇔ hitl falls out of the menus.
-      const legal = CLASS_BY_CLOSE[close.type];
-      if (CLASSES.includes(s.class) && !legal.includes(s.class)) {
-        red('close-hierarchy', `${at}.class`, `${close.type} close admits class ${legal.join('|')} only (a rubric can never be hard; a human IS the hitl close — PRD §7)`);
-      }
-    });
+    red('missing-required', 'goal', 'a job declares goal/verdictType/close/checks[] — the agent authors the steps');
   }
 
   // 5. secrets sweep — the SAME shared guard the workflow validator runs

@@ -22,7 +22,6 @@
 import { readFileSync, appendFileSync, existsSync } from 'node:fs';
 import { basename } from 'node:path';
 import { createHash } from 'node:crypto';
-import { VERBS } from './validate.js';
 
 /** severity order, worst-first (the fold's display order; frequency ranks within) */
 export const LEDGER_CLASSES = Object.freeze([
@@ -50,7 +49,14 @@ const normalizeDetail = (/** @type {unknown} */ s) => String(s ?? '')
   .slice(0, DETAIL_MAX);
 const sigOf = (/** @type {string} */ normalized) => createHash('sha256').update(normalized).digest('hex').slice(0, 8);
 
-const VERB_RE = new RegExp(`\\b(${VERBS.join('|')})\\b`);
+// The prose fallback for attributing a store failure to a verb. This list came
+// from config-v1's hook vocabulary, which was deleted with that path (PRD
+// v1.32); it is relocated here VERBATIM rather than re-derived, so classification
+// behaviour is byte-identical across the deletion. Re-aiming it at litectx's own
+// verb names would be a behavioural change and belongs in its own commit — two
+// levers in one diff make the delta unattributable to either.
+const SNIFF_VERBS = Object.freeze(['recall', 'compress', 'stash', 'remember']);
+const VERB_RE = new RegExp(`\\b(${SNIFF_VERBS.join('|')})\\b`);
 const QUOTED_VERB_RE = /"([a-z0-9-]+)"/;
 
 /** The deliberate escalation exclusions as a RUNTIME set, not prose: anything

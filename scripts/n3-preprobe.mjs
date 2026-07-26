@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { TOOL_MENU } from '../src/job.js';
 import { MAX_PLAN_STEPS, MAX_EXITS_PER_STEP, validatePlan } from '../src/plan.js';
 import { extractArtifact } from '../src/text.js';
-import { PERSONA_TOOLS } from '../src/interpret.js';
+import { PERSONA_TOOLS } from '../src/tools.js';
 
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');

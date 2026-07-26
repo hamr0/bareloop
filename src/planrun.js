@@ -25,7 +25,7 @@ import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_
 import { snapshotScope, evalExits } from './exits.js';
 import { createRoot } from './root.js';
 import { TOOL_MENU } from './job.js';
-import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, RETRIEVAL_STRATEGY, EDIT_STRATEGY } from './interpret.js';
+import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, RETRIEVAL_STRATEGY, EDIT_STRATEGY } from './tools.js';
 import { globToPrefix, SECRET_PATTERNS } from './validate.js';
 import { extractArtifact } from './text.js';
 import { createClock, isWallTimeout } from './clock.js';
@@ -1060,7 +1060,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
   let fixOutcome;
   try {
     // Layer R for the close-fix loop — the plan flow's single ralph loop judged
-    // by the REAL close (the closest analog to interpret.js's loop, and the
+    // by the REAL close (the plan flow's single ralph loop, and the
     // likeliest place fixation manifests: the fix worker has the full menu and
     // is judged by a command, not a form-only exit). The red-set is the CLOSE's
     // own gapKeep (the gap here is the raw close output, unwrapped — so the

@@ -21,7 +21,7 @@ import { Gate } from 'bareguard';
 import { LiteCtx } from 'litectx';
 import { planPrompt } from '../src/planrun.js';
 import { validatePlan } from '../src/plan.js';
-import { TOOL_BY_VERB, PERSONA_TOOLS, RETRIEVAL_STRATEGY, createCtxTools } from '../src/interpret.js';
+import { TOOL_BY_VERB, PERSONA_TOOLS, RETRIEVAL_STRATEGY, createCtxTools } from '../src/tools.js';
 import { extractArtifact } from '../src/text.js';
 
 const require = createRequire(import.meta.url);

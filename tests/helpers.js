@@ -10,8 +10,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-export const GOOD_SUM = 'export function sum(a, b) { return a + b; }\n';
-export const BAD_SUM = 'export function sum(a, b) { return a - b; }\n';
 
 /**
  * The ONE provider response envelope every stub returns.
@@ -62,26 +60,6 @@ export function scriptedProvider(script) {
   };
 }
 
-/**
- * The sum-suite scaffold: the artifact lives under src/ (inside the fixture
- * writeScope "src/**"); the suite lives OUTSIDE the scope — a workflow can
- * never edit its own close. breakSuite writes a close that can never green.
- * @param {string} base per-file tmp root
- * @param {string} name run directory name under base
- * @param {{breakSuite?: boolean}} [opts]
- */
-export function makeSumWork(base, name, { breakSuite = false } = {}) {
-  const workdir = join(base, name);
-  mkdirSync(join(workdir, 'src'), { recursive: true });
-  const suite = join(workdir, 'sum.test.mjs');
-  writeFileSync(suite, breakSuite
-    ? 'process.exit(1); // a close that can never green'
-    : `import { test } from 'node:test';
-import assert from 'node:assert/strict';
-import { sum } from './src/sum.mjs';
-test('adds', () => assert.equal(sum(2, 3), 5));`);
-  return { workdir, target: join(workdir, 'src', 'sum.mjs'), close: ['node', '--test', suite], suiteCmd: `node --test ${suite}` };
-}
 
 /**
  * Scripted NATIVE clipipe provider factory (BA-16 shape) — the analog of
@@ -161,5 +139,3 @@ export function scriptedNativeFactory(sessions) {
 /** ONE spine reader: parsed events in seq order. @param {string} file */
 export const readSpine = (file) => readFileSync(file, 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
 
-/** the valid workflow-config fixture, a fresh copy per call */
-export const validConfig = () => JSON.parse(readFileSync(new URL('./fixtures/valid.json', import.meta.url), 'utf8'));

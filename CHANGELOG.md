@@ -7,6 +7,45 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Removed
+- **BREAKING — the legacy operator-authored `steps[]` path is deleted** (PRD v1.32, hamr:
+  *"i just want to get rid of it"*). `steps[]` is the shape where the OPERATOR hand-writes the
+  workflow steps — the exact thing bareloop exists to remove (*"there shouldn't be user
+  authoring anywhere"*, v1.28) — and it had been co-existing scaffolding since Layer 2 landed,
+  forcing every downstream schema decision to carry two spellings.
+  - **Gone from the public surface:** `interpret`, `STALL_REDS`, `validateConfig`, `diffPaths`,
+    `extractRules`, `MAX_RULES`, `MAX_RULE_CHARS`, `LOOP_SHAPES`, `SLOTS`, `VERBS`, `CLASSES`,
+    `STEP_MODES`, and `runJob`'s `opts.target` / `opts.execCmd`. **config-v1 is fully removed**,
+    not merely declared dead (F22 declared it): the drafted-workflow-config schema, its knobs,
+    the drafting call, the rules extractor, and the hitl draft-PR mechanics went with the path
+    that consumed them. A spec still carrying `steps[]` reds `shape-retired:steps` **by name**,
+    so an old spec is told what happened instead of half-running.
+  - **What it costs, stated plainly:** `hitl` is not dead code — `jobs/litectx-maintainer.json`
+    ran 6 times and opened a real draft PR once, and it is the only job that produced the
+    product's actual end state (a change for a human to merge) rather than a benchmark grade.
+    **That job goes dark** until the plan shape implements hitl. `soft-green` was never
+    implemented past its declaration. **How both come back is deferred to Layer 3 and
+    deliberately undecided** — by standing doctrine graduation between rungs is a REWRITE, never
+    a copy, so keeping the old implementation alive for a later rung preserved code that would
+    never have been copied.
+  - **What survived, and where it lives now:** the machinery the plan flow imports was housed in
+    the deleted files but was never part of the dead path. The worker tool menu (`TOOL_BY_VERB`,
+    the ctx tools, the gate action translator, the personas and strategy lines) moved
+    `src/interpret.js` → **`src/tools.js`**, which is what it always was; the fence and secret
+    primitives (`globToPrefix`, `scopeContained`, `sweepSecretLiterals`, `SECRET_PATTERNS`,
+    `scanSecrets`) stay in `src/validate.js`, now purely the shared primitives both validators
+    go through. The ledger's prose verb-sniff list was relocated VERBATIM rather than re-derived,
+    so incident classification is byte-identical across the deletion.
+  - **Coverage was re-pointed, not dropped.** The suite goes 616 → 395 tests because the tests
+    of a deleted path die with it; every guard that OUTLIVED the path was moved rather than
+    deleted — the approval binding, the pre-token smoke and four money-contract readings are
+    ports onto the plan shape in `tests/run.test.js`, the fence/secret assertions were re-pointed
+    at the primitives themselves in `tests/validate.test.js`, and the close-body rules
+    (`judged`, `gapKeep`, quotes-in-cmd, secret sweep) now address the plan close. Guards that
+    simply moved house are named where they now live: `close-unsupported`, `broken-close`,
+    `already-green` and the close's cwd in `tests/planrun.test.js`; `close-crashed` and the
+    close-output scrub in `tests/ralph.test.js`.
+
 ### Added
 - **T — a run has a CLOCK, and time is a material the planner is told as a balance**
   (PRD v1.27/v1.29, design record 2026-07-26 + addenda 1–3). Money was the only bound in the
