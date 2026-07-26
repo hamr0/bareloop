@@ -7,6 +7,45 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+- **T — a run has a CLOCK, and time is a material the planner is told as a balance**
+  (PRD v1.27/v1.29, design record 2026-07-26 + addenda 1–3). Money was the only bound in the
+  system; nothing bounded TIME, and job #5's own plan authorised ~630 worker turns (F56).
+  - `maxWallMs` joins the SIGNED job spec (`src/job.js`) — integer ms, **no default**, floor
+    one close timeout (`MIN_WALL_MS`). A run without it is time-unbounded *by explicit
+    operator choice*, never by an unnoticed fallback (F45: a defaulted cap is a silent second
+    ceiling). Adding it changes the spec hash — re-sign.
+  - New `src/clock.js` (`createClock`, `PROVIDER_TIMEOUT_MS`, `MIN_CALL_TIMEOUT_MS`): one
+    wall clock per run. Enforcement is a **between-round deadline** because `loop.stop()`
+    cannot cut an in-flight call — F61 measured it fired at 500ms and returned at 4,018ms —
+    so the honest enforced worst case is `maxWallMs + closeTimeoutMs` and BOTH numbers are
+    reported (`wall-clock`, `report()`), never the flattering one. Unbounded reports as
+    `null`, never `0` and never `Infinity` (F6 extended to time: an unknown duration is
+    reported as unknown).
+  - `runPlan` emits `wall-clock` (at start), `wall-bounded` (an attempt cut by the deadline —
+    the same seam the round bound rides; the partial work is judged and its gap fed forward)
+    and terminates `wall-halt` with a decision-ready escalation naming the requested vs
+    elapsed ms. The stop IS the checkpoint: raise `maxWallMs` and rerun.
+  - **Materials at draft** — `runPlan` emits `materials` and the plan/replan prompt now
+    carries `{ balanceUsd, remainingMs }`: what is LEFT, as a balance, never a per-round rate
+    (hamr's correction, PRD v1.29). F57 measured a 150× spread on verification-gap duration,
+    so a per-round constant describes almost no real round and a rate framing creates a
+    rush-or-fake incentive. The agent sees both axes; the arbiter is untouched — materials go
+    to the PLANNER at draft, and the worker stays blind (no budget, no close, no clock).
+- **A — the replan trigger gains a VARIANCE axis** (design record §3.4): a step that has
+  consumed `VARIANCE_THRESHOLD` (0.5, hamr's number) of the run's *remaining* money or time
+  with its exits still red is stopped at the head of its next attempt and routed as a
+  `step-variance` replan — the planner re-allocates what is left instead of the step eating
+  the run. Emits `variance {step, iteration, threshold, moneyShare, timeShare, axis}`. The
+  hard ceiling of **ONE** replan is unchanged (unlimited replanning launders thrash as
+  adaptation, v1.12); a second `step-variance` after the replan is spent is a STOP.
+  - **Recorded honestly: this trigger is INERT on every workload with data (F63).** Replayed
+    across 18 archived spines / 54 steps / 101 judged attempts it would have fired **0
+    times** (near misses 0.35 · 0.35 · 0.40 · 0.45), and the premise it was built on —
+    F56's *"a replan has never fired in the entire programme"* — is FALSE: eight replans had
+    already fired, four days before F56 was written. The threshold is arbiter territory and
+    stays hamr's; it was deliberately NOT lowered to fit those four points.
+
 ### Changed
 - **The `tree-changed` scope is now a MENU the agent picks from, not a glob it authors and
   guesses the shape of** (design record 2026-07-26 §4, hamr's *"did agent choose from a list or

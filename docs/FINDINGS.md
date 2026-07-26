@@ -3527,3 +3527,58 @@ after.** F56's Finding 4 cost a design decision, a signed record section, and a 
 implementation, and the disconfirming evidence was sitting in 8 files the whole time. The check
 that caught it — *is the thing I just built reachable?* — took one script and no money, and it
 belongs before the build, where "would this ever fire?" is still a cheap question.
+
+---
+
+## F64 — T's own governance stop can be recorded as a network failure: a wall-derived call timeout routes `provider-red`
+
+**Status: minted 2026-07-26, $0 (source + dependency-source trace, no run). PARKED for hamr's
+explicit go — verdict routing is arbiter territory. Found by auditing the reachability of the
+clock just built (the same question that produced F63).**
+
+### The path
+
+1. `src/clock.js` derives each provider call's timeout from what is left:
+   `callTimeoutMs() = min(PROVIDER_TIMEOUT_MS, max(MIN_CALL_TIMEOUT_MS, remainingMs()))`, and
+   `src/planrun.js` passes it to every `loop.run` (`timeoutMs: clock.callTimeoutMs()`).
+2. On a bounded run whose next call outlives the remaining wall — with more than
+   `MIN_CALL_TIMEOUT_MS` (30s) left, so the floor is not what binds — that timeout trips.
+   bare-agent rejects with `TimeoutError` (`code: 'ETIMEDOUT'`, `provider-http.js:55`), which
+   carries **no `category` and no `lib`**.
+3. Every catch site in `planrun.js` defaults an uncategorised throw to **`provider-red`**
+   (`err.category ?? 'provider-red'`, three sites plus `relay`). `src/ralph.js:85` maps
+   `ETIMEDOUT` for the CLOSE process only — not for a provider call.
+4. A timed-out call never reaches the metering callback, so `wall-bounded` never emits, and the
+   step loop's `clock.expired()` terminal is never reached.
+
+**Reachability is high, not theoretical.** F62 measured model rounds as 73% of a run's wall time
+with individual rounds running into the hundreds of seconds, so on any tight `maxWallMs` the
+FINAL call is exactly the one likely to exceed what is left.
+
+### Why it matters more than a mislabel
+
+By standing doctrine a `provider-red` row is a transport **casualty**: never evidence, retry, and
+it carries the F44 `spendComplete:false` floor. So a run that correctly ran out of the operator's
+*time* is discarded as a *network* failure — the operator's own governance stop laundered into a
+casualty. This is the F48 escalation-category-collapse class pointed the other way (there a
+casualty could launder into capability data; here governance launders into a casualty), and it
+directly defeats T's honesty rule: an unbounded or unknown duration must never be reported as
+something it is not.
+
+`MIN_CALL_TIMEOUT_MS` bounds the damage — a call is never given a timeout it cannot survive — but
+does not close the class.
+
+### Shape of the fix, NOT applied
+
+Stamp the derived-timeout throw at the throw site (the typed-`lib`/category discipline, never
+error-prose sniffing) so a **wall-derived** timeout routes as `wall-halt` with the requested vs
+elapsed numbers, while a genuine transport timeout stays `provider-red`. Needs a must-fail test
+per direction: a wall-derived trip that would previously have read `provider-red`, and a real
+transport timeout that must still read `provider-red`.
+
+### Lesson
+
+The reachability audit that caught F63 caught a second thing in the same pass: **"what happens
+when the thing I built fires?" is a different question from "would it ever fire?", and both are
+$0.** T was built, unit-tested and mutation-proven, and its terminal is bypassed by the very
+timeout it derives.

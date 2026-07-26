@@ -407,15 +407,24 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
    Layer 3 after job #5's realignment audit (F56) found the build had narrowed without a
    decision: the agent's whole authorship surface is six fields, the four-component palette
    was never re-expressed after config-v1 died, nothing in the system bounds TIME, and a
-   replan has fired **zero times in the programme** — so "adapts as it goes", half the product
-   claim, has no observations at all.
-   - **T — time is a cap, like money.** A run-level wall-clock bound the agent is told at plan
+   replan has fired ~~**zero times in the programme**~~ — **that fourth premise is FALSE and
+   is CORRECTED by F63: eight replans had already fired** (2026-07-22/23, four days before F56
+   was written), all on the exhaustion trigger. A's motivation is retired; the other three
+   divergences stand, and T is undamaged (it never depended on the replan premise).
+   - **T — time is a cap, like money. ✅ BUILT** (2026-07-26, `maxWallMs` + `src/clock.js` +
+     the materials block). A run-level wall-clock bound the agent is told at plan
      time and plans against; operator-set, tighten-only, never self-raised. A run that cannot
-     fit is a stop. The read it buys: given a time budget, does the agent RUSH or build a
-     bridge that carries it? (Auto-sizing from complexity is later; v1 is operator-set.)
-   - **A — replan on TIME, not exhaustion only.** A step burning a declared share of remaining
-     time with exits unmoved triggers the replan. The count ceiling stays — trigger changes,
-     ceiling never does.
+     fit is a stop (`wall-halt`; the stop is the checkpoint). The read it buys — given a time
+     budget, does the agent RUSH or build a bridge that carries it? — is **still unmade: no
+     real run has executed under a clock.** (Auto-sizing from complexity is later; v1 is
+     operator-set.) Time is handed over as a BALANCE, never a rate (PRD v1.29).
+   - **A — replan on TIME, not exhaustion only. ⚠ BUILT AND INERT.** A step burning a declared
+     share of remaining money or time with exits unmoved triggers the replan. The count
+     ceiling stays — trigger changes, ceiling never does. **F63 replayed it across 18 spines /
+     54 steps: it would have fired 0 times at hamr's 0.5** (near misses 0.35 · 0.35 · 0.40 ·
+     0.45). Not lowered to fit those four points — the threshold is arbiter territory and
+     **is the one open decision blocking this item**; the two honest readings (inert vs
+     untriggered-not-inert) are in F63 and the finding does not choose between them.
    - **P — restore the palette** (write · select · compress · isolate, per-step and
      agent-selected, not shell hooks) and widen the step vocabulary past six fields
      (model tier / effort, attempt cap, scope narrowing). The arbiter stays inexpressible.
@@ -426,7 +435,13 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
      **ONE job end to end**, which graduates the bridge; the bridge is then reused on the next
      job of the same shape and improves. This makes Layer 3's paired control fall out of normal
      operation (reuse = the ON arm, from-scratch = the OFF arm) instead of needing a battery.
-   - Order: **T + A → U → P**. P last so the widening has a baseline to be attributed against.
+   - Order: **T + A → the staged close (v1.28) → U → P**. P last so the widening has a
+     baseline to be attributed against. The **staged close** is the one build between A and U:
+     a close declared as an ordered list of NAMED STAGES, with the check menu DERIVED from
+     those stages, so U runs with **zero operator-authored checks** (hamr: *"there shouldn't be
+     user authoring anywhere, that defies the point of bareloop"*). Designed and signed in PRD
+     v1.28; unbuilt. **Status 2026-07-26: T built, A built-and-inert (awaiting the threshold
+     call), staged close / U / P not started.**
 5. **Build Layer 3** — inheritance with ledger attribution (N3, kill-switch: rules must
    transmit across non-identical runs). Carries three v1.21 requirements (external-review
    fold, 2026-07-21): **(a) the drift detector** — arbiter-side trailing green-rate vs

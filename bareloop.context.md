@@ -80,6 +80,7 @@ unknown-field reds.
 | `conditions` | `{ providerPath?, closeVerbosity?, taskFraming?, scaffold? }` | declared keys only, string values — the environment label (consumed by the N3 lineage key; recorded on spines from run one) |
 | `cadence` | `{ unit: hour\|day\|week, every: 1..30 }` | validated now, consumed at N5 (Scheduler) |
 | `budgetUsd` | `0 < n <= shell cap` | ceiling chain: workflow ≤ job ≤ shell — each layer may tighten, never exceed |
+| `maxWallMs` | optional integer ms `>= MIN_WALL_MS` (one close timeout) | the run's wall clock. **NO DEFAULT, by ruling** — absent means time-unbounded *by explicit operator choice*, never by fallback (F45: a defaulted cap is a silent second ceiling). Enforcement is a BETWEEN-ROUND deadline, so the honest worst case is `maxWallMs + closeTimeoutMs` and both numbers are reported (`loop.stop()` cannot cut an in-flight call — F61 measured 500ms→4,018ms). Operator-only, tighten-only; adding or changing it changes the spec hash |
 | `writeScope` | array of contained globs | the operator's outer fence; same containment law as the workflow layer, same code |
 | `steps` | array of `{ id, close, class, mode?, tools? }` | unique slug ids; every step names its close |
 | `steps[].mode` | `text` (default) \| `tools` | `text`: the worker returns ONE artifact written to the shell's `target`; `tools`: the worker drives Gate-governed file tools (multi-file). Illegal on `hitl` steps (they run no loop) |
@@ -443,13 +444,32 @@ description with check NAMES only; `validatePlan` gates it, one redraft with the
 fed back, then `plan-red`) → **EXECUTE** (strictly sequential micro-loops: `ralph` with
 the exit-evaluator judge; tree snapshots at step start; the gap names every failing
 wall — mechanical genre, F46's measured mechanism; artifacts feed forward labeled by
-step id) → **ONE replan**, triggered by exhaustion only (an instrument stop never
+step id) → **ONE replan**, triggered by exhaustion OR variance (an instrument stop never
 replans) → **the operator's close**, a red feeding ONE bounded fix loop judged by the
 REAL close. `plan-executed` (the plan-as-executed record, design law #2) lands on the
 spine on every path that executed steps. Additional outcomes: `already-green |
-plan-red | check-red | close-red`. Worker prompts hold the v1.12 §5 contract
+plan-red | check-red | close-red | wall-halt`. Worker prompts hold the v1.12 §5 contract
 (mutation-proven): the absolute repo root, the step's action/target, prior artifacts,
 the gap — NEVER the budget, the close command, a check's command, or the arbiter's books.
+
+**Time and materials (T + A, PRD v1.27/v1.29).** `runPlan` starts ONE wall clock per run
+(`createClock`, `src/clock.js`) from the signed `maxWallMs` and emits `wall-clock` with the
+requested AND enforced numbers up front. Enforcement is a **between-round deadline** — the
+only seam that exists, since `loop.stop()` cannot cut an in-flight call (F61: fired at 500ms,
+returned at 4,018ms) — so an attempt that crosses the deadline mid-flight emits `wall-bounded`,
+is judged, and feeds its gap forward exactly like a round-bounded attempt; the run-level
+terminal `wall-halt` is decided by the step loop after the step returns. Time reporting is
+licensed at ~90% accuracy by ruling: imprecision is fine, reporting an unknown or unbounded
+duration as `0` never is (F6 extended to time — unbounded reports `null`, never `Infinity`).
+The planner (never the worker) receives a **materials** block at draft and at replan —
+`{ balanceUsd, remainingMs }`, what is LEFT as a balance, never a rate: F57 measured a 150×
+spread on verification-gap duration, so a per-round constant describes almost no real round
+and a rate framing creates a rush-or-fake incentive. The replan trigger gains a second axis
+(`step-variance`): a step consuming ≥ `VARIANCE_THRESHOLD` (0.5) of the run's REMAINING money
+or time with its exits unmoved is pre-empted at the head of its next attempt so the planner
+re-allocates instead. **Known and recorded (F63): that trigger fired 0 times across 18
+archived spines / 54 steps** (near misses 0.35–0.45) — the threshold is arbiter territory,
+deliberately not fitted to those points. The ONE-replan ceiling is unchanged.
 
 **Two worker surfaces — API and native clipipe (BA-16, module 4d).** The plan flow is
 provider-agnostic: the close, the checks, and the exit evaluator are commands and form

@@ -321,3 +321,73 @@ paths keep validated free text — containment-checked against the fence exactly
 This narrows §4's generalisation from *"wherever the plan schema takes free text that only a closed
 set can satisfy"* to the operational test above. The looser wording would have pointed at `target`,
 and a `target` menu would have broken every write step.
+
+---
+
+## Addendum 5 — 2026-07-26: A's premise was FALSE, and A's signed threshold is inert on every run we have (F63)
+
+This addendum amends §1, §3.4 and the answered §6.2. It does not touch T, and it does not
+change the code that shipped.
+
+### §1's fourth bullet is withdrawn
+
+§1 states, citing F56: *"a replan has fired **zero times in the programme**"*, and §3 §"the
+adaptation channel" repeats it (*"the one that has never fired"*, and again at the metering
+table). **That is false.** F63 replayed all 18 archived plan-v1 spines: **eight replans fired**,
+all on the exhaustion trigger, on 2026-07-22 (L2 acceptance) and 2026-07-23 (clipipe) — four
+days BEFORE F56 was written. F56's actual evidence was two job-#5 rows recording
+`replanned:false` after dying provider-red: two rows, one job, both provider casualties,
+generalised to "the entire programme" without replaying the archive.
+
+So the motivation this record gives for A — *"adaptation has no observations at all"* — is not
+the state of the world. There are eight observations, and "does replanning help?" is now a $0
+archive question rather than something A had to be built to create.
+
+### §6.2's threshold is inert at 0.5, measured
+
+§6.2 recorded hamr's *"50% is fine"* as **provisional by construction**, with the first real run
+that trips or fails to trip it as the settling read. That read came for $0 instead, off the
+archive:
+
+| | |
+|---|---|
+| steps replayed | 54 (18 spines, 101 judged attempts, 1,213 metered rounds) |
+| steps with >1 attempt — the only ones that can EVER fire it | 24 |
+| **would have fired at 0.5 with a further attempt pending** | **0** |
+| crossed 0.5 only on the LAST attempt (no successor to pre-empt) | 3 |
+| near misses (0.25–0.5, successor pending) | 4 — at 0.35 · 0.35 · 0.40 · 0.45 |
+
+The zero was audited before it was believed (the blind-instrument class has shipped seven times
+here): every spine carries `budgetUsd` on `job-start`, 1,212 of 1,213 `worker-round` events are
+priced, and 101 `exit-eval` events exist to read shares at. The instrument can see the variable.
+
+**The threshold stays hamr's and stays 0.5 in code.** It was deliberately NOT lowered to 0.35:
+picking the number where these four points sit is fitting to the data, which is the standing
+no-fit-to-pass prohibition, and threshold-setting is arbiter territory. F63 offers two honest
+readings — *inert* (buys no observation exhaustion did not) versus *untriggered, not inert* (a
+guard against a step that eats the run; no archived step did that, and the 0.45 near-miss says
+the population is close to the wall) — and does not choose between them.
+
+### PARKED, not fixed — a wall stop can still be reported as a transport casualty
+
+Found while auditing T's own reachability; **named and scoped here, deliberately untouched,
+because verdict routing is arbiter territory.**
+
+`clock.callTimeoutMs()` derives each provider call's timeout as
+`min(PROVIDER_TIMEOUT_MS, max(MIN_CALL_TIMEOUT_MS, remainingMs()))` and `planrun.js` passes it
+to `loop.run`. On a bounded run whose next call outlives the remaining wall (with >30s left, so
+the floor is not what binds), the provider throws a timeout; that throw carries no category, and
+every catch site in `planrun.js` defaults an uncategorised throw to **`provider-red`**
+(`err.category ?? 'provider-red'`). A timed-out call never reaches the metering callback, so
+`wall-bounded` never emits and the step loop's `clock.expired()` check is never reached.
+
+Consequence: **the operator's own governance stop is recorded as a transport casualty.** By
+standing doctrine a provider-red row is a casualty and never evidence (F45/F48) and carries the
+F44 `spendComplete:false` floor — so a run that correctly ran out of *time* would be discarded
+as a *network* failure. That is the same laundering class F48's escalation-category collapse fix
+closed, pointed the other way. `MIN_CALL_TIMEOUT_MS` bounds the damage (a call is never given an
+impossible timeout) but does not close it.
+
+Shape of the fix, for hamr's call, not applied: stamp the derived-timeout throw at the throw site
+(the typed-`lib`/category discipline — never prose sniffing) so a wall-derived timeout routes as
+`wall-halt`, and only a genuine transport timeout stays `provider-red`.
