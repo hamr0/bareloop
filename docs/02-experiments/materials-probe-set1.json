@@ -1,0 +1,2538 @@
+{
+  "runid": "set1",
+  "model": "claude-sonnet-5",
+  "n": 3,
+  "spentUsd": 1.0355788000000001,
+  "calls": 25,
+  "timeoutRetries": 0,
+  "unpricedRounds": 0,
+  "scoutBytes": 5379,
+  "rows": [
+    {
+      "label": "A1-fullgoal-scoutON-1",
+      "scoutOn": true,
+      "goalChars": 1910,
+      "ok": false,
+      "reds": [
+        {
+          "code": "invalid-value",
+          "path": "steps.2.exit.0.scope",
+          "detail": "a contained scope (trailing /** or /* only, no \"..\" or absolute)"
+        },
+        {
+          "code": "invalid-value",
+          "path": "steps.3.exit.0.scope",
+          "detail": "a contained scope (trailing /** or /* only, no \"..\" or absolute)"
+        }
+      ],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "fix-index-entry",
+            "action": "In src/index.js (the public entry point), make every declaration honest under `tsc --noEmit --strict`: add JSDoc @param/@type/@returns for every implicitly-typed function, method, arrow callback, and destructured parameter (LiteCtx, ScopedView, StalePointerError, and all re-export glue). Narrow every `catch (e)` block using `e instanceof Error` (or equivalent) instead of relying on implicit any, since caught values are now `unknown`. Fix any strictFunctionTypes/strictBindCallApply issues on duck-typed injectable fields (embedder, writeGate, writeAudit). Never use `any`, `{*}`, @ts-ignore, @ts-expect-error, or @ts-nocheck; prefer `unknown` plus narrowing. Do not change any runtime behavior, defaults, or branching, and do not remove or rename any existing exported symbol, class, method, or const (KINDS, WRITE_KINDS, GLOBAL, LiteCtx, ScopedView, StalePointerError, and all re-exports from other modules must remain exported exactly as before).",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/index.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/index.js"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "fix-store-module",
+            "action": "In src/store.js (the SQLite/FTS5 store, the largest module), eliminate all new errors introduced by `tsc --noEmit --strict` (noImplicitAny, strictNullChecks edge cases, useUnknownInCatchVariables, strictFunctionTypes). Add or tighten JSDoc @typedef for Hit, GraphNode, RelatedNode and any other exported shapes so every field is precisely typed. Annotate all function/method parameters and locals that currently rely on inference, narrow any `catch (e)` blocks via `e instanceof Error`, and use `unknown` plus explicit narrowing anywhere the honest type is not known statically. Never use `any`, `{*}`, or any ts-ignore/ts-expect-error/ts-nocheck suppression. Preserve exact runtime behavior and keep every exported symbol from this file (and everything re-exported through src/index.js) unchanged in name and shape.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/store.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/store.js"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "fix-parsing-modules",
+            "action": "Fix all new `tsc --noEmit --strict` errors in src/chunker.js, src/edges.js, src/embedder.js, and src/docparse.js. Add precise JSDoc @param/@returns/@type annotations for every function, callback, and destructured object currently left to implicit inference. Narrow every `catch (e)` block with `e instanceof Error` (or a suitable type guard) rather than treating the caught value as any. Where the true type is not statically knowable, annotate as `unknown` and add a runtime check before use. Do not introduce `any`, `{*}`, or any ts-ignore/ts-expect-error/ts-nocheck comment. Keep behavior byte-for-byte identical and preserve every symbol these files export (directly or via src/index.js re-exports).",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 25,
+            "target": "src/chunker.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/*.js"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "fix-graph-and-write-modules",
+            "action": "Fix all new `tsc --noEmit --strict` errors in src/contextgraph.js, src/writegate.js, and src/memory-store.js. Add honest JSDoc types for every implicitly-typed parameter, callback, and object literal, including duck-typed interfaces exchanged with src/index.js (writeGate, writeAudit shapes). Narrow any `catch (e)` blocks with `e instanceof Error`. Use `unknown` with explicit narrowing wherever a concrete type cannot be honestly asserted. Do not add `any`, `{*}`, or any ts-ignore/ts-expect-error/ts-nocheck suppression, and do not alter runtime logic. Preserve every exported symbol from these files unchanged.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 20,
+            "target": "src/contextgraph.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/*.js"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "fix-remaining-modules",
+            "action": "Fix all remaining new `tsc --noEmit --strict` errors across src/compress.js, src/assemble.js, src/tokenize.js, src/tsalias.js, src/langdef.js, src/gitsig.js, src/impact.js, src/indexer.js, and everything under src/grammars/**. For each, add precise JSDoc @param/@returns/@type annotations to remove implicit-any, narrow any `catch (e)` blocks with `e instanceof Error`, and use `unknown` plus narrowing where the honest type is not statically known. Do not introduce `any`, `{*}`, or any ts-ignore/ts-expect-error/ts-nocheck suppression. Preserve exact runtime behavior and every exported symbol from these files (directly or via src/index.js re-exports).",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 25,
+            "target": "src/compress.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "verify-strict-and-suite",
+            "action": "Without modifying any files, verify the final state of the repository: confirm that `npx tsc --noEmit --strict` exits 0 across the whole src/** tree and that the existing test suite still passes in full, with no test lost and no export dropped from src/index.js compared to before.",
+            "tools": [
+              "read",
+              "grep"
+            ],
+            "rounds": 8,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              },
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              }
+            ]
+          }
+        ]
+      },
+      "raw": "{\n  \"schema\": \"plan-v1\",\n  \"steps\": [\n    {\n      \"id\": \"fix-index-entry\",\n      \"action\": \"In src/index.js (the public entry point), make every declaration honest under `tsc --noEmit --strict`: add JSDoc @param/@type/@returns for every implicitly-typed function, method, arrow callback, and destructured parameter (LiteCtx, ScopedView, StalePointerError, and all re-export glue). Narrow every `catch (e)` block using `e instanceof Error` (or equivalent) instead of relying on implicit any, since caught values are now `unknown`. Fix any strictFunctionTypes/strictBindCallApply issues on duck-typed injectable fields (embedder, writeGate, writeAudit). Never use `any`, `{*}`, @ts-ignore, @ts-expect-error, or @ts-nocheck; prefer `unknown` plus narrowing. Do not change any runtime behavior, defaults, or branching, and do not remove or rename any existing exported symbol, class, method, or const (KINDS, WRITE_KINDS, GLOBAL, LiteCtx, ScopedView, StalePointerError, and all re-exports from other modules must remain exported exactly as before).\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 30,\n      \"target\": \"src/index.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/index.js\"},\n        {\"type\": \"check-passes\", \"name\": \"no-suppressions\"}\n      ]\n    },\n    {\n      \"id\": \"fix-store-module\",\n      \"action\": \"In src/store.js (the SQLite/FTS5 store, the largest module), eliminate all new errors introduced by `tsc --noEmit --strict` (noImplicitAny, strictNullChecks edge cases, useUnknownInCatchVariables, strictFunctionTypes). Add or tighten JSDoc @typedef for Hit, GraphNode, RelatedNode and any other exported shapes so every field is precisely typed. Annotate all function/method parameters and locals that currently rely on inference, narrow any `catch (e)` blocks via `e instanceof Error`, and use `unknown` plus explicit narrowing anywhere the honest type is not known statically. Never use `any`, `{*}`, or any ts-ignore/ts-expect-error/ts-nocheck suppression. Preserve exact runtime behavior and keep every exported symbol from this file (and everything re-exported through src/index.js) unchanged in name and shape.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 30,\n      \"target\": \"src/store.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/store.js\"},\n        {\"type\": \"check-passes\", \"name\": \"no-suppressions\"}\n      ]\n    },\n    {\n      \"id\": \"fix-parsing-modules\",\n      \"action\": \"Fix all new `tsc --noEmit --strict` errors in src/chunker.js, src/edges.js, src/embedder.js, and src/docparse.js. Add precise JSDoc @param/@returns/@type annotations for every function, callback, and destructured object currently left to implicit inference. Narrow every `catch (e)` block with `e instanceof Error` (or a suitable type guard) rather than treating the caught value as any. Where the true type is not statically knowable, annotate as `unknown` and add a runtime check before use. Do not introduce `any`, `{*}`, or any ts-ignore/ts-expect-error/ts-nocheck comment. Keep behavior byte-for-byte identical and preserve every symbol these files export (directly or via src/index.js re-exports).\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 25,\n      \"target\": \"src/chunker.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/*.js\"},\n        {\"type\": \"check-passes\", \"name\": \"no-suppressions\"}\n      ]\n    },\n    {\n      \"id\": \"fix-graph-and-write-modules\",\n      \"action\": \"Fix all new `tsc --noEmit --strict` errors in src/contextgraph.js, src/writegate.js, and src/memory-store.js. Add honest JSDoc types for every implicitly-typed parameter, callback, and object literal, including duck-typed interfaces exchanged with src/index.js (writeGate, writeAudit shapes). Narrow any `catch (e)` blocks with `e instanceof Error`. Use `unknown` with explicit narrowing wherever a concrete type cannot be honestly asserted. Do not add `any`, `{*}`, or any ts-ignore/ts-expect-error/ts-nocheck suppression"
+    },
+    {
+      "label": "A2-fullgoal-scoutOFF-1",
+      "scoutOn": false,
+      "goalChars": 1910,
+      "ok": false,
+      "reds": [
+        {
+          "code": "scope-escape",
+          "path": "steps.0.exit.0.path",
+          "detail": "\"package.json\" is outside the signed fence [src/**]"
+        }
+      ],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "survey-src-strict-errors",
+            "action": "Read every file under src/** and the package's public entry point (e.g. src/index.js) to build a complete picture: list all exported symbols that must remain exported, and catalogue every place where JSDoc typing is currently loose in a way that would fail `npx tsc --noEmit --strict` (implicit any parameters/returns, missing null/undefined handling, optional properties, catch-clause variables, etc). Do not modify anything yet. Record findings only for use in later steps.",
+            "tools": [
+              "read",
+              "grep"
+            ],
+            "rounds": 10,
+            "exit": [
+              {
+                "type": "json-valid",
+                "path": "package.json"
+              }
+            ]
+          },
+          {
+            "id": "fix-core-module-types",
+            "action": "In the core/main library files under src/** (the primary entry point and its directly-imported modules), add or correct JSDoc type annotations so the code typechecks cleanly under full TypeScript strictness (strictNullChecks, noImplicitAny, strictFunctionTypes, useUnknownInCatchVariables, exactOptionalPropertyTypes, etc). Only add types that accurately describe existing runtime behaviour; narrow `unknown` values at their use sites instead of using `any`. Do not change any runtime logic, do not add @ts-ignore/@ts-expect-error/@ts-nocheck, and do not remove or rename any exported symbol.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "target": "src/**",
+            "rounds": 25,
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "fix-remaining-module-types",
+            "action": "In all remaining files under src/** not yet fixed (helpers, utilities, internal types, submodules), add or correct JSDoc type annotations to satisfy full TypeScript strictness under `npx tsc --noEmit --strict`. Preserve exact runtime behaviour and every existing export from the public entry point. Use `unknown` plus explicit narrowing instead of `any` wherever a precise type cannot be stated honestly. Do not introduce any suppression comments.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "target": "src/**",
+            "rounds": 25,
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "eliminate-suppressions-and-any",
+            "action": "Search all of src/** for @ts-ignore, @ts-expect-error, @ts-nocheck comments and for JSDoc types containing `any` or the `{*}` wildcard. Replace every one of them with a precise type or with `unknown` plus proper narrowing at the use site, without changing behaviour or removing any exported symbol. The suppression/any/wildcard count in src/** must not exceed what existed before this plan started (ideally zero remain).",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "target": "src/**",
+            "rounds": 20,
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "verify-strict-typecheck-and-tests",
+            "action": "Re-read the public entry point and confirm every symbol it exported before this plan is still exported unchanged, then confirm the whole library is expected to satisfy `npx tsc --noEmit --strict` with zero errors and that the existing test suite's behaviour is preserved (no logic changes were made, only type annotations). Do not modify any file in this step.",
+            "tools": [
+              "read",
+              "grep"
+            ],
+            "rounds": 10,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              },
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              }
+            ]
+          }
+        ]
+      },
+      "raw": "{\n  \"schema\": \"plan-v1\",\n  \"steps\": [\n    {\n      \"id\": \"survey-src-strict-errors\",\n      \"action\": \"Read every file under src/** and the package's public entry point (e.g. src/index.js) to build a complete picture: list all exported symbols that must remain exported, and catalogue every place where JSDoc typing is currently loose in a way that would fail `npx tsc --noEmit --strict` (implicit any parameters/returns, missing null/undefined handling, optional properties, catch-clause variables, etc). Do not modify anything yet. Record findings only for use in later steps.\",\n      \"tools\": [\"read\", \"grep\"],\n      \"rounds\": 10,\n      \"exit\": [\n        {\"type\": \"json-valid\", \"path\": \"package.json\"}\n      ]\n    },\n    {\n      \"id\": \"fix-core-module-types\",\n      \"action\": \"In the core/main library files under src/** (the primary entry point and its directly-imported modules), add or correct JSDoc type annotations so the code typechecks cleanly under full TypeScript strictness (strictNullChecks, noImplicitAny, strictFunctionTypes, useUnknownInCatchVariables, exactOptionalPropertyTypes, etc). Only add types that accurately describe existing runtime behaviour; narrow `unknown` values at their use sites instead of using `any`. Do not change any runtime logic, do not add @ts-ignore/@ts-expect-error/@ts-nocheck, and do not remove or rename any exported symbol.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"target\": \"src/**\",\n      \"rounds\": 25,\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"}\n      ]\n    },\n    {\n      \"id\": \"fix-remaining-module-types\",\n      \"action\": \"In all remaining files under src/** not yet fixed (helpers, utilities, internal types, submodules), add or correct JSDoc type annotations to satisfy full TypeScript strictness under `npx tsc --noEmit --strict`. Preserve exact runtime behaviour and every existing export from the public entry point. Use `unknown` plus explicit narrowing instead of `any` wherever a precise type cannot be stated honestly. Do not introduce any suppression comments.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"target\": \"src/**\",\n      \"rounds\": 25,\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"}\n      ]\n    },\n    {\n      \"id\": \"eliminate-suppressions-and-any\",\n      \"action\": \"Search all of src/** for @ts-ignore, @ts-expect-error, @ts-nocheck comments and for JSDoc types containing `any` or the `{*}` wildcard. Replace every one of them with a precise type or with `unknown` plus proper narrowing at the use site, without changing behaviour or removing any exported symbol. The suppression/any/wildcard count in src/** must not exceed what existed before this plan started (ideally zero remain).\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"target\": \"src/**\",\n      \"rounds\": 20,\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"},\n        {\"type\": \"check-passes\", \"name\": \"no-suppressions\"}\n      ]\n    },\n    {\n      \"id\": \"verify-strict-typecheck-and-tests\",\n      \"action\": \"Re-read the public entry point and confirm every symbol it exported before this plan is still exported unchanged, then confirm the whole library is expected to satisfy `npx tsc --noEmit --strict` with zero errors and that the existing test suite's behaviour is preserved (no logic changes were made, only type annotations). Do not modify any file in this step.\",\n      \"tools\": [\"read\", \"grep\"],\n      \"rounds\": 10,\n      \"exit\": [\n        {\"type\": \"check-passes\", \"name\": \"typecheck-clean\"},\n        {\"type\": \"check-passes\", \"name\": \"suite-green\"}\n      ]\n    }\n  ]\n}"
+    },
+    {
+      "label": "A3-onesentence-scoutON-1",
+      "scoutOn": true,
+      "goalChars": 221,
+      "ok": false,
+      "reds": [
+        {
+          "code": "invalid-value",
+          "path": "steps.2.exit.0.scope",
+          "detail": "a contained scope (trailing /** or /* only, no \"..\" or absolute)"
+        },
+        {
+          "code": "invalid-value",
+          "path": "steps.3.exit.0.scope",
+          "detail": "a contained scope (trailing /** or /* only, no \"..\" or absolute)"
+        },
+        {
+          "code": "invalid-value",
+          "path": "steps.4.exit.0.scope",
+          "detail": "a contained scope (trailing /** or /* only, no \"..\" or absolute)"
+        }
+      ],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "fix-index-strict",
+            "action": "In src/index.js, add/tighten JSDoc types (params, returns, catch-variable narrowing via instanceof Error, class property @type annotations) so the file satisfies `tsc --noEmit --strict` for noImplicitAny, useUnknownInCatchVariables, strictFunctionTypes, and strictPropertyInitialization, without changing any exported symbol, its name, signature semantics, or default behavior, and without using any, as any, !, or @ts-ignore.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/index.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/index.js"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "fix-store-strict",
+            "action": "In src/store.js, add/tighten JSDoc typedefs and annotations (Hit, GraphNode, RelatedNode, function params/returns, catch-variable narrowing, property @type) so the file satisfies `tsc --noEmit --strict`, without changing any exported symbol name/signature semantics or using any, as any, !, or @ts-ignore.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/store.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/store.js"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "fix-core-modules-a",
+            "action": "In src/chunker.js, src/edges.js, src/embedder.js, src/gitsig.js, and src/impact.js, add/tighten JSDoc types for all implicit-any parameters, callbacks, and destructured fields, and narrow any catch(e) blocks with instanceof Error checks, so each file satisfies `tsc --noEmit --strict` without changing exported symbols/behavior or using any, as any, !, or @ts-ignore.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 25,
+            "target": "src/*.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/*.js"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "fix-core-modules-b",
+            "action": "In src/indexer.js, src/docparse.js, src/contextgraph.js, src/writegate.js, and src/memory-store.js, add/tighten JSDoc types for implicit-any parameters, duck-typed interfaces (e.g. writeGate/writeAudit), and catch(e) narrowing via instanceof Error, so each file satisfies `tsc --noEmit --strict` without changing exported symbols/behavior or using any, as any, !, or @ts-ignore.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 25,
+            "target": "src/*.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/*.js"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "fix-core-modules-c",
+            "action": "In src/compress.js, src/assemble.js, src/tokenize.js, src/tsalias.js, and src/langdef.js, add/tighten JSDoc types for implicit-any parameters and callback signatures, and narrow any catch(e) blocks with instanceof Error checks, so each file satisfies `tsc --noEmit --strict` without changing exported symbols/behavior or using any, as any, !, or @ts-ignore.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 25,
+            "target": "src/*.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/*.js"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "verify-strict-typecheck",
+            "action": "Review all src/*.js files and confirm src/index.js still re-exports every original public symbol unchanged, then confirm the repository passes `tsc --noEmit --strict` with zero errors; if any remaining implicit-any, catch-variable, or strict-mode error is found anywhere in src/**, do not fix here (that is out of scope for this read-only verification step) and instead report the precise location for a follow-up pass.",
+            "tools": [
+              "read",
+              "grep"
+            ],
+            "rounds": 15,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              }
+            ]
+          },
+          {
+            "id": "verify-suite-green",
+            "action": "Confirm the existing test suite still passes unchanged after all JSDoc/type annotation edits across src/**, with no test files modified and no runtime behavior changes introduced.",
+            "tools": [
+              "read",
+              "grep"
+            ],
+            "rounds": 10,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              }
+            ]
+          }
+        ]
+      },
+      "raw": "{\n  \"schema\": \"plan-v1\",\n  \"steps\": [\n    {\n      \"id\": \"fix-index-strict\",\n      \"action\": \"In src/index.js, add/tighten JSDoc types (params, returns, catch-variable narrowing via instanceof Error, class property @type annotations) so the file satisfies `tsc --noEmit --strict` for noImplicitAny, useUnknownInCatchVariables, strictFunctionTypes, and strictPropertyInitialization, without changing any exported symbol, its name, signature semantics, or default behavior, and without using any, as any, !, or @ts-ignore.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 30,\n      \"target\": \"src/index.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/index.js\"},\n        {\"type\": \"check-passes\", \"name\": \"no-suppressions\"}\n      ]\n    },\n    {\n      \"id\": \"fix-store-strict\",\n      \"action\": \"In src/store.js, add/tighten JSDoc typedefs and annotations (Hit, GraphNode, RelatedNode, function params/returns, catch-variable narrowing, property @type) so the file satisfies `tsc --noEmit --strict`, without changing any exported symbol name/signature semantics or using any, as any, !, or @ts-ignore.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 30,\n      \"target\": \"src/store.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/store.js\"},\n        {\"type\": \"check-passes\", \"name\": \"no-suppressions\"}\n      ]\n    },\n    {\n      \"id\": \"fix-core-modules-a\",\n      \"action\": \"In src/chunker.js, src/edges.js, src/embedder.js, src/gitsig.js, and src/impact.js, add/tighten JSDoc types for all implicit-any parameters, callbacks, and destructured fields, and narrow any catch(e) blocks with instanceof Error checks, so each file satisfies `tsc --noEmit --strict` without changing exported symbols/behavior or using any, as any, !, or @ts-ignore.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 25,\n      \"target\": \"src/*.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/*.js\"},\n        {\"type\": \"check-passes\", \"name\": \"no-suppressions\"}\n      ]\n    },\n    {\n      \"id\": \"fix-core-modules-b\",\n      \"action\": \"In src/indexer.js, src/docparse.js, src/contextgraph.js, src/writegate.js, and src/memory-store.js, add/tighten JSDoc types for implicit-any parameters, duck-typed interfaces (e.g. writeGate/writeAudit), and catch(e) narrowing via instanceof Error, so each file satisfies `tsc --noEmit --strict` without changing exported symbols/behavior or using any, as any, !, or @ts-ignore.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 25,\n      \"target\": \"src/*.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/*.js\"},\n        {\"type\": \"check-passes\", \"name\": \"no-suppressions\"}\n      ]\n    },\n    {\n      \"id\": \"fix-core-modules-c\",\n      \"action\": \"In src/compress.js, src/assemble.js, src/tokenize.js, src/tsalias.js, and src/langdef.js, add/tighten JSDoc types for implicit-any parameters and callback signatures, and narrow any catch(e) blocks with instanceof Error checks, so each file satisfies `tsc --noEmit --strict` without changing exported symbols/behavior or using any, as any, !, or @ts-ignore.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 25,\n      \"target\": \"src/*.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/*.js\"},\n        {\"type\": \"check-passes\", \"name\": \"no-suppressions\"}\n      ]\n    },\n    {\n      \"id\": \"verify-strict-typecheck\",\n      \"action\": \"Review all src/*.js files and confirm src/index.js still re-exports every original public symbol unchanged, then confirm the repository passes `tsc --noEmit --strict` with zero errors; if any remaining implicit-any, catch-variable, or strict-mode error is found anywhere in src/**, do not fix here (that is out of scope for this read-only verification step) and instead report the precise location for a follow-up pass.\",\n      \"tools\": [\"read\", \"grep\"],\n      \"rounds\": 15,\n      \"exit\": [\n        {\"type\": \"check-passes\", \"name\": \"typecheck-clean\"}\n      ]\n    },\n    {\n      \"i"
+    },
+    {
+      "label": "A4-onesentence-scoutOFF-1",
+      "scoutOn": false,
+      "goalChars": 221,
+      "ok": true,
+      "reds": [],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "audit-baseline",
+            "action": "Read the repository structure under src/ and any existing tsconfig/type-checking setup; run the test suite to confirm it currently passes before any changes are made, establishing a baseline.",
+            "tools": [
+              "read",
+              "grep"
+            ],
+            "rounds": 8,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              }
+            ]
+          },
+          {
+            "id": "annotate-core-modules",
+            "action": "Add correct JSDoc type annotations and minimal type-safe refactors to the core/entry-point source files under src/ so they satisfy tsc --noEmit --strict, without adding any @ts-ignore, @ts-expect-error, or 'any' casts used to hide errors, and without changing runtime behavior.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "target": "src/**",
+            "rounds": 25,
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "annotate-remaining-modules",
+            "action": "Continue adding correct JSDoc type annotations and minimal type-safe fixes to any remaining helper, utility, or type-definition files under src/ that still produce tsc --noEmit --strict errors, without suppressions and without altering runtime behavior.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "target": "src/**",
+            "rounds": 25,
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "resolve-remaining-type-errors",
+            "action": "Iterate over the full src/ tree fixing every remaining tsc --noEmit --strict type error until zero errors remain, ensuring no suppression comments or unsafe 'any' casts were introduced, and confirming the test suite still passes after these changes.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "target": "src/**",
+            "rounds": 30,
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              }
+            ]
+          },
+          {
+            "id": "final-verification",
+            "action": "Verify without making any code changes that tsc --noEmit --strict passes with zero errors and no suppressions anywhere in src/, and that the full test suite still passes.",
+            "tools": [
+              "read",
+              "grep"
+            ],
+            "rounds": 10,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              },
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              }
+            ]
+          }
+        ]
+      },
+      "raw": "{\n  \"schema\": \"plan-v1\",\n  \"steps\": [\n    {\n      \"id\": \"audit-baseline\",\n      \"action\": \"Read the repository structure under src/ and any existing tsconfig/type-checking setup; run the test suite to confirm it currently passes before any changes are made, establishing a baseline.\",\n      \"tools\": [\"read\", \"grep\"],\n      \"rounds\": 8,\n      \"exit\": [\n        {\"type\": \"check-passes\", \"name\": \"suite-green\"}\n      ]\n    },\n    {\n      \"id\": \"annotate-core-modules\",\n      \"action\": \"Add correct JSDoc type annotations and minimal type-safe refactors to the core/entry-point source files under src/ so they satisfy tsc --noEmit --strict, without adding any @ts-ignore, @ts-expect-error, or 'any' casts used to hide errors, and without changing runtime behavior.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"target\": \"src/**\",\n      \"rounds\": 25,\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"}\n      ]\n    },\n    {\n      \"id\": \"annotate-remaining-modules\",\n      \"action\": \"Continue adding correct JSDoc type annotations and minimal type-safe fixes to any remaining helper, utility, or type-definition files under src/ that still produce tsc --noEmit --strict errors, without suppressions and without altering runtime behavior.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"target\": \"src/**\",\n      \"rounds\": 25,\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"}\n      ]\n    },\n    {\n      \"id\": \"resolve-remaining-type-errors\",\n      \"action\": \"Iterate over the full src/ tree fixing every remaining tsc --noEmit --strict type error until zero errors remain, ensuring no suppression comments or unsafe 'any' casts were introduced, and confirming the test suite still passes after these changes.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"target\": \"src/**\",\n      \"rounds\": 30,\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"},\n        {\"type\": \"check-passes\", \"name\": \"typecheck-clean\"}\n      ]\n    },\n    {\n      \"id\": \"final-verification\",\n      \"action\": \"Verify without making any code changes that tsc --noEmit --strict passes with zero errors and no suppressions anywhere in src/, and that the full test suite still passes.\",\n      \"tools\": [\"read\", \"grep\"],\n      \"rounds\": 10,\n      \"exit\": [\n        {\"type\": \"check-passes\", \"name\": \"no-suppressions\"},\n        {\"type\": \"check-passes\", \"name\": \"suite-green\"}\n      ]\n    }\n  ]\n}"
+    },
+    {
+      "label": "T2B-materials-1",
+      "scoutOn": true,
+      "goalChars": 1910,
+      "ok": true,
+      "reds": [],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "fix-store",
+            "action": "Edit src/store.js so it typechecks under `npx tsc --noEmit --strict`. Add or tighten JSDoc @param/@returns/@type annotations to eliminate noImplicitAny, strictFunctionTypes, strictBindCallApply, strictPropertyInitialization, and useUnknownInCatchVariables errors (e.g. narrow `catch (e)` values with `e instanceof Error` before using them). Do not use `any`, `{*}`, @ts-ignore, @ts-expect-error, or @ts-nocheck; use `unknown` plus narrowing where the honest type is unclear. Keep runtime behavior byte-for-byte identical (annotations only, no logic changes) and keep every exported symbol (Store class and its typedefs like Hit, GraphNode, RelatedNode) unchanged in name and shape.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 35,
+            "target": "src/store.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/store.js"
+              }
+            ]
+          },
+          {
+            "id": "fix-index",
+            "action": "Edit src/index.js so it typechecks under `npx tsc --noEmit --strict`. Add/tighten JSDoc types on LiteCtx, ScopedView, StalePointerError methods and fields, the embedder/writeGate/writeAudit duck-typed options, and any catch blocks (narrow unknown via `instanceof Error`) to remove noImplicitAny, strictFunctionTypes, strictPropertyInitialization errors. Never use `any`, `{*}`, or ts-suppression comments; prefer `unknown` plus narrowing. Do not change any runtime logic, defaults, or branching. Critically, every symbol currently exported from src/index.js (LiteCtx, ScopedView, StalePointerError, KINDS, WRITE_KINDS, GLOBAL, and every re-export from store.js, tokenize.js, embedder.js, compress.js, assemble.js, memory-store.js, writegate.js, contextgraph.js) must remain exported under the same name.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 40,
+            "target": "src/index.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/index.js"
+              }
+            ]
+          },
+          {
+            "id": "fix-batch-chunk-edges-embedder",
+            "action": "Edit src/chunker.js, src/edges.js, and src/embedder.js so each typechecks under `npx tsc --noEmit --strict`. Add or tighten JSDoc @param/@returns/@type annotations to remove noImplicitAny and related strict errors, narrowing any caught unknown values with instanceof checks. Never introduce `any`, `{*}`, or ts-suppression comments; use `unknown` plus narrowing where needed. Do not alter any runtime behavior or exported symbol names/shapes from these files.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/chunker.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "fix-batch-gitsig-impact-indexer",
+            "action": "Edit src/gitsig.js, src/impact.js, and src/indexer.js so each typechecks under `npx tsc --noEmit --strict`. Add or tighten JSDoc annotations to remove noImplicitAny, strictFunctionTypes, and useUnknownInCatchVariables errors (narrow caught unknown values with instanceof checks before use). Never introduce `any`, `{*}`, or ts-suppression comments; prefer `unknown` plus narrowing. Preserve exact runtime behavior and all exported symbol names/shapes.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/gitsig.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "fix-batch-docparse-contextgraph-writegate",
+            "action": "Edit src/docparse.js, src/contextgraph.js, and src/writegate.js so each typechecks under `npx tsc --noEmit --strict`. Add or tighten JSDoc annotations to remove noImplicitAny, strictFunctionTypes, and strictPropertyInitialization errors; narrow any caught unknown values (e.g. the catch at docparse.js) with instanceof checks. Never introduce `any`, `{*}`, or ts-suppression comments; prefer `unknown` plus narrowing. Preserve exact runtime behavior and all exported symbol names/shapes, including the duck-typed writeGate/writeAudit interfaces consumed by index.js.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/docparse.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "fix-batch-remaining",
+            "action": "Edit src/memory-store.js, src/compress.js, src/assemble.js, src/tokenize.js, src/tsalias.js, src/langdef.js, and any files under src/grammars/ so each typechecks under `npx tsc --noEmit --strict`. Add or tighten JSDoc annotations to remove remaining noImplicitAny and strict-mode errors, narrowing caught unknown values with instanceof checks. Never introduce `any`, `{*}`, or ts-suppression comments; prefer `unknown` plus narrowing. Preserve exact runtime behavior and all exported symbol names/shapes.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 35,
+            "target": "src/memory-store.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "reconcile-cross-module-types",
+            "action": "Re-read src/index.js and compare its re-export lines against the original module exports to confirm no exported symbol was lost across the prior edits. Sweep all src/*.js files for any remaining `npx tsc --noEmit --strict` errors caused by type mismatches introduced between modules (e.g. a tightened parameter type in one file conflicting with a call site in another), and fix them with honest JSDoc types or `unknown` plus narrowing only — never `any`, `{*}`, or ts-suppression comments. Do not change runtime logic or drop any exported symbol.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 35,
+            "target": "src/index.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              }
+            ]
+          },
+          {
+            "id": "final-verify",
+            "action": "Perform a read-only final review: confirm the existing test suite still passes in full (no test lost) and confirm no suppression counts (@ts-ignore, @ts-expect-error, @ts-nocheck, `any`/`{*}` in JSDoc) rose anywhere under src/**. Do not make any edits in this step.",
+            "tools": [
+              "read",
+              "grep"
+            ],
+            "rounds": 20,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          }
+        ]
+      },
+      "raw": "{\n  \"schema\": \"plan-v1\",\n  \"steps\": [\n    {\n      \"id\": \"fix-store\",\n      \"action\": \"Edit src/store.js so it typechecks under `npx tsc --noEmit --strict`. Add or tighten JSDoc @param/@returns/@type annotations to eliminate noImplicitAny, strictFunctionTypes, strictBindCallApply, strictPropertyInitialization, and useUnknownInCatchVariables errors (e.g. narrow `catch (e)` values with `e instanceof Error` before using them). Do not use `any`, `{*}`, @ts-ignore, @ts-expect-error, or @ts-nocheck; use `unknown` plus narrowing where the honest type is unclear. Keep runtime behavior byte-for-byte identical (annotations only, no logic changes) and keep every exported symbol (Store class and its typedefs like Hit, GraphNode, RelatedNode) unchanged in name and shape.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 35,\n      \"target\": \"src/store.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/store.js\"}\n      ]\n    },\n    {\n      \"id\": \"fix-index\",\n      \"action\": \"Edit src/index.js so it typechecks under `npx tsc --noEmit --strict`. Add/tighten JSDoc types on LiteCtx, ScopedView, StalePointerError methods and fields, the embedder/writeGate/writeAudit duck-typed options, and any catch blocks (narrow unknown via `instanceof Error`) to remove noImplicitAny, strictFunctionTypes, strictPropertyInitialization errors. Never use `any`, `{*}`, or ts-suppression comments; prefer `unknown` plus narrowing. Do not change any runtime logic, defaults, or branching. Critically, every symbol currently exported from src/index.js (LiteCtx, ScopedView, StalePointerError, KINDS, WRITE_KINDS, GLOBAL, and every re-export from store.js, tokenize.js, embedder.js, compress.js, assemble.js, memory-store.js, writegate.js, contextgraph.js) must remain exported under the same name.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 40,\n      \"target\": \"src/index.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/index.js\"}\n      ]\n    },\n    {\n      \"id\": \"fix-batch-chunk-edges-embedder\",\n      \"action\": \"Edit src/chunker.js, src/edges.js, and src/embedder.js so each typechecks under `npx tsc --noEmit --strict`. Add or tighten JSDoc @param/@returns/@type annotations to remove noImplicitAny and related strict errors, narrowing any caught unknown values with instanceof checks. Never introduce `any`, `{*}`, or ts-suppression comments; use `unknown` plus narrowing where needed. Do not alter any runtime behavior or exported symbol names/shapes from these files.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 30,\n      \"target\": \"src/chunker.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"}\n      ]\n    },\n    {\n      \"id\": \"fix-batch-gitsig-impact-indexer\",\n      \"action\": \"Edit src/gitsig.js, src/impact.js, and src/indexer.js so each typechecks under `npx tsc --noEmit --strict`. Add or tighten JSDoc annotations to remove noImplicitAny, strictFunctionTypes, and useUnknownInCatchVariables errors (narrow caught unknown values with instanceof checks before use). Never introduce `any`, `{*}`, or ts-suppression comments; prefer `unknown` plus narrowing. Preserve exact runtime behavior and all exported symbol names/shapes.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 30,\n      \"target\": \"src/gitsig.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"}\n      ]\n    },\n    {\n      \"id\": \"fix-batch-docparse-contextgraph-writegate\",\n      \"action\": \"Edit src/docparse.js, src/contextgraph.js, and src/writegate.js so each typechecks under `npx tsc --noEmit --strict`. Add or tighten JSDoc annotations to remove noImplicitAny, strictFunctionTypes, and strictPropertyInitialization errors; narrow any caught unknown values (e.g. the catch at docparse.js) with instanceof checks. Never introduce `any`, `{*}`, or ts-suppression comments; prefer `unknown` plus narrowing. Preserve exact runtime behavior and all exported symbol names/shapes, including the duck-typed writeGate"
+    },
+    {
+      "label": "P1B-catalog-1",
+      "scoutOn": true,
+      "goalChars": 1910,
+      "ok": false,
+      "reds": [
+        {
+          "code": "invalid-value",
+          "path": "steps.0.tools",
+          "detail": "unknown tool(s) impact — menu: read|grep|write|edit|recall|get"
+        },
+        {
+          "code": "invalid-value",
+          "path": "steps.5.tools",
+          "detail": "unknown tool(s) impact — menu: read|grep|write|edit|recall|get"
+        }
+      ],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "type-index-entry-point",
+            "action": "In src/index.js (the public entry point), add or tighten JSDoc types so the file typechecks under `npx tsc --noEmit --strict` (noImplicitAny, useUnknownInCatchVariables, strictFunctionTypes, strictPropertyInitialization, etc.). For every implicit-any parameter, property, or catch(e) block, add the honest JSDoc @type/@param based on actual runtime usage — prefer `unknown` plus narrowing (e.g. `e instanceof Error`) over `any` or `{*}`, which are forbidden. Do not change any runtime logic, defaults, branches, or control flow — only add/adjust type annotations. Do not remove or rename any exported class, const, or function (LiteCtx, ScopedView, StalePointerError, KINDS, WRITE_KINDS, GLOBAL, and all re-exports from other modules must remain exported exactly as before). Use impact/recall to confirm nothing consuming these exports elsewhere would break from a type change.",
+            "tools": [
+              "read",
+              "grep",
+              "impact",
+              "recall",
+              "edit"
+            ],
+            "rounds": 25,
+            "target": "src/index.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/index.js"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "type-store-module",
+            "action": "In src/store.js (the SQLite/FTS5 store, largest module, with typedefs like Hit, GraphNode, RelatedNode), add or tighten JSDoc types so this file typechecks under `npx tsc --noEmit --strict`. Fix implicit-any function parameters, object literal shapes, callback signatures, and any catch(e) blocks (narrow via `e instanceof Error` rather than accessing properties on unknown). Prefer `unknown` over `any`/`{*}` wherever narrowing is the honest fix. Do not alter any runtime behavior, SQL, or control flow — annotations only. Keep every exported symbol from this module identical in name and shape so src/index.js re-exports remain valid.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/store.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/store.js"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "type-processing-modules",
+            "action": "In src/chunker.js, src/edges.js, src/embedder.js, and src/tokenize.js, add or tighten JSDoc types so all four files typecheck under `npx tsc --noEmit --strict`. Fix implicit-any parameters/locals, duck-typed interfaces (e.g. the injectable embedder's `embed(text): Promise<Float32Array>` shape) for strictFunctionTypes/strictBindCallApply compatibility, and narrow any catch(e) blocks with `e instanceof Error` instead of using `any`. Use `unknown` where the honest type is not statically known. Do not change any runtime behavior — only annotations. Preserve every currently exported symbol's name and shape in each of these four files exactly.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 20,
+            "target": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "type-compression-modules",
+            "action": "In src/compress.js, src/assemble.js, src/memory-store.js, and src/writegate.js, add or tighten JSDoc types so all four files typecheck under `npx tsc --noEmit --strict`. Fix implicit-any parameters, the writeGate/writeAudit duck-typed interfaces, object literal property types, and any catch(e) blocks (narrow with `e instanceof Error`, never `any`/`{*}`). Prefer `unknown` plus a narrowing check at the use site over widening to `any`. Do not change runtime behavior, only annotations. Preserve every currently exported symbol's name and shape in each of these four files exactly, since src/index.js re-exports them.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 20,
+            "target": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "type-graph-and-misc-modules",
+            "action": "In src/contextgraph.js, src/impact.js, src/gitsig.js, src/indexer.js, src/docparse.js, src/tsalias.js, src/langdef.js, and any files under src/grammars/, add or tighten JSDoc types so all files typecheck under `npx tsc --noEmit --strict`. Fix implicit-any parameters/locals, narrow every catch(e) block with `e instanceof Error` (or an appropriate narrowing check) instead of accessing unknown properties directly, and never introduce `any` or `{*}` — use `unknown` plus narrowing where the true type is not statically known. Do not change any runtime behavior — annotations only. Preserve every currently exported symbol's name and shape in each of these files exactly, since src/index.js re-exports them.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 25,
+            "target": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "verify-exports-and-typecheck",
+            "action": "Without modifying any file, review src/index.js's full set of re-exports and class/const/function declarations against what the module exported before this remediation began, using recall/impact to trace consumers, to confirm no exported symbol from the public entry point was dropped or renamed. Then confirm the repository as a whole is expected to typecheck cleanly under `npx tsc --noEmit --strict` and that the existing test suite still passes given the annotation-only changes made in prior steps.",
+            "tools": [
+              "read",
+              "grep",
+              "recall",
+              "impact"
+            ],
+            "rounds": 15,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              },
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              }
+            ]
+          },
+          {
+            "id": "final-suppressions-and-strictness-audit",
+            "action": "Without modifying any file, grep the entire src/** tree for @ts-ignore, @ts-expect-error, @ts-nocheck, `any` in JSDoc types, and the `{*}` wildcard, confirming none were introduced or increased anywhere during this remediation, and confirming the tree still typechecks cleanly under full strict mode.",
+            "tools": [
+              "grep",
+              "read"
+            ],
+            "rounds": 10,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              },
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              }
+            ]
+          }
+        ]
+      },
+      "raw": "{\n  \"schema\": \"plan-v1\",\n  \"steps\": [\n    {\n      \"id\": \"type-index-entry-point\",\n      \"action\": \"In src/index.js (the public entry point), add or tighten JSDoc types so the file typechecks under `npx tsc --noEmit --strict` (noImplicitAny, useUnknownInCatchVariables, strictFunctionTypes, strictPropertyInitialization, etc.). For every implicit-any parameter, property, or catch(e) block, add the honest JSDoc @type/@param based on actual runtime usage — prefer `unknown` plus narrowing (e.g. `e instanceof Error`) over `any` or `{*}`, which are forbidden. Do not change any runtime logic, defaults, branches, or control flow — only add/adjust type annotations. Do not remove or rename any exported class, const, or function (LiteCtx, ScopedView, StalePointerError, KINDS, WRITE_KINDS, GLOBAL, and all re-exports from other modules must remain exported exactly as before). Use impact/recall to confirm nothing consuming these exports elsewhere would break from a type change.\",\n      \"tools\": [\"read\", \"grep\", \"impact\", \"recall\", \"edit\"],\n      \"rounds\": 25,\n      \"target\": \"src/index.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/index.js\"},\n        {\"type\": \"check-passes\", \"name\": \"no-suppressions\"}\n      ]\n    },\n    {\n      \"id\": \"type-store-module\",\n      \"action\": \"In src/store.js (the SQLite/FTS5 store, largest module, with typedefs like Hit, GraphNode, RelatedNode), add or tighten JSDoc types so this file typechecks under `npx tsc --noEmit --strict`. Fix implicit-any function parameters, object literal shapes, callback signatures, and any catch(e) blocks (narrow via `e instanceof Error` rather than accessing properties on unknown). Prefer `unknown` over `any`/`{*}` wherever narrowing is the honest fix. Do not alter any runtime behavior, SQL, or control flow — annotations only. Keep every exported symbol from this module identical in name and shape so src/index.js re-exports remain valid.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 30,\n      \"target\": \"src/store.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/store.js\"},\n        {\"type\": \"check-passes\", \"name\": \"no-suppressions\"}\n      ]\n    },\n    {\n      \"id\": \"type-processing-modules\",\n      \"action\": \"In src/chunker.js, src/edges.js, src/embedder.js, and src/tokenize.js, add or tighten JSDoc types so all four files typecheck under `npx tsc --noEmit --strict`. Fix implicit-any parameters/locals, duck-typed interfaces (e.g. the injectable embedder's `embed(text): Promise<Float32Array>` shape) for strictFunctionTypes/strictBindCallApply compatibility, and narrow any catch(e) blocks with `e instanceof Error` instead of using `any`. Use `unknown` where the honest type is not statically known. Do not change any runtime behavior — only annotations. Preserve every currently exported symbol's name and shape in each of these four files exactly.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 20,\n      \"target\": \"src/**\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"},\n        {\"type\": \"check-passes\", \"name\": \"no-suppressions\"}\n      ]\n    },\n    {\n      \"id\": \"type-compression-modules\",\n      \"action\": \"In src/compress.js, src/assemble.js, src/memory-store.js, and src/writegate.js, add or tighten JSDoc types so all four files typecheck under `npx tsc --noEmit --strict`. Fix implicit-any parameters, the writeGate/writeAudit duck-typed interfaces, object literal property types, and any catch(e) blocks (narrow with `e instanceof Error`, never `any`/`{*}`). Prefer `unknown` plus a narrowing check at the use site over widening to `any`. Do not change runtime behavior, only annotations. Preserve every currently exported symbol's name and shape in each of these four files exactly, since src/index.js re-exports them.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 20,\n      \"target\": \"src/**\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"},\n        {\"type\": \"check-passes\", \"name\":"
+    },
+    {
+      "label": "A1-fullgoal-scoutON-2",
+      "scoutOn": true,
+      "goalChars": 1910,
+      "ok": false,
+      "reds": [
+        {
+          "code": "invalid-value",
+          "path": "steps.2.exit.0.scope",
+          "detail": "a contained scope (trailing /** or /* only, no \"..\" or absolute)"
+        },
+        {
+          "code": "invalid-value",
+          "path": "steps.3.exit.0.scope",
+          "detail": "a contained scope (trailing /** or /* only, no \"..\" or absolute)"
+        },
+        {
+          "code": "invalid-value",
+          "path": "steps.4.exit.0.scope",
+          "detail": "a contained scope (trailing /** or /* only, no \"..\" or absolute)"
+        },
+        {
+          "code": "invalid-value",
+          "path": "steps.6.exit.0.scope",
+          "detail": "a contained scope (trailing /** or /* only, no \"..\" or absolute)"
+        }
+      ],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "fix-index-js-strict",
+            "action": "In src/index.js, make all JSDoc types honest under full `tsc --strict` (noImplicitAny, useUnknownInCatchVariables, strictFunctionTypes, strictPropertyInitialization, noImplicitThis). Add/tighten @param, @type, @returns, @property annotations for LiteCtx, ScopedView, StalePointerError and all exported consts/functions, matching existing runtime behavior exactly. For every `catch (e)` block, narrow the now-`unknown` value with `instanceof Error` (or equivalent) before use instead of widening to any. Do not change any exported symbol names, method signatures' runtime behavior, or defaults. Never introduce `any`, `{*}`, or ts-ignore/ts-expect-error/ts-nocheck.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/index.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/index.js"
+              }
+            ]
+          },
+          {
+            "id": "fix-store-js-strict",
+            "action": "In src/store.js, resolve full-strict typecheck errors (noImplicitAny, useUnknownInCatchVariables, strictFunctionTypes) by adding precise JSDoc types for all functions, SQLite row-shaped parameters, and the Hit/GraphNode/RelatedNode typedefs and their consumers, without changing any query logic, defaults, or return values. Narrow any `catch (e)` values via instanceof checks. Do not add `any`/`{*}` or suppression comments.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/store.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/store.js"
+              }
+            ]
+          },
+          {
+            "id": "fix-mid-modules-strict",
+            "action": "In src/embedder.js, src/writegate.js, src/memory-store.js, and src/contextgraph.js, add honest JSDoc parameter/return/property types so each file passes full `tsc --strict` (noImplicitAny, strictFunctionTypes for duck-typed embedder/writeGate/writeAudit interfaces, strictPropertyInitialization for any classes, catch-block narrowing). Preserve all exported symbol names and runtime behavior exactly; prefer `unknown` with narrowing over `any` wherever the real type is not statically known.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 25,
+            "target": "src/*.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/*.js"
+              }
+            ]
+          },
+          {
+            "id": "fix-analysis-modules-strict",
+            "action": "In src/chunker.js, src/edges.js, src/impact.js, and src/indexer.js, add honest JSDoc types for all function parameters, callbacks, and object-literal shapes so each file passes full `tsc --strict` (primarily noImplicitAny plus any strictFunctionTypes/catch-narrowing issues). Keep every exported symbol's name and observable behavior identical; use `unknown` plus narrowing instead of `any`/`{*}` where types are genuinely open.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 25,
+            "target": "src/*.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/*.js"
+              }
+            ]
+          },
+          {
+            "id": "fix-remaining-modules-strict",
+            "action": "In src/docparse.js, src/gitsig.js, src/tokenize.js, src/tsalias.js, src/langdef.js, and any files under src/grammars/**, add honest JSDoc types for parameters, returns, and object shapes to satisfy full `tsc --strict`, and narrow all `catch (e)` blocks (docparse.js line ~308 and any others) with instanceof Error checks instead of relying on implicit any. Preserve every exported symbol and existing behavior exactly; never add `any`, `{*}`, or suppression comments.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 25,
+            "target": "src/*.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/*.js"
+              }
+            ]
+          },
+          {
+            "id": "audit-public-exports",
+            "action": "Re-read src/index.js and cross-check its full re-export list (classes, functions, consts such as KINDS, WRITE_KINDS, GLOBAL, StalePointerError, and everything re-exported from store.js, tokenize.js, embedder.js, compress.js, assemble.js, memory-store.js, writegate.js, contextgraph.js) against what each source module currently exports. Restore any export accidentally dropped or renamed during the prior typing passes, without adding new public symbols or changing behavior.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 15,
+            "target": "src/index.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/index.js"
+              }
+            ]
+          },
+          {
+            "id": "final-strict-remediation",
+            "action": "Address any remaining `npx tsc --noEmit --strict` errors across src/**, iterating on whichever files still fail (implicit-any leftovers, strictBindCallApply, remaining catch-variable narrowing, strictFunctionTypes mismatches). Only add or tighten JSDoc annotations that describe existing runtime behavior; never introduce `any`, `{*}`, or @ts-ignore/@ts-expect-error/@ts-nocheck, and never change logic, defaults, or exported names.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/*.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/*.js"
+              },
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              }
+            ]
+          },
+          {
+            "id": "final-verification",
+            "action": "Verify, without modifying anything, that the existing test suite still passes in full and that no suppression (@ts-ignore, @ts-expect-error, @ts-nocheck, `any`/`{*}` JSDoc types) was introduced anywhere under src/**.",
+            "tools": [
+              "read",
+              "grep"
+            ],
+            "rounds": 10,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          }
+        ]
+      },
+      "raw": "{\n  \"schema\": \"plan-v1\",\n  \"steps\": [\n    {\n      \"id\": \"fix-index-js-strict\",\n      \"action\": \"In src/index.js, make all JSDoc types honest under full `tsc --strict` (noImplicitAny, useUnknownInCatchVariables, strictFunctionTypes, strictPropertyInitialization, noImplicitThis). Add/tighten @param, @type, @returns, @property annotations for LiteCtx, ScopedView, StalePointerError and all exported consts/functions, matching existing runtime behavior exactly. For every `catch (e)` block, narrow the now-`unknown` value with `instanceof Error` (or equivalent) before use instead of widening to any. Do not change any exported symbol names, method signatures' runtime behavior, or defaults. Never introduce `any`, `{*}`, or ts-ignore/ts-expect-error/ts-nocheck.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 30,\n      \"target\": \"src/index.js\",\n      \"exit\": [\n        { \"type\": \"tree-changed\", \"scope\": \"src/index.js\" }\n      ]\n    },\n    {\n      \"id\": \"fix-store-js-strict\",\n      \"action\": \"In src/store.js, resolve full-strict typecheck errors (noImplicitAny, useUnknownInCatchVariables, strictFunctionTypes) by adding precise JSDoc types for all functions, SQLite row-shaped parameters, and the Hit/GraphNode/RelatedNode typedefs and their consumers, without changing any query logic, defaults, or return values. Narrow any `catch (e)` values via instanceof checks. Do not add `any`/`{*}` or suppression comments.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 30,\n      \"target\": \"src/store.js\",\n      \"exit\": [\n        { \"type\": \"tree-changed\", \"scope\": \"src/store.js\" }\n      ]\n    },\n    {\n      \"id\": \"fix-mid-modules-strict\",\n      \"action\": \"In src/embedder.js, src/writegate.js, src/memory-store.js, and src/contextgraph.js, add honest JSDoc parameter/return/property types so each file passes full `tsc --strict` (noImplicitAny, strictFunctionTypes for duck-typed embedder/writeGate/writeAudit interfaces, strictPropertyInitialization for any classes, catch-block narrowing). Preserve all exported symbol names and runtime behavior exactly; prefer `unknown` with narrowing over `any` wherever the real type is not statically known.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 25,\n      \"target\": \"src/*.js\",\n      \"exit\": [\n        { \"type\": \"tree-changed\", \"scope\": \"src/*.js\" }\n      ]\n    },\n    {\n      \"id\": \"fix-analysis-modules-strict\",\n      \"action\": \"In src/chunker.js, src/edges.js, src/impact.js, and src/indexer.js, add honest JSDoc types for all function parameters, callbacks, and object-literal shapes so each file passes full `tsc --strict` (primarily noImplicitAny plus any strictFunctionTypes/catch-narrowing issues). Keep every exported symbol's name and observable behavior identical; use `unknown` plus narrowing instead of `any`/`{*}` where types are genuinely open.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 25,\n      \"target\": \"src/*.js\",\n      \"exit\": [\n        { \"type\": \"tree-changed\", \"scope\": \"src/*.js\" }\n      ]\n    },\n    {\n      \"id\": \"fix-remaining-modules-strict\",\n      \"action\": \"In src/docparse.js, src/gitsig.js, src/tokenize.js, src/tsalias.js, src/langdef.js, and any files under src/grammars/**, add honest JSDoc types for parameters, returns, and object shapes to satisfy full `tsc --strict`, and narrow all `catch (e)` blocks (docparse.js line ~308 and any others) with instanceof Error checks instead of relying on implicit any. Preserve every exported symbol and existing behavior exactly; never add `any`, `{*}`, or suppression comments.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 25,\n      \"target\": \"src/*.js\",\n      \"exit\": [\n        { \"type\": \"tree-changed\", \"scope\": \"src/*.js\" }\n      ]\n    },\n    {\n      \"id\": \"audit-public-exports\",\n      \"action\": \"Re-read src/index.js and cross-check its full re-export list (classes, functions, consts such as KINDS, WRITE_KINDS, GLOBAL, StalePointerError, and everything re-exported from store.js, tokenize.js, embedder."
+    },
+    {
+      "label": "A2-fullgoal-scoutOFF-2",
+      "scoutOn": false,
+      "goalChars": 1910,
+      "ok": false,
+      "reds": [
+        {
+          "code": "scope-escape",
+          "path": "steps.0.exit.0.path",
+          "detail": "\"tsconfig.json\" is outside the signed fence [src/**]"
+        }
+      ],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "survey-src-and-exports",
+            "action": "Read tsconfig.json, package.json, and every file under src/** to catalog current JSDoc type annotations, list all symbols exported from the package's public entry point, and identify every location that will produce an error under `npx tsc --noEmit --strict` (implicit any, missing null checks, unchecked object access, etc.). Do not modify anything.",
+            "tools": [
+              "read",
+              "grep"
+            ],
+            "rounds": 15,
+            "exit": [
+              {
+                "type": "json-valid",
+                "path": "tsconfig.json"
+              }
+            ]
+          },
+          {
+            "id": "fix-core-modules",
+            "action": "In the core/main src files (e.g. the primary context/store implementation modules), update JSDoc type annotations so the code typechecks under full TypeScript strictness: replace implicit or loose types with precise types or `unknown` where honest, add null/undefined narrowing where strictNullChecks demands it, and add missing @param/@returns/@type annotations. Do not use `any`, `{*}`, @ts-ignore, @ts-expect-error, or @ts-nocheck. Do not change any runtime behavior, logic, or exported symbol names.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "fix-remaining-modules",
+            "action": "In all remaining src/** files not yet fixed, update JSDoc type annotations to satisfy full TypeScript strictness (noImplicitAny, strictNullChecks, strictFunctionTypes, etc.), using precise types or `unknown` plus narrowing at use sites instead of `any` or `{*}`. Preserve exact existing behavior and all currently exported symbol names and signatures.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "fix-entry-point-and-dts",
+            "action": "Review and adjust the public entry point file(s) under src/** so that every symbol previously exported is still exported with the same name, all JSDoc types on exported declarations are strict-mode clean and free of `any`/`{*}`/suppressions, and the emitted .d.ts remains buildable. Fix any remaining strict-mode diagnostics surfaced by re-checking cross-file type flow.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 25,
+            "target": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "final-verification",
+            "action": "Perform a final read-only review confirming `npx tsc --noEmit --strict` would exit 0, the .d.ts still builds, no suppression counts rose, no `any`/`{*}` JSDoc types remain, all previously exported symbols are still exported, and the existing test suite behavior is unchanged.",
+            "tools": [
+              "read",
+              "grep"
+            ],
+            "rounds": 15,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              },
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              }
+            ]
+          }
+        ]
+      },
+      "raw": "{\n  \"schema\": \"plan-v1\",\n  \"steps\": [\n    {\n      \"id\": \"survey-src-and-exports\",\n      \"action\": \"Read tsconfig.json, package.json, and every file under src/** to catalog current JSDoc type annotations, list all symbols exported from the package's public entry point, and identify every location that will produce an error under `npx tsc --noEmit --strict` (implicit any, missing null checks, unchecked object access, etc.). Do not modify anything.\",\n      \"tools\": [\"read\", \"grep\"],\n      \"rounds\": 15,\n      \"exit\": [\n        {\"type\": \"json-valid\", \"path\": \"tsconfig.json\"}\n      ]\n    },\n    {\n      \"id\": \"fix-core-modules\",\n      \"action\": \"In the core/main src files (e.g. the primary context/store implementation modules), update JSDoc type annotations so the code typechecks under full TypeScript strictness: replace implicit or loose types with precise types or `unknown` where honest, add null/undefined narrowing where strictNullChecks demands it, and add missing @param/@returns/@type annotations. Do not use `any`, `{*}`, @ts-ignore, @ts-expect-error, or @ts-nocheck. Do not change any runtime behavior, logic, or exported symbol names.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 30,\n      \"target\": \"src/**\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"},\n        {\"type\": \"check-passes\", \"name\": \"no-suppressions\"}\n      ]\n    },\n    {\n      \"id\": \"fix-remaining-modules\",\n      \"action\": \"In all remaining src/** files not yet fixed, update JSDoc type annotations to satisfy full TypeScript strictness (noImplicitAny, strictNullChecks, strictFunctionTypes, etc.), using precise types or `unknown` plus narrowing at use sites instead of `any` or `{*}`. Preserve exact existing behavior and all currently exported symbol names and signatures.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 30,\n      \"target\": \"src/**\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"},\n        {\"type\": \"check-passes\", \"name\": \"no-suppressions\"}\n      ]\n    },\n    {\n      \"id\": \"fix-entry-point-and-dts\",\n      \"action\": \"Review and adjust the public entry point file(s) under src/** so that every symbol previously exported is still exported with the same name, all JSDoc types on exported declarations are strict-mode clean and free of `any`/`{*}`/suppressions, and the emitted .d.ts remains buildable. Fix any remaining strict-mode diagnostics surfaced by re-checking cross-file type flow.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 25,\n      \"target\": \"src/**\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"},\n        {\"type\": \"check-passes\", \"name\": \"no-suppressions\"}\n      ]\n    },\n    {\n      \"id\": \"final-verification\",\n      \"action\": \"Perform a final read-only review confirming `npx tsc --noEmit --strict` would exit 0, the .d.ts still builds, no suppression counts rose, no `any`/`{*}` JSDoc types remain, all previously exported symbols are still exported, and the existing test suite behavior is unchanged.\",\n      \"tools\": [\"read\", \"grep\"],\n      \"rounds\": 15,\n      \"exit\": [\n        {\"type\": \"check-passes\", \"name\": \"typecheck-clean\"},\n        {\"type\": \"check-passes\", \"name\": \"suite-green\"}\n      ]\n    }\n  ]\n}"
+    },
+    {
+      "label": "A3-onesentence-scoutON-2",
+      "scoutOn": true,
+      "goalChars": 221,
+      "ok": true,
+      "reds": [],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "type-core-index-exports",
+            "action": "In src/index.js, add/tighten JSDoc types for all classes (LiteCtx, ScopedView, StalePointerError) and exported consts, fix `catch` blocks to narrow the caught `unknown` value (e.g. `e instanceof Error`) without using `any`/`as`/non-null `!`/`@ts-ignore`, and verify every current export/re-export line is preserved unchanged so the public API surface stays identical. Do not change runtime behavior.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 25,
+            "target": "src/index.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/index.js"
+              },
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              }
+            ]
+          },
+          {
+            "id": "type-store",
+            "action": "In src/store.js, add honest JSDoc parameter/return types for all functions and methods (SQLite/FTS5 store), including full types for the `Hit`, `GraphNode`, `RelatedNode` typedefs, so no implicit-any parameters remain under `tsc --strict`. Narrow any `catch (e)` blocks with `instanceof Error` checks. No behavior changes, no `any`/`as any`/`@ts-ignore`/non-null `!`.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/store.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/store.js"
+              },
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              }
+            ]
+          },
+          {
+            "id": "type-chunk-edges-embed",
+            "action": "In src/chunker.js, src/edges.js, and src/embedder.js, add missing/complete JSDoc types for all function parameters, object literals, and callbacks (notably the injectable `embed(text: string): Promise<Float32Array>` shape) so no implicit-any remains under `tsc --strict`. Narrow any caught errors with `instanceof Error`. Do not use `any`, `as`, non-null `!`, or `@ts-ignore`; preserve existing behavior and exports.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 25,
+            "target": "src/embedder.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              }
+            ]
+          },
+          {
+            "id": "type-gitsig-impact-indexer",
+            "action": "In src/gitsig.js, src/impact.js, and src/indexer.js, add complete JSDoc parameter/return/property types to eliminate all implicit-any under `tsc --strict`, narrowing any `catch (e)` blocks with `instanceof Error`/similar checks. No `any`, `as`, non-null `!`, or `@ts-ignore`; keep behavior and exports identical.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 25,
+            "target": "src/indexer.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              }
+            ]
+          },
+          {
+            "id": "type-docparse-contextgraph-writegate",
+            "action": "In src/docparse.js, src/contextgraph.js, and src/writegate.js, add full JSDoc types for all functions/params/returns and the duck-typed `writeGate`/`writeAudit` interfaces, fixing the `catch (e)` block in docparse.js (and any others) to narrow the caught value via `instanceof Error`. No `any`/`as`/non-null `!`/`@ts-ignore`; preserve exports and runtime behavior.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 25,
+            "target": "src/writegate.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              }
+            ]
+          },
+          {
+            "id": "type-remaining-modules",
+            "action": "In src/memory-store.js, src/compress.js, src/assemble.js, src/tokenize.js, src/tsalias.js, src/langdef.js, and src/grammars/**, add complete JSDoc types for all parameters/returns/object shapes to remove implicit-any under `tsc --strict`, narrowing any caught errors with `instanceof Error`. No `any`/`as`/non-null `!`/`@ts-ignore`; keep exports and behavior unchanged.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/memory-store.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              }
+            ]
+          },
+          {
+            "id": "final-strict-typecheck-fixes",
+            "action": "Re-review all src/*.js files against `tsc --noEmit --strict`: fix any remaining implicit-any, strictFunctionTypes/strictBindCallApply mismatches on callback-typed fields, and strictPropertyInitialization issues on classes (LiteCtx, ScopedView, StalePointerError, Embedder, WriteAudit, ContextGraph) by adding/adjusting `@type`/`@param`/`@returns` JSDoc. Do not use `any`, `as`, non-null `!`, or `@ts-ignore`. Preserve every export in src/index.js exactly as before.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/index.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              }
+            ]
+          },
+          {
+            "id": "final-no-suppressions-audit",
+            "action": "Grep across all src/**/*.js for any suppression patterns (`@ts-ignore`, `@ts-nocheck`, ` as any`, non-null `!` assertions, `{*}`/`{any}` JSDoc types) and replace each with an honest, precise type or narrowing logic instead of removing the check; make the corresponding edits in the affected src/*.js file(s). Confirm src/index.js still exports every original symbol.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 20,
+            "target": "src/index.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          }
+        ]
+      },
+      "raw": "{\n  \"schema\": \"plan-v1\",\n  \"steps\": [\n    {\n      \"id\": \"type-core-index-exports\",\n      \"action\": \"In src/index.js, add/tighten JSDoc types for all classes (LiteCtx, ScopedView, StalePointerError) and exported consts, fix `catch` blocks to narrow the caught `unknown` value (e.g. `e instanceof Error`) without using `any`/`as`/non-null `!`/`@ts-ignore`, and verify every current export/re-export line is preserved unchanged so the public API surface stays identical. Do not change runtime behavior.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 25,\n      \"target\": \"src/index.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/index.js\"},\n        {\"type\": \"check-passes\", \"name\": \"suite-green\"}\n      ]\n    },\n    {\n      \"id\": \"type-store\",\n      \"action\": \"In src/store.js, add honest JSDoc parameter/return types for all functions and methods (SQLite/FTS5 store), including full types for the `Hit`, `GraphNode`, `RelatedNode` typedefs, so no implicit-any parameters remain under `tsc --strict`. Narrow any `catch (e)` blocks with `instanceof Error` checks. No behavior changes, no `any`/`as any`/`@ts-ignore`/non-null `!`.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 30,\n      \"target\": \"src/store.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/store.js\"},\n        {\"type\": \"check-passes\", \"name\": \"suite-green\"}\n      ]\n    },\n    {\n      \"id\": \"type-chunk-edges-embed\",\n      \"action\": \"In src/chunker.js, src/edges.js, and src/embedder.js, add missing/complete JSDoc types for all function parameters, object literals, and callbacks (notably the injectable `embed(text: string): Promise<Float32Array>` shape) so no implicit-any remains under `tsc --strict`. Narrow any caught errors with `instanceof Error`. Do not use `any`, `as`, non-null `!`, or `@ts-ignore`; preserve existing behavior and exports.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 25,\n      \"target\": \"src/embedder.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"},\n        {\"type\": \"check-passes\", \"name\": \"suite-green\"}\n      ]\n    },\n    {\n      \"id\": \"type-gitsig-impact-indexer\",\n      \"action\": \"In src/gitsig.js, src/impact.js, and src/indexer.js, add complete JSDoc parameter/return/property types to eliminate all implicit-any under `tsc --strict`, narrowing any `catch (e)` blocks with `instanceof Error`/similar checks. No `any`, `as`, non-null `!`, or `@ts-ignore`; keep behavior and exports identical.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 25,\n      \"target\": \"src/indexer.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"},\n        {\"type\": \"check-passes\", \"name\": \"suite-green\"}\n      ]\n    },\n    {\n      \"id\": \"type-docparse-contextgraph-writegate\",\n      \"action\": \"In src/docparse.js, src/contextgraph.js, and src/writegate.js, add full JSDoc types for all functions/params/returns and the duck-typed `writeGate`/`writeAudit` interfaces, fixing the `catch (e)` block in docparse.js (and any others) to narrow the caught value via `instanceof Error`. No `any`/`as`/non-null `!`/`@ts-ignore`; preserve exports and runtime behavior.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 25,\n      \"target\": \"src/writegate.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"},\n        {\"type\": \"check-passes\", \"name\": \"suite-green\"}\n      ]\n    },\n    {\n      \"id\": \"type-remaining-modules\",\n      \"action\": \"In src/memory-store.js, src/compress.js, src/assemble.js, src/tokenize.js, src/tsalias.js, src/langdef.js, and src/grammars/**, add complete JSDoc types for all parameters/returns/object shapes to remove implicit-any under `tsc --strict`, narrowing any caught errors with `instanceof Error`. No `any`/`as`/non-null `!`/`@ts-ignore`; keep exports and behavior unchanged.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 30,\n      \"target\": \"src/memory-store.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": "
+    },
+    {
+      "label": "A4-onesentence-scoutOFF-2",
+      "scoutOn": false,
+      "goalChars": 221,
+      "ok": false,
+      "reds": [
+        {
+          "code": "missing-required",
+          "path": "steps.0.exit",
+          "detail": "non-empty array from the closed menu artifact-written|tree-changed|json-valid|check-passes — ALL listed exits must pass (AND-only); a step without an exit has no progress gate"
+        }
+      ],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "survey-repo",
+            "action": "Explore the repository: read package.json, tsconfig.json (if present), and all files under src/ to identify JavaScript modules, exported APIs, and any existing type annotations or JSDoc, in order to understand the scope of type errors tsc --noEmit --strict would report.",
+            "tools": [
+              "read",
+              "grep"
+            ],
+            "rounds": 8
+          },
+          {
+            "id": "add-type-annotations-src",
+            "action": "Add accurate JSDoc type annotations (@param, @returns, @type, /** @typedef */ etc.) and fix genuine type inconsistencies across all source files under src/ so the codebase satisfies `tsc --noEmit --strict`. Do not add @ts-ignore, @ts-nocheck, eslint-disable, or any other suppression comments, and do not change runtime behavior.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 25,
+            "target": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              }
+            ]
+          },
+          {
+            "id": "verify-tests-pass",
+            "action": "Run and inspect the existing test suite results to confirm that the type-annotation changes made to src/ did not break any tests; do not modify any files during this step.",
+            "tools": [
+              "read"
+            ],
+            "rounds": 8,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              }
+            ]
+          },
+          {
+            "id": "verify-no-suppressions",
+            "action": "Search all files under src/ for any type-error suppression patterns (e.g. @ts-ignore, @ts-nocheck, eslint-disable, unchecked any casts) that may have been introduced, confirming none exist.",
+            "tools": [
+              "grep"
+            ],
+            "rounds": 6,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          }
+        ]
+      },
+      "raw": "{\n  \"schema\": \"plan-v1\",\n  \"steps\": [\n    {\n      \"id\": \"survey-repo\",\n      \"action\": \"Explore the repository: read package.json, tsconfig.json (if present), and all files under src/ to identify JavaScript modules, exported APIs, and any existing type annotations or JSDoc, in order to understand the scope of type errors tsc --noEmit --strict would report.\",\n      \"tools\": [\"read\", \"grep\"],\n      \"rounds\": 8\n    },\n    {\n      \"id\": \"add-type-annotations-src\",\n      \"action\": \"Add accurate JSDoc type annotations (@param, @returns, @type, /** @typedef */ etc.) and fix genuine type inconsistencies across all source files under src/ so the codebase satisfies `tsc --noEmit --strict`. Do not add @ts-ignore, @ts-nocheck, eslint-disable, or any other suppression comments, and do not change runtime behavior.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 25,\n      \"target\": \"src/**\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"},\n        {\"type\": \"check-passes\", \"name\": \"typecheck-clean\"}\n      ]\n    },\n    {\n      \"id\": \"verify-tests-pass\",\n      \"action\": \"Run and inspect the existing test suite results to confirm that the type-annotation changes made to src/ did not break any tests; do not modify any files during this step.\",\n      \"tools\": [\"read\"],\n      \"rounds\": 8,\n      \"exit\": [\n        {\"type\": \"check-passes\", \"name\": \"suite-green\"}\n      ]\n    },\n    {\n      \"id\": \"verify-no-suppressions\",\n      \"action\": \"Search all files under src/ for any type-error suppression patterns (e.g. @ts-ignore, @ts-nocheck, eslint-disable, unchecked any casts) that may have been introduced, confirming none exist.\",\n      \"tools\": [\"grep\"],\n      \"rounds\": 6,\n      \"exit\": [\n        {\"type\": \"check-passes\", \"name\": \"no-suppressions\"}\n      ]\n    }\n  ]\n}"
+    },
+    {
+      "label": "T2B-materials-2",
+      "scoutOn": true,
+      "goalChars": 1910,
+      "ok": true,
+      "reds": [],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "fix-store",
+            "action": "Edit src/store.js only. Under `npx tsc --noEmit --strict`, add/tighten JSDoc types so the file passes full strictness (noImplicitAny, strictNullChecks, useUnknownInCatchVariables, strictFunctionTypes, strictPropertyInitialization, noImplicitThis) with zero behavior change. For every function/method/callback parameter and object literal lacking a type, add an honest @param/@type reflecting current runtime usage. For `catch (e)` blocks, treat e as unknown and narrow with `e instanceof Error` before accessing .message/.stack; never introduce `any` or `{*}` in JSDoc, and never add @ts-ignore/@ts-expect-error/@ts-nocheck. Keep all exported class/function names, signatures' call semantics, and existing typedefs (Hit, GraphNode, RelatedNode, etc.) intact — only annotate, don't refactor logic or delete code.",
+            "tools": [
+              "read",
+              "grep",
+              "write",
+              "edit"
+            ],
+            "rounds": 35,
+            "target": "src/store.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/store.js"
+              }
+            ]
+          },
+          {
+            "id": "fix-index",
+            "action": "Edit src/index.js only. This is the public entry point (LiteCtx, ScopedView, StalePointerError classes; KINDS, WRITE_KINDS, GLOBAL consts; re-exports from other src modules). Under full `tsc --strict`, add honest JSDoc types for all untyped parameters, object-literal shapes (e.g. embedder/writeGate/writeAudit duck-typed options), and lazily-initialized class fields (add @type comments where properties are assigned late, e.g. in getters/constructors) so strictPropertyInitialization and noImplicitAny pass. For every `catch (e)` block, narrow the now-`unknown` e via `e instanceof Error` before using .message. Do not use `any`, `{*}`, or add any @ts-ignore/@ts-expect-error/@ts-nocheck. Do NOT remove or rename any exported symbol, class, method, or re-export line — the exact same public export surface must remain. Only add/adjust type annotations; behavior and defaults must stay identical.",
+            "tools": [
+              "read",
+              "grep",
+              "write",
+              "edit"
+            ],
+            "rounds": 35,
+            "target": "src/index.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/index.js"
+              }
+            ]
+          },
+          {
+            "id": "fix-docparse-gitsig-impact",
+            "action": "Edit src/docparse.js, src/gitsig.js, and src/impact.js. Under full `tsc --strict`, add honest JSDoc @param/@type/@returns annotations for every implicitly-typed function, arrow callback, and object literal so noImplicitAny and related strict flags pass, with zero change to runtime behavior. Fix every `catch (e)` block (including src/docparse.js:308-area) to treat e as unknown and narrow with `e instanceof Error` before reading .message/.stack. Never use `any`, `{*}`, or add @ts-ignore/@ts-expect-error/@ts-nocheck. Do not delete or rename any exported function/class/const; only annotate existing code.",
+            "tools": [
+              "read",
+              "grep",
+              "write",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/docparse.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "fix-chunker-edges-embedder",
+            "action": "Edit src/chunker.js, src/edges.js, and src/embedder.js. Under full `tsc --strict`, add honest JSDoc types for all untyped function parameters, destructured object fields, and callback signatures (especially the injectable embedder `embed(text) -> Promise<Float32Array>`-style interfaces, ensuring strictFunctionTypes/strictBindCallApply compatibility) so the files typecheck cleanly with zero behavior change. Narrow any `catch (e)` blocks via `e instanceof Error`. Never use `any`, `{*}`, or add any suppression comment. Preserve every exported symbol's name and call signature exactly as used elsewhere in the codebase (do not change how src/index.js re-exports them).",
+            "tools": [
+              "read",
+              "grep",
+              "write",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/chunker.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "fix-contextgraph-writegate-memorystore",
+            "action": "Edit src/contextgraph.js, src/writegate.js, and src/memory-store.js. Under full `tsc --strict`, add honest JSDoc annotations for untyped parameters, class fields (fixing strictPropertyInitialization issues via @type comments on lazily-set properties), and any duck-typed writeGate/writeAudit interfaces so they satisfy strictFunctionTypes. Narrow `catch (e)` blocks with `e instanceof Error`. No `any`, no `{*}`, no @ts-ignore/@ts-expect-error/@ts-nocheck. Do not rename, remove, or change the call signature of any exported class/function/const; only add type annotations to existing code.",
+            "tools": [
+              "read",
+              "grep",
+              "write",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/contextgraph.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "fix-remaining-modules",
+            "action": "Edit src/compress.js, src/assemble.js, src/tokenize.js, src/tsalias.js, src/langdef.js, and files under src/grammars/. Under full `tsc --strict`, add honest JSDoc types for every implicitly-typed parameter, return value, and object literal so these files pass noImplicitAny and the other strict flags, with zero behavior change. Narrow any `catch (e)` blocks with `e instanceof Error`. Never use `any`, `{*}`, or add @ts-ignore/@ts-expect-error/@ts-nocheck anywhere. Preserve all exported symbol names and signatures exactly.",
+            "tools": [
+              "read",
+              "grep",
+              "write",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/compress.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "full-strict-sweep",
+            "action": "Re-review the entire src/** tree against `npx tsc --noEmit --strict` (mentally trace remaining errors from prior steps' incomplete coverage). Fix any remaining type errors in any src/*.js file or src/grammars/** by adding honest JSDoc annotations (never `any`, `{*}`, or suppression comments); pay special attention to strictFunctionTypes callback mismatches and any leftover implicit-any parameters missed earlier. Cross-check src/index.js's re-export lines against every class/function/const originally exported by each module (LiteCtx, ScopedView, StalePointerError, KINDS, WRITE_KINDS, GLOBAL, store.js/tokenize.js/embedder.js/compress.js/assemble.js/memory-store.js/writegate.js/contextgraph.js exports) to confirm nothing was accidentally dropped or renamed during annotation work; restore any missing export. Do not change runtime behavior anywhere.",
+            "tools": [
+              "read",
+              "grep",
+              "write",
+              "edit"
+            ],
+            "rounds": 40,
+            "target": "src/index.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              }
+            ]
+          },
+          {
+            "id": "verify-suite-and-suppressions",
+            "action": "Perform a final read-only verification pass: confirm the existing test suite still passes in full (no test lost or skipped) and that no suppression comments (@ts-ignore, @ts-expect-error, @ts-nocheck) or `any`/`{*}` JSDoc types were introduced anywhere in src/**. Do not modify any files in this step.",
+            "tools": [
+              "read",
+              "grep"
+            ],
+            "rounds": 20,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          }
+        ]
+      },
+      "raw": "{\n  \"schema\": \"plan-v1\",\n  \"steps\": [\n    {\n      \"id\": \"fix-store\",\n      \"action\": \"Edit src/store.js only. Under `npx tsc --noEmit --strict`, add/tighten JSDoc types so the file passes full strictness (noImplicitAny, strictNullChecks, useUnknownInCatchVariables, strictFunctionTypes, strictPropertyInitialization, noImplicitThis) with zero behavior change. For every function/method/callback parameter and object literal lacking a type, add an honest @param/@type reflecting current runtime usage. For `catch (e)` blocks, treat e as unknown and narrow with `e instanceof Error` before accessing .message/.stack; never introduce `any` or `{*}` in JSDoc, and never add @ts-ignore/@ts-expect-error/@ts-nocheck. Keep all exported class/function names, signatures' call semantics, and existing typedefs (Hit, GraphNode, RelatedNode, etc.) intact — only annotate, don't refactor logic or delete code.\",\n      \"tools\": [\"read\", \"grep\", \"write\", \"edit\"],\n      \"rounds\": 35,\n      \"target\": \"src/store.js\",\n      \"exit\": [\n        { \"type\": \"tree-changed\", \"scope\": \"src/store.js\" }\n      ]\n    },\n    {\n      \"id\": \"fix-index\",\n      \"action\": \"Edit src/index.js only. This is the public entry point (LiteCtx, ScopedView, StalePointerError classes; KINDS, WRITE_KINDS, GLOBAL consts; re-exports from other src modules). Under full `tsc --strict`, add honest JSDoc types for all untyped parameters, object-literal shapes (e.g. embedder/writeGate/writeAudit duck-typed options), and lazily-initialized class fields (add @type comments where properties are assigned late, e.g. in getters/constructors) so strictPropertyInitialization and noImplicitAny pass. For every `catch (e)` block, narrow the now-`unknown` e via `e instanceof Error` before using .message. Do not use `any`, `{*}`, or add any @ts-ignore/@ts-expect-error/@ts-nocheck. Do NOT remove or rename any exported symbol, class, method, or re-export line — the exact same public export surface must remain. Only add/adjust type annotations; behavior and defaults must stay identical.\",\n      \"tools\": [\"read\", \"grep\", \"write\", \"edit\"],\n      \"rounds\": 35,\n      \"target\": \"src/index.js\",\n      \"exit\": [\n        { \"type\": \"tree-changed\", \"scope\": \"src/index.js\" }\n      ]\n    },\n    {\n      \"id\": \"fix-docparse-gitsig-impact\",\n      \"action\": \"Edit src/docparse.js, src/gitsig.js, and src/impact.js. Under full `tsc --strict`, add honest JSDoc @param/@type/@returns annotations for every implicitly-typed function, arrow callback, and object literal so noImplicitAny and related strict flags pass, with zero change to runtime behavior. Fix every `catch (e)` block (including src/docparse.js:308-area) to treat e as unknown and narrow with `e instanceof Error` before reading .message/.stack. Never use `any`, `{*}`, or add @ts-ignore/@ts-expect-error/@ts-nocheck. Do not delete or rename any exported function/class/const; only annotate existing code.\",\n      \"tools\": [\"read\", \"grep\", \"write\", \"edit\"],\n      \"rounds\": 30,\n      \"target\": \"src/docparse.js\",\n      \"exit\": [\n        { \"type\": \"tree-changed\", \"scope\": \"src/**\" }\n      ]\n    },\n    {\n      \"id\": \"fix-chunker-edges-embedder\",\n      \"action\": \"Edit src/chunker.js, src/edges.js, and src/embedder.js. Under full `tsc --strict`, add honest JSDoc types for all untyped function parameters, destructured object fields, and callback signatures (especially the injectable embedder `embed(text) -> Promise<Float32Array>`-style interfaces, ensuring strictFunctionTypes/strictBindCallApply compatibility) so the files typecheck cleanly with zero behavior change. Narrow any `catch (e)` blocks via `e instanceof Error`. Never use `any`, `{*}`, or add any suppression comment. Preserve every exported symbol's name and call signature exactly as used elsewhere in the codebase (do not change how src/index.js re-exports them).\",\n      \"tools\": [\"read\", \"grep\", \"write\", \"edit\"],\n      \"rounds\": 30,\n      \"target\": \"src/chunker.js\",\n      \"exit\": [\n        { \"type\": \"tree-changed\", \"scope\": "
+    },
+    {
+      "label": "P1B-catalog-2",
+      "scoutOn": true,
+      "goalChars": 1910,
+      "ok": true,
+      "reds": [],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "audit-strict-baseline",
+            "action": "Search src/** for catch-block variables, function parameters lacking @param types, and duck-typed object parameters that would trigger noImplicitAny/useUnknownInCatchVariables under `tsc --noEmit --strict`; note exact file:line locations to fix in subsequent steps, without changing any code.",
+            "tools": [
+              "grep",
+              "read"
+            ],
+            "rounds": 15,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              }
+            ]
+          },
+          {
+            "id": "type-store-module",
+            "action": "In src/store.js, add honest JSDoc @param/@type annotations for all previously-implicit-any function parameters, callback signatures, and destructured object fields (matching actual runtime usage), narrow any `catch (e)` variables with `e instanceof Error` checks instead of relying on implicit any, and ensure existing typedefs (Hit, GraphNode, RelatedNode) fully describe optional/nullable fields per strictNullChecks; do not use `any` or `{*}`, prefer `unknown` plus narrowing; do not change any runtime behavior or exported symbol names.",
+            "tools": [
+              "read",
+              "edit",
+              "write"
+            ],
+            "rounds": 30,
+            "target": "src/store.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/store.js"
+              }
+            ]
+          },
+          {
+            "id": "type-index-entrypoint",
+            "action": "In src/index.js, add honest JSDoc parameter/return/property types for LiteCtx, ScopedView, StalePointerError and all exported consts/functions so the file typechecks under noImplicitAny and strictPropertyInitialization, narrow any catch-block variables with instanceof Error checks, and verify every symbol currently exported (KINDS, WRITE_KINDS, GLOBAL, LiteCtx, ScopedView, StalePointerError, and all re-exports from store.js/tokenize.js/embedder.js/compress.js/assemble.js/memory-store.js/writegate.js/contextgraph.js) is still exported unchanged; no `any`/`{*}`, prefer `unknown` with narrowing; no behavior changes.",
+            "tools": [
+              "read",
+              "edit",
+              "write",
+              "grep"
+            ],
+            "rounds": 35,
+            "target": "src/index.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/index.js"
+              }
+            ]
+          },
+          {
+            "id": "type-chunker-edges-embedder",
+            "action": "In src/chunker.js, src/edges.js, and src/embedder.js, add honest JSDoc @param/@type/@returns annotations for every implicitly-typed function, callback, and object literal so these files typecheck under noImplicitAny/strictFunctionTypes/strictBindCallApply; narrow catch-block variables with instanceof Error; use `unknown` instead of `any`/`{*}` wherever the honest type is not known ahead of narrowing; do not alter runtime logic or exported names.",
+            "tools": [
+              "read",
+              "edit",
+              "write"
+            ],
+            "rounds": 30,
+            "target": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "type-gitsig-impact-indexer-docparse",
+            "action": "In src/gitsig.js, src/impact.js, src/indexer.js, and src/docparse.js, add honest JSDoc types for all implicitly-typed parameters, return values, and destructured fields to satisfy noImplicitAny and useUnknownInCatchVariables; convert `catch (e)` handling to narrow with `e instanceof Error` (matching src/docparse.js:308 style already used elsewhere); never introduce `any`/`{*}`; keep exported symbols and behavior identical.",
+            "tools": [
+              "read",
+              "edit",
+              "write"
+            ],
+            "rounds": 30,
+            "target": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "type-contextgraph-writegate-memorystore-compress-assemble-tokenize",
+            "action": "In src/contextgraph.js, src/writegate.js, src/memory-store.js, src/compress.js, src/assemble.js, and src/tokenize.js, add honest JSDoc annotations for all implicitly-typed parameters/returns/object shapes (including the injectable embedder/writeGate/writeAudit duck-typed interfaces) so these files typecheck under full --strict; ensure strictFunctionTypes-sensitive callback fields are typed as read-only-safe function signatures matching actual call sites; use `unknown` not `any`/`{*}`; keep all exports and runtime behavior identical.",
+            "tools": [
+              "read",
+              "edit",
+              "write"
+            ],
+            "rounds": 35,
+            "target": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "type-remaining-modules",
+            "action": "In src/tsalias.js, src/langdef.js, and src/grammars/**, add honest JSDoc annotations for any remaining implicitly-typed parameters, returns, or object fields surfaced by full --strict, matching existing runtime behavior exactly; use `unknown` not `any`/`{*}`; keep exported symbols unchanged.",
+            "tools": [
+              "read",
+              "edit",
+              "write"
+            ],
+            "rounds": 25,
+            "target": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "verify-strict-and-exports",
+            "action": "Re-read src/index.js and grep across src/** to confirm every symbol that was exported before these changes (KINDS, WRITE_KINDS, GLOBAL, LiteCtx, ScopedView, StalePointerError, and all re-exports) is still exported, that no @ts-ignore/@ts-expect-error/@ts-nocheck or `any`/`{*}` JSDoc types were introduced, and fix any residual noImplicitAny/strictNullChecks errors found so the tree typechecks cleanly under `npx tsc --noEmit --strict`; make only minimal additional JSDoc annotation edits needed to reach a clean strict typecheck.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/index.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              }
+            ]
+          }
+        ]
+      },
+      "raw": "{\n  \"schema\": \"plan-v1\",\n  \"steps\": [\n    {\n      \"id\": \"audit-strict-baseline\",\n      \"action\": \"Search src/** for catch-block variables, function parameters lacking @param types, and duck-typed object parameters that would trigger noImplicitAny/useUnknownInCatchVariables under `tsc --noEmit --strict`; note exact file:line locations to fix in subsequent steps, without changing any code.\",\n      \"tools\": [\"grep\", \"read\"],\n      \"rounds\": 15,\n      \"exit\": [\n        {\"type\": \"check-passes\", \"name\": \"suite-green\"}\n      ]\n    },\n    {\n      \"id\": \"type-store-module\",\n      \"action\": \"In src/store.js, add honest JSDoc @param/@type annotations for all previously-implicit-any function parameters, callback signatures, and destructured object fields (matching actual runtime usage), narrow any `catch (e)` variables with `e instanceof Error` checks instead of relying on implicit any, and ensure existing typedefs (Hit, GraphNode, RelatedNode) fully describe optional/nullable fields per strictNullChecks; do not use `any` or `{*}`, prefer `unknown` plus narrowing; do not change any runtime behavior or exported symbol names.\",\n      \"tools\": [\"read\", \"edit\", \"write\"],\n      \"rounds\": 30,\n      \"target\": \"src/store.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/store.js\"}\n      ]\n    },\n    {\n      \"id\": \"type-index-entrypoint\",\n      \"action\": \"In src/index.js, add honest JSDoc parameter/return/property types for LiteCtx, ScopedView, StalePointerError and all exported consts/functions so the file typechecks under noImplicitAny and strictPropertyInitialization, narrow any catch-block variables with instanceof Error checks, and verify every symbol currently exported (KINDS, WRITE_KINDS, GLOBAL, LiteCtx, ScopedView, StalePointerError, and all re-exports from store.js/tokenize.js/embedder.js/compress.js/assemble.js/memory-store.js/writegate.js/contextgraph.js) is still exported unchanged; no `any`/`{*}`, prefer `unknown` with narrowing; no behavior changes.\",\n      \"tools\": [\"read\", \"edit\", \"write\", \"grep\"],\n      \"rounds\": 35,\n      \"target\": \"src/index.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/index.js\"}\n      ]\n    },\n    {\n      \"id\": \"type-chunker-edges-embedder\",\n      \"action\": \"In src/chunker.js, src/edges.js, and src/embedder.js, add honest JSDoc @param/@type/@returns annotations for every implicitly-typed function, callback, and object literal so these files typecheck under noImplicitAny/strictFunctionTypes/strictBindCallApply; narrow catch-block variables with instanceof Error; use `unknown` instead of `any`/`{*}` wherever the honest type is not known ahead of narrowing; do not alter runtime logic or exported names.\",\n      \"tools\": [\"read\", \"edit\", \"write\"],\n      \"rounds\": 30,\n      \"target\": \"src/**\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"}\n      ]\n    },\n    {\n      \"id\": \"type-gitsig-impact-indexer-docparse\",\n      \"action\": \"In src/gitsig.js, src/impact.js, src/indexer.js, and src/docparse.js, add honest JSDoc types for all implicitly-typed parameters, return values, and destructured fields to satisfy noImplicitAny and useUnknownInCatchVariables; convert `catch (e)` handling to narrow with `e instanceof Error` (matching src/docparse.js:308 style already used elsewhere); never introduce `any`/`{*}`; keep exported symbols and behavior identical.\",\n      \"tools\": [\"read\", \"edit\", \"write\"],\n      \"rounds\": 30,\n      \"target\": \"src/**\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"}\n      ]\n    },\n    {\n      \"id\": \"type-contextgraph-writegate-memorystore-compress-assemble-tokenize\",\n      \"action\": \"In src/contextgraph.js, src/writegate.js, src/memory-store.js, src/compress.js, src/assemble.js, and src/tokenize.js, add honest JSDoc annotations for all implicitly-typed parameters/returns/object shapes (including the injectable embedder/writeGate/writeAudit duck-typed interfaces) so these files typecheck under full --strict; ensure strict"
+    },
+    {
+      "label": "A1-fullgoal-scoutON-3",
+      "scoutOn": true,
+      "goalChars": 1910,
+      "ok": true,
+      "reds": [],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "type-store-module",
+            "action": "In src/store.js only: make the file typecheck cleanly under `npx tsc --noEmit --strict` (noImplicitAny, strictNullChecks, strictFunctionTypes, strictBindCallApply, strictPropertyInitialization, noImplicitThis, useUnknownInCatchVariables, alwaysStrict). Add or tighten JSDoc `@param`/`@returns`/`@type`/`@typedef` annotations (e.g. for Hit, GraphNode, RelatedNode and any untyped function parameters, destructured object fields, or class properties) to describe exactly what the existing runtime code already does. For any `catch (e)` block, narrow the now-`unknown` caught value with `e instanceof Error` (or equivalent) before accessing properties — never widen with `any`. Do not use `any`, the `{*}` wildcard, `@ts-ignore`, `@ts-expect-error`, or `@ts-nocheck` anywhere; prefer `unknown` plus a narrowing check when a precise type cannot be stated honestly. Do not change any runtime behavior, control flow, defaults, or exported symbol names/shapes — only add or tighten type annotations.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/store.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/store.js"
+              }
+            ]
+          },
+          {
+            "id": "type-index-module",
+            "action": "In src/index.js only: make the file typecheck cleanly under `npx tsc --noEmit --strict`. This file is the public entry point (LiteCtx, ScopedView, StalePointerError classes; KINDS/WRITE_KINDS/GLOBAL consts; re-exports from store.js, tokenize.js, embedder.js, compress.js, assemble.js, memory-store.js, writegate.js, contextgraph.js). Add or tighten JSDoc annotations for method parameters, return types, class properties (including lazily-initialized ones needing an explicit `@type` at declaration site for strictPropertyInitialization), and duck-typed injectable interfaces (e.g. embedder, writeGate, writeAudit shapes) so strictFunctionTypes/strictBindCallApply are satisfied. Narrow any `catch (e)` unknown values with `instanceof Error` checks. Every symbol currently exported from this file must remain exported with the same name and same runtime value — do not delete or rename any export. Never use `any`, `{*}`, `@ts-ignore`, `@ts-expect-error`, or `@ts-nocheck`; use `unknown` plus narrowing where an honest precise type is not available. Do not alter runtime behavior.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/index.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/index.js"
+              }
+            ]
+          },
+          {
+            "id": "type-graph-write-modules",
+            "action": "In src/contextgraph.js, src/writegate.js, and src/memory-store.js: make each file typecheck cleanly under `npx tsc --noEmit --strict`. Add or tighten JSDoc `@param`/`@returns`/`@type`/`@typedef` annotations for previously-implicit-any parameters, object literals, destructured fields, and class properties, matching exactly what the existing code already does at runtime. Narrow any `catch (e)` unknown values with `instanceof Error` (or equivalent) before use. Do not introduce `any`, `{*}`, `@ts-ignore`, `@ts-expect-error`, or `@ts-nocheck`; use `unknown` plus a narrowing check when needed. Keep every exported symbol's name and runtime value unchanged. Do not alter control flow, defaults, or observable behavior — annotations only.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 25,
+            "target": "src/contextgraph.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "type-parse-analysis-modules",
+            "action": "In src/chunker.js, src/edges.js, src/embedder.js, src/docparse.js, src/gitsig.js, src/impact.js, and src/indexer.js: make each file typecheck cleanly under `npx tsc --noEmit --strict`. Add or tighten JSDoc `@param`/`@returns`/`@type`/`@typedef` annotations for implicit-any parameters, callback signatures (respecting strictFunctionTypes/strictBindCallApply), destructured object fields, and class properties/constructors (respecting strictPropertyInitialization), matching exactly what the existing code already does. Narrow any `catch (e)` unknown values with `instanceof Error` (or equivalent). Never use `any`, `{*}`, `@ts-ignore`, `@ts-expect-error`, or `@ts-nocheck`; use `unknown` plus narrowing where a precise honest type is unavailable. Keep every exported symbol's name and runtime value unchanged and do not alter observable behavior.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/chunker.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "type-remaining-modules",
+            "action": "In src/compress.js, src/assemble.js, src/tokenize.js, src/tsalias.js, src/langdef.js, and any files under src/grammars/**: make each file typecheck cleanly under `npx tsc --noEmit --strict`. Add or tighten JSDoc `@param`/`@returns`/`@type`/`@typedef` annotations for implicit-any parameters, object literals, and class properties, matching exactly the existing runtime behavior. Narrow any `catch (e)` unknown values with `instanceof Error` (or equivalent). Never use `any`, `{*}`, `@ts-ignore`, `@ts-expect-error`, or `@ts-nocheck`; use `unknown` plus narrowing where needed. Keep every exported symbol's name and runtime value unchanged and do not alter observable behavior.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 25,
+            "target": "src/compress.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "verify-strict-typecheck-and-suite",
+            "action": "Do not modify any files. Verify that the repository now satisfies all remediation requirements: the full strict typecheck passes, and the existing test suite (the behavior oracle) still passes in full with no test lost, confirming that all annotations added in prior steps describe existing behavior only, no suppressions (@ts-ignore/@ts-expect-error/@ts-nocheck) or `any`/`{*}` types were introduced, and that src/index.js still exports every symbol it exported before. Read src/index.js and cross-check its export list against what prior steps touched if needed, using read/grep only.",
+            "tools": [
+              "read",
+              "grep"
+            ],
+            "rounds": 15,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              },
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              }
+            ]
+          }
+        ]
+      },
+      "raw": "{\n  \"schema\": \"plan-v1\",\n  \"steps\": [\n    {\n      \"id\": \"type-store-module\",\n      \"action\": \"In src/store.js only: make the file typecheck cleanly under `npx tsc --noEmit --strict` (noImplicitAny, strictNullChecks, strictFunctionTypes, strictBindCallApply, strictPropertyInitialization, noImplicitThis, useUnknownInCatchVariables, alwaysStrict). Add or tighten JSDoc `@param`/`@returns`/`@type`/`@typedef` annotations (e.g. for Hit, GraphNode, RelatedNode and any untyped function parameters, destructured object fields, or class properties) to describe exactly what the existing runtime code already does. For any `catch (e)` block, narrow the now-`unknown` caught value with `e instanceof Error` (or equivalent) before accessing properties — never widen with `any`. Do not use `any`, the `{*}` wildcard, `@ts-ignore`, `@ts-expect-error`, or `@ts-nocheck` anywhere; prefer `unknown` plus a narrowing check when a precise type cannot be stated honestly. Do not change any runtime behavior, control flow, defaults, or exported symbol names/shapes — only add or tighten type annotations.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 30,\n      \"target\": \"src/store.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/store.js\"}\n      ]\n    },\n    {\n      \"id\": \"type-index-module\",\n      \"action\": \"In src/index.js only: make the file typecheck cleanly under `npx tsc --noEmit --strict`. This file is the public entry point (LiteCtx, ScopedView, StalePointerError classes; KINDS/WRITE_KINDS/GLOBAL consts; re-exports from store.js, tokenize.js, embedder.js, compress.js, assemble.js, memory-store.js, writegate.js, contextgraph.js). Add or tighten JSDoc annotations for method parameters, return types, class properties (including lazily-initialized ones needing an explicit `@type` at declaration site for strictPropertyInitialization), and duck-typed injectable interfaces (e.g. embedder, writeGate, writeAudit shapes) so strictFunctionTypes/strictBindCallApply are satisfied. Narrow any `catch (e)` unknown values with `instanceof Error` checks. Every symbol currently exported from this file must remain exported with the same name and same runtime value — do not delete or rename any export. Never use `any`, `{*}`, `@ts-ignore`, `@ts-expect-error`, or `@ts-nocheck`; use `unknown` plus narrowing where an honest precise type is not available. Do not alter runtime behavior.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 30,\n      \"target\": \"src/index.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/index.js\"}\n      ]\n    },\n    {\n      \"id\": \"type-graph-write-modules\",\n      \"action\": \"In src/contextgraph.js, src/writegate.js, and src/memory-store.js: make each file typecheck cleanly under `npx tsc --noEmit --strict`. Add or tighten JSDoc `@param`/`@returns`/`@type`/`@typedef` annotations for previously-implicit-any parameters, object literals, destructured fields, and class properties, matching exactly what the existing code already does at runtime. Narrow any `catch (e)` unknown values with `instanceof Error` (or equivalent) before use. Do not introduce `any`, `{*}`, `@ts-ignore`, `@ts-expect-error`, or `@ts-nocheck`; use `unknown` plus a narrowing check when needed. Keep every exported symbol's name and runtime value unchanged. Do not alter control flow, defaults, or observable behavior — annotations only.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 25,\n      \"target\": \"src/contextgraph.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"}\n      ]\n    },\n    {\n      \"id\": \"type-parse-analysis-modules\",\n      \"action\": \"In src/chunker.js, src/edges.js, src/embedder.js, src/docparse.js, src/gitsig.js, src/impact.js, and src/indexer.js: make each file typecheck cleanly under `npx tsc --noEmit --strict`. Add or tighten JSDoc `@param`/`@returns`/`@type`/`@typedef` annotations for implicit-any parameters, callback signatures (respecting strictFunctionTypes/strictBindCallAppl"
+    },
+    {
+      "label": "A2-fullgoal-scoutOFF-3",
+      "scoutOn": false,
+      "goalChars": 1910,
+      "ok": true,
+      "reds": [],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "audit-and-annotate-core",
+            "action": "Read every source file under src/** and, comparing against what `npx tsc --noEmit --strict` would flag (noImplicitAny, strictFunctionTypes, strictBindCallApply, noImplicitThis), add or correct JSDoc type annotations (@param, @returns, @type, @typedef) so each value's declared type matches exactly what the code already does at runtime. Do not use `any` or `{*}` anywhere; where the true type cannot be statically known, use `unknown` and add narrowing (typeof/instanceof/property checks) at the use site instead of widening. Do not add @ts-ignore, @ts-expect-error, or @ts-nocheck. Do not change any runtime logic, only type-level JSDoc.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 25,
+            "target": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "fix-nullability-and-optionals",
+            "action": "Read source files under src/** and resolve remaining strictNullChecks / strictPropertyInitialization / strictOptionalProperties style errors that `npx tsc --noEmit --strict` would report: mark truly optional parameters and object properties with JSDoc optional syntax, add explicit `| null` / `| undefined` unions where the code genuinely allows those values, and add guard checks before use where narrowing is required. Preserve exact existing behavior (do not add new default values, early returns, or throws that were not already present). No `any`, no `{*}`, no suppression comments.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 20,
+            "target": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "reconcile-public-exports",
+            "action": "Read the package's public entry point module and every symbol it re-exports or exports directly from src/**. Verify each symbol that was exported before this plan's changes began is still exported with the same name, and that its JSDoc type is precise enough for tsc to emit a valid .d.ts declaration for it under strict mode. If any export or type reference was narrowed incorrectly, renamed, or dropped by earlier edits, restore/fix it in src/** without using `any`, `{*}`, or suppression comments, and without changing runtime behavior.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 15,
+            "target": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "verify-typecheck-and-suite",
+            "action": "Read through src/** once more to confirm that all JSDoc type annotations are internally consistent and that no code path was altered, in preparation for the automated checks confirming that `npx tsc --noEmit --strict` exits 0 and that the existing test suite still passes with no test lost.",
+            "tools": [
+              "read"
+            ],
+            "rounds": 5,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              },
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              }
+            ]
+          },
+          {
+            "id": "verify-no-suppressions",
+            "action": "Read through src/** to confirm no @ts-ignore, @ts-expect-error, or @ts-nocheck comments were introduced or increased, and that no JSDoc type uses `any` or the `{*}` wildcard anywhere, in preparation for the automated no-suppressions check.",
+            "tools": [
+              "read"
+            ],
+            "rounds": 3,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          }
+        ]
+      },
+      "raw": "{\n  \"schema\": \"plan-v1\",\n  \"steps\": [\n    {\n      \"id\": \"audit-and-annotate-core\",\n      \"action\": \"Read every source file under src/** and, comparing against what `npx tsc --noEmit --strict` would flag (noImplicitAny, strictFunctionTypes, strictBindCallApply, noImplicitThis), add or correct JSDoc type annotations (@param, @returns, @type, @typedef) so each value's declared type matches exactly what the code already does at runtime. Do not use `any` or `{*}` anywhere; where the true type cannot be statically known, use `unknown` and add narrowing (typeof/instanceof/property checks) at the use site instead of widening. Do not add @ts-ignore, @ts-expect-error, or @ts-nocheck. Do not change any runtime logic, only type-level JSDoc.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 25,\n      \"target\": \"src/**\",\n      \"exit\": [\n        { \"type\": \"tree-changed\", \"scope\": \"src/**\" }\n      ]\n    },\n    {\n      \"id\": \"fix-nullability-and-optionals\",\n      \"action\": \"Read source files under src/** and resolve remaining strictNullChecks / strictPropertyInitialization / strictOptionalProperties style errors that `npx tsc --noEmit --strict` would report: mark truly optional parameters and object properties with JSDoc optional syntax, add explicit `| null` / `| undefined` unions where the code genuinely allows those values, and add guard checks before use where narrowing is required. Preserve exact existing behavior (do not add new default values, early returns, or throws that were not already present). No `any`, no `{*}`, no suppression comments.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 20,\n      \"target\": \"src/**\",\n      \"exit\": [\n        { \"type\": \"tree-changed\", \"scope\": \"src/**\" }\n      ]\n    },\n    {\n      \"id\": \"reconcile-public-exports\",\n      \"action\": \"Read the package's public entry point module and every symbol it re-exports or exports directly from src/**. Verify each symbol that was exported before this plan's changes began is still exported with the same name, and that its JSDoc type is precise enough for tsc to emit a valid .d.ts declaration for it under strict mode. If any export or type reference was narrowed incorrectly, renamed, or dropped by earlier edits, restore/fix it in src/** without using `any`, `{*}`, or suppression comments, and without changing runtime behavior.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 15,\n      \"target\": \"src/**\",\n      \"exit\": [\n        { \"type\": \"tree-changed\", \"scope\": \"src/**\" }\n      ]\n    },\n    {\n      \"id\": \"verify-typecheck-and-suite\",\n      \"action\": \"Read through src/** once more to confirm that all JSDoc type annotations are internally consistent and that no code path was altered, in preparation for the automated checks confirming that `npx tsc --noEmit --strict` exits 0 and that the existing test suite still passes with no test lost.\",\n      \"tools\": [\"read\"],\n      \"rounds\": 5,\n      \"exit\": [\n        { \"type\": \"check-passes\", \"name\": \"typecheck-clean\" },\n        { \"type\": \"check-passes\", \"name\": \"suite-green\" }\n      ]\n    },\n    {\n      \"id\": \"verify-no-suppressions\",\n      \"action\": \"Read through src/** to confirm no @ts-ignore, @ts-expect-error, or @ts-nocheck comments were introduced or increased, and that no JSDoc type uses `any` or the `{*}` wildcard anywhere, in preparation for the automated no-suppressions check.\",\n      \"tools\": [\"read\"],\n      \"rounds\": 3,\n      \"exit\": [\n        { \"type\": \"check-passes\", \"name\": \"no-suppressions\" }\n      ]\n    }\n  ]\n}"
+    },
+    {
+      "label": "A3-onesentence-scoutON-3",
+      "scoutOn": true,
+      "goalChars": 221,
+      "ok": true,
+      "reds": [],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "fix-store-types",
+            "action": "In src/store.js (SQLite/FTS5 store, largest module), add honest JSDoc parameter, return, and property type annotations so it satisfies `tsc --noEmit --strict` (noImplicitAny, strictFunctionTypes, strictBindCallApply, strictPropertyInitialization, useUnknownInCatchVariables). Narrow any `catch (e)` blocks with `e instanceof Error` (or similar) checks instead of casting. Do not use `any`, `as any`, `!`, or `@ts-ignore`/`@ts-expect-error`. Preserve all exported classes, functions, and typedefs (Hit, GraphNode, RelatedNode) with identical names and runtime behavior.",
+            "tools": [
+              "read",
+              "edit",
+              "grep"
+            ],
+            "rounds": 25,
+            "target": "src/store.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/store.js"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "fix-index-types",
+            "action": "In src/index.js (public entry point: LiteCtx, ScopedView, StalePointerError classes, KINDS/WRITE_KINDS/GLOBAL consts, and all re-exports from other src modules), add honest JSDoc type annotations to satisfy `tsc --noEmit --strict`. Narrow catch-block variables with `instanceof Error` checks (do not weaken the existing `_embedSafe` pattern). Ensure every currently re-exported symbol from store.js, tokenize.js, embedder.js, compress.js, assemble.js, memory-store.js, writegate.js, contextgraph.js remains re-exported unchanged. No `any`, `!`, or ts-ignore/ts-expect-error suppressions.",
+            "tools": [
+              "read",
+              "edit",
+              "grep"
+            ],
+            "rounds": 25,
+            "target": "src/index.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/index.js"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "fix-parser-group-types",
+            "action": "Add honest JSDoc type annotations (parameters, returns, catch narrowing via instanceof Error, object literal/destructuring shapes) to src/chunker.js, src/edges.js, src/embedder.js, and src/gitsig.js so each satisfies `tsc --noEmit --strict` with no implicit-any parameters. Do not change exported names, signatures' runtime semantics, or defaults. No `any`, `!`, or ts-ignore/ts-expect-error suppressions anywhere.",
+            "tools": [
+              "read",
+              "edit",
+              "grep"
+            ],
+            "rounds": 20,
+            "target": "src/chunker.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "fix-analysis-group-types",
+            "action": "Add honest JSDoc type annotations (parameters, returns, catch narrowing via instanceof Error, object/typedef shapes) to src/impact.js, src/indexer.js, src/docparse.js, and src/contextgraph.js so each satisfies `tsc --noEmit --strict` with no implicit-any parameters, including the catch blocks noted around src/docparse.js. Preserve exported symbols and behavior exactly. No `any`, `!`, or ts-ignore/ts-expect-error suppressions anywhere.",
+            "tools": [
+              "read",
+              "edit",
+              "grep"
+            ],
+            "rounds": 20,
+            "target": "src/docparse.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "fix-writegate-group-types",
+            "action": "Add honest JSDoc type annotations (parameters, returns, duck-typed interface shapes for writeGate/writeAudit callbacks, strictFunctionTypes-safe function types) to src/writegate.js, src/memory-store.js, src/compress.js, and src/assemble.js so each satisfies `tsc --noEmit --strict` with no implicit-any. Preserve exported symbols and runtime behavior exactly. No `any`, `!`, or ts-ignore/ts-expect-error suppressions anywhere.",
+            "tools": [
+              "read",
+              "edit",
+              "grep"
+            ],
+            "rounds": 20,
+            "target": "src/writegate.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "fix-lexer-group-types",
+            "action": "Add honest JSDoc type annotations to src/tokenize.js, src/tsalias.js, src/langdef.js, and any grammar helper files under src/grammars/ so each satisfies `tsc --noEmit --strict` with no implicit-any parameters and no untyped destructuring. Preserve exported symbols and runtime behavior exactly. No `any`, `!`, or ts-ignore/ts-expect-error suppressions anywhere.",
+            "tools": [
+              "read",
+              "edit",
+              "grep"
+            ],
+            "rounds": 20,
+            "target": "src/tokenize.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "verify-strict-and-tests",
+            "action": "Verify the full repository now passes `tsc --noEmit --strict` cleanly with no suppressions and that the existing test suite still passes unmodified. Do not make further edits unless the checks fail; if they fail, identify remaining error locations via search for a follow-up fix.",
+            "tools": [
+              "read",
+              "grep"
+            ],
+            "rounds": 15,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              },
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              }
+            ]
+          }
+        ]
+      },
+      "raw": "{\n  \"schema\": \"plan-v1\",\n  \"steps\": [\n    {\n      \"id\": \"fix-store-types\",\n      \"action\": \"In src/store.js (SQLite/FTS5 store, largest module), add honest JSDoc parameter, return, and property type annotations so it satisfies `tsc --noEmit --strict` (noImplicitAny, strictFunctionTypes, strictBindCallApply, strictPropertyInitialization, useUnknownInCatchVariables). Narrow any `catch (e)` blocks with `e instanceof Error` (or similar) checks instead of casting. Do not use `any`, `as any`, `!`, or `@ts-ignore`/`@ts-expect-error`. Preserve all exported classes, functions, and typedefs (Hit, GraphNode, RelatedNode) with identical names and runtime behavior.\",\n      \"tools\": [\"read\", \"edit\", \"grep\"],\n      \"rounds\": 25,\n      \"target\": \"src/store.js\",\n      \"exit\": [\n        { \"type\": \"tree-changed\", \"scope\": \"src/store.js\" },\n        { \"type\": \"check-passes\", \"name\": \"no-suppressions\" }\n      ]\n    },\n    {\n      \"id\": \"fix-index-types\",\n      \"action\": \"In src/index.js (public entry point: LiteCtx, ScopedView, StalePointerError classes, KINDS/WRITE_KINDS/GLOBAL consts, and all re-exports from other src modules), add honest JSDoc type annotations to satisfy `tsc --noEmit --strict`. Narrow catch-block variables with `instanceof Error` checks (do not weaken the existing `_embedSafe` pattern). Ensure every currently re-exported symbol from store.js, tokenize.js, embedder.js, compress.js, assemble.js, memory-store.js, writegate.js, contextgraph.js remains re-exported unchanged. No `any`, `!`, or ts-ignore/ts-expect-error suppressions.\",\n      \"tools\": [\"read\", \"edit\", \"grep\"],\n      \"rounds\": 25,\n      \"target\": \"src/index.js\",\n      \"exit\": [\n        { \"type\": \"tree-changed\", \"scope\": \"src/index.js\" },\n        { \"type\": \"check-passes\", \"name\": \"no-suppressions\" }\n      ]\n    },\n    {\n      \"id\": \"fix-parser-group-types\",\n      \"action\": \"Add honest JSDoc type annotations (parameters, returns, catch narrowing via instanceof Error, object literal/destructuring shapes) to src/chunker.js, src/edges.js, src/embedder.js, and src/gitsig.js so each satisfies `tsc --noEmit --strict` with no implicit-any parameters. Do not change exported names, signatures' runtime semantics, or defaults. No `any`, `!`, or ts-ignore/ts-expect-error suppressions anywhere.\",\n      \"tools\": [\"read\", \"edit\", \"grep\"],\n      \"rounds\": 20,\n      \"target\": \"src/chunker.js\",\n      \"exit\": [\n        { \"type\": \"tree-changed\", \"scope\": \"src/**\" },\n        { \"type\": \"check-passes\", \"name\": \"no-suppressions\" }\n      ]\n    },\n    {\n      \"id\": \"fix-analysis-group-types\",\n      \"action\": \"Add honest JSDoc type annotations (parameters, returns, catch narrowing via instanceof Error, object/typedef shapes) to src/impact.js, src/indexer.js, src/docparse.js, and src/contextgraph.js so each satisfies `tsc --noEmit --strict` with no implicit-any parameters, including the catch blocks noted around src/docparse.js. Preserve exported symbols and behavior exactly. No `any`, `!`, or ts-ignore/ts-expect-error suppressions anywhere.\",\n      \"tools\": [\"read\", \"edit\", \"grep\"],\n      \"rounds\": 20,\n      \"target\": \"src/docparse.js\",\n      \"exit\": [\n        { \"type\": \"tree-changed\", \"scope\": \"src/**\" },\n        { \"type\": \"check-passes\", \"name\": \"no-suppressions\" }\n      ]\n    },\n    {\n      \"id\": \"fix-writegate-group-types\",\n      \"action\": \"Add honest JSDoc type annotations (parameters, returns, duck-typed interface shapes for writeGate/writeAudit callbacks, strictFunctionTypes-safe function types) to src/writegate.js, src/memory-store.js, src/compress.js, and src/assemble.js so each satisfies `tsc --noEmit --strict` with no implicit-any. Preserve exported symbols and runtime behavior exactly. No `any`, `!`, or ts-ignore/ts-expect-error suppressions anywhere.\",\n      \"tools\": [\"read\", \"edit\", \"grep\"],\n      \"rounds\": 20,\n      \"target\": \"src/writegate.js\",\n      \"exit\": [\n        { \"type\": \"tree-changed\", \"scope\": \"src/**\" },\n        { \"type\": \"check-passes\", \"name\": \"no-suppressions\" }\n      ]"
+    },
+    {
+      "label": "A4-onesentence-scoutOFF-3",
+      "scoutOn": false,
+      "goalChars": 221,
+      "ok": true,
+      "reds": [],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "audit-type-errors",
+            "action": "Read through all source files under src/** and enumerate every type error that 'tsc --noEmit --strict' would report (implicit any, missing return types, null/undefined mismatches, untyped parameters, etc.), producing a clear mental map of what needs fixing before any edits are made.",
+            "tools": [
+              "read",
+              "grep",
+              "get"
+            ],
+            "rounds": 8,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              }
+            ]
+          },
+          {
+            "id": "type-annotate-source",
+            "action": "Edit source files in src/** to add explicit type annotations, fix implicit-any parameters, correct mismatched or missing types, and resolve strict-mode nullability issues so that 'tsc --noEmit --strict' reports zero errors. Do not use any suppression comments or directives, and do not alter runtime logic or public behavior.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "target": "src/**",
+            "rounds": 25,
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              }
+            ]
+          },
+          {
+            "id": "fix-test-regressions",
+            "action": "Run the test suite mentally by reviewing dependent code paths in src/** affected by the prior type annotations; adjust any implementation details in src/** that the type fixes may have altered so the existing test suite passes fully, without adding any type suppressions.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "target": "src/**",
+            "rounds": 15,
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              }
+            ]
+          },
+          {
+            "id": "final-verify",
+            "action": "Perform a final read-only verification pass confirming that 'tsc --noEmit --strict' passes cleanly, no suppression comments (e.g. @ts-ignore, @ts-expect-error, any casts used to bypass checks) exist anywhere in src/**, and the test suite remains green.",
+            "tools": [
+              "read",
+              "grep",
+              "get"
+            ],
+            "rounds": 6,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          }
+        ]
+      },
+      "raw": "{\n  \"schema\": \"plan-v1\",\n  \"steps\": [\n    {\n      \"id\": \"audit-type-errors\",\n      \"action\": \"Read through all source files under src/** and enumerate every type error that 'tsc --noEmit --strict' would report (implicit any, missing return types, null/undefined mismatches, untyped parameters, etc.), producing a clear mental map of what needs fixing before any edits are made.\",\n      \"tools\": [\"read\", \"grep\", \"get\"],\n      \"rounds\": 8,\n      \"exit\": [\n        { \"type\": \"check-passes\", \"name\": \"suite-green\" }\n      ]\n    },\n    {\n      \"id\": \"type-annotate-source\",\n      \"action\": \"Edit source files in src/** to add explicit type annotations, fix implicit-any parameters, correct mismatched or missing types, and resolve strict-mode nullability issues so that 'tsc --noEmit --strict' reports zero errors. Do not use any suppression comments or directives, and do not alter runtime logic or public behavior.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"target\": \"src/**\",\n      \"rounds\": 25,\n      \"exit\": [\n        { \"type\": \"tree-changed\", \"scope\": \"src/**\" },\n        { \"type\": \"check-passes\", \"name\": \"typecheck-clean\" }\n      ]\n    },\n    {\n      \"id\": \"fix-test-regressions\",\n      \"action\": \"Run the test suite mentally by reviewing dependent code paths in src/** affected by the prior type annotations; adjust any implementation details in src/** that the type fixes may have altered so the existing test suite passes fully, without adding any type suppressions.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"target\": \"src/**\",\n      \"rounds\": 15,\n      \"exit\": [\n        { \"type\": \"tree-changed\", \"scope\": \"src/**\" },\n        { \"type\": \"check-passes\", \"name\": \"suite-green\" }\n      ]\n    },\n    {\n      \"id\": \"final-verify\",\n      \"action\": \"Perform a final read-only verification pass confirming that 'tsc --noEmit --strict' passes cleanly, no suppression comments (e.g. @ts-ignore, @ts-expect-error, any casts used to bypass checks) exist anywhere in src/**, and the test suite remains green.\",\n      \"tools\": [\"read\", \"grep\", \"get\"],\n      \"rounds\": 6,\n      \"exit\": [\n        { \"type\": \"check-passes\", \"name\": \"typecheck-clean\" },\n        { \"type\": \"check-passes\", \"name\": \"no-suppressions\" }\n      ]\n    }\n  ]\n}"
+    },
+    {
+      "label": "T2B-materials-3",
+      "scoutOn": true,
+      "goalChars": 1910,
+      "ok": false,
+      "reds": [
+        {
+          "code": "bounds",
+          "path": "steps.0.rounds",
+          "detail": "integer 1..40 — the step bound is the Gate's maxTurns, it may tighten the shell cap, never exceed it"
+        },
+        {
+          "code": "bounds",
+          "path": "steps.1.rounds",
+          "detail": "integer 1..40 — the step bound is the Gate's maxTurns, it may tighten the shell cap, never exceed it"
+        }
+      ],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "fix-store-module",
+            "action": "In src/store.js only: add honest JSDoc @param/@returns/@type annotations to every function, method, and class field so the file satisfies `npx tsc --noEmit --strict` (noImplicitAny, strictNullChecks, strictPropertyInitialization, useUnknownInCatchVariables, strictFunctionTypes). Narrow any `catch (e)` blocks with `e instanceof Error` (or equivalent) instead of assuming a type. Never introduce `any`, `{*}`, @ts-ignore, @ts-expect-error, or @ts-nocheck; prefer `unknown` plus narrowing where the true type is not statically known. Do not change any runtime logic, defaults, branching, or exported symbol names/shapes — only add or tighten type annotations that describe existing behavior.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 45,
+            "target": "src/store.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/store.js"
+              }
+            ]
+          },
+          {
+            "id": "fix-index-entrypoint",
+            "action": "In src/index.js only: add honest JSDoc annotations to every class (LiteCtx, ScopedView, StalePointerError), method, function, and exported const (KINDS, WRITE_KINDS, GLOBAL) so the file satisfies full `--strict`. Keep every currently exported symbol (all classes, consts, and re-exports from store.js, tokenize.js, embedder.js, compress.js, assemble.js, memory-store.js, writegate.js, contextgraph.js) present and exported exactly as before. Narrow catch-block variables with instanceof checks instead of relying on implicit any. Never use `any`, `{*}`, or ts-suppression comments; use `unknown` plus narrowing when needed. No behavioral changes.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 45,
+            "target": "src/index.js",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/index.js"
+              }
+            ]
+          },
+          {
+            "id": "fix-graph-and-write-modules",
+            "action": "In src/contextgraph.js, src/writegate.js, and src/memory-store.js: add honest JSDoc parameter/return/property types (including duck-typed interfaces like writeGate/writeAudit) to satisfy full `--strict`, narrow catch-block variables, and fix any strictFunctionTypes/strictBindCallApply issues on callback-typed fields. No `any`/`{*}`/suppressions; prefer `unknown` with narrowing. Preserve all exported symbols and runtime behavior exactly.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 35,
+            "target": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "fix-embed-chunk-edge-modules",
+            "action": "In src/chunker.js, src/edges.js, src/embedder.js, src/compress.js, and src/assemble.js: add honest JSDoc types to satisfy full `--strict`, including the injectable embedder shape ({ embed(text: string): Promise<Float32Array> } or equivalent honest signature). Narrow catch blocks. No `any`/`{*}`/suppressions; use `unknown` plus narrowing where appropriate. Preserve all exports and exact runtime behavior.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 35,
+            "target": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "fix-parse-and-analysis-modules",
+            "action": "In src/docparse.js, src/gitsig.js, src/impact.js, and src/indexer.js: add honest JSDoc parameter/return/property types to satisfy full `--strict`, including the catch(e) blocks (e.g. src/docparse.js line ~308) narrowed via instanceof Error. No `any`/`{*}`/suppressions; use `unknown` plus narrowing where appropriate. Preserve all exports and exact runtime behavior.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 35,
+            "target": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "fix-lang-and-tokenize-modules",
+            "action": "In src/tokenize.js, src/tsalias.js, src/langdef.js, and any files under src/grammars/: add honest JSDoc parameter/return/property types to satisfy full `--strict`. No `any`/`{*}`/suppressions; use `unknown` plus narrowing where appropriate. Preserve all exports and exact runtime behavior.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          },
+          {
+            "id": "final-strict-and-suppression-sweep",
+            "action": "Across all of src/**, resolve any remaining `npx tsc --noEmit --strict` errors not yet addressed by prior steps, using only honest JSDoc type additions/tightenings (never `any`, `{*}`, @ts-ignore, @ts-expect-error, or @ts-nocheck; use `unknown` plus narrowing where the true type is unknown). Re-verify src/index.js still exports every symbol it exported before this work began (classes, consts, and all re-exports). Do not alter runtime behavior.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 40,
+            "target": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              }
+            ]
+          },
+          {
+            "id": "verify-no-regressions",
+            "action": "Without modifying any files, verify (by reading src/** and reasoning) that the existing test suite still passes and that no suppression comments (@ts-ignore, @ts-expect-error, @ts-nocheck) or `any`/`{*}` JSDoc types were introduced anywhere in src/**.",
+            "tools": [
+              "read",
+              "grep"
+            ],
+            "rounds": 15,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          }
+        ]
+      },
+      "raw": "{\n  \"schema\": \"plan-v1\",\n  \"steps\": [\n    {\n      \"id\": \"fix-store-module\",\n      \"action\": \"In src/store.js only: add honest JSDoc @param/@returns/@type annotations to every function, method, and class field so the file satisfies `npx tsc --noEmit --strict` (noImplicitAny, strictNullChecks, strictPropertyInitialization, useUnknownInCatchVariables, strictFunctionTypes). Narrow any `catch (e)` blocks with `e instanceof Error` (or equivalent) instead of assuming a type. Never introduce `any`, `{*}`, @ts-ignore, @ts-expect-error, or @ts-nocheck; prefer `unknown` plus narrowing where the true type is not statically known. Do not change any runtime logic, defaults, branching, or exported symbol names/shapes — only add or tighten type annotations that describe existing behavior.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 45,\n      \"target\": \"src/store.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/store.js\"}\n      ]\n    },\n    {\n      \"id\": \"fix-index-entrypoint\",\n      \"action\": \"In src/index.js only: add honest JSDoc annotations to every class (LiteCtx, ScopedView, StalePointerError), method, function, and exported const (KINDS, WRITE_KINDS, GLOBAL) so the file satisfies full `--strict`. Keep every currently exported symbol (all classes, consts, and re-exports from store.js, tokenize.js, embedder.js, compress.js, assemble.js, memory-store.js, writegate.js, contextgraph.js) present and exported exactly as before. Narrow catch-block variables with instanceof checks instead of relying on implicit any. Never use `any`, `{*}`, or ts-suppression comments; use `unknown` plus narrowing when needed. No behavioral changes.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 45,\n      \"target\": \"src/index.js\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/index.js\"}\n      ]\n    },\n    {\n      \"id\": \"fix-graph-and-write-modules\",\n      \"action\": \"In src/contextgraph.js, src/writegate.js, and src/memory-store.js: add honest JSDoc parameter/return/property types (including duck-typed interfaces like writeGate/writeAudit) to satisfy full `--strict`, narrow catch-block variables, and fix any strictFunctionTypes/strictBindCallApply issues on callback-typed fields. No `any`/`{*}`/suppressions; prefer `unknown` with narrowing. Preserve all exported symbols and runtime behavior exactly.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 35,\n      \"target\": \"src/**\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"}\n      ]\n    },\n    {\n      \"id\": \"fix-embed-chunk-edge-modules\",\n      \"action\": \"In src/chunker.js, src/edges.js, src/embedder.js, src/compress.js, and src/assemble.js: add honest JSDoc types to satisfy full `--strict`, including the injectable embedder shape ({ embed(text: string): Promise<Float32Array> } or equivalent honest signature). Narrow catch blocks. No `any`/`{*}`/suppressions; use `unknown` plus narrowing where appropriate. Preserve all exports and exact runtime behavior.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 35,\n      \"target\": \"src/**\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"}\n      ]\n    },\n    {\n      \"id\": \"fix-parse-and-analysis-modules\",\n      \"action\": \"In src/docparse.js, src/gitsig.js, src/impact.js, and src/indexer.js: add honest JSDoc parameter/return/property types to satisfy full `--strict`, including the catch(e) blocks (e.g. src/docparse.js line ~308) narrowed via instanceof Error. No `any`/`{*}`/suppressions; use `unknown` plus narrowing where appropriate. Preserve all exports and exact runtime behavior.\",\n      \"tools\": [\"read\", \"grep\", \"edit\"],\n      \"rounds\": 35,\n      \"target\": \"src/**\",\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"}\n      ]\n    },\n    {\n      \"id\": \"fix-lang-and-tokenize-modules\",\n      \"action\": \"In src/tokenize.js, src/tsalias.js, src/langdef.js, and any files under src/grammars/: add honest JSDoc parameter/return/property types to sa"
+    },
+    {
+      "label": "P1B-catalog-3",
+      "scoutOn": true,
+      "goalChars": 1910,
+      "ok": false,
+      "reds": [
+        {
+          "code": "invalid-value",
+          "path": "steps.0.tools",
+          "detail": "unknown tool(s) impact, stash — menu: read|grep|write|edit|recall|get"
+        },
+        {
+          "code": "invalid-value",
+          "path": "steps.6.tools",
+          "detail": "unknown tool(s) peek — menu: read|grep|write|edit|recall|get"
+        }
+      ],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "audit-strict-surface",
+            "action": "Scan all src/**/*.js (starting with src/index.js) to enumerate every symbol currently exported from the public entry point, and locate all implicit-any risk spots (untyped function params, object-literal properties, destructured fields), all catch(e) blocks needing unknown-narrowing, and any duck-typed callback interfaces (embedder, writeGate, writeAudit). Use impact to see what depends on index.js's exports. Stash the full inventory (export list + file-by-file hotspot notes) under key 'strict-audit' for later steps to consult.",
+            "tools": [
+              "grep",
+              "recall",
+              "impact",
+              "stash"
+            ],
+            "rounds": 14,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "fix-index-core",
+            "action": "In src/index.js, add honest JSDoc types (no `any`, no `{*}`) to close every noImplicitAny/strictFunctionTypes/strictPropertyInitialization/useUnknownInCatchVariables gap for the LiteCtx class, ScopedView class, StalePointerError class, and all catch(e) blocks (narrow with `e instanceof Error` or explicit unknown-narrowing, never widen to any). Do not change any runtime behavior, defaults, or branches. Preserve every existing export exactly (KINDS, WRITE_KINDS, GLOBAL, all classes, all re-exports).",
+            "tools": [
+              "read",
+              "grep",
+              "edit",
+              "recall"
+            ],
+            "target": "src/index.js",
+            "rounds": 30,
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/index.js"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "fix-store-module",
+            "action": "In src/store.js, add/correct JSDoc @typedef and @param/@returns annotations (Hit, GraphNode, RelatedNode, and all internal helpers/SQLite/FTS5 query builders) so the file typechecks under full --strict with noImplicitAny, strictNullChecks, strictFunctionTypes, and useUnknownInCatchVariables. Prefer `unknown` plus narrowing over any/`{*}`. Do not alter runtime logic or exported symbol shapes.",
+            "tools": [
+              "read",
+              "grep",
+              "edit",
+              "recall"
+            ],
+            "target": "src/store.js",
+            "rounds": 30,
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/store.js"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "fix-memory-write-graph-modules",
+            "action": "In src/memory-store.js, src/writegate.js, and src/contextgraph.js, add honest JSDoc parameter/return/property types to eliminate implicit-any and strictFunctionTypes/strictBindCallApply errors under full --strict, including for the duck-typed writeGate/writeAudit callback interfaces. Narrow any catch(e) blocks. Keep all exported symbols and behavior unchanged.",
+            "tools": [
+              "read",
+              "grep",
+              "edit",
+              "recall"
+            ],
+            "target": "src/memory-store.js",
+            "rounds": 26,
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "fix-embedding-assemble-modules",
+            "action": "In src/embedder.js, src/assemble.js, src/compress.js, and src/tokenize.js, add honest JSDoc types for all functions/callbacks (including the injectable embedder.embed(text) interface) to satisfy noImplicitAny and strictFunctionTypes under full --strict. Narrow catch(e) blocks with instanceof checks. No behavior changes; keep exports identical.",
+            "tools": [
+              "read",
+              "grep",
+              "edit",
+              "recall"
+            ],
+            "target": "src/embedder.js",
+            "rounds": 26,
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "fix-parsing-and-misc-modules",
+            "action": "In src/chunker.js, src/edges.js, src/gitsig.js, src/impact.js, src/indexer.js, src/docparse.js, src/tsalias.js, src/langdef.js, and src/grammars/**, add honest JSDoc annotations to close remaining noImplicitAny/useUnknownInCatchVariables/strictNullChecks errors surfaced by full --strict, especially the catch(e) blocks in docparse.js. No runtime or export changes.",
+            "tools": [
+              "read",
+              "grep",
+              "edit",
+              "recall"
+            ],
+            "target": "src/docparse.js",
+            "rounds": 28,
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "verify-export-completeness",
+            "action": "Re-read src/index.js and compare its current export list against the 'strict-audit' stash from the first step to confirm every previously-exported symbol (classes, consts, re-exports from store.js, tokenize.js, embedder.js, compress.js, assemble.js, memory-store.js, writegate.js, contextgraph.js) is still present and unchanged in shape; note any gap for correction context.",
+            "tools": [
+              "recall",
+              "peek",
+              "grep"
+            ],
+            "rounds": 10,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "final-strict-verification",
+            "action": "Confirm the repository now typechecks cleanly under `npx tsc --noEmit --strict` and that the existing test suite still passes fully, with no lost tests and no rise in suppression counts.",
+            "tools": [
+              "read",
+              "grep"
+            ],
+            "rounds": 8,
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "typecheck-clean"
+              },
+              {
+                "type": "check-passes",
+                "name": "suite-green"
+              }
+            ]
+          }
+        ]
+      },
+      "raw": "{\n  \"schema\": \"plan-v1\",\n  \"steps\": [\n    {\n      \"id\": \"audit-strict-surface\",\n      \"action\": \"Scan all src/**/*.js (starting with src/index.js) to enumerate every symbol currently exported from the public entry point, and locate all implicit-any risk spots (untyped function params, object-literal properties, destructured fields), all catch(e) blocks needing unknown-narrowing, and any duck-typed callback interfaces (embedder, writeGate, writeAudit). Use impact to see what depends on index.js's exports. Stash the full inventory (export list + file-by-file hotspot notes) under key 'strict-audit' for later steps to consult.\",\n      \"tools\": [\"grep\", \"recall\", \"impact\", \"stash\"],\n      \"rounds\": 14,\n      \"exit\": [\n        {\"type\": \"check-passes\", \"name\": \"no-suppressions\"}\n      ]\n    },\n    {\n      \"id\": \"fix-index-core\",\n      \"action\": \"In src/index.js, add honest JSDoc types (no `any`, no `{*}`) to close every noImplicitAny/strictFunctionTypes/strictPropertyInitialization/useUnknownInCatchVariables gap for the LiteCtx class, ScopedView class, StalePointerError class, and all catch(e) blocks (narrow with `e instanceof Error` or explicit unknown-narrowing, never widen to any). Do not change any runtime behavior, defaults, or branches. Preserve every existing export exactly (KINDS, WRITE_KINDS, GLOBAL, all classes, all re-exports).\",\n      \"tools\": [\"read\", \"grep\", \"edit\", \"recall\"],\n      \"target\": \"src/index.js\",\n      \"rounds\": 30,\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/index.js\"},\n        {\"type\": \"check-passes\", \"name\": \"no-suppressions\"}\n      ]\n    },\n    {\n      \"id\": \"fix-store-module\",\n      \"action\": \"In src/store.js, add/correct JSDoc @typedef and @param/@returns annotations (Hit, GraphNode, RelatedNode, and all internal helpers/SQLite/FTS5 query builders) so the file typechecks under full --strict with noImplicitAny, strictNullChecks, strictFunctionTypes, and useUnknownInCatchVariables. Prefer `unknown` plus narrowing over any/`{*}`. Do not alter runtime logic or exported symbol shapes.\",\n      \"tools\": [\"read\", \"grep\", \"edit\", \"recall\"],\n      \"target\": \"src/store.js\",\n      \"rounds\": 30,\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/store.js\"},\n        {\"type\": \"check-passes\", \"name\": \"no-suppressions\"}\n      ]\n    },\n    {\n      \"id\": \"fix-memory-write-graph-modules\",\n      \"action\": \"In src/memory-store.js, src/writegate.js, and src/contextgraph.js, add honest JSDoc parameter/return/property types to eliminate implicit-any and strictFunctionTypes/strictBindCallApply errors under full --strict, including for the duck-typed writeGate/writeAudit callback interfaces. Narrow any catch(e) blocks. Keep all exported symbols and behavior unchanged.\",\n      \"tools\": [\"read\", \"grep\", \"edit\", \"recall\"],\n      \"target\": \"src/memory-store.js\",\n      \"rounds\": 26,\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"},\n        {\"type\": \"check-passes\", \"name\": \"no-suppressions\"}\n      ]\n    },\n    {\n      \"id\": \"fix-embedding-assemble-modules\",\n      \"action\": \"In src/embedder.js, src/assemble.js, src/compress.js, and src/tokenize.js, add honest JSDoc types for all functions/callbacks (including the injectable embedder.embed(text) interface) to satisfy noImplicitAny and strictFunctionTypes under full --strict. Narrow catch(e) blocks with instanceof checks. No behavior changes; keep exports identical.\",\n      \"tools\": [\"read\", \"grep\", \"edit\", \"recall\"],\n      \"target\": \"src/embedder.js\",\n      \"rounds\": 26,\n      \"exit\": [\n        {\"type\": \"tree-changed\", \"scope\": \"src/**\"},\n        {\"type\": \"check-passes\", \"name\": \"no-suppressions\"}\n      ]\n    },\n    {\n      \"id\": \"fix-parsing-and-misc-modules\",\n      \"action\": \"In src/chunker.js, src/edges.js, src/gitsig.js, src/impact.js, src/indexer.js, src/docparse.js, src/tsalias.js, src/langdef.js, and src/grammars/**, add honest JSDoc annotations to close remaining noImplicitAny/useUnknownInCatchVariables/strictNullChecks errors su"
+    }
+  ]
+}

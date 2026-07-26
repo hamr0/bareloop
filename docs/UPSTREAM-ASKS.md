@@ -1023,7 +1023,43 @@ never run (F20) and the loop has no ratchet (F21), of which **BA-5 is the librar
 next move is plan-v1 (PRD Addendum v1.12), **not** another primitive. bareloop's own-side debt from
 the same run is tracked under *"OUR SIDE"* above.
 
-## BA-18 — `AnthropicProvider` sets no request/idle timeout, and `withRetry` has zero call sites — an idle-stalled socket hangs the caller until the OS TCP timeout (2026-07-26, job #5 TYPES screen)
+## BA-18 — RESOLVED (bare-agent 0.34.0, 2026-07-26): no request/idle timeout on the http(s) providers — and my second criterion was WRONG
+
+**Delivered same-day.** `timeoutMs` on all four http(s) providers (Anthropic, OpenAI, Gemini,
+Ollama), constructor default 600000ms / 10 min, per-call overridable, `0`/`Infinity` disable.
+It bounds socket **inactivity** (`req.setTimeout`), so a slow-but-streaming response is not
+killed — only a silent socket trips. On trip `generate()` rejects with a retryable
+`TimeoutError` (`code:'ETIMEDOUT'`, `retryable:true`), the shape `DEFAULT_RETRY_ON` already
+classifies as transient. Implemented once in `src/provider-http.js` so the four cannot drift.
+Acceptance criterion 1 met, with the disable-edge semantics tightened beyond what was asked
+(a per-call `null` inherits rather than re-enabling; `NaN`/negative falls back to the default
+rather than silently disabling the bound).
+
+**Criterion 2 was my error, and it is withdrawn.** The ask asserted *"`withRetry` has zero
+call sites in `bare-agent/src`, so `retry.js`'s `ETIMEDOUT` classification is dead code on
+this path."* Verified against the version I filed against (0.33.1): **`withRetry` does not
+exist at all** — zero matches anywhere in the source — and the real primitive, `Retry.call()`,
+**was already wired around `provider.generate`** at `loop.js:733`
+(`this.retry ? await this.retry.call(generate) : await generate()`), reachable via
+`Loop({ retry })`. The retry seam reached the transient table the whole time. It never fired
+only because nothing ever THREW `ETIMEDOUT` — there was no timeout. **Part 1 was the entire
+bug; part 2 was noise I added.**
+
+**The error class, named so it does not repeat.** I grepped for a symbol I had misremembered,
+got no hits, and read that emptiness as "the mechanism is absent." *A grep for a name that
+does not exist returns exactly what a missing mechanism returns.* The standing rule (read the
+source before filing) was followed in letter — I did read `retry.js` — and failed in substance,
+because I searched for the wrong noun instead of tracing what actually wraps `generate`. This
+is the third correction to a filed ask (BA-2 misfiled, LC-1 redrafted) and the second to this
+one (the "40-56s between every turn" frequency claim was corrected by F57).
+
+**Consumed:** bareloop moves 0.33.1 → 0.34.0; the harness-side stale-socket guard in
+`scripts/run-screen-types.mjs` and `scripts/probe-materials.mjs` is superseded by `timeoutMs`
+and comes out at consumption.
+
+<details><summary>Original ask as filed (2026-07-26, job #5 TYPES screen)</summary>
+
+### BA-18 — `AnthropicProvider` sets no request/idle timeout, and `withRetry` has zero call sites — an idle-stalled socket hangs the caller until the OS TCP timeout (2026-07-26, job #5 TYPES screen)
 
 **Symptom, observed 3/3 times it could occur.** A job whose signed checks idle the connection
 40–56s between every LLM turn. In each of three runs, the last worker round lands normally,
@@ -1068,6 +1104,8 @@ earlier draft of this ask said the checks idle the connection "40-56s between ev
 the archive says median **3.8s**, max **48.6s** on this job. The idle aggravator is the TAIL, not
 the typical round; job #4's **561s** maximum check is the stronger example. The premise holds, the
 frequency claim did not, and it is corrected here before the ask is implemented.
+
+</details>
 
 **Related.** BA-14 (2026-07-16) is the same family one layer down — a stale pooled keep-alive
 socket surfacing as `EPIPE`, fixed by widening the retry predicate. BA-18 is the case that

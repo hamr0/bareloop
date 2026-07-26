@@ -112,9 +112,13 @@ async function mkWorker({ granted, rounds, label }) {
   };
   const { policy, onLlmResult } = wireGate(gate);
   const loop = new Loop({ provider, system: PERSONA_TOOLS + (ctx.length ? RETRIEVAL_STRATEGY : ''), policy, onLlmResult: meter });
-  return async (prompt, defs = toolDefs) => loop.run(
+  const ask = async (prompt, defs = toolDefs) => loop.run(
     [{ role: 'user', content: prompt }], defs, { cacheMessages: true, maxTokens: 32000 },
   );
+  ask.from = async (msgs, prompt) => loop.run(
+    [...msgs, { role: 'user', content: prompt }], [], { cacheMessages: true, maxTokens: 32000 },
+  );
+  return ask;
 }
 
 // ── phase 0: ONE scout, cached — the constant every arm shares
@@ -122,12 +126,21 @@ async function getScout() {
   if (existsSync(SCOUT_CACHE)) return readFileSync(SCOUT_CACHE, 'utf8');
   assertBudget('scout');
   const ask = await mkWorker({ granted: ['read', 'grep', 'recall', 'get'], rounds: SCOUT_ROUNDS, label: 'scout' });
+  const askFrom = ask.from;
   const r = await ask([
     'Survey this repository READ-ONLY for the goal below. Report: the relevant layout, the key files and symbols, and your best hypothesis about what the work requires. Be concise — your notes brief a planner that cannot see the repository.',
     `Repository root (absolute): ${WORKDIR}\nEvery path you pass to a tool MUST be absolute and inside this root.`,
     `Goal:\n${job.goal}`,
   ].join('\n\n'));
-  const blob = (r.text ?? '').slice(0, 8000);
+  let blob = (r.text ?? '').slice(0, 8000);
+  // F59 mirror: the bound halts the scout mid-tool-use, so reserve a TOOLLESS round on
+  // the same conversation. Same fix as src/planrun.js (5dd3f16) — text is the only
+  // possible output when no tools are offered.
+  if (Buffer.byteLength(blob) < 200 && Array.isArray(r.msgs) && r.msgs.length) {
+    console.log(`  scout truncated at ${Buffer.byteLength(blob)}B — spending the reserved summary round`);
+    const s2 = await askFrom(r.msgs, 'You are out of exploration turns. Write your survey NOW, from what you have already read: the relevant layout, the key files and symbols, and your best hypothesis about what the work requires. Text only.');
+    if (Buffer.byteLength(s2.text ?? '') > Buffer.byteLength(blob)) blob = (s2.text ?? '').slice(0, 8000);
+  }
   mkdirSync(SCOUT_CACHE.replace(/\/[^/]+$/, ''), { recursive: true });
   writeFileSync(SCOUT_CACHE, blob);
   return blob;
@@ -153,16 +166,16 @@ The verbs available to a step come from four families:
 
 const ONE_SENTENCE = `Repository root: ${WORKDIR}. Make this JavaScript library pass "tsc --noEmit --strict" with no type errors, without breaking its test suite and without suppressing anything.`;
 
-async function draft(spec, extra, label) {
+async function draft(spec, extra, label, scout = SCOUT) {
   assertBudget(label);
   const ask = await mkWorker({ granted: [], rounds: 2, label });
-  const prompt = planPrompt(spec, SCOUT, null, MAX_STEP_ROUNDS, null) + (extra ?? '');
+  const prompt = planPrompt(spec, scout, null, MAX_STEP_ROUNDS, null) + (extra ?? '');
   const r = await ask(prompt, []);
   const code = extractArtifact(r.text).code ?? '';
   const pv = validatePlan(code, { job: spec, maxStepRounds: MAX_STEP_ROUNDS });
   let plan = null;
   try { plan = JSON.parse(code); } catch { /* unparseable — recorded as such */ }
-  return { label, ok: pv.ok, reds: pv.reds, plan, raw: code.slice(0, 4000) };
+  return { label, scoutOn: scout !== '', goalChars: spec.goal.length, ok: pv.ok, reds: pv.reds, plan, raw: code.slice(0, 4000) };
 }
 
 const SCOUT = await getScout();
@@ -172,10 +185,16 @@ const TWELVE = ['read', 'grep', 'write', 'edit', 'recall', 'get', 'impact', 'ass
 const rows = [];
 for (let i = 0; i < N; i++) {
   // CONTROL is shared by T2-A and P1-A — an identical condition, run once (stated in the report)
-  rows.push(await draft(job, null, `control-${i + 1}`));
+  const short = { ...job, goal: ONE_SENTENCE };
+  // S0 2x2 (amendment 1): goal richness x scout presence. A3/A4 is the sharp cell —
+  // with a one-sentence goal the survey is the ONLY possible source of repo facts.
+  rows.push(await draft(job, null, `A1-fullgoal-scoutON-${i + 1}`));
+  rows.push(await draft(job, null, `A2-fullgoal-scoutOFF-${i + 1}`, ''));
+  rows.push(await draft(short, null, `A3-onesentence-scoutON-${i + 1}`));
+  rows.push(await draft(short, null, `A4-onesentence-scoutOFF-${i + 1}`, ''));
+  // T2 and P1 reuse A1 as their control (identical condition, run once)
   rows.push(await draft(job, MATERIALS, `T2B-materials-${i + 1}`));
   rows.push(await draft({ ...job, tools: TWELVE }, CATALOG, `P1B-catalog-${i + 1}`));
-  rows.push(await draft({ ...job, goal: ONE_SENTENCE }, null, `U0B-onesentence-${i + 1}`));
   console.log(`round ${i + 1}/${N} done | calls ${calls} | spent $${spent.toFixed(4)}`);
 }
 

@@ -3205,3 +3205,106 @@ Which one ships is a design call, and the probe driver works around it harness-s
 finding: `0 bytes` could have been dismissed as a quirk of a probe harness in thirty seconds.
 The rule that says *debug the test before believing it* paid for itself, and then paid again —
 the harness was fine and the product was not.
+
+## F60 — the materials probe set: the scout DOES transmit (do not delete it), a materials budget makes the planner allocate ~60% MORE, and 2 of 3 planners reach for verbs they were never offered before
+
+**Status: minted 2026-07-26. $1.04, 18 drafts, 25 calls, 0 casualties. Applies
+`docs/02-experiments/MATERIALS-PREREG.md` + amendment 1, both frozen before any number.
+Draft-only: every claim below is about the PLAN, never an outcome.**
+
+### S0 — the scout question, and it goes against the hypothesis
+
+hamr's instruction was *"confirm without notes and if it doesn't make a diff then remove it"* —
+a reasonable read of F59, where 3 of 5 archived greens had a zero-byte scout. The 2×2 refutes
+it. Frozen primary metric: repository specifics (path/symbol tokens) appearing in the plan but
+**absent from that arm's goal text** — the operational test of transmission.
+
+| arm | goal | scout | specifics absent from goal (n=3) |
+|---|---|---|---|
+| A1 | full (1,910 ch) | ON | 22 · 32 · 31 |
+| A2 | full | OFF | 5 · 4 · 2 |
+| A3 | one sentence | ON | 23 · 31 · 32 |
+| A4 | one sentence | OFF | 2 · 2 · 1 |
+
+**A3 exceeds A4 roughly fifteen-fold**, and the character of the tokens differs, not just the
+count: scout-ON plans name real files (`src/assemble.js`, `src/docparse.js`); scout-OFF plans
+produce generic guesses (`null/undefined`, `core/entry-point`, `package.json`). The frozen rule
+for A3 ≫ A4 reads **the survey transmits; the phase stays** — so the delete recommendation does
+NOT fire, and the F59 fix is vindicated rather than made moot. The 2×2 earned its keep: A2-vs-A1
+alone (5·4·2 vs 22·32·31) would have shown the same direction, but only the one-sentence cell
+proves the scout is the *source* rather than a redundant echo of a rich goal.
+
+**Why the archive hinted otherwise.** "Greens happened with a blind planner" is true and is not
+evidence the scout is inert — it is an uncontrolled comparison across different jobs and plants.
+$1.04 of controlled contrast overturned it. **A hypothesis drawn from an observational pattern
+survived exactly as long as it took to run the arm.**
+
+**Unasked-for second result: the scout roughly TRIPLES the plan's declared work.**
+
+| | steps (mean) | declared rounds (mean) |
+|---|---|---|
+| A1 scout ON | 6.7 | **161** |
+| A2 scout OFF | 5.0 | **91** |
+| A3 scout ON | 7.3 | **172** |
+| A4 scout OFF | 4.3 | **66** |
+
+A blind planner writes a smaller, cheaper, vaguer plan. This re-prices F59: the 15 blind runs
+were not merely under-informed, they were **under-planned** — and the phase that costs ~12%
+(F55) governs an allocation several times its own size.
+
+### T2 — the allocation responds to materials, and it expands toward the bound
+
+Frozen rule: identical plans at n=3 ⇒ the inform arm STOPS. They are not identical.
+T2B (given $10, 45 minutes, and F57's per-round rate) drafted **8.0 steps / 262 rounds** against
+A1's 6.7 / 161 — **+62% allocation**. At F57's measured rate that is ~$4.97 and ~23 minutes of
+model time: it expanded toward the stated ceiling while staying inside it.
+
+**This is hamr's premise, observed:** *"give it open-ended and it exhausts it; give it bounds and
+it uses it all."* With no budget stated the planner asked for 161 rounds; handed a budget it
+asked for 262. The arm proceeds to design.
+
+**And the per-step cap is doing real work.** T2B's validator reds were `bounds:steps.N.rounds` —
+told it had materials, it wrote individual steps exceeding `maxStepRounds`. The outer ceiling
+caught what the stated budget encouraged, which is the arbiter behaving exactly as designed.
+
+### P1 — 2 of 3 reach for the wider palette
+
+Frozen rule: 0 of 3 ⇒ re-scope P from "widen the menu" to "why is it declined". **Not met** —
+so P proceeds as a menu widening.
+
+- draft 1 → `impact` · draft 2 → nothing new · draft 3 → `impact`, `peek`, `stash`
+
+It reaches into **Select** and **Isolate**, and never into **Compress**. Contrast with job #5,
+where `recall`/`get` were granted and never used: offered a *named, described* catalog the
+planner does grant itself new verbs. (These drafts red at the validator by construction —
+`TOOL_MENU` is still the hard six — which was stated in advance and is not a result.)
+
+### U0(b) — one sentence is viable
+
+Frozen rule: ≥2/3 validator-green ⇒ one-sentence input is viable for U. **A3 scored 2/3.** It
+was also no worse than the 1,910-character goal (A1: 1/3) — recorded, not a rate claim at n=3.
+So U can run on a sentence a user would actually say.
+
+### The incidental finding with the best cost/benefit: one grammar rule drives 72% of all reds
+
+13 of the 18 validator reds are a single class — `invalid-value` on a `tree-changed` scope — and
+every instance is the same mistake:
+
+```
+the agent wrote:  {"type":"tree-changed","scope":"src/*.js"}
+the validator wants: a contained scope (trailing /** or /* only)
+```
+
+`src/*.js` is a natural and sensible scope the grammar cannot express, and **the plan prompt
+never states the rule** — it says only *"a scope inside ["src/**"]"*. Each red costs a redraft
+call. Naming the constraint in the prompt is a one-line change that would remove ~72% of
+drafting friction; widening the grammar is the alternative and is the riskier direction
+(`globToPrefix` containment is load-bearing, and its normalization order is already noted as
+high-risk). **Recommend the prompt line, not the grammar.**
+
+### Limits, stated before they can be forgotten
+
+n=3 supports existence and direction, never a rate. **Every result here is on the PLAN surface**
+— none shows that a scout, a materials budget, or a wider palette improves an OUTCOME. In
+particular "the scout transmits" is not "the scout helps"; it is the weaker claim the frozen
+asymmetry allowed, and the stronger one needs an outcome battery. One patient, one genre.
