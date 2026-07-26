@@ -26,10 +26,13 @@ const JOB = {
   writeScope: ['tests/**'],
   goal: 'Write a pytest suite for the orchestrator that kills at least 45% of the frozen mutant set.',
   verdictType: 'green',
-  close: { type: 'predicate', cmd: 'python grade.py', expect: 0 },
-  checks: [
+  // the staged close (PRD v1.28): the inspection IS the list, and the agent's
+  // rulers derive from it — `clean-run` and `form-floor` are stages of the same
+  // close whose last stage renders the verdict
+  close: [
     { name: 'clean-run', cmd: 'python -m pytest -ra tests/test_orchestrator.py', expect: 0, gapKeep: '^FAILED' },
     { name: 'form-floor', cmd: 'python check_form.py', expect: 0 },
+    { name: 'verdict', cmd: 'python grade.py', expect: 0 },
   ],
   tools: ['read', 'grep', 'write', 'edit', 'recall', 'get'],
   escalation: { mode: 'decision-ready' },
@@ -140,9 +143,11 @@ test('a job with NO tools field ceilings at the full menu (validateJob permits o
   assert.deepEqual(r.reds, []);
 });
 
-test('a job with NO checks menu makes every check-passes a check-unknown', () => {
+test('a close whose only stage is HIDDEN offers no menu at all, so every check-passes is a check-unknown (a partial or empty menu is acceptable, never a failure — PRD v1.28)', () => {
   const noChecks = clone(JOB);
-  delete noChecks.checks;
+  // one stage, marked as a precondition: it renders the verdict but is not a
+  // ruler the agent may borrow mid-build
+  noChecks.close = [{ name: 'verdict', cmd: 'python grade.py', expect: 0, offer: false }];
   const r = validatePlan(PLAN, { job: noChecks });
   assert.equal(r.ok, false);
   assert.ok(r.reds.some((x) => x.code === 'check-unknown' && x.path === 'steps.1.exit.1'),

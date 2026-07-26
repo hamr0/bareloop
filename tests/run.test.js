@@ -57,8 +57,9 @@ const planJob = () => ({
   writeScope: ['tests/**'],
   goal: 'Write tests/test_x.mjs with an ok assertion.',
   verdictType: 'green',
-  close: { type: 'predicate', cmd: 'node close.mjs', expect: 0 },
-  checks: [{ name: 'clean-run', cmd: 'node check.mjs', expect: 0, gapKeep: '^FAILED' }],
+  // the staged close (PRD v1.28): ONE list of named stages, and the check menu
+  // derives from it — `clean-run` is a piece of the close, not a copy beside it
+  close: [{ name: 'clean-run', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' }],
   tools: ['read', 'write'],
   escalation: { mode: 'decision-ready' },
 });

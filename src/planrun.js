@@ -19,12 +19,12 @@ import { createHash } from 'node:crypto';
 import { join, resolve, relative } from 'node:path';
 import { Gate, redact } from 'bareguard';
 import { LiteCtx } from 'litectx';
-import { runClose, ralph, CLOSE_FAULTS } from './ralph.js';
+import { runClose, runStages, ralph, CLOSE_FAULTS } from './ralph.js';
 import { validatePlan, legalScopes } from './plan.js';
 import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU } from './plan.js';
 import { snapshotScope, evalExits } from './exits.js';
 import { createRoot } from './root.js';
-import { TOOL_MENU } from './job.js';
+import { TOOL_MENU, checkMenu } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, RETRIEVAL_STRATEGY, EDIT_STRATEGY } from './tools.js';
 import { globToPrefix, SECRET_PATTERNS } from './validate.js';
 import { extractArtifact } from './text.js';
@@ -137,7 +137,7 @@ function materialsBlock(m) {
 export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials) {
   const scopeMenu = Array.isArray(scopes) && scopes.length ? scopes : legalScopes(job.writeScope ?? []);
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
-  const checkNames = (job.checks ?? []).map((/** @type {any} */ c) => c.name);
+  const checkNames = checkMenu(job.close).map((m) => m.name);
   const doc = `DRAFT-PLAN
 You are planning how to accomplish a goal in a repository, as an ordered list of bounded
 steps (schema "plan-v1"). The plan is pure declarative JSON validated by a strict schema;
@@ -237,10 +237,16 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
   // hard-class), and a gold close carries no `cmd`; running `close.cmd.trim()`
   // on it would TypeError out of runJob with NO job-end (the spine would dangle,
   // no spend recorded). Refuse a non-predicate close cleanly, before any tokens.
-  if (job.close.type !== 'predicate') {
+  // A STAGED close (PRD v1.28) is an ordered list of command stages and is the
+  // go-forward shape; the object form survives only for the declared-but-locked
+  // verdict classes (gold/rubric/hitl), which name no command to run.
+  const stagedClose = Array.isArray(job.close)
+    ? job.close
+    : (job.close.type === 'predicate' ? [{ name: 'close', cmd: job.close.cmd, expect: job.close.expect, judged: job.close.judged, gapKeep: job.close.gapKeep }] : null);
+  if (!stagedClose) {
     emit('escalation', {
       category: 'close-unsupported', decisionReady: true,
-      decision: `The job's close is a ${job.close.type} close — the plan flow executes a predicate close only (a command whose exit code is truth).`,
+      decision: `The job's close is a ${job.close.type} close — the plan flow executes commands whose exit codes are truth (a staged close, or a single predicate).`,
       options: ['restate the close as a predicate', 'wait for the verdict-classes rung'],
     });
     return 'close-unsupported';
@@ -316,12 +322,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
   });
   const WALL_OPTIONS = ['raise maxWallMs and rerun (resume-to-cap: the stop is the checkpoint)', 'abandon the run'];
 
-  const closeArgv = job.close.cmd.trim().split(/\s+/);
-  const closeOpts = { timeoutMs: closeTimeoutMs, cwd: workdir, expect: job.close.expect, judged: job.close.judged, gapKeep: job.close.gapKeep };
+  const closeOpts = { timeoutMs: closeTimeoutMs, cwd: workdir };
+  /** the close, as ONE verdict: every stage in order, first red wins */
+  const judgeClose = () => runStages(stagedClose, scrub, closeOpts);
 
   // ── 0a. close precheck (close-first, F17): already-green is a DISTINCT
   // record, zero tokens; a forbidden-zone verdict escalates before any spend
-  const pre = runClose(closeArgv, scrub, closeOpts);
+  const pre = judgeClose();
   emit('close-precheck', { ...pre });
   if (pre.verdict === 'satisfied') return 'already-green';
   const preFault = Object.hasOwn(CLOSE_FAULTS, pre.verdict) ? CLOSE_FAULTS[pre.verdict] : undefined;
@@ -330,16 +337,25 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
     return 'close-red';
   }
 
-  // ── 0b. checks preflight ($0, deterministic): every SIGNED check runs once
-  // before tokens — an unrunnable check would fault mid-plan after real spend
-  // (a frozen rule without a wired detector is prose; here the detector runs
-  // first). Red and green are both fine: checks decide nothing.
-  for (const c of job.checks ?? []) {
-    const v = runClose(c.cmd.trim().split(/\s+/), scrub, { timeoutMs: closeTimeoutMs, cwd: workdir, expect: c.expect, judged: c.judged, gapKeep: c.gapKeep });
-    emit('check-preflight', { name: c.name, verdict: v.verdict });
+  // ── 0b. check preflight ($0, deterministic): every OFFERABLE stage runs once
+  // before tokens — an unrunnable ruler would fault mid-plan after real spend (a
+  // frozen rule without a wired detector is prose; here the detector runs
+  // first). Red and green are both fine: checks decide nothing and mint nothing.
+  // The menu is DERIVED from the close (PRD v1.28) — nobody authored it, so the
+  // ruler and the real inspection cannot drift apart.
+  const menu = checkMenu(stagedClose);
+  emit('check-menu', {
+    offered: menu.map((m) => m.name),
+    ...(menu.length < stagedClose.length
+      ? { hidden: stagedClose.filter((s2) => s2.offer === false).map((s2) => s2.name), meaning: 'a stage that cannot stand alone as a ruler (a precondition) is not offered — a partial menu is acceptable, never a failure' }
+      : {}),
+  });
+  for (const m of menu) {
+    const v = runStages(m.run, scrub, closeOpts);
+    emit('check-preflight', { name: m.name, verdict: v.verdict, ...(m.run.length > 1 ? { chain: m.run.map((s2) => s2.name) } : {}) });
     const f = Object.hasOwn(CLOSE_FAULTS, v.verdict) ? CLOSE_FAULTS[v.verdict] : undefined;
     if (f) {
-      emit('escalation', { category: f.category, decisionReady: true, decision: `Signed check "${c.name}" rendered no judgment at preflight — every plan referencing it would fault mid-run. ${f.decision}`, options: f.options, detail: `${c.name}: ${v.detail ?? ''}` });
+      emit('escalation', { category: f.category, decisionReady: true, decision: `Close stage "${m.name}" rendered no judgment at preflight — every plan referencing it would fault mid-run. ${f.decision}`, options: f.options, detail: `${m.name}: ${v.detail ?? ''}` });
       return 'check-red';
     }
   }
@@ -348,7 +364,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
   const fencePrefixes = job.writeScope.map((/** @type {string} */ g) => resolve(workdir, globToPrefix(g)));
   const auditPath = join(workdir, 'gate-audit.jsonl');
-  const checksByName = new Map((job.checks ?? []).map((/** @type {any} */ c) => [c.name, c]));
+  const chainByName = new Map(menu.map((m) => [m.name, m.run]));
   // Choose-don't-describe (§4): the offered `tree-changed` scopes, enumerated from
   // the signed fence plus the directories that actually exist beneath it. ONE menu
   // object feeds both the drafting prompt and the validator, so what was offered
@@ -379,10 +395,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
    * per signed check; a forbidden-zone verdict rides out as `fault` by name so
    * the micro-loop escalates (or F32-routes a crash) instead of faking a gap */
   const runCheck = async (/** @type {string} */ name) => {
-    const c = checksByName.get(name);
-    if (!c) return { pass: false, fault: 'failed', gap: `no signed check named "${name}"` };
-    const v = runClose(c.cmd.trim().split(/\s+/), scrub, { timeoutMs: closeTimeoutMs, cwd: workdir, expect: c.expect, judged: c.judged, gapKeep: c.gapKeep });
-    emit('check-run', { name, verdict: v.verdict, ...(v.exitCode !== undefined ? { exitCode: v.exitCode } : {}) });
+    const chain = chainByName.get(name);
+    if (!chain) return { pass: false, fault: 'failed', gap: `no offered close stage named "${name}"` };
+    const v = runStages(chain, scrub, closeOpts);
+    emit('check-run', { name, verdict: v.verdict, ...(v.stage && v.stage !== name ? { stage: v.stage } : {}), ...(v.exitCode !== undefined ? { exitCode: v.exitCode } : {}) });
     if (v.verdict === 'satisfied') return { pass: true };
     if (v.verdict === 'needs_revision') return { pass: false, gap: v.gap };
     return { pass: false, fault: v.verdict, gap: v.detail };
@@ -1044,7 +1060,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
   // ── 4. THE CLOSE — the operator's signed command, the only truth. Red →
   // the gap feeds ONE bounded fix loop judged by the REAL close (v1.12 §4);
   // still red → the escalation ralph already emitted stands.
-  const post = runClose(closeArgv, scrub, closeOpts);
+  const post = judgeClose();
   emit('outer-close', { ...post });
   if (post.verdict === 'satisfied') {
     planExecuted();
@@ -1067,7 +1083,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
     // `^`-anchored pattern matches, unlike the exec steps' exit-eval gap). Same
     // native exclusion (no onToolResult seam ⇒ the tee cannot settle).
     const fixRoot = layerRoot && !native
-      ? createRoot({ gapKeep: job.close.gapKeep, redact: scrub, writesInformative: true })
+      ? createRoot({ gapKeep: stagedClose.find((s2) => s2.gapKeep)?.gapKeep, redact: scrub, writesInformative: true })
       : null;
     const w = await mkWorker({ granted: ceiling, phase: 'fix', attemptRounds: maxStepRounds, attempts: capRuns, writable: true, root: fixRoot });
     /** @param {number} iteration @param {string} [gap] */
@@ -1085,9 +1101,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
       ].filter(Boolean).join('\n\n'));
     };
     fixOutcome = await ralph({
-      middle, close: closeArgv, capRuns, emit: emitL, redact: scrub,
-      closeTimeoutMs, cwd: workdir, expect: job.close.expect, judged: job.close.judged, gapKeep: job.close.gapKeep,
-      workerWrites: w.workerWrites,
+      // the staged close rides in as the JUDGE seam (one verdict, every stage in
+      // order) — ralph's single-command path stays exactly what it was
+      middle, judge: async () => judgeClose(), capRuns, emit: emitL, redact: scrub,
+      closeTimeoutMs, cwd: workdir, workerWrites: w.workerWrites,
     });
   } catch (e) {
     planExecuted();

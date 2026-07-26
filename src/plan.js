@@ -12,13 +12,13 @@
 //   exits from the closed menu only        → `exit-illegal` (arbiter
 //     inexpressibility: an exit is declarative data the shell evaluates with
 //     its own fixed code — `run` cannot be laundered through it)
-//   check references resolve against the SIGNED checks menu → `check-unknown`
+//   check references resolve against the menu DERIVED from the signed close → `check-unknown`
 //     (decision 1: a check the spec doesn't sign does not exist)
 //
 // Like its siblings (validate.js, job.js) it never throws on JSON text or
 // plain parsed data; every failure is a named {code, path, detail} red.
 
-import { TOOL_MENU, LOCKED_TOOLS } from './job.js';
+import { TOOL_MENU, LOCKED_TOOLS, checkMenu } from './job.js';
 import { globToPrefix, scopeContained, isObj, isNonEmptyString, sweepSecretLiterals } from './validate.js';
 
 /** the closed exit menu (PRD v1.12 §3 + decision 1's `check-passes`): the
@@ -215,7 +215,11 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes } = {}) {
   const ceiling = Array.isArray(spec.tools) ? spec.tools : [...TOOL_MENU];
   const fence = spec.writeScope.map(globToPrefix);
   const insideFence = (/** @type {string} */ p) => fence.some((f) => p === f || p.startsWith(f + '/'));
-  const checkNames = Array.isArray(spec.checks) ? spec.checks.map((/** @type {any} */ c) => c?.name).filter(isNonEmptyString) : [];
+  // The check menu DERIVES from the close's stages (PRD v1.28) — the agent
+  // references a piece of the operator's own inspection, never a ruler someone
+  // hand-carved beside it. One derivation, shared with the runner, so what the
+  // prompt offers and what the validator accepts cannot drift apart.
+  const checkNames = checkMenu(spec.close).map((m) => m.name);
   // The offered scope menu. A caller-supplied menu must be the same one the
   // prompt enumerated; with none, derive from the signed fence — fail-CLOSED,
   // so omitting the option narrows the agent's choices and never widens them.
@@ -342,7 +346,7 @@ function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep, s
       else if (!checkNames.includes(e.name)) {
         // decision 1: a check the spec doesn't sign DOES NOT EXIST — and the
         // detail names the signed menu so the replan can aim, not guess
-        red('check-unknown', eAt, `"${e.name}" is not a signed check — the agent references checks, never authors them; signed menu: [${checkNames.join(', ') || 'none'}]`);
+        red('check-unknown', eAt, `"${e.name}" is not an offered close stage — the agent references stages of the operator's close, never authors a ruler; offered: [${checkNames.join(', ') || 'none'}]`);
       }
     } else if (e.type === 'tree-changed') {
       hasTreeChanged = true;

@@ -345,6 +345,86 @@ function predicateBody(o, at, red) {
  * @param {(code: string, path: string, detail?: string) => void} red
  * @param {Red[]} reds direct access for structured request-reds
  */
+/**
+ * The staged close (PRD v1.28) — the close is an ORDERED LIST of named stages,
+ * and the check menu DERIVES from it. The principle: *the user authors the
+ * destination, never the road.* A user who cannot describe a workflow can still
+ * say what done looks like, and everything downstream of that is derived — which
+ * is why `checks[]` no longer exists as a field (hamr: *"there shouldn't be user
+ * authoring anywhere, that defies the point of bareloop"*).
+ *
+ * Two stage classes cannot be handed to the agent as a mid-build ruler, and F58
+ * measured both against a real close:
+ *  - a PRECONDITION ("the seed commit exists") is not a ruler for the work; run
+ *    as a check it passes instantly and teaches nothing. It sets `offer: false`.
+ *  - a stage that reads what an EARLIER stage built ("the public API matches the
+ *    emitted declarations") reds on its own for a reason that has nothing to do
+ *    with the worker's edit. It names `needs`, and picking it runs that chain first.
+ * Everything else is offerable: derivation gave job #5 SEVEN rulers where the
+ * operator had hand-carved three (F58) — removing the operator does not cost the
+ * agent rulers, it hands it more.
+ *
+ * @param {any[]} close the validated stage list
+ * @returns {{name: string, run: any[]}[]} offerable stages, each with the ordered
+ *   chain that must run for it (prerequisites first, the stage itself last)
+ */
+export function checkMenu(close) {
+  if (!Array.isArray(close)) return [];
+  const byName = new Map(close.filter((s) => isObj(s) && isNonEmptyString(s.name)).map((s) => [s.name, s]));
+  return close
+    .filter((s) => isObj(s) && s.offer !== false && isNonEmptyString(s.name))
+    .map((s) => ({
+      name: s.name,
+      run: [...(Array.isArray(s.needs) ? s.needs : []).map((n) => byName.get(n)).filter(Boolean), s],
+    }));
+}
+
+/** the fields a close STAGE may carry — anything else is a smuggle channel */
+const STAGE_FIELDS = ['name', 'cmd', 'expect', 'judged', 'gapKeep', 'offer', 'needs'];
+
+/**
+ * Validate the staged close. Every stage is a predicate BODY under the same
+ * rules the single close object has always used (one contract, never a second
+ * copy — the F9 two-transforms class applied to the arbiter itself).
+ * @param {any[]} stages
+ * @param {(code: string, path: string, detail?: string) => void} red
+ */
+function validateStagedClose(stages, red) {
+  if (stages.length === 0) {
+    red('missing-required', 'close', 'a non-empty ordered list of named stages — a job with nothing to run is ungated spend');
+    return;
+  }
+  const seen = new Set();
+  stages.forEach((s, i) => {
+    const at = `close.${i}`;
+    if (!isObj(s)) { red('invalid-value', at, 'a stage is an object { name, cmd, expect, ... }'); return; }
+    for (const key of Object.keys(s)) {
+      if (!STAGE_FIELDS.includes(key)) red('unknown-field', `${at}.${key}`, `not a stage field (script bodies, close types and minting claims land here); fields: ${STAGE_FIELDS.join(', ')}`);
+    }
+    if (!isNonEmptyString(s.name) || !SLUG_RE.test(s.name)) red('invalid-value', `${at}.name`, 'kebab-case slug — the plan references stages by name (check-passes(name))');
+    else if (seen.has(s.name)) red('duplicate-id', `${at}.name`, `"${s.name}" is already a stage name — check-passes(name) would be ambiguous`);
+    else seen.add(s.name);
+    // every stage is a COMMAND whose exit code is truth: a rubric or hitl stage
+    // is inexpressible here by construction, which is the hierarchy enforced by
+    // shape rather than by a check
+    predicateBody(s, at, red);
+    if (s.offer !== undefined && typeof s.offer !== 'boolean') {
+      red('invalid-value', `${at}.offer`, 'boolean — omit it (the default) unless the stage cannot stand alone as a ruler');
+    }
+    if (s.needs !== undefined) {
+      const earlier = new Set(stages.slice(0, i).filter((p) => isObj(p) && isNonEmptyString(p.name)).map((p) => p.name));
+      if (!Array.isArray(s.needs) || s.needs.length === 0 || !s.needs.every((n) => typeof n === 'string')) {
+        red('invalid-value', `${at}.needs`, 'non-empty array of EARLIER stage names — omit the field when the stage stands alone');
+      } else if (s.offer === false) {
+        red('invalid-value', `${at}.needs`, 'a stage that is never offered has no chain to run — needs and offer:false are incoherent together');
+      } else {
+        const bad = s.needs.filter((n) => !earlier.has(n));
+        if (bad.length) red('invalid-value', `${at}.needs`, `must name stages declared BEFORE this one (a prerequisite that has not run yet cannot be one): ${bad.join(', ')} — earlier stages: ${[...earlier].join(', ') || 'none'}`);
+      }
+    }
+  });
+}
+
 function validatePlanShape(spec, red, reds) {
   if (spec.goal === undefined) red('missing-required', 'goal');
   else if (!isNonEmptyString(spec.goal)) red('invalid-value', 'goal', 'non-empty text — the goal is what the agent plans against');
@@ -365,7 +445,12 @@ function validatePlanShape(spec, red, reds) {
   }
 
   if (spec.close === undefined) red('missing-required', 'close', 'declared green with nothing to run it — preflight validates the declaration, never infers');
-  else if (!isObj(spec.close)) red('invalid-value', 'close', 'a close object (type + its fixed fields)');
+  // The staged close (PRD v1.28): an ordered list of named command stages, from
+  // which the check menu derives. The object form remains ONLY for the
+  // declared-but-locked verdict classes (gold/rubric/hitl), which name no
+  // command and which the plan flow refuses at runtime (close-unsupported).
+  else if (Array.isArray(spec.close)) validateStagedClose(spec.close, red);
+  else if (!isObj(spec.close)) red('invalid-value', 'close', 'an ordered list of named stages [{ name, cmd, expect, ... }], or a close object for a locked verdict class');
   else if (validateClose(spec.close, 'close', red) && demanded !== undefined
            && !CLASS_BY_CLOSE[spec.close.type].includes(demanded)) {
     // the hierarchy one level up: the declared verdict demands a close class
@@ -373,23 +458,15 @@ function validatePlanShape(spec, red, reds) {
     red('close-hierarchy', 'verdictType', `verdictType ${spec.verdictType} demands a ${demanded}-class close; ${spec.close.type} admits ${CLASS_BY_CLOSE[spec.close.type].join('|')} only (a rubric can never be hard — PRD §7)`);
   }
 
+  // `checks[]` is RETIRED (PRD v1.28/v1.32): the check menu DERIVES from the
+  // close's stages, so no operator authors checks per job, ever. The red names
+  // what happened rather than leaving a bare unknown-field — and the hazard it
+  // removes is measured, not theoretical: job #5's three hand-written checks
+  // were re-implementations of three stages the close already ran, and a
+  // hand-carved copy can drift LENIENT (the worker passes the operator's ruler
+  // and fails the real inspection). Derivation removes that class by construction.
   if (spec.checks !== undefined) {
-    if (!Array.isArray(spec.checks) || spec.checks.length === 0) {
-      red('invalid-value', 'checks', 'non-empty array of named checks — omit the field when the job signs none');
-    } else {
-      const seen = new Set();
-      spec.checks.forEach((/** @type {any} */ c, /** @type {number} */ i) => {
-        const at = `checks.${i}`;
-        if (!isObj(c)) { red('invalid-value', at, 'a check must be an object'); return; }
-        for (const key of Object.keys(c)) {
-          if (!CHECK_FIELDS.includes(key)) red('unknown-field', `${at}.${key}`, 'not a check field (script bodies land here)');
-        }
-        if (!isNonEmptyString(c.name) || !SLUG_RE.test(c.name)) red('invalid-value', `${at}.name`, 'kebab-case slug — the plan references checks by name (check-passes(name))');
-        else if (seen.has(c.name)) red('duplicate-id', `${at}.name`, c.name);
-        else seen.add(c.name);
-        predicateBody(c, at, red);
-      });
-    }
+    red('checks-derived', 'checks', 'hand-authored checks are retired — declare the close as an ordered list of named stages and the check menu derives from it (the agent references them with check-passes(name)); a stage that cannot stand alone sets offer:false, one that needs an earlier stage names it in needs');
   }
 
   // the tool CEILING (plan-v1 anchor: every plan step's verbs ⊆ this) — same

@@ -131,6 +131,54 @@ export function runClose(close, redact = (s) => s, { timeoutMs = 120_000, cwd, e
   };
 }
 
+/**
+ * Run a STAGED close (PRD v1.28) — an ordered list of named command stages, run
+ * in order until one renders a verdict that is not `satisfied`. The return is
+ * runClose's own shape, so every consumer (the precheck, ralph's judge, the
+ * escalation's CLOSE_FAULTS routing) is unchanged: a staged close is still ONE
+ * verdict, not a scoreboard.
+ *
+ * Two additions, both mechanical information the worker can act on:
+ *  - `stage` names which stage rendered the verdict. The close's output must
+ *    never name the CULPRIT FILE (v1.12/F28 — the worker finds that itself), and
+ *    naming the wall it hit is the opposite of that: it is the mechanical genre
+ *    that converts (F38/F46), not the answer.
+ *  - `stages` is the ordered record of what actually ran. A stage after the
+ *    first red never runs, so a later green can never mask an earlier failure.
+ *
+ * The same function runs a DERIVED CHECK: a check is its stage's chain
+ * (`checkMenu` puts the prerequisites first), so there is one execution path for
+ * the close and for the rulers derived from it — never two, which is the F9
+ * two-transforms class applied to the arbiter.
+ *
+ * @param {any[]} stages the stage list (already validated by validateJob)
+ * @param {(s: string) => string} [redact] scrub, applied at capture on EVERY stage
+ * @param {{timeoutMs?: number, cwd?: string}} [opts]
+ * @returns {any} runClose's verdict shape, plus `stage` and `stages`
+ */
+export function runStages(stages, redact = (s) => s, { timeoutMs, cwd } = {}) {
+  const ran = [];
+  let last;
+  for (const st of stages) {
+    const r = runClose(st.cmd.trim().split(/\s+/), redact, {
+      timeoutMs, cwd, expect: st.expect, judged: st.judged, gapKeep: st.gapKeep,
+    });
+    ran.push({ name: st.name, verdict: r.verdict, ...(r.exitCode !== undefined ? { exitCode: r.exitCode } : {}) });
+    last = r;
+    if (r.verdict !== 'satisfied') {
+      return {
+        ...r,
+        stage: st.name,
+        stages: ran,
+        // The gap says WHICH wall, then the wall's own output. A worker handed
+        // three stages' worth of output cannot tell which one it must satisfy.
+        ...(r.gap ? { gap: `close stage "${st.name}" failed:\n${r.gap}` } : {}),
+      };
+    }
+  }
+  return { ...last, stages: ran };
+}
+
 // Tail-biased bound: a test runner's useful output (the assertion diff, the
 // failing case name) is at the END; head-only truncation fed the worker the
 // preamble and dropped the cause (N2 queue, F2). Head sample kept so "what ran"

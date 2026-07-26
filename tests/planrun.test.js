@@ -48,8 +48,14 @@ const JOB = (wd, over = {}) => ({
   writeScope: ['tests/**'],
   goal: 'Write tests/test_x.mjs with an ok assertion so the suite greens.',
   verdictType: 'green',
-  close: { type: 'predicate', cmd: 'node close.mjs', expect: 0 },
-  checks: [{ name: 'clean-run', cmd: 'node check.mjs', expect: 0, gapKeep: '^FAILED' }],
+  // The staged close (PRD v1.28): the inspection is a list of named stages and
+  // the agent's ruler menu DERIVES from it. `clean-run` is a stage of the close,
+  // not a copy carved beside it — which is the whole point: the ruler and the
+  // real inspection cannot drift apart.
+  close: [
+    { name: 'clean-run', cmd: 'node check.mjs', expect: 0, gapKeep: '^FAILED' },
+    { name: 'verdict', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' },
+  ],
   tools: ['read', 'write', 'edit'],
   escalation: { mode: 'decision-ready' },
   ...over,
@@ -219,22 +225,30 @@ test('a mid-step provider-red is a CASUALTY, not a step-red: runPlan returns pro
   assert.equal(esc.category, 'provider-red', 'the returned outcome and the spine escalation name the SAME category (F11)');
 });
 
-test('preflight: a signed check that cannot RUN escalates broken-close before any tokens', async (t) => {
+test('preflight: a close STAGE that cannot RUN escalates broken-close before any tokens — an unrunnable ruler would fault mid-plan after real spend', async (t) => {
   const wd = makePatient(t);
   const provider = scriptedProvider([{ text: 'never reached' }]);
-  const job = JOB(wd, { checks: [{ name: 'clean-run', cmd: 'no-such-binary --x', expect: 0 }] });
+  // stage 1 runs and reds honestly (so the PRECHECK passes it through as a
+  // normal red); stage 2 cannot run at all. Only the preflight can catch that —
+  // the precheck stops at the first red and never reaches it.
+  const job = JOB(wd, { close: [
+    { name: 'clean-run', cmd: 'node check.mjs', expect: 0, gapKeep: '^FAILED' },
+    { name: 'ghost', cmd: 'no-such-binary --x', expect: 0 },
+  ] });
   const { outcome, events } = await go(wd, provider, { job });
   assert.equal(outcome, 'check-red');
   assert.equal(provider.calls.length, 0, 'no tokens were spent');
   const esc = events.find((e) => e.type === 'escalation');
   assert.equal(esc.category, 'broken-close');
-  assert.match(esc.detail ?? '', /clean-run/);
+  assert.match(esc.detail ?? '', /ghost/);
 });
 
 test('an already-green close at precheck ends the run as the DISTINCT already-green, zero tokens (F17)', async (t) => {
   const wd = makePatient(t, { closeGreen: true });
   const provider = scriptedProvider([{ text: 'never reached' }]);
-  const { outcome, events } = await go(wd, provider);
+  // every stage green is what already-green MEANS: a close is satisfied only
+  // when the whole list is, so this job's one stage is the green one
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { close: [{ name: 'verdict', cmd: 'node close.mjs', expect: 0 }] }) });
   assert.equal(outcome, 'already-green');
   assert.equal(provider.calls.length, 0);
   assert.ok(events.some((e) => e.type === 'close-precheck'));
