@@ -295,3 +295,29 @@ planner at replan, the variance the meter computes, and the `maxWallMs` backstop
 *honesty*. An unknown duration is still reported as unknown, never as zero — F6's rule is unchanged
 and is not an accuracy question. Likewise the advertised-vs-enforced pair from addendum 1 stays two
 reported numbers; approximation is not permission to quote only the requested one.
+
+---
+
+## Addendum 4 — 2026-07-26: the choose-don't-describe audit of the remaining free-text fields
+
+§4 required the other free-text plan fields to be audited against the same rule before building.
+Done; the result is that **`tree-changed.scope` was the only enumerable one**, and the reason is
+worth recording so the generalisation is not misapplied later.
+
+| field | enumerable? | verdict |
+|---|---|---|
+| `exit.tree-changed.scope` | **yes** | a scope names an EXISTING container. The closed set is the fence plus the directories under it — **built** (`legalScopes`) |
+| `steps[].target` | **no** | a target names the file the step is about to CREATE. It does not exist yet, so there is nothing to enumerate; a menu would forbid the deliverable |
+| `exit.artifact-written.path` / `json-valid.path` | **no** | same reason — the path is the step's own output |
+| `exit.check-passes.name` | already a menu | the model §4 said to copy; unchanged |
+| `exit.artifact-written.pattern` | **no** | a regex over content the step has not written. F49's static shape reject is the right instrument here, and it stays |
+
+**The rule, stated precisely enough to reuse:** a field is enumerable when its legal values name
+something that **already exists** at draft time. A field naming something the run is about to
+*produce* cannot be a menu, and forcing one would forbid the work. So `target` and the two exit
+paths keep validated free text — containment-checked against the fence exactly as before, which is
+`scope-escape`/`invalid-value` territory and unchanged by this build.
+
+This narrows §4's generalisation from *"wherever the plan schema takes free text that only a closed
+set can satisfy"* to the operational test above. The looser wording would have pointed at `target`,
+and a `target` menu would have broken every write step.
