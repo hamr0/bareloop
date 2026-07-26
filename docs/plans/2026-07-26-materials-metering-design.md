@@ -143,3 +143,54 @@ be handed the set. Audit the remaining fields against this before building (`tar
    whatever bound it is shown, so showing it money predicts it will plan toward the money. That
    is the behaviour the experiment exists to read, and the per-step cap plus the operator's
    outer wall are what keep it honest while we read it.
+
+---
+
+## Addendum 1 — 2026-07-26: `maxWallMs` is a between-round deadline, and its overshoot is a quotable number
+
+**Pre-build spike, $0, two conditions both able to fail.** Run before writing any T code because
+the design above assumes a wall-clock cap is enforceable and never says by what seam.
+
+| condition | instrument | measured |
+|---|---|---|
+| C1 — can `loop.stop()` cut an in-flight `generate()`? | fake provider hanging 4,000 ms; `stop()` fired at 500 ms | **NO.** `run()` returned at **4,018 ms**, 1 call. `stop()` is read at the round boundary (`loop.js:661`) and between tool calls (`:916`) — never mid-request |
+| C2 — does BA-18's provider timeout fire on the ABSENCE of events? | real `AnthropicProvider`, `timeoutMs: 1200`, against a local socket that accepts and never answers | **YES.** Rejected at **1,259 ms**, `TimeoutError code=ETIMEDOUT` |
+
+C2 could genuinely have failed: without BA-18 the socket is bounded only by the OS TCP timeout
+(~2 h) and the spike would have hung. The 59 ms overshoot is timer granularity — negligible at
+minute scale.
+
+### What this settles
+
+**A deadline alone is not enforcement.** Checked between rounds, `maxWallMs` overshoots by one
+whole round, and a *hung* round is bounded only by the provider default (600,000 ms = 10 min,
+which bareloop never overrides). Enforcement therefore needs BOTH seams:
+
+- the **deadline**, checked at the round boundary — bounds a run that is progressing;
+- the **per-call provider timeout**, derived as `min(600_000, remainingWallMs)` — bounds the one
+  round that is *not* progressing, the F57 hang shape that emits nothing.
+
+`loop.run`'s third argument is forwarded verbatim to `provider.generate` (`loop.js:732`), so the
+derived timeout threads through the three existing call sites (`planrun.js:418, 488, 498`) with
+no new machinery.
+
+### The honest number, which must be reported and not rounded
+
+With both seams wired, worst case is a close/check already in flight when the deadline trips:
+
+> **enforced ≈ `maxWallMs` + `closeTimeoutMs`** (default 120,000 ms = 2 min, `ralph.js:75`).
+
+Without the derived provider timeout it is `maxWallMs` + 10 min + 2 min. Either way the advertised
+number is not the enforced number, and **§3.5's "identical to money" is therefore not quite true**:
+`budgetUsd` binds between rounds too, but a round's cost is bounded by `maxTokens`, whereas a
+round's *duration* had no bound at all before BA-18. Both numbers go in the spine. Quoting only the
+requested one would be F6 in a time coat — the honest null for time.
+
+### Consequence for what T is worth
+
+The *"couple of hours just hanging"* complaint is **already fixed**, by BA-18's 10-minute provider
+timeout consumed in `2bd46bb` — not by anything in this record. `maxWallMs` answers the different
+complaint: a run that is making progress and will still take hours. Its value is therefore
+overwhelmingly §3.1 — **time as a material the planner allocates against** — with the deadline as a
+backstop carrying a 2-minute tolerance. That reframing does not change the design; it changes which
+half of it the first read should be aimed at.
