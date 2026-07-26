@@ -131,3 +131,55 @@ under the $3 ceiling, only with hamr's go on spend.
 **Instrument stop.** Any probe whose result depends on a number its instrument cannot see is
 STOPPED and reported as unread — never estimated. Two consecutive provider-reds on the same
 arm halt the set (casualty rule).
+
+---
+
+## Amendment 1 — 2026-07-26: the S0 scout-off arm (added AFTER the freeze, before any number)
+
+**Why it was not in the original freeze.** F59 was discovered while building this probe set's
+driver: the scout returns nothing on 15 of 18 archived runs, so the planner drafts blind — and
+**3 of the 5 archived greens had a zero-byte scout.** hamr's instruction, verbatim: *"try
+it/confirm without notes and if it doesn't make a diff then remove it."* This amendment is
+dated and appended; the original rules above are unchanged and none is loosened.
+
+**The question.** Does the repository survey transmit anything the goal text does not already
+carry? It costs ~12.34% of run spend (F55). If it changes nothing, the honest move is to
+DELETE the phase, not to keep the fix.
+
+**Design — 2×2, because the confound is real.** Job #5's goal is ~1,910 characters and already
+enumerates files and requirements; against a goal that rich, ANY survey would look redundant.
+So the arm crosses goal richness with scout presence:
+
+| arm | goal | scout |
+|---|---|---|
+| A1 (control) | full (1,910 chars) | ON |
+| A2 | full | **OFF** |
+| A3 | one sentence | ON |
+| A4 | one sentence | **OFF** |
+
+A3/A4 are the sharp cell: with a one-sentence goal the survey is the ONLY possible source of
+repository facts. A2-vs-A1 alone could only ever show "the scout is redundant *to a goal that
+already says everything*" — which is a statement about job #5's goal, not about the scout.
+
+**Frozen PRIMARY metric.** For each plan: does any step reference a repository specific — a
+file path or symbol name — that does **not** appear in that arm's goal text? This is the
+operational test of transmission: a blind planner cannot name what it was never told.
+
+**Frozen decision rule.**
+- **A4 ≈ A3** on the primary metric (n=3 each) ⇒ the survey transmits nothing even when it is
+  the only possible source ⇒ **recommend DELETING the scout phase** and returning its ~12%.
+- **A3 materially above A4** ⇒ the survey does transmit; the phase stays and the fix earns its
+  keep. Whether transmission helps the OUTCOME is a separate question this probe cannot answer.
+- **A2 ≈ A1 but A3 > A4** ⇒ the scout is redundant to a rich goal only — report as such; the
+  delete recommendation does NOT follow, and the finding becomes an argument about goal
+  richness (which is U0(b)'s territory).
+
+**Stated asymmetry, so the result cannot be over-read in the flattering direction.** This arm
+can support a strong NEGATIVE ("the survey transmits nothing") because absence of transmission
+is directly observable in the plan text. It cannot alone support a POSITIVE ("the scout
+helps") — a plan that names real files is not thereby a better plan, and only an outcome
+battery could establish that. Recommending deletion is therefore in scope for this probe;
+recommending investment is not.
+
+**Cost.** Six arms (A1–A4 plus T2-B and P1-B, which reuse A1 as their control) × n=3 = 18
+drafts plus one scout ≈ $1.00, inside the $2.50 ceiling with the $0.39 pilot folded in.
