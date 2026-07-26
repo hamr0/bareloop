@@ -194,3 +194,76 @@ complaint: a run that is making progress and will still take hours. Its value is
 overwhelmingly §3.1 — **time as a material the planner allocates against** — with the deadline as a
 backstop carrying a 2-minute tolerance. That reframing does not change the design; it changes which
 half of it the first read should be aimed at.
+
+---
+
+## Addendum 2 — 2026-07-26: time is a BALANCE, not a rate; and it is a METERING signal before it is a drafting material
+
+**Authorised by hamr in-turn, this session** — his correction, verbatim: *"why would you tell it
+every round that you have x time per round? what if there is a heavier round? why don't you tell it
+same like cost, you have x left from cost/time instead of making it race against time?"* and, on the
+shape below, *"yeah, we can try that."*
+
+Evidence: **F61**. This addendum supersedes the rate framing used in F60's T2B arm and narrows §3.1.
+
+### What changes
+
+**§3.1's "exchange rate" is withdrawn as a planner input.** The rate stays a real measured quantity
+(F57) and stays useful to the *shell* for deriving the per-call provider timeout (addendum 1) — but
+it is never handed to the agent, and the agent is never given a per-round quota to pace against.
+
+Three reasons, in order of weight:
+
+1. **A rate is a fiction at the round level.** F57 measured a 150× spread on the verification gaps
+   (3.8 s → 561 s) and 1.6× on execute rounds. "5.4 s per round" describes almost no actual round, so
+   a heavy round breaks the planner's arithmetic and nothing tells it.
+2. **A balance is self-correcting.** After a heavy round the remaining number is simply lower. The
+   agent never models round weight; there is no fiction to get wrong.
+3. **A rate is a stopwatch.** Racing a clock gives a worker the incentive to rush or fake — the exact
+   thing the v1.12 §5 prompt contract exists to remove.
+
+### The shape we will try
+
+| recipient | what it is told | when |
+|---|---|---|
+| planner at **draft** | the totals as **scale only** — *"$10 and 45 minutes for the whole run"*. No rate, no derived round count, no instruction to allocate time | once |
+| planner at **replan** | the **balance and its own progress** — *"$6.40 and 22 minutes left; step 2 of 6; this step has used 60% of what you allocated it"* | when the meter trips |
+| worker | **nothing** | never — unchanged, §3.2 stands |
+
+**No per-round quota anywhere, for money or for time.** This also brings time into line with what
+money already does: F61's source read found the shipped plan prompt (`src/planrun.js:76-109`) never
+mentions money at all — it is enforced by ralph every round and never spoken. Time now works the same
+way, with the balance added at replan because that is the adaptation channel being built.
+
+### The consequence we accept, deliberately
+
+At draft nothing has run, so the balance *is* the total and the agent **cannot size its steps in
+time**. It plans in rounds, as today, and may well draft a plan that does not fit.
+
+**We are choosing not to fix that.** Sizing time at draft requires the rate, and the rate is the
+fiction we just removed — it would be fake precision bought with the exact instrument F61 discarded.
+A plan that does not fit is what the meter is *for*: it trips, the balance and the variance go back
+to the planner, and it re-allocates. That is the adaptation channel, and it has fired zero times in
+this programme (F56). Letting the first draft be wrong is how we get to read it.
+
+### What this costs the record
+
+**F60's +62% is withdrawn as a prediction.** It was measured under the rate framing and does not
+transfer to the balance framing. The surviving claim is the weaker, framing-independent one: *hand
+the planner a stated bound and it plans against it.* §2's table and §3.1's "the rate is the
+load-bearing part" are corrected accordingly — the load-bearing part is the **balance**, and the rate
+is shell-side arithmetic the agent never sees.
+
+### Also narrowed: what T is worth (from addendum 1)
+
+The *"hours just hanging"* motivation in §1 is dead — BA-18 fixed it in `2bd46bb` and F61/C2 measured
+it firing. `maxWallMs` therefore earns its place as a **material and a metering unit**, not as a
+safety backstop. The backstop is kept, deliberately rough (addendum 1's ±`closeTimeoutMs`), and gets
+no further build effort.
+
+### Still open, and NOT assumed by this addendum
+
+Where a real run's hours actually go is unmeasured. Model rounds are already bounded by money at
+F57's rate; check/close gaps cost $0 and are invisible to the money cap. The archived spines carry
+timestamps and answer it for $0. If the hours turn out to be in check gaps, the unit that needs
+bounding is check invocations, not the wall clock — and this addendum would need a third.

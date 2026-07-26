@@ -3308,3 +3308,75 @@ n=3 supports existence and direction, never a rate. **Every result here is on th
 — none shows that a scout, a materials budget, or a wider palette improves an OUTCOME. In
 particular "the scout transmits" is not "the scout helps"; it is the weaker claim the frozen
 asymmetry allowed, and the stronger one needs an outcome battery. One patient, one genre.
+
+## F61 — the hang was already fixed, and a per-round rate is a fiction: time is a BALANCE, never a quota
+
+**Status: minted 2026-07-26. $0 — two failable conditions against a fake provider and a local
+socket, plus one source read. Run BEFORE any T code, precisely so the design record could be
+corrected instead of implemented.**
+
+### What was measured
+
+| # | condition | instrument | result |
+|---|---|---|---|
+| C1 | can `loop.stop()` cut an in-flight `generate()`? | fake provider hanging 4,000 ms; `stop()` fired at 500 ms | **NO** — `run()` returned at **4,018 ms**, 1 call |
+| C2 | does BA-18's provider timeout fire on the ABSENCE of events? | real `AnthropicProvider`, `timeoutMs: 1200`, local socket that accepts and never answers | **YES** — **1,259 ms**, `TimeoutError code=ETIMEDOUT` |
+
+C2 could genuinely have failed: without BA-18 that socket is bounded only by the OS TCP timeout
+(~2 h) and the spike would have hung rather than returned. `stop()` is read at the round boundary
+(`bare-agent/src/loop.js:661`) and between tool calls (`:916`) — never mid-request.
+
+### The refutation: T's first motivation is dead
+
+The materials design record's §1 justifies T on two complaints, and the first is
+*"couple of hours just hanging — nothing in the system bounds TIME."* **That is no longer true.**
+BA-18's 10-minute inactivity timeout was consumed in `2bd46bb`, two commits before the record was
+written, and C2 shows it fires. A wall-clock cap does not fix hanging, because hanging is fixed.
+
+What survives is the second motivation: **time as a material the planner allocates against** —
+untouched by BA-18 and independently measured in F60.
+
+### The source read that reframed the rest
+
+**The shipped plan prompt never mentions money at all** (`src/planrun.js:76-109`): no `budgetUsd`,
+no rate, no dollars. The only bound the planner sees is `rounds: 1..maxStepRounds` per step. Money
+is *purely enforced* (the gate's `maxCostUsd`, per round, shell-side) and *never spoken*.
+
+So F60's T2B arm invented a framing nothing else in the system uses — it handed the planner a
+**rate and a derived round quota**: *"a round costs $0.019, so the run affords 526 rounds"* /
+*"a round takes 5.4 seconds, so the run affords 300 rounds"* (`scripts/probe-materials.mjs:136-141`).
+
+### Why a rate is the wrong instrument (hamr's correction, and F57 supports it)
+
+hamr: *"why would you tell it every round that you have x time per round? what if there is a heavier
+round? why don't you tell it same like cost, you have x left … instead of making it race against
+time?"*
+
+A per-round rate is a median that describes almost no real round. F57's own spread:
+
+- execute rounds: 1.6× and 1.2× of median
+- the verification between attempts: **3.8 s to 561 s — a 150× spread**
+
+A heavy round silently breaks the planner's arithmetic and nothing tells it. A **balance** is
+self-correcting by construction: after a heavy round the number is simply lower, and the agent never
+has to model what a round weighs. It is also the shape money already has.
+
+Second-order: a rate turns a budget into a stopwatch, and a worker racing a clock has the same
+incentive to rush or fake that the v1.12 §5 prompt contract exists to remove.
+
+### Consequence, and the cost of the correction
+
+Time is told as a **remaining balance**, never a per-round quota, and never as a rate to divide by.
+See design record addendum 2 for the shape.
+
+**F60's +62% does not transfer.** It was produced by the rate framing now discarded, so it is not a
+prediction for the balance framing. What survives from T2B is the weaker, framing-independent claim:
+*hand the planner a stated bound and it plans against it.* The magnitude is withdrawn.
+
+### Limits, stated before they can be forgotten
+
+C1 and C2 establish what the **seams** do — a fake provider and a local socket, not a real run.
+Neither measures where a real run's hours actually go. That question is **still open**: the candidate
+buckets are model rounds (already bounded by money at F57's rate) and check/close gaps (which cost
+$0, so the money cap cannot see them, and which F57 measured as high as 561 s each). The archived
+spines carry timestamps and can answer it for $0; that read was proposed and is **not yet run**.

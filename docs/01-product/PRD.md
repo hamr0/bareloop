@@ -1729,3 +1729,65 @@ the close is passing the close — that is succeeding, not gaming.
 U (v1.27's user-mode e2e) can now run with **zero operator-authored checks**. Whether job
 #5's existing close actually decomposes into stages is the free half of probe U0 — a code
 question, answerable before any spend.
+
+---
+## Addendum v1.29 — 2026-07-26 (a budget is a BALANCE, never a per-round rate; and T's hang motivation is retired — hamr)
+
+**Approval.** hamr in-turn this session. The correction, verbatim: *"why would you tell it every
+round that you have x time per round? what if there is a heavier round? why don't you tell it same
+like cost, you have x left from cost/time instead of making it race against time?"* — and on the
+resulting shape, *"yeah, we can try that."* Evidence: **F61**; detail in the materials design record,
+addendum 2.
+
+### What v1.27's T said, and what is now narrowed
+
+v1.27 justified **T** on two complaints and stated that the agent *"is TOLD its time budget at plan
+time exactly as it is told its round bound, and plans against it."* Both halves are corrected:
+
+1. **The hang motivation is retired.** *"Nothing bounds TIME"* was true when v1.27 was written and is
+   no longer: BA-18's inactivity timeout shipped in bare-agent 0.34.0, was consumed in `2bd46bb`, and
+   F61/C2 measured it firing (1,259 ms on a socket that accepts and never answers; without it the
+   bound is the OS TCP timeout, ~2 h). A wall-clock cap does not fix hanging. **T's remaining value is
+   time as a material and a metering unit** — the backstop is kept but stays deliberately rough and
+   earns no further build effort.
+2. **"Exactly as it is told its round bound" was never true of money, and will not be true of time.**
+   F61's source read: the shipped plan prompt (`src/planrun.js:76-109`) **never mentions money at
+   all**. Money is enforced by ralph every round and never spoken. Time now works the same way.
+
+### The rule this mints
+
+> **A budget is told as a remaining BALANCE. It is never told as a per-round rate, a per-round
+> allowance, or a derived round count.**
+
+Binding on money, time, and any future material. Three reasons, and the first is measured:
+
+- **A rate is a fiction at the round level.** F57: verification gaps span **3.8 s → 561 s (150×)**;
+  execute rounds spread 1.6× of median. A per-round constant describes almost no real round, so a
+  heavy round breaks the agent's arithmetic and nothing tells it.
+- **A balance is self-correcting.** After a heavy round the number is simply lower. The agent never
+  models round weight, and there is no fiction to get wrong.
+- **A rate is a stopwatch.** Racing a clock gives a worker the incentive to rush or fake — precisely
+  what the v1.12 §5 prompt contract exists to remove. The balance is stated to the *planner*, never
+  to the worker, and the worker stays blind (unchanged).
+
+### Consequence, accepted deliberately
+
+At draft nothing has run, so the balance *is* the total and **the agent cannot size its steps in
+time**. It plans in rounds, as today, and may draft a plan that does not fit. This is not fixed: the
+only way to size time at draft is the rate, which is the fiction just removed. **A plan that does not
+fit is what the meter is for** — it trips, the balance and the variance return to the planner, and it
+re-allocates. That is the adaptation channel, and it has fired zero times in the programme (F56).
+
+### What this costs the record
+
+**F60's +62% allocation result is withdrawn as a prediction.** It was produced under the rate framing
+and does not transfer to the balance framing. The surviving claim is framing-independent and weaker:
+*hand the planner a stated bound and it plans against it.* Cited that way from here.
+
+### Still open, and not assumed
+
+Where a real run's hours actually go is **unmeasured**. Model rounds are already bounded by money at
+F57's rate; check/close gaps cost $0 and are therefore invisible to the money cap, and F57 measured
+them as high as 561 s each. The archived spines carry timestamps and answer this for $0. If the hours
+are in check gaps, the unit needing a bound is **check invocations, not the wall clock** — which
+would narrow T a third time.
