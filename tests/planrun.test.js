@@ -479,18 +479,24 @@ test('Layer R OFF (default): the SAME fixation script emits NO root-injected —
   assert.equal(outcome, 'green');
 });
 
-test('Layer R ON: the outer close-fix loop ALSO ratchets — fixation there (judged by the REAL close) fires root-injected with phase:fix', async (t) => {
+test('Layer R ON: the outer close-fix loop ALSO ratchets — the red-set is the FAILING STAGE\'s, not the first stage that happens to carry a gapKeep', async (t) => {
   const wd = makePatient(t);
-  // the check greens on "ok" (so the step greens), but the CLOSE additionally
-  // wants a DONE marker — so the step passes, the outer close reds, and the fix
-  // loop runs. The fix worker rewrites the file twice without DONE (same close
-  // red-set) then adds it: the fix loop's own ratchet must fire at attempt 3.
+  // Stage 1 (`clean-run`) greens on "ok", so the step greens and the close walks
+  // on; stage 2 (`verdict`) additionally wants a DONE marker, so IT renders the
+  // verdict and the fix loop runs. The two stages carry DIFFERENT gapKeeps and
+  // stage 1's pattern matches NOTHING in stage 2's output — so a detector reading
+  // "the first stage carrying a gapKeep" sees an empty kept-set, degrades to
+  // writes-only, and cannot make the strong claim. Reading the failing stage's
+  // own pattern keeps the reds+writes mode, which is what this asserts.
   writeFileSync(join(wd, 'close.mjs'), `import { existsSync, readFileSync } from 'node:fs';
 const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
 const t = existsSync(p) ? readFileSync(p, 'utf8') : '';
 if (t.includes('DONE')) process.exit(0);
-console.log('FAILED close: the test is missing the DONE marker'); process.exit(1);\n`);
-  const job = JOB(wd, { close: { type: 'predicate', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' } });
+console.log('BAR verdict: the test is missing the DONE marker'); process.exit(1);\n`);
+  const job = JOB(wd, { close: [
+    { name: 'clean-run', cmd: 'node check.mjs', expect: 0, gapKeep: '^FAILED' },
+    { name: 'verdict', cmd: 'node close.mjs', expect: 0, gapKeep: '^BAR' },
+  ] });
   const provider = scriptedProvider([
     { text: 'scout' },
     { text: PLAN(wd) },
@@ -502,8 +508,10 @@ console.log('FAILED close: the test is missing the DONE marker'); process.exit(1
   ]);
   const { outcome, events } = await go(wd, provider, { job, layerRoot: true });
   const inj = events.filter((e) => e.type === 'root-injected');
-  assert.ok(inj.some((e) => e.phase === 'fix' && e.stage === 'summary'),
-    `the fix loop ratchets under fixation; got ${JSON.stringify(inj)}`);
+  const fixInj = inj.find((e) => e.phase === 'fix' && e.stage === 'summary');
+  assert.ok(fixInj, `the fix loop ratchets under fixation; got ${JSON.stringify(inj)}`);
+  assert.equal(fixInj.redStage, 'verdict', 'the red-set came from the stage that rendered the verdict');
+  assert.equal(fixInj.mode, 'reds+writes', 'and it was READABLE — the failing stage\'s own pattern, not another stage\'s');
   assert.ok(provider.calls.some((p) => typeof p === 'string' && p.includes('RATCHET')), 'the note reached the fix worker');
   assert.equal(outcome, 'green');
 });

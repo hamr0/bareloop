@@ -323,8 +323,14 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
   const WALL_OPTIONS = ['raise maxWallMs and rerun (resume-to-cap: the stop is the checkpoint)', 'abandon the run'];
 
   const closeOpts = { timeoutMs: closeTimeoutMs, cwd: workdir };
+  /** @type {string|undefined} the stage that rendered the LAST close verdict (Layer R's red-set source) */
+  let closeStage;
   /** the close, as ONE verdict: every stage in order, first red wins */
-  const judgeClose = () => runStages(stagedClose, scrub, closeOpts);
+  const judgeClose = () => {
+    const v = runStages(stagedClose, scrub, closeOpts);
+    closeStage = v.stage;
+    return v;
+  };
 
   // ── 0a. close precheck (close-first, F17): already-green is a DISTINCT
   // record, zero tokens; a forbidden-zone verdict escalates before any spend
@@ -1078,18 +1084,29 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
     // Layer R for the close-fix loop — the plan flow's single ralph loop judged
     // by the REAL close (the plan flow's single ralph loop, and the
     // likeliest place fixation manifests: the fix worker has the full menu and
-    // is judged by a command, not a form-only exit). The red-set is the CLOSE's
-    // own gapKeep (the gap here is the raw close output, unwrapped — so the
+    // is judged by a command, not a form-only exit). The red-set comes from the
+    // stage that ACTUALLY rendered the verdict this attempt, not from one pattern
+    // fixed for the run: a staged close has N gapKeeps and the wall the worker hit
+    // varies attempt to attempt (the gap here is the raw close output, so the
     // `^`-anchored pattern matches, unlike the exec steps' exit-eval gap). Same
     // native exclusion (no onToolResult seam ⇒ the tee cannot settle).
     const fixRoot = layerRoot && !native
-      ? createRoot({ gapKeep: stagedClose.find((s2) => s2.gapKeep)?.gapKeep, redact: scrub, writesInformative: true })
+      ? createRoot({ redact: scrub, writesInformative: true })
       : null;
     const w = await mkWorker({ granted: ceiling, phase: 'fix', attemptRounds: maxStepRounds, attempts: capRuns, writable: true, root: fixRoot });
     /** @param {number} iteration @param {string} [gap] */
     const middle = async (iteration, gap) => {
       w.setIteration(iteration);
-      const rootInj = fixRoot ? fixRoot.observe({ iteration, gap, writes: w.workerWrites() }) : null;
+      // the red-set's source travels WITH the gap: `closeStage` is the stage the
+      // judge stopped at for the attempt this gap came from, and its own gapKeep
+      // designates that stage's failures
+      const rootInj = fixRoot
+        ? fixRoot.observe({
+          iteration, gap, writes: w.workerWrites(),
+          redStage: closeStage,
+          redKeep: stagedClose.find((s2) => s2.name === closeStage)?.gapKeep,
+        })
+        : null;
       if (rootInj) emit('root-injected', { phase: 'fix', ...rootInj.event });
       await w.ask([
         'The job\'s final verification is failing. Fix the repository so it passes.',

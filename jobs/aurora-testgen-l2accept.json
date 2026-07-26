@@ -38,7 +38,8 @@
         "pattern": "TESTGEN judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^TESTGEN "
+      "gapKeep": "^TESTGEN ",
+      "offer": false
     }
   ],
   "tools": [

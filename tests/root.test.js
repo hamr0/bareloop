@@ -461,3 +461,70 @@ test('Finding 7: a DENIED write never settles — discard still wins over any ou
   assert.equal(inj.stage, 'verbatim');
   assert.ok(!inj.note.includes('DENIED'), 'a gate-denied write is never surfaced');
 });
+
+// ---- the staged close (PRD v1.28): the red-set travels PER ATTEMPT ----
+//
+// A close is now an ordered list of named stages and the first red renders the
+// verdict, so which stage the gap came from — and therefore which `gapKeep`
+// designates its failures — varies attempt to attempt. The detector takes the
+// pattern of the stage that ACTUALLY rendered the verdict, and refuses to
+// compare across a stage change.
+//
+// Why not one union pattern fixed for the run (the alternative considered):
+// its safety rests on the stages' kept lines being distinguishable, and the
+// real corpus does not provide that. Job #4's two stages are near-clones of one
+// grader — 7 of their 12 kept-line templates are byte-identical, including the
+// `TESTGEN | <suite line>` failure family and the form-red line reproduced
+// below (measured 2026-07-27 over scripts/l2poc-check-close.mjs and
+// scripts/testgen-close.mjs). Under a union pattern, moving from the first
+// stage's wall to the second can present an IDENTICAL kept-set and read as
+// repetition — a false fire, which "inert when not stuck" forbids.
+
+const TESTGEN_KEEP = '^TESTGEN ';
+// byte-identical in BOTH aurora stage scripts (shared line family, measured)
+const SHARED_RED = 'TESTGEN form-red: collected unit=0 (need >=8) integration=0 (need >=4) under tests/testgen/{unit,integration}/';
+
+test('staged close: the red-set comes from the stage that rendered the verdict — same stage, same reds → the STRONG reds+writes mode', () => {
+  const root = createRoot({}); // no run-wide pattern: it belongs to the stage now
+  root.observe({ iteration: 1, writes: [] });
+  root.noteWrite('/r/tests/t.py', 'a');
+  root.observe({ iteration: 2, gap: GAP_A, writes: ['/r/tests/t.py'], redStage: 'verdict', redKeep: KEEP });
+  root.noteWrite('/r/tests/t.py', 'b');
+  const inj = root.observe({ iteration: 3, gap: GAP_A2, writes: ['/r/tests/t.py'], redStage: 'verdict', redKeep: KEEP });
+  assert.ok(inj, 'the failing stage supplies the pattern, so the kept-set is readable');
+  assert.equal(inj.event.mode, 'reds+writes', 'the strong claim, not the degraded writes-only path');
+  assert.equal(inj.event.redStage, 'verdict', 'the record names which stage the red-set came from');
+});
+
+test('staged close: the failing stage CHANGED → never a fire, even when the kept lines are byte-identical (the union rule\'s false-fire case)', () => {
+  const root = createRoot({ gapKeep: TESTGEN_KEEP }); // a union pattern would match both stages
+  root.observe({ iteration: 1, writes: [] });
+  root.noteWrite('/r/tests/t.py', 'a');
+  root.observe({ iteration: 2, gap: SHARED_RED, writes: ['/r/tests/t.py'], redStage: 'clean-run', redKeep: TESTGEN_KEEP });
+  root.noteWrite('/r/tests/t.py', 'b');
+  const inj = root.observe({ iteration: 3, gap: SHARED_RED, writes: ['/r/tests/t.py'], redStage: 'verdict', redKeep: TESTGEN_KEEP });
+  assert.equal(inj, null, 'a different wall is a different failure — not repetition, whatever the lines say');
+});
+
+test('staged close control (must not change): the SAME stage twice with those same shared lines still fires — the guard is the stage change, not the wording', () => {
+  const root = createRoot({ gapKeep: TESTGEN_KEEP });
+  root.observe({ iteration: 1, writes: [] });
+  root.noteWrite('/r/tests/t.py', 'a');
+  root.observe({ iteration: 2, gap: SHARED_RED, writes: ['/r/tests/t.py'], redStage: 'clean-run', redKeep: TESTGEN_KEEP });
+  root.noteWrite('/r/tests/t.py', 'b');
+  const inj = root.observe({ iteration: 3, gap: SHARED_RED, writes: ['/r/tests/t.py'], redStage: 'clean-run', redKeep: TESTGEN_KEEP });
+  assert.ok(inj, 'same wall, same failures, same file — that IS fixation');
+  assert.equal(inj.event.mode, 'reds+writes');
+});
+
+test('staged close: a stage-less caller (the per-step exit path) is untouched — the run-wide pattern still decides', () => {
+  const root = createRoot({ gapKeep: KEEP });
+  root.observe({ iteration: 1, writes: [] });
+  root.noteWrite('/r/src/x.js', 'a');
+  root.observe({ iteration: 2, gap: GAP_A, writes: ['/r/src/x.js'] });
+  root.noteWrite('/r/src/x.js', 'b');
+  const inj = root.observe({ iteration: 3, gap: GAP_A2, writes: ['/r/src/x.js'] });
+  assert.ok(inj, 'no redStage on either side → nothing changed → the old behavior stands');
+  assert.equal(inj.event.mode, 'reds+writes');
+  assert.equal(inj.event.redStage, undefined, 'and no stage is claimed on the record');
+});

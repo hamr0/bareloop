@@ -58,7 +58,8 @@
         "pattern": "TYPES judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^TYPES "
+      "gapKeep": "^TYPES ",
+      "offer": false
     }
   ],
   "tools": [

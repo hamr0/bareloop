@@ -105,13 +105,14 @@ export function createRoot({ gapKeep, redact = (s) => s, writesInformative = tru
    *     failures" — [] === [] would false-read as "reds unchanged" (Finding 2).
    * @param {string} gap @returns {string[]|null} normalized kept lines, or null when untrustworthy
    */
-  const keptSet = (gap) => {
-    if (!keepRe || gap.includes(GAP_KEEP_TRIM_MARKER)) return null;
-    const lines = [...new Set(gap.split('\n').filter((l) => keepRe.test(l)).map(normalizeRedLine))].sort();
+  const keptSet = (gap, pattern) => {
+    const re = pattern ? new RegExp(pattern, 'm') : keepRe;
+    if (!re || gap.includes(GAP_KEEP_TRIM_MARKER)) return null;
+    const lines = [...new Set(gap.split('\n').filter((l) => re.test(l)).map(normalizeRedLine))].sort();
     return lines.length ? lines : null;
   };
 
-  /** @type {{writes: string[], reds: string[]|null, tee: Map<string, TeeEntry>}[]} finalized attempts */
+  /** @type {{writes: string[], reds: string[]|null, stage: string|undefined, tee: Map<string, TeeEntry>}[]} finalized attempts */
   const attempts = [];
   /** @type {Set<string>} cumulative audit write-set at the last observe */
   let prevCumulative = new Set();
@@ -179,10 +180,16 @@ export function createRoot({ gapKeep, redact = (s) => s, writesInformative = tru
      * Called at the START of attempt `iteration`, with the PREVIOUS attempt's
      * gap. Finalizes that attempt from the books, runs the detector, and
      * returns the injection for the attempt about to run — or null (inert).
-     * @param {{iteration: number, gap?: string, writes: string[]}} o
+     *
+     * `redStage`/`redKeep` are the STAGED-CLOSE seam (PRD v1.28): a close is an
+     * ordered list of named stages, the first red renders the verdict, so the
+     * pattern that designates failures belongs to whichever stage rendered it
+     * THIS attempt. Callers with a single red-set source (the per-step exit
+     * evaluator) pass neither and keep the constructor's run-wide pattern.
+     * @param {{iteration: number, gap?: string, writes: string[], redStage?: string, redKeep?: string}} o
      * @returns {null | {stage: 'summary'|'verbatim', note: string, event: object}}
      */
-    observe({ iteration, gap, writes }) {
+    observe({ iteration, gap, writes, redStage, redKeep }) {
       const cumulative = new Set(writes);
       if (!gap) { // first attempt: nothing judged yet, nothing to compare
         prevCumulative = cumulative;
@@ -197,7 +204,7 @@ export function createRoot({ gapKeep, redact = (s) => s, writesInformative = tru
       for (const p of tee.keys()) if (cumulative.has(p) && !delta.includes(p)) delta.push(p);
       // `gap` is guaranteed truthy here (the `if (!gap) return` guard above handled
       // the empty case); reds === null comes only from keptSet's own UNKNOWN logic.
-      attempts.push({ writes: delta, reds: keptSet(gap), tee });
+      attempts.push({ writes: delta, reds: keptSet(gap, redKeep), stage: redStage, tee });
       // The detector only ever compares the last two finalized attempts, so older
       // ones (and their teed content) are dead state — keep just the two (Finding 7).
       if (attempts.length > 2) attempts.shift();
@@ -210,12 +217,22 @@ export function createRoot({ gapKeep, redact = (s) => s, writesInformative = tru
       if (attempts.length < 2) return null;
       const [prev, last] = attempts.slice(-2);
       const overlap = last.writes.filter((p) => prev.writes.includes(p));
-      // Both UNKNOWN → no trustworthy red-set either side: write-overlap alone
-      // decides (writes-only mode, named below). One known and one UNKNOWN → the
-      // red-set is not provably the same, so it counts as MOVEMENT, never a fire
-      // (a real red-set followed by a crash/empty gap is new information, not
+      // A CHANGED failing stage is movement by definition — a different wall of
+      // the same inspection is a different failure, so the two red-sets are not
+      // comparable and repetition is not provable. Same bucket as one-known-one-
+      // UNKNOWN below, and for the same reason. This guard is what makes a single
+      // union pattern wrong: the stages of a real close are near-clones of one
+      // grader (job #4: 7 of 12 kept-line templates byte-identical), so a union
+      // kept-set can be IDENTICAL across a stage change and read as repetition —
+      // a false fire, which "inert when not stuck" forbids.
+      //
+      // Otherwise: both UNKNOWN → no trustworthy red-set either side, write-overlap
+      // alone decides (writes-only mode, named below). One known and one UNKNOWN →
+      // the red-set is not provably the same, so it counts as MOVEMENT, never a
+      // fire (a real red-set followed by a crash/empty gap is new information, not
       // repetition). Both known → the honest set comparison.
-      const redsSame = last.reds === null && prev.reds === null ? null
+      const redsSame = last.stage !== prev.stage ? false
+        : last.reds === null && prev.reds === null ? null
         : last.reds === null || prev.reds === null ? false
         : JSON.stringify(last.reds) === JSON.stringify(prev.reds);
       // Finding 3: when writes carry no information (text mode — the one target is
@@ -237,6 +254,9 @@ export function createRoot({ gapKeep, redact = (s) => s, writesInformative = tru
         iteration, stage, mode, streak,
         paths: shownPaths, ...(morePaths > 0 ? { pathsElided: morePaths } : {}),
         redSetSize: last.reds ? last.reds.length : null,
+        // which stage of the close designated those failures — absent for the
+        // single-source callers, so the record never claims a stage it lacks
+        ...(last.stage !== undefined ? { redStage: last.stage } : {}),
       };
 
       // Finding 7: what the worker REACHED FOR fired the detector; what it
