@@ -431,3 +431,10 @@ test('planPrompt: the offered scopes are a STANDALONE list, and the JSON exit ex
   assert.match(p, /Offered "scope" values for tree-changed/);
   assert.match(p, /^ {2}"tests\/unit\/\*\*"$/m, 'each offered value on its own line, quoted, copyable');
 });
+
+test('maxWallMs is ARBITER territory: smuggled into a plan or a step it reds unknown-field (the agent cannot author, tighten, or widen the time cap in v1 — it has no time field at all)', () => {
+  const top = validatePlan({ ...clone(PLAN), maxWallMs: 60_000 }, OPTS);
+  assert.ok(top.reds.some((x) => x.code === 'unknown-field' && x.path === 'maxWallMs'));
+  const step = validatePlan(mut((p) => { p.steps[0].maxWallMs = 60_000; }), OPTS);
+  assert.ok(step.reds.some((x) => x.code === 'unknown-field' && x.path === 'steps.0.maxWallMs'));
+});

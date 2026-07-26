@@ -617,3 +617,45 @@ test('judged is inexpressible in the AGENT-drafted workflow config — the arbit
   assert.equal(r.ok, false, 'an agent that could lower its own judgment floor could author a fake green');
   assert.ok(r.reds.some((x) => x.code === 'unknown-field' && /judged/.test(x.path)));
 });
+
+// ─── T: maxWallMs, time as a first-class operator cap (PRD v1.27/v1.29) ───
+// Same status as budgetUsd: operator input, the agent may TIGHTEN and never
+// widen, never self-raised. Decided by hamr 2026-07-26: NO DEFAULT — a
+// defaulted cap is a silent second ceiling, which is the F45 failure. A run
+// without one is time-unbounded by explicit operator CHOICE, and the absence
+// must be visible in the record rather than inferred.
+
+test('maxWallMs is OPTIONAL and has no default: a spec without it validates green and the field stays absent (never a silent fallback)', () => {
+  const j = clone(JOB1);
+  delete j.maxWallMs;
+  const r = validateJob(j);
+  assert.deepEqual(r.reds, []);
+  assert.equal(r.job.maxWallMs, undefined, 'validateJob must NOT mint a default — F45: a defaulted cap is a silent second ceiling');
+  assert.ok(!Object.prototype.hasOwnProperty.call(r.job, 'maxWallMs'), 'the absence is absence, not a zero or null');
+});
+
+test('maxWallMs accepts a positive integer of milliseconds', () => {
+  const r = validateJob({ ...clone(JOB1), maxWallMs: 45 * 60_000 });
+  assert.deepEqual(r.reds, []);
+  assert.equal(r.job.maxWallMs, 2_700_000);
+});
+
+for (const [label, value] of [
+  ['zero', 0], ['negative', -1], ['fractional', 1500.5], ['a string', '45m'],
+  ['null', null], ['Infinity', Infinity], ['NaN', NaN],
+]) {
+  test(`maxWallMs rejects ${label} → bounds:maxWallMs`, () => {
+    const r = validateJob({ ...clone(JOB1), maxWallMs: value });
+    assert.equal(r.ok, false);
+    assert.ok(r.reds.some((x) => x.path === 'maxWallMs' && x.code === 'bounds'),
+      `expected bounds:maxWallMs, got ${JSON.stringify(r.reds)}`);
+  });
+}
+
+test('maxWallMs below one close timeout is a bounds red: addendum 1 measured enforcement as maxWallMs + closeTimeoutMs, so a budget under that cannot fund its own close', () => {
+  const r = validateJob({ ...clone(JOB1), maxWallMs: 5_000 });
+  assert.equal(r.ok, false);
+  const red = r.reds.find((x) => x.path === 'maxWallMs');
+  assert.equal(red.code, 'bounds');
+  assert.match(red.detail, /close/i, 'the red must say WHY, not just "out of range"');
+});

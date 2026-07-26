@@ -47,6 +47,15 @@ export const STEP_MODES = Object.freeze(['text', 'tools']);
  * unreliable at size (F31: 4 of 5 big-file whole-writes broke the tree) and
  * taxes output tokens ∝ file size. It admits no execution either. */
 export const TOOL_MENU = Object.freeze(['read', 'grep', 'write', 'edit', 'recall', 'get']);
+/**
+ * The floor for `maxWallMs`: one default close timeout (`runClose`'s 120_000).
+ * Addendum 1 MEASURED that a wall deadline can only be read BETWEEN rounds —
+ * `loop.stop()` does not cut an in-flight call (fired at 500ms, returned at
+ * 4,018ms) — so enforcement is `maxWallMs + closeTimeoutMs`. Under this floor the
+ * overshoot exceeds the budget itself and the advertised number would be more
+ * wrong than right, which is the advertised-must-equal-enforced line.
+ */
+export const MIN_WALL_MS = 120_000;
 /** locked-but-listed tools: real capabilities deliberately outside the grant
  * menu. Requesting one is a DISTINCT `request-red` (module 4) — the ledger
  * counts admission demand, and a generic invalid-value would bury it as a typo. */
@@ -73,7 +82,7 @@ export const PROVIDERS = Object.freeze(['anthropic-api', 'clipipe-subscription']
  * candidate at N3. `provider` is part of the key by definition (top-level,
  * not duplicated here). */
 export const CONDITION_KEYS = Object.freeze(['providerPath', 'closeVerbosity', 'taskFraming', 'scaffold']);
-const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'conditions', 'cadence', 'budgetUsd', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'checks', 'tools'];
+const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'conditions', 'cadence', 'budgetUsd', 'maxWallMs', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'checks', 'tools'];
 /** the four-field plan shape's core (decision 5) — presence of any of these
  * declares the shape; `tools` (the ceiling) rides the shape but alone does not
  * declare it, so a legacy spec carrying it gets a pointed red, not a conflict */
@@ -157,6 +166,19 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
   if (spec.budgetUsd === undefined) red('missing-required', 'budgetUsd');
   else if (!(typeof spec.budgetUsd === 'number' && spec.budgetUsd > 0 && spec.budgetUsd <= shellCapUsd)) {
     red('bounds', 'budgetUsd', `0 < budget <= shell cap ${shellCapUsd} (cap-not-estimate; no self-adjusted budgets, ever)`);
+  }
+
+  // T (PRD v1.27/v1.29) — TIME, with exactly budgetUsd's status: operator input,
+  // the agent may tighten and never widen, never self-raised. OPTIONAL AND WITH NO
+  // DEFAULT, decided by hamr 2026-07-26: a defaulted cap is a silent second
+  // ceiling, which is the F45 failure (a money rule with no wired detector let
+  // four cut rows be classed as evidence). A spec without it is time-unbounded by
+  // explicit operator CHOICE — so nothing here mints a fallback, and the runner
+  // reports the absence rather than letting it be inferred.
+  if (spec.maxWallMs !== undefined
+      && !(typeof spec.maxWallMs === 'number' && Number.isInteger(spec.maxWallMs) && spec.maxWallMs >= MIN_WALL_MS)) {
+    red('bounds', 'maxWallMs',
+      `integer milliseconds >= ${MIN_WALL_MS} (one close timeout). Enforcement is a between-round deadline, measured as maxWallMs + closeTimeoutMs (design addendum 1: loop.stop() cannot cut an in-flight call), so a budget under one close cannot fund its own close and the advertised number would be more wrong than right`);
   }
 
   // 3. the outer write fence — operator law (interview decision #4), same
