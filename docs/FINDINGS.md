@@ -3380,3 +3380,62 @@ Neither measures where a real run's hours actually go. That question is **still 
 buckets are model rounds (already bounded by money at F57's rate) and check/close gaps (which cost
 $0, so the money cap cannot see them, and which F57 measured as high as 561 s each). The archived
 spines carry timestamps and can answer it for $0; that read was proposed and is **not yet run**.
+
+## F62 — where a run's hours actually go: 73% model, 9% tests, 17% hang — and the residual caught two blind instruments before the answer did
+
+**Status: minted 2026-07-26. $0 — 124 archived spines, 1,045.8 minutes of wall clock. Closes the
+item F61 left open.**
+
+### The split
+
+| bucket | time | share |
+|---|---|---|
+| **WORKER** — worker rounds and their tool executions | 761.7 min | **72.8%** |
+| **STALL** — dead time before an escalation (the hang) | 183.3 min | 17.5% |
+| **CLOSE + CHECKS** — the operator's close and the agent's checks, $0 model spend | 94.7 min | **9.1%** |
+| residual | 6.1 min | 0.6% |
+
+**Tests are 9%, not the dominant cost.** The hypothesis F61 left open — that the hours might be
+hiding in $0 check gaps invisible to the money cap — is **refuted**. Excluding close/check time from
+the wall-clock count would move the number by under a tenth and does not justify a separate
+mechanism. hamr's question (*"why are tests counted or can we exclude that from build/count time?"*)
+is answered empirically: count everything; the distinction is not worth building.
+
+**The 17.5% stall is the hang, and it is concentrated, not diffuse.** Two `types-screen-C` runs carry
+180.8 of the 183.3 minutes — **98.6%**. That is the class BA-18 now bounds at 10 minutes (F61/C2),
+which re-confirms F61's retirement of T's hang motivation from a second direction: the dead time was
+real, it was rare, and it is already fixed.
+
+**Consequence for T:** 72.8% of wall clock is the model working, which is exactly what a time budget
+governs. The materials design stands as written (addendum 2) — no third narrowing.
+
+### The method, which is the transferable half
+
+**Measure every bucket directly and keep a residual. Never derive one by subtraction.** A subtracted
+bucket silently absorbs every classifier error and everything the classifier cannot see, and reports
+a clean number while doing it.
+
+This is not asserted — it is what happened, three times in one sitting:
+
+| pass | residual | what it caught |
+|---|---|---|
+| 1 | **95.4%** | append-only close/check logs and gate audits were being read as runs; one spanned **7 days**. Fixed by requiring `job-start` at `seq:1` |
+| 2 | **31.0%** | two classifier holes: `worker-turn` (the native per-turn event) was model work counted as neither, and pre-stop gaps had no bucket |
+| 3 | **0.6%** | sound |
+
+Had the model bucket been computed as `total − tests`, all three errors would have landed inside the
+answer and the first pass would have been reportable with a straight face. **The residual was the
+only instrument that could see them** — the seventh shipping of the blind-instrument class, caught
+this time by design rather than by hamr.
+
+### Limits, stated before they can be forgotten
+
+- **WORKER is the LLM call PLUS its tool executions.** The spine does not bracket them separately, so
+  the split between "model thinking" and "reading files" is unavailable without new instrumentation.
+  It does not change the conclusion at this scale.
+- **The archive is mixed** — job #1, job #2, aurora, the types screen, API and native clipipe
+  surfaces, across many months and several designs. The 73/17/9 split is the programme's aggregate,
+  not any one job's profile; a single patient with a pathological close (aurora's untimed
+  HuggingFace check) could still invert it locally.
+- **Gap attribution is by the event that ENDS the gap.** With a 0.6% residual the attribution is
+  sound in aggregate; it is not a per-round timing instrument.

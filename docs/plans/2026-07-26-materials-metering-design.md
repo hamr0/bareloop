@@ -267,3 +267,31 @@ Where a real run's hours actually go is unmeasured. Model rounds are already bou
 F57's rate; check/close gaps cost $0 and are invisible to the money cap. The archived spines carry
 timestamps and answer it for $0. If the hours turn out to be in check gaps, the unit that needs
 bounding is check invocations, not the wall clock — and this addendum would need a third.
+
+---
+
+## Addendum 3 — 2026-07-26: time reporting is a ~90% approximation, by ruling
+
+**hamr, in-turn:** *"time in general has to be relatively good reporting, doesn't need to be 100%
+accurate, but 90% good approximation."*
+
+This settles the accuracy bar for every time number the system produces — the balance shown to the
+planner at replan, the variance the meter computes, and the `maxWallMs` backstop.
+
+**What it licenses:**
+
+- **Addendum 1's rough backstop is accepted as final.** Enforced ≈ `maxWallMs` + `closeTimeoutMs`
+  (a ±2-minute tolerance on a 45-minute budget is ~96%). No further build effort goes into
+  tightening it, and the per-call provider timeout derived from the remaining wall budget is
+  worth wiring precisely because it is cheap, not because precision is required.
+- **Gap-attribution timing is good enough for the meter.** F62's method — attribute each gap to the
+  event that ends it, keep a residual — landed at a **0.6% residual** over 124 runs. That is inside
+  the bar by a wide margin and needs no per-call instrumentation.
+- **The LLM-vs-tools split stays unbuilt.** F62 could not separate the model's own time from its tool
+  executions without new instrumentation. Under this ruling it does not need to be: both are the
+  agent's own consumption, and lumping them is well inside 90%.
+
+**What it does NOT license.** The bar applies to the *precision* of a time number, never to its
+*honesty*. An unknown duration is still reported as unknown, never as zero — F6's rule is unchanged
+and is not an accuracy question. Likewise the advertised-vs-enforced pair from addendum 1 stays two
+reported numbers; approximation is not permission to quote only the requested one.
