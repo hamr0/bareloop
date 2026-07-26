@@ -88,3 +88,30 @@ test('every stage of a staged close is a hard-class command — a rubric or hitl
   assert.equal(r.ok, false);
   assert.ok(r.reds.some((x) => x.path.startsWith('close.1')), 'a non-command stage cannot ride in the list');
 });
+
+// The SHIPPED specs, not a fixture. `offer:false` on the grading stage is a
+// per-spec flag, not a schema rule ("the last stage is the grade" holds in all
+// four today and is unproven in general), so nothing structural stops the grader
+// from drifting back onto the menu — this is that guard. Decided 2026-07-27
+// (hamr): the agent may borrow any earlier stage of the close as a mid-build
+// ruler, never the stage that renders the grade.
+test('every shipped job spec validates, and none of them offers its grading stage as a ruler', async () => {
+  const { readdirSync, readFileSync } = await import('node:fs');
+  const specs = readdirSync('jobs').filter((f) => f.endsWith('.json'));
+  assert.ok(specs.length > 0, 'the spec directory is not empty (an empty sweep would pass vacuously)');
+  let staged = 0;
+  for (const f of specs) {
+    const j = JSON.parse(readFileSync(`jobs/${f}`, 'utf8'));
+    // the spec's own signed budget is the cap here: this test is about the close's
+    // shape, and a shellCap mismatch would red every spec for an unrelated reason
+    const r = validateJob(j, { shellCapUsd: j.budgetUsd });
+    assert.deepEqual(r.reds, [], `${f} validates`);
+    if (!Array.isArray(j.close)) continue;
+    staged += 1;
+    const offered = checkMenu(r.job.close).map((m) => m.name);
+    assert.ok(offered.length > 0, `${f}: a fully hidden menu would leave the agent no ruler at all`);
+    assert.ok(!offered.includes(j.close.at(-1).name),
+      `${f}: the grading stage "${j.close.at(-1).name}" must not be lendable — got menu [${offered}]`);
+  }
+  assert.ok(staged >= 4, `the staged specs are actually being read (saw ${staged})`);
+});
