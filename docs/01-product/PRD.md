@@ -1904,3 +1904,63 @@ The two verdict classes carry different downstream rights: a casualty is exclude
 retried, a governance stop is a checkpoint the operator resumes from. A defect that moves rows
 between those classes is an **arbiter** defect, which is why it was parked rather than fixed on
 sight, and why the fix ships with a control test in the direction that must NOT change.
+
+---
+## Addendum v1.32 — 2026-07-26 (the legacy `steps[]` path is DELETED now, not after Layer 3 — hamr)
+
+**Approval.** hamr in-turn, after being shown what the deletion costs: *"i just want to get rid of
+it"*, then — on the question of what happens to the two verdicts it carries — *"when we get to layer
+3, we will decide how hitl and softgreen will evolve, does that work?"*, and on the record entry:
+*"that's fine, log it in prd"*. This SUPERSEDES v1.23's park (*"legacy retires at the
+verdict-classes rung, post-Layer-3"*).
+
+### What is being deleted, and why now
+
+`steps[]` is the shape where the **operator hand-writes the workflow steps**. It is the exact thing
+the product exists to remove — *"there shouldn't be user authoring anywhere"* (v1.28) — and it has
+been co-existing scaffolding since Layer 2 landed. Keeping it costs a second shape in every
+schema decision downstream: the staged close (v1.28, the next build) would have had to accept both
+spellings, and the confusion is not hypothetical — it derailed this session's design checkpoint
+before either of us noticed we were talking about two different "old shapes".
+
+The park's stated reason was that legacy is the ONLY implementation of `hitl` and `soft-green`.
+That reason does not survive the repo's own doctrine: **graduation between rungs is a REWRITE,
+never a copy.** Keeping ~1,360 lines alive so a later rung can decline to copy them is preserving
+code for a use that will never happen.
+
+### What it costs, stated plainly and not minimised
+
+**`hitl` is not dead code — it has run.** `jobs/litectx-maintainer.json` (keep litectx green, then
+open a draft PR for human review) executed **6 times** in the archive, and one run opened a **real
+draft PR**. It is the only job in the repo that produces the product's actual end state — a change
+for a human to merge — rather than a benchmark grade. **That job goes dark** until the plan shape
+implements hitl.
+
+The other 7 legacy specs are archived experiment records; they stop being runnable and stay
+readable. `soft-green` was never implemented beyond its declaration, so nothing is lost there.
+
+### What it does NOT decide
+
+**How `hitl` and `soft-green` come back is deferred to Layer 3, deliberately undecided here**
+(hamr's *"we will decide how they evolve"*). Not "port the old design" — decide. Two things are
+already known to constrain that decision and are recorded so the rung inherits them, not so they
+pre-empt it: a rubric close judged by the worker is self-consistency in a judge's coat, so
+`soft-green` needs the RSI judged-floor analog first (v1.15); and merge stays human, forever,
+which is a hard line no verdict design may touch.
+
+Until then the plan path admits `green` only, and declaring `soft-green`/`hitl` stays a
+`request-red` — an admission the ledger counts, which is the honest record of the gap.
+
+### Consequences carried by this addendum
+
+- **Breaking change** — `interpret`, `validateConfig`, and `extractRules` are published API in the
+  adopter contract. Version bump, CHANGELOG entry, `bareloop.context.md` rewritten to one shape.
+- **config-v1 is fully gone**, not merely declared dead (F22 declared it; this removes it). The
+  drafted-workflow-config surface, its knobs (`loop.shape`, slots, `remember` kinds), and the
+  rules extractor built on it go with the path that consumed them.
+- **What stays** is the machinery the plan path imports and would otherwise have to re-grow: the
+  fence and secret primitives (`globToPrefix`, `scopeContained`, `sweepSecretLiterals`,
+  `SECRET_PATTERNS`) and the worker tool menu (`TOOL_BY_VERB`, the ctx tools, the personas and
+  strategy lines). Those are not legacy; they were housed in legacy files.
+- **Landed as its own change, before the staged close** (hamr chose the sequencing): two levers in
+  one diff make any resulting delta unattributable to either — the standing rule.
