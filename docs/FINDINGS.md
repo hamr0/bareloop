@@ -3439,3 +3439,91 @@ this time by design rather than by hamr.
   HuggingFace check) could still invert it locally.
 - **Gap attribution is by the event that ENDS the gap.** With a 0.6% residual the attribution is
   sound in aggregate; it is not a per-round timing instrument.
+
+## F63 — F56's "a replan has never fired" is FALSE: it fired 8 times. And A's 50% variance trigger would have fired 0 times on the same archive
+
+**Status: minted 2026-07-26. $0 — replayed all 18 archived plan-v1 spines (54 steps, 101 judged
+attempts, 1,213 metered rounds). Corrects F56 Finding 4, which is the premise PRD v1.27's move A
+and the materials design record §3.4 were built on. Found by asking whether the just-built
+trigger was REACHABLE, before spending anything on a live row.**
+
+### The correction
+
+F56 Finding 4 states, verbatim: *"a replan has never fired, in the entire programme"* and
+*"'the agent adapts its workflow as it goes' has zero observations across every battery this repo
+has run."*
+
+**Eight replans fired.** Each is a `replan` event followed by a `plan-accepted` at
+`phase: 'replan'`, all on the exhaustion trigger (`reason: "step exhausted its attempts with
+exits still red"`):
+
+| spine | job | step that triggered it |
+|---|---|---|
+| l2accept-L1-mrvpteca | aurora-testgen-l2accept | review-current-tests |
+| l2accept-L2-mrvpteca | aurora-testgen-l2accept | read-existing-suite |
+| l2accept-L3-mrvpteca | aurora-testgen-l2accept | survey-current-suite |
+| l2accept-L3-mrvyexy4 | aurora-testgen-l2accept | review-existing-suite |
+| l2accept-L4-mrvpteca | aurora-testgen-l2accept | audit-current-suite |
+| l2accept-L6-mrvpteca | aurora-testgen-l2accept | review-existing-suite |
+| l2clip-L1-mrxkj6ik | …-clipipe | survey-existing-tests |
+| l2clip-L2-mrxd0c4l | …-clipipe | strengthen-cache-check-tests |
+
+The L2-acceptance rows ran **2026-07-22** and the clipipe rows **2026-07-23** — both BEFORE F56
+was written on 2026-07-26. The evidence F56 actually cited was *"Both job #5 rows recorded
+`replanned:false` after dying provider-red"* — **two rows, one job, both provider casualties**,
+generalised to "the entire programme" without replaying the archive. Same error class F60 caught
+one size up: *a hypothesis drawn from an observational pattern survived exactly as long as it took
+to run the arm.* Here it survived four days and reached a signed design record.
+
+### And the trigger it motivated is inert at its chosen number
+
+A's replan trigger (design record §3.4, threshold answered §6.2 as 50%) fires when a step consumes
+that share of the run's REMAINING money or time with its exits unmoved. Replayed against every
+archived attempt boundary — which is exactly what the meter reads at the head of the next attempt:
+
+| | |
+|---|---|
+| steps seen | 54 |
+| steps with more than one attempt (the only ones that can EVER fire it) | 24 |
+| **would have fired at 0.5 with a further attempt pending** | **0** |
+| crossed 0.5 only on the LAST attempt (no successor to pre-empt) | 3 |
+| near misses (0.25–0.5, successor pending) | 4 — at **0.35 · 0.35 · 0.40 · 0.45** |
+
+**The zero was audited before it was believed** (the blind-instrument class has shipped seven
+times in this programme): all 18 spines carry `budgetUsd` on `job-start`, 1,212 of 1,213
+`worker-round` events are priced, and 101 `exit-eval` events exist to read shares at. The
+instrument can see the variable; the zero is a result, not a blind read.
+
+### What this does to A
+
+A is built, unit-tested and mutation-proven (5 mutants killed), and on the only workload with
+data it **adds nothing** — the F22 class, a knob that looks live and does nothing. Two honest
+readings, and this finding does not choose between them:
+
+1. **Inert.** The variance trigger buys no observation the exhaustion trigger did not already buy.
+2. **Untriggered, not inert.** It is a guard against a step that eats the run; no archived step
+   did that. The near-miss ceiling of 0.45 says the population is *close* to the wall, not far
+   from it.
+
+**The threshold is arbiter territory and stays hamr's.** Explicitly NOT lowered here: picking 0.35
+because that is where these four points sit would be fitting the number to the data, which is the
+standing no-fit-to-pass prohibition. The distribution is reported instead.
+
+**T is undamaged.** The clock, `wall-halt`, and the balance-at-draft do not depend on the replan
+premise.
+
+### The question the correction re-opens, now answerable from existing data
+
+F56 declared adaptation unobservable. It is not — there are 8 observations. First look, deliberately
+not minted as a rate: replanned runs greened 2 of 8; non-replan runs greened 1 of 5 valid rows
+(10 rows less 2 provider-red, 2 no-job-end, 1 pricing-red). **n is tiny and the rows are not
+matched** — different jobs, two provider surfaces, months apart — so this is unreadable, not
+encouraging. It does mean "does replanning help?" is a $0 archive question rather than a battery.
+
+### Lesson
+
+**A premise cited to justify a build gets replayed against the archive BEFORE the build, not
+after.** F56's Finding 4 cost a design decision, a signed record section, and a day of
+implementation, and the disconfirming evidence was sitting in 8 files the whole time. The check
+that caught it — *is the thing I just built reachable?* — took one script and no money, and it
+belongs before the build, where "would this ever fire?" is still a cheap question.
