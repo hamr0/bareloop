@@ -12,8 +12,8 @@
 //   instruction text), not the shipped function. It is run ONCE and the SAME blob is fed to
 //   every arm, so any drift is a constant held equal across the contrast and cannot bias it.
 //
-// BA-18: the stale-socket guard is carried over from run-screen-types.mjs. It lives in the
-// harness, never the library, so every new driver must re-wire it (F57 operational note).
+// BA-18 is RESOLVED upstream (bare-agent 0.34.0) — the provider bounds its own socket, so no
+// harness guard is needed here any more.
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -38,7 +38,6 @@ const SCOUT_ROUNDS = 8;
 const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/litectx-types';
 const OUT_DIR = '/home/hamr/PycharmProjects/bareloop/docs/02-experiments';
 const SCOUT_CACHE = '/tmp/claude-1000/-home-hamr-PycharmProjects-bareloop/768e1b72-ef13-4b1f-ba18-b332792c7608/scratchpad/probe-scout.txt';
-const CALL_TIMEOUT_MS = 240_000;
 
 const job = JSON.parse(readFileSync(new URL('../jobs/litectx-types-screen-c.json', import.meta.url), 'utf8'));
 
@@ -47,7 +46,6 @@ const job = JSON.parse(readFileSync(new URL('../jobs/litectx-types-screen-c.json
 let spent = 0;
 let calls = 0;
 let unpricedRounds = 0;
-let timeoutRetries = 0;
 const assertBudget = (what) => {
   if (spent >= HARD_STOP_USD) throw new Error(`probe HARD STOP: $${spent.toFixed(4)} of $${HARD_STOP_USD} before ${what}`);
 };
@@ -59,26 +57,13 @@ const baseProvider = dry
   ? /** @type {any} */ ({ async generate() { throw new Error('DRY: provider called — a dry run must spend nothing'); } })
   : new AnthropicProvider({ apiKey, model: MODEL });
 
-// ── BA-18 stale-socket guard (harness-side, touches no arbiter surface). AnthropicProvider
-// sets no request timeout and withRetry has no call sites, so a dead socket hangs until the
-// OS TCP timeout (38min–2h24m measured). One bounded retry on a fresh call.
-async function generateWithTimeout(/** @type {any[]} */ ...args) {
-  for (let attempt = 0; ; attempt++) {
-    let timer;
-    try {
-      return await Promise.race([
-        baseProvider.generate(...args),
-        new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`harness: generate() exceeded ${CALL_TIMEOUT_MS}ms — presumed stale socket`)), CALL_TIMEOUT_MS); }),
-      ]);
-    } catch (e) {
-      if (attempt >= 1 || !String(e?.message ?? '').includes('presumed stale socket')) throw e;
-      timeoutRetries++;
-    } finally { clearTimeout(timer); }
-  }
-}
-const provider = dry ? baseProvider : new Proxy(baseProvider, {
-  get(t, prop, r) { return prop === 'generate' ? generateWithTimeout : Reflect.get(t, prop, r); },
-});
+// BA-18 RESOLVED in bare-agent 0.34.0: the provider now bounds socket INACTIVITY itself
+// (timeoutMs, 10-min default, rejects with a retryable TimeoutError/ETIMEDOUT). The harness
+// Proxy that stood in for it is deleted. Retry is deliberately NOT wired: unlike BA-14's EPIPE
+// (which dies on write, so the request never reached the API), a timeout may have been accepted
+// and processed — retrying pays twice for one completion. A trip is a clean provider-red, and
+// the escalation's own "retry the run" recovers it without the double-bill.
+const provider = baseProvider;
 
 // ── one worker, mirroring planrun's mkWorker for the axes that matter here
 async function mkWorker({ granted, rounds, label }) {
@@ -200,5 +185,5 @@ for (let i = 0; i < N; i++) {
 
 const runid = process.env.PROBE_RUNID ?? String(Date.now().toString(36));
 const out = join(OUT_DIR, `materials-probe-${runid}.json`);
-writeFileSync(out, JSON.stringify({ runid, model: dry ? null : MODEL, n: N, spentUsd: spent, calls, timeoutRetries, unpricedRounds, scoutBytes: Buffer.byteLength(SCOUT), rows }, null, 2));
-console.log(`\nwrote ${out}\nspent $${spent.toFixed(4)} of $${HARD_STOP_USD} | ${calls} calls | ${timeoutRetries} timeout retries`);
+writeFileSync(out, JSON.stringify({ runid, model: dry ? null : MODEL, n: N, spentUsd: spent, calls, unpricedRounds, scoutBytes: Buffer.byteLength(SCOUT), rows }, null, 2));
+console.log(`\nwrote ${out}\nspent $${spent.toFixed(4)} of $${HARD_STOP_USD} | ${calls} calls`);

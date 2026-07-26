@@ -7,6 +7,42 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Fixed
+- **F59 — the SCOUT returned nothing on 15 of 18 runs, so the planner drafted blind.** The
+  round bound is enforced from the metering callback (`loop.stop`), so a scout still calling
+  tools on its last round was halted mid-tool-use and its `text` was empty: it spent its whole
+  allowance exploring and never wrote the survey that is its only deliverable. `planPrompt`
+  then substituted `(no scout notes)` — a legal prompt, so the failure was silent. Measured
+  across every archived plan-v1 run: 15 of 16 bounded scouts produced 0–86 bytes; both scouts
+  that finished on their own produced full 6–8KB surveys. Two fixes:
+  - **The summary round is now reserved.** A bounded-and-short scout gets one **toolless**
+    round on the same conversation (`askFrom`), where text is the only possible output — a
+    mechanical guarantee, never a prose request (F19/F37: a persona pacing mandate was violated
+    6/6). Native is excluded by design: a toolless native session reports no cost (F48), so a
+    recovery round there would be unmetered spend.
+  - **An empty survey is now loud.** `scout-empty` is a named spine event. It is never a halt —
+    3 of 5 archived greens had an empty scout, so failing the run there would be a worse error
+    than the one being fixed.
+  - `scoutRounds` is now a shell-owned option (like `capRuns`/`maxStepRounds`).
+  - **Confirmed live:** the patient that returned 0 bytes returned 5379 bytes after the fix.
+    F60 then measured what that survey is worth: it carries ~15× more real repository
+    specifics into the plan, and roughly triples the plan's declared work.
+
+### Changed
+- **bare-agent 0.33.1 → 0.34.0** (BA-18 delivered). The provider now bounds socket
+  **inactivity** itself (`timeoutMs`, 10-minute default, per-call overridable, rejecting with a
+  retryable `TimeoutError`/`ETIMEDOUT`), so a silently-dropped socket is a 10-minute error
+  instead of a ~2-hour hang. The harness-side stale-socket guards in `scripts/run-screen-types.mjs`
+  and `scripts/probe-materials.mjs` are deleted as superseded. **`Retry` stays deliberately
+  unwired:** a BA-14 `EPIPE` dies on write so the request never reached the API and a retry is
+  free, but a timed-out request may have been accepted and processed — retrying pays twice for
+  one completion. A trip is a clean `provider-red`, and the escalation's own "retry the run"
+  option recovers it without the double-bill.
+- `planPrompt` is exported from `src/planrun.js` (in-repo seam for probe drivers; **not** added
+  to `src/index.js`, so the adopter surface is unchanged). Probes now import the shipped prompt
+  instead of copying it — the N3 pre-probe's verbatim copy was diffed against source and found
+  identical, so F51–F55 stand, but a copy is a fixture and new drivers do not take that risk.
+
 ## [0.5.1] — 2026-07-24
 
 ### Added
