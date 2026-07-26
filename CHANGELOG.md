@@ -7,6 +7,31 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Changed
+- **The `tree-changed` scope is now a MENU the agent picks from, not a glob it authors and
+  guesses the shape of** (design record 2026-07-26 §4, hamr's *"did agent choose from a list or
+  not?"*). F60 measured **13 of 18 validator reds as this one class**: the agent writes
+  `{"type":"tree-changed","scope":"src/*.js"}`, the grammar accepts only a trailing `/**` or
+  `/*`, and every red costs a redraft call. Teaching the rule in the prompt or widening the
+  grammar both leave the agent authoring free text; enumerating makes an illegal scope
+  **inexpressible**.
+  - New `legalScopes(writeScope, dirs, cap?)` (`src/plan.js`) is the ONLY producer of scope
+    menus: the signed fence entries (always offerable — they cover directories a step has not
+    created yet) plus the real directories beneath them, fence-filtered, deduped,
+    shallowest-first, capped at `MAX_SCOPE_MENU` (24). Because it filters by the fence, a menu
+    entry that escapes containment cannot be constructed rather than being caught downstream.
+  - `planPrompt` gains a `scopes` parameter and lists the values verbatim, one per line;
+    `validatePlan` gains `opts.scopes` and accepts **membership only**. Omitting the option
+    derives the menu from the signed `writeScope` — fail-CLOSED, never a free-text containment
+    fallback (F50: a silently-ignored optional param is the blind-instrument class).
+  - An off-menu scope **splits by cause**: outside the signed fence stays `scope-escape` (a
+    behaviour signal the ledger keys on), in-fence-but-unoffered is `invalid-value` carrying the
+    menu so the redraft can choose. Collapsing them would launder an attempted fence escape into
+    a typo class.
+  - `runPlan` emits `scope-menu {offered, truncated, offerableCount?, cap?}` — no silent caps.
+  - `globToPrefix` is **untouched**: this changes what the agent is offered, never what the
+    fence enforces.
+
 ### Fixed
 - **F59 — the SCOUT returned nothing on 15 of 18 runs, so the planner drafted blind.** The
   round bound is enforced from the metering callback (`loop.stop`), so a scout still calling

@@ -35,6 +35,55 @@ export const MAX_PLAN_STEPS = 8;
  * `write`) — a step granting one is a WRITE step for the F17 pairing rule
  * and the v1.18 target requirement */
 export const WRITE_VERBS = Object.freeze(['write', 'edit']);
+/** scope-menu bound: the menu is a PROMPT ingredient on every draft and
+ * redraft, so an unbounded repo would price the drafting call by its directory
+ * count. Shallow entries survive the cap (see `legalScopes`) because they are
+ * the useful ones — a deep leaf is reachable via its parent. */
+export const MAX_SCOPE_MENU = 24;
+
+/**
+ * The MENU of legal `tree-changed` scopes — choose-don't-describe (design record
+ * §4, hamr's correction: *"did agent choose from a list or not?"*).
+ *
+ * F60 measured 13 of 18 validator reds as ONE class: the agent writes
+ * `scope: "src/*.js"`, the grammar accepts only a trailing `/**` or `/*`, and
+ * each red costs a redraft call. Teaching the rule in the prompt or widening the
+ * grammar both leave the agent authoring a free-text string and guessing its
+ * shape. Enumerating instead makes an illegal scope INEXPRESSIBLE.
+ *
+ * This is the only producer of scope menus, and it filters by the signed fence —
+ * so a menu entry that escapes containment cannot be constructed, rather than
+ * being caught by a downstream check. `globToPrefix` is untouched: this changes
+ * what the agent is OFFERED, never what the fence ENFORCES.
+ *
+ * @param {string[]} writeScope the signed fence entries (always offerable — they
+ *   cover directories a step has not created yet, which `snapshotScope` treats
+ *   as an empty snapshot)
+ * @param {string[]} [dirs] workdir-relative directories discovered under the
+ *   fence; each becomes `<dir>/**`
+ * @param {number} [cap] the menu bound; `Infinity` asks for the UNCAPPED set, so
+ *   a caller can report how many entries the cap dropped (no silent caps — a menu
+ *   that reads as complete when it is not is the blind-instrument class)
+ * @returns {string[]} the offerable scopes, deduped, shallowest-first, capped
+ */
+export function legalScopes(writeScope, dirs = [], cap = MAX_SCOPE_MENU) {
+  const fence = writeScope.filter(isNonEmptyString).map(globToPrefix).filter((p) => p !== '');
+  const inside = (/** @type {string} */ p) => fence.some((f) => p === f || p.startsWith(f + '/'));
+  /** @type {string[]} */
+  const prefixes = [];
+  for (const p of [...fence, ...dirs.filter(isNonEmptyString).map(globToPrefix)]) {
+    // scopeContained rejects absolutes, drive letters, backslashes and any ".."
+    // segment; `inside` rejects a contained-but-out-of-fence dir. Both, in that
+    // order, on the NORMALIZED prefix.
+    if (!scopeContained(p) || !inside(p) || prefixes.includes(p)) continue;
+    prefixes.push(p);
+  }
+  // depth first, then lexical — a stable order so the same repo yields the same
+  // menu (and the same prompt) across drafts, and so the cap drops leaves
+  // rather than roots.
+  prefixes.sort((a, b) => a.split('/').length - b.split('/').length || a.localeCompare(b));
+  return prefixes.slice(0, cap).map((p) => `${p}/**`);
+}
 const PLAN_FIELDS = ['schema', 'steps'];
 // decision 7: NO dependsOn — v1 is strictly sequential, array order IS the
 // order; a field nothing consumes is a live-looking knob with zero effect
@@ -139,14 +188,17 @@ export function hasNestedQuantifier(src) {
  * job spec. Never throws on JSON text or plain parsed data; every failure is
  * a named red. Returns the parsed plan on ok (single parse), null on any red.
  * @param {object|string} input parsed plan, or raw JSON text (parse failures are a red)
- * @param {{ job?: any, maxStepRounds?: number }} [opts] `job`: the
+ * @param {{ job?: any, maxStepRounds?: number, scopes?: string[] }} [opts] `job`: the
  *   validateJob-GREEN four-field spec (the ceiling, the fence, and the checks
  *   menu all come from it — a missing or non-plan-shape job fails CLOSED);
  *   `maxStepRounds`: the shell's per-step rounds ceiling (interpret's
- *   tool-mode TURNS_PER_ATTEMPT) — a step may tighten it, never exceed it.
+ *   tool-mode TURNS_PER_ATTEMPT) — a step may tighten it, never exceed it;
+ *   `scopes`: the offered `tree-changed` menu from `legalScopes` (the SAME array
+ *   the drafting prompt enumerated). Omitted, it derives from the signed
+ *   writeScope — never a free-text fallback (F50).
  * @returns {{ ok: boolean, reds: Red[], plan: object|null }}
  */
-export function validatePlan(input, { job, maxStepRounds = 40 } = {}) {
+export function validatePlan(input, { job, maxStepRounds = 40, scopes } = {}) {
   /** @type {Red[]} */
   const reds = [];
   /** @type {(code: string, path: string, detail?: string) => void} */
@@ -164,6 +216,10 @@ export function validatePlan(input, { job, maxStepRounds = 40 } = {}) {
   const fence = spec.writeScope.map(globToPrefix);
   const insideFence = (/** @type {string} */ p) => fence.some((f) => p === f || p.startsWith(f + '/'));
   const checkNames = Array.isArray(spec.checks) ? spec.checks.map((/** @type {any} */ c) => c?.name).filter(isNonEmptyString) : [];
+  // The offered scope menu. A caller-supplied menu must be the same one the
+  // prompt enumerated; with none, derive from the signed fence — fail-CLOSED,
+  // so omitting the option narrows the agent's choices and never widens them.
+  const scopeMenu = Array.isArray(scopes) && scopes.length ? scopes : legalScopes(spec.writeScope);
 
   let p = input;
   if (typeof p === 'string') {
@@ -241,7 +297,7 @@ export function validatePlan(input, { job, maxStepRounds = 40 } = {}) {
         red('scope-escape', `${at}.target`, `"${s.target}" is outside the signed fence [${spec.writeScope.join(', ')}]`);
       }
 
-      validateExit(s, at, red, { checkNames, fence: spec.writeScope, insideFence, writeStep });
+      validateExit(s, at, red, { checkNames, fence: spec.writeScope, insideFence, writeStep, scopeMenu });
     });
   }
 
@@ -258,9 +314,9 @@ export function validatePlan(input, { job, maxStepRounds = 40 } = {}) {
  * @param {Record<string, any>} s the step
  * @param {string} at step path prefix
  * @param {(code: string, path: string, detail?: string) => void} red
- * @param {{ checkNames: string[], fence: string[], insideFence: (p: string) => boolean, writeStep: boolean }} ctx
+ * @param {{ checkNames: string[], fence: string[], insideFence: (p: string) => boolean, writeStep: boolean, scopeMenu: string[] }} ctx
  */
-function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep }) {
+function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep, scopeMenu }) {
   if (!Array.isArray(s.exit) || s.exit.length === 0) {
     red('missing-required', `${at}.exit`, `non-empty array from the closed menu ${EXIT_TYPES.join('|')} — ALL listed exits must pass (AND-only); a step without an exit has no progress gate`);
     return;
@@ -290,10 +346,27 @@ function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep })
       }
     } else if (e.type === 'tree-changed') {
       hasTreeChanged = true;
-      if (!isNonEmptyString(e.scope) || !scopeContained(e.scope) || globToPrefix(e.scope).includes('*')) {
-        red('invalid-value', `${eAt}.scope`, 'a contained scope (trailing /** or /* only, no ".." or absolute)');
-      } else if (!insideFence(globToPrefix(e.scope))) {
-        red('scope-escape', `${eAt}.scope`, `"${e.scope}" is outside the signed fence [${fence.join(', ')}]`);
+      // choose-don't-describe: membership of the enumerated menu, NOT a shape
+      // grammar the agent has to guess (§4; F60's 72%-of-all-reds class). The
+      // menu derives from the signed writeScope when the caller passes none, so
+      // omitting the option can never restore free-text containment — a
+      // silently-ignored optional param is the F50 blind-instrument class. Every
+      // menu comes from `legalScopes`, which filters by the fence, so
+      // scope-escape here is inexpressible rather than checked.
+      // An off-menu scope splits by CAUSE, because the two carry different
+      // meaning to the ledger's class table: reaching OUTSIDE the signed fence is
+      // a behaviour signal about the agent (`scope-escape`, same code the target
+      // and path arms raise), while an in-fence value that simply is not offered
+      // is drafting friction (`invalid-value`, and the detail carries the menu so
+      // the redraft can choose instead of guess). Collapsing them would launder an
+      // attempted fence escape into a typo class.
+      if (!isNonEmptyString(e.scope) || !scopeMenu.includes(e.scope)) {
+        const contained = isNonEmptyString(e.scope) && scopeContained(e.scope);
+        if (contained && !insideFence(globToPrefix(e.scope))) {
+          red('scope-escape', `${eAt}.scope`, `"${e.scope}" is outside the signed fence [${fence.join(', ')}]`);
+        } else {
+          red('invalid-value', `${eAt}.scope`, `one of the offered scopes: [${scopeMenu.join(', ')}]`);
+        }
       }
     } else { // artifact-written | json-valid — a named file path inside the fence
       if (!isNonEmptyString(e.path) || !scopeContained(e.path)) {

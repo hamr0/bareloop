@@ -14,14 +14,14 @@
 // (fs.deny on the gate audit / .smoke / .litectx, unchanged).
 
 import { createRequire } from 'node:module';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { join, resolve } from 'node:path';
+import { join, resolve, relative } from 'node:path';
 import { Gate, redact } from 'bareguard';
 import { LiteCtx } from 'litectx';
 import { runClose, ralph, CLOSE_FAULTS } from './ralph.js';
-import { validatePlan } from './plan.js';
-import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS } from './plan.js';
+import { validatePlan, legalScopes } from './plan.js';
+import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU } from './plan.js';
 import { snapshotScope, evalExits } from './exits.js';
 import { createRoot } from './root.js';
 import { TOOL_MENU } from './job.js';
@@ -72,8 +72,14 @@ const MONEY_MIN = 0.001;
  * arbiter territory the planner never sees.
  * @param {any} job @param {string} scoutBlob @param {any[]|null} reds
  * @param {number} maxStepRounds @param {string|null} failure replan context
+ * @param {string[]} [scopes] the offered `tree-changed` menu (`legalScopes`).
+ *   Choose-don't-describe (§4): the agent picks a value, never authors a glob and
+ *   guesses its shape. Omitted, it derives from the signed fence — the SAME
+ *   fail-closed derivation `validatePlan` uses, so prompt and validator can never
+ *   disagree about what was offered.
  */
-export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure) {
+export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes) {
+  const scopeMenu = Array.isArray(scopes) && scopes.length ? scopes : legalScopes(job.writeScope ?? []);
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
   const checkNames = (job.checks ?? []).map((/** @type {any} */ c) => c.name);
   const doc = `DRAFT-PLAN
@@ -91,12 +97,17 @@ strictly in array order. Each step (no other fields exist):
 - "target": the step's deliverable path (REQUIRED when tools include write/edit), inside ${JSON.stringify(job.writeScope)}
 - "exit": 1..${MAX_EXITS_PER_STEP} form checks that ALL must pass (AND), each one of:
     {"type":"artifact-written","path":"...","pattern":"optional regex"}
-    {"type":"tree-changed","scope":"a scope inside ${JSON.stringify(job.writeScope)}"}
+    {"type":"tree-changed","scope":"<copy one value from the offered scopes below>"}
     {"type":"json-valid","path":"..."}
     {"type":"check-passes","name":"one of ${JSON.stringify(checkNames)}"}
   A check-passes on a write-granted step MUST be paired with a tree-changed exit
   (the repository starts green — a lone check would pass on the untouched tree).
   Reference checks by NAME only; you cannot author or modify one.
+
+Offered "scope" values for tree-changed — copy ONE of these exactly, character for
+character. No other value is accepted, and patterns of your own (like "src/*.js")
+are not accepted:
+${scopeMenu.map((s) => `  ${JSON.stringify(s)}`).join('\n')}
 
 Goal:
 ${job.goal}
@@ -222,6 +233,31 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
   const fencePrefixes = job.writeScope.map((/** @type {string} */ g) => resolve(workdir, globToPrefix(g)));
   const auditPath = join(workdir, 'gate-audit.jsonl');
   const checksByName = new Map((job.checks ?? []).map((/** @type {any} */ c) => [c.name, c]));
+  // Choose-don't-describe (§4): the offered `tree-changed` scopes, enumerated from
+  // the signed fence plus the directories that actually exist beneath it. ONE menu
+  // object feeds both the drafting prompt and the validator, so what was offered
+  // and what is accepted can never drift apart. Discovery is best-effort — a
+  // missing or unreadable fence directory degrades to the signed entries alone
+  // (which `snapshotScope` already handles as an empty snapshot), never a throw.
+  const discoveredDirs = job.writeScope.flatMap((/** @type {string} */ g) => {
+    const prefix = globToPrefix(g);
+    try {
+      return readdirSync(join(workdir, prefix), { recursive: true, withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .map((d) => `${prefix}/${relative(join(workdir, prefix), join(d.parentPath ?? d.path, d.name))}`);
+    } catch { return []; }
+  });
+  const scopeMenu = legalScopes(job.writeScope, discoveredDirs);
+  // No silent caps: MAX_SCOPE_MENU can drop deep directories, and a menu that
+  // reads as complete when it is not is the blind-instrument class. Report BOTH
+  // counts so a truncation is visible in the record rather than inferred.
+  const offerable = legalScopes(job.writeScope, discoveredDirs, Infinity).length;
+  emit('scope-menu', {
+    offered: scopeMenu,
+    ...(offerable > scopeMenu.length
+      ? { truncated: true, offerableCount: offerable, cap: MAX_SCOPE_MENU, meaning: 'deep directories were dropped from the menu; they remain reachable via a parent scope' }
+      : { truncated: false }),
+  });
 
   /** the check-passes seam evalExits delegates to: the FULL runClose machinery
    * per signed check; a forbidden-zone verdict rides out as `fault` by name so
@@ -596,15 +632,15 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
     const drafter = await mkWorker({ granted: [], phase: 'plan', attemptRounds: 2, attempts: 3, writable: false });
     const draftPlan = async (/** @type {any[]|null} */ reds) => {
       drafter.setIteration(reds ? 'redraft' : 'draft');
-      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure), []);
+      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu), []);
       return extractArtifact(r.text).code ?? '';
     };
     let text = await draftPlan(null);
-    let pv = validatePlan(text, { job, maxStepRounds });
+    let pv = validatePlan(text, { job, maxStepRounds, scopes: scopeMenu });
     emit('plan-validate', { ok: pv.ok, reds: pv.reds, phase: `${phase}-1` });
     if (!pv.ok) {
       text = await draftPlan(pv.reds);
-      pv = validatePlan(text, { job, maxStepRounds });
+      pv = validatePlan(text, { job, maxStepRounds, scopes: scopeMenu });
       emit('plan-validate', { ok: pv.ok, reds: pv.reds, phase: `${phase}-2` });
     }
     return pv;

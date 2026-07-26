@@ -10,7 +10,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validatePlan, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, WRITE_VERBS, hasNestedQuantifier } from '../src/plan.js';
+import { validatePlan, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, WRITE_VERBS, hasNestedQuantifier, legalScopes } from '../src/plan.js';
+import { planPrompt } from '../src/planrun.js';
 import { validateJob } from '../src/job.js';
 
 // The signed side: a validateJob-green four-field spec (job #4's shape) — the
@@ -329,4 +330,104 @@ test('a legacy steps[] job cannot gate a plan — plans validate only against th
   assert.equal(r.ok, false);
   assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'job-invalid:job');
   assert.match(r.reds[0].detail ?? '', /plan shape/);
+});
+
+// ─── choose-don't-describe: the tree-changed scope is a MENU, not free text ───
+// F60 measured 13 of 18 validator reds as ONE class: the agent writes
+// {"type":"tree-changed","scope":"src/*.js"} and the grammar accepts only a
+// trailing /** or /*. hamr's correction ("did agent choose from a list or
+// not?") rejected both prompt-teaching and grammar-widening — the agent should
+// pick from an enumerated set, so an illegal scope is INEXPRESSIBLE rather than
+// rejected after a redraft call. The fence (globToPrefix) is NOT touched: this
+// changes what the agent is offered, never what containment enforces.
+
+test('legalScopes: the signed writeScope entries are ALWAYS in the menu, even with no discovered dirs', () => {
+  const menu = legalScopes(['tests/**'], []);
+  assert.deepEqual(menu, ['tests/**']);
+});
+
+test('legalScopes: discovered dirs become <dir>/** and are deduped against the signed entries', () => {
+  const menu = legalScopes(['tests/**'], ['tests', 'tests/unit', 'tests/unit/helpers']);
+  assert.deepEqual(menu, ['tests/**', 'tests/unit/**', 'tests/unit/helpers/**']);
+});
+
+test('legalScopes: a discovered dir OUTSIDE the signed fence never enters the menu', () => {
+  const menu = legalScopes(['tests/**'], ['tests/unit', 'src', 'node_modules/x', '../escape']);
+  assert.deepEqual(menu, ['tests/**', 'tests/unit/**'], 'only fence-contained dirs are offerable');
+});
+
+test('legalScopes: the menu is capped and prefers SHALLOW dirs (a prompt ingredient must stay bounded)', () => {
+  const deep = Array.from({ length: 60 }, (_, i) => `tests/a/b/c/d${i}`);
+  const shallow = ['tests/zzz'];
+  const menu = legalScopes(['tests/**'], [...deep, ...shallow]);
+  assert.ok(menu.length <= MAX_SCOPE_MENU, `menu was ${menu.length}`);
+  assert.ok(menu.includes('tests/zzz/**'), 'a shallow dir must survive the cap ahead of 60 deep ones');
+});
+
+test('the F60 red class: a scope OFF the menu reds, and the red NAMES the menu so the redraft can choose', () => {
+  const r = validatePlan(mut((p) => { p.steps[1].exit[0] = { type: 'tree-changed', scope: 'tests/*.py' }; }), OPTS);
+  assert.equal(r.ok, false);
+  const red = r.reds.find((x) => x.path === 'steps.1.exit.0.scope');
+  assert.ok(red, `expected a scope red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(red.code, 'invalid-value');
+  assert.match(red.detail, /tests\/\*\*/, 'the red must carry the legal values, not just say "invalid"');
+});
+
+test('a scope ON the menu passes — the agent may pick a discovered SUBDIRECTORY, not only the signed root', () => {
+  const r = validatePlan(
+    mut((p) => { p.steps[1].exit[0] = { type: 'tree-changed', scope: 'tests/unit/**' }; }),
+    { job: JOB, scopes: legalScopes(['tests/**'], ['tests/unit']) },
+  );
+  assert.deepEqual(r.reds, []);
+});
+
+test('fail-CLOSED with no scopes option: the menu DERIVES from the signed writeScope — never a free-text containment fallback (F50: a silently-ignored optional param is the blind-instrument class)', () => {
+  // 'tests/unit/**' is CONTAINED by the fence and would have passed the old
+  // containment rule. With no dirs discovered it is not on the derived menu, so
+  // it must red — otherwise omitting the option silently restores free text.
+  const r = validatePlan(mut((p) => { p.steps[1].exit[0] = { type: 'tree-changed', scope: 'tests/unit/**' }; }), OPTS);
+  assert.equal(r.ok, false);
+  assert.ok(r.reds.some((x) => x.path === 'steps.1.exit.0.scope' && x.code === 'invalid-value'));
+});
+
+test('the fence still binds the menu: a scope on an OFFERED menu that escapes the signed fence is impossible to construct', () => {
+  // legalScopes is the only producer of menus, and it filters by the fence — so
+  // scope-escape via the menu is inexpressible by construction, not by a check.
+  const menu = legalScopes(['tests/**'], ['../../etc', '/etc', 'tests/../src']);
+  assert.deepEqual(menu, ['tests/**']);
+});
+
+test('planPrompt ENUMERATES the scope menu (choose-don\'t-describe: the agent is handed the set, never asked to guess a shape)', () => {
+  const p = planPrompt(JOB, 'survey', null, 40, null, legalScopes(['tests/**'], ['tests/unit']));
+  assert.match(p, /"tests\/\*\*"/);
+  assert.match(p, /"tests\/unit\/\*\*"/);
+  assert.doesNotMatch(p, /a scope inside/, 'the old describe-the-shape wording must be gone');
+});
+
+test('an off-menu scope splits by CAUSE: outside the fence stays scope-escape (a behaviour signal the ledger keys on), inside-but-unoffered is invalid-value', () => {
+  const escaping = validatePlan(mut((p) => { p.steps[1].exit[0] = { type: 'tree-changed', scope: 'src/**' }; }), OPTS);
+  const esc = escaping.reds.find((x) => x.path === 'steps.1.exit.0.scope');
+  assert.equal(esc.code, 'scope-escape', 'a fence escape must never launder into the typo class');
+
+  const unoffered = validatePlan(mut((p) => { p.steps[1].exit[0] = { type: 'tree-changed', scope: 'tests/deep/**' }; }), OPTS);
+  const un = unoffered.reds.find((x) => x.path === 'steps.1.exit.0.scope');
+  assert.equal(un.code, 'invalid-value');
+  assert.match(un.detail, /tests\/\*\*/, 'drafting friction gets the menu; the escape gets the fence');
+});
+
+test('legalScopes: cap is a parameter so a caller can report what the cap DROPPED (no silent caps)', () => {
+  const dirs = Array.from({ length: 40 }, (_, i) => `tests/d${i}`);
+  const capped = legalScopes(['tests/**'], dirs);
+  const uncapped = legalScopes(['tests/**'], dirs, Infinity);
+  assert.equal(capped.length, MAX_SCOPE_MENU);
+  assert.equal(uncapped.length, 41, 'the fence entry plus every discovered dir');
+  assert.ok(uncapped.length > capped.length, 'the two counts are what makes a truncation reportable');
+});
+
+test('planPrompt: the offered scopes are a STANDALONE list, and the JSON exit example stays parseable (a nested array inside a JSON string is malformed schema text)', () => {
+  const p = planPrompt(JOB, 'survey', null, 40, null, legalScopes(['tests/**'], ['tests/unit']));
+  const exitLine = p.split('\n').find((l) => l.includes('"type":"tree-changed"'));
+  assert.doesNotThrow(() => JSON.parse(exitLine.trim()), `exit example must be valid JSON, got: ${exitLine}`);
+  assert.match(p, /Offered "scope" values for tree-changed/);
+  assert.match(p, /^ {2}"tests\/unit\/\*\*"$/m, 'each offered value on its own line, quoted, copyable');
 });
