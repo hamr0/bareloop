@@ -86,6 +86,49 @@ feature lands, **patch** = docs, fixes, scaffolding.
   - **Threshold decided at 0.5 with that inertness on the table** (hamr, *"keep 0.5"*, PRD
     v1.31). It is therefore a guard set ABOVE the observed population, not a tuned trigger —
     moving it to 0.35 to catch those four points would be fitting the number to the data.
+- **The staged close — the user authors the DESTINATION, never the road** (PRD v1.28, hamr:
+  *"there shouldn't be user authoring anywhere, that defies the point of bareloop"*). `checks[]`
+  is retired outright: a spec that still declares it reds `checks-derived` **by name**, not a
+  bare `unknown-field`. In its place the operator's close becomes an ORDERED LIST of NAMED
+  STAGES, and the check menu the agent picks from is DERIVED from that list — nobody
+  hand-authors a check per job, ever.
+  - `close: [{ name, cmd, expect, judged?, gapKeep?, offer?, needs? }, ...]` (`src/job.js`) —
+    kebab-case unique names, every stage a `predicate` command body (a rubric/hitl stage is
+    inexpressible by shape); `needs` must name EARLIER stages and is incoherent with
+    `offer: false` on the same stage (a chain with nothing to reach it). A single `predicate`
+    close object is legal shorthand the plan flow adapts into a one-stage list; a
+    `gold`/`rubric`/`hitl` object close still validates (the declared-but-locked verdict
+    classes) but the plan flow refuses it at runtime as `close-unsupported` — it names no
+    command to run. `checkMenu(close)` (`src/job.js`) derives the offerable stages, each
+    carrying the ordered chain (prerequisites, then itself) that a `check-passes(name)` pick
+    must run.
+  - `runStages` (`src/ralph.js`) runs a stage list as ONE close: first red renders the verdict,
+    later stages never run; the gap names the failing STAGE, never a culprit file (v1.12/F28
+    untouched); the secrets scrub runs on every stage.
+  - `runPlan` (`src/planrun.js`) wires the close precheck, the check-menu preflight (now
+    emitting `check-menu {offered, hidden?, meaning?}` — a partial menu is a stage that cannot
+    stand alone as a ruler, never a failure), the `check-passes` seam, the outer close, and the
+    fix loop through `runStages`; `validatePlan` (`src/plan.js`) derives its legal
+    `check-passes` names from `checkMenu(job.close)` instead of a separately-signed list. The
+    four job specs in `jobs/` migrated to the staged shape.
+  - **Two decisions taken 2026-07-26 (hamr, *"agreed on both, validate your claims"*), built and
+    validated:**
+    - **Layer R's red-set is the FAILING STAGE's, per attempt.** A staged close has N
+      `gapKeep`s, so `createRoot().observe()` (`src/root.js`) now takes `redStage`/`redKeep`
+      and REFUSES to compare red-sets across a stage change (a different wall is a different
+      failure — the same bucket as one-known-one-UNKNOWN, never a fire). `root-injected` gains
+      an optional `redStage`. **Measured, not assumed:** the rejected alternative — one union
+      `gapKeep` pattern fixed for the run — was rejected because job #4's two close stages are
+      near-clones of one grader (7 of 12 kept-line templates byte-identical), so a union
+      kept-set can read identical across a stage change and false-fire, which "inert when not
+      stuck" forbids.
+    - **The grading stage is not lendable.** All four shipped specs set `offer: false` on the
+      final `verdict` stage, kept as a **per-spec flag**, not a schema rule — "the last stage
+      is the grade" holds today and is unproven in general. `check-menu` preflight always
+      announces the derived menu either way, so a forgotten flag is visible in the run's own
+      record; a test now reads every spec in `jobs/` and reds if any offers its own last stage.
+  - **Scripted-provider evidence only — the staged close has not yet run against a real
+    model.**
 
 ### Changed
 - **The `tree-changed` scope is now a MENU the agent picks from, not a glob it authors and

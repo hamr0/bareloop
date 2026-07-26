@@ -64,6 +64,11 @@ const RED = [
   ['needs naming itself', (j) => { j.close[3].needs = ['api-superset']; }, 'invalid-value:close.3.needs'],
   ['needs on a stage nobody can pick is meaningless', (j) => { j.close[0].needs = []; }, 'invalid-value:close.0.needs'],
   ['offer that is not a boolean', (j) => { j.close[1].offer = 'yes'; }, 'invalid-value:close.1.offer'],
+  // the two fields answer opposite questions — `needs` says what must run when the
+  // agent PICKS this stage, and offer:false says it can never be picked. Declared
+  // together, one of them is a mistake, and guessing which would be the arbiter
+  // silently reinterpreting an operator's close.
+  ['needs on a stage that is never offered (incoherent)', (j) => { j.close[2].offer = false; j.close[2].needs = ['typecheck']; }, 'invalid-value:close.2.needs'],
   ['a secret literal in a stage cmd', (j) => { j.close[1].cmd = 'deploy --token ghp_abcdefghijklmnopqrstuv'; }, 'secret-literal:close.1.cmd'],
 ];
 for (const [name, fn, want] of RED) {
@@ -92,7 +97,7 @@ test('every stage of a staged close is a hard-class command — a rubric or hitl
 // The SHIPPED specs, not a fixture. `offer:false` on the grading stage is a
 // per-spec flag, not a schema rule ("the last stage is the grade" holds in all
 // four today and is unproven in general), so nothing structural stops the grader
-// from drifting back onto the menu — this is that guard. Decided 2026-07-27
+// from drifting back onto the menu — this is that guard. Decided 2026-07-26
 // (hamr): the agent may borrow any earlier stage of the close as a mid-build
 // ruler, never the stage that renders the grade.
 test('every shipped job spec validates, and none of them offers its grading stage as a ruler', async () => {

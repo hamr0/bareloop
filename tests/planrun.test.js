@@ -958,3 +958,53 @@ test('T: the between-steps wall terminal — a run whose clock expires after a g
   assert.equal(wh.cutMidCall, false, 'read BETWEEN steps, not inside a call');
   assert.match(wh.meaning, /not "can't"/, 'a time stop is not a capability read');
 });
+
+test('a HIDDEN precondition never becomes a ruler, and a dependent stage is picked WITH its chain — through the real plan flow', async (t) => {
+  const wd = makePatient(t);
+  // Both stage classes v1.28 names, in one close, exercised end to end — the
+  // unit tests cover checkMenu and runStages, but nothing had run either class
+  // through preflight and the check-passes seam, where the menu and the chain
+  // are actually consumed.
+  writeFileSync(join(wd, 'seed.mjs'), 'process.exit(0);\n');                       // a precondition: always true, teaches nothing
+  writeFileSync(join(wd, 'build.mjs'), `import { writeFileSync as w } from 'node:fs';
+w(new URL('./built.txt', import.meta.url), 'x'); process.exit(0);\n`);
+  // `api` judges what `build` produced: alone it reds for a reason that has
+  // nothing to do with the worker's edit, which is what `needs` exists to prevent
+  // it CONSUMES the artifact, so the chain must re-run `build` every single time:
+  // a persistent artifact would let a chainless `api` pass on the leftovers from
+  // preflight, and the test would go green while proving nothing
+  writeFileSync(join(wd, 'api.mjs'), `import { existsSync, rmSync } from 'node:fs';
+const built = new URL('./built.txt', import.meta.url);
+if (!existsSync(built)) { console.log('FAILED: nothing was built'); process.exit(1); }
+rmSync(built); process.exit(0);\n`);
+  const job = JOB(wd, { close: [
+    { name: 'seed-present', cmd: 'node seed.mjs', expect: 0, offer: false },
+    { name: 'clean-run', cmd: 'node check.mjs', expect: 0, gapKeep: '^FAILED' },
+    { name: 'build', cmd: 'node build.mjs', expect: 0 },
+    { name: 'api', cmd: 'node api.mjs', expect: 0, needs: ['build'] },
+  ] });
+  const plan = JSON.stringify({ schema: 'plan-v1', steps: [{
+    id: 'write-test', action: 'Write tests/test_x.mjs asserting the module exports.',
+    tools: ['write'], rounds: 6, target: 'tests/test_x.mjs',
+    exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'api' }],
+  }] });
+  const provider = scriptedProvider([
+    { text: 'scout' }, { text: plan },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok — asserts x\n' })] }, { text: 'wrote it' },
+  ]);
+  const { outcome, events } = await go(wd, provider, { job });
+
+  const menu = events.find((e) => e.type === 'check-menu');
+  assert.deepEqual(menu.offered, ['clean-run', 'build', 'api'], 'the derived menu, and the precondition is not in it');
+  assert.deepEqual(menu.hidden, ['seed-present'], 'what was withheld is on the record, not silently dropped');
+  assert.deepEqual(events.filter((e) => e.type === 'check-preflight').map((e) => e.name), ['clean-run', 'build', 'api'],
+    'preflight runs the MENU — a hidden precondition is never preflighted as a ruler');
+  assert.deepEqual(events.find((e) => e.type === 'check-preflight' && e.name === 'api').chain, ['build', 'api'],
+    'and the dependent stage preflights as its chain');
+
+  // the plan named `api`; picking it must have run `build` first, or api reds on
+  // a phantom and the step could never green
+  assert.equal(events.find((e) => e.type === 'check-run' && e.name === 'api')?.verdict, 'satisfied',
+    'the chain ran, so the ruler judged the real thing');
+  assert.equal(outcome, 'green');
+});

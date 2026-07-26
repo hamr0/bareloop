@@ -55,10 +55,18 @@ test('a stage FAULT (cannot run) is a fault, not a red — a close that never re
 
 test('per-stage gapKeep and judged apply to their OWN stage — the floor that was not met is named by the stage that declared it', (t) => {
   const { wd } = patient(t);
-  writeFileSync(join(wd, 'noisy.mjs'), 'console.log("noise"); console.log("FAILED: a"); console.log("more noise"); console.log("FAILED: b"); process.exit(1);\n');
+  // The failures must sit in the ELIDED MIDDLE of a long output, or the test
+  // proves nothing: the gap bound keeps ~400 head + ~1500 tail bytes verbatim,
+  // so on a short output the FAILED lines ride through whether gapKeep exists or
+  // not, and the assertion passes vacuously (a smoke test in disguise). Real
+  // suites are exactly this shape — F28 was minted on a 67KB one.
+  writeFileSync(join(wd, 'noisy.mjs'), `const pad = (tag) => { for (let i = 0; i < 200; i++) console.log(tag + ' filler line ' + i + ' ................................'); };
+pad('head'); console.log("FAILED: a"); pad('mid'); console.log("FAILED: b"); pad('tail'); process.exit(1);\n`);
   writeFileSync(join(wd, 'empty.mjs'), 'console.log("collected 0 items"); process.exit(0);\n');
   const keep = runStages([{ name: 'noisy', cmd: 'node noisy.mjs', expect: 0, gapKeep: '^FAILED' }], (s) => s, { cwd: wd });
-  assert.match(keep.gap, /FAILED: a[\s\S]*FAILED: b/, 'the stage\'s own gapKeep surfaced its failures');
+  assert.ok(keep.gap.includes('filler line 0') && !keep.gap.includes('mid filler line 100'),
+    'precondition: the output really was long enough to elide — otherwise gapKeep is not what surfaced anything');
+  assert.match(keep.gap, /FAILED: a[\s\S]*FAILED: b/, 'the stage\'s own gapKeep surfaced its failures out of the elided middle');
 
   const floor = runStages([{ name: 'empty', cmd: 'node empty.mjs', expect: 0, judged: { pattern: 'collected (\\d+) items', min: 1 } }], (s) => s, { cwd: wd });
   assert.equal(floor.verdict, 'crashed', 'an exit-0 stage that judged nothing is a fake green, caught by its own floor');
@@ -102,4 +110,19 @@ test('the scrub runs on every stage, not just the first — a secret echoed by s
   const r = runStages(stages, scrub, { cwd: wd });
   assert.doesNotMatch(r.gap, /ghp_abcdefghijklmnopqrstuv/, 'redaction is at capture, on every stage');
   assert.match(r.gap, /<redacted>/);
+});
+
+test('a stage is judged against its OWN expect code — a non-zero contract is truth, and exit 0 against it is the red', (t) => {
+  const { wd } = patient(t);
+  // Not academic: an inspection stage may be a tool whose "nothing to report"
+  // code is not 0 (a diff that must find no changes, a grep that must miss). The
+  // stage declares what truth looks like; the shell never assumes zero.
+  writeFileSync(join(wd, 'three.mjs'), 'console.log("no differences"); process.exit(3);\n');
+  const ok = runStages([{ name: 'no-diff', cmd: 'node three.mjs', expect: 3 }], (s) => s, { cwd: wd });
+  assert.equal(ok.verdict, 'satisfied', 'exit 3 against expect 3 is the stage passing');
+
+  writeFileSync(join(wd, 'zero.mjs'), 'console.log("differences found"); process.exit(0);\n');
+  const red = runStages([{ name: 'no-diff', cmd: 'node zero.mjs', expect: 3 }], (s) => s, { cwd: wd });
+  assert.equal(red.verdict, 'needs_revision', 'and exit 0 against expect 3 is the stage failing — never the reverse');
+  assert.equal(red.stage, 'no-diff');
 });

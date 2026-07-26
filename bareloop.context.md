@@ -47,8 +47,9 @@ const spec = {
   // the human signs the DESTINATION; the agent authors the road
   goal: 'Fix any failure in src/ so the suite passes.',
   verdictType: 'green',
-  close: { type: 'predicate', cmd: 'npm test', expect: 0 },
-  checks: [{ name: 'suite-green', cmd: 'npm test', expect: 0 }],
+  // the close is an ORDERED LIST of named stages (PRD v1.28) — the check menu
+  // DERIVES from it; there is no separate `checks[]` field to author
+  close: [{ name: 'suite-green', cmd: 'npm test', expect: 0 }],
   tools: ['read', 'grep', 'write', 'edit'],
   escalation: { mode: 'decision-ready' },
 };
@@ -96,12 +97,32 @@ the step plan at run time (gated by `validatePlan`); the human signs only:
 |---|---|---|
 | `goal` | non-empty text | what the agent plans against |
 | `verdictType` | `green` \| `soft-green` \| `hitl` | declared radio, never inferred (`VERDICT_TYPES`, frozen). v1 ADMITS only `green`; declaring `soft-green`/`hitl` reds `request-red` with the type as a structured `verb` field (declared-but-locked — the tool-menu pattern) |
-| `close` | a close object (table below) | ONE close, the only truth; `green` demands a hard-class close (`close-hierarchy` red on a rubric/hitl close) |
-| `checks` | optional array of `{ name, cmd, expect, judged?, gapKeep? }` | the operator-SIGNED named-check menu: the predicate-close body plus a kebab slug `name`, validated by the same rules, executed under the same runClose machinery. Plans reference them via the `check-passes(name)` exit; the agent can never author, edit, or compose one. **Checks decide nothing and mint nothing** — a check result is a progress gate and a gap source only |
+| `close` | **an ORDERED LIST of named stages** `[{ name, cmd, expect, judged?, gapKeep?, offer?, needs? }, ...]` (PRD v1.28), or a close object (table below) **only** for the declared-but-locked verdict classes | the destination, the only thing hand-authored; the check menu DERIVES from it (below). The plan flow executes a staged close directly and adapts a bare `predicate` object into a one-stage list; a `gold`/`rubric`/`hitl` object close validates (the declared-but-locked verdict classes still parse) but the plan flow refuses it at runtime as `close-unsupported` — it names no command to run |
+| `checks` | **RETIRED** (PRD v1.28/v1.32) | hand-authored checks are gone, not merely discouraged: declaring `checks` reds `checks-derived` by name. The check menu is DERIVED from the close's own stages instead — see **Staged close** below. The hazard this removes is measured, not theoretical: job #5's three hand-written checks were re-implementations of three stages the close already ran, and a hand-carved copy can drift LENIENT (the worker passes the operator's ruler and fails the real inspection) |
 | `tools` | optional unique subset of `TOOL_MENU` | the CEILING every plan step's grant must fit inside (defaults to the full menu); `run` is `LOCKED_TOOLS` and reds `request-red` — locked-but-listed, and the red IS the admission evidence the ledger tallies (a typo stays `invalid-value`). `edit` (BA-13) is the anchored exact-once replace, judged by the SAME writeScope fence as `write` |
 
-**Close types and the hierarchy** (a close is data, never code; verdict-class laundering
-is a named red `close-hierarchy`):
+**Staged close — the check menu DERIVES from it (PRD v1.28, `checkMenu` in `src/job.js`).**
+Every stage is a `predicate` command body (the same `cmd`/`expect`/`judged?`/`gapKeep?`
+contract the single close object has always used) plus:
+
+| stage field | shape | notes |
+|---|---|---|
+| `name` | unique kebab-case slug | the plan references it via `check-passes(name)`; duplicates red `duplicate-id` |
+| `offer` | optional boolean, default offered | `offer: false` hides the stage from the derived menu — it never reaches the agent. For a stage that cannot stand alone as a ruler: a PRECONDITION (e.g. "the seed commit exists" — passes instantly, teaches nothing) or, in every shipped spec today, the **final grading stage** (a per-spec convention, not a schema rule — nothing stops a stage named last from being offered except the spec author remembering to set the flag; preflight's `check-menu` event always names the full menu either way, so a forgotten flag is visible in the run's own record) |
+| `needs` | optional non-empty array of EARLIER stage names | a stage that reads what an earlier stage built (e.g. "the public API matches what an earlier stage emitted") names its prerequisite chain; picking it via `check-passes` runs the chain first, then the stage itself. Every name must be declared before this stage (`invalid-value` otherwise); `needs` + `offer: false` together is incoherent (`invalid-value`) — a stage with a chain to run must be reachable |
+
+The stages run in declared order as the close itself; the first red renders the verdict and
+later stages never run. `checkMenu(close)` returns only the offerable stages (each with its
+run chain, prerequisites first); a hidden or partial menu is an acceptable case, never a
+failure — `check-menu` on the spine reports `hidden` + `meaning` whenever the derived menu is
+narrower than the stage list.
+
+**Close types and the hierarchy — the OBJECT form, which survives only for the
+declared-but-locked verdict classes** (a close is data, never code; verdict-class laundering
+is a named red `close-hierarchy`). The go-forward shape is the staged list above; a
+`predicate` object is legal shorthand for a one-stage list and the plan flow adapts it, but
+`gold`/`rubric`/`hitl` validate and then refuse at runtime (`close-unsupported`) since v1
+admits `verdictType: green` only:
 
 | type | fields (exact — extras red) | legal class |
 |---|---|---|
@@ -171,7 +192,7 @@ middle writes; `validatePlan` gates it against the SIGNED job spec before tokens
 | `steps[].tools` | non-empty unique subset of the SPEC ceiling | a verb beyond the ceiling reds `verb-escape` with the verb as structured data (overreach, distinct from the operator-side `request-red`); `run` is `verb-escape` at every layer |
 | `steps[].rounds` | int 1..shell cap (default 40) | the step's per-attempt tool-round bound (the Gate's `maxTurns` natively) |
 | `steps[].target` | path inside the fence | v1.18 deliverable; REQUIRED on write-granted steps |
-| `steps[].exit` | 1..2 items (`MAX_EXITS_PER_STEP`), ALL must pass (AND-only, no OR/NOT) | closed menu (`EXIT_TYPES`): `artifact-written(path, pattern?)` · `tree-changed(scope)` · `json-valid(path)` · `check-passes(name)`. **`tree-changed.scope` is a MENU, not a glob the agent authors** — `legalScopes(writeScope, dirs, cap?)` enumerates the signed fence entries plus the real directories beneath them (shallowest-first, capped at `MAX_SCOPE_MENU`=24), `planPrompt` lists them verbatim, and `validatePlan` accepts membership only. Pass the SAME array to both via `opts.scopes`; omitted, it derives from `writeScope` alone — never a free-text fallback. An off-menu value that escapes the fence still reds `scope-escape` (the ledger's attribution class), an in-fence unoffered value reds `invalid-value` carrying the menu. `runPlan` emits `scope-menu {offered, truncated, offerableCount?, cap?}` so a capped menu is never silently complete. `check-passes` must name a SIGNED check (`check-unknown` red names the signed menu); on a write-granted step it must be paired with `tree-changed` (`exit-illegal` — the seed tree is green, a lone check would pass untouched, F17/F46). `artifact-written.pattern` must compile AND survive a ReDoS shape check — an unbounded quantifier over a group that itself repeats unboundedly (`(a+)+`, `(\d*)*`, even wrapped: `((a+))+`) is an `invalid-value` red (F49, catastrophic-backtracking footgun; rewrite without a repeated group inside a repeat). Exits verify FORM, not truth — progress gates; the operator's close stays the one arbiter |
+| `steps[].exit` | 1..2 items (`MAX_EXITS_PER_STEP`), ALL must pass (AND-only, no OR/NOT) | closed menu (`EXIT_TYPES`): `artifact-written(path, pattern?)` · `tree-changed(scope)` · `json-valid(path)` · `check-passes(name)`. **`tree-changed.scope` is a MENU, not a glob the agent authors** — `legalScopes(writeScope, dirs, cap?)` enumerates the signed fence entries plus the real directories beneath them (shallowest-first, capped at `MAX_SCOPE_MENU`=24), `planPrompt` lists them verbatim, and `validatePlan` accepts membership only. Pass the SAME array to both via `opts.scopes`; omitted, it derives from `writeScope` alone — never a free-text fallback. An off-menu value that escapes the fence still reds `scope-escape` (the ledger's attribution class), an in-fence unoffered value reds `invalid-value` carrying the menu. `runPlan` emits `scope-menu {offered, truncated, offerableCount?, cap?}` so a capped menu is never silently complete. `check-passes` must name a stage on the close's DERIVED menu (`check-unknown` red names the offered menu — no operator authors this list, it comes straight from `checkMenu(close)`); on a write-granted step it must be paired with `tree-changed` (`exit-illegal` — the seed tree is green, a lone check would pass untouched, F17/F46). `artifact-written.pattern` must compile AND survive a ReDoS shape check — an unbounded quantifier over a group that itself repeats unboundedly (`(a+)+`, `(\d*)*`, even wrapped: `((a+))+`) is an `invalid-value` red (F49, catastrophic-backtracking footgun; rewrite without a repeated group inside a repeat). Exits verify FORM, not truth — progress gates; the operator's close stays the one arbiter |
 
 Red vocabulary (all three validators): `parse-error`, `unknown-field`, `missing-required`,
 `invalid-value`, `bounds`, `duplicate-id`, `close-type`, `close-hierarchy`,
@@ -340,9 +361,10 @@ field presence and never has to launder a missing `spentUsd` into `$0`.
 **The plan flow (Layer 2).** `job-start` carries `shape: 'plan'` + the goal; plan steps are
 tool-mode by construction. The flow (`runPlan`, also exported for direct callers who own
 their own ledger): **close precheck** (`already-green` is a
-DISTINCT zero-token outcome; a forbidden-zone verdict escalates before spend) → **checks
-preflight** (every SIGNED check runs once at $0 — an unrunnable check is a `check-red`
-stop before tokens, not a fault mid-plan) → **SCOUT** (read-only by construction: the
+DISTINCT zero-token outcome; a forbidden-zone verdict escalates before spend) → **check-menu
+preflight** (`check-menu` names the derived menu, then every OFFERED stage's chain runs once
+at $0 — an unrunnable stage is a `check-red` stop before tokens, not a fault mid-plan) →
+**SCOUT** (read-only by construction: the
 write verbs are not in its menu; hard-bounded rounds) → **PLAN** (the decompose call —
 the planner never sees the repo, only the scout blob; drafted against a schema
 description with check NAMES only; `validatePlan` gates it, one redraft with the reds

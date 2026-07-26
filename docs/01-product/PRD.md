@@ -1964,3 +1964,83 @@ Until then the plan path admits `green` only, and declaring `soft-green`/`hitl` 
   strategy lines). Those are not legacy; they were housed in legacy files.
 - **Landed as its own change, before the staged close** (hamr chose the sequencing): two levers in
   one diff make any resulting delta unattributable to either — the standing rule.
+
+---
+## Addendum v1.33 — 2026-07-26 (two calls inside the staged close: the ratchet's red-set is the
+FAILING STAGE's, and the grader is not lendable — hamr)
+
+**Approval.** hamr in-turn, verbatim: *"agreed on both, validate your claims"* — given after
+both proposals, with their measured grounds, were put in front of him during the staged-close
+build (PRD v1.28). Both are arbiter territory (Layer R's detector; the check menu the agent is
+handed) and both are recorded here rather than folded silently into the build.
+
+### 1. Layer R's red-set under a staged close is the STAGE that rendered the verdict, per attempt
+
+A staged close has N `gapKeep` patterns, one per stage, and the stage that renders the verdict
+varies attempt to attempt (whichever one reds first). The build's own WIP had stubbed this as
+"the first stage that carries a `gapKeep`" — wrong, and wrong in a way the suite could not see
+because nothing exercised two stages with different patterns.
+
+**What shipped:** `createRoot().observe()` (`src/root.js`) now accepts `redStage`/`redKeep`
+alongside `gap`/`writes`, and the detector **refuses to compare red-sets across a stage
+change** — a different wall of the close is a different failure, so repetition is not
+provable. This is the same bucket the detector already used for one-known-one-UNKNOWN, and for
+the same reason: MOVEMENT, never a fire, when the comparison cannot be trusted. `root-injected`
+gains an optional `redStage` field carrying which stage produced the compared red-set.
+
+**The rejected alternative, and why it was rejected on MEASURED grounds, not taste:** one union
+`gapKeep` pattern fixed for the whole run, so every stage's failures fed one comparable set.
+Its safety rests on an assumption — that the stages' kept lines are distinguishable from each
+other — which the real corpus does not support: job #4's two close stages are near-clones of
+one grader, and **7 of their 12 kept-line templates are byte-identical** (measured over
+`l2poc-check-close.mjs` and `testgen-close.mjs`, including the shared `TESTGEN | <suite line>`
+family). A test built from those real shared lines **fired under the union rule** before the
+per-stage guard landed — a false positive across a stage change, exactly what "inert when not
+stuck" (the standing armed-and-inert doctrine) forbids. This is the opposite direction from the
+hazard the union approach was meant to avoid (going silent); that account was wrong and is
+withdrawn.
+
+**Deviation from what was described when hamr agreed — flagged to him, not folded in silently.**
+The rule was put to him as *"a changed stage means the red-set is not comparable, so say
+can't-tell and fall back to the weaker signal: did the worker touch the same file again."* What
+shipped is **stricter**: a changed stage never fires at all. The looser version was wrong in the
+same direction as the union pattern — in the measured case (the worker clears one wall and hits
+the next while rewriting the same file), write-overlap alone would still have carried a fire, so
+the fallback would have produced exactly the false positive the guard exists to prevent.
+Reversing this to the version as described is a one-line change and remains hamr's call.
+
+**Cost:** callers with a single red-set source — the per-step exit evaluator, which was never
+staged — pass neither `redStage` nor `redKeep` and are unaffected; only the close-fix loop
+(the one seam a staged close reaches) carries the new fields. Both directions are
+mutation-proven: restoring the old stub reds the plan-runner's own test; deleting the
+stage-change guard reds the root test built against the shared-template case above.
+
+### 2. The grading stage is not lendable
+
+All four shipped specs set `offer: false` on their final stage (named `verdict`), so the
+close's own grade never appears in the derived check menu the agent is handed mid-build — it
+can borrow every EARLIER stage as a ruler, never the stage that renders the verdict itself.
+This is kept as a **per-spec flag**, not a schema rule enforced by the validator: "the last
+stage is the grade" holds in all four specs that exist today and is not proven true in
+general (a future close could legitimately name its grading stage first, or run several
+independent hard gates with no ordering significance). Because it is a convention and not a
+structural guarantee, a forgotten flag on a fifth spec would be silent **except** that
+`check-menu` preflight always announces the full derived menu on the spine regardless — so a
+grading stage left lendable is visible in the run's own record even when the schema does not
+forbid it. A test (`tests/staged-close.test.js`) now reads every spec in `jobs/` and reds if
+any of them offers its own last stage; it is proven able to fail (flipping aurora's `verdict`
+stage to `offer: true` reds it, naming the menu).
+
+### What this does not change
+
+Both items are refinements inside the staged close (v1.28) itself, not a new arbiter-shape
+decision: the close is still the only truth, `checks[]` is still retired, and the check menu
+still derives from the close's own stages. Neither item touches money, time, or the merge
+line.
+
+### Scripted-provider caveat, stated where it matters
+
+Everything above — the staged close itself, both decisions in this addendum, and every
+supporting number — comes from scripted-provider tests. **The staged close has not yet run
+against a real model.** That run is the next real-model evidence this rung needs, same as
+every other build in this programme before its battery.

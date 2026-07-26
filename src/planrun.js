@@ -402,6 +402,12 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
    * the micro-loop escalates (or F32-routes a crash) instead of faking a gap */
   const runCheck = async (/** @type {string} */ name) => {
     const chain = chainByName.get(name);
+    // UNREACHABLE through runPlan and deliberately kept: validatePlan reds
+    // `check-unknown` against `checkMenu(spec.close)` — the SAME derivation that
+    // built this map from the SAME close — so a name that got here was already
+    // proven to be on the menu. Defence in depth against a future second
+    // derivation, not a live path; the reachable guard is the validator's, and
+    // that one is mutation-covered.
     if (!chain) return { pass: false, fault: 'failed', gap: `no offered close stage named "${name}"` };
     const v = runStages(chain, scrub, closeOpts);
     emit('check-run', { name, verdict: v.verdict, ...(v.stage && v.stage !== name ? { stage: v.stage } : {}), ...(v.exitCode !== undefined ? { exitCode: v.exitCode } : {}) });

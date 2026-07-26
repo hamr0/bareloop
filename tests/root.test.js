@@ -475,7 +475,7 @@ test('Finding 7: a DENIED write never settles — discard still wins over any ou
 // real corpus does not provide that. Job #4's two stages are near-clones of one
 // grader — 7 of their 12 kept-line templates are byte-identical, including the
 // `TESTGEN | <suite line>` failure family and the form-red line reproduced
-// below (measured 2026-07-27 over scripts/l2poc-check-close.mjs and
+// below (measured 2026-07-26 over scripts/l2poc-check-close.mjs and
 // scripts/testgen-close.mjs). Under a union pattern, moving from the first
 // stage's wall to the second can present an IDENTICAL kept-set and read as
 // repetition — a false fire, which "inert when not stuck" forbids.

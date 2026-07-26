@@ -441,9 +441,20 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
      a close declared as an ordered list of NAMED STAGES, with the check menu DERIVED from
      those stages, so U runs with **zero operator-authored checks** (hamr: *"there shouldn't be
      user authoring anywhere, that defies the point of bareloop"*). Designed and signed in PRD
-     v1.28. **Status 2026-07-26: T built (F64 fixed — a wall stop is a governance stop, never
-     a transport casualty), A built-and-inert with its threshold decided at 0.5, staged close
-     IN BUILD, U / P not started.**
+     v1.28. **✅ BUILT 2026-07-26** (branch `staged-close-wip`): `close: [{name, cmd, expect,
+     judged?, gapKeep?, offer?, needs?}]` replaces the single close object for `verdictType:
+     green`; `checks[]` is retired outright (`checks-derived` red by name, not merely
+     discouraged); `checkMenu(close)` derives the offerable menu, with a hidden/non-borrowable
+     stage (`offer:false`) or a prerequisite chain (`needs`) both expressible. Two further
+     decisions landed the same build (hamr, 2026-07-26, PRD v1.33): Layer R's red-set under a
+     staged close reads the STAGE that actually rendered the verdict that attempt, and refuses
+     to compare across a stage change rather than risk a false fire; and the grading stage is
+     kept off the derived menu in all four shipped specs (`offer:false`, a per-spec convention
+     guarded by a test, not a schema rule). **Everything above is scripted-provider evidence
+     only — the staged close has not yet run against a real model.** **Status 2026-07-26: T
+     built (F64 fixed — a wall stop is a governance stop, never a transport casualty), A
+     built-and-inert with its threshold decided at 0.5, staged close BUILT, U / P not
+     started.**
 5. **Build Layer 3** — inheritance with ledger attribution (N3, kill-switch: rules must
    transmit across non-identical runs). Carries three v1.21 requirements (external-review
    fold, 2026-07-21): **(a) the drift detector** — arbiter-side trailing green-rate vs
