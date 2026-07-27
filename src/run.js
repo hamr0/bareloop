@@ -88,7 +88,7 @@ async function primitiveSmoke(workdir) {
  * @returns {Promise<string>} outcome: 'green' | 'already-green' | 'escalated' |
  *   'unapproved-spec' | 'job-red' | 'smoke-red' | 'plan-red' | 'check-red' |
  *   'close-red' | 'close-unsupported' | 'pricing-red' | 'provider-red' |
- *   'interpreter-red' | 'cap-halt' | 'wall-halt' | `step-red:<id>`
+ *   'interpreter-red' | 'cap-halt' | 'wall-halt' | 'step-stalled' | `step-red:<id>`
  */
 export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, emit, capRuns = 3, shellCapUsd = 2, closeTimeoutMs, layerRoot = false }) {
   // 0. the ledger's counters, declared FIRST so that every job-end — including
@@ -170,10 +170,15 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
     if (unpriced) return pricingRed();
     if (outcome.startsWith('step-red:')) {
       emit('job-end', { outcome: 'step-red', step: outcome.slice('step-red:'.length), ...spend() });
-    } else if (outcome === 'provider-red') {
+    } else if (outcome === 'provider-red' || outcome === 'step-stalled') {
       // F44: a transport-throw provider-red never returned a usage figure for the
       // failed call, so the priced sum is a FLOOR, not the total — spendComplete
       // false, never an exact-looking total.
+      // F66: `step-stalled` carries the same unknown. Every abandoned call MAY
+      // already have been billed by the provider before it went quiet — that is
+      // the known cost of self-heal — and an unbilled reissue is indistinguishable
+      // from a billed one from here. Reporting the priced sum as exact would be F6
+      // in a self-heal coat.
       emit('job-end', { outcome, ...spend(), spendComplete: false });
     } else {
       emit('job-end', { outcome, ...spend() });

@@ -24,6 +24,7 @@ import { validatePlan, legalScopes } from './plan.js';
 import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU } from './plan.js';
 import { snapshotScope, evalExits } from './exits.js';
 import { createRoot } from './root.js';
+import { createStallWatch, STALL_MS, MAX_STALLS } from './stall.js';
 import { TOOL_MENU, checkMenu } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, RETRIEVAL_STRATEGY, EDIT_STRATEGY } from './tools.js';
 import { globToPrefix, SECRET_PATTERNS } from './validate.js';
@@ -640,8 +641,15 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
         tokens: (arg?.usage?.inputTokens ?? 0) + (arg?.usage?.outputTokens ?? 0),
         usage: usageOf(arg?.usage),
       });
+      // F66 — the heartbeat is ANY result coming back from the model layer, not
+      // only a `turn`. The question the watchdog asks is "is the model still
+      // answering", and a non-turn result answers it just as well; gating the beat
+      // on `kind` would arm a false stall on any round shape we don't enumerate
+      // here, which is the blind-instrument class in miniature.
+      stallWatch.beat();
       if ((arg?.kind ?? 'turn') === 'turn') {
         roundsThisAttempt += 1;
+
         // The wall deadline rides the SAME seam as the round bound, because it is
         // the only seam that exists: loop.stop() is read at the round boundary and
         // cannot cut an in-flight call (F61/C1, measured — fired at 500ms, returned
@@ -661,6 +669,16 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
       return onLlmResult(arg);
     };
     const loop = new Loop({ provider: loopProvider, system, policy, onLlmResult: metered, onToolResult: onToolOutcome });
+    // F66 — the stall watchdog. bare-agent's `timeoutMs` bounds socket INACTIVITY,
+    // not call duration (provider-http.js `req.setTimeout` resets on every byte),
+    // so a connection that stays alive while producing nothing is invisible to it:
+    // U run ms3197n8 hung 274 minutes inside ONE call and died ECONNRESET with the
+    // bound correctly passed. The heartbeat here is a completed ROUND, which is the
+    // one signal that cannot be faked by a live socket. One watch PER WORKER, so
+    // the ceiling counts stalls across the step rather than resetting each call.
+    const stallWatch = createStallWatch({
+      onStall: (n) => emit('stall', { phase, iteration: roundIteration, stall: n, stallMs: STALL_MS, maxStalls: MAX_STALLS }),
+    });
     /** @param {string} prompt @param {typeof toolDefs} [defs] */
     /**
      * F59 — continue an EXISTING conversation for exactly one TOOLLESS round.
@@ -673,7 +691,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
      */
     const askFrom = async (msgs, prompt) => {
       try {
-        return await loop.run([...msgs, { role: 'user', content: prompt }], [], { cacheMessages: true, maxTokens: 32000, timeoutMs: clock.callTimeoutMs() });
+        return await stallWatch.watch(() => loop.run([...msgs, { role: 'user', content: prompt }], [], { cacheMessages: true, maxTokens: 32000, timeoutMs: clock.callTimeoutMs() }));
       } catch (e) {
         throw categorize(e).err;
       }
@@ -681,7 +699,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
     const ask = async (prompt, defs = toolDefs) => {
       let r;
       try {
-        r = await loop.run([{ role: 'user', content: prompt }], defs, { cacheMessages: true, maxTokens: 32000, timeoutMs: clock.callTimeoutMs() });
+        r = await stallWatch.watch(() => loop.run([{ role: 'user', content: prompt }], defs, { cacheMessages: true, maxTokens: 32000, timeoutMs: clock.callTimeoutMs() }));
       } catch (e) {
         throw categorize(e).err;
       }
@@ -714,6 +732,12 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
     const DECIDE = {
       'cap-halt': [`The budget gate tripped during ${phase} — the wallet cannot fund the plan flow.`, ['raise the job budget and rerun', 'abandon the run']],
       'wall-halt': [`The run reached its wall-clock cap during ${phase}. Time ran out, not capability.`, WALL_OPTIONS],
+      // A stall OUTSIDE a step (scout, drafting, fix) has no step to replan, so it
+      // surfaces — but it is named, never laundered into provider-red. The socket
+      // did not fail here; the model stopped answering and reissuing did not help,
+      // and those are different diagnoses with different remedies (F45/F48: a
+      // casualty is never evidence, and a governance stop is never a casualty).
+      'step-stalled': [`The model stopped producing rounds during ${phase} and reissuing the call did not recover it.`, ['retry the run', 'check provider status', 'abandon the run']],
     };
     const [decision, options] = (Object.hasOwn(DECIDE, category) ? DECIDE[category] : undefined)
       ?? [`The ${phase} call failed (${category}) — no result exists.`, ['retry the run', 'fix the provider binding', 'abandon the run']];
@@ -721,7 +745,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
       category, decisionReady: true, phase, decision, options, detail,
       ...(typeof e?.lib === 'string' ? { lib: e.lib } : {}),
     });
-    return category === 'cap-halt' || category === 'wall-halt' ? category : 'provider-red';
+    // `step-stalled` rides out as ITSELF, not as provider-red. Naming the
+    // escalation while returning a casualty label would launder a governance stop
+    // into transport noise at exactly the layer the readout reads.
+    return category === 'cap-halt' || category === 'wall-halt' || category === 'step-stalled' ? category : 'provider-red';
   };
 
   // ── 1. SCOUT — read-only by construction: the write-class verbs are simply
@@ -994,8 +1021,16 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
     // Both triggers still need FUNDS LEFT, and both are still bounded by the ONE
     // replan ceiling — this changes the trigger, never the ceiling (v1.12).
     const cat = lastEscalation?.category;
+    // F66 adds the THIRD trigger: `step-stalled` — the stall watchdog reissued the
+    // model call MAX_STALLS times and never got a round back. hamr's ruling is that
+    // a stall must self-heal rather than end the run ("killing and coming back is
+    // not an option"), so the watchdog reissues silently; only once reissuing has
+    // demonstrably stopped working does the run adapt instead — by replanning, not
+    // by stopping. Same ONE-replan ceiling and same FUNDS-LEFT condition as the
+    // other two: this changes the trigger, never the ceiling (v1.12).
     const replanTrigger = cat === 'cap-halt' ? 'step exhausted its attempts with exits still red'
       : cat === 'step-variance' ? 'the meter stopped a step that was consuming the run with its exits unmoved'
+      : cat === 'step-stalled' ? 'the model stopped producing rounds and reissuing the call did not recover it'
       : null;
     if (!replanned && replanTrigger && remainingUsd() > MONEY_MIN) {
       replanned = true;
