@@ -6,7 +6,7 @@
 // green ONE job end to end. That green GRADUATES the bridge: the plan the agent
 // authored is preserved from the spine as a reusable artifact, and the next run of
 // this shape reuses and fine-tunes it rather than starting cold.
-import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, renameSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { execFileSync, spawn } from 'node:child_process';
 import { join, resolve } from 'node:path';
@@ -95,6 +95,29 @@ const watchdog = spawn(process.execPath, [
 ], { stdio: ['ignore', 'ignore', 'inherit'] });
 watchdog.unref();
 
+// WHERE-was-the-freeze sampler. ms3jh76q froze its event loop for 81.5min and the
+// spine could not say where — a frozen loop emits nothing, by construction. This
+// timer is delayed exactly as long as any block; when it finally fires it records
+// how late it ran, which brackets the freeze in time. Diagnostic sidecar only:
+// nothing in the run reads it, and it decides nothing (the arbiter is untouched).
+// Coverage split with the watchdog: blocks that END show up here; a block long
+// enough for the watchdog's stale kill dies mid-freeze and is localized by the
+// marker + the last spine event instead. Both windows are covered, by different
+// instruments.
+const LAG_POLL_MS = 1_000;
+const LAG_RECORD_MS = 3_000; // healthy gaps measured in ms; litectx's sync index blocked ~18s
+const lagFile = `${spineFile}.lag.jsonl`;
+let lagDue = Date.now() + LAG_POLL_MS;
+const lagTimer = setInterval(() => {
+  const now = Date.now();
+  const blockedMs = now - lagDue;
+  if (blockedMs >= LAG_RECORD_MS) {
+    const rec = { blockedMs, from: new Date(now - blockedMs).toISOString(), until: new Date(now).toISOString() };
+    try { appendFileSync(lagFile, `${JSON.stringify(rec)}\n`); } catch { /* best-effort — a diagnostic must never kill the run */ }
+  }
+  lagDue = now + LAG_POLL_MS;
+}, LAG_POLL_MS);
+
 let outcome;
 try {
   outcome = await runJob(spec, {
@@ -104,6 +127,7 @@ try {
 } finally {
   // the guard outlives the run only by accident, never by design
   try { watchdog.kill('SIGKILL'); } catch { /* already gone */ }
+  clearInterval(lagTimer);
 }
 const elapsedMin = ((Date.now() - started) / 60000).toFixed(1);
 
@@ -157,6 +181,12 @@ if (outcome === 'green' && plan) {
 if (existsSync(`${spineFile}.watchdog.json`)) {
   const m = JSON.parse(readFileSync(`${spineFile}.watchdog.json`, 'utf8'));
   console.log(`\nWATCHDOG   fired: ${m.reason} — the run was stopped from OUTSIDE, not by its own governance`);
+}
+// event-loop freezes the run survived — the sampler's record of WHERE the loop was blocked
+if (existsSync(lagFile)) {
+  const lags = readFileSync(lagFile, 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const worst = lags.reduce((a, b) => (b.blockedMs > a.blockedMs ? b : a));
+  console.log(`\nLOOP FROZE ${lags.length}x — worst ${(worst.blockedMs / 1000).toFixed(1)}s, ${worst.from} → ${worst.until} (${lagFile})`);
 }
 console.log(`\nspine     ${spineFile}`);
 console.log(`patient   left AS THE RUN LEFT IT (read it before the next run resets to the seed)`);

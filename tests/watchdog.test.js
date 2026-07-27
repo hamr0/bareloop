@@ -71,6 +71,23 @@ test('a spine that goes cold gets the run killed', async (t) => {
   assert.match(w.output(), /stale/i);
 });
 
+test('a victim whose event loop is HARD-FROZEN still dies — the exact case F67 exists for', async (t) => {
+  // ms3jh76q's shape: the run's event loop is blocked, so no in-process guard can
+  // run and no JS signal listener could ever be serviced. The kill still lands
+  // because the run path installs NO signal handlers (verified: zero process.on
+  // sites in src/ or run-u.mjs), so SIGTERM keeps its kernel default disposition —
+  // probed live before this test was written. A busy-loop victim, not setInterval:
+  // a healthy-loop victim would prove nothing about the frozen case.
+  const { spine } = tmp();
+  writeFileSync(spine, '{"type":"job-start"}\n');
+  const v = spawn(process.execPath, ['-e', 'for(;;);'], { stdio: 'ignore' });
+  t.after(() => { try { v.kill('SIGKILL'); } catch { /* already gone */ } });
+  const w = watchdog(t, ['--spine', spine, '--pid', String(v.pid), '--stale-ms', '500', '--poll-ms', '100']);
+  await sleep(2000);
+  assert.equal(alive(v.pid), false, 'a frozen run must die to the outside kill — nothing inside it can act');
+  assert.match(w.output(), /stale/i);
+});
+
 test('the kill is RECORDED — a stopped run must not read as a mystery crash', async (t) => {
   const { dir, spine } = tmp();
   writeFileSync(spine, '{"type":"job-start"}\n');

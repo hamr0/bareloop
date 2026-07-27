@@ -3600,3 +3600,164 @@ The reachability audit that caught F63 caught a second thing in the same pass: *
 when the thing I built fires?" is a different question from "would it ever fire?", and both are
 $0.** T was built, unit-tested and mutation-proven, and its terminal is bypassed by the very
 timeout it derives.
+
+---
+
+> **Numbering note:** F65 was never assigned. The two findings below were built and committed
+> (`93fb993`, `9fedfa3`) under the numbers F66/F67 before this ledger entry was written, and the
+> commit history is immutable — the skip is recorded here rather than papered over by renumbering.
+> There is no hidden F65.
+
+---
+
+## F66 — bare-agent's `timeoutMs` is an IDLE-SOCKET timer, so a slow-but-trickling call can hang a run for hours: the in-process stall fuse
+
+**Status: minted 2026-07-28 from U run `ms3197n8` (litectx-u, provider-red after a 274-minute
+hang, ≥$3.23 spent, zero verdict). Fuse built and shipped in `93fb993`; hamr set the
+numbers (N=5min, 3 stalls then replan) and the doctrine: "the goal is always self heal and
+killing and coming back is not an option."**
+
+### The run
+
+`ms3197n8` on `litectx-u` (63 strict errors, hand-proven winnable at $0): 77 rounds, 24 writes
+across 3 files, a 4-step plan — then ONE 274-minute gap between the last `worker-round` and the
+escalation. Zero events emitted. Wall cap 45min; actual wall 287.3min. Terminating error:
+`read ECONNRESET` — a reset, not a timeout, which is the proof of the mechanism below.
+
+### Root cause, read from source, three hypotheses killed
+
+`applyRequestTimeout` in bare-agent's `provider-http.js` (the BA-18 fix) is one
+`req.setTimeout(...)`. Node RESETS that timer on every byte; its own docstring says so: *"the
+timer resets on activity, so a slow-but-streaming response is not killed."* It bounds socket
+INACTIVITY, never total call duration. A call that trickles a byte every few minutes is
+invisible to it forever.
+
+Checked and killed before believing this: NOT ignored (the bound is derived and forwarded per
+provider call, `loop.js:732`); NOT first-call-only (`options` forwarded on every call); NOT a
+retry storm (`Retry` is deliberately unwired; a single reset ended the run). And retry would
+not have helped — the reset came AFTER the 4.5 hours, not instead of them.
+
+### The fuse (`src/stall.js`)
+
+Two timers, no arithmetic. A stall timer reset on every heartbeat; the wall unchanged (absolute
+deadline, never reset). Heartbeat = ANY `onLlmResult` — gating on an enumerated `kind` would arm
+a false stall on unlisted round shapes. On stall: abandon the call, reissue silently (self-heal,
+per hamr's ruling). After 3 stalls: `StallError`, `category:'step-stalled'`, `lib:'bare-agent'`.
+
+`step-stalled` is the THIRD replan trigger in `planrun.js` (with `cap-halt` and
+`step-variance`), under the same ONE-replan ceiling and funds-left condition. Outside a step it
+surfaces NAMED via `relay`'s DECIDE map — never laundered into provider-red. `run.js` stamps
+`spendComplete:false`: an abandoned call may already have been billed (F44).
+
+N was SIZED from measured healthy round-gaps, then SET by hamr (threshold-setting is arbiter
+territory): across 220 rounds in three runs, median gaps 4.4–5.5s, p90 11.9–18.2s, worst
+legitimate gap ever 2.5min. The hang was 274min — two orders of magnitude past the worst
+healthy gap.
+
+### Validation — and the surviving mutant that was a real hole
+
+11 tests through the real bare-agent `Loop`; mutation battery 6 mutants. **M5 survived first
+pass** — dropping the `generation += 1` bump in `trip()`. Not equivalent: without the bump, an
+abandoned call dying while its reissue is still pending settles the caller's promise anyway —
+exactly the `ms3197n8` shape — making the reissue decorative. Added the mid-flight test,
+watched it fail under M5, 6/6 killed. A surviving mutant is a claim about the TEST, not always
+about the code.
+
+**Firing status, honest:** the fuse has fired in tests and in a reproduction of run 1's exact
+shape (4 real rounds then provider silence → 3 stalls → `StallError`, 2.1s). It has never fired
+in a paid run — and run 2 (F67) proved the class of failure it structurally cannot catch.
+
+### Upstream
+
+Filed as BA-19: BA-18's fix bounds inactivity; nothing in bare-agent bounds TOTAL call duration.
+
+### Lesson
+
+A timeout's WATCHED QUANTITY is part of its contract. "There is a timeout and it is forwarded"
+was true and useless — it watched bytes-between-bytes while the failure was minutes-per-call.
+The BA-18 consumption inherited the assumption without reading what the timer measures.
+
+## F67 — a guard that lives inside the thing it guards shares its fate: the OUTSIDE watchdog
+
+**Status: minted 2026-07-28 from U run `ms3jh76q` (litectx-u, wall-halt at 105min of a 45min
+cap, $3.19, zero verdict). Watchdog shipped in `9fedfa3`. hamr called the outside guard at the
+start ("outside shell for circuit breakers... so it won't go stale") and the assistant argued
+it down in favour of in-process — hamr's call was right; recorded as the assistant's to have
+got wrong. WHAT FROZE THE EVENT LOOP IS STILL UNKNOWN — stated at that strength deliberately.**
+
+### The run
+
+`ms3jh76q` got much further than run 1: 100 rounds, 48 writes across 13 files, a 5-step plan,
+3 check runs, a real close verdict (`needs_revision` at `no-suppressions`) and the fix loop
+fired. Then an **81.5-minute gap in the fix phase with 0 stall events**, ending in
+`read ETIMEDOUT`. The F66 fuse was live (committed 4 minutes before t0) and never fired.
+
+### Diagnosis: the fuse works, and that is exactly the problem
+
+Reproduced against the run's exact shape (4 completed rounds through the real bare-agent
+`Loop`, then provider silence): 3 stalls, `StallError`, 2.1 seconds. So in the real run it
+never RAN. A `setTimeout` in the same event loop as whatever froze that loop shares its fate.
+Every guard bareloop had lived inside the run, and each failed structurally on this event:
+
+| guard | why it could not help |
+|---|---|
+| bare-agent `timeoutMs` | idle SOCKET timer — resets on bytes, saw nothing wrong |
+| the wall clock (T) | read BETWEEN rounds — no round ever arrived |
+| the F66 stall fuse | a `setTimeout` — cannot fire on a blocked event loop |
+
+Measured en route: `lc.index()` ticks the event loop 1 time where 19 were due (litectx is
+synchronous SQLite underneath) — a real blocking-class mechanism, but indexing runs once per
+worker BEFORE the rounds, so it does not account for the 81 minutes.
+
+### Withdrawn: the node_modules theory
+
+Measured `grep -rn` at 6.9s on litectx-u vs 0.47s on aurora-u and blamed 969MB of
+node_modules. WRONG INSTRUMENT — bare-agent's grep runs in a worker thread under a hard 5s
+ceiling (`DEFAULT_GREP_TIMEOUT_MS`, `worker.terminate()`), so it can neither block the main
+loop nor run long. `grep -rn` from a shell is a different program from the tool the worker
+calls. The fix it motivated was also wrong and reverted: symlinking node_modules outside the
+patient broke nested dependency resolution (330 test failures). The blind-instrument class,
+self-inflicted after writing a rule against it.
+
+### The watchdog (`scripts/u-watchdog.mjs`)
+
+A separate process that shares NOTHING with the run: it reads one file's mtime and calls
+kill(2). Deliberately dumb, each omission load-bearing — parses no JSON (a malformed spine
+must not blind the guard), imports nothing from `src/` (no shared code, no shared failure),
+models nothing about the run (nothing to desync). Two independent triggers: STALE (spine
+stopped growing → wedged; default 600s = 2× the inner fuse so the inner guard always gets its
+three tries first) and WALL (elapsed past cap + grace; grace default 900s covers the close,
+which legitimately runs ~55s+ after the last round — killing mid-close destroys a real
+verdict). The kill is RECORDED at `<spine>.watchdog.json` BEFORE the signal goes out: a run
+stopped by the arbiter must never read as a mystery crash (the governance-stop vs casualty
+line, F45/F64). SIGTERM, then SIGKILL after 10s.
+
+### Validation
+
+Real processes, real files, real kills — a watchdog tested against a mocked clock and victim
+proves nothing about the case it exists for. 8 tests including: a progressing run is never
+touched; the wall fires on a HEALTHY spine (out of time however alive it looks); a spine that
+never appears is stale from watchdog start; the watchdog exits when the run ends (no strays);
+**a victim whose event loop is HARD-FROZEN (`for(;;);`) still dies** — probed live first:
+the run path installs zero signal handlers, so SIGTERM keeps its kernel default disposition
+and lands on a frozen process. Mutation battery 5/5 killed. First draft leaked 5 victim
+processes on assertion failure; fixtures now tear down via `t.after`.
+
+**Stated limit:** the run-u.mjs WIRING (spawn args, `unref`, finally-kill, marker readout) has
+executed only in the no-fire path — no run has both fired the watchdog and been read. The next
+real run is bounded by it either way; its first live fire is the wiring's validation.
+
+### The still-open question, and the instrument now waiting for it
+
+The freeze is unexplained. Two instruments now bracket the next occurrence: the watchdog
+marker + last spine event localize a freeze the watchdog kills; a lag sampler in `run-u.mjs`
+(1s tick; records any ≥3s block with from/until timestamps to `<spine>.lag.jsonl`, proven
+against a real 4s hard freeze) localizes any freeze the run survives. Between them, the next
+freeze cannot pass unmeasured.
+
+### Lesson
+
+A guard that lives inside the thing it guards shares its fate. Three independent in-process
+bounds all failed on the same event for the same structural reason — the fix was not a better
+timer but a different PROCESS. And the operator's original instinct ("outside shell... so it
+won't go stale") was the correct design the first time it was offered.

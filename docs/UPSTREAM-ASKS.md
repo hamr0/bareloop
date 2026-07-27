@@ -1110,3 +1110,43 @@ frequency claim did not, and it is corrected here before the ask is implemented.
 **Related.** BA-14 (2026-07-16) is the same family one layer down — a stale pooled keep-alive
 socket surfacing as `EPIPE`, fixed by widening the retry predicate. BA-18 is the case that
 predicate cannot reach: the socket does not error, it simply never answers.
+
+## BA-19 — `timeoutMs` bounds socket INACTIVITY only; nothing bounds a call's TOTAL duration — a slow-but-trickling response hangs a caller for hours (2026-07-28, U run ms3197n8 / F66)
+
+**Symptom, observed once at full cost.** One `generate()` call on `AnthropicProvider`
+(bare-agent 0.34.0, `timeoutMs` derived and forwarded per call — verified at `loop.js:732`)
+ran for **274 minutes** and ended in `read ECONNRESET`, not a timeout. Zero rounds, zero
+events, ≥$3.23 of a $10 budget consumed by a run that produced no verdict. The reset — not a
+`TimeoutError` — is the proof of mechanism: the idle timer never tripped, so bytes WERE
+arriving at the socket for 4.5 hours without the response ever completing.
+
+**Source read before filing.** `applyRequestTimeout` (`src/provider-http.js`) is one
+`req.setTimeout(...)`. Node resets that timer on ANY socket activity; the docstring says so
+plainly: *"the timer resets on activity, so a slow-but-streaming response is not killed."*
+That is the correct behavior for the quantity it watches — BA-18 asked for an idle bound and
+got a good one. But it means bare-agent has NO bound on total call duration: a response that
+trickles a byte every few minutes is invisible to every timer in the library, forever.
+
+**The ask.** A per-call total-duration deadline beside (not replacing) the idle bound —
+`deadlineMs` or an `AbortSignal`, whichever fits the provider surface. The two quantities are
+independent failure modes: a silent socket (BA-18) and a zombie stream (this ask).
+
+**FAIL-able acceptance criteria:**
+1. A mock server that streams one byte every `idle/2` ms and never completes: a call with
+   `deadlineMs: X` rejects within `X + ε`. Today this call NEVER returns until the kernel
+   gives up — the criterion fails on 0.34.0 by construction.
+2. The rejection is typed and DISTINGUISHABLE from the idle trip (a distinct `code`, or a
+   field naming which bound fired) — a consumer routing governance stops vs transport
+   casualties (bareloop's F64 discriminator) must not have to guess which timer spoke.
+3. The idle bound still works unchanged with a deadline set: a silent socket trips the idle
+   timer FIRST when `timeoutMs < deadlineMs`. (Guards against the fix replacing one bound
+   with the other.)
+4. Per-call overridable; disable semantics consistent with `timeoutMs` (`0`/`Infinity`).
+
+**Filed WITH its own limiting evidence (standing rule):** n=1 — one 274-minute hang, one run.
+bareloop no longer depends on this fix: the F66 in-process stall fuse (heartbeat = a round,
+5-min window, 3 strikes then replan) self-heals this class at the harness layer, and the F67
+outside watchdog bounds even a frozen harness. This ask is defense-in-depth for consumers who
+have neither. A deliberately long single call (large `maxTokens`, slow model) is a legitimate
+multi-minute stream — a default deadline would kill it, so **disabled-by-default is the
+defensible shape**; the ask is for the KNOB, not for a new default.
