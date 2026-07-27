@@ -37,8 +37,8 @@ const out = (/** @type {string} */ line) => console.log(`SPAWNER ${line}`);
 const done = (/** @type {number} */ code) => { if (code !== 97) out('judged=1'); process.exit(code); };
 const stop = (/** @type {string} */ why) => { out(`instrument-stop: ${why}`); process.exit(97); };
 
-const run = (/** @type {string} */ cmd, /** @type {string[]} */ args, timeoutMs = 900_000) => {
-  const r = spawnSync(cmd, args, { cwd: WORKDIR, encoding: 'utf8', timeout: timeoutMs, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } });
+const run = (/** @type {string} */ cmd, /** @type {string[]} */ args, timeoutMs = 900_000, /** @type {Record<string,string>} */ extraEnv = {}) => {
+  const r = spawnSync(cmd, args, { cwd: WORKDIR, encoding: 'utf8', timeout: timeoutMs, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', ...extraEnv } });
   return { code: r.status, text: `${r.stdout ?? ''}${r.stderr ?? ''}`, timedOut: r.error?.code === 'ETIMEDOUT' };
 };
 /** the tool's own lines, capped and prefixed — trims are ANNOUNCED, never silent (F28) */
@@ -76,7 +76,18 @@ if (stage === 'changed-from-seed') {
 }
 
 if (stage === 'typecheck') {
-  const r = run('python3', ['-m', 'mypy', '--config-file', 'mypy.ini', PKG_SRC]);
+  // MYPYPATH is load-bearing, not decoration. The patient sets `explicit_package_bases`,
+  // so passing `packages/spawner/src` makes mypy NAME those modules
+  // `packages.spawner.src.aurora_spawner.*`. A sibling import (`from aurora_spawner.recovery
+  // import …`) then matches none of them and falls through to the editable install, which
+  // symlinks to a DIFFERENT checkout of aurora — so a fix that crosses a module boundary was
+  // being checked against unedited source in another repo. Proven by probe: adding a function
+  // to the patient's recovery.py and misusing it from spawner.py reported "Module
+  // aurora_spawner.recovery has no attribute …" (the other repo) instead of the arg-type
+  // error. With MYPYPATH the module names resolve inside the patient and the real error is
+  // reported. The seed count is 16 either way and both recorded greens re-verify clean, so
+  // this closes a latent hole and moves no number.
+  const r = run('python3', ['-m', 'mypy', '--config-file', 'mypy.ini', PKG_SRC], 900_000, { MYPYPATH: PKG_SRC });
   if (r.timedOut || r.code === null) stop('the strict typecheck timed out');
   const errs = r.text.split('\n').filter((l) => l.includes(' error: '));
   if (errs.length === 0 && r.code === 0) { out('green: mypy --strict reports zero errors'); done(0); }
