@@ -8,7 +8,7 @@
 // this shape reuses and fine-tunes it rather than starting cold.
 import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
@@ -80,10 +80,31 @@ const provider = new AnthropicProvider({ apiKey, model: MODEL });
 
 const started = Date.now();
 console.log(`\n== U run ${runid} ==  $${spec.budgetUsd} · ${spec.maxWallMs / 60000}min · ${MODEL}`);
-const outcome = await runJob(spec, {
-  approvals, workdir: wd, provider, emit: makeSpine(spineFile),
-  shellCapUsd: spec.budgetUsd, capRuns: CAP_RUNS, closeTimeoutMs: CLOSE_TIMEOUT_MS,
-});
+
+// F67 — the OUTSIDE watchdog, started before the run and sharing nothing with it.
+// Every guard bareloop had lived inside this process, and ms3197n8/ms3jh76q proved
+// that is exactly where they cannot help: 274min and 81.5min of total silence, the
+// in-process fuse never running because whatever froze the run froze its timers
+// too. This one is a separate process holding one file's mtime and a pid.
+// `unref()` so it can never keep a finished run alive.
+const watchdog = spawn(process.execPath, [
+  new URL('./u-watchdog.mjs', import.meta.url).pathname,
+  '--spine', spineFile,
+  '--pid', String(process.pid),
+  '--wall-ms', String(spec.maxWallMs),
+], { stdio: ['ignore', 'ignore', 'inherit'] });
+watchdog.unref();
+
+let outcome;
+try {
+  outcome = await runJob(spec, {
+    approvals, workdir: wd, provider, emit: makeSpine(spineFile),
+    shellCapUsd: spec.budgetUsd, capRuns: CAP_RUNS, closeTimeoutMs: CLOSE_TIMEOUT_MS,
+  });
+} finally {
+  // the guard outlives the run only by accident, never by design
+  try { watchdog.kill('SIGKILL'); } catch { /* already gone */ }
+}
 const elapsedMin = ((Date.now() - started) / 60000).toFixed(1);
 
 // ── the read. Facts only: what happened, what it cost, and whether the record is
@@ -129,6 +150,13 @@ if (outcome === 'green' && plan) {
   writeFileSync(bridgeFile, `${JSON.stringify({ job: spec.job, specHash, runid, greenAt: new Date().toISOString(), plan }, null, 2)}\n`);
   console.log(`\nBRIDGE saved — ${bridgeFile}`);
   console.log('  the next run of this shape reuses this plan instead of starting cold');
+}
+// F67: if the outside guard fired, say so HERE rather than leaving the reader to
+// reconcile a truncated run against a file they don't know exists. (A kill it
+// completed leaves no readout at all — the marker beside the spine IS the record.)
+if (existsSync(`${spineFile}.watchdog.json`)) {
+  const m = JSON.parse(readFileSync(`${spineFile}.watchdog.json`, 'utf8'));
+  console.log(`\nWATCHDOG   fired: ${m.reason} — the run was stopped from OUTSIDE, not by its own governance`);
 }
 console.log(`\nspine     ${spineFile}`);
 console.log(`patient   left AS THE RUN LEFT IT (read it before the next run resets to the seed)`);
