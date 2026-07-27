@@ -18,24 +18,44 @@ import { SECRET_PATTERNS } from '../src/validate.js';
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
 
-const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/aurora-u';
-const SEED = 'd661e507c5cd0981368d90ed3e3abf6e2bb9ed18';
+// U targets. Each entry is a PATIENT + its frozen seed + the spec that names its close;
+// everything else the runner reads from the spec itself. `--job` selects one; the default
+// is the first target so run 1/run 3's invocation is unchanged.
+const JOBS = {
+  'aurora-spawner': {
+    spec: 'aurora-u-spawner-types.json',
+    workdir: '/home/hamr/PycharmProjects/bareloop-patients/aurora-u',
+    spine: 'aurora-u-bareloop',
+    seed: 'd661e507c5cd0981368d90ed3e3abf6e2bb9ed18',
+  },
+  'litectx-types': {
+    spec: 'litectx-u-types.json',
+    workdir: '/home/hamr/PycharmProjects/bareloop-patients/litectx-u',
+    spine: 'litectx-u-bareloop',
+    seed: '96813a43bbcbac6a808ff610c6751a8736e2903e',
+  },
+};
 const MODEL = 'claude-sonnet-5';
-const CLOSE_TIMEOUT_MS = 900_000; // the suite is ~23s; this is headroom, not a budget
+const CLOSE_TIMEOUT_MS = 900_000; // the slowest close stage is the suite (~23s aurora, ~53s litectx); headroom, not a budget
 const CAP_RUNS = 4;
 
 const arg = (/** @type {string} */ n) => { const i = process.argv.indexOf(`--${n}`); return i === -1 ? null : (process.argv[i + 1] ?? ''); };
-const spec = JSON.parse(readFileSync(new URL('../jobs/aurora-u-spawner-types.json', import.meta.url), 'utf8'));
+const jobKey = arg('job') ?? 'aurora-spawner';
+const target = JOBS[/** @type {keyof typeof JOBS} */ (jobKey)];
+if (!target) { console.error(`unknown --job "${jobKey}" — one of: ${Object.keys(JOBS).join(', ')}`); process.exit(2); }
+const WORKDIR = target.workdir;
+const SEED = target.seed;
+const spec = JSON.parse(readFileSync(new URL(`../jobs/${target.spec}`, import.meta.url), 'utf8'));
 const specHash = jobSpecHash(spec);
 
 if (arg('approve') !== specHash) {
   console.log('U — user-mode e2e, ONE run, REAL dollars');
-  console.log(`  spec     jobs/aurora-u-spawner-types.json  $${spec.budgetUsd}  wall ${spec.maxWallMs / 60000}min  capRuns=${CAP_RUNS}`);
+  console.log(`  spec     jobs/${target.spec}  $${spec.budgetUsd}  wall ${spec.maxWallMs / 60000}min  capRuns=${CAP_RUNS}`);
   console.log(`  patient  ${WORKDIR} @ ${SEED.slice(0, 12)}`);
   console.log(`  goal     "${spec.goal}"`);
   console.log(`  hash     ${specHash}`);
   if (arg('approve') !== null) console.error(`\nREFUSED: --approve ${arg('approve')} does not match this spec version.`);
-  console.log(`\nTo approve and run:\n  ANTHROPIC_API_KEY=... node scripts/run-u.mjs --approve ${specHash}`);
+  console.log(`\nTo approve and run:\n  ANTHROPIC_API_KEY=... node scripts/run-u.mjs --job ${jobKey} --approve ${specHash}`);
   process.exit(arg('approve') === null ? 0 : 1);
 }
 
@@ -43,7 +63,7 @@ const apiKey = process.env.ANTHROPIC_API_KEY;
 if (!apiKey) { console.error('ANTHROPIC_API_KEY not set (secrets load from the environment — never the tree)'); process.exit(2); }
 
 const wd = resolve(WORKDIR);
-const spineDir = join(wd, '..', 'aurora-u-bareloop');
+const spineDir = join(wd, '..', target.spine);
 mkdirSync(spineDir, { recursive: true });
 const runid = Date.now().toString(36);
 const spineFile = join(spineDir, `u-${runid}.jsonl`);

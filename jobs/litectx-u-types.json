@@ -1,0 +1,71 @@
+{
+  "schema": "job-v1",
+  "job": "litectx-u-types",
+  "description": "U (user-mode e2e), second target: same job SHAPE as aurora-u-spawner-types, different patient and different toolchain (JS/JSDoc + tsc, not Python + mypy). One sentence of problem, a budget, a clock, one close. No arms, no operator-authored checks, no hand-solving.",
+  "provider": "anthropic-api",
+  "cadence": {
+    "unit": "day",
+    "every": 1
+  },
+  "budgetUsd": 10,
+  "maxWallMs": 2700000,
+  "writeScope": [
+    "src/**"
+  ],
+  "goal": "Make litectx pass `tsc --strict` without weakening the tests.",
+  "verdictType": "green",
+  "close": [
+    {
+      "name": "changed-from-seed",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-litectx-close.mjs changed-from-seed",
+      "expect": 0,
+      "judged": {
+        "pattern": "LITECTX judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^LITECTX ",
+      "offer": false
+    },
+    {
+      "name": "typecheck",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-litectx-close.mjs typecheck",
+      "expect": 0,
+      "judged": {
+        "pattern": "LITECTX judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^LITECTX "
+    },
+    {
+      "name": "suite-green",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-litectx-close.mjs suite-green",
+      "expect": 0,
+      "judged": {
+        "pattern": "LITECTX judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^LITECTX "
+    },
+    {
+      "name": "no-suppressions",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-litectx-close.mjs no-suppressions",
+      "expect": 0,
+      "judged": {
+        "pattern": "LITECTX judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^LITECTX "
+    }
+  ],
+  "tools": [
+    "read",
+    "grep",
+    "write",
+    "edit",
+    "recall",
+    "get"
+  ],
+  "escalation": {
+    "mode": "decision-ready"
+  }
+}
