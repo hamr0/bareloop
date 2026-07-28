@@ -1181,8 +1181,15 @@ litectx before — LC-2 was withdrawn as our own stale index):**
 stay exactly as it is; the ask is a knob.
 
 **FAIL-able acceptance criteria:**
-1. During a force index of a fixture that takes ≥2s, a 100ms host interval fires ≥80% of due
-   ticks with the option enabled (today: 4.5%).
+1. During a force index of a fixture that takes ≥2s, with the option enabled: no single
+   event-loop block exceeds 500ms, and a 100ms host interval fires ≥60% of due ticks
+   (today: max block 1142ms, 4.5% liveness).
+   *(AMENDED 2026-07-28, criterion was ours to correct: the original ≥80% bar overshot the
+   functional need — every consumer named here runs second/minute-scale timers, and litectx's
+   POC showed reaching 80% costs the store's single-transaction atomicity. An integrity
+   property must not be traded to hit a comfort number nobody needs; yield-only (~63%
+   liveness, ~250ms max block, atomicity intact) is the shape this criterion now accepts by
+   design, not by exception.)*
 2. Identical output: chunk count, edge count, and stored stamp match the blocking path on the
    same fixture, byte for byte where content is compared.
 3. Concurrent reads during an off-thread index either serialize safely or fail cleanly with a
