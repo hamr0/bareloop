@@ -6,7 +6,7 @@
 // green ONE job end to end. That green GRADUATES the bridge: the plan the agent
 // authored is preserved from the spine as a reusable artifact, and the next run of
 // this shape reuses and fine-tunes it rather than starting cold.
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, renameSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { execFileSync, spawn } from 'node:child_process';
 import { join, resolve } from 'node:path';
@@ -73,10 +73,25 @@ const git = (/** @type {string[]} */ a) => execFileSync('git', ['-C', wd, ...a],
 // run's edits is measuring the wrong thing
 git(['reset', '--hard', SEED]);
 git(['clean', '-fd']);
-console.log(`patient reset — clean at ${git(['rev-parse', '--short', 'HEAD'])}`);
+// COLD MEANS COLD (P design record): the isolate verbs (stash/remember) persist in
+// .litectx across runs — an uncleaned store would leak run N's memory into run N+1's
+// "cold" baseline and quietly poison every contrast (the reuse rung's OFF arm above
+// all). The store is a derived, self-healing cache by litectx's own contract; the
+// re-index it costs is ~65s under yield. When the reuse rung lands, KEEPING the
+// store becomes an explicit ledger-attributed choice — never a leak.
+rmSync(join(wd, '.litectx'), { recursive: true, force: true });
+console.log(`patient reset — clean at ${git(['rev-parse', '--short', 'HEAD'])}, store cold`);
 
 const approvals = [{ specHash, signer: process.env.USER ?? 'human', ts: new Date().toISOString() }];
 const provider = new AnthropicProvider({ apiKey, model: MODEL });
+// P: the per-step model-tier factory. The TIER menu is signed in the plan schema
+// (STEP_MODELS); the tier->model mapping is the RUNNER's territory, here. haiku
+// takes no output_config.effort (provider-gated, battery rule) - nothing to gate
+// yet since neither tier sets effort params.
+const TIER_MODELS = { sonnet: MODEL, haiku: 'claude-haiku-4-5-20251001' };
+/** @type {Record<string, any>} */
+const tierCache = {};
+const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= tier === 'sonnet' ? provider : new AnthropicProvider({ apiKey, model: TIER_MODELS[tier] }));
 
 const started = Date.now();
 console.log(`\n== U run ${runid} ==  $${spec.budgetUsd} · ${spec.maxWallMs / 60000}min · ${MODEL}`);
@@ -121,7 +136,7 @@ const lagTimer = setInterval(() => {
 let outcome;
 try {
   outcome = await runJob(spec, {
-    approvals, workdir: wd, provider, emit: makeSpine(spineFile),
+    approvals, workdir: wd, provider, providerFor, emit: makeSpine(spineFile),
     shellCapUsd: spec.budgetUsd, capRuns: CAP_RUNS, closeTimeoutMs: CLOSE_TIMEOUT_MS,
   });
 } finally {

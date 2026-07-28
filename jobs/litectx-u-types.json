@@ -63,7 +63,15 @@
     "write",
     "edit",
     "recall",
-    "get"
+    "get",
+    "impact",
+    "related",
+    "recent",
+    "compress",
+    "peek",
+    "stash",
+    "remember",
+    "forget"
   ],
   "escalation": {
     "mode": "decision-ready"
