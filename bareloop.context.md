@@ -341,13 +341,18 @@ known-answer round-trip before tokens: `smoke-red` — a silent degradation thro
 
 Outcomes: `green | already-green | escalated | unapproved-spec | job-red | smoke-red |
 plan-red | check-red | close-red | close-unsupported | pricing-red | provider-red |
-interpreter-red | cap-halt | wall-halt | step-red:<id>`. `provider-red` is a transport throw
-or a worker round the API cut off mid-generation (`truncated:max_tokens`, BA-6 — before
-which it laundered into a clean finish, F25): no verdict exists and the failed round's spend
-is only partly known (F6). `cap-halt` is the wallet; `wall-halt` is the clock (F64 — a
-timeout derived from the run's own deadline is a governance stop, never a transport
-casualty). Every one of them is a decision-ready escalation with a terminal `job-end`: the
-spine never dangles.
+interpreter-red | cap-halt | wall-halt | step-stalled | step-red:<id>`. `provider-red` is a
+transport throw or a worker round the API cut off mid-generation (`truncated:max_tokens`,
+BA-6 — before which it laundered into a clean finish, F25): no verdict exists and the failed
+round's spend is only partly known (F6). `cap-halt` is the wallet; `wall-halt` is the clock
+(F64 — a timeout derived from the run's own deadline is a governance stop, never a transport
+casualty). `step-stalled` is the F66 stall fuse giving up: no completed round for 5 minutes,
+three times on one call — each stall silently abandons the hung call and reissues it
+(self-heal first); only the third throws. Inside a step it is the THIRD replan trigger
+(with `cap-halt` and `step-variance`); outside a step it escalates under its own name, never
+laundered into `provider-red`, and carries `spendComplete:false` (an abandoned call may
+already have been billed). Every one of them is a decision-ready escalation with a terminal
+`job-end`: the spine never dangles.
 
 **Every `job-end` carries the money, on every path**: `{ outcome, spentUsd, spendComplete }`
 (plus `step`/`cause`/`detail` where the outcome has them). `spentUsd` is the accumulated sum

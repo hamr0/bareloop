@@ -3761,3 +3761,66 @@ A guard that lives inside the thing it guards shares its fate. Three independent
 bounds all failed on the same event for the same structural reason — the fix was not a better
 timer but a different PROCESS. And the operator's original instinct ("outside shell... so it
 won't go stale") was the correct design the first time it was offered.
+
+## F68 — U's second genre greens through a replan: cap-halt → adapt → validated green; and the close-runner turns out to freeze the loop it reports to
+
+**Status: minted 2026-07-28 from U run `ms3wawub` (litectx-u, GREEN, $5.77 of $10, 37.0min of
+45). The first complete cold-build → cap-halt → self-heal → validated-green cycle in user
+mode, with the full guard stack (T + F66 fuse + F67 watchdog + lag sampler) live for the
+first time.**
+
+### The run
+
+Cold 3-step plan (`fix-error-narrowing` → `fix-implicit-any-and-this` → `final-strict-verify`).
+Steps 1–2 green. Step 3 spent its 4/4 runs red and cap-halted at 00:26:47 — and the replan
+trigger CONVERTED it: a 2-step recovery plan (`finish-strict-fixes` → `final-strict-verify`),
+both green, outer close satisfied on FIRST judgment at 00:43:12. 176 rounds, 53 writes across
+10 files, 16 check runs, zero stalls, watchdog never fired.
+
+**Validated, not asserted:** all four close stages re-run independently against the tree the
+run left — 10 files all under `src/`, `tsc --strict` zero errors, 410 tests EXECUTED / 0
+failing (the floor counts executed, never passed), zero suppressions. Diff preserved by cp
+discipline (`run3-ms3wawub.patch`, 661 lines) BEFORE anything touched the tree — the rule
+violated on aurora run 3 was followed this time.
+
+### What is and is not a first (stated so the claim cannot inflate)
+
+FIRSTS: first litectx-u verdict (runs 1–2 were timeout-class casualties, F66/F67); first
+user-mode green through self-healing (aurora's two greens never replanned); first bridge
+minted from an ADAPTED plan — the saved bridge is the post-replan plan, exactly the artifact
+the reuse thesis wants. NOT firsts: not the first bridge (aurora saved two); not the
+programme's first replan (F63 counted 8 in Layer-2-era batteries, 2 greened — but those were
+operator-scaffolded jobs, not user mode). The guards did NOT cause the green — zero stalls,
+zero watchdog fires; their contribution was bounding the downside. The replan machinery
+earned it.
+
+### The lag sampler's first catch — and it caught US
+
+9 loop-freeze records, worst 74.3s. Every one brackets a close run. `ralph.js` executes
+closes via `spawnSync` — a SYNCHRONOUS child process — so the host event loop is dead for
+every close's full duration (the litectx close ≈ 65s: tsc ~10s + 410-test suite ~55s,
+matching the freeze brackets exactly). First reading of the first record blamed litectx's
+`index()`; the timeline refuted that within the hour (check-preflight events bracket the
+block) and the correction is recorded in LC-3, which was filed with the honest per-package
+split: litectx's real share is a 4.4s / 4.5%-liveness force-index block (measured on a
+155-file spare patient), ours is the spawnSync.
+
+Severity: LOW today — no provider call is in flight during a close, so the block starves
+only instruments (fuse timers, lag sampler, spine liveness against the watchdog's stale
+window; the outside watchdog itself is immune by construction). Recommendation: async spawn
+with identical semantics. **Close execution is arbiter territory: named, scoped, PARKED for
+explicit go.**
+
+### Open
+
+The 81-minute freeze (F67's trigger) remains unexplained — spawnSync cannot produce it (no
+close ran in that window; one block is capped by the 900s close timeout). This run gave it
+no chance to recur. Both instruments stay armed; the next occurrence gets bracketed either
+way (marker + last spine event if killed mid-freeze; lag record if survived).
+
+### Lesson
+
+The self-heal channel is no longer theoretical: on its first user-mode firing, a replan
+turned a run that had spent 60% of its budget on a red step into a validated green under
+cap. And an instrument added to find someone else's freeze found ours first — build the
+cheap instrument, then believe what it says over what the investigation expected.

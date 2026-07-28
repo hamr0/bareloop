@@ -1111,7 +1111,24 @@ frequency claim did not, and it is corrected here before the ask is implemented.
 socket surfacing as `EPIPE`, fixed by widening the retry predicate. BA-18 is the case that
 predicate cannot reach: the socket does not error, it simply never answers.
 
-## BA-19 — `timeoutMs` bounds socket INACTIVITY only; nothing bounds a call's TOTAL duration — a slow-but-trickling response hangs a caller for hours (2026-07-28, U run ms3197n8 / F66)
+## BA-19 — RESOLVED (bare-agent 0.35.0, same-day): total-duration `deadlineMs` beside the idle bound
+
+**Delivered exactly as asked, verified against shipped source (never the changelog):**
+`deadlineMs` per call, `code:'EDEADLINE'` with `context.bound:'deadline'` (and the idle trip
+now carries `context.bound:'idle'` — the discriminator on BOTH bounds, criterion 2 exceeded),
+`retryable:false` (terminal — hamr's choice via the shape question: a deadline is a hard
+ceiling the caller set to STOP; auto-retry would re-spend up to another full `deadlineMs`),
+disabled by default, `0` a no-op, timer unref'd. Criterion 3's ordering (idle fires first
+when `timeoutMs < deadlineMs`) documented at the source.
+
+**Consumed:** bareloop 0.34.0 → 0.35.0, full suite 449/449 + typecheck green. **Wiring
+`deadlineMs` into worker calls is PARKED:** the F66 fuse already self-heals this class above
+the transport (validated on the paid surface), and adding a second call bound to the clock's
+derivation is arbiter territory — named, not shipped unilaterally.
+
+<details><summary>Original ask as filed (2026-07-28)</summary>
+
+### BA-19 — `timeoutMs` bounds socket INACTIVITY only; nothing bounds a call's TOTAL duration — a slow-but-trickling response hangs a caller for hours (2026-07-28, U run ms3197n8 / F66)
 
 **Symptom, observed once at full cost.** One `generate()` call on `AnthropicProvider`
 (bare-agent 0.34.0, `timeoutMs` derived and forwarded per call — verified at `loop.js:732`)
@@ -1150,6 +1167,8 @@ outside watchdog bounds even a frozen harness. This ask is defense-in-depth for 
 have neither. A deliberately long single call (large `maxTokens`, slow model) is a legitimate
 multi-minute stream — a default deadline would kill it, so **disabled-by-default is the
 defensible shape**; the ask is for the KNOB, not for a new default.
+
+</details>
 
 ## LC-3 — `index()` blocks the host event loop for its full duration: async in signature, synchronous in substance (2026-07-28, U run ms3wawub diagnosis)
 

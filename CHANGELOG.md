@@ -7,6 +7,43 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+- **F66 — the in-process stall fuse** (`src/stall.js`): bare-agent's `timeoutMs` bounds
+  socket INACTIVITY (resets on every byte), so a slow-but-trickling call hung a run for 274
+  minutes (U run ms3197n8). The fuse's heartbeat is a completed ROUND — no round for 5
+  minutes abandons the call and silently reissues it (self-heal, hamr's ruling); three
+  stalls throw `step-stalled`, the third replan trigger. Validated on the paid surface: a
+  real slow call stalled and its reissue answered; three real in-flight calls abandoned at
+  the ceiling; late answers from abandoned sockets swallowed. Mutation battery 6/6 (the
+  surviving mutant was a real hole matching the production failure shape — fixed).
+- **F67 — the outside watchdog** (`scripts/u-watchdog.mjs`): U run ms3jh76q froze its event
+  loop 81.5 minutes and every in-process guard froze with it. A separate process sharing
+  nothing with the run — reads one file's mtime, calls kill(2), records the reason on disk
+  BEFORE the signal. Two triggers: stale spine and wall+grace. Battery includes a
+  hard-frozen-loop victim (`for(;;);`) — the exact case it exists for. Mutation 5/5.
+- **Event-loop lag sampler** in `scripts/run-u.mjs`: records any ≥3s loop block with
+  from/until timestamps to `<spine>.lag.jsonl` — the instrument that localized the
+  spawnSync-close blocks (below) on its first run.
+
+### Fixed
+- **The aurora U close type-checked another repository** (`scripts/u-spawner-close.mjs`):
+  mypy's `explicit_package_bases` named the patient's files `packages.spawner.src.*`, so
+  sibling imports fell through to the editable install — a symlink to a DIFFERENT aurora
+  checkout. Proven with a planted probe, fixed with `MYPYPATH`; latent not active (seed
+  error count unchanged, both prior greens re-verified under the fixed instrument).
+
+### Changed
+- bare-agent 0.34.0 → 0.35.0 (BA-19 delivered: `deadlineMs` total-call bound, `EDEADLINE`,
+  `context.bound` discriminator, terminal by design; bareloop wiring PARKED — the F66 fuse
+  already self-heals this class above the transport).
+
+### Known
+- `ralph.js` runs closes via `spawnSync`: every close run blocks the host event loop for the
+  close's full duration (measured 9 blocks in U run ms3wawub, worst 74.3s — bracketed
+  exactly by the close's tsc + suite stages). In-process timers are dead during a close; the
+  outside watchdog is not. Fix (async spawn, identical semantics) is arbiter territory —
+  named and PARKED for explicit go.
+
 ### Removed
 - **BREAKING — the legacy operator-authored `steps[]` path is deleted** (PRD v1.32, hamr:
   *"i just want to get rid of it"*). `steps[]` is the shape where the OPERATOR hand-writes the
