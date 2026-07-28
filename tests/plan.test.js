@@ -443,3 +443,31 @@ test('maxWallMs is ARBITER territory: smuggled into a plan or a step it reds unk
   const step = validatePlan(mut((p) => { p.steps[0].maxWallMs = 60_000; }), OPTS);
   assert.ok(step.reds.some((x) => x.code === 'unknown-field' && x.path === 'steps.0.maxWallMs'));
 });
+
+// ---- P: the widened step vocabulary (design record 2026-07-28) — all tighten-only ----
+
+test('P: model from the closed tier menu is accepted; an off-menu value is inexpressible', () => {
+  assert.deepEqual(validatePlan(mut((p) => { p.steps[0].model = 'haiku'; }), OPTS).reds, []);
+  assert.deepEqual(validatePlan(mut((p) => { p.steps[0].model = 'sonnet'; }), OPTS).reds, []);
+  const r = validatePlan(mut((p) => { p.steps[0].model = 'opus'; }), OPTS);
+  assert.equal(r.reds.length, 1);
+  assert.match(r.reds[0].detail ?? '', /sonnet\|haiku/, 'the menu is handed over, not described');
+});
+
+test('P: attempts tightens the shell capRuns, never exceeds it', () => {
+  assert.deepEqual(validatePlan(mut((p) => { p.steps[1].attempts = 2; }), { job: JOB, capRuns: 4 }).reds, []);
+  const r = validatePlan(mut((p) => { p.steps[1].attempts = 9; }), { job: JOB, capRuns: 4 });
+  assert.equal(r.reds.length, 1);
+  assert.equal(r.reds[0].code, 'bounds');
+});
+
+test('P: a per-step scope narrows the fence from the SAME menu tree-changed uses', () => {
+  assert.deepEqual(validatePlan(mut((p) => { p.steps[1].scope = 'tests/**'; }), OPTS).reds, []);
+  const r = validatePlan(mut((p) => { p.steps[1].scope = 'src/**'; }), OPTS);
+  assert.equal(r.reds.length, 1, JSON.stringify(r.reds));
+  assert.match(r.reds[0].detail ?? '', /menu/, 'choose-dont-describe: the legal scopes are enumerated');
+});
+
+test('P: the three new fields are optional — an existing six-field plan is untouched', () => {
+  assert.deepEqual(validatePlan(PLAN, OPTS).reds, []);
+});

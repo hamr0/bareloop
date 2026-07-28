@@ -21,12 +21,12 @@ import { Gate, redact } from 'bareguard';
 import { LiteCtx } from 'litectx';
 import { runClose, runStages, ralph, CLOSE_FAULTS } from './ralph.js';
 import { validatePlan, legalScopes } from './plan.js';
-import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU } from './plan.js';
+import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, STEP_MODELS } from './plan.js';
 import { snapshotScope, evalExits } from './exits.js';
 import { createRoot } from './root.js';
 import { createStallWatch, STALL_MS, MAX_STALLS } from './stall.js';
-import { TOOL_MENU, checkMenu } from './job.js';
-import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, RETRIEVAL_STRATEGY, EDIT_STRATEGY } from './tools.js';
+import { TOOL_MENU, STORE_VERBS, checkMenu } from './job.js';
+import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, RETRIEVAL_STRATEGY, EDIT_STRATEGY, COMPONENT_STRATEGIES } from './tools.js';
 import { globToPrefix, SECRET_PATTERNS } from './validate.js';
 import { extractArtifact } from './text.js';
 import { createClock, isWallTimeout } from './clock.js';
@@ -149,9 +149,12 @@ Shape: { "schema": "plan-v1", "steps": [ ... 1..${MAX_PLAN_STEPS} steps ... ] } 
 strictly in array order. Each step (no other fields exist):
 - "id": kebab-case slug, unique
 - "action": the step's task, precise enough for a worker that sees ONLY this step
-- "tools": non-empty unique subset of ${JSON.stringify(ceiling)} (write/edit are the write-class verbs)
+- "tools": non-empty unique subset of ${JSON.stringify(ceiling)} (write/edit change the tree; recall/get/impact/related/recent search and navigate the repository index; compress/peek read cheaply; stash/remember/forget park and record notes across steps)
 - "rounds": integer 1..${maxStepRounds} — the step's per-attempt tool-round bound
 - "target": the step's deliverable path (REQUIRED when tools include write/edit), inside ${JSON.stringify(job.writeScope)}
+- "model" (optional): ${STEP_MODELS.join(' | ')} — a cheaper tier for mechanical steps; omit for the default
+- "attempts" (optional): integer — TIGHTEN this step's retry cap below the shell's; you may never raise it
+- "scope" (optional): narrow this step's WRITE fence — copy one value from the offered scopes below
 - "exit": 1..${MAX_EXITS_PER_STEP} form checks that ALL must pass (AND), each one of:
     {"type":"artifact-written","path":"...","pattern":"optional regex"}
     {"type":"tree-changed","scope":"<copy one value from the offered scopes below>"}
@@ -199,6 +202,9 @@ ${scoutBlob || '(no scout notes)'}`;
  * @param {() => number} opts.remainingUsd the one wallet: what is left of the signed budget right now
  * @param {() => boolean} [opts.isUnpriced] has any round come back with a null cost? (F6) — the
  *   plan flow bails IN-FLIGHT on the first unpriced round instead of burning the whole plan
+ * @param {(tier: string) => any} [opts.providerFor] P: per-step model-tier factory
+ *   (tier ∈ STEP_MODELS → a provider). A plan naming a tier with no factory supplied is an
+ *   interpreter-red STOP — never silently run the default tier as if the choice was honoured.
  * @param {number} [opts.capRuns] shell-owned per-step attempt cap
  * @param {number} [opts.closeTimeoutMs] close/check wall-clock cap (shell territory)
  * @param {number} [opts.maxStepRounds] the shell's per-step rounds ceiling (validatePlan's bound)
@@ -222,7 +228,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   'check-red' | 'close-red' | 'close-unsupported' | 'pricing-red' | 'cap-halt' |
  *   'wall-halt' | 'provider-red' | 'interpreter-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, emit, remainingUsd, isUnpriced = () => false, capRuns = 3, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, now }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, capRuns = 3, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, now }) {
   workdir = resolve(workdir);
   const scrub = (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS });
 
@@ -428,16 +434,19 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
    * denied, the wallet as its budget), granted tools only (the menu IS the
    * grant), per-attempt round bound via loop.stop() (F20), every round metered
    * with a phase label (F12).
-   * @param {{granted: string[], phase: string, attemptRounds: number, attempts: number, writable: boolean, root?: ReturnType<typeof createRoot>|null}} o
+   * @param {{granted: string[], phase: string, attemptRounds: number, attempts: number, writable: boolean, root?: ReturnType<typeof createRoot>|null, fence?: string[]|null, workerProvider?: any}} o
    *   `root` (Layer R): when present, the worker's write-class actions are teed
    *   for the within-run ratchet — staged before the gate decides, discarded on
    *   deny/halt, settled to landed-or-not after execution (the two axes, F43/F7).
    *   Wired ONLY on the Loop path: the native session exposes no onToolResult seam.
    */
-  async function mkWorker({ granted, phase, attemptRounds, attempts, writable, root = null }) {
+  async function mkWorker({ granted, phase, attemptRounds, attempts, writable, root = null, fence = null, workerProvider = null }) {
     const gate = new Gate({
       fs: {
-        writeScope: writable ? fencePrefixes : [],
+        // P: a step's `scope` narrows the fence — the per-step prefixes are always a
+        // SUBSET of the signed fence (validator: scope ∈ the same menu tree-changed
+        // uses), so this can only tighten, never widen
+        writeScope: writable ? (fence ?? fencePrefixes) : [],
         readScope: [workdir],
         deny: [auditPath, join(workdir, '.smoke'), join(workdir, '.litectx')],
       },
@@ -560,7 +569,15 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
     // below anything a second/minute-scale timer can perceive. Store output is byte-identical.
     if (ctx.length) await lc.index({ yield: true });
     const toolDefs = [...shell, ...ctx];
-    const system = PERSONA_TOOLS + (granted.includes('edit') ? EDIT_STRATEGY : '') + (ctx.length ? RETRIEVAL_STRATEGY : '')
+    // F19 per component (P): a strategy line rides ONLY with a granted verb from its
+    // component — RETRIEVAL_STRATEGY names ctx_recall/ctx_get, so it gates on those two
+    // specifically (a worker granted only `impact` must not be steered to tools it lacks).
+    const has = (/** @type {string[]} */ ...vs) => vs.some((v) => granted.includes(v));
+    const system = PERSONA_TOOLS + (granted.includes('edit') ? EDIT_STRATEGY : '')
+      + (has('recall', 'get') ? RETRIEVAL_STRATEGY : '')
+      + (has('impact', 'related', 'recent') ? COMPONENT_STRATEGIES.select : '')
+      + (has('compress', 'peek') ? COMPONENT_STRATEGIES.compress : '')
+      + (has('stash', 'remember', 'forget') ? COMPONENT_STRATEGIES.isolate : '')
       + (native && grantedNames.has(TOOL_BY_VERB.read) ? NATIVE_READ_STRATEGY : '');
     /** @param {any} u @returns {{inputTokens: number, outputTokens: number, cacheReadTokens: number, cacheCreationTokens: number}} */
     const usageOf = (u) => ({ inputTokens: u?.inputTokens ?? 0, outputTokens: u?.outputTokens ?? 0, cacheReadTokens: u?.cacheReadTokens ?? 0, cacheCreationTokens: u?.cacheCreationTokens ?? 0 });
@@ -637,7 +654,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
     // never invisible (F6/F44). The gate policy is wired but idle (no tools).
     const loopProvider = native
       ? /** @type {any} */ (nativeProvider)({ policy, maxTurns: attemptRounds * (attempts + 1), hasTools: false })
-      : provider;
+      : (workerProvider ?? provider);
     /** @param {{costUsd?: number|null, pricing?: string|null, usage?: any, kind?: string}} arg */
     const metered = async (arg) => {
       emit('worker-round', {
@@ -761,7 +778,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
   let scoutBlob = '';
   emit('scout-start', { rounds: scoutRounds });
   try {
-    const scout = await mkWorker({ granted: ceiling.filter((v) => !WRITE_VERBS.includes(v)), phase: 'scout', attemptRounds: scoutRounds, attempts: 1, writable: false });
+    const scout = await mkWorker({ granted: ceiling.filter((v) => !WRITE_VERBS.includes(v) && !STORE_VERBS.includes(v)), phase: 'scout', attemptRounds: scoutRounds, attempts: 1, writable: false });
     scout.setIteration(1);
     const r = await scout.ask([
       'Survey this repository READ-ONLY for the goal below. Report: the relevant layout, the key files and symbols, and your best hypothesis about what the work requires. Be concise — your notes brief a planner that cannot see the repository.',
@@ -831,11 +848,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
       return extractArtifact(r.text).code ?? '';
     };
     let text = await draftPlan(null);
-    let pv = validatePlan(text, { job, maxStepRounds, scopes: scopeMenu });
+    let pv = validatePlan(text, { job, maxStepRounds, scopes: scopeMenu, capRuns });
     emit('plan-validate', { ok: pv.ok, reds: pv.reds, phase: `${phase}-1` });
     if (!pv.ok) {
       text = await draftPlan(pv.reds);
-      pv = validatePlan(text, { job, maxStepRounds, scopes: scopeMenu });
+      pv = validatePlan(text, { job, maxStepRounds, scopes: scopeMenu, capRuns });
       emit('plan-validate', { ok: pv.ok, reds: pv.reds, phase: `${phase}-2` });
     }
     return pv;
@@ -886,7 +903,23 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
     const root = layerRoot && !native
       ? createRoot({ gapKeep: '\\S', redact: scrub, writesInformative: true })
       : null;
-    const w = await mkWorker({ granted: step.tools, phase: `step:${step.id}`, attemptRounds: step.rounds, attempts: capRuns, writable: true, root });
+    // P: the three widened step fields, each wired or refused — a silently-ignored
+    // optional field is the F50 blind-instrument class. `attempts` tightens the
+    // shell cap (validator already bounds it); `scope` narrows the fence to a
+    // menu value (a subset by construction); `model` swaps the worker's provider
+    // via the runner's factory — absent factory it must STOP, not silently run
+    // the default tier as if the choice had been honoured.
+    const stepCap = step.attempts !== undefined ? Math.min(step.attempts, capRuns) : capRuns;
+    if (step.model !== undefined && !providerFor) {
+      const err = /** @type {any} */ (new Error(`step "${step.id}" selects model tier "${step.model}" but the runner supplied no providerFor factory — wiring gap, not a plan defect`));
+      err.category = 'interpreter-red';
+      throw err;
+    }
+    const w = await mkWorker({
+      granted: step.tools, phase: `step:${step.id}`, attemptRounds: step.rounds, attempts: stepCap, writable: true, root,
+      fence: step.scope !== undefined ? [resolve(workdir, globToPrefix(step.scope))] : null,
+      workerProvider: step.model !== undefined && providerFor ? providerFor(step.model) : null,
+    });
     let lastText = '';
     let iterationNow = 0;
     // The meter's baseline: what the RUN had left when this step began. Shares are
@@ -950,7 +983,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
       // AND-only: the gap names EVERY failing wall (mechanical genre, F38)
       return { verdict: 'needs_revision', gap: results.filter((r) => !r.pass).map((r) => r.detail).join('\n') };
     };
-    const outcome = await ralph({ middle, judge, capRuns, emit: emitL, workerWrites: w.workerWrites });
+    const outcome = await ralph({ middle, judge, capRuns: stepCap, emit: emitL, workerWrites: w.workerWrites });
     return { outcome, artifact: lastText };
   };
 
@@ -1041,7 +1074,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
       replanned = true;
       emit('replan', { step: step.id, reason: replanTrigger, trigger: cat });
       const failure = `Step "${step.id}" (${step.action}) did not reach its exits. `
-        + `${cat === 'step-variance' ? 'It was stopped by the run\'s meter for consuming too large a share of what was left.' : `It ran ${capRuns} attempts and its exits were still red.`}\n`
+        + `${cat === 'step-variance' ? 'It was stopped by the run\'s meter for consuming too large a share of what was left.' : `It ran ${step.attempts !== undefined ? Math.min(step.attempts, capRuns) : capRuns} attempts and its exits were still red.`}\n`
         + `Last exit state:\n${lastEscalation?.detail ?? '(none)'}\n`
         + `Steps completed so far: ${artifacts.map((a) => a.id).join(', ') || 'none'}.`;
       // The progress line IS the adaptation channel (addendum 2): the balance rides

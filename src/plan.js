@@ -89,7 +89,13 @@ const PLAN_FIELDS = ['schema', 'steps'];
 // order; a field nothing consumes is a live-looking knob with zero effect
 // (the F16 inert-op class). The arbiter's own vocabulary (close, budget,
 // fence) is absent by construction — unknown-field at every depth.
-const STEP_FIELDS = ['id', 'action', 'tools', 'rounds', 'target', 'exit'];
+const STEP_FIELDS = ['id', 'action', 'tools', 'rounds', 'target', 'exit', 'model', 'attempts', 'scope'];
+/** P (design record 2026-07-28): the signed per-step model-tier menu. Closed by
+ * construction — the agent picks a tier, never names an arbitrary model string
+ * (the tier→model mapping and any effort params are the RUNNER's, per provider).
+ * opus is deliberately absent: reserved for fresh builds hamr explicitly assigns,
+ * never plan-selectable. */
+export const STEP_MODELS = Object.freeze(['sonnet', 'haiku']);
 const EXIT_FIELDS = {
   'artifact-written': ['type', 'path', 'pattern'],
   'tree-changed': ['type', 'scope'],
@@ -188,7 +194,7 @@ export function hasNestedQuantifier(src) {
  * job spec. Never throws on JSON text or plain parsed data; every failure is
  * a named red. Returns the parsed plan on ok (single parse), null on any red.
  * @param {object|string} input parsed plan, or raw JSON text (parse failures are a red)
- * @param {{ job?: any, maxStepRounds?: number, scopes?: string[] }} [opts] `job`: the
+ * @param {{ job?: any, maxStepRounds?: number, scopes?: string[], capRuns?: number }} [opts] `job`: the
  *   validateJob-GREEN four-field spec (the ceiling, the fence, and the checks
  *   menu all come from it — a missing or non-plan-shape job fails CLOSED);
  *   `maxStepRounds`: the shell's per-step rounds ceiling (interpret's
@@ -198,7 +204,7 @@ export function hasNestedQuantifier(src) {
  *   writeScope — never a free-text fallback (F50).
  * @returns {{ ok: boolean, reds: Red[], plan: object|null }}
  */
-export function validatePlan(input, { job, maxStepRounds = 40, scopes } = {}) {
+export function validatePlan(input, { job, maxStepRounds = 40, scopes, capRuns = 3 } = {}) {
   /** @type {Red[]} */
   const reds = [];
   /** @type {(code: string, path: string, detail?: string) => void} */
@@ -289,6 +295,19 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes } = {}) {
       // rounds ≤ the shell cap (cap-not-estimate; the step bound IS maxTurns)
       if (!(Number.isInteger(s.rounds) && s.rounds >= 1 && s.rounds <= maxStepRounds)) {
         red('bounds', `${at}.rounds`, `integer 1..${maxStepRounds} — the step bound is the Gate's maxTurns, it may tighten the shell cap, never exceed it`);
+      }
+
+      // P (design record 2026-07-28): the widened vocabulary — every field
+      // optional, every field tighten-only, every legal set handed over as a
+      // MENU (choose-don't-describe: illegal is inexpressible, never described)
+      if (s.model !== undefined && !STEP_MODELS.includes(s.model)) {
+        red('invalid-value', `${at}.model`, `menu: ${STEP_MODELS.join('|')} — the tier menu is signed; the agent picks a tier, never names a model`);
+      }
+      if (s.attempts !== undefined && !(Number.isInteger(s.attempts) && s.attempts >= 1 && s.attempts <= capRuns)) {
+        red('bounds', `${at}.attempts`, `integer 1..${capRuns} — a step may tighten the shell's attempt cap, never exceed it`);
+      }
+      if (s.scope !== undefined && !scopeMenu.includes(s.scope)) {
+        red('invalid-value', `${at}.scope`, `menu: [${scopeMenu.join(', ')}] — a per-step write scope narrows the fence from the same menu tree-changed uses`);
       }
 
       // target (v1.18): the per-step deliverable — required on write steps,

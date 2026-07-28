@@ -77,11 +77,11 @@ const collector = () => {
   return { events, emit: (type, data = {}) => { const e = { type, ...data }; events.push(e); return e; } };
 };
 
-async function go(wd, provider, { job = JOB(wd), capRuns = 3, layerRoot = false, scoutRounds, now } = {}) {
+async function go(wd, provider, { job = JOB(wd), capRuns = 3, layerRoot = false, scoutRounds, now, providerFor } = {}) {
   const jv = validateJob(job);
   assert.deepEqual(jv.reds, [], 'the test job must be validateJob-green');
   const { events, emit } = collector();
-  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns, layerRoot, remainingUsd: () => 1.5, ...(scoutRounds ? { scoutRounds } : {}), ...(now ? { now } : {}) });
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns, layerRoot, remainingUsd: () => 1.5, ...(scoutRounds ? { scoutRounds } : {}), ...(now ? { now } : {}), ...(providerFor ? { providerFor } : {}) });
   return { outcome, events };
 }
 
@@ -1007,4 +1007,105 @@ rmSync(built); process.exit(0);\n`);
   assert.equal(events.find((e) => e.type === 'check-run' && e.name === 'api')?.verdict, 'satisfied',
     'the chain ran, so the ruler judged the real thing');
   assert.equal(outcome, 'green');
+});
+
+// ---- P: the widened step vocabulary is WIRED, not just validated (F50 class) ----
+
+test('P: a per-step scope NARROWS the live fence — a write the job fence allows is denied by the step scope', async (t) => {
+  const wd = makePatient(t);
+  const job = JOB(wd, { writeScope: ['tests/**', 'src/**'] });
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write the test; do not touch src.',
+      tools: ['write'], rounds: 6, target: 'tests/test_x.mjs', scope: 'tests/**',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    }],
+  });
+  const provider = scriptedProvider([
+    { text: 'scout notes' },
+    { text: plan },
+    // one round, two writes: src/ is INSIDE the signed fence but OUTSIDE the step scope
+    { toolCalls: [
+      tcall('t1', 'shell_write', { path: join(wd, 'src', 'hack.mjs'), content: 'nope\n' }),
+      tcall('t2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' }),
+    ] },
+    { text: 'wrote the test' },
+  ]);
+  const { outcome } = await go(wd, provider, { job });
+  assert.equal(outcome, 'green');
+  assert.ok(existsSync(join(wd, 'tests', 'test_x.mjs')), 'the in-scope write landed');
+  assert.ok(!existsSync(join(wd, 'src', 'hack.mjs')), 'the out-of-step-scope write was denied by the NARROWED fence');
+});
+
+test('P: step.attempts=1 tightens the shell cap — exactly one iteration before the step stops', async (t) => {
+  const wd = makePatient(t);
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write the test.',
+      tools: ['write'], rounds: 3, target: 'tests/test_x.mjs', attempts: 1,
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    }],
+  });
+  const provider = scriptedProvider([
+    { text: 'scout notes' },
+    { text: plan },
+    // the write lands but its content never satisfies the check → exit red
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'not the magic word\n' })] },
+    { text: 'wrote it (wrong)' },
+    // the replan drafter fires next (cap-halt + funds left) — feed it junk so the
+    // run ends; this test reads the ITERATION count, not the ending
+    { text: 'not a plan' },
+    { text: 'still not a plan' },
+    { text: 'nope' },
+  ]);
+  const { events } = await go(wd, provider);
+  const stepIters = events.filter((e) => e.type === 'iteration-start');
+  assert.equal(stepIters.length, 1, `attempts:1 must stop after ONE iteration — saw ${stepIters.length}`);
+  assert.ok(events.some((e) => e.type === 'escalation' && e.category === 'cap-halt'), 'the tightened cap reads as cap-halt');
+});
+
+test('P: step.model routes the worker through providerFor(tier); the drafter stays on the default', async (t) => {
+  const wd = makePatient(t);
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write the test.',
+      tools: ['write'], rounds: 6, target: 'tests/test_x.mjs', model: 'haiku',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    }],
+  });
+  const main = scriptedProvider([
+    { text: 'scout notes' },
+    { text: plan },
+  ]);
+  const haiku = scriptedProvider([
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'wrote the test' },
+  ]);
+  /** @type {string[]} */
+  const asked = [];
+  const { outcome } = await go(wd, main, { providerFor: (tier) => { asked.push(tier); return haiku; } });
+  assert.equal(outcome, 'green');
+  assert.deepEqual(asked, ['haiku'], 'the factory is asked for exactly the planned tier');
+  assert.equal(main.calls.length, 2, 'scout + plan ran on the default provider');
+  assert.ok(haiku.calls.length >= 1, 'the step worker ran on the tier provider');
+});
+
+test('P: step.model with NO providerFor is a STOP, never a silent default-tier run', async (t) => {
+  const wd = makePatient(t);
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write the test.',
+      tools: ['write'], rounds: 6, target: 'tests/test_x.mjs', model: 'haiku',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }],
+    }],
+  });
+  const provider = scriptedProvider([{ text: 'scout notes' }, { text: plan }]);
+  const { outcome, events } = await go(wd, provider);
+  assert.notEqual(outcome, 'green');
+  assert.ok(events.some((e) => e.type === 'escalation' && /providerFor/.test(`${e.decision ?? ''} ${e.detail ?? ''}`)),
+    `the missing wiring is NAMED in the escalation — got ${JSON.stringify(events.filter((e) => e.type === 'escalation'))}`);
 });

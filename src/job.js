@@ -46,8 +46,20 @@ export const GOLD_COMPARE = Object.freeze(['exact', 'json-equal']);
  * WRITE-class verb judged by the SAME writeScope fence as `write` (bareguard
  * action type 'edit'). Admitted because whole-file rewrite is measurably
  * unreliable at size (F31: 4 of 5 big-file whole-writes broke the tree) and
- * taxes output tokens ∝ file size. It admits no execution either. */
-export const TOOL_MENU = Object.freeze(['read', 'grep', 'write', 'edit', 'recall', 'get']);
+ * taxes output tokens ∝ file size. It admits no execution either.
+ *
+ * P (design record 2026-07-28, hamr: full catalog) widened the menu to the four
+ * components — write · select · compress · isolate — every verb an EXISTING
+ * litectx implementation (menu-is-inventory). impact/related/recent/compress/
+ * peek are read-only like the retrieval pair; stash/remember/forget are
+ * STORE-writes (`.litectx`, never the tree — own gate action types, and the U
+ * runner deletes the store at reset so cold stays cold). None admits execution:
+ * the `run` lock is untouched. */
+export const TOOL_MENU = Object.freeze(['read', 'grep', 'write', 'edit', 'recall', 'get', 'impact', 'related', 'recent', 'compress', 'peek', 'stash', 'remember', 'forget']);
+/** the write-class split the validator and the scout filter read: tree writes
+ * (writeScope fence) vs store writes (isolate) — NEITHER is read-capable. */
+export const WRITE_VERBS = Object.freeze(['write', 'edit']);
+export const STORE_VERBS = Object.freeze(['stash', 'remember', 'forget']);
 /**
  * The floor for `maxWallMs`: one default close timeout (`runClose`'s 120_000).
  * Addendum 1 MEASURED that a wall deadline can only be read BETWEEN rounds —
@@ -486,8 +498,8 @@ function validatePlanShape(spec, red, reds) {
       // scout surveys read-only (the write-class verbs are filtered out of its
       // menu), so a write-only ceiling hands the scout an EMPTY menu and it
       // surveys blind — a degradation the validator catches at sign time.
-      else if (!spec.tools.some((/** @type {string} */ t) => TOOL_MENU.includes(t) && !['write', 'edit'].includes(t))) {
-        red('invalid-value', 'tools', 'a plan-shape ceiling must grant ≥1 read-capable verb (read/grep/recall/get) — the scout surveys read-only; a write-only ceiling leaves it blind');
+      else if (!spec.tools.some((/** @type {string} */ t) => TOOL_MENU.includes(t) && !WRITE_VERBS.includes(t) && !STORE_VERBS.includes(t))) {
+        red('invalid-value', 'tools', 'a plan-shape ceiling must grant ≥1 read-capable verb — the scout surveys read-only; write-class and store-class verbs leave it blind');
       }
     }
   }

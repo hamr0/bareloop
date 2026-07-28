@@ -24,6 +24,14 @@ import { join } from 'node:path';
 
 const WATCHDOG = new URL('../scripts/u-watchdog.mjs', import.meta.url).pathname;
 const sleep = (/** @type {number} */ ms) => new Promise((r) => setTimeout(r, ms));
+/** poll until cond() or deadline — fixed sleeps made these tests fail under full-suite
+ * CPU load (parallel tree-sitter indexing starves the poll timers); a bounded wait keeps
+ * the assertion able to fail while removing the load sensitivity. */
+const waitUntil = async (/** @type {() => boolean} */ cond, ms = 10_000) => {
+  const end = Date.now() + ms;
+  while (Date.now() < end) { if (cond()) return true; await sleep(150); }
+  return cond();
+};
 
 function tmp() {
   const d = mkdtempSync(join(tmpdir(), 'wd-'));
@@ -66,7 +74,7 @@ test('a spine that goes cold gets the run killed', async (t) => {
   writeFileSync(spine, '{"type":"job-start"}\n');
   const v = victim(t);
   const w = watchdog(t, ['--spine', spine, '--pid', String(v.pid), '--stale-ms', '500', '--poll-ms', '100']);
-  await sleep(2000); // never append again — the run has gone quiet
+  await waitUntil(() => !alive(v.pid)); // never append again — the run has gone quiet
   assert.equal(alive(v.pid), false, 'a wedged run must be stopped from outside');
   assert.match(w.output(), /stale/i);
 });
@@ -83,7 +91,7 @@ test('a victim whose event loop is HARD-FROZEN still dies — the exact case F67
   const v = spawn(process.execPath, ['-e', 'for(;;);'], { stdio: 'ignore' });
   t.after(() => { try { v.kill('SIGKILL'); } catch { /* already gone */ } });
   const w = watchdog(t, ['--spine', spine, '--pid', String(v.pid), '--stale-ms', '500', '--poll-ms', '100']);
-  await sleep(2000);
+  await waitUntil(() => !alive(v.pid));
   assert.equal(alive(v.pid), false, 'a frozen run must die to the outside kill — nothing inside it can act');
   assert.match(w.output(), /stale/i);
 });
@@ -93,7 +101,7 @@ test('the kill is RECORDED — a stopped run must not read as a mystery crash', 
   writeFileSync(spine, '{"type":"job-start"}\n');
   const v = victim(t);
   const w = watchdog(t, ['--spine', spine, '--pid', String(v.pid), '--stale-ms', '500', '--poll-ms', '100']);
-  await sleep(2000);
+  await waitUntil(() => existsSync(join(dir, 'spine.jsonl.watchdog.json')));
   const marker = join(dir, 'spine.jsonl.watchdog.json');
   assert.ok(existsSync(marker), 'the watchdog leaves its verdict on disk, next to the spine it was watching');
   const rec = JSON.parse(readFileSync(marker, 'utf8'));
@@ -112,8 +120,8 @@ test('the wall is enforced from OUTSIDE even while the spine is healthy', async 
   writeFileSync(spine, '{"type":"job-start"}\n');
   const v = victim(t);
   const w = watchdog(t, ['--spine', spine, '--pid', String(v.pid), '--stale-ms', '60000', '--wall-ms', '600', '--grace-ms', '200', '--poll-ms', '100']);
-  const beat = setInterval(() => appendFileSync(spine, '{"type":"worker-round"}\n'), 100);
-  await sleep(2500);
+  const beat = setInterval(() => { try { appendFileSync(spine, '{"type":"worker-round"}\n'); } catch { /* raced teardown */ } }, 100);
+  await waitUntil(() => !alive(v.pid));
   clearInterval(beat);
   assert.equal(alive(v.pid), false, 'a healthy-but-overrunning run is still out of time');
   assert.match(w.output(), /wall/i);
@@ -126,7 +134,7 @@ test('the watchdog exits on its own when the run finishes normally', async (t) =
   const w = watchdog(t, ['--spine', spine, '--pid', String(v.pid), '--stale-ms', '60000', '--poll-ms', '100']);
   const exited = new Promise((res) => w.proc.on('exit', (c) => res(c)));
   v.kill('SIGKILL'); // the run ends
-  const code = await Promise.race([exited, sleep(4000).then(() => 'timeout')]);
+  const code = await Promise.race([exited, sleep(10_000).then(() => 'timeout')]);
   assert.equal(code, 0, 'a watchdog that outlives its run is a stray process');
 });
 
@@ -147,6 +155,6 @@ test('a spine that never appears is measured from the watchdog start, not treate
   const { spine } = tmp();
   const v = victim(t);
   const w = watchdog(t, ['--spine', spine, '--pid', String(v.pid), '--stale-ms', '500', '--poll-ms', '100']);
-  await sleep(2000);
+  await waitUntil(() => !alive(v.pid));
   assert.equal(alive(v.pid), false, 'a run that never emits anything is the most stalled run there is');
 });

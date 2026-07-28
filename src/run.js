@@ -75,6 +75,7 @@ async function primitiveSmoke(workdir) {
  *   threaded to runPlan, which builds one per worker (native tool mode when `hasTools`, else a
  *   metered claude-json text provider for the toolless drafter); ignored on every Loop-driven provider
  * @param {(type: string, data?: object) => object} opts.emit spine emitter
+ * @param {(tier: string) => any} [opts.providerFor] P: per-step model-tier provider factory (forwarded to the plan flow)
  * @param {number} [opts.capRuns] shell-owned per-step attempt cap
  * @param {number} [opts.shellCapUsd] the shell's hard USD ceiling
  * @param {number} [opts.closeTimeoutMs] close wall-clock cap (shell territory)
@@ -90,7 +91,7 @@ async function primitiveSmoke(workdir) {
  *   'close-red' | 'close-unsupported' | 'pricing-red' | 'provider-red' |
  *   'interpreter-red' | 'cap-halt' | 'wall-halt' | 'step-stalled' | `step-red:<id>`
  */
-export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, emit, capRuns = 3, shellCapUsd = 2, closeTimeoutMs, layerRoot = false }) {
+export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, emit, capRuns = 3, shellCapUsd = 2, closeTimeoutMs, layerRoot = false }) {
   // 0. the ledger's counters, declared FIRST so that every job-end — including
   // the pre-token reds below — can state a real figure. An omitted `spentUsd` is
   // not a zero: a consumer reads `undefined` and either crashes or launders it
@@ -163,7 +164,7 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // accounts it natively (F12) and the job-end money contract is unchanged.
   {
     const outcome = await runPlan(job, {
-      workdir, provider, nativeProvider, emit: meter, capRuns, closeTimeoutMs, layerRoot,
+      workdir, provider, nativeProvider, providerFor, emit: meter, capRuns, closeTimeoutMs, layerRoot,
       remainingUsd: () => Math.min(shellCapUsd, job.budgetUsd - spentUsd),
       isUnpriced: () => unpriced, // F6: let the plan flow bail in-flight, not just after it returns
     });

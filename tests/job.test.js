@@ -231,8 +231,8 @@ test('checkApproval: matching record approves; stale hash, empty, or garbage nev
 
 
 
-test('TOOL_MENU ships frozen: file tools + the two retrieval verbs + the edit verb — run is NOT in the menu', () => {
-  assert.deepEqual([...TOOL_MENU], ['read', 'grep', 'write', 'edit', 'recall', 'get']);
+test('TOOL_MENU ships frozen: the P four-component catalog — run is NOT in the menu', () => {
+  assert.deepEqual([...TOOL_MENU], ['read', 'grep', 'write', 'edit', 'recall', 'get', 'impact', 'related', 'recent', 'compress', 'peek', 'stash', 'remember', 'forget']);
   assert.ok(Object.isFrozen(TOOL_MENU));
   // The line the menu exists to hold (F19): admitting retrieval must NOT admit execution.
   // A worker that can run commands can run its own close — it grades its own exam.
@@ -437,4 +437,24 @@ test('maxWallMs below one close timeout is a bounds red: addendum 1 measured enf
   const red = r.reds.find((x) => x.path === 'maxWallMs');
   assert.equal(red.code, 'bounds');
   assert.match(red.detail, /close/i, 'the red must say WHY, not just "out of range"');
+});
+
+// ---- P: the widened catalog at the spec ceiling (design record 2026-07-28) ----
+
+test('P: the full catalog is grantable at the spec ceiling', () => {
+  const r = validateJob(mut4((j) => { j.tools = ['read', 'grep', 'write', 'edit', 'recall', 'get', 'impact', 'related', 'recent', 'compress', 'peek', 'stash', 'remember', 'forget']; }));
+  assert.deepEqual(r.reds, []);
+  assert.equal(r.ok, true);
+});
+
+test('P: a store-only ceiling is still scout-blind — isolate verbs are not read-capable', () => {
+  // stash/remember/forget write the store; a ceiling of only those plus write-class
+  // leaves the scout with an empty read menu, the exact degradation the rule catches
+  const r = validateJob(mut4((j) => { j.tools = ['write', 'stash', 'remember']; }));
+  assert.ok(r.reds.some((x) => /read-capable/.test(x.detail ?? '')), JSON.stringify(r.reds));
+});
+
+test('P: run stays locked-but-listed — the widening never touched the lock', () => {
+  const r = validateJob(mut4((j) => { j.tools = ['read', 'impact', 'run']; }));
+  assert.ok(r.reds.some((x) => x.code === 'request-red' && x.verb === 'run'));
 });
