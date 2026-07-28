@@ -3824,3 +3824,68 @@ The self-heal channel is no longer theoretical: on its first user-mode firing, a
 turned a run that had spent 60% of its budget on a red step into a validated green under
 cap. And an instrument added to find someone else's freeze found ours first — build the
 cheap instrument, then believe what it says over what the investigation expected.
+
+## F69 — the P read (n=3, all cold): the planner ignores the widened palette but adopts every control knob — and its default plan shape disconnects the self-heal loop
+
+**Status: minted 2026-07-29 from the signed P read (hash `25d8c5ee…`, hamr's "confirmed"),
+runs `ms4l5p6w` ($1.48, 10.7min, step-red), `ms57zr7c` ($4.28, 30.2min, step-red),
+`ms5a24tz` ($0.28, 3.3min, plan-red). One genre (TYPES), one job (litectx-u) — every claim
+below carries that qualifier.**
+
+### Question (a): new-verb selection — zero
+
+Across the 4 validated plans (2 runs × draft+replan), not one of the 8 new palette verbs
+was selected — nor the pre-existing `recall`/`get`. Every step: `read/grep/edit`. F60's
+"2 of 3 drafts select when the catalog is named" did not reproduce on this job. Contrast:
+the P step-VOCABULARY landed instantly — `model:"haiku"` on mechanical steps, `attempts`
+tightening, per-step `scope` — used in every plan that offered a place for them. The
+planner takes control knobs it understands and leaves retrieval verbs whose value it has
+no reason to believe (F19's capability-without-strategy, now visible at the DRAFT layer:
+the strategy lines ride with granted verbs, but nothing at draft time argues FOR granting).
+
+### Question (b): outcome vs baseline — no cost read minted
+
+0/3 green on the widened menu vs 1/3 on the old menu is two anecdotes side by side (F24
+rule); no run was killed BY a new verb (none was ever invoked), so the menu is a bystander
+in every death. The three deaths: two identical structural stalls (below), one honest
+plan-red (drafter tried to hang an exit on `tsconfig.json`, outside the signed fence —
+the fence held, $0.28).
+
+### The real find: the mailbox with no hands (4 of 4 plans)
+
+Every validated plan authored the same idiom: fix steps exiting on `tree-changed` alone
+(form only — greens on ANY change), plus a read-only "verify-…" step holding every
+`check-passes`. A failing check's gap is re-delivered to the verifying step's OWN worker —
+which holds no write-class tool. Both step-red runs show the stall signature: a
+byte-identical 57-error gap, four iterations, zero possible conversions. The one green
+this job ever produced (F68, `ms3wawub`) escaped ONLY because its replan happened to move
+`check-passes:typecheck` onto the edit-granted fix step — its ORIGINAL plan carried the
+same trap. Green vs red on this job was a plan-shape coin flip, not capability.
+
+The replan channel cannot heal this class: both red runs' replans re-authored the trap.
+Self-heal converts only what reaches a worker that can act (F38/F39 delivery≠conversion,
+recurring at the plan-wiring layer).
+
+### The fix (shipped, d447665): the shape is now inexpressible
+
+`validatePlan` reds `check-passes` on any step without a write-class tool (the complement
+of the F17 pairing rule; same `exit-illegal` class), and the drafter prompt states the
+same law. The rejection red at draft time IS the teaching moment — choose-don't-describe,
+zero execution tokens burned. The flipped test pins the reversal with the paid evidence
+in its comment. Landed AFTER all three runs so the series stayed one readable condition.
+
+### Symptoms catalog (for the next operator reading a stuck run)
+
+1. Byte-identical gap across iterations — feedback is delivering but not converting.
+2. A `verify-…` step with no `edit`/`write` holding `check-passes` — the trap (now
+   validator-rejected).
+3. Fix steps greening on `tree-changed` with the close still red — form satisfied, truth
+   untouched.
+
+### Lesson
+
+A widened menu is inert without a reason to reach for it (F19 at the draft layer), and
+the highest-value read from the widening experiment was not about the widening at all:
+running the same job cold three times exposed that the planner's default "fix, then
+verify" idiom structurally disconnects the very check-loop that mints every green. The
+un-gameable fix was not prose in the prompt but one more inexpressibility rule at the gate.
