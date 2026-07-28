@@ -420,4 +420,14 @@ function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep, s
   if (writeStep && hasCheck && !hasTreeChanged) {
     red('exit-illegal', `${at}.exit`, 'check-passes on a write-granted step requires the tree-changed conjunct — the seed tree is green, so a lone check would pass on the untouched repo (F17/F46 already-green trap)');
   }
+  // The inverse trap, measured (runs ms4l5p6w/ms57zr7c: 4 of 4 drafted plans):
+  // a failing check's gap is re-delivered to THIS step's own worker, so a step
+  // holding a check must be able to act on it. A read-only "verify" step is a
+  // mailbox with no hands — the gap arrives, nothing can edit, the loop stalls
+  // to cap on a byte-identical gap. The outer close is the run's verification;
+  // forbidding this shape pushes the check onto the step that fixes (the one
+  // shape that has ever greened this job).
+  if (!writeStep && hasCheck) {
+    red('exit-illegal', `${at}.exit`, `check-passes on a step with no write-class tool (${WRITE_VERBS.join('|')}) — the check's failure gap comes back to this step's own worker, which cannot edit; attach the check to the step that fixes (the operator's close already verifies the finished run)`);
+  }
 }

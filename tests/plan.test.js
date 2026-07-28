@@ -164,13 +164,21 @@ test('the F17 pairing rule: check-passes on a write-granted step without tree-ch
   assert.match(r.reds[0].detail ?? '', /tree-changed/);
 });
 
-test('check-passes WITHOUT a write grant needs no pairing (a read-only verify step is legal)', () => {
+test('the mailbox-with-no-hands rule: check-passes on a step with NO write-class tool reds exit-illegal', () => {
+  // Measured, not hypothesized (runs ms4l5p6w/ms57zr7c, 4 of 4 drafted plans):
+  // a failing check's gap is re-delivered to THIS step's own worker; a read-only
+  // "verify" step receives the gap and structurally cannot act, so the loop
+  // stalls to cap on a byte-identical gap. The outer close is the run's final
+  // verification — a read-only verify step duplicates it with no hands.
   const r = validatePlan(mut((p) => {
     p.steps[1].tools = ['read', 'get'];
     delete p.steps[1].target;
     p.steps[1].exit = [{ type: 'check-passes', name: 'clean-run' }];
   }), OPTS);
-  assert.deepEqual(r.reds, []);
+  assert.equal(r.ok, false);
+  assert.equal(r.reds.length, 1, `exactly one red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'exit-illegal:steps.1.exit');
+  assert.match(r.reds[0].detail ?? '', /write|edit/);
 });
 
 test('rounds ceiling is an opt the shell sets (12 passes under 40, reds under 8)', () => {

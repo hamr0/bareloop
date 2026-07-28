@@ -162,6 +162,11 @@ strictly in array order. Each step (no other fields exist):
     {"type":"check-passes","name":"one of ${JSON.stringify(checkNames)}"}
   A check-passes on a write-granted step MUST be paired with a tree-changed exit
   (the repository starts green — a lone check would pass on the untouched tree).
+  A check-passes may ONLY appear on a step whose tools include write or edit: a
+  failing check is reported back to THAT step's worker for another attempt, so
+  the step must be able to act on the report. Do not plan a separate read-only
+  "verify" step — attach the check to the step that does the fixing; the final
+  verification after your plan is not yours to author.
   Reference checks by NAME only; you cannot author or modify one.
 
 Offered "scope" values for tree-changed — copy ONE of these exactly, character for
