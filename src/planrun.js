@@ -553,7 +553,12 @@ export async function runPlan(job, { workdir, provider, nativeProvider, emit, re
     const ctx = [...CTX_TOOLS].some((t) => grantedNames.has(t))
       ? createCtxTools(lc, workdir, emit).filter((t) => grantedNames.has(t.name))
       : [];
-    if (ctx.length) await lc.index();
+    // LC-3 (litectx 0.31.0): cooperative yield — index() is async but its work is sync CPU,
+    // and the default pass holds THIS event loop (the fuse's timers, the wall clock, the lag
+    // sampler all live here) for its full duration: measured 4.4s at 4.5% liveness on a
+    // 155-file force pass. With yield:true the worst single block measured 189–252ms (n=4),
+    // below anything a second/minute-scale timer can perceive. Store output is byte-identical.
+    if (ctx.length) await lc.index({ yield: true });
     const toolDefs = [...shell, ...ctx];
     const system = PERSONA_TOOLS + (granted.includes('edit') ? EDIT_STRATEGY : '') + (ctx.length ? RETRIEVAL_STRATEGY : '')
       + (native && grantedNames.has(TOOL_BY_VERB.read) ? NATIVE_READ_STRATEGY : '');

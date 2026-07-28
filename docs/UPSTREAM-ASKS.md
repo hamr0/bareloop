@@ -1170,7 +1170,29 @@ defensible shape**; the ask is for the KNOB, not for a new default.
 
 </details>
 
-## LC-3 — `index()` blocks the host event loop for its full duration: async in signature, synchronous in substance (2026-07-28, U run ms3wawub diagnosis)
+## LC-3 — RESOLVED (litectx 0.31.0, same-day): `index({ yield: true })` cooperative yielding, shape B as decided
+
+**Delivered as the yield-only shape (hamr's fork call: atomicity is an integrity property,
+liveness a comfort property — never trade the first for the second), verified against shipped
+source: `setImmediate` between per-file parses, store byte-identical, single `applyChanges`
+transaction preserved, default `false` unchanged.**
+
+**Acceptance read on bareloop's own fixture (the 155-file spare patient, n=4), stated with
+the miss on record:** max single block **189–252ms** — the binding clause (≤500ms) passes
+every run with ~2× headroom; liveness **54.0–57.8%** — the ≥60% proxy clause MISSES by the
+letter here (upstream measured ~63% on litectx's own tree; the tick-ratio is fixture-sensitive
+to file-size distribution). Consumed on the binding clause: no timer any consumer named runs
+can perceive a ≤252ms block. The %-proxy's fixture sensitivity is the lesson — the next
+liveness criterion should be max-block-only, which is the quantity a host actually feels.
+NOT re-amended to pass: the criterion was amended once for a principled reason (atomicity);
+amending it again after the measurement would be fitting the bar to the result.
+
+**Consumed:** litectx 0.29.1 → 0.31.0; `planrun.js` worker setup now indexes with
+`{ yield: true }` (every worker path — scout, step, fix). Full suite 449/449 + typecheck.
+
+<details><summary>Original ask as filed (2026-07-28)</summary>
+
+### LC-3 — `index()` blocks the host event loop for its full duration: async in signature, synchronous in substance (2026-07-28, U run ms3wawub diagnosis)
 
 **Measured before filing, on litectx 0.30.0 via bareloop's own construction (`new LiteCtx({root})`,
 `index({force:true})`), patient a 155-file copy of litectx itself:** index took **4,409ms** during
@@ -1213,3 +1235,5 @@ stay exactly as it is; the ask is a knob.
    same fixture, byte for byte where content is compared.
 3. Concurrent reads during an off-thread index either serialize safely or fail cleanly with a
    named error — never a corrupt store.
+
+</details>
