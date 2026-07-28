@@ -1150,3 +1150,40 @@ outside watchdog bounds even a frozen harness. This ask is defense-in-depth for 
 have neither. A deliberately long single call (large `maxTokens`, slow model) is a legitimate
 multi-minute stream — a default deadline would kill it, so **disabled-by-default is the
 defensible shape**; the ask is for the KNOB, not for a new default.
+
+## LC-3 — `index()` blocks the host event loop for its full duration: async in signature, synchronous in substance (2026-07-28, U run ms3wawub diagnosis)
+
+**Measured before filing, on litectx 0.30.0 via bareloop's own construction (`new LiteCtx({root})`,
+`index({force:true})`), patient a 155-file copy of litectx itself:** index took **4,409ms** during
+which a 100ms host interval fired **2 of 44 due ticks — 4.5% event-loop liveness**. An in-run
+observation during U diagnostics read the same shape (1 tick where 19 were due). `index()` is
+`async` and is awaited — but the work inside (tree-sitter chunking, better-sqlite3 upserts,
+`collectFiles`) is CPU/sync, so the `await` yields microtasks, never the loop.
+
+**Why a host cares.** bareloop calls `lc.index()` at worker setup inside the same process that
+runs its safety timers (a stall fuse, a wall clock, an event-loop lag sampler). During an index
+pass all of them are dead — timers cannot fire, sockets cannot be read, spines cannot be written.
+Seconds today; it scales with repo size and would multiply under embeddings (which force a
+rebuild to take effect at all).
+
+**Filed WITH its own limiting evidence (standing rule, and this repo has misattributed blame to
+litectx before — LC-2 was withdrawn as our own stale index):**
+- On this 155-file repo the block is ~4.4s, and INCREMENTAL passes are ms-scale (7ms measured
+  elsewhere for 206 files) — the cost is real only on force/first passes and version-skew heals.
+- bareloop's own 65-second freeze that triggered this investigation was NOT litectx: it was
+  bareloop's `ralph.js` running closes via `spawnSync` — owned on our side, tracked separately.
+- bareloop can also mitigate alone (call `index()` from a worker thread), so this is a
+  quality-of-embedding ask, not a blocker.
+
+**The ask.** A non-blocking option for `index()` — either a worker-thread offload
+(`index({offthread:true})` or a documented `indexInWorker()`), or an inter-file yield
+(`setImmediate` between files) so the host loop breathes between parses. Default behavior may
+stay exactly as it is; the ask is a knob.
+
+**FAIL-able acceptance criteria:**
+1. During a force index of a fixture that takes ≥2s, a 100ms host interval fires ≥80% of due
+   ticks with the option enabled (today: 4.5%).
+2. Identical output: chunk count, edge count, and stored stamp match the blocking path on the
+   same fixture, byte for byte where content is compared.
+3. Concurrent reads during an off-thread index either serialize safely or fail cleanly with a
+   named error — never a corrupt store.
