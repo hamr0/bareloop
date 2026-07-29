@@ -3889,3 +3889,25 @@ the highest-value read from the widening experiment was not about the widening a
 running the same job cold three times exposed that the planner's default "fix, then
 verify" idiom structurally disconnects the very check-loop that mints every green. The
 un-gameable fix was not prose in the prompt but one more inexpressibility rule at the gate.
+
+### Addendum 2026-07-29 — the rule converts: first-draft compliance twice, and the first no-replan green
+
+Post-rule cold runs (same job, same caps): `ms5aou4a` (provider-red casualty at ≥$0.80 —
+`truncated:max_tokens` in a worker round; readable half only) and `ms5uxhej` (**GREEN,
+$4.29 of $10, 23.9min of 45, 132 rounds, 45 writes / 10 files, close satisfied on FIRST
+judgment, NO replan — a first for this job**; bridge minted from an un-replanned cold plan).
+
+Both post-rule drafts validated on the FIRST try with the winning shape — the validator
+never had to fire; the law stated in the prompt redirected the habit upstream (against a
+4-of-4 prior trap rate). The green run's planner even kept its "verify-strict-typecheck"
+step name, but the rule had forced `edit` onto it — and that exact step then converted
+live: typecheck red → gap to its OWN worker → fix → red → fix → satisfied on iteration 4.
+The precise location where `ms4l5p6w`/`ms57zr7c` stalled to cap on a byte-identical gap.
+
+Green audited, not asserted: all four close stages re-run independently against the tree
+(exit 0 each), 410 tests EXECUTED / 0 failing, 10 files all under `src/`, zero
+suppressions (three grep hits are seed-preexisting prose mentions), diff preserved
+cp-first (`run-ms5uxhej.patch`, 764 lines). New-verb uptake: still zero (data point six).
+
+Cost read (secondary, n=1 vs n=1): $4.29/23.9min no-replan vs the baseline's $5.77/37min
+with a replan — direction favorable, unminted.
