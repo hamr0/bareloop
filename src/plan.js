@@ -216,7 +216,7 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes, capRuns =
   // ceiling/fence/menu are meaningless without a plan-shape spec, and an open
   // gate on a malformed one would validate a plan against nothing.
   if (!isObj(job) || !isNonEmptyString(/** @type {any} */ (job).goal) || !Array.isArray(/** @type {any} */ (job).writeScope)) {
-    return { ok: false, reds: [{ code: 'job-invalid', path: 'job', detail: 'a plan validates only against a validateJob-green plan shape spec (goal/verdictType/close/checks[]) — validate the job first' }], plan: null };
+    return { ok: false, reds: [{ code: 'job-invalid', path: 'job', detail: 'a plan validates only against a validateJob-green plan shape spec (goal/verdictType/close) — validate the job first' }], plan: null };
   }
   const spec = /** @type {Record<string, any>} */ (job);
   /** the signed tool ceiling — validateJob permits omission, meaning the full menu */

@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runPlan } from '../src/planrun.js';
 import { validateJob } from '../src/job.js';
+import { StallError, MAX_STALLS } from '../src/stall.js';
 import { scriptedProvider, scriptedNativeFactory } from './helpers.js';
 
 const tcall = (id, name, args) => ({ id, name, arguments: args });
@@ -205,6 +206,47 @@ test('a second exhaustion after the replan escalates — the stop is a result', 
   assert.equal(events.filter((e) => e.type === 'replan').length, 1, 'never a second replan');
 });
 
+test('F66: the replan brief for a STALL says the model stopped producing rounds — never "its exits were still red", which never happened', async (t) => {
+  const wd = makePatient(t);
+  // The brief is the one channel the redrafting planner adapts to. A stall never
+  // reached its exits at all (the watchdog gave up on the call), so handing it
+  // the exhaustion sentence is a wrong diagnosis given to the only component
+  // whose job is to respond to it — the F28 class, on the replan side.
+  const base = scriptedProvider([
+    { text: 'scout notes' },
+    { text: PLAN(wd) },
+    { text: 'unreachable — the step call stalls' },
+    // the replan draft, then the fresh plan's step
+    { text: PLAN(wd, [{ id: 'second-go', action: 'Write it properly.', tools: ['write'], rounds: 4, target: 'tests/test_x.mjs', exit: [{ type: 'artifact-written', path: 'tests/test_x.mjs', pattern: 'ok' }] }]) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'done' },
+  ]);
+  /** @type {string[]} */
+  const prompts = [];
+  let n = 0;
+  const provider = {
+    calls: base.calls,
+    async generate(/** @type {any} */ messages, /** @type {any} */ tools) {
+      prompts.push(String(messages.at(-1)?.content ?? ''));
+      // the STEP worker's call: the watchdog reissued MAX_STALLS times and gave
+      // up — the same StallError object the real watch rejects with, so ralph
+      // reads the same typed category it would in production
+      if (n++ === 2) throw new StallError('no round completed for 300s, 3 times — giving up on this call', MAX_STALLS);
+      return base.generate(messages, tools);
+    },
+  };
+  const { events } = await go(wd, provider);
+
+  const replan = events.find((e) => e.type === 'replan');
+  assert.ok(replan, `a stall past the ceiling must REPLAN, not stop — events: ${events.map((e) => e.type).join(' ')}`);
+  assert.equal(replan.trigger, 'step-stalled');
+  const brief = prompts.find((p) => p.includes('did not reach its exits'));
+  assert.ok(brief, 'the replan drafter was handed a failure brief');
+  assert.match(brief, /stopped producing rounds/, 'the brief names what actually happened');
+  assert.doesNotMatch(brief, /exits were still red/, 'a stall never judged its exits — claiming they reddened is a false diagnosis handed to the planner');
+  assert.doesNotMatch(brief, /attempts and its exits/, 'and it did not run out of attempts either');
+});
+
 test('a mid-step provider-red is a CASUALTY, not a step-red: runPlan returns provider-red so the outcome and the escalation agree (F11/F44)', async (t) => {
   const wd = makePatient(t);
   // scout + a valid plan, then the STEP worker's provider throws a transport
@@ -310,6 +352,40 @@ test('the scout is read-only by construction: its tool menu carries no write-cla
   assert.ok(scoutMenu.includes('shell_read'), 'the scout can read');
   const planMenu = provider.toolsOffered[1];
   assert.deepEqual(planMenu, [], 'the planner sees the scout blob only — never the repo (no tools at all)');
+});
+
+test('L3: a ctx verb\'s spine event is SCRUBBED at the wiring — a model-authored recall query never lands a secret in the append-only log', async (t) => {
+  // The hard line: secrets never enter the spine (a log that captures a key
+  // captures it forever), and ONE inventory (SECRET_PATTERNS) governs detection
+  // and redaction alike. Every ctx-tool field is model-CHOSEN text — the query
+  // here, but equally a stash id, a symbol, a path the worker spelled — so the
+  // scrub belongs on the emitter the tools are constructed with, not on any one
+  // call site. Driven through the REAL wiring (runPlan builds the litectx and
+  // the emitter itself); the key is synthetic and matches SECRET_PATTERNS.
+  const wd = makePatient(t);
+  const KEY = 'sk-ant-A1b2C3d4E5f6G7h8';
+  const job = JOB(wd, { tools: ['read', 'write', 'recall'] });
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Find the module, then write tests/test_x.mjs.',
+      tools: ['recall', 'write'], rounds: 6, target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }],
+    }],
+  });
+  const provider = scriptedProvider([
+    { text: 'src/mod.mjs exports x; tests/ is empty.' },                          // scout
+    { text: plan },                                                               // plan draft
+    { toolCalls: [tcall('t1', 'ctx_recall', { query: `stopword ${KEY} filter` })] },
+    { toolCalls: [tcall('t2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'wrote tests/test_x.mjs' },
+  ]);
+  const { events } = await go(wd, provider, { job });
+  const ev = events.find((e) => e.type === 'ctx-tool' && e.tool === 'ctx_recall');
+  assert.ok(ev, 'the recall really ran through the real wiring — no ctx-tool event and this test proves nothing');
+  assert.doesNotMatch(JSON.stringify(ev), new RegExp(KEY), 'the literal key must not survive anywhere in the event');
+  assert.match(ev.query, /\[REDACTED:/, 'the query rides the spine masked, and still says a secret was there');
+  assert.match(ev.query, /stopword/, 'only the token is masked — the rest of the query stays readable, or the record is useless');
 });
 
 // ── review 2026-07-21: doctrine-restoring fixes to the graduated plan flow ──

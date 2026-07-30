@@ -341,6 +341,33 @@ test('close timeout: "did not finish judging" is its own verdict, distinct from 
   assert.equal(broken.verdict, 'failed', 'a missing binary is still cannot-run — the two are NOT one bucket');
 });
 
+// A close that TRAPS SIGTERM (a test runner installing its own handler, a shell
+// wrapper swallowing it) answers the deadline's polite request with silence. With
+// SIGTERM as the only lever there is no second deadline, so the promise stays
+// pending FOREVER and the whole run hangs on the out-of-process watchdog. The
+// deadline must be able to end the child it cannot persuade.
+const IGNORES_SIGTERM = ['node', '-e', 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000)'];
+// The deadline is 1500ms deliberately, NOT the 300ms the tests above use: node's
+// own startup is ~350ms here, and a signal that lands before the child has armed
+// its trap is killed by the DEFAULT action — the test then passes without ever
+// exercising the trap (measured: 300ms → dead by SIGTERM, 600ms+ → trap holds).
+const TRAP_DEADLINE_MS = 1500;
+
+test('close timeout on a SIGTERM-trapping close still RESOLVES — SIGKILL follows the grace, the promise is never left pending', { timeout: 30_000 }, async () => {
+  const t0 = Date.now();
+  const v = await runClose(IGNORES_SIGTERM, undefined, { timeoutMs: TRAP_DEADLINE_MS });
+  const ms = Date.now() - t0;
+  assert.equal(v.verdict, 'timed-out', 'first fault still wins: the deadline named the outcome, the kill only enforced it');
+  assert.match(v.detail, /never finished judging/i);
+  // Precondition, against the boot race above: the trap really held, so SIGTERM
+  // alone did NOT end this child — the escalation is what did. (Couples to
+  // CLOSE_KILL_GRACE_MS being >= 1s; if that shrinks, this bound moves with it.)
+  assert.ok(ms >= TRAP_DEADLINE_MS + 1000, `precondition: SIGTERM was refused and the grace ran (${ms}ms)`);
+  // Unfixed this never returns at all — the test-level guard above is what ends
+  // the run. Fixed: deadline + CLOSE_KILL_GRACE_MS + slack for a loaded box.
+  assert.ok(ms < 15_000, `the close was ended, not waited on (${ms}ms)`);
+});
+
 test('ralph escalates close-timeout by its own name, with raise-the-timeout among the options', async () => {
   const file = join(dir, 'timeout.jsonl');
   const outcome = await ralph({ middle: noop, close: HANGS, capRuns: 3, emit: makeSpine(file), closeTimeoutMs: 300 });

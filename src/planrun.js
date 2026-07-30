@@ -186,7 +186,7 @@ ${scoutBlob || '(no scout notes)'}`;
 }
 
 /**
- * Execute a validateJob-GREEN plan-shape job (goal/verdictType/close/checks[]).
+ * Execute a validateJob-GREEN plan-shape job (goal/verdictType/close).
  * Called by runJob after the approval gate, validation, and the smoke — this
  * function owns the plan flow only; the caller owns the job-end record and the
  * one ledger (every provider round is emitted here as `worker-round`, which
@@ -236,6 +236,19 @@ ${scoutBlob || '(no scout notes)'}`;
 export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, capRuns = 3, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, now }) {
   workdir = resolve(workdir);
   const scrub = (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS });
+  // The ctx verbs' spine channel, scrubbed at the WIRING. Every field a ctx-tool
+  // event carries is MODEL-CHOSEN text — a recall query, a stash id, a symbol, a
+  // path the worker spelled — and the spine is append-only: a log that captures a
+  // key captures it forever. Scrubbing the emitter (once, at construction) rather
+  // than the seventeen call sites is what makes the leak inexpressible: a new ctx
+  // verb cannot forget it. Same ONE inventory (SECRET_PATTERNS) the close output
+  // is scrubbed with — never a second spelling of what a secret looks like.
+  // Shallow by shape: the events are flat records of strings, string arrays
+  // (`paths`) and numbers, and numbers pass through untouched.
+  const emitCtx = (/** @type {string} */ type, /** @type {any} */ data) => emit(type, Object.fromEntries(
+    Object.entries(data ?? {}).map(([k, v]) => [k, typeof v === 'string' ? scrub(v)
+      : (Array.isArray(v) ? v.map((x) => (typeof x === 'string' ? scrub(x) : x)) : v)]),
+  ));
 
   // Which worker surface? `clipipe-subscription` drives tools NATIVELY (the CLI
   // owns the turn cycle, BA-16); every other provider runs the Loop. The close,
@@ -565,7 +578,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       }
     }
     const ctx = [...CTX_TOOLS].some((t) => grantedNames.has(t))
-      ? createCtxTools(lc, workdir, emit).filter((t) => grantedNames.has(t.name))
+      ? createCtxTools(lc, workdir, emitCtx).filter((t) => grantedNames.has(t.name))
       : [];
     // LC-3 (litectx 0.31.0): cooperative yield — index() is async but its work is sync CPU,
     // and the default pass holds THIS event loop (the fuse's timers, the wall clock, the lag
@@ -1115,8 +1128,18 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     if (!replanned && replanTrigger && remainingUsd() > MONEY_MIN) {
       replanned = true;
       emit('replan', { step: step.id, reason: replanTrigger, trigger: cat });
+      // The brief names the trigger HONESTLY, one branch per trigger: it is the
+      // only channel the redrafting planner adapts to, so a wrong diagnosis here
+      // is handed to the one component whose whole job is to respond to it. A
+      // stall in particular never judged its exits at all — the exhaustion
+      // sentence would invent a red the run never saw (F28's rule, replan side).
+      const why = cat === 'step-variance'
+        ? 'It was stopped by the run\'s meter for consuming too large a share of what was left.'
+        : cat === 'step-stalled'
+          ? 'It stalled: the model stopped producing rounds and reissuing the call did not recover it, so its exits were never judged.'
+          : `It ran ${step.attempts !== undefined ? Math.min(step.attempts, capRuns) : capRuns} attempts and its exits were still red.`;
       const failure = `Step "${step.id}" (${step.action}) did not reach its exits. `
-        + `${cat === 'step-variance' ? 'It was stopped by the run\'s meter for consuming too large a share of what was left.' : `It ran ${step.attempts !== undefined ? Math.min(step.attempts, capRuns) : capRuns} attempts and its exits were still red.`}\n`
+        + `${why}\n`
         + `Last exit state:\n${lastEscalation?.detail ?? '(none)'}\n`
         + `Steps completed so far: ${artifacts.map((a) => a.id).join(', ') || 'none'}.`;
       // The progress line IS the adaptation channel (addendum 2): the balance rides

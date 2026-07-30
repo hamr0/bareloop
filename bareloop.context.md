@@ -125,6 +125,17 @@ interchangeable handles: `impact`'s def range dereferences through `get` verbati
 tested and REFUTED: it would print two numbers for one chunk and turn `get`'s clean
 chunk-boundary refusal into a guessing game.
 
+**The store is caller-owned, and it is a LIVE cross-run channel.** `runJob`/`runPlan` root ONE
+litectx store at `<workdir>/.litectx` (`new LiteCtx({ root: workdir })`, `src/planrun.js`) — an
+on-disk SQLite index that OUTLIVES the run. A note written with `remember` lands there as a
+durable `fact`, and `ctx_recall` reads that tier back on any later run against the same
+workdir: agent notes persist across runs by default. The library ships NO reset — it never
+deletes the store, because what a run inherits is the caller's decision, not the runner's. A
+caller who wants a COLD baseline (an inheritance-OFF control arm, a reproducible re-run, any
+contrast between two runs) must remove `<workdir>/.litectx` itself between them; the in-repo U
+runner does exactly that with a one-line `rmSync`. The store is a derived, self-healing cache
+by litectx's own contract, so the only cost of deleting it is the re-index.
+
 **Staged close — the check menu DERIVES from it (PRD v1.28, `checkMenu` in `src/job.js`).**
 Every stage is a `predicate` command body (the same `cmd`/`expect`/`judged?`/`gapKeep?`
 contract the single close object has always used) plus:

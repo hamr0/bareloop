@@ -13,7 +13,7 @@ import { join, resolve } from 'node:path';
 import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
 import { makeSpine } from '../src/spine.js';
-import { SECRET_PATTERNS } from '../src/validate.js';
+import { scanSecrets } from '../src/validate.js';
 
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
@@ -171,7 +171,10 @@ const elapsedMin = ((Date.now() - started) / 60000).toFixed(1);
 const raw = readFileSync(spineFile, 'utf8');
 const events = raw.trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
 const je = events.findLast((e) => e.type === 'job-end');
-const leaks = SECRET_PATTERNS.map((re) => new RegExp(re.source, `${re.flags.replace('g', '')}g`)).flatMap((re) => raw.match(re) ?? []);
+// the ONE spelling of the text-side scan (src/validate.js) — a hand-rolled copy
+// here would be the ninth, and one that misses a shape leaks on the very output
+// it guards. Only the COUNT is ever read out; the matches themselves stay here.
+const leaks = scanSecrets(raw);
 // the ACCEPTED plan (a replan emits its own) — plan-validate carries verdicts, not the plan
 const plan = events.findLast((e) => e.type === 'plan-accepted')?.plan ?? null;
 
@@ -196,15 +199,32 @@ const fixed = events.some((e) => e.type === 'fix-loop');
 console.log(`close     first judgment ${oc?.verdict ?? '-'}${oc?.stage ? ` (stage ${oc.stage})` : ''}${fixed ? ` → fix loop ran → ${outcome}` : ''}`);
 console.log(`replan    ${events.some((e) => e.type === 'replan') ? 'YES' : 'no'}`);
 for (const e of events.filter((x) => x.type === 'escalation')) console.log(`ESCALATION ${e.category}: ${(e.decision ?? '').slice(0, 160)}`);
-if (leaks.length) console.log(`\nSPINE LEAK: ${leaks.length} secret-shaped strings — the hard line is broken`);
+// A leak is the HARD LINE broken, not a note in the margin: an advisory that
+// prints a count and then exits 0 while still writing the bridge is a guard in
+// name only. On any hit the run fails LOUD (non-zero) and the bridge is NOT
+// written — a spine carrying a secret must never graduate into a reusable
+// artifact that outlives the run. Count and PATH only, never the matched
+// content: echoing the secret to stdout/CI logs is the same leak, one hop on.
+if (leaks.length) {
+  console.log(`\nSPINE LEAK: ${leaks.length} secret-shaped strings in ${spineFile} — the hard line is broken; BRIDGE NOT WRITTEN`);
+  process.exitCode = 3; // distinct from 2 (operator/config) and 1 (stale --approve)
+}
 
 // the BRIDGE: on a green the agent's own plan is kept as the reusable artifact
-if (outcome === 'green' && plan) {
+if (outcome === 'green' && plan && !leaks.length) {
   // one file PER GREEN, never one file per job: two cold runs of this job produced
   // two DIFFERENT plans that both green (run 1: 3 steps, run 3: 2 steps), so a
   // single `bridge-<job>.json` silently destroys the earlier bridge. WHICH bridge
   // gets offered for reuse is a selection question the reuse rung answers
   // (PRD v1.34 item 3) — the runner must not answer it by clobbering.
+  // `spec.job` is operator-authored JSON reaching a filesystem path here, so it is
+  // checked AT THE USE SITE rather than trusted from a distance. Same spelling as
+  // the shipped validator's SLUG_RE (src/job.js) — deliberately not a second,
+  // looser alphabet: `.` would admit `..` and walk out of spineDir. In practice
+  // validateJob reds a non-slug job before any green exists, so this is a boundary
+  // assertion, not the primary defence; it REJECTS rather than rewrites because a
+  // malformed job name is an operator mistake to surface, not to silently mask.
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(spec.job)) throw new Error(`spec.job ${JSON.stringify(spec.job)} is not a kebab-case slug — refusing to build a bridge filename from it (jobs/${target.spec})`);
   const bridgeFile = join(spineDir, `bridge-${spec.job}-${runid}.json`);
   writeFileSync(bridgeFile, `${JSON.stringify({ job: spec.job, specHash, runid, greenAt: new Date().toISOString(), plan }, null, 2)}\n`);
   console.log(`\nBRIDGE saved — ${bridgeFile}`);

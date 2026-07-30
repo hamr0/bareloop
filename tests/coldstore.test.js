@@ -6,8 +6,11 @@
 // The write path under test is the REAL one: these tests drive `createCtxTools`'s own
 // `ctx_remember` / `ctx_stash` / `ctx_peek` handlers against a real LiteCtx rooted at a
 // tmpdir patient — never a hand-rolled call the runtime doesn't make. The read side of
-// the round-trip goes through `lc.recall({ kind: 'fact' })` because our `ctx_recall`
-// handler is hardcoded to `kind: 'code'` (pinned below — it cannot see a fact).
+// the round-trip is checked BOTH ways: `lc.recall({ kind: 'fact' })` direct, to prove the
+// fixture is connected at all, and then through `ctx_recall` itself, which since
+// 2026-07-30 runs a second `kind: 'fact'` recall beside its `kind: 'code'` one and prints
+// each note body-inline under a `memory` label (it used to be pinned to `kind: 'code'`,
+// which made remembered notes write-only through the tool surface — pinned below).
 //
 // Four axes: (1) the fixture is connected, (2) THE GUARANTEE — a post-rmSync fresh
 // store returns zero, (3) nothing store-shaped persists outside `<root>/.litectx`,

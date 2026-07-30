@@ -222,11 +222,11 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
   // `steps` is now an unknown field like any other, so an old spec reds by name
   // rather than half-running.
   if (spec.steps !== undefined) {
-    red('shape-retired', 'steps', 'operator-authored steps[] was deleted (PRD v1.32) — a job declares goal/verdictType/close/checks[] and the AGENT authors the steps. hitl and soft-green return as a Layer 3 decision, rebuilt in this shape');
+    red('shape-retired', 'steps', 'operator-authored steps[] was deleted (PRD v1.32) — a job declares goal/verdictType/close and the AGENT authors the steps. hitl and soft-green return as a Layer 3 decision, rebuilt in this shape');
   } else if (PLAN_CORE_FIELDS.some((f) => spec[f] !== undefined) || spec.tools !== undefined) {
     validatePlanShape(spec, red, reds);
   } else {
-    red('missing-required', 'goal', 'a job declares goal/verdictType/close/checks[] — the agent authors the steps');
+    red('missing-required', 'goal', 'a job declares goal/verdictType/close — the agent authors the steps');
   }
 
   // 5. secrets sweep — the SAME shared guard the workflow validator runs
@@ -345,15 +345,6 @@ function predicateBody(o, at, red) {
 }
 
 /**
- * The four-field plan shape (design record 2026-07-21, decision 5): goal /
- * verdictType / close / checks[] (+ the top-level tool ceiling). v1 admits
- * only verdictType `green`; soft-green/hitl are declared-but-locked and red
- * as `request-red` — admission demand the ledger counts, never a grant.
- * @param {Record<string, any>} spec
- * @param {(code: string, path: string, detail?: string) => void} red
- * @param {Red[]} reds direct access for structured request-reds
- */
-/**
  * The staged close (PRD v1.28) — the close is an ORDERED LIST of named stages,
  * and the check menu DERIVES from it. The principle: *the user authors the
  * destination, never the road.* A user who cannot describe a workflow can still
@@ -459,6 +450,22 @@ function validateStagedClose(stages, red) {
   });
 }
 
+/**
+ * The plan-shaped job spec (design record 2026-07-21, decision 5): goal /
+ * verdictType / close (+ the top-level tool ceiling). The fourth field of the
+ * original four, `checks`, is RETIRED — the check menu derives from the close's
+ * stages instead (PRD v1.28/v1.32), and a spec that still declares it gets the
+ * `checks-derived` red below rather than a bare unknown-field.
+ *
+ * v1 admits only verdictType `green`; soft-green/hitl are declared-but-locked
+ * and red as `request-red` — admission demand the ledger counts, never a grant.
+ * The close is validated one level up as well: a declared verdict demands a
+ * close CLASS, so green-on-rubric reds as `close-hierarchy` rather than
+ * laundering a soft judgement into a hard one.
+ * @param {Record<string, any>} spec
+ * @param {(code: string, path: string, detail?: string) => void} red
+ * @param {Red[]} reds direct access for structured request-reds
+ */
 function validatePlanShape(spec, red, reds) {
   if (spec.goal === undefined) red('missing-required', 'goal');
   else if (!isNonEmptyString(spec.goal)) red('invalid-value', 'goal', 'non-empty text — the goal is what the agent plans against');

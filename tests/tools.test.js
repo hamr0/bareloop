@@ -108,6 +108,27 @@ test('ctx_impact names the CALLEES by name — a callee is a string, never an ob
   assert.match(out, /calls\taddNums/, 'the callee is named — litectx returns callees as unique NAMES (Impact.callees: string[])');
 });
 
+test('ctx_impact ships litectx\'s HEDGES — a "risk low, 0 callers" readout never travels without its §7.2 caveat, and a hedge-free symbol prints no empty section', async (t) => {
+  const { tools } = await harness(t);
+  // litectx's impact contract is asymmetric on purpose: over-counting the blast
+  // radius is safe, under-counting is dangerous, so "isolated / low risk" only
+  // ever ships HEDGED (impact.js: "§7.2 safety caveats; never a silent
+  // isolated"; `callers` may also be capped). Nothing in the fixture calls
+  // padNums, so it produces exactly that readout — and printing the number
+  // while dropping the caveat IS the over-confident read the asymmetry exists
+  // to prevent.
+  const hedged = await tools.get('ctx_impact').execute({ symbol: 'padNums' });
+  assert.match(hedged, /^risk low — 0 confirmed caller\(s\), 0 mention\(s\)$/m,
+    'the fixture must really produce the reads-as-isolated line, or the test proves nothing');
+  assert.match(hedged, /caveat\t.*NOT a confirmed isolation/,
+    'the §7.2 caveat rides WITH the count it qualifies — a worker that reads "0 callers" as licence to change freely is the failure impact exists to prevent');
+  // addNums has two confirmed callers, so litectx hedges nothing — a header with
+  // nothing under it is noise the worker re-reads (and re-pays for) every call.
+  const plain = await tools.get('ctx_impact').execute({ symbol: 'addNums' });
+  assert.match(plain, /^risk \w+ — 2 confirmed caller\(s\)/m, 'the unhedged case is a REAL unhedged impact, not an absent one');
+  assert.doesNotMatch(plain, /caveat/i, 'no hedges means no hedge section at all');
+});
+
 test('ONE line space across recall/get/impact: the numbers are interchangeable 0-based handles, and every tool that prints or takes one says so (L8)', async (t) => {
   const { lc, tools } = await harness(t);
   // (1) the fact the "off-by-one" report rests on: the printed number is the

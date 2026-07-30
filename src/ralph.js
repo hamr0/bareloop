@@ -32,6 +32,16 @@ import { spawn } from 'node:child_process';
 // Nothing parses that string (it rides out as an escalation `detail`).
 const CLOSE_MAX_BUFFER = 1024 * 1024; // spawnSync's default maxBuffer, per stream
 const CLOSE_KILL_SIGNAL = 'SIGTERM';  // spawnSync's default killSignal
+// SIGTERM is a REQUEST, and a close is free to refuse it — a runner installing its
+// own handler, a wrapper that traps to clean up. There is no second deadline after
+// the first, so a refused SIGTERM leaves the wait below pending FOREVER: no `close`
+// event ever arrives, and the run's only remaining stop is the out-of-process
+// watchdog. The grace is the escalation — long enough for an honest close to flush
+// and leave on its own terms, then SIGKILL, which nothing can refuse. Verdict
+// semantics are untouched: the FIRST fault already named the outcome, and the kill
+// only enforces it. (spawnSync sends killSignal and then simply keeps waiting; this
+// is the one place the arbiter's clock is deliberately harder than its reference.)
+const CLOSE_KILL_GRACE_MS = 2000;
 
 /**
  * @param {string} cmd
@@ -49,13 +59,22 @@ function spawnClose(cmd, args, { env, cwd, timeoutMs }) {
     let error = null;
     /** @type {NodeJS.Timeout|undefined} */
     let timer;
+    /** @type {NodeJS.Timeout|undefined} */
+    let killTimer;
 
     // The FIRST fault wins and kills the child, exactly as spawnSync does: a close
-    // that blew the buffer and then hit the deadline is one story, not two.
+    // that blew the buffer and then hit the deadline is one story, not two. The
+    // escalation rides inside that same first-fault-wins guard, so a child is asked
+    // once and, if it refuses, ended once.
     const fault = (/** @type {string} */ code) => {
       if (error) return;
       error = Object.assign(new Error(`spawn ${cmd} ${code}`), { code, syscall: `spawn ${cmd}`, path: cmd, spawnargs: args });
       try { child.kill(CLOSE_KILL_SIGNAL); } catch { /* already gone — nothing to kill */ }
+      // …and SIGKILL if it is still there after the grace. `unref` so this timer can
+      // never hold the host's event loop open by itself (F68's whole point) — and it
+      // is cleared on `close`, so it cannot fire at a child that already left.
+      killTimer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* gone in the meantime */ } }, CLOSE_KILL_GRACE_MS);
+      killTimer.unref();
     };
 
     child.stdout.on('data', (/** @type {Buffer} */ c) => { outBytes += c.length; outChunks.push(c); if (outBytes > CLOSE_MAX_BUFFER) fault('ENOBUFS'); });
@@ -66,6 +85,7 @@ function spawnClose(cmd, args, { env, cwd, timeoutMs }) {
     child.on('error', (e) => { if (!error) error = e; });
     child.on('close', (status, signal) => {
       clearTimeout(timer);
+      clearTimeout(killTimer);
       resolve({
         error, status, signal,
         // Concat-then-decode, never per-chunk: a multi-byte character straddling a

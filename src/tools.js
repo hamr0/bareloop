@@ -232,6 +232,15 @@ export function createCtxTools(lc, workdir, emit) {
         for (const c of imp.callers ?? []) lines.push(`called by\t${c.path}:${c.line}${c.symbol ? ` (in ${c.symbol})` : ''}`);
         for (const c of imp.callees ?? []) lines.push(`calls\t${c}`);
         lines.push(`risk ${imp.risk} — ${imp.confirmed} confirmed caller(s), ${imp.mentions} mention(s)`);
+        // The hedges are not decoration — they are the other half of the count.
+        // litectx's impact is deliberately asymmetric (over-count safe, under-count
+        // dangerous), so "isolated / low risk" only ever ships HEDGED and `callers`
+        // may be capped; dropping the caveat leaves "risk low — 0 confirmed
+        // caller(s)" reading as a licence to change the symbol freely, which is the
+        // one dangerous act the asymmetry exists to prevent. Empty when litectx
+        // hedged nothing — a header with nothing under it is bytes the worker
+        // re-reads every call.
+        for (const h of imp.hedges ?? []) lines.push(`caveat\t${h}`);
         const out = lines.join('\n');
         emit('ctx-tool', { tool: 'ctx_impact', symbol: String(symbol), hits: lines.length, bytes: Buffer.byteLength(out) });
         return out;
