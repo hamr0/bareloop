@@ -120,13 +120,24 @@ console.log(`\n== U run ${runid} ==  $${spec.budgetUsd} · ${spec.maxWallMs / 60
 // silent for up to closeTimeoutMs × stages. The default 600s window against a
 // 900s-per-stage cap would kill a live verdict mid-close — the exact damage the
 // wall grace exists to prevent, on the trigger the grace never covered.
-const worstCloseSilenceMs = CLOSE_TIMEOUT_MS * spec.close.length;
+// The WALL's grace is the SAME arithmetic, and it must be passed: the watchdog's
+// own default is one stage (900s), so a 4-stage close left on the default put the
+// outside deadline at wall+15min while a legal close can still be mid-verdict at
+// wall+60min — the guard could destroy a live verdict. This is the one number that
+// keeps the outside deadline equal to the deadline the run's own clock enforces
+// (src/clock.js: maxWallMs + closeStages × closeTimeoutMs).
+// A legacy object-form close (the locked verdict classes, job.js) is ONE stage —
+// `spec.close.length` on it is `undefined`, and NaN flags would have disarmed both
+// windows silently.
+const closeStages = Array.isArray(spec.close) ? spec.close.length : 1;
+const worstCloseSilenceMs = CLOSE_TIMEOUT_MS * closeStages;
 const watchdog = spawn(process.execPath, [
   new URL('./u-watchdog.mjs', import.meta.url).pathname,
   '--spine', spineFile,
   '--pid', String(process.pid),
   '--stale-ms', String(worstCloseSilenceMs + 600_000),
   '--wall-ms', String(spec.maxWallMs),
+  '--grace-ms', String(worstCloseSilenceMs),
 ], { stdio: ['ignore', 'ignore', 'inherit'] });
 watchdog.unref();
 

@@ -131,19 +131,69 @@ test('the kill is RECORDED — a stopped run must not read as a mystery crash', 
   assert.ok(typeof rec.lastEventAt === 'string' && rec.lastEventAt.length > 0);
 });
 
-test('the wall is enforced from OUTSIDE even while the spine is healthy', async (t) => {
-  // hamr's framing: "outside shell timer is running regardless of whats happening
-  // inside". A run that keeps producing events forever is still out of time, and
-  // the between-rounds check inside the run cannot be trusted to notice if the run
-  // is the thing that is broken.
-  const { spine } = tmp(t);
+test('a run PAST the deadline but still ACTIVE is NOT killed — and says so, loudly, every poll', async (t) => {
+  // hamr's ruling (2026-07-30): "the kill from outside should check for
+  // activity/bytes or other markers for activity, not a silent kill". The clock
+  // alone no longer kills: the in-process fuses and the money cap bound a run that
+  // is alive, and this guard bounds one that is dead. Killing a progressing run at
+  // the deadline is how a live verdict gets destroyed mid-close.
+  const { dir, spine } = tmp(t);
   writeFileSync(spine, '{"type":"job-start"}\n');
-  const w = guardedRun(t, ['--spine', spine, '--stale-ms', '60000', '--wall-ms', '600', '--grace-ms', '200', '--poll-ms', '100']);
+  const w = guardedRun(t, ['--spine', spine, '--stale-ms', '60000', '--wall-ms', '400', '--grace-ms', '200', '--dead-ms', '400', '--poll-ms', '100']);
   const beat = setInterval(() => { try { appendFileSync(spine, '{"type":"worker-round"}\n'); } catch { /* raced teardown */ } }, 100);
-  await waitUntil(() => !alive(w.proc.pid));
+  await waitUntil(() => /PAST DEADLINE/.test(w.output()));
+  await sleep(1500); // ~15 further polls, every one of them past the deadline
   clearInterval(beat);
-  assert.equal(alive(w.proc.pid), false, 'a healthy-but-overrunning run is still out of time');
-  assert.match(w.output(), /wall/i);
+  assert.equal(alive(w.proc.pid), true, 'a live, progressing run is never killed from outside by the clock alone');
+  assert.match(w.output(), /PAST DEADLINE by \d+s/, 'the overshoot is named — not killing is not the same as going quiet');
+  assert.match(w.output(), /still ACTIVE on spine/, 'and it names WHICH marker is still moving');
+  assert.equal(existsSync(join(dir, 'spine.jsonl.watchdog.json')), false, 'no kill, no verdict');
+});
+
+test('past the deadline with every marker flat, the run is killed — and the kill names the deadline and the markers', async (t) => {
+  // The other half of the pair. Same shape as the test above, one difference: this
+  // victim is idle, so nothing is moving — no bytes, no CPU. `--stale-ms 60000`
+  // puts the stale trigger far out of reach, so the ONLY thing that can fire here
+  // is the deadline trigger.
+  const { dir, spine } = tmp(t);
+  writeFileSync(spine, '{"type":"job-start"}\n');
+  const w = guardedRun(t, ['--spine', spine, '--stale-ms', '60000', '--wall-ms', '400', '--grace-ms', '200', '--dead-ms', '500', '--poll-ms', '100']);
+  await waitUntil(() => !alive(w.proc.pid));
+  assert.equal(alive(w.proc.pid), false, 'past its deadline and executing nothing at all, the run is dead — that is this guard\'s job');
+  assert.match(w.output(), /KILL wall-dead/, 'the kill is announced before the signal, never after');
+  assert.match(w.output(), /past the deadline/i, 'it says WHICH deadline passed');
+  assert.match(w.output(), /markers checked/, 'and which markers it looked at');
+  assert.match(w.output(), /"spine":\{.*"coldMs"/, 'with the spine marker\'s own last value and age');
+  assert.match(w.output(), /"cpu":\{/, 'and the CPU marker\'s');
+  const rec = JSON.parse(readFileSync(join(dir, 'spine.jsonl.watchdog.json'), 'utf8'));
+  assert.equal(rec.reason, 'wall-dead');
+  assert.equal(rec.enforcedMs, 600, 'the deadline it enforced is wall + grace, on the record');
+  assert.match(rec.judgement, /flat/, 'the record says why the process was judged dead, not just that it was killed');
+  assert.ok(rec.markers.spine.coldMs >= 500, 'the marker ages are the evidence — they belong in the record');
+  // The repo's own platform is Linux, where the CPU marker is real. The other branch
+  // (`markers.cpu.unavailable`) is the documented degrade for a host without /proc,
+  // announced at startup rather than left silent.
+  if (process.platform === 'linux') assert.equal(typeof rec.markers.cpu.ticks, 'number', 'on Linux the CPU marker is a real /proc reading');
+});
+
+test('a busy-looping victim past the deadline is held alive by the CPU marker alone', async (t) => {
+  // The pair that proves the /proc marker is WIRED, not decorative: identical flags
+  // to the test above and an equally cold spine — the one difference is that this
+  // victim burns CPU. The idle one dies; this one must not. Two should-differ
+  // conditions that produced the same result would mean the marker was never read.
+  //
+  // It is also the deliberate asymmetry: this process IS wedged (a `for(;;)` never
+  // finishes a job), and CPU cannot tell working from spinning. So the CPU marker
+  // only ever DELAYS the kill to the stale window — which is 60s away here, and is
+  // the trigger that reaps this shape in the F67 test above.
+  const { dir, spine } = tmp(t);
+  writeFileSync(spine, '{"type":"job-start"}\n');
+  const w = guardedRun(t, ['--spine', spine, '--stale-ms', '60000', '--wall-ms', '400', '--grace-ms', '200', '--dead-ms', '500', '--poll-ms', '100'], { freeze: true });
+  await waitUntil(() => /PAST DEADLINE/.test(w.output()));
+  await sleep(1500);
+  assert.equal(alive(w.proc.pid), true, 'a process that is still executing is not judged dead by the clock');
+  assert.match(w.output(), /still ACTIVE on cpu/, 'and the CPU marker is named as the one holding the kill off');
+  assert.equal(existsSync(join(dir, 'spine.jsonl.watchdog.json')), false, 'no kill, no verdict');
 });
 
 test('the watchdog exits on its own when the run finishes normally', async (t) => {
@@ -208,4 +258,28 @@ test('a watchdog aimed at a pid that is not its parent REFUSES to arm — the pi
   await sleep(1200); // well past the 500ms stale window it would have enforced
   assert.equal(alive(stranger.pid), true, 'the process it was pointed at is untouched');
   assert.equal(existsSync(join(dir, 'spine.jsonl.watchdog.json')), false, 'a refusal is not a verdict — it leaves no marker');
+});
+
+test('run-u sizes the wall grace as stages x close timeout — and passes it', () => {
+  // The defect this locks out: `--grace-ms` was never passed at all, so a 4-stage
+  // close ran against the watchdog's own ONE-stage default (900s). The outside
+  // deadline landed at wall+15min while a legal close can still be mid-verdict at
+  // wall+60min — the guard could destroy a live verdict, on the exact axis the
+  // grace exists to protect. The sibling `--stale-ms` already had this arithmetic.
+  //
+  // Read from SOURCE because run-u.mjs cannot be imported: it is a top-level script
+  // that resets the patient repo and spawns a run on load. The arithmetic is checked
+  // against the real spec, and the wiring against the real flag.
+  const src = readFileSync(new URL('../scripts/run-u.mjs', import.meta.url), 'utf8');
+  const spec = JSON.parse(readFileSync(new URL('../jobs/aurora-u-spawner-types.json', import.meta.url), 'utf8'));
+  const stages = Array.isArray(spec.close) ? spec.close.length : 1;
+  assert.equal(stages, 4, 'the U target runs a 4-stage close — the case the one-stage default under-sized by 45 minutes');
+  const timeout = Number(/const CLOSE_TIMEOUT_MS = ([\d_]+)/.exec(src)?.[1]?.replace(/_/g, ''));
+  assert.equal(timeout, 900_000, 'every stage runs under the full close timeout (src/clock.js W5)');
+  assert.equal(stages * timeout, 3_600_000, 'so the grace this spec needs is 60 minutes, not 15');
+  // legacy object-form close = ONE stage; `spec.close.length` on it is undefined, and
+  // a NaN flag would have disarmed the window silently rather than loudly
+  assert.match(src, /const closeStages = Array\.isArray\(spec\.close\) \? spec\.close\.length : 1;/);
+  assert.match(src, /const worstCloseSilenceMs = CLOSE_TIMEOUT_MS \* closeStages;/);
+  assert.match(src, /'--grace-ms', String\(worstCloseSilenceMs\)/, 'and it is actually passed to the guard');
 });

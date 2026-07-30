@@ -79,6 +79,13 @@ export const TOOL_BY_VERB = Object.freeze({
   compress: 'ctx_compress', peek: 'ctx_peek',
   stash: 'ctx_stash', remember: 'ctx_remember', forget: 'ctx_forget',
 });
+// L1 — the isolate verbs are the one worker surface that writes UNGATED bytes: the
+// writeScope fence judges the tree, and a store write never passes it, so without a
+// bound a worker can grow the on-disk store for as many rounds as the wallet funds.
+// 64KB (hamr's threshold) stops degenerate store-dumping, not legitimate use:
+// observed notes run hundreds of bytes to a few KB, and a >64KB "note" is a FILE —
+// files belong in the tree, behind the fence.
+export const ISOLATE_MAX_BYTES = 65536;
 export const CTX_TOOLS = Object.freeze(['ctx_recall', 'ctx_get', 'ctx_impact', 'ctx_related', 'ctx_recent', 'ctx_compress', 'ctx_peek', 'ctx_stash', 'ctx_remember', 'ctx_forget']);
 
 // F19 applied per component: a granted verb ships WITH the line that says WHEN to
@@ -316,7 +323,8 @@ export function createCtxTools(lc, workdir, emit) {
     {
       name: 'ctx_stash',
       description: 'Park a payload OUT of your context under a key — it is stored, not lost, and costs nothing per round while parked. '
-        + 'Use for bulky intermediate results (long outputs, gathered evidence) you may need later. Retrieve its head/tail with ctx_peek.',
+        + 'Use for bulky intermediate results (long outputs, gathered evidence) you may need later. Retrieve its head/tail with ctx_peek. '
+        + `A payload over ${ISOLATE_MAX_BYTES} bytes is refused unparked — that size is a file, so write it to the tree instead.`,
       parameters: {
         type: 'object',
         properties: {
@@ -326,9 +334,18 @@ export function createCtxTools(lc, workdir, emit) {
         required: ['id', 'text'],
       },
       execute: async (/** @type {{id: string, text: string}} */ { id, text }) => {
+        const size = Buffer.byteLength(String(text));
+        // L1: over-cap is a REFUSAL RESULT, never a throw (throws stay reserved for
+        // the BA-4 param-guard class) — the worker is told the size and the limit so
+        // its retry is a DISTINCT call, and the store is left untouched.
+        if (size > ISOLATE_MAX_BYTES) {
+          emit('ctx-tool', { tool: 'ctx_stash', id: String(id), outcome: 'over-cap', bytes: 0, size });
+          return `ctx_stash: text is ${size} bytes — the limit is ${ISOLATE_MAX_BYTES} bytes per payload. Nothing was parked. `
+            + `Park the part you actually need later, or write the bulk to a file with the write tool and stash its path.`;
+        }
         lc.stash(String(id), String(text));
-        const out = `parked ${Buffer.byteLength(String(text))} bytes under "${id}"`;
-        emit('ctx-tool', { tool: 'ctx_stash', id: String(id), bytes: Buffer.byteLength(String(text)) });
+        const out = `parked ${size} bytes under "${id}"`;
+        emit('ctx-tool', { tool: 'ctx_stash', id: String(id), bytes: size });
         return out;
       },
     },
@@ -355,7 +372,8 @@ export function createCtxTools(lc, workdir, emit) {
     {
       name: 'ctx_remember',
       description: 'Record a durable note under a key — it survives this step and a later step can find it with ctx_recall. '
-        + 'Use for conclusions worth keeping (root causes, decisions), never for bulk data (use ctx_stash for that).',
+        + 'Use for conclusions worth keeping (root causes, decisions), never for bulk data (use ctx_stash for that). '
+        + `A note over ${ISOLATE_MAX_BYTES} bytes is refused unrecorded — record the conclusion, not the evidence.`,
       parameters: {
         type: 'object',
         properties: {
@@ -365,8 +383,17 @@ export function createCtxTools(lc, workdir, emit) {
         required: ['id', 'text'],
       },
       execute: async (/** @type {{id: string, text: string}} */ { id, text }) => {
+        const size = Buffer.byteLength(String(text));
+        // L1, same bound as ctx_stash — and a note is the one that most needs it: a
+        // note's body rides back inline through ctx_recall, so an unbounded store
+        // write is also an unbounded future context read.
+        if (size > ISOLATE_MAX_BYTES) {
+          emit('ctx-tool', { tool: 'ctx_remember', id: String(id), outcome: 'over-cap', bytes: 0, size });
+          return `ctx_remember: text is ${size} bytes — the limit is ${ISOLATE_MAX_BYTES} bytes per note. Nothing was recorded. `
+            + `A note is a CONCLUSION, not a file: record what you concluded and leave the evidence it came from in the tree.`;
+        }
         await lc.remember(String(id), String(text), { kind: 'fact', by: 'agent' });
-        emit('ctx-tool', { tool: 'ctx_remember', id: String(id), bytes: Buffer.byteLength(String(text)) });
+        emit('ctx-tool', { tool: 'ctx_remember', id: String(id), bytes: size });
         return `remembered "${id}"`;
       },
     },

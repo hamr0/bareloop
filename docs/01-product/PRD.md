@@ -2273,3 +2273,33 @@ This PRD's status header cites adaptlearn's closed record as **FINDINGS F1–F20
 record in `docs/00-context/FINDINGS.md` runs to **F23** (F21–F23 are the three bareloop
 de-risk probes: menu breadth, menu disclosure, declared truncation). The range is the only
 thing wrong — no claim built on that record changes.
+
+## Addendum v1.39 — 2026-07-30 (release-gate fixes land; two future items parked on hamr's order)
+
+The 0.6.0 release gate (fresh full /ship + /security + /diff-review, opus) confirmed no
+Critical/High and produced two fix batches, all validated-then-fixed TDD under hamr's
+"solve all that don't need my review" bar, plus an approved arbiter batch (resolved-spec
+signing so an omitted `tools` pins WHICH menu was signed; spend/time honesty on self-healed
+stalls and staged closes; the `step-scope-escape` pair check; the ONE `stageClose` staging;
+the stall watchdog consulting the wall; the activity-aware outside watchdog; the 64KB store
+note cap — threshold hamr's, verbatim in-turn). Full record in the branch log and F-series.
+
+### Parked as FUTURE work (hamr: "add it to prd future when it's time" / "i assume they come later")
+
+1. **`MIN_WALL_MS` stage-awareness.** The 120s wall floor is a one-stage-era number: a spec
+   with a 2-minute wall and a 4×900s staged close validates while its enforced worst case is
+   ~62 minutes (31× its own cap). Since W5 the clock REPORTS the honest total; making the
+   floor scale with the staged close is a threshold change reserved for hamr, deferred to a
+   future release. Not a defect: advertised = enforced holds; the floor is just permissive.
+
+2. **Pair-coherence sweep (the W3 class, named).** Two individually-legal fields can be
+   jointly incoherent — the validator's healthy precedent is `close-hierarchy`
+   (verdictType × close class); W3 (`scope` × `target`/exit paths) is the second member,
+   found only after it shipped. Future lens, verified candidates (2026-07-30 source pass):
+   `target` × exit paths (unlinked today — judge whether auxiliary artifacts are design or
+   drift); `attempts` × per-step rounds × remaining budget (validation never cross-checks;
+   confirm the runtime meter's ownership is sufficient rather than duplicating it);
+   operator-side `providerFor` factories gating provider params per tier (the library
+   correctly never touches params — a tier with no factory is an interpreter-red STOP —
+   so the coherence burden sits in scripts). Standing rule stays: menus first; a pair
+   check is for what menus cannot express.

@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 
-import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, COMPONENT_STRATEGIES } from '../src/tools.js';
+import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, COMPONENT_STRATEGIES, ISOLATE_MAX_BYTES } from '../src/tools.js';
 
 const require = createRequire(import.meta.url);
 const { LiteCtx } = require('litectx');
@@ -230,6 +230,56 @@ test('the isolate promise holds at the TOOL surface: a remembered note comes bac
   assert.match(out, /culprit-note/, 'the note id surfaces through the worker-facing verb');
   assert.match(out, /drops digits at chunk boundaries/, 'the conclusion itself rides back, not just a pointer');
   assert.match(out, /memory/, 'a note line is labeled as memory — never disguised as a code pointer ctx_get could dereference');
+});
+
+// ---- L1: the isolate verbs are bounded, so the store cannot be dumped into ----
+
+test('a payload one byte under the cap parks and reads back — the bound stops dumping, not notes', async (t) => {
+  const { tools } = await harness(t);
+  const text = 'A'.repeat(ISOLATE_MAX_BYTES - 1);
+  const out = await tools.get('ctx_stash').execute({ id: 'just-under', text });
+  assert.match(out, new RegExp(`parked ${ISOLATE_MAX_BYTES - 1} bytes`), 'the legitimate payload is parked, not refused');
+  const peeked = await tools.get('ctx_peek').execute({ id: 'just-under' });
+  assert.match(peeked, new RegExp(`${ISOLATE_MAX_BYTES - 1} bytes`), 'and the REAL store holds it — read back, not taken on the return string\'s word');
+});
+
+test('an over-cap stash is refused as a RESULT naming size and limit, and nothing reaches the store', async (t) => {
+  const { tools, events } = await harness(t);
+  const text = 'A'.repeat(ISOLATE_MAX_BYTES + 1);
+  const out = await tools.get('ctx_stash').execute({ id: 'dump', text });
+  assert.match(out, new RegExp(String(ISOLATE_MAX_BYTES + 1)), 'the refusal names the ACTUAL size (the shell_edit anchor-miss idiom: a refusal is worker feedback)');
+  assert.match(out, new RegExp(String(ISOLATE_MAX_BYTES)), 'and the limit, so the retry is a DISTINCT call and not a re-run of the same one');
+  // The read-back is the assertion that matters: a handler could return the
+  // refusal string AND still have written. Ask the real store.
+  const peeked = await tools.get('ctx_peek').execute({ id: 'dump' });
+  assert.match(peeked, /nothing stashed under "dump"/, 'a refused stash writes NOTHING — the whole point of the bound');
+  // F6 class: the spine must not report bytes that never entered the store.
+  const ev = events.find((e) => e.t === 'ctx-tool' && e.tool === 'ctx_stash');
+  assert.equal(ev.bytes, 0, 'a refused stash parked zero bytes — reporting the attempted size as parked bytes is a blind instrument');
+  assert.equal(ev.outcome, 'over-cap', 'and the refusal is nameable in the audit');
+});
+
+test('a note one byte under the cap is recorded and recalls back', async (t) => {
+  const { tools } = await harness(t);
+  const text = `zephyrmarker ${'note. '.repeat(200)}`.padEnd(ISOLATE_MAX_BYTES - 1, '.');
+  assert.equal(Buffer.byteLength(text), ISOLATE_MAX_BYTES - 1, 'the fixture must really sit one byte under, or the test proves nothing');
+  const out = await tools.get('ctx_remember').execute({ id: 'big-but-legal', text });
+  assert.match(out, /remembered "big-but-legal"/);
+  const recalled = await tools.get('ctx_recall').execute({ query: 'zephyrmarker' });
+  assert.match(recalled, /big-but-legal/, 'the REAL store holds it — read back through the worker-facing verb');
+});
+
+test('an over-cap note is refused as a RESULT, and the store never sees it', async (t) => {
+  const { tools, events } = await harness(t);
+  const text = `quixmarker ${'x'.repeat(ISOLATE_MAX_BYTES)}`;
+  const out = await tools.get('ctx_remember').execute({ id: 'dumped-note', text });
+  assert.match(out, new RegExp(String(Buffer.byteLength(text))), 'the refusal names the actual size');
+  assert.match(out, new RegExp(String(ISOLATE_MAX_BYTES)), 'and the limit');
+  const recalled = await tools.get('ctx_recall').execute({ query: 'quixmarker' });
+  assert.doesNotMatch(recalled, /dumped-note/, 'a refused note is not in the store — asked of the store, not of the return string');
+  const ev = events.find((e) => e.t === 'ctx-tool' && e.tool === 'ctx_remember');
+  assert.equal(ev.bytes, 0, 'nothing was recorded, so nothing is reported as recorded');
+  assert.equal(ev.outcome, 'over-cap');
 });
 
 test('component strategies exist for every component — capability without strategy is inert (F19)', () => {
