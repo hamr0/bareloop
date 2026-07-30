@@ -98,6 +98,12 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // into $0 (F12's class, at the terminal record instead of mid-attempt).
   let spentUsd = 0;
   let unpriced = false;
+  // W1: did this run ABSORB a stall? The terminal `step-stalled` is the rare case;
+  // the common one self-heals (src/stall.js abandons the hung call and reissues),
+  // and an abandoned call may already have been billed — a reissue can pay twice
+  // and the provider never told us. So a run that stalls and then ends green (or
+  // escalated, or at the cap) also holds a FLOOR, not a total.
+  let stalled = false;
   // The money on the terminal record, and whether the money is EXACT. `spentUsd`
   // is the accumulated sum of PRICED rounds ONLY — never an estimate derived
   // from tokens or averages (cap-not-estimate). When any round came back
@@ -105,7 +111,7 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // says so machine-readably instead of dressing a floor up as exact. Emitted on
   // EVERY job-end (true when everything was priced) so no consumer ever has to
   // branch on field presence.
-  const spend = () => ({ spentUsd, spendComplete: !unpriced });
+  const spend = () => ({ spentUsd, spendComplete: !unpriced && !stalled });
   // 1. human-signs-always — before ANY provider call (N1 decision #1)
   if (!checkApproval(rawSpec, approvals)) {
     emit('job-end', { outcome: 'unapproved-spec', detail: 'no approval record matches this exact spec version', ...spend() });
@@ -150,6 +156,11 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
     // unknown, never $0 — F6): per-round metering means a partially-unpriced run
     // is caught natively, round by round, with no separate unpricedRounds tally.
     if (type === 'worker-round') account(/** @type {any} */ (data)?.costUsd);
+    // W1: a `stall` is the plan flow announcing it ABANDONED a call and reissued
+    // it. The abandoned call's spend is unknowable from here (billed or not,
+    // indistinguishable), so from this point the priced sum is a floor no matter
+    // how the run ends — the flag is one-way and read by `spend()`.
+    if (type === 'stall') stalled = true;
     return emit(type, data);
   };
   const pricingRed = () => {

@@ -238,8 +238,13 @@ Red vocabulary (all three validators): `parse-error`, `unknown-field`, `missing-
 `request-red` (locked-but-listed: a locked tool or verdictType — admission demand the
 ledger tallies), plus the workflow-side verb reds (`verb-illegal`,
 `verb-placement`, `verb-params`, `slot-overflow`) and the plan-side reds (`verb-escape`,
-`exit-illegal`, `check-unknown`, `job-invalid` — a plan validated against a missing or
-non-plan-shape job fails CLOSED). The `secret-literal` sweep is
+`exit-illegal`, `check-unknown`, `step-scope-escape` — a scoped step whose `target` or
+exit path falls outside its OWN narrowed scope (in-fence but gate-denied ground: the
+step's gate is built from the narrowed prefix, so the pair is rejected at validation
+instead of burning attempts on refusals), `job-invalid` — a plan validated against a
+missing or non-plan-shape job fails CLOSED). `stageClose(close)` is the ONE staging
+every check-menu consumer shares (array → itself; legacy object predicate → its
+one-stage list, named `close`; gold/rubric/hitl → null). The `secret-literal` sweep is
 defense-in-depth against known token shapes — env-only loading remains the law, not the
 sweep.
 

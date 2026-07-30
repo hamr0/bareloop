@@ -141,6 +141,91 @@ test('a stall is ANNOUNCED, never silent — onStall sees each one', async () =>
   assert.deepEqual(seen, [1, 2, 3], 'every stall is reported, in order, including the last');
 });
 
+// ─── L4: the wall is consulted BEFORE the watch spends again ───
+
+/** settle-or-not, never a hang: a watch that WRONGLY reissues leaves the promise
+ * pending forever, and an unbounded await would turn that red into a suite that
+ * stops instead of a test that fails (the ZOMBIE test's capture pattern). */
+const capture = (/** @type {Promise<any>} */ p) => {
+  /** @type {{ err?: any, ok?: any } | null} */
+  let outcome = null;
+  p.then((v) => { outcome = { ok: v }; }, (e) => { outcome = { err: e }; });
+  return async () => { await new Promise((r) => setImmediate(r)); return outcome; };
+};
+
+test('L4: past the wall a stall does NOT reissue — the run already declined to authorize that spend', async () => {
+  const T = fakeTimers();
+  let atWall = false;
+  let attempts = 0;
+  const w = createStallWatch({ stallMs: STALL_MS, maxStalls: 3, expired: () => atWall, ...T });
+  const call = () => { attempts += 1; return new Promise(() => {}); }; // always hangs
+  const read = capture(w.watch(call));
+  T.advance(STALL_MS); // stall #1 with time left: self-heal, exactly as before
+  assert.equal(attempts, 2, 'a stall INSIDE the wall still reissues — self-heal is the ruling');
+  atWall = true;
+  T.advance(STALL_MS); // stall #2, now past the deadline
+  const e = (await read())?.err;
+  assert.equal(attempts, 2, 'no third issue: a reissue past the wall is spend the run has already refused');
+  assert.equal(w.stalls(), 2, 'the stall that hit the wall is still counted and announced');
+  assert.ok(e instanceof Error, `the caller must be TOLD, not left waiting on a call that will never be made — got ${e}`);
+  assert.match(e.message, /wall-clock cap/i, 'the message names the wall, not the model');
+});
+
+test('L4: the terminal says the WALL bound the run, never that the model stalled — step-stalled would buy a replan a run out of time cannot fund', async () => {
+  const T = fakeTimers();
+  const w = createStallWatch({ stallMs: STALL_MS, maxStalls: 3, expired: () => true, ...T });
+  const read = capture(w.watch(() => new Promise(() => {})));
+  T.advance(STALL_MS);
+  const e = (await read())?.err;
+  assert.ok(e, 'the wall stop must surface as a rejection');
+  assert.equal(e.category, 'wall-halt', 'an EXISTING category every consumer already routes — never a new one');
+  assert.notEqual(e.category, 'step-stalled', 'step-stalled is planrun\'s replan trigger; replanning past the wall spends a draft on a finished run');
+  assert.ok(!(e instanceof StallError), 'StallError IS the step-stalled category — the wall stop must not wear its name');
+  assert.equal(e.lib, undefined, 'the wall is bareloop\'s own instrument: no upstream package is charged for a governance stop');
+  assert.equal(e.stalls, 1, 'what happened on the way here is still on the error');
+});
+
+test('L4: the wall outranks the maxStalls ceiling — the last stall of an expired run is a wall-halt, not a give-up on the model', async () => {
+  const T = fakeTimers();
+  let atWall = false;
+  const w = createStallWatch({ stallMs: STALL_MS, maxStalls: 3, expired: () => atWall, ...T });
+  const read = capture(w.watch(() => new Promise(() => {})));
+  T.advance(STALL_MS); // #1
+  T.advance(STALL_MS); // #2
+  atWall = true;
+  T.advance(STALL_MS); // #3 — the ceiling AND the wall, both true
+  const e = (await read())?.err;
+  assert.ok(e, 'either terminal rejects; the question is which one it names');
+  assert.equal(e.category, 'wall-halt', 'both are true and only one is the remedy the operator can act on (raise maxWallMs)');
+  assert.equal(w.stalls(), 3);
+});
+
+test('L4 regression control: with a LIVE wall the watch reissues exactly as it always did, up to the ceiling', async () => {
+  const T = fakeTimers();
+  let attempts = 0;
+  const w = createStallWatch({ stallMs: STALL_MS, maxStalls: 3, expired: () => false, ...T });
+  const p = w.watch(() => { attempts += 1; return new Promise(() => {}); });
+  const err = p.then(() => null, (e) => e);
+  for (let i = 0; i < 4; i++) T.advance(STALL_MS);
+  const e = await err;
+  assert.ok(e instanceof StallError, 'a live wall changes nothing: the model gave up, and that is step-stalled');
+  assert.equal(e.category, 'step-stalled');
+  assert.equal(attempts, 3, 'three issues, then the ceiling — byte-identical to the no-callback behaviour');
+  assert.equal(w.stalls(), 3);
+});
+
+test('L4 backward compatibility: a watch built WITHOUT the wall callback behaves exactly as today', async () => {
+  const T = fakeTimers();
+  let attempts = 0;
+  const w = createStallWatch({ stallMs: STALL_MS, maxStalls: 3, ...T }); // no `expired`
+  const p = w.watch(() => { attempts += 1; return new Promise(() => {}); });
+  const err = p.then(() => null, (e) => e);
+  for (let i = 0; i < 4; i++) T.advance(STALL_MS);
+  const e = await err;
+  assert.ok(e instanceof StallError);
+  assert.equal(attempts, 3, 'an absent wall is not an expired one — a caller with no clock must never be cut short');
+});
+
 test('a real rejection is NOT a stall — it propagates and is never reissued', async () => {
   const T = fakeTimers();
   const w = createStallWatch({ stallMs: STALL_MS, ...T });

@@ -64,9 +64,19 @@ export const STORE_VERBS = Object.freeze(['stash', 'remember', 'forget']);
  * The floor for `maxWallMs`: one default close timeout (`runClose`'s 120_000).
  * Addendum 1 MEASURED that a wall deadline can only be read BETWEEN rounds —
  * `loop.stop()` does not cut an in-flight call (fired at 500ms, returned at
- * 4,018ms) — so enforcement is `maxWallMs + closeTimeoutMs`. Under this floor the
- * overshoot exceeds the budget itself and the advertised number would be more
- * wrong than right, which is the advertised-must-equal-enforced line.
+ * 4,018ms) — so enforcement is `maxWallMs + closeStages × closeTimeoutMs` (W5: a
+ * staged close runs every stage under the FULL timeout, ralph.js `runStages`).
+ * Under this floor the overshoot exceeds the budget itself and the advertised
+ * number would be more wrong than right, which is the advertised-must-equal-
+ * enforced line.
+ *
+ * The VALUE is a one-stage, default-timeout floor and is deliberately left alone —
+ * a threshold is operator territory, not something this module re-derives from a
+ * spec's own stage count. It therefore bounds only the degenerate case; a job with
+ * many stages or a raised `closeTimeoutMs` can still sit far above it while its
+ * overshoot dwarfs its cap. The clock reports that honestly (`closeStages` and
+ * `enforcedMs` are both on the `wall-clock` record) rather than the floor pretending
+ * to prevent it.
  */
 export const MIN_WALL_MS = 120_000;
 /** locked-but-listed tools: real capabilities deliberately outside the grant
@@ -190,7 +200,7 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
   if (spec.maxWallMs !== undefined
       && !(typeof spec.maxWallMs === 'number' && Number.isInteger(spec.maxWallMs) && spec.maxWallMs >= MIN_WALL_MS)) {
     red('bounds', 'maxWallMs',
-      `integer milliseconds >= ${MIN_WALL_MS} (one close timeout). Enforcement is a between-round deadline, measured as maxWallMs + closeTimeoutMs (design addendum 1: loop.stop() cannot cut an in-flight call), so a budget under one close cannot fund its own close and the advertised number would be more wrong than right`);
+      `integer milliseconds >= ${MIN_WALL_MS} (one close timeout). Enforcement is a between-round deadline, measured as maxWallMs + closeStages x closeTimeoutMs (design addendum 1: loop.stop() cannot cut an in-flight call; W5: every close stage runs under the full timeout), so a budget under one close cannot fund its own close and the advertised number would be more wrong than right`);
   }
 
   // 3. the outer write fence — operator law (interview decision #4), same
@@ -561,6 +571,23 @@ function canon(v) {
 }
 
 /**
+ * The spec as the RUNTIME reads it — the form both hash paths canonize (MED-1).
+ * `tools` is optional and its absence means the whole TOOL_MENU: plan.js and
+ * planrun.js resolve it with this exact predicate, so an omitted-`tools` spec's
+ * ceiling GROWS whenever the menu does while its bytes never move. Hashing the
+ * unresolved form leaves that widening unsigned; hashing the resolved form pins
+ * WHICH menu was signed, so a menu change flips the hash into the existing
+ * refuse-until-reapproved machinery. A spec that named its own ceiling is
+ * untouched — no migration for a signature already in flight.
+ * @param {any} job
+ * @returns {any}
+ */
+function resolveSpec(job) {
+  if (!isObj(job) || Array.isArray(job.tools)) return job;
+  return { ...job, tools: [...TOOL_MENU] };
+}
+
+/**
  * Content hash of a job spec — what an approval record binds to. Any edit to
  * the spec changes the hash, so an edited spec is unapproved by construction
  * (interview decision #1: human signs, always, once per spec VERSION).
@@ -572,8 +599,9 @@ export function jobSpecHash(job) {
   // directly on the raw job object, so a non-JSON value (BigInt, a cycle, a
   // throwing getter) must yield a hash, not crash the signer. canon handles
   // JSON-representable inputs; the guard covers cycles and hostile getters.
+  // resolveSpec sits INSIDE the guard: it spreads, and a spread runs getters.
   let c;
-  try { c = canon(job); } catch { c = '\u0000unhashable'; }
+  try { c = canon(resolveSpec(job)); } catch { c = '\u0000unhashable'; }
   return createHash('sha256').update(c).digest('hex');
 }
 
@@ -590,9 +618,11 @@ export function checkApproval(job, approvals) {
   if (!Array.isArray(approvals)) return false;
   // NOT jobSpecHash: its un-hashable sentinel would make every un-hashable
   // spec hash-equal — an approval minted for one would authorize any other.
-  // Here un-hashable simply means unapproved, full stop.
+  // Here un-hashable simply means unapproved, full stop. The RESOLVED spec is
+  // what gets canonized, same as the signer's (MED-1) — a gate reading a
+  // different form than the mint would unapprove every omitted-`tools` spec.
   let c;
-  try { c = canon(job); } catch { return false; }
+  try { c = canon(resolveSpec(job)); } catch { return false; }
   const h = createHash('sha256').update(c).digest('hex');
   return approvals.some((a) => isObj(a) && /** @type {Record<string, unknown>} */ (a).specHash === h);
 }

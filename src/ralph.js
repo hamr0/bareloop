@@ -449,6 +449,15 @@ export async function ralph({ middle, close, judge, capRuns, emit, redact, close
         // and the remedy is the operator's cap, not a retry.
         'wall-halt': ['The run reached its wall-clock cap mid-attempt — time ran out, not capability.',
           ['raise maxWallMs and rerun (the stop is the checkpoint)', 'abandon the task']],
+        // F66 — the STALL WATCHDOG gave up: no round completed for the stall window,
+        // three times over, and reissuing the call did not recover it. It borrows both
+        // siblings' rules. Like `step-variance`, the caller reads this category and
+        // REPLANS, so the planner's lever leads. Like `wall-halt`, nothing broke — the
+        // socket stayed alive the whole time (that is the measured mechanism), so the
+        // message must not send a human to debug transport, and the default's "fix the
+        // interpreter" would aim a human at the one component that did nothing wrong.
+        'step-stalled': ['The model stopped producing rounds and reissuing the call did not recover it — a stall, not a fault.',
+          ['let the planner re-allocate what is left (replan)', 'retry the run', 'check provider status', 'abandon the task']],
       };
       // Object.hasOwn, not bare lookup: a category named after an
       // Object.prototype member ("toString") would return the inherited

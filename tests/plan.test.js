@@ -599,3 +599,126 @@ test('P: a per-step scope narrows the fence from the SAME menu tree-changed uses
 test('P: the three new fields are optional — an existing six-field plan is untouched', () => {
   assert.deepEqual(validatePlan(PLAN, OPTS).reds, []);
 });
+
+// ---- W3: a step's own `scope` is the fence the RUNNER builds for it ----
+// planrun's mkWorker gates a scoped step with `[resolve(workdir, globToPrefix(scope))]`,
+// not the signed fence. So a target or exit path that is in-fence but outside the
+// step's OWN scope is a write the gate denies on every attempt: the step burns its
+// whole attempt budget on refusals and no red is ever raised. Both halves were
+// individually legal, so nothing caught the incoherent PAIR. Illegal becomes
+// inexpressible at the validation gate instead of discovered at the runtime one.
+// The narrowed scope NEVER replaces the fence check — fence first, scope second —
+// so a caller-supplied menu can only tighten what is accepted, never widen it.
+
+/** the two-level menu these cases need: the signed fence plus a real subdirectory */
+const NESTED = { job: JOB, scopes: ['tests/**', 'tests/unit/**'] };
+
+test('W3: a scoped step whose target sits outside its OWN scope reds step-scope-escape (in-fence, gate-denied — the class nothing caught)', () => {
+  const r = validatePlan(mut((p) => {
+    p.steps[1].scope = 'tests/unit/**';
+    p.steps[1].exit[0] = { type: 'tree-changed', scope: 'tests/unit/**' };
+    // target stays tests/test_orchestrator.py: inside the signed fence, outside the step's scope
+  }), NESTED);
+  assert.equal(r.reds.length, 1, `one defect, one red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'step-scope-escape:steps.1.target');
+  assert.match(r.reds[0].detail ?? '', /tests\/unit\/\*\*/, 'the gap names the step\'s OWN narrowed scope, not the signed fence');
+});
+
+test('W3: an artifact-written path outside the step\'s own scope reds step-scope-escape too', () => {
+  const r = validatePlan(mut((p) => {
+    p.steps[0].scope = 'tests/unit/**';
+    p.steps[0].target = 'tests/unit/notes.md';
+    p.steps[0].exit = [
+      { type: 'artifact-written', path: 'tests/notes.md', pattern: 'def ' },
+      { type: 'tree-changed', scope: 'tests/unit/**' },
+    ];
+  }), NESTED);
+  assert.equal(r.reds.length, 1, `one defect, one red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'step-scope-escape:steps.0.exit.0.path');
+});
+
+test('W3: a tree-changed scope WIDER than the step\'s own scope reds step-scope-escape (an exit watching ground the step cannot touch)', () => {
+  const r = validatePlan(mut((p) => {
+    p.steps[1].scope = 'tests/unit/**';
+    p.steps[1].target = 'tests/unit/test_orchestrator.py';
+    p.steps[1].exit[0] = { type: 'tree-changed', scope: 'tests/**' };
+  }), NESTED);
+  assert.equal(r.reds.length, 1, `one defect, one red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'step-scope-escape:steps.1.exit.0.scope');
+});
+
+test('W3: a scoped step whose target and exits all sit INSIDE its own scope stays green (the rule does not overreach)', () => {
+  const r = validatePlan(mut((p) => {
+    p.steps[1].scope = 'tests/unit/**';
+    p.steps[1].target = 'tests/unit/test_orchestrator.py';
+    p.steps[1].exit[0] = { type: 'tree-changed', scope: 'tests/unit/**' };
+  }), NESTED);
+  assert.deepEqual(r.reds, []);
+  assert.equal(r.ok, true);
+});
+
+test('W3: the fence still binds FIRST — a scoped step reaching outside the SIGNED fence keeps the scope-escape class the ledger reads', () => {
+  const r = validatePlan(mut((p) => {
+    p.steps[1].scope = 'tests/unit/**';
+    p.steps[1].target = 'src/hack.py';
+    p.steps[1].exit[0] = { type: 'tree-changed', scope: 'tests/unit/**' };
+  }), NESTED);
+  assert.equal(r.reds.length, 1, `one defect, one red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'scope-escape:steps.1.target',
+    'a fence escape must never launder into the narrower step-scope class');
+});
+
+test('W3: an UNSCOPED step is judged by the signed fence exactly as before (regression control)', () => {
+  // no `scope` field: every target/path/scope in the POC plan spans the whole
+  // fence and must stay green, and an out-of-fence target must still be scope-escape
+  assert.deepEqual(validatePlan(PLAN, NESTED).reds, []);
+  const r = validatePlan(mut((p) => { p.steps[1].target = 'src/hack.py'; }), NESTED);
+  assert.equal(r.reds.length, 1, JSON.stringify(r.reds));
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'scope-escape:steps.1.target');
+  assert.ok(!r.reds.some((x) => x.code === 'step-scope-escape'), 'no step scope, no step-scope red');
+});
+
+test('W3: an OFF-MENU step scope is one defect — the illegal scope reds, the narrowed containment does not pile on', () => {
+  const r = validatePlan(mut((p) => { p.steps[1].scope = 'tests/deep/**'; }), NESTED);
+  assert.equal(r.reds.length, 1, `one defect, one red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'invalid-value:steps.1.scope');
+});
+
+// ---- W4: ONE close staging feeds the prompt, the validator and the runner ----
+
+/** the legacy object-form predicate close — still validateJob-green, and the only
+ * shape whose staging used to differ between the three consumers */
+const OBJ_JOB = { ...clone(JOB), close: { type: 'predicate', cmd: 'python grade.py', expect: 0, gapKeep: '^FAILED' } };
+
+test('W4: an object-form predicate close is validateJob-green (the anchor these cases rest on)', () => {
+  assert.deepEqual(validateJob(OBJ_JOB).reds, []);
+});
+
+test('W4: the validator derives the SAME single staged stage the runner runs — check-passes("close") validates green', () => {
+  const r = validatePlan(mut((p) => { p.steps[1].exit[1] = { type: 'check-passes', name: 'close' }; }), { job: OBJ_JOB });
+  assert.deepEqual(r.reds, [], 'the runner stages [{name:"close"}] and executes it at preflight — the validator must offer the same one');
+});
+
+test('W4: planPrompt offers that same stage — the drafter is never handed an empty menu for a close the runner stages', () => {
+  const p = planPrompt(OBJ_JOB, 'survey', null, 40, null, legalScopes(['tests/**']));
+  assert.match(p, /one of \["close"\]/, 'the prompt enumerates the derived stage');
+});
+
+test('W4: prompt and validator agree on the object-form close — anything the prompt offers, the validator accepts', () => {
+  const offered = /one of (\[.*?\])/.exec(planPrompt(OBJ_JOB, 'survey', null, 40, null, legalScopes(['tests/**'])))?.[1];
+  const names = JSON.parse(offered ?? '[]');
+  // an EMPTY offer would make every assertion below vacuous — the loop must run
+  assert.ok(names.length > 0, 'the prompt must offer at least the staged close stage');
+  for (const name of names) {
+    const r = validatePlan(mut((p) => { p.steps[1].exit[1] = { type: 'check-passes', name }; }), { job: OBJ_JOB });
+    assert.deepEqual(r.reds, [], `the prompt offered "${name}" — the validator must accept it`);
+  }
+});
+
+test('W4: an ARRAY close is untouched by the staging hoist (regression control)', () => {
+  assert.deepEqual(validatePlan(PLAN, OPTS).reds, []);
+  const r = validatePlan(mut((p) => { p.steps[1].exit[1] = { type: 'check-passes', name: 'close' }; }), OPTS);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'check-unknown:steps.1.exit.1',
+    '"close" is not a stage of THIS close — the staged name exists only for the object form');
+  assert.match(planPrompt(JOB, 'survey', null, 40, null, legalScopes(['tests/**'])), /\["clean-run","form-floor","verdict"\]/);
+});

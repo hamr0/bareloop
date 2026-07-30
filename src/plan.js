@@ -9,6 +9,10 @@
 //     `request-red`, which is admission demand against the product menu)
 //   bounds ≤ the shell caps                → `bounds`
 //   scopes/targets inside the signed fence → `scope-escape` / `invalid-value`
+//   …and, on a step that NARROWED the fence with `scope`, inside that step's own
+//     scope too → `step-scope-escape` (the runner gates the step from the
+//     narrowed prefix, so an in-fence-but-out-of-scope target is a write denied
+//     on every attempt with no red anywhere — W3)
 //   exits from the closed menu only        → `exit-illegal` (arbiter
 //     inexpressibility: an exit is declarative data the shell evaluates with
 //     its own fixed code — `run` cannot be laundered through it)
@@ -189,6 +193,35 @@ export function hasNestedQuantifier(src) {
   return false;
 }
 
+/**
+ * The close, as the ordered STAGE LIST the plan flow actually executes (PRD
+ * v1.28). A staged close is already that list; the legacy object form is the
+ * ONE-stage list it stands for, named `close`. Anything else — a gold, rubric or
+ * hitl close, which names no command to run — is null, and the runner escalates
+ * `close-unsupported` before any tokens.
+ *
+ * W4 — this is the ONE staging, and it exists because there used to be two. The
+ * runner synthesized the single stage and derived its check menu from THAT, while
+ * `planPrompt` and `validatePlan` called `checkMenu` on the RAW spec — where an
+ * object close is not an array, so the menu came back empty. The result was a
+ * runner announcing and preflighting a stage the drafter was never offered and the
+ * validator would have redded `check-unknown`. Same class as the two-transforms
+ * defects before it: the fix is one derivation every consumer calls, not three
+ * copies kept in step by comment.
+ *
+ * Lives here rather than beside `checkMenu` in job.js only because job.js owns the
+ * SIGNED vocabulary and this is the consumer-side reading of it; `plan.js` is the
+ * lowest module every check-menu consumer already imports (planrun imports plan,
+ * never the reverse), so it is the one place all three can share without a cycle.
+ * @param {any} close the spec's `close` field, any shape
+ * @returns {any[]|null} the stage list, or null when the close names no command
+ */
+export function stageClose(close) {
+  if (Array.isArray(close)) return close;
+  if (!isObj(close) || close.type !== 'predicate') return null;
+  return [{ name: 'close', cmd: close.cmd, expect: close.expect, judged: close.judged, gapKeep: close.gapKeep }];
+}
+
 /** @typedef {{code: string, path: string, detail?: string, verb?: string}} Red */
 
 /**
@@ -226,8 +259,15 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes, capRuns =
   // The check menu DERIVES from the close's stages (PRD v1.28) — the agent
   // references a piece of the operator's own inspection, never a ruler someone
   // hand-carved beside it. One derivation, shared with the runner, so what the
-  // prompt offers and what the validator accepts cannot drift apart.
-  const checkNames = checkMenu(spec.close).map((m) => m.name);
+  // prompt offers and what the validator accepts cannot drift apart — which means
+  // reading the close through `stageClose`, the same staging the runner EXECUTES
+  // (W4: reading the raw field here made the legacy object form's stage invisible
+  // to the validator and the prompt while the runner ran it).
+  // `?? []` is the null case spelled out: a close that names no command to run
+  // (gold/rubric/hitl) stages nothing, so it offers nothing — the runner
+  // escalates `close-unsupported` on the same null, and an empty menu is already
+  // the honest reading here (every check-passes becomes a check-unknown).
+  const checkNames = checkMenu(stageClose(spec.close) ?? []).map((m) => m.name);
   // The offered scope menu. A caller-supplied menu must be the same one the
   // prompt enumerated; with none, derive from the signed fence — fail-CLOSED,
   // so omitting the option narrows the agent's choices and never widens them.
@@ -313,6 +353,29 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes, capRuns =
       if (s.scope !== undefined && !scopeMenu.includes(s.scope)) {
         red('invalid-value', `${at}.scope`, `menu: [${scopeMenu.join(', ')}] — a per-step write scope narrows the fence from the same menu tree-changed uses`);
       }
+      // W3 — a step that NARROWS the fence is gated by its own scope, not the
+      // signed one: planrun's mkWorker builds this step's Gate writeScope from
+      // `globToPrefix(scope)`. So a target or exit path that is in-fence but
+      // OUTSIDE the step's own scope is a write the gate denies on every attempt —
+      // the step burns its whole attempt budget on refusals and no red is raised
+      // anywhere, because each half was individually legal and nothing checked the
+      // PAIR. Checking it here makes the incoherent pair inexpressible at the
+      // validation gate rather than discovered at the runtime one.
+      //
+      // Fence FIRST, narrowed scope SECOND (see the target/path arms): the menu is
+      // fence-filtered by `legalScopes`, so containment in the scope normally
+      // implies containment in the fence — but a caller-supplied menu is data, and
+      // deriving the fence check FROM it would let a bad menu widen what is
+      // accepted. Kept as two ordered checks, the narrowed one can only tighten.
+      // An OFF-MENU scope carries no narrowing (it already redded above): one
+      // defect, one red — a second red derived from a value the agent cannot use
+      // would charge the ledger twice for the same mistake.
+      const stepScope = s.scope !== undefined && scopeMenu.includes(s.scope) ? s.scope : null;
+      const stepPrefix = stepScope === null ? null : globToPrefix(stepScope);
+      /** contained by the step's OWN scope — vacuously true on an unscoped step,
+       * which is what keeps every pre-W3 plan byte-identical */
+      const insideStepScope = (/** @type {string} */ p) => stepPrefix === null
+        || p === stepPrefix || p.startsWith(stepPrefix + '/');
 
       // target (v1.18): the per-step deliverable — required on write steps,
       // always inside the signed fence when present
@@ -322,9 +385,11 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes, capRuns =
         red('invalid-value', `${at}.target`, 'a relative path inside the run dir — no absolute paths, no ".." segments');
       } else if (!insideFence(globToPrefix(s.target))) {
         red('scope-escape', `${at}.target`, `"${s.target}" is outside the signed fence [${spec.writeScope.join(', ')}]`);
+      } else if (!insideStepScope(globToPrefix(s.target))) {
+        red('step-scope-escape', `${at}.target`, `"${s.target}" is inside the signed fence but outside this step's own scope "${stepScope}" — the step's gate is built from that narrowed prefix, so every write to this target would be denied`);
       }
 
-      validateExit(s, at, red, { checkNames, fence: spec.writeScope, insideFence, writeStep, toolsParsed, scopeMenu });
+      validateExit(s, at, red, { checkNames, fence: spec.writeScope, insideFence, writeStep, toolsParsed, scopeMenu, stepScope, insideStepScope });
     });
   }
 
@@ -341,9 +406,12 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes, capRuns =
  * @param {Record<string, any>} s the step
  * @param {string} at step path prefix
  * @param {(code: string, path: string, detail?: string) => void} red
- * @param {{ checkNames: string[], fence: string[], insideFence: (p: string) => boolean, writeStep: boolean, toolsParsed: boolean, scopeMenu: string[] }} ctx
+ * @param {{ checkNames: string[], fence: string[], insideFence: (p: string) => boolean, writeStep: boolean, toolsParsed: boolean, scopeMenu: string[], stepScope: string|null, insideStepScope: (p: string) => boolean }} ctx
+ *   `stepScope`/`insideStepScope` (W3): the step's OWN narrowed fence when it
+ *   declared a legal `scope`, null/always-true otherwise — an exit path outside it
+ *   names ground the step's gate will refuse.
  */
-function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep, toolsParsed, scopeMenu }) {
+function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep, toolsParsed, scopeMenu, stepScope, insideStepScope }) {
   if (!Array.isArray(s.exit) || s.exit.length === 0) {
     red('missing-required', `${at}.exit`, `non-empty array from the closed menu ${EXIT_TYPES.join('|')} — ALL listed exits must pass (AND-only); a step without an exit has no progress gate`);
     return;
@@ -394,12 +462,18 @@ function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep, t
         } else {
           red('invalid-value', `${eAt}.scope`, `one of the offered scopes: [${scopeMenu.join(', ')}]`);
         }
+      } else if (!insideStepScope(globToPrefix(e.scope))) {
+        // W3: an offered, in-fence scope can still be WIDER than the step's own
+        // narrowed fence — an exit watching ground this step's gate refuses.
+        red('step-scope-escape', `${eAt}.scope`, `"${e.scope}" is not contained by this step's own scope "${stepScope}" — the step can only change what its narrowed gate allows, so this exit watches ground it cannot touch`);
       }
     } else { // artifact-written | json-valid — a named file path inside the fence
       if (!isNonEmptyString(e.path) || !scopeContained(e.path)) {
         red('invalid-value', `${eAt}.path`, 'a relative file path inside the run dir — no absolute paths, no ".." segments');
       } else if (!insideFence(globToPrefix(e.path))) {
         red('scope-escape', `${eAt}.path`, `"${e.path}" is outside the signed fence [${fence.join(', ')}]`);
+      } else if (!insideStepScope(globToPrefix(e.path))) {
+        red('step-scope-escape', `${eAt}.path`, `"${e.path}" is inside the signed fence but outside this step's own scope "${stepScope}" — the step's gate is built from that narrowed prefix, so the worker could never produce this artifact`);
       }
       if (e.type === 'artifact-written' && e.pattern !== undefined) {
         if (!isNonEmptyString(e.pattern)) red('invalid-value', `${eAt}.pattern`, 'regex source string');

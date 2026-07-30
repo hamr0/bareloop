@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { makeSpine } from '../src/spine.js';
 import { ralph, runClose } from '../src/ralph.js';
+import { StallError } from '../src/stall.js';
 
 const noop = () => {};
 const dir = mkdtempSync(join(tmpdir(), 'ralph-test-'));
@@ -90,6 +91,26 @@ test('a middle throwing a category named after an Object.prototype member escala
   assert.ok(esc, 'escalation event reached the spine');
   assert.ok(esc.decisionReady);
   assert.match(esc.decision, /middle itself broke/, 'unknown category falls back to the generic decision');
+});
+
+// F66/W2 — a stall inside a step's middle is a GOVERNANCE stop, not a broken
+// harness: the watchdog gave up on a model that stopped producing rounds, and
+// the socket never failed. Thrown as the REAL StallError the worker path throws
+// (`w.ask` → categorize → here), so this couples to the production category, not
+// to a hand-stamped fixture. Falling through to the default decision would send
+// a human to fix an interpreter that did nothing wrong — the same rule
+// `step-variance` and `wall-halt` already carry.
+test('a stall inside the middle escalates as a stall — never as a broken interpreter', async () => {
+  const middle = () => { throw new StallError('no round completed for 300s, 3 times — giving up on this call', 3); };
+  const { outcome, events } = await run('step-stalled', GREEN, 3, middle);
+  assert.equal(outcome, 'escalated');
+  const esc = events.find((e) => e.type === 'escalation');
+  assert.equal(esc.category, 'step-stalled');
+  assert.ok(esc.decisionReady);
+  assert.match(esc.decision, /stopped producing rounds/, 'the decision names the stall');
+  assert.doesNotMatch(esc.decision, /middle itself broke/, 'never blame the interpreter for a provider stall');
+  assert.ok(esc.options.some((/** @type {string} */ o) => /replan/.test(o)), 'the replan lever is offered — this category is a replan trigger');
+  assert.equal(esc.lib, 'bare-agent', 'the throw-site attribution survives the relay');
 });
 
 test('a middle that fixes the world by iteration 2 closes green under the same cap', async () => {

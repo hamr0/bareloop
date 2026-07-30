@@ -20,7 +20,7 @@ import { join, resolve, relative } from 'node:path';
 import { Gate, redact } from 'bareguard';
 import { LiteCtx } from 'litectx';
 import { runClose, runStages, ralph, CLOSE_FAULTS } from './ralph.js';
-import { validatePlan, legalScopes } from './plan.js';
+import { validatePlan, legalScopes, stageClose } from './plan.js';
 import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, STEP_MODELS } from './plan.js';
 import { snapshotScope, evalExits } from './exits.js';
 import { createRoot } from './root.js';
@@ -138,7 +138,11 @@ function materialsBlock(m) {
 export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials) {
   const scopeMenu = Array.isArray(scopes) && scopes.length ? scopes : legalScopes(job.writeScope ?? []);
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
-  const checkNames = checkMenu(job.close).map((m) => m.name);
+  // W4: the menu comes off the STAGED close — the same one derivation `runPlan`
+  // executes and `validatePlan` accepts against. Reading `job.close` raw here left
+  // the legacy object form offering nothing while the runner preflighted a stage.
+  // (`?? []`: a close naming no command stages nothing, so it offers nothing)
+  const checkNames = checkMenu(stageClose(job.close) ?? []).map((m) => m.name);
   const doc = `DRAFT-PLAN
 You are planning how to accomplish a goal in a repository, as an ordered list of bounded
 steps (schema "plan-v1"). The plan is pure declarative JSON validated by a strict schema;
@@ -265,9 +269,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // A STAGED close (PRD v1.28) is an ordered list of command stages and is the
   // go-forward shape; the object form survives only for the declared-but-locked
   // verdict classes (gold/rubric/hitl), which name no command to run.
-  const stagedClose = Array.isArray(job.close)
-    ? job.close
-    : (job.close.type === 'predicate' ? [{ name: 'close', cmd: job.close.cmd, expect: job.close.expect, judged: job.close.judged, gapKeep: job.close.gapKeep }] : null);
+  // W4: the staging itself lives in ONE place (`stageClose`), shared with
+  // `planPrompt` and `validatePlan` — a second copy here is exactly how the
+  // runner came to execute a stage neither of the other two could see.
+  const stagedClose = stageClose(job.close);
   if (!stagedClose) {
     emit('escalation', {
       category: 'close-unsupported', decisionReady: true,
@@ -302,8 +307,16 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // (hamr's ruling): absent means honestly time-unbounded, and the record says so
   // rather than leaving a reader to infer it. Both numbers are reported — addendum 1
   // measured that a deadline is only readable BETWEEN rounds, so enforcement is
-  // requested + closeTimeoutMs and quoting one number would be F6 in a time coat.
-  const clock = createClock({ maxWallMs: job.maxWallMs ?? null, ...(now ? { now } : {}) });
+  // requested + the close's own worst case and quoting one number would be F6 in a
+  // time coat.
+  //
+  // W5 — that worst case is per STAGE. `runStages` hands each stage the full
+  // `closeTimeoutMs`, so a run whose deadline trips just before a 4-stage close can
+  // overshoot by four of them, and the clock is told the count rather than assuming
+  // one. `stagedClose` is the SAME staging the runner executes (never a second
+  // count), and it is non-null here by the close-unsupported guard above — a close
+  // that names no command escalated before this line, so there is no null to thread.
+  const clock = createClock({ maxWallMs: job.maxWallMs ?? null, closeStages: stagedClose.length, ...(now ? { now } : {}) });
   const closeTimeoutForReport = closeTimeoutMs ?? 120_000;
   emit('wall-clock', {
     ...clock.report(closeTimeoutForReport),
@@ -680,8 +693,15 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // bound correctly passed. The heartbeat here is a completed ROUND, which is the
     // one signal that cannot be faked by a live socket. One watch PER WORKER, so
     // the ceiling counts stalls across the step rather than resetting each call.
+    // L4 — the watch is handed the run's WALL. Self-heal is what a run does with
+    // time left: past the deadline a reissue is spend the run already declined to
+    // authorize, and this is the one path no other clock read covers (a stall
+    // completes no round and returns from no step, which are the only two places
+    // `clock.expired()` is otherwise consulted). Same clock object as every other
+    // reader — never a second time source.
     const stallWatch = createStallWatch({
       onStall: (n) => emit('stall', { phase, iteration: roundIteration, stall: n, stallMs: STALL_MS, maxStalls: MAX_STALLS }),
+      expired: () => clock.expired(),
     });
     /**
      * ONE Loop PER ISSUED CALL, and every callback on it scoped to that call's

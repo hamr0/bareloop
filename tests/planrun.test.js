@@ -772,7 +772,52 @@ test('T: a bounded run reports BOTH numbers — requested and enforced — becau
   const wc = events.find((e) => e.type === 'wall-clock');
   assert.equal(wc.bounded, true);
   assert.equal(wc.requestedMs, 600_000);
-  assert.equal(wc.enforcedMs, 720_000, 'requested + one close timeout — quoting only the requested number is F6 in a time coat');
+  // W5 — the close here is TWO stages and `runStages` gives each one the whole
+  // timeout, so the enforced worst case is two of them. The old 720_000 quoted one
+  // close for a two-close overshoot: the requested-vs-enforced split was on the
+  // record and the enforced side was still wrong.
+  assert.equal(wc.closeStages, 2, 'the count comes from the close the runner actually executes');
+  assert.equal(wc.enforcedMs, 840_000, 'requested + every stage\'s close timeout — quoting only the requested number, or only one stage, is F6 in a time coat');
+});
+
+test('W5: the wall-clock record scales with the close it will actually run — a 4-stage close advertises four close timeouts, and the record equals the arithmetic from its own fields', async (t) => {
+  const wd = makePatient(t, { closeGreen: true });
+  const provider = scriptedProvider([
+    { text: 'scout' }, { text: PLAN(wd) },
+    { text: 'writing', toolCalls: [tcall('1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'done' },
+  ]);
+  // jobs/aurora-u-spawner-types.json's shape: a real staged close, four stages.
+  const close = [
+    { name: 'clean-run', cmd: 'node check.mjs', expect: 0, gapKeep: '^FAILED' },
+    { name: 'stage-two', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' },
+    { name: 'stage-three', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' },
+    { name: 'verdict', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' },
+  ];
+  const { events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000, close }) });
+  const wc = events.find((e) => e.type === 'wall-clock');
+  assert.equal(wc.closeStages, 4);
+  assert.equal(wc.enforcedMs, 600_000 + 4 * 120_000, 'four stages, four close timeouts of overshoot');
+  assert.equal(wc.enforcedMs, wc.requestedMs + wc.closeStages * 120_000, 'the advertised record IS the enforced computation, readable from the record itself');
+});
+
+test('W5: a single-predicate (object-form) close still advertises exactly one close timeout — the regression the multiplier must not move', async (t) => {
+  const wd = makePatient(t, { closeGreen: true });
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd, [{
+      id: 'write-test', action: 'Write tests/test_x.mjs asserting the module exports.',
+      tools: ['write'], rounds: 6, target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }],
+    }]) },
+    { text: 'writing', toolCalls: [tcall('1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'done' },
+  ]);
+  const close = { type: 'predicate', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' };
+  const { events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000, close }) });
+  const wc = events.find((e) => e.type === 'wall-clock');
+  assert.equal(wc.closeStages, 1, 'the object form is the ONE-stage list it stands for (stageClose)');
+  assert.equal(wc.enforcedMs, 720_000);
 });
 
 test('T: the materials handed to the planner are a BALANCE — no rate, no per-round allowance, no derived round count (hamr\'s correction; F57 measured a 150x spread on verification gaps)', async (t) => {
@@ -932,7 +977,7 @@ test('F64: a wall-derived call timeout is a wall-halt, NOT a provider-red — th
   const wh = events.filter((e) => e.type === 'wall-halt').at(-1);
   assert.ok(wh, 'the run-level record carries the clock\'s numbers, not just ralph\'s escalation');
   assert.equal(wh.requestedMs, 600_000);
-  assert.equal(wh.enforcedMs, 720_000, 'both numbers, always (addendum 1)');
+  assert.equal(wh.enforcedMs, 840_000, 'both numbers, always (addendum 1) — and the enforced one counts every stage of this job\'s two-stage close (W5)');
   assert.ok(wh.elapsedMs >= 600_000, 'the honest elapsed figure, overshoot included');
   assert.equal(wh.cutMidCall, true, 'distinguishes a deadline that landed INSIDE a call from one read between steps');
   const esc = events.filter((e) => e.type === 'escalation').find((e) => e.category === 'wall-halt');
@@ -1398,4 +1443,82 @@ test('SCOUT casualty: a transport death on the survey call ends the run as provi
   assert.equal(esc.category, 'provider-red');
   assert.equal(esc.phase, 'scout');
   assert.equal(esc.lib, 'bare-agent', 'the typed lib field is stamped at the throw site, never sniffed from prose');
+});
+
+// ---- W4: ONE close staging, shared by the prompt, the validator and the runner ----
+
+test('W4: an object-form predicate close is STAGED once — the drafter, the validator and the runner see the same one-stage menu, at the same close cost as the equivalent single-stage list', async (t) => {
+  // Before the hoist there were TWO derivations: planPrompt and validatePlan
+  // called checkMenu on the RAW spec (an object is not an array → empty menu),
+  // while runPlan called it on the SYNTHESIZED [{name:'close',…}]. So the runner
+  // announced and preflighted a stage the drafter was never offered and the
+  // validator would have redded check-unknown — and it ran the close command a
+  // second time for a ruler nobody could reference.
+  const run = async (close) => {
+    const wd = makePatient(t);
+    // a COUNTING close: it appends one line per execution, so the number of times
+    // the operator's command actually ran is on disk, not inferred from events
+    writeFileSync(join(wd, 'close.mjs'), `import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+appendFileSync(new URL('./close-runs.log', import.meta.url), 'run\\n');
+const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
+if (existsSync(p) && readFileSync(p, 'utf8').includes('ok')) { console.log('suite: 1 passed'); process.exit(0); }
+console.log('FAILED tests/test_x.mjs — file missing or has no ok assertion'); process.exit(1);\n`);
+    const plan = JSON.stringify({ schema: 'plan-v1', steps: [{
+      id: 'write-test', action: 'Write tests/test_x.mjs asserting the module exports.',
+      tools: ['write'], rounds: 6, target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'close' }],
+    }] });
+    const provider = scriptedProvider([
+      { text: 'scout' }, { text: plan },
+      { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+      { text: 'wrote it' },
+    ]);
+    const { outcome, events } = await go(wd, provider, { job: JOB(wd, { close }) });
+    const log = join(wd, 'close-runs.log');
+    const runs = existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).length : 0;
+    return { outcome, events, runs };
+  };
+
+  const obj = await run({ type: 'predicate', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' });
+  assert.equal(obj.outcome, 'green', 'the plan referenced the staged stage by name and the run completed');
+  assert.deepEqual(obj.events.find((e) => e.type === 'check-menu').offered, ['close']);
+  assert.deepEqual(obj.events.filter((e) => e.type === 'check-preflight').map((e) => e.name), ['close']);
+  assert.equal(obj.events.filter((e) => e.type === 'close-precheck').length, 1, 'the precheck is one close judgment, not two');
+  assert.ok(obj.events.some((e) => e.type === 'check-run' && e.name === 'close'),
+    'the step actually referenced the staged stage as its ruler — without that the menu claim is decoration');
+
+  // parity: the object form is EXACTLY the one-stage list it stands for, so its
+  // close command must execute the same number of times — no extra run for an
+  // unreferenceable ruler, and no silently skipped preflight either
+  const arr = await run([{ name: 'close', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' }]);
+  assert.equal(arr.outcome, 'green');
+  assert.equal(obj.runs, arr.runs,
+    `the object form must cost exactly what its staged equivalent costs (object ${obj.runs} vs list ${arr.runs})`);
+  assert.deepEqual(
+    obj.events.filter((e) => ['check-menu', 'check-preflight', 'check-run'].includes(e.type)),
+    arr.events.filter((e) => ['check-menu', 'check-preflight', 'check-run'].includes(e.type)),
+    'and the two shapes produce the same menu/preflight/check record',
+  );
+});
+
+test('W3: the incoherent narrowed-scope plan is rejected at the VALIDATION gate on the shipped path — it never reaches the worker to burn attempts on refusals', async (t) => {
+  // The defect this closes, end to end: `scope` narrows the step's gate to
+  // tests/**, `target` names src/mod.mjs — each half legal against the SIGNED
+  // fence, so the plan used to validate green and every write the step made was
+  // then denied by the narrowed gate, burning its attempts with no red anywhere.
+  // Run against the runner's OWN derived scope menu, not a hand-passed one.
+  const wd = makePatient(t);
+  const job = JOB(wd, { writeScope: ['tests/**', 'src/**'] });
+  const bad = JSON.stringify({ schema: 'plan-v1', steps: [{
+    id: 'write-test', action: 'Edit the module.',
+    tools: ['write'], rounds: 6, target: 'src/mod.mjs', scope: 'tests/**',
+    exit: [{ type: 'tree-changed', scope: 'tests/**' }],
+  }] });
+  const provider = scriptedProvider([{ text: 'scout' }, { text: bad }, { text: bad }]);
+  const { outcome, events } = await go(wd, provider, { job });
+  assert.equal(outcome, 'plan-red');
+  const red = events.filter((e) => e.type === 'plan-red').find((e) => e.path === 'steps.0.target');
+  assert.equal(red?.code, 'step-scope-escape', `got ${JSON.stringify(events.filter((e) => e.type === 'plan-red'))}`);
+  assert.match(red.detail ?? '', /tests\/\*\*/, 'the gap names the step\'s own narrowed scope so the redraft can aim');
+  assert.equal(events.filter((e) => e.type === 'step-start').length, 0, 'no step ever ran — the burn is what this closes');
 });

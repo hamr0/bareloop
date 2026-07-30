@@ -218,6 +218,31 @@ test('any spec change changes the hash (approval binds to the exact version)', (
   assert.notEqual(jobSpecHash(JOB1), jobSpecHash(mut((j) => { j.close[0].cmd = 'npm test --silent'; })));
 });
 
+// MED-1: `tools` is OPTIONAL, and its absence means the full TOOL_MENU — which
+// this branch widened 6→14 verbs. An omitted-`tools` spec therefore kept a
+// byte-identical (and hash-identical) signature while its runtime ceiling grew
+// by eight verbs. The hash is taken over the RESOLVED spec so it pins WHICH menu
+// was signed; any future menu change flips it into the existing refuse-until-
+// reapproved machinery.
+test('an omitted `tools` hashes as the RESOLVED full menu — widening the menu flips the hash (MED-1)', () => {
+  const { tools: _explicit, ...noTools } = JOB1;
+  assert.equal(jobSpecHash(noTools), jobSpecHash({ ...noTools, tools: [...TOOL_MENU] }),
+    'omitting tools IS declaring the full menu (plan.js/planrun.js resolve it exactly so) — the hash must say which one');
+  assert.notEqual(jobSpecHash(noTools), jobSpecHash({ ...noTools, tools: ['read', 'grep', 'write', 'edit', 'recall', 'get'] }),
+    'the pre-widening 6-verb menu is a DIFFERENT signed ceiling: same spec bytes, different meaning, different hash');
+  // checkApproval recomputes the hash itself rather than calling jobSpecHash —
+  // the resolution has to hold there too, or the gate and the signer disagree
+  assert.equal(checkApproval(noTools, [{ specHash: jobSpecHash({ ...noTools, tools: [...TOOL_MENU] }), signer: 'hamr', ts: 'now' }]), true,
+    'the approval gate reads the same resolved form the signer minted');
+});
+
+test('a spec that NAMED its ceiling is untouched by the resolution — no migration for explicit `tools` (MED-1)', () => {
+  // literal pinned from the pre-fix code: an explicit-`tools` spec's signature
+  // must survive the change, so no signed job in flight silently unapproves
+  assert.equal(jobSpecHash(JOB1), '83627686b0fe8aec585bef4f06f563c6f46ba519d77a1d7ca62ccc438997f4ae');
+  assert.equal(checkApproval(JOB1, [{ specHash: '83627686b0fe8aec585bef4f06f563c6f46ba519d77a1d7ca62ccc438997f4ae', signer: 'hamr', ts: 'now' }]), true);
+});
+
 test('checkApproval: matching record approves; stale hash, empty, or garbage never do — and never throw', () => {
   const signed = [{ specHash: jobSpecHash(JOB1), signer: 'hamr', ts: '2026-07-12T00:00:00Z' }];
   assert.equal(checkApproval(JOB1, signed), true);

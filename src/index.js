@@ -28,7 +28,7 @@ export { validateJob, jobSpecHash, checkApproval, checkMenu, CLOSE_TYPES, CLASS_
 // Layer 2: the plan-v1 validator — the agent-authored plan doc's gate; the
 // two-doc split's third validator never happens (plan-v1 gates the PLAN, the
 // job spec stays the arbiter's only home).
-export { validatePlan, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, WRITE_VERBS } from './plan.js';
+export { validatePlan, stageClose, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, WRITE_VERBS } from './plan.js';
 export { snapshotScope, evalExits } from './exits.js';
 export { runPlan } from './planrun.js';
 export { runJob } from './run.js';

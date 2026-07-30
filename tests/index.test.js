@@ -27,7 +27,7 @@ test('the documented public surface is actually exported from src/index.js', () 
     'CLOSE_TYPES', 'CLASS_BY_CLOSE', 'GOLD_COMPARE', 'CADENCE_UNITS', 'PROVIDERS',
     'CONDITION_KEYS', 'TOOL_MENU', 'LOCKED_TOOLS', 'VERDICT_TYPES', 'LOCKED_VERDICTS',
     'WRITE_VERBS', 'STORE_VERBS',
-    'validatePlan', 'EXIT_TYPES', 'MAX_EXITS_PER_STEP', 'MAX_PLAN_STEPS',
+    'validatePlan', 'stageClose', 'EXIT_TYPES', 'MAX_EXITS_PER_STEP', 'MAX_PLAN_STEPS',
     'snapshotScope', 'evalExits',
     'runPlan', 'runJob',
     'classifyIncidents', 'foldLedger', 'ledgerDeltas', 'updateLedger', 'LEDGER_CLASSES',

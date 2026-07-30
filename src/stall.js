@@ -28,6 +28,16 @@
 // (F6/F44). It is also exactly why `Retry` was left unwired; self-heal is the
 // ruling that overrides it.
 //
+// L4 — "the wall clock still ends the run" was the half-true half of that. The
+// clock is consulted where a ROUND completes (planrun's `metered`) and after a step
+// returns; during a stall no round completes and no step returns, so nothing read it
+// between the wall passing and the next reissue. A worker stalling at its wall could
+// therefore be reissued for up to maxStalls × stallMs of calls the run had already
+// declined to authorize. So the watch takes the wall as a callback and consults it
+// BEFORE reissuing: past the deadline it does not self-heal, it gives up. That is
+// not a retreat from hamr's ruling — self-heal is what a run does with time left,
+// and there is none.
+//
 // Timers are injected so the whole mechanism is deterministically testable — a
 // watchdog validated with real sleeps is a flake generator, and one that is never
 // watched failing is not validated at all.
@@ -71,17 +81,22 @@ export class StallError extends Error {
 /**
  * Start a stall watchdog.
  * @param {{ stallMs?: number, maxStalls?: number, onStall?: (n: number) => void,
+ *          expired?: () => boolean,
  *          setTimer?: (fn: () => void, ms: number) => any,
  *          clearTimer?: (id: any) => void }} [opts]
  *   `onStall` is announced for EVERY stall including the last — a trim or a
  *   recovery that happens silently is indistinguishable from one that never
  *   happened (F28's rule, applied to time).
+ *   `expired` is the run's WALL, read at the one moment this module decides to
+ *   spend again (L4). Omitted, the watch behaves exactly as it did before the wall
+ *   existed — a caller with no clock reissues on the same rules.
  * @returns {StallWatch}
  */
 export function createStallWatch({
   stallMs = STALL_MS,
   maxStalls = MAX_STALLS,
   onStall = () => {},
+  expired = () => false,
   setTimer = setTimeout,
   clearTimer = clearTimeout,
 } = {}) {
@@ -121,6 +136,40 @@ export function createStallWatch({
     stalls += 1;
     onStall(stalls);
     generation += 1; // everything from the abandoned call is now inert
+    // L4 — the WALL, read before the decision to spend again, and read FIRST. A
+    // reissue past the deadline is money and time the run has already declined to
+    // authorize, and it is the only spend on this path nothing else can catch: no
+    // round completes during a stall, so `metered`'s clock check never fires, and no
+    // step returns, so the step loop's never does either.
+    //
+    // It outranks the `maxStalls` ceiling deliberately, and the category is the
+    // reason. `step-stalled` is a REPLAN TRIGGER (planrun's third trigger): it says
+    // "the model stopped answering, re-allocate what is left" and buys a fresh
+    // drafting round. On an expired wall there is nothing left to re-allocate, so
+    // that route would spend a draft on a run that is over and hand the operator
+    // "retry the run / check provider status" for a stop whose only remedy is
+    // `maxWallMs`. `wall-halt` is the truthful reading — the wall bound the run, not
+    // the model — and it is the SAME ruling clock.js already made for the F64
+    // ambiguity: a call that dies on a run whose wall has also passed reads as a
+    // wall-halt, because the run is out of time either way and the remedy is
+    // identical. No new category, no new routing: every consumer (ralph's
+    // DECISIONS, the step loop's terminal, `relay`, the ledger's exclusions) already
+    // handles `wall-halt`, and none of them replans on it.
+    if (expired()) {
+      settled = true;
+      disarm();
+      // Not a StallError: that class IS the `step-stalled` category, and a stall
+      // count is what happened on the way here, not what stopped it. No `lib`
+      // either — the wall is bareloop's own governance instrument, and stamping an
+      // upstream package would stand a fake bug of ours where real evidence goes.
+      const err = /** @type {any} */ (new Error(
+        `the run's wall-clock cap passed while this call was stalled (${stalls} stall${stalls === 1 ? '' : 's'}) — not reissuing`,
+      ));
+      err.category = 'wall-halt';
+      err.stalls = stalls;
+      reject?.(err);
+      return;
+    }
     if (stalls >= maxStalls) {
       settled = true;
       disarm();
