@@ -140,19 +140,103 @@ test('spine: reserved envelope keys (type/seq/ts) cannot be overridden by a spre
 // at the SOURCE, before gap becomes a spine event or a worker prompt. The
 // redactor is INJECTED (ralph stays stdlib-only); default is identity. ----
 
-test('runClose scrubs a secret from the gap via the injected redactor, before it is returned', () => {
+test('runClose scrubs a secret from the gap via the injected redactor, before it is returned', async () => {
   const close = ['node', '-e', 'console.error("GET 401 Authorization: Bearer " + "sk-" + "ant-abcdefghijklmnop"); process.exit(1)'];
   const redact = (x) => String(x).replace(/Bearer\s+sk-[\w-]+/g, 'Bearer [REDACTED]');
-  const v = runClose(close, redact);
+  const v = await runClose(close, redact);
   assert.equal(v.verdict, 'needs_revision');
   assert.ok(!v.gap.includes('sk-ant'), 'the token never survives into the gap');
   assert.ok(v.gap.includes('[REDACTED]'));
 });
 
-test('runClose default redactor is identity — a benign gap is byte-identical (V4: the shell does not summarize)', () => {
+test('runClose default redactor is identity — a benign gap is byte-identical (V4: the shell does not summarize)', async () => {
   const close = ['node', '-e', 'console.error("AssertionError: 5 !== 6"); process.exit(1)'];
-  const v = runClose(close);
+  const v = await runClose(close);
   assert.equal(v.gap.trimEnd(), 'AssertionError: 5 !== 6');
+});
+
+// ─── F68: the close runner must not freeze the loop it reports to ────────────
+// Measured before the fix, on this exact harness: a 2.0s close let 2 ticks of a
+// 25ms interval through and blocked the loop for 2045ms — the whole close. That
+// is the shipped defect (9 lag records in one green run, worst 74.3s, each one
+// bracketing a close). While it held, the F66 stall fuse's timers could not fire
+// and every in-flight instrument shared the freeze. The assertions below are the
+// same measurement with the sign flipped.
+
+test('F68: the host event loop keeps running while a close runs — the arbiter no longer freezes the instruments watching it', async () => {
+  const SLOW = ['node', '-e', 'setTimeout(() => { console.log("judged"); }, 1200)'];
+  let last = Date.now();
+  let worstGap = 0, ticks = 0;
+  const ticker = setInterval(() => {
+    const now = Date.now();
+    worstGap = Math.max(worstGap, now - last);
+    last = now;
+    ticks += 1;
+  }, 25);
+  const t0 = Date.now();
+  const v = await runClose(SLOW);
+  const closeMs = Date.now() - t0;
+  clearInterval(ticker);
+
+  assert.equal(v.verdict, 'satisfied', 'the close still rendered its verdict — this measures the wait, not the semantics');
+  assert.ok(closeMs >= 1200, `precondition: the close really took its time (${closeMs}ms) — otherwise there was nothing to block`);
+  // Generous by design (a loaded CI box is slow): the defect blocked for the FULL
+  // duration, so anything near the close's own length is the freeze coming back.
+  assert.ok(worstGap < closeMs / 3, `the loop stayed alive: worst inter-tick gap ${worstGap}ms against a ${closeMs}ms close`);
+  assert.ok(ticks > 10, `the ticker kept ticking through the close (${ticks} ticks; the sync runner allowed 2)`);
+});
+
+test('F68: a close that reads stdin sees EOF, exactly as it did under the sync runner — it never blocks on an idle pipe', async () => {
+  // spawnSync hands the child an immediately-closed stdin. An async spawn leaves
+  // the pipe OPEN by default, so a close reading stdin would hang to the timeout —
+  // a silent behaviour change in the arbiter. This pins the EOF.
+  const READS_STDIN = ['node', '-e',
+    'let n = 0; process.stdin.on("data", (c) => { n += c.length; });'
+    + 'process.stdin.on("end", () => { console.log("tests 3 (stdin EOF after " + n + " bytes)"); process.exit(0); });'];
+  const v = await runClose(READS_STDIN, undefined, { timeoutMs: 4000, judged: { pattern: '^tests (\\d+)', min: 3 } });
+  assert.equal(v.verdict, 'satisfied', 'the close reached EOF and judged — never timed out');
+  assert.equal(v.judgedCount, 3);
+});
+
+test('F68: output past the 1 MiB per-stream ceiling stays a FAULT, not a red on truncated output (spawnSync\'s maxBuffer, kept)', async () => {
+  // The old runner returned ENOBUFS through `error`, which runClose reads as
+  // `failed` → broken-close. Collecting an unbounded stream instead would turn an
+  // over-long close into a needs_revision judged on a truncated tail — a verdict
+  // rendered on output nobody can trust. The ceiling is preserved deliberately.
+  const HUGE = ['node', '-e', 'process.exitCode = 1; process.stdout.write("x".repeat(3 * 1024 * 1024) + "\\nTAIL\\n");'];
+  const v = await runClose(HUGE);
+  assert.equal(v.verdict, 'failed', 'over the ceiling is an instrument stop, never a judged red');
+  assert.match(v.detail, /ENOBUFS/, 'and it says which ceiling it hit');
+
+  // The ceiling is PER STREAM, as spawnSync's is — a close that dumps its flood to
+  // stderr must not slip past a stdout-only guard.
+  const HUGE_ERR = ['node', '-e', 'process.exitCode = 1; process.stderr.write("y".repeat(2 * 1024 * 1024));'];
+  assert.equal((await runClose(HUGE_ERR)).verdict, 'failed', 'stderr has its own ceiling, not a shared one');
+
+  const under = ['node', '-e', 'process.exitCode = 1; process.stdout.write("x".repeat(512 * 1024) + "\\nAssertionError: THE-REAL-CAUSE\\n");'];
+  const ok = await runClose(under);
+  assert.equal(ok.verdict, 'needs_revision', 'and a big-but-legal stream still judges normally');
+  assert.match(ok.gap, /THE-REAL-CAUSE/, 'with its tail intact — half a megabyte is collected whole');
+});
+
+test('F68: a multi-byte close stream is decoded ONCE, whole — a character straddling a chunk boundary is not mangled', async () => {
+  // The runner now collects raw chunks off a stream instead of being handed one
+  // decoded string. Decoding PER CHUNK turns any character straddling a chunk
+  // boundary into replacement characters — and the judged pattern and gapKeep both
+  // read that text, so the corruption would land in the arbiter's own reading.
+  // The child splits ONE character across two writes deliberately: a bulk-stream
+  // version of this test proves nothing, because the 64KB boundary lands in the
+  // elided middle of the gap where no assertion can see it (a smoke test in
+  // disguise). Small output, no bounding, corruption in plain view.
+  const SPLIT = ['node', '-e',
+    'const b = Buffer.from("中".repeat(4) + " AssertionError: MULTIBYTE-INTACT\\n");'
+    + 'process.stdout.write(b.subarray(0, 4));' // 4 bytes = one whole 中 + one byte of the next
+    + 'setTimeout(() => { process.stdout.write(b.subarray(4)); process.exit(1); }, 80);'];
+  const v = await runClose(SPLIT);
+  assert.equal(v.verdict, 'needs_revision');
+  assert.ok(v.gap.length < 400, 'precondition: short enough that the gap is the WHOLE stream — nothing is elided');
+  assert.ok(!v.gap.includes('�'), 'no replacement characters — the chunks were concatenated before decoding');
+  assert.match(v.gap, /^中{4} AssertionError: MULTIBYTE-INTACT$/m, 'every character survives the boundary intact');
 });
 
 // ---- N2 queue: close timeout as an option; tail-biased gap bound ----
@@ -163,19 +247,19 @@ test('runClose default redactor is identity — a benign gap is byte-identical (
 // terminates rather than hangs, and is never retried) moved into the
 // close-timeout tests in the forbidden-zone block below.
 
-test('the gap bound is tail-biased: the error at the END of long output survives (the assertion diff lives there)', () => {
+test('the gap bound is tail-biased: the error at the END of long output survives (the assertion diff lives there)', async () => {
   const close = ['node', '-e', 'console.error("x".repeat(3000) + "\\nAssertionError: THE-REAL-CAUSE"); process.exit(1)'];
-  const v = runClose(close);
+  const v = await runClose(close);
   assert.equal(v.verdict, 'needs_revision');
   assert.ok(v.gap.includes('THE-REAL-CAUSE'), 'the tail is the useful part — it must survive the bound');
   assert.ok(v.gap.includes('x'.repeat(100)), 'a head sample survives too (what ran)');
   assert.ok(v.gap.length <= 2100, `bounded (got ${v.gap.length})`);
 });
 
-test('redaction happens BEFORE the tail-biased bound: a token near the end never survives', () => {
+test('redaction happens BEFORE the tail-biased bound: a token near the end never survives', async () => {
   const close = ['node', '-e', 'console.error("x".repeat(2500) + " Bearer " + "sk-" + "tail0123456789abcdef end"); process.exit(1)'];
   const redact = (x) => String(x).replace(/sk-[\w-]+/g, '[REDACTED]');
-  const v = runClose(close, redact);
+  const v = await runClose(close, redact);
   assert.ok(!v.gap.includes('sk-tail'), 'the tail token never survives');
   assert.ok(v.gap.includes('[REDACTED]'), 'the tail was included (bias) and scrubbed (order)');
 });
@@ -200,16 +284,16 @@ test('ralph threads the redactor into runClose so the spine close-verdict carrie
 // else-is-truth. The old suite could never catch this: every test close named an
 // ABSOLUTE path, so cwd never mattered.
 
-test('runClose executes the close in the given cwd — a cwd-relative close judges THAT tree, not the runner\'s', () => {
+test('runClose executes the close in the given cwd — a cwd-relative close judges THAT tree, not the runner\'s', async () => {
   const repo = mkdtempSync(join(tmpdir(), 'close-cwd-'));
   writeFileSync(join(repo, 'check.mjs'), 'process.exit(0)');           // greens ONLY from inside repo
   const elsewhere = mkdtempSync(join(tmpdir(), 'close-cwd-other-'));
   writeFileSync(join(elsewhere, 'check.mjs'), 'process.exit(1)');      // the same relative name, red
 
-  const green = runClose(['node', 'check.mjs'], undefined, { cwd: repo });
+  const green = await runClose(['node', 'check.mjs'], undefined, { cwd: repo });
   assert.equal(green.verdict, 'satisfied', 'the close ran inside the workdir');
 
-  const red = runClose(['node', 'check.mjs'], undefined, { cwd: elsewhere });
+  const red = await runClose(['node', 'check.mjs'], undefined, { cwd: elsewhere });
   assert.equal(red.verdict, 'needs_revision', 'the SAME argv reds in the other tree — cwd is load-bearing');
 });
 
@@ -234,8 +318,8 @@ const HANGS = ['node', '-e', 'setTimeout(()=>{}, 30000)'];
 const judgedClose = (n, exit) => ['node', '-e', `console.log("tests ${n}"); console.error("gap: three recall tests failed"); process.exit(${exit})`];
 const JUDGED = { pattern: '^tests (\\d+)$', min: 3 };
 
-test('close killed by signal: no judgment rendered — its own verdict, never a red', () => {
-  const v = runClose(KILLED);
+test('close killed by signal: no judgment rendered — its own verdict, never a red', async () => {
+  const v = await runClose(KILLED);
   assert.equal(v.verdict, 'killed', 'a signal death is not a failing test suite');
   assert.equal(v.signal, 'SIGKILL');
 });
@@ -249,11 +333,11 @@ test('ralph escalates close-killed immediately and NEVER retries the broken arbi
   assert.equal(events.filter((e) => e.type === 'iteration-start').length, 1, 'one iteration — the cap was NOT burned against a dead judge');
 });
 
-test('close timeout: "did not finish judging" is its own verdict, distinct from "cannot run"', () => {
-  const v = runClose(HANGS, undefined, { timeoutMs: 300 }); // would hold the event loop 30s — terminates, never hangs
+test('close timeout: "did not finish judging" is its own verdict, distinct from "cannot run"', async () => {
+  const v = await runClose(HANGS, undefined, { timeoutMs: 300 }); // would hold the event loop 30s — terminates, never hangs
   assert.equal(v.verdict, 'timed-out', 'not pooled into failed/broken-close — the fixes differ');
   assert.match(v.detail, /never finished judging/i, 'the detail says what it is: no judgment, not a failure');
-  const broken = runClose(BROKEN);
+  const broken = await runClose(BROKEN);
   assert.equal(broken.verdict, 'failed', 'a missing binary is still cannot-run — the two are NOT one bucket');
 });
 
@@ -268,21 +352,21 @@ test('ralph escalates close-timeout by its own name, with raise-the-timeout amon
   assert.equal(events.filter((e) => e.type === 'iteration-start').length, 1, 'never retried — a judge that cannot answer is not re-asked');
 });
 
-test('CONTROL — an honest red that DID render judgment passes the floor and stays a plain red', () => {
-  const v = runClose(judgedClose(391, 1), undefined, { judged: JUDGED });
+test('CONTROL — an honest red that DID render judgment passes the floor and stays a plain red', async () => {
+  const v = await runClose(judgedClose(391, 1), undefined, { judged: JUDGED });
   assert.equal(v.verdict, 'needs_revision', 'the floor must not over-trigger on a real red');
   assert.equal(v.judgedCount, 391);
   assert.match(v.gap, /three recall tests failed/);
 });
 
-test('close-crashed: exit says red but nothing was judged — a crash, not a verdict', () => {
-  const v = runClose(judgedClose(1, 1), undefined, { judged: JUDGED });
+test('close-crashed: exit says red but nothing was judged — a crash, not a verdict', async () => {
+  const v = await runClose(judgedClose(1, 1), undefined, { judged: JUDGED });
   assert.equal(v.verdict, 'crashed', 'judged 1 of a declared floor of 3 — the suite died at load');
   assert.equal(v.judgedCount, 1);
 });
 
-test('close-crashed on GREEN too: exit 0 having judged nothing is a FAKE GREEN (law #8)', () => {
-  const v = runClose(judgedClose(0, 0), undefined, { judged: JUDGED });
+test('close-crashed on GREEN too: exit 0 having judged nothing is a FAKE GREEN (law #8)', async () => {
+  const v = await runClose(judgedClose(0, 0), undefined, { judged: JUDGED });
   assert.equal(v.verdict, 'crashed', 'a green that judged nothing is the only real failure there is');
   assert.notEqual(v.verdict, 'satisfied');
 });
@@ -296,29 +380,29 @@ test('ralph escalates close-crashed immediately — a crashed judge is never ret
   assert.equal(events.filter((e) => e.type === 'iteration-start').length, 1);
 });
 
-test('no judged block: the close still works, and the blind spot is NAMED on the record', () => {
-  const v = runClose(judgedClose(391, 1));
+test('no judged block: the close still works, and the blind spot is NAMED on the record', async () => {
+  const v = await runClose(judgedClose(391, 1));
   assert.equal(v.verdict, 'needs_revision');
   assert.equal(v.unaudited, true, 'the hole is stamped, not hidden — an unaudited close cannot detect a crash');
-  const audited = runClose(judgedClose(391, 1), undefined, { judged: JUDGED });
+  const audited = await runClose(judgedClose(391, 1), undefined, { judged: JUDGED });
   assert.ok(!audited.unaudited, 'a declared floor is audited');
 });
 
-test('a judged pattern that matches nothing is a crash, not a silent pass', () => {
-  const v = runClose(['node', '-e', 'console.log("no counts here"); process.exit(0)'], undefined, { judged: JUDGED });
+test('a judged pattern that matches nothing is a crash, not a silent pass', async () => {
+  const v = await runClose(['node', '-e', 'console.log("no counts here"); process.exit(0)'], undefined, { judged: JUDGED });
   assert.equal(v.verdict, 'crashed');
   assert.equal(v.judgedCount, null, 'honest null: no number was rendered (F6 convention)');
 });
 
-test('close.expect is HONORED: a close whose declared success is exit 1 greens on exit 1', () => {
-  assert.equal(runClose(['node', '-e', 'process.exit(1)'], undefined, { expect: 1 }).verdict, 'satisfied');
-  assert.equal(runClose(['node', '-e', 'process.exit(0)'], undefined, { expect: 1 }).verdict, 'needs_revision',
+test('close.expect is HONORED: a close whose declared success is exit 1 greens on exit 1', async () => {
+  assert.equal((await runClose(['node', '-e', 'process.exit(1)'], undefined, { expect: 1 })).verdict, 'satisfied');
+  assert.equal((await runClose(['node', '-e', 'process.exit(0)'], undefined, { expect: 1 })).verdict, 'needs_revision',
     'and exit 0 is the RED — the arbiter judges against the signed number, not against 0');
 });
 
-test('the judged count is read from a REDACTED stream — a secret in the close output never rides the count', () => {
+test('the judged count is read from a REDACTED stream — a secret in the close output never rides the count', async () => {
   const close = ['node', '-e', 'console.log("tests 391"); console.error("sk-ant-api03-AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHHIIIIJJJJKKKKLLLLMMMM"); process.exit(1)'];
-  const v = runClose(close, (s) => s.replace(/sk-ant-[A-Za-z0-9-]+/g, '[redacted]'), { judged: JUDGED });
+  const v = await runClose(close, (s) => s.replace(/sk-ant-[A-Za-z0-9-]+/g, '[redacted]'), { judged: JUDGED });
   assert.equal(v.judgedCount, 391);
   assert.doesNotMatch(v.gap, /sk-ant-api03/);
 });
@@ -423,8 +507,8 @@ test('F32: the gap announces a trimmed file list, never silently truncates it', 
 const tapClose = (notOk = 5, lines = 750) => ['node', '-e',
   `const L=[];for(let i=1;i<=${lines};i++){if(i===${Math.floor(lines / 2)}){for(let k=1;k<=${notOk};k++)L.push("not ok "+k+" - notify falsy guard wrongly rejects a valid empty batch, case "+k);}L.push("ok "+i+" - passing subtest number "+i+" in the mailproof suite covering assorted behaviour paths");}console.log(L.join("\\n"));console.log("# tests "+(${lines}+${notOk}));console.log("# pass ${lines}");console.log("# fail "+${notOk});process.exit(1);`];
 
-test('F28: without gapKeep a big TAP stream buries every `not ok` in the elided middle — ZERO reach the gap (the shipped default, locked)', () => {
-  const v = runClose(tapClose(5));
+test('F28: without gapKeep a big TAP stream buries every `not ok` in the elided middle — ZERO reach the gap (the shipped default, locked)', async () => {
+  const v = await runClose(tapClose(5));
   assert.equal(v.verdict, 'needs_revision');
   assert.ok(v.gap.length > 0);
   assert.equal((v.gap.match(/not ok/g) ?? []).length, 0,
@@ -432,8 +516,8 @@ test('F28: without gapKeep a big TAP stream buries every `not ok` in the elided 
   assert.match(v.gap, /# fail 5/, 'the tail summary still survives (tail-biased bound)');
 });
 
-test('F28 fix: gapKeep "^not ok" carries ALL five failure lines verbatim, plus the tail summary and the elision marker', () => {
-  const v = runClose(tapClose(5), undefined, { gapKeep: '^not ok' });
+test('F28 fix: gapKeep "^not ok" carries ALL five failure lines verbatim, plus the tail summary and the elision marker', async () => {
+  const v = await runClose(tapClose(5), undefined, { gapKeep: '^not ok' });
   assert.equal(v.verdict, 'needs_revision');
   const kept = v.gap.match(/^not ok \d+ - notify falsy guard/gm) ?? [];
   assert.equal(kept.length, 5, 'every failing test NAME reaches the worker — the causal navigation input (F28)');
@@ -441,18 +525,18 @@ test('F28 fix: gapKeep "^not ok" carries ALL five failure lines verbatim, plus t
   assert.match(v.gap, /truncated/, 'the head/tail middle is still bounded — gapKeep ADDS to the bound, it does not remove it');
 });
 
-test('F28 hazard: failures on STDOUT survive even when STDERR is non-empty — the gap sees BOTH streams', () => {
+test('F28 hazard: failures on STDOUT survive even when STDERR is non-empty — the gap sees BOTH streams', async () => {
   // The old `err || out` returned stderr ALONE when it was non-empty, silently
   // losing a stdout-printed failure. Small output (no bounding) — this isolates
   // the stream-combination, not the keep pattern.
   const close = ['node', '-e', 'console.log("not ok 1 - the real failure the worker must see"); console.error("npm warn deprecated something unrelated"); process.exit(1)'];
-  const v = runClose(close);
+  const v = await runClose(close);
   assert.equal(v.verdict, 'needs_revision');
   assert.match(v.gap, /not ok 1 - the real failure/, 'the stdout failure is not clobbered by stderr noise');
   assert.match(v.gap, /npm warn deprecated/, 'and the stderr noise is still present — both streams, never one');
 });
 
-test('F28: the kept-failures block is HARD-capped at 50 lines and ANNOUNCES the trim — a pathological close cannot rebuild the bloat', () => {
+test('F28: the kept-failures block is HARD-capped at 50 lines and ANNOUNCES the trim — a pathological close cannot rebuild the bloat', async () => {
   // 200 matching lines fenced by ok filler (so head and tail hold no `not ok` and
   // the count reflects ONLY the keep block). Silent truncation is the disease this
   // fix cures, so a trimmed block must say so.
@@ -461,7 +545,7 @@ test('F28: the kept-failures block is HARD-capped at 50 lines and ANNOUNCES the 
     + 'for(let i=1;i<=200;i++)L.push("not ok "+i+" - failing case number "+i+" that must be capped");'
     + 'for(let i=1;i<=300;i++)L.push("ok "+(i+300)+" - trailing filler passing test number "+(i+300));'
     + 'console.log(L.join("\\n"));console.log("# fail 200");process.exit(1)'];
-  const v = runClose(many, undefined, { gapKeep: '^not ok' });
+  const v = await runClose(many, undefined, { gapKeep: '^not ok' });
   const kept = v.gap.match(/^not ok /gm) ?? [];
   assert.equal(kept.length, 50, `keep block capped at 50 lines, got ${kept.length}`);
   assert.match(v.gap, /more elided/, 'the cap trim is announced with an explicit marker, never silent');

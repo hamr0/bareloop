@@ -338,15 +338,15 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   /** @type {string|undefined} the stage that rendered the LAST close verdict (Layer R's red-set source) */
   let closeStage;
   /** the close, as ONE verdict: every stage in order, first red wins */
-  const judgeClose = () => {
-    const v = runStages(stagedClose, scrub, closeOpts);
+  const judgeClose = async () => {
+    const v = await runStages(stagedClose, scrub, closeOpts);
     closeStage = v.stage;
     return v;
   };
 
   // ── 0a. close precheck (close-first, F17): already-green is a DISTINCT
   // record, zero tokens; a forbidden-zone verdict escalates before any spend
-  const pre = judgeClose();
+  const pre = await judgeClose();
   emit('close-precheck', { ...pre });
   if (pre.verdict === 'satisfied') return 'already-green';
   const preFault = Object.hasOwn(CLOSE_FAULTS, pre.verdict) ? CLOSE_FAULTS[pre.verdict] : undefined;
@@ -369,7 +369,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       : {}),
   });
   for (const m of menu) {
-    const v = runStages(m.run, scrub, closeOpts);
+    const v = await runStages(m.run, scrub, closeOpts);
     emit('check-preflight', { name: m.name, verdict: v.verdict, ...(m.run.length > 1 ? { chain: m.run.map((s2) => s2.name) } : {}) });
     const f = Object.hasOwn(CLOSE_FAULTS, v.verdict) ? CLOSE_FAULTS[v.verdict] : undefined;
     if (f) {
@@ -421,7 +421,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // derivation, not a live path; the reachable guard is the validator's, and
     // that one is mutation-covered.
     if (!chain) return { pass: false, fault: 'failed', gap: `no offered close stage named "${name}"` };
-    const v = runStages(chain, scrub, closeOpts);
+    const v = await runStages(chain, scrub, closeOpts);
     emit('check-run', { name, verdict: v.verdict, ...(v.stage && v.stage !== name ? { stage: v.stage } : {}), ...(v.exitCode !== undefined ? { exitCode: v.exitCode } : {}) });
     if (v.verdict === 'satisfied') return { pass: true };
     if (v.verdict === 'needs_revision') return { pass: false, gap: v.gap };
@@ -1187,7 +1187,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // ── 4. THE CLOSE — the operator's signed command, the only truth. Red →
   // the gap feeds ONE bounded fix loop judged by the REAL close (v1.12 §4);
   // still red → the escalation ralph already emitted stands.
-  const post = judgeClose();
+  const post = await judgeClose();
   emit('outer-close', { ...post });
   if (post.verdict === 'satisfied') {
     planExecuted();
@@ -1256,15 +1256,25 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     emitWallHalt({ cutMidCall: true, phase: 'fix' });
     return 'wall-halt';
   }
-  if (fixOutcome !== 'green' && typeof lastEscalation?.category === 'string' && lastEscalation.category !== 'cap-halt') {
+  if (fixOutcome !== 'green' && lastEscalation?.category === 'cap-halt') {
+    // ralph spells BOTH of its terminals cap-halt — attempt-exhaustion AND a
+    // money-gate halt thrown mid-attempt — so the category alone cannot tell them
+    // apart, and the wallet is the only instrument that can. The step loop already
+    // splits this exact pair on the same reading; the fix loop must too, because
+    // the fix worker's gate is built with the wallet at its MOST drained (every
+    // step's spend is behind it), which is precisely where a money cut masquerades
+    // as "the fix failed". F45: a money cut is never a capability read — it rides
+    // out as cap-halt, the resume-to-cap checkpoint (the stop IS the checkpoint).
+    // Attempts spent with money still on the table stays the designed terminal
+    // ("close still red") and keeps riding out as `escalated` below.
+    // (MED-4, fixed with hamr's explicit go, 2026-07-30.)
+    if (remainingUsd() <= MONEY_MIN) return 'cap-halt';
+  } else if (fixOutcome !== 'green' && typeof lastEscalation?.category === 'string') {
     // The step loop's category restoration (F11), mirrored: ralph returns the flat
     // 'escalated' on a middle throw while its escalation carries the real name — a
     // provider-red here is a transport CASUALTY, and run.js keys the F44
     // spendComplete:false floor on the OUTCOME, so a laundered label would report
-    // an exact-looking total for a call that never billed back. cap-halt stays
-    // 'escalated': the fix loop exhausting its bound is the designed terminal
-    // ("close still red"), not a casualty. (Doctrine gap found by the hardening
-    // pass; fixed with hamr's explicit go, 2026-07-30.)
+    // an exact-looking total for a call that never billed back.
     return lastEscalation.category;
   }
   return fixOutcome === 'green' ? 'green' : 'escalated';

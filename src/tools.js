@@ -96,6 +96,22 @@ export const COMPONENT_STRATEGIES = Object.freeze({
     + 'with ctx_remember(<id>,<text>) so a later step can ctx_recall it; ctx_forget(<id>) retracts a note that proved wrong.',
 });
 
+// L8 — ONE line space, named in the contract instead of renumbered (validated
+// 2026-07-30 against a real index, not read off the source). Every line number
+// litectx hands back is a 0-BASED index: a chunk's `startLine`/`endLine`
+// (chunker.js: "0-based, inclusive"), impact's `defs[].startLine`, and impact's
+// `callers[].line`. So a symbol whose doc-comment sits on editor line 5 prints
+// as 4 — the off-by-one a worker would hit if it cross-referenced an editor.
+// The tempting fix (render impact 1-based, since its numbers are display-only)
+// was REFUTED by measurement: impact's def range dereferences through ctx_get
+// verbatim, and ctx_recall prints the SAME number for the SAME chunk. They are
+// one interchangeable handle space, and ctx_get refuses anything that is not a
+// chunk boundary — so a 1-based impact would make two tools print two numbers
+// for one chunk and turn a clean refusal into a guessing game. Consistency is
+// the resolution; the description is where the worker learns the space.
+const LINE_SPACE = 'Line numbers here are 0-BASED index positions from the repository index — one lower than the line an editor shows. '
+  + 'Copy them between ctx_recall, ctx_get and ctx_impact as-is; never adjust them, and never quote one as an editor line.';
+
 /**
  * The retrieval pair (F19). `shell_read` cannot seek — it starts at byte zero — so a
  * pointer at a symbol was inert and the worker paged whole files to reach one function.
@@ -116,7 +132,8 @@ export function createCtxTools(lc, workdir, emit) {
       name: 'ctx_recall',
       description: 'Search the repository index for a symbol or phrase. Returns POINTERS (path, symbol, line range) — not code. '
         + 'Pass a pointer to ctx_get to read that one function. Search finds what you can NAME: it will not find a bug from a failing '
-        + "test's output (the symptom and the cause live in different files) — read the failing test first, then recall the function it calls.",
+        + "test's output (the symptom and the cause live in different files) — read the failing test first, then recall the function it calls. "
+        + LINE_SPACE,
       parameters: {
         type: 'object',
         properties: {
@@ -152,7 +169,8 @@ export function createCtxTools(lc, workdir, emit) {
       name: 'ctx_get',
       description: 'Read ONE function by the line range ctx_recall gave you — code plus its doc-comment, without the rest of the file. '
         + 'The line range is a HANDLE you copy from ctx_recall, never one you compute: a range that is not a chunk boundary is refused, '
-        + 'and a file edited since it was indexed is refused (re-run ctx_recall for a fresh pointer).',
+        + 'and a file edited since it was indexed is refused (re-run ctx_recall for a fresh pointer). '
+        + LINE_SPACE,
       parameters: {
         type: 'object',
         properties: {
@@ -189,7 +207,8 @@ export function createCtxTools(lc, workdir, emit) {
     {
       name: 'ctx_impact',
       description: 'Before changing a symbol, see what depends on it: callers, importers, and mention sites across the repository. '
-        + 'Returns a text readout of the blast radius — a fix that compiles but breaks an unseen dependent is what this prevents.',
+        + 'Returns a text readout of the blast radius — a fix that compiles but breaks an unseen dependent is what this prevents. '
+        + LINE_SPACE,
       parameters: {
         type: 'object',
         properties: { symbol: { type: 'string', description: 'Function/class/identifier name, e.g. "addNums".' } },
@@ -201,12 +220,17 @@ export function createCtxTools(lc, workdir, emit) {
           emit('ctx-tool', { tool: 'ctx_impact', symbol: String(symbol), outcome: 'unknown-symbol', bytes: 0 });
           return `no indexed symbol "${symbol}" — check the spelling with ctx_recall first`;
         }
-        // the readout is the shape the POC measured: defs/callers/callees are arrays of
-        // {path, line}; confirmed/mentions are COUNTS; risk is the one-word summary
+        // The readout's real shape, checked against a live index (the POC's note said
+        // "defs/callers/callees are arrays of {path, line}" and was right for two of
+        // the three): defs are {path,startLine,endLine} and callers are {path,line,
+        // symbol} — but CALLEES are bare NAMES (litectx Impact.callees: string[]), so
+        // reading .path/.line off them printed `calls undefined:undefined` on every
+        // symbol that calls anything. Garbage a worker cannot tell from a pointer.
+        // confirmed/mentions are COUNTS; risk is the one-word summary.
         const lines = [];
         for (const d of imp.defs ?? []) lines.push(`defined\t${d.path}:${d.startLine}`);
         for (const c of imp.callers ?? []) lines.push(`called by\t${c.path}:${c.line}${c.symbol ? ` (in ${c.symbol})` : ''}`);
-        for (const c of imp.callees ?? []) lines.push(`calls\t${c.path}:${c.line}`);
+        for (const c of imp.callees ?? []) lines.push(`calls\t${c}`);
         lines.push(`risk ${imp.risk} — ${imp.confirmed} confirmed caller(s), ${imp.mentions} mention(s)`);
         const out = lines.join('\n');
         emit('ctx-tool', { tool: 'ctx_impact', symbol: String(symbol), hits: lines.length, bytes: Buffer.byteLength(out) });

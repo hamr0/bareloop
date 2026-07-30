@@ -242,7 +242,10 @@ written.
 ### `ralph({ middle, close?, judge?, capRuns, emit, redact?, closeTimeoutMs?, cwd?, expect?, judged?, gapKeep?, workerWrites? })` → `'green' | 'escalated'` — `src/ralph.js`
 
 The dumb outer shell: `while close-red and under-cap: run the middle`. `close` is an argv
-whose exit code is truth (`runClose` is also exported); the red gap text feeds the next
+whose exit code is truth (`runClose` is also exported — **async since 0.6: `runClose` and
+`runStages` return Promises**; the child is awaited instead of spawnSync so a running close
+no longer freezes the host event loop (F68); every close semantic — timeout signal, output
+bounds, gap shape, exit bands — is byte-identical); the red gap text feeds the next
 iteration, tail-biased when bounded (400 head + 1500 tail — the assertion diff lives at
 the end). **`cwd` is where the close RUNS, and it is load-bearing (F8):** a close is a
 repository command (`npm test`, `make check`) and every one of them is cwd-relative — run

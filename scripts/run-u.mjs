@@ -114,8 +114,9 @@ console.log(`\n== U run ${runid} ==  $${spec.budgetUsd} · ${spec.maxWallMs / 60
 // too. This one is a separate process holding one file's mtime and a pid.
 // `unref()` so it can never keep a finished run alive.
 // The STALE window is sized above the worst LEGAL spine silence, which is the
-// CLOSE, not the worker: runStages emits nothing between stages and spawnSync
-// freezes the loop for each stage's full duration (F68), so a legal close can be
+// CLOSE, not the worker: runStages emits nothing between stages (the close
+// runner is async since the F68 fix, but its spine silence is unchanged), so a
+// legal close can be
 // silent for up to closeTimeoutMs × stages. The default 600s window against a
 // 900s-per-stage cap would kill a live verdict mid-close — the exact damage the
 // wall grace exists to prevent, on the trigger the grace never covered.

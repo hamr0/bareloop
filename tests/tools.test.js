@@ -69,8 +69,17 @@ function fixture(t) {
     '/** Add two numbers — the fixture leaf. */\nexport function addNums(a, b) {\n  return a + b;\n}\n');
   writeFileSync(join(dir, 'src', 'caller.js'),
     "import { addNums } from './adder.js';\n/** Sum a list via addNums. */\nexport function sumAll(xs) {\n  return xs.reduce((s, x) => addNums(s, x), 0);\n}\n");
+  // A symbol that does NOT start at the top of its file, and that CALLS another
+  // indexed symbol: the line-space test needs a number where 0-based and 1-based
+  // visibly disagree, and the callee readout needs a real intra-repo callee.
+  writeFileSync(join(dir, 'src', 'padded.js'), PADDED);
   return dir;
 }
+
+/** the padded fixture's source, shared with the line-space test so the expected
+ * line is DERIVED from the text rather than hardcoded (a hardcoded number would
+ * pass for the wrong reason the day the chunker's boundaries move) */
+const PADDED = "import { addNums } from './adder.js';\n// header\n// header\n\n/** Pad a number — declared well below line one. */\nexport function padNums(n) {\n  return addNums(n, 1);\n}\n";
 
 /** @param {{ after: (fn: () => void) => void }} t
  * @returns {Promise<{lc: any, dir: string, events: any[], tools: Map<string, any>}>} */
@@ -90,6 +99,48 @@ test('ctx_impact names the dependents of a symbol', async (t) => {
   const out = await tools.get('ctx_impact').execute({ symbol: 'addNums' });
   assert.match(out, /caller\.js/, 'the importer must appear in the impact readout');
   assert.ok(events.some((e) => e.t === 'ctx-tool' && e.tool === 'ctx_impact'), 'a retrieval verb whose result is invisible cannot be judged');
+});
+
+test('ctx_impact names the CALLEES by name — a callee is a string, never an object with a path (L8 validation find)', async (t) => {
+  const { tools } = await harness(t);
+  const out = await tools.get('ctx_impact').execute({ symbol: 'padNums' });
+  assert.doesNotMatch(out, /undefined/, 'a readout that prints "undefined:undefined" is worse than no readout — the worker cannot tell it from a real pointer');
+  assert.match(out, /calls\taddNums/, 'the callee is named — litectx returns callees as unique NAMES (Impact.callees: string[])');
+});
+
+test('ONE line space across recall/get/impact: the numbers are interchangeable 0-based handles, and every tool that prints or takes one says so (L8)', async (t) => {
+  const { lc, tools } = await harness(t);
+  // (1) the fact the "off-by-one" report rests on: the printed number is the
+  // 0-based chunk index, so it is one BELOW the editor line of the same text.
+  const chunkFirstLine = PADDED.split('\n').indexOf('/** Pad a number — declared well below line one. */');
+  assert.ok(chunkFirstLine > 0, 'the fixture symbol must not start at the top of its file, or the two spellings agree by accident');
+  const impactOut = await tools.get('ctx_impact').execute({ symbol: 'padNums' });
+  const printed = Number(impactOut.match(/^defined\tsrc\/padded\.js:(\d+)$/m)?.[1]);
+  assert.equal(printed, chunkFirstLine, 'impact prints the 0-based chunk index');
+  assert.equal(printed + 1, chunkFirstLine + 1, 'and the EDITOR line of that same text is one higher — the two spellings really do differ');
+
+  // (2) why renumbering impact alone would be the wrong fix: recall prints the
+  // SAME number for the same chunk, and ctx_get takes it as a content-hash-gated
+  // HANDLE. The three tools share one space; a 1-based impact would make two
+  // tools print different numbers for one chunk.
+  const recallOut = await tools.get('ctx_recall').execute({ query: 'padNums' });
+  const range = recallOut.match(/src\/padded\.js\tpadNums\t\S+\tlines (\d+)-(\d+)/);
+  assert.ok(range, `recall must point at padNums, got:\n${recallOut}`);
+  assert.equal(Number(range[1]), printed, 'recall and impact print the SAME number for the same chunk — one space, not two');
+  const body = await tools.get('ctx_get').execute({ path: 'src/padded.js', startLine: Number(range[1]), endLine: Number(range[2]) });
+  assert.match(body, /padNums/, 'and that number dereferences through ctx_get — it is a handle, not decoration');
+  const node = lc.getNode('src/padded.js');
+  assert.equal(node.chunks.find((/** @type {any} */ c) => c.symbol === 'padNums').startLine, printed,
+    'and it is litectx\'s own chunk number, unrenumbered');
+
+  // (3) the resolution: since the space is shared, consistency is the fix and the
+  // DESCRIPTION carries the warning — the worker must never cross-reference these
+  // against an editor, and the only place it can learn that is the tool contract.
+  const tool = (/** @type {string} */ n) => tools.get(n).description;
+  for (const n of ['ctx_recall', 'ctx_get', 'ctx_impact']) {
+    assert.match(tool(n), /0-based index/i,
+      `${n} prints or consumes a line number — its description must name the line space, or the worker reads it as an editor line`);
+  }
 });
 
 test('ctx_related walks the import graph from a file', async (t) => {

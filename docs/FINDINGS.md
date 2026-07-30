@@ -3811,6 +3811,14 @@ window; the outside watchdog itself is immune by construction). Recommendation: 
 with identical semantics. **Close execution is arbiter territory: named, scoped, PARKED for
 explicit go.**
 
+**RESOLVED 2026-07-30 (hamr's go: "validate all errors and fix what passes").** The close
+runner is async spawn with byte-identical semantics, proven by a 25-case old-vs-new
+differential (timeout signal, ENOBUFS ceiling, gap shape, exit bands, redaction, stdin EOF,
+multibyte boundaries) plus 5-for-5 mutation kills on the new guards. Freeze measured before
+and after: the F68 preflight shape (3 stages, 3.5s) went 0 host ticks → 126 ticks, worst
+gap 26ms. The stale-window sizing in run-u is UNCHANGED — runStages still emits nothing
+between stages, so legal spine silence is the same; only the host loop stays alive.
+
 ### Open
 
 The 81-minute freeze (F67's trigger) remains unexplained — spawnSync cannot produce it (no

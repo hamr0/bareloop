@@ -1249,6 +1249,67 @@ console.log('FAILED close: the test never imports the module'); process.exit(1);
   assert.ok(rounds.every((r) => 'costUsd' in r), 'every surviving round still carries its cost field (F6)');
 });
 
+/** the fix-loop fixture: a close STRICTER than the check, so every step greens on
+ * its own exits and the outer close still reds — the one shape that opens the
+ * close-fix loop. @param {string} wd */
+const strictCloseOverCheck = (wd) => writeFileSync(join(wd, 'close.mjs'), `import { existsSync, readFileSync } from 'node:fs';
+const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
+const t = existsSync(p) ? readFileSync(p, 'utf8') : '';
+if (t.includes('ok') && t.includes('import')) process.exit(0);
+console.log('FAILED close: the test never imports the module'); process.exit(1);\n`);
+
+test('CLOSE-FIX-LOOP money halt: a fix loop that cap-halts on a DRAINED wallet returns cap-halt, never escalated — a money cut is never a capability read (F45, MED-4)', async (t) => {
+  const wd = makePatient(t);
+  strictCloseOverCheck(wd);
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok but no module use\n' })] },
+    { text: 'wrote it' },                 // the step greens; the close then reds
+    { text: 'fix attempt' },              // the fix worker's first round — priced above the drained wallet
+  ]);
+  const { events, emit } = collector();
+  const jv = validateJob(JOB(wd));
+  // The drain is targeted at the RUN'S OWN STATE (the fix loop has opened), never
+  // by counting calls on the injected wallet — a call-count trigger measures "how
+  // many times has remainingUsd been read", which silently retargets whenever the
+  // number of reads changes.
+  let fixOpen = false;
+  const emit2 = (/** @type {string} */ type, /** @type {any} */ data = {}) => {
+    if (type === 'fix-loop') fixOpen = true;
+    return emit(type, data);
+  };
+  const outcome = await runPlan(jv.job, {
+    workdir: wd, provider, emit: emit2, capRuns: 3,
+    remainingUsd: () => (fixOpen ? 0.0001 : 1.5),
+  });
+  assert.ok(events.some((e) => e.type === 'fix-loop'), 'the fix loop opened — the halt is inside it, not before it');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'cap-halt', 'ralph emits the money-gate halt as cap-halt (its ONE category for both halts)');
+  assert.equal(outcome, 'cap-halt',
+    'a drained wallet in the fix loop is the resume-to-cap checkpoint, not "the fix failed" — the step loop already splits this exact pair');
+});
+
+test('CLOSE-FIX-LOOP exhaustion CONTROL: attempts spent WITH money left stays escalated — the designed "close still red" terminal (MED-4 must not swallow it)', async (t) => {
+  const wd = makePatient(t);
+  strictCloseOverCheck(wd);
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok but no module use\n' })] },
+    { text: 'wrote it' },                 // the step greens; the close then reds
+    { text: 'fix attempt — writes nothing' }, // sticks: every fix attempt leaves the close red
+  ]);
+  const { events, emit } = collector();
+  const jv = validateJob(JOB(wd));
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 2, remainingUsd: () => 1.5 });
+  assert.ok(events.some((e) => e.type === 'fix-loop'), 'the fix loop opened');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'cap-halt', 'ralph names attempt-exhaustion cap-halt too — the SAME category, which is why the wallet is the split');
+  assert.equal(outcome, 'escalated',
+    'attempts spent with money on the table is a capability terminal, and it must keep riding out as escalated');
+});
+
 test('SCOUT casualty: a transport death on the survey call ends the run as provider-red BEFORE a plan is ever drafted', async (t) => {
   const wd = makePatient(t);
   const provider = dyingAt([{ text: 'never reached' }], 0);

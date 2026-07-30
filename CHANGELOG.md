@@ -91,6 +91,15 @@ feature lands, **patch** = docs, fixes, scaffolding.
   error count unchanged, both prior greens re-verified under the fixed instrument).
 
 ### Changed
+- **BREAKING for adopters — `runClose` and `runStages` are async and return Promises**
+  (`src/ralph.js`). The close child is awaited instead of `spawnSync`, so a running close no
+  longer freezes the host event loop (F68 — measured: a 3-stage close went from 0 host ticks
+  during 3.5s of close to 126 ticks with a worst gap of 26ms). Every close semantic is
+  byte-identical, verified by a 25-case old-vs-new differential: timeout signal (SIGTERM →
+  `timed-out`), 1 MiB per-stream output ceiling (`ENOBUFS` → broken-close, deliberately not
+  widened — an over-long close must not be judged on truncated output), gap shape/bounds,
+  exit bands, redaction, cwd, stdin EOF. The one visible difference: a spawn fault's detail
+  prose says `spawn` instead of `spawnSync` (nothing parses it).
 - **BREAKING for plan authors — `check-passes` now requires a write-class verb (`write`/`edit`)
   on the SAME step** (`src/plan.js`, `exit-illegal`). A shape that validated before is rejected
   now: a read-only "verify" step that carries a check. Measured before it was built (P-read runs
