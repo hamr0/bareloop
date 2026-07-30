@@ -1109,3 +1109,158 @@ test('P: step.model with NO providerFor is a STOP, never a silent default-tier r
   assert.ok(events.some((e) => e.type === 'escalation' && /providerFor/.test(`${e.decision ?? ''} ${e.detail ?? ''}`)),
     `the missing wiring is NAMED in the escalation — got ${JSON.stringify(events.filter((e) => e.type === 'escalation'))}`);
 });
+
+// ── casualty routing across EVERY provider-consuming phase ──────────────────
+//
+// Doctrine: an API truncation is TRANSPORT class — retry, never capability
+// evidence, never interpreter-red/config-red (the `truncated:` leg at
+// src/planrun.js:735-743). And a casualty is a casualty wherever the provider is
+// consumed: the plan flow calls out from five places (scout, plan drafter, step
+// worker, replan drafter, close-fix worker) and each must file the same event
+// under the same name, or the readout's casualty count is phase-shaped.
+//
+// Prior coverage was ONE cell of that grid: a mid-STEP transport THROW (the
+// F11/F44 test above). Truncation reaches the router by the OTHER seam — a
+// RETURNED `r.error`, not a throw — and the drafting/replan/fix phases had no
+// casualty coverage at all.
+
+/**
+ * A scripted provider whose Nth call onward (0-based) dies instead of answering.
+ * Same wrap idiom as the F11/F44 mid-step test, factored because four phases
+ * need it at four different call positions.
+ * @param {any[]} script @param {number} n @param {() => Error} [thrower]
+ */
+const dyingAt = (script, n, thrower = () => Object.assign(new Error('ECONNRESET mid-call'), { category: 'provider-red', lib: 'bare-agent' })) => {
+  const base = scriptedProvider(script);
+  let i = 0;
+  return {
+    calls: base.calls,
+    toolsOffered: base.toolsOffered,
+    /** @param {any} messages @param {any} tools */
+    async generate(messages, tools) {
+      if (i++ >= n) throw thrower();
+      return base.generate(messages, tools);
+    },
+  };
+};
+
+test('WORKER truncation: a step round cut off at the output cap rides out as provider-red — a returned truncated:max_tokens is the SAME casualty class as a thrown socket, never interpreter-red', async (t) => {
+  const wd = makePatient(t);
+  // The truncation seam is a RETURNED error, not a throw: the real Loop maps
+  // stopReason max_tokens to `error: 'truncated:max_tokens'` (bare-agent
+  // loop.js), and planrun's `ask` routes that string. So the fixture drives the
+  // REAL mechanism (a provider stop reason) rather than a hand-made error object
+  // — and the router's default `interpreter-red` leg sits one line below the one
+  // under test, so a mis-wired router lands there and this test reads it.
+  const provider = scriptedProvider([
+    { text: 'scout notes' },
+    { text: PLAN(wd) },
+    { text: 'half a thou', stopReason: 'max_tokens' },   // the step worker's first round
+  ]);
+  const { outcome, events } = await go(wd, provider);
+  assert.equal(outcome, 'provider-red', 'an API-truncated worker round is transport, never capability tier data');
+  assert.ok(!outcome.startsWith('step-red'), 'never laundered into the outcome the driver reads as a capability read');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'provider-red', 'the outcome and the spine escalation name the SAME category (F11)');
+  assert.match(esc.detail ?? '', /truncated:max_tokens/, 'the casualty is named by its own shape — a human reading the spine can tell truncation from a dead socket');
+  assert.equal(events.filter((e) => e.type === 'escalation' && e.category === 'interpreter-red').length, 0,
+    'a truncated round is NOT a broken interpreter — that routing would blame the harness for the provider');
+});
+
+test('DRAFTER truncation: a plan-draft call cut off at the output cap is provider-red, never plan-red — a truncated draft is a casualty, and there is no redraft on truncation', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout notes' },
+    { text: 'a plan that never fini', stopReason: 'max_tokens' },  // the DRAFT call
+  ]);
+  const { outcome, events } = await go(wd, provider);
+  assert.equal(outcome, 'provider-red', 'the drafter was cut off by the provider — that is not a bad plan');
+  assert.equal(events.filter((e) => e.type === 'plan-validate').length, 0,
+    'the truncated text is never validated: judging a half-emitted artifact would mint a plan-red the drafter never earned');
+  assert.equal(events.filter((e) => e.type === 'plan-red').length, 0, 'and no plan-red rides out');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'provider-red');
+  assert.equal(esc.phase, 'plan', 'the escalation says WHICH call died — the relay path is not a blinder route (F64 class)');
+  assert.match(esc.detail ?? '', /truncated:max_tokens/);
+});
+
+test('REPLAN-DRAFTER casualty: a transport death during the replan draft is provider-red, and the spine still records that the replan was ATTEMPTED', async (t) => {
+  const wd = makePatient(t);
+  // Same fixture as the ONE-replan test: plan A's step writes nothing, so
+  // tree-changed reds every attempt → cap-halt with funds left → the one replan.
+  // Call 4 is the replan draft, and it dies on the wire.
+  const provider = dyingAt([
+    { text: 'scout notes' },
+    { text: PLAN(wd) },
+    { text: 'thinking about it' },   // attempt 1: no write
+    { text: 'still thinking' },      // attempt 2: no write → exhaustion
+  ], 4);
+  const { outcome, events } = await go(wd, provider, { capRuns: 2 });
+  assert.equal(outcome, 'provider-red', 'the replan drafter is a provider consumer like any other — its casualty is a casualty');
+  const replan = events.find((e) => e.type === 'replan');
+  assert.ok(replan, 'the replan is on the record even though its draft never came back — a phase that spent must not vanish');
+  assert.equal(replan.trigger, 'cap-halt');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'provider-red', 'the returned outcome and the last escalation agree (F11)');
+  assert.equal(esc.phase, 'replan');
+  assert.ok(events.find((e) => e.type === 'plan-executed'), 'the plan-as-executed record never dangles, even on a casualty exit (design law #2)');
+});
+
+test('CLOSE-FIX-LOOP casualty: a transport death inside the outer fix loop — DOCTRINE GAP pinned, and the metered rounds that DID complete survive', async (t) => {
+  const wd = makePatient(t);
+  // Same shape as the fix-loop test: the close is stricter than the check, so
+  // the step greens and the close reds once, opening the fix loop. Call 4 is the
+  // fix worker's first round, and it dies on the wire.
+  writeFileSync(join(wd, 'close.mjs'), `import { existsSync, readFileSync } from 'node:fs';
+const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
+const t = existsSync(p) ? readFileSync(p, 'utf8') : '';
+if (t.includes('ok') && t.includes('import')) process.exit(0);
+console.log('FAILED close: the test never imports the module'); process.exit(1);\n`);
+  const provider = dyingAt([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok but no module use\n' })] },
+    { text: 'wrote it' },            // the step greens; the close then reds
+  ], 4);
+  const { outcome, events } = await go(wd, provider);
+
+  assert.ok(events.some((e) => e.type === 'fix-loop'), 'the fix loop opened — the casualty is inside it, not before it');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'provider-red', 'ralph files the casualty correctly ON THE SPINE');
+
+  // ⚠ DOCTRINE GAP (src/planrun.js:1204-1222). ralph catches a middle throw and
+  // returns the flat 'escalated'; the step loop re-reads `lastEscalation.category`
+  // to restore the honest name (planrun.js:1140-1147), and the fix loop does the
+  // same ONLY for wall-halt (planrun.js:1215). So a transport casualty in the fix
+  // loop rides out as 'escalated' while the spine escalation beside it says
+  // provider-red — the F11 two-instruments-disagreeing shape — and run.js's F44
+  // branch (run.js:174) keys on the OUTCOME, so this row would report
+  // spendComplete true: an exact-looking total for a call that never billed back.
+  // PINNED AS CURRENT BEHAVIOUR, not asserted as doctrine. Do not "fix" the test.
+  assert.equal(outcome, 'escalated',
+    '⚠ DOCTRINE GAP — current behaviour: the fix loop does NOT restore the casualty category the way the step loop does');
+  assert.notEqual(outcome, esc.category,
+    '⚠ DOCTRINE GAP — and that is the disagreement: the spine says provider-red, the outcome does not');
+
+  // whatever the label, the money record must survive the casualty: the rounds
+  // that completed were really spent and really billed (F12 per-round metering)
+  const rounds = events.filter((e) => e.type === 'worker-round');
+  assert.ok(rounds.length >= 4, `scout + draft + the two step rounds stay on the spine, got ${rounds.length}`);
+  assert.ok(rounds.some((r) => r.phase === 'scout') && rounds.some((r) => r.phase === 'plan'),
+    'the pre-casualty phases keep their attribution — a casualty never erases the spend that preceded it');
+  assert.ok(rounds.every((r) => 'costUsd' in r), 'every surviving round still carries its cost field (F6)');
+});
+
+test('SCOUT casualty: a transport death on the survey call ends the run as provider-red BEFORE a plan is ever drafted', async (t) => {
+  const wd = makePatient(t);
+  const provider = dyingAt([{ text: 'never reached' }], 0);
+  const { outcome, events } = await go(wd, provider);
+  assert.equal(outcome, 'provider-red');
+  assert.equal(events.filter((e) => e.type === 'plan-validate').length, 0, 'the run ended before any plan was validated');
+  assert.equal(events.filter((e) => e.type === 'plan-accepted').length, 0);
+  assert.ok(events.some((e) => e.type === 'scout-start'), 'the scout had started — the casualty is attributed to the phase that died');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'provider-red');
+  assert.equal(esc.phase, 'scout');
+  assert.equal(esc.lib, 'bare-agent', 'the typed lib field is stamped at the throw site, never sniffed from prose');
+});

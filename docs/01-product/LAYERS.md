@@ -80,6 +80,11 @@ non-negotiable, at every scale.
 Granted **per job by the signed spec** — the agent never widens its own menu. If a locked
 verb blocks the work, the worker files a *request-red* and a human decides.
 
+> **Model tiers (v1.36, 2026-07-30):** the PLAN is authored at the medium tier (sonnet)
+> or above — a small-tier drafter died at the validation gate twice on the same rejection
+> (measured). Steps may be tiered DOWN to the economy tier by the planner (`model` field);
+> running a whole job below the floor is an explicit operator probe, never a default.
+
 | verb | what it does |
 |---|---|
 | `read` | open a file |

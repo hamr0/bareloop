@@ -12,7 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { validatePlan, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, WRITE_VERBS, hasNestedQuantifier, legalScopes } from '../src/plan.js';
 import { planPrompt } from '../src/planrun.js';
-import { validateJob } from '../src/job.js';
+import { validateJob, STORE_VERBS } from '../src/job.js';
 
 // The signed side: a validateJob-green four-field spec (job #4's shape) — the
 // ceiling, the fence, and the checks menu all come from it, never from opts.
@@ -179,6 +179,117 @@ test('the mailbox-with-no-hands rule: check-passes on a step with NO write-class
   assert.equal(r.reds.length, 1, `exactly one red, got ${JSON.stringify(r.reds)}`);
   assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'exit-illegal:steps.1.exit');
   assert.match(r.reds[0].detail ?? '', /write|edit/);
+});
+
+test('an UNPARSEABLE tools grant does not derive a mailbox red: one defect, one red', () => {
+  // With `tools` missing, `writeStep` cannot be known — firing the mailbox law
+  // off its false default would charge the ledger's class table with an
+  // exit-shape violation the agent never committed (the defect is the missing
+  // grant, already redded as missing-required). One defect, one red.
+  const r = validatePlan(mut((p) => {
+    delete p.steps[1].tools;
+    delete p.steps[1].target;
+    p.steps[1].exit = [{ type: 'check-passes', name: 'clean-run' }];
+  }), OPTS);
+  assert.equal(r.ok, false);
+  assert.equal(r.reds.length, 1, `exactly one red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'missing-required:steps.1.tools');
+});
+
+// ─── the two exit laws are COMPLEMENTS: the mailbox rule's edges ───
+// Law 1 (F17 pairing): on a WRITE-granted step, check-passes needs the
+// tree-changed conjunct. Law 2 (mailbox): on a step with NO write-class tool,
+// check-passes is illegal outright. Both key off the SAME `writeStep`
+// predicate, so they partition — a step can raise one, never both. These pin
+// the predicate's edges (store verbs), the boundary (which red fires where),
+// and the rule's REACH, so a later widening cannot quietly overreach onto the
+// one composition that has ever greened this job.
+
+test('store-class verbs are not HANDS: a step granting read + stash/remember is still a mailbox with no hands', () => {
+  // STORE_VERBS write the `.litectx` store, never the tree (job.js: "NEITHER is
+  // read-capable" — and neither is tree-capable either). The gap from a failing
+  // check arrives at a worker that cannot change a byte the close will read, so
+  // the split the rule reads is WRITE-CLASS, not "writes something somewhere".
+  assert.deepEqual(WRITE_VERBS.filter((v) => STORE_VERBS.includes(v)), [], 'the two classes are disjoint by construction');
+  const storeJob = clone(JOB);
+  storeJob.tools = [...JOB.tools, 'stash', 'remember'];
+  assert.deepEqual(validateJob(storeJob).reds, [], 'the widened ceiling is itself signed-green (anchor, not a fixture authored to pass)');
+  const r = validatePlan(mut((p) => {
+    p.steps[1].tools = ['read', 'stash', 'remember'];
+    delete p.steps[1].target;
+    p.steps[1].exit = [{ type: 'check-passes', name: 'clean-run' }];
+  }), { job: storeJob });
+  assert.equal(r.ok, false);
+  assert.equal(r.reds.length, 1, `exactly one red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'exit-illegal:steps.1.exit');
+  assert.match(r.reds[0].detail ?? '', /no write-class tool/);
+});
+
+test('the rule does not overreach: edit ∧ tree-changed ∧ check-passes with a narrowing per-step scope validates GREEN', () => {
+  // `edit` ALONE is write-class (BA-13: judged by the same writeScope fence as
+  // write), so this step has hands; the tree-changed conjunct pays law 1; the P
+  // `scope` field narrows the fence from the same offered menu. This is the F46
+  // winning shape in the widened P vocabulary — the mailbox rule must leave it
+  // untouched.
+  const r = validatePlan(mut((p) => {
+    p.steps[1].tools = ['edit'];
+    p.steps[1].scope = 'tests/**';
+  }), OPTS);
+  assert.deepEqual(r.reds, []);
+  assert.equal(r.ok, true);
+});
+
+test('the laws split by CAUSE: a write-granted step missing the conjunct raises the F17 red, never the mailbox one', () => {
+  const r = validatePlan(mut((p) => {
+    p.steps[1].tools = ['read', 'write', 'edit'];
+    p.steps[1].exit = [{ type: 'check-passes', name: 'clean-run' }];
+  }), OPTS);
+  assert.equal(r.ok, false);
+  assert.equal(r.reds.length, 1, `exactly one red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'exit-illegal:steps.1.exit');
+  assert.match(r.reds[0].detail ?? '', /requires the tree-changed conjunct/);
+  assert.doesNotMatch(r.reds[0].detail ?? '', /no write-class tool/,
+    'the step HAS hands — the gap must name the missing conjunct, not a missing grant it already holds');
+});
+
+test('the two laws are mutually exclusive by construction — no step can raise both', () => {
+  const arms = [
+    ['hands, no conjunct', (p) => {
+      p.steps[1].tools = ['edit'];
+      p.steps[1].exit = [{ type: 'check-passes', name: 'clean-run' }];
+    }, /tree-changed conjunct/],
+    ['conjunct, no hands', (p) => {
+      p.steps[1].tools = ['read'];
+      delete p.steps[1].target;
+      p.steps[1].exit = [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }];
+    }, /no write-class tool/],
+  ];
+  for (const [name, fn, want] of arms) {
+    const r = validatePlan(mut(fn), OPTS);
+    const illegal = r.reds.filter((x) => x.code === 'exit-illegal');
+    assert.equal(illegal.length, 1, `${name}: exactly one exit-illegal, got ${JSON.stringify(r.reds)}`);
+    assert.equal(r.reds.length, 1, `${name}: one defect, one red, got ${JSON.stringify(r.reds)}`);
+    assert.equal(illegal[0].path, 'steps.1.exit');
+    assert.match(illegal[0].detail ?? '', want);
+  }
+});
+
+test('the mailbox rule binds check-passes ONLY: json-valid and artifact-written on a read-only step stay legal', () => {
+  // Both are FORM checks the shell evaluates against the tree with its own fixed
+  // code — neither re-delivers a close stage's gap to this step's worker, so a
+  // read-only step holding one is not a mailbox. The law keys on the exit TYPE,
+  // never on "the step has an exit".
+  for (const exit of [
+    [{ type: 'json-valid', path: 'tests/out.json' }],
+    [{ type: 'artifact-written', path: 'tests/notes.md', pattern: 'def ' }],
+  ]) {
+    const r = validatePlan(mut((p) => {
+      p.steps[1].tools = ['read', 'get'];
+      delete p.steps[1].target;
+      p.steps[1].exit = exit;
+    }), OPTS);
+    assert.deepEqual(r.reds, [], `${exit[0].type} on a read-only step must stay legal`);
+  }
 });
 
 test('rounds ceiling is an opt the shell sets (12 passes under 40, reds under 8)', () => {

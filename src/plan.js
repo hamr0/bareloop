@@ -271,6 +271,7 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes, capRuns =
       // verb as structured data (the ledger counts overreach per verb) — an
       // unknown string stays a typo (invalid-value), never an escape
       let writeStep = false;
+      let toolsParsed = false;
       if (s.tools === undefined) red('missing-required', `${at}.tools`, 'every step declares its grant — the narrowed menu is the step boundary');
       else if (!(Array.isArray(s.tools) && s.tools.length > 0
                  && s.tools.every((/** @type {unknown} */ t) => typeof t === 'string')
@@ -290,6 +291,7 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes, capRuns =
           reds.push({ code: 'verb-escape', path: `${at}.tools`, verb: t, detail: `"${t}" is outside the signed ceiling [${ceiling.join(', ')}] — the plan may narrow the grant, never widen it` });
         }
         writeStep = s.tools.some((/** @type {string} */ t) => WRITE_VERBS.includes(t));
+        toolsParsed = true;
       }
 
       // rounds ≤ the shell cap (cap-not-estimate; the step bound IS maxTurns)
@@ -320,7 +322,7 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes, capRuns =
         red('scope-escape', `${at}.target`, `"${s.target}" is outside the signed fence [${spec.writeScope.join(', ')}]`);
       }
 
-      validateExit(s, at, red, { checkNames, fence: spec.writeScope, insideFence, writeStep, scopeMenu });
+      validateExit(s, at, red, { checkNames, fence: spec.writeScope, insideFence, writeStep, toolsParsed, scopeMenu });
     });
   }
 
@@ -337,9 +339,9 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes, capRuns =
  * @param {Record<string, any>} s the step
  * @param {string} at step path prefix
  * @param {(code: string, path: string, detail?: string) => void} red
- * @param {{ checkNames: string[], fence: string[], insideFence: (p: string) => boolean, writeStep: boolean, scopeMenu: string[] }} ctx
+ * @param {{ checkNames: string[], fence: string[], insideFence: (p: string) => boolean, writeStep: boolean, toolsParsed: boolean, scopeMenu: string[] }} ctx
  */
-function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep, scopeMenu }) {
+function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep, toolsParsed, scopeMenu }) {
   if (!Array.isArray(s.exit) || s.exit.length === 0) {
     red('missing-required', `${at}.exit`, `non-empty array from the closed menu ${EXIT_TYPES.join('|')} — ALL listed exits must pass (AND-only); a step without an exit has no progress gate`);
     return;
@@ -427,7 +429,11 @@ function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep, s
   // to cap on a byte-identical gap. The outer close is the run's verification;
   // forbidding this shape pushes the check onto the step that fixes (the one
   // shape that has ever greened this job).
-  if (!writeStep && hasCheck) {
+  // …and only when the grant PARSED: with `tools` missing/malformed the step's
+  // hands are unknowable, and a mailbox red derived from the false default would
+  // charge the ledger with a violation the agent never committed (the real
+  // defect already redded as missing-required/invalid-value). One defect, one red.
+  if (toolsParsed && !writeStep && hasCheck) {
     red('exit-illegal', `${at}.exit`, `check-passes on a step with no write-class tool (${WRITE_VERBS.join('|')}) — the check's failure gap comes back to this step's own worker, which cannot edit; attach the check to the step that fixes (the operator's close already verifies the finished run)`);
   }
 }

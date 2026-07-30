@@ -2186,3 +2186,27 @@ rule, and the fix. The same job, same signed spec, greened under sonnet the same
 greened); `opus`/top tiers stay absent from the plan menu (hamr-assigned only); the
 runner's `--model` flag remains an explicit operator probe knob — running below the floor
 is an operator act, never a default, and its rows are probes, not battery evidence.
+
+## Addendum v1.37 — 2026-07-30 (tier policy is a product surface: provider-agnostic tier names, per-provider auto-detection, and user-chosen tier pairs at the UI — hamr)
+
+Direction recorded from hamr's words, design deferred to its rung (the reuse rung for the
+bridge half; the panel rung N6 for the UI half):
+
+1. **Tier names are product vocabulary, not model ids.** The plan schema already encodes
+   this (`STEP_MODELS` offers tiers; the tier→model mapping is the runner's, per provider).
+   The vocabulary generalizes to **low / medium / high**: today low=haiku, medium=sonnet,
+   high=opus-class (absent from the plan menu, operator-assigned only — unchanged).
+2. **Per-provider auto-detection.** When a provider beyond Anthropic is wired (e.g. an
+   OpenAI-compatible API), the runner should DETECT the provider's small/medium/high
+   models from the provider's own catalog rather than hardcoding ids — the tier menu
+   stays identical for the agent; only the runner's mapping table is provider-aware.
+   (Detection is runner/operator territory; the agent still only ever names a tier.)
+3. **The efficiency goal, stated:** a BRIDGE gets the best of the models — authored at
+   medium-or-above (v1.36 floor), executed as cheaply as the evidence allows. Tier
+   demotion of proven bridge steps is evidence-gated and operator-signed (carried to the
+   Layer 3 interview agenda), the escalation path on drift being the existing
+   exhaustion→replan route, which the floor already keeps at medium+.
+4. **User choice at the UI (later):** the signing card offers tier PAIRS —
+   planning/execution — e.g. **medium/low · medium/medium · medium/high · high/high**;
+   the planning side never drops below the v1.36 floor, and high tiers remain an explicit
+   user choice (cost-visible), never a default.
