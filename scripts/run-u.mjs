@@ -58,10 +58,22 @@ const WORKDIR = target.workdir;
 const SEED = target.seed;
 const spec = JSON.parse(readFileSync(new URL(`../jobs/${target.spec}`, import.meta.url), 'utf8'));
 const specHash = jobSpecHash(spec);
+// `maxWallMs` is OPTIONAL in job-v1 and has NO DEFAULT — a spec without one is
+// time-unbounded by explicit operator choice, and the whole point of the missing
+// default is that an unbounded run must be a VISIBLE choice rather than a silent
+// second ceiling (src/clock.js, F45). So the runner does two things and neither is
+// "invent a number": it NAMES the unbounded state in every readout instead of
+// printing `NaN min` (`undefined / 60000`), and it OMITS `--wall-ms` rather than
+// handing the watchdog the literal string "undefined" — u-watchdog's num() would
+// fall back to its null default and disarm the deadline trigger silently while the
+// header still claimed a wall. That is the same NaN-disarms-a-guard class as the
+// closeStages fix below, one flag over.
+const WALL_MS = typeof spec.maxWallMs === 'number' && Number.isFinite(spec.maxWallMs) ? spec.maxWallMs : null;
+const WALL_LABEL = WALL_MS === null ? 'UNBOUNDED (spec sets no maxWallMs — deliberate operator choice; no outside deadline)' : `${WALL_MS / 60000}min`;
 
 if (arg('approve') !== specHash) {
   console.log('U — user-mode e2e, ONE run, REAL dollars');
-  console.log(`  spec     jobs/${target.spec}  $${spec.budgetUsd}  wall ${spec.maxWallMs / 60000}min  capRuns=${CAP_RUNS}`);
+  console.log(`  spec     jobs/${target.spec}  $${spec.budgetUsd}  wall ${WALL_LABEL}  capRuns=${CAP_RUNS}`);
   console.log(`  patient  ${WORKDIR} @ ${SEED.slice(0, 12)}`);
   console.log(`  goal     "${spec.goal}"`);
   console.log(`  hash     ${specHash}`);
@@ -105,7 +117,7 @@ const tierCache = {};
 const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] === MODEL ? provider : new AnthropicProvider({ apiKey, model: TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] }));
 
 const started = Date.now();
-console.log(`\n== U run ${runid} ==  $${spec.budgetUsd} · ${spec.maxWallMs / 60000}min · ${MODEL}`);
+console.log(`\n== U run ${runid} ==  $${spec.budgetUsd} · ${WALL_LABEL} · ${MODEL}`);
 
 // F67 — the OUTSIDE watchdog, started before the run and sharing nothing with it.
 // Every guard bareloop had lived inside this process, and ms3197n8/ms3jh76q proved
@@ -136,7 +148,10 @@ const watchdog = spawn(process.execPath, [
   '--spine', spineFile,
   '--pid', String(process.pid),
   '--stale-ms', String(worstCloseSilenceMs + 600_000),
-  '--wall-ms', String(spec.maxWallMs),
+  // omitted entirely on an unbounded spec (see WALL_MS above): the watchdog's own
+  // startup line then says "no wall", so the choice is loud on BOTH sides of the
+  // process boundary and the STALE trigger — which needs no wall — stays armed.
+  ...(WALL_MS === null ? [] : ['--wall-ms', String(WALL_MS)]),
   '--grace-ms', String(worstCloseSilenceMs),
 ], { stdio: ['ignore', 'ignore', 'inherit'] });
 watchdog.unref();
@@ -197,7 +212,7 @@ const writes = audit.filter((e) => e.decision === 'allow' && (e.action?.type ===
 
 console.log(`\noutcome   ${outcome}`);
 console.log(`spent     ${je?.spentUsd == null ? 'UNKNOWN' : `${je.spendComplete === false ? '≥' : ''}$${je.spentUsd.toFixed(4)}`} of $${spec.budgetUsd}`);
-console.log(`wall      ${elapsedMin}min of ${spec.maxWallMs / 60000}min`);
+console.log(`wall      ${elapsedMin}min of ${WALL_LABEL}`);
 console.log(`rounds    ${events.filter((e) => e.type === 'worker-round' && e.kind === 'turn').length}`);
 console.log(`writes    ${writes.length} allowed (${new Set(writes.map((e) => e.action?.path)).size} distinct files)`);
 console.log(`plan      ${plan ? `${plan.steps?.length ?? '?'} steps` : 'none validated'}`);

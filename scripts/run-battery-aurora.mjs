@@ -30,7 +30,7 @@ import { join, resolve } from 'node:path';
 import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
 import { makeSpine } from '../src/spine.js';
-import { SECRET_PATTERNS } from '../src/validate.js';
+import { scanSecrets } from '../src/validate.js';
 
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
@@ -236,7 +236,10 @@ function readRow(/** @type {string} */ spineFile, /** @type {string|null} */ aud
   const rounds = events.filter((e) => e.type === 'worker-round').length;
   const runEnd = events.findLast((e) => e.type === 'run-end');
   const attemptsToGreen = runEnd?.outcome === 'green' ? runEnd.iterations : null;
-  const leaks = SECRET_PATTERNS.map((re) => new RegExp(re.source, re.flags.replace('g', '') + 'g')).flatMap((re) => raw.match(re) ?? []);
+  // the ONE spelling of the text-side scan (src/validate.js `scanSecrets`): a
+  // hand-rolled copy here is a second inventory that can silently miss a shape the
+  // canonical one catches, on the very output it guards.
+  const leaks = scanSecrets(raw);
   let writes = null, culpritRead = null;
   if (auditFile) {
     const audit = readFileSync(auditFile, 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));

@@ -588,9 +588,15 @@ function resolveSpec(job) {
 }
 
 /**
- * Content hash of a job spec — what an approval record binds to. Any edit to
- * the spec changes the hash, so an edited spec is unapproved by construction
- * (interview decision #1: human signs, always, once per spec VERSION).
+ * Content hash of a job spec — what an approval record binds to. Any SEMANTIC
+ * edit changes the hash, so a spec whose meaning moved is unapproved by
+ * construction (interview decision #1: human signs, always, once per spec
+ * VERSION). Not every BYTE edit: the hash is taken over the RESOLVED spec
+ * (resolveSpec), so writing today's full TOOL_MENU into a spec that omitted
+ * `tools` is hash-neutral — the two spell the same ceiling, and that identity
+ * is the point of MED-1, since it is what pins WHICH menu the signature covers.
+ * The direction that matters still bites: the menu itself changing (or the
+ * explicit list changing) moves the resolved form, and the hash with it.
  * @param {object} job
  * @returns {string} sha256 hex
  */

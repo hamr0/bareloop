@@ -85,6 +85,11 @@ export const TOOL_BY_VERB = Object.freeze({
 // 64KB (hamr's threshold) stops degenerate store-dumping, not legitimate use:
 // observed notes run hundreds of bytes to a few KB, and a >64KB "note" is a FILE —
 // files belong in the tree, behind the fence.
+// The residual, named honestly: this bounds ONE PAYLOAD, not the store. litectx
+// upserts on the same key, so re-stashing an id is idempotent — but N distinct ids
+// are N separate 64KB payloads, and the aggregate stays unbounded. An aggregate cap
+// (per-run store bytes, or a key count) is a THRESHOLD, and thresholds are hamr's
+// call — this is the known limit, not a defect to fix by picking a number here.
 export const ISOLATE_MAX_BYTES = 65536;
 export const CTX_TOOLS = Object.freeze(['ctx_recall', 'ctx_get', 'ctx_impact', 'ctx_related', 'ctx_recent', 'ctx_compress', 'ctx_peek', 'ctx_stash', 'ctx_remember', 'ctx_forget']);
 
@@ -247,9 +252,15 @@ export function createCtxTools(lc, workdir, emit) {
         // one dangerous act the asymmetry exists to prevent. Empty when litectx
         // hedged nothing — a header with nothing under it is bytes the worker
         // re-reads every call.
+        // Frozen BEFORE the caveats: `hits` means impact content (defs, callers,
+        // callees, risk) and keeps that meaning. A caveat qualifies the count, it
+        // is not more of it — reading lines.length after the loop would re-mean a
+        // shipped spine field the day a new line type ships, which is how a field
+        // stops measuring what its readers think it measures.
+        const hits = lines.length;
         for (const h of imp.hedges ?? []) lines.push(`caveat\t${h}`);
         const out = lines.join('\n');
-        emit('ctx-tool', { tool: 'ctx_impact', symbol: String(symbol), hits: lines.length, bytes: Buffer.byteLength(out) });
+        emit('ctx-tool', { tool: 'ctx_impact', symbol: String(symbol), hits, bytes: Buffer.byteLength(out) });
         return out;
       },
     },

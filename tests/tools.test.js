@@ -127,6 +127,30 @@ test('ctx_impact ships litectx\'s HEDGES — a "risk low, 0 callers" readout nev
   const plain = await tools.get('ctx_impact').execute({ symbol: 'addNums' });
   assert.match(plain, /^risk \w+ — 2 confirmed caller\(s\)/m, 'the unhedged case is a REAL unhedged impact, not an absent one');
   assert.doesNotMatch(plain, /caveat/i, 'no hedges means no hedge section at all');
+  // ...and the caveat lines QUALIFY the count, they are never more of it: the
+  // spine's `hits` means impact content (defs/callers/callees/risk), and a field
+  // that silently re-means itself the day a new line type ships is the
+  // blind-instrument seed. The real index cannot pose this question — litectx
+  // hedges only the 0-caller readout, so a hedged and an unhedged REAL impact
+  // never share a body — so the SAME body goes through twice with the hedge as
+  // the only difference: the one axis under test.
+  const body = {
+    defs: [{ path: 'src/adder.js', startLine: 1, endLine: 3 }],
+    callers: [{ path: 'src/caller.js', line: 4, symbol: 'sumAll' }],
+    callees: ['addNums'], risk: 'low', confirmed: 1, mentions: 1,
+  };
+  /** @param {string[]} hedges @returns {Promise<number>} the emitted hits for that identical body */
+  const hitsFor = async (hedges) => {
+    /** @type {any[]} */
+    const seen = [];
+    const tool = createCtxTools({ impact: async () => ({ ...body, hedges }) }, '/nowhere',
+      (/** @type {string} */ type, /** @type {any} */ d) => seen.push({ t: type, ...d })).find((x) => x.name === 'ctx_impact');
+    await tool.execute({ symbol: 'addNums' });
+    return seen[0].hits;
+  };
+  const [withHedge, withoutHedge] = [await hitsFor(['callers may be capped']), await hitsFor([])];
+  assert.equal(withoutHedge, 4, 'the unhedged body is 1 def + 1 caller + 1 callee + 1 risk line — pinned so the equality below cannot pass by both sides drifting together');
+  assert.equal(withHedge, withoutHedge, 'identical impact content reports identical hits whether or not litectx hedged — the caveat is not a hit');
 });
 
 test('ONE line space across recall/get/impact: the numbers are interchangeable 0-based handles, and every tool that prints or takes one says so (L8)', async (t) => {

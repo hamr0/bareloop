@@ -9,10 +9,12 @@
 //     `request-red`, which is admission demand against the product menu)
 //   bounds ≤ the shell caps                → `bounds`
 //   scopes/targets inside the signed fence → `scope-escape` / `invalid-value`
-//   …and, on a step that NARROWED the fence with `scope`, inside that step's own
-//     scope too → `step-scope-escape` (the runner gates the step from the
-//     narrowed prefix, so an in-fence-but-out-of-scope target is a write denied
-//     on every attempt with no red anywhere — W3)
+//   …and, on a step that NARROWED the fence with `scope`, the step's WRITES are
+//     judged against that narrowed prefix too → `step-scope-escape` (the runner
+//     gates the step from it, so an in-fence-but-out-of-scope target is a write
+//     denied on every attempt with no red anywhere — W3). Exits are observations,
+//     not writes: only a `tree-changed` scope DISJOINT from the step's scope is
+//     unsatisfiable, and the artifact paths are not constrained at all
 //   exits from the closed menu only        → `exit-illegal` (arbiter
 //     inexpressibility: an exit is declarative data the shell evaluates with
 //     its own fixed code — `run` cannot be laundered through it)
@@ -355,14 +357,33 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes, capRuns =
       }
       // W3 — a step that NARROWS the fence is gated by its own scope, not the
       // signed one: planrun's mkWorker builds this step's Gate writeScope from
-      // `globToPrefix(scope)`. So a target or exit path that is in-fence but
-      // OUTSIDE the step's own scope is a write the gate denies on every attempt —
-      // the step burns its whole attempt budget on refusals and no red is raised
-      // anywhere, because each half was individually legal and nothing checked the
-      // PAIR. Checking it here makes the incoherent pair inexpressible at the
-      // validation gate rather than discovered at the runtime one.
+      // `globToPrefix(scope)`. So a TARGET that is in-fence but OUTSIDE the step's
+      // own scope is a write the gate denies on every attempt — the step burns its
+      // whole attempt budget on refusals and no red is raised anywhere, because
+      // each half was individually legal and nothing checked the PAIR. Checking it
+      // here makes the incoherent pair inexpressible at the validation gate rather
+      // than discovered at the runtime one.
       //
-      // Fence FIRST, narrowed scope SECOND (see the target/path arms): the menu is
+      // The rule binds WRITES, not OBSERVATIONS. An exit is evaluated by the shell
+      // (src/exits.js), never written by the worker, so the step's gate constrains
+      // it only where the evaluator's own semantics say so — measured, not assumed:
+      //   - `tree-changed` passes iff ANY file under ITS scope changed, so a scope
+      //     that CONTAINS the step's scope contains the step's writable ground and
+      //     fires exactly when the narrow one does. Only a DISJOINT scope is
+      //     unsatisfiable: it can pass only if ground this gate refuses changed.
+      //     Hence overlap, not containment (and the menu is shallowest-first while
+      //     the prompt says copy one value, so the widest scope is the LIKELIEST
+      //     draft — containment here would tax the natural plan, the exact F60
+      //     class `legalScopes` exists to eliminate).
+      //   - `artifact-written`/`json-valid` read and parse the named file and ask
+      //     nothing about who wrote it, so a path outside the step's scope naming a
+      //     PRIOR step's artifact is legal AND satisfiable (v1 is strictly
+      //     sequential — that composition is the natural shape). No step-scope red
+      //     belongs on those arms: it would claim a constraint the evaluator does
+      //     not impose. A path nothing ever produces still fails at runtime, with
+      //     the mechanical "<path> was not written (does not exist)" gap.
+      //
+      // Fence FIRST, narrowed scope SECOND (see the target/scope arms): the menu is
       // fence-filtered by `legalScopes`, so containment in the scope normally
       // implies containment in the fence — but a caller-supplied menu is data, and
       // deriving the fence check FROM it would let a bad menu widen what is
@@ -373,9 +394,13 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes, capRuns =
       const stepScope = s.scope !== undefined && scopeMenu.includes(s.scope) ? s.scope : null;
       const stepPrefix = stepScope === null ? null : globToPrefix(stepScope);
       /** contained by the step's OWN scope — vacuously true on an unscoped step,
-       * which is what keeps every pre-W3 plan byte-identical */
+       * which is what keeps every pre-W3 plan byte-identical. The WRITE test. */
       const insideStepScope = (/** @type {string} */ p) => stepPrefix === null
         || p === stepPrefix || p.startsWith(stepPrefix + '/');
+      /** shares ground with the step's own scope — either prefix contains the
+       * other. The OBSERVATION test: what `tree-changed` needs to be satisfiable. */
+      const overlapsStepScope = (/** @type {string} */ p) => stepPrefix === null
+        || p === stepPrefix || p.startsWith(stepPrefix + '/') || stepPrefix.startsWith(p + '/');
 
       // target (v1.18): the per-step deliverable — required on write steps,
       // always inside the signed fence when present
@@ -389,7 +414,7 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes, capRuns =
         red('step-scope-escape', `${at}.target`, `"${s.target}" is inside the signed fence but outside this step's own scope "${stepScope}" — the step's gate is built from that narrowed prefix, so every write to this target would be denied`);
       }
 
-      validateExit(s, at, red, { checkNames, fence: spec.writeScope, insideFence, writeStep, toolsParsed, scopeMenu, stepScope, insideStepScope });
+      validateExit(s, at, red, { checkNames, fence: spec.writeScope, insideFence, writeStep, toolsParsed, scopeMenu, stepScope, overlapsStepScope });
     });
   }
 
@@ -406,12 +431,13 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes, capRuns =
  * @param {Record<string, any>} s the step
  * @param {string} at step path prefix
  * @param {(code: string, path: string, detail?: string) => void} red
- * @param {{ checkNames: string[], fence: string[], insideFence: (p: string) => boolean, writeStep: boolean, toolsParsed: boolean, scopeMenu: string[], stepScope: string|null, insideStepScope: (p: string) => boolean }} ctx
- *   `stepScope`/`insideStepScope` (W3): the step's OWN narrowed fence when it
- *   declared a legal `scope`, null/always-true otherwise — an exit path outside it
- *   names ground the step's gate will refuse.
+ * @param {{ checkNames: string[], fence: string[], insideFence: (p: string) => boolean, writeStep: boolean, toolsParsed: boolean, scopeMenu: string[], stepScope: string|null, overlapsStepScope: (p: string) => boolean }} ctx
+ *   `stepScope`/`overlapsStepScope` (W3): the step's OWN narrowed fence when it
+ *   declared a legal `scope`, null/always-true otherwise. Exits are OBSERVATIONS,
+ *   not writes, so only `tree-changed` is constrained by it and only against
+ *   DISJOINTness — see the arm for the measured semantics.
  */
-function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep, toolsParsed, scopeMenu, stepScope, insideStepScope }) {
+function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep, toolsParsed, scopeMenu, stepScope, overlapsStepScope }) {
   if (!Array.isArray(s.exit) || s.exit.length === 0) {
     red('missing-required', `${at}.exit`, `non-empty array from the closed menu ${EXIT_TYPES.join('|')} — ALL listed exits must pass (AND-only); a step without an exit has no progress gate`);
     return;
@@ -462,18 +488,29 @@ function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep, t
         } else {
           red('invalid-value', `${eAt}.scope`, `one of the offered scopes: [${scopeMenu.join(', ')}]`);
         }
-      } else if (!insideStepScope(globToPrefix(e.scope))) {
-        // W3: an offered, in-fence scope can still be WIDER than the step's own
-        // narrowed fence — an exit watching ground this step's gate refuses.
-        red('step-scope-escape', `${eAt}.scope`, `"${e.scope}" is not contained by this step's own scope "${stepScope}" — the step can only change what its narrowed gate allows, so this exit watches ground it cannot touch`);
+      } else if (!overlapsStepScope(globToPrefix(e.scope))) {
+        // W3: an offered, in-fence scope can still be DISJOINT from the step's own
+        // narrowed fence. Measured against src/exits.js: `tree-changed` passes iff
+        // some file under ITS scope changed against the pre-step snapshot, and that
+        // snapshot already holds every earlier step's bytes — so a disjoint scope
+        // can only pass if ground this step's gate refuses changed. Unsatisfiable on
+        // every attempt, which is exactly the burn W3 closes.
+        // A WIDER (containing) scope is NOT redded: it contains the step's writable
+        // ground and fires exactly when the narrow one does.
+        red('step-scope-escape', `${eAt}.scope`, `"${e.scope}" is disjoint from this step's own scope "${stepScope}" — the step's gate allows writes only under "${stepScope}", and this exit passes only if a file under "${e.scope}" changed, so no write this step can make would ever satisfy it (a scope that contains "${stepScope}" is fine)`);
       }
     } else { // artifact-written | json-valid — a named file path inside the fence
+      // NO step-scope check here, deliberately (W3): src/exits.js reads and parses
+      // the named file and asks nothing about who wrote it, so a path outside the
+      // step's own scope naming a PRIOR step's artifact is legal AND satisfiable —
+      // and v1 is strictly sequential, so that composition is the natural shape.
+      // A red would claim a constraint the evaluator does not impose. A path nothing
+      // ever produces still fails at runtime with the mechanical "was not written"
+      // gap — the honest direction, versus taxing a legal draft with a redraft.
       if (!isNonEmptyString(e.path) || !scopeContained(e.path)) {
         red('invalid-value', `${eAt}.path`, 'a relative file path inside the run dir — no absolute paths, no ".." segments');
       } else if (!insideFence(globToPrefix(e.path))) {
         red('scope-escape', `${eAt}.path`, `"${e.path}" is outside the signed fence [${fence.join(', ')}]`);
-      } else if (!insideStepScope(globToPrefix(e.path))) {
-        red('step-scope-escape', `${eAt}.path`, `"${e.path}" is inside the signed fence but outside this step's own scope "${stepScope}" — the step's gate is built from that narrowed prefix, so the worker could never produce this artifact`);
       }
       if (e.type === 'artifact-written' && e.pattern !== undefined) {
         if (!isNonEmptyString(e.pattern)) red('invalid-value', `${eAt}.pattern`, 'regex source string');

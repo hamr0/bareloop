@@ -602,16 +602,30 @@ test('P: the three new fields are optional — an existing six-field plan is unt
 
 // ---- W3: a step's own `scope` is the fence the RUNNER builds for it ----
 // planrun's mkWorker gates a scoped step with `[resolve(workdir, globToPrefix(scope))]`,
-// not the signed fence. So a target or exit path that is in-fence but outside the
-// step's OWN scope is a write the gate denies on every attempt: the step burns its
-// whole attempt budget on refusals and no red is ever raised. Both halves were
-// individually legal, so nothing caught the incoherent PAIR. Illegal becomes
-// inexpressible at the validation gate instead of discovered at the runtime one.
+// not the signed fence. So a TARGET that is in-fence but outside the step's OWN scope
+// is a write the gate denies on every attempt: the step burns its whole attempt budget
+// on refusals and no red is ever raised. Both halves were individually legal, so
+// nothing caught the incoherent PAIR.
+//
+// The rule binds the TARGET (a write by the worker) and, in one narrow form, the
+// `tree-changed` scope — never the artifact paths. Exits are OBSERVATIONS the shell
+// makes, not writes, and src/exits.js is the only authority on what they impose:
+//   - `tree-changed` passes iff ANY file under its own scope changed, so a scope that
+//     CONTAINS the step's scope contains the step's writable ground and fires exactly
+//     when the narrow one does (measured: step tests/unit/**, exit tests/**, one write
+//     to tests/unit/a.py → pass:true, same as the narrow scope). Only a DISJOINT scope
+//     is unsatisfiable — it can pass only if ground this step's gate refuses changed.
+//   - `artifact-written`/`json-valid` only read+parse the named file; they never ask
+//     who wrote it (measured: a path outside the step's scope naming a PRIOR step's
+//     artifact → pass:true). Nothing about the step's gate is imposed, so no
+//     step-scope red belongs on those arms at all.
 // The narrowed scope NEVER replaces the fence check — fence first, scope second —
 // so a caller-supplied menu can only tighten what is accepted, never widen it.
 
 /** the two-level menu these cases need: the signed fence plus a real subdirectory */
 const NESTED = { job: JOB, scopes: ['tests/**', 'tests/unit/**'] };
+/** two SIBLING subdirectories — the only shape that can be disjoint inside one fence */
+const BRANCHED = { job: JOB, scopes: ['tests/**', 'tests/e2e/**', 'tests/unit/**'] };
 
 test('W3: a scoped step whose target sits outside its OWN scope reds step-scope-escape (in-fence, gate-denied — the class nothing caught)', () => {
   const r = validatePlan(mut((p) => {
@@ -624,7 +638,11 @@ test('W3: a scoped step whose target sits outside its OWN scope reds step-scope-
   assert.match(r.reds[0].detail ?? '', /tests\/unit\/\*\*/, 'the gap names the step\'s OWN narrowed scope, not the signed fence');
 });
 
-test('W3: an artifact-written path outside the step\'s own scope reds step-scope-escape too', () => {
+test('W3: an artifact-written path outside the step\'s own scope is GREEN — the evaluator reads the file, it never asks who wrote it', () => {
+  // measured against src/exits.js: `artifact-written`/`json-valid` readFile+parse and
+  // nothing else, so a path naming a PRIOR step's artifact (v1 is strictly sequential —
+  // the natural shape) evaluates pass:true. A red here would claim a constraint the
+  // evaluator does not impose, and tax a legal draft.
   const r = validatePlan(mut((p) => {
     p.steps[0].scope = 'tests/unit/**';
     p.steps[0].target = 'tests/unit/notes.md';
@@ -633,18 +651,57 @@ test('W3: an artifact-written path outside the step\'s own scope reds step-scope
       { type: 'tree-changed', scope: 'tests/unit/**' },
     ];
   }), NESTED);
-  assert.equal(r.reds.length, 1, `one defect, one red, got ${JSON.stringify(r.reds)}`);
-  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'step-scope-escape:steps.0.exit.0.path');
+  assert.deepEqual(r.reds, []);
 });
 
-test('W3: a tree-changed scope WIDER than the step\'s own scope reds step-scope-escape (an exit watching ground the step cannot touch)', () => {
+test('W3: a json-valid path outside the step\'s own scope is GREEN too (same arm, same evaluator semantics)', () => {
+  const r = validatePlan(mut((p) => {
+    p.steps[0].scope = 'tests/unit/**';
+    p.steps[0].target = 'tests/unit/notes.md';
+    p.steps[0].exit = [
+      { type: 'json-valid', path: 'tests/report.json' },
+      { type: 'tree-changed', scope: 'tests/unit/**' },
+    ];
+  }), NESTED);
+  assert.deepEqual(r.reds, []);
+});
+
+test('W3: a tree-changed scope WIDER than the step\'s own scope is GREEN — a superset contains the step\'s ground and fires exactly when the narrow scope does', () => {
+  // measured against src/exits.js snapshotScope/evalExits: step scope tests/unit/**,
+  // exit scope tests/**, one write to tests/unit/a.py → pass:true, identical to the
+  // narrow scope. The menu is shallowest-first and the prompt says copy one value, so
+  // the widest scope is the most likely draft — redding it taxes the natural plan
+  // (the F60 class `legalScopes` exists to eliminate).
   const r = validatePlan(mut((p) => {
     p.steps[1].scope = 'tests/unit/**';
     p.steps[1].target = 'tests/unit/test_orchestrator.py';
     p.steps[1].exit[0] = { type: 'tree-changed', scope: 'tests/**' };
   }), NESTED);
+  assert.deepEqual(r.reds, []);
+  assert.equal(r.ok, true);
+});
+
+test('W3: a DISJOINT tree-changed scope still reds step-scope-escape — no write this step is allowed to make could ever satisfy it', () => {
+  // measured: step writes only under tests/unit/**, exit watches tests/e2e/** whose
+  // pre-step snapshot already holds every prior step's bytes → 0 files changed, pass:false
+  // on every attempt. Unsatisfiable by construction, which is what W3 closes.
+  const r = validatePlan(mut((p) => {
+    p.steps[1].scope = 'tests/unit/**';
+    p.steps[1].target = 'tests/unit/test_orchestrator.py';
+    p.steps[1].exit[0] = { type: 'tree-changed', scope: 'tests/e2e/**' };
+  }), BRANCHED);
   assert.equal(r.reds.length, 1, `one defect, one red, got ${JSON.stringify(r.reds)}`);
   assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'step-scope-escape:steps.1.exit.0.scope');
+  assert.match(r.reds[0].detail ?? '', /tests\/unit\/\*\*/, 'the gap names the step\'s OWN narrowed scope so the redraft can aim');
+});
+
+test('W3: a NARROWER tree-changed scope than the step\'s own scope is GREEN (the step can write there; the exit just watches less)', () => {
+  const r = validatePlan(mut((p) => {
+    p.steps[1].scope = 'tests/**';
+    p.steps[1].target = 'tests/unit/test_orchestrator.py';
+    p.steps[1].exit[0] = { type: 'tree-changed', scope: 'tests/unit/**' };
+  }), NESTED);
+  assert.deepEqual(r.reds, []);
 });
 
 test('W3: a scoped step whose target and exits all sit INSIDE its own scope stays green (the rule does not overreach)', () => {

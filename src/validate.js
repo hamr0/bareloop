@@ -93,8 +93,13 @@ const SECRET_RE = new RegExp(SECRET_PATTERNS.map((r) => r.source).join('|'));
  * Scan a RAW text stream (a spine file, a close's output, a transcript) for
  * known secret shapes and return the literal matches. The ONE spelling of the
  * text-side scan, for the same reason SECRET_PATTERNS is the ONE inventory: a
- * hand-rolled copy that misses a shape is a leak on the very output it guards
- * (seven copies of this expression lived in scripts/ before it landed here).
+ * hand-rolled copy that misses a shape is a leak on the very output it guards.
+ * The dedup is now COMPLETE and the count is grepped, not remembered: all 11
+ * call sites in scripts/ go through this function, and zero hand-rolled copies
+ * of the expression remain anywhere in the repo. (F40 landed the helper and
+ * converted 2 of 7 sites; the 5 it left alone plus 4 that accreted afterwards
+ * were converted in one sweep, byte-identical behaviour — measured equivalent
+ * on 900 spiked real spines, 0 divergences.)
  * `sweepSecretLiterals` is the config-tree twin — same shapes, tree walk.
  * Never throws; returns [] for a missing stream.
  * @param {unknown} raw
