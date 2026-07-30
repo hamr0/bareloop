@@ -35,11 +35,18 @@ const JOBS = {
     seed: '96813a43bbcbac6a808ff610c6751a8736e2903e',
   },
 };
-const MODEL = 'claude-sonnet-5';
 const CLOSE_TIMEOUT_MS = 900_000; // the slowest close stage is the suite (~23s aurora, ~53s litectx); headroom, not a budget
 const CAP_RUNS = 4;
 
 const arg = (/** @type {string} */ n) => { const i = process.argv.indexOf(`--${n}`); return i === -1 ? null : (process.argv[i + 1] ?? ''); };
+// --model picks the DEFAULT worker tier (runner territory — the spec names no model, so
+// the signed hash is unaffected). Tier names, not model ids: the same closed menu the
+// planner's per-step `model` field uses. haiku takes no output_config.effort
+// (provider-gated, battery rule) — nothing to gate yet since neither tier sets effort.
+const DEFAULT_TIER_MODELS = { sonnet: 'claude-sonnet-5', haiku: 'claude-haiku-4-5-20251001' };
+const tierArg = arg('model') ?? 'sonnet';
+const MODEL = DEFAULT_TIER_MODELS[/** @type {keyof typeof DEFAULT_TIER_MODELS} */ (tierArg)];
+if (!MODEL) { console.error(`unknown --model "${tierArg}" — one of: ${Object.keys(DEFAULT_TIER_MODELS).join(', ')}`); process.exit(2); }
 const jobKey = arg('job') ?? 'aurora-spawner';
 const target = JOBS[/** @type {keyof typeof JOBS} */ (jobKey)];
 if (!target) { console.error(`unknown --job "${jobKey}" — one of: ${Object.keys(JOBS).join(', ')}`); process.exit(2); }
@@ -88,10 +95,10 @@ const provider = new AnthropicProvider({ apiKey, model: MODEL });
 // (STEP_MODELS); the tier->model mapping is the RUNNER's territory, here. haiku
 // takes no output_config.effort (provider-gated, battery rule) - nothing to gate
 // yet since neither tier sets effort params.
-const TIER_MODELS = { sonnet: MODEL, haiku: 'claude-haiku-4-5-20251001' };
+const TIER_MODELS = DEFAULT_TIER_MODELS;
 /** @type {Record<string, any>} */
 const tierCache = {};
-const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= tier === 'sonnet' ? provider : new AnthropicProvider({ apiKey, model: TIER_MODELS[tier] }));
+const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] === MODEL ? provider : new AnthropicProvider({ apiKey, model: TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] }));
 
 const started = Date.now();
 console.log(`\n== U run ${runid} ==  $${spec.budgetUsd} · ${spec.maxWallMs / 60000}min · ${MODEL}`);
