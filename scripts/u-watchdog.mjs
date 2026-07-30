@@ -52,6 +52,19 @@ if (!spine || !Number.isInteger(pid) || pid <= 0) {
   console.error('usage: u-watchdog.mjs --spine <path> --pid <n> [--stale-ms N] [--wall-ms N] [--grace-ms N] [--poll-ms N]');
   process.exit(2);
 }
+// The watched pid must be this process's PARENT. kill(pid, 0) answers "is SOME
+// process holding this pid" — after a SIGKILL/OOM the kernel can recycle the
+// run's pid onto a stranger, and an armed guard would SIGTERM/SIGKILL it and
+// leave a marker blaming the run. The parent link cannot be recycled: run-u
+// spawns this guard as its direct child, and `process.ppid` flips to init
+// within one poll of the parent dying — verified live, including under SIGKILL.
+// A guard pointed at a non-parent refuses LOUD at startup (exit 2, no marker):
+// an armed guard aimed at a stranger is worse than no guard, and a silent no-op
+// is the blind-instrument class.
+if (process.ppid !== pid) {
+  console.error(`[u-watchdog] REFUSED: --pid ${pid} is not this process's parent (ppid ${process.ppid}) — the liveness check is the parent link, which pid reuse cannot forge`);
+  process.exit(2);
+}
 // Defaults are DERIVED, not chosen: the stale window is twice the in-process fuse
 // (F66, hamr's 5 min), so the inner guard always gets its three tries first and
 // this one only speaks when the inner one could not. It stays a flag because a
@@ -66,7 +79,10 @@ const graceMs = num('grace-ms', 900_000) ?? 900_000;
 const pollMs = num('poll-ms', 5_000) ?? 5_000;
 
 const startedAt = Date.now();
-const alive = () => { try { process.kill(pid, 0); return true; } catch { return false; } };
+// Liveness is the PARENT LINK, not kill(pid, 0): once the parent dies this
+// process is reparented and ppid stops matching — reuse-proof where a pid probe
+// is not (see the startup refusal above).
+const alive = () => process.ppid === pid;
 /** last spine growth, or the watchdog's own start when the file does not exist
  * yet: a run that wedges BEFORE its first event is the most stalled run there is,
  * and treating a missing file as "no news is good news" would blind the guard to

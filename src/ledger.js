@@ -134,7 +134,16 @@ export function classifyIncidents(events, { spine = 'spine' } = {}) {
         add(ev, 'provider-red', 'bare-agent', 'provider', ev.detail ?? ev.decision);
       } else if (ev.category === 'pricing-red') {
         add(ev, 'pricing-red', 'bare-agent', 'pricing', ev.decision ?? ev.detail);
-      } else if (ev.category === 'interpreter-red') {
+      } else if (ev.category === 'interpreter-red' || ev.category === 'step-stalled') {
+        // `step-stalled` (the F66 stall fuse) rides this branch rather than its
+        // own: TYPED-LIB ATTRIBUTION is one policy, not a per-category copy.
+        // StallError stamps `lib` at the throw site (stall.js: 'bare-agent'
+        // today, BA-19's evidence trail) and planrun forwards it onto the
+        // escalation, so a stall accrues against the package the field names —
+        // and never against bareloop as an "unclassified category", which would
+        // stand a fake bug of OURS where real upstream evidence belongs.
+        // EXCLUDING it instead would delete the stall evidence outright.
+        //
         // the design split: a store verb in the detail → runtime-red (verb→lib
         // map); a worker-loop/provider failure → provider-red; neither is
         // still counted (runtime-red, lib unknown) — never silently dropped

@@ -12,7 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { validatePlan, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, WRITE_VERBS, hasNestedQuantifier, legalScopes } from '../src/plan.js';
 import { planPrompt } from '../src/planrun.js';
-import { validateJob, STORE_VERBS } from '../src/job.js';
+import { validateJob, STORE_VERBS, WRITE_VERBS as JOB_WRITE_VERBS } from '../src/job.js';
 
 // The signed side: a validateJob-green four-field spec (job #4's shape) — the
 // ceiling, the fence, and the checks menu all come from it, never from opts.
@@ -112,6 +112,15 @@ test('the closed menus ship frozen', () => {
   assert.ok(Object.isFrozen(WRITE_VERBS));
   assert.equal(MAX_EXITS_PER_STEP, 2);
   assert.equal(MAX_PLAN_STEPS, 8);
+});
+
+test('WRITE_VERBS is ONE inventory: plan.js re-exports job.js’s array, same reference', () => {
+  // The SECRET_PATTERNS precedent (one inventory, two readers): plan.js held its
+  // own frozen copy, so a third write-class verb added to either list would be
+  // invisible to the other — the validator would fence a verb the scout filter
+  // still handed out (or the reverse). Identity, not deepEqual: two arrays that
+  // merely happen to match today are exactly the drift this forbids.
+  assert.equal(WRITE_VERBS, JOB_WRITE_VERBS, 'the same frozen array, not a second copy that agrees today');
 });
 
 test('verb-escape carries the escaping verb as a STRUCTURED field (the ledger keys on it)', () => {

@@ -20,6 +20,12 @@ const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/aurora-u';
 const SEED_REF = 'd661e507c5cd0981368d90ed3e3abf6e2bb9ed18'; // the patient as cloned
 const PKG_SRC = 'packages/spawner/src';
 const PKG_TESTS = 'packages/spawner/tests';
+// The seed's EXECUTED count — executed, never passed (F40). Measured on the patient at
+// SEED_REF: `collected 209 items` … `209 passed in 21.58s`, zero skipped, zero
+// deselected, so executed == collected == passed == 209 at the seed. The three coincide
+// only there; the floor is on the EXECUTED number, and it is the one that moves when a
+// test is deleted, filtered out or skipped.
+const TESTS_MIN = 209;
 const GAP_LINE_CAP = 40;
 // suppressing an error is not typing it. `unknown` is deliberately NOT here: it
 // forces narrowing at the use site, which is real typing work.
@@ -100,20 +106,46 @@ if (stage === 'typecheck') {
 if (stage === 'suite-green') {
   const r = run('python3', ['-m', 'pytest', PKG_TESTS, '-ra', '-p', 'no:cacheprovider']);
   if (r.timedOut || r.code === null) stop('the patient suite timed out');
-  const m = r.text.match(/=+ ([^=]*\b(?:passed|failed|error)\b[^=]*) =+\s*$/m);
+  // Count tests EXECUTED, never PASSED — a red tree must not be able to hide under a
+  // passing-count floor (F40). pytest's own totals, read off REAL runs of this patient
+  // under this exact invocation (pytest 9.0.2), never an imagined shape:
+  //   `collecting ... collected 209 items`                      the header count
+  //   `collected 209 items / 207 deselected / 2 selected`       …with a filter in play
+  //   `collected 0 items / 1 error`                             …with a collection error
+  //   `= 2 failed, 1 passed, 1 skipped, 1 xfailed, 2 errors in 0.15s =`   the summary
+  //   `= 2 errors in 0.06s =` · `= 2 passed, 207 deselected in 2.38s =` · `= no tests ran =`
+  const collected = Number((r.text.match(/\bcollected (\d+) items?\b/) ?? [])[1] ?? NaN);
+  if (!Number.isFinite(collected)) stop('the suite produced no readable collection count — the run did not complete');
+  // `errors?` and `no tests ran` are in the matcher because an errors-only or empty run
+  // prints NEITHER "passed" nor "failed": without them a real red read as a crashed
+  // instrument (97) instead of a verdict.
+  const m = r.text.match(/=+ ([^=]*\b(?:passed|failed|errors?|no tests ran)\b[^=]*) =+\s*$/m);
   if (!m) stop('the suite produced no readable summary line — the run did not complete');
-  const passed = Number((r.text.match(/(\d+) passed/) ?? [])[1] ?? NaN);
-  const failed = Number((r.text.match(/(\d+) (?:failed|error)/) ?? [])[1] ?? 0);
-  // a suite that SHRANK is not a suite that passes: deleting a test removes its
+  // tallied over the SUMMARY LINE ONLY (a traceback body can contain anything) and
+  // SUMMED, not first-match: `2 failed, …, 2 errors` is four red tests, and the old
+  // single-match read reported two. `xfailed` cannot be captured — the alternation is
+  // anchored at the digit + space, and "1 xfailed" offers no "failed" there.
+  const tally = (/** @type {RegExp} */ re) => { let n = 0; for (const g of m[1].matchAll(re)) n += Number(g[1]); return n; };
+  const failed = tally(/(\d+) (?:failed|errors?)\b/g);
+  // a skipped or deselected test is a test that did NOT run. Subtracting them is what
+  // makes this an EXECUTED floor rather than a collected one — otherwise `@pytest.mark.skip`
+  // on a failing test clears the floor as cheaply as deleting it. (The sibling litectx
+  // close counts node:test's `# tests`, which folds skips in; this is the stricter read.)
+  const notRun = tally(/(\d+) (?:skipped|deselected)\b/g);
+  const executed = collected - notRun;
+  // a suite that SHRANK is not a suite that passes: removing a test removes its
   // failure and is the cheapest way to green a behaviour gate
-  if (!Number.isFinite(passed)) stop('the suite produced no readable pass count');
-  if (passed < 209) { out(`red: ${passed} tests passed, below the seed's 209 — tests were lost, not kept`); echo(r.text.split('\n').filter((l) => l.startsWith('FAILED') || l.startsWith('ERROR'))); done(1); }
+  if (executed < TESTS_MIN) {
+    out(`red: ${executed} tests executed${notRun ? ` (${collected} collected, ${notRun} skipped/deselected)` : ''}, below the seed's ${TESTS_MIN} — tests were lost, not kept`);
+    echo(r.text.split('\n').filter((l) => l.startsWith('FAILED') || l.startsWith('ERROR')));
+    done(1);
+  }
   if (failed > 0 || r.code !== 0) {
     out(`red: ${failed} test(s) now fail — a type annotation must describe what the code already does`);
     echo(r.text.split('\n').filter((l) => l.startsWith('FAILED') || l.startsWith('ERROR')));
     done(1);
   }
-  out(`green: ${passed} tests pass`);
+  out(`green: ${executed} tests executed, 0 failing`);
   done(0);
 }
 

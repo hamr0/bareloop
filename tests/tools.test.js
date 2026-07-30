@@ -6,7 +6,7 @@
 // a caller-sliced body — none of which a mocked litectx would have surfaced.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -56,8 +56,14 @@ test('isolate verbs carry their OWN action types — store writes are never tree
 
 // ---- the tools against a REAL index ----
 
-function fixture() {
+/** @param {{ after: (fn: () => void) => void }} t */
+function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'ptools-'));
+  // Every harness builds a REAL litectx index in this tree, so the tree is not
+  // small — the test's own context owns its teardown (the `makePatient` idiom in
+  // tests/planrun.test.js). Measured before this line existed: 8 tests per run
+  // stranded 8 `ptools-*` trees in $TMPDIR, forever.
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
   mkdirSync(join(dir, 'src'));
   writeFileSync(join(dir, 'src', 'adder.js'),
     '/** Add two numbers — the fixture leaf. */\nexport function addNums(a, b) {\n  return a + b;\n}\n');
@@ -66,52 +72,54 @@ function fixture() {
   return dir;
 }
 
-/** @returns {{lc: any, dir: string, events: any[], tools: Map<string, any>}} */
-async function harness() {
-  const dir = fixture();
+/** @param {{ after: (fn: () => void) => void }} t
+ * @returns {Promise<{lc: any, dir: string, events: any[], tools: Map<string, any>}>} */
+async function harness(t) {
+  const dir = fixture(t);
   const lc = new LiteCtx({ root: dir });
   await lc.index();
   /** @type {any[]} */
   const events = [];
-  const tools = new Map(createCtxTools(lc, dir, (/** @type {string} */ t, /** @type {object} */ d) => events.push({ t, ...d })).map((x) => [x.name, x]));
+  // the emit param is named `type` (not `t`) so it cannot shadow the test context
+  const tools = new Map(createCtxTools(lc, dir, (/** @type {string} */ type, /** @type {object} */ d) => events.push({ t: type, ...d })).map((x) => [x.name, x]));
   return { lc, dir, events, tools };
 }
 
-test('ctx_impact names the dependents of a symbol', async () => {
-  const { tools, events } = await harness();
+test('ctx_impact names the dependents of a symbol', async (t) => {
+  const { tools, events } = await harness(t);
   const out = await tools.get('ctx_impact').execute({ symbol: 'addNums' });
   assert.match(out, /caller\.js/, 'the importer must appear in the impact readout');
   assert.ok(events.some((e) => e.t === 'ctx-tool' && e.tool === 'ctx_impact'), 'a retrieval verb whose result is invisible cannot be judged');
 });
 
-test('ctx_related walks the import graph from a file', async () => {
-  const { tools } = await harness();
+test('ctx_related walks the import graph from a file', async (t) => {
+  const { tools } = await harness(t);
   const out = await tools.get('ctx_related').execute({ path: 'src/adder.js' });
   assert.match(out, /caller\.js/, 'the importing neighbour must be listed');
 });
 
-test('ctx_recent reports activity, and an empty read says so instead of vanishing', async () => {
-  const { tools } = await harness();
+test('ctx_recent reports activity, and an empty read says so instead of vanishing', async (t) => {
+  const { tools } = await harness(t);
   const out = await tools.get('ctx_recent').execute({});
   assert.equal(typeof out, 'string');
   assert.ok(out.length > 0, 'an empty result must still be a worker-readable sentence');
 });
 
-test('ctx_compress returns the signature tier — head kept, body elided, cheaper than the source', async () => {
-  const { tools } = await harness();
+test('ctx_compress returns the signature tier — head kept, body elided, cheaper than the source', async (t) => {
+  const { tools } = await harness(t);
   const out = await tools.get('ctx_compress').execute({ path: 'src/caller.js', symbol: 'sumAll' });
   assert.match(out, /sumAll/, 'the declaration head survives');
   assert.doesNotMatch(out, /reduce/, 'the implementation body is elided');
 });
 
-test('ctx_compress on an unknown symbol refuses with the symbol named, never throws', async () => {
-  const { tools } = await harness();
+test('ctx_compress on an unknown symbol refuses with the symbol named, never throws', async (t) => {
+  const { tools } = await harness(t);
   const out = await tools.get('ctx_compress').execute({ path: 'src/caller.js', symbol: 'noSuchFn' });
   assert.match(out, /noSuchFn/, 'refusal-as-result names what was asked (BA-13 refusal pattern)');
 });
 
-test('stash → peek round trip: park a payload, read head/tail without paying its bytes', async () => {
-  const { tools } = await harness();
+test('stash → peek round trip: park a payload, read head/tail without paying its bytes', async (t) => {
+  const { tools } = await harness(t);
   const big = `HEAD-MARK${'x'.repeat(4000)}TAIL-MARK`;
   const parked = await tools.get('ctx_stash').execute({ id: 'notes', text: big });
   assert.match(parked, /notes/, 'stash confirms the key it parked under');
@@ -121,14 +129,14 @@ test('stash → peek round trip: park a payload, read head/tail without paying i
   assert.ok(peeked.length < big.length / 2, 'peek must cost far less than the payload');
 });
 
-test('ctx_peek on an unknown key refuses with the key named', async () => {
-  const { tools } = await harness();
+test('ctx_peek on an unknown key refuses with the key named', async (t) => {
+  const { tools } = await harness(t);
   const out = await tools.get('ctx_peek').execute({ id: 'never-stashed' });
   assert.match(out, /never-stashed/);
 });
 
-test('remember → recall → forget: a durable note round-trips and dies on request', async () => {
-  const { lc, tools } = await harness();
+test('remember → recall → forget: a durable note round-trips and dies on request', async (t) => {
+  const { lc, tools } = await harness(t);
   await tools.get('ctx_remember').execute({ id: 'finding-1', text: 'the close is staged and the grader is not lendable' });
   const hits = await lc.recall('grader lendable', { kind: 'fact' });
   const flat = Array.isArray(hits) ? hits : Object.values(hits).flat();
@@ -137,14 +145,14 @@ test('remember → recall → forget: a durable note round-trips and dies on req
   assert.match(out, /1/, 'forget reports the rows removed');
 });
 
-test('the isolate promise holds at the TOOL surface: a remembered note comes back through ctx_recall, body attached', async () => {
+test('the isolate promise holds at the TOOL surface: a remembered note comes back through ctx_recall, body attached', async (t) => {
   // The hardening pass caught the gap: the persona says "record a durable
   // conclusion with ctx_remember so a later step can ctx_recall it", but the
   // recall handler hardcoded kind:'code', so notes were write-only through the
   // tool surface (the library-level round-trip test above never saw it — it
   // called lc.recall directly). A note is a CONCLUSION: the body rides inline,
   // because a pointer to a memory the worker cannot dereference is inert.
-  const { tools } = await harness();
+  const { tools } = await harness(t);
   await tools.get('ctx_remember').execute({ id: 'culprit-note', text: 'the tokenizer drops digits at chunk boundaries' });
   const out = await tools.get('ctx_recall').execute({ query: 'tokenizer digits' });
   assert.match(out, /culprit-note/, 'the note id surfaces through the worker-facing verb');

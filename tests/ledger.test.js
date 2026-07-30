@@ -148,6 +148,32 @@ test('interpreter-red: with NO typed field the prose sniff still attributes lite
   assert.equal(occs[0].verb, 'recall');
 });
 
+test('step-stalled (the F66 fuse) attributes by TYPED lib — never as an unclassified bareloop bug', () => {
+  reset();
+  // The category was minted in planrun/stall.js and the ledger map was never
+  // updated, so every stall folded as runtime-red/bareloop "unclassified
+  // escalation category" — a FAKE bareloop bug standing where BA-19's evidence
+  // trail should be. StallError stamps lib at the throw site (stall.js), and
+  // planrun forwards it onto the escalation, so the typed-lib route classifies
+  // it exactly like interpreter-red does.
+  const occs = classifyIncidents([ev('escalation', {
+    category: 'step-stalled', lib: 'bare-agent', decisionReady: true,
+    detail: 'no completed round for 300000ms; reissued 3 times',
+  })]);
+  assert.equal(occs.length, 1, 'a stall is evidence, never an exclusion');
+  assert.equal(occs[0].lib, 'bare-agent', 'the stall accrues against the package the typed lib names');
+  assert.equal(occs[0].class, 'provider-red');
+  assert.doesNotMatch(occs[0].detail, /unclassified/, 'the stall detail rides, not an unmapped-category apology');
+});
+
+test('step-stalled with NO typed lib falls back exactly like interpreter-red — still counted', () => {
+  reset();
+  const occs = classifyIncidents([ev('escalation', { category: 'step-stalled', decisionReady: true, detail: 'recall stalled: no beat for 300000ms' })]);
+  assert.equal(occs.length, 1);
+  assert.equal(occs[0].lib, 'litectx', 'the prose sniff is the shared fallback, not a second policy');
+  assert.equal(occs[0].verb, 'recall');
+});
+
 test('an UNRECOGNISED escalation category is counted, not silently dropped', () => {
   reset();
   // the dispatch keyed on four bare literals with no default: a renamed or new

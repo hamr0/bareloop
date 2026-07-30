@@ -81,7 +81,7 @@ minting claim, or the shell-owned retry cap — all unknown-field reds.
 |---|---|---|
 | `job` | kebab-case slug | |
 | `description` | non-empty string | |
-| `provider` | `anthropic-api` | menu; part of the lineage key by definition |
+| `provider` | `anthropic-api` \| `clipipe-subscription` | menu (`PROVIDERS`); part of the lineage key by definition. Only `anthropic-api` is guaranteed (F48); `clipipe-subscription` drives the worker natively and needs `opts.nativeProvider` |
 | `conditions` | `{ providerPath?, closeVerbosity?, taskFraming?, scaffold? }` | declared keys only, string values — the environment label (consumed by the N3 lineage key; recorded on spines from run one) |
 | `cadence` | `{ unit: hour\|day\|week, every: 1..30 }` | validated now, consumed at N5 (Scheduler) |
 | `budgetUsd` | `0 < n <= shell cap` | ceiling chain: workflow ≤ job ≤ shell — each layer may tighten, never exceed |
@@ -99,7 +99,25 @@ the step plan at run time (gated by `validatePlan`); the human signs only:
 | `verdictType` | `green` \| `soft-green` \| `hitl` | declared radio, never inferred (`VERDICT_TYPES`, frozen). v1 ADMITS only `green`; declaring `soft-green`/`hitl` reds `request-red` with the type as a structured `verb` field (declared-but-locked — the tool-menu pattern) |
 | `close` | **an ORDERED LIST of named stages** `[{ name, cmd, expect, judged?, gapKeep?, offer?, needs? }, ...]` (PRD v1.28), or a close object (table below) **only** for the declared-but-locked verdict classes | the destination, the only thing hand-authored; the check menu DERIVES from it (below). The plan flow executes a staged close directly and adapts a bare `predicate` object into a one-stage list; a `gold`/`rubric`/`hitl` object close validates (the declared-but-locked verdict classes still parse) but the plan flow refuses it at runtime as `close-unsupported` — it names no command to run |
 | `checks` | **RETIRED** (PRD v1.28/v1.32) | hand-authored checks are gone, not merely discouraged: declaring `checks` reds `checks-derived` by name. The check menu is DERIVED from the close's own stages instead — see **Staged close** below. The hazard this removes is measured, not theoretical: job #5's three hand-written checks were re-implementations of three stages the close already ran, and a hand-carved copy can drift LENIENT (the worker passes the operator's ruler and fails the real inspection) |
-| `tools` | optional unique subset of `TOOL_MENU` | the CEILING every plan step's grant must fit inside (defaults to the full menu); `run` is `LOCKED_TOOLS` and reds `request-red` — locked-but-listed, and the red IS the admission evidence the ledger tallies (a typo stays `invalid-value`). `edit` (BA-13) is the anchored exact-once replace, judged by the SAME writeScope fence as `write` |
+| `tools` | optional unique subset of `TOOL_MENU` (14 verbs, below) | the CEILING every plan step's grant must fit inside (defaults to the full menu); `run` is `LOCKED_TOOLS` and reds `request-red` — locked-but-listed, and the red IS the admission evidence the ledger tallies (a typo stays `invalid-value`). A ceiling of write-class and store-class verbs ONLY reds `invalid-value`: the scout surveys read-only, so it would be handed an empty menu and survey blind |
+
+**`TOOL_MENU` — the worker's 14 verbs, in four components** (`src/job.js`; the verb→tool map
+is `TOOL_BY_VERB` in `src/tools.js`). The menu is an INVENTORY: every verb is an existing
+bare-agent or litectx primitive, none was built for it. A granted component's strategy line
+ships with the grant (`COMPONENT_STRATEGIES` — capability without strategy is inert, F19).
+
+| component | verbs | class |
+|---|---|---|
+| write | `write` · `edit` | tree writes, judged by the signed `writeScope` fence — `edit` (BA-13) is the anchored exact-once replace and goes through that SAME fence, not a weaker one |
+| select | `read` · `grep` · `recall` · `get` · `impact` · `related` · `recent` | read-only; every one is judged as a `read` action by that same fence, so the deny list applies through every door |
+| compress | `compress` · `peek` | read-only (a signature tier; a stash's head/tail) |
+| isolate | `stash` · `remember` · `forget` | STORE writes (the `.litectx` store, never the tree) — their own gate action types, so a store park can never be counted as a tree write by the F32 `workerWrites` instrument. **Not read-capable** |
+
+`run` is locked at every layer and always will be: a worker that can run commands can run
+its own close. `ctx_recall` serves BOTH axes — code pointers, plus any note written with
+`ctx_remember`, returned on a line labeled `memory` with the note's BODY inline (capped at
+400 chars). A note is a conclusion, not a pointer: there is no worker verb that dereferences
+a memory id, so a pointer-only reply would be inert.
 
 **Staged close — the check menu DERIVES from it (PRD v1.28, `checkMenu` in `src/job.js`).**
 Every stage is a `predicate` command body (the same `cmd`/`expect`/`judged?`/`gapKeep?`
@@ -108,7 +126,7 @@ contract the single close object has always used) plus:
 | stage field | shape | notes |
 |---|---|---|
 | `name` | unique kebab-case slug | the plan references it via `check-passes(name)`; duplicates red `duplicate-id` |
-| `offer` | optional boolean, default offered | `offer: false` hides the stage from the derived menu — it never reaches the agent. For a stage that cannot stand alone as a ruler: a PRECONDITION (e.g. "the seed commit exists" — passes instantly, teaches nothing) or, in every shipped spec today, the **final grading stage** (a per-spec convention, not a schema rule — nothing stops a stage named last from being offered except the spec author remembering to set the flag; preflight's `check-menu` event always names the full menu either way, so a forgotten flag is visible in the run's own record) |
+| `offer` | optional boolean, default offered | `offer: false` hides the stage from the derived menu — it never reaches the agent. For a stage that cannot stand alone as a ruler: a PRECONDITION (e.g. "the seed commit exists" — passes instantly, teaches nothing) or the **final grading stage** — of the six specs in `jobs/`, four hide a final `verdict` stage and two hide a `changed-from-seed` precondition instead (a per-spec convention, not a schema rule — nothing stops a stage named last from being offered except the spec author remembering to set the flag; preflight's `check-menu` event always names the full menu either way, so a forgotten flag is visible in the run's own record) |
 | `needs` | optional non-empty array of EARLIER stage names | a stage that reads what an earlier stage built (e.g. "the public API matches what an earlier stage emitted") names its prerequisite chain; picking it via `check-passes` runs the chain first, then the stage itself. Every name must be declared before this stage (`invalid-value` otherwise); `needs` + `offer: false` together is incoherent (`invalid-value`) — a stage with a chain to run must be reachable |
 
 The stages run in declared order as the close itself; the first red renders the verdict and
@@ -192,7 +210,10 @@ middle writes; `validatePlan` gates it against the SIGNED job spec before tokens
 | `steps[].tools` | non-empty unique subset of the SPEC ceiling | a verb beyond the ceiling reds `verb-escape` with the verb as structured data (overreach, distinct from the operator-side `request-red`); `run` is `verb-escape` at every layer |
 | `steps[].rounds` | int 1..shell cap (default 40) | the step's per-attempt tool-round bound (the Gate's `maxTurns` natively) |
 | `steps[].target` | path inside the fence | v1.18 deliverable; REQUIRED on write-granted steps |
-| `steps[].exit` | 1..2 items (`MAX_EXITS_PER_STEP`), ALL must pass (AND-only, no OR/NOT) | closed menu (`EXIT_TYPES`): `artifact-written(path, pattern?)` · `tree-changed(scope)` · `json-valid(path)` · `check-passes(name)`. **`tree-changed.scope` is a MENU, not a glob the agent authors** — `legalScopes(writeScope, dirs, cap?)` enumerates the signed fence entries plus the real directories beneath them (shallowest-first, capped at `MAX_SCOPE_MENU`=24), `planPrompt` lists them verbatim, and `validatePlan` accepts membership only. Pass the SAME array to both via `opts.scopes`; omitted, it derives from `writeScope` alone — never a free-text fallback. An off-menu value that escapes the fence still reds `scope-escape` (the ledger's attribution class), an in-fence unoffered value reds `invalid-value` carrying the menu. `runPlan` emits `scope-menu {offered, truncated, offerableCount?, cap?}` so a capped menu is never silently complete. `check-passes` must name a stage on the close's DERIVED menu (`check-unknown` red names the offered menu — no operator authors this list, it comes straight from `checkMenu(close)`); on a write-granted step it must be paired with `tree-changed` (`exit-illegal` — the seed tree is green, a lone check would pass untouched, F17/F46). `artifact-written.pattern` must compile AND survive a ReDoS shape check — an unbounded quantifier over a group that itself repeats unboundedly (`(a+)+`, `(\d*)*`, even wrapped: `((a+))+`) is an `invalid-value` red (F49, catastrophic-backtracking footgun; rewrite without a repeated group inside a repeat). Exits verify FORM, not truth — progress gates; the operator's close stays the one arbiter |
+| `steps[].model` | optional; `sonnet` \| `haiku` (`STEP_MODELS`) | the step's model TIER — a menu, never a model string the agent spells (the tier→model mapping and any per-model effort params are the runner's). `opus` is deliberately absent: reserved for work the human assigns, never plan-selectable. Off-menu reds `invalid-value`. A step naming a tier when the caller supplied no `providerFor` factory is an `interpreter-red` STOP, never a silent run on the default tier |
+| `steps[].attempts` | optional; int `1..capRuns` | TIGHTEN-only: the step's own retry cap inside `ralph`, floored against the shell's `capRuns` (default 3). Above it reds `bounds`; a plan may narrow the shell's cap, never raise it |
+| `steps[].scope` | optional; one value from the SAME menu `tree-changed` uses | narrows this step's live WRITE fence to a subset of the signed `writeScope` — chosen from `legalScopes(...)`, never authored. Off-menu reds `invalid-value` carrying the menu |
+| `steps[].exit` | 1..2 items (`MAX_EXITS_PER_STEP`), ALL must pass (AND-only, no OR/NOT) | closed menu (`EXIT_TYPES`): `artifact-written(path, pattern?)` · `tree-changed(scope)` · `json-valid(path)` · `check-passes(name)`. **`tree-changed.scope` is a MENU, not a glob the agent authors** — `legalScopes(writeScope, dirs, cap?)` enumerates the signed fence entries plus the real directories beneath them (shallowest-first, capped at `MAX_SCOPE_MENU`=24), `planPrompt` lists them verbatim, and `validatePlan` accepts membership only. Pass the SAME array to both via `opts.scopes`; omitted, it derives from `writeScope` alone — never a free-text fallback. An off-menu value that escapes the fence still reds `scope-escape` (the ledger's attribution class), an in-fence unoffered value reds `invalid-value` carrying the menu. `runPlan` emits `scope-menu {offered, truncated, offerableCount?, cap?}` so a capped menu is never silently complete. `check-passes` must name a stage on the close's DERIVED menu (`check-unknown` red names the offered menu — no operator authors this list, it comes straight from `checkMenu(close)`); on a write-granted step it must be paired with `tree-changed` (`exit-illegal` — the seed tree is green, a lone check would pass untouched, F17/F46). **`check-passes` also requires a write-class verb (`write`/`edit`) on the SAME step** (`exit-illegal` — BREAKING for plan authors: a read-only "verify" step carrying a check used to validate and no longer does). A failing check's gap is re-delivered to that step's OWN worker, so a step holding a check must be able to act on it; a read-only one is a mailbox with no hands and stalls to cap on a byte-identical gap (measured on 4 of 4 drafted plans). The check belongs on the step that fixes; the run's final verification is the operator's close, which the agent never authors. The rule is stated identically in the drafter prompt and the validator, so the two can never disagree — and it is suppressed when `tools` failed to parse (the step's hands are unknowable then, and the real defect already redded: one defect, one red). `artifact-written.pattern` must compile AND survive a ReDoS shape check — an unbounded quantifier over a group that itself repeats unboundedly (`(a+)+`, `(\d*)*`, even wrapped: `((a+))+`) is an `invalid-value` red (F49, catastrophic-backtracking footgun; rewrite without a repeated group inside a repeat). Exits verify FORM, not truth — progress gates; the operator's close stays the one arbiter |
 
 Red vocabulary (all three validators): `parse-error`, `unknown-field`, `missing-required`,
 `invalid-value`, `bounds`, `duplicate-id`, `close-type`, `close-hierarchy`,
@@ -294,15 +315,17 @@ generic unknown-field. Menus exported: `CLOSE_TYPES`, `CLASS_BY_CLOSE`, `GOLD_CO
 `CADENCE_UNITS`, `PROVIDERS`, `CONDITION_KEYS`, `TOOL_MENU`, `LOCKED_TOOLS`,
 `VERDICT_TYPES`, `LOCKED_VERDICTS`.
 
-### `validatePlan(input, { job, maxStepRounds? })` → `{ ok, reds, plan }` — `src/plan.js`
+### `validatePlan(input, { job, maxStepRounds?, scopes?, capRuns? })` → `{ ok, reds, plan }` — `src/plan.js`
 
 The third validator: gates the AGENT-authored plan doc (`schema: "plan-v1"`) against the
 SIGNED job spec before tokens burn — the ceiling, the fence, and the checks menu all come
 from `job` (a missing or non-plan-shape job fails CLOSED, `job-invalid`). Never throws;
 same `{ code, path, detail }` red shape as its siblings; `verb-escape` reds carry the
 escaping verb as a structured `verb` field (the ledger keys on it). `maxStepRounds`
-(default 40 — the shell's tool-mode per-attempt bound) ceilings every step's `rounds`.
-Menus exported: `EXIT_TYPES`, `MAX_EXITS_PER_STEP`, `MAX_PLAN_STEPS`, `WRITE_VERBS`.
+(default 40 — the shell's tool-mode per-attempt bound) ceilings every step's `rounds`;
+`capRuns` (default 3) ceilings every step's `attempts`; `scopes` is the offered scope menu
+(pass the SAME array the prompt listed — omitted, it derives from the signed `writeScope`,
+never a free-text fallback). Menus exported: `EXIT_TYPES`, `MAX_EXITS_PER_STEP`, `MAX_PLAN_STEPS`, `WRITE_VERBS`.
 
 ### `snapshotScope(dir, scope)` / `evalExits(exits, { dir, snapshot?, runCheck? })` — `src/exits.js`
 
@@ -330,7 +353,7 @@ Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
 `coordination-red` — a failure between units (scope contention, step order, store
 races), never to be folded into worker/interpreter reds.
 
-### `runJob(spec, { approvals, workdir, provider, nativeProvider?, emit, capRuns?, shellCapUsd?, closeTimeoutMs?, layerRoot? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, shellCapUsd?, closeTimeoutMs?, layerRoot? })` → outcome — `src/run.js`
 
 The runner — the shell's top layer, and the ONE entry. It composes everything below it and
 interprets nothing itself. Sequence: **approval gate** (human-signs-always — refuses an
@@ -369,8 +392,8 @@ their own ledger): **close precheck** (`already-green` is a
 DISTINCT zero-token outcome; a forbidden-zone verdict escalates before spend) → **check-menu
 preflight** (`check-menu` names the derived menu, then every OFFERED stage's chain runs once
 at $0 — an unrunnable stage is a `check-red` stop before tokens, not a fault mid-plan) →
-**SCOUT** (read-only by construction: the
-write verbs are not in its menu; hard-bounded rounds) → **PLAN** (the decompose call —
+**SCOUT** (read-only by construction: neither the
+write-class nor the store-class verbs are in its menu; hard-bounded rounds) → **PLAN** (the decompose call —
 the planner never sees the repo, only the scout blob; drafted against a schema
 description with check NAMES only; `validatePlan` gates it, one redraft with the reds
 fed back, then `plan-red`) → **EXECUTE** (strictly sequential micro-loops: `ralph` with
@@ -402,6 +425,17 @@ or time with its exits unmoved is pre-empted at the head of its next attempt so 
 re-allocates instead. **Known and recorded (F63): that trigger fired 0 times across 18
 archived spines / 54 steps** (near misses 0.35–0.45) — the threshold is arbiter territory,
 deliberately not fitted to those points. The ONE-replan ceiling is unchanged.
+
+**Per-step model tiers — `providerFor` (P).** A plan step may declare a `model` TIER
+(`sonnet` \| `haiku`, `STEP_MODELS`). The tier menu is signed into the schema; mapping a tier
+onto a real model (and any per-model provider params) is the RUNNER's territory, so both
+`runJob` and `runPlan` take `providerFor?: (tier: string) => provider`. It is called ONLY for
+a step that declared a tier, once per such step — the scout, the plan drafter and every
+untiered step stay on `opts.provider`, so a caller that never plans tiers can omit it
+entirely. Cache per tier on your side if you want one instance reused. **A plan naming a tier
+when no factory was supplied is an `interpreter-red` STOP**, named as a wiring gap rather than
+a plan defect: running the default tier as if the choice had been honoured is the F50
+blind-instrument class, and the whole point of the field is that the choice is observable.
 
 **Two worker surfaces — API and native clipipe (BA-16, module 4d).** The plan flow is
 provider-agnostic: the close, the checks, and the exit evaluator are commands and form
@@ -454,8 +488,7 @@ re-run with the close's verdict; without this a model one-shots and can eat the 
 reads before ever writing). It is NOT allowed to read the run's own machinery (F14): the gate
 audit, the smoke store and the litectx store are denied — the agent neither authors the
 arbiter nor reads its books. N2 bounds (honest): `gold`/`rubric` closes refuse
-`close-unsupported` (execution lands at N4); `target` is required only for text-mode
-steps.
+`close-unsupported` (execution lands at N4).
 
 ### `updateLedger({ ledgerFile, spineFiles })` → `{ appended, fold }` — `src/ledger.js`
 

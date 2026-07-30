@@ -8,6 +8,47 @@ feature lands, **patch** = docs, fixes, scaffolding.
 ## [Unreleased]
 
 ### Added
+- **P — the worker's palette widens 6 → 14 verbs, and a step gains a vocabulary** (design
+  record 2026-07-28). The plan surface exposed two of litectx's verbs and the agent could
+  choose almost nothing about HOW a step ran (F56).
+  - `TOOL_MENU` (`src/job.js`) is now four components: **write** (`write` · `edit`), **select**
+    (`read` · `grep` · `recall` · `get` · `impact` · `related` · `recent`), **compress**
+    (`compress` · `peek`), **isolate** (`stash` · `remember` · `forget`). Every verb maps to an
+    EXISTING litectx/bare-agent implementation — the menu is an INVENTORY, nothing was built to
+    fill it. Select/compress verbs are gate-judged as `read` actions through the same fence;
+    isolate verbs write the `.litectx` STORE and carry their OWN gate action types, so a store
+    park can never be counted as a tree write by the F32 `workerWrites` instrument. `run` stays
+    locked at every layer.
+  - New `WRITE_VERBS` / `STORE_VERBS` split: **neither class is read-capable**, so the scout's
+    grant filters both, and a ceiling made only of them reds `invalid-value` at sign time (a
+    write-only ceiling hands the scout an empty menu and it surveys blind).
+  - Each component ships its F19 strategy line (`COMPONENT_STRATEGIES`, `src/tools.js`),
+    composed into the persona only for components with a granted verb — capability without
+    strategy is inert, and a strategy for a verb the worker does not hold is noise.
+  - **Three new step fields, each legal set handed over as a MENU** (`src/plan.js`,
+    choose-don't-describe): `model` (`sonnet` | `haiku`, `STEP_MODELS` — `opus` deliberately
+    absent, hamr-assigned only, never plan-selectable), `attempts` (integer `1..capRuns`), and
+    `scope` (one value from the same `legalScopes` menu `tree-changed` uses). All optional, all
+    **tighten-only** — a plan may narrow the shell's caps and the signed fence, never widen them.
+  - **Each field is WIRED or REFUSED, never silently ignored** (the F50 blind-instrument class):
+    `scope` narrows the live gate fence (proven — an in-job-fence write denied by the step's own
+    scope), `attempts` tightens `ralph`'s cap (proven — exactly one iteration), and `model` routes
+    that step's worker through a new **`providerFor(tier)`** factory on `runJob`/`runPlan`.
+    **A step naming a tier when the caller supplied no factory is a NAMED `interpreter-red` stop**
+    — a wiring gap, not a plan defect — never a silent run on the default tier as if the choice
+    had been honoured.
+  - `scripts/run-u.mjs` supplies that factory (the tier→model mapping is the RUNNER's territory,
+    never the schema's) and gains a `--model` tier flag, and now **deletes `.litectx` at every
+    reset — cold means cold**: the isolate verbs persist across runs, so an uncleaned store would
+    leak run N's memory into run N+1's "cold" baseline and quietly poison the reuse rung's OFF arm.
+  - The U job specs widen to the full catalog, which is a NEW spec hash and therefore UNSIGNED
+    until hamr's explicit in-turn approval — widening the menu never silently changes a signed
+    spec's meaning.
+  - POC-first paid three times before a line of module code (recall hits carry no id — the path
+    IS the key; `impact`'s `confirmed`/`mentions` are counts, not arrays; `purge()` covers neither
+    stash nor memory, so a cold reset must delete the store). The tool tests run against a REAL
+    LiteCtx over a real fixture: the impact-shape test failed once against live data and was fixed
+    from the measured shape, not the assumed one.
 - **F66 — the in-process stall fuse** (`src/stall.js`): bare-agent's `timeoutMs` bounds
   socket INACTIVITY (resets on every byte), so a slow-but-trickling call hung a run for 274
   minutes (U run ms3197n8). The fuse's heartbeat is a completed ROUND — no round for 5
@@ -26,6 +67,23 @@ feature lands, **patch** = docs, fixes, scaffolding.
   spawnSync-close blocks (below) on its first run.
 
 ### Fixed
+- **The close-fix loop laundered a transport casualty into a flat `escalated`**
+  (`src/planrun.js`). The step loop restores an escalation's own category (F11: the outcome and
+  the spine escalation must agree); the fix loop did not, so a `provider-red` raised there came
+  back as `escalated` — and `run.js` keys the F44 `spendComplete:false` floor on the OUTCOME, so
+  the run reported an exact-looking total for a call that may never have billed back. Now
+  mirrored. `cap-halt` deliberately stays `escalated`: the fix loop exhausting its bound is the
+  designed terminal ("close still red"), not a casualty. Found by the hardening pass, PARKED,
+  and fixed only on hamr's explicit go.
+- **`ctx_recall` was blind to the memory axis, so `ctx_remember` was write-only through the tool
+  surface** (`src/tools.js`). The isolate strategy promises *"record a durable conclusion with
+  `ctx_remember` so a later step can `ctx_recall` it"* — and the recall handler hardcoded
+  `kind: 'code'`, so no note ever came back. The library-level round-trip test could not see it:
+  it called `lc.recall` directly, not the verb the worker holds. Recall now queries the fact axis
+  alongside code and returns each note on a line labeled `memory` with its BODY inline (capped at
+  400 chars, so a bloated note cannot page the context). The body rides because a note is a
+  CONCLUSION, not a pointer — there is no worker verb that dereferences a memory id. Same parked-
+  then-explicit-go path as above.
 - **The aurora U close type-checked another repository** (`scripts/u-spawner-close.mjs`):
   mypy's `explicit_package_bases` named the patient's files `packages.spawner.src.*`, so
   sibling imports fell through to the editable install — a symlink to a DIFFERENT aurora
@@ -33,6 +91,23 @@ feature lands, **patch** = docs, fixes, scaffolding.
   error count unchanged, both prior greens re-verified under the fixed instrument).
 
 ### Changed
+- **BREAKING for plan authors — `check-passes` now requires a write-class verb (`write`/`edit`)
+  on the SAME step** (`src/plan.js`, `exit-illegal`). A shape that validated before is rejected
+  now: a read-only "verify" step that carries a check. Measured before it was built (P-read runs
+  ms4l5p6w / ms57zr7c): 4 of 4 drafted plans put every `check-passes` on a read-only verify step,
+  and both runs stalled to cap on a byte-identical gap delivered to a worker that could not edit.
+  A failing check's gap is re-delivered to THAT step's own worker, so the step must be able to act
+  on it — a read-only one is a mailbox with no hands. The check belongs on the step that fixes;
+  the run's final verification is the operator's close, which the agent never authors. The drafter
+  prompt states the same law, so prompt and validator can never disagree. The red is SUPPRESSED
+  when `tools` failed to parse: the step's hands are unknowable then, and charging the ledger with
+  a violation derived from a false default would double-red one defect.
+- **litectx ^0.29.1 → ^0.31.0** (LC-3 delivered, yield-only shape — atomicity intact,
+  `setImmediate` between parses). Every worker's index call now passes `{ yield: true }`, so the
+  F66 stall fuse's timers, the wall clock and the lag sampler stay alive through an index pass
+  instead of dying inside one long block. Consumed on the BINDING max-block clause (189–252ms,
+  n=4, 2× headroom) **with the miss on record**: liveness read 54–58% on our fixture against a
+  60% proxy bar, and the criterion was NOT re-amended after measurement.
 - bare-agent 0.34.0 → 0.35.0 (BA-19 delivered: `deadlineMs` total-call bound, `EDEADLINE`,
   `context.bound` discriminator, terminal by design; bareloop wiring PARKED — the F66 fuse
   already self-heals this class above the transport).
@@ -146,8 +221,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
     emitting `check-menu {offered, hidden?, meaning?}` — a partial menu is a stage that cannot
     stand alone as a ruler, never a failure), the `check-passes` seam, the outer close, and the
     fix loop through `runStages`; `validatePlan` (`src/plan.js`) derives its legal
-    `check-passes` names from `checkMenu(job.close)` instead of a separately-signed list. The
-    four job specs in `jobs/` migrated to the staged shape.
+    `check-passes` names from `checkMenu(job.close)` instead of a separately-signed list. Every
+    job spec in `jobs/` migrated to the staged shape.
   - **Two decisions taken 2026-07-26 (hamr, *"agreed on both, validate your claims"*), built and
     validated:**
     - **Layer R's red-set is the FAILING STAGE's, per attempt.** A staged close has N
@@ -159,11 +234,15 @@ feature lands, **patch** = docs, fixes, scaffolding.
       near-clones of one grader (7 of 12 kept-line templates byte-identical), so a union
       kept-set can read identical across a stage change and false-fire, which "inert when not
       stuck" forbids.
-    - **The grading stage is not lendable.** All four shipped specs set `offer: false` on the
-      final `verdict` stage, kept as a **per-spec flag**, not a schema rule — "the last stage
-      is the grade" holds today and is unproven in general. `check-menu` preflight always
+    - **The grading stage is not lendable.** Of the six specs in `jobs/`, the four with a final
+      `verdict` stage set `offer: false` on it; the other two have no grading stage at all and
+      hide a `changed-from-seed` PRECONDITION instead. The flag is kept **per-spec**, not as a
+      schema rule — "the last stage is the grade" holds where it applies and is unproven in
+      general. `check-menu` preflight always
       announces the derived menu either way, so a forgotten flag is visible in the run's own
-      record; a test now reads every spec in `jobs/` and reds if any offers its own last stage.
+      record; a test reads every spec in `jobs/` and reds if any offers a stage NAMED `verdict`.
+      The guard is stated over the convention that exists rather than over position — the fifth
+      spec proved "the last stage is the grade" is not structural.
   - **Scripted-provider evidence only — the staged close has not yet run against a real
     model.**
 

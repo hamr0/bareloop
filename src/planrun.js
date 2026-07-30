@@ -660,42 +660,6 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const loopProvider = native
       ? /** @type {any} */ (nativeProvider)({ policy, maxTurns: attemptRounds * (attempts + 1), hasTools: false })
       : (workerProvider ?? provider);
-    /** @param {{costUsd?: number|null, pricing?: string|null, usage?: any, kind?: string}} arg */
-    const metered = async (arg) => {
-      emit('worker-round', {
-        phase, iteration: roundIteration, kind: arg?.kind ?? 'turn',
-        costUsd: arg?.costUsd ?? null, pricing: arg?.pricing ?? null,
-        tokens: (arg?.usage?.inputTokens ?? 0) + (arg?.usage?.outputTokens ?? 0),
-        usage: usageOf(arg?.usage),
-      });
-      // F66 — the heartbeat is ANY result coming back from the model layer, not
-      // only a `turn`. The question the watchdog asks is "is the model still
-      // answering", and a non-turn result answers it just as well; gating the beat
-      // on `kind` would arm a false stall on any round shape we don't enumerate
-      // here, which is the blind-instrument class in miniature.
-      stallWatch.beat();
-      if ((arg?.kind ?? 'turn') === 'turn') {
-        roundsThisAttempt += 1;
-
-        // The wall deadline rides the SAME seam as the round bound, because it is
-        // the only seam that exists: loop.stop() is read at the round boundary and
-        // cannot cut an in-flight call (F61/C1, measured — fired at 500ms, returned
-        // at 4,018ms). Stopping here judges the partial work and feeds the gap
-        // forward exactly as a round-bounded attempt does; the run-level terminal is
-        // decided by the step loop, which reads the clock after the step returns.
-        if (clock.expired()) {
-          attemptBounded = roundIteration;
-          emit('wall-bounded', { phase, iteration: roundIteration, ...clock.report(closeTimeoutForReport) });
-          loop.stop();
-        } else if (roundsThisAttempt >= attemptRounds) {
-          attemptBounded = roundIteration;
-          emit('attempt-bounded', { phase, iteration: roundIteration, rounds: roundsThisAttempt, cap: attemptRounds });
-          loop.stop();
-        }
-      }
-      return onLlmResult(arg);
-    };
-    const loop = new Loop({ provider: loopProvider, system, policy, onLlmResult: metered, onToolResult: onToolOutcome });
     // F66 — the stall watchdog. bare-agent's `timeoutMs` bounds socket INACTIVITY,
     // not call duration (provider-http.js `req.setTimeout` resets on every byte),
     // so a connection that stays alive while producing nothing is invisible to it:
@@ -706,6 +670,79 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const stallWatch = createStallWatch({
       onStall: (n) => emit('stall', { phase, iteration: roundIteration, stall: n, stallMs: STALL_MS, maxStalls: MAX_STALLS }),
     });
+    /**
+     * ONE Loop PER ISSUED CALL, and every callback on it scoped to that call's
+     * generation. After a stall there are TWO calls alive: the abandoned one, whose
+     * socket keeps streaming rounds (ms3197n8's lived 274min past the point we moved
+     * on), and the reissue. Sharing one Loop between them shares `_stopped`, so a
+     * corpse's round bound would cut the LIVE call mid-flight; sharing one callback
+     * left the corpse beating the watch that was timing its replacement, which meant
+     * the replacement could hang forever without tripping — the fuse feeding itself
+     * from the thing it abandoned. A Loop is a plain object over the shared provider,
+     * holds no cross-run state (`run()` takes the transcript per call), so one per
+     * issue costs nothing.
+     *
+     * RESIDUAL, documented not fixed: both generations still execute tools through
+     * the SAME Gate (`policy`) and the same audit — deliberately, because the audit
+     * is what `workerWrites` reads and a per-generation gate would split the run's
+     * own books. Concurrent tool calls across a stall therefore interleave on one
+     * fence. The fence itself is decision-per-call and order-independent, so the
+     * denial semantics hold; what is not modelled is two calls writing the same path
+     * in the same window. Latent today (Layer R off, and a stall is rare).
+     * @param {number} gen the generation `stallWatch` handed this call
+     */
+    const newLoop = (gen) => {
+      /** @type {any} */
+      let self = null;
+      /** @param {{costUsd?: number|null, pricing?: string|null, usage?: any, kind?: string}} arg */
+      const metered = async (arg) => {
+        // The meter fires for EVERY generation, live or abandoned. An orphaned round
+        // was really billed, and spend that no instrument sees is the one thing this
+        // repo never ships (F6/F44 — unknown is reported as unknown, never as zero;
+        // stall.js says it plainly: a reissue can pay twice, and the wallet is what
+        // caps that).
+        emit('worker-round', {
+          phase, iteration: roundIteration, kind: arg?.kind ?? 'turn',
+          costUsd: arg?.costUsd ?? null, pricing: arg?.pricing ?? null,
+          tokens: (arg?.usage?.inputTokens ?? 0) + (arg?.usage?.outputTokens ?? 0),
+          usage: usageOf(arg?.usage),
+        });
+        // Everything BELOW here belongs to the live call only. A superseded call must
+        // not beat the watch (that is the whole watchdog), must not spend the step's
+        // round bound (stall.js: "the step's round bound is untouched" by a reissue —
+        // the wallet is what bounds a reissue's spend), and must not announce a bound
+        // it cannot own.
+        if (!stallWatch.isCurrent(gen)) return onLlmResult(arg);
+        // F66 — the heartbeat is ANY result coming back from the model layer, not
+        // only a `turn`. The question the watchdog asks is "is the model still
+        // answering", and a non-turn result answers it just as well; gating the beat
+        // on `kind` would arm a false stall on any round shape we don't enumerate
+        // here, which is the blind-instrument class in miniature.
+        stallWatch.beat(gen);
+        if ((arg?.kind ?? 'turn') === 'turn') {
+          roundsThisAttempt += 1;
+
+          // The wall deadline rides the SAME seam as the round bound, because it is
+          // the only seam that exists: loop.stop() is read at the round boundary and
+          // cannot cut an in-flight call (F61/C1, measured — fired at 500ms, returned
+          // at 4,018ms). Stopping here judges the partial work and feeds the gap
+          // forward exactly as a round-bounded attempt does; the run-level terminal is
+          // decided by the step loop, which reads the clock after the step returns.
+          if (clock.expired()) {
+            attemptBounded = roundIteration;
+            emit('wall-bounded', { phase, iteration: roundIteration, ...clock.report(closeTimeoutForReport) });
+            self.stop();
+          } else if (roundsThisAttempt >= attemptRounds) {
+            attemptBounded = roundIteration;
+            emit('attempt-bounded', { phase, iteration: roundIteration, rounds: roundsThisAttempt, cap: attemptRounds });
+            self.stop();
+          }
+        }
+        return onLlmResult(arg);
+      };
+      self = new Loop({ provider: loopProvider, system, policy, onLlmResult: metered, onToolResult: onToolOutcome });
+      return self;
+    };
     /** @param {string} prompt @param {typeof toolDefs} [defs] */
     /**
      * F59 — continue an EXISTING conversation for exactly one TOOLLESS round.
@@ -718,7 +755,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
      */
     const askFrom = async (msgs, prompt) => {
       try {
-        return await stallWatch.watch(() => loop.run([...msgs, { role: 'user', content: prompt }], [], { cacheMessages: true, maxTokens: 32000, timeoutMs: clock.callTimeoutMs() }));
+        return await stallWatch.watch((gen) => newLoop(gen).run([...msgs, { role: 'user', content: prompt }], [], { cacheMessages: true, maxTokens: 32000, timeoutMs: clock.callTimeoutMs() }));
       } catch (e) {
         throw categorize(e).err;
       }
@@ -726,7 +763,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const ask = async (prompt, defs = toolDefs) => {
       let r;
       try {
-        r = await stallWatch.watch(() => loop.run([{ role: 'user', content: prompt }], defs, { cacheMessages: true, maxTokens: 32000, timeoutMs: clock.callTimeoutMs() }));
+        r = await stallWatch.watch((gen) => newLoop(gen).run([{ role: 'user', content: prompt }], defs, { cacheMessages: true, maxTokens: 32000, timeoutMs: clock.callTimeoutMs() }));
       } catch (e) {
         throw categorize(e).err;
       }

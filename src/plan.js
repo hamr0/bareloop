@@ -18,7 +18,7 @@
 // Like its siblings (validate.js, job.js) it never throws on JSON text or
 // plain parsed data; every failure is a named {code, path, detail} red.
 
-import { TOOL_MENU, LOCKED_TOOLS, checkMenu } from './job.js';
+import { TOOL_MENU, LOCKED_TOOLS, WRITE_VERBS, checkMenu } from './job.js';
 import { globToPrefix, scopeContained, isObj, isNonEmptyString, sweepSecretLiterals } from './validate.js';
 
 /** the closed exit menu (PRD v1.12 §3 + decision 1's `check-passes`): the
@@ -33,8 +33,10 @@ export const MAX_EXITS_PER_STEP = 2;
 export const MAX_PLAN_STEPS = 8;
 /** the write-class verbs (BA-13: `edit` is judged by the same fence as
  * `write`) — a step granting one is a WRITE step for the F17 pairing rule
- * and the v1.18 target requirement */
-export const WRITE_VERBS = Object.freeze(['write', 'edit']);
+ * and the v1.18 target requirement. RE-EXPORTED from job.js, never re-declared:
+ * ONE inventory (the SECRET_PATTERNS precedent) — a second copy lets a third
+ * write-class verb land in one list and stay invisible to the other. */
+export { WRITE_VERBS };
 /** scope-menu bound: the menu is a PROMPT ingredient on every draft and
  * redraft, so an unbounded repo would price the drafting call by its directory
  * count. Shallow entries survive the cap (see `legalScopes`) because they are

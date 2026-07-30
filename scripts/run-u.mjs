@@ -43,6 +43,10 @@ const arg = (/** @type {string} */ n) => { const i = process.argv.indexOf(`--${n
 // the signed hash is unaffected). Tier names, not model ids: the same closed menu the
 // planner's per-step `model` field uses. haiku takes no output_config.effort
 // (provider-gated, battery rule) — nothing to gate yet since neither tier sets effort.
+// PRD v1.36 floor: the drafter/default tier is sonnet MINIMUM — measured, a haiku
+// drafter died plan-red twice on the same rejection (ms7gne7s). `--model haiku` runs
+// BELOW the floor: an explicit operator probe whose rows are probes, never battery
+// evidence.
 const DEFAULT_TIER_MODELS = { sonnet: 'claude-sonnet-5', haiku: 'claude-haiku-4-5-20251001' };
 const tierArg = arg('model') ?? 'sonnet';
 const MODEL = DEFAULT_TIER_MODELS[/** @type {keyof typeof DEFAULT_TIER_MODELS} */ (tierArg)];
@@ -109,10 +113,18 @@ console.log(`\n== U run ${runid} ==  $${spec.budgetUsd} · ${spec.maxWallMs / 60
 // in-process fuse never running because whatever froze the run froze its timers
 // too. This one is a separate process holding one file's mtime and a pid.
 // `unref()` so it can never keep a finished run alive.
+// The STALE window is sized above the worst LEGAL spine silence, which is the
+// CLOSE, not the worker: runStages emits nothing between stages and spawnSync
+// freezes the loop for each stage's full duration (F68), so a legal close can be
+// silent for up to closeTimeoutMs × stages. The default 600s window against a
+// 900s-per-stage cap would kill a live verdict mid-close — the exact damage the
+// wall grace exists to prevent, on the trigger the grace never covered.
+const worstCloseSilenceMs = CLOSE_TIMEOUT_MS * spec.close.length;
 const watchdog = spawn(process.execPath, [
   new URL('./u-watchdog.mjs', import.meta.url).pathname,
   '--spine', spineFile,
   '--pid', String(process.pid),
+  '--stale-ms', String(worstCloseSilenceMs + 600_000),
   '--wall-ms', String(spec.maxWallMs),
 ], { stdio: ['ignore', 'ignore', 'inherit'] });
 watchdog.unref();

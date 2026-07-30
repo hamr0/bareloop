@@ -21,14 +21,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createStallWatch, StallError } from '../src/stall.js';
 
-/** a hand-driven clock + timer queue: nothing here touches real time */
+/** a hand-driven timer queue: nothing here touches real time. The watch reads the
+ * clock only through these timers — it holds no `now` of its own, so there is none
+ * to inject (an injected knob nothing reads is a knob that lies about what is under
+ * test, F16). */
 function fakeTimers() {
   let nowMs = 0;
   /** @type {{ at: number, fn: () => void, id: number, live: boolean }[]} */
   const queue = [];
   let nextId = 1;
   return {
-    now: () => nowMs,
     setTimer: (/** @type {() => void} */ fn, /** @type {number} */ ms) => {
       const t = { at: nowMs + ms, fn, id: nextId++, live: true };
       queue.push(t);
@@ -85,13 +87,15 @@ test('a beat RESETS the window — a slow but progressing call is never cut', as
   const w = createStallWatch({ stallMs: STALL_MS, ...T });
   let attempts = 0;
   let settle = /** @type {(v: string) => void} */ ((_) => {});
-  const call = () => { attempts += 1; return new Promise((res) => { settle = res; }); };
+  /** @type {number} */
+  let gen = -1;
+  const call = (/** @type {number} */ g) => { attempts += 1; gen = g; return new Promise((res) => { settle = res; }); };
   const p = w.watch(call);
   // four rounds, each arriving just inside the window: 4x longer than the window
   // in total, and it must NOT trip once.
   for (let i = 0; i < 4; i++) {
     T.advance(STALL_MS - 1);
-    w.beat();
+    w.beat(gen);
   }
   settle('slow but alive');
   assert.equal(await p, 'slow but alive');
@@ -195,6 +199,68 @@ test('an abandoned call that dies MID-FLIGHT cannot kill the healthy one that re
   assert.equal(await p, 'healed', 'the dead call must not be able to settle the live one');
 });
 
+test('a ZOMBIE round cannot keep the replacement alive — a beat is generation-scoped', async () => {
+  // MED-2, demonstrated live: the abandoned call does not stop existing. Its socket
+  // is exactly the ms3197n8 shape — still open, still streaming rounds — and every
+  // one of those rounds calls back. If a corpse's beat re-arms the watch, it re-arms
+  // it on the call that REPLACED it, and that replacement can then hang for the rest
+  // of the run without ever tripping: the watchdog is fed by the thing it abandoned.
+  const T = fakeTimers();
+  const w = createStallWatch({ stallMs: STALL_MS, maxStalls: 3, ...T });
+  /** @type {number[]} */
+  const gens = [];
+  let attempts = 0;
+  const call = (/** @type {number} */ gen) => { attempts += 1; gens.push(gen); return new Promise(() => {}); };
+  /** @type {{ err?: any, ok?: any } | null} */
+  let outcome = null;
+  w.watch(call).then((v) => { outcome = { ok: v }; }, (e) => { outcome = { err: e }; });
+  T.advance(STALL_MS); // stall #1 → call#1 abandoned, call#2 issued
+  assert.equal(attempts, 2);
+  const zombie = gens[0];
+  // the corpse now beats four times per window, forever, while the replacement
+  // produces nothing at all. The replacement MUST still trip out to StallError.
+  for (let i = 0; i < 16; i++) {
+    T.advance(STALL_MS / 4);
+    w.beat(zombie);
+  }
+  await new Promise((r) => setImmediate(r));
+  assert.ok(
+    /** @type {any} */ (outcome)?.err instanceof StallError,
+    'the replacement never tripped — an abandoned call kept its successor\'s watch alive',
+  );
+  assert.equal(w.stalls(), 3);
+});
+
+test('a superseded generation is never current again — the seam that withholds beat() and loop.stop() from a corpse', async () => {
+  // The fuse's callbacks (metering, the round bound, the wall cut) are wired per
+  // Loop, and after a reissue TWO calls can be firing them. `isCurrent` is how the
+  // caller tells its own rounds from a dead call's: the corpse's spend is still
+  // metered (F6/F44 — an orphaned round is really billed), but it must never beat
+  // the watch and never stop the live call.
+  const T = fakeTimers();
+  const w = createStallWatch({ stallMs: STALL_MS, ...T });
+  /** @type {number[]} */
+  const gens = [];
+  let attempts = 0;
+  /** @type {(v: string) => void} */
+  let finishNew = () => {};
+  const call = (/** @type {number} */ gen) => {
+    attempts += 1;
+    gens.push(gen);
+    return attempts === 1 ? new Promise(() => {}) : new Promise((res) => { finishNew = res; });
+  };
+  const p = w.watch(call);
+  assert.equal(w.isCurrent(gens[0]), true, 'the call in flight is the one the watch is timing');
+  T.advance(STALL_MS);
+  assert.equal(attempts, 2);
+  assert.notEqual(gens[1], gens[0], 'each issued call gets its own generation token');
+  assert.equal(w.isCurrent(gens[0]), false, 'the abandoned call is inert: no beat, no stop, on the live call');
+  assert.equal(w.isCurrent(gens[1]), true);
+  finishNew('healed');
+  assert.equal(await p, 'healed');
+  assert.equal(w.isCurrent(gens[1]), false, 'a late round after the watch settles is inert too');
+});
+
 test('timers are released — a settled watch leaves nothing armed', async () => {
   const T = fakeTimers();
   const w = createStallWatch({ stallMs: STALL_MS, ...T });
@@ -205,7 +271,9 @@ test('timers are released — a settled watch leaves nothing armed', async () =>
 test('beats after settle are inert — a late round cannot re-arm a finished watch', async () => {
   const T = fakeTimers();
   const w = createStallWatch({ stallMs: STALL_MS, ...T });
-  await w.watch(() => Promise.resolve('done'));
-  w.beat();
+  /** @type {number} */
+  let gen = -1;
+  await w.watch((/** @type {number} */ g) => { gen = g; return Promise.resolve('done'); });
+  w.beat(gen); // the call's OWN generation, arriving late: still inert once settled
   assert.equal(T.pending(), 0);
 });

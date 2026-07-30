@@ -10,7 +10,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { validateJob, jobSpecHash, checkApproval, CLASS_BY_CLOSE, CLOSE_TYPES, TOOL_MENU, LOCKED_TOOLS, VERDICT_TYPES, LOCKED_VERDICTS } from '../src/job.js';
+import { validateJob, jobSpecHash, checkApproval, checkMenu, CLASS_BY_CLOSE, CLOSE_TYPES, TOOL_MENU, LOCKED_TOOLS, VERDICT_TYPES, LOCKED_VERDICTS } from '../src/job.js';
 
 // The base fixture is the PLAN shape — the only shape (PRD v1.32, 2026-07-26):
 // the human signs the destination (goal / verdictType / close / checks) and the
@@ -457,4 +457,59 @@ test('P: a store-only ceiling is still scout-blind — isolate verbs are not rea
 test('P: run stays locked-but-listed — the widening never touched the lock', () => {
   const r = validateJob(mut4((j) => { j.tools = ['read', 'impact', 'run']; }));
   assert.ok(r.reds.some((x) => x.code === 'request-red' && x.verb === 'run'));
+});
+
+// ---- checkMenu: the derived chain (PRD v1.28) ----
+// A picked ruler runs its prerequisites first. The expansion must be
+// TRANSITIVE: a one-level expansion runs an INCOMPLETE chain, so a stage whose
+// prerequisite has its own prerequisite false-reds for a reason that has
+// nothing to do with the worker's edit — the exact failure `needs` exists to
+// remove, one level deeper. Zero reachability today (no signed spec nests),
+// so these pin the shape before a spec can reach it.
+
+test('checkMenu expands needs TRANSITIVELY: a two-deep chain runs all of it, in close order', () => {
+  const close = [
+    { name: 'seed', cmd: 'git rev-parse SEED', expect: 0, offer: false },
+    { name: 'build', cmd: 'npm run build', expect: 0 },
+    { name: 'declarations', cmd: 'npm run build:types', expect: 0, needs: ['build'] },
+    { name: 'api-superset', cmd: 'node check-api.mjs', expect: 0, needs: ['declarations'] },
+  ];
+  const menu = checkMenu(close);
+  assert.deepEqual(menu.find((m) => m.name === 'api-superset').run.map((s) => s.name),
+    ['build', 'declarations', 'api-superset'],
+    'needs-of-needs runs too — an incomplete chain reds on missing declarations, not on the work');
+  assert.deepEqual(menu.find((m) => m.name === 'declarations').run.map((s) => s.name), ['build', 'declarations']);
+  assert.deepEqual(menu.find((m) => m.name === 'build').run.map((s) => s.name), ['build']);
+});
+
+test('checkMenu dedupes a diamond and keeps close-stage order, never the mention order', () => {
+  const close = [
+    { name: 'build', cmd: 'npm run build', expect: 0 },
+    { name: 'left', cmd: 'node left.mjs', expect: 0, needs: ['build'] },
+    { name: 'right', cmd: 'node right.mjs', expect: 0, needs: ['build'] },
+    // names its prerequisites out of close order: the chain is the CLOSE's
+    // order (which the validator already forces to be topological), not the
+    // operator's typing order
+    { name: 'both', cmd: 'node both.mjs', expect: 0, needs: ['right', 'left'] },
+  ];
+  const run = checkMenu(close).find((m) => m.name === 'both').run.map((s) => s.name);
+  assert.deepEqual(run, ['build', 'left', 'right', 'both'], 'build runs ONCE, and the chain follows the close');
+});
+
+test('checkMenu refuses to loop on a needs CYCLE — terminates, each stage at most once', () => {
+  // Unreachable through validateJob (needs must name EARLIER stages, so a cycle
+  // is inexpressible in a signed close) — but checkMenu is exported and pure,
+  // and a fixed-point walk that trusts its input is one hostile close away from
+  // hanging the runner before any token burns.
+  const close = [
+    { name: 'a', cmd: 'node a.mjs', expect: 0, needs: ['b'] },
+    { name: 'b', cmd: 'node b.mjs', expect: 0, needs: ['a'] },
+  ];
+  const menu = checkMenu(close);
+  for (const m of menu) {
+    const names = m.run.map((s) => s.name);
+    assert.equal(new Set(names).size, names.length, `${m.name}: a stage appears at most once`);
+    assert.equal(names[names.length - 1], m.name, 'the picked stage still runs last');
+  }
+  assert.deepEqual(menu.map((m) => m.run.map((s) => s.name)), [['b', 'a'], ['a', 'b']], 'deterministic, both directions');
 });

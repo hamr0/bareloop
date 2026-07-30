@@ -111,10 +111,6 @@ const CLOSE_FIELDS = {
   rubric: ['type', 'criteria'],
   hitl: ['type', 'prompt'],
 };
-/** a named check (decision 1) IS the predicate-close body plus a name — same
- * fields, same validator, same runClose machinery (a second command shape
- * would be the F9 two-transforms class one level up) */
-const CHECK_FIELDS = ['name', 'cmd', 'expect', 'judged', 'gapKeep'];
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
 
 /** @typedef {{code: string, path: string, detail?: string, verb?: string}} Red — `verb` rides request-reds as structured data (the ledger keys on it, never on prose) */
@@ -376,19 +372,45 @@ function predicateBody(o, at, red) {
  * operator had hand-carved three (F58) — removing the operator does not cost the
  * agent rulers, it hands it more.
  *
+ * The `needs` expansion is TRANSITIVE (fixed point, not one level): a
+ * prerequisite may itself name one, and running an incomplete chain reproduces
+ * the exact false-red `needs` exists to remove, one level deeper. The expanded
+ * chain is ordered by the CLOSE, never by the order names were typed —
+ * validateStagedClose forces `needs` to name EARLIER stages, so close order IS
+ * a topological order. A `needs` cycle is inexpressible in a validated close for
+ * that same reason; the walk is still cycle-safe by construction (each stage is
+ * collected at most once), because a pure exported helper must terminate on
+ * whatever it is handed rather than hang the runner before any token burns.
+ *
  * @param {any[]} close the validated stage list
  * @returns {{name: string, run: any[]}[]} offerable stages, each with the ordered
  *   chain that must run for it (prerequisites first, the stage itself last)
  */
 export function checkMenu(close) {
   if (!Array.isArray(close)) return [];
-  const byName = new Map(close.filter((s) => isObj(s) && isNonEmptyString(s.name)).map((s) => [s.name, s]));
+  const named = close.filter((s) => isObj(s) && isNonEmptyString(s.name));
+  const byName = new Map(named.map((s) => [s.name, s]));
+  const orderOf = new Map(named.map((s, i) => [s, i]));
+  /** the transitive prerequisite closure of one stage, in close order */
+  const chain = (/** @type {any} */ stage) => {
+    /** @type {Set<any>} */
+    const collected = new Set();
+    const walk = (/** @type {any} */ s) => {
+      for (const n of Array.isArray(s.needs) ? s.needs : []) {
+        const p = byName.get(n);
+        // already collected (a diamond) or the picked stage itself (a cycle):
+        // the walk stops here, so it visits each stage at most once
+        if (!p || p === stage || collected.has(p)) continue;
+        collected.add(p);
+        walk(p);
+      }
+    };
+    walk(stage);
+    return [...collected].sort((a, b) => (orderOf.get(a) ?? 0) - (orderOf.get(b) ?? 0));
+  };
   return close
     .filter((s) => isObj(s) && s.offer !== false && isNonEmptyString(s.name))
-    .map((s) => ({
-      name: s.name,
-      run: [...(Array.isArray(s.needs) ? s.needs : []).map((n) => byName.get(n)).filter(Boolean), s],
-    }));
+    .map((s) => ({ name: s.name, run: [...chain(s), s] }));
 }
 
 /** the fields a close STAGE may carry — anything else is a smuggle channel */

@@ -57,16 +57,21 @@ export class StallError extends Error {
 
 /**
  * @typedef {Object} StallWatch
- * @property {<T>(call: () => Promise<T>) => Promise<T>} watch run `call`, reissuing it
- *   whenever it goes `stallMs` without a beat; rejects `StallError` past `maxStalls`
- * @property {() => void} beat a round completed — reset the window
+ * @property {<T>(call: (gen: number) => Promise<T>) => Promise<T>} watch run `call`,
+ *   reissuing it whenever it goes `stallMs` without a beat; rejects `StallError` past
+ *   `maxStalls`. Each issue is handed its GENERATION — the token every callback that
+ *   call installs must carry back, so a corpse's callbacks cannot touch the live call.
+ * @property {(gen: number) => void} beat a round completed on generation `gen` — reset
+ *   the window. From any other generation it is inert.
+ * @property {(gen: number) => boolean} isCurrent is `gen` still the call this watch is
+ *   waiting on? The caller reads it to withhold everything else a dead call would do.
  * @property {() => number} stalls how many stalls this watch has absorbed
  */
 
 /**
  * Start a stall watchdog.
  * @param {{ stallMs?: number, maxStalls?: number, onStall?: (n: number) => void,
- *          now?: () => number, setTimer?: (fn: () => void, ms: number) => any,
+ *          setTimer?: (fn: () => void, ms: number) => any,
  *          clearTimer?: (id: any) => void }} [opts]
  *   `onStall` is announced for EVERY stall including the last — a trim or a
  *   recovery that happens silently is indistinguishable from one that never
@@ -77,22 +82,25 @@ export function createStallWatch({
   stallMs = STALL_MS,
   maxStalls = MAX_STALLS,
   onStall = () => {},
-  now = Date.now,
   setTimer = setTimeout,
   clearTimer = clearTimeout,
 } = {}) {
   let stalls = 0;
   /** @type {any} */
   let timerId = null;
-  /** the generation of the call currently being watched: a beat or a trip from an
-   * ABANDONED call must not touch the one that replaced it. */
+  /** the generation of the call currently being watched: NOTHING from an ABANDONED
+   * call may touch the one that replaced it — not its trip, not its late settlement,
+   * and not its beats. The corpse keeps streaming (ms3197n8's socket lived 274min
+   * after we would have moved on), so every callback it installed keeps firing; the
+   * generation is the token that tells those callbacks apart from the live call's.
+   * It is handed to each issued call and carried back through `beat`/`isCurrent`. */
   let generation = 0;
   let settled = true;
   /** @type {((v: any) => void) | null} */
   let resolve = null;
   /** @type {((e: any) => void) | null} */
   let reject = null;
-  /** @type {(() => Promise<any>) | null} */
+  /** @type {((gen: number) => Promise<any>) | null} */
   let theCall = null;
 
   const disarm = () => {
@@ -130,7 +138,10 @@ export function createStallWatch({
     arm(gen);
     let p;
     try {
-      p = /** @type {() => Promise<any>} */ (theCall)();
+      // the call is TOLD its generation: the callbacks it wires (metering, the round
+      // bound, the wall cut) outlive the call itself, and this is the only token that
+      // lets them ask "am I still the live one?".
+      p = /** @type {(g: number) => Promise<any>} */ (theCall)(gen);
     } catch (e) { // a synchronous throw is a real failure, not a stall
       settled = true;
       disarm();
@@ -156,7 +167,7 @@ export function createStallWatch({
     );
   }
 
-  /** @type {<T>(call: () => Promise<T>) => Promise<T>} */
+  /** @type {<T>(call: (gen: number) => Promise<T>) => Promise<T>} */
   function watch(call) {
     theCall = call;
     settled = false;
@@ -170,13 +181,18 @@ export function createStallWatch({
 
   return {
     stalls: () => stalls,
-    // A beat after the watch has settled is inert. Rounds can and do arrive from a
-    // call we abandoned; re-arming on one would keep a dead timer alive past the
-    // end of the run.
-    beat() {
-      if (settled) return;
+    // A beat is SCOPED TO ITS CALL. Rounds do arrive from a call we abandoned, and
+    // re-arming on one is not a harmless late timer: it re-arms the watch that is
+    // timing the REPLACEMENT, so the corpse feeds the watchdog and the live call can
+    // hang for the rest of the run without ever tripping. A beat after the watch has
+    // settled is inert for the same reason.
+    /** @param {number} gen the generation `watch` handed the call that produced this round */
+    beat(gen) {
+      if (settled || gen !== generation) return;
       arm(generation);
     },
+    /** @param {number} gen @returns {boolean} */
+    isCurrent: (gen) => !settled && gen === generation,
     watch,
   };
 }
