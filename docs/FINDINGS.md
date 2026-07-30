@@ -3939,3 +3939,130 @@ unchanged); the runner's `--model haiku` arm remains as an explicit operator pro
 documented as below-floor. Also on record: the mailbox rule was built as a teaching red
 for the resident drafter and debuted as a SHIELD against a weaker one — the gate's value
 is tier-independent.
+
+## F70 — the hardening-and-review cycle before the release: two guards carrying the very failure they were built to catch, and one fix refuted before it shipped
+
+**Status: minted 2026-07-30 from the close-out of branch `staged-close-wip` (31 commits
+vs main). A hardening pass (15 tests: mailbox edges, a five-phase casualty grid, the
+cold-store guarantee) ran first and PARKED two of its own finds as arbiter territory;
+hamr released them in-turn (*"fix both then /code-review medium…"*), which fixed them and
+launched an opus MEDIUM whole-branch review; that returned 6 MED + 9 LOW, and hamr's
+second order (*"validate all errors and fix what passes"*) set the contract for the
+closing batch: validate each finding before touching it, fix only what survives
+validation. Every validated finding is fixed across `1a04193` / `c6bfb88` / `ff78314`;
+full gate 505/505, typecheck clean.**
+
+### The headline: a guard can carry the exact failure mode it exists to catch
+
+Two of the three MED findings are the same shape, in the two instruments this branch
+added to survive a frozen run — and neither was reachable by reading the feature they
+guard. Only reading the GUARD as if it were the patient found them.
+
+**The stall fuse could be disarmed by its own reissue (MED-2).** F66's fuse abandons a
+hung call and silently reissues it, and its heartbeat is a completed round. But the
+abandoned call is not dead — U run `ms3197n8`'s socket kept streaming for 274 minutes
+after the fuse moved on — so every callback the corpse installed keeps firing. A late
+beat from that zombie re-armed the watch that was timing its REPLACEMENT: the replacement
+could then hang forever without ever tripping the fuse built to trip on exactly that.
+One shared `Loop` made it worse, letting a corpse's round bound stop the live call. Fixed
+by generation scoping (`src/stall.js`): the watch, the beat and the metering callback all
+carry the generation of the call that issued them, `isCurrent(gen)` is the token that
+tells a corpse's callback from the live one, and each issued call gets its own `Loop`.
+Orphan rounds stay metered — an abandoned call may already have been billed (F44).
+
+**The outside watchdog could kill a stranger, and could kill a live verdict (L7 +
+MED-3).** F67's whole premise is that a guard sharing nothing with the run survives what
+the run cannot. Its liveness probe was `kill(pid, 0)` — which answers "does SOME process
+hold this pid", not "is my victim alive". After the SIGKILL/OOM case the watchdog exists
+for, the kernel can recycle that pid onto an unrelated process and the guard would go on
+to kill a stranger. Liveness is now the PARENT LINK (`process.ppid === pid`,
+`scripts/u-watchdog.mjs:85`), which pid reuse cannot forge, and a guard aimed at a
+non-parent REFUSES to arm at startup — loud, exit 2, no marker (`:64-66`) — rather than
+running as a plausible-looking guard pointed at nothing. Separately, its stale-spine
+window was sized below the longest LEGAL silence: `runStages` emits nothing between
+stages, so a legal close can be quiet for `closeTimeoutMs × stages`, and the trigger could
+have killed a run mid-verdict. Sized from the spec's own stage count plus a margin
+(`scripts/run-u.mjs:123,128`). The watchdog's test fixtures were rewritten so the victim
+spawns its OWN watchdog — the only fixture shape that exercises the real parent link.
+
+### Three instruments reading a number that was not the one they meant
+
+**The ledger counted every stall as a bareloop bug (MED-1).** `classifyIncidents` had no
+branch for `step-stalled`, so the F66 fuse's own terminal fell through to "unclassified
+escalation category" — real upstream evidence (BA-19's trail) filed as a fake defect of
+ours. Routed through the same TYPED-LIB branch as `interpreter-red`
+(`src/ledger.js:137-138`): the `lib` field is stamped at the throw site and the stall
+accrues against the package that field names. Excluding the category instead would have
+deleted the evidence outright.
+
+**The spawner close floored on tests PASSED, not EXECUTED — the F40 class, again**
+(`scripts/u-spawner-close.mjs`). A skipped or deselected test could hide a red without
+ever pushing the passed-count under the floor, and only one summary bucket was read. The
+floor now reads `executed = collected − (skipped + deselected)` and sums every red tally
+on the summary line. Validated against the real patient (209 executed). The rule this
+repo minted at F40 — *count tests EXECUTED, never tests PASSED* — held in the library's
+close contract the whole time and was violated in a close script written later.
+
+**The close-fix loop laundered casualties, then laundered a money cut (F11/F44, then
+F45).** The step loop already restores an escalation's own category before returning; the
+fix loop returned a flat `escalated`, so a `provider-red` raised there came back as a
+capability read — and `run.js` keys the F44 `spendComplete:false` floor on the OUTCOME,
+so the run reported an exact-looking total for a call that may never have billed back.
+Found by the hardening pass, PARKED as verdict routing, fixed on hamr's word
+(`1a04193`). The review then found the SECOND half in the same routine (MED-4): the shell
+spells attempt-exhaustion and a money-gate halt with the same `cap-halt` category, so the
+category alone cannot tell them apart and only the wallet can. The fix worker's gate is
+built with the wallet at its most drained — every step's spend is behind it — which is
+precisely where a money cut masquerades as "the fix failed". A drained wallet now returns
+`cap-halt`, the resume-to-cap checkpoint; attempts spent with money still on the table
+stays the designed `escalated` terminal (`src/planrun.js:1259-1279`). Reachability was
+validated before the fix, not after: there is no money guard between the last step and
+the close.
+
+### Two promises the tool surface did not keep
+
+**`ctx_remember` was write-only through the verb the worker holds.** The isolate strategy
+line promises *"record a durable conclusion with `ctx_remember` so a later step can
+`ctx_recall` it"* — and the recall handler hardcoded `kind: 'code'`, so no note ever came
+back. The library-level round-trip test could not see it: it called `lc.recall` directly,
+not the verb. Recall now queries the fact axis alongside code and returns each note
+labeled `memory` with its BODY inline, capped at 400 chars — the body rides because a
+note is a CONCLUSION, not a pointer, and no worker verb dereferences a memory id, so a
+pointer-only reply would have been inert. **`ctx_impact` printed `calls
+undefined:undefined` for every callee** (`src/tools.js:233`): litectx returns `defs` and
+`callers` as objects with a path and a line, but `callees` as bare NAMES, and the readout
+assumed the object shape uniformly. Found while validating something else.
+
+### The fix that was refuted before it shipped (L8)
+
+The review proposed renumbering `ctx_impact`'s line output to 1-based on the reasoning
+that its numbers are display-only. Validated against a real index rather than read off the
+source, and REFUTED: `impact`'s def range dereferences through `ctx_get` verbatim, and
+`ctx_recall` prints the identical number for the identical chunk. They are ONE
+interchangeable 0-based handle space, so renumbering one tool would have made two tools
+print two numbers for one chunk and turned `ctx_get`'s clean chunk-boundary refusal into a
+guessing game. The real defect — a worker cross-referencing an editor is off by one — is
+closed by naming the space in all three tool contracts instead (`LINE_SPACE`,
+`src/tools.js:112`), which is the choose-don't-describe move applied to a fact rather than
+a menu. The proposed fix would have broken a working contract to document one.
+
+### Also closed in the same batch
+
+F68's parked async close runner, under hamr's blanket go: `runClose`/`runStages` await a
+plain `spawn` instead of blocking on `spawnSync`, so a running close no longer freezes the
+host event loop it reports to — BREAKING for adopters, byte-identical in every close
+semantic, and recorded in F68's own resolution block rather than here.
+
+### Lesson
+
+**An instrument built to guard a failure mode can carry that failure mode itself.** The
+fuse that exists because abandoned calls keep talking was disarmable by an abandoned call
+talking; the watchdog that exists to survive a killed run could be aimed at a stranger by
+the kill it survives, and could kill a live verdict during a silence its own subject makes
+legally. Neither is reachable from the feature side — the guard has to be read as the
+patient, with its own failure mode as the hypothesis. And the second lesson is the
+contract hamr set for the batch: **validate before you fix**. Of the findings carried into
+the closing pass, one proposed fix would have broken a working invariant, and it died to a
+round-trip measurement against a real index — the same rule F43's tree-diff rework paid
+for (a fix proposed from reading is a hypothesis, not a fix), holding a second time on a
+change that read as obviously correct.

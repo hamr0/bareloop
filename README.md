@@ -60,7 +60,7 @@ Three layers; nothing inside negotiates with the layer above it.
 | Layer | What it is | Emergent? |
 |---|---|---|
 | **Outer shell** | Per-run budget cap (bareguard), retry cap, verdict collection, escalation routing. Stateless across runs | never — permanent, dumb, un-gameable |
-| **Emergent middle** | The authored workflow config: steps, per-step verdict class, memory binding, write scopes — schema-validated, config-red before tokens burn | yes — authored and improved by the agent |
+| **Emergent middle** | The authored plan: bounded steps, each with its granted verbs, its own round/attempt caps, its write scope and its form-checkable exits — schema-validated, red before tokens burn | yes — authored and improved by the agent |
 | **Floor** | Append-only JSONL spine (single source for every UI), litectx store per job, per-run ledger | never — the record |
 
 Every checkpoint in a workflow carries its own **verdict class**, and the class decides
@@ -79,7 +79,7 @@ diagnostic signal, and the admission path when it's justified.
 ## The science behind it
 
 bareloop is the productization of **[adaptlearn](https://github.com/hamr0/adaptlearn)**
-(archived at v0.11.1) — a closed experimental record, findings F1–F20. What it settled,
+(archived at v0.11.1) — a closed experimental record, findings F1–F23. What it settled,
 bareloop consumes without re-proving:
 
 | Mechanism | Evidence |
@@ -104,7 +104,7 @@ ladder, and the stop is a result.
 | **N1** ✅ | Job/close schema + validator — v0.2.0 |
 | **N2** ✅ | Single-job headless loop — job #1 minimal (review→fix→PR, hard greens only) — v0.3.0 |
 | **Layer R** ✅ | Within-run ratchet: shell-side fixation detector (intent) + rejected-edit feedback (outcome), **shipped OFF by default** (F41: fixation in remission, so ON has never won its A/B; F43 split the two axes; field read + default decision defer to Layer 2) — v0.4.0 |
-| **Layer 2** | plan-v1 micro-wheels — the road: bounded steps with in-run verifiable exits (the F39-measured semantic converter) |
+| **Layer 2** ✅ | plan-v1 micro-wheels — the road: bounded steps with in-run verifiable exits (the F39-measured semantic converter), accepted on the real-model battery (F47) — v0.5.0, then finished by T·A·P·U (a wall clock, variance-triggered replan, the 14-verb palette, user-mode e2e) |
 | **N3** | Executed inheritance + contrast-bit extractor — **kill-switch: rules must transmit across non-identical runs** |
 | **N4** | Verdict classes complete (soft/HITL minting) |
 | **N5** | Scheduler + budget ops |

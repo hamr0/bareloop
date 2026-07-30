@@ -231,7 +231,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   whose floor is one close timeout).
  * @returns {Promise<string>} 'green' | 'already-green' | 'escalated' | 'plan-red' |
  *   'check-red' | 'close-red' | 'close-unsupported' | 'pricing-red' | 'cap-halt' |
- *   'wall-halt' | 'provider-red' | 'interpreter-red' | `step-red:<id>`
+ *   'wall-halt' | 'provider-red' | 'interpreter-red' | 'step-stalled' | `step-red:<id>`
  */
 export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, capRuns = 3, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, now }) {
   workdir = resolve(workdir);

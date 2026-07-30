@@ -2210,3 +2210,66 @@ bridge half; the panel rung N6 for the UI half):
    planning/execution — e.g. **medium/low · medium/medium · medium/high · high/high**;
    the planning side never drops below the v1.36 floor, and high tiers remain an explicit
    user choice (cost-visible), never a default.
+
+## Addendum v1.38 — 2026-07-30 (the branch closes: hardened, reviewed, every validated finding fixed — and two arbiter changes made only on hamr's explicit word)
+
+**This addendum closes the `staged-close-wip` branch, not a design question.** v1.35 recorded
+that Layer 2's road was finished; this records that it is now hardened, reviewed and
+release-ready. No decision here reopens anything above it.
+
+### What landed after v1.37
+
+A hardening pass first (15 tests, every one fail-proven by sabotage): the mailbox rule's
+edges, a casualty grid covering all five provider-consuming phases, and the cold-store
+guarantee — a leak hunt proving litectx persists only under `.litectx/`, plus a tripwire on
+the runner's reset line, because an uncleaned store leaks run N's memory into run N+1's
+"cold" baseline and quietly poisons the reuse rung's OFF arm before it is ever built. One
+in-scope fix travelled with it: the mailbox law now fires only on a PARSED `tools` grant —
+one defect, one red.
+
+Then an opus MEDIUM whole-branch review: 6 MED + 9 LOW. Every validated finding is fixed;
+the full record is **F70**, and the two headline defects were in the guards themselves —
+F66's stall fuse disarmable by its own zombie reissue, F67's watchdog killable-by-design
+mid-close and aimable at a recycled pid. Neither was reachable from the feature side.
+
+### The two arbiter-territory changes, and the words that released them
+
+Standing doctrine parks verdict routing and close semantics for hamr's explicit go. Both
+were parked, and both were released in-turn:
+
+1. **Verdict routing.** The hardening pass found the close-fix loop laundering a transport
+   casualty into a flat `escalated` (F11/F44 class) and parked it. hamr: *"fix both then
+   /code-review medium…"* — which fixed it and launched the review. The review then found
+   the second half in the same routine, MED-4: the shell spells attempt-exhaustion and a
+   money-gate halt with one category, so only the wallet can split them, and the fix
+   worker's gate is built with the wallet at its most drained — the exact place a money cut
+   masquerades as a capability read (F45). Both halves now mirror the step loop.
+2. **Close execution.** hamr: *"validate all errors and fix what passes"* — which set the
+   closing batch's contract (validate each finding before touching it, fix only what
+   survives) and released **F68's parked async close runner**. `runClose`/`runStages` await a
+   plain `spawn`; the close no longer freezes the host loop it reports to, and every close
+   semantic is byte-identical. Resolution recorded in F68's own block.
+
+That contract earned its keep immediately: one proposed fix (renumbering the retrieval
+verbs' line output) was REFUTED by measurement before it shipped — it would have broken a
+working one-handle-space contract to document it (F70).
+
+### Standing
+
+The branch is **release-ready at 31 commits** vs `main`: full gate green, typecheck clean,
+no parked defect left in the shipped path. Two BREAKING changes are on it — `runClose` /
+`runStages` returning Promises (adopters), and `check-passes` requiring a write-class verb
+on the same step (plan authors) — so **the next release is recommended as a MINOR with
+explicit breaking notes (0.6.0)**, pre-1.0 SemVer as this repo already applies it. The
+version itself is hamr's call, as is the merge; nothing here authorizes either.
+
+**Next rung: Layer 3, the REUSE rung** — opened in the order LAYERS.md §4 states (interview
+→ design-freeze → a sub-dollar lineage pre-probe BEFORE any inheritance machinery), and
+gated as always on hamr.
+
+### One record correction (append-only, so it is stated here rather than edited above)
+
+This PRD's status header cites adaptlearn's closed record as **FINDINGS F1–F20**; the copied
+record in `docs/00-context/FINDINGS.md` runs to **F23** (F21–F23 are the three bareloop
+de-risk probes: menu breadth, menu disclosure, declared truncation). The range is the only
+thing wrong — no claim built on that record changes.

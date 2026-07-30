@@ -117,7 +117,13 @@ ships with the grant (`COMPONENT_STRATEGIES` — capability without strategy is 
 its own close. `ctx_recall` serves BOTH axes — code pointers, plus any note written with
 `ctx_remember`, returned on a line labeled `memory` with the note's BODY inline (capped at
 400 chars). A note is a conclusion, not a pointer: there is no worker verb that dereferences
-a memory id, so a pointer-only reply would be inert.
+a memory id, so a pointer-only reply would be inert. **`recall`, `get` and `impact` share ONE
+0-based line space** — the index's own index positions, one lower than the line an editor
+shows — and every one of the three says so in its own tool contract. The numbers are
+interchangeable handles: `impact`'s def range dereferences through `get` verbatim, and
+`recall` prints the same number for the same chunk. Rendering any one of them 1-based was
+tested and REFUTED: it would print two numbers for one chunk and turn `get`'s clean
+chunk-boundary refusal into a guessing game.
 
 **Staged close — the check menu DERIVES from it (PRD v1.28, `checkMenu` in `src/job.js`).**
 Every stage is a `predicate` command body (the same `cmd`/`expect`/`judged?`/`gapKeep?`
@@ -372,7 +378,14 @@ transport throw or a worker round the API cut off mid-generation (`truncated:max
 BA-6 — before which it laundered into a clean finish, F25): no verdict exists and the failed
 round's spend is only partly known (F6). `cap-halt` is the wallet; `wall-halt` is the clock
 (F64 — a timeout derived from the run's own deadline is a governance stop, never a transport
-casualty). `step-stalled` is the F66 stall fuse giving up: no completed round for 5 minutes,
+casualty). **`cap-halt` reaches you from the close-fix loop too, not only from a step:** the
+shell spells attempt-exhaustion and a money-gate halt with the same category, so both the
+step loop and the fix loop read the WALLET to tell them apart — a drained wallet is
+`cap-halt` (the resume-to-cap checkpoint), attempts spent with money still on the table is
+the designed `escalated` terminal ("the close is still red"). The fix worker's gate is built
+with the wallet at its most drained, which is exactly where a money cut would otherwise
+masquerade as a capability read (F45). `step-stalled` is the F66 stall fuse giving up: no
+completed round for 5 minutes,
 three times on one call — each stall silently abandons the hung call and reissues it
 (self-heal first); only the third throws. Inside a step it is the THIRD replan trigger
 (with `cap-halt` and `step-variance`); outside a step it escalates under its own name, never
@@ -521,8 +534,10 @@ panel reads the same file at N6.
 
 Three layers. An **outer shell** (dumb, permanent): per-run budget cap via bareguard,
 retry cap, verdict collection, escalation routing — stateless across runs; nothing inside
-negotiates with it. An **emergent middle**: the authored workflow config — steps, per-step
-verdict class, memory binding, write scopes — schema-validated. A **floor**: append-only
+negotiates with it. An **emergent middle**: the AGENT-authored plan — bounded steps, each
+with its granted verbs, its round and attempt caps, its narrowed write scope and its
+form-checkable exits — schema-validated by `validatePlan` before tokens burn (the
+operator-authored `steps[]` shape is deleted, PRD v1.32). A **floor**: append-only
 JSONL spine (single source for every UI), litectx store per job, per-run ledger. Built on
 the bare suite: bareagent, bareguard, litectx, barebrowse, baremobile — the full surface
 is disclosed to the authoring agent; only admitted verbs are callable per job.

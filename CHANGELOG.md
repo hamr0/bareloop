@@ -72,9 +72,18 @@ feature lands, **patch** = docs, fixes, scaffolding.
   the spine escalation must agree); the fix loop did not, so a `provider-red` raised there came
   back as `escalated` — and `run.js` keys the F44 `spendComplete:false` floor on the OUTCOME, so
   the run reported an exact-looking total for a call that may never have billed back. Now
-  mirrored. `cap-halt` deliberately stays `escalated`: the fix loop exhausting its bound is the
-  designed terminal ("close still red"), not a casualty. Found by the hardening pass, PARKED,
-  and fixed only on hamr's explicit go.
+  mirrored. Found by the hardening pass, PARKED, and fixed only on hamr's explicit go.
+- **The close-fix loop could not tell a drained wallet from spent attempts** (`src/planrun.js`,
+  F45 class). The shell spells BOTH terminals `cap-halt` — attempt-exhaustion and a money-gate
+  halt thrown mid-attempt — so the category alone cannot split them and only the wallet can.
+  The fix worker's gate is built with the wallet at its MOST drained (every step's spend is
+  behind it), which is precisely where a money cut masquerades as "the fix failed" and becomes
+  a false capability read. The fix loop now reads the wallet exactly as the step loop does: a
+  drained wallet returns `cap-halt` (the resume-to-cap checkpoint — the stop IS the
+  checkpoint), attempts spent with money still on the table stays the designed `escalated`
+  terminal ("the close is still red"). Reachability validated before the fix: nothing guards
+  money between the last step and the close. Verdict routing is arbiter territory — fixed only
+  on hamr's explicit go.
 - **`ctx_recall` was blind to the memory axis, so `ctx_remember` was write-only through the tool
   surface** (`src/tools.js`). The isolate strategy promises *"record a durable conclusion with
   `ctx_remember` so a later step can `ctx_recall` it"* — and the recall handler hardcoded
@@ -89,6 +98,58 @@ feature lands, **patch** = docs, fixes, scaffolding.
   sibling imports fell through to the editable install — a symlink to a DIFFERENT aurora
   checkout. Proven with a planted probe, fixed with `MYPYPATH`; latent not active (seed
   error count unchanged, both prior greens re-verified under the fixed instrument).
+- **The stall fuse could be disarmed by the very call it abandoned** (`src/stall.js`, F70). An
+  abandoned call is not dead — it keeps streaming (ms3197n8's socket lived 274 minutes past
+  the fuse) — so a late beat from that corpse re-armed the watch timing its REPLACEMENT, and
+  the replacement could then hang forever without tripping the fuse built for exactly that.
+  One shared `Loop` compounded it, letting a corpse's round bound stop the live call. Now
+  generation-scoped: `watch`/`beat`/`isCurrent` all carry the generation of the call that
+  issued them, and each issued call gets its own `Loop`. Orphan rounds stay metered — an
+  abandoned call may already have been billed.
+- **The outside watchdog could kill a stranger, or kill a live verdict**
+  (`scripts/u-watchdog.mjs`, `scripts/run-u.mjs`, F70). Liveness was `kill(pid, 0)`, which
+  answers "does SOME process hold this pid" — and after the SIGKILL/OOM case the watchdog
+  exists for, the kernel can recycle that pid onto an unrelated process. Liveness is now the
+  PARENT LINK (`process.ppid === pid`), which pid reuse cannot forge, and a guard aimed at a
+  non-parent REFUSES to arm at startup (exit 2, no marker) rather than running as a
+  plausible-looking guard pointed at nothing. Separately, its stale-spine window was sized
+  BELOW the longest legal silence — `runStages` emits nothing between stages, so a legal close
+  can be quiet for `closeTimeoutMs × stages` — and is now sized from the spec's own stage count
+  plus a margin. Test fixtures rewritten so the victim spawns its own watchdog: the only shape
+  that exercises the real parent link.
+- **The ledger counted every stall as a bareloop bug** (`src/ledger.js`, F70).
+  `classifyIncidents` had no branch for `step-stalled`, so the F66 fuse's own terminal fell
+  through to "unclassified escalation category" — real upstream evidence filed as a fake defect
+  of ours. Now routed through the same TYPED-LIB branch as `interpreter-red`: `lib` is stamped
+  at the throw site and the stall accrues against the package that field names. Excluding the
+  category instead would have deleted the evidence outright.
+- **`checkMenu` expanded `needs` one level only** (`src/job.js`, F70), so a chain of
+  prerequisites ran incomplete — reproducing the false red `needs` exists to prevent, one level
+  deeper. Now a transitive fixed-point walk, ordered by close position, visiting each stage at
+  most once (cycle-safe by construction).
+- **`ctx_impact` printed `calls undefined:undefined` for every callee** (`src/tools.js`, F70).
+  litectx returns `defs` and `callers` as objects with a path and a line, but `callees` as bare
+  NAMES; the readout assumed the object shape uniformly.
+- **The aurora U close floored on tests PASSED, not EXECUTED** (`scripts/u-spawner-close.mjs`,
+  the F40 class recurring in a close written after the rule was minted). A skipped or deselected
+  test could hide a red without pushing the passed-count under the floor, and only one summary
+  bucket was read. Now floors on `executed = collected − (skipped + deselected)` and sums every
+  red tally; validated on the real patient (209 executed).
+- `WRITE_VERBS` was declared twice — `src/plan.js` held its own frozen copy of `src/job.js`'s
+  array, so a third write-class verb could land in one and not the other. `plan.js` now
+  re-exports the one inventory (identity-tested, not deep-equal).
+- **One defect, one red:** the mailbox rule fired on a step whose `tools` grant failed to
+  parse, deriving a second red from a false default on top of the correct
+  `missing-required`/`invalid-value` for the bad field. It now fires only on a PARSED grant —
+  the step's hands are unknowable otherwise, and the real defect already redded.
+- **The retrieval verbs' line numbers are named as ONE 0-based handle space**
+  (`src/tools.js`). `recall`, `get` and `impact` all print the index's own 0-based positions —
+  one lower than the line an editor shows — and each now says so in its own tool contract. The
+  tempting alternative (render `impact` 1-based, since its numbers look display-only) was
+  tested against a real index and REFUTED: `impact`'s def range dereferences through `get`
+  verbatim and `recall` prints the same number for the same chunk, so renumbering one tool
+  would print two numbers for one chunk and turn `get`'s clean chunk-boundary refusal into a
+  guessing game.
 
 ### Changed
 - **BREAKING for adopters — `runClose` and `runStages` are async and return Promises**
@@ -120,13 +181,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - bare-agent 0.34.0 → 0.35.0 (BA-19 delivered: `deadlineMs` total-call bound, `EDEADLINE`,
   `context.bound` discriminator, terminal by design; bareloop wiring PARKED — the F66 fuse
   already self-heals this class above the transport).
-
-### Known
-- `ralph.js` runs closes via `spawnSync`: every close run blocks the host event loop for the
-  close's full duration (measured 9 blocks in U run ms3wawub, worst 74.3s — bracketed
-  exactly by the close's tsc + suite stages). In-process timers are dead during a close; the
-  outside watchdog is not. Fix (async spawn, identical semantics) is arbiter territory —
-  named and PARKED for explicit go.
 
 ### Removed
 - **BREAKING — the legacy operator-authored `steps[]` path is deleted** (PRD v1.32, hamr:
