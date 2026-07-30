@@ -126,13 +126,25 @@ export function createCtxTools(lc, workdir, emit) {
         required: ['query'],
       },
       execute: async (/** @type {{query: string, n?: number}} */ { query, n }) => {
-        const hits = await lc.recall(String(query), { kind: 'code', n: Math.min(Math.max(Number(n) || 5, 1), 20) });
-        const out = hits.length
-          ? hits.map((/** @type {any} */ h) => (h.chunk
-            ? `${h.path}\t${h.chunk.symbol ?? '(anonymous)'}\t${h.chunk.nodeType}\tlines ${h.chunk.startLine}-${h.chunk.endLine}`
-            : `${h.path}\t(whole file — no chunk)`)).join('\n')
-          : 'no hits';
-        emit('ctx-tool', { tool: 'ctx_recall', query: String(query), hits: hits.length, paths: hits.map((/** @type {any} */ h) => h.path), bytes: Buffer.byteLength(out) });
+        const q = String(query);
+        const cap = Math.min(Math.max(Number(n) || 5, 1), 20);
+        const hits = await lc.recall(q, { kind: 'code', n: cap });
+        // The memory axis rides the same verb (hardening find, 2026-07-30): the
+        // isolate persona promises "remember so a later step can ctx_recall it",
+        // and a recall pinned to kind:'code' made notes write-only through the
+        // tool surface. A note's BODY comes back inline — it is a conclusion,
+        // not a pointer, and there is no worker verb that dereferences a memory
+        // id — capped per note so a bloated note cannot page the context.
+        const notes = await lc.recall(q, { kind: 'fact', n: cap, body: true });
+        const lines = hits.map((/** @type {any} */ h) => (h.chunk
+          ? `${h.path}\t${h.chunk.symbol ?? '(anonymous)'}\t${h.chunk.nodeType}\tlines ${h.chunk.startLine}-${h.chunk.endLine}`
+          : `${h.path}\t(whole file — no chunk)`));
+        for (const h of notes) {
+          const body = typeof h.body === 'string' ? h.body : '';
+          lines.push(`memory\t${h.path}\t${body.length > 400 ? `${body.slice(0, 400)}… [note truncated at 400 chars]` : body}`);
+        }
+        const out = lines.length ? lines.join('\n') : 'no hits';
+        emit('ctx-tool', { tool: 'ctx_recall', query: q, hits: hits.length, notes: notes.length, paths: [...hits, ...notes].map((/** @type {any} */ h) => h.path), bytes: Buffer.byteLength(out) });
         return out;
       },
     },

@@ -79,11 +79,13 @@ test('round-trip: the isolate verbs actually persist — a remembered fact recal
   assert.match(peeked, new RegExp(`^stash "${STASH_ID}": ${Buffer.byteLength(BLOB)} bytes`));
   assert.match(peeked, /error TS2345/);
 
-  // Pinned current behavior, NOT an endorsement: our ctx_recall handler hardcodes
-  // kind:'code', so a note written by ctx_remember is invisible to ctx_recall — the
-  // isolate persona's "a later step can ctx_recall it" does not hold through the tool
-  // surface. Recorded here because it is the read half of the memory this file guards.
-  assert.equal(await verb('ctx_recall')({ query: 'stopword filter' }), 'no hits');
+  // The read half of the memory this file guards, through the TOOL surface: the
+  // recall handler used to hardcode kind:'code' (notes were write-only — a pinned
+  // hardening find); fixed 2026-07-30, so the persona's "a later step can
+  // ctx_recall it" now holds, note body inline under the `memory` label.
+  const recalled = await verb('ctx_recall')({ query: 'stopword filter' });
+  assert.match(recalled, new RegExp(`^memory\\t${NOTE_ID}\\t`), 'the note surfaces, labeled as memory');
+  assert.ok(recalled.includes(NOTE), 'the conclusion body rides inline');
 
   assert.deepEqual(
     events.map((e) => e.tool),

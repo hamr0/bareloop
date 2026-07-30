@@ -1206,7 +1206,7 @@ test('REPLAN-DRAFTER casualty: a transport death during the replan draft is prov
   assert.ok(events.find((e) => e.type === 'plan-executed'), 'the plan-as-executed record never dangles, even on a casualty exit (design law #2)');
 });
 
-test('CLOSE-FIX-LOOP casualty: a transport death inside the outer fix loop — DOCTRINE GAP pinned, and the metered rounds that DID complete survive', async (t) => {
+test('CLOSE-FIX-LOOP casualty: a transport death inside the outer fix loop rides out under its OWN name, and the metered rounds that DID complete survive', async (t) => {
   const wd = makePatient(t);
   // Same shape as the fix-loop test: the close is stricter than the check, so
   // the step greens and the close reds once, opening the fix loop. Call 4 is the
@@ -1228,19 +1228,17 @@ console.log('FAILED close: the test never imports the module'); process.exit(1);
   const esc = events.filter((e) => e.type === 'escalation').at(-1);
   assert.equal(esc.category, 'provider-red', 'ralph files the casualty correctly ON THE SPINE');
 
-  // ⚠ DOCTRINE GAP (src/planrun.js:1204-1222). ralph catches a middle throw and
-  // returns the flat 'escalated'; the step loop re-reads `lastEscalation.category`
-  // to restore the honest name (planrun.js:1140-1147), and the fix loop does the
-  // same ONLY for wall-halt (planrun.js:1215). So a transport casualty in the fix
-  // loop rides out as 'escalated' while the spine escalation beside it says
-  // provider-red — the F11 two-instruments-disagreeing shape — and run.js's F44
-  // branch (run.js:174) keys on the OUTCOME, so this row would report
-  // spendComplete true: an exact-looking total for a call that never billed back.
-  // PINNED AS CURRENT BEHAVIOUR, not asserted as doctrine. Do not "fix" the test.
-  assert.equal(outcome, 'escalated',
-    '⚠ DOCTRINE GAP — current behaviour: the fix loop does NOT restore the casualty category the way the step loop does');
-  assert.notEqual(outcome, esc.category,
-    '⚠ DOCTRINE GAP — and that is the disagreement: the spine says provider-red, the outcome does not');
+  // The fix loop restores the casualty's own name exactly as the step loop does
+  // (planrun.js:1140-1147): ralph catches the middle throw and returns the flat
+  // 'escalated', and the caller re-reads `lastEscalation.category`. Anything
+  // else is the F11 two-instruments-disagreeing shape — and run.js's F44 branch
+  // keys spendComplete on the OUTCOME, so a laundered label reports an
+  // exact-looking total for a call that never billed back. (Was a pinned
+  // doctrine gap; fixed with hamr's explicit go, 2026-07-30.)
+  assert.equal(outcome, 'provider-red',
+    'a transport casualty in the fix loop is a casualty — never laundered into a bare escalated');
+  assert.equal(outcome, esc.category,
+    'the returned outcome and the spine escalation name the SAME category (F11)');
 
   // whatever the label, the money record must survive the casualty: the rounds
   // that completed were really spent and really billed (F12 per-round metering)

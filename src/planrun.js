@@ -1219,5 +1219,16 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     emitWallHalt({ cutMidCall: true, phase: 'fix' });
     return 'wall-halt';
   }
+  if (fixOutcome !== 'green' && typeof lastEscalation?.category === 'string' && lastEscalation.category !== 'cap-halt') {
+    // The step loop's category restoration (F11), mirrored: ralph returns the flat
+    // 'escalated' on a middle throw while its escalation carries the real name — a
+    // provider-red here is a transport CASUALTY, and run.js keys the F44
+    // spendComplete:false floor on the OUTCOME, so a laundered label would report
+    // an exact-looking total for a call that never billed back. cap-halt stays
+    // 'escalated': the fix loop exhausting its bound is the designed terminal
+    // ("close still red"), not a casualty. (Doctrine gap found by the hardening
+    // pass; fixed with hamr's explicit go, 2026-07-30.)
+    return lastEscalation.category;
+  }
   return fixOutcome === 'green' ? 'green' : 'escalated';
 }

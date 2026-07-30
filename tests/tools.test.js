@@ -137,6 +137,21 @@ test('remember → recall → forget: a durable note round-trips and dies on req
   assert.match(out, /1/, 'forget reports the rows removed');
 });
 
+test('the isolate promise holds at the TOOL surface: a remembered note comes back through ctx_recall, body attached', async () => {
+  // The hardening pass caught the gap: the persona says "record a durable
+  // conclusion with ctx_remember so a later step can ctx_recall it", but the
+  // recall handler hardcoded kind:'code', so notes were write-only through the
+  // tool surface (the library-level round-trip test above never saw it — it
+  // called lc.recall directly). A note is a CONCLUSION: the body rides inline,
+  // because a pointer to a memory the worker cannot dereference is inert.
+  const { tools } = await harness();
+  await tools.get('ctx_remember').execute({ id: 'culprit-note', text: 'the tokenizer drops digits at chunk boundaries' });
+  const out = await tools.get('ctx_recall').execute({ query: 'tokenizer digits' });
+  assert.match(out, /culprit-note/, 'the note id surfaces through the worker-facing verb');
+  assert.match(out, /drops digits at chunk boundaries/, 'the conclusion itself rides back, not just a pointer');
+  assert.match(out, /memory/, 'a note line is labeled as memory — never disguised as a code pointer ctx_get could dereference');
+});
+
 test('component strategies exist for every component — capability without strategy is inert (F19)', () => {
   for (const c of ['select', 'compress', 'isolate']) {
     assert.equal(typeof COMPONENT_STRATEGIES[c], 'string');
