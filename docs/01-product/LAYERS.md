@@ -89,7 +89,10 @@ verb blocks the work, the worker files a *request-red* and a human decides.
 | `get` | trade one pointer for exactly one chunk of code (the function + its doc comment) |
 | `run` | **LOCKED, forever.** A worker that can run commands can run its own judge and grade its own exam |
 
-> **⚠ This table is the CURRENT six, not the intended palette (F56, 2026-07-26).** The agreed
+> **⚠ RESOLVED by move P (2026-07-28, F69): the menu is now the full four-component
+> catalog — 14 verbs (`read·grep·write·edit` / `recall·get·impact·related·recent` /
+> `compress·peek` / `stash·remember·forget`), all signed into both job specs. The table
+> above shows the original six for history.** Original note (F56, 2026-07-26): The agreed
 > vocabulary is four components — **write · select · compress · isolate** — each with its own
 > verb list, which the agent picks from as it sees fit. Those twelve verbs ship upstream today
 > and were bound by the PRD's primitive-menu section; they were lost as collateral when
@@ -450,11 +453,14 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
      staged close reads the STAGE that actually rendered the verdict that attempt, and refuses
      to compare across a stage change rather than risk a false fire; and the grading stage is
      kept off the derived menu in all four shipped specs (`offer:false`, a per-spec convention
-     guarded by a test, not a schema rule). **Everything above is scripted-provider evidence
-     only — the staged close has not yet run against a real model.** **Status 2026-07-26: T
-     built (F64 fixed — a wall stop is a governance stop, never a transport casualty), A
-     built-and-inert with its threshold decided at 0.5, staged close BUILT, U / P not
-     started.**
+     guarded by a test, not a schema rule). **Status 2026-07-30: T·A·P·U is COMPLETE (PRD v1.35).** T built and live in
+     every U run; A built-and-inert at 0.5 (the paying replans fire on exhaustion); the
+     staged close has run real-model many times over; U is routine (litectx-u and aurora-u
+     both green end-to-end, bridges minted, casualties routed per doctrine); P built and
+     read under signed hashes (F69: the widened palette went unselected on both TYPES jobs
+     while the step vocabulary — model tier, attempts, scope — was adopted immediately; the
+     load-bearing find was the mailbox-with-no-hands plan shape, now a validation law).
+     Both job specs are signed on the 14-verb menu.
 5. **Build Layer 3** — inheritance with ledger attribution (N3, kill-switch: rules must
    transmit across non-identical runs). Carries three v1.21 requirements (external-review
    fold, 2026-07-21): **(a) the drift detector** — arbiter-side trailing green-rate vs
