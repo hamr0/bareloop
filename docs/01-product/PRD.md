@@ -2119,3 +2119,55 @@ different** plan and was killed mid-flight by an operator tooling limit, not by 
 is UNREAD, and no comparison may be drawn from it. That a second draft differs is expected of a
 probabilistic worker and is not evidence that one plan is worse; **more than one valid bridge
 almost certainly exists for a given job**, which is itself an input to items 2, 3 and 6 above.
+
+## Addendum v1.35 — 2026-07-30 (T·A·P·U closes: P read complete, the palette is inert where feedback names the target, and the mailbox rule joins the validation laws — F69)
+
+**This addendum closes the v1.27 programme.** All four moves are landed and read; the plan's
+paper trail: v1.27 (the programme), the materials design record (2026-07-26, T+A), the P design
+record (2026-07-28), FINDINGS F59–F69, and this addendum. No other document carries T·A·P·U
+status.
+
+### Where each move ended
+
+- **T** — shipped and live in every U run: `maxWallMs` (operator-set, no default), `src/clock.js`,
+  and the materials block (balance, never a rate — v1.29).
+- **A** — built; the variance trigger stays UNSET (v1.30/F63: it would have fired zero times in
+  the whole archive). The replan that actually pays fires on attempt-exhaustion, and it converted
+  a cap-halt to green on the F68 run.
+- **U** — the surface everything above was read on: five litectx-u cold runs this cycle plus the
+  F68 green; user-mode e2e is routine now, including casualty routing (one `truncated:max_tokens`
+  provider-red absorbed per doctrine).
+- **P** — built (design record 2026-07-28: 14-verb catalog, step vocabulary model/attempts/scope,
+  wired-or-refused); read under the signed hash `25d8c5ee…` at n=3 cold + 2 post-rule runs (F69).
+
+### What the P read established (one genre, one job — the qualifier travels)
+
+1. **The widened palette was never touched**: six drafted plans, zero new-verb selections —
+   while the step VOCABULARY (model tiering, attempts, scope) was adopted immediately and
+   everywhere. F19 recurs at the draft layer: a menu without a draft-time reason is inventory,
+   not capability.
+2. **The read is genre-bound by construction**: TYPES feedback (tsc's error list) names every
+   target file:line, so navigation verbs have nothing to sell on this job. "Inert on litectx-u
+   TYPES" is minted; "inert" is not. A job where FINDING is the bottleneck is the discriminating
+   instrument, if the question is ever worth its spend.
+3. **The load-bearing find was plan SHAPE, not palette**: 4 of 4 pre-rule plans authored a
+   read-only "verify" step holding every `check-passes` — the check's gap re-delivers to that
+   step's own worker, which cannot act (the mailbox with no hands). The one prior green (F68)
+   had escaped only via a lucky replan relocating the check.
+
+### The mailbox rule (shipped, d447665)
+
+`validatePlan` reds `check-passes` on any step without a write-class tool — the complement of
+the F17 pairing rule; the drafter prompt states the same law. Post-rule: first-draft compliance
+twice (the validator never fired — the stated law redirected the habit), and the first
+no-replan green in this job's history (`ms5uxhej`, $4.29/23.9min vs the F68 baseline's
+$5.77/37min-with-replan; direction recorded, n=1 unminted). The check-loop converted live at
+the exact step shape that had stalled both pre-rule runs.
+
+### Standing after v1.35
+
+Layer 2's road is finished. Open, in order, all gated on hamr: aurora-u re-sign under the
+widened menu (P design decision 4); the REUSE rung (v1.34's eight questions — four bridges now
+exist, including the first from an un-replanned cold plan); the parked mechanics (spawnSync
+async close-runner, deadlineMs wiring, branch merge). LC-4 (stash/peek/compress intent
+divergence with litectx's contract) remains an unfiled candidate ask.
