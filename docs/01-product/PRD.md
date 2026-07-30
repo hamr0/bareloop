@@ -2171,3 +2171,18 @@ widened menu (P design decision 4); the REUSE rung (v1.34's eight questions — 
 exist, including the first from an un-replanned cold plan); the parked mechanics (spawnSync
 async close-runner, deadlineMs wiring, branch merge). LC-4 (stash/peek/compress intent
 divergence with litectx's contract) remains an unfiled candidate ask.
+
+## Addendum v1.36 — 2026-07-30 (the tier floor: the plan is authored at sonnet or above — hamr)
+
+One decision, evidence-first: aurora-u run whole-job on haiku died plan-red at $0.05 —
+draft 1 authored the mailbox trap (F69's rule fired in production for the first time and
+blocked it), draft 2 repeated the violation verbatim after a red that named the step, the
+rule, and the fix. The same job, same signed spec, greened under sonnet the same day
+($1.86, 11.2min). The capability edge is at PLANNING, before any execution spend.
+
+**The lock (hamr, in-turn):** the drafter and the default worker tier floor is **sonnet
+(medium tier)**. Unchanged by this lock: the per-step `model` menu still offers `haiku`
+(economy tiering of mechanical steps under a sonnet-authored plan — a haiku step has
+greened); `opus`/top tiers stay absent from the plan menu (hamr-assigned only); the
+runner's `--model` flag remains an explicit operator probe knob — running below the floor
+is an operator act, never a default, and its rows are probes, not battery evidence.

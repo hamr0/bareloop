@@ -3911,3 +3911,23 @@ cp-first (`run-ms5uxhej.patch`, 764 lines). New-verb uptake: still zero (data po
 
 Cost read (secondary, n=1 vs n=1): $4.29/23.9min no-replan vs the baseline's $5.77/37min
 with a replan — direction favorable, unminted.
+
+### Addendum 2 (2026-07-30) — the haiku arm: the tier floor is the PLANNER's, and the mailbox rule's production debut was as a shield
+
+Aurora-u under `--model haiku` (run `ms7gne7s`, whole job on the economy tier): **plan-red,
+$0.05, 1.4min — no plan ever validated.** Draft 1 authored the exact mailbox trap (a 6-step
+plan ending in a read-only verify step holding `check-passes`) — **the F69 rule's first
+production firing**, plus two missing-exit reds. Draft 2 fixed the form reds and repeated
+the mailbox violation VERBATIM despite the red naming step, rule, and fix direction — the
+F38 gap-genre split (form converts, structure does not) surfacing at the drafting layer.
+Sonnet post-rule: 3/3 first-draft compliant, never drew the red.
+
+Contrast (same job, same signed hash, same day): sonnet green $1.86/11.2min vs haiku
+plan-red $0.05/1.4min. n=1 per arm, but the failure is BEFORE execution — a planning-tier
+capability edge, not a fixing-cost edge. **hamr locked the floor (in-turn, 2026-07-30):
+the drafter/default worker tier is sonnet (medium) minimum.** Per-step `model:"haiku"`
+tiering under a sonnet plan stays available (a haiku step has greened; the menu is
+unchanged); the runner's `--model haiku` arm remains as an explicit operator probe knob,
+documented as below-floor. Also on record: the mailbox rule was built as a teaching red
+for the resident drafter and debuted as a SHIELD against a weaker one — the gate's value
+is tier-independent.
