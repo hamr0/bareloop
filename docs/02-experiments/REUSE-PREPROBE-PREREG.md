@@ -323,8 +323,11 @@ as outside the draft probe. This is that instrument.
 **ONE full run** of `jobs/litectx-u-types.json`:
 
 - **same spec, same signed hash** — nothing about the job is edited for the probe;
-- **same $5 budget and 30 min wall** as the cold baselines — **comparability requires the
-  identical envelope**, so neither number moves;
+- **the spec's own envelope — $10 budget, 45 min wall** — the same one the cold baselines ran
+  under (**comparability requires the identical envelope**, so neither number moves; an
+  earlier draft of this addendum misquoted the envelope as $5/30min from the aurora-u spec —
+  corrected here BEFORE firing, the governing rule being "same spec, same signed hash",
+  which never changed);
 - **patient:** `litectx-u`, **reset clean to seed `96813a43bbcb`** (the same clean-seed
   precondition as pre-fire §4 — a half-solved tree is not what a real run faces, and a solved
   tree returns `already-green`). **The reset is operator-performed, never harness-performed.**
