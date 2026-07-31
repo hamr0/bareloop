@@ -76,6 +76,16 @@ The full bare-suite surface is *disclosed* to the authoring agent; only *admitte
 are callable per job. A request against a locked primitive is a structured red — real
 diagnostic signal, and the admission path when it's justified.
 
+## Security posture — honest about the boundary
+
+bareloop runs **locally**, as you. Secrets load from the environment and never enter the
+tree, the spine, the configs or the ledger — and the close child, which executes the code
+the worker just wrote, gets its environment **stripped of credential-shaped variables**
+(provider keys, `AWS_*`, anything named `*_TOKEN`/`*_SECRET`/`*_PASSWORD`/`*_API_KEY`):
+nothing that judges a tree needs them. That is exposure reduction, **not a sandbox** — the
+worker's code still runs with your OS permissions and network access, so treat a bareloop
+run as inside your trust boundary and give it a repo you'd let an agent touch.
+
 ## The science behind it
 
 bareloop is the productization of **[adaptlearn](https://github.com/hamr0/adaptlearn)**

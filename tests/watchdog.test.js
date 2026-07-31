@@ -84,12 +84,29 @@ function guardedRun(t, args, opts = {}) {
 const alive = (/** @type {number} */ pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
 test('a run whose spine keeps growing is never killed', async (t) => {
-  const { spine } = tmp(t);
+  const { dir, spine } = tmp(t);
   writeFileSync(spine, '{"type":"job-start"}\n');
-  const w = guardedRun(t, ['--spine', spine, '--stale-ms', '600', '--poll-ms', '100']);
-  // beat the spine faster than the stale window for well over that window
-  for (let i = 0; i < 8; i++) { await sleep(200); appendFileSync(spine, `{"type":"worker-round","i":${i}}\n`); }
+  // BOTH numbers are sized on measurement, and they move together on purpose.
+  //
+  // The old pair was `--stale-ms 600` against an `await sleep(200)` + appendFileSync
+  // round trip — 3:1 on paper. Measured in this exact shape under 3x CPU
+  // oversubscription (25 runs): the widest cold gap per run was p50 231ms, max 335ms,
+  // i.e. the worst beat ate 56% of the window and the real margin was 1.79x. The beat
+  // is the load-sensitive half (line 27), so the window is widened to ~6x that worst
+  // gap rather than the beat being chased faster.
+  //
+  // Widening alone would have DISARMED the test: 8 beats is 1.6s of observation, and
+  // against a 2s window a guard that ignored the spine entirely could not have killed
+  // anything inside it — the assertion would pass on a broken watchdog. So the
+  // observation widens with it. 5s is 2.5x the stale window: a guard that read this
+  // beating spine as flat kills at ~2.1s, ~3s before the assertion runs.
+  const w = guardedRun(t, ['--spine', spine, '--stale-ms', '2000', '--poll-ms', '100']);
+  const beat = setInterval(() => { try { appendFileSync(spine, '{"type":"worker-round"}\n'); } catch { /* raced teardown */ } }, 200);
+  t.after(() => clearInterval(beat));
+  await sleep(5000);
+  clearInterval(beat);
   assert.equal(alive(w.proc.pid), true, 'a progressing run must not be touched');
+  assert.equal(existsSync(join(dir, 'spine.jsonl.watchdog.json')), false, 'and no kill was even attempted — a live run leaves the guard silent');
 });
 
 test('a spine that goes cold gets the run killed', async (t) => {

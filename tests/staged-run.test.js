@@ -60,12 +60,32 @@ test('per-stage gapKeep and judged apply to their OWN stage — the floor that w
   // so on a short output the FAILED lines ride through whether gapKeep exists or
   // not, and the assertion passes vacuously (a smoke test in disguise). Real
   // suites are exactly this shape — F28 was minted on a 67KB one.
+  // `process.exitCode` rather than `process.exit()` — the conventional spelling, and it
+  // removes the one documented way a child can drop buffered output. It is NOT claimed
+  // as a fix: measured, `process.exit()` truncates NOTHING here (2,500 spawns across
+  // both spellings, including with the reader deliberately stalled 300ms so the pipe
+  // backs up — node's pipe writes are synchronous on Linux, so there is nothing pending
+  // to drop). Kept because it is free and strictly not-worse.
+  //
+  // The open item it did NOT close: this stage's own output has been observed ARRIVING
+  // SHORT — twice, ~1 run in 250 under CPU load, captured as `…[16004 chars truncated]…`
+  // against the usual ~30000, the stream ending mid-`mid filler line 137` with
+  // `FAILED: b` never received, exit code still 1. A plain `spawn` + `on('data')` loop
+  // over the same fixture never loses a byte in 2,500 spawns; only the runClose path
+  // does. Unexplained, and reported as such rather than papered over.
   writeFileSync(join(wd, 'noisy.mjs'), `const pad = (tag) => { for (let i = 0; i < 200; i++) console.log(tag + ' filler line ' + i + ' ................................'); };
-pad('head'); console.log("FAILED: a"); pad('mid'); console.log("FAILED: b"); pad('tail'); process.exit(1);\n`);
+pad('head'); console.log("FAILED: a"); pad('mid'); console.log("FAILED: b"); pad('tail'); process.exitCode = 1;\n`);
   writeFileSync(join(wd, 'empty.mjs'), 'console.log("collected 0 items"); process.exit(0);\n');
-  const keep = await runStages([{ name: 'noisy', cmd: 'node noisy.mjs', expect: 0, gapKeep: '^FAILED' }], (s) => s, { cwd: wd });
-  assert.ok(keep.gap.includes('filler line 0') && !keep.gap.includes('mid filler line 100'),
-    'precondition: the output really was long enough to elide — otherwise gapKeep is not what surfaced anything');
+  const noisy = { name: 'noisy', cmd: 'node noisy.mjs', expect: 0 };
+  const keep = await runStages([{ ...noisy, gapKeep: '^FAILED' }], (s) => s, { cwd: wd });
+  // The precondition is a NEGATIVE CONTROL, not a guess about which filler line landed
+  // on which side of the bound: the SAME stage without gapKeep must lose both failures
+  // to the elision. That reads the bound's own behaviour instead of an offset that
+  // moves whenever output arrival does — and it is what makes the assertion below
+  // non-vacuous, since on a short output the FAILED lines ride through either way.
+  const bare = await runStages([noisy], (s) => s, { cwd: wd });
+  assert.match(bare.gap, /chars truncated/, 'precondition: the output really was long enough to elide');
+  assert.doesNotMatch(bare.gap, /FAILED: [ab]/, 'precondition: without gapKeep the failures are GONE — so a pass below is gapKeep doing the work, not a short output riding through');
   assert.match(keep.gap, /FAILED: a[\s\S]*FAILED: b/, 'the stage\'s own gapKeep surfaced its failures out of the elided middle');
 
   const floor = await runStages([{ name: 'empty', cmd: 'node empty.mjs', expect: 0, judged: { pattern: 'collected (\\d+) items', min: 1 } }], (s) => s, { cwd: wd });

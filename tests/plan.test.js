@@ -105,6 +105,24 @@ test('a missing or malformed signed job fails CLOSED with its own red — never 
   }
 });
 
+test('a writeScope holding a NON-STRING fails closed too — the never-throws contract covers plain data', () => {
+  // `Array.isArray(writeScope)` admitted the array and said nothing about its
+  // MEMBERS, so the very next line (`writeScope.map(globToPrefix)`) hit
+  // `scope.replace is not a function` and validatePlan threw a TypeError on
+  // plain parsed data — the one thing its contract says it never does ("Never
+  // throws on JSON text or plain parsed data; every failure is a named red").
+  // `legalScopes` already filters with the same `isNonEmptyString`; the
+  // fail-closed guard just has to ask the same question.
+  for (const writeScope of [[123], ['tests/**', null], [''], [{}], [['tests/**']]]) {
+    let r;
+    assert.doesNotThrow(() => { r = validatePlan({ schema: 'plan-v1', steps: [] }, { job: { goal: 'g', writeScope } }); },
+      `writeScope ${JSON.stringify(writeScope)} must red, never throw`);
+    assert.equal(r.ok, false);
+    assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'job-invalid:job');
+    assert.equal(r.plan, null);
+  }
+});
+
 test('the closed menus ship frozen', () => {
   assert.deepEqual([...EXIT_TYPES], ['artifact-written', 'tree-changed', 'json-valid', 'check-passes']);
   assert.ok(Object.isFrozen(EXIT_TYPES));
@@ -402,6 +420,13 @@ const REDOS_BAD = [
   // repeat up through the wrapper; a false-negative here is the dangerous
   // direction (F49, review 2026-07-23).
   '((a+))+', '(?:(a+))+', '((\\d*))*', '(((a+)))+', '((\\w+))*',
+  // JS EMPTY character classes — `[]` (matches nothing) and `[^]` (the any-char
+  // idiom). The POSIX rule "a leading ] is a literal member" does NOT hold in
+  // JS: `[]` closes at the first `]`. Applying it ran the scan past the class's
+  // real end and swallowed every later quantifier — a FALSE NEGATIVE, the
+  // dangerous direction (measured: `x[^](a+)+$` does not finish RegExp.test in
+  // 15s on a 31-char body while the detector passed it, review 2026-07-31).
+  'x[^](a+)+$', '(([^]+))+', '(([]a+))+', '[^]x(a+)+',
 ];
 const REDOS_GOOD = [
   'def ', 'a+', '(abc)+', '(a+)', '(a+)?', '(a+){2}', '(a+){1,3}',
@@ -563,6 +588,28 @@ test('planPrompt: the offered scopes are a STANDALONE list, and the JSON exit ex
   assert.doesNotThrow(() => JSON.parse(exitLine.trim()), `exit example must be valid JSON, got: ${exitLine}`);
   assert.match(p, /Offered "scope" values for tree-changed/);
   assert.match(p, /^ {2}"tests\/unit\/\*\*"$/m, 'each offered value on its own line, quoted, copyable');
+});
+
+test('planPrompt states every bound and rule the validator ENFORCES — an unstated red is drafting friction the agent cannot see', () => {
+  // The prompt is the whole contract the agent drafts against: a bound the
+  // validator reds but the prompt never mentions is a round burnt on a rule the
+  // drafter had no way to know. Three had drifted: `attempts` said "integer" with
+  // no range while validatePlan reds outside 1..capRuns, and BOTH
+  // `step-scope-escape` reds (a target outside its own step's narrowed scope; a
+  // tree-changed scope disjoint from it) were enforced and never stated.
+  const scopes = legalScopes(['tests/**'], ['tests/unit']);
+  // the live cap is interpolated the way every sibling bound is, never a constant
+  for (const capRuns of [2, 5]) {
+    const p = planPrompt(JOB, 'survey', null, 40, null, scopes, undefined, capRuns);
+    assert.match(p, new RegExp(`"attempts"[^\\n]*1\\.\\.${capRuns}`), `the attempts bound names the LIVE cap ${capRuns}`);
+  }
+  const p = planPrompt(JOB, 'survey', null, 40, null, scopes, undefined, 3);
+  assert.match(p, /"scope"/, 'the step scope field is offered');
+  // stated as rules, in the prompt's own voice — matched on the load-bearing
+  // words rather than the sentence, so a rewording does not break the pin
+  const scopeRules = p.slice(p.indexOf('"scope" (optional)'), p.indexOf('- "exit"'));
+  assert.match(scopeRules, /"target"[\s\S]*?inside/i, 'the target-inside-its-own-scope rule is stated');
+  assert.match(scopeRules, /"tree-changed"[\s\S]*?disjoint/i, 'the tree-changed-not-disjoint rule is stated');
 });
 
 test('maxWallMs is ARBITER territory: smuggled into a plan or a step it reds unknown-field (the agent cannot author, tighten, or widen the time cap in v1 — it has no time field at all)', () => {

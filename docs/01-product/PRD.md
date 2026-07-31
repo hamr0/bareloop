@@ -2357,3 +2357,60 @@ actually distinguishes progress from silence.
 `MIN_WALL_MS` stays a one-stage floor (parked in v1.39): advertised = enforced holds, the
 floor is merely permissive. Nothing here changes the money path, the verdict classes, or who
 may author a bound — budgets and walls remain operator territory, permanently.
+
+## Addendum v1.41 — 2026-07-31 (the close child stops carrying the operator's credentials — and the threat model says plainly what that does NOT buy)
+
+hamr's ruling on a MEDIUM review finding, verbatim: ***"strip it when unnecessary, minimize
+unneeded exposure."*** One change, one honest note about its limits.
+
+### 1. The finding: the arbiter's child ran with the operator's keys in reach
+
+`runClose` built the close child's environment as `{...process.env}`, deleting only
+`NODE_TEST_CONTEXT`. Everything else went through — `ANTHROPIC_API_KEY` included. That child
+is not an ordinary subprocess: it runs **worker-authored code**. `npm test`, `pytest`, `tsc`
+execute whatever the worker wrote into the tree during the attempt it is about to judge, with
+network available. Nothing in that set needs a model-provider credential to decide whether a
+tree passes, so the exposure bought exactly nothing and is removed.
+
+### 2. The rule: a literal denylist is a chase, so a NAME-SHAPE rule bounds it
+
+`CLOSE_ENV_DENY` (src/ralph.js, exported) strips from the child's env copy:
+
+- **the knowns** — `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`,
+  `ANTHROPIC_AUTH_TOKEN`, `GITHUB_TOKEN`, `GH_TOKEN`, `NPM_TOKEN`, and the whole `AWS_*` prefix;
+- **the shape** — any variable whose NAME ends in `_API_KEY`, `_SECRET`, `_TOKEN`, `_PASSWORD`,
+  or `_CREDENTIAL(S)`, case-insensitive.
+
+Both are kept on purpose, and the second is the load-bearing one. A literal list is a chase —
+every new provider mints a new variable name — so it exists only for names the shape rule
+cannot see (`AWS_ACCESS_KEY_ID`). The shape rule is what makes the guard hold for credentials
+nobody here has heard of. It follows the SECRET_PATTERNS discipline: one inventory, named,
+with the rule stated where it is enforced.
+
+Placement is deliberate. The strip lives in `runClose`, which is the single close-spawn seam
+in the library: `runStages` runs each stage through it, and `check-passes` → `runCheck` →
+`runStages` lands there too, so every derived check inherits the same blinding — one
+instrument, never two (the F9 two-transforms class applied to the arbiter). The strip is on a
+COPY: the host process keeps its key, because bare-agent needs it every round. The `scripts/`
+close wrappers are unaffected — those that build a frozen allowlist (`PATH`/`HOME` + offline
+flags) were already tighter, and those that re-spread `process.env` are spreading the
+already-stripped child env, so the blinding propagates to their grandchildren. It is arbiter
+territory like everything else in that file: no drafted plan or config can express, widen, or
+opt out of it.
+
+### 3. The residual truth: this is exposure reduction, NOT a sandbox
+
+Stated plainly, because a guard described as more than it is becomes the next false green:
+
+- bareloop runs **locally**, on the operator's machine, as the operator's OS user;
+- the operator's own process **necessarily holds the API key** — bare-agent cannot call the
+  provider without it, and no strip changes that;
+- worker-authored code executed by the close still runs **with network access** and **with the
+  operator's full OS user permissions**: it can read any file that user can read (including
+  credential files on disk, `~/.aws`, `~/.netrc`, a `pass` store, the shell profile that
+  exports the very variables just stripped), and it can reach the network.
+
+So the strip removes credential **environment variables** from the child. A local worker
+remains **inside the operator's trust boundary**. Real containment — a container, a user
+namespace, a network-denied cgroup — is a different mechanism, unbuilt, and is not claimed
+anywhere. What IS claimed is the ruling: where the exposure is unnecessary, it is stripped.

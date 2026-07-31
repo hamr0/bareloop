@@ -148,30 +148,28 @@ test('interpreter-red: with NO typed field the prose sniff still attributes lite
   assert.equal(occs[0].verb, 'recall');
 });
 
-test('step-stalled (the F66 fuse) attributes by TYPED lib — never as an unclassified bareloop bug', () => {
+test('step-stalled is a DELIBERATE exclusion — it files no upstream ask (operator ruling 2026-07-31)', () => {
   reset();
-  // The category was minted in planrun/stall.js and the ledger map was never
-  // updated, so every stall folded as runtime-red/bareloop "unclassified
-  // escalation category" — a FAKE bareloop bug standing where BA-19's evidence
-  // trail should be. StallError stamps lib at the throw site (stall.js), and
-  // planrun forwards it onto the escalation, so the typed-lib route classifies
-  // it exactly like interpreter-red does.
+  // Routing it through the typed-lib branch rendered a live ask reading
+  // "bare-agent: the provider path failed — worker stalled…". A stall is the
+  // absence of beats: nothing observed the provider path fail, and the wrong
+  // package gets the bug. The ruling is the wall-halt shape — a governance
+  // story, excluded — so it produces no occurrence at all.
   const occs = classifyIncidents([ev('escalation', {
     category: 'step-stalled', lib: 'bare-agent', decisionReady: true,
     detail: 'no completed round for 300000ms; reissued 3 times',
   })]);
-  assert.equal(occs.length, 1, 'a stall is evidence, never an exclusion');
-  assert.equal(occs[0].lib, 'bare-agent', 'the stall accrues against the package the typed lib names');
-  assert.equal(occs[0].class, 'provider-red');
-  assert.doesNotMatch(occs[0].detail, /unclassified/, 'the stall detail rides, not an unmapped-category apology');
+  assert.deepEqual(occs, [], 'an excluded category classifies to nothing — no ask, no row');
 });
 
-test('step-stalled with NO typed lib falls back exactly like interpreter-red — still counted', () => {
+test('step-stalled is excluded with or WITHOUT a typed lib — and never counts as unmapped', () => {
   reset();
+  // The exclusion is on the CATEGORY, exactly like wall-halt: the prose sniff
+  // must not resurrect it as a litectx runtime-red, and the unmapped-category
+  // counter (the anti-silent-drop guard) must not fire either — a deliberate
+  // exclusion is not a stale mapping.
   const occs = classifyIncidents([ev('escalation', { category: 'step-stalled', decisionReady: true, detail: 'recall stalled: no beat for 300000ms' })]);
-  assert.equal(occs.length, 1);
-  assert.equal(occs[0].lib, 'litectx', 'the prose sniff is the shared fallback, not a second policy');
-  assert.equal(occs[0].verb, 'recall');
+  assert.deepEqual(occs, [], 'no verb sniff, no unclassified-escalation row');
 });
 
 test('an UNRECOGNISED escalation category is counted, not silently dropped', () => {

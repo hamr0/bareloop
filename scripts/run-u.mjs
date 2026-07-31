@@ -8,6 +8,7 @@
 // this shape reuses and fine-tunes it rather than starting cold.
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, renameSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { execFileSync, spawn } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { runJob } from '../src/run.js';
@@ -143,8 +144,12 @@ console.log(`\n== U run ${runid} ==  $${spec.budgetUsd} · ${WALL_LABEL} · ${MO
 // windows silently.
 const closeStages = Array.isArray(spec.close) ? spec.close.length : 1;
 const worstCloseSilenceMs = CLOSE_TIMEOUT_MS * closeStages;
+// `fileURLToPath`, not `.pathname`: a URL keeps its path percent-ENCODED, so a repo
+// checked out under a directory with a space (or any of `#?%`) hands spawn a path
+// containing `%20` that does not exist, and the guard dies at startup on the one run
+// it was meant to protect. Same spelling the sibling scripts use.
 const watchdog = spawn(process.execPath, [
-  new URL('./u-watchdog.mjs', import.meta.url).pathname,
+  fileURLToPath(new URL('./u-watchdog.mjs', import.meta.url)),
   '--spine', spineFile,
   '--pid', String(process.pid),
   '--stale-ms', String(worstCloseSilenceMs + 600_000),
@@ -154,6 +159,16 @@ const watchdog = spawn(process.execPath, [
   ...(WALL_MS === null ? [] : ['--wall-ms', String(WALL_MS)]),
   '--grace-ms', String(worstCloseSilenceMs),
 ], { stdio: ['ignore', 'ignore', 'inherit'] });
+// A spawn failure arrives as an EVENT, and an unhandled 'error' on a ChildProcess is
+// an uncaught exception — i.e. a guard that could not start would END the paid run it
+// exists to protect, at second zero. The run must continue UNGUARDED and say so:
+// losing the outside guard is a degraded run (the in-process fuses and the money cap
+// still bound it), losing the run is a wasted budget. Loud, because a reader must
+// never later mistake a missing watchdog marker for "the guard was watching and never
+// fired".
+watchdog.on('error', (e) => {
+  console.error(`\nWATCHDOG FAILED TO START (${e.message}) — this run is UNGUARDED from outside: a frozen event loop will NOT be reaped (F67). The run continues under its own fuses, wall clock and money cap.`);
+});
 watchdog.unref();
 
 // WHERE-was-the-freeze sampler. ms3jh76q froze its event loop for 81.5min and the

@@ -11,7 +11,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 
-import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, COMPONENT_STRATEGIES, ISOLATE_MAX_BYTES } from '../src/tools.js';
+import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, COMPONENT_STRATEGIES, ISOLATE_MAX_BYTES, RETRIEVAL_STRATEGY, EDIT_STRATEGY, strategyFor } from '../src/tools.js';
+import { TOOL_MENU } from '../src/job.js';
 
 const require = createRequire(import.meta.url);
 const { LiteCtx } = require('litectx');
@@ -352,4 +353,53 @@ test('component strategies exist for every component — capability without stra
     assert.equal(typeof COMPONENT_STRATEGIES[c], 'string');
     assert.ok(COMPONENT_STRATEGIES[c].length > 40, `${c} strategy must actually say when to reach for it`);
   }
+});
+
+// F19 INVERTED: a strategy line that names a tool the grant LACKS steers the
+// worker at a tool it cannot call — worse than no strategy, because the model
+// spends rounds reaching for a menu entry that is not there. The components fire
+// per COMPONENT (any one verb lights the whole paragraph) while their prose names
+// EVERY verb in it, and two of them cross component lines outright: isolate names
+// `ctx_peek` (a compress verb), the retrieval pair prescribes `ctx_recall` →
+// `ctx_get` on either verb alone. planrun already states the law for the select
+// component — "a worker granted only `impact` must not be steered to tools it
+// lacks" — so the assembly has to hold it for every sentence.
+const TOOL_NAMES = Object.values(TOOL_BY_VERB);
+/** every tool NAME the assembled strategy mentions but the grant does not carry */
+const ungrantedNamed = (/** @type {string[]} */ granted) => {
+  const s = strategyFor(granted);
+  const allowed = new Set(granted.map((v) => TOOL_BY_VERB[v]));
+  return TOOL_NAMES.filter((n) => !allowed.has(n) && s.includes(n));
+};
+
+for (const granted of [
+  ['stash', 'write'],                 // isolate without peek — today names ctx_peek
+  ['recall', 'write'],                // retrieval without get — today prescribes ctx_get
+  ['get', 'write'],                   // retrieval without recall — today prescribes ctx_recall
+  ['impact', 'write'],                // planrun's own worked example
+  ['peek', 'write'],                  // compress without compress
+  ['compress', 'write'],              // compress without peek
+  ['remember', 'write'],              // isolate without recall/stash/forget
+  ['forget', 'write'],
+  ['recall', 'get', 'write'],         // retrieval pair, but no `read` to reserve
+]) {
+  test(`a partial grant is steered only at tools it HAS: ${granted.join('+')}`, () => {
+    assert.deepEqual(ungrantedNamed(granted), [], `the strategy names tools this worker cannot call`);
+    assert.ok(strategyFor(granted).length > 40, 'and it still says WHEN to reach for what it does have (F19)');
+  });
+}
+
+test('a FULL grant reads exactly as the component strategies do today — the fix narrows partials, never the full menu', () => {
+  // The paragraphs are the paid-for prose; the per-verb assembly must reproduce
+  // them byte-for-byte when every verb is present, or this became a rewrite of
+  // the strategy text wearing a bug fix's clothes.
+  const full = strategyFor([...TOOL_MENU]);
+  assert.equal(full, EDIT_STRATEGY + RETRIEVAL_STRATEGY + COMPONENT_STRATEGIES.select
+    + COMPONENT_STRATEGIES.compress + COMPONENT_STRATEGIES.isolate);
+  assert.deepEqual(ungrantedNamed([...TOOL_MENU]), []);
+});
+
+test('no granted verb, no strategy — an empty grant is steered nowhere', () => {
+  assert.equal(strategyFor([]), '');
+  assert.equal(strategyFor(['write']), '', 'write alone carries no component strategy (its own line is the persona\'s)');
 });

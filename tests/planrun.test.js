@@ -261,7 +261,7 @@ test('F66: the replan brief for a STALL says the model stopped producing rounds 
       // the STEP worker's call: the watchdog reissued MAX_STALLS times and gave
       // up — the same StallError object the real watch rejects with, so ralph
       // reads the same typed category it would in production
-      if (n++ === 2) throw new StallError('no round completed for 300s, 3 times — giving up on this call', MAX_STALLS);
+      if (n++ === 2) throw new StallError('no round completed for 300s, 3 times in this step — not reissuing again', MAX_STALLS);
       return base.generate(messages, tools);
     },
   };
@@ -416,6 +416,51 @@ test('L3: a ctx verb\'s spine event is SCRUBBED at the wiring — a model-author
   assert.doesNotMatch(JSON.stringify(ev), new RegExp(KEY), 'the literal key must not survive anywhere in the event');
   assert.match(ev.query, /\[REDACTED:/, 'the query rides the spine masked, and still says a secret was there');
   assert.match(ev.query, /stopword/, 'only the token is masked — the rest of the query stays readable, or the record is useless');
+});
+
+test('the GATE AUDIT is scrubbed too: a token in a worker\'s raw tool args never lands in the in-tree audit log', async (t) => {
+  // Third channel into a persistent, append-only record — and the one that was
+  // open. The spine and the ctx-verb wiring are scrubbed with SECRET_PATTERNS,
+  // but the Gate was constructed with no `secrets` config, so `gate-audit.jsonl`
+  // (in the WORKDIR, surviving the run) kept bareguard's default-on backstop
+  // only — which covers `apiKey`/`authorization`/`Bearer …`/`sk-…` and NOT the
+  // rest of our inventory.
+  //
+  // The channel is the MODEL-AUTHORED IDENTIFIER, not file content: `toolAction`
+  // deliberately reduces a write to `{bytes}`, so content never reaches the gate
+  // at all — but an isolate verb's `id` (and any path the worker spells) rides
+  // onto the action verbatim. Measured on the real gate: `ctx_remember` /
+  // `ctx_stash` / `ctx_forget` ids and a `shell_read` path each landed a `ghp_`
+  // token in cleartext with no `secrets` config, and all masked with
+  // SECRET_PATTERNS. ONE inventory governs every redaction boundary, so the gate
+  // gets the same patterns. Driven through the REAL wiring — runPlan builds the Gate.
+  const wd = makePatient(t);
+  // Matches SECRET_PATTERNS but NOT bareguard's default-on set (apiKey / Bearer /
+  // sk-), so this fails while the gate carries defaults only. The token stands
+  // ALONE: SECRET_PATTERNS anchors on `(?<![A-Za-z0-9_-])`, so a `note-<token>`
+  // spelling matches neither the inventory nor the gate and would prove nothing.
+  const KEY = `ghp_${'A1b2C3d4E5f6G7h8I9j0'}`;
+  const job = JOB(wd, { tools: ['read', 'write', 'remember'] });
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write tests/test_x.mjs, then record what you concluded.',
+      tools: ['remember', 'write'], rounds: 6, target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }],
+    }],
+  });
+  const provider = scriptedProvider([
+    { text: 'src/mod.mjs exports x; tests/ is empty.' },                          // scout
+    { text: plan },                                                               // plan draft
+    { toolCalls: [tcall('t1', 'ctx_remember', { id: KEY, text: 'the module exports x' })] },
+    { toolCalls: [tcall('t2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'wrote tests/test_x.mjs' },
+  ]);
+  await go(wd, provider, { job });
+  const audit = readFileSync(join(wd, 'gate-audit.jsonl'), 'utf8');
+  assert.match(audit, /ctx_remember/, 'the isolate verb really reached the gate — no audited action and this test proves nothing');
+  assert.doesNotMatch(audit, new RegExp(KEY), 'the literal token must not survive in the in-tree audit log');
+  assert.deepEqual(scanSecrets(audit), [], 'the whole audit is clean under the ONE inventory');
 });
 
 test('an EXIT DETAIL is scrubbed before it reaches the spine — json-valid quotes the file\'s own bytes back in V8\'s parse message', async (t) => {

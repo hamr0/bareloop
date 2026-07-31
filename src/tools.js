@@ -115,6 +115,94 @@ export const COMPONENT_STRATEGIES = Object.freeze({
     + 'with ctx_remember(<id>,<text>) so a later step can ctx_recall it; ctx_forget(<id>) retracts a note that proved wrong.',
 });
 
+// ---- F19, INVERTED: a strategy must never name a tool the grant lacks --------
+// The paragraphs above are the FULL-COMPONENT prose, and they were emitted per
+// COMPONENT: any one isolate verb lit a paragraph naming `ctx_peek` (a COMPRESS
+// verb), either retrieval verb lit the two-step `ctx_recall` → `ctx_get`
+// prescription, any one select verb named all three. So a worker granted `stash`
+// alone was told to call a tool that was not on its menu — the inversion of F19,
+// and worse than silence: the model spends rounds reaching for a menu entry that
+// does not exist. planrun states the law for the select case ("a worker granted
+// only `impact` must not be steered to tools it lacks"); `EDIT_STRATEGY`'s
+// `granted.includes('edit')` is the house pattern. This assembles the same prose
+// SENTENCE BY SENTENCE, each gated on its own verb.
+//
+// The full-menu text is unchanged BY TEST, not by comment: `strategyFor(TOOL_MENU)`
+// is asserted byte-identical to the concatenation of the paragraphs above, so a
+// partial grant can only ever see LESS, never different.
+
+/** `a`, `a, and b`, `a, b, and c` — the clause grammar the select paragraph uses. */
+const andJoin = (/** @type {string[]} */ xs) =>
+  xs.length < 2 ? (xs[0] ?? '') : `${xs.slice(0, -1).join(', ')}, and ${xs.at(-1)}`;
+
+/** the select paragraph's per-verb clauses, in the order the paragraph reads them */
+const SELECT_CLAUSES = /** @type {[string, string][]} */ ([
+  ['impact', 'ctx_impact(<symbol>) names its callers and importers'],
+  ['related', 'ctx_related(<path>) walks the import graph around a file'],
+  ['recent', 'ctx_recent lists recently-edited symbols'],
+]);
+
+/**
+ * The strategy suffix for ONE worker's grant: every sentence that survives names
+ * only tools this worker can actually call. Reproduces the exported paragraphs
+ * exactly on a full grant.
+ * @param {string[]} granted the step's granted VERBS (the menu IS the grant, 2b)
+ * @returns {string} the system-prompt suffix, '' when nothing is granted
+ */
+export function strategyFor(granted) {
+  const g = (/** @type {string} */ v) => granted.includes(v);
+  /** @type {string[]} */
+  const out = [];
+
+  if (g('edit')) out.push(EDIT_STRATEGY);
+
+  // retrieval — the two-step prescription needs BOTH verbs; each alone gets the
+  // half it can run. The `shell_read` sentence rides only with a granted `read`.
+  if (g('recall') || g('get')) {
+    const s = ['You also have a repository index.'];
+    if (g('recall') && g('get')) s.push('To read a function, do NOT read its whole file: call ctx_recall with the function name to get a pointer, then ctx_get with that pointer to read that function alone (it comes with its doc-comment, which states what the function is SUPPOSED to do — compare it against what the code does).');
+    else if (g('recall')) s.push('To find a function, do NOT page through whole files: call ctx_recall with the function name and it names the file and lines that define it.');
+    else s.push('To read a function, do NOT read its whole file: call ctx_get with its path and line range to read that function alone (it comes with its doc-comment, which states what the function is SUPPOSED to do — compare it against what the code does).');
+    if (g('read')) s.push('Reserve shell_read for whole files that are genuinely small, and for files you cannot name a symbol in yet.');
+    if (g('recall')) s.push('Search only finds what you can NAME: a failing test names the symptom, not the cause, so read the failing test first, see which function it calls, and recall THAT.');
+    out.push('\n' + s.join(' '));
+  }
+
+  // select — one clause per granted verb, joined with the paragraph's own grammar
+  const clauses = SELECT_CLAUSES.filter(([v]) => g(v)).map(([, t]) => t);
+  if (clauses.length) {
+    out.push(`\nBefore changing a function, ask what depends on it: ${andJoin(clauses)}. `
+      + 'A fix that type-checks but breaks a dependent you never looked at is the failure these exist to prevent.');
+  }
+
+  // compress — two independent sentences, one per verb
+  const cs = [];
+  if (g('compress')) cs.push('When you only need what a function IS rather than how it works, ctx_compress(<path>,<symbol>) returns its signature and doc without the body — far cheaper than reading it.');
+  if (g('peek')) cs.push('ctx_peek(<id>) shows the head and tail of something you stashed without paying for its bytes again.');
+  if (cs.length) out.push('\n' + cs.join(' '));
+
+  // isolate — the stash advice drops its ctx_peek half without `peek`, and the
+  // durable-note sentence drops its ctx_recall half without `recall` (both are
+  // OTHER components' verbs, which is exactly how the paragraph over-reached)
+  const is = [];
+  if (g('stash')) {
+    is.push(g('peek')
+      ? 'Park bulky intermediate results with ctx_stash(<id>,<text>) and check them later with ctx_peek(<id>) instead of carrying them in conversation.'
+      : 'Park bulky intermediate results with ctx_stash(<id>,<text>) instead of carrying them in conversation.');
+  }
+  const durable = [];
+  if (g('remember')) {
+    durable.push(g('recall')
+      ? 'Record a durable conclusion with ctx_remember(<id>,<text>) so a later step can ctx_recall it'
+      : 'Record a durable conclusion with ctx_remember(<id>,<text>) so a later step can find it');
+  }
+  if (g('forget')) durable.push('ctx_forget(<id>) retracts a note that proved wrong');
+  if (durable.length) is.push(durable.join('; ') + '.');
+  if (is.length) out.push('\nYour context is re-sent and re-billed every round. ' + is.join(' '));
+
+  return out.join('');
+}
+
 // L8 — ONE line space, named in the contract instead of renumbered (validated
 // 2026-07-30 against a real index, not read off the source). Every line number
 // litectx hands back is a 0-BASED index: a chunk's `startLine`/`endLine`

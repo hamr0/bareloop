@@ -66,6 +66,14 @@ const QUOTED_VERB_RE = /"([a-z0-9-]+)"/;
 const EXCLUDED_ESCALATIONS = new Set([
   'cap-halt',           // a budget story, not a lib bug
   'wall-halt',          // the TIME budget's version of the same story (T, PRD v1.27)
+  // A stall is the ABSENCE of beats, not an observed provider failure: nothing
+  // saw the transport fail, so the typed-lib route rendered a live ask reading
+  // "bare-agent: the provider path failed — worker stalled…" and aimed a bug at
+  // the wrong package. Excluded on the wall-halt shape (operator ruling
+  // 2026-07-31): the F66 fuse firing is OUR governance working, and the stall
+  // evidence still rides the spine's own escalation event, which is where a
+  // real upstream ask would be sourced from anyway.
+  'step-stalled',
   'step-variance',      // A's replan trigger: a planning story, never a lib bug
   'gate-red',           // governance working as intended
   'smoke-red',          // already counted via primitive-smoke
@@ -94,7 +102,9 @@ const ASKS = /** @type {Record<string, (o: {lib: string, verb: string, detail: s
  * bareloop vocabulary). Deliberate exclusions — bare cap-halt (a budget story),
  * close-verdict reds and artifact-red (worker stories, the §5b line), gate-red
  * (governance working as intended), pr-red (operator environment, not a suite
- * lib), smoke-red escalations (already counted via primitive-smoke), hitl-close
+ * lib), smoke-red escalations (already counted via primitive-smoke), step-stalled
+ * (our own fuse firing on an ABSENCE of beats — no observed lib failure to file),
+ * hitl-close
  * and close-unsupported (by design) — classify to nothing.
  * @param {any[]} events one spine's parsed events, in seq order
  * @param {{spine?: string}} [opts] spine id stamped into samples
@@ -134,15 +144,13 @@ export function classifyIncidents(events, { spine = 'spine' } = {}) {
         add(ev, 'provider-red', 'bare-agent', 'provider', ev.detail ?? ev.decision);
       } else if (ev.category === 'pricing-red') {
         add(ev, 'pricing-red', 'bare-agent', 'pricing', ev.decision ?? ev.detail);
-      } else if (ev.category === 'interpreter-red' || ev.category === 'step-stalled') {
-        // `step-stalled` (the F66 stall fuse) rides this branch rather than its
-        // own: TYPED-LIB ATTRIBUTION is one policy, not a per-category copy.
-        // StallError stamps `lib` at the throw site (stall.js: 'bare-agent'
-        // today, BA-19's evidence trail) and planrun forwards it onto the
-        // escalation, so a stall accrues against the package the field names —
-        // and never against bareloop as an "unclassified category", which would
-        // stand a fake bug of OURS where real upstream evidence belongs.
-        // EXCLUDING it instead would delete the stall evidence outright.
+      } else if (ev.category === 'interpreter-red') {
+        // `step-stalled` (the F66 stall fuse) used to ride this branch on a
+        // typed-lib argument. It is now a named EXCLUSION: StallError stamps
+        // `lib:'bare-agent'` at the throw site, so the ask rendered as
+        // "bare-agent: the provider path failed — worker stalled…" — but a stall
+        // is the ABSENCE of beats; nothing observed the provider path fail, and
+        // the upstream package got aimed at for our own governance firing.
         //
         // the design split: a store verb in the detail → runtime-red (verb→lib
         // map); a worker-loop/provider failure → provider-red; neither is

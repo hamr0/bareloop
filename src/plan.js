@@ -168,7 +168,22 @@ export function hasNestedQuantifier(src) {
     if (c === '[') {                            // character class: quantifier chars inside are literals
       i++;
       if (src[i] === '^') i++;
-      if (src[i] === ']') i++;                  // a leading ] is a literal member, not the close
+      // NO POSIX leading-`]`-is-a-literal rule: JS is not POSIX here. `[]` is the
+      // EMPTY class (matches nothing) and `[^]` the any-char idiom — both close at
+      // that first `]`. Skipping it ran the scan past the class's real end and
+      // swallowed every quantifier after it, so `x[^](a+)+$` read as safe while
+      // RegExp.test on it does not finish in 15s on a 31-char body. A false
+      // NEGATIVE is the dangerous direction (F49), so the scan follows JS.
+      //
+      // Honest limit on the monotonicity claim: this is a PARSE correction, not
+      // the "add rejections only" tightening F49's rule contemplates, and it is
+      // not strictly rejection-monotonic. Measured over 14,862 compilable
+      // generated patterns (2,369 previously rejected): 2 rejections disappear,
+      // both pathological `[]`-bearing shapes whose old `true` came from the very
+      // misparse being fixed, and both verified to finish RegExp.test in ~0ms.
+      // Every entry of the checked-in REDOS_BAD/GOOD/OVERREJECTED corpus is
+      // unchanged. So no real hazard was un-rejected — but the claim is
+      // "measured, no hazard lost", never "monotonic by construction".
       while (i < src.length && src[i] !== ']') { if (src[i] === '\\') i++; i++; }
       continue;
     }
@@ -250,7 +265,13 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes, capRuns =
   // The signed side, fail-CLOSED (the validate.js fence-invalid pattern): the
   // ceiling/fence/menu are meaningless without a plan-shape spec, and an open
   // gate on a malformed one would validate a plan against nothing.
-  if (!isObj(job) || !isNonEmptyString(/** @type {any} */ (job).goal) || !Array.isArray(/** @type {any} */ (job).writeScope)) {
+  // The writeScope's MEMBERS are checked here too, not just its arrayness:
+  // `globToPrefix` below calls `.replace` on each one, so a non-string member
+  // threw `TypeError: scope.replace is not a function` out of a function whose
+  // contract is that plain data only ever yields a named red. Same
+  // `isNonEmptyString` question `legalScopes` already asks of the same field.
+  if (!isObj(job) || !isNonEmptyString(/** @type {any} */ (job).goal) || !Array.isArray(/** @type {any} */ (job).writeScope)
+    || !(/** @type {any[]} */ (/** @type {any} */ (job).writeScope)).every(isNonEmptyString)) {
     return { ok: false, reds: [{ code: 'job-invalid', path: 'job', detail: 'a plan validates only against a validateJob-green plan shape spec (goal/verdictType/close) — validate the job first' }], plan: null };
   }
   const spec = /** @type {Record<string, any>} */ (job);

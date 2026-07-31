@@ -125,6 +125,11 @@ interchangeable handles: `impact`'s def range dereferences through `get` verbati
 tested and REFUTED: it would print two numbers for one chunk and turn `get`'s clean
 chunk-boundary refusal into a guessing game.
 
+**`impact` requires `ripgrep` (`rg`) on `PATH`.** litectx's caller scan shells out to `rg` and
+catches a missing binary exactly as it catches "no matches", so without it the verb reports
+`0 callers, risk low` — silently, in the false-isolation direction (LC-5, open upstream).
+Install `rg` wherever the worker runs, or leave `impact` off the spec's `tools` ceiling.
+
 **The store is caller-owned, and it is a LIVE cross-run channel.** `runJob`/`runPlan` root ONE
 litectx store at `<workdir>/.litectx` (`new LiteCtx({ root: workdir })`, `src/planrun.js`) — an
 on-disk SQLite index that OUTLIVES the run. A note written with `remember` lands there as a

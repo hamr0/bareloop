@@ -118,6 +118,28 @@ test('maxStalls is a CEILING: the (maxStalls+1)th stall throws StallError', asyn
   assert.match(e.message, /3/);
 });
 
+test('the ceiling counts across the STEP, not per call — and the message says so', async () => {
+  // `stalls` lives in the watch's closure and is never reset by `watch()`, and
+  // planrun builds ONE watch PER WORKER ("the ceiling counts stalls across the
+  // step rather than resetting each call"). So two separate calls that stall
+  // twice and once give up on the SECOND call's first stall. The docstring and
+  // the error text both said "on one call", which describes a mechanism that
+  // does not exist — and the message is what an operator reads at the stop.
+  const T = fakeTimers();
+  const w = createStallWatch({ stallMs: STALL_MS, maxStalls: 3, ...T });
+  const first = w.watch(() => new Promise(() => {})).then(() => null, (e) => e);
+  T.advance(STALL_MS); T.advance(STALL_MS);         // two stalls, still under the ceiling
+  assert.equal(w.stalls(), 2);
+  const second = w.watch(() => new Promise(() => {})).then(() => null, (e) => e);
+  T.advance(STALL_MS);                              // the third stall, on a DIFFERENT call
+  const e = await second;
+  assert.ok(e instanceof StallError, `expected StallError, got ${e}`);
+  assert.equal(w.stalls(), 3, 'the count carried across the call boundary — that IS the step scope');
+  assert.doesNotMatch(e.message, /this call/, 'the message must not claim a per-call ceiling the code does not implement');
+  assert.match(e.message, /step/i, 'it names the step-scoped reality an operator can act on');
+  void first;
+});
+
 test('the error carries the category the replan trigger reads', async () => {
   const T = fakeTimers();
   const w = createStallWatch({ stallMs: STALL_MS, maxStalls: 1, ...T });

@@ -44,8 +44,23 @@ const done = (/** @type {number} */ code) => { if (code !== 97) out('judged=1');
 const stop = (/** @type {string} */ why) => { out(`instrument-stop: ${why}`); process.exit(97); };
 
 const run = (/** @type {string} */ cmd, /** @type {string[]} */ args, timeoutMs = 900_000, /** @type {Record<string,string>} */ extraEnv = {}) => {
-  const r = spawnSync(cmd, args, { cwd: WORKDIR, encoding: 'utf8', timeout: timeoutMs, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', ...extraEnv } });
-  return { code: r.status, text: `${r.stdout ?? ''}${r.stderr ?? ''}`, timedOut: r.error?.code === 'ETIMEDOUT' };
+  // maxBuffer, not the 1MB default: a red pytest run prints every traceback, and the
+  // overflow does not truncate — it SIGTERMs the child and returns `{status:null,
+  // error.code:'ENOBUFS'}` (measured), i.e. a real red arriving dressed as an instrument
+  // stop. Same value as the sibling litectx close.
+  const r = spawnSync(cmd, args, { cwd: WORKDIR, encoding: 'utf8', timeout: timeoutMs, maxBuffer: 1 << 28, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', ...extraEnv } });
+  return { code: r.status, text: `${r.stdout ?? ''}${r.stderr ?? ''}`, timedOut: r.error?.code === 'ETIMEDOUT', why: r.error?.code ?? r.signal ?? 'no error, no signal' };
+};
+/** A spawn that produced NO exit code was not a judgment, so it is always an instrument
+ * stop — but WHICH one matters. Measured shapes (node 22 spawnSync): a timeout is
+ * `{status:null, signal:'SIGTERM', error.code:'ETIMEDOUT'}`; a maxBuffer overflow is
+ * `{status:null, signal:'SIGTERM', error.code:'ENOBUFS'}`; an external kill is
+ * `{status:null, signal:'SIGKILL'}` with no error at all. Reporting all three as "timed
+ * out" hands the operator a wrong cause and hides a broken instrument behind a bound that
+ * never fired (the casualty-vs-evidence class). */
+const noExit = (/** @type {{code: number|null, timedOut: boolean, why: string}} */ r, /** @type {string} */ what) => {
+  if (r.timedOut) stop(`${what} timed out`);
+  if (r.code === null) stop(`${what} died without an exit code (${r.why}) — the instrument broke, the tree was never judged`);
 };
 /** the tool's own lines, capped and prefixed — trims are ANNOUNCED, never silent (F28) */
 const echo = (/** @type {string[]} */ lines) => {
@@ -94,7 +109,7 @@ if (stage === 'typecheck') {
   // reported. The seed count is 16 either way and both recorded greens re-verify clean, so
   // this closes a latent hole and moves no number.
   const r = run('python3', ['-m', 'mypy', '--config-file', 'mypy.ini', PKG_SRC], 900_000, { MYPYPATH: PKG_SRC });
-  if (r.timedOut || r.code === null) stop('the strict typecheck timed out');
+  noExit(r, 'the strict typecheck');
   const errs = r.text.split('\n').filter((l) => l.includes(' error: '));
   if (errs.length === 0 && r.code === 0) { out('green: mypy --strict reports zero errors'); done(0); }
   if (errs.length === 0) { stop(`mypy exited ${r.code} with no readable error lines — the run did not complete`); }
@@ -105,7 +120,7 @@ if (stage === 'typecheck') {
 
 if (stage === 'suite-green') {
   const r = run('python3', ['-m', 'pytest', PKG_TESTS, '-ra', '-p', 'no:cacheprovider']);
-  if (r.timedOut || r.code === null) stop('the patient suite timed out');
+  noExit(r, 'the patient suite');
   // Count tests EXECUTED, never PASSED — a red tree must not be able to hide under a
   // passing-count floor (F40). pytest's own totals, read off REAL runs of this patient
   // under this exact invocation (pytest 9.0.2), never an imagined shape:

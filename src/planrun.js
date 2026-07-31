@@ -26,8 +26,8 @@ import { snapshotScope, evalExits } from './exits.js';
 import { createRoot } from './root.js';
 import { createStallWatch, STALL_MS, MAX_STALLS } from './stall.js';
 import { TOOL_MENU, STORE_VERBS, checkMenu } from './job.js';
-import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, RETRIEVAL_STRATEGY, EDIT_STRATEGY, COMPONENT_STRATEGIES } from './tools.js';
-import { globToPrefix, redactSecrets } from './validate.js';
+import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, strategyFor } from './tools.js';
+import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
 import { extractArtifact } from './text.js';
 import { createClock, isWallTimeout } from './clock.js';
 
@@ -174,8 +174,12 @@ function gapTrend(gaps) {
  * @param {{ balanceUsd?: number|null, remainingMs?: number|null, progress?: string }} [materials]
  *   what the run has LEFT (T/A). Omitted → no materials block at all, which is the
  *   pre-T behaviour and keeps every existing caller byte-identical.
+ * @param {number} [capRuns] the shell's attempt cap — the ceiling `attempts` may only
+ *   TIGHTEN. Interpolated the way every sibling bound is: `validatePlan` reds outside
+ *   `1..capRuns`, and a prompt that says only "integer" spends a round teaching it.
+ *   Defaults to validatePlan's own default so existing callers are unchanged.
  */
-export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials) {
+export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, capRuns = 3) {
   const scopeMenu = Array.isArray(scopes) && scopes.length ? scopes : legalScopes(job.writeScope ?? []);
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
   // W4: the menu comes off the STAGED close — the same one derivation `runPlan`
@@ -197,8 +201,12 @@ strictly in array order. Each step (no other fields exist):
 - "rounds": integer 1..${maxStepRounds} — the step's per-attempt tool-round bound
 - "target": the step's deliverable path (REQUIRED when tools include write/edit), inside ${JSON.stringify(job.writeScope)}
 - "model" (optional): ${STEP_MODELS.join(' | ')} — a cheaper tier for mechanical steps; omit for the default
-- "attempts" (optional): integer — TIGHTEN this step's retry cap below the shell's; you may never raise it
-- "scope" (optional): narrow this step's WRITE fence — copy one value from the offered scopes below
+- "attempts" (optional): integer 1..${capRuns} — TIGHTEN this step's retry cap below the shell's; you may never raise it
+- "scope" (optional): narrow this step's WRITE fence — copy one value from the offered scopes below.
+  A narrowed "scope" is the ONLY ground this step can write: its "target" must sit
+  inside it, and a "tree-changed" exit's scope must not be disjoint from it (one that
+  CONTAINS it is fine) — otherwise every write the step could make is denied, or the
+  exit can never pass, on every attempt.
 - "exit": 1..${MAX_EXITS_PER_STEP} form checks that ALL must pass (AND), each one of:
     {"type":"artifact-written","path":"...","pattern":"optional regex"}
     {"type":"tree-changed","scope":"<copy one value from the offered scopes below>"}
@@ -545,6 +553,16 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       budget: { maxCostUsd: Math.max(remainingUsd(), 0.0001) },
       limits: { maxTurns: attemptRounds * (attempts + 1) },
       audit: { path: auditPath },
+      // The gate audit is the THIRD persistent, append-only channel (beside the
+      // spine and the ctx-verb events) and it lives IN THE TREE, so it gets the
+      // SAME ONE inventory. bareguard's default-on backstop covers only
+      // apiKey/authorization/`Bearer …`/`sk-…` — measured: a `ghp_` token landed
+      // in cleartext through every model-authored identifier the action carries
+      // (an isolate verb's `id`, a path the worker spelled), and masked under
+      // these patterns. Content is already unreachable here (`toolAction` reduces
+      // a write to `{bytes}`), but the identifiers are raw model text, and a log
+      // that captures a key captures it forever.
+      secrets: { patterns: SECRET_PATTERNS },
       humanChannel: async () => ({ decision: 'terminate' }),
     });
     await gate.init();
@@ -661,15 +679,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // below anything a second/minute-scale timer can perceive. Store output is byte-identical.
     if (ctx.length) await lc.index({ yield: true });
     const toolDefs = [...shell, ...ctx];
-    // F19 per component (P): a strategy line rides ONLY with a granted verb from its
-    // component — RETRIEVAL_STRATEGY names ctx_recall/ctx_get, so it gates on those two
-    // specifically (a worker granted only `impact` must not be steered to tools it lacks).
-    const has = (/** @type {string[]} */ ...vs) => vs.some((v) => granted.includes(v));
-    const system = PERSONA_TOOLS + (granted.includes('edit') ? EDIT_STRATEGY : '')
-      + (has('recall', 'get') ? RETRIEVAL_STRATEGY : '')
-      + (has('impact', 'related', 'recent') ? COMPONENT_STRATEGIES.select : '')
-      + (has('compress', 'peek') ? COMPONENT_STRATEGIES.compress : '')
-      + (has('stash', 'remember', 'forget') ? COMPONENT_STRATEGIES.isolate : '')
+    // F19 per VERB (P, corrected 2026-07-31): a strategy SENTENCE rides only with
+    // the verb it names. Gating per COMPONENT was close but over-reached — a
+    // worker granted only `impact` must not be steered to tools it lacks, and the
+    // isolate/retrieval paragraphs named other components' verbs outright. The
+    // assembly lives in tools.js beside the prose it composes, and is asserted
+    // byte-identical to the full-component paragraphs on a full grant.
+    const system = PERSONA_TOOLS + strategyFor(granted)
       + (native && grantedNames.has(TOOL_BY_VERB.read) ? NATIVE_READ_STRATEGY : '');
     /** @param {any} u @returns {{inputTokens: number, outputTokens: number, cacheReadTokens: number, cacheCreationTokens: number}} */
     const usageOf = (u) => ({ inputTokens: u?.inputTokens ?? 0, outputTokens: u?.outputTokens ?? 0, cacheReadTokens: u?.cacheReadTokens ?? 0, cacheCreationTokens: u?.cacheCreationTokens ?? 0 });
@@ -983,7 +999,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     emit('materials', { phase, ...materials });
     const draftPlan = async (/** @type {any[]|null} */ reds) => {
       drafter.setIteration(reds ? 'redraft' : 'draft');
-      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials), []);
+      // capRuns is the SAME number validatePlan bounds `attempts` against below —
+      // one source, so the prompt and the validator cannot drift apart
+      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials, capRuns), []);
       return extractArtifact(r.text).code ?? '';
     };
     // Scrubbed HERE, once, before any consumer reads them — the judge() precedent

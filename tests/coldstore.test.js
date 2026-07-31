@@ -147,8 +147,15 @@ test('leak hunt: everything the isolate verbs persist lives under <root>/.litect
   // ⚠ LEAK if this ever fails: a store artifact outside .litectx survives the runner's
   // reset and carries run N's memory into run N+1's cold baseline.
   assert.deepEqual(outside, [], `store state outside .litectx would survive the reset: ${outside.join(', ')}`);
-  // Current shape (litectx 0.31.0, better-sqlite3 WAL): the db plus its -wal/-shm siblings.
-  assert.deepEqual(added, ['.litectx/', '.litectx/index.db', '.litectx/index.db-shm', '.litectx/index.db-wal']);
+  // WHAT the store is, not which sidecars sqlite happened to be holding open. The
+  // shape at litectx 0.31.0 (better-sqlite3 WAL) is the db plus `-wal`/`-shm`, but
+  // both sidecars are checkpoint-timing artifacts — sqlite deletes them on a clean
+  // close and a litectx bump could switch journal mode entirely. Pinning their names
+  // makes an unrelated dependency bump fail this test for a reason the test does not
+  // care about. The load-bearing halves are above: nothing landed outside `.litectx`,
+  // and nothing landed in HOME/XDG. This one says the store's own db is what got
+  // written, so the additions can never be an empty directory and a green here.
+  assert.ok(added.includes('.litectx/index.db'), `the store's own db is among the additions: ${added.join(', ')}`);
   assert.deepEqual(tree(fakeHome), [], 'litectx wrote nothing to HOME / XDG / model-cache roots');
 
   // And after the reset the patient is byte-for-byte back to its seeded shape.

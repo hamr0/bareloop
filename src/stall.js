@@ -44,7 +44,12 @@
 
 /** hamr's number: no completed round for five minutes is a stall. */
 export const STALL_MS = 300_000;
-/** hamr's number: three stalls on one call, then stop reissuing and replan. */
+/** hamr's number: three stalls, then stop reissuing and replan. The count is
+ * CUMULATIVE over the watch's whole life and `watch()` never resets it — planrun
+ * builds one watch per WORKER, so the ceiling is spent across the STEP, not per
+ * call: two stalls on one call and one on the next give up just the same. That
+ * is deliberate (a step that keeps hanging is a step to replan, not a call to
+ * retry forever), and it is why nothing here says "on one call". */
 export const MAX_STALLS = 3;
 
 /**
@@ -174,7 +179,7 @@ export function createStallWatch({
       settled = true;
       disarm();
       reject?.(new StallError(
-        `no round completed for ${Math.round(stallMs / 1000)}s, ${stalls} times — giving up on this call`,
+        `no round completed for ${Math.round(stallMs / 1000)}s, ${stalls} times in this step — not reissuing again`,
         stalls,
       ));
       return;

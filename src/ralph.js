@@ -105,6 +105,39 @@ function spawnClose(cmd, args, { env, cwd, timeoutMs }) {
 }
 
 /**
+ * What the close child must NOT be able to read (operator ruling, 2026-07-31:
+ * "strip it when unnecessary, minimize unneeded exposure").
+ *
+ * The close child executes WORKER-AUTHORED CODE. `pytest`, `npm test`, `tsc`
+ * run whatever the worker just wrote into the tree, in a child that — before
+ * this — inherited the whole operator environment, credentials included. None
+ * of git/npm/tsc/pytest/mypy needs an API key to judge a tree, so the exposure
+ * bought nothing and is removed. This is EXPOSURE REDUCTION, not a sandbox:
+ * see the threat-model note in the PRD (v1.41) and README for what remains.
+ *
+ * Two rules, deliberately kept BOTH ways round:
+ *  - `names` / `prefixes` — the knowns. A literal denylist is a chase (every
+ *    new provider mints a new variable), so it is not load-bearing on its own;
+ *    it exists for names the shape rule cannot see (`AWS_ACCESS_KEY_ID`).
+ *  - `shape` — the NAME-SHAPE rule, which is what bounds the chase: anything
+ *    whose name ends in the credential suffixes goes, whoever minted it and
+ *    whether or not anyone here has heard of it. Case-insensitive; no `g` flag,
+ *    so `.test` stays stateless and safe to reuse across every key.
+ *
+ * It is arbiter territory like the rest of this file: no drafted plan or config
+ * can express, widen, or opt out of it.
+ * @type {Readonly<{names: readonly string[], prefixes: readonly string[], shape: RegExp}>}
+ */
+export const CLOSE_ENV_DENY = Object.freeze({
+  names: Object.freeze([
+    'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY',
+    'ANTHROPIC_AUTH_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN', 'NPM_TOKEN',
+  ]),
+  prefixes: Object.freeze(['AWS_']),
+  shape: /(_API_KEY|_SECRET|_TOKEN|_PASSWORD|_CREDENTIALS?)$/i,
+});
+
+/**
  * Run a close command; its exit code is the verdict (hard green, PRD §4).
  * `expect` → satisfied; any other exit → needs_revision (gap fed back).
  *
@@ -173,6 +206,14 @@ function spawnClose(cmd, args, { env, cwd, timeoutMs }) {
 export async function runClose(close, redact = (s) => s, { timeoutMs = 120_000, cwd, expect = 0, judged, gapKeep } = {}) {
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT; // a `node --test` close inherits this from a test runner and silently no-ops — a fake green
+  // …and the operator's credentials go with it (CLOSE_ENV_DENY above). A COPY is
+  // stripped, never `process.env` itself: the host still needs its key (bare-agent
+  // reads it every round) — only the child that runs worker-authored code is blinded.
+  for (const name of Object.keys(env)) {
+    if (CLOSE_ENV_DENY.names.includes(name)
+      || CLOSE_ENV_DENY.prefixes.some((p) => name.startsWith(p))
+      || CLOSE_ENV_DENY.shape.test(name)) delete env[name];
+  }
   const r = await spawnClose(close[0], close.slice(1), { env, cwd, timeoutMs });
 
   // ── forbidden zone, before any exit code is believed ──────────────────────

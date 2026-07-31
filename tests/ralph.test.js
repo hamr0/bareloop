@@ -9,7 +9,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { makeSpine } from '../src/spine.js';
-import { ralph, runClose } from '../src/ralph.js';
+import { ralph, runClose, CLOSE_ENV_DENY } from '../src/ralph.js';
 import { StallError } from '../src/stall.js';
 
 const noop = () => {};
@@ -101,7 +101,7 @@ test('a middle throwing a category named after an Object.prototype member escala
 // a human to fix an interpreter that did nothing wrong — the same rule
 // `step-variance` and `wall-halt` already carry.
 test('a stall inside the middle escalates as a stall — never as a broken interpreter', async () => {
-  const middle = () => { throw new StallError('no round completed for 300s, 3 times — giving up on this call', 3); };
+  const middle = () => { throw new StallError('no round completed for 300s, 3 times in this step — not reissuing again', 3); };
   const { outcome, events } = await run('step-stalled', GREEN, 3, middle);
   assert.equal(outcome, 'escalated');
   const esc = events.find((e) => e.type === 'escalation');
@@ -136,6 +136,71 @@ test('a real node --test close reds under the test runner (NODE_TEST_CONTEXT str
   const { outcome, events } = await run('real-close-red', ['node', '--test', failing], 1);
   assert.equal(outcome, 'escalated', 'a failing real close must red, never fake-green');
   assert.equal(events.find((e) => e.type === 'close-verdict').verdict, 'needs_revision');
+});
+
+// ---- the close child runs WORKER-AUTHORED code (pytest/npm test/tsc execute
+// whatever the worker just wrote), so the operator's credentials have no
+// business being readable there. Operator ruling: "strip it when unnecessary,
+// minimize unneeded exposure." These tests read the CHILD's own environment
+// back out — the only instrument that can see what the child actually got. ----
+
+/** A close that reports which of the named vars its own process can see, plus
+ * whether PATH/HOME survived. Exits 1 so the report rides out as the gap. */
+const envProbe = (/** @type {string[]} */ names) => ['node', '-e',
+  `const want=${JSON.stringify(names)};`
+  + 'console.log("SEEN=" + want.filter((k) => k in process.env).join(","));'
+  + 'console.log("PATH=" + (process.env.PATH ? 1 : 0) + " HOME=" + (process.env.HOME ? 1 : 0));'
+  + 'console.log("BENIGN=" + (process.env.BARELOOP_TEST_BENIGN ?? "")); process.exit(1)'];
+
+/** Set vars in THIS process, run fn, always restore. The parent must really
+ * hold them or the test is vacuous — asserted inside. */
+async function withParentEnv(/** @type {Record<string,string>} */ vars, /** @type {() => Promise<any>} */ fn) {
+  const prior = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, vars);
+  try { return await fn(); } finally {
+    for (const [k, v] of Object.entries(prior)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+}
+
+test('the close child cannot read the operator\'s credentials — explicit names, AWS_*, and the name-shape rule', async () => {
+  const planted = {
+    // the explicit knowns
+    ANTHROPIC_API_KEY: 'sk-ant-test', OPENAI_API_KEY: 'sk-openai-test', GEMINI_API_KEY: 'g-test',
+    GOOGLE_API_KEY: 'g2-test', ANTHROPIC_AUTH_TOKEN: 'at-test', GITHUB_TOKEN: 'ghp-test',
+    GH_TOKEN: 'gh-test', NPM_TOKEN: 'npm-test',
+    // the AWS_* prefix class (neither name matches the shape rule)
+    AWS_ACCESS_KEY_ID: 'AKIATEST', AWS_SESSION_TOKEN: 'aws-sess',
+    // the name-shape rule, on names no literal list would ever hold
+    ACME_INTERNAL_API_KEY: 'acme', VAULT_SECRET: 'v', SOME_SERVICE_TOKEN: 't',
+    DB_PASSWORD: 'p', GOOGLE_APPLICATION_CREDENTIALS: '/tmp/creds.json', MY_CREDENTIAL: 'c',
+    // the control: a benign var with no credential shape must still reach the close
+    BARELOOP_TEST_BENIGN: 'kept',
+  };
+  await withParentEnv(planted, async () => {
+    const names = Object.keys(planted).filter((k) => k !== 'BARELOOP_TEST_BENIGN');
+    // confound check: the hazard must be present in THIS process or the test is vacuous
+    assert.ok(names.every((k) => k in process.env), 'the parent must hold every planted var');
+    const v = await runClose(envProbe(names));
+    assert.equal(v.verdict, 'needs_revision');
+    assert.match(v.gap, /^SEEN=$/m, `no credential-shaped var may reach the close child — got: ${v.gap}`);
+    assert.match(v.gap, /^PATH=1 HOME=1$/m, 'PATH and HOME are what a close needs to RUN — they survive');
+    assert.match(v.gap, /^BENIGN=kept$/m, 'a benign var still reaches the close (the strip is a denylist, not an allowlist)');
+  });
+});
+
+test('the strip is the child\'s, not the parent\'s — the operator\'s own process keeps its key', async () => {
+  await withParentEnv({ ANTHROPIC_API_KEY: 'sk-ant-test' }, async () => {
+    await runClose(GREEN);
+    assert.equal(process.env.ANTHROPIC_API_KEY, 'sk-ant-test', 'bare-agent needs the key — runClose must never mutate the host env');
+  });
+});
+
+test('CLOSE_ENV_DENY is frozen and its shape rule is stateless (reuse across names is safe)', () => {
+  assert.ok(Object.isFrozen(CLOSE_ENV_DENY));
+  assert.equal(CLOSE_ENV_DENY.shape.global, false, 'a /g regex would make .test stateful and skip every other name');
+  assert.ok(CLOSE_ENV_DENY.shape.test('X_TOKEN') && CLOSE_ENV_DENY.shape.test('X_TOKEN'), 'repeat reads agree');
+  assert.equal(CLOSE_ENV_DENY.shape.test('PATH'), false);
+  assert.equal(CLOSE_ENV_DENY.shape.test('NODE_OPTIONS'), false);
 });
 
 test('spine: seq monotonic from 1, ts stamped last on every event', async () => {

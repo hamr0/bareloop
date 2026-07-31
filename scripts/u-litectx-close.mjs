@@ -31,16 +31,31 @@ const GAP_LINE_CAP = 40;
 // narrowing at the use site, which is real typing work.
 //   - `any` is matched only in TYPE position (after `{ < | ( [ : ,` or `as`, or `any[]`),
 //     never as the English word — this file's own prose says "any" and must not self-trip.
+//   - the JSDoc WILDCARD (`{*}`, `{?}`) is `any` under a different spelling and the `any`
+//     rule cannot see it — it contains no letters. Measured against this repo's own tsc
+//     (5.x, `--noEmit --strict --allowJs --checkJs`): a naked `function f(v)` reports
+//     TS7006, and `@param {*}` / `@param { * }` / `@param {?}` each report ZERO errors, as
+//     does a `@typedef {*} Loose` used from a `@param {Loose}`. So the tag is matched
+//     GENERICALLY (`@\w+`), not from a list: `@typedef`/`@yields`/`@template` silence
+//     exactly as well as `@param`, and a list of tags is a list of holes. `{*[]}` and
+//     `{Array<*>}` are deliberately NOT matched — measured, they still error on non-array
+//     use, so they are `any[]`, not a full escape, and the `any` rule already covers that
+//     shape's spelled form.
 //   - a JSDoc CAST (`/** @type {X} */ (expr)`) is the JS analog of Python's `cast(`: it
 //     asserts a type the checker could not derive. Declaration annotations (a `@type` line
 //     that does NOT open a parenthesised expression) are the real work and stay legal.
+//     The type body is matched with `.*`, not `[^}]*`: an inner brace (`@type {{a: number}}
+//     */ (y)`) closes `[^}]*` early and the whole cast walks through. Every rule here is
+//     tested against ONE diff line at a time (the loop below), so `.` can never run past
+//     the end of the line it was aimed at.
 const SUPPRESSIONS = [
   { id: 'ts-ignore', re: /@ts-ignore/ },
   { id: 'ts-expect-error', re: /@ts-expect-error/ },
   { id: 'ts-nocheck', re: /@ts-nocheck/ },
   { id: 'eslint-disable', re: /eslint-disable/ },
   { id: 'any', re: /(?:[{<|(\[:,]|\bas)\s*any\b|\bany\[\]/ },
-  { id: 'cast', re: /@type\s*\{[^}]*\}\s*\*\/\s*\(/ },
+  { id: 'any-star', re: /@\w+\s*\{\s*[*?]\s*\}/ },
+  { id: 'cast', re: /@type\s*\{.*\}\s*\*\/\s*\(/ },
 ];
 
 const stage = process.argv[2];
@@ -51,7 +66,18 @@ const stop = (/** @type {string} */ why) => { out(`instrument-stop: ${why}`); pr
 
 const run = (/** @type {string} */ cmd, /** @type {string[]} */ args, timeoutMs = 900_000) => {
   const r = spawnSync(cmd, args, { cwd: WORKDIR, encoding: 'utf8', timeout: timeoutMs, maxBuffer: 1 << 28, env: { ...process.env, NO_COLOR: '1' } });
-  return { code: r.status, text: `${r.stdout ?? ''}${r.stderr ?? ''}`, timedOut: r.error?.code === 'ETIMEDOUT' };
+  return { code: r.status, text: `${r.stdout ?? ''}${r.stderr ?? ''}`, timedOut: r.error?.code === 'ETIMEDOUT', why: r.error?.code ?? r.signal ?? 'no error, no signal' };
+};
+/** A spawn that produced NO exit code was not a judgment, so it is always an instrument
+ * stop — but WHICH one matters. Measured shapes (node 22 spawnSync): a timeout is
+ * `{status:null, signal:'SIGTERM', error.code:'ETIMEDOUT'}`; a maxBuffer overflow is
+ * `{status:null, signal:'SIGTERM', error.code:'ENOBUFS'}`; an external kill is
+ * `{status:null, signal:'SIGKILL'}` with no error at all. Reporting all three as "timed
+ * out" hands the operator a wrong cause and hides a broken instrument behind a bound that
+ * never fired (the casualty-vs-evidence class). */
+const noExit = (/** @type {{code: number|null, timedOut: boolean, why: string}} */ r, /** @type {string} */ what) => {
+  if (r.timedOut) stop(`${what} timed out`);
+  if (r.code === null) stop(`${what} died without an exit code (${r.why}) — the instrument broke, the tree was never judged`);
 };
 /** the tool's own lines, capped and prefixed — trims are ANNOUNCED, never silent (F28) */
 const echo = (/** @type {string[]} */ lines) => {
@@ -89,7 +115,7 @@ if (stage === 'changed-from-seed') {
 
 if (stage === 'typecheck') {
   const r = run('npx', ['tsc', '--noEmit', '--strict'], 600_000);
-  if (r.timedOut || r.code === null) stop('the strict typecheck timed out');
+  noExit(r, 'the strict typecheck');
   const errs = r.text.split('\n').map((s) => s.trimEnd()).filter((l) => /error TS\d+/.test(l));
   if (errs.length === 0 && r.code === 0) { out('green: tsc --strict reports zero errors'); done(0); }
   if (errs.length === 0) { stop(`tsc exited ${r.code} with no readable error lines — the run did not complete`); }
@@ -100,7 +126,7 @@ if (stage === 'typecheck') {
 
 if (stage === 'suite-green') {
   const r = run('npm', ['test'], 900_000);
-  if (r.timedOut || r.code === null) stop('the patient suite timed out');
+  noExit(r, 'the patient suite');
   // `node --test` spec output is never byte-stable (duration stamps); the TAP summary
   // counters and `not ok` lines are. Count tests EXECUTED, never passed — a red tree
   // must not be able to hide under a passing-count floor (F40).
