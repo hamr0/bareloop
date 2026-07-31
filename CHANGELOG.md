@@ -225,6 +225,19 @@ feature lands, **patch** = docs, fixes, scaffolding.
   emitter is now scrubbed once at the WIRING, with the same ONE inventory (`SECRET_PATTERNS`)
   the close output goes through, so a new ctx verb cannot forget it — seventeen scrubbed call
   sites would have been seventeen chances to.
+- **A failing `json-valid` exit could put file bytes on the spine** (`src/planrun.js`). An exit
+  detail is supposed to be names and counts, but `json-valid` embeds `JSON.parse`'s own message
+  and V8 quotes a window of the SOURCE inside it — a body of 20 characters or fewer is quoted
+  WHOLE, and the short-prefix secret shapes (`xoxb-…`) fit inside that window — so the detail
+  can carry file bytes the WORKER chose, into a log that is append-only forever. `runPlan` now
+  scrubs every detail once at the `judge()` boundary, with the same ONE inventory
+  (`SECRET_PATTERNS`) the close output and the ctx-verb channel ride through. The boundary is
+  the place, not the three consumers below it: the same details become the `exit-eval` record,
+  a fault's escalation `detail`, and the worker gap ralph puts on the spine as
+  `close-verdict.gap` — scrubbing at the source makes the leak inexpressible, scrubbing per
+  consumer makes it something the next consumer has to remember. `evalExits` itself is
+  untouched and does NOT scrub; it is a public export, so an adopter wiring its results into
+  their own log applies their own redaction.
 - **The stall fuse could reissue a call past the run's wall** (`src/stall.js`, L4). The clock is
   consulted where a ROUND completes and after a step returns; a stall completes no round and
   returns from no step, so nothing read it between the wall passing and the next reissue — a
@@ -294,8 +307,13 @@ feature lands, **patch** = docs, fixes, scaffolding.
   opposite ways, and both are spec edits whose new hash needs re-approval: raise `maxWallMs`
   and resume (resume-to-cap — the stop IS the checkpoint) or revise the goal so the work fits
   the time; abandon is the third. `cutMidCall` still splits the two readings, so which
-  instrument saw the deadline stays on the record. It is not a universal bound and is not
-  claimed as one: a STEP already under way still runs its own exit checks after the deadline.
+  instrument saw the deadline stays on the record, and the step-site record names its two
+  caps SEPARATELY: `capRuns` is the RUN's attempt cap — what the fix-site record has always
+  written — and `stepAttemptCap` is the step's own tightened cap, the number that actually
+  bounded THIS step. Previously the one key carried both meanings depending on which site
+  emitted it, leaving a reader of two records of the same type no way to tell which. It is
+  not a universal bound and is not claimed as one: a STEP already under way still runs its
+  own exit checks after the deadline.
 - **Scripts — unshipped, but the surface a user actually runs.**
   - The outside watchdog's DEADLINE kill is ACTIVITY-AWARE (hamr: *"the kill from outside should
     check for activity/bytes or other markers for activity, not a silent kill"*). Past the

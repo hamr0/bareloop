@@ -1125,7 +1125,14 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
           stepsDone: idx,
           stepsPlanned: plan.steps.length,
           attemptsUsed: iteration - 1,
-          capRuns: stepCap,
+          // BOTH, honestly named. `capRuns` means the RUN's attempt cap on every
+          // wall-halt record — the fix site writes exactly that — so this site must
+          // not quietly put the step's TIGHTENED cap under the same key: two records
+          // of one type disagreeing about what a number counts, with nothing on the
+          // record saying which, is the two-instruments class. The tightening is real
+          // information (it is what bounded THIS step) and keeps its own name.
+          capRuns,
+          stepAttemptCap: stepCap,
         };
         // No trend here, and none invented: `gapTrend` reads consecutive CLOSE output,
         // and a step that never ran has no grade of its own to compare. The lever the
@@ -1158,7 +1165,21 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       lastText = scrub(r.text ?? '').slice(0, ARTIFACT_MAX);
     };
     const judge = async () => {
-      const { pass, results } = await evalExits(step.exit, { dir: workdir, snapshot, runCheck });
+      const { pass, results: raw } = await evalExits(step.exit, { dir: workdir, snapshot, runCheck });
+      // Scrubbed HERE, once, before the results are read by anyone. An exit detail is
+      // supposed to be names and counts, but `json-valid` embeds `JSON.parse`'s own
+      // message and V8 quotes a window of the SOURCE inside it (a body of 20 chars or
+      // fewer is quoted whole) — so the detail can carry FILE BYTES the worker chose,
+      // and the spine is append-only forever (the hard line). ONE inventory
+      // (SECRET_PATTERNS), the same `scrub` the close output and the ctx-verb channel
+      // already ride through — never a second spelling of what a secret looks like.
+      // The boundary is the right place and not the three call sites below it: these
+      // same details become the `exit-eval` record, a fault's escalation `detail`
+      // (via ralph's close-verdict + CLOSE_FAULTS emissions), and the worker gap
+      // (which ralph also puts on the spine as close-verdict.gap). Scrubbing the
+      // results makes the leak inexpressible; scrubbing each consumer makes it
+      // something the next consumer has to remember.
+      const results = raw.map((r) => (typeof r.detail === 'string' ? { ...r, detail: scrub(r.detail) } : r));
       emit('exit-eval', { step: step.id, iteration: iterationNow, results });
       // an instrument fault rides out by its runClose verdict NAME: ralph
       // escalates it through CLOSE_FAULTS (or F32-routes a crash after writes)

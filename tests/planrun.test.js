@@ -13,6 +13,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runPlan } from '../src/planrun.js';
+import { ralph } from '../src/ralph.js';
 import { validateJob } from '../src/job.js';
 import { StallError, MAX_STALLS } from '../src/stall.js';
 import { scriptedProvider, scriptedNativeFactory } from './helpers.js';
@@ -386,6 +387,43 @@ test('L3: a ctx verb\'s spine event is SCRUBBED at the wiring — a model-author
   assert.doesNotMatch(JSON.stringify(ev), new RegExp(KEY), 'the literal key must not survive anywhere in the event');
   assert.match(ev.query, /\[REDACTED:/, 'the query rides the spine masked, and still says a secret was there');
   assert.match(ev.query, /stopword/, 'only the token is masked — the rest of the query stays readable, or the record is useless');
+});
+
+test('an EXIT DETAIL is scrubbed before it reaches the spine — json-valid quotes the file\'s own bytes back in V8\'s parse message', async (t) => {
+  // The same hard line as the ctx-verb wiring above, on the other channel into the
+  // append-only log. `json-valid` embeds `JSON.parse`'s message, and V8 quotes a
+  // window of the SOURCE in it (a source of 20 chars or fewer is quoted whole:
+  // measured, `JSON.parse('[xoxb-AAAAAAAAAA]')` → "Unexpected token 'x',
+  // "[xoxb-AAAAAAAAAA]" is not valid JSON"). So an exit detail is not the
+  // names-and-counts text the evaluator's own doctrine promises — it can carry
+  // FILE BYTES, and the worker chose those bytes. ONE inventory (SECRET_PATTERNS)
+  // scrubs it, at the emission boundary, so every downstream reader of the same
+  // results (the exit-eval record, the escalation detail, the worker gap) is
+  // covered by construction rather than by three remembered call sites.
+  const wd = makePatient(t);
+  const KEY = 'xoxb-AAAAAAAAAA';
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'emit-report', action: 'Write tests/report.json.',
+      tools: ['write'], rounds: 4, target: 'tests/report.json',
+      exit: [{ type: 'json-valid', path: 'tests/report.json' }],
+    }],
+  });
+  const provider = scriptedProvider([
+    { text: 'scout notes' },
+    { text: plan },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'report.json'), content: `[${KEY}]` })] },
+    { text: 'wrote the report' },
+  ]);
+  const { events } = await go(wd, provider, { capRuns: 1 });
+  const ev = events.find((e) => e.type === 'exit-eval');
+  assert.ok(ev, 'the json-valid exit really ran — no exit-eval and this test proves nothing');
+  const detail = ev.results[0].detail;
+  assert.match(detail, /is not valid JSON/, 'the parse message really did ride into the detail (the leak channel is live)');
+  assert.doesNotMatch(JSON.stringify(ev), new RegExp(KEY), 'the literal token must not survive anywhere in the spine record');
+  assert.match(detail, /\[REDACTED:/, 'masked, and the record still says a secret was there');
+  assert.match(detail, /tests\/report\.json/, 'only the token is masked — the mechanical gap (which file, which wall) stays readable');
 });
 
 // ── review 2026-07-21: doctrine-restoring fixes to the graduated plan flow ──
@@ -1055,6 +1093,46 @@ test('F64: a wall-derived timeout during PLAN DRAFTING is a wall-halt too — th
   ]);
 });
 
+test('W-2: the wall-halt option list is ONE list — planrun\'s WALL_OPTIONS and ralph\'s DECISIONS entry pinned against EACH OTHER, not each against a literal', async (t) => {
+  // The two lists are declared byte-identical in both files' comments, and the pin
+  // above only holds planrun's side to a copy of the text. A literal-vs-literal pin
+  // is one-sided: edit ralph's entry and nothing here fails, which is exactly how the
+  // lists drifted to two-vs-three levers the first time. This reads BOTH sites'
+  // real emissions and compares them to each other, so an edit to EITHER breaks.
+  // Behavioural, not by import: neither list is exported (WALL_OPTIONS is a runPlan
+  // local, ralph's DECISIONS a per-throw local), and the escalation's `options` is
+  // the observable that actually reaches a human either way.
+  const wd = makePatient(t);
+  const clk = fakeClock();
+  let n = 0;
+  const provider = {
+    name: 'draft-timeout',
+    async generate() {
+      n += 1;
+      if (n === 2) { clk.advance(700_000); throw timeoutError(); } // the drafting call — planrun's own WALL_OPTIONS site
+      return { text: 'scout', usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const { events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now });
+  const planrunOptions = events.filter((e) => e.type === 'escalation').at(-1)?.options;
+
+  // ralph's side: a middle that throws the SAME category, so its DECISIONS table
+  // renders the entry the same human would read from the other site
+  const { events: ralphEvents, emit } = collector();
+  await ralph({
+    middle: () => { throw Object.assign(new Error('the wall passed'), { category: 'wall-halt' }); },
+    judge: async () => ({ verdict: 'satisfied' }),
+    capRuns: 1,
+    emit,
+  });
+  const ralphEsc = ralphEvents.find((e) => e.type === 'escalation');
+  assert.equal(ralphEsc?.category, 'wall-halt', 'ralph really routed the category — a different one and this compares the wrong list');
+
+  assert.equal(planrunOptions?.length, 3, 'three levers: more time, a smaller goal, stop');
+  assert.deepEqual(planrunOptions, ralphEsc.options,
+    'ONE category, ONE option list — which site read the clock is an implementation detail');
+});
+
 test('T: the between-steps wall terminal — a run whose clock expires after a green step STOPS, and the stop is the checkpoint', async (t) => {
   // NOT closeGreen: an already-green close short-circuits the whole run at the
   // precheck, so the terminal under test would never be reached (a green patient
@@ -1660,6 +1738,41 @@ test('W-2 (step site): a step that would START past the deadline is never funded
   assert.equal(wh.stepsPlanned, 1);
   assert.equal(wh.attemptsUsed, 0);
   assert.equal(wh.requestedMs, 600_000);
+});
+
+test('W-2 (step site): the wall-halt record separates the RUN\'s cap from the step\'s TIGHTENED one — one key never carries two meanings', async (t) => {
+  // `capRuns` on the same record type means the run's attempt cap at the fix site.
+  // At the step site it used to carry `stepCap` — the per-step tightening — so two
+  // wall-halt records could disagree about what the number counts, with nothing on
+  // the record saying which. A step that TIGHTENS its attempts is the only shape
+  // that can tell them apart (with no `attempts` the two numbers are equal and the
+  // conflation is invisible), which is why this plan declares attempts: 1 under a
+  // run cap of 3. The record shape is new in this unreleased version, so naming the
+  // two things separately is free now and never later.
+  const wd = makePatient(t);
+  const clk = fakeClock();
+  const tightened = PLAN(wd, [{
+    id: 'write-test', action: 'Write tests/test_x.mjs.', tools: ['write'], rounds: 4,
+    attempts: 1, target: 'tests/test_x.mjs',
+    exit: [{ type: 'tree-changed', scope: 'tests/**' }],
+  }]);
+  let n = 0;
+  const provider = {
+    name: 'wall-before-tightened-step',
+    async generate() {
+      n += 1;
+      const scripted = [{ text: 'scout' }, { text: tightened }][n - 1] ?? { text: 'never bought' };
+      if (n === 2) clk.advance(700_000);
+      return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now, capRuns: 3 });
+  assert.equal(outcome, 'wall-halt');
+
+  const wh = events.filter((e) => e.type === 'wall-halt').at(-1);
+  assert.equal(wh.phase, 'step:write-test', 'the STEP site wrote this record — the fix site is the other one');
+  assert.equal(wh.capRuns, 3, 'capRuns is the RUN\'s cap here, exactly as it is at the fix site');
+  assert.equal(wh.stepAttemptCap, 1, 'and the step\'s own tightening gets its own name, not the same key');
 });
 
 test('W-2 (step site) CONTROL: a step ALREADY RUNNING when the wall passes keeps its old behaviour — the attempt finishes, the judge runs, and the METER is what stops it', async (t) => {

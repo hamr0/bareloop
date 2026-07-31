@@ -377,8 +377,13 @@ the snapshot): an identical re-write is NOT a change (F43) and git status is nev
 consulted (F45). `artifact-written` rejects zero-byte files. `check-passes` delegates
 through the `runCheck` seam (the runner wires runClose); an unwired or crashed seam
 fails CLOSED with `fault` carrying a runClose verdict name — an instrument fault
-escalates through `CLOSE_FAULTS`, never masquerades as worker feedback. Failing details
-are counts and names only, never file bodies (they ride the append-only spine).
+escalates through `CLOSE_FAULTS`, never masquerades as worker feedback. Failing details are
+mostly counts and names — with one exception that matters: `json-valid` embeds `JSON.parse`'s
+own message, and V8 quotes a window of the SOURCE inside it, so that detail can carry file
+bytes the worker chose. The plan runner redacts EVERY detail (`scrub`/`SECRET_PATTERNS`, the
+ONE inventory) at the emission boundary, before anything rides the append-only spine. The
+module itself does not scrub: a direct `evalExits` caller wiring results into its own log
+must apply its own redaction.
 
 ### `jobSpecHash(job)` / `checkApproval(job, approvals)` — `src/job.js`
 

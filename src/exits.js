@@ -9,8 +9,14 @@
 //     F45) and never gate intent (the F43 identical-refire trap: an allowed
 //     write that lands the same bytes is NOT a change).
 //   - a failing exit's detail is a MECHANICAL gap (a named wall, a count) —
-//     the genre that converts (F38/F46); details carry names and counts only,
-//     never file bodies (they ride the spine, which is append-only forever).
+//     the genre that converts (F38/F46). One detail is NOT names-and-counts:
+//     `json-valid` embeds `JSON.parse`'s own message and V8 quotes a window of
+//     the SOURCE inside it, so it can carry file bytes the worker chose. The
+//     CALLER scrubs, not this module: `runPlan` redacts every detail (the ONE
+//     `SECRET_PATTERNS` inventory) at the emission boundary, before anything
+//     rides the spine, which is append-only forever. `evalExits` is a public
+//     export — a direct caller wiring results into its own log applies its own
+//     redaction.
 //   - `check-passes` delegates through the `runCheck` seam the runner wires
 //     to the full runClose machinery; the evaluator itself never spawns. An
 //     unwired or throwing check fails CLOSED (the broken-close class: an
