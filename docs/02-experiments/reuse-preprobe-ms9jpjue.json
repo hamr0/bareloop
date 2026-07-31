@@ -1,0 +1,2193 @@
+{
+  "probe": "reuse-preprobe",
+  "dry": false,
+  "prereg": "docs/02-experiments/REUSE-PREPROBE-PREREG.md",
+  "designRecord": "docs/plans/2026-08-01-layer-3-reuse-design.md",
+  "runid": "ms9jpjue",
+  "startedAt": "2026-07-31T23:09:09.804Z",
+  "model": "claude-sonnet-5",
+  "capUsd": 1,
+  "spentUsd": 0.5107386,
+  "unpricedRounds": 0,
+  "stoppedByCap": null,
+  "nPerArm": 3,
+  "inputs": {
+    "job": "jobs/litectx-u-types.json",
+    "specHash": "25d8c5eeecc294092c2b15cc08c25f2aeac5120c3959de94f0112ad9de82445f",
+    "workdir": "/home/hamr/PycharmProjects/bareloop-patients/litectx-u",
+    "patientSeed": "96813a43bbcbac6a808ff610c6751a8736e2903e",
+    "patientHead": "96813a43bbcbac6a808ff610c6751a8736e2903e",
+    "patientCleanAtSeed": true,
+    "patientUnchangedByProbe": true,
+    "bridgeFile": "/home/hamr/PycharmProjects/bareloop-patients/aurora-u-bareloop/bridge-aurora-u-spawner-types-ms7flkok.json",
+    "bridgeJob": "aurora-u-spawner-types",
+    "bridgeRunid": "ms7flkok",
+    "bridgeSpecHash": "1f906a24ba4cd9b73cc537823395094617822cade2e25a117f1a45b016ad1872",
+    "bridgeGreenAt": "2026-07-30T11:40:49.970Z",
+    "bridgeSteps": 2
+  },
+  "capture": {
+    "source": "runPlan (real drafter call, intercepted)",
+    "runPlanOutcome": "provider-red",
+    "costUsd": 0.1933514,
+    "litectxStoreCreatedByProbe": false,
+    "scoutBytes": 3761,
+    "scoutEmpty": false,
+    "closePrecheckVerdict": "needs_revision",
+    "checkMenu": [
+      "typecheck",
+      "suite-green",
+      "no-suppressions"
+    ],
+    "scopeMenu": [
+      "src/**",
+      "src/grammars/**"
+    ],
+    "draftPromptChars": 7138,
+    "draftPrompt": "DRAFT-PLAN\nYou are planning how to accomplish a goal in a repository, as an ordered list of bounded\nsteps (schema \"plan-v1\"). The plan is pure declarative JSON validated by a strict schema;\nANY unknown field, wrong enum value, or out-of-bounds number is rejected. Output ONLY the\nJSON object, no fences, no commentary.\n\nShape: { \"schema\": \"plan-v1\", \"steps\": [ ... 1..8 steps ... ] } — steps run\nstrictly in array order. Each step (no other fields exist):\n- \"id\": kebab-case slug, unique\n- \"action\": the step's task, precise enough for a worker that sees ONLY this step\n- \"tools\": non-empty unique subset of [\"read\",\"grep\",\"write\",\"edit\",\"recall\",\"get\",\"impact\",\"related\",\"recent\",\"compress\",\"peek\",\"stash\",\"remember\",\"forget\"] (write/edit change the tree; recall/get/impact/related/recent search and navigate the repository index; compress/peek read cheaply; stash/remember/forget park and record notes across steps)\n- \"rounds\": integer 1..40 — the step's per-attempt tool-round bound\n- \"target\": the step's deliverable path (REQUIRED when tools include write/edit), inside [\"src/**\"]\n- \"model\" (optional): sonnet | haiku — a cheaper tier for mechanical steps; omit for the default\n- \"attempts\" (optional): integer 1..4 — TIGHTEN this step's retry cap below the shell's; you may never raise it\n- \"scope\" (optional): narrow this step's WRITE fence — copy one value from the offered scopes below.\n  A narrowed \"scope\" is the ONLY ground this step can write: its \"target\" must sit\n  inside it, and a \"tree-changed\" exit's scope must not be disjoint from it (one that\n  CONTAINS it is fine) — otherwise every write the step could make is denied, or the\n  exit can never pass, on every attempt.\n- \"exit\": 1..2 form checks that ALL must pass (AND), each one of:\n    {\"type\":\"artifact-written\",\"path\":\"...\",\"pattern\":\"optional regex\"}\n    {\"type\":\"tree-changed\",\"scope\":\"<copy one value from the offered scopes below>\"}\n    {\"type\":\"json-valid\",\"path\":\"...\"}\n    {\"type\":\"check-passes\",\"name\":\"<copy one name from the check menu below>\"}\n  Check menu — a check-passes \"name\" is exactly one of [\"typecheck\",\"suite-green\",\"no-suppressions\"]; copy\n  it character for character. No other name exists, and you cannot add one.\n  A check-passes on a write-granted step MUST be paired with a tree-changed exit\n  (the repository starts green — a lone check would pass on the untouched tree).\n  A check-passes may ONLY appear on a step whose tools include write or edit: a\n  failing check is reported back to THAT step's worker for another attempt, so\n  the step must be able to act on the report. Do not plan a separate read-only\n  \"verify\" step — attach the check to the step that does the fixing; the final\n  verification after your plan is not yours to author.\n  Reference checks by NAME only; you cannot author or modify one.\n\nOffered \"scope\" values for tree-changed — copy ONE of these exactly, character for\ncharacter. No other value is accepted, and patterns of your own (like \"src/*.js\")\nare not accepted:\n  \"src/**\"\n  \"src/grammars/**\"\n\nGoal:\nMake litectx pass `tsc --strict` without weakening the tests.\n\nWhat this run has left to spend — plan within it:\n- money left for the whole run: $0.81\n- time left for the whole run: 43 minutes\nThese are totals for the run, not per-step allowances. Nothing here is a rate: a step's cost depends on what it does.\n\nRepository survey (from a read-only scout):\n## Survey notes for planner\n\n**Repo shape:** vanilla-ESM JS library. Types are generated, not hand-written: `tsconfig.json` compiles `src/**/*.js` (allowJs+checkJs, emitDeclarationOnly) into `./types/*.d.ts`. `types/` is git-ignored (confirmed in `.gitignore`: \"Generated type declarations — never committed\") and `types` is excluded from tsconfig's `include`. `npm run typecheck` = `tsc --noEmit`; CI (`.github/workflows/ci.yml`) runs `npm run typecheck` then `npm run build:types` then `npm test`.\n\n**Current tsconfig.json** (repo root):\n```\nstrict: false, strictNullChecks: true   (explicit, deliberate — checkJs + strictNullChecks only)\n```\nCLAUDE.md doctrine explicitly says today: *\"`tsc` runs `checkJs` + `strictNullChecks` (not full `strict`).\"* The goal asks to go further and turn on full `--strict`, which is a doctrine change the task wants us to make.\n\n**Key files:** `src/index.js` (main entry, `LiteCtx` class, heavily JSDoc-annotated with `@param`/`@returns`/`@type`), plus `src/assemble.js`, `chunker.js`, `compress.js`, `contextgraph.js`, `docparse.js`, `edges.js`, `embedder.js`, `gitsig.js`, `impact.js`, `indexer.js`, `langdef.js`, `memory-store.js`, `store.js`, `tokenize.js`, `tsalias.js`, `writegate.js`, and `src/grammars/`. Only 2 `catch (e)` blocks found repo-wide (`docparse.js:308`, `index.js:301`) — under strict's `useUnknownInCatchVariables`, `e` becomes `unknown` and any property access on it (e.g. `e.message`) will now error; these need narrowing (`e instanceof Error`) or JSDoc `@type`.\n\n**Test suite:** `test/*.test.js`, run via `node --test` (plain Node test runner, not tsc-checked at runtime) — 40+ files, extensive strictScope/memory/recall/impact coverage. None of them invoke `tsc` directly; the \"verification\" harness (external to this repo, per the job framing) apparently runs `tsc --strict` separately and checks the tree changed from a seed. \"Without weakening the tests\" means: don't touch `test/**` to make failures go away, and don't loosen assertions — all fixes must land in `src/**` (JSDoc annotations/types) and in `tsconfig.json` (flipping `strict` on).\n\n**Hypothesis:** The required work is:\n1. Flip `tsconfig.json`'s `\"strict\": false` to `\"strict\": true` (the `strictNullChecks: true` becomes redundant but harmless).\n2. Re-run `tsc --noEmit`/`tsc --strict` mentally/actually and fix every new diagnostic strict mode surfaces in the `src/*.js` files via JSDoc: primarily `noImplicitAny` (untyped function parameters/variables inferred as `any` from usage — likely many across `assemble.js`, `chunker.js`, `compress.js`, `contextgraph.js`, `docparse.js`, `edges.js`, `embedder.js`, `impact.js`, `indexer.js`, `memory-store.js`, `store.js`, `writegate.js`), `useUnknownInCatchVariables` (the two catch blocks), possibly `strictFunctionTypes`/`strictBindCallApply` around callback signatures (tree-sitter/better-sqlite3 usage), and `alwaysStrict`/`noImplicitThis` (unlikely to bite in ESM but worth a scan of any function using `this` outside class methods).\n3. Do NOT touch `types/` (generated/gitignored) or `test/**`; only `tsconfig.json` + JSDoc/type-only edits inside `src/**` (and maybe `bin/`, `integrations/`, `poc/` if those are also type-checked — but tsconfig `include` is scoped to `src/**/*.js` only, so likely only `src/` needs fixes).\n4. Since the failure message (\"tree identical to seed — nothing changed\") just means no edit has been made yet, the next turn's job is to actually implement step 1 and iteratively fix whatever `tsc --strict` reports across the ~17 files in `src/`, biasing toward minimal JSDoc-type additions (explicit `@param`/`@returns`/`@type`, narrowing `catch` variables) rather than restructuring logic, per the \"surgical changes only\" repo doctrine.",
+    "events": [
+      {
+        "type": "wall-clock",
+        "bounded": true,
+        "requestedMs": 2700000,
+        "closeStages": 4,
+        "enforcedMs": 6300000,
+        "elapsedMs": 0,
+        "remainingMs": 2700000,
+        "meaning": "a between-round deadline; a close already in flight when it trips runs to completion"
+      },
+      {
+        "type": "close-precheck",
+        "verdict": "needs_revision",
+        "gap": "close stage \"changed-from-seed\" failed:\nLITECTX red: the tree is identical to the seed — nothing was changed\nLITECTX judged=1\n",
+        "exitCode": 1,
+        "judgedCount": 1,
+        "stage": "changed-from-seed",
+        "stages": [
+          {
+            "name": "changed-from-seed",
+            "verdict": "needs_revision",
+            "exitCode": 1
+          }
+        ]
+      },
+      {
+        "type": "check-menu",
+        "offered": [
+          "typecheck",
+          "suite-green",
+          "no-suppressions"
+        ],
+        "hidden": [
+          "changed-from-seed"
+        ],
+        "meaning": "a stage that cannot stand alone as a ruler (a precondition) is not offered — a partial menu is acceptable, never a failure"
+      },
+      {
+        "type": "check-preflight",
+        "name": "typecheck",
+        "verdict": "needs_revision"
+      },
+      {
+        "type": "check-preflight",
+        "name": "suite-green",
+        "verdict": "satisfied"
+      },
+      {
+        "type": "check-preflight",
+        "name": "no-suppressions",
+        "verdict": "satisfied"
+      },
+      {
+        "type": "scope-menu",
+        "offered": [
+          "src/**",
+          "src/grammars/**"
+        ],
+        "truncated": false
+      },
+      {
+        "type": "scout-start",
+        "rounds": 8
+      },
+      {
+        "type": "worker-round",
+        "phase": "scout",
+        "iteration": 1,
+        "kind": "turn",
+        "costUsd": 0.008461999999999999,
+        "pricing": "priced",
+        "tokens": 91,
+        "usage": {
+          "inputTokens": 1,
+          "outputTokens": 90,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 3096
+        }
+      },
+      {
+        "type": "worker-round",
+        "phase": "scout",
+        "iteration": 1,
+        "kind": "turn",
+        "costUsd": 0.0032347,
+        "pricing": "priced",
+        "tokens": 235,
+        "usage": {
+          "inputTokens": 2,
+          "outputTokens": 233,
+          "cacheReadTokens": 3096,
+          "cacheCreationTokens": 299
+        }
+      },
+      {
+        "type": "worker-round",
+        "phase": "scout",
+        "iteration": 1,
+        "kind": "turn",
+        "costUsd": 0.0080485,
+        "pricing": "priced",
+        "tokens": 303,
+        "usage": {
+          "inputTokens": 2,
+          "outputTokens": 301,
+          "cacheReadTokens": 3395,
+          "cacheCreationTokens": 1983
+        }
+      },
+      {
+        "type": "worker-round",
+        "phase": "scout",
+        "iteration": 1,
+        "kind": "turn",
+        "costUsd": 0.0447401,
+        "pricing": "priced",
+        "tokens": 298,
+        "usage": {
+          "inputTokens": 2,
+          "outputTokens": 296,
+          "cacheReadTokens": 5378,
+          "cacheCreationTokens": 16517
+        }
+      },
+      {
+        "type": "ctx-tool",
+        "tool": "ctx_recent",
+        "hits": 0,
+        "bytes": 32
+      },
+      {
+        "type": "worker-round",
+        "phase": "scout",
+        "iteration": 1,
+        "kind": "turn",
+        "costUsd": 0.0112515,
+        "pricing": "priced",
+        "tokens": 644,
+        "usage": {
+          "inputTokens": 2,
+          "outputTokens": 642,
+          "cacheReadTokens": 21895,
+          "cacheCreationTokens": 693
+        }
+      },
+      {
+        "type": "worker-round",
+        "phase": "scout",
+        "iteration": 1,
+        "kind": "turn",
+        "costUsd": 0.0125861,
+        "pricing": "priced",
+        "tokens": 491,
+        "usage": {
+          "inputTokens": 2,
+          "outputTokens": 489,
+          "cacheReadTokens": 22588,
+          "cacheCreationTokens": 1661
+        }
+      },
+      {
+        "type": "worker-round",
+        "phase": "scout",
+        "iteration": 1,
+        "kind": "turn",
+        "costUsd": 0.0174398,
+        "pricing": "priced",
+        "tokens": 834,
+        "usage": {
+          "inputTokens": 2,
+          "outputTokens": 832,
+          "cacheReadTokens": 24249,
+          "cacheCreationTokens": 2372
+        }
+      },
+      {
+        "type": "worker-round",
+        "phase": "scout",
+        "iteration": 1,
+        "kind": "turn",
+        "costUsd": 0.009834200000000001,
+        "pricing": "priced",
+        "tokens": 124,
+        "usage": {
+          "inputTokens": 2,
+          "outputTokens": 122,
+          "cacheReadTokens": 26621,
+          "cacheCreationTokens": 1412
+        }
+      },
+      {
+        "type": "attempt-bounded",
+        "phase": "scout",
+        "iteration": 1,
+        "rounds": 8,
+        "cap": 8
+      },
+      {
+        "type": "scout-truncated",
+        "bytes": 48
+      },
+      {
+        "type": "worker-round",
+        "phase": "scout",
+        "iteration": 1,
+        "kind": "turn",
+        "costUsd": 0.0777545,
+        "pricing": "priced",
+        "tokens": 1598,
+        "usage": {
+          "inputTokens": 2,
+          "outputTokens": 1596,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 25993
+        }
+      },
+      {
+        "type": "attempt-bounded",
+        "phase": "scout",
+        "iteration": 1,
+        "rounds": 9,
+        "cap": 8
+      },
+      {
+        "type": "scout-result",
+        "bytes": 3761
+      },
+      {
+        "type": "materials",
+        "phase": "draft",
+        "balanceUsd": 0.8066485999999999,
+        "remainingMs": 2554789
+      },
+      {
+        "type": "escalation",
+        "category": "probe-capture-stop",
+        "decisionReady": true,
+        "phase": "plan",
+        "decision": "The plan call failed (probe-capture-stop) — no result exists.",
+        "options": [
+          "retry the run",
+          "fix the provider binding",
+          "abandon the run"
+        ],
+        "detail": "reuse-preprobe: drafter prompt captured — aborting the call before it spends"
+      }
+    ]
+  },
+  "arms": {
+    "A": {
+      "what": "cold — the spec only (the control)",
+      "frame": null
+    },
+    "B": {
+      "what": "readable lineage — the bridge plan as reading material",
+      "frame": "\n\nFOR REFERENCE ONLY — a plan from a DIFFERENT repository. This is reading material, not your draft.\nA previous run of a same-shape job (the same four close stages) greened on a DIFFERENT repository\nwith the plan below. Its paths do not exist here and it is not a draft you can submit. Draft YOUR\nplan for THIS repository from scratch; consult the one below only if something in it is useful.\n\n{\n  \"schema\": \"plan-v1\",\n  \"steps\": [\n    {\n      \"id\": \"fix-spawner-core-annotations\",\n      \"action\": \"In packages/spawner/src/aurora_spawner/spawner.py, resolve all mypy --strict violations (using the repo's mypy.ini strict settings) without touching any files under packages/spawner/tests/. Specifically: add full type annotations to nested/inner functions (e.g. read_stdout, read_stderr, on_warning, retry_progress, spinner_task, emit_state_change and any others flagged), properly narrow Optional[StreamReader] before calling .read() on process.stdout/process.stderr, add explicit annotations to lists/containers like results and final_results (e.g. list[SpawnResult]) to avoid Any-leakage, and fix any possibly-unbound/Optional access flagged by warn_unreachable in the state-tracking retry/fallback paths. Do not add blanket '# type: ignore' comments, do not relax mypy.ini, and do not weaken or edit any test file.\",\n      \"tools\": [\n        \"read\",\n        \"grep\",\n        \"edit\"\n      ],\n      \"rounds\": 30,\n      \"target\": \"packages/spawner/src/aurora_spawner/spawner.py\",\n      \"scope\": \"packages/spawner/src/aurora_spawner/**\",\n      \"exit\": [\n        {\n          \"type\": \"tree-changed\",\n          \"scope\": \"packages/spawner/src/aurora_spawner/**\"\n        },\n        {\n          \"type\": \"check-passes\",\n          \"name\": \"no-suppressions\"\n        }\n      ]\n    },\n    {\n      \"id\": \"fix-remaining-modules-typecheck\",\n      \"action\": \"Run mypy --strict (per repo mypy.ini) across the full packages/spawner/src/aurora_spawner package and fix any remaining strict-mode errors in circuit_breaker.py, early_detection.py, heartbeat.py, models.py, observability.py, recovery.py, timeout_policy.py, and __init__.py (leave spawner.py alone unless a cross-module signature mismatch requires a matching fix there). Add precise annotations, narrow Optional/union types, and fix any Any-return or untyped-def/incomplete-def violations. Do not add blanket '# type: ignore' suppressions, do not relax mypy.ini, and do not modify any file under packages/spawner/tests/. Keep iterating until the whole package passes strict typecheck.\",\n      \"tools\": [\n        \"read\",\n        \"grep\",\n        \"edit\"\n      ],\n      \"rounds\": 25,\n      \"target\": \"packages/spawner/src/aurora_spawner/**\",\n      \"scope\": \"packages/spawner/src/aurora_spawner/**\",\n      \"exit\": [\n        {\n          \"type\": \"tree-changed\",\n          \"scope\": \"packages/spawner/src/aurora_spawner/**\"\n        },\n        {\n          \"type\": \"check-passes\",\n          \"name\": \"typecheck\"\n        }\n      ]\n    }\n  ]\n}"
+    },
+    "C": {
+      "what": "mechanical start — the bridge plan as the starting draft",
+      "frame": "\n\nYOUR STARTING DRAFT — begin from the plan below and tweak it.\nThis plan greened a same-shape job (the same four close stages) on a DIFFERENT repository. Take it\nas your starting draft rather than starting from a blank page: keep what carries over, change what\nthis repository needs. Everything you submit must be legal for THIS job as described above — its\npaths, scopes, verbs, bounds and check names. Output the finished plan as the single JSON object\nrequired above, and nothing else.\n\n{\n  \"schema\": \"plan-v1\",\n  \"steps\": [\n    {\n      \"id\": \"fix-spawner-core-annotations\",\n      \"action\": \"In packages/spawner/src/aurora_spawner/spawner.py, resolve all mypy --strict violations (using the repo's mypy.ini strict settings) without touching any files under packages/spawner/tests/. Specifically: add full type annotations to nested/inner functions (e.g. read_stdout, read_stderr, on_warning, retry_progress, spinner_task, emit_state_change and any others flagged), properly narrow Optional[StreamReader] before calling .read() on process.stdout/process.stderr, add explicit annotations to lists/containers like results and final_results (e.g. list[SpawnResult]) to avoid Any-leakage, and fix any possibly-unbound/Optional access flagged by warn_unreachable in the state-tracking retry/fallback paths. Do not add blanket '# type: ignore' comments, do not relax mypy.ini, and do not weaken or edit any test file.\",\n      \"tools\": [\n        \"read\",\n        \"grep\",\n        \"edit\"\n      ],\n      \"rounds\": 30,\n      \"target\": \"packages/spawner/src/aurora_spawner/spawner.py\",\n      \"scope\": \"packages/spawner/src/aurora_spawner/**\",\n      \"exit\": [\n        {\n          \"type\": \"tree-changed\",\n          \"scope\": \"packages/spawner/src/aurora_spawner/**\"\n        },\n        {\n          \"type\": \"check-passes\",\n          \"name\": \"no-suppressions\"\n        }\n      ]\n    },\n    {\n      \"id\": \"fix-remaining-modules-typecheck\",\n      \"action\": \"Run mypy --strict (per repo mypy.ini) across the full packages/spawner/src/aurora_spawner package and fix any remaining strict-mode errors in circuit_breaker.py, early_detection.py, heartbeat.py, models.py, observability.py, recovery.py, timeout_policy.py, and __init__.py (leave spawner.py alone unless a cross-module signature mismatch requires a matching fix there). Add precise annotations, narrow Optional/union types, and fix any Any-return or untyped-def/incomplete-def violations. Do not add blanket '# type: ignore' suppressions, do not relax mypy.ini, and do not modify any file under packages/spawner/tests/. Keep iterating until the whole package passes strict typecheck.\",\n      \"tools\": [\n        \"read\",\n        \"grep\",\n        \"edit\"\n      ],\n      \"rounds\": 25,\n      \"target\": \"packages/spawner/src/aurora_spawner/**\",\n      \"scope\": \"packages/spawner/src/aurora_spawner/**\",\n      \"exit\": [\n        {\n          \"type\": \"tree-changed\",\n          \"scope\": \"packages/spawner/src/aurora_spawner/**\"\n        },\n        {\n          \"type\": \"check-passes\",\n          \"name\": \"typecheck\"\n        }\n      ]\n    }\n  ]\n}"
+    }
+  },
+  "rows": [
+    {
+      "arm": "A",
+      "i": 1,
+      "outcome": "read",
+      "truncated": false,
+      "costUsd": 0.0469015,
+      "priced": true,
+      "stop": "end_turn",
+      "validatorOk": true,
+      "validatorReds": [],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "strict-typecheck-fixes",
+            "action": "Add minimal, surgical JSDoc type annotations (no runtime/logic changes, do not touch test/** or tsconfig.json) across src/**/*.js (index.js, assemble.js, chunker.js, compress.js, contextgraph.js, docparse.js, edges.js, embedder.js, gitsig.js, impact.js, indexer.js, langdef.js, memory-store.js, store.js, tokenize.js, tsalias.js, writegate.js, and src/grammars/**) so that `tsc --strict` reports zero errors. Specifically: narrow the two `catch (e)` blocks (docparse.js:308, index.js:301) using `e instanceof Error` checks or explicit `@type` annotations instead of accessing properties on unknown; add `@param`/`@returns`/`@type` JSDoc annotations wherever strict's noImplicitAny would otherwise infer `any` for parameters, variables, or callback signatures; fix any strictFunctionTypes/strictBindCallApply mismatches around callback usage (e.g. tree-sitter/better-sqlite3 callbacks) via correct JSDoc function types; address any noImplicitThis issues. Iterate until `tsc --strict` is clean, keeping all test assertions and test/** files untouched.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/index.js",
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "typecheck"
+              },
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          }
+        ]
+      },
+      "axes": {
+        "stepCount": 1,
+        "declaredRounds": 30,
+        "verbsPerStep": [
+          [
+            "edit",
+            "grep",
+            "read"
+          ]
+        ],
+        "verbUnion": [
+          "edit",
+          "grep",
+          "read"
+        ],
+        "targets": [
+          "src/index.js"
+        ],
+        "scopes": [
+          null
+        ],
+        "exitTypes": [
+          [
+            "check-passes",
+            "tree-changed"
+          ]
+        ],
+        "checkNames": [
+          "typecheck"
+        ],
+        "models": [
+          null
+        ],
+        "fileRefs": {
+          "realCount": 5,
+          "guessedCount": 20,
+          "real": [
+            "src/index.js",
+            "src",
+            "test",
+            "src/grammars",
+            "tsconfig.json"
+          ],
+          "guessed": [
+            "runtime/logic",
+            "strictFunctionTypes/strictBindCallApply",
+            "tree-sitter/better-sqlite3",
+            "index.js",
+            "assemble.js",
+            "chunker.js",
+            "compress.js",
+            "contextgraph.js",
+            "docparse.js",
+            "edges.js",
+            "embedder.js",
+            "gitsig.js",
+            "impact.js",
+            "indexer.js",
+            "langdef.js",
+            "memory-store.js",
+            "store.js",
+            "tokenize.js",
+            "tsalias.js",
+            "writegate.js"
+          ]
+        }
+      },
+      "rawChars": 1283
+    },
+    {
+      "arm": "A",
+      "i": 2,
+      "outcome": "read",
+      "truncated": false,
+      "costUsd": 0.027139800000000002,
+      "priced": true,
+      "stop": "end_turn",
+      "validatorOk": true,
+      "validatorReds": [],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "fix-strict-typecheck",
+            "action": "Enable litectx to pass `tsc --strict`. Work only inside src/**, without editing test/** or weakening any test assertions. Fix every strict-mode diagnostic tsc reports across src/*.js (and src/grammars/**): add/refine JSDoc @param, @returns, and @type annotations to eliminate implicit-any parameters/variables; narrow the two `catch (e)` blocks (docparse.js:308, index.js:301) with `e instanceof Error` checks or explicit @type so `unknown` catch variables type-check; address any strictNullChecks/strictFunctionTypes/strictBindCallApply fallout surfaced once full strict is enabled. Make only minimal, surgical JSDoc/type-narrowing edits — do not restructure logic or touch tsconfig.json or any file under test/**.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/**",
+            "model": "sonnet",
+            "attempts": 2,
+            "scope": "src/**",
+            "exit": [
+              {
+                "type": "check-passes",
+                "name": "typecheck"
+              },
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              }
+            ]
+          }
+        ]
+      },
+      "axes": {
+        "stepCount": 1,
+        "declaredRounds": 30,
+        "verbsPerStep": [
+          [
+            "edit",
+            "grep",
+            "read"
+          ]
+        ],
+        "verbUnion": [
+          "edit",
+          "grep",
+          "read"
+        ],
+        "targets": [
+          "src/**"
+        ],
+        "scopes": [
+          "src/**"
+        ],
+        "exitTypes": [
+          [
+            "check-passes",
+            "tree-changed"
+          ]
+        ],
+        "checkNames": [
+          "typecheck"
+        ],
+        "models": [
+          "sonnet"
+        ],
+        "fileRefs": {
+          "realCount": 4,
+          "guessedCount": 7,
+          "real": [
+            "src",
+            "test",
+            "src/grammars",
+            "tsconfig.json"
+          ],
+          "guessed": [
+            "src/*.js",
+            "add/refine",
+            "parameters/variables",
+            "strictNullChecks/strictFunctionTypes/strictBindCallApply",
+            "JSDoc/type-narrowing",
+            "docparse.js",
+            "index.js"
+          ]
+        }
+      },
+      "rawChars": 1131
+    },
+    {
+      "arm": "A",
+      "i": 3,
+      "outcome": "read",
+      "truncated": false,
+      "costUsd": 0.041595799999999995,
+      "priced": true,
+      "stop": "end_turn",
+      "validatorOk": true,
+      "validatorReds": [],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "strict-mode-jsdoc-fixes",
+            "action": "Repository must pass `tsc --strict` (all strict-family flags: noImplicitAny, strictNullChecks, strictFunctionTypes, strictBindCallApply, strictPropertyInitialization, noImplicitThis, alwaysStrict, useUnknownInCatchVariables) without touching tsconfig.json or any file under test/**. Work only inside src/**. Systematically add/tighten JSDoc annotations (@param, @returns, @type, @typedef) on every function, method, and variable in src/index.js, src/assemble.js, src/chunker.js, src/compress.js, src/contextgraph.js, src/docparse.js, src/edges.js, src/embedder.js, src/gitsig.js, src/impact.js, src/indexer.js, src/langdef.js, src/memory-store.js, src/store.js, src/tokenize.js, src/tsalias.js, src/writegate.js, and files under src/grammars/, so that none are inferred as implicit any and all null/undefined paths are explicit. Specifically narrow the two `catch (e)` blocks (docparse.js line ~308, index.js line ~301) so `e` (now `unknown` under useUnknownInCatchVariables) is checked with `e instanceof Error` or given an explicit JSDoc type before any property access. Do not change runtime logic or behavior, do not edit any file under test/**, do not edit tsconfig.json — only add/adjust type annotations and narrowing checks in src/**. Iterate using grep to find likely implicit-any sites (bare function params without @param types, object literals used as maps, callback parameters for array methods, tree-sitter/better-sqlite3 callback usage) and fix them minimally and surgically.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 35,
+            "target": "src/index.js",
+            "model": "sonnet",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "typecheck"
+              }
+            ]
+          }
+        ]
+      },
+      "axes": {
+        "stepCount": 1,
+        "declaredRounds": 35,
+        "verbsPerStep": [
+          [
+            "edit",
+            "grep",
+            "read"
+          ]
+        ],
+        "verbUnion": [
+          "edit",
+          "grep",
+          "read"
+        ],
+        "targets": [
+          "src/index.js"
+        ],
+        "scopes": [
+          null
+        ],
+        "exitTypes": [
+          [
+            "tree-changed",
+            "check-passes"
+          ]
+        ],
+        "checkNames": [
+          "typecheck"
+        ],
+        "models": [
+          "sonnet"
+        ],
+        "fileRefs": {
+          "realCount": 21,
+          "guessedCount": 21,
+          "real": [
+            "src/index.js",
+            "src",
+            "test",
+            "src/assemble.js",
+            "src/chunker.js",
+            "src/compress.js",
+            "src/contextgraph.js",
+            "src/docparse.js",
+            "src/edges.js",
+            "src/embedder.js",
+            "src/gitsig.js",
+            "src/impact.js",
+            "src/indexer.js",
+            "src/langdef.js",
+            "src/memory-store.js",
+            "src/store.js",
+            "src/tokenize.js",
+            "src/tsalias.js",
+            "src/writegate.js",
+            "src/grammars",
+            "tsconfig.json"
+          ],
+          "guessed": [
+            "add/tighten",
+            "null/undefined",
+            "add/adjust",
+            "tree-sitter/better-sqlite3",
+            "index.js",
+            "assemble.js",
+            "chunker.js",
+            "compress.js",
+            "contextgraph.js",
+            "docparse.js",
+            "edges.js",
+            "embedder.js",
+            "gitsig.js",
+            "impact.js",
+            "indexer.js",
+            "langdef.js",
+            "memory-store.js",
+            "store.js",
+            "tokenize.js",
+            "tsalias.js",
+            "writegate.js"
+          ]
+        }
+      },
+      "rawChars": 1742
+    },
+    {
+      "arm": "B",
+      "i": 1,
+      "outcome": "read",
+      "truncated": false,
+      "costUsd": 0.0366005,
+      "priced": true,
+      "stop": "end_turn",
+      "validatorOk": true,
+      "validatorReds": [],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "fix-strict-typecheck-src",
+            "action": "Across all files in src/**/*.js (index.js, assemble.js, chunker.js, compress.js, contextgraph.js, docparse.js, edges.js, embedder.js, gitsig.js, impact.js, indexer.js, langdef.js, memory-store.js, store.js, tokenize.js, tsalias.js, writegate.js, and src/grammars/**), fix every diagnostic that `tsc --strict` (noImplicitAny, strictNullChecks, strictFunctionTypes, strictBindCallApply, useUnknownInCatchVariables, alwaysStrict, noImplicitThis, strictPropertyInitialization) would newly surface, using JSDoc annotations (@param, @returns, @type) and narrowing rather than logic changes. In particular narrow the two `catch (e)` blocks (docparse.js line ~308, index.js line ~301) with `e instanceof Error` checks or explicit JSDoc typing since `e` becomes `unknown` under strict. Do NOT edit any file under test/** or tsconfig.json, and do not weaken any assertions or test behavior — only add/adjust type annotations and narrow unknown/nullable values in src/**.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/index.js",
+            "scope": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "typecheck"
+              }
+            ]
+          }
+        ]
+      },
+      "axes": {
+        "stepCount": 1,
+        "declaredRounds": 30,
+        "verbsPerStep": [
+          [
+            "edit",
+            "grep",
+            "read"
+          ]
+        ],
+        "verbUnion": [
+          "edit",
+          "grep",
+          "read"
+        ],
+        "targets": [
+          "src/index.js"
+        ],
+        "scopes": [
+          "src/**"
+        ],
+        "exitTypes": [
+          [
+            "tree-changed",
+            "check-passes"
+          ]
+        ],
+        "checkNames": [
+          "typecheck"
+        ],
+        "models": [
+          null
+        ],
+        "fileRefs": {
+          "realCount": 5,
+          "guessedCount": 19,
+          "real": [
+            "src/index.js",
+            "src",
+            "src/grammars",
+            "test",
+            "tsconfig.json"
+          ],
+          "guessed": [
+            "add/adjust",
+            "unknown/nullable",
+            "index.js",
+            "assemble.js",
+            "chunker.js",
+            "compress.js",
+            "contextgraph.js",
+            "docparse.js",
+            "edges.js",
+            "embedder.js",
+            "gitsig.js",
+            "impact.js",
+            "indexer.js",
+            "langdef.js",
+            "memory-store.js",
+            "store.js",
+            "tokenize.js",
+            "tsalias.js",
+            "writegate.js"
+          ]
+        }
+      },
+      "rawChars": 1324
+    },
+    {
+      "arm": "B",
+      "i": 2,
+      "outcome": "read",
+      "truncated": false,
+      "costUsd": 0.022430600000000002,
+      "priced": true,
+      "stop": "end_turn",
+      "validatorOk": true,
+      "validatorReds": [],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "fix-strict-mode-violations",
+            "action": "Make the litectx codebase pass `tsc --strict` (strict mode enabled via the CLI flag; do not edit tsconfig.json). Go through every file under src/**/*.js (index.js, assemble.js, chunker.js, compress.js, contextgraph.js, docparse.js, edges.js, embedder.js, gitsig.js, impact.js, indexer.js, langdef.js, memory-store.js, store.js, tokenize.js, tsalias.js, writegate.js, and files under src/grammars/) and fix every diagnostic strict mode surfaces. In particular: narrow the two `catch (e)` blocks (docparse.js:308, index.js:301) since `e` becomes `unknown` under useUnknownInCatchVariables (use `e instanceof Error` narrowing or an explicit JSDoc `@type` cast before any property access); add explicit JSDoc `@param`/`@returns`/`@type` annotations wherever noImplicitAny would otherwise infer `any` on function parameters, callbacks, or variables; fix any strictFunctionTypes/strictBindCallApply issues around callback signatures (e.g. tree-sitter/better-sqlite3 usage); and address any noImplicitThis issues. Make only minimal, surgical JSDoc/type-only edits — do not restructure logic, do not touch tsconfig.json, do not touch anything under test/**, and do not weaken any test assertions. Iterate until `tsc --strict` is clean.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 32,
+            "target": "src/**",
+            "scope": "src/**",
+            "attempts": 3,
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "typecheck"
+              }
+            ]
+          }
+        ]
+      },
+      "axes": {
+        "stepCount": 1,
+        "declaredRounds": 32,
+        "verbsPerStep": [
+          [
+            "edit",
+            "grep",
+            "read"
+          ]
+        ],
+        "verbUnion": [
+          "edit",
+          "grep",
+          "read"
+        ],
+        "targets": [
+          "src/**"
+        ],
+        "scopes": [
+          "src/**"
+        ],
+        "exitTypes": [
+          [
+            "tree-changed",
+            "check-passes"
+          ]
+        ],
+        "checkNames": [
+          "typecheck"
+        ],
+        "models": [
+          null
+        ],
+        "fileRefs": {
+          "realCount": 4,
+          "guessedCount": 20,
+          "real": [
+            "src",
+            "src/grammars",
+            "test",
+            "tsconfig.json"
+          ],
+          "guessed": [
+            "strictFunctionTypes/strictBindCallApply",
+            "tree-sitter/better-sqlite3",
+            "JSDoc/type-only",
+            "index.js",
+            "assemble.js",
+            "chunker.js",
+            "compress.js",
+            "contextgraph.js",
+            "docparse.js",
+            "edges.js",
+            "embedder.js",
+            "gitsig.js",
+            "impact.js",
+            "indexer.js",
+            "langdef.js",
+            "memory-store.js",
+            "store.js",
+            "tokenize.js",
+            "tsalias.js",
+            "writegate.js"
+          ]
+        }
+      },
+      "rawChars": 1612
+    },
+    {
+      "arm": "B",
+      "i": 3,
+      "outcome": "read",
+      "truncated": false,
+      "costUsd": 0.028758600000000002,
+      "priced": true,
+      "stop": "end_turn",
+      "validatorOk": true,
+      "validatorReds": [],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "fix-strict-typecheck-src",
+            "action": "The verification runs `tsc --strict` against this repo's src/**/*.js files (checkJs). Without editing tsconfig.json or any file under test/** (do not weaken any test), fix every strict-mode diagnostic across all files in src/** (index.js, assemble.js, chunker.js, compress.js, contextgraph.js, docparse.js, edges.js, embedder.js, gitsig.js, impact.js, indexer.js, langdef.js, memory-store.js, store.js, tokenize.js, tsalias.js, writegate.js, and src/grammars/**). Concretely: add/repair JSDoc @param/@returns/@type annotations wherever noImplicitAny would fire (untyped function parameters, callback signatures, object literals inferred as any); narrow both `catch (e)` blocks (docparse.js and index.js) to handle `e: unknown` (e.g. `e instanceof Error` checks or an explicit JSDoc @type before property access); fix any strictNullChecks/strictFunctionTypes/strictBindCallApply/strictPropertyInitialization/noImplicitThis violations strict mode newly surfaces. Only ever add or correct type annotations/JSDoc and minimal narrowing logic — do not restructure runtime behavior, do not add blanket @ts-ignore/any suppressions, and do not touch anything outside src/**. Iterate until `tsc --strict` is clean.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/**",
+            "scope": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "typecheck"
+              }
+            ]
+          }
+        ]
+      },
+      "axes": {
+        "stepCount": 1,
+        "declaredRounds": 30,
+        "verbsPerStep": [
+          [
+            "edit",
+            "grep",
+            "read"
+          ]
+        ],
+        "verbUnion": [
+          "edit",
+          "grep",
+          "read"
+        ],
+        "targets": [
+          "src/**"
+        ],
+        "scopes": [
+          "src/**"
+        ],
+        "exitTypes": [
+          [
+            "tree-changed",
+            "check-passes"
+          ]
+        ],
+        "checkNames": [
+          "typecheck"
+        ],
+        "models": [
+          null
+        ],
+        "fileRefs": {
+          "realCount": 4,
+          "guessedCount": 22,
+          "real": [
+            "src",
+            "test",
+            "src/grammars",
+            "tsconfig.json"
+          ],
+          "guessed": [
+            "add/repair",
+            "@param/@returns/@type",
+            "strictNullChecks/strictFunctionTypes/strictBindCallApply/strictPropertyInitialization/noImplicitThis",
+            "annotations/JSDoc",
+            "@ts-ignore/any",
+            "index.js",
+            "assemble.js",
+            "chunker.js",
+            "compress.js",
+            "contextgraph.js",
+            "docparse.js",
+            "edges.js",
+            "embedder.js",
+            "gitsig.js",
+            "impact.js",
+            "indexer.js",
+            "langdef.js",
+            "memory-store.js",
+            "store.js",
+            "tokenize.js",
+            "tsalias.js",
+            "writegate.js"
+          ]
+        }
+      },
+      "rawChars": 1562
+    },
+    {
+      "arm": "C",
+      "i": 1,
+      "outcome": "read",
+      "truncated": false,
+      "costUsd": 0.055394000000000006,
+      "priced": true,
+      "stop": "end_turn",
+      "validatorOk": true,
+      "validatorReds": [],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "fix-core-catch-and-annotations",
+            "action": "In src/index.js and src/docparse.js, make the two existing `catch (e)` blocks compatible with tsc --strict's useUnknownInCatchVariables (narrow with `e instanceof Error` or an explicit JSDoc `@type` before using any property of the caught value). Also scan src/index.js's LiteCtx class methods and top-level functions for implicit-any parameters/variables that tsc --strict's noImplicitAny would flag, and add precise JSDoc `@param`/`@returns`/`@type` annotations to fix them. Do not add `@ts-ignore`, `@ts-expect-error`, or any blanket suppression comments, do not touch any file under test/**, and do not weaken existing logic — only add/adjust type annotations.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 15,
+            "target": "src/index.js",
+            "scope": "src/**",
+            "model": "haiku",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "fix-remaining-modules-strict-typecheck",
+            "action": "Fix all remaining tsc --strict diagnostics across src/**/*.js (assemble.js, chunker.js, compress.js, contextgraph.js, edges.js, embedder.js, gitsig.js, impact.js, indexer.js, langdef.js, memory-store.js, store.js, tokenize.js, tsalias.js, writegate.js, and src/grammars/**), building on the annotations already added to index.js and docparse.js in the prior step. Address noImplicitAny (untyped function parameters/variables/callbacks), strict null/optional handling, and any strictFunctionTypes or useUnknownInCatchVariables issues, purely via JSDoc `@param`/`@returns`/`@type` annotations and narrowing checks. Do not add `@ts-ignore`/`@ts-expect-error`/blanket suppression comments, do not relax tsconfig.json, and do not modify anything under test/** or weaken any assertion. Keep iterating until the entire src tree passes tsc --strict.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/**",
+            "scope": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "typecheck"
+              }
+            ]
+          }
+        ]
+      },
+      "axes": {
+        "stepCount": 2,
+        "declaredRounds": 45,
+        "verbsPerStep": [
+          [
+            "edit",
+            "grep",
+            "read"
+          ],
+          [
+            "edit",
+            "grep",
+            "read"
+          ]
+        ],
+        "verbUnion": [
+          "edit",
+          "grep",
+          "read"
+        ],
+        "targets": [
+          "src/index.js",
+          "src/**"
+        ],
+        "scopes": [
+          "src/**",
+          "src/**"
+        ],
+        "exitTypes": [
+          [
+            "tree-changed",
+            "check-passes"
+          ],
+          [
+            "tree-changed",
+            "check-passes"
+          ]
+        ],
+        "checkNames": [
+          "no-suppressions",
+          "typecheck"
+        ],
+        "models": [
+          "haiku",
+          null
+        ],
+        "fileRefs": {
+          "realCount": 6,
+          "guessedCount": 21,
+          "real": [
+            "src/index.js",
+            "src",
+            "src/docparse.js",
+            "test",
+            "src/grammars",
+            "tsconfig.json"
+          ],
+          "guessed": [
+            "parameters/variables",
+            "add/adjust",
+            "index.js",
+            "docparse.js",
+            "parameters/variables/callbacks",
+            "null/optional",
+            "assemble.js",
+            "chunker.js",
+            "compress.js",
+            "contextgraph.js",
+            "edges.js",
+            "embedder.js",
+            "gitsig.js",
+            "impact.js",
+            "indexer.js",
+            "langdef.js",
+            "memory-store.js",
+            "store.js",
+            "tokenize.js",
+            "tsalias.js",
+            "writegate.js"
+          ]
+        }
+      },
+      "bridgeReuse": {
+        "strict": {
+          "kept": 0,
+          "modified": 2,
+          "dropped": 0
+        },
+        "structural": {
+          "kept": 2,
+          "modified": 0,
+          "dropped": 0
+        },
+        "bridgeSteps": 2
+      },
+      "rawChars": 2243
+    },
+    {
+      "arm": "C",
+      "i": 2,
+      "outcome": "read",
+      "truncated": false,
+      "costUsd": 0.029451200000000004,
+      "priced": true,
+      "stop": "end_turn",
+      "validatorOk": true,
+      "validatorReds": [],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "fix-index-catch-and-annotations",
+            "action": "In src/index.js, resolve every tsc --strict violation without touching anything under test/**. Specifically: narrow the catch (e) block around line 301 (useUnknownInCatchVariables makes e: unknown — add an `e instanceof Error` check or JSDoc @type before accessing e.message/e.stack), add explicit JSDoc @param/@returns/@type annotations to any function, method, or variable that strict mode's noImplicitAny/strictNullChecks now flags as implicitly-any or possibly null/undefined, and fix any strictFunctionTypes/strictBindCallApply mismatches in callback signatures. Do not add @ts-ignore, @ts-nocheck, or `any` types as blanket suppressions, do not relax any config, and do not modify test/**.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 15,
+            "attempts": 2,
+            "model": "sonnet",
+            "target": "src/index.js",
+            "scope": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "fix-remaining-src-typecheck",
+            "action": "Across the rest of src/** (assemble.js, chunker.js, compress.js, contextgraph.js, docparse.js, edges.js, embedder.js, gitsig.js, impact.js, indexer.js, langdef.js, memory-store.js, store.js, tokenize.js, tsalias.js, writegate.js, and src/grammars/**), fix every remaining tsc --strict diagnostic using JSDoc type annotations only: narrow the catch (e) block in docparse.js around line 308 (e is now unknown), add explicit @param/@returns/@type JSDoc to implicitly-any functions/parameters/variables, and resolve any strictNullChecks/strictFunctionTypes issues introduced by full strict mode. Do not add @ts-ignore/@ts-nocheck or blanket any-typing, do not edit test/**, and only change src/index.js if a cross-file signature mismatch requires a matching fix there. Iterate until the whole src/** tree passes tsc --strict.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 20,
+            "attempts": 2,
+            "model": "sonnet",
+            "target": "src/**",
+            "scope": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "typecheck"
+              }
+            ]
+          }
+        ]
+      },
+      "axes": {
+        "stepCount": 2,
+        "declaredRounds": 35,
+        "verbsPerStep": [
+          [
+            "edit",
+            "grep",
+            "read"
+          ],
+          [
+            "edit",
+            "grep",
+            "read"
+          ]
+        ],
+        "verbUnion": [
+          "edit",
+          "grep",
+          "read"
+        ],
+        "targets": [
+          "src/index.js",
+          "src/**"
+        ],
+        "scopes": [
+          "src/**",
+          "src/**"
+        ],
+        "exitTypes": [
+          [
+            "tree-changed",
+            "check-passes"
+          ],
+          [
+            "tree-changed",
+            "check-passes"
+          ]
+        ],
+        "checkNames": [
+          "no-suppressions",
+          "typecheck"
+        ],
+        "models": [
+          "sonnet",
+          "sonnet"
+        ],
+        "fileRefs": {
+          "realCount": 4,
+          "guessedCount": 25,
+          "real": [
+            "src/index.js",
+            "src",
+            "test",
+            "src/grammars"
+          ],
+          "guessed": [
+            "e.message/e.stack",
+            "@param/@returns/@type",
+            "noImplicitAny/strictNullChecks",
+            "null/undefined",
+            "strictFunctionTypes/strictBindCallApply",
+            "index.js",
+            "functions/parameters/variables",
+            "strictNullChecks/strictFunctionTypes",
+            "@ts-ignore/@ts-nocheck",
+            "assemble.js",
+            "chunker.js",
+            "compress.js",
+            "contextgraph.js",
+            "docparse.js",
+            "edges.js",
+            "embedder.js",
+            "gitsig.js",
+            "impact.js",
+            "indexer.js",
+            "langdef.js",
+            "memory-store.js",
+            "store.js",
+            "tokenize.js",
+            "tsalias.js",
+            "writegate.js"
+          ]
+        }
+      },
+      "bridgeReuse": {
+        "strict": {
+          "kept": 0,
+          "modified": 2,
+          "dropped": 0
+        },
+        "structural": {
+          "kept": 2,
+          "modified": 0,
+          "dropped": 0
+        },
+        "bridgeSteps": 2
+      },
+      "rawChars": 2304
+    },
+    {
+      "arm": "C",
+      "i": 3,
+      "outcome": "read",
+      "truncated": false,
+      "costUsd": 0.0291152,
+      "priced": true,
+      "stop": "end_turn",
+      "validatorOk": true,
+      "validatorReds": [],
+      "plan": {
+        "schema": "plan-v1",
+        "steps": [
+          {
+            "id": "fix-core-strict-annotations",
+            "action": "In src/index.js, make all changes needed for this file to satisfy `tsc --strict` (strictNullChecks, noImplicitAny, useUnknownInCatchVariables, strictFunctionTypes, etc.) without touching tsconfig.json or anything under test/**. Specifically: narrow the `catch (e)` block around line 301 (e.g. `e instanceof Error`) instead of accessing properties on unknown `e`; add explicit JSDoc @param/@returns/@type annotations to any function, parameter, or variable that strict mode would otherwise infer as implicit any; fix any nullable/optional value used without a null check. Do not add blanket @ts-ignore/@ts-expect-error suppressions and do not weaken any assertions or logic — only add/correct type annotations and narrowings.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 20,
+            "target": "src/index.js",
+            "scope": "src/**",
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "no-suppressions"
+              }
+            ]
+          },
+          {
+            "id": "fix-remaining-modules-strict-typecheck",
+            "action": "Make the rest of src/** (assemble.js, chunker.js, compress.js, contextgraph.js, docparse.js, edges.js, embedder.js, gitsig.js, impact.js, indexer.js, langdef.js, memory-store.js, store.js, tokenize.js, tsalias.js, writegate.js, and src/grammars/**) pass `tsc --strict`. Fix every remaining strict-mode diagnostic (noImplicitAny, strictNullChecks, useUnknownInCatchVariables — including the catch block around docparse.js:308 — strictFunctionTypes/strictBindCallApply around callback signatures, noImplicitThis) purely via JSDoc @param/@returns/@type annotations and narrowing checks. Do not edit tsconfig.json, do not touch anything under test/**, and do not add blanket @ts-ignore/@ts-expect-error suppressions. Keep iterating until the whole src/** tree passes strict typecheck.",
+            "tools": [
+              "read",
+              "grep",
+              "edit"
+            ],
+            "rounds": 30,
+            "target": "src/**",
+            "scope": "src/**",
+            "attempts": 3,
+            "exit": [
+              {
+                "type": "tree-changed",
+                "scope": "src/**"
+              },
+              {
+                "type": "check-passes",
+                "name": "typecheck"
+              }
+            ]
+          }
+        ]
+      },
+      "axes": {
+        "stepCount": 2,
+        "declaredRounds": 50,
+        "verbsPerStep": [
+          [
+            "edit",
+            "grep",
+            "read"
+          ],
+          [
+            "edit",
+            "grep",
+            "read"
+          ]
+        ],
+        "verbUnion": [
+          "edit",
+          "grep",
+          "read"
+        ],
+        "targets": [
+          "src/index.js",
+          "src/**"
+        ],
+        "scopes": [
+          "src/**",
+          "src/**"
+        ],
+        "exitTypes": [
+          [
+            "tree-changed",
+            "check-passes"
+          ],
+          [
+            "tree-changed",
+            "check-passes"
+          ]
+        ],
+        "checkNames": [
+          "no-suppressions",
+          "typecheck"
+        ],
+        "models": [
+          null,
+          null
+        ],
+        "fileRefs": {
+          "realCount": 5,
+          "guessedCount": 22,
+          "real": [
+            "src/index.js",
+            "src",
+            "test",
+            "tsconfig.json",
+            "src/grammars"
+          ],
+          "guessed": [
+            "@param/@returns/@type",
+            "nullable/optional",
+            "@ts-ignore/@ts-expect-error",
+            "add/correct",
+            "index.js",
+            "strictFunctionTypes/strictBindCallApply",
+            "assemble.js",
+            "chunker.js",
+            "compress.js",
+            "contextgraph.js",
+            "docparse.js",
+            "edges.js",
+            "embedder.js",
+            "gitsig.js",
+            "impact.js",
+            "indexer.js",
+            "langdef.js",
+            "memory-store.js",
+            "store.js",
+            "tokenize.js",
+            "tsalias.js",
+            "writegate.js"
+          ]
+        }
+      },
+      "bridgeReuse": {
+        "strict": {
+          "kept": 0,
+          "modified": 2,
+          "dropped": 0
+        },
+        "structural": {
+          "kept": 2,
+          "modified": 0,
+          "dropped": 0
+        },
+        "bridgeSteps": 2
+      },
+      "rawChars": 2236
+    }
+  ],
+  "readAxes": {
+    "definitions": {
+      "realFileReference": "a path-shaped token named anywhere in the plan (target, scope, exit path/scope, or inside a step action) that EXISTS in the patient tree; \"guessed\" is the same token when it does not exist. F60's own construct, answered against the tree rather than a prose shadow of it.",
+      "strict": "per bridge step, matched against ALL drafted steps: kept = identical tools SET and identical target; modified = exactly one of those matches; dropped = neither. Degenerate across patients (the bridge targets sit outside this job's writeScope, so a valid draft cannot keep one).",
+      "structural": "per bridge step, matched ORDINALLY against the drafted step at the same index: kept = identical tools SET and identical exit-type sequence (and identical check-passes names); modified = exactly one of those matches; dropped = neither, or no drafted step at that index."
+    },
+    "withinArmA": {
+      "stepCount": {
+        "n": 3,
+        "values": [
+          1,
+          1,
+          1
+        ],
+        "min": 1,
+        "max": 1,
+        "mean": 1,
+        "spread": 0
+      },
+      "declaredRounds": {
+        "n": 3,
+        "values": [
+          30,
+          30,
+          35
+        ],
+        "min": 30,
+        "max": 35,
+        "mean": 31.666666666666668,
+        "spread": 5
+      },
+      "distinctVerbs": {
+        "n": 3,
+        "values": [
+          3,
+          3,
+          3
+        ],
+        "min": 3,
+        "max": 3,
+        "mean": 3,
+        "spread": 0
+      },
+      "realFileRefs": {
+        "n": 3,
+        "values": [
+          5,
+          4,
+          21
+        ],
+        "min": 4,
+        "max": 21,
+        "mean": 10,
+        "spread": 17
+      },
+      "guessedFileRefs": {
+        "n": 3,
+        "values": [
+          20,
+          7,
+          21
+        ],
+        "min": 7,
+        "max": 21,
+        "mean": 16,
+        "spread": 14
+      },
+      "costUsd": {
+        "n": 3,
+        "values": [
+          0.0469015,
+          0.027139800000000002,
+          0.041595799999999995
+        ],
+        "min": 0.027139800000000002,
+        "max": 0.0469015,
+        "mean": 0.038545699999999995,
+        "spread": 0.019761699999999997
+      },
+      "verbUnion": {
+        "n": 3,
+        "values": [
+          0,
+          0,
+          0
+        ],
+        "min": 0,
+        "max": 0,
+        "mean": 0,
+        "spread": 0
+      },
+      "targets": {
+        "n": 3,
+        "values": [
+          2,
+          0,
+          2
+        ],
+        "min": 0,
+        "max": 2,
+        "mean": 1.3333333333333333,
+        "spread": 2
+      },
+      "checkNames": {
+        "n": 3,
+        "values": [
+          0,
+          0,
+          0
+        ],
+        "min": 0,
+        "max": 0,
+        "mean": 0,
+        "spread": 0
+      }
+    },
+    "bVsA": {
+      "stepCount": {
+        "armA": {
+          "n": 3,
+          "values": [
+            1,
+            1,
+            1
+          ],
+          "min": 1,
+          "max": 1,
+          "mean": 1,
+          "spread": 0
+        },
+        "armB": {
+          "n": 3,
+          "values": [
+            1,
+            1,
+            1
+          ],
+          "min": 1,
+          "max": 1,
+          "mean": 1,
+          "spread": 0
+        },
+        "meanDelta": 0,
+        "armAWithinSpread": 0
+      },
+      "declaredRounds": {
+        "armA": {
+          "n": 3,
+          "values": [
+            30,
+            30,
+            35
+          ],
+          "min": 30,
+          "max": 35,
+          "mean": 31.666666666666668,
+          "spread": 5
+        },
+        "armB": {
+          "n": 3,
+          "values": [
+            30,
+            32,
+            30
+          ],
+          "min": 30,
+          "max": 32,
+          "mean": 30.666666666666668,
+          "spread": 2
+        },
+        "meanDelta": -1,
+        "armAWithinSpread": 5
+      },
+      "distinctVerbs": {
+        "armA": {
+          "n": 3,
+          "values": [
+            3,
+            3,
+            3
+          ],
+          "min": 3,
+          "max": 3,
+          "mean": 3,
+          "spread": 0
+        },
+        "armB": {
+          "n": 3,
+          "values": [
+            3,
+            3,
+            3
+          ],
+          "min": 3,
+          "max": 3,
+          "mean": 3,
+          "spread": 0
+        },
+        "meanDelta": 0,
+        "armAWithinSpread": 0
+      },
+      "realFileRefs": {
+        "armA": {
+          "n": 3,
+          "values": [
+            5,
+            4,
+            21
+          ],
+          "min": 4,
+          "max": 21,
+          "mean": 10,
+          "spread": 17
+        },
+        "armB": {
+          "n": 3,
+          "values": [
+            5,
+            4,
+            4
+          ],
+          "min": 4,
+          "max": 5,
+          "mean": 4.333333333333333,
+          "spread": 1
+        },
+        "meanDelta": -5.666666666666667,
+        "armAWithinSpread": 17
+      },
+      "guessedFileRefs": {
+        "armA": {
+          "n": 3,
+          "values": [
+            20,
+            7,
+            21
+          ],
+          "min": 7,
+          "max": 21,
+          "mean": 16,
+          "spread": 14
+        },
+        "armB": {
+          "n": 3,
+          "values": [
+            19,
+            20,
+            22
+          ],
+          "min": 19,
+          "max": 22,
+          "mean": 20.333333333333332,
+          "spread": 3
+        },
+        "meanDelta": 4.333333333333332,
+        "armAWithinSpread": 14
+      },
+      "costUsd": {
+        "armA": {
+          "n": 3,
+          "values": [
+            0.0469015,
+            0.027139800000000002,
+            0.041595799999999995
+          ],
+          "min": 0.027139800000000002,
+          "max": 0.0469015,
+          "mean": 0.038545699999999995,
+          "spread": 0.019761699999999997
+        },
+        "armB": {
+          "n": 3,
+          "values": [
+            0.0366005,
+            0.022430600000000002,
+            0.028758600000000002
+          ],
+          "min": 0.022430600000000002,
+          "max": 0.0366005,
+          "mean": 0.029263233333333333,
+          "spread": 0.0141699
+        },
+        "meanDelta": -0.009282466666666662,
+        "armAWithinSpread": 0.019761699999999997
+      },
+      "verbUnion": {
+        "betweenAB": {
+          "n": 9,
+          "values": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "spread": 0
+        },
+        "armAWithinSpread": {
+          "n": 3,
+          "values": [
+            0,
+            0,
+            0
+          ],
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "spread": 0
+        }
+      },
+      "targets": {
+        "betweenAB": {
+          "n": 9,
+          "values": [
+            0,
+            2,
+            2,
+            2,
+            0,
+            0,
+            0,
+            2,
+            2
+          ],
+          "min": 0,
+          "max": 2,
+          "mean": 1.1111111111111112,
+          "spread": 2
+        },
+        "armAWithinSpread": {
+          "n": 3,
+          "values": [
+            2,
+            0,
+            2
+          ],
+          "min": 0,
+          "max": 2,
+          "mean": 1.3333333333333333,
+          "spread": 2
+        }
+      },
+      "checkNames": {
+        "betweenAB": {
+          "n": 9,
+          "values": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "spread": 0
+        },
+        "armAWithinSpread": {
+          "n": 3,
+          "values": [
+            0,
+            0,
+            0
+          ],
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "spread": 0
+        }
+      }
+    },
+    "cVsA": {
+      "stepCount": {
+        "armA": {
+          "n": 3,
+          "values": [
+            1,
+            1,
+            1
+          ],
+          "min": 1,
+          "max": 1,
+          "mean": 1,
+          "spread": 0
+        },
+        "armC": {
+          "n": 3,
+          "values": [
+            2,
+            2,
+            2
+          ],
+          "min": 2,
+          "max": 2,
+          "mean": 2,
+          "spread": 0
+        },
+        "meanDelta": 1,
+        "armAWithinSpread": 0
+      },
+      "declaredRounds": {
+        "armA": {
+          "n": 3,
+          "values": [
+            30,
+            30,
+            35
+          ],
+          "min": 30,
+          "max": 35,
+          "mean": 31.666666666666668,
+          "spread": 5
+        },
+        "armC": {
+          "n": 3,
+          "values": [
+            45,
+            35,
+            50
+          ],
+          "min": 35,
+          "max": 50,
+          "mean": 43.333333333333336,
+          "spread": 15
+        },
+        "meanDelta": 11.666666666666668,
+        "armAWithinSpread": 5
+      },
+      "distinctVerbs": {
+        "armA": {
+          "n": 3,
+          "values": [
+            3,
+            3,
+            3
+          ],
+          "min": 3,
+          "max": 3,
+          "mean": 3,
+          "spread": 0
+        },
+        "armC": {
+          "n": 3,
+          "values": [
+            3,
+            3,
+            3
+          ],
+          "min": 3,
+          "max": 3,
+          "mean": 3,
+          "spread": 0
+        },
+        "meanDelta": 0,
+        "armAWithinSpread": 0
+      },
+      "realFileRefs": {
+        "armA": {
+          "n": 3,
+          "values": [
+            5,
+            4,
+            21
+          ],
+          "min": 4,
+          "max": 21,
+          "mean": 10,
+          "spread": 17
+        },
+        "armC": {
+          "n": 3,
+          "values": [
+            6,
+            4,
+            5
+          ],
+          "min": 4,
+          "max": 6,
+          "mean": 5,
+          "spread": 2
+        },
+        "meanDelta": -5,
+        "armAWithinSpread": 17
+      },
+      "guessedFileRefs": {
+        "armA": {
+          "n": 3,
+          "values": [
+            20,
+            7,
+            21
+          ],
+          "min": 7,
+          "max": 21,
+          "mean": 16,
+          "spread": 14
+        },
+        "armC": {
+          "n": 3,
+          "values": [
+            21,
+            25,
+            22
+          ],
+          "min": 21,
+          "max": 25,
+          "mean": 22.666666666666668,
+          "spread": 4
+        },
+        "meanDelta": 6.666666666666668,
+        "armAWithinSpread": 14
+      },
+      "costUsd": {
+        "armA": {
+          "n": 3,
+          "values": [
+            0.0469015,
+            0.027139800000000002,
+            0.041595799999999995
+          ],
+          "min": 0.027139800000000002,
+          "max": 0.0469015,
+          "mean": 0.038545699999999995,
+          "spread": 0.019761699999999997
+        },
+        "armC": {
+          "n": 3,
+          "values": [
+            0.055394000000000006,
+            0.029451200000000004,
+            0.0291152
+          ],
+          "min": 0.0291152,
+          "max": 0.055394000000000006,
+          "mean": 0.03798680000000001,
+          "spread": 0.026278800000000005
+        },
+        "meanDelta": -0.0005588999999999872,
+        "armAWithinSpread": 0.019761699999999997
+      },
+      "verbUnion": {
+        "betweenAC": {
+          "n": 9,
+          "values": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "spread": 0
+        },
+        "armAWithinSpread": {
+          "n": 3,
+          "values": [
+            0,
+            0,
+            0
+          ],
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "spread": 0
+        }
+      },
+      "targets": {
+        "betweenAC": {
+          "n": 9,
+          "values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "min": 1,
+          "max": 1,
+          "mean": 1,
+          "spread": 0
+        },
+        "armAWithinSpread": {
+          "n": 3,
+          "values": [
+            2,
+            0,
+            2
+          ],
+          "min": 0,
+          "max": 2,
+          "mean": 1.3333333333333333,
+          "spread": 2
+        }
+      },
+      "checkNames": {
+        "betweenAC": {
+          "n": 9,
+          "values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "min": 1,
+          "max": 1,
+          "mean": 1,
+          "spread": 0
+        },
+        "armAWithinSpread": {
+          "n": 3,
+          "values": [
+            0,
+            0,
+            0
+          ],
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "spread": 0
+        }
+      }
+    },
+    "cReads": {
+      "bridgePassesD2Gate": false,
+      "bridgeGateReds": [
+        {
+          "code": "invalid-value",
+          "path": "steps.0.scope",
+          "detail": "menu: [src/**, src/grammars/**] — a per-step write scope narrows the fence from the same menu tree-changed uses"
+        },
+        {
+          "code": "scope-escape",
+          "path": "steps.0.target",
+          "detail": "\"packages/spawner/src/aurora_spawner/spawner.py\" is outside the signed fence [src/**]"
+        },
+        {
+          "code": "scope-escape",
+          "path": "steps.0.exit.0.scope",
+          "detail": "\"packages/spawner/src/aurora_spawner/**\" is outside the signed fence [src/**]"
+        },
+        {
+          "code": "invalid-value",
+          "path": "steps.1.scope",
+          "detail": "menu: [src/**, src/grammars/**] — a per-step write scope narrows the fence from the same menu tree-changed uses"
+        },
+        {
+          "code": "scope-escape",
+          "path": "steps.1.target",
+          "detail": "\"packages/spawner/src/aurora_spawner/**\" is outside the signed fence [src/**]"
+        },
+        {
+          "code": "scope-escape",
+          "path": "steps.1.exit.0.scope",
+          "detail": "\"packages/spawner/src/aurora_spawner/**\" is outside the signed fence [src/**]"
+        }
+      ],
+      "bridgeReusePerRow": [
+        {
+          "i": 1,
+          "strict": {
+            "kept": 0,
+            "modified": 2,
+            "dropped": 0
+          },
+          "structural": {
+            "kept": 2,
+            "modified": 0,
+            "dropped": 0
+          },
+          "bridgeSteps": 2
+        },
+        {
+          "i": 2,
+          "strict": {
+            "kept": 0,
+            "modified": 2,
+            "dropped": 0
+          },
+          "structural": {
+            "kept": 2,
+            "modified": 0,
+            "dropped": 0
+          },
+          "bridgeSteps": 2
+        },
+        {
+          "i": 3,
+          "strict": {
+            "kept": 0,
+            "modified": 2,
+            "dropped": 0
+          },
+          "structural": {
+            "kept": 2,
+            "modified": 0,
+            "dropped": 0
+          },
+          "bridgeSteps": 2
+        }
+      ],
+      "draftingCostVsA": {
+        "armA": {
+          "n": 3,
+          "values": [
+            0.0469015,
+            0.027139800000000002,
+            0.041595799999999995
+          ],
+          "min": 0.027139800000000002,
+          "max": 0.0469015,
+          "mean": 0.038545699999999995,
+          "spread": 0.019761699999999997
+        },
+        "armC": {
+          "n": 3,
+          "values": [
+            0.055394000000000006,
+            0.029451200000000004,
+            0.0291152
+          ],
+          "min": 0.0291152,
+          "max": 0.055394000000000006,
+          "mean": 0.03798680000000001,
+          "spread": 0.026278800000000005
+        },
+        "meanDelta": -0.0005588999999999872,
+        "armAWithinSpread": 0.019761699999999997
+      }
+    }
+  },
+  "notes": [
+    "COLLECTION ONLY — this file carries no verdict. Reading it against the prereg's frozen discard rules (§5) is the operator's.",
+    "Deviation 1: the prereg says \"no close\"; reaching the shipped scout requires runPlan, which runs the close precheck and check preflight first ($0, deterministic). There is no seam that skips them, and hand-writing the scout would be a forked instrument.",
+    "Deviation 2: the prereg says \"no writes to any patient\"; the shipped scout writes the arbiter's own books (gate-audit.jsonl, the .litectx store). No source file is touched (the scout has no write-class verb and an empty fence), and the tracked tree is asserted unchanged before and after.",
+    "Deviation 3: the $1.00 sizing line funds 9 drafts only; the scout comes out of the same cap, so the cap can bind earlier than the sizing implies. Cap-not-estimate is enforced before every draft.",
+    "Deviation 4: the materials block in the captured prompt quotes the PROBE's wallet (~$1), not the job's $10 — one remainingUsd feeds both the scout's Gate budget and the drafter's balance line, and bounding the scout inside the frozen cap wins. Constant across all nine samples, so it cannot bias the contrast.",
+    "The strict kept/modified/dropped read is degenerate across patients by construction (the bridge's targets sit outside this job's writeScope). The structural read is the one that can move."
+  ]
+}

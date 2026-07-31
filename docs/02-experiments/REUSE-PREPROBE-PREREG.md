@@ -207,3 +207,96 @@ truncated row is **kept-and-excluded per §6**, **never replaced as a casualty.*
 
 The harness (`scripts/reuse-preprobe.mjs`) computes and stores every §3/§4/§5 input but **prints
 no verdict language** — the read against the discard rules remains the operator's.
+
+---
+
+## Addendum — 2026-08-01, POST-FIRE READ (the frozen rules applied; verdict per rule, with every qualifier)
+
+Fired 2026-08-01 under the frozen design above (as amended pre-fire, before any number
+existed). Primary artifact: `docs/02-experiments/reuse-preprobe-ms9jpjue.json` — the harness
+prints no verdict language; the read below is the operator's, against §5's frozen rules.
+
+**Fire facts:** **9/9 readable rows** — **0 truncated**, **0 casualties**, so §6 never fired
+and the denominator is the full pre-registered one. **Total spend $0.5107 of the $1.00 hard
+cap**; the cap never bound, so §7's "the stop is the result" clause is not in play.
+
+**Capture leg ($0.1934 of the total).** The shipped `runPlan` drove the **close precheck**
+(`needs_revision` on `changed-from-seed` — the clean-seed precondition of pre-fire §4, working
+as stated), the **check preflight** over the three offered stages, and the **scout**
+(**summary 3761 bytes**, non-empty). At the drafter call the harness's **sentinel** aborted and
+captured the real prompt (7138 chars). It is recorded as the harness's own
+**`probe-capture-stop`**; the escalation router files the run outcome as **`provider-red`** —
+that is **the harness's sentinel, not a transport casualty**, and it is not a row. **The one
+captured prompt fed all nine drafts**, so the scout input is byte-identical across arms as §2
+required.
+
+### Rows (from the JSON; costs are the drafter call only)
+
+| arm | i | costUsd | steps | declaredRounds | distinctVerbs | realRefs | guessedRefs | valid |
+|---|---|---|---|---|---|---|---|---|
+| A | 1 | $0.0469 | 1 | 30 | 3 | 5 | 20 | yes |
+| A | 2 | $0.0271 | 1 | 30 | 3 | 4 | 7 | yes |
+| A | 3 | $0.0416 | 1 | 35 | 3 | 21 | 21 | yes |
+| B | 1 | $0.0366 | 1 | 30 | 3 | 5 | 19 | yes |
+| B | 2 | $0.0224 | 1 | 32 | 3 | 4 | 20 | yes |
+| B | 3 | $0.0288 | 1 | 30 | 3 | 4 | 22 | yes |
+| C | 1 | $0.0554 | 2 | 45 | 3 | 6 | 21 | yes |
+| C | 2 | $0.0295 | 2 | 35 | 3 | 4 | 25 | yes |
+| C | 3 | $0.0291 | 2 | 50 | 3 | 5 | 22 | yes |
+
+Nine drafts = $0.3174; plus the capture leg's $0.1934 = the $0.5107 recorded.
+
+### Discard rule 1 — **FIRES: B ≈ A, the readable-lineage arm is DEAD**
+
+Every frozen axis's B-vs-A delta sits **inside arm A's own within-arm spread** (delta | A's
+spread):
+
+- **stepCount** 0 | 0 · **declaredRounds** −1 | 5 · **distinctVerbs** 0 | 0
+- **realFileRefs** −5.67 | 17 · **guessedFileRefs** +4.33 | 14
+- **costUsd** −$0.009 | $0.020
+- **verbUnion** between-max 0 | within-max 0 · **targets** between-max 2 | within-max 2 ·
+  **checkNames** 0 | 0
+
+Per §4, *a difference smaller than the control's own noise is not a difference* — no axis
+clears it. This is **exactly the pre-registered default prediction** (§1; CL-BENCH; F51–F55):
+**reading material moved nothing.** Only the mechanical-start path gets built.
+
+### Discard rule 3 (as re-anchored pre-fire) — **FIRES: the mechanical path LIVES**
+
+- **All three C drafts are legal** — they pass the shipped `validatePlan` for THIS job
+  (`validatorOk: true`, zero reds), which is the re-anchored legality clause.
+- **All three keep 2/2 bridge steps on the STRUCTURAL read** (ordinal tools-set + exit
+  signature) — a majority, twice over.
+- The **strict** target-based read is **0 kept / 2 modified / 0 dropped in all three** — the
+  pre-fire addendum's *guaranteed zero by construction*, landing exactly as predicted and
+  recorded here as **the control it now is**, not as a finding.
+
+**Structure genuinely transmitted:** every C draft is a **2-step** plan following the bridge's
+shape, while **all six A/B drafts are 1-step** plans. That is the only axis on which any arm
+moved.
+
+### One pre-registered expectation **REFUTED**, stated plainly
+
+§1 predicted C's win would be **"drafting cost saved, structure kept."** The cost half **did
+not materialize**: mean drafting cost **C $0.0380 vs A $0.0385** — flat, and the delta
+(−$0.0006) is two orders inside A's own spread. What C bought **at draft tier** is
+**STRUCTURE CARRY-OVER, not cheaper drafting.** Whether the carried structure is worth
+anything is an **execution** question, outside this probe (§8).
+
+### Honesty notes
+
+- **Arm A's within-arm spread is WIDE.** Its realFileRefs values are **5 / 4 / 21** (spread
+  17) — one draft enumerated the whole `src/` tree, two did not. Plan-family variance was
+  pre-registered as the reason for n=3 (§2), but a **wide yardstick makes "B ≈ A" easier to
+  conclude**. The null's credibility rests on it ALSO being **the pre-registered default
+  prediction**, not a post-hoc reading of a noisy control.
+- **n = 3 per arm.** Every sentence above carries: **…on TYPES, at draft tier only, with the
+  materials block quoting a ~$1 balance** (pre-fire §3).
+- **1-step (A/B) vs 2-step (C): which is BETTER is not readable at draft tier.** The second
+  instrument (limited-budget execution, D9) exists for exactly that, and it **fires only on
+  hamr's word.**
+
+Per the design record §5, the result selects the build shape: the machinery proceeds
+**MECHANICAL-START ONLY** — registry, gate, listing/selection, draft-time tweak path,
+envelope, status/history — **with no readable-lineage feature.** The execution probe go/no-go
+is hamr's.
