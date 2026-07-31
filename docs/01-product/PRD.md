@@ -2424,3 +2424,39 @@ reaching the close child untouched: `PGPASSWORD`, `PGPASSFILE`, `PGSSLKEY`, `MYS
 `PGPASSFILE`). The shape regex is deliberately NOT loosened: widening it to `*_KEY$` would
 strip ordinary config, and exact-name matching is what keeps `PGHOST`/`SECRETS_DIR`/
 `TOKENIZERS_PARALLELISM` alive — a second over-strip control now asserts exactly that.
+
+## Addendum v1.42 — 2026-08-01 (Layer 3 REUSE rung: interview complete, design FROZEN, pre-probe pre-registered — hamr)
+
+**Signature, hamr in-turn, verbatim: *"all agreed, lock in and we will validate with pocs
+these assumptions and change as needed"*.**
+
+**v1.34's inventory is now ANSWERED, decision by decision.** All eight items — storage,
+keying/matching, selection, loading and re-validation, adaptation, demotion, attribution, and
+the scout under reuse — plus the reuse envelope and what gates the build, are ruled in the
+design record: **`docs/plans/2026-08-01-layer-3-reuse-design.md`** (R1, R2, D1–D9). That
+record holds the decisions and the learning each leans on; this addendum does not duplicate
+them.
+
+**The two conditions v1.27 left unruled are RULED:**
+
+1. **Graduation and demotion (R1 / D6):** only a green writes the box — an adapted run that
+   greens becomes the bridge's next version (run-as-executed, prior versions kept); a red
+   leaves the bridge untouched and takes a demotion mark. Status is coarse: CANDIDATE = 1
+   green, PROVEN = greens on ≥2 distinct patients, a red on a proven drops it to candidate;
+   entry bar is at least one green, and there is deliberately **no probability score** (n=1 is
+   an anecdote either way; a % from 2–3 runs is fake precision — any future threshold is
+   hamr's, from a measured base rate).
+2. **"The same job" (R2):** the same **SHAPE**, never the same instance — v1 concrete, two jobs
+   match when their close stages are the same kind of inspection, never when they merely share
+   a patient. Otherwise the registry is a lookup table the memorization audit kills.
+
+**The pre-probe is pre-registered and GATES the machinery.** Requirement (b)'s gate is frozen
+at **`docs/02-experiments/REUSE-PREPROBE-PREREG.md`** — draft-only, three arms (cold /
+readable lineage / mechanical start), n=3 each, sonnet, scout ON, **$1 hard cap**, on the
+cross-patient TYPES pair (aurora bridge → litectx job). **No inheritance machinery is built
+before it reads.** A limited-budget real execution run is the second instrument, fired only if
+the drafts differ, and only on hamr's word.
+
+**"Change as needed" is amendment discipline, not licence:** POC and pre-probe results amend
+the design record by **dated addendum**, never by silent rewrite, and a frozen rule is never
+loosened after a number exists.

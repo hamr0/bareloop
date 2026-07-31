@@ -504,6 +504,13 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
    move the outcome the arm is dead). That order is not ceremony — CL-BENCH's read is that
    memory systems LOSE to plain in-context learning once base capability is subtracted, so
    the cheap instrument runs before the expensive build.
+   **Status 2026-08-01: the opening interview is COMPLETE and the design is FROZEN** (hamr,
+   2026-07-31 → 2026-08-01, verbatim *"all agreed, lock in and we will validate with pocs
+   these assumptions and change as needed"*) — design record
+   `docs/plans/2026-08-01-layer-3-reuse-design.md` (R1/R2/D1–D9, answering PRD v1.34's
+   inventory; PRD v1.42). **The pre-probe is pre-registered and gates the machinery:**
+   `docs/02-experiments/REUSE-PREPROBE-PREREG.md` — draft-only, three arms, $1 hard cap, on
+   the cross-patient TYPES pair. Nothing is built before it reads.
 
 ---
 
