@@ -37,6 +37,9 @@ jobs:
           # supports both 20 and 22, so only this line changes.
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
+      # litectx's impact() shells out to ripgrep (documented requirement; not on the runner
+      # image). Without it a symbol reads as 0 callers and the two ctx_impact tests fail (LC-5).
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
       - name: Upgrade npm (trusted publishing needs >= 11.5.1)
         # Pinned to a major, NOT @latest: a floating npm eventually raises its Node
         # floor above the runner's version and fails with EBADENGINE (npm@12 dropped
