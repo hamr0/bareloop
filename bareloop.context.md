@@ -99,7 +99,7 @@ the step plan at run time (gated by `validatePlan`); the human signs only:
 | `verdictType` | `green` \| `soft-green` \| `hitl` | declared radio, never inferred (`VERDICT_TYPES`, frozen). v1 ADMITS only `green`; declaring `soft-green`/`hitl` reds `request-red` with the type as a structured `verb` field (declared-but-locked — the tool-menu pattern) |
 | `close` | **an ORDERED LIST of named stages** `[{ name, cmd, expect, judged?, gapKeep?, offer?, needs? }, ...]` (PRD v1.28), or a close object (table below) **only** for the declared-but-locked verdict classes | the destination, the only thing hand-authored; the check menu DERIVES from it (below). The plan flow executes a staged close directly and adapts a bare `predicate` object into a one-stage list; a `gold`/`rubric`/`hitl` object close validates (the declared-but-locked verdict classes still parse) but the plan flow refuses it at runtime as `close-unsupported` — it names no command to run |
 | `checks` | **RETIRED** (PRD v1.28/v1.32) | hand-authored checks are gone, not merely discouraged: declaring `checks` reds `checks-derived` by name. The check menu is DERIVED from the close's own stages instead — see **Staged close** below. The hazard this removes is measured, not theoretical: job #5's three hand-written checks were re-implementations of three stages the close already ran, and a hand-carved copy can drift LENIENT (the worker passes the operator's ruler and fails the real inspection) |
-| `tools` | optional unique subset of `TOOL_MENU` (14 verbs, below) | the CEILING every plan step's grant must fit inside (defaults to the full menu); `run` is `LOCKED_TOOLS` and reds `request-red` — locked-but-listed, and the red IS the admission evidence the ledger tallies (a typo stays `invalid-value`). A ceiling of write-class and store-class verbs ONLY reds `invalid-value`: the scout surveys read-only, so it would be handed an empty menu and survey blind |
+| `tools` | optional unique subset of `TOOL_MENU` (14 verbs, below) | the CEILING every plan step's grant must fit inside (omitting it means the full menu — and the hash is taken over that RESOLVED form, so a `TOOL_MENU` widening flips an omitted-`tools` spec's hash and forces a re-sign; see `jobSpecHash`, MED-1); `run` is `LOCKED_TOOLS` and reds `request-red` — locked-but-listed, and the red IS the admission evidence the ledger tallies (a typo stays `invalid-value`). A ceiling of write-class and store-class verbs ONLY reds `invalid-value`: the scout surveys read-only, so it would be handed an empty menu and survey blind |
 
 **`TOOL_MENU` — the worker's 14 verbs, in four components** (`src/job.js`; the verb→tool map
 is `TOOL_BY_VERB` in `src/tools.js`). The menu is an INVENTORY: every verb is an existing
@@ -185,7 +185,7 @@ code said.
 
 It is a **floor, not a zero-check**: `node --test` reports a crashed file as ONE failing
 test, so "zero executed" never fires. Declare it against the suite's real size
-(`{ pattern: "^ℹ tests (\\d+)$", min: 300 }` for a 391-test suite, with
+(`{ pattern: "^ℹ tests (\\d+)$", min: 300 }` for a 558-test suite, with
 `--test-reporter=spec`, which prints both the counts and the failures at the end). It
 catches *"the arbiter did not run"* — wrong tree, broken argv, a failed shared import — not
 *"one test file is broken"*, which is an honest red the worker should fix.
@@ -233,15 +233,14 @@ middle writes; `validatePlan` gates it against the SIGNED job spec before tokens
 | `steps[].target` | path inside the fence | v1.18 deliverable; REQUIRED on write-granted steps |
 | `steps[].model` | optional; `sonnet` \| `haiku` (`STEP_MODELS`) | the step's model TIER — a menu, never a model string the agent spells (the tier→model mapping and any per-model effort params are the runner's). `opus` is deliberately absent: reserved for work the human assigns, never plan-selectable. Off-menu reds `invalid-value`. A step naming a tier when the caller supplied no `providerFor` factory is an `interpreter-red` STOP, never a silent run on the default tier |
 | `steps[].attempts` | optional; int `1..capRuns` | TIGHTEN-only: the step's own retry cap inside `ralph`, floored against the shell's `capRuns` (default 3). Above it reds `bounds`; a plan may narrow the shell's cap, never raise it |
-| `steps[].scope` | optional; one value from the SAME menu `tree-changed` uses | narrows this step's live WRITE fence to a subset of the signed `writeScope` — chosen from `legalScopes(...)`, never authored. Off-menu reds `invalid-value` carrying the menu |
-| `steps[].exit` | 1..2 items (`MAX_EXITS_PER_STEP`), ALL must pass (AND-only, no OR/NOT) | closed menu (`EXIT_TYPES`): `artifact-written(path, pattern?)` · `tree-changed(scope)` · `json-valid(path)` · `check-passes(name)`. **`tree-changed.scope` is a MENU, not a glob the agent authors** — `legalScopes(writeScope, dirs, cap?)` enumerates the signed fence entries plus the real directories beneath them (shallowest-first, capped at `MAX_SCOPE_MENU`=24), `planPrompt` lists them verbatim, and `validatePlan` accepts membership only. Pass the SAME array to both via `opts.scopes`; omitted, it derives from `writeScope` alone — never a free-text fallback. An off-menu value that escapes the fence still reds `scope-escape` (the ledger's attribution class), an in-fence unoffered value reds `invalid-value` carrying the menu. `runPlan` emits `scope-menu {offered, truncated, offerableCount?, cap?}` so a capped menu is never silently complete. `check-passes` must name a stage on the close's DERIVED menu (`check-unknown` red names the offered menu — no operator authors this list, it comes straight from `checkMenu(close)`); on a write-granted step it must be paired with `tree-changed` (`exit-illegal` — the seed tree is green, a lone check would pass untouched, F17/F46). **`check-passes` also requires a write-class verb (`write`/`edit`) on the SAME step** (`exit-illegal` — BREAKING for plan authors: a read-only "verify" step carrying a check used to validate and no longer does). A failing check's gap is re-delivered to that step's OWN worker, so a step holding a check must be able to act on it; a read-only one is a mailbox with no hands and stalls to cap on a byte-identical gap (measured on 4 of 4 drafted plans). The check belongs on the step that fixes; the run's final verification is the operator's close, which the agent never authors. The rule is stated identically in the drafter prompt and the validator, so the two can never disagree — and it is suppressed when `tools` failed to parse (the step's hands are unknowable then, and the real defect already redded: one defect, one red). `artifact-written.pattern` must compile AND survive a ReDoS shape check — an unbounded quantifier over a group that itself repeats unboundedly (`(a+)+`, `(\d*)*`, even wrapped: `((a+))+`) is an `invalid-value` red (F49, catastrophic-backtracking footgun; rewrite without a repeated group inside a repeat). Exits verify FORM, not truth — progress gates; the operator's close stays the one arbiter |
+| `steps[].scope` | optional; one value from the SAME menu `tree-changed` uses | narrows this step's live WRITE fence to a subset of the signed `writeScope` — chosen from the offered scope menu (below), never authored. Off-menu reds `invalid-value` carrying the menu |
+| `steps[].exit` | 1..2 items (`MAX_EXITS_PER_STEP`), ALL must pass (AND-only, no OR/NOT) | closed menu (`EXIT_TYPES`): `artifact-written(path, pattern?)` · `tree-changed(scope)` · `json-valid(path)` · `check-passes(name)`. **`tree-changed.scope` is a MENU, not a glob the agent authors** — the runner enumerates the signed fence entries plus the real directories beneath them (shallowest-first, capped at `MAX_SCOPE_MENU`=24; `legalScopes` in `src/plan.js`), `planPrompt` lists them verbatim, and `validatePlan` accepts membership only — the SAME array on both sides, so what was offered is what is accepted; omitted, it derives from `writeScope` alone — never a free-text fallback. An off-menu value that escapes the fence still reds `scope-escape` (the ledger's attribution class), an in-fence unoffered value reds `invalid-value` carrying the menu. `runPlan` emits `scope-menu {offered, truncated, offerableCount?, cap?}` so a capped menu is never silently complete. `check-passes` must name a stage on the close's DERIVED menu (`check-unknown` red names the offered menu — no operator authors this list, it comes straight from `checkMenu(close)`); on a write-granted step it must be paired with `tree-changed` (`exit-illegal` — the seed tree is green, a lone check would pass untouched, F17/F46). **`check-passes` also requires a write-class verb (`write`/`edit`) on the SAME step** (`exit-illegal` — BREAKING for plan authors: a read-only "verify" step carrying a check used to validate and no longer does). A failing check's gap is re-delivered to that step's OWN worker, so a step holding a check must be able to act on it; a read-only one is a mailbox with no hands and stalls to cap on a byte-identical gap (measured on 4 of 4 drafted plans). The check belongs on the step that fixes; the run's final verification is the operator's close, which the agent never authors. The rule is stated identically in the drafter prompt and the validator, so the two can never disagree — and it is suppressed when `tools` failed to parse (the step's hands are unknowable then, and the real defect already redded: one defect, one red). `artifact-written.pattern` must compile AND survive a ReDoS shape check — an unbounded quantifier over a group that itself repeats unboundedly (`(a+)+`, `(\d*)*`, even wrapped: `((a+))+`) is an `invalid-value` red (F49, catastrophic-backtracking footgun; rewrite without a repeated group inside a repeat). Exits verify FORM, not truth — progress gates; the operator's close stays the one arbiter |
 
-Red vocabulary (all three validators): `parse-error`, `unknown-field`, `missing-required`,
+Red vocabulary (both validators): `parse-error`, `unknown-field`, `missing-required`,
 `invalid-value`, `bounds`, `duplicate-id`, `close-type`, `close-hierarchy`,
-`secret-literal`, `scope-escape`, `fence-invalid` (a malformed `jobWriteScope` fence — attributed to `jobWriteScope`, never the workflow config), `shape-conflict` (both job shapes declared),
+`secret-literal`, `scope-escape`,
 `request-red` (locked-but-listed: a locked tool or verdictType — admission demand the
-ledger tallies), plus the workflow-side verb reds (`verb-illegal`,
-`verb-placement`, `verb-params`, `slot-overflow`) and the plan-side reds (`verb-escape`,
+ledger tallies), plus the plan-side reds (`verb-escape`,
 `exit-illegal`, `check-unknown`, `step-scope-escape` — a scoped step whose `target` falls
 outside its OWN narrowed scope (in-fence but gate-denied ground: the step's gate is built
 from the narrowed prefix, so the pair is rejected at validation instead of burning attempts
@@ -258,8 +257,8 @@ sweep.
 
 ## Public API
 
-*Landed through N2 + the Layer 2 core (spine + shell + three validators + interpreter
-with text/tool middles + the plan executor + extractor + runJob). Still TBD: N3
+*Landed through N2 + the Layer 2 core (spine + shell + the two validators + the plan
+executor + extractor + runJob). Still TBD: N3
 (contrast-bit extractor live), N4 (verdict classes — gold/rubric close EXECUTION), N5
 (scheduler + budget ops + CLI), N6 (panel).*
 
@@ -353,15 +352,19 @@ generic unknown-field. Menus exported: `CLOSE_TYPES`, `CLASS_BY_CLOSE`, `GOLD_CO
 
 ### `validatePlan(input, { job, maxStepRounds?, scopes?, capRuns? })` → `{ ok, reds, plan }` — `src/plan.js`
 
-The third validator: gates the AGENT-authored plan doc (`schema: "plan-v1"`) against the
-SIGNED job spec before tokens burn — the ceiling, the fence, and the checks menu all come
+`validateJob`'s SIBLING in the two-document split, never a third validator over it (the
+two-doc split's third validator never happens: plan-v1 gates the PLAN, the job spec stays
+the arbiter's only home). Gates the AGENT-authored plan doc (`schema: "plan-v1"`) against
+the SIGNED job spec before tokens burn — the ceiling, the fence, and the checks menu all come
 from `job` (a missing or non-plan-shape job fails CLOSED, `job-invalid`). Never throws;
 same `{ code, path, detail }` red shape as its siblings; `verb-escape` reds carry the
 escaping verb as a structured `verb` field (the ledger keys on it). `maxStepRounds`
 (default 40 — the shell's tool-mode per-attempt bound) ceilings every step's `rounds`;
-`capRuns` (default 3) ceilings every step's `attempts`; `scopes` is the offered scope menu
-(pass the SAME array the prompt listed — omitted, it derives from the signed `writeScope`,
-never a free-text fallback). Menus exported: `EXIT_TYPES`, `MAX_EXITS_PER_STEP`, `MAX_PLAN_STEPS`, `WRITE_VERBS` — plus `stageClose`.
+`capRuns` (default 3) ceilings every step's `attempts`; `scopes` is the offered
+`tree-changed` scope menu — the array of scope strings the drafter prompt listed, which
+`runJob`/`runPlan` build internally from the signed fence plus the real directories beneath
+it (a direct `validatePlan` caller may pass its own array); omitted, it derives from the
+signed `writeScope` alone, never a free-text fallback. Menus exported: `EXIT_TYPES`, `MAX_EXITS_PER_STEP`, `MAX_PLAN_STEPS`, `WRITE_VERBS` — plus `stageClose`.
 
 ### `snapshotScope(dir, scope)` / `evalExits(exits, { dir, snapshot?, runCheck? })` — `src/exits.js`
 
@@ -381,10 +384,21 @@ are counts and names only, never file bodies (they ride the append-only spine).
 
 The pure half of **human-signs-always**: an agent may draft a job spec, but no job runs
 until a human approves that exact version. `jobSpecHash` is sha256 over canonical JSON
-(key-order independent) — any edit changes the hash, so an edited spec is unapproved by
-construction. `checkApproval(job, approvals)` is a pure predicate over
-`{ specHash, signer, ts }` records; the approval record lives OUTSIDE the document it
-signs and is shell/human territory, never agent-writable. The N2 runner enforces it.
+(key-order independent) of the **RESOLVED** spec (MED-1): an omitted `tools` is filled in
+with the concrete current `TOOL_MENU` before canonicalization, because that is the ceiling
+`plan.js` and `planrun.js` actually read. So any SEMANTIC edit changes the hash and an
+edited spec is unapproved by construction — but not every BYTE edit: writing today's full
+menu into a spec that omitted `tools` is hash-NEUTRAL, since the two spell the same
+ceiling. The direction that matters bites instead — a `TOOL_MENU` WIDENING (a library
+upgrade) flips the hash of an omitted-`tools` spec whose bytes never moved, straight into
+the refuse-until-reapproved machinery. That is the point: the signature pins WHICH menu it
+covers, so an already-signed ceiling can never grow unsigned. A spec that named its own
+`tools` hashes exactly as before. **BREAKING** for an approval held against an
+omitted-`tools` spec: it re-signs once. `checkApproval(job, approvals)` is a pure predicate
+over `{ specHash, signer, ts }` records, canonicalizing the SAME resolved form (a gate
+reading a different form than the mint would unapprove every omitted-`tools` spec); the
+approval record lives OUTSIDE the document it signs and is shell/human territory, never
+agent-writable. The N2 runner enforces it.
 Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
 `coordination-red` — a failure between units (scope contention, step order, store
 races), never to be folded into worker/interpreter reds.
