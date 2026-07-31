@@ -25,10 +25,11 @@ it · the fix (upstream commit/PR) · the version bareloop consumed.**
 > the clipipe cross-surface battery (F48). Full entry at the end of the queue. The
 > 2026-07-15 snapshot below stands for everything prior.
 
-> **2026-07-31 update:** **OPEN — LC-5** (litectx): a missing `ripgrep` makes `impact()`
-> read "0 callers, risk low" — the false-isolation its own contract names as "the one
-> dangerous error" is documented but not *detected*; the ask is a runtime distinguisher
-> (ENOENT ≠ no-matches). Found by bareloop's CI going red on it. Full entry at the end.
+> **2026-07-31 update:** **LC-5 (litectx) DELIVERED in `litectx@0.32.0`, same day** —
+> option (a) of the ask: `impact()` now throws a named `RipgrepMissingError`
+> (`.code = "RIPGREP_MISSING"`, exported) when `rg` never ran, instead of reading
+> "0 callers, risk low". Source-verified and live-probed; consumed here by version bump
+> (`^0.32.0`, 590/590). Full entry with acceptance evidence at the end of the queue.
 
 **The queue is EMPTY: BA-13 delivered in `bare-agent@0.29.0`** (same day it was filed) and
 consumed by bareloop the same session (TOOL_MENU/TOOL_BY_VERB gain `edit`; F32). Everything
@@ -1244,6 +1245,33 @@ stay exactly as it is; the ask is a knob.
 </details>
 
 ## LC-5 — a missing `ripgrep` reads as "0 callers, risk low": the documented §7.2 false-isolation should be DETECTED at runtime, not only documented (2026-07-31, v0.6.0 release gate / CI red)
+
+> **DELIVERED in `litectx@0.32.0`, same day (2026-07-31), as option (a) — refuse.** Verified
+> against the shipped tarball's source and by executing the acceptance criteria live, not the
+> changelog's word:
+> - **C1 (loud on missing rg):** both sweeps now route through one `runRg()` runner
+>   (`src/impact.js`); a spawn failure throws the new exported `RipgrepMissingError`
+>   (`.code = "RIPGREP_MISSING"`) whose message names ripgrep, PATH, and the §7.2 false
+>   isolation. Live probe (fresh 2-file fixture, in-memory index): PATH scrubbed →
+>   `RipgrepMissingError code=RIPGREP_MISSING` thrown, never a silent readout.
+> - **C2 (legitimate empty unchanged):** the spawn-failure detector (`rgSpawnFailed`) keys on
+>   `syscall: "spawnSync*"` + no signal — exit 1 "no matches" carries neither and stays a
+>   valid empty. Live probe with rg present: `refCount 3 / risk medium / 2 confirmed callers`
+>   on the same fixture — behavior intact.
+> - **C3 (both call sites):** the single shared runner makes per-site divergence structurally
+>   impossible — the barrel/alias sweep (`rgListFiles`) cannot silently contribute an empty
+>   candidate set without the same throw.
+> - **C4 (partial-stdout salvage kept):** the `e.stdout` salvage branch survives in `runRg`;
+>   the throw fires only when rg never ran (spawn syscall, no exit signal — upstream verified
+>   the error shapes against `execFileSync`, noted in source).
+>
+> Notably the detector is *broader* than the ask: EACCES/ENOTDIR/EPERM (rg present but
+> unrunnable) also throw, via the syscall signal rather than an errno whitelist — the same
+> fail-safe direction. **Consumed:** bareloop bumps to `^0.32.0` (590/590 green; rg present
+> in CI since the same-day ci.yml/publish.yml fix). No bareloop code change needed: the
+> `guarded()` wrapper in `src/tools.js` already converts the throw into a refusal RESULT
+> (`ctx_impact failed: impact() needs ripgrep (rg) on PATH …`) with an `outcome:'error'`
+> spine emit — the worker sees a named cause, never a false "0 callers" licence.
 
 **Measured before filing (standing rule), on litectx 0.31.0 as shipped:**
 
