@@ -23,6 +23,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LiteCtx } from 'litectx';
 import { createCtxTools } from '../src/tools.js';
+import { scanSecrets } from '../src/validate.js';
 
 const RUNNER = new URL('../scripts/run-u.mjs', import.meta.url).pathname;
 
@@ -153,6 +154,87 @@ test('leak hunt: everything the isolate verbs persist lives under <root>/.litect
   // And after the reset the patient is byte-for-byte back to its seeded shape.
   rmSync(join(wd, '.litectx'), { recursive: true, force: true });
   assert.deepEqual(tree(wd), seeded);
+});
+
+// ---- the hard line: secrets never enter the tree, and the store IS the tree ----
+// `<root>/.litectx/index.db` is a file inside the patient, it survives the step that
+// wrote it, and ctx_recall reads notes back inline. So a model-authored payload is
+// exactly the append-only capture the hard line names: "a record that captures a key
+// captures it forever". The scrub is ONE inventory (SECRET_PATTERNS, via the same
+// redactor the close output and the ctx-verb spine channel already ride) — detection
+// and redaction must never disagree, so the read-back is judged by `scanSecrets`
+// itself rather than by a second hand-spelled expression.
+
+/** ghp_ + 30, and xoxb- + a slack-shaped tail: two SECRET_PATTERNS shapes, neither
+ * of them one of bareguard's built-in defaults — so a green here proves THIS
+ * inventory is wired, not that bareguard happened to catch an `sk-` by itself. */
+const GH_TOKEN = `ghp_${'a1b2c3d4e5'.repeat(3)}`;
+const SLACK_TOKEN = 'xoxb-1234567890-abcdefghijkl';
+
+test('HARD LINE: a model-authored stash/note is scrubbed BEFORE it reaches the store — the secret is masked in what persists', async (t) => {
+  const wd = makePatient(t);
+  const { lc, verb } = ctxVerbs(wd);
+
+  await verb('ctx_stash')({ id: 'tsc-dump', text: `tsc output\nGITHUB_TOKEN=${GH_TOKEN}\ndone\n` });
+  await verb('ctx_remember')({ id: NOTE_ID, text: `the stopword filter reads ${SLACK_TOKEN} from source` });
+
+  // Read the STORE back, not the return strings: a handler can say "parked" and
+  // still have written the raw bytes.
+  const peeked = lc.peek('tsc-dump');
+  assert.ok(peeked, 'the payload really landed — a test over an empty store proves nothing');
+  const parked = `${peeked.head}\n${peeked.tail}`;
+  assert.deepEqual(scanSecrets(parked), [], `the stashed payload carries a live token: ${parked}`);
+  assert.match(parked, /\[REDACTED:/, 'and it is MASKED, not silently dropped — the worker must still see that something was there');
+
+  const notes = await lc.recall('stopword filter', { kind: 'fact', n: 5, body: true });
+  assert.equal(notes.length, 1, 'the note is in the store (the fixture is connected)');
+  assert.deepEqual(scanSecrets(notes[0].body), [], `the recorded note carries a live token: ${notes[0].body}`);
+  assert.match(notes[0].body, /\[REDACTED:/);
+
+  // ...and through the worker-facing read, which prints note bodies inline.
+  assert.deepEqual(scanSecrets(await verb('ctx_recall')({ query: 'stopword filter' })), []);
+});
+
+test('HARD LINE: a secret in the KEY is scrubbed too, and the store stays keyed consistently — peek/forget still resolve the id the worker spelled', async (t) => {
+  const wd = makePatient(t);
+  const { lc, verb } = ctxVerbs(wd);
+  // the token LEADS: SECRET_PATTERNS is left-bounded on purpose (so "flask-sqlalchemy"
+  // never reds), which means `dump-ghp_…` is not a match at all and a test built on it
+  // would pass while proving nothing.
+  const dirtyId = `${GH_TOKEN}/dump`;
+  const dirtyNoteId = `${GH_TOKEN}/note`;
+  assert.equal(scanSecrets(dirtyId).length, 1, 'the fixture id really carries a token, or this test cannot fail');
+
+  await verb('ctx_stash')({ id: dirtyId, text: 'harmless payload' });
+  await verb('ctx_remember')({ id: dirtyNoteId, text: 'harmless conclusion' });
+
+  // A key is a stored string like any other: litectx keys the row by it and
+  // `ctx_recall` prints it back as the note's path.
+  assert.equal(lc.peek(dirtyId), null, 'the RAW id is not what the store holds');
+  const notes = await lc.recall('harmless conclusion', { kind: 'fact', n: 5 });
+  assert.equal(notes.length, 1);
+  assert.deepEqual(scanSecrets(notes[0].path), [], `the note key carries a live token: ${notes[0].path}`);
+
+  // Consistency is the other half: scrubbing on write and NOT on lookup would make
+  // every stash unreachable by the id the worker knows.
+  const peeked = await verb('ctx_peek')({ id: dirtyId });
+  assert.match(peeked, /harmless payload/, 'peek with the id the worker spelled still finds the payload it parked');
+  assert.deepEqual(scanSecrets(peeked), []);
+  assert.match(await verb('ctx_forget')({ id: dirtyNoteId }), /^forgot 1 note\(s\)/, 'and forget retracts the note it recorded');
+});
+
+test('the L1 bound is unaffected by the scrub: an over-cap payload is still refused as a RESULT and nothing reaches the store', async (t) => {
+  const wd = makePatient(t);
+  const { lc, verb } = ctxVerbs(wd);
+  // the newline matters: `ghp_[A-Za-z0-9]{20,}` is greedy, so a token butted straight
+  // against 65536 `A`s is ONE match and redacts to 26 bytes — under the cap, and the
+  // test would then be measuring the wrong thing entirely.
+  const text = `${GH_TOKEN}\n${'A'.repeat(65536)}`;
+  const out = await verb('ctx_stash')({ id: 'over', text });
+  assert.match(out, /the limit is 65536 bytes per payload\. Nothing was parked\./);
+  assert.equal(lc.peek('over'), null, 'a refused stash writes nothing — redacted or not');
+  assert.match(await verb('ctx_remember')({ id: 'over-note', text }), /Nothing was recorded\./);
+  assert.equal((await lc.recall('over-note', { kind: 'fact', n: 5 })).length, 0);
 });
 
 test('tripwire: scripts/run-u.mjs still resets the .litectx store before every run', () => {

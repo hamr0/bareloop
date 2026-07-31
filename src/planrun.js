@@ -17,7 +17,7 @@ import { createRequire } from 'node:module';
 import { readFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, resolve, relative } from 'node:path';
-import { Gate, redact } from 'bareguard';
+import { Gate } from 'bareguard';
 import { LiteCtx } from 'litectx';
 import { runClose, runStages, ralph, CLOSE_FAULTS } from './ralph.js';
 import { validatePlan, legalScopes, stageClose } from './plan.js';
@@ -27,7 +27,7 @@ import { createRoot } from './root.js';
 import { createStallWatch, STALL_MS, MAX_STALLS } from './stall.js';
 import { TOOL_MENU, STORE_VERBS, checkMenu } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, RETRIEVAL_STRATEGY, EDIT_STRATEGY, COMPONENT_STRATEGIES } from './tools.js';
-import { globToPrefix, SECRET_PATTERNS } from './validate.js';
+import { globToPrefix, redactSecrets } from './validate.js';
 import { extractArtifact } from './text.js';
 import { createClock, isWallTimeout } from './clock.js';
 
@@ -279,7 +279,11 @@ ${scoutBlob || '(no scout notes)'}`;
  */
 export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, capRuns = 3, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, now }) {
   workdir = resolve(workdir);
-  const scrub = (/** @type {string} */ s) => redact(s, { patterns: SECRET_PATTERNS });
+  // ONE spelling of the redaction, housed next to the inventory it reads
+  // (src/validate.js) — the same helper the isolate verbs scrub the litectx store
+  // with. Two hand-spelled copies of "what a secret looks like" is exactly how
+  // detection and redaction drift apart.
+  const scrub = redactSecrets;
   // The ctx verbs' spine channel, scrubbed at the WIRING. Every field a ctx-tool
   // event carries is MODEL-CHOSEN text — a recall query, a stash id, a symbol, a
   // path the worker spelled — and the spine is append-only: a log that captures a
@@ -982,12 +986,25 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials), []);
       return extractArtifact(r.text).code ?? '';
     };
+    // Scrubbed HERE, once, before any consumer reads them — the judge() precedent
+    // and the same V8-quoting class it was written for: `parse-error`'s detail is
+    // JSON.parse's own message, and V8 quotes a window of the SOURCE inside it (a
+    // body of 20 chars or fewer is quoted whole). That source is the DRAFT, which
+    // the model wrote, so a red can carry model bytes onto `plan-validate`, onto
+    // `plan-red`, and back into the redraft prompt — and the spine is append-only
+    // forever (the hard line). The boundary is the right place and not the three
+    // emit sites: scrubbing here makes the leak inexpressible, scrubbing each
+    // consumer makes it something the next consumer has to remember.
+    const validate = (/** @type {string} */ t) => {
+      const v = validatePlan(t, { job, maxStepRounds, scopes: scopeMenu, capRuns });
+      return { ...v, reds: v.reds.map((r) => (typeof r.detail === 'string' ? { ...r, detail: scrub(r.detail) } : r)) };
+    };
     let text = await draftPlan(null);
-    let pv = validatePlan(text, { job, maxStepRounds, scopes: scopeMenu, capRuns });
+    let pv = validate(text);
     emit('plan-validate', { ok: pv.ok, reds: pv.reds, phase: `${phase}-1` });
     if (!pv.ok) {
       text = await draftPlan(pv.reds);
-      pv = validatePlan(text, { job, maxStepRounds, scopes: scopeMenu, capRuns });
+      pv = validate(text);
       emit('plan-validate', { ok: pv.ok, reds: pv.reds, phase: `${phase}-2` });
     }
     return pv;

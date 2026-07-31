@@ -17,6 +17,7 @@ import { ralph } from '../src/ralph.js';
 import { validateJob } from '../src/job.js';
 import { StallError, MAX_STALLS } from '../src/stall.js';
 import { scriptedProvider, scriptedNativeFactory } from './helpers.js';
+import { scanSecrets } from '../src/validate.js';
 
 const tcall = (id, name, args) => ({ id, name, arguments: args });
 
@@ -167,6 +168,34 @@ test('plan drafting: an invalid first draft is fed back its reds and the redraft
   const r2 = await go(wd2, stubborn);
   assert.equal(r2.outcome, 'plan-red');
   assert.ok(r2.events.some((e) => e.type === 'plan-red' && e.code === 'verb-escape'));
+});
+
+test('plan reds are scrubbed at the validation boundary: a parse error quotes the DRAFT\'S OWN BYTES, and the spine is append-only', async (t) => {
+  // The same V8-quoting class judge() already scrubs for `json-valid`: JSON.parse's
+  // message embeds a window of the source it choked on (a body of 20 chars or fewer
+  // is quoted whole), so a `parse-error` detail can carry bytes the MODEL wrote —
+  // onto plan-validate, onto plan-red, and back into the redraft prompt. ONE
+  // inventory (SECRET_PATTERNS), the same `scrub` the close output rides through.
+  const wd = makePatient(t);
+  // 15 chars, so V8 quotes it whole; a `xoxb-` shape specifically, because it is
+  // NOT one of bareguard's built-in default patterns — a green here proves THIS
+  // repo's inventory is wired and not that the redactor caught an `sk-` by itself.
+  const TOKEN = 'xoxb-abcdefghij';
+  const provider = scriptedProvider([{ text: 'scout notes' }, { text: TOKEN }, { text: TOKEN }]);
+  const { outcome, events } = await go(wd, provider);
+  assert.equal(outcome, 'plan-red');
+
+  const reds = events.filter((e) => e.type === 'plan-red');
+  assert.equal(reds.length, 1);
+  assert.equal(reds[0].code, 'parse-error');
+  // the leak CHANNEL is real, not hypothetical: the detail really is V8's quoted window
+  assert.match(reds[0].detail, /is not valid JSON/, 'the detail is the parser\'s own message, which quotes the draft');
+  assert.match(reds[0].detail, /\[REDACTED:/, 'and the quoted draft bytes are masked, not dropped');
+
+  for (const e of [...reds, ...events.filter((x) => x.type === 'plan-validate').flatMap((x) => x.reds ?? [])]) {
+    assert.deepEqual(scanSecrets(JSON.stringify(e)), [], `a plan red carried a live token onto the spine: ${JSON.stringify(e)}`);
+  }
+  assert.deepEqual(scanSecrets(provider.calls[2]), [], 'and the redraft prompt does not hand the draft\'s own secret back to the model');
 });
 
 test('ONE replan: a step that exhausts its attempts triggers exactly one replan; the replanned plan greens', async (t) => {

@@ -10,6 +10,8 @@
 // v1.32). What remains is what the live path imports — the primitives were
 // housed here, they were never part of the dead schema.
 
+import { redact } from 'bareguard';
+
 /**
  * Map a schema writeScope entry to its enforcement prefix. bareguard
  * fs.writeScope is prefix-containment, not glob (adaptlearn F4/F9): the
@@ -110,6 +112,23 @@ export function scanSecrets(raw) {
   // a fresh global clone per call: a shared /g regex carries lastIndex between
   // calls and would skip matches on the next stream
   return SECRET_PATTERNS.flatMap((re) => text.match(new RegExp(re.source, `${re.flags.replace('g', '')}g`)) ?? []);
+}
+
+/**
+ * Mask known secret shapes in a text. The REDACTION twin of `scanSecrets` and
+ * the ONE spelling of it: detection and redaction read the same inventory, so a
+ * shape the validator reds can never be a shape the redactor passes (a divergence
+ * there is a leak on the very output the validator was guarding). Housed beside
+ * the inventory rather than at each consumer for the same reason `scanSecrets`
+ * is — a hand-rolled copy is how the two drift.
+ * Consumers: the plan flow's spine/close/prompt `scrub`, and the isolate verbs,
+ * which write model-authored text into `<workdir>/.litectx` — a file INSIDE the
+ * tree that outlives the run and reads back through ctx_recall.
+ * @param {unknown} raw
+ * @returns {string}
+ */
+export function redactSecrets(raw) {
+  return redact(String(raw ?? ''), { patterns: SECRET_PATTERNS });
 }
 
 /**

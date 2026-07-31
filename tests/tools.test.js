@@ -306,6 +306,47 @@ test('an over-cap note is refused as a RESULT, and the store never sees it', asy
   assert.equal(ev.outcome, 'over-cap');
 });
 
+test('a palette verb whose litectx call THROWS still reports to the spine — ctx_get\'s failure contract, generalised', async () => {
+  // The F18 blindness rule is why `emit` exists in this file at all: a verb whose
+  // RESULT is invisible cannot be judged, and a thrown call is the most invisible
+  // result there is — it looks exactly like a verb that was never reached, so the
+  // worker's fall-back to a whole-file read reads as a free choice. ctx_get already
+  // wraps and emits on its failure path; the palette verbs must not be the eight
+  // holes in that instrument. The throw is a REFUSAL RESULT to the worker, never a
+  // rethrow (L1: throws stay reserved for the BA-4 param-guard class).
+  const boom = () => { throw new Error('sqlite: database is locked'); };
+  /** every seam the eight verbs reach through, all of them throwing */
+  const brokenLc = {
+    impact: boom, related: boom, recentActivity: boom, getNode: boom, get: boom,
+    stash: boom, peek: boom, remember: boom, forget: boom,
+  };
+  /** @type {any[]} */
+  const events = [];
+  const tools = new Map(createCtxTools(brokenLc, '/nowhere',
+    (/** @type {string} */ type, /** @type {any} */ d) => events.push({ t: type, ...d })).map((x) => [x.name, x]));
+
+  /** @type {[string, object][]} */
+  const calls = [
+    ['ctx_impact', { symbol: 'addNums' }],
+    ['ctx_related', { path: 'src/adder.js' }],
+    ['ctx_recent', {}],
+    ['ctx_compress', { path: 'src/adder.js', symbol: 'addNums' }],
+    ['ctx_stash', { id: 'k', text: 'payload' }],
+    ['ctx_peek', { id: 'k' }],
+    ['ctx_remember', { id: 'k', text: 'note' }],
+    ['ctx_forget', { id: 'k' }],
+  ];
+  for (const [name, args] of calls) {
+    const out = await tools.get(name).execute(args);
+    assert.equal(typeof out, 'string', `${name} hands the worker a result, it does not throw out of the loop`);
+    assert.match(out, /database is locked/, `${name}'s refusal names the real cause, so the worker can react to it`);
+    const ev = events.filter((e) => e.t === 'ctx-tool' && e.tool === name).at(-1);
+    assert.ok(ev, `${name}: a thrown call reached the spine`);
+    assert.equal(ev.outcome, 'error', `${name}: and it is nameable in the audit as a failure, not silence`);
+    assert.equal(ev.bytes, 0, `${name}: a failed call moved zero bytes (F6 class)`);
+  }
+});
+
 test('component strategies exist for every component — capability without strategy is inert (F19)', () => {
   for (const c of ['select', 'compress', 'isolate']) {
     assert.equal(typeof COMPONENT_STRATEGIES[c], 'string');

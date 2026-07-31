@@ -24,6 +24,13 @@ const { createShellTools } = require('bare-agent/tools');
 const { compress: compressNode } = require('litectx');
 
 import { extractArtifact, priceOf } from './text.js';
+// The isolate verbs write MODEL-AUTHORED text into `<workdir>/.litectx` — a file
+// inside the tree that outlives the step and reads back through ctx_recall. That is
+// the hard line's own sentence ("a record that captures a key captures it forever"),
+// so the scrub is IMPORTED, never injected: an injected redactor is one a future
+// caller can forget to pass, and this leak has to be inexpressible, not optional.
+// Same ONE inventory the spine channel and the close output ride through.
+import { redactSecrets } from './validate.js';
 
 /** @typedef {{body?: string|null, text?: string|null}} RecallHit litectx recall hit — body present only with `{body: true}` */
 
@@ -139,6 +146,26 @@ const LINE_SPACE = 'Line numbers here are 0-BASED index positions from the repos
  *   whole-file read looks like a free choice instead of a forced one.
  */
 export function createCtxTools(lc, workdir, emit) {
+  // ctx_get's failure contract, generalised to the palette (review 2026-07-31).
+  // `emit` exists in this file because a verb whose RESULT is invisible cannot be
+  // judged — and a THROWN call is the most invisible result there is: it looks
+  // exactly like a verb that was never reached, so the worker's fall-back to a
+  // whole-file read reads as a free choice instead of a forced one (the F18
+  // blindness rule). The worker gets a refusal RESULT naming the cause, never a
+  // throw (L1: throws stay reserved for the BA-4 param-guard class), so a locked
+  // store or a corrupt index costs one round instead of the run.
+  // `fields` reads its args defensively — a field reader that throws would take
+  // the emit down with it, which is the hole this closes.
+  /** @param {string} tool @param {(args: any) => object} fields @param {(args: any) => Promise<string>} fn */
+  const guarded = (tool, fields, fn) => async (/** @type {any} */ args) => {
+    try {
+      return await fn(args);
+    } catch (e) {
+      const detail = String(/** @type {Error} */ (e)?.message || e);
+      emit('ctx-tool', { tool, ...fields(args), outcome: 'error', bytes: 0, detail });
+      return `${tool} failed: ${detail}`;
+    }
+  };
   return [
     {
       name: 'ctx_recall',
@@ -226,7 +253,7 @@ export function createCtxTools(lc, workdir, emit) {
         properties: { symbol: { type: 'string', description: 'Function/class/identifier name, e.g. "addNums".' } },
         required: ['symbol'],
       },
-      execute: async (/** @type {{symbol: string}} */ { symbol }) => {
+      execute: guarded('ctx_impact', (a) => ({ symbol: String(a?.symbol ?? '') }), async (/** @type {{symbol: string}} */ { symbol }) => {
         const imp = await lc.impact(String(symbol));
         if (!imp) {
           emit('ctx-tool', { tool: 'ctx_impact', symbol: String(symbol), outcome: 'unknown-symbol', bytes: 0 });
@@ -262,7 +289,7 @@ export function createCtxTools(lc, workdir, emit) {
         const out = lines.join('\n');
         emit('ctx-tool', { tool: 'ctx_impact', symbol: String(symbol), hits, bytes: Buffer.byteLength(out) });
         return out;
-      },
+      }),
     },
     {
       name: 'ctx_related',
@@ -273,7 +300,7 @@ export function createCtxTools(lc, workdir, emit) {
         properties: { path: { type: 'string', description: 'Repository-relative path, e.g. "src/chunker.js".' } },
         required: ['path'],
       },
-      execute: async (/** @type {{path: string}} */ { path: p }) => {
+      execute: guarded('ctx_related', (a) => ({ path: String(a?.path ?? '') }), async (/** @type {{path: string}} */ { path: p }) => {
         const rel = String(p).startsWith(workdir + sep) ? String(p).slice(workdir.length + 1) : String(p);
         const r = lc.related(rel, { dir: 'both', hops: 1 });
         if (!r || !r.items.length) {
@@ -283,20 +310,20 @@ export function createCtxTools(lc, workdir, emit) {
         const out = r.items.map((/** @type {any} */ i) => `${i.via === 'in' ? 'imported by' : 'imports'}\t${i.id}`).join('\n');
         emit('ctx-tool', { tool: 'ctx_related', path: rel, hits: r.items.length, bytes: Buffer.byteLength(out) });
         return out;
-      },
+      }),
     },
     {
       name: 'ctx_recent',
       description: 'List recently-edited symbols in this repository, most recent first — where the churn is.',
       parameters: { type: 'object', properties: {} },
-      execute: async () => {
+      execute: guarded('ctx_recent', () => ({}), async () => {
         const rows = lc.recentActivity() ?? [];
         const out = rows.length
           ? rows.map((/** @type {any} */ r) => `${r.id ?? r.symbol}\t${r.kind ?? ''}\tedits ${r.edits ?? '?'}`).join('\n')
           : 'no recent edit activity recorded';
         emit('ctx-tool', { tool: 'ctx_recent', hits: rows.length, bytes: Buffer.byteLength(out) });
         return out;
-      },
+      }),
     },
     {
       name: 'ctx_compress',
@@ -310,7 +337,7 @@ export function createCtxTools(lc, workdir, emit) {
         },
         required: ['path', 'symbol'],
       },
-      execute: async (/** @type {{path: string, symbol: string}} */ { path: p, symbol }) => {
+      execute: guarded('ctx_compress', (a) => ({ path: String(a?.path ?? ''), symbol: String(a?.symbol ?? '') }), async (/** @type {{path: string, symbol: string}} */ { path: p, symbol }) => {
         const rel = String(p).startsWith(workdir + sep) ? String(p).slice(workdir.length + 1) : String(p);
         // recall→chunk→slice→compress: the contract's own recipe (compress takes a
         // body the CALLER slices; recall/nodesForPath give the range, not the text)
@@ -329,7 +356,7 @@ export function createCtxTools(lc, workdir, emit) {
         const sig = await compressNode({ text: body, format: node.format, symbol: String(symbol) }, { level: 'signature' });
         emit('ctx-tool', { tool: 'ctx_compress', path: rel, symbol: String(symbol), bytes: Buffer.byteLength(sig), savedBytes: Buffer.byteLength(body) - Buffer.byteLength(sig) });
         return sig;
-      },
+      }),
     },
     {
       name: 'ctx_stash',
@@ -344,21 +371,33 @@ export function createCtxTools(lc, workdir, emit) {
         },
         required: ['id', 'text'],
       },
-      execute: async (/** @type {{id: string, text: string}} */ { id, text }) => {
-        const size = Buffer.byteLength(String(text));
+      execute: guarded('ctx_stash', (a) => ({ id: redactSecrets(a?.id) }), async (/** @type {{id: string, text: string}} */ { id, text }) => {
+        // Scrubbed BEFORE anything else touches it (the hard line): `.litectx` is a
+        // file inside the tree, it outlives the step that wrote it, and ctx_recall
+        // reads notes back inline — an append-only record that captures a key
+        // captures it forever. The KEY goes through the same scrub as the body, and
+        // every id-taking verb scrubs on LOOKUP too, or a stash would be unreachable
+        // by the id the worker actually spelled.
+        const key = redactSecrets(id);
+        const body = redactSecrets(text);
+        // …and the cap is measured on the SCRUBBED payload, because that is the one
+        // that enters the store: a size read off the pre-redaction text would report
+        // bytes that never landed (the F6/blind-instrument class), and the bound
+        // exists to bound the store.
+        const size = Buffer.byteLength(body);
         // L1: over-cap is a REFUSAL RESULT, never a throw (throws stay reserved for
         // the BA-4 param-guard class) — the worker is told the size and the limit so
         // its retry is a DISTINCT call, and the store is left untouched.
         if (size > ISOLATE_MAX_BYTES) {
-          emit('ctx-tool', { tool: 'ctx_stash', id: String(id), outcome: 'over-cap', bytes: 0, size });
+          emit('ctx-tool', { tool: 'ctx_stash', id: key, outcome: 'over-cap', bytes: 0, size });
           return `ctx_stash: text is ${size} bytes — the limit is ${ISOLATE_MAX_BYTES} bytes per payload. Nothing was parked. `
             + `Park the part you actually need later, or write the bulk to a file with the write tool and stash its path.`;
         }
-        lc.stash(String(id), String(text));
-        const out = `parked ${size} bytes under "${id}"`;
-        emit('ctx-tool', { tool: 'ctx_stash', id: String(id), bytes: size });
+        lc.stash(key, body);
+        const out = `parked ${size} bytes under "${key}"`;
+        emit('ctx-tool', { tool: 'ctx_stash', id: key, bytes: size });
         return out;
-      },
+      }),
     },
     {
       name: 'ctx_peek',
@@ -369,16 +408,19 @@ export function createCtxTools(lc, workdir, emit) {
         properties: { id: { type: 'string', description: 'The key it was stashed under.' } },
         required: ['id'],
       },
-      execute: async (/** @type {{id: string}} */ { id }) => {
-        const p = lc.peek(String(id));
+      execute: guarded('ctx_peek', (a) => ({ id: redactSecrets(a?.id) }), async (/** @type {{id: string}} */ { id }) => {
+        // the SAME transform ctx_stash keyed with — scrubbing only on write would
+        // strand every payload whose id carried a token
+        const key = redactSecrets(id);
+        const p = lc.peek(key);
         if (!p) {
-          emit('ctx-tool', { tool: 'ctx_peek', id: String(id), outcome: 'no-key', bytes: 0 });
-          return `nothing stashed under "${id}"`;
+          emit('ctx-tool', { tool: 'ctx_peek', id: key, outcome: 'no-key', bytes: 0 });
+          return `nothing stashed under "${key}"`;
         }
-        const out = `stash "${id}": ${p.bytes} bytes\nhead: ${p.head}\ntail: ${p.tail}`;
-        emit('ctx-tool', { tool: 'ctx_peek', id: String(id), bytes: Buffer.byteLength(out) });
+        const out = `stash "${key}": ${p.bytes} bytes\nhead: ${p.head}\ntail: ${p.tail}`;
+        emit('ctx-tool', { tool: 'ctx_peek', id: key, bytes: Buffer.byteLength(out) });
         return out;
-      },
+      }),
     },
     {
       name: 'ctx_remember',
@@ -393,20 +435,25 @@ export function createCtxTools(lc, workdir, emit) {
         },
         required: ['id', 'text'],
       },
-      execute: async (/** @type {{id: string, text: string}} */ { id, text }) => {
-        const size = Buffer.byteLength(String(text));
+      execute: guarded('ctx_remember', (a) => ({ id: redactSecrets(a?.id) }), async (/** @type {{id: string, text: string}} */ { id, text }) => {
+        // scrubbed at the same seam as ctx_stash, and a note needs it harder: its
+        // body rides back INLINE through ctx_recall, so a captured token would be
+        // re-read into the context of every later step that searches near it
+        const key = redactSecrets(id);
+        const body = redactSecrets(text);
+        const size = Buffer.byteLength(body);
         // L1, same bound as ctx_stash — and a note is the one that most needs it: a
         // note's body rides back inline through ctx_recall, so an unbounded store
         // write is also an unbounded future context read.
         if (size > ISOLATE_MAX_BYTES) {
-          emit('ctx-tool', { tool: 'ctx_remember', id: String(id), outcome: 'over-cap', bytes: 0, size });
+          emit('ctx-tool', { tool: 'ctx_remember', id: key, outcome: 'over-cap', bytes: 0, size });
           return `ctx_remember: text is ${size} bytes — the limit is ${ISOLATE_MAX_BYTES} bytes per note. Nothing was recorded. `
             + `A note is a CONCLUSION, not a file: record what you concluded and leave the evidence it came from in the tree.`;
         }
-        await lc.remember(String(id), String(text), { kind: 'fact', by: 'agent' });
-        emit('ctx-tool', { tool: 'ctx_remember', id: String(id), bytes: size });
-        return `remembered "${id}"`;
-      },
+        await lc.remember(key, body, { kind: 'fact', by: 'agent' });
+        emit('ctx-tool', { tool: 'ctx_remember', id: key, bytes: size });
+        return `remembered "${key}"`;
+      }),
     },
     {
       name: 'ctx_forget',
@@ -416,11 +463,14 @@ export function createCtxTools(lc, workdir, emit) {
         properties: { id: { type: 'string', description: 'The note key to retract.' } },
         required: ['id'],
       },
-      execute: async (/** @type {{id: string}} */ { id }) => {
-        const n = lc.forget(String(id));
-        emit('ctx-tool', { tool: 'ctx_forget', id: String(id), removed: n });
-        return `forgot ${n} note(s) under "${id}"`;
-      },
+      execute: guarded('ctx_forget', (a) => ({ id: redactSecrets(a?.id) }), async (/** @type {{id: string}} */ { id }) => {
+        // a retraction addresses the key ctx_remember actually wrote (scrubbed), not
+        // the one the worker still holds in its context — same transform, both doors
+        const key = redactSecrets(id);
+        const n = lc.forget(key);
+        emit('ctx-tool', { tool: 'ctx_forget', id: key, removed: n });
+        return `forgot ${n} note(s) under "${key}"`;
+      }),
     },
   ];
 }
