@@ -308,3 +308,77 @@ hamr's signature includes *"and change as needed"*. That means POC and pre-probe
 convention holds: closed records are amended, never rewritten; a frozen rule is never loosened
 post-hoc to convert a miss into a pass; an acceptance criterion may be corrected for principle
 BEFORE measurement, never re-amended after one.
+
+---
+
+## Addendum — 2026-08-01 (D2 SPLIT: the load gate checks SHAPE; the full validator checks the TWEAKED DRAFT — hamr; plus the execution probe GO)
+
+**hamr's ruling, verbatim, 2026-08-01 in-turn: *"agreed to all cont"*** — agreeing to (a) the
+D2 gate split recorded below, (b) the operator's anti-gloss reporting procedure, and (c)
+firing the execution probe before the machinery build.
+
+### What forced this
+
+The pre-probe's **$0 deterministic** finding (pre-fire addendum §5(a) of
+`docs/02-experiments/REUSE-PREPROBE-PREREG.md`): **a bridge storing instance paths reds
+`validatePlan` against ANY other patient.** On the aurora→litectx pair the count is **6 reds**
+— *invalid-value* on both scope fields, and *scope-escape* on both targets and both
+`tree-changed` exit scopes.
+
+**D2 as frozen — *"legal to load only if it validates against THIS job"* — would therefore
+refuse EVERY cross-patient bridge.** The gate as written kills all reuse at the door. And it
+would do so while the same probe showed **the drafter handles instance-path replacement
+itself**: all three arm-C drafts were **legal after tweak** (3/3, `validatorOk: true`, zero
+reds). The gate was rejecting exactly the material the drafter then fixed unaided.
+
+### The RULED shape (hamr, 2026-08-01)
+
+**D2 splits into two questions, asked at two times.**
+
+1. **LOAD-TIME — the shape-compatibility gate.** A bridge is legal to LOAD if:
+   **verdict type matches**; **close-stage KINDS match**; and **the bridge's verbs fit within
+   THIS job's signed tool menu**. **Nothing about paths, scopes, or targets** — those are
+   instance-bound and are **expected to red**. A bridge that fails the load gate is the
+   **"recipe-stale / wrong kind"** outcome: **refused at the door, cold drafting offered.**
+2. **DRAFT-TIME — the full validator, unchanged.** The **tweaked** plan passes **the SAME
+   `validatePlan` every cold draft passes**. **No second, looser path exists for an inherited
+   plan** (D4, unchanged).
+
+**Nothing executes without full validation.** Only **WHEN** each class of check applies moved.
+**The arbiter is untouched: both halves are code; the agent authors neither.**
+
+### The kid-version framing, recorded because it is how the ruling was explained and agreed
+
+> *"Is this the right KIND of recipe?"* is answerable **at the box**. *"Does it name today's
+> bricks?"* is only meaningfully asked of **the finished, tweaked plan** — **every recipe from
+> a different day names yesterday's bricks, and that is what a recipe IS, not a flaw.**
+
+### Operator procedure hamr agreed to (binding on READS, not on the library)
+
+Every experiment read gets an **adversarial self-audit before reporting**:
+
+- **construct check** — what was MEASURED vs what was CLAIMED to motivate it;
+- **deviation × axis interaction sweep** — every implementation deviation crossed against every
+  read axis;
+- **power statement in the headline sentence** — n and its qualifier travel with the claim, not
+  a footnote;
+- **refute-your-own-headline pass** — the read must attempt to kill its own conclusion before
+  it is reported.
+
+This binds the operator's reporting. **It changes no library code and no arbiter behaviour.**
+
+### The execution probe: GO
+
+D9's second instrument — the limited-budget real execution run — was **not authorized by this
+record** (§6, owner: hamr, at the point the draft read lands). **hamr's *"agreed to all cont"*
+is that authorization**, and it fires **BEFORE the machinery build** (§5's step 2→3 boundary,
+*"only on hamr's word"* — that word is now on record). Full pre-registration:
+`docs/02-experiments/REUSE-PREPROBE-PREREG.md`, addendum *EXECUTION PROBE PREREG*, frozen
+before firing.
+
+*Leans on:* the amendment discipline of §7 (dated addendum, never silent rewrite); D4 (the
+bridge is a starting draft, not a contract — now the gate agrees with it); the arbiter split
+(validators are code either side of the move); "a frozen rule is corrected for principle
+BEFORE measurement, never re-amended after one" — the pre-probe fact that forced this is $0
+and deterministic, established by the validator, not by a paid measurement anyone is fitting
+to.

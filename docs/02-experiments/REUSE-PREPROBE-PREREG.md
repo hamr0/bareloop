@@ -300,3 +300,79 @@ Per the design record §5, the result selects the build shape: the machinery pro
 **MECHANICAL-START ONLY** — registry, gate, listing/selection, draft-time tweak path,
 envelope, status/history — **with no readable-lineage feature.** The execution probe go/no-go
 is hamr's.
+
+---
+
+## Addendum — 2026-08-01, EXECUTION PROBE PREREG (the second instrument — FROZEN before firing)
+
+**GO on hamr's word, verbatim, 2026-08-01 in-turn: *"agreed to all cont"*** — D9's second
+instrument is authorized, and it fires **BEFORE the machinery build** (design record §5, step
+2→3). Frozen here **before any number exists**; frozen rules are never loosened post-hoc.
+
+### 1. The question
+
+**Does mechanical-start — the aurora bridge handed as the STARTING DRAFT — carry a REAL run?**
+And **how does it compare on cost / time / outcome to the cold baseline family?**
+
+The draft-tier read is closed: structure transmits, cost did not move (post-fire addendum).
+**Whether the carried structure is worth anything is an EXECUTION question**, and §8 named it
+as outside the draft probe. This is that instrument.
+
+### 2. Instrument (frozen)
+
+**ONE full run** of `jobs/litectx-u-types.json`:
+
+- **same spec, same signed hash** — nothing about the job is edited for the probe;
+- **same $5 budget and 30 min wall** as the cold baselines — **comparability requires the
+  identical envelope**, so neither number moves;
+- **patient:** `litectx-u`, **reset clean to seed `96813a43bbcb`** (the same clean-seed
+  precondition as pre-fire §4 — a half-solved tree is not what a real run faces, and a solved
+  tree returns `already-green`). **The reset is operator-performed, never harness-performed.**
+- **through the REAL `runPlan` flow**, **scout ON** (D8);
+- **the injection:** the harness appends the same **mechanical-start block** (the arm-C framing
+  from this pre-probe) **plus the bridge plan** to the captured **DRAFT-PLAN** prompt, and
+  **otherwise touches nothing**.
+
+**The spec is unchanged; the injection is probe-harness behaviour; the arbiter is untouched.**
+
+### 3. Cold baseline family — already on record, NOT re-run
+
+Two cold greens of this **identical** job:
+
+- **U run 1** — **$2.21 / 8.9 min**;
+- **U run 3** — **$2.47**, the **outer fix loop fired once**.
+
+**Both predate this probe. Nothing about them may be re-measured or re-graded.**
+
+### 4. PRIMARY read — binary, the kill question
+
+**Does the bridge-start run GREEN within the envelope?**
+
+- **GREEN** = the carried structure **survives contact with a different patient**; the
+  mechanical path **clears its execution kill-gate**.
+- **RED** = **recorded**, **the bridge is untouched per R1** (a red never edits the box), and
+  **the decision goes to hamr**.
+
+### 5. SECONDARY reads — recorded, explicitly NOT mintable as lift claims at n=1
+
+Recorded: **cost vs $2.21 / $2.47**; **wall time vs 8.9 min**; **rounds**; **replan fired or
+not**; **which stages red-cycled**.
+
+**n=1 against n=2 is an anecdote in BOTH directions.** The numbers are recorded **with that
+qualifier attached to every sentence**. **No "reuse is cheaper / faster" claim mints from this
+probe, regardless of direction.**
+
+### 6. Casualty rules (frozen)
+
+- **provider-red = casualty.** **One relaunch permitted**, then **stop-and-report**.
+- **wall-halt or cap-halt = the stop IS the result** (W-2: keep the grade already minted,
+  report decision-ready).
+- **truncation routing per the shipped loop.**
+- The run's **spend reports per F6** — `spendComplete` travels with `spentUsd`; an unknown is
+  recorded unknown, never rendered as 0.
+
+### 7. What this probe CANNOT read (stated plainly)
+
+**Success or failure of THIS PROBE is NOT success or failure of the RUNG.** A red here is a
+finding about **THIS bridge**, on **THIS patient**, at **n=1**, on **TYPES**, in **one
+direction** — and **every result sentence carries that qualifier**.
