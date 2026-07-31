@@ -325,7 +325,7 @@ test('F68: a multi-byte close stream is decoded ONCE, whole — a character stra
   assert.match(v.gap, /^中{4} AssertionError: MULTIBYTE-INTACT$/m, 'every character survives the boundary intact');
 });
 
-test('F68: a FROZEN host loop mid-close never shortens the capture — a close bigger than a pipe is still read whole', async () => {
+test('F71: a FROZEN host loop mid-close never shortens the capture — a close bigger than a pipe is still read whole', async () => {
   // The price of the async runner: the reader shares the host's event loop, so a
   // frozen loop stops draining the child's pipe. Once the drain stalls, the close's
   // own writes queue inside ITS process — and node DROPS whatever is still queued

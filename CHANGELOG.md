@@ -164,12 +164,18 @@ feature lands, **patch** = docs, fixes, scaffolding.
   verdict" only:** the DEADLINE trigger still killed on the clock alone, on a wall grace whose
   default covered one close stage, and hamr ruled the whole trigger must read activity before
   it signals — the redesign is under *Changed*, below.
-- **The ledger counted every stall as a bareloop bug** (`src/ledger.js`, F70).
-  `classifyIncidents` had no branch for `step-stalled`, so the F66 fuse's own terminal fell
-  through to "unclassified escalation category" — real upstream evidence filed as a fake defect
-  of ours. Now routed through the same TYPED-LIB branch as `interpreter-red`: `lib` is stamped
-  at the throw site and the stall accrues against the package that field names. Excluding the
-  category instead would have deleted the evidence outright.
+- **The ledger counted every stall as a bareloop bug, and then aimed it at the wrong package**
+  (`src/ledger.js`, F70 + review). `classifyIncidents` had no branch for `step-stalled`, so the
+  F66 fuse's own terminal fell through to "unclassified escalation category" — real upstream
+  evidence filed as a fake defect of ours. It was first routed through the TYPED-LIB branch
+  `interpreter-red` uses, and the rendered ask refuted that: `StallError` stamps
+  `lib: 'bare-agent'` at the throw site, so a live ask read *"bare-agent: the provider path
+  failed — worker stalled…"* when **nothing observed the provider path fail**. A stall is the
+  ABSENCE of beats. `step-stalled` is now a NAMED member of `EXCLUDED_ESCALATIONS` beside
+  `cap-halt` and `wall-halt` (operator ruling, on the wall-halt shape): our own governance
+  firing is not an upstream bug, and the stall evidence still rides the spine's own escalation
+  event, which is where a real ask would be sourced from anyway. Excluded by name, never
+  silently dropped — the excluded-set is executable and counted.
 - **`checkMenu` expanded `needs` one level only** (`src/job.js`, F70), so a chain of
   prerequisites ran incomplete — reproducing the false red `needs` exists to prevent, one level
   deeper. Now a transitive fixed-point walk, ordered by close position, visiting each stage at
@@ -255,6 +261,136 @@ feature lands, **patch** = docs, fixes, scaffolding.
   can never hold the host loop open (F68's whole point) and cleared on `close` so it cannot
   fire at a child that already left. Verdict semantics are untouched: the FIRST fault already
   named the outcome and the kill only enforces it.
+- **The ReDoS detector mis-parsed an EMPTY character class and passed the hazard through**
+  (`src/plan.js`, F49). The scan carried the POSIX rule *"a leading `]` is a literal member"* —
+  which is not JS: `[]` is the EMPTY class and `[^]` the any-char idiom, and both CLOSE at that
+  first `]`. Skipping it ran the scan past the class's real end and swallowed every quantifier
+  after it, so `x[^](a+)+$` read as SAFE while `RegExp.test` on it does not finish in 15s on a
+  31-char body — an agent-authored exit pattern that passed validation and then hangs the run's
+  event loop, which is the whole failure F49 exists to make inexpressible. A false NEGATIVE is
+  the dangerous direction, so the scan now follows JS. Four cases join `REDOS_BAD`
+  (`x[^](a+)+$`, `(([^]+))+`, `(([]a+))+`, `[^]x(a+)+`). **The monotonicity claim is stated
+  honestly rather than assumed:** this is a PARSE correction, not the add-rejections-only
+  tightening F49's rule contemplates, and it is not rejection-monotonic by construction.
+  Measured over 14,862 compilable generated patterns (2,369 previously rejected), exactly 2
+  rejections disappear — both pathological `[]`-bearing shapes whose old `true` came from the
+  very misparse being fixed, both verified to finish `RegExp.test` in ~0ms — and every entry of
+  the checked-in `REDOS_BAD`/`GOOD`/`OVERREJECTED` corpus is unchanged. The claim is "measured,
+  no hazard lost", never "monotonic by construction".
+- **The isolate verbs wrote model-authored text into the tree unscrubbed** (`src/tools.js`,
+  `src/validate.js`). `ctx_stash`/`ctx_remember` park worker-chosen bytes in
+  `<workdir>/.litectx` — a file INSIDE the tree that outlives the step and reads back inline
+  through `ctx_recall` — which is the hard line's own sentence (*a record that captures a key
+  captures it forever*), one hop away from the spine it was already written for. Both the
+  PAYLOAD and the KEY now go through `redactSecrets`, a new export housed beside the inventory
+  in `src/validate.js` so detection (`scanSecrets`) and redaction read the ONE
+  `SECRET_PATTERNS` list and cannot drift apart. It is IMPORTED, not injected: an injected
+  redactor is one a future caller can forget to pass, and this leak has to be inexpressible,
+  not optional. Every id-taking verb (`ctx_peek`, `ctx_forget`) scrubs on LOOKUP with the same
+  transform, or a stash would be unreachable by the id the worker spelled; and the
+  `ISOLATE_MAX_BYTES` cap is measured on the SCRUBBED payload — the one that actually enters
+  the store — because a size read off the pre-redaction text reports bytes that never landed
+  (the F6 blind-instrument class). The plan flow's own `scrub` collapses onto the same helper.
+- **The gate audit was the one persistent channel still logging worker-chosen text in
+  cleartext** (`src/planrun.js`). `gate-audit.jsonl` lives IN THE TREE and is append-only, and
+  the `Gate` was built without a `secrets` config — so it ran on bareguard's default-on
+  backstop, which covers `apiKey`/`authorization`/`Bearer …`/`sk-…` and nothing else. Measured:
+  a `ghp_` token landed in cleartext through every model-authored identifier an action carries
+  (an isolate verb's `id`, a path the worker spelled), and masked once the gate is handed
+  `SECRET_PATTERNS`. Content was never reachable here — `toolAction` reduces a write to
+  `{bytes}` — but the identifiers are raw model text. Third channel, same ONE inventory.
+- **A plan `parse-error` could carry the DRAFT's bytes onto the spine** (`src/planrun.js`, the
+  `judge()` precedent one layer up). A `parse-error` red's detail is `JSON.parse`'s own message,
+  and V8 quotes a window of the SOURCE inside it — a body of 20 characters or fewer is quoted
+  WHOLE, which is exactly the short-prefix secret shapes. That source is the model's draft, so
+  the red rode onto `plan-validate`, onto `plan-red`, and back into the redraft prompt. Every
+  red's detail is now scrubbed ONCE at the validation boundary, before any consumer reads it —
+  the boundary, not the three emit sites, because scrubbing here makes the leak inexpressible
+  while scrubbing per consumer makes it something the next consumer has to remember.
+- **A strategy line could name a tool the worker was never granted** (`src/tools.js`,
+  `src/planrun.js`) — F19 inverted, and worse than silence: the model spends rounds reaching
+  for a menu entry that does not exist. The strategy prose was gated per COMPONENT, so any one
+  isolate verb lit a paragraph prescribing `ctx_peek` (a COMPRESS verb), either retrieval verb
+  lit the two-step `ctx_recall` → `ctx_get` recipe, and any one select verb named all three.
+  New `strategyFor(granted)` assembles the same prose SENTENCE BY SENTENCE, each clause gated
+  on its own verb, with the select paragraph's `a, b, and c` grammar preserved. The full-menu
+  text is unchanged BY TEST, not by comment: `strategyFor(TOOL_MENU)` is asserted
+  byte-identical to the concatenated paragraphs, so a partial grant can only ever see LESS,
+  never different.
+- **The eight palette verbs had no failure path** (`src/tools.js`). `ctx_get` has always
+  wrapped its own failures into a refusal RESULT and emitted them; the eight verbs P added
+  (`impact`, `related`, `recent`, `compress`, `stash`, `peek`, `remember`, `forget`) threw
+  straight out of the tool loop instead — and a thrown call is the most invisible result there
+  is, indistinguishable from a verb that was never reached, so the worker's fall-back to a
+  whole-file read reads as a free choice instead of a forced one (the F18 blindness rule). A
+  shared `guarded()` wrapper now hands the worker a refusal naming the real cause (a locked
+  store, a corrupt index) and emits `outcome:'error', bytes:0` to the spine — one round instead
+  of the run, and never a rethrow (L1: throws stay reserved for the BA-4 param-guard class).
+  Its field reader is deliberately defensive, since a field reader that throws would take the
+  emit down with it — the hole this closes.
+- **`validatePlan` could THROW on plain parsed data** (`src/plan.js`). Its contract is that
+  every failure is a named red; `Array.isArray(job.writeScope)` admitted the array and asked
+  nothing about its MEMBERS, so the next line's `globToPrefix` hit `scope.replace is not a
+  function` and a `TypeError` escaped the validator. The fail-closed guard now asks the same
+  `isNonEmptyString` question of each member that `legalScopes` already asks of the same field.
+- **Three enforced rules the drafter prompt never stated** (`src/planrun.js`). A bound the
+  validator reds but the prompt omits is a round burnt on a rule the drafter had no way to
+  know: `attempts` said "integer" while `validatePlan` reds outside `1..capRuns`, and BOTH
+  `step-scope-escape` reds (a `target` outside its own step's narrowed scope; a `tree-changed`
+  scope disjoint from it) were enforced silently. `planPrompt` now takes `capRuns` from the
+  SAME source the validator bounds against — one number, so prompt and validator cannot drift
+  — and states both scope rules in its own voice.
+- **The `check-passes` exit example was the one malformed line among four** (`src/planrun.js`).
+  It carried the enumerated check menu INSIDE its JSON `"name"` string, so the example the
+  drafter is most likely to copy did not parse. The menu now sits BESIDE the example as its own
+  copy-it-character-for-character line, and the regression test parses EVERY exit example, one
+  per `EXIT_TYPES` entry, rather than the single `tree-changed` line it happened to pick.
+- **The U close scripts' suppression rules missed two escapes that the paid runs actually
+  emit, and mislabelled a broken instrument as a timeout** (`scripts/u-litectx-close.mjs`,
+  `scripts/u-spawner-close.mjs`).
+  - The JSDoc WILDCARD (`{*}`, `{?}`) is `any` under a spelling the `any` rule cannot see — it
+    contains no letters. Measured against this repo's own `tsc` (`--noEmit --strict --allowJs
+    --checkJs`): a naked `function f(v)` reports TS7006, while `@param {*}`, `@param { * }`,
+    `@param {?}` and a `@typedef {*} Loose` used from a `@param {Loose}` each report ZERO
+    errors. So the new `any-star` rule matches the tag GENERICALLY (`@\w+`) rather than from a
+    list of tags — a list of tags is a list of holes. `{*[]}` / `{Array<*>}` are deliberately
+    NOT matched: measured, they still error on non-array use, so they are `any[]`, which the
+    `any` rule already covers.
+  - The CAST rule read its type body with `[^}]*`, which an inner brace closes early — so
+    `/** @type {{ a: number }[]} */ (expr)` walked straight through. That shape is not
+    hypothetical: it appears in this repo's own paid U-run diffs (`run3-ms3wawub`,
+    `run-ms5uxhej`). Now `.*`, which is bounded by construction — every rule is tested against
+    ONE diff line at a time.
+  - A `spawnSync` that produced NO exit code was reported as *"timed out"* whatever killed it.
+    Measured shapes (node 22): a timeout is `{status:null, signal:'SIGTERM',
+    error.code:'ETIMEDOUT'}`, a `maxBuffer` overflow is the same with `ENOBUFS`, an external
+    kill is `{status:null, signal:'SIGKILL'}` with no error at all. Collapsing them hands the
+    operator a wrong cause and hides a broken instrument behind a bound that never fired (the
+    casualty-vs-evidence class); each now names itself. The spawner close also gains the
+    sibling's `maxBuffer` (1 << 28) — a red pytest run prints every traceback, and the overflow
+    does not truncate, it SIGTERMs the child, i.e. a real red arriving dressed as an instrument
+    stop.
+- **A close child ending in `process.exit()` drops its own queued stdout, and the runner read
+  the short capture as a short close** (F71, `tests/staged-run.test.js`,
+  `tests/ralph.test.js`). One test's staged-close fixture arrived truncated about 1 run in 250
+  under load — stream ending mid-line, the `FAILED:` names gone, exit code still 1 — which is
+  the F28 failure-names-lost class arriving nondeterministically. Root cause is the CHILD's:
+  node discards whatever is still queued on its stdout pipe when the process calls
+  `process.exit()`, and the parent then sees a clean EOF, a real exit code and no fault, so a
+  lost tail is indistinguishable from a close that simply printed less. Measured 7/500 shorts
+  with `process.exit(1)` against 0/500 with `process.exitCode = 1` on the identical fixture, and
+  12/12 deterministically with a 50ms reader stall. The earlier reading in that test's comment —
+  *"pipe writes are synchronous on Linux, so there is nothing pending to drop"*, and *"only the
+  runClose path loses bytes"* — is REFUTED on both halves and rewritten with the measurements
+  that refuted it. What shipped is the fixture's `process.exitCode` spelling (now named as the
+  fix it is, not a free tidy), a precondition asserting the stage's LAST line reached the gap
+  so a short arrival can never again surface as a confusing `gapKeep` failure three assertions
+  later, and a whole-capture guard pinning the half the RUNNER owns: past the pipe's 64KB
+  capacity, with the host loop frozen mid-stream, a close that exits cleanly is captured WHOLE
+  (mutation-checked — it kills a reader that caps accumulation at 64KB, 4/4). The residual is
+  named, not hidden: the production close scripts still end in `process.exit()`, safe today
+  only because they self-cap their output at 40 lines, which is inside the measured-immune
+  band. See F71.
 
 ### Changed
 - **BREAKING for adopters — `runClose` and `runStages` are async and return Promises**
@@ -314,6 +450,25 @@ feature lands, **patch** = docs, fixes, scaffolding.
   emitted it, leaving a reader of two records of the same type no way to tell which. It is
   not a universal bound and is not claimed as one: a STEP already under way still runs its
   own exit checks after the deadline.
+- **The close child no longer inherits the operator's credentials** (`src/ralph.js`,
+  `CLOSE_ENV_DENY`, PRD v1.41 — hamr: *"strip it when unnecessary, minimize unneeded
+  exposure"*). `runClose` built the child's env as `{...process.env}` minus
+  `NODE_TEST_CONTEXT`, and that child is not an ordinary subprocess: `npm test`, `pytest`,
+  `tsc` execute **worker-authored code**, with network, in the tree they are about to judge.
+  Nothing that judges a tree needs a provider key, so the exposure bought nothing. Two rules,
+  deliberately both: the KNOWNS (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`,
+  `GOOGLE_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `GITHUB_TOKEN`, `GH_TOKEN`, `NPM_TOKEN`, the whole
+  `AWS_*` prefix) exist only for names the shape rule cannot see, and the NAME-SHAPE rule —
+  anything ending `_API_KEY`/`_SECRET`/`_TOKEN`/`_PASSWORD`/`_CREDENTIAL(S)`, case-insensitive
+  — is the load-bearing one, because a literal denylist is a chase every new provider extends.
+  A COPY is stripped, never `process.env`: the host keeps the key bare-agent spends every
+  round. Placed at `runClose`, the single close-spawn seam, so `runStages` and every derived
+  `check-passes` inherit the same blinding — one instrument, never two. **Stated as what it is:
+  exposure reduction, NOT a sandbox.** bareloop runs locally as the operator's OS user, so
+  worker-authored code still has that user's file access (including the shell profile that
+  exports the variables just stripped) and the network. Real containment is a different
+  mechanism, unbuilt, and claimed nowhere; README and `bareloop.context.md` carry the same
+  boundary note. Arbiter territory: no drafted plan or config can express, widen, or opt out.
 - **Scripts — unshipped, but the surface a user actually runs.**
   - The outside watchdog's DEADLINE kill is ACTIVITY-AWARE (hamr: *"the kill from outside should
     check for activity/bytes or other markers for activity, not a silent kill"*). Past the
@@ -339,6 +494,15 @@ feature lands, **patch** = docs, fixes, scaffolding.
     written — a spine carrying a secret must never graduate into a reusable artifact that
     outlives the run. Count and path only, never the matched content: echoing it to stdout is
     the same leak, one hop on.
+  - `run-u` can no longer be killed by its own guard's startup. The watchdog path was taken
+    from `new URL(...).pathname`, which stays percent-ENCODED — a checkout under a directory
+    with a space hands `spawn` a `%20` path that does not exist, and the guard dies at second
+    zero on the one run it exists to protect (`fileURLToPath` now, the spelling the sibling
+    scripts already use). And a spawn failure arrives as an EVENT: an unhandled `'error'` on a
+    ChildProcess is an uncaught exception, so a guard that could not start would have ENDED the
+    paid run. It is handled LOUDLY instead — the run continues UNGUARDED from outside, under
+    its own fuses, wall and money cap, and says so, because a reader must never mistake a
+    missing watchdog marker for "the guard was watching and never fired".
   - **All nine remaining hand-rolled secret scans in `scripts/` now call the canonical
     `scanSecrets`** (11 call sites, 2 already canonical). F40 parked the conversion; hamr
     retired the park on his word, and both risks it guarded were closed by MEASUREMENT rather

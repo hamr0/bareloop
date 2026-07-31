@@ -302,7 +302,11 @@ The verdict is untouched — the FIRST fault named the outcome and the kill only
 `_API_KEY`/`_SECRET`/`_TOKEN`/`_PASSWORD`/`_CREDENTIAL(S)`) — a close judges a tree and never
 needs them. A COPY is stripped, never `process.env`, so the host keeps the key it spends every
 round. This is exposure reduction, not a sandbox: worker-authored code run by the close still
-has network and your OS user's permissions.
+has network and your OS user's permissions. The strip has no opt-out — no plan, config, or
+spec field can widen it — so if your close genuinely needs a credential-shaped variable
+(`AWS_*` regions/profiles included, e.g. a suite booting against localstack with a test DB
+password), it will not be there and the close reds; set such values inside the close command
+itself, not the inherited environment.
 
 **The forbidden zone (PRD v1.11 / F17).** `runClose` returns a verdict ONLY when judgment
 was rendered. `expect` (the signed exit code, default 0) and `judged` define the two clean
@@ -598,9 +602,14 @@ failures can't derive), `runtime-red`, `provider-red`, `pricing-red` (F6), possi
 `capability-gap` (cap-halt + request-red in one spine), `broken-close` (consumer-attributed),
 `request-red` (admission demand for a locked verb — keyed on the red's structured
 `verb` field, prose-quoted verb as legacy fallback), `retention-red`, `config-red`
-(drafting friction — attributed to bareloop's own schema/prompt). Deliberate exclusions:
-bare `cap-halt` (a budget story), `close-verdict`/`artifact-red` (worker stories),
-`gate-red` (governance working as intended), `pr-red` (operator environment).
+(drafting friction — attributed to bareloop's own schema/prompt). Deliberate exclusions
+(`EXCLUDED_ESCALATIONS`, a runtime set — anything outside classified ∪ excluded is
+counted as unmapped, never dropped): `cap-halt`/`wall-halt` (budget stories, money and
+time), `step-stalled` (the stall fuse firing is our governance, not an observed provider
+failure), `step-variance` (a planning story), `gate-red`/`smoke-red` (governance working
+as intended / already counted), `hitl-close`/`close-unsupported` (by design),
+`close-timeout`/`close-killed`/`close-crashed` (the arbiter's own named terminals, F17);
+`close-verdict`/`artifact-red` stay worker stories, `pr-red` operator environment.
 `suggestedAsk` on every row is a template seed for an upstream ask — filing stays human;
 status rows (`open → filed → fixed → consumed`) are human-appended, and the fold shows
 the latest per key. Pure pieces exported for custom folds: `classifyIncidents(events,

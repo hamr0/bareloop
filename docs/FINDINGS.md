@@ -4104,3 +4104,144 @@ the closing pass, one proposed fix would have broken a working invariant, and it
 round-trip measurement against a real index — the same rule F43's tree-diff rework paid
 for (a fix proposed from reading is a hypothesis, not a fix), holding a second time on a
 change that read as obviously correct.
+
+## F71 — the ~1-in-250 short close was the CHILD throwing its own bytes away: `process.exit()` discards queued stdout, and a clean EOF plus a real exit code is indistinguishable from a close that simply printed less
+
+**Status: minted 2026-07-31 during the v0.6.0 release gate, from a flake named as a blocker
+rather than merged around (*"gate evidence with unexplained noise is not clean enough to
+merge on"*). Root-caused, measured, and fixed in `c330d24` for the test surface. The
+PRODUCTION residual — every `scripts/` close still ends in `process.exit()` — is named
+below and PARKED for hamr: the complete fix is arbiter territory.**
+
+### The symptom
+
+`tests/staged-run.test.js`'s staged-close fixture prints a fixed 31,890 bytes (600 filler
+lines around the two markers `FAILED: a` and `FAILED: b`) and exits 1. About **1 run in 250
+under CPU load**, it arrived SHORT: the capture ending mid-`mid filler line 137`, `FAILED: b`
+never received, `[16004 chars truncated]` where the run before had said `[30000…]` — and the
+verdict was still `needs_revision` with `exitCode: 1`, because the exit code was correct. The
+observable damage is the F28 class arriving nondeterministically: **the gap loses its failure
+names**, which is the one thing the gap exists to carry. Nothing anywhere reds. No fault, no
+timeout, no `ENOBUFS`, no signal.
+
+The prior session had chased this and stopped honestly, recording in the test's own comment
+that it was *"unexplained, and reported as such rather than papered over"* — along with two
+conclusions that turned out to be wrong (below).
+
+### The mechanism
+
+**A node process that ends with `process.exit()` drops whatever is still queued on its stdout
+pipe.** The child asked for its own pending-write state on stderr (a different pipe)
+immediately before exiting: a 300KB close answers **`pendingBytes=296413 finished=false`** on
+its way out. Those bytes are never written. The parent then observes a clean `close` event, a
+real exit code, and no error — the exact same observation it would make if the close had
+simply printed less. There is no signal to route, so this could not have been caught by any
+amount of fault handling on the reading side; the reader's only evidence is bytes that never
+came.
+
+The window opens whenever the reader is slow enough for the child's writes to queue: a stalled
+reader, or — in the real case — CPU contention, which is the same thing without an artificial
+stall.
+
+### The measurements
+
+Interleaved A/B on the real `runClose`, both spellings of the same fixture, same bytes, same
+load, **no artificial stall** (CPU burners as the load):
+
+| ending | runs | short | smallest capture |
+|---|---|---|---|
+| `process.exit(1)` | 500 | **7** | 14,070 of 31,890 |
+| `process.exitCode = 1` | 500 | **0** | 31,890 (whole) |
+
+Made deterministic by stalling the reader 50ms on its first chunk (N=12 per cell): the
+`process.exit(1)` fixture goes short **12/12** through the `runClose` path and **11/12**
+through a plain `spawn` + `on('data')` control, down to ~9,178 of 31,890 bytes, while the
+`process.exitCode` twin loses **0/12** in the same conditions.
+
+Bounds of the window, N=8 per cell, `process.exit()` throughout:
+
+- **≥16KB of output plus a ≥50ms stall — 8/8 lost.**
+- **≤5KB — 0/8 at every stall length**, including 300ms. Below the pipe's capacity there is
+  nothing queued to drop.
+- At 300KB behind a 50ms stall: 6/6 lost, 8,490 of 304,903 bytes captured.
+
+Two controls that localize the defect to the CHILD rather than to any reader:
+
+- **File-backed stdout is immune.** Same 300KB `process.exit()` child, same freeze: captured
+  over a pipe **6/6 lost**, captured to a file via `stdio:[…, fd, fd]` **0/6 lost**.
+- **The parent's accumulation code is not implicated.** 4,000 spawns across three parent-side
+  arms (a control reader, the `spawnClose` copy, the copy without the stdin `end()`) with a
+  CHEAP writer — `cat` of the same 31,890-byte file — lost **0**. Swap the writer for a node
+  child that calls `process.exit()` and the same parents lose bytes immediately.
+- `spawnSync`, whose reader cannot stall, loses **0/6** on a 32KB close and **1/6** on the
+  300KB one. So F68's async close-runner rewrite **widened** this window; it did not open it.
+
+### Two claims REFUTED — both were written into the tree as measured facts
+
+1. ***"Only the `runClose` path loses bytes — a plain `spawn` + `on('data')` loop over the same
+   fixture never loses a byte in 2,500 spawns."*** False: the plain-spawn control loses 11/12
+   under a 50ms stall, against the copy's 12/12. The loss is the child's and belongs to
+   neither path. The replication points at the confound: a harness of that shape reproduces
+   the zero exactly (4,000 spawns, 0 short) when its writer is `cat` instead of a node child —
+   i.e. the stall was real but **the dropping party had been substituted out of the
+   experiment**. The variable was never exercised, so the test could not produce the positive.
+2. ***"node's pipe writes are synchronous on Linux, so there is nothing pending to drop."***
+   False, and refuted by the child itself: `process.stdout.writableLength` reads **296,413**
+   immediately before `process.exit(1)`.
+
+Both had been recorded as negative results in good faith. They are corrected in place, in the
+same comment that carried them, with the numbers that refuted them — not deleted.
+
+### What shipped (`c330d24`)
+
+- **The fixture's `process.exitCode = 1` ending is now named as THE fix.** It was already in
+  the tree, landed earlier as a *"free and strictly not-worse"* tidy on the reasoning that it
+  *"removes the one documented way a child can drop buffered output"* — while the comment
+  beside it explicitly declined to claim it fixed anything. It did. 0 short in 500+ interleaved
+  runs under load, and 0 in 400 runs of the real fixture through the real `runClose` **inside
+  `node --test`**, which is the context the flake was observed in.
+- **A last-line PRECONDITION** in `tests/staged-run.test.js`: both the `gapKeep` and the bare
+  gap must contain the stage's final line (`tail filler line 199`) before any `gapKeep`
+  assertion is read. Writes are ordered, so the last line is present iff every byte arrived. A
+  short arrival otherwise surfaces three assertions later as a confusing `gapKeep` failure —
+  which is precisely how this cost a day.
+- **A whole-capture guard** in `tests/ralph.test.js` pinning the half the RUNNER owns: 300KB of
+  close output, host event loop frozen 300ms mid-stream, a child that exits cleanly is captured
+  WHOLE (`SENTINEL-END` present). Mutation-checked — it kills a reader that caps its
+  accumulation at 64KB, 4/4. It deliberately does **not** kill resolving on `exit` instead of
+  `close`, nor a late-attached `data` listener: both were measured lossless in this shape, so
+  neither is claimed.
+
+### The residual, stated and PARKED
+
+**Every production close script still ends in `process.exit()`** —
+`scripts/u-litectx-close.mjs` and `scripts/u-spawner-close.mjs` both exit that way from their
+`done`/`stop` helpers and from their final fall-through. They are safe **today** for one
+reason only: they self-cap the gap at `GAP_LINE_CAP = 40` lines, a few KB, inside the
+measured-immune ≤5KB band. Nothing ENFORCES that relationship. Raise the cap, add a stage that
+prints before the cap applies, or borrow one of these scripts as a template for a chattier
+close, and the run walks into the window silently — the loss is nondeterministic, preserves
+the exit code and therefore the verdict, and is invisible in every artifact the run leaves
+behind.
+
+The complete fix is not a bigger cap or a discipline note: it is to stop capturing close output
+over a pipe at all — write it to a temp file and read it after the child exits, the one
+configuration measured immune (0/6 where the pipe lost 6/6). That changes how the arbiter runs
+a close. **Named, scoped, PARKED for hamr's explicit go.**
+
+### Lesson
+
+**A clean EOF and a correct exit code are not evidence that the output is complete.** Every
+signal the runner had said the close finished normally; the only witness to the loss was inside
+the process that caused it, and it had to be asked directly (`writableLength`, on a different
+pipe, in the microsecond before exit). When an instrument's own success indicators cannot
+distinguish two outcomes, ask the other side of the boundary rather than reading the same
+indicators harder.
+
+And the second, which is F45's blind-instrument rule wearing new clothes: **a negative result
+recorded as a measured fact freezes into doctrine.** *"Measured, `process.exit()` truncates
+NOTHING here"* sat in the tree as a comment with a run count attached, and it was wrong because
+the harness that produced it had substituted a `cat` for the node child that was doing the
+dropping — the stall was faithfully reproduced, the party under test was not. The rule that
+catches it is the pre-flight one this repo already has: **could this test have produced the
+positive?** A control that swaps out the suspected mechanism is not a control.
