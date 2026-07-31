@@ -582,10 +582,19 @@ test('legalScopes: cap is a parameter so a caller can report what the cap DROPPE
   assert.ok(uncapped.length > capped.length, 'the two counts are what makes a truncation reportable');
 });
 
-test('planPrompt: the offered scopes are a STANDALONE list, and the JSON exit example stays parseable (a nested array inside a JSON string is malformed schema text)', () => {
+test('planPrompt: the offered scopes are a STANDALONE list, and EVERY JSON exit example stays parseable (a nested array inside a JSON string is malformed schema text)', () => {
   const p = planPrompt(JOB, 'survey', null, 40, null, legalScopes(['tests/**'], ['tests/unit']));
-  const exitLine = p.split('\n').find((l) => l.includes('"type":"tree-changed"'));
-  assert.doesNotThrow(() => JSON.parse(exitLine.trim()), `exit example must be valid JSON, got: ${exitLine}`);
+  // every exit example, not just tree-changed: the check-passes example carried
+  // the enumerated menu INSIDE its "name" string, so the one line the drafter is
+  // most likely to copy was the one malformed line among four — a nested array
+  // (or any bracket list) belongs beside the example, never inside a JSON string.
+  const exitLines = p.split('\n').map((l) => l.trim())
+    .filter((l) => l.startsWith('{"type":"') && l.endsWith('}'));
+  assert.equal(exitLines.length, EXIT_TYPES.length,
+    `one example per exit type — got ${exitLines.length} for ${EXIT_TYPES.length} types`);
+  for (const line of exitLines) {
+    assert.doesNotThrow(() => JSON.parse(line), `exit example must be valid JSON, got: ${line}`);
+  }
   assert.match(p, /Offered "scope" values for tree-changed/);
   assert.match(p, /^ {2}"tests\/unit\/\*\*"$/m, 'each offered value on its own line, quoted, copyable');
 });

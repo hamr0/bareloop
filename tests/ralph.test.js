@@ -325,6 +325,36 @@ test('F68: a multi-byte close stream is decoded ONCE, whole — a character stra
   assert.match(v.gap, /^中{4} AssertionError: MULTIBYTE-INTACT$/m, 'every character survives the boundary intact');
 });
 
+test('F68: a FROZEN host loop mid-close never shortens the capture — a close bigger than a pipe is still read whole', async () => {
+  // The price of the async runner: the reader shares the host's event loop, so a
+  // frozen loop stops draining the child's pipe. Once the drain stalls, the close's
+  // own writes queue inside ITS process — and node DROPS whatever is still queued
+  // when a child calls `process.exit()`. The parent then sees a clean EOF, a real
+  // exit code and no fault, so a short capture is indistinguishable from a short
+  // close: the gap silently loses its failure names (F28, nondeterministically).
+  // Measured on this box, 300KB of close output behind a 50ms freeze: ending
+  // `process.exit(1)` loses the tail 6/6 (8,490 of 304,903 bytes captured; the child
+  // reports `pendingBytes=296413` on its way out), ending `process.exitCode = 1`
+  // loses 0/30 at every freeze length. The threshold is ~16KB of output plus a ≥50ms
+  // freeze (8/8 lost); ≤5KB is immune 0/8 at every freeze. spawnSync — whose reader
+  // CANNOT stall — loses 0/6 on the same 32KB close and 1/6 on the 300KB one, so the
+  // rewrite widened this window rather than opening it.
+  // This pins the half the runner owns: past the pipe's 64KB capacity, with the loop
+  // frozen mid-capture, a close that exits cleanly is captured WHOLE. (Mutation-
+  // checked: it kills a reader that caps its accumulation at 64KB, 4/4. It does NOT
+  // kill resolving on `exit` instead of `close`, nor a late-attached data listener —
+  // both measured lossless in this shape, so neither is claimed.)
+  const BIG = ['node', '-e',
+    "for (let i = 0; i < 6000; i++) console.log('line ' + i + ' ' + '.'.repeat(40));"
+    + "console.log('SENTINEL-END'); process.exitCode = 1"];
+  // freeze the host loop 300ms while the close is mid-stream (F68's own defect shape)
+  setTimeout(() => { const t = Date.now(); while (Date.now() - t < 300) { /* burn */ } }, 30);
+  const v = await runClose(BIG);
+  assert.equal(v.verdict, 'needs_revision', 'a legal 300KB stream still judges normally');
+  assert.match(v.gap, /SENTINEL-END/,
+    'the close\'s LAST line arrived — writes are ordered, so the sentinel is present only if every byte was captured');
+});
+
 // ---- N2 queue: close timeout as an option; tail-biased gap bound ----
 
 // NOTE: the two tests that lived here pinned `timeout → failed → broken-close`.

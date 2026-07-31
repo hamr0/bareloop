@@ -60,19 +60,22 @@ test('per-stage gapKeep and judged apply to their OWN stage — the floor that w
   // so on a short output the FAILED lines ride through whether gapKeep exists or
   // not, and the assertion passes vacuously (a smoke test in disguise). Real
   // suites are exactly this shape — F28 was minted on a 67KB one.
-  // `process.exitCode` rather than `process.exit()` — the conventional spelling, and it
-  // removes the one documented way a child can drop buffered output. It is NOT claimed
-  // as a fix: measured, `process.exit()` truncates NOTHING here (2,500 spawns across
-  // both spellings, including with the reader deliberately stalled 300ms so the pipe
-  // backs up — node's pipe writes are synchronous on Linux, so there is nothing pending
-  // to drop). Kept because it is free and strictly not-worse.
-  //
-  // The open item it did NOT close: this stage's own output has been observed ARRIVING
-  // SHORT — twice, ~1 run in 250 under CPU load, captured as `…[16004 chars truncated]…`
-  // against the usual ~30000, the stream ending mid-`mid filler line 137` with
-  // `FAILED: b` never received, exit code still 1. A plain `spawn` + `on('data')` loop
-  // over the same fixture never loses a byte in 2,500 spawns; only the runClose path
-  // does. Unexplained, and reported as such rather than papered over.
+  // `process.exitCode` rather than `process.exit()`, and it IS the fix for the short
+  // arrivals this fixture used to produce (~1 run in 250 under CPU load: the stream
+  // ending mid-`filler line`, `FAILED: b` never received, exit code still 1). The
+  // earlier reading — "process.exit() truncates NOTHING here … node's pipe writes are
+  // synchronous on Linux, so there is nothing pending to drop" — is REFUTED. Measured:
+  // this exact fixture ending `process.exit(1)` goes short 11/12 (plain spawn) and
+  // 12/12 (the runClose path) behind a 50ms reader stall, down to ~9,178 of 31,890
+  // bytes, while the `process.exitCode` twin loses 0/12 in the same conditions and 0
+  // in 500+ interleaved cold runs under load. The child itself reports the mechanism:
+  // asked for `process.stdout.writableLength` immediately before `process.exit(1)`, a
+  // 300KB close answers `pendingBytes=296413 finished=false` — node drops its own
+  // queued writes on exit(), the parent then sees a clean EOF, a real exit code and no
+  // fault, so the short capture is indistinguishable from a short close.
+  // The loss is NOT specific to the runClose path (11/12 vs 12/12 above); it is the
+  // child's, and it grows with how long the reader takes to drain. See the F68
+  // host-freeze test in tests/ralph.test.js for the half the runner owns.
   writeFileSync(join(wd, 'noisy.mjs'), `const pad = (tag) => { for (let i = 0; i < 200; i++) console.log(tag + ' filler line ' + i + ' ................................'); };
 pad('head'); console.log("FAILED: a"); pad('mid'); console.log("FAILED: b"); pad('tail'); process.exitCode = 1;\n`);
   writeFileSync(join(wd, 'empty.mjs'), 'console.log("collected 0 items"); process.exit(0);\n');
@@ -85,6 +88,12 @@ pad('head'); console.log("FAILED: a"); pad('mid'); console.log("FAILED: b"); pad
   // non-vacuous, since on a short output the FAILED lines ride through either way.
   const bare = await runStages([noisy], (s) => s, { cwd: wd });
   assert.match(bare.gap, /chars truncated/, 'precondition: the output really was long enough to elide');
+  // Read the CAPTURE before reading the bound: the gap's tail is the stream's tail, so
+  // the stage's last line is present iff every byte arrived. A short arrival otherwise
+  // surfaces as a confusing gapKeep failure three assertions later.
+  for (const [label, r] of [['keep', keep], ['bare', bare]]) {
+    assert.match(r.gap, /tail filler line 199 /, `precondition (${label}): the capture reached the END of the stage's output — a short arrival is silent everywhere else`);
+  }
   assert.doesNotMatch(bare.gap, /FAILED: [ab]/, 'precondition: without gapKeep the failures are GONE — so a pass below is gapKeep doing the work, not a short output riding through');
   assert.match(keep.gap, /FAILED: a[\s\S]*FAILED: b/, 'the stage\'s own gapKeep surfaced its failures out of the elided middle');
 

@@ -211,7 +211,9 @@ strictly in array order. Each step (no other fields exist):
     {"type":"artifact-written","path":"...","pattern":"optional regex"}
     {"type":"tree-changed","scope":"<copy one value from the offered scopes below>"}
     {"type":"json-valid","path":"..."}
-    {"type":"check-passes","name":"one of ${JSON.stringify(checkNames)}"}
+    {"type":"check-passes","name":"<copy one name from the check menu below>"}
+  Check menu — a check-passes "name" is exactly one of ${JSON.stringify(checkNames)}; copy
+  it character for character. No other name exists, and you cannot add one.
   A check-passes on a write-granted step MUST be paired with a tree-changed exit
   (the repository starts green — a lone check would pass on the untouched tree).
   A check-passes may ONLY appear on a step whose tools include write or edit: a

@@ -297,6 +297,13 @@ if it is still there 2s later, ended with SIGKILL: SIGTERM is a request a close 
 (its own handler, a trapping wrapper), and without a second deadline the wait never resolves.
 The verdict is untouched — the FIRST fault named the outcome and the kill only enforces it.
 
+**The close child's environment is stripped of credential-shaped variables before it runs**
+(`CLOSE_ENV_DENY` in `src/ralph.js`: provider keys, `AWS_*`, and any name ending
+`_API_KEY`/`_SECRET`/`_TOKEN`/`_PASSWORD`/`_CREDENTIAL(S)`) — a close judges a tree and never
+needs them. A COPY is stripped, never `process.env`, so the host keeps the key it spends every
+round. This is exposure reduction, not a sandbox: worker-authored code run by the close still
+has network and your OS user's permissions.
+
 **The forbidden zone (PRD v1.11 / F17).** `runClose` returns a verdict ONLY when judgment
 was rendered. `expect` (the signed exit code, default 0) and `judged` define the two clean
 bands; everything else is **not a verdict**, gets its own name, and is **never retried** —
