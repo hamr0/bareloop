@@ -13,8 +13,11 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runPlan } from '../src/planrun.js';
+import { ralph } from '../src/ralph.js';
 import { validateJob } from '../src/job.js';
+import { StallError, MAX_STALLS } from '../src/stall.js';
 import { scriptedProvider, scriptedNativeFactory } from './helpers.js';
+import { scanSecrets } from '../src/validate.js';
 
 const tcall = (id, name, args) => ({ id, name, arguments: args });
 
@@ -48,8 +51,14 @@ const JOB = (wd, over = {}) => ({
   writeScope: ['tests/**'],
   goal: 'Write tests/test_x.mjs with an ok assertion so the suite greens.',
   verdictType: 'green',
-  close: { type: 'predicate', cmd: 'node close.mjs', expect: 0 },
-  checks: [{ name: 'clean-run', cmd: 'node check.mjs', expect: 0, gapKeep: '^FAILED' }],
+  // The staged close (PRD v1.28): the inspection is a list of named stages and
+  // the agent's ruler menu DERIVES from it. `clean-run` is a stage of the close,
+  // not a copy carved beside it — which is the whole point: the ruler and the
+  // real inspection cannot drift apart.
+  close: [
+    { name: 'clean-run', cmd: 'node check.mjs', expect: 0, gapKeep: '^FAILED' },
+    { name: 'verdict', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' },
+  ],
   tools: ['read', 'write', 'edit'],
   escalation: { mode: 'decision-ready' },
   ...over,
@@ -71,11 +80,11 @@ const collector = () => {
   return { events, emit: (type, data = {}) => { const e = { type, ...data }; events.push(e); return e; } };
 };
 
-async function go(wd, provider, { job = JOB(wd), capRuns = 3, layerRoot = false, scoutRounds, now } = {}) {
+async function go(wd, provider, { job = JOB(wd), capRuns = 3, layerRoot = false, scoutRounds, now, providerFor } = {}) {
   const jv = validateJob(job);
   assert.deepEqual(jv.reds, [], 'the test job must be validateJob-green');
   const { events, emit } = collector();
-  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns, layerRoot, remainingUsd: () => 1.5, ...(scoutRounds ? { scoutRounds } : {}), ...(now ? { now } : {}) });
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns, layerRoot, remainingUsd: () => 1.5, ...(scoutRounds ? { scoutRounds } : {}), ...(now ? { now } : {}), ...(providerFor ? { providerFor } : {}) });
   return { outcome, events };
 }
 
@@ -161,6 +170,34 @@ test('plan drafting: an invalid first draft is fed back its reds and the redraft
   assert.ok(r2.events.some((e) => e.type === 'plan-red' && e.code === 'verb-escape'));
 });
 
+test('plan reds are scrubbed at the validation boundary: a parse error quotes the DRAFT\'S OWN BYTES, and the spine is append-only', async (t) => {
+  // The same V8-quoting class judge() already scrubs for `json-valid`: JSON.parse's
+  // message embeds a window of the source it choked on (a body of 20 chars or fewer
+  // is quoted whole), so a `parse-error` detail can carry bytes the MODEL wrote —
+  // onto plan-validate, onto plan-red, and back into the redraft prompt. ONE
+  // inventory (SECRET_PATTERNS), the same `scrub` the close output rides through.
+  const wd = makePatient(t);
+  // 15 chars, so V8 quotes it whole; a `xoxb-` shape specifically, because it is
+  // NOT one of bareguard's built-in default patterns — a green here proves THIS
+  // repo's inventory is wired and not that the redactor caught an `sk-` by itself.
+  const TOKEN = 'xoxb-abcdefghij';
+  const provider = scriptedProvider([{ text: 'scout notes' }, { text: TOKEN }, { text: TOKEN }]);
+  const { outcome, events } = await go(wd, provider);
+  assert.equal(outcome, 'plan-red');
+
+  const reds = events.filter((e) => e.type === 'plan-red');
+  assert.equal(reds.length, 1);
+  assert.equal(reds[0].code, 'parse-error');
+  // the leak CHANNEL is real, not hypothetical: the detail really is V8's quoted window
+  assert.match(reds[0].detail, /is not valid JSON/, 'the detail is the parser\'s own message, which quotes the draft');
+  assert.match(reds[0].detail, /\[REDACTED:/, 'and the quoted draft bytes are masked, not dropped');
+
+  for (const e of [...reds, ...events.filter((x) => x.type === 'plan-validate').flatMap((x) => x.reds ?? [])]) {
+    assert.deepEqual(scanSecrets(JSON.stringify(e)), [], `a plan red carried a live token onto the spine: ${JSON.stringify(e)}`);
+  }
+  assert.deepEqual(scanSecrets(provider.calls[2]), [], 'and the redraft prompt does not hand the draft\'s own secret back to the model');
+});
+
 test('ONE replan: a step that exhausts its attempts triggers exactly one replan; the replanned plan greens', async (t) => {
   const wd = makePatient(t);
   // plan A's step writes nothing (text-only attempts) → tree-changed reds every
@@ -199,6 +236,47 @@ test('a second exhaustion after the replan escalates — the stop is a result', 
   assert.equal(events.filter((e) => e.type === 'replan').length, 1, 'never a second replan');
 });
 
+test('F66: the replan brief for a STALL says the model stopped producing rounds — never "its exits were still red", which never happened', async (t) => {
+  const wd = makePatient(t);
+  // The brief is the one channel the redrafting planner adapts to. A stall never
+  // reached its exits at all (the watchdog gave up on the call), so handing it
+  // the exhaustion sentence is a wrong diagnosis given to the only component
+  // whose job is to respond to it — the F28 class, on the replan side.
+  const base = scriptedProvider([
+    { text: 'scout notes' },
+    { text: PLAN(wd) },
+    { text: 'unreachable — the step call stalls' },
+    // the replan draft, then the fresh plan's step
+    { text: PLAN(wd, [{ id: 'second-go', action: 'Write it properly.', tools: ['write'], rounds: 4, target: 'tests/test_x.mjs', exit: [{ type: 'artifact-written', path: 'tests/test_x.mjs', pattern: 'ok' }] }]) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'done' },
+  ]);
+  /** @type {string[]} */
+  const prompts = [];
+  let n = 0;
+  const provider = {
+    calls: base.calls,
+    async generate(/** @type {any} */ messages, /** @type {any} */ tools) {
+      prompts.push(String(messages.at(-1)?.content ?? ''));
+      // the STEP worker's call: the watchdog reissued MAX_STALLS times and gave
+      // up — the same StallError object the real watch rejects with, so ralph
+      // reads the same typed category it would in production
+      if (n++ === 2) throw new StallError('no round completed for 300s, 3 times in this step — not reissuing again', MAX_STALLS);
+      return base.generate(messages, tools);
+    },
+  };
+  const { events } = await go(wd, provider);
+
+  const replan = events.find((e) => e.type === 'replan');
+  assert.ok(replan, `a stall past the ceiling must REPLAN, not stop — events: ${events.map((e) => e.type).join(' ')}`);
+  assert.equal(replan.trigger, 'step-stalled');
+  const brief = prompts.find((p) => p.includes('did not reach its exits'));
+  assert.ok(brief, 'the replan drafter was handed a failure brief');
+  assert.match(brief, /stopped producing rounds/, 'the brief names what actually happened');
+  assert.doesNotMatch(brief, /exits were still red/, 'a stall never judged its exits — claiming they reddened is a false diagnosis handed to the planner');
+  assert.doesNotMatch(brief, /attempts and its exits/, 'and it did not run out of attempts either');
+});
+
 test('a mid-step provider-red is a CASUALTY, not a step-red: runPlan returns provider-red so the outcome and the escalation agree (F11/F44)', async (t) => {
   const wd = makePatient(t);
   // scout + a valid plan, then the STEP worker's provider throws a transport
@@ -219,22 +297,30 @@ test('a mid-step provider-red is a CASUALTY, not a step-red: runPlan returns pro
   assert.equal(esc.category, 'provider-red', 'the returned outcome and the spine escalation name the SAME category (F11)');
 });
 
-test('preflight: a signed check that cannot RUN escalates broken-close before any tokens', async (t) => {
+test('preflight: a close STAGE that cannot RUN escalates broken-close before any tokens — an unrunnable ruler would fault mid-plan after real spend', async (t) => {
   const wd = makePatient(t);
   const provider = scriptedProvider([{ text: 'never reached' }]);
-  const job = JOB(wd, { checks: [{ name: 'clean-run', cmd: 'no-such-binary --x', expect: 0 }] });
+  // stage 1 runs and reds honestly (so the PRECHECK passes it through as a
+  // normal red); stage 2 cannot run at all. Only the preflight can catch that —
+  // the precheck stops at the first red and never reaches it.
+  const job = JOB(wd, { close: [
+    { name: 'clean-run', cmd: 'node check.mjs', expect: 0, gapKeep: '^FAILED' },
+    { name: 'ghost', cmd: 'no-such-binary --x', expect: 0 },
+  ] });
   const { outcome, events } = await go(wd, provider, { job });
   assert.equal(outcome, 'check-red');
   assert.equal(provider.calls.length, 0, 'no tokens were spent');
   const esc = events.find((e) => e.type === 'escalation');
   assert.equal(esc.category, 'broken-close');
-  assert.match(esc.detail ?? '', /clean-run/);
+  assert.match(esc.detail ?? '', /ghost/);
 });
 
 test('an already-green close at precheck ends the run as the DISTINCT already-green, zero tokens (F17)', async (t) => {
   const wd = makePatient(t, { closeGreen: true });
   const provider = scriptedProvider([{ text: 'never reached' }]);
-  const { outcome, events } = await go(wd, provider);
+  // every stage green is what already-green MEANS: a close is satisfied only
+  // when the whole list is, so this job's one stage is the green one
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { close: [{ name: 'verdict', cmd: 'node close.mjs', expect: 0 }] }) });
   assert.equal(outcome, 'already-green');
   assert.equal(provider.calls.length, 0);
   assert.ok(events.some((e) => e.type === 'close-precheck'));
@@ -296,6 +382,122 @@ test('the scout is read-only by construction: its tool menu carries no write-cla
   assert.ok(scoutMenu.includes('shell_read'), 'the scout can read');
   const planMenu = provider.toolsOffered[1];
   assert.deepEqual(planMenu, [], 'the planner sees the scout blob only — never the repo (no tools at all)');
+});
+
+test('L3: a ctx verb\'s spine event is SCRUBBED at the wiring — a model-authored recall query never lands a secret in the append-only log', async (t) => {
+  // The hard line: secrets never enter the spine (a log that captures a key
+  // captures it forever), and ONE inventory (SECRET_PATTERNS) governs detection
+  // and redaction alike. Every ctx-tool field is model-CHOSEN text — the query
+  // here, but equally a stash id, a symbol, a path the worker spelled — so the
+  // scrub belongs on the emitter the tools are constructed with, not on any one
+  // call site. Driven through the REAL wiring (runPlan builds the litectx and
+  // the emitter itself); the key is synthetic and matches SECRET_PATTERNS.
+  const wd = makePatient(t);
+  const KEY = 'sk-ant-A1b2C3d4E5f6G7h8';
+  const job = JOB(wd, { tools: ['read', 'write', 'recall'] });
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Find the module, then write tests/test_x.mjs.',
+      tools: ['recall', 'write'], rounds: 6, target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }],
+    }],
+  });
+  const provider = scriptedProvider([
+    { text: 'src/mod.mjs exports x; tests/ is empty.' },                          // scout
+    { text: plan },                                                               // plan draft
+    { toolCalls: [tcall('t1', 'ctx_recall', { query: `stopword ${KEY} filter` })] },
+    { toolCalls: [tcall('t2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'wrote tests/test_x.mjs' },
+  ]);
+  const { events } = await go(wd, provider, { job });
+  const ev = events.find((e) => e.type === 'ctx-tool' && e.tool === 'ctx_recall');
+  assert.ok(ev, 'the recall really ran through the real wiring — no ctx-tool event and this test proves nothing');
+  assert.doesNotMatch(JSON.stringify(ev), new RegExp(KEY), 'the literal key must not survive anywhere in the event');
+  assert.match(ev.query, /\[REDACTED:/, 'the query rides the spine masked, and still says a secret was there');
+  assert.match(ev.query, /stopword/, 'only the token is masked — the rest of the query stays readable, or the record is useless');
+});
+
+test('the GATE AUDIT is scrubbed too: a token in a worker\'s raw tool args never lands in the in-tree audit log', async (t) => {
+  // Third channel into a persistent, append-only record — and the one that was
+  // open. The spine and the ctx-verb wiring are scrubbed with SECRET_PATTERNS,
+  // but the Gate was constructed with no `secrets` config, so `gate-audit.jsonl`
+  // (in the WORKDIR, surviving the run) kept bareguard's default-on backstop
+  // only — which covers `apiKey`/`authorization`/`Bearer …`/`sk-…` and NOT the
+  // rest of our inventory.
+  //
+  // The channel is the MODEL-AUTHORED IDENTIFIER, not file content: `toolAction`
+  // deliberately reduces a write to `{bytes}`, so content never reaches the gate
+  // at all — but an isolate verb's `id` (and any path the worker spells) rides
+  // onto the action verbatim. Measured on the real gate: `ctx_remember` /
+  // `ctx_stash` / `ctx_forget` ids and a `shell_read` path each landed a `ghp_`
+  // token in cleartext with no `secrets` config, and all masked with
+  // SECRET_PATTERNS. ONE inventory governs every redaction boundary, so the gate
+  // gets the same patterns. Driven through the REAL wiring — runPlan builds the Gate.
+  const wd = makePatient(t);
+  // Matches SECRET_PATTERNS but NOT bareguard's default-on set (apiKey / Bearer /
+  // sk-), so this fails while the gate carries defaults only. The token stands
+  // ALONE: SECRET_PATTERNS anchors on `(?<![A-Za-z0-9_-])`, so a `note-<token>`
+  // spelling matches neither the inventory nor the gate and would prove nothing.
+  const KEY = `ghp_${'A1b2C3d4E5f6G7h8I9j0'}`;
+  const job = JOB(wd, { tools: ['read', 'write', 'remember'] });
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write tests/test_x.mjs, then record what you concluded.',
+      tools: ['remember', 'write'], rounds: 6, target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }],
+    }],
+  });
+  const provider = scriptedProvider([
+    { text: 'src/mod.mjs exports x; tests/ is empty.' },                          // scout
+    { text: plan },                                                               // plan draft
+    { toolCalls: [tcall('t1', 'ctx_remember', { id: KEY, text: 'the module exports x' })] },
+    { toolCalls: [tcall('t2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'wrote tests/test_x.mjs' },
+  ]);
+  await go(wd, provider, { job });
+  const audit = readFileSync(join(wd, 'gate-audit.jsonl'), 'utf8');
+  assert.match(audit, /ctx_remember/, 'the isolate verb really reached the gate — no audited action and this test proves nothing');
+  assert.doesNotMatch(audit, new RegExp(KEY), 'the literal token must not survive in the in-tree audit log');
+  assert.deepEqual(scanSecrets(audit), [], 'the whole audit is clean under the ONE inventory');
+});
+
+test('an EXIT DETAIL is scrubbed before it reaches the spine — json-valid quotes the file\'s own bytes back in V8\'s parse message', async (t) => {
+  // The same hard line as the ctx-verb wiring above, on the other channel into the
+  // append-only log. `json-valid` embeds `JSON.parse`'s message, and V8 quotes a
+  // window of the SOURCE in it (a source of 20 chars or fewer is quoted whole:
+  // measured, `JSON.parse('[xoxb-AAAAAAAAAA]')` → "Unexpected token 'x',
+  // "[xoxb-AAAAAAAAAA]" is not valid JSON"). So an exit detail is not the
+  // names-and-counts text the evaluator's own doctrine promises — it can carry
+  // FILE BYTES, and the worker chose those bytes. ONE inventory (SECRET_PATTERNS)
+  // scrubs it, at the emission boundary, so every downstream reader of the same
+  // results (the exit-eval record, the escalation detail, the worker gap) is
+  // covered by construction rather than by three remembered call sites.
+  const wd = makePatient(t);
+  const KEY = 'xoxb-AAAAAAAAAA';
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'emit-report', action: 'Write tests/report.json.',
+      tools: ['write'], rounds: 4, target: 'tests/report.json',
+      exit: [{ type: 'json-valid', path: 'tests/report.json' }],
+    }],
+  });
+  const provider = scriptedProvider([
+    { text: 'scout notes' },
+    { text: plan },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'report.json'), content: `[${KEY}]` })] },
+    { text: 'wrote the report' },
+  ]);
+  const { events } = await go(wd, provider, { capRuns: 1 });
+  const ev = events.find((e) => e.type === 'exit-eval');
+  assert.ok(ev, 'the json-valid exit really ran — no exit-eval and this test proves nothing');
+  const detail = ev.results[0].detail;
+  assert.match(detail, /is not valid JSON/, 'the parse message really did ride into the detail (the leak channel is live)');
+  assert.doesNotMatch(JSON.stringify(ev), new RegExp(KEY), 'the literal token must not survive anywhere in the spine record');
+  assert.match(detail, /\[REDACTED:/, 'masked, and the record still says a secret was there');
+  assert.match(detail, /tests\/report\.json/, 'only the token is masked — the mechanical gap (which file, which wall) stays readable');
 });
 
 // ── review 2026-07-21: doctrine-restoring fixes to the graduated plan flow ──
@@ -465,18 +667,24 @@ test('Layer R OFF (default): the SAME fixation script emits NO root-injected —
   assert.equal(outcome, 'green');
 });
 
-test('Layer R ON: the outer close-fix loop ALSO ratchets — fixation there (judged by the REAL close) fires root-injected with phase:fix', async (t) => {
+test('Layer R ON: the outer close-fix loop ALSO ratchets — the red-set is the FAILING STAGE\'s, not the first stage that happens to carry a gapKeep', async (t) => {
   const wd = makePatient(t);
-  // the check greens on "ok" (so the step greens), but the CLOSE additionally
-  // wants a DONE marker — so the step passes, the outer close reds, and the fix
-  // loop runs. The fix worker rewrites the file twice without DONE (same close
-  // red-set) then adds it: the fix loop's own ratchet must fire at attempt 3.
+  // Stage 1 (`clean-run`) greens on "ok", so the step greens and the close walks
+  // on; stage 2 (`verdict`) additionally wants a DONE marker, so IT renders the
+  // verdict and the fix loop runs. The two stages carry DIFFERENT gapKeeps and
+  // stage 1's pattern matches NOTHING in stage 2's output — so a detector reading
+  // "the first stage carrying a gapKeep" sees an empty kept-set, degrades to
+  // writes-only, and cannot make the strong claim. Reading the failing stage's
+  // own pattern keeps the reds+writes mode, which is what this asserts.
   writeFileSync(join(wd, 'close.mjs'), `import { existsSync, readFileSync } from 'node:fs';
 const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
 const t = existsSync(p) ? readFileSync(p, 'utf8') : '';
 if (t.includes('DONE')) process.exit(0);
-console.log('FAILED close: the test is missing the DONE marker'); process.exit(1);\n`);
-  const job = JOB(wd, { close: { type: 'predicate', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' } });
+console.log('BAR verdict: the test is missing the DONE marker'); process.exit(1);\n`);
+  const job = JOB(wd, { close: [
+    { name: 'clean-run', cmd: 'node check.mjs', expect: 0, gapKeep: '^FAILED' },
+    { name: 'verdict', cmd: 'node close.mjs', expect: 0, gapKeep: '^BAR' },
+  ] });
   const provider = scriptedProvider([
     { text: 'scout' },
     { text: PLAN(wd) },
@@ -488,8 +696,10 @@ console.log('FAILED close: the test is missing the DONE marker'); process.exit(1
   ]);
   const { outcome, events } = await go(wd, provider, { job, layerRoot: true });
   const inj = events.filter((e) => e.type === 'root-injected');
-  assert.ok(inj.some((e) => e.phase === 'fix' && e.stage === 'summary'),
-    `the fix loop ratchets under fixation; got ${JSON.stringify(inj)}`);
+  const fixInj = inj.find((e) => e.phase === 'fix' && e.stage === 'summary');
+  assert.ok(fixInj, `the fix loop ratchets under fixation; got ${JSON.stringify(inj)}`);
+  assert.equal(fixInj.redStage, 'verdict', 'the red-set came from the stage that rendered the verdict');
+  assert.equal(fixInj.mode, 'reds+writes', 'and it was READABLE — the failing stage\'s own pattern, not another stage\'s');
   assert.ok(provider.calls.some((p) => typeof p === 'string' && p.includes('RATCHET')), 'the note reached the fix worker');
   assert.equal(outcome, 'green');
 });
@@ -674,7 +884,52 @@ test('T: a bounded run reports BOTH numbers — requested and enforced — becau
   const wc = events.find((e) => e.type === 'wall-clock');
   assert.equal(wc.bounded, true);
   assert.equal(wc.requestedMs, 600_000);
-  assert.equal(wc.enforcedMs, 720_000, 'requested + one close timeout — quoting only the requested number is F6 in a time coat');
+  // W5 — the close here is TWO stages and `runStages` gives each one the whole
+  // timeout, so the enforced worst case is two of them. The old 720_000 quoted one
+  // close for a two-close overshoot: the requested-vs-enforced split was on the
+  // record and the enforced side was still wrong.
+  assert.equal(wc.closeStages, 2, 'the count comes from the close the runner actually executes');
+  assert.equal(wc.enforcedMs, 840_000, 'requested + every stage\'s close timeout — quoting only the requested number, or only one stage, is F6 in a time coat');
+});
+
+test('W5: the wall-clock record scales with the close it will actually run — a 4-stage close advertises four close timeouts, and the record equals the arithmetic from its own fields', async (t) => {
+  const wd = makePatient(t, { closeGreen: true });
+  const provider = scriptedProvider([
+    { text: 'scout' }, { text: PLAN(wd) },
+    { text: 'writing', toolCalls: [tcall('1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'done' },
+  ]);
+  // jobs/aurora-u-spawner-types.json's shape: a real staged close, four stages.
+  const close = [
+    { name: 'clean-run', cmd: 'node check.mjs', expect: 0, gapKeep: '^FAILED' },
+    { name: 'stage-two', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' },
+    { name: 'stage-three', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' },
+    { name: 'verdict', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' },
+  ];
+  const { events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000, close }) });
+  const wc = events.find((e) => e.type === 'wall-clock');
+  assert.equal(wc.closeStages, 4);
+  assert.equal(wc.enforcedMs, 600_000 + 4 * 120_000, 'four stages, four close timeouts of overshoot');
+  assert.equal(wc.enforcedMs, wc.requestedMs + wc.closeStages * 120_000, 'the advertised record IS the enforced computation, readable from the record itself');
+});
+
+test('W5: a single-predicate (object-form) close still advertises exactly one close timeout — the regression the multiplier must not move', async (t) => {
+  const wd = makePatient(t, { closeGreen: true });
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd, [{
+      id: 'write-test', action: 'Write tests/test_x.mjs asserting the module exports.',
+      tools: ['write'], rounds: 6, target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }],
+    }]) },
+    { text: 'writing', toolCalls: [tcall('1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'done' },
+  ]);
+  const close = { type: 'predicate', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' };
+  const { events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000, close }) });
+  const wc = events.find((e) => e.type === 'wall-clock');
+  assert.equal(wc.closeStages, 1, 'the object form is the ONE-stage list it stands for (stageClose)');
+  assert.equal(wc.enforcedMs, 720_000);
 });
 
 test('T: the materials handed to the planner are a BALANCE — no rate, no per-round allowance, no derived round count (hamr\'s correction; F57 measured a 150x spread on verification gaps)', async (t) => {
@@ -834,7 +1089,7 @@ test('F64: a wall-derived call timeout is a wall-halt, NOT a provider-red — th
   const wh = events.filter((e) => e.type === 'wall-halt').at(-1);
   assert.ok(wh, 'the run-level record carries the clock\'s numbers, not just ralph\'s escalation');
   assert.equal(wh.requestedMs, 600_000);
-  assert.equal(wh.enforcedMs, 720_000, 'both numbers, always (addendum 1)');
+  assert.equal(wh.enforcedMs, 840_000, 'both numbers, always (addendum 1) — and the enforced one counts every stage of this job\'s two-stage close (W5)');
   assert.ok(wh.elapsedMs >= 600_000, 'the honest elapsed figure, overshoot included');
   assert.equal(wh.cutMidCall, true, 'distinguishes a deadline that landed INSIDE a call from one read between steps');
   const esc = events.filter((e) => e.type === 'escalation').find((e) => e.category === 'wall-halt');
@@ -901,6 +1156,55 @@ test('F64: a wall-derived timeout during PLAN DRAFTING is a wall-halt too — th
   assert.equal(esc.category, 'wall-halt');
   assert.equal(esc.phase, 'plan', 'the phase says where the clock ran out');
   assert.ok(events.find((e) => e.type === 'wall-halt'), 'the clock\'s numbers reach the spine on the drafting path too');
+  // This file's OWN option list (WALL_OPTIONS), pinned — the only test that reads it.
+  // Nothing used to, so it silently drifted to two levers while ralph's entry for the
+  // same category offered three: one category, one option list, whichever site read
+  // the clock. Both levers are spec edits, so each names its re-approval.
+  assert.deepEqual(esc.options, [
+    'raise maxWallMs and rerun (resume-to-cap; a spec edit, so the new hash needs re-approval)',
+    'revise the goal/spec so the work fits the time (same re-approval)',
+    'abandon the task',
+  ]);
+});
+
+test('W-2: the wall-halt option list is ONE list — planrun\'s WALL_OPTIONS and ralph\'s DECISIONS entry pinned against EACH OTHER, not each against a literal', async (t) => {
+  // The two lists are declared byte-identical in both files' comments, and the pin
+  // above only holds planrun's side to a copy of the text. A literal-vs-literal pin
+  // is one-sided: edit ralph's entry and nothing here fails, which is exactly how the
+  // lists drifted to two-vs-three levers the first time. This reads BOTH sites'
+  // real emissions and compares them to each other, so an edit to EITHER breaks.
+  // Behavioural, not by import: neither list is exported (WALL_OPTIONS is a runPlan
+  // local, ralph's DECISIONS a per-throw local), and the escalation's `options` is
+  // the observable that actually reaches a human either way.
+  const wd = makePatient(t);
+  const clk = fakeClock();
+  let n = 0;
+  const provider = {
+    name: 'draft-timeout',
+    async generate() {
+      n += 1;
+      if (n === 2) { clk.advance(700_000); throw timeoutError(); } // the drafting call — planrun's own WALL_OPTIONS site
+      return { text: 'scout', usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const { events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now });
+  const planrunOptions = events.filter((e) => e.type === 'escalation').at(-1)?.options;
+
+  // ralph's side: a middle that throws the SAME category, so its DECISIONS table
+  // renders the entry the same human would read from the other site
+  const { events: ralphEvents, emit } = collector();
+  await ralph({
+    middle: () => { throw Object.assign(new Error('the wall passed'), { category: 'wall-halt' }); },
+    judge: async () => ({ verdict: 'satisfied' }),
+    capRuns: 1,
+    emit,
+  });
+  const ralphEsc = ralphEvents.find((e) => e.type === 'escalation');
+  assert.equal(ralphEsc?.category, 'wall-halt', 'ralph really routed the category — a different one and this compares the wrong list');
+
+  assert.equal(planrunOptions?.length, 3, 'three levers: more time, a smaller goal, stop');
+  assert.deepEqual(planrunOptions, ralphEsc.options,
+    'ONE category, ONE option list — which site read the clock is an implementation detail');
 });
 
 test('T: the between-steps wall terminal — a run whose clock expires after a green step STOPS, and the stop is the checkpoint', async (t) => {
@@ -935,4 +1239,753 @@ test('T: the between-steps wall terminal — a run whose clock expires after a g
   assert.equal(wh.stepsPlanned, 2);
   assert.equal(wh.cutMidCall, false, 'read BETWEEN steps, not inside a call');
   assert.match(wh.meaning, /not "can't"/, 'a time stop is not a capability read');
+});
+
+test('a HIDDEN precondition never becomes a ruler, and a dependent stage is picked WITH its chain — through the real plan flow', async (t) => {
+  const wd = makePatient(t);
+  // Both stage classes v1.28 names, in one close, exercised end to end — the
+  // unit tests cover checkMenu and runStages, but nothing had run either class
+  // through preflight and the check-passes seam, where the menu and the chain
+  // are actually consumed.
+  writeFileSync(join(wd, 'seed.mjs'), 'process.exit(0);\n');                       // a precondition: always true, teaches nothing
+  writeFileSync(join(wd, 'build.mjs'), `import { writeFileSync as w } from 'node:fs';
+w(new URL('./built.txt', import.meta.url), 'x'); process.exit(0);\n`);
+  // `api` judges what `build` produced: alone it reds for a reason that has
+  // nothing to do with the worker's edit, which is what `needs` exists to prevent
+  // it CONSUMES the artifact, so the chain must re-run `build` every single time:
+  // a persistent artifact would let a chainless `api` pass on the leftovers from
+  // preflight, and the test would go green while proving nothing
+  writeFileSync(join(wd, 'api.mjs'), `import { existsSync, rmSync } from 'node:fs';
+const built = new URL('./built.txt', import.meta.url);
+if (!existsSync(built)) { console.log('FAILED: nothing was built'); process.exit(1); }
+rmSync(built); process.exit(0);\n`);
+  const job = JOB(wd, { close: [
+    { name: 'seed-present', cmd: 'node seed.mjs', expect: 0, offer: false },
+    { name: 'clean-run', cmd: 'node check.mjs', expect: 0, gapKeep: '^FAILED' },
+    { name: 'build', cmd: 'node build.mjs', expect: 0 },
+    { name: 'api', cmd: 'node api.mjs', expect: 0, needs: ['build'] },
+  ] });
+  const plan = JSON.stringify({ schema: 'plan-v1', steps: [{
+    id: 'write-test', action: 'Write tests/test_x.mjs asserting the module exports.',
+    tools: ['write'], rounds: 6, target: 'tests/test_x.mjs',
+    exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'api' }],
+  }] });
+  const provider = scriptedProvider([
+    { text: 'scout' }, { text: plan },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok — asserts x\n' })] }, { text: 'wrote it' },
+  ]);
+  const { outcome, events } = await go(wd, provider, { job });
+
+  const menu = events.find((e) => e.type === 'check-menu');
+  assert.deepEqual(menu.offered, ['clean-run', 'build', 'api'], 'the derived menu, and the precondition is not in it');
+  assert.deepEqual(menu.hidden, ['seed-present'], 'what was withheld is on the record, not silently dropped');
+  assert.deepEqual(events.filter((e) => e.type === 'check-preflight').map((e) => e.name), ['clean-run', 'build', 'api'],
+    'preflight runs the MENU — a hidden precondition is never preflighted as a ruler');
+  assert.deepEqual(events.find((e) => e.type === 'check-preflight' && e.name === 'api').chain, ['build', 'api'],
+    'and the dependent stage preflights as its chain');
+
+  // the plan named `api`; picking it must have run `build` first, or api reds on
+  // a phantom and the step could never green
+  assert.equal(events.find((e) => e.type === 'check-run' && e.name === 'api')?.verdict, 'satisfied',
+    'the chain ran, so the ruler judged the real thing');
+  assert.equal(outcome, 'green');
+});
+
+// ---- P: the widened step vocabulary is WIRED, not just validated (F50 class) ----
+
+test('P: a per-step scope NARROWS the live fence — a write the job fence allows is denied by the step scope', async (t) => {
+  const wd = makePatient(t);
+  const job = JOB(wd, { writeScope: ['tests/**', 'src/**'] });
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write the test; do not touch src.',
+      tools: ['write'], rounds: 6, target: 'tests/test_x.mjs', scope: 'tests/**',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    }],
+  });
+  const provider = scriptedProvider([
+    { text: 'scout notes' },
+    { text: plan },
+    // one round, two writes: src/ is INSIDE the signed fence but OUTSIDE the step scope
+    { toolCalls: [
+      tcall('t1', 'shell_write', { path: join(wd, 'src', 'hack.mjs'), content: 'nope\n' }),
+      tcall('t2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' }),
+    ] },
+    { text: 'wrote the test' },
+  ]);
+  const { outcome } = await go(wd, provider, { job });
+  assert.equal(outcome, 'green');
+  assert.ok(existsSync(join(wd, 'tests', 'test_x.mjs')), 'the in-scope write landed');
+  assert.ok(!existsSync(join(wd, 'src', 'hack.mjs')), 'the out-of-step-scope write was denied by the NARROWED fence');
+});
+
+test('P: step.attempts=1 tightens the shell cap — exactly one iteration before the step stops', async (t) => {
+  const wd = makePatient(t);
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write the test.',
+      tools: ['write'], rounds: 3, target: 'tests/test_x.mjs', attempts: 1,
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    }],
+  });
+  const provider = scriptedProvider([
+    { text: 'scout notes' },
+    { text: plan },
+    // the write lands but its content never satisfies the check → exit red
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'not the magic word\n' })] },
+    { text: 'wrote it (wrong)' },
+    // the replan drafter fires next (cap-halt + funds left) — feed it junk so the
+    // run ends; this test reads the ITERATION count, not the ending
+    { text: 'not a plan' },
+    { text: 'still not a plan' },
+    { text: 'nope' },
+  ]);
+  const { events } = await go(wd, provider);
+  const stepIters = events.filter((e) => e.type === 'iteration-start');
+  assert.equal(stepIters.length, 1, `attempts:1 must stop after ONE iteration — saw ${stepIters.length}`);
+  assert.ok(events.some((e) => e.type === 'escalation' && e.category === 'cap-halt'), 'the tightened cap reads as cap-halt');
+});
+
+test('P: step.model routes the worker through providerFor(tier); the drafter stays on the default', async (t) => {
+  const wd = makePatient(t);
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write the test.',
+      tools: ['write'], rounds: 6, target: 'tests/test_x.mjs', model: 'haiku',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    }],
+  });
+  const main = scriptedProvider([
+    { text: 'scout notes' },
+    { text: plan },
+  ]);
+  const haiku = scriptedProvider([
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'wrote the test' },
+  ]);
+  /** @type {string[]} */
+  const asked = [];
+  const { outcome } = await go(wd, main, { providerFor: (tier) => { asked.push(tier); return haiku; } });
+  assert.equal(outcome, 'green');
+  assert.deepEqual(asked, ['haiku'], 'the factory is asked for exactly the planned tier');
+  assert.equal(main.calls.length, 2, 'scout + plan ran on the default provider');
+  assert.ok(haiku.calls.length >= 1, 'the step worker ran on the tier provider');
+});
+
+test('P: step.model with NO providerFor is a STOP, never a silent default-tier run', async (t) => {
+  const wd = makePatient(t);
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write the test.',
+      tools: ['write'], rounds: 6, target: 'tests/test_x.mjs', model: 'haiku',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }],
+    }],
+  });
+  const provider = scriptedProvider([{ text: 'scout notes' }, { text: plan }]);
+  const { outcome, events } = await go(wd, provider);
+  assert.notEqual(outcome, 'green');
+  assert.ok(events.some((e) => e.type === 'escalation' && /providerFor/.test(`${e.decision ?? ''} ${e.detail ?? ''}`)),
+    `the missing wiring is NAMED in the escalation — got ${JSON.stringify(events.filter((e) => e.type === 'escalation'))}`);
+});
+
+// ── casualty routing across EVERY provider-consuming phase ──────────────────
+//
+// Doctrine: an API truncation is TRANSPORT class — retry, never capability
+// evidence, never interpreter-red/config-red (the `truncated:` leg at
+// src/planrun.js:735-743). And a casualty is a casualty wherever the provider is
+// consumed: the plan flow calls out from five places (scout, plan drafter, step
+// worker, replan drafter, close-fix worker) and each must file the same event
+// under the same name, or the readout's casualty count is phase-shaped.
+//
+// Prior coverage was ONE cell of that grid: a mid-STEP transport THROW (the
+// F11/F44 test above). Truncation reaches the router by the OTHER seam — a
+// RETURNED `r.error`, not a throw — and the drafting/replan/fix phases had no
+// casualty coverage at all.
+
+/**
+ * A scripted provider whose Nth call onward (0-based) dies instead of answering.
+ * Same wrap idiom as the F11/F44 mid-step test, factored because four phases
+ * need it at four different call positions.
+ * @param {any[]} script @param {number} n @param {() => Error} [thrower]
+ */
+const dyingAt = (script, n, thrower = () => Object.assign(new Error('ECONNRESET mid-call'), { category: 'provider-red', lib: 'bare-agent' })) => {
+  const base = scriptedProvider(script);
+  let i = 0;
+  return {
+    calls: base.calls,
+    toolsOffered: base.toolsOffered,
+    /** @param {any} messages @param {any} tools */
+    async generate(messages, tools) {
+      if (i++ >= n) throw thrower();
+      return base.generate(messages, tools);
+    },
+  };
+};
+
+test('WORKER truncation: a step round cut off at the output cap rides out as provider-red — a returned truncated:max_tokens is the SAME casualty class as a thrown socket, never interpreter-red', async (t) => {
+  const wd = makePatient(t);
+  // The truncation seam is a RETURNED error, not a throw: the real Loop maps
+  // stopReason max_tokens to `error: 'truncated:max_tokens'` (bare-agent
+  // loop.js), and planrun's `ask` routes that string. So the fixture drives the
+  // REAL mechanism (a provider stop reason) rather than a hand-made error object
+  // — and the router's default `interpreter-red` leg sits one line below the one
+  // under test, so a mis-wired router lands there and this test reads it.
+  const provider = scriptedProvider([
+    { text: 'scout notes' },
+    { text: PLAN(wd) },
+    { text: 'half a thou', stopReason: 'max_tokens' },   // the step worker's first round
+  ]);
+  const { outcome, events } = await go(wd, provider);
+  assert.equal(outcome, 'provider-red', 'an API-truncated worker round is transport, never capability tier data');
+  assert.ok(!outcome.startsWith('step-red'), 'never laundered into the outcome the driver reads as a capability read');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'provider-red', 'the outcome and the spine escalation name the SAME category (F11)');
+  assert.match(esc.detail ?? '', /truncated:max_tokens/, 'the casualty is named by its own shape — a human reading the spine can tell truncation from a dead socket');
+  assert.equal(events.filter((e) => e.type === 'escalation' && e.category === 'interpreter-red').length, 0,
+    'a truncated round is NOT a broken interpreter — that routing would blame the harness for the provider');
+});
+
+test('DRAFTER truncation: a plan-draft call cut off at the output cap is provider-red, never plan-red — a truncated draft is a casualty, and there is no redraft on truncation', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout notes' },
+    { text: 'a plan that never fini', stopReason: 'max_tokens' },  // the DRAFT call
+  ]);
+  const { outcome, events } = await go(wd, provider);
+  assert.equal(outcome, 'provider-red', 'the drafter was cut off by the provider — that is not a bad plan');
+  assert.equal(events.filter((e) => e.type === 'plan-validate').length, 0,
+    'the truncated text is never validated: judging a half-emitted artifact would mint a plan-red the drafter never earned');
+  assert.equal(events.filter((e) => e.type === 'plan-red').length, 0, 'and no plan-red rides out');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'provider-red');
+  assert.equal(esc.phase, 'plan', 'the escalation says WHICH call died — the relay path is not a blinder route (F64 class)');
+  assert.match(esc.detail ?? '', /truncated:max_tokens/);
+});
+
+test('REPLAN-DRAFTER casualty: a transport death during the replan draft is provider-red, and the spine still records that the replan was ATTEMPTED', async (t) => {
+  const wd = makePatient(t);
+  // Same fixture as the ONE-replan test: plan A's step writes nothing, so
+  // tree-changed reds every attempt → cap-halt with funds left → the one replan.
+  // Call 4 is the replan draft, and it dies on the wire.
+  const provider = dyingAt([
+    { text: 'scout notes' },
+    { text: PLAN(wd) },
+    { text: 'thinking about it' },   // attempt 1: no write
+    { text: 'still thinking' },      // attempt 2: no write → exhaustion
+  ], 4);
+  const { outcome, events } = await go(wd, provider, { capRuns: 2 });
+  assert.equal(outcome, 'provider-red', 'the replan drafter is a provider consumer like any other — its casualty is a casualty');
+  const replan = events.find((e) => e.type === 'replan');
+  assert.ok(replan, 'the replan is on the record even though its draft never came back — a phase that spent must not vanish');
+  assert.equal(replan.trigger, 'cap-halt');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'provider-red', 'the returned outcome and the last escalation agree (F11)');
+  assert.equal(esc.phase, 'replan');
+  assert.ok(events.find((e) => e.type === 'plan-executed'), 'the plan-as-executed record never dangles, even on a casualty exit (design law #2)');
+});
+
+test('CLOSE-FIX-LOOP casualty: a transport death inside the outer fix loop rides out under its OWN name, and the metered rounds that DID complete survive', async (t) => {
+  const wd = makePatient(t);
+  // Same shape as the fix-loop test: the close is stricter than the check, so
+  // the step greens and the close reds once, opening the fix loop. Call 4 is the
+  // fix worker's first round, and it dies on the wire.
+  writeFileSync(join(wd, 'close.mjs'), `import { existsSync, readFileSync } from 'node:fs';
+const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
+const t = existsSync(p) ? readFileSync(p, 'utf8') : '';
+if (t.includes('ok') && t.includes('import')) process.exit(0);
+console.log('FAILED close: the test never imports the module'); process.exit(1);\n`);
+  const provider = dyingAt([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok but no module use\n' })] },
+    { text: 'wrote it' },            // the step greens; the close then reds
+  ], 4);
+  const { outcome, events } = await go(wd, provider);
+
+  assert.ok(events.some((e) => e.type === 'fix-loop'), 'the fix loop opened — the casualty is inside it, not before it');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'provider-red', 'ralph files the casualty correctly ON THE SPINE');
+
+  // The fix loop restores the casualty's own name exactly as the step loop does
+  // (planrun.js:1140-1147): ralph catches the middle throw and returns the flat
+  // 'escalated', and the caller re-reads `lastEscalation.category`. Anything
+  // else is the F11 two-instruments-disagreeing shape — and run.js's F44 branch
+  // keys spendComplete on the OUTCOME, so a laundered label reports an
+  // exact-looking total for a call that never billed back. (Was a pinned
+  // doctrine gap; fixed with hamr's explicit go, 2026-07-30.)
+  assert.equal(outcome, 'provider-red',
+    'a transport casualty in the fix loop is a casualty — never laundered into a bare escalated');
+  assert.equal(outcome, esc.category,
+    'the returned outcome and the spine escalation name the SAME category (F11)');
+
+  // whatever the label, the money record must survive the casualty: the rounds
+  // that completed were really spent and really billed (F12 per-round metering)
+  const rounds = events.filter((e) => e.type === 'worker-round');
+  assert.ok(rounds.length >= 4, `scout + draft + the two step rounds stay on the spine, got ${rounds.length}`);
+  assert.ok(rounds.some((r) => r.phase === 'scout') && rounds.some((r) => r.phase === 'plan'),
+    'the pre-casualty phases keep their attribution — a casualty never erases the spend that preceded it');
+  assert.ok(rounds.every((r) => 'costUsd' in r), 'every surviving round still carries its cost field (F6)');
+});
+
+/** the fix-loop fixture: a close STRICTER than the check, so every step greens on
+ * its own exits and the outer close still reds — the one shape that opens the
+ * close-fix loop. @param {string} wd */
+const strictCloseOverCheck = (wd) => writeFileSync(join(wd, 'close.mjs'), `import { existsSync, readFileSync } from 'node:fs';
+const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
+const t = existsSync(p) ? readFileSync(p, 'utf8') : '';
+if (t.includes('ok') && t.includes('import')) process.exit(0);
+console.log('FAILED close: the test never imports the module'); process.exit(1);\n`);
+
+test('CLOSE-FIX-LOOP money halt: a fix loop that cap-halts on a DRAINED wallet returns cap-halt, never escalated — a money cut is never a capability read (F45, MED-4)', async (t) => {
+  const wd = makePatient(t);
+  strictCloseOverCheck(wd);
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok but no module use\n' })] },
+    { text: 'wrote it' },                 // the step greens; the close then reds
+    { text: 'fix attempt' },              // the fix worker's first round — priced above the drained wallet
+  ]);
+  const { events, emit } = collector();
+  const jv = validateJob(JOB(wd));
+  // The drain is targeted at the RUN'S OWN STATE (the fix loop has opened), never
+  // by counting calls on the injected wallet — a call-count trigger measures "how
+  // many times has remainingUsd been read", which silently retargets whenever the
+  // number of reads changes.
+  let fixOpen = false;
+  const emit2 = (/** @type {string} */ type, /** @type {any} */ data = {}) => {
+    if (type === 'fix-loop') fixOpen = true;
+    return emit(type, data);
+  };
+  const outcome = await runPlan(jv.job, {
+    workdir: wd, provider, emit: emit2, capRuns: 3,
+    remainingUsd: () => (fixOpen ? 0.0001 : 1.5),
+  });
+  assert.ok(events.some((e) => e.type === 'fix-loop'), 'the fix loop opened — the halt is inside it, not before it');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'cap-halt', 'ralph emits the money-gate halt as cap-halt (its ONE category for both halts)');
+  assert.equal(outcome, 'cap-halt',
+    'a drained wallet in the fix loop is the resume-to-cap checkpoint, not "the fix failed" — the step loop already splits this exact pair');
+});
+
+test('CLOSE-FIX-LOOP exhaustion CONTROL: attempts spent WITH money left stays escalated — the designed "close still red" terminal (MED-4 must not swallow it)', async (t) => {
+  const wd = makePatient(t);
+  strictCloseOverCheck(wd);
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok but no module use\n' })] },
+    { text: 'wrote it' },                 // the step greens; the close then reds
+    { text: 'fix attempt — writes nothing' }, // sticks: every fix attempt leaves the close red
+  ]);
+  const { events, emit } = collector();
+  const jv = validateJob(JOB(wd));
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 2, remainingUsd: () => 1.5 });
+  assert.ok(events.some((e) => e.type === 'fix-loop'), 'the fix loop opened');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'cap-halt', 'ralph names attempt-exhaustion cap-halt too — the SAME category, which is why the wallet is the split');
+  assert.equal(outcome, 'escalated',
+    'attempts spent with money on the table is a capability terminal, and it must keep riding out as escalated');
+});
+
+// ── W-2: the wall, read BETWEEN close-fix iterations. Nothing used to read the
+// clock between the last step and the outer close, and the fix loop re-ran the FULL
+// staged close every iteration with no wall read at all. Past the deadline each fix
+// worker is stopped on its first round by the metered clock check — it writes
+// nothing — so every post-wall iteration was zero work plus a full re-grade of an
+// UNCHANGED tree, minting the verdict already on the record, capRuns times over (60
+// minutes each on the shipped four-stage spec). hamr's ruling: keep the grade we
+// already have and stop, then ask the human for more time or a different goal.
+
+/** the events emitted from the `fix-loop` marker onward — the close-fix loop's own
+ * record, separated from the step loop's (which emits the same event types). */
+const afterFixLoop = (events) => {
+  const i = events.findIndex((e) => e.type === 'fix-loop');
+  assert.ok(i >= 0, 'the fix loop opened — every assertion below is about what happened inside it');
+  return events.slice(i);
+};
+
+/** a close whose RED OUTPUT tracks the tree (a real suite's does), so two
+ * consecutive grades can legitimately differ. Still stricter than the `clean-run`
+ * check, which is what opens the fix loop at all. @param {string} wd */
+const byteReportingClose = (wd) => writeFileSync(join(wd, 'close.mjs'), `import { existsSync, readFileSync } from 'node:fs';
+const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
+const t = existsSync(p) ? readFileSync(p, 'utf8') : '';
+if (t.includes('import')) process.exit(0);
+console.log(\`FAILED close: \${t.length} bytes, still no import\`); process.exit(1);\n`);
+
+test('W-2: the wall past the outer close STOPS the fix loop on the verdict already minted — one close post-steps, zero fix rounds, no re-grade of an unchanged tree', async (t) => {
+  const wd = makePatient(t);
+  strictCloseOverCheck(wd);
+  const clk = fakeClock();
+  let n = 0;
+  const provider = {
+    name: 'wall-at-outer-close',
+    async generate() {
+      n += 1;
+      const scripted = [
+        { text: 'scout' },
+        { text: PLAN(wd) },
+        { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok but no module use\n' })] },
+        { text: 'wrote it' },
+      ][n - 1] ?? { text: 'a fix attempt that must never be bought' };
+      if (n === 4) clk.advance(700_000); // the step greened, and the clock is now spent
+      return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now, capRuns: 3 });
+
+  assert.equal(outcome, 'wall-halt', 'time ran out — a governance stop, never "the fix failed"');
+  const inFix = afterFixLoop(events);
+  assert.equal(inFix.filter((e) => e.type === 'close-verdict').length, 0,
+    'ZERO closes ran inside the fix loop: the only post-steps grade is the outer close, and it is the one the run stops on');
+  assert.equal(events.filter((e) => e.type === 'outer-close').length, 1, 'exactly one close ran after the steps');
+  assert.equal(events.filter((e) => e.type === 'worker-round' && e.phase === 'fix').length, 0,
+    'not a single fix-worker round was bought past the deadline');
+
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'wall-halt', 'the escalation names the same category the outcome does (F11)');
+  assert.match(esc.detail, /needs_revision/, 'the detail states the verdict that STANDS — the grade is kept, never re-derived');
+  assert.match(esc.detail, /stage "verdict"/, 'and which stage rendered it');
+  assert.match(esc.detail, /0 of 3 fix iteration/, 'and how much of the loop was actually spent');
+  assert.match(esc.detail, /trend: unknown/, 'one grade cannot make a trend, and the honest reading says so rather than guessing "stalled"');
+  assert.match(esc.options.join(' | '), /maxWallMs/, 'lever one: more time');
+  assert.match(esc.options.join(' | '), /revise the goal/, 'lever two: a different goal — the trend is what tells the human which');
+  assert.match(esc.options.join(' | '), /abandon/, 'lever three');
+  assert.doesNotMatch(esc.decision, /transport|network|socket/i, 'never a socket to debug');
+
+  const wh = events.filter((e) => e.type === 'wall-halt').at(-1);
+  assert.ok(wh, 'the run-level TIME record carries the clock\'s own numbers');
+  assert.equal(wh.cutMidCall, false, 'read BETWEEN iterations, not inside a call (F64 is the other reading)');
+  assert.equal(wh.phase, 'fix');
+  assert.equal(wh.trend, 'unknown', 'the trend rides as a FIELD, not only as prose');
+  assert.equal(wh.iterationsUsed, 0);
+  assert.equal(wh.verdict, 'needs_revision');
+  assert.equal(wh.requestedMs, 600_000);
+});
+
+test('W-2 CONTROL: with time still on the clock the fix loop iterates exactly as before — the check must cost the healthy run nothing', async (t) => {
+  const wd = makePatient(t);
+  strictCloseOverCheck(wd);
+  const clk = fakeClock(); // never advanced: the wall is set and never reached
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok but no module use\n' })] },
+    { text: 'wrote it' },
+    { text: 'fix attempt — writes nothing, so the close stays red' },
+  ]);
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now, capRuns: 2 });
+
+  assert.equal(outcome, 'escalated', 'attempts spent with time and money left is the designed capability terminal');
+  assert.equal(afterFixLoop(events).filter((e) => e.type === 'close-verdict').length, 2,
+    'both fix iterations ran and both were graded — the wall check fired zero times');
+  assert.equal(events.filter((e) => e.type === 'worker-round' && e.phase === 'fix').length, 2, 'both fix workers were bought');
+  assert.equal(events.filter((e) => e.type === 'wall-halt').length, 0, 'no time record on a run that never ran out of time');
+  assert.equal(events.filter((e) => e.type === 'escalation').at(-1).category, 'cap-halt');
+});
+
+/**
+ * The trend fixtures. IDENTICAL in every respect but one: what the single fix
+ * attempt writes, and therefore whether the close it triggers reports the same
+ * bytes as the grade before it. Same close, same plan, same clock, same call
+ * positions — so a difference in the trend can only come from the gaps.
+ * @param {string} fixContent what the fix worker writes on its one attempt
+ */
+const trendRun = async (t, fixContent) => {
+  const wd = makePatient(t);
+  byteReportingClose(wd);
+  const clk = fakeClock();
+  let n = 0;
+  const provider = {
+    name: 'wall-after-one-fix',
+    async generate() {
+      n += 1;
+      const scripted = [
+        { text: 'scout' },
+        { text: PLAN(wd) },
+        { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+        { text: 'wrote it' },                                                                    // step greens; outer close reds → G0
+        { toolCalls: [tcall('t2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: fixContent })] },
+        { text: 'fix attempt done' },                                                            // …and the wall passes HERE
+      ][n - 1] ?? { text: 'never bought' };
+      if (n === 6) clk.advance(700_000);
+      return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  return go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now, capRuns: 3 });
+};
+
+test('W-2 trend: a fix attempt that MOVED the close reads "moving" — and its close ran to completion even though the wall passed mid-attempt', async (t) => {
+  const { outcome, events } = await trendRun(t, 'ok and six more bytes\n');
+  assert.equal(outcome, 'wall-halt');
+
+  // the in-flight case, which falls out of WHERE the check sits rather than out of
+  // a second mechanism: the deadline landed during fix attempt 1, that attempt's
+  // close still ran and graded real pre-deadline work, and only THEN did the loop
+  // stop. A close is never bounded — a wall that kills grading leaves the run
+  // unreadable after the money is spent (F45).
+  assert.equal(afterFixLoop(events).filter((e) => e.type === 'close-verdict').length, 1,
+    'the expiring attempt was still graded; the SECOND iteration is the one that never started');
+  assert.ok(events.some((e) => e.type === 'wall-bounded' && e.phase === 'fix'),
+    'the wall did land inside that attempt — otherwise this proves nothing about the in-flight case');
+
+  const wh = events.filter((e) => e.type === 'wall-halt').at(-1);
+  assert.equal(wh.trend, 'moving', 'consecutive close outputs differ, so the work was still changing when time ran out');
+  assert.equal(wh.iterationsUsed, 1);
+  assert.match(events.filter((e) => e.type === 'escalation').at(-1).detail, /raising maxWallMs is the lever that fits/);
+});
+
+test('W-2 trend: a fix attempt that changed NOTHING the close can see reads "stalled" — and points the human at the goal, not the clock', async (t) => {
+  const { outcome, events } = await trendRun(t, 'ok\n'); // byte-identical to what step one wrote
+  assert.equal(outcome, 'wall-halt');
+  const wh = events.filter((e) => e.type === 'wall-halt').at(-1);
+  assert.equal(wh.trend, 'stalled', 'byte-identical close output across two grades');
+  assert.equal(wh.iterationsUsed, 1);
+  assert.match(events.filter((e) => e.type === 'escalation').at(-1).detail, /revise the goal\/spec first/,
+    'more time does not make an unreachable goal reachable — the trend is what separates the two levers');
+});
+
+// ── W-2 at the STEP site. The fix loop's wall read has a sibling one layer up: a
+// STEP that would BEGIN past the deadline. The variance meter cannot see that one —
+// it measures a step's share against what the run had left when the step STARTED,
+// and a step that started with nothing left has a time share of 0 forever, so the
+// meter never fires and the step burns every attempt it is allowed. Each of those
+// attempts is worthless by construction: the metered clock check stops the worker on
+// its FIRST round so it writes nothing, and the judge still runs the step's exits —
+// themselves close stages, at the full close timeout each — to re-mint the red
+// already on the record. Same ruling as the fix loop's: when time is up, keep the
+// grade we already have and stop.
+
+/** the events emitted from the FIRST `step-start` onward — the step loop's own
+ * record, separated from the close precheck's (which spawns the same check stages). */
+const afterStepStart = (events) => {
+  const i = events.findIndex((e) => e.type === 'step-start');
+  assert.ok(i >= 0, 'a step opened — every assertion below is about what happened inside the step loop');
+  return events.slice(i);
+};
+
+test('W-2 (step site): a step that would START past the deadline is never funded — zero attempts, zero rounds, zero exit checks', async (t) => {
+  const wd = makePatient(t);
+  const clk = fakeClock();
+  let n = 0;
+  const provider = {
+    name: 'wall-before-step-one',
+    async generate() {
+      n += 1;
+      const scripted = [{ text: 'scout' }, { text: PLAN(wd) }][n - 1] ?? { text: 'a step attempt that must never be bought' };
+      if (n === 2) clk.advance(700_000); // the plan is drafted, and the clock is spent
+      return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now, capRuns: 3 });
+
+  assert.equal(outcome, 'wall-halt', 'time ran out before the step could start — a governance stop, never a step-red');
+  assert.equal(n, 2, 'not one provider call was bought past the deadline');
+  const inStep = afterStepStart(events);
+  assert.equal(inStep.filter((e) => e.type === 'worker-round').length, 0, 'zero rounds inside the step');
+  assert.equal(inStep.filter((e) => e.type === 'exit-eval').length, 0,
+    'the judge never ran: a step\'s exits are close stages, and re-grading an untouched tree with them is the cost this closes');
+  assert.equal(inStep.filter((e) => e.type === 'check-run').length, 0, 'so no check stage was spawned either');
+  assert.equal(inStep.filter((e) => e.type === 'iteration-start').length, 1,
+    'exactly ONE attempt was opened and it was refused at its head — never capRuns of them');
+  assert.equal(inStep.filter((e) => e.type === 'middle-done').length, 0, 'and that attempt never ran');
+  assert.equal(events.filter((e) => e.type === 'outer-close').length, 0,
+    'nor does the run mint a fresh full close past the deadline: the grade it has is the close precheck\'s');
+
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'wall-halt', 'the escalation names the same category the outcome does (F11)');
+  assert.match(esc.options.join(' | '), /maxWallMs/, 'lever one: more time');
+  assert.match(esc.options.join(' | '), /revise the goal/, 'lever two: a different goal');
+  assert.doesNotMatch(esc.decision, /transport|network|socket/i, 'never a socket to debug');
+
+  const wh = events.filter((e) => e.type === 'wall-halt').at(-1);
+  assert.ok(wh, 'the run-level TIME record carries the clock\'s own numbers');
+  assert.equal(wh.cutMidCall, false,
+    'read BETWEEN attempts with no call in flight — F64 is the other reading, and the job-end money floor keys on exactly this field');
+  assert.equal(wh.phase, 'step:write-test');
+  assert.equal(wh.stepsDone, 0);
+  assert.equal(wh.stepsPlanned, 1);
+  assert.equal(wh.attemptsUsed, 0);
+  assert.equal(wh.requestedMs, 600_000);
+});
+
+test('W-2 (step site): the wall-halt record separates the RUN\'s cap from the step\'s TIGHTENED one — one key never carries two meanings', async (t) => {
+  // `capRuns` on the same record type means the run's attempt cap at the fix site.
+  // At the step site it used to carry `stepCap` — the per-step tightening — so two
+  // wall-halt records could disagree about what the number counts, with nothing on
+  // the record saying which. A step that TIGHTENS its attempts is the only shape
+  // that can tell them apart (with no `attempts` the two numbers are equal and the
+  // conflation is invisible), which is why this plan declares attempts: 1 under a
+  // run cap of 3. The record shape is new in this unreleased version, so naming the
+  // two things separately is free now and never later.
+  const wd = makePatient(t);
+  const clk = fakeClock();
+  const tightened = PLAN(wd, [{
+    id: 'write-test', action: 'Write tests/test_x.mjs.', tools: ['write'], rounds: 4,
+    attempts: 1, target: 'tests/test_x.mjs',
+    exit: [{ type: 'tree-changed', scope: 'tests/**' }],
+  }]);
+  let n = 0;
+  const provider = {
+    name: 'wall-before-tightened-step',
+    async generate() {
+      n += 1;
+      const scripted = [{ text: 'scout' }, { text: tightened }][n - 1] ?? { text: 'never bought' };
+      if (n === 2) clk.advance(700_000);
+      return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now, capRuns: 3 });
+  assert.equal(outcome, 'wall-halt');
+
+  const wh = events.filter((e) => e.type === 'wall-halt').at(-1);
+  assert.equal(wh.phase, 'step:write-test', 'the STEP site wrote this record — the fix site is the other one');
+  assert.equal(wh.capRuns, 3, 'capRuns is the RUN\'s cap here, exactly as it is at the fix site');
+  assert.equal(wh.stepAttemptCap, 1, 'and the step\'s own tightening gets its own name, not the same key');
+});
+
+test('W-2 (step site) CONTROL: a step ALREADY RUNNING when the wall passes keeps its old behaviour — the attempt finishes, the judge runs, and the METER is what stops it', async (t) => {
+  const wd = makePatient(t);
+  const clk = fakeClock();
+  const replanned = PLAN(wd, [{
+    id: 'second-go', action: 'Write it properly.', tools: ['write'], rounds: 4,
+    target: 'tests/test_x.mjs', exit: [{ type: 'tree-changed', scope: 'tests/**' }],
+  }]);
+  let n = 0;
+  const provider = {
+    name: 'wall-during-step-one',
+    async generate() {
+      n += 1;
+      const scripted = [
+        { text: 'scout' },
+        { text: PLAN(wd) },
+        { text: 'writing', toolCalls: [tcall('1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'nope\n' })] },
+        { text: 'attempt 1 done' },   // …and the wall passes HERE, with the step under way
+        { text: replanned },
+      ][n - 1] ?? { text: 'never bought' };
+      if (n === 4) clk.advance(700_000);
+      return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now, capRuns: 3 });
+
+  // scoped to the FIRST step — the step that was already running when the wall
+  // passed. What the run does AFTER the replan is the other test's subject.
+  const stepOne = afterStepStart(events).slice(0, afterStepStart(events).findIndex((e) => e.type === 'replan'));
+  assert.equal(stepOne.filter((e) => e.type === 'middle-done').length, 1,
+    'the in-flight attempt ran to completion — the wall never cuts work already under way');
+  assert.equal(stepOne.filter((e) => e.type === 'exit-eval').length, 1, 'and its judge ran: grading real work always completes (F45)');
+
+  const variance = events.find((e) => e.type === 'variance');
+  assert.ok(variance, 'the METER is the instrument for a step that was already running — it sees the whole remaining time gone');
+  assert.equal(variance.axis, 'time');
+  assert.equal(variance.timeShare, 1);
+  assert.equal(variance.iteration, 2, 'stopped at the HEAD of attempt 2, so attempt 1\'s work is not discarded');
+  assert.equal(events.filter((e) => e.type === 'escalation')[0].category, 'step-variance',
+    'a running step is stopped by the meter exactly as before — never by the step-site wall check');
+  const replan = events.find((e) => e.type === 'replan');
+  assert.ok(replan, 'and it still routes to the ONE replan rather than to a stop');
+  assert.equal(replan.trigger, 'step-variance');
+
+  // The TAIL is the fix above, not this control: the REPLANNED plan's first step is
+  // the one that would begin past the deadline, and that is the step the run refuses.
+  assert.equal(outcome, 'wall-halt');
+  assert.equal(events.filter((e) => e.type === 'wall-halt').at(-1).phase, 'step:second-go');
+});
+
+test('SCOUT casualty: a transport death on the survey call ends the run as provider-red BEFORE a plan is ever drafted', async (t) => {
+  const wd = makePatient(t);
+  const provider = dyingAt([{ text: 'never reached' }], 0);
+  const { outcome, events } = await go(wd, provider);
+  assert.equal(outcome, 'provider-red');
+  assert.equal(events.filter((e) => e.type === 'plan-validate').length, 0, 'the run ended before any plan was validated');
+  assert.equal(events.filter((e) => e.type === 'plan-accepted').length, 0);
+  assert.ok(events.some((e) => e.type === 'scout-start'), 'the scout had started — the casualty is attributed to the phase that died');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'provider-red');
+  assert.equal(esc.phase, 'scout');
+  assert.equal(esc.lib, 'bare-agent', 'the typed lib field is stamped at the throw site, never sniffed from prose');
+});
+
+// ---- W4: ONE close staging, shared by the prompt, the validator and the runner ----
+
+test('W4: an object-form predicate close is STAGED once — the drafter, the validator and the runner see the same one-stage menu, at the same close cost as the equivalent single-stage list', async (t) => {
+  // Before the hoist there were TWO derivations: planPrompt and validatePlan
+  // called checkMenu on the RAW spec (an object is not an array → empty menu),
+  // while runPlan called it on the SYNTHESIZED [{name:'close',…}]. So the runner
+  // announced and preflighted a stage the drafter was never offered and the
+  // validator would have redded check-unknown — and it ran the close command a
+  // second time for a ruler nobody could reference.
+  const run = async (close) => {
+    const wd = makePatient(t);
+    // a COUNTING close: it appends one line per execution, so the number of times
+    // the operator's command actually ran is on disk, not inferred from events
+    writeFileSync(join(wd, 'close.mjs'), `import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+appendFileSync(new URL('./close-runs.log', import.meta.url), 'run\\n');
+const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
+if (existsSync(p) && readFileSync(p, 'utf8').includes('ok')) { console.log('suite: 1 passed'); process.exit(0); }
+console.log('FAILED tests/test_x.mjs — file missing or has no ok assertion'); process.exit(1);\n`);
+    const plan = JSON.stringify({ schema: 'plan-v1', steps: [{
+      id: 'write-test', action: 'Write tests/test_x.mjs asserting the module exports.',
+      tools: ['write'], rounds: 6, target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'close' }],
+    }] });
+    const provider = scriptedProvider([
+      { text: 'scout' }, { text: plan },
+      { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+      { text: 'wrote it' },
+    ]);
+    const { outcome, events } = await go(wd, provider, { job: JOB(wd, { close }) });
+    const log = join(wd, 'close-runs.log');
+    const runs = existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).length : 0;
+    return { outcome, events, runs };
+  };
+
+  const obj = await run({ type: 'predicate', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' });
+  assert.equal(obj.outcome, 'green', 'the plan referenced the staged stage by name and the run completed');
+  assert.deepEqual(obj.events.find((e) => e.type === 'check-menu').offered, ['close']);
+  assert.deepEqual(obj.events.filter((e) => e.type === 'check-preflight').map((e) => e.name), ['close']);
+  assert.equal(obj.events.filter((e) => e.type === 'close-precheck').length, 1, 'the precheck is one close judgment, not two');
+  assert.ok(obj.events.some((e) => e.type === 'check-run' && e.name === 'close'),
+    'the step actually referenced the staged stage as its ruler — without that the menu claim is decoration');
+
+  // parity: the object form is EXACTLY the one-stage list it stands for, so its
+  // close command must execute the same number of times — no extra run for an
+  // unreferenceable ruler, and no silently skipped preflight either
+  const arr = await run([{ name: 'close', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' }]);
+  assert.equal(arr.outcome, 'green');
+  assert.equal(obj.runs, arr.runs,
+    `the object form must cost exactly what its staged equivalent costs (object ${obj.runs} vs list ${arr.runs})`);
+  assert.deepEqual(
+    obj.events.filter((e) => ['check-menu', 'check-preflight', 'check-run'].includes(e.type)),
+    arr.events.filter((e) => ['check-menu', 'check-preflight', 'check-run'].includes(e.type)),
+    'and the two shapes produce the same menu/preflight/check record',
+  );
+});
+
+test('W3: the incoherent narrowed-scope plan is rejected at the VALIDATION gate on the shipped path — it never reaches the worker to burn attempts on refusals', async (t) => {
+  // The defect this closes, end to end: `scope` narrows the step's gate to
+  // tests/**, `target` names src/mod.mjs — each half legal against the SIGNED
+  // fence, so the plan used to validate green and every write the step made was
+  // then denied by the narrowed gate, burning its attempts with no red anywhere.
+  // Run against the runner's OWN derived scope menu, not a hand-passed one.
+  const wd = makePatient(t);
+  const job = JOB(wd, { writeScope: ['tests/**', 'src/**'] });
+  const bad = JSON.stringify({ schema: 'plan-v1', steps: [{
+    id: 'write-test', action: 'Edit the module.',
+    tools: ['write'], rounds: 6, target: 'src/mod.mjs', scope: 'tests/**',
+    exit: [{ type: 'tree-changed', scope: 'tests/**' }],
+  }] });
+  const provider = scriptedProvider([{ text: 'scout' }, { text: bad }, { text: bad }]);
+  const { outcome, events } = await go(wd, provider, { job });
+  assert.equal(outcome, 'plan-red');
+  const red = events.filter((e) => e.type === 'plan-red').find((e) => e.path === 'steps.0.target');
+  assert.equal(red?.code, 'step-scope-escape', `got ${JSON.stringify(events.filter((e) => e.type === 'plan-red'))}`);
+  assert.match(red.detail ?? '', /tests\/\*\*/, 'the gap names the step\'s own narrowed scope so the redraft can aim');
+  assert.equal(events.filter((e) => e.type === 'step-start').length, 0, 'no step ever ran — the burn is what this closes');
 });

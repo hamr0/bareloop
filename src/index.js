@@ -18,13 +18,17 @@ export { makeSpine } from './spine.js';
 // CLOSE_FAULTS/scanSecrets: bareloop.context.md documents both as public API —
 // the exports make the adopter contract true (release review 2026-07-19; the
 // exports map admits only ".", so a deep import cannot reach them).
-export { ralph, runClose, CLOSE_FAULTS } from './ralph.js';
+// runStages/checkMenu/STORE_VERBS: same reason, one rung later (review 2026-07-30)
+// — the CHANGELOG announces runStages async beside runClose and STORE_VERBS beside
+// the exported WRITE_VERBS, and bareloop.context.md points adopters at checkMenu by
+// name. Documented-but-unexported is a false contract; the additions are additive.
+export { ralph, runClose, runStages, CLOSE_FAULTS } from './ralph.js';
 export { globToPrefix, scanSecrets } from './validate.js';
-export { validateJob, jobSpecHash, checkApproval, CLOSE_TYPES, CLASS_BY_CLOSE, GOLD_COMPARE, CADENCE_UNITS, PROVIDERS, CONDITION_KEYS, TOOL_MENU, LOCKED_TOOLS, VERDICT_TYPES, LOCKED_VERDICTS } from './job.js';
+export { validateJob, jobSpecHash, checkApproval, checkMenu, CLOSE_TYPES, CLASS_BY_CLOSE, GOLD_COMPARE, CADENCE_UNITS, PROVIDERS, CONDITION_KEYS, TOOL_MENU, LOCKED_TOOLS, STORE_VERBS, VERDICT_TYPES, LOCKED_VERDICTS } from './job.js';
 // Layer 2: the plan-v1 validator — the agent-authored plan doc's gate; the
 // two-doc split's third validator never happens (plan-v1 gates the PLAN, the
 // job spec stays the arbiter's only home).
-export { validatePlan, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, WRITE_VERBS } from './plan.js';
+export { validatePlan, stageClose, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, WRITE_VERBS } from './plan.js';
 export { snapshotScope, evalExits } from './exits.js';
 export { runPlan } from './planrun.js';
 export { runJob } from './run.js';

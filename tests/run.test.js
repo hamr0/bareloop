@@ -22,6 +22,7 @@ import { join } from 'node:path';
 import { makeSpine } from '../src/spine.js';
 import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
+import { STALL_MS } from '../src/stall.js';
 import { readSpine, scriptedProvider } from './helpers.js';
 
 const base = mkdtempSync(join(tmpdir(), 'run-test-'));
@@ -57,8 +58,9 @@ const planJob = () => ({
   writeScope: ['tests/**'],
   goal: 'Write tests/test_x.mjs with an ok assertion.',
   verdictType: 'green',
-  close: { type: 'predicate', cmd: 'node close.mjs', expect: 0 },
-  checks: [{ name: 'clean-run', cmd: 'node check.mjs', expect: 0, gapKeep: '^FAILED' }],
+  // the staged close (PRD v1.28): ONE list of named stages, and the check menu
+  // derives from it — `clean-run` is a piece of the close, not a copy beside it
+  close: [{ name: 'clean-run', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' }],
   tools: ['read', 'write'],
   escalation: { mode: 'decision-ready' },
 });
@@ -161,6 +163,81 @@ test('plan dispatch: a transport-throw provider-red reports spendComplete:false 
   assert.equal(end.spendComplete, false, 'the priced sum is a FLOOR, not the total — mirror the legacy providerRed()');
 });
 
+// W1: the stall case that is NOT terminal. src/stall.js abandons a hung call and
+// REISSUES it (self-heal is hamr's ruling), and stall.js says outright that the
+// abandoned call may already have been billed — so a run that absorbs a stall and
+// then ends green states a priced sum that is a FLOOR, not the total. Only the
+// terminal `step-stalled` carried that unknown; the healed run — the common case —
+// reported an exact-looking total. F6 in a self-heal coat.
+test('a SELF-HEALED stall makes the green job-end money a FLOOR: spendComplete false, spentUsd still the real sum (W1)', async (t) => {
+  // the whole point of `stall` is a call that outlives its window, so the window
+  // is what gets mocked — the watchdog, the meter and the plan flow are all real
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write the missing test.', tools: ['write'], rounds: 6,
+      target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    }],
+  });
+  /** one arm: `stall` hangs the scout's FIRST issue, the control hangs nothing */
+  const arm = async (/** @type {string} */ name, /** @type {boolean} */ hangFirst) => {
+    const wd = makePlanWork(name);
+    const job = planJob();
+    const scripted = scriptedProvider([
+      { text: 'no tests exist yet' },
+      { text: plan },
+      { toolCalls: [tcall2('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+      { text: 'wrote it' },
+    ]);
+    let issues = 0;
+    const provider = {
+      calls: scripted.calls,
+      async generate(/** @type {any} */ messages, /** @type {any} */ tools) {
+        // a socket that stays alive and completes no ROUND — the one shape
+        // bare-agent's idle timeout cannot see (F66). It never settles: the
+        // reissue is what answers, exactly as the abandoned call's corpse does.
+        // It never reaches `scripted.generate`, so the tape does not advance.
+        if (hangFirst && ++issues === 1) return new Promise(() => {});
+        return scripted.generate(messages, tools);
+      },
+    };
+    const file = join(wd, 'spine.jsonl');
+    const running = runJob(job, {
+      approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+      workdir: wd, provider, emit: makeSpine(file),
+    });
+    if (hangFirst) {
+      // yield real event-loop turns (the smoke and the close precheck are real
+      // I/O, ~1s of it) until the watchdog has armed on the hung call, then
+      // expire the window. setImmediate is deliberately NOT mocked, and the
+      // deadline is wall-clock: a fixed turn COUNT races the child process.
+      const t0 = Date.now();
+      while (issues === 0 && Date.now() - t0 < 30_000) await new Promise((r) => setImmediate(r));
+      assert.equal(issues, 1, 'the scout call was issued and is hanging');
+      t.mock.timers.tick(STALL_MS);
+    }
+    return { outcome: await running, events: readSpine(file) };
+  };
+
+  const healed = await arm('plan-healed-stall', true);
+  assert.equal(healed.outcome, 'green', 'the stall SELF-HEALED — the run finished, nobody was told to retry');
+  assert.ok(healed.events.some((e) => e.type === 'stall'), 'the watchdog really fired: a stall passed through the meter');
+  const end = healed.events.find((e) => e.type === 'job-end');
+  assert.equal(end.outcome, 'green');
+  assert.ok(end.spentUsd > 0, 'the priced sum still rides out — a floor is a real number, not a blank');
+  assert.equal(end.spendComplete, false, 'an abandoned call may already have been billed: the sum is a FLOOR and says so');
+
+  // the control: the same job, the same tape, no stall — the money is EXACT, so
+  // the flag tracks the stall and not merely "this run ended"
+  const clean = await arm('plan-no-stall', false);
+  assert.equal(clean.outcome, 'green');
+  assert.ok(!clean.events.some((e) => e.type === 'stall'));
+  const cleanEnd = clean.events.find((e) => e.type === 'job-end');
+  assert.equal(cleanEnd.spendComplete, true, 'nothing was abandoned — the total is exact');
+});
+
 // ─── ports from the deleted legacy half: guards that outlived the path they
 // were written against. Each is the SAME assertion, re-pointed at the plan
 // shape — deleting them with the path would have shrunk coverage silently,
@@ -229,4 +306,96 @@ test('money on the job-end: an UNPRICED round halts pricing-red and the priced s
   const end = readSpine(file).find((e) => e.type === 'job-end');
   assert.equal(end.outcome, 'pricing-red');
   assert.equal(end.spendComplete, false, 'the sum is a floor, and says so');
+});
+
+// ── F64 at the job-end: `wall-halt` is TWO stops wearing one name, and only one of
+// them states an exact figure. A deadline read BETWEEN rounds (or between attempts,
+// W-2) stops a run with nothing in flight — every round it counted came back and was
+// billed, so the sum IS the total. A deadline that landed INSIDE a call comes back as
+// the provider's own timeout, and that call returned no usage at all: it may already
+// have been billed and will never say so. Same unknown as the transport floor and the
+// self-healed stall above, so the same honest answer — and the discriminator is the
+// wall-halt record's own `cutMidCall`, never the outcome (keying on the outcome would
+// floor the exact stop too, which is the same dishonesty pointing the other way).
+//
+// The wall is mocked at `Date`, the one seam a runJob-level test has: `maxWallMs` has
+// a two-minute floor (MIN_WALL_MS — a cap under one close cannot fund its own close),
+// so a real-time test would have to run for two minutes to read a deadline. Only Date
+// is mocked; setTimeout, the spawned close and the real plan flow are untouched.
+
+/** the plan-shape job with the operator's time cap set at its floor */
+const wallJob = () => ({ ...planJob(), maxWallMs: 120_000 });
+
+const etimedout = () => Object.assign(new Error('[AnthropicProvider] request timed out'), { code: 'ETIMEDOUT' });
+
+test('a MID-CALL wall-halt states spendComplete:false — the cut call returned no usage, so the priced sum is a FLOOR (F64/F6)', async (t) => {
+  const wd = makePlanWork('wall-mid-call');
+  const job = wallJob();
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
+  let n = 0;
+  const provider = {
+    calls: [],
+    async generate() {
+      n += 1;
+      provider.calls.push(n);
+      // the scout answers and is billed; the DRAFTING call is the one the wall lands
+      // inside, and it rejects with exactly the timeout clock.callTimeoutMs() asked for
+      if (n === 2) { t.mock.timers.tick(200_000); throw etimedout(); }
+      return { text: 'no tests exist yet', usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(job, { approvals: approve(job), workdir: wd, provider, emit: makeSpine(file), capRuns: 2 });
+
+  assert.equal(outcome, 'wall-halt', 'the run\'s own deadline is a governance stop, never a transport casualty (F64)');
+  const events = readSpine(file);
+  assert.equal(events.find((e) => e.type === 'wall-halt').cutMidCall, true,
+    'the discriminator is ON the record — the meter reads the field, it does not re-derive the reading');
+  const end = events.find((e) => e.type === 'job-end');
+  assert.equal(end.outcome, 'wall-halt');
+  assert.ok(end.spentUsd > 0, 'the priced sum still rides out — a floor is a real number, not a blank');
+  assert.equal(end.spendComplete, false, 'the cut call may already have been billed and never told us: the sum is a FLOOR and says so');
+});
+
+test('CONTROL: a BETWEEN-ATTEMPTS wall-halt keeps spendComplete:true — nothing was in flight, so the exact total must not be dressed up as a floor', async (t) => {
+  const wd = makePlanWork('wall-between-attempts');
+  const job = wallJob();
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write the missing test.', tools: ['write'], rounds: 6,
+      target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    }],
+  });
+  let n = 0;
+  const provider = {
+    calls: [],
+    async generate() {
+      n += 1;
+      provider.calls.push(n);
+      const scripted = [{ text: 'no tests exist yet' }, { text: plan }][n - 1] ?? { text: 'a step attempt that must never be bought' };
+      return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const file = join(wd, 'spine.jsonl');
+  // the wall passes once the plan is ACCEPTED — the run's own state, never a call
+  // count, so the trigger cannot silently retarget if the number of calls changes
+  const spine = makeSpine(file);
+  const emit = (/** @type {string} */ type, /** @type {any} */ data) => {
+    const e = spine(type, data);
+    if (type === 'plan-accepted') t.mock.timers.tick(200_000);
+    return e;
+  };
+  const outcome = await runJob(job, { approvals: approve(job), workdir: wd, provider, emit, capRuns: 2 });
+
+  assert.equal(outcome, 'wall-halt', 'the first step would begin past the deadline, so it is never funded (W-2 at the step site)');
+  const events = readSpine(file);
+  assert.equal(events.find((e) => e.type === 'wall-halt').cutMidCall, false, 'read between attempts, with no call in flight');
+  const end = events.find((e) => e.type === 'job-end');
+  assert.equal(end.outcome, 'wall-halt');
+  assert.ok(end.spentUsd > 0, 'the scout and the draft were bought and billed');
+  assert.equal(end.spendComplete, true,
+    'every round this sum counted came back priced — the flag tracks the mid-call cut, not merely "a wall-halt happened"');
 });

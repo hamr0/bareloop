@@ -130,6 +130,44 @@ test('tree-changed: a DELETED file counts as change; a scope dir that does not e
   assert.equal(emptySnap.size, 0, 'missing scope dir = empty snapshot, never a throw');
 });
 
+test('W3 (the validator arm\'s runtime ground): a tree-changed scope CONTAINING the step\'s scope fires on a narrow write; its DISJOINT twin never can', async (t) => {
+  // plan.js admits a WIDER exit scope than the step's own and reds a DISJOINT one.
+  // Both halves rest on this evaluator's behaviour, and until now the claim lived only
+  // in a comment in plan.test.js — the validator's arm was pinned, the semantics it
+  // asserts about ANOTHER module were not. Real files, real snapshots, exactly the way
+  // planrun builds them (one snapshotScope per tree-changed exit scope, pre-step).
+  const dir = makeDir(t);
+  mkdirSync(join(dir, 'tests/unit'), { recursive: true });
+  mkdirSync(join(dir, 'tests/e2e'), { recursive: true });
+  // the e2e tree is a PRIOR step's ground: it exists, it is in the snapshot, and this
+  // step is not allowed to touch it — the case that makes the disjoint exit unsatisfiable
+  writeFileSync(join(dir, 'tests/e2e/test_flow.py'), 'def test_flow(): pass\n');
+  writeFileSync(join(dir, 'tests/unit/test_a.py'), 'def test_a(): pass\n');
+
+  // all three snapshots taken PRE-step, as planrun does
+  const wide = await snapshotScope(dir, 'tests/**');
+  const narrowSnap = await snapshotScope(dir, 'tests/unit/**');
+  const disjoint = await snapshotScope(dir, 'tests/e2e/**');
+  assert.ok(disjoint.size > 0, 'the disjoint scope is NON-empty — an empty one would pass by deletion-count accident and prove nothing');
+
+  // the only write the step's own scope (tests/unit/**) allows
+  writeFileSync(join(dir, 'tests/unit/test_a.py'), 'def test_a(): assert True\n');
+
+  const containing = await evalExits([{ type: 'tree-changed', scope: 'tests/**' }], { dir, snapshot: wide });
+  assert.equal(containing.pass, true, 'a superset scope contains the step\'s ground, so it fires on a write the narrow scope allows');
+  assert.match(containing.results[0].detail, /1 file\(s\) changed under tests\/\*\*/);
+
+  const narrow = await evalExits([{ type: 'tree-changed', scope: 'tests/unit/**' }], { dir, snapshot: narrowSnap });
+  assert.equal(narrow.pass, containing.pass,
+    'and it fires EXACTLY when the narrow scope does — the widening the validator admits changes no verdict');
+  assert.match(narrow.results[0].detail, /1 file\(s\) changed under tests\/unit\/\*\*/,
+    'same count, wider window: the extra ground the superset watches contributed nothing');
+
+  const away = await evalExits([{ type: 'tree-changed', scope: 'tests/e2e/**' }], { dir, snapshot: disjoint });
+  assert.equal(away.pass, false, 'a disjoint scope is unsatisfiable by construction — no write this step may make can ever reach it');
+  assert.match(away.results[0].detail, /0 files? changed under tests\/e2e\/\*\*/);
+});
+
 test('tree-changed without a snapshot in ctx fails CLOSED as a fault (a blind instrument must never read "changed" — and never feed a worker gap)', async (t) => {
   const dir = makeDir(t);
   const r = await evalExits([{ type: 'tree-changed', scope: 'tests/**' }], { dir });

@@ -1964,3 +1964,453 @@ Until then the plan path admits `green` only, and declaring `soft-green`/`hitl` 
   strategy lines). Those are not legacy; they were housed in legacy files.
 - **Landed as its own change, before the staged close** (hamr chose the sequencing): two levers in
   one diff make any resulting delta unattributable to either — the standing rule.
+
+---
+## Addendum v1.33 — 2026-07-26 (two calls inside the staged close: the ratchet's red-set is the
+FAILING STAGE's, and the grader is not lendable — hamr)
+
+**Approval.** hamr in-turn, verbatim: *"agreed on both, validate your claims"* — given after
+both proposals, with their measured grounds, were put in front of him during the staged-close
+build (PRD v1.28). Both are arbiter territory (Layer R's detector; the check menu the agent is
+handed) and both are recorded here rather than folded silently into the build.
+
+### 1. Layer R's red-set under a staged close is the STAGE that rendered the verdict, per attempt
+
+A staged close has N `gapKeep` patterns, one per stage, and the stage that renders the verdict
+varies attempt to attempt (whichever one reds first). The build's own WIP had stubbed this as
+"the first stage that carries a `gapKeep`" — wrong, and wrong in a way the suite could not see
+because nothing exercised two stages with different patterns.
+
+**What shipped:** `createRoot().observe()` (`src/root.js`) now accepts `redStage`/`redKeep`
+alongside `gap`/`writes`, and the detector **refuses to compare red-sets across a stage
+change** — a different wall of the close is a different failure, so repetition is not
+provable. This is the same bucket the detector already used for one-known-one-UNKNOWN, and for
+the same reason: MOVEMENT, never a fire, when the comparison cannot be trusted. `root-injected`
+gains an optional `redStage` field carrying which stage produced the compared red-set.
+
+**The rejected alternative, and why it was rejected on MEASURED grounds, not taste:** one union
+`gapKeep` pattern fixed for the whole run, so every stage's failures fed one comparable set.
+Its safety rests on an assumption — that the stages' kept lines are distinguishable from each
+other — which the real corpus does not support: job #4's two close stages are near-clones of
+one grader, and **7 of their 12 kept-line templates are byte-identical** (measured over
+`l2poc-check-close.mjs` and `testgen-close.mjs`, including the shared `TESTGEN | <suite line>`
+family). A test built from those real shared lines **fired under the union rule** before the
+per-stage guard landed — a false positive across a stage change, exactly what "inert when not
+stuck" (the standing armed-and-inert doctrine) forbids. This is the opposite direction from the
+hazard the union approach was meant to avoid (going silent); that account was wrong and is
+withdrawn.
+
+**Deviation from what was described when hamr agreed — flagged to him, not folded in silently.**
+The rule was put to him as *"a changed stage means the red-set is not comparable, so say
+can't-tell and fall back to the weaker signal: did the worker touch the same file again."* What
+shipped is **stricter**: a changed stage never fires at all. The looser version was wrong in the
+same direction as the union pattern — in the measured case (the worker clears one wall and hits
+the next while rewriting the same file), write-overlap alone would still have carried a fire, so
+the fallback would have produced exactly the false positive the guard exists to prevent.
+Reversing this to the version as described is a one-line change and remains hamr's call.
+
+**Cost:** callers with a single red-set source — the per-step exit evaluator, which was never
+staged — pass neither `redStage` nor `redKeep` and are unaffected; only the close-fix loop
+(the one seam a staged close reaches) carries the new fields. Both directions are
+mutation-proven: restoring the old stub reds the plan-runner's own test; deleting the
+stage-change guard reds the root test built against the shared-template case above.
+
+### 2. The grading stage is not lendable
+
+All four shipped specs set `offer: false` on their final stage (named `verdict`), so the
+close's own grade never appears in the derived check menu the agent is handed mid-build — it
+can borrow every EARLIER stage as a ruler, never the stage that renders the verdict itself.
+This is kept as a **per-spec flag**, not a schema rule enforced by the validator: "the last
+stage is the grade" holds in all four specs that exist today and is not proven true in
+general (a future close could legitimately name its grading stage first, or run several
+independent hard gates with no ordering significance). Because it is a convention and not a
+structural guarantee, a forgotten flag on a fifth spec would be silent **except** that
+`check-menu` preflight always announces the full derived menu on the spine regardless — so a
+grading stage left lendable is visible in the run's own record even when the schema does not
+forbid it. A test (`tests/staged-close.test.js`) now reads every spec in `jobs/` and reds if
+any of them offers its own last stage; it is proven able to fail (flipping aurora's `verdict`
+stage to `offer: true` reds it, naming the menu).
+
+### What this does not change
+
+Both items are refinements inside the staged close (v1.28) itself, not a new arbiter-shape
+decision: the close is still the only truth, `checks[]` is still retired, and the check menu
+still derives from the close's own stages. Neither item touches money, time, or the merge
+line.
+
+### Scripted-provider caveat, stated where it matters
+
+Everything above — the staged close itself, both decisions in this addendum, and every
+supporting number — comes from scripted-provider tests. **The staged close has not yet run
+against a real model.** That run is the next real-model evidence this rung needs, same as
+every other build in this programme before its battery.
+
+---
+## Addendum v1.34 — 2026-07-27 (workflow REUSE: the goal stated, the missing machinery inventoried, the design deferred to its rung — hamr)
+
+**Approval.** hamr in-turn, verbatim: *"spill out missing specs and add it to later module as part
+of prd. goal is user can choose workflow for similar job and it would reuse the same plan and
+self-heal insteaf of starting from scratch"*, and on the design itself: *"speccs will be addressed
+when its turn"*. **This addendum NAMES the gap and parks it. It designs nothing** — the machinery
+below is deliberately left unspecified until the rung that builds it, which opens under Layer 3's
+own procedure (interview → design-freeze → sub-dollar lineage pre-probe BEFORE any machinery).
+
+### The goal, in the user's terms
+
+> A user picks a workflow for a **similar** job; the system **reuses that plan and self-heals**
+> instead of starting from scratch.
+
+This is the product's founding claim restated operationally (§2: bareloop learns a JOB — the plan
+is a persistent, ledger-attributed artifact; a bareloop that discards the plan each run IS
+relayfact and should be archived). What v1.27 added is that the reuse run doubles as Layer 3's
+inheritance-ON arm and a from-scratch run as the OFF arm, so the paired control falls out of
+normal operation.
+
+### What EXISTS today (2026-07-27, U's first green)
+
+- A green run emits its accepted plan on the spine, and the U runner persists it as
+  `bridge-<job>.json` with the spec hash and the green that minted it. **A file, not a mechanism:
+  nothing reads it back.**
+- Self-healing WITHIN a run is built and observed: a step that fails its own derived check gets
+  the gap and retries under bound (U run 1, step 2), and the outer close-fix loop catches a
+  close-level red. Layer R adds within-run repetition detection (default OFF).
+- Self-healing ACROSS runs does not exist in any form. A reused plan would either work or the run
+  would stop; nothing revises a bridge that failed.
+
+### The missing machinery — an INVENTORY, not a design
+
+Each line is a question the building rung must answer; none is answered here.
+
+1. **Storage.** Where a bridge lives, what it contains beyond the plan, and its relationship to
+   the ledger (every inherited rule carries the green that minted it and the contrast that
+   attributed it — §2).
+2. **Keying and matching.** What makes a job "similar" enough to offer a bridge. This is the
+   whole weight of the user's sentence and the hardest item: v1.27's unruled condition 2 says
+   same SHAPE, never same instance, or the bridge is a lookup table the memorization audit kills.
+3. **Selection.** Whether the USER picks the workflow (hamr's phrasing: *"user can choose"*),
+   the agent proposes, or the shell matches — and what the user is shown in order to choose.
+4. **Loading and re-validation.** A stored plan is never executed unchecked: it re-enters the
+   same validator (scopes, bounds, verbs, exits, check names derived from THIS job's close), and
+   a bridge that no longer validates is a distinct outcome, not a crash.
+5. **Adaptation — the self-heal.** What the agent may change in an inherited plan and when: after
+   a failed step, after a red close, before starting. The arbiter stays inexpressible either way;
+   unlimited revision launders thrash as adaptation (the v1.22 replan ceiling exists for exactly
+   this reason and must not be quietly reopened here).
+6. **Demotion.** v1.27's unruled condition 1: a green graduates a bridge to CANDIDATE, and a
+   bridge that fails to carry the next job is demoted, not defended.
+7. **Attribution.** What the ledger counts so reuse can be read as a lift and not a story —
+   the ON/OFF contrast on cost, wall time, rounds and outcome.
+8. **The scout under reuse.** The scout is load-bearing when planning cold (F60). Whether a
+   reused bridge still scouts, scouts less, or skips it, is unmeasured and unassumed.
+
+### The two conditions still awaiting hamr's ruling
+
+v1.27 recorded them so they could not be quietly assumed; they remain unruled and they gate the
+build, because they decide what the second run MEANS:
+
+1. graduation is to CANDIDATE, reuse is the replication, failure demotes;
+2. "the same job" means the same SHAPE, never the same instance.
+
+### Evidence this addendum rests on, and its limits
+
+U run 1 greened this job cold ($2.21 of $5, 8.9 min of 30) with a three-step plan the agent
+composed itself, and saved the first bridge. U run 2 (same job, same seed) drafted a **materially
+different** plan and was killed mid-flight by an operator tooling limit, not by the product — it
+is UNREAD, and no comparison may be drawn from it. That a second draft differs is expected of a
+probabilistic worker and is not evidence that one plan is worse; **more than one valid bridge
+almost certainly exists for a given job**, which is itself an input to items 2, 3 and 6 above.
+
+## Addendum v1.35 — 2026-07-30 (T·A·P·U closes: P read complete, the palette is inert where feedback names the target, and the mailbox rule joins the validation laws — F69)
+
+**This addendum closes the v1.27 programme.** All four moves are landed and read; the plan's
+paper trail: v1.27 (the programme), the materials design record (2026-07-26, T+A), the P design
+record (2026-07-28), FINDINGS F59–F69, and this addendum. No other document carries T·A·P·U
+status.
+
+### Where each move ended
+
+- **T** — shipped and live in every U run: `maxWallMs` (operator-set, no default), `src/clock.js`,
+  and the materials block (balance, never a rate — v1.29).
+- **A** — built; the variance trigger stays UNSET (v1.30/F63: it would have fired zero times in
+  the whole archive). The replan that actually pays fires on attempt-exhaustion, and it converted
+  a cap-halt to green on the F68 run.
+- **U** — the surface everything above was read on: five litectx-u cold runs this cycle plus the
+  F68 green; user-mode e2e is routine now, including casualty routing (one `truncated:max_tokens`
+  provider-red absorbed per doctrine).
+- **P** — built (design record 2026-07-28: 14-verb catalog, step vocabulary model/attempts/scope,
+  wired-or-refused); read under the signed hash `25d8c5ee…` at n=3 cold + 2 post-rule runs (F69).
+
+### What the P read established (one genre, one job — the qualifier travels)
+
+1. **The widened palette was never touched**: six drafted plans, zero new-verb selections —
+   while the step VOCABULARY (model tiering, attempts, scope) was adopted immediately and
+   everywhere. F19 recurs at the draft layer: a menu without a draft-time reason is inventory,
+   not capability.
+2. **The read is genre-bound by construction**: TYPES feedback (tsc's error list) names every
+   target file:line, so navigation verbs have nothing to sell on this job. "Inert on litectx-u
+   TYPES" is minted; "inert" is not. A job where FINDING is the bottleneck is the discriminating
+   instrument, if the question is ever worth its spend.
+3. **The load-bearing find was plan SHAPE, not palette**: 4 of 4 pre-rule plans authored a
+   read-only "verify" step holding every `check-passes` — the check's gap re-delivers to that
+   step's own worker, which cannot act (the mailbox with no hands). The one prior green (F68)
+   had escaped only via a lucky replan relocating the check.
+
+### The mailbox rule (shipped, d447665)
+
+`validatePlan` reds `check-passes` on any step without a write-class tool — the complement of
+the F17 pairing rule; the drafter prompt states the same law. Post-rule: first-draft compliance
+twice (the validator never fired — the stated law redirected the habit), and the first
+no-replan green in this job's history (`ms5uxhej`, $4.29/23.9min vs the F68 baseline's
+$5.77/37min-with-replan; direction recorded, n=1 unminted). The check-loop converted live at
+the exact step shape that had stalled both pre-rule runs.
+
+### Standing after v1.35
+
+Layer 2's road is finished. Open, in order, all gated on hamr: aurora-u re-sign under the
+widened menu (P design decision 4); the REUSE rung (v1.34's eight questions — four bridges now
+exist, including the first from an un-replanned cold plan); the parked mechanics (spawnSync
+async close-runner, deadlineMs wiring, branch merge). LC-4 (stash/peek/compress intent
+divergence with litectx's contract) remains an unfiled candidate ask.
+
+## Addendum v1.36 — 2026-07-30 (the tier floor: the plan is authored at sonnet or above — hamr)
+
+One decision, evidence-first: aurora-u run whole-job on haiku died plan-red at $0.05 —
+draft 1 authored the mailbox trap (F69's rule fired in production for the first time and
+blocked it), draft 2 repeated the violation verbatim after a red that named the step, the
+rule, and the fix. The same job, same signed spec, greened under sonnet the same day
+($1.86, 11.2min). The capability edge is at PLANNING, before any execution spend.
+
+**The lock (hamr, in-turn):** the drafter and the default worker tier floor is **sonnet
+(medium tier)**. Unchanged by this lock: the per-step `model` menu still offers `haiku`
+(economy tiering of mechanical steps under a sonnet-authored plan — a haiku step has
+greened); `opus`/top tiers stay absent from the plan menu (hamr-assigned only); the
+runner's `--model` flag remains an explicit operator probe knob — running below the floor
+is an operator act, never a default, and its rows are probes, not battery evidence.
+
+## Addendum v1.37 — 2026-07-30 (tier policy is a product surface: provider-agnostic tier names, per-provider auto-detection, and user-chosen tier pairs at the UI — hamr)
+
+Direction recorded from hamr's words, design deferred to its rung (the reuse rung for the
+bridge half; the panel rung N6 for the UI half):
+
+1. **Tier names are product vocabulary, not model ids.** The plan schema already encodes
+   this (`STEP_MODELS` offers tiers; the tier→model mapping is the runner's, per provider).
+   The vocabulary generalizes to **low / medium / high**: today low=haiku, medium=sonnet,
+   high=opus-class (absent from the plan menu, operator-assigned only — unchanged).
+2. **Per-provider auto-detection.** When a provider beyond Anthropic is wired (e.g. an
+   OpenAI-compatible API), the runner should DETECT the provider's small/medium/high
+   models from the provider's own catalog rather than hardcoding ids — the tier menu
+   stays identical for the agent; only the runner's mapping table is provider-aware.
+   (Detection is runner/operator territory; the agent still only ever names a tier.)
+3. **The efficiency goal, stated:** a BRIDGE gets the best of the models — authored at
+   medium-or-above (v1.36 floor), executed as cheaply as the evidence allows. Tier
+   demotion of proven bridge steps is evidence-gated and operator-signed (carried to the
+   Layer 3 interview agenda), the escalation path on drift being the existing
+   exhaustion→replan route, which the floor already keeps at medium+.
+4. **User choice at the UI (later):** the signing card offers tier PAIRS —
+   planning/execution — e.g. **medium/low · medium/medium · medium/high · high/high**;
+   the planning side never drops below the v1.36 floor, and high tiers remain an explicit
+   user choice (cost-visible), never a default.
+
+## Addendum v1.38 — 2026-07-30 (the branch closes: hardened, reviewed, every validated finding fixed — and two arbiter changes made only on hamr's explicit word)
+
+**This addendum closes the `staged-close-wip` branch, not a design question.** v1.35 recorded
+that Layer 2's road was finished; this records that it is now hardened, reviewed and
+release-ready. No decision here reopens anything above it.
+
+### What landed after v1.37
+
+A hardening pass first (15 tests, every one fail-proven by sabotage): the mailbox rule's
+edges, a casualty grid covering all five provider-consuming phases, and the cold-store
+guarantee — a leak hunt proving litectx persists only under `.litectx/`, plus a tripwire on
+the runner's reset line, because an uncleaned store leaks run N's memory into run N+1's
+"cold" baseline and quietly poisons the reuse rung's OFF arm before it is ever built. One
+in-scope fix travelled with it: the mailbox law now fires only on a PARSED `tools` grant —
+one defect, one red.
+
+Then an opus MEDIUM whole-branch review: 6 MED + 9 LOW. Every validated finding is fixed;
+the full record is **F70**, and the two headline defects were in the guards themselves —
+F66's stall fuse disarmable by its own zombie reissue, F67's watchdog killable-by-design
+mid-close and aimable at a recycled pid. Neither was reachable from the feature side.
+
+### The two arbiter-territory changes, and the words that released them
+
+Standing doctrine parks verdict routing and close semantics for hamr's explicit go. Both
+were parked, and both were released in-turn:
+
+1. **Verdict routing.** The hardening pass found the close-fix loop laundering a transport
+   casualty into a flat `escalated` (F11/F44 class) and parked it. hamr: *"fix both then
+   /code-review medium…"* — which fixed it and launched the review. The review then found
+   the second half in the same routine, MED-4: the shell spells attempt-exhaustion and a
+   money-gate halt with one category, so only the wallet can split them, and the fix
+   worker's gate is built with the wallet at its most drained — the exact place a money cut
+   masquerades as a capability read (F45). Both halves now mirror the step loop.
+2. **Close execution.** hamr: *"validate all errors and fix what passes"* — which set the
+   closing batch's contract (validate each finding before touching it, fix only what
+   survives) and released **F68's parked async close runner**. `runClose`/`runStages` await a
+   plain `spawn`; the close no longer freezes the host loop it reports to, and every close
+   semantic is byte-identical. Resolution recorded in F68's own block.
+
+That contract earned its keep immediately: one proposed fix (renumbering the retrieval
+verbs' line output) was REFUTED by measurement before it shipped — it would have broken a
+working one-handle-space contract to document it (F70).
+
+### Standing
+
+The branch is **release-ready at 31 commits** vs `main`: full gate green, typecheck clean,
+no parked defect left in the shipped path. Two BREAKING changes are on it — `runClose` /
+`runStages` returning Promises (adopters), and `check-passes` requiring a write-class verb
+on the same step (plan authors) — so **the next release is recommended as a MINOR with
+explicit breaking notes (0.6.0)**, pre-1.0 SemVer as this repo already applies it. The
+version itself is hamr's call, as is the merge; nothing here authorizes either.
+
+**Next rung: Layer 3, the REUSE rung** — opened in the order LAYERS.md §4 states (interview
+→ design-freeze → a sub-dollar lineage pre-probe BEFORE any inheritance machinery), and
+gated as always on hamr.
+
+### One record correction (append-only, so it is stated here rather than edited above)
+
+This PRD's status header cites adaptlearn's closed record as **FINDINGS F1–F20**; the copied
+record in `docs/00-context/FINDINGS.md` runs to **F23** (F21–F23 are the three bareloop
+de-risk probes: menu breadth, menu disclosure, declared truncation). The range is the only
+thing wrong — no claim built on that record changes.
+
+## Addendum v1.39 — 2026-07-30 (release-gate fixes land; two future items parked on hamr's order)
+
+The 0.6.0 release gate (fresh full /ship + /security + /diff-review, opus) confirmed no
+Critical/High and produced two fix batches, all validated-then-fixed TDD under hamr's
+"solve all that don't need my review" bar, plus an approved arbiter batch (resolved-spec
+signing so an omitted `tools` pins WHICH menu was signed; spend/time honesty on self-healed
+stalls and staged closes; the `step-scope-escape` pair check; the ONE `stageClose` staging;
+the stall watchdog consulting the wall; the activity-aware outside watchdog; the 64KB store
+note cap — threshold hamr's, verbatim in-turn). Full record in the branch log and F-series.
+
+### Parked as FUTURE work (hamr: "add it to prd future when it's time" / "i assume they come later")
+
+1. **`MIN_WALL_MS` stage-awareness.** The 120s wall floor is a one-stage-era number: a spec
+   with a 2-minute wall and a 4×900s staged close validates while its enforced worst case is
+   ~62 minutes (31× its own cap). Since W5 the clock REPORTS the honest total; making the
+   floor scale with the staged close is a threshold change reserved for hamr, deferred to a
+   future release. Not a defect: advertised = enforced holds; the floor is just permissive.
+
+2. **Pair-coherence sweep (the W3 class, named).** Two individually-legal fields can be
+   jointly incoherent — the validator's healthy precedent is `close-hierarchy`
+   (verdictType × close class); W3 (`scope` × `target`/exit paths) is the second member,
+   found only after it shipped. Future lens, verified candidates (2026-07-30 source pass):
+   `target` × exit paths (unlinked today — judge whether auxiliary artifacts are design or
+   drift); `attempts` × per-step rounds × remaining budget (validation never cross-checks;
+   confirm the runtime meter's ownership is sufficient rather than duplicating it);
+   operator-side `providerFor` factories gating provider params per tier (the library
+   correctly never touches params — a tier with no factory is an interpreter-red STOP —
+   so the coherence burden sits in scripts). Standing rule stays: menus first; a pair
+   check is for what menus cannot express.
+
+## Addendum v1.40 — 2026-07-31 (the wall PAUSES the run: the close is never bounded, the stop is the checkpoint, and the outside kill needs evidence — hamr, rulings given 2026-07-30)
+
+Three rulings on TIME, all given while W-2/W-3 were being built. None of them touches the
+arbiter's ownership: the agent still never authors, adjusts or reads its own wall.
+
+### 1. The close is never bounded by the wall, and never counts against it
+
+A deadline that stops grading leaves the run **unreadable after the money is already
+spent** — the F45 class (a money cap binding mid-attempt killed the row before it could be
+graded, and 4 such rows were counted as evidence) generalized from money to time. So the
+wall bounds the *work*, never the *judgement*: a close already in flight when the deadline
+trips runs to completion, and the run's enforced worst case is stated honestly as
+`maxWallMs + closeStages × closeTimeoutMs` (W5 — a staged close hands EVERY stage the full
+timeout) rather than quoting the one-stage number the code used to advertise.
+
+### 2. The wall PAUSES; it does not cut the grade — resume-to-cap, extended from money to time
+
+hamr, verbatim: *"when time is up, keep the grade we already have and stop"* — and
+*"run tests (free) and when done if original time is past due, pause and ask user to increase
+time or adjust prompt"*. Past the deadline no NEW work starts: the close-fix loop opens no
+further iteration and a step that would begin already expired does not begin. The run stops
+on the verdict the last close minted, and nothing after the deadline may change it.
+
+This is v1.12's resume-to-cap with time in money's place: **the stop IS the checkpoint.** The
+human holds two levers and they point opposite ways — raise `maxWallMs` and resume, or revise
+the goal so the work fits the time — so the stop is decision-ready and carries a progress
+TREND (`moving` | `stalled` | `unknown`, read off the last two close gaps) that says which one
+fits. Both levers are **spec edits**: a new hash, re-signed before the run is allowed to
+resume. The trend is a READING for the human, never a gate — nothing routes on it, and one
+grade alone reports `unknown` rather than rounding up to `stalled` (F6's rule, applied to a
+trend instead of a number).
+
+### 3. The outside kill requires EVIDENCE of death, not a clock — and the marker is spine bytes
+
+hamr, verbatim: *"the kill from outside should check for activity/bytes or other markers for
+activity, not a silent kill"*. The out-of-process watchdog (F67) may kill on its deadline only
+when the spine has ALSO been flat for a full stall-fuse window; past-deadline-but-still-writing
+is logged loud on every poll and never killed — the in-process fuses and the money cap own
+bounding a run that is *alive*, this guard owns processes that are *dead*. Every kill states
+the trigger, the deadline arithmetic and the marker's value and age before the signal goes out.
+
+ONE marker, and the second was deleted rather than kept as decoration: a CPU-liveness marker
+(`/proc` utime+stime) measured broken in BOTH directions — a live close read DEAD (child ticks
+are credited only at reap) and a wedged run read ALIVE (the runner's own lag sampler ticks the
+parent), with its kill tests passing only three orders of magnitude below production
+constants. hamr: *"keep what is simpler/available"* — the spine, which is the marker that
+actually distinguishes progress from silence.
+
+### What this does not decide
+
+`MIN_WALL_MS` stays a one-stage floor (parked in v1.39): advertised = enforced holds, the
+floor is merely permissive. Nothing here changes the money path, the verdict classes, or who
+may author a bound — budgets and walls remain operator territory, permanently.
+
+## Addendum v1.41 — 2026-07-31 (the close child stops carrying the operator's credentials — and the threat model says plainly what that does NOT buy)
+
+hamr's ruling on a MEDIUM review finding, verbatim: ***"strip it when unnecessary, minimize
+unneeded exposure."*** One change, one honest note about its limits.
+
+### 1. The finding: the arbiter's child ran with the operator's keys in reach
+
+`runClose` built the close child's environment as `{...process.env}`, deleting only
+`NODE_TEST_CONTEXT`. Everything else went through — `ANTHROPIC_API_KEY` included. That child
+is not an ordinary subprocess: it runs **worker-authored code**. `npm test`, `pytest`, `tsc`
+execute whatever the worker wrote into the tree during the attempt it is about to judge, with
+network available. Nothing in that set needs a model-provider credential to decide whether a
+tree passes, so the exposure bought exactly nothing and is removed.
+
+### 2. The rule: a literal denylist is a chase, so a NAME-SHAPE rule bounds it
+
+`CLOSE_ENV_DENY` (src/ralph.js, exported) strips from the child's env copy:
+
+- **the knowns** — `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`,
+  `ANTHROPIC_AUTH_TOKEN`, `GITHUB_TOKEN`, `GH_TOKEN`, `NPM_TOKEN`, and the whole `AWS_*` prefix;
+- **the shape** — any variable whose NAME ends in `_API_KEY`, `_SECRET`, `_TOKEN`, `_PASSWORD`,
+  or `_CREDENTIAL(S)`, case-insensitive.
+
+Both are kept on purpose, and the second is the load-bearing one. A literal list is a chase —
+every new provider mints a new variable name — so it exists only for names the shape rule
+cannot see (`AWS_ACCESS_KEY_ID`). The shape rule is what makes the guard hold for credentials
+nobody here has heard of. It follows the SECRET_PATTERNS discipline: one inventory, named,
+with the rule stated where it is enforced.
+
+Placement is deliberate. The strip lives in `runClose`, which is the single close-spawn seam
+in the library: `runStages` runs each stage through it, and `check-passes` → `runCheck` →
+`runStages` lands there too, so every derived check inherits the same blinding — one
+instrument, never two (the F9 two-transforms class applied to the arbiter). The strip is on a
+COPY: the host process keeps its key, because bare-agent needs it every round. The `scripts/`
+close wrappers are unaffected — those that build a frozen allowlist (`PATH`/`HOME` + offline
+flags) were already tighter, and those that re-spread `process.env` are spreading the
+already-stripped child env, so the blinding propagates to their grandchildren. It is arbiter
+territory like everything else in that file: no drafted plan or config can express, widen, or
+opt out of it.
+
+### 3. The residual truth: this is exposure reduction, NOT a sandbox
+
+Stated plainly, because a guard described as more than it is becomes the next false green:
+
+- bareloop runs **locally**, on the operator's machine, as the operator's OS user;
+- the operator's own process **necessarily holds the API key** — bare-agent cannot call the
+  provider without it, and no strip changes that;
+- worker-authored code executed by the close still runs **with network access** and **with the
+  operator's full OS user permissions**: it can read any file that user can read (including
+  credential files on disk, `~/.aws`, `~/.netrc`, a `pass` store, the shell profile that
+  exports the very variables just stripped), and it can reach the network.
+
+So the strip removes credential **environment variables** from the child. A local worker
+remains **inside the operator's trust boundary**. Real containment — a container, a user
+namespace, a network-denied cgroup — is a different mechanism, unbuilt, and is not claimed
+anywhere. What IS claimed is the ruling: where the exposure is unnecessary, it is stripped.

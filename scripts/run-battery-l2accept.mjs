@@ -32,7 +32,7 @@ import { fileURLToPath } from 'node:url';
 import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
 import { makeSpine } from '../src/spine.js';
-import { SECRET_PATTERNS } from '../src/validate.js';
+import { scanSecrets } from '../src/validate.js';
 
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
@@ -230,7 +230,10 @@ for (let i = 1; rows.filter(isAct).length < need && launches < runsRequested && 
   const je = events.findLast((e) => e.type === 'job-end');
   const spentUsd = je?.spentUsd ?? null;
   const spendComplete = je?.spendComplete;
-  const leaks = SECRET_PATTERNS.map((re) => new RegExp(re.source, re.flags.replace('g', '') + 'g')).flatMap((re) => raw.match(re) ?? []);
+  // the ONE spelling of the text-side scan (src/validate.js `scanSecrets`): a
+  // hand-rolled copy here is a second inventory that can silently miss a shape the
+  // canonical one catches, on the very output it guards.
+  const leaks = scanSecrets(raw);
   const casualty = events.some((e) => e.type === 'escalation' && e.category === 'provider-red');
 
   const auditEntries = audit ? logLines(audit).map((l) => JSON.parse(l)) : [];

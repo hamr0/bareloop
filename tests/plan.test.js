@@ -12,7 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { validatePlan, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, WRITE_VERBS, hasNestedQuantifier, legalScopes } from '../src/plan.js';
 import { planPrompt } from '../src/planrun.js';
-import { validateJob } from '../src/job.js';
+import { validateJob, STORE_VERBS, WRITE_VERBS as JOB_WRITE_VERBS } from '../src/job.js';
 
 // The signed side: a validateJob-green four-field spec (job #4's shape) — the
 // ceiling, the fence, and the checks menu all come from it, never from opts.
@@ -26,10 +26,13 @@ const JOB = {
   writeScope: ['tests/**'],
   goal: 'Write a pytest suite for the orchestrator that kills at least 45% of the frozen mutant set.',
   verdictType: 'green',
-  close: { type: 'predicate', cmd: 'python grade.py', expect: 0 },
-  checks: [
+  // the staged close (PRD v1.28): the inspection IS the list, and the agent's
+  // rulers derive from it — `clean-run` and `form-floor` are stages of the same
+  // close whose last stage renders the verdict
+  close: [
     { name: 'clean-run', cmd: 'python -m pytest -ra tests/test_orchestrator.py', expect: 0, gapKeep: '^FAILED' },
     { name: 'form-floor', cmd: 'python check_form.py', expect: 0 },
+    { name: 'verdict', cmd: 'python grade.py', expect: 0 },
   ],
   tools: ['read', 'grep', 'write', 'edit', 'recall', 'get'],
   escalation: { mode: 'decision-ready' },
@@ -102,6 +105,24 @@ test('a missing or malformed signed job fails CLOSED with its own red — never 
   }
 });
 
+test('a writeScope holding a NON-STRING fails closed too — the never-throws contract covers plain data', () => {
+  // `Array.isArray(writeScope)` admitted the array and said nothing about its
+  // MEMBERS, so the very next line (`writeScope.map(globToPrefix)`) hit
+  // `scope.replace is not a function` and validatePlan threw a TypeError on
+  // plain parsed data — the one thing its contract says it never does ("Never
+  // throws on JSON text or plain parsed data; every failure is a named red").
+  // `legalScopes` already filters with the same `isNonEmptyString`; the
+  // fail-closed guard just has to ask the same question.
+  for (const writeScope of [[123], ['tests/**', null], [''], [{}], [['tests/**']]]) {
+    let r;
+    assert.doesNotThrow(() => { r = validatePlan({ schema: 'plan-v1', steps: [] }, { job: { goal: 'g', writeScope } }); },
+      `writeScope ${JSON.stringify(writeScope)} must red, never throw`);
+    assert.equal(r.ok, false);
+    assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'job-invalid:job');
+    assert.equal(r.plan, null);
+  }
+});
+
 test('the closed menus ship frozen', () => {
   assert.deepEqual([...EXIT_TYPES], ['artifact-written', 'tree-changed', 'json-valid', 'check-passes']);
   assert.ok(Object.isFrozen(EXIT_TYPES));
@@ -109,6 +130,15 @@ test('the closed menus ship frozen', () => {
   assert.ok(Object.isFrozen(WRITE_VERBS));
   assert.equal(MAX_EXITS_PER_STEP, 2);
   assert.equal(MAX_PLAN_STEPS, 8);
+});
+
+test('WRITE_VERBS is ONE inventory: plan.js re-exports job.js’s array, same reference', () => {
+  // The SECRET_PATTERNS precedent (one inventory, two readers): plan.js held its
+  // own frozen copy, so a third write-class verb added to either list would be
+  // invisible to the other — the validator would fence a verb the scout filter
+  // still handed out (or the reverse). Identity, not deepEqual: two arrays that
+  // merely happen to match today are exactly the drift this forbids.
+  assert.equal(WRITE_VERBS, JOB_WRITE_VERBS, 'the same frozen array, not a second copy that agrees today');
 });
 
 test('verb-escape carries the escaping verb as a STRUCTURED field (the ledger keys on it)', () => {
@@ -140,9 +170,11 @@ test('a job with NO tools field ceilings at the full menu (validateJob permits o
   assert.deepEqual(r.reds, []);
 });
 
-test('a job with NO checks menu makes every check-passes a check-unknown', () => {
+test('a close whose only stage is HIDDEN offers no menu at all, so every check-passes is a check-unknown (a partial or empty menu is acceptable, never a failure — PRD v1.28)', () => {
   const noChecks = clone(JOB);
-  delete noChecks.checks;
+  // one stage, marked as a precondition: it renders the verdict but is not a
+  // ruler the agent may borrow mid-build
+  noChecks.close = [{ name: 'verdict', cmd: 'python grade.py', expect: 0, offer: false }];
   const r = validatePlan(PLAN, { job: noChecks });
   assert.equal(r.ok, false);
   assert.ok(r.reds.some((x) => x.code === 'check-unknown' && x.path === 'steps.1.exit.1'),
@@ -159,13 +191,132 @@ test('the F17 pairing rule: check-passes on a write-granted step without tree-ch
   assert.match(r.reds[0].detail ?? '', /tree-changed/);
 });
 
-test('check-passes WITHOUT a write grant needs no pairing (a read-only verify step is legal)', () => {
+test('the mailbox-with-no-hands rule: check-passes on a step with NO write-class tool reds exit-illegal', () => {
+  // Measured, not hypothesized (runs ms4l5p6w/ms57zr7c, 4 of 4 drafted plans):
+  // a failing check's gap is re-delivered to THIS step's own worker; a read-only
+  // "verify" step receives the gap and structurally cannot act, so the loop
+  // stalls to cap on a byte-identical gap. The outer close is the run's final
+  // verification — a read-only verify step duplicates it with no hands.
   const r = validatePlan(mut((p) => {
     p.steps[1].tools = ['read', 'get'];
     delete p.steps[1].target;
     p.steps[1].exit = [{ type: 'check-passes', name: 'clean-run' }];
   }), OPTS);
+  assert.equal(r.ok, false);
+  assert.equal(r.reds.length, 1, `exactly one red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'exit-illegal:steps.1.exit');
+  assert.match(r.reds[0].detail ?? '', /write|edit/);
+});
+
+test('an UNPARSEABLE tools grant does not derive a mailbox red: one defect, one red', () => {
+  // With `tools` missing, `writeStep` cannot be known — firing the mailbox law
+  // off its false default would charge the ledger's class table with an
+  // exit-shape violation the agent never committed (the defect is the missing
+  // grant, already redded as missing-required). One defect, one red.
+  const r = validatePlan(mut((p) => {
+    delete p.steps[1].tools;
+    delete p.steps[1].target;
+    p.steps[1].exit = [{ type: 'check-passes', name: 'clean-run' }];
+  }), OPTS);
+  assert.equal(r.ok, false);
+  assert.equal(r.reds.length, 1, `exactly one red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'missing-required:steps.1.tools');
+});
+
+// ─── the two exit laws are COMPLEMENTS: the mailbox rule's edges ───
+// Law 1 (F17 pairing): on a WRITE-granted step, check-passes needs the
+// tree-changed conjunct. Law 2 (mailbox): on a step with NO write-class tool,
+// check-passes is illegal outright. Both key off the SAME `writeStep`
+// predicate, so they partition — a step can raise one, never both. These pin
+// the predicate's edges (store verbs), the boundary (which red fires where),
+// and the rule's REACH, so a later widening cannot quietly overreach onto the
+// one composition that has ever greened this job.
+
+test('store-class verbs are not HANDS: a step granting read + stash/remember is still a mailbox with no hands', () => {
+  // STORE_VERBS write the `.litectx` store, never the tree (job.js: "NEITHER is
+  // read-capable" — and neither is tree-capable either). The gap from a failing
+  // check arrives at a worker that cannot change a byte the close will read, so
+  // the split the rule reads is WRITE-CLASS, not "writes something somewhere".
+  assert.deepEqual(WRITE_VERBS.filter((v) => STORE_VERBS.includes(v)), [], 'the two classes are disjoint by construction');
+  const storeJob = clone(JOB);
+  storeJob.tools = [...JOB.tools, 'stash', 'remember'];
+  assert.deepEqual(validateJob(storeJob).reds, [], 'the widened ceiling is itself signed-green (anchor, not a fixture authored to pass)');
+  const r = validatePlan(mut((p) => {
+    p.steps[1].tools = ['read', 'stash', 'remember'];
+    delete p.steps[1].target;
+    p.steps[1].exit = [{ type: 'check-passes', name: 'clean-run' }];
+  }), { job: storeJob });
+  assert.equal(r.ok, false);
+  assert.equal(r.reds.length, 1, `exactly one red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'exit-illegal:steps.1.exit');
+  assert.match(r.reds[0].detail ?? '', /no write-class tool/);
+});
+
+test('the rule does not overreach: edit ∧ tree-changed ∧ check-passes with a narrowing per-step scope validates GREEN', () => {
+  // `edit` ALONE is write-class (BA-13: judged by the same writeScope fence as
+  // write), so this step has hands; the tree-changed conjunct pays law 1; the P
+  // `scope` field narrows the fence from the same offered menu. This is the F46
+  // winning shape in the widened P vocabulary — the mailbox rule must leave it
+  // untouched.
+  const r = validatePlan(mut((p) => {
+    p.steps[1].tools = ['edit'];
+    p.steps[1].scope = 'tests/**';
+  }), OPTS);
   assert.deepEqual(r.reds, []);
+  assert.equal(r.ok, true);
+});
+
+test('the laws split by CAUSE: a write-granted step missing the conjunct raises the F17 red, never the mailbox one', () => {
+  const r = validatePlan(mut((p) => {
+    p.steps[1].tools = ['read', 'write', 'edit'];
+    p.steps[1].exit = [{ type: 'check-passes', name: 'clean-run' }];
+  }), OPTS);
+  assert.equal(r.ok, false);
+  assert.equal(r.reds.length, 1, `exactly one red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'exit-illegal:steps.1.exit');
+  assert.match(r.reds[0].detail ?? '', /requires the tree-changed conjunct/);
+  assert.doesNotMatch(r.reds[0].detail ?? '', /no write-class tool/,
+    'the step HAS hands — the gap must name the missing conjunct, not a missing grant it already holds');
+});
+
+test('the two laws are mutually exclusive by construction — no step can raise both', () => {
+  const arms = [
+    ['hands, no conjunct', (p) => {
+      p.steps[1].tools = ['edit'];
+      p.steps[1].exit = [{ type: 'check-passes', name: 'clean-run' }];
+    }, /tree-changed conjunct/],
+    ['conjunct, no hands', (p) => {
+      p.steps[1].tools = ['read'];
+      delete p.steps[1].target;
+      p.steps[1].exit = [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }];
+    }, /no write-class tool/],
+  ];
+  for (const [name, fn, want] of arms) {
+    const r = validatePlan(mut(fn), OPTS);
+    const illegal = r.reds.filter((x) => x.code === 'exit-illegal');
+    assert.equal(illegal.length, 1, `${name}: exactly one exit-illegal, got ${JSON.stringify(r.reds)}`);
+    assert.equal(r.reds.length, 1, `${name}: one defect, one red, got ${JSON.stringify(r.reds)}`);
+    assert.equal(illegal[0].path, 'steps.1.exit');
+    assert.match(illegal[0].detail ?? '', want);
+  }
+});
+
+test('the mailbox rule binds check-passes ONLY: json-valid and artifact-written on a read-only step stay legal', () => {
+  // Both are FORM checks the shell evaluates against the tree with its own fixed
+  // code — neither re-delivers a close stage's gap to this step's worker, so a
+  // read-only step holding one is not a mailbox. The law keys on the exit TYPE,
+  // never on "the step has an exit".
+  for (const exit of [
+    [{ type: 'json-valid', path: 'tests/out.json' }],
+    [{ type: 'artifact-written', path: 'tests/notes.md', pattern: 'def ' }],
+  ]) {
+    const r = validatePlan(mut((p) => {
+      p.steps[1].tools = ['read', 'get'];
+      delete p.steps[1].target;
+      p.steps[1].exit = exit;
+    }), OPTS);
+    assert.deepEqual(r.reds, [], `${exit[0].type} on a read-only step must stay legal`);
+  }
 });
 
 test('rounds ceiling is an opt the shell sets (12 passes under 40, reds under 8)', () => {
@@ -269,6 +420,13 @@ const REDOS_BAD = [
   // repeat up through the wrapper; a false-negative here is the dangerous
   // direction (F49, review 2026-07-23).
   '((a+))+', '(?:(a+))+', '((\\d*))*', '(((a+)))+', '((\\w+))*',
+  // JS EMPTY character classes — `[]` (matches nothing) and `[^]` (the any-char
+  // idiom). The POSIX rule "a leading ] is a literal member" does NOT hold in
+  // JS: `[]` closes at the first `]`. Applying it ran the scan past the class's
+  // real end and swallowed every later quantifier — a FALSE NEGATIVE, the
+  // dangerous direction (measured: `x[^](a+)+$` does not finish RegExp.test in
+  // 15s on a 31-char body while the detector passed it, review 2026-07-31).
+  'x[^](a+)+$', '(([^]+))+', '(([]a+))+', '[^]x(a+)+',
 ];
 const REDOS_GOOD = [
   'def ', 'a+', '(abc)+', '(a+)', '(a+)?', '(a+){2}', '(a+){1,3}',
@@ -424,12 +582,43 @@ test('legalScopes: cap is a parameter so a caller can report what the cap DROPPE
   assert.ok(uncapped.length > capped.length, 'the two counts are what makes a truncation reportable');
 });
 
-test('planPrompt: the offered scopes are a STANDALONE list, and the JSON exit example stays parseable (a nested array inside a JSON string is malformed schema text)', () => {
+test('planPrompt: the offered scopes are a STANDALONE list, and EVERY JSON exit example stays parseable (a nested array inside a JSON string is malformed schema text)', () => {
   const p = planPrompt(JOB, 'survey', null, 40, null, legalScopes(['tests/**'], ['tests/unit']));
-  const exitLine = p.split('\n').find((l) => l.includes('"type":"tree-changed"'));
-  assert.doesNotThrow(() => JSON.parse(exitLine.trim()), `exit example must be valid JSON, got: ${exitLine}`);
+  // every exit example, not just tree-changed: the check-passes example carried
+  // the enumerated menu INSIDE its "name" string, so the one line the drafter is
+  // most likely to copy was the one malformed line among four — a nested array
+  // (or any bracket list) belongs beside the example, never inside a JSON string.
+  const exitLines = p.split('\n').map((l) => l.trim())
+    .filter((l) => l.startsWith('{"type":"') && l.endsWith('}'));
+  assert.equal(exitLines.length, EXIT_TYPES.length,
+    `one example per exit type — got ${exitLines.length} for ${EXIT_TYPES.length} types`);
+  for (const line of exitLines) {
+    assert.doesNotThrow(() => JSON.parse(line), `exit example must be valid JSON, got: ${line}`);
+  }
   assert.match(p, /Offered "scope" values for tree-changed/);
   assert.match(p, /^ {2}"tests\/unit\/\*\*"$/m, 'each offered value on its own line, quoted, copyable');
+});
+
+test('planPrompt states every bound and rule the validator ENFORCES — an unstated red is drafting friction the agent cannot see', () => {
+  // The prompt is the whole contract the agent drafts against: a bound the
+  // validator reds but the prompt never mentions is a round burnt on a rule the
+  // drafter had no way to know. Three had drifted: `attempts` said "integer" with
+  // no range while validatePlan reds outside 1..capRuns, and BOTH
+  // `step-scope-escape` reds (a target outside its own step's narrowed scope; a
+  // tree-changed scope disjoint from it) were enforced and never stated.
+  const scopes = legalScopes(['tests/**'], ['tests/unit']);
+  // the live cap is interpolated the way every sibling bound is, never a constant
+  for (const capRuns of [2, 5]) {
+    const p = planPrompt(JOB, 'survey', null, 40, null, scopes, undefined, capRuns);
+    assert.match(p, new RegExp(`"attempts"[^\\n]*1\\.\\.${capRuns}`), `the attempts bound names the LIVE cap ${capRuns}`);
+  }
+  const p = planPrompt(JOB, 'survey', null, 40, null, scopes, undefined, 3);
+  assert.match(p, /"scope"/, 'the step scope field is offered');
+  // stated as rules, in the prompt's own voice — matched on the load-bearing
+  // words rather than the sentence, so a rewording does not break the pin
+  const scopeRules = p.slice(p.indexOf('"scope" (optional)'), p.indexOf('- "exit"'));
+  assert.match(scopeRules, /"target"[\s\S]*?inside/i, 'the target-inside-its-own-scope rule is stated');
+  assert.match(scopeRules, /"tree-changed"[\s\S]*?disjoint/i, 'the tree-changed-not-disjoint rule is stated');
 });
 
 test('maxWallMs is ARBITER territory: smuggled into a plan or a step it reds unknown-field (the agent cannot author, tighten, or widen the time cap in v1 — it has no time field at all)', () => {
@@ -437,4 +626,212 @@ test('maxWallMs is ARBITER territory: smuggled into a plan or a step it reds unk
   assert.ok(top.reds.some((x) => x.code === 'unknown-field' && x.path === 'maxWallMs'));
   const step = validatePlan(mut((p) => { p.steps[0].maxWallMs = 60_000; }), OPTS);
   assert.ok(step.reds.some((x) => x.code === 'unknown-field' && x.path === 'steps.0.maxWallMs'));
+});
+
+// ---- P: the widened step vocabulary (design record 2026-07-28) — all tighten-only ----
+
+test('P: model from the closed tier menu is accepted; an off-menu value is inexpressible', () => {
+  assert.deepEqual(validatePlan(mut((p) => { p.steps[0].model = 'haiku'; }), OPTS).reds, []);
+  assert.deepEqual(validatePlan(mut((p) => { p.steps[0].model = 'sonnet'; }), OPTS).reds, []);
+  const r = validatePlan(mut((p) => { p.steps[0].model = 'opus'; }), OPTS);
+  assert.equal(r.reds.length, 1);
+  assert.match(r.reds[0].detail ?? '', /sonnet\|haiku/, 'the menu is handed over, not described');
+});
+
+test('P: attempts tightens the shell capRuns, never exceeds it', () => {
+  assert.deepEqual(validatePlan(mut((p) => { p.steps[1].attempts = 2; }), { job: JOB, capRuns: 4 }).reds, []);
+  const r = validatePlan(mut((p) => { p.steps[1].attempts = 9; }), { job: JOB, capRuns: 4 });
+  assert.equal(r.reds.length, 1);
+  assert.equal(r.reds[0].code, 'bounds');
+});
+
+test('P: a per-step scope narrows the fence from the SAME menu tree-changed uses', () => {
+  assert.deepEqual(validatePlan(mut((p) => { p.steps[1].scope = 'tests/**'; }), OPTS).reds, []);
+  const r = validatePlan(mut((p) => { p.steps[1].scope = 'src/**'; }), OPTS);
+  assert.equal(r.reds.length, 1, JSON.stringify(r.reds));
+  assert.match(r.reds[0].detail ?? '', /menu/, 'choose-dont-describe: the legal scopes are enumerated');
+});
+
+test('P: the three new fields are optional — an existing six-field plan is untouched', () => {
+  assert.deepEqual(validatePlan(PLAN, OPTS).reds, []);
+});
+
+// ---- W3: a step's own `scope` is the fence the RUNNER builds for it ----
+// planrun's mkWorker gates a scoped step with `[resolve(workdir, globToPrefix(scope))]`,
+// not the signed fence. So a TARGET that is in-fence but outside the step's OWN scope
+// is a write the gate denies on every attempt: the step burns its whole attempt budget
+// on refusals and no red is ever raised. Both halves were individually legal, so
+// nothing caught the incoherent PAIR.
+//
+// The rule binds the TARGET (a write by the worker) and, in one narrow form, the
+// `tree-changed` scope — never the artifact paths. Exits are OBSERVATIONS the shell
+// makes, not writes, and src/exits.js is the only authority on what they impose:
+//   - `tree-changed` passes iff ANY file under its own scope changed, so a scope that
+//     CONTAINS the step's scope contains the step's writable ground and fires exactly
+//     when the narrow one does (measured: step tests/unit/**, exit tests/**, one write
+//     to tests/unit/a.py → pass:true, same as the narrow scope). Only a DISJOINT scope
+//     is unsatisfiable — it can pass only if ground this step's gate refuses changed.
+//   - `artifact-written`/`json-valid` only read+parse the named file; they never ask
+//     who wrote it (measured: a path outside the step's scope naming a PRIOR step's
+//     artifact → pass:true). Nothing about the step's gate is imposed, so no
+//     step-scope red belongs on those arms at all.
+// The narrowed scope NEVER replaces the fence check — fence first, scope second —
+// so a caller-supplied menu can only tighten what is accepted, never widen it.
+
+/** the two-level menu these cases need: the signed fence plus a real subdirectory */
+const NESTED = { job: JOB, scopes: ['tests/**', 'tests/unit/**'] };
+/** two SIBLING subdirectories — the only shape that can be disjoint inside one fence */
+const BRANCHED = { job: JOB, scopes: ['tests/**', 'tests/e2e/**', 'tests/unit/**'] };
+
+test('W3: a scoped step whose target sits outside its OWN scope reds step-scope-escape (in-fence, gate-denied — the class nothing caught)', () => {
+  const r = validatePlan(mut((p) => {
+    p.steps[1].scope = 'tests/unit/**';
+    p.steps[1].exit[0] = { type: 'tree-changed', scope: 'tests/unit/**' };
+    // target stays tests/test_orchestrator.py: inside the signed fence, outside the step's scope
+  }), NESTED);
+  assert.equal(r.reds.length, 1, `one defect, one red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'step-scope-escape:steps.1.target');
+  assert.match(r.reds[0].detail ?? '', /tests\/unit\/\*\*/, 'the gap names the step\'s OWN narrowed scope, not the signed fence');
+});
+
+test('W3: an artifact-written path outside the step\'s own scope is GREEN — the evaluator reads the file, it never asks who wrote it', () => {
+  // measured against src/exits.js: `artifact-written`/`json-valid` readFile+parse and
+  // nothing else, so a path naming a PRIOR step's artifact (v1 is strictly sequential —
+  // the natural shape) evaluates pass:true. A red here would claim a constraint the
+  // evaluator does not impose, and tax a legal draft.
+  const r = validatePlan(mut((p) => {
+    p.steps[0].scope = 'tests/unit/**';
+    p.steps[0].target = 'tests/unit/notes.md';
+    p.steps[0].exit = [
+      { type: 'artifact-written', path: 'tests/notes.md', pattern: 'def ' },
+      { type: 'tree-changed', scope: 'tests/unit/**' },
+    ];
+  }), NESTED);
+  assert.deepEqual(r.reds, []);
+});
+
+test('W3: a json-valid path outside the step\'s own scope is GREEN too (same arm, same evaluator semantics)', () => {
+  const r = validatePlan(mut((p) => {
+    p.steps[0].scope = 'tests/unit/**';
+    p.steps[0].target = 'tests/unit/notes.md';
+    p.steps[0].exit = [
+      { type: 'json-valid', path: 'tests/report.json' },
+      { type: 'tree-changed', scope: 'tests/unit/**' },
+    ];
+  }), NESTED);
+  assert.deepEqual(r.reds, []);
+});
+
+test('W3: a tree-changed scope WIDER than the step\'s own scope is GREEN — a superset contains the step\'s ground and fires exactly when the narrow scope does', () => {
+  // measured against src/exits.js snapshotScope/evalExits: step scope tests/unit/**,
+  // exit scope tests/**, one write to tests/unit/a.py → pass:true, identical to the
+  // narrow scope. The menu is shallowest-first and the prompt says copy one value, so
+  // the widest scope is the most likely draft — redding it taxes the natural plan
+  // (the F60 class `legalScopes` exists to eliminate).
+  const r = validatePlan(mut((p) => {
+    p.steps[1].scope = 'tests/unit/**';
+    p.steps[1].target = 'tests/unit/test_orchestrator.py';
+    p.steps[1].exit[0] = { type: 'tree-changed', scope: 'tests/**' };
+  }), NESTED);
+  assert.deepEqual(r.reds, []);
+  assert.equal(r.ok, true);
+});
+
+test('W3: a DISJOINT tree-changed scope still reds step-scope-escape — no write this step is allowed to make could ever satisfy it', () => {
+  // measured: step writes only under tests/unit/**, exit watches tests/e2e/** whose
+  // pre-step snapshot already holds every prior step's bytes → 0 files changed, pass:false
+  // on every attempt. Unsatisfiable by construction, which is what W3 closes.
+  const r = validatePlan(mut((p) => {
+    p.steps[1].scope = 'tests/unit/**';
+    p.steps[1].target = 'tests/unit/test_orchestrator.py';
+    p.steps[1].exit[0] = { type: 'tree-changed', scope: 'tests/e2e/**' };
+  }), BRANCHED);
+  assert.equal(r.reds.length, 1, `one defect, one red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'step-scope-escape:steps.1.exit.0.scope');
+  assert.match(r.reds[0].detail ?? '', /tests\/unit\/\*\*/, 'the gap names the step\'s OWN narrowed scope so the redraft can aim');
+});
+
+test('W3: a NARROWER tree-changed scope than the step\'s own scope is GREEN (the step can write there; the exit just watches less)', () => {
+  const r = validatePlan(mut((p) => {
+    p.steps[1].scope = 'tests/**';
+    p.steps[1].target = 'tests/unit/test_orchestrator.py';
+    p.steps[1].exit[0] = { type: 'tree-changed', scope: 'tests/unit/**' };
+  }), NESTED);
+  assert.deepEqual(r.reds, []);
+});
+
+test('W3: a scoped step whose target and exits all sit INSIDE its own scope stays green (the rule does not overreach)', () => {
+  const r = validatePlan(mut((p) => {
+    p.steps[1].scope = 'tests/unit/**';
+    p.steps[1].target = 'tests/unit/test_orchestrator.py';
+    p.steps[1].exit[0] = { type: 'tree-changed', scope: 'tests/unit/**' };
+  }), NESTED);
+  assert.deepEqual(r.reds, []);
+  assert.equal(r.ok, true);
+});
+
+test('W3: the fence still binds FIRST — a scoped step reaching outside the SIGNED fence keeps the scope-escape class the ledger reads', () => {
+  const r = validatePlan(mut((p) => {
+    p.steps[1].scope = 'tests/unit/**';
+    p.steps[1].target = 'src/hack.py';
+    p.steps[1].exit[0] = { type: 'tree-changed', scope: 'tests/unit/**' };
+  }), NESTED);
+  assert.equal(r.reds.length, 1, `one defect, one red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'scope-escape:steps.1.target',
+    'a fence escape must never launder into the narrower step-scope class');
+});
+
+test('W3: an UNSCOPED step is judged by the signed fence exactly as before (regression control)', () => {
+  // no `scope` field: every target/path/scope in the POC plan spans the whole
+  // fence and must stay green, and an out-of-fence target must still be scope-escape
+  assert.deepEqual(validatePlan(PLAN, NESTED).reds, []);
+  const r = validatePlan(mut((p) => { p.steps[1].target = 'src/hack.py'; }), NESTED);
+  assert.equal(r.reds.length, 1, JSON.stringify(r.reds));
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'scope-escape:steps.1.target');
+  assert.ok(!r.reds.some((x) => x.code === 'step-scope-escape'), 'no step scope, no step-scope red');
+});
+
+test('W3: an OFF-MENU step scope is one defect — the illegal scope reds, the narrowed containment does not pile on', () => {
+  const r = validatePlan(mut((p) => { p.steps[1].scope = 'tests/deep/**'; }), NESTED);
+  assert.equal(r.reds.length, 1, `one defect, one red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'invalid-value:steps.1.scope');
+});
+
+// ---- W4: ONE close staging feeds the prompt, the validator and the runner ----
+
+/** the legacy object-form predicate close — still validateJob-green, and the only
+ * shape whose staging used to differ between the three consumers */
+const OBJ_JOB = { ...clone(JOB), close: { type: 'predicate', cmd: 'python grade.py', expect: 0, gapKeep: '^FAILED' } };
+
+test('W4: an object-form predicate close is validateJob-green (the anchor these cases rest on)', () => {
+  assert.deepEqual(validateJob(OBJ_JOB).reds, []);
+});
+
+test('W4: the validator derives the SAME single staged stage the runner runs — check-passes("close") validates green', () => {
+  const r = validatePlan(mut((p) => { p.steps[1].exit[1] = { type: 'check-passes', name: 'close' }; }), { job: OBJ_JOB });
+  assert.deepEqual(r.reds, [], 'the runner stages [{name:"close"}] and executes it at preflight — the validator must offer the same one');
+});
+
+test('W4: planPrompt offers that same stage — the drafter is never handed an empty menu for a close the runner stages', () => {
+  const p = planPrompt(OBJ_JOB, 'survey', null, 40, null, legalScopes(['tests/**']));
+  assert.match(p, /one of \["close"\]/, 'the prompt enumerates the derived stage');
+});
+
+test('W4: prompt and validator agree on the object-form close — anything the prompt offers, the validator accepts', () => {
+  const offered = /one of (\[.*?\])/.exec(planPrompt(OBJ_JOB, 'survey', null, 40, null, legalScopes(['tests/**'])))?.[1];
+  const names = JSON.parse(offered ?? '[]');
+  // an EMPTY offer would make every assertion below vacuous — the loop must run
+  assert.ok(names.length > 0, 'the prompt must offer at least the staged close stage');
+  for (const name of names) {
+    const r = validatePlan(mut((p) => { p.steps[1].exit[1] = { type: 'check-passes', name }; }), { job: OBJ_JOB });
+    assert.deepEqual(r.reds, [], `the prompt offered "${name}" — the validator must accept it`);
+  }
+});
+
+test('W4: an ARRAY close is untouched by the staging hoist (regression control)', () => {
+  assert.deepEqual(validatePlan(PLAN, OPTS).reds, []);
+  const r = validatePlan(mut((p) => { p.steps[1].exit[1] = { type: 'check-passes', name: 'close' }; }), OPTS);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'check-unknown:steps.1.exit.1',
+    '"close" is not a stage of THIS close — the staged name exists only for the object form');
+  assert.match(planPrompt(JOB, 'survey', null, 40, null, legalScopes(['tests/**'])), /\["clean-run","form-floor","verdict"\]/);
 });

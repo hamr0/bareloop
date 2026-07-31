@@ -25,7 +25,7 @@ import { join, resolve } from 'node:path';
 import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
 import { makeSpine } from '../src/spine.js';
-import { SECRET_PATTERNS } from '../src/validate.js';
+import { scanSecrets } from '../src/validate.js';
 
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
@@ -239,7 +239,10 @@ function readRow(/** @type {string} */ spineFile, /** @type {string|null} */ aud
   const rounds = events.filter((e) => e.type === 'worker-round').length;
   const runEnd = events.findLast((e) => e.type === 'run-end');
   const attemptsToGreen = runEnd?.outcome === 'green' ? runEnd.iterations : null;
-  const leaks = SECRET_PATTERNS.map((re) => new RegExp(re.source, re.flags.replace('g', '') + 'g')).flatMap((re) => raw.match(re) ?? []);
+  // the ONE spelling of the text-side scan (src/validate.js `scanSecrets`): a
+  // hand-rolled copy here is a second inventory that can silently miss a shape the
+  // canonical one catches, on the very output it guards.
+  const leaks = scanSecrets(raw);
   // gate audit: allowed write-CLASS actions — write AND edit both count (F33: a 7-edit
   // pass read writes=0 because this counter predated the edit verb; an instrument must
   // see every write-class verb, the F32 lesson re-learned at the reporting layer).

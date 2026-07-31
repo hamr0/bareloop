@@ -75,6 +75,7 @@ async function primitiveSmoke(workdir) {
  *   threaded to runPlan, which builds one per worker (native tool mode when `hasTools`, else a
  *   metered claude-json text provider for the toolless drafter); ignored on every Loop-driven provider
  * @param {(type: string, data?: object) => object} opts.emit spine emitter
+ * @param {(tier: string) => any} [opts.providerFor] P: per-step model-tier provider factory (forwarded to the plan flow)
  * @param {number} [opts.capRuns] shell-owned per-step attempt cap
  * @param {number} [opts.shellCapUsd] the shell's hard USD ceiling
  * @param {number} [opts.closeTimeoutMs] close wall-clock cap (shell territory)
@@ -88,15 +89,32 @@ async function primitiveSmoke(workdir) {
  * @returns {Promise<string>} outcome: 'green' | 'already-green' | 'escalated' |
  *   'unapproved-spec' | 'job-red' | 'smoke-red' | 'plan-red' | 'check-red' |
  *   'close-red' | 'close-unsupported' | 'pricing-red' | 'provider-red' |
- *   'interpreter-red' | 'cap-halt' | 'wall-halt' | `step-red:<id>`
+ *   'interpreter-red' | 'cap-halt' | 'wall-halt' | 'step-stalled' | `step-red:<id>`
  */
-export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, emit, capRuns = 3, shellCapUsd = 2, closeTimeoutMs, layerRoot = false }) {
+export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, emit, capRuns = 3, shellCapUsd = 2, closeTimeoutMs, layerRoot = false }) {
   // 0. the ledger's counters, declared FIRST so that every job-end — including
   // the pre-token reds below — can state a real figure. An omitted `spentUsd` is
   // not a zero: a consumer reads `undefined` and either crashes or launders it
   // into $0 (F12's class, at the terminal record instead of mid-attempt).
   let spentUsd = 0;
   let unpriced = false;
+  // W1: did this run ABSORB a stall? The terminal `step-stalled` is the rare case;
+  // the common one self-heals (src/stall.js abandons the hung call and reissues),
+  // and an abandoned call may already have been billed — a reissue can pay twice
+  // and the provider never told us. So a run that stalls and then ends green (or
+  // escalated, or at the cap) also holds a FLOOR, not a total.
+  let stalled = false;
+  // F64: did the wall cut this run from INSIDE a provider call? A `wall-halt` is two
+  // stops wearing one name. Read between rounds (or between attempts, W-2) it is the
+  // cleanest terminal there is — nothing was in flight, every round the sum counted
+  // came back priced, and the figure is exact. But the deadline can also land inside a
+  // call and come back as the provider's own timeout, and THAT call returned no usage
+  // at all: it may already have been billed and will never say so. Same unknown as the
+  // transport floor and the self-healed stall, so the same honest answer.
+  // The discriminator is the wall-halt record's own `cutMidCall` field, never the
+  // outcome — keying on the outcome would floor the exact stop too, which is the same
+  // dishonesty pointing the other way.
+  let cutMidCall = false;
   // The money on the terminal record, and whether the money is EXACT. `spentUsd`
   // is the accumulated sum of PRICED rounds ONLY — never an estimate derived
   // from tokens or averages (cap-not-estimate). When any round came back
@@ -104,7 +122,7 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // says so machine-readably instead of dressing a floor up as exact. Emitted on
   // EVERY job-end (true when everything was priced) so no consumer ever has to
   // branch on field presence.
-  const spend = () => ({ spentUsd, spendComplete: !unpriced });
+  const spend = () => ({ spentUsd, spendComplete: !unpriced && !stalled && !cutMidCall });
   // 1. human-signs-always — before ANY provider call (N1 decision #1)
   if (!checkApproval(rawSpec, approvals)) {
     emit('job-end', { outcome: 'unapproved-spec', detail: 'no approval record matches this exact spec version', ...spend() });
@@ -149,6 +167,15 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
     // unknown, never $0 — F6): per-round metering means a partially-unpriced run
     // is caught natively, round by round, with no separate unpricedRounds tally.
     if (type === 'worker-round') account(/** @type {any} */ (data)?.costUsd);
+    // W1: a `stall` is the plan flow announcing it ABANDONED a call and reissued
+    // it. The abandoned call's spend is unknowable from here (billed or not,
+    // indistinguishable), so from this point the priced sum is a floor no matter
+    // how the run ends — the flag is one-way and read by `spend()`.
+    if (type === 'stall') stalled = true;
+    // F64: the plan flow's own TIME record says which of the two wall stops this was.
+    // One-way, and read by `spend()` — the run ends on this record either way, but the
+    // between-rounds stop must keep its exact figure rather than inheriting a floor.
+    if (type === 'wall-halt' && /** @type {any} */ (data)?.cutMidCall === true) cutMidCall = true;
     return emit(type, data);
   };
   const pricingRed = () => {
@@ -163,17 +190,22 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // accounts it natively (F12) and the job-end money contract is unchanged.
   {
     const outcome = await runPlan(job, {
-      workdir, provider, nativeProvider, emit: meter, capRuns, closeTimeoutMs, layerRoot,
+      workdir, provider, nativeProvider, providerFor, emit: meter, capRuns, closeTimeoutMs, layerRoot,
       remainingUsd: () => Math.min(shellCapUsd, job.budgetUsd - spentUsd),
       isUnpriced: () => unpriced, // F6: let the plan flow bail in-flight, not just after it returns
     });
     if (unpriced) return pricingRed();
     if (outcome.startsWith('step-red:')) {
       emit('job-end', { outcome: 'step-red', step: outcome.slice('step-red:'.length), ...spend() });
-    } else if (outcome === 'provider-red') {
+    } else if (outcome === 'provider-red' || outcome === 'step-stalled') {
       // F44: a transport-throw provider-red never returned a usage figure for the
       // failed call, so the priced sum is a FLOOR, not the total — spendComplete
       // false, never an exact-looking total.
+      // F66: `step-stalled` carries the same unknown. Every abandoned call MAY
+      // already have been billed by the provider before it went quiet — that is
+      // the known cost of self-heal — and an unbilled reissue is indistinguishable
+      // from a billed one from here. Reporting the priced sum as exact would be F6
+      // in a self-heal coat.
       emit('job-end', { outcome, ...spend(), spendComplete: false });
     } else {
       emit('job-end', { outcome, ...spend() });

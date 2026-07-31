@@ -1869,6 +1869,23 @@ instruments** whose recorded runs are pre-registered evidence; behaviour-preserv
 not, rewriting them post-hoc muddies the record for a drift-prevention win, and they
 carry no test coverage to catch a mistake. New scripts use the helper.
 
+> **Addendum 2026-07-30 — the scanSecrets park is RETIRED (hamr's word, this date).**
+> The 0.6.0 release gate's review re-flagged the hand-rolled copies; the sweep
+> converted all of them (nine by then — four more had accreted in post-F40 scripts)
+> before the park was noticed, and the reversal was surfaced to hamr rather than
+> papered over. hamr ruled the park spent: *"if its irrelevant compared to where we
+> are or has been invalidated by any of probes, why should we keep it?"* The two risks
+> the park guarded are both retired by measurement, not assumption: (1) equivalence
+> was proven on 900 spiked real-spine cases (all five token shapes × three offsets,
+> 670 hits, 0 divergences) with a comparison demonstrated ABLE to diverge (a
+> deliberately broken copy reads 4 vs 5); (2) the recorded evidence cannot shift —
+> the battery runs are archived and finished, and three of the five instruments can
+> no longer execute at all (their job specs are retired; pre-existing ENOENT verified
+> against HEAD). The count in this block ("five of the seven") was also stale twice
+> over — the grepped truth at conversion time was 11 call sites, 2 already canonical,
+> 9 converted. No test files referenced the five scripts (checked at retirement —
+> nothing to delete or archive). The JSONL spine-reader park above is untouched.
+
 **One PLAUSIBLE, latent:** a single `opts.target` threads to every text-mode step, so
 two text-mode predicate steps would clobber each other's artifact. The schema permits
 it; no shipped job comes near it; single-artifact text mode is documented intent.
@@ -3600,3 +3617,631 @@ The reachability audit that caught F63 caught a second thing in the same pass: *
 when the thing I built fires?" is a different question from "would it ever fire?", and both are
 $0.** T was built, unit-tested and mutation-proven, and its terminal is bypassed by the very
 timeout it derives.
+
+---
+
+> **Numbering note:** F65 was never assigned. The two findings below were built and committed
+> (`93fb993`, `9fedfa3`) under the numbers F66/F67 before this ledger entry was written, and the
+> commit history is immutable — the skip is recorded here rather than papered over by renumbering.
+> There is no hidden F65.
+
+---
+
+## F66 — bare-agent's `timeoutMs` is an IDLE-SOCKET timer, so a slow-but-trickling call can hang a run for hours: the in-process stall fuse
+
+**Status: minted 2026-07-28 from U run `ms3197n8` (litectx-u, provider-red after a 274-minute
+hang, ≥$3.23 spent, zero verdict). Fuse built and shipped in `93fb993`; hamr set the
+numbers (N=5min, 3 stalls then replan) and the doctrine: "the goal is always self heal and
+killing and coming back is not an option."**
+
+### The run
+
+`ms3197n8` on `litectx-u` (63 strict errors, hand-proven winnable at $0): 77 rounds, 24 writes
+across 3 files, a 4-step plan — then ONE 274-minute gap between the last `worker-round` and the
+escalation. Zero events emitted. Wall cap 45min; actual wall 287.3min. Terminating error:
+`read ECONNRESET` — a reset, not a timeout, which is the proof of the mechanism below.
+
+### Root cause, read from source, three hypotheses killed
+
+`applyRequestTimeout` in bare-agent's `provider-http.js` (the BA-18 fix) is one
+`req.setTimeout(...)`. Node RESETS that timer on every byte; its own docstring says so: *"the
+timer resets on activity, so a slow-but-streaming response is not killed."* It bounds socket
+INACTIVITY, never total call duration. A call that trickles a byte every few minutes is
+invisible to it forever.
+
+Checked and killed before believing this: NOT ignored (the bound is derived and forwarded per
+provider call, `loop.js:732`); NOT first-call-only (`options` forwarded on every call); NOT a
+retry storm (`Retry` is deliberately unwired; a single reset ended the run). And retry would
+not have helped — the reset came AFTER the 4.5 hours, not instead of them.
+
+### The fuse (`src/stall.js`)
+
+Two timers, no arithmetic. A stall timer reset on every heartbeat; the wall unchanged (absolute
+deadline, never reset). Heartbeat = ANY `onLlmResult` — gating on an enumerated `kind` would arm
+a false stall on unlisted round shapes. On stall: abandon the call, reissue silently (self-heal,
+per hamr's ruling). After 3 stalls: `StallError`, `category:'step-stalled'`, `lib:'bare-agent'`.
+
+`step-stalled` is the THIRD replan trigger in `planrun.js` (with `cap-halt` and
+`step-variance`), under the same ONE-replan ceiling and funds-left condition. Outside a step it
+surfaces NAMED via `relay`'s DECIDE map — never laundered into provider-red. `run.js` stamps
+`spendComplete:false`: an abandoned call may already have been billed (F44).
+
+N was SIZED from measured healthy round-gaps, then SET by hamr (threshold-setting is arbiter
+territory): across 220 rounds in three runs, median gaps 4.4–5.5s, p90 11.9–18.2s, worst
+legitimate gap ever 2.5min. The hang was 274min — two orders of magnitude past the worst
+healthy gap.
+
+### Validation — and the surviving mutant that was a real hole
+
+11 tests through the real bare-agent `Loop`; mutation battery 6 mutants. **M5 survived first
+pass** — dropping the `generation += 1` bump in `trip()`. Not equivalent: without the bump, an
+abandoned call dying while its reissue is still pending settles the caller's promise anyway —
+exactly the `ms3197n8` shape — making the reissue decorative. Added the mid-flight test,
+watched it fail under M5, 6/6 killed. A surviving mutant is a claim about the TEST, not always
+about the code.
+
+**Firing status, honest:** the fuse has fired in tests and in a reproduction of run 1's exact
+shape (4 real rounds then provider silence → 3 stalls → `StallError`, 2.1s). It has never fired
+in a paid run — and run 2 (F67) proved the class of failure it structurally cannot catch.
+
+### Upstream
+
+Filed as BA-19: BA-18's fix bounds inactivity; nothing in bare-agent bounds TOTAL call duration.
+
+### Lesson
+
+A timeout's WATCHED QUANTITY is part of its contract. "There is a timeout and it is forwarded"
+was true and useless — it watched bytes-between-bytes while the failure was minutes-per-call.
+The BA-18 consumption inherited the assumption without reading what the timer measures.
+
+## F67 — a guard that lives inside the thing it guards shares its fate: the OUTSIDE watchdog
+
+**Status: minted 2026-07-28 from U run `ms3jh76q` (litectx-u, wall-halt at 105min of a 45min
+cap, $3.19, zero verdict). Watchdog shipped in `9fedfa3`. hamr called the outside guard at the
+start ("outside shell for circuit breakers... so it won't go stale") and the assistant argued
+it down in favour of in-process — hamr's call was right; recorded as the assistant's to have
+got wrong. WHAT FROZE THE EVENT LOOP IS STILL UNKNOWN — stated at that strength deliberately.**
+
+### The run
+
+`ms3jh76q` got much further than run 1: 100 rounds, 48 writes across 13 files, a 5-step plan,
+3 check runs, a real close verdict (`needs_revision` at `no-suppressions`) and the fix loop
+fired. Then an **81.5-minute gap in the fix phase with 0 stall events**, ending in
+`read ETIMEDOUT`. The F66 fuse was live (committed 4 minutes before t0) and never fired.
+
+### Diagnosis: the fuse works, and that is exactly the problem
+
+Reproduced against the run's exact shape (4 completed rounds through the real bare-agent
+`Loop`, then provider silence): 3 stalls, `StallError`, 2.1 seconds. So in the real run it
+never RAN. A `setTimeout` in the same event loop as whatever froze that loop shares its fate.
+Every guard bareloop had lived inside the run, and each failed structurally on this event:
+
+| guard | why it could not help |
+|---|---|
+| bare-agent `timeoutMs` | idle SOCKET timer — resets on bytes, saw nothing wrong |
+| the wall clock (T) | read BETWEEN rounds — no round ever arrived |
+| the F66 stall fuse | a `setTimeout` — cannot fire on a blocked event loop |
+
+Measured en route: `lc.index()` ticks the event loop 1 time where 19 were due (litectx is
+synchronous SQLite underneath) — a real blocking-class mechanism, but indexing runs once per
+worker BEFORE the rounds, so it does not account for the 81 minutes.
+
+### Withdrawn: the node_modules theory
+
+Measured `grep -rn` at 6.9s on litectx-u vs 0.47s on aurora-u and blamed 969MB of
+node_modules. WRONG INSTRUMENT — bare-agent's grep runs in a worker thread under a hard 5s
+ceiling (`DEFAULT_GREP_TIMEOUT_MS`, `worker.terminate()`), so it can neither block the main
+loop nor run long. `grep -rn` from a shell is a different program from the tool the worker
+calls. The fix it motivated was also wrong and reverted: symlinking node_modules outside the
+patient broke nested dependency resolution (330 test failures). The blind-instrument class,
+self-inflicted after writing a rule against it.
+
+### The watchdog (`scripts/u-watchdog.mjs`)
+
+A separate process that shares NOTHING with the run: it reads one file's mtime and calls
+kill(2). Deliberately dumb, each omission load-bearing — parses no JSON (a malformed spine
+must not blind the guard), imports nothing from `src/` (no shared code, no shared failure),
+models nothing about the run (nothing to desync). Two independent triggers: STALE (spine
+stopped growing → wedged; default 600s = 2× the inner fuse so the inner guard always gets its
+three tries first) and WALL (elapsed past cap + grace; grace default 900s covers the close,
+which legitimately runs ~55s+ after the last round — killing mid-close destroys a real
+verdict). The kill is RECORDED at `<spine>.watchdog.json` BEFORE the signal goes out: a run
+stopped by the arbiter must never read as a mystery crash (the governance-stop vs casualty
+line, F45/F64). SIGTERM, then SIGKILL after 10s.
+
+> **Addendum 2026-07-30 — the deadline trigger is ACTIVITY-AWARE now (hamr's ruling,
+> 0.6.0 release gate).** The paragraph above describes the original design; two of its
+> numbers went stale and one rule changed. (1) The wall grace is sized
+> `stages × closeTimeoutMs` (the 900s default covered ONE close stage; a staged close
+> legally runs N — the old arithmetic could kill a live verdict, the exact damage the
+> grace exists to prevent) and run-u passes it explicitly. (2) hamr's ruling, verbatim:
+> "the kill from outside should check for activity/bytes or other markers for activity,
+> not a silent kill" — the deadline kill now fires only when the deadline passed AND the
+> spine has been flat for a full fuse window (300s); past-deadline-but-writing logs LOUD
+> every poll and is never killed (the in-process fuses and the money cap own bounding a
+> live run). Every kill prints the trigger, the deadline arithmetic, and the marker's
+> value/age before the signal. (3) A CPU marker (/proc utime+stime) was built alongside
+> and REMOVED after the release review measured it broken both directions — child CPU is
+> credited only at reap so a live close reads dead, and run-u's own 1s lag sampler ticks
+> the parent so a wedged run reads alive at production constants; its kill tests had only
+> passed at a 5:1 dead-window:poll ratio where production is 60:1. Spine-bytes-only is
+> the marker ("keep what is simpler/available" — hamr). The STALE trigger is unchanged
+> and remains the trigger that actually catches the F67 wedge; a wall-less spec now
+> omits `--wall-ms` and prints the unbounded choice loudly instead of passing the
+> string "undefined" (which silently disarmed the deadline trigger).
+
+### Validation
+
+Real processes, real files, real kills — a watchdog tested against a mocked clock and victim
+proves nothing about the case it exists for. 8 tests including: a progressing run is never
+touched; the wall fires on a HEALTHY spine (out of time however alive it looks); a spine that
+never appears is stale from watchdog start; the watchdog exits when the run ends (no strays);
+**a victim whose event loop is HARD-FROZEN (`for(;;);`) still dies** — probed live first:
+the run path installs zero signal handlers, so SIGTERM keeps its kernel default disposition
+and lands on a frozen process. Mutation battery 5/5 killed. First draft leaked 5 victim
+processes on assertion failure; fixtures now tear down via `t.after`.
+
+**Stated limit:** the run-u.mjs WIRING (spawn args, `unref`, finally-kill, marker readout) has
+executed only in the no-fire path — no run has both fired the watchdog and been read. The next
+real run is bounded by it either way; its first live fire is the wiring's validation.
+
+### The still-open question, and the instrument now waiting for it
+
+The freeze is unexplained. Two instruments now bracket the next occurrence: the watchdog
+marker + last spine event localize a freeze the watchdog kills; a lag sampler in `run-u.mjs`
+(1s tick; records any ≥3s block with from/until timestamps to `<spine>.lag.jsonl`, proven
+against a real 4s hard freeze) localizes any freeze the run survives. Between them, the next
+freeze cannot pass unmeasured.
+
+### Lesson
+
+A guard that lives inside the thing it guards shares its fate. Three independent in-process
+bounds all failed on the same event for the same structural reason — the fix was not a better
+timer but a different PROCESS. And the operator's original instinct ("outside shell... so it
+won't go stale") was the correct design the first time it was offered.
+
+## F68 — U's second genre greens through a replan: cap-halt → adapt → validated green; and the close-runner turns out to freeze the loop it reports to
+
+**Status: minted 2026-07-28 from U run `ms3wawub` (litectx-u, GREEN, $5.77 of $10, 37.0min of
+45). The first complete cold-build → cap-halt → self-heal → validated-green cycle in user
+mode, with the full guard stack (T + F66 fuse + F67 watchdog + lag sampler) live for the
+first time.**
+
+### The run
+
+Cold 3-step plan (`fix-error-narrowing` → `fix-implicit-any-and-this` → `final-strict-verify`).
+Steps 1–2 green. Step 3 spent its 4/4 runs red and cap-halted at 00:26:47 — and the replan
+trigger CONVERTED it: a 2-step recovery plan (`finish-strict-fixes` → `final-strict-verify`),
+both green, outer close satisfied on FIRST judgment at 00:43:12. 176 rounds, 53 writes across
+10 files, 16 check runs, zero stalls, watchdog never fired.
+
+**Validated, not asserted:** all four close stages re-run independently against the tree the
+run left — 10 files all under `src/`, `tsc --strict` zero errors, 410 tests EXECUTED / 0
+failing (the floor counts executed, never passed), zero suppressions. Diff preserved by cp
+discipline (`run3-ms3wawub.patch`, 661 lines) BEFORE anything touched the tree — the rule
+violated on aurora run 3 was followed this time.
+
+### What is and is not a first (stated so the claim cannot inflate)
+
+FIRSTS: first litectx-u verdict (runs 1–2 were timeout-class casualties, F66/F67); first
+user-mode green through self-healing (aurora's two greens never replanned); first bridge
+minted from an ADAPTED plan — the saved bridge is the post-replan plan, exactly the artifact
+the reuse thesis wants. NOT firsts: not the first bridge (aurora saved two); not the
+programme's first replan (F63 counted 8 in Layer-2-era batteries, 2 greened — but those were
+operator-scaffolded jobs, not user mode). The guards did NOT cause the green — zero stalls,
+zero watchdog fires; their contribution was bounding the downside. The replan machinery
+earned it.
+
+### The lag sampler's first catch — and it caught US
+
+9 loop-freeze records, worst 74.3s. Every one brackets a close run. `ralph.js` executes
+closes via `spawnSync` — a SYNCHRONOUS child process — so the host event loop is dead for
+every close's full duration (the litectx close ≈ 65s: tsc ~10s + 410-test suite ~55s,
+matching the freeze brackets exactly). First reading of the first record blamed litectx's
+`index()`; the timeline refuted that within the hour (check-preflight events bracket the
+block) and the correction is recorded in LC-3, which was filed with the honest per-package
+split: litectx's real share is a 4.4s / 4.5%-liveness force-index block (measured on a
+155-file spare patient), ours is the spawnSync.
+
+Severity: LOW today — no provider call is in flight during a close, so the block starves
+only instruments (fuse timers, lag sampler, spine liveness against the watchdog's stale
+window; the outside watchdog itself is immune by construction). Recommendation: async spawn
+with identical semantics. **Close execution is arbiter territory: named, scoped, PARKED for
+explicit go.**
+
+**RESOLVED 2026-07-30 (hamr's go: "validate all errors and fix what passes").** The close
+runner is async spawn with byte-identical semantics, proven by a 25-case old-vs-new
+differential (timeout signal, ENOBUFS ceiling, gap shape, exit bands, redaction, stdin EOF,
+multibyte boundaries) plus 5-for-5 mutation kills on the new guards. Freeze measured before
+and after: the F68 preflight shape (3 stages, 3.5s) went 0 host ticks → 126 ticks, worst
+gap 26ms. The stale-window sizing in run-u is UNCHANGED — runStages still emits nothing
+between stages, so legal spine silence is the same; only the host loop stays alive.
+
+### Open
+
+The 81-minute freeze (F67's trigger) remains unexplained — spawnSync cannot produce it (no
+close ran in that window; one block is capped by the 900s close timeout). This run gave it
+no chance to recur. Both instruments stay armed; the next occurrence gets bracketed either
+way (marker + last spine event if killed mid-freeze; lag record if survived).
+
+### Lesson
+
+The self-heal channel is no longer theoretical: on its first user-mode firing, a replan
+turned a run that had spent 60% of its budget on a red step into a validated green under
+cap. And an instrument added to find someone else's freeze found ours first — build the
+cheap instrument, then believe what it says over what the investigation expected.
+
+## F69 — the P read (n=3, all cold): the planner ignores the widened palette but adopts every control knob — and its default plan shape disconnects the self-heal loop
+
+**Status: minted 2026-07-29 from the signed P read (hash `25d8c5ee…`, hamr's "confirmed"),
+runs `ms4l5p6w` ($1.48, 10.7min, step-red), `ms57zr7c` ($4.28, 30.2min, step-red),
+`ms5a24tz` ($0.28, 3.3min, plan-red). One genre (TYPES), one job (litectx-u) — every claim
+below carries that qualifier.**
+
+### Question (a): new-verb selection — zero
+
+Across the 4 validated plans (2 runs × draft+replan), not one of the 8 new palette verbs
+was selected — nor the pre-existing `recall`/`get`. Every step: `read/grep/edit`. F60's
+"2 of 3 drafts select when the catalog is named" did not reproduce on this job. Contrast:
+the P step-VOCABULARY landed instantly — `model:"haiku"` on mechanical steps, `attempts`
+tightening, per-step `scope` — used in every plan that offered a place for them. The
+planner takes control knobs it understands and leaves retrieval verbs whose value it has
+no reason to believe (F19's capability-without-strategy, now visible at the DRAFT layer:
+the strategy lines ride with granted verbs, but nothing at draft time argues FOR granting).
+
+### Question (b): outcome vs baseline — no cost read minted
+
+0/3 green on the widened menu vs 1/3 on the old menu is two anecdotes side by side (F24
+rule); no run was killed BY a new verb (none was ever invoked), so the menu is a bystander
+in every death. The three deaths: two identical structural stalls (below), one honest
+plan-red (drafter tried to hang an exit on `tsconfig.json`, outside the signed fence —
+the fence held, $0.28).
+
+### The real find: the mailbox with no hands (4 of 4 plans)
+
+Every validated plan authored the same idiom: fix steps exiting on `tree-changed` alone
+(form only — greens on ANY change), plus a read-only "verify-…" step holding every
+`check-passes`. A failing check's gap is re-delivered to the verifying step's OWN worker —
+which holds no write-class tool. Both step-red runs show the stall signature: a
+byte-identical 57-error gap, four iterations, zero possible conversions. The one green
+this job ever produced (F68, `ms3wawub`) escaped ONLY because its replan happened to move
+`check-passes:typecheck` onto the edit-granted fix step — its ORIGINAL plan carried the
+same trap. Green vs red on this job was a plan-shape coin flip, not capability.
+
+The replan channel cannot heal this class: both red runs' replans re-authored the trap.
+Self-heal converts only what reaches a worker that can act (F38/F39 delivery≠conversion,
+recurring at the plan-wiring layer).
+
+### The fix (shipped, d447665): the shape is now inexpressible
+
+`validatePlan` reds `check-passes` on any step without a write-class tool (the complement
+of the F17 pairing rule; same `exit-illegal` class), and the drafter prompt states the
+same law. The rejection red at draft time IS the teaching moment — choose-don't-describe,
+zero execution tokens burned. The flipped test pins the reversal with the paid evidence
+in its comment. Landed AFTER all three runs so the series stayed one readable condition.
+
+### Symptoms catalog (for the next operator reading a stuck run)
+
+1. Byte-identical gap across iterations — feedback is delivering but not converting.
+2. A `verify-…` step with no `edit`/`write` holding `check-passes` — the trap (now
+   validator-rejected).
+3. Fix steps greening on `tree-changed` with the close still red — form satisfied, truth
+   untouched.
+
+### Lesson
+
+A widened menu is inert without a reason to reach for it (F19 at the draft layer), and
+the highest-value read from the widening experiment was not about the widening at all:
+running the same job cold three times exposed that the planner's default "fix, then
+verify" idiom structurally disconnects the very check-loop that mints every green. The
+un-gameable fix was not prose in the prompt but one more inexpressibility rule at the gate.
+
+### Addendum 2026-07-29 — the rule converts: first-draft compliance twice, and the first no-replan green
+
+Post-rule cold runs (same job, same caps): `ms5aou4a` (provider-red casualty at ≥$0.80 —
+`truncated:max_tokens` in a worker round; readable half only) and `ms5uxhej` (**GREEN,
+$4.29 of $10, 23.9min of 45, 132 rounds, 45 writes / 10 files, close satisfied on FIRST
+judgment, NO replan — a first for this job**; bridge minted from an un-replanned cold plan).
+
+Both post-rule drafts validated on the FIRST try with the winning shape — the validator
+never had to fire; the law stated in the prompt redirected the habit upstream (against a
+4-of-4 prior trap rate). The green run's planner even kept its "verify-strict-typecheck"
+step name, but the rule had forced `edit` onto it — and that exact step then converted
+live: typecheck red → gap to its OWN worker → fix → red → fix → satisfied on iteration 4.
+The precise location where `ms4l5p6w`/`ms57zr7c` stalled to cap on a byte-identical gap.
+
+Green audited, not asserted: all four close stages re-run independently against the tree
+(exit 0 each), 410 tests EXECUTED / 0 failing, 10 files all under `src/`, zero
+suppressions (three grep hits are seed-preexisting prose mentions), diff preserved
+cp-first (`run-ms5uxhej.patch`, 764 lines). New-verb uptake: still zero (data point six).
+
+Cost read (secondary, n=1 vs n=1): $4.29/23.9min no-replan vs the baseline's $5.77/37min
+with a replan — direction favorable, unminted.
+
+### Addendum 2 (2026-07-30) — the haiku arm: the tier floor is the PLANNER's, and the mailbox rule's production debut was as a shield
+
+Aurora-u under `--model haiku` (run `ms7gne7s`, whole job on the economy tier): **plan-red,
+$0.05, 1.4min — no plan ever validated.** Draft 1 authored the exact mailbox trap (a 6-step
+plan ending in a read-only verify step holding `check-passes`) — **the F69 rule's first
+production firing**, plus two missing-exit reds. Draft 2 fixed the form reds and repeated
+the mailbox violation VERBATIM despite the red naming step, rule, and fix direction — the
+F38 gap-genre split (form converts, structure does not) surfacing at the drafting layer.
+Sonnet post-rule: 3/3 first-draft compliant, never drew the red.
+
+Contrast (same job, same signed hash, same day): sonnet green $1.86/11.2min vs haiku
+plan-red $0.05/1.4min. n=1 per arm, but the failure is BEFORE execution — a planning-tier
+capability edge, not a fixing-cost edge. **hamr locked the floor (in-turn, 2026-07-30):
+the drafter/default worker tier is sonnet (medium) minimum.** Per-step `model:"haiku"`
+tiering under a sonnet plan stays available (a haiku step has greened; the menu is
+unchanged); the runner's `--model haiku` arm remains as an explicit operator probe knob,
+documented as below-floor. Also on record: the mailbox rule was built as a teaching red
+for the resident drafter and debuted as a SHIELD against a weaker one — the gate's value
+is tier-independent.
+
+## F70 — the hardening-and-review cycle before the release: two guards carrying the very failure they were built to catch, and one fix refuted before it shipped
+
+**Status: minted 2026-07-30 from the close-out of branch `staged-close-wip` (31 commits
+vs main). A hardening pass (15 tests: mailbox edges, a five-phase casualty grid, the
+cold-store guarantee) ran first and PARKED two of its own finds as arbiter territory;
+hamr released them in-turn (*"fix both then /code-review medium…"*), which fixed them and
+launched an opus MEDIUM whole-branch review; that returned 6 MED + 9 LOW, and hamr's
+second order (*"validate all errors and fix what passes"*) set the contract for the
+closing batch: validate each finding before touching it, fix only what survives
+validation. Every validated finding is fixed across `1a04193` / `c6bfb88` / `ff78314`;
+full gate 505/505, typecheck clean.**
+
+### The headline: a guard can carry the exact failure mode it exists to catch
+
+Two of the three MED findings are the same shape, in the two instruments this branch
+added to survive a frozen run — and neither was reachable by reading the feature they
+guard. Only reading the GUARD as if it were the patient found them.
+
+**The stall fuse could be disarmed by its own reissue (MED-2).** F66's fuse abandons a
+hung call and silently reissues it, and its heartbeat is a completed round. But the
+abandoned call is not dead — U run `ms3197n8`'s socket kept streaming for 274 minutes
+after the fuse moved on — so every callback the corpse installed keeps firing. A late
+beat from that zombie re-armed the watch that was timing its REPLACEMENT: the replacement
+could then hang forever without ever tripping the fuse built to trip on exactly that.
+One shared `Loop` made it worse, letting a corpse's round bound stop the live call. Fixed
+by generation scoping (`src/stall.js`): the watch, the beat and the metering callback all
+carry the generation of the call that issued them, `isCurrent(gen)` is the token that
+tells a corpse's callback from the live one, and each issued call gets its own `Loop`.
+Orphan rounds stay metered — an abandoned call may already have been billed (F44).
+
+**The outside watchdog could kill a stranger, and could kill a live verdict (L7 +
+MED-3).** F67's whole premise is that a guard sharing nothing with the run survives what
+the run cannot. Its liveness probe was `kill(pid, 0)` — which answers "does SOME process
+hold this pid", not "is my victim alive". After the SIGKILL/OOM case the watchdog exists
+for, the kernel can recycle that pid onto an unrelated process and the guard would go on
+to kill a stranger. Liveness is now the PARENT LINK (`process.ppid === pid`,
+`scripts/u-watchdog.mjs:85`), which pid reuse cannot forge, and a guard aimed at a
+non-parent REFUSES to arm at startup — loud, exit 2, no marker (`:64-66`) — rather than
+running as a plausible-looking guard pointed at nothing. Separately, its stale-spine
+window was sized below the longest LEGAL silence: `runStages` emits nothing between
+stages, so a legal close can be quiet for `closeTimeoutMs × stages`, and the trigger could
+have killed a run mid-verdict. Sized from the spec's own stage count plus a margin
+(`scripts/run-u.mjs:123,128`). The watchdog's test fixtures were rewritten so the victim
+spawns its OWN watchdog — the only fixture shape that exercises the real parent link.
+
+### Three instruments reading a number that was not the one they meant
+
+**The ledger counted every stall as a bareloop bug (MED-1).** `classifyIncidents` had no
+branch for `step-stalled`, so the F66 fuse's own terminal fell through to "unclassified
+escalation category" — real upstream evidence (BA-19's trail) filed as a fake defect of
+ours. Routed through the same TYPED-LIB branch as `interpreter-red`
+(`src/ledger.js:137-138`): the `lib` field is stamped at the throw site and the stall
+accrues against the package that field names. Excluding the category instead would have
+deleted the evidence outright.
+
+**The spawner close floored on tests PASSED, not EXECUTED — the F40 class, again**
+(`scripts/u-spawner-close.mjs`). A skipped or deselected test could hide a red without
+ever pushing the passed-count under the floor, and only one summary bucket was read. The
+floor now reads `executed = collected − (skipped + deselected)` and sums every red tally
+on the summary line. Validated against the real patient (209 executed). The rule this
+repo minted at F40 — *count tests EXECUTED, never tests PASSED* — held in the library's
+close contract the whole time and was violated in a close script written later.
+
+**The close-fix loop laundered casualties, then laundered a money cut (F11/F44, then
+F45).** The step loop already restores an escalation's own category before returning; the
+fix loop returned a flat `escalated`, so a `provider-red` raised there came back as a
+capability read — and `run.js` keys the F44 `spendComplete:false` floor on the OUTCOME,
+so the run reported an exact-looking total for a call that may never have billed back.
+Found by the hardening pass, PARKED as verdict routing, fixed on hamr's word
+(`1a04193`). The review then found the SECOND half in the same routine (MED-4): the shell
+spells attempt-exhaustion and a money-gate halt with the same `cap-halt` category, so the
+category alone cannot tell them apart and only the wallet can. The fix worker's gate is
+built with the wallet at its most drained — every step's spend is behind it — which is
+precisely where a money cut masquerades as "the fix failed". A drained wallet now returns
+`cap-halt`, the resume-to-cap checkpoint; attempts spent with money still on the table
+stays the designed `escalated` terminal (`src/planrun.js:1259-1279`). Reachability was
+validated before the fix, not after: there is no money guard between the last step and
+the close.
+
+### Two promises the tool surface did not keep
+
+**`ctx_remember` was write-only through the verb the worker holds.** The isolate strategy
+line promises *"record a durable conclusion with `ctx_remember` so a later step can
+`ctx_recall` it"* — and the recall handler hardcoded `kind: 'code'`, so no note ever came
+back. The library-level round-trip test could not see it: it called `lc.recall` directly,
+not the verb. Recall now queries the fact axis alongside code and returns each note
+labeled `memory` with its BODY inline, capped at 400 chars — the body rides because a
+note is a CONCLUSION, not a pointer, and no worker verb dereferences a memory id, so a
+pointer-only reply would have been inert. **`ctx_impact` printed `calls
+undefined:undefined` for every callee** (`src/tools.js:233`): litectx returns `defs` and
+`callers` as objects with a path and a line, but `callees` as bare NAMES, and the readout
+assumed the object shape uniformly. Found while validating something else.
+
+### The fix that was refuted before it shipped (L8)
+
+The review proposed renumbering `ctx_impact`'s line output to 1-based on the reasoning
+that its numbers are display-only. Validated against a real index rather than read off the
+source, and REFUTED: `impact`'s def range dereferences through `ctx_get` verbatim, and
+`ctx_recall` prints the identical number for the identical chunk. They are ONE
+interchangeable 0-based handle space, so renumbering one tool would have made two tools
+print two numbers for one chunk and turned `ctx_get`'s clean chunk-boundary refusal into a
+guessing game. The real defect — a worker cross-referencing an editor is off by one — is
+closed by naming the space in all three tool contracts instead (`LINE_SPACE`,
+`src/tools.js:112`), which is the choose-don't-describe move applied to a fact rather than
+a menu. The proposed fix would have broken a working contract to document one.
+
+### Also closed in the same batch
+
+F68's parked async close runner, under hamr's blanket go: `runClose`/`runStages` await a
+plain `spawn` instead of blocking on `spawnSync`, so a running close no longer freezes the
+host event loop it reports to — BREAKING for adopters, byte-identical in every close
+semantic, and recorded in F68's own resolution block rather than here.
+
+### Lesson
+
+**An instrument built to guard a failure mode can carry that failure mode itself.** The
+fuse that exists because abandoned calls keep talking was disarmable by an abandoned call
+talking; the watchdog that exists to survive a killed run could be aimed at a stranger by
+the kill it survives, and could kill a live verdict during a silence its own subject makes
+legally. Neither is reachable from the feature side — the guard has to be read as the
+patient, with its own failure mode as the hypothesis. And the second lesson is the
+contract hamr set for the batch: **validate before you fix**. Of the findings carried into
+the closing pass, one proposed fix would have broken a working invariant, and it died to a
+round-trip measurement against a real index — the same rule F43's tree-diff rework paid
+for (a fix proposed from reading is a hypothesis, not a fix), holding a second time on a
+change that read as obviously correct.
+
+## F71 — the ~1-in-250 short close was the CHILD throwing its own bytes away: `process.exit()` discards queued stdout, and a clean EOF plus a real exit code is indistinguishable from a close that simply printed less
+
+**Status: minted 2026-07-31 during the v0.6.0 release gate, from a flake named as a blocker
+rather than merged around (*"gate evidence with unexplained noise is not clean enough to
+merge on"*). Root-caused, measured, and fixed in `c330d24` for the test surface. The
+PRODUCTION residual — every `scripts/` close still ends in `process.exit()` — is named
+below and PARKED for hamr: the complete fix is arbiter territory.**
+
+### The symptom
+
+`tests/staged-run.test.js`'s staged-close fixture prints a fixed 31,890 bytes (600 filler
+lines around the two markers `FAILED: a` and `FAILED: b`) and exits 1. About **1 run in 250
+under CPU load**, it arrived SHORT: the capture ending mid-`mid filler line 137`, `FAILED: b`
+never received, `[16004 chars truncated]` where the run before had said `[30000…]` — and the
+verdict was still `needs_revision` with `exitCode: 1`, because the exit code was correct. The
+observable damage is the F28 class arriving nondeterministically: **the gap loses its failure
+names**, which is the one thing the gap exists to carry. Nothing anywhere reds. No fault, no
+timeout, no `ENOBUFS`, no signal.
+
+The prior session had chased this and stopped honestly, recording in the test's own comment
+that it was *"unexplained, and reported as such rather than papered over"* — along with two
+conclusions that turned out to be wrong (below).
+
+### The mechanism
+
+**A node process that ends with `process.exit()` drops whatever is still queued on its stdout
+pipe.** The child asked for its own pending-write state on stderr (a different pipe)
+immediately before exiting: a 300KB close answers **`pendingBytes=296413 finished=false`** on
+its way out. Those bytes are never written. The parent then observes a clean `close` event, a
+real exit code, and no error — the exact same observation it would make if the close had
+simply printed less. There is no signal to route, so this could not have been caught by any
+amount of fault handling on the reading side; the reader's only evidence is bytes that never
+came.
+
+The window opens whenever the reader is slow enough for the child's writes to queue: a stalled
+reader, or — in the real case — CPU contention, which is the same thing without an artificial
+stall.
+
+### The measurements
+
+Interleaved A/B on the real `runClose`, both spellings of the same fixture, same bytes, same
+load, **no artificial stall** (CPU burners as the load):
+
+| ending | runs | short | smallest capture |
+|---|---|---|---|
+| `process.exit(1)` | 500 | **7** | 14,070 of 31,890 |
+| `process.exitCode = 1` | 500 | **0** | 31,890 (whole) |
+
+Made deterministic by stalling the reader 50ms on its first chunk (N=12 per cell): the
+`process.exit(1)` fixture goes short **12/12** through the `runClose` path and **11/12**
+through a plain `spawn` + `on('data')` control, down to ~9,178 of 31,890 bytes, while the
+`process.exitCode` twin loses **0/12** in the same conditions.
+
+Bounds of the window, N=8 per cell, `process.exit()` throughout:
+
+- **≥16KB of output plus a ≥50ms stall — 8/8 lost.**
+- **≤5KB — 0/8 at every stall length**, including 300ms. Below the pipe's capacity there is
+  nothing queued to drop.
+- At 300KB behind a 50ms stall: 6/6 lost, 8,490 of 304,903 bytes captured.
+
+Two controls that localize the defect to the CHILD rather than to any reader:
+
+- **File-backed stdout is immune.** Same 300KB `process.exit()` child, same freeze: captured
+  over a pipe **6/6 lost**, captured to a file via `stdio:[…, fd, fd]` **0/6 lost**.
+- **The parent's accumulation code is not implicated.** 4,000 spawns across three parent-side
+  arms (a control reader, the `spawnClose` copy, the copy without the stdin `end()`) with a
+  CHEAP writer — `cat` of the same 31,890-byte file — lost **0**. Swap the writer for a node
+  child that calls `process.exit()` and the same parents lose bytes immediately.
+- `spawnSync`, whose reader cannot stall, loses **0/6** on a 32KB close and **1/6** on the
+  300KB one. So F68's async close-runner rewrite **widened** this window; it did not open it.
+
+### Two claims REFUTED — both were written into the tree as measured facts
+
+1. ***"Only the `runClose` path loses bytes — a plain `spawn` + `on('data')` loop over the same
+   fixture never loses a byte in 2,500 spawns."*** False: the plain-spawn control loses 11/12
+   under a 50ms stall, against the copy's 12/12. The loss is the child's and belongs to
+   neither path. The replication points at the confound: a harness of that shape reproduces
+   the zero exactly (4,000 spawns, 0 short) when its writer is `cat` instead of a node child —
+   i.e. the stall was real but **the dropping party had been substituted out of the
+   experiment**. The variable was never exercised, so the test could not produce the positive.
+2. ***"node's pipe writes are synchronous on Linux, so there is nothing pending to drop."***
+   False, and refuted by the child itself: `process.stdout.writableLength` reads **296,413**
+   immediately before `process.exit(1)`.
+
+Both had been recorded as negative results in good faith. They are corrected in place, in the
+same comment that carried them, with the numbers that refuted them — not deleted.
+
+### What shipped (`c330d24`)
+
+- **The fixture's `process.exitCode = 1` ending is now named as THE fix.** It was already in
+  the tree, landed earlier as a *"free and strictly not-worse"* tidy on the reasoning that it
+  *"removes the one documented way a child can drop buffered output"* — while the comment
+  beside it explicitly declined to claim it fixed anything. It did. 0 short in 500+ interleaved
+  runs under load, and 0 in 400 runs of the real fixture through the real `runClose` **inside
+  `node --test`**, which is the context the flake was observed in.
+- **A last-line PRECONDITION** in `tests/staged-run.test.js`: both the `gapKeep` and the bare
+  gap must contain the stage's final line (`tail filler line 199`) before any `gapKeep`
+  assertion is read. Writes are ordered, so the last line is present iff every byte arrived. A
+  short arrival otherwise surfaces three assertions later as a confusing `gapKeep` failure —
+  which is precisely how this cost a day.
+- **A whole-capture guard** in `tests/ralph.test.js` pinning the half the RUNNER owns: 300KB of
+  close output, host event loop frozen 300ms mid-stream, a child that exits cleanly is captured
+  WHOLE (`SENTINEL-END` present). Mutation-checked — it kills a reader that caps its
+  accumulation at 64KB, 4/4. It deliberately does **not** kill resolving on `exit` instead of
+  `close`, nor a late-attached `data` listener: both were measured lossless in this shape, so
+  neither is claimed.
+
+### The residual, stated and PARKED
+
+**Every production close script still ends in `process.exit()`** —
+`scripts/u-litectx-close.mjs` and `scripts/u-spawner-close.mjs` both exit that way from their
+`done`/`stop` helpers and from their final fall-through. They are safe **today** for one
+reason only: they self-cap the gap at `GAP_LINE_CAP = 40` lines, a few KB, inside the
+measured-immune ≤5KB band. Nothing ENFORCES that relationship. Raise the cap, add a stage that
+prints before the cap applies, or borrow one of these scripts as a template for a chattier
+close, and the run walks into the window silently — the loss is nondeterministic, preserves
+the exit code and therefore the verdict, and is invisible in every artifact the run leaves
+behind.
+
+The complete fix is not a bigger cap or a discipline note: it is to stop capturing close output
+over a pipe at all — write it to a temp file and read it after the child exits, the one
+configuration measured immune (0/6 where the pipe lost 6/6). That changes how the arbiter runs
+a close. **Named, scoped, PARKED for hamr's explicit go.**
+
+### Lesson
+
+**A clean EOF and a correct exit code are not evidence that the output is complete.** Every
+signal the runner had said the close finished normally; the only witness to the loss was inside
+the process that caused it, and it had to be asked directly (`writableLength`, on a different
+pipe, in the microsecond before exit). When an instrument's own success indicators cannot
+distinguish two outcomes, ask the other side of the boundary rather than reading the same
+indicators harder.
+
+And the second, which is F45's blind-instrument rule wearing new clothes: **a negative result
+recorded as a measured fact freezes into doctrine.** *"Measured, `process.exit()` truncates
+NOTHING here"* sat in the tree as a comment with a run count attached, and it was wrong because
+the harness that produced it had substituted a `cat` for the node child that was doing the
+dropping — the stall was faithfully reproduced, the party under test was not. The rule that
+catches it is the pre-flight one this repo already has: **could this test have produced the
+positive?** A control that swaps out the suspected mechanism is not a control.

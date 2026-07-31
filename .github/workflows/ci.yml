@@ -18,6 +18,9 @@ jobs:
         with:
           node-version: "20"
           cache: npm
+      # litectx's impact() shells out to ripgrep (documented requirement; not on the runner
+      # image). Without it a symbol reads as 0 callers and the two ctx_impact tests fail (LC-5).
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
       - run: npm ci
       - run: npm run typecheck   # tsc --noEmit — JSDoc/code mismatch blocks merge (anti-drift, LIBRARY_CONVENTIONS §2)
       - run: npm run build:types # prove the .d.ts actually generate from the JSDoc

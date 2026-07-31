@@ -10,6 +10,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const HASH = '8ab3aa189278869b71e9be8c33b41a4976e2f4c0b85ac856a029db18753813c3';
 const SPINE_DIR = '/home/hamr/PycharmProjects/bareloop-patients/aurora-soar-bareloop';
@@ -81,7 +82,7 @@ for (let inv = 1; inv <= MAX_INVOCATIONS; inv++) {
   console.log(`${ts()} firing runner: --runs ${remaining}`);
   try {
     execFileSync('node', ['scripts/run-battery-testgen.mjs', '--approve', HASH, '--runs', String(remaining)],
-      { stdio: 'inherit', env: process.env, cwd: new URL('..', import.meta.url).pathname });
+      { stdio: 'inherit', env: process.env, cwd: fileURLToPath(new URL('..', import.meta.url)) });
   } catch { /* runner exits non-zero only on preflight refusals; results JSON is still the record */ }
 
   const results = newestResults();

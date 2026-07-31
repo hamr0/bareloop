@@ -80,6 +80,11 @@ non-negotiable, at every scale.
 Granted **per job by the signed spec** — the agent never widens its own menu. If a locked
 verb blocks the work, the worker files a *request-red* and a human decides.
 
+> **Model tiers (v1.36, 2026-07-30):** the PLAN is authored at the medium tier (sonnet)
+> or above — a small-tier drafter died at the validation gate twice on the same rejection
+> (measured). Steps may be tiered DOWN to the economy tier by the planner (`model` field);
+> running a whole job below the floor is an explicit operator probe, never a default.
+
 | verb | what it does |
 |---|---|
 | `read` | open a file |
@@ -89,7 +94,10 @@ verb blocks the work, the worker files a *request-red* and a human decides.
 | `get` | trade one pointer for exactly one chunk of code (the function + its doc comment) |
 | `run` | **LOCKED, forever.** A worker that can run commands can run its own judge and grade its own exam |
 
-> **⚠ This table is the CURRENT six, not the intended palette (F56, 2026-07-26).** The agreed
+> **⚠ RESOLVED by move P (2026-07-28, F69): the menu is now the full four-component
+> catalog — 14 verbs (`read·grep·write·edit` / `recall·get·impact·related·recent` /
+> `compress·peek` / `stash·remember·forget`), all signed into both job specs. The table
+> above shows the original six for history.** Original note (F56, 2026-07-26): The agreed
 > vocabulary is four components — **write · select · compress · isolate** — each with its own
 > verb list, which the agent picks from as it sees fit. Those twelve verbs ship upstream today
 > and were bound by the PRD's primitive-menu section; they were lost as collateral when
@@ -115,18 +123,21 @@ verb blocks the work, the worker files a *request-red* and a human decides.
 ## The layers
 
 ```
-Layer 3   INHERITANCE    the road survives runs, with receipts; self-heals    (not built — N3)
-Layer 2   MICRO-WHEELS   the road itself: locate → understand → write → verify (built + ACCEPTED — F47, v0.5.0)
+Layer 3   INHERITANCE    the road survives runs, with receipts; self-heals    (not built — N3, the NEXT rung)
+Layer 2   MICRO-WHEELS   the road itself: locate → understand → write → verify (built + ACCEPTED — F47, v0.5.0;
+                                                                                road finished by T·A·P·U, v1.35)
 Layer R   THE ROOT       memory that survives attempts inside one run          (built — armed-and-inert, F41)
-Layer 1   ONE WHEEL      a single loop over the whole task                     (built; first real firing NOW)
+Layer 1   ONE WHEEL      a single loop over the whole task                     (built; fired — F38)
 ```
 
 ### Layer 1 — one wheel
 One loop over the entire job: attempt → judge → gap → retry, under one budget. This is the
-engine every higher layer is made of. **Status: built; the wheel has turned mechanically
-(F32 rerun: gaps delivered across attempts) but CONVERSION — an attempt measurably better
-BECAUSE of the gap — has never been observed.** Delivery and conversion are separate axes
-(F32); the TESTGEN battery (job #4) is the first conversion firing.
+engine every higher layer is made of. **Status: built and FIRED.** The wheel turns
+mechanically (F32 rerun: gaps delivered across attempts), and CONVERSION — an attempt
+measurably better BECAUSE of the gap — was first observed on the TESTGEN battery (F38:
+ladder conversion 3/5, on gaps that name a wall). Delivery and conversion are separate
+axes (F32), and the split holds by gap GENRE: mechanical gaps convert, semantic ones
+stall (F38/F39) — which is what Layer 2's in-run checks exist to translate.
 
 ### Layer R — the root (the ratchet)
 Today, each attempt starts as a **fresh conversation**; the only thing that crosses attempts
@@ -189,8 +200,20 @@ agent drafts this road per job; a validator gates the draft before any tokens bu
 (SCOUT → PLAN → per-step micro-loops judged by the exit evaluator → one replan → the
 operator's close) converts job #4 3/3 and clears the 45 bar 3/3 on the API surface; the
 in-run operator-signed check TRANSLATES the semantic ask into the mechanical genre (F46).
-Cross-surface (clipipe) reads OUT-as-peer (F48): only the API is a guaranteed surface. Open
-follow-up: F49 (bound the agent-authored exit regex).
+Cross-surface (clipipe) reads OUT-as-peer (F48): only the API is a guaranteed surface. The
+follow-up F49 (bound the agent-authored exit regex) is RESOLVED — a static nested-quantifier
+reject at the validation gate, widened monotonically in v0.5.1.
+
+**The road is FINISHED (2026-07-30, PRD v1.35).** T·A·P·U landed on top of the accepted
+core: a wall clock and materials the planner is told as a balance (T), the variance replan
+axis (A, built-and-inert at 0.5), the 14-verb palette and the step vocabulary (P), and
+user-mode e2e as routine — both U jobs green end to end with bridges minted (F68, F69).
+The P read's load-bearing find became a validation law: a `check-passes` step must hold a
+write-class verb, so the mailbox-with-no-hands plan shape is now inexpressible. **Closed out
+2026-07-30** with a hardening pass (mailbox edges, the five-phase casualty grid, the
+cold-store guarantee) and a whole-branch review whose every validated finding is fixed —
+including F68's parked close runner, now async, so a running close no longer freezes the
+loop it reports to. The branch is release-ready.
 
 **Stage verdicts (decided 2026-07-15, hamr):** a micro-wheel validates against **its own
 eval** where one exists — a mechanical check the stage cannot game; where none exists, it
@@ -280,8 +303,9 @@ kid is never allowed to push on a wall to test a brace before mom inspects (and 
 inspection ends the try). Even pinning the full note to the castle — score, target, every
 weak wall — didn't change that (the F39 probe). So: the notebook (R) keeps the kid from
 repeating itself; but turning "make it sturdier" into small walls the kid can push on
-itself before mom looks — that is Layer 2's job, and it is the one piece of the thesis
-not yet observed working.
+itself before mom looks — that is Layer 2's job, and it is now **observed working**
+(F46 at POC tier, F47 at acceptance: the kid picks its own ruler, mid-build, and the
+failure that was fatal every time converts).
 
 ## The shell vs the layers — who has what
 
@@ -393,9 +417,10 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
    `exit-illegal` / `check-unknown`, F17 pairing law), the exit evaluator (outcome-reading
    snapshots, fault propagation), ralph's judge seam, the plan executor (scout → validated
    plan → micro-loops with check-gap feedback → one replan → close + one fix loop), and
-   the runJob dispatch — 503 tests, TDD, mutation-spot-checked. Scripted-provider
-   evidence only so far: **the rung's acceptance gate is the real-model battery (job #4,
-   same close, same frozen 45 bar, read against F39's baseline), which has NOT yet run.**
+   the runJob dispatch — 503 tests, TDD, mutation-spot-checked. **The rung's acceptance
+   gate — the real-model battery (job #4, same close, same frozen 45 bar, read against
+   F39's baseline) — RAN and PASSED: 3/3 conversions, all 3 over the bar, every green
+   driven by the agent's own composed check exit (F47, accepted 2026-07-22, v0.5.0).**
    **Also owns the Layer R default decision:** the first Layer 2 job that produces natural
    fixation runs the ON-vs-OFF acceptance read, and that result flips `layerRoot` to `true`
    (ON helps) or keeps it `false` (no lift) — see the Layer R ⚠ note above.
@@ -441,9 +466,23 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
      a close declared as an ordered list of NAMED STAGES, with the check menu DERIVED from
      those stages, so U runs with **zero operator-authored checks** (hamr: *"there shouldn't be
      user authoring anywhere, that defies the point of bareloop"*). Designed and signed in PRD
-     v1.28. **Status 2026-07-26: T built (F64 fixed — a wall stop is a governance stop, never
-     a transport casualty), A built-and-inert with its threshold decided at 0.5, staged close
-     IN BUILD, U / P not started.**
+     v1.28. **✅ BUILT 2026-07-26** (branch `staged-close-wip`): `close: [{name, cmd, expect,
+     judged?, gapKeep?, offer?, needs?}]` replaces the single close object for `verdictType:
+     green`; `checks[]` is retired outright (`checks-derived` red by name, not merely
+     discouraged); `checkMenu(close)` derives the offerable menu, with a hidden/non-borrowable
+     stage (`offer:false`) or a prerequisite chain (`needs`) both expressible. Two further
+     decisions landed the same build (hamr, 2026-07-26, PRD v1.33): Layer R's red-set under a
+     staged close reads the STAGE that actually rendered the verdict that attempt, and refuses
+     to compare across a stage change rather than risk a false fire; and the grading stage is
+     kept off the derived menu in all four shipped specs (`offer:false`, a per-spec convention
+     guarded by a test, not a schema rule). **Status 2026-07-30: T·A·P·U is COMPLETE (PRD v1.35).** T built and live in
+     every U run; A built-and-inert at 0.5 (the paying replans fire on exhaustion); the
+     staged close has run real-model many times over; U is routine (litectx-u and aurora-u
+     both green end-to-end, bridges minted, casualties routed per doctrine); P built and
+     read under signed hashes (F69: the widened palette went unselected on both TYPES jobs
+     while the step vocabulary — model tier, attempts, scope — was adopted immediately; the
+     load-bearing find was the mailbox-with-no-hands plan shape, now a validation law).
+     Both job specs are signed on the 14-verb menu.
 5. **Build Layer 3** — inheritance with ledger attribution (N3, kill-switch: rules must
    transmit across non-identical runs). Carries three v1.21 requirements (external-review
    fold, 2026-07-21): **(a) the drift detector** — arbiter-side trailing green-rate vs
@@ -455,6 +494,16 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
    **(c) bound-pressure ledger fold** — "step X capped M of N runs" for the trust
    surface; acceptance = it can surface the F37/16g rounds-vs-money bind from archived
    spines.
+   **This is the NEXT rung (2026-07-30).** Layer 2's road is finished, hardened and
+   reviewed; the branch is release-ready. Layer 3 is the REUSE rung — the bridges the
+   U runs have already minted get reused instead of redrawn, which makes the paired
+   control fall out of normal operation (reuse = the ON arm, from-scratch = the OFF arm)
+   rather than needing a battery. **How it opens, in order:** interview hamr → freeze the
+   design → a sub-dollar PRE-PROBE before any inheritance machinery is built (requirement
+   (b)'s gate: identical plans with and without lineage in hand, and if lineage does not
+   move the outcome the arm is dead). That order is not ceremony — CL-BENCH's read is that
+   memory systems LOSE to plain in-context learning once base capability is subtracted, so
+   the cheap instrument runs before the expensive build.
 
 ---
 
@@ -466,7 +515,7 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
 | the fence / gate / redaction | `bareguard` |
 | `read` / `grep` / `write` | `bare-agent` shell tools |
 | `recall` / `get` (the index) | `litectx` |
-| the judge (close) | `spawnSync` of the spec's argv — plain child process, exit code = truth |
+| the judge (close) | an awaited `spawn` of the spec's argv — plain child process, exit code = truth (async since 2026-07-30, F68: a running close no longer freezes the host loop; every close semantic unchanged) |
 
 Everywhere else in this repo's docs, the product word is used. If a doc says `recall`, it
 means the verb; if it means the package, it says the package name.

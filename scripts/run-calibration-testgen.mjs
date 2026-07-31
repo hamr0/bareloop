@@ -21,7 +21,7 @@ import { join, resolve } from 'node:path';
 import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
 import { makeSpine } from '../src/spine.js';
-import { SECRET_PATTERNS } from '../src/validate.js';
+import { scanSecrets } from '../src/validate.js';
 
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
@@ -151,7 +151,10 @@ for (let i = 1; i <= N_RUNS + MAX_EXTENSION; i++) {
   const spentUsd = je?.spentUsd ?? null;
   const spendComplete = je?.spendComplete; // F43: false = a floor (casualty/unpriced); undefined pre-F43
   const rounds = events.filter((e) => e.type === 'worker-round').length;
-  const leaks = SECRET_PATTERNS.map((re) => new RegExp(re.source, re.flags.replace('g', '') + 'g')).flatMap((re) => raw.match(re) ?? []);
+  // the ONE spelling of the text-side scan (src/validate.js `scanSecrets`): a
+  // hand-rolled copy here is a second inventory that can silently miss a shape the
+  // canonical one catches, on the very output it guards.
+  const leaks = scanSecrets(raw);
 
   // the close's own log is the kill-rate instrument: entries appended during
   // THIS run; the LAST one is the graded close of the single attempt (earlier

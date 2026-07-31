@@ -46,15 +46,37 @@ export const GOLD_COMPARE = Object.freeze(['exact', 'json-equal']);
  * WRITE-class verb judged by the SAME writeScope fence as `write` (bareguard
  * action type 'edit'). Admitted because whole-file rewrite is measurably
  * unreliable at size (F31: 4 of 5 big-file whole-writes broke the tree) and
- * taxes output tokens ∝ file size. It admits no execution either. */
-export const TOOL_MENU = Object.freeze(['read', 'grep', 'write', 'edit', 'recall', 'get']);
+ * taxes output tokens ∝ file size. It admits no execution either.
+ *
+ * P (design record 2026-07-28, hamr: full catalog) widened the menu to the four
+ * components — write · select · compress · isolate — every verb an EXISTING
+ * litectx implementation (menu-is-inventory). impact/related/recent/compress/
+ * peek are read-only like the retrieval pair; stash/remember/forget are
+ * STORE-writes (`.litectx`, never the tree — own gate action types, and the U
+ * runner deletes the store at reset so cold stays cold). None admits execution:
+ * the `run` lock is untouched. */
+export const TOOL_MENU = Object.freeze(['read', 'grep', 'write', 'edit', 'recall', 'get', 'impact', 'related', 'recent', 'compress', 'peek', 'stash', 'remember', 'forget']);
+/** the write-class split the validator and the scout filter read: tree writes
+ * (writeScope fence) vs store writes (isolate) — NEITHER is read-capable. */
+export const WRITE_VERBS = Object.freeze(['write', 'edit']);
+export const STORE_VERBS = Object.freeze(['stash', 'remember', 'forget']);
 /**
  * The floor for `maxWallMs`: one default close timeout (`runClose`'s 120_000).
  * Addendum 1 MEASURED that a wall deadline can only be read BETWEEN rounds —
  * `loop.stop()` does not cut an in-flight call (fired at 500ms, returned at
- * 4,018ms) — so enforcement is `maxWallMs + closeTimeoutMs`. Under this floor the
- * overshoot exceeds the budget itself and the advertised number would be more
- * wrong than right, which is the advertised-must-equal-enforced line.
+ * 4,018ms) — so enforcement is `maxWallMs + closeStages × closeTimeoutMs` (W5: a
+ * staged close runs every stage under the FULL timeout, ralph.js `runStages`).
+ * Under this floor the overshoot exceeds the budget itself and the advertised
+ * number would be more wrong than right, which is the advertised-must-equal-
+ * enforced line.
+ *
+ * The VALUE is a one-stage, default-timeout floor and is deliberately left alone —
+ * a threshold is operator territory, not something this module re-derives from a
+ * spec's own stage count. It therefore bounds only the degenerate case; a job with
+ * many stages or a raised `closeTimeoutMs` can still sit far above it while its
+ * overshoot dwarfs its cap. The clock reports that honestly (`closeStages` and
+ * `enforcedMs` are both on the `wall-clock` record) rather than the floor pretending
+ * to prevent it.
  */
 export const MIN_WALL_MS = 120_000;
 /** locked-but-listed tools: real capabilities deliberately outside the grant
@@ -99,10 +121,6 @@ const CLOSE_FIELDS = {
   rubric: ['type', 'criteria'],
   hitl: ['type', 'prompt'],
 };
-/** a named check (decision 1) IS the predicate-close body plus a name — same
- * fields, same validator, same runClose machinery (a second command shape
- * would be the F9 two-transforms class one level up) */
-const CHECK_FIELDS = ['name', 'cmd', 'expect', 'judged', 'gapKeep'];
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
 
 /** @typedef {{code: string, path: string, detail?: string, verb?: string}} Red — `verb` rides request-reds as structured data (the ledger keys on it, never on prose) */
@@ -182,7 +200,7 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
   if (spec.maxWallMs !== undefined
       && !(typeof spec.maxWallMs === 'number' && Number.isInteger(spec.maxWallMs) && spec.maxWallMs >= MIN_WALL_MS)) {
     red('bounds', 'maxWallMs',
-      `integer milliseconds >= ${MIN_WALL_MS} (one close timeout). Enforcement is a between-round deadline, measured as maxWallMs + closeTimeoutMs (design addendum 1: loop.stop() cannot cut an in-flight call), so a budget under one close cannot fund its own close and the advertised number would be more wrong than right`);
+      `integer milliseconds >= ${MIN_WALL_MS} (one close timeout). Enforcement is a between-round deadline, measured as maxWallMs + closeStages x closeTimeoutMs (design addendum 1: loop.stop() cannot cut an in-flight call; W5: every close stage runs under the full timeout), so a budget under one close cannot fund its own close and the advertised number would be more wrong than right`);
   }
 
   // 3. the outer write fence — operator law (interview decision #4), same
@@ -214,11 +232,11 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
   // `steps` is now an unknown field like any other, so an old spec reds by name
   // rather than half-running.
   if (spec.steps !== undefined) {
-    red('shape-retired', 'steps', 'operator-authored steps[] was deleted (PRD v1.32) — a job declares goal/verdictType/close/checks[] and the AGENT authors the steps. hitl and soft-green return as a Layer 3 decision, rebuilt in this shape');
+    red('shape-retired', 'steps', 'operator-authored steps[] was deleted (PRD v1.32) — a job declares goal/verdictType/close and the AGENT authors the steps. hitl and soft-green return as a Layer 3 decision, rebuilt in this shape');
   } else if (PLAN_CORE_FIELDS.some((f) => spec[f] !== undefined) || spec.tools !== undefined) {
     validatePlanShape(spec, red, reds);
   } else {
-    red('missing-required', 'goal', 'a job declares goal/verdictType/close/checks[] — the agent authors the steps');
+    red('missing-required', 'goal', 'a job declares goal/verdictType/close — the agent authors the steps');
   }
 
   // 5. secrets sweep — the SAME shared guard the workflow validator runs
@@ -337,10 +355,123 @@ function predicateBody(o, at, red) {
 }
 
 /**
- * The four-field plan shape (design record 2026-07-21, decision 5): goal /
- * verdictType / close / checks[] (+ the top-level tool ceiling). v1 admits
- * only verdictType `green`; soft-green/hitl are declared-but-locked and red
- * as `request-red` — admission demand the ledger counts, never a grant.
+ * The staged close (PRD v1.28) — the close is an ORDERED LIST of named stages,
+ * and the check menu DERIVES from it. The principle: *the user authors the
+ * destination, never the road.* A user who cannot describe a workflow can still
+ * say what done looks like, and everything downstream of that is derived — which
+ * is why `checks[]` no longer exists as a field (hamr: *"there shouldn't be user
+ * authoring anywhere, that defies the point of bareloop"*).
+ *
+ * Two stage classes cannot be handed to the agent as a mid-build ruler, and F58
+ * measured both against a real close:
+ *  - a PRECONDITION ("the seed commit exists") is not a ruler for the work; run
+ *    as a check it passes instantly and teaches nothing. It sets `offer: false`.
+ *  - a stage that reads what an EARLIER stage built ("the public API matches the
+ *    emitted declarations") reds on its own for a reason that has nothing to do
+ *    with the worker's edit. It names `needs`, and picking it runs that chain first.
+ * Everything else is offerable: derivation gave job #5 SEVEN rulers where the
+ * operator had hand-carved three (F58) — removing the operator does not cost the
+ * agent rulers, it hands it more.
+ *
+ * The `needs` expansion is TRANSITIVE (fixed point, not one level): a
+ * prerequisite may itself name one, and running an incomplete chain reproduces
+ * the exact false-red `needs` exists to remove, one level deeper. The expanded
+ * chain is ordered by the CLOSE, never by the order names were typed —
+ * validateStagedClose forces `needs` to name EARLIER stages, so close order IS
+ * a topological order. A `needs` cycle is inexpressible in a validated close for
+ * that same reason; the walk is still cycle-safe by construction (each stage is
+ * collected at most once), because a pure exported helper must terminate on
+ * whatever it is handed rather than hang the runner before any token burns.
+ *
+ * @param {any[]} close the validated stage list
+ * @returns {{name: string, run: any[]}[]} offerable stages, each with the ordered
+ *   chain that must run for it (prerequisites first, the stage itself last)
+ */
+export function checkMenu(close) {
+  if (!Array.isArray(close)) return [];
+  const named = close.filter((s) => isObj(s) && isNonEmptyString(s.name));
+  const byName = new Map(named.map((s) => [s.name, s]));
+  const orderOf = new Map(named.map((s, i) => [s, i]));
+  /** the transitive prerequisite closure of one stage, in close order */
+  const chain = (/** @type {any} */ stage) => {
+    /** @type {Set<any>} */
+    const collected = new Set();
+    const walk = (/** @type {any} */ s) => {
+      for (const n of Array.isArray(s.needs) ? s.needs : []) {
+        const p = byName.get(n);
+        // already collected (a diamond) or the picked stage itself (a cycle):
+        // the walk stops here, so it visits each stage at most once
+        if (!p || p === stage || collected.has(p)) continue;
+        collected.add(p);
+        walk(p);
+      }
+    };
+    walk(stage);
+    return [...collected].sort((a, b) => (orderOf.get(a) ?? 0) - (orderOf.get(b) ?? 0));
+  };
+  return close
+    .filter((s) => isObj(s) && s.offer !== false && isNonEmptyString(s.name))
+    .map((s) => ({ name: s.name, run: [...chain(s), s] }));
+}
+
+/** the fields a close STAGE may carry — anything else is a smuggle channel */
+const STAGE_FIELDS = ['name', 'cmd', 'expect', 'judged', 'gapKeep', 'offer', 'needs'];
+
+/**
+ * Validate the staged close. Every stage is a predicate BODY under the same
+ * rules the single close object has always used (one contract, never a second
+ * copy — the F9 two-transforms class applied to the arbiter itself).
+ * @param {any[]} stages
+ * @param {(code: string, path: string, detail?: string) => void} red
+ */
+function validateStagedClose(stages, red) {
+  if (stages.length === 0) {
+    red('missing-required', 'close', 'a non-empty ordered list of named stages — a job with nothing to run is ungated spend');
+    return;
+  }
+  const seen = new Set();
+  stages.forEach((s, i) => {
+    const at = `close.${i}`;
+    if (!isObj(s)) { red('invalid-value', at, 'a stage is an object { name, cmd, expect, ... }'); return; }
+    for (const key of Object.keys(s)) {
+      if (!STAGE_FIELDS.includes(key)) red('unknown-field', `${at}.${key}`, `not a stage field (script bodies, close types and minting claims land here); fields: ${STAGE_FIELDS.join(', ')}`);
+    }
+    if (!isNonEmptyString(s.name) || !SLUG_RE.test(s.name)) red('invalid-value', `${at}.name`, 'kebab-case slug — the plan references stages by name (check-passes(name))');
+    else if (seen.has(s.name)) red('duplicate-id', `${at}.name`, `"${s.name}" is already a stage name — check-passes(name) would be ambiguous`);
+    else seen.add(s.name);
+    // every stage is a COMMAND whose exit code is truth: a rubric or hitl stage
+    // is inexpressible here by construction, which is the hierarchy enforced by
+    // shape rather than by a check
+    predicateBody(s, at, red);
+    if (s.offer !== undefined && typeof s.offer !== 'boolean') {
+      red('invalid-value', `${at}.offer`, 'boolean — omit it (the default) unless the stage cannot stand alone as a ruler');
+    }
+    if (s.needs !== undefined) {
+      const earlier = new Set(stages.slice(0, i).filter((p) => isObj(p) && isNonEmptyString(p.name)).map((p) => p.name));
+      if (!Array.isArray(s.needs) || s.needs.length === 0 || !s.needs.every((n) => typeof n === 'string')) {
+        red('invalid-value', `${at}.needs`, 'non-empty array of EARLIER stage names — omit the field when the stage stands alone');
+      } else if (s.offer === false) {
+        red('invalid-value', `${at}.needs`, 'a stage that is never offered has no chain to run — needs and offer:false are incoherent together');
+      } else {
+        const bad = s.needs.filter((n) => !earlier.has(n));
+        if (bad.length) red('invalid-value', `${at}.needs`, `must name stages declared BEFORE this one (a prerequisite that has not run yet cannot be one): ${bad.join(', ')} — earlier stages: ${[...earlier].join(', ') || 'none'}`);
+      }
+    }
+  });
+}
+
+/**
+ * The plan-shaped job spec (design record 2026-07-21, decision 5): goal /
+ * verdictType / close (+ the top-level tool ceiling). The fourth field of the
+ * original four, `checks`, is RETIRED — the check menu derives from the close's
+ * stages instead (PRD v1.28/v1.32), and a spec that still declares it gets the
+ * `checks-derived` red below rather than a bare unknown-field.
+ *
+ * v1 admits only verdictType `green`; soft-green/hitl are declared-but-locked
+ * and red as `request-red` — admission demand the ledger counts, never a grant.
+ * The close is validated one level up as well: a declared verdict demands a
+ * close CLASS, so green-on-rubric reds as `close-hierarchy` rather than
+ * laundering a soft judgement into a hard one.
  * @param {Record<string, any>} spec
  * @param {(code: string, path: string, detail?: string) => void} red
  * @param {Red[]} reds direct access for structured request-reds
@@ -365,7 +496,12 @@ function validatePlanShape(spec, red, reds) {
   }
 
   if (spec.close === undefined) red('missing-required', 'close', 'declared green with nothing to run it — preflight validates the declaration, never infers');
-  else if (!isObj(spec.close)) red('invalid-value', 'close', 'a close object (type + its fixed fields)');
+  // The staged close (PRD v1.28): an ordered list of named command stages, from
+  // which the check menu derives. The object form remains ONLY for the
+  // declared-but-locked verdict classes (gold/rubric/hitl), which name no
+  // command and which the plan flow refuses at runtime (close-unsupported).
+  else if (Array.isArray(spec.close)) validateStagedClose(spec.close, red);
+  else if (!isObj(spec.close)) red('invalid-value', 'close', 'an ordered list of named stages [{ name, cmd, expect, ... }], or a close object for a locked verdict class');
   else if (validateClose(spec.close, 'close', red) && demanded !== undefined
            && !CLASS_BY_CLOSE[spec.close.type].includes(demanded)) {
     // the hierarchy one level up: the declared verdict demands a close class
@@ -373,23 +509,15 @@ function validatePlanShape(spec, red, reds) {
     red('close-hierarchy', 'verdictType', `verdictType ${spec.verdictType} demands a ${demanded}-class close; ${spec.close.type} admits ${CLASS_BY_CLOSE[spec.close.type].join('|')} only (a rubric can never be hard — PRD §7)`);
   }
 
+  // `checks[]` is RETIRED (PRD v1.28/v1.32): the check menu DERIVES from the
+  // close's stages, so no operator authors checks per job, ever. The red names
+  // what happened rather than leaving a bare unknown-field — and the hazard it
+  // removes is measured, not theoretical: job #5's three hand-written checks
+  // were re-implementations of three stages the close already ran, and a
+  // hand-carved copy can drift LENIENT (the worker passes the operator's ruler
+  // and fails the real inspection). Derivation removes that class by construction.
   if (spec.checks !== undefined) {
-    if (!Array.isArray(spec.checks) || spec.checks.length === 0) {
-      red('invalid-value', 'checks', 'non-empty array of named checks — omit the field when the job signs none');
-    } else {
-      const seen = new Set();
-      spec.checks.forEach((/** @type {any} */ c, /** @type {number} */ i) => {
-        const at = `checks.${i}`;
-        if (!isObj(c)) { red('invalid-value', at, 'a check must be an object'); return; }
-        for (const key of Object.keys(c)) {
-          if (!CHECK_FIELDS.includes(key)) red('unknown-field', `${at}.${key}`, 'not a check field (script bodies land here)');
-        }
-        if (!isNonEmptyString(c.name) || !SLUG_RE.test(c.name)) red('invalid-value', `${at}.name`, 'kebab-case slug — the plan references checks by name (check-passes(name))');
-        else if (seen.has(c.name)) red('duplicate-id', `${at}.name`, c.name);
-        else seen.add(c.name);
-        predicateBody(c, at, red);
-      });
-    }
+    red('checks-derived', 'checks', 'hand-authored checks are retired — declare the close as an ordered list of named stages and the check menu derives from it (the agent references them with check-passes(name)); a stage that cannot stand alone sets offer:false, one that needs an earlier stage names it in needs');
   }
 
   // the tool CEILING (plan-v1 anchor: every plan step's verbs ⊆ this) — same
@@ -409,8 +537,8 @@ function validatePlanShape(spec, red, reds) {
       // scout surveys read-only (the write-class verbs are filtered out of its
       // menu), so a write-only ceiling hands the scout an EMPTY menu and it
       // surveys blind — a degradation the validator catches at sign time.
-      else if (!spec.tools.some((/** @type {string} */ t) => TOOL_MENU.includes(t) && !['write', 'edit'].includes(t))) {
-        red('invalid-value', 'tools', 'a plan-shape ceiling must grant ≥1 read-capable verb (read/grep/recall/get) — the scout surveys read-only; a write-only ceiling leaves it blind');
+      else if (!spec.tools.some((/** @type {string} */ t) => TOOL_MENU.includes(t) && !WRITE_VERBS.includes(t) && !STORE_VERBS.includes(t))) {
+        red('invalid-value', 'tools', 'a plan-shape ceiling must grant ≥1 read-capable verb — the scout surveys read-only; write-class and store-class verbs leave it blind');
       }
     }
   }
@@ -443,9 +571,32 @@ function canon(v) {
 }
 
 /**
- * Content hash of a job spec — what an approval record binds to. Any edit to
- * the spec changes the hash, so an edited spec is unapproved by construction
- * (interview decision #1: human signs, always, once per spec VERSION).
+ * The spec as the RUNTIME reads it — the form both hash paths canonize (MED-1).
+ * `tools` is optional and its absence means the whole TOOL_MENU: plan.js and
+ * planrun.js resolve it with this exact predicate, so an omitted-`tools` spec's
+ * ceiling GROWS whenever the menu does while its bytes never move. Hashing the
+ * unresolved form leaves that widening unsigned; hashing the resolved form pins
+ * WHICH menu was signed, so a menu change flips the hash into the existing
+ * refuse-until-reapproved machinery. A spec that named its own ceiling is
+ * untouched — no migration for a signature already in flight.
+ * @param {any} job
+ * @returns {any}
+ */
+function resolveSpec(job) {
+  if (!isObj(job) || Array.isArray(job.tools)) return job;
+  return { ...job, tools: [...TOOL_MENU] };
+}
+
+/**
+ * Content hash of a job spec — what an approval record binds to. Any SEMANTIC
+ * edit changes the hash, so a spec whose meaning moved is unapproved by
+ * construction (interview decision #1: human signs, always, once per spec
+ * VERSION). Not every BYTE edit: the hash is taken over the RESOLVED spec
+ * (resolveSpec), so writing today's full TOOL_MENU into a spec that omitted
+ * `tools` is hash-neutral — the two spell the same ceiling, and that identity
+ * is the point of MED-1, since it is what pins WHICH menu the signature covers.
+ * The direction that matters still bites: the menu itself changing (or the
+ * explicit list changing) moves the resolved form, and the hash with it.
  * @param {object} job
  * @returns {string} sha256 hex
  */
@@ -454,8 +605,9 @@ export function jobSpecHash(job) {
   // directly on the raw job object, so a non-JSON value (BigInt, a cycle, a
   // throwing getter) must yield a hash, not crash the signer. canon handles
   // JSON-representable inputs; the guard covers cycles and hostile getters.
+  // resolveSpec sits INSIDE the guard: it spreads, and a spread runs getters.
   let c;
-  try { c = canon(job); } catch { c = '\u0000unhashable'; }
+  try { c = canon(resolveSpec(job)); } catch { c = '\u0000unhashable'; }
   return createHash('sha256').update(c).digest('hex');
 }
 
@@ -472,9 +624,11 @@ export function checkApproval(job, approvals) {
   if (!Array.isArray(approvals)) return false;
   // NOT jobSpecHash: its un-hashable sentinel would make every un-hashable
   // spec hash-equal — an approval minted for one would authorize any other.
-  // Here un-hashable simply means unapproved, full stop.
+  // Here un-hashable simply means unapproved, full stop. The RESOLVED spec is
+  // what gets canonized, same as the signer's (MED-1) — a gate reading a
+  // different form than the mint would unapprove every omitted-`tools` spec.
   let c;
-  try { c = canon(job); } catch { return false; }
+  try { c = canon(resolveSpec(job)); } catch { return false; }
   const h = createHash('sha256').update(c).digest('hex');
   return approvals.some((a) => isObj(a) && /** @type {Record<string, unknown>} */ (a).specHash === h);
 }

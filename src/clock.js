@@ -12,8 +12,31 @@
 //      500ms against a 4,000ms hanging generate(), run() returned at 4,018ms.
 //      bare-agent reads the flag at the round boundary (loop.js:661) and between
 //      tool calls (:916). So a wall deadline is a BETWEEN-ROUND check, and
-//      enforcement is `maxWallMs + closeTimeoutMs` — reported, never rounded down
-//      to the requested number (F6 in a time coat).
+//      enforcement is `maxWallMs + closeStages × closeTimeoutMs` — reported, never
+//      rounded down to the requested number (F6 in a time coat). The multiplier is
+//      W5: a STAGED close (PRD v1.28) runs its stages one at a time and hands EACH
+//      one the full `closeTimeoutMs` (`runStages` → `runClose`, ralph.js:257), so a
+//      4-stage close at 900s is 60 minutes of close, not 15. The runner's own
+//      outside watchdog already sized its stale window this way
+//      (scripts/run-u.mjs: `CLOSE_TIMEOUT_MS * spec.close.length`); the clock
+//      quoting the 1× number was the same arithmetic disagreeing with itself.
+//      That figure counts ONE close, and the RUNNER is what holds both of its loops
+//      to one: past the deadline it refuses to open a new fix iteration and stops on
+//      the verdict the last close already minted (W-2), and it refuses to open a
+//      STEP's attempt on the same reading — a step that would begin past the deadline
+//      is never funded. Before that second refusal a step starting with zero time left
+//      burned every attempt it was allowed (measured on the real flow: three attempts,
+//      three judged exits, all past the deadline), because the variance meter scores a
+//      step's time share against what the run had left when the step BEGAN and so is
+//      structurally blind to a step that began with nothing.
+//      It is still not a universal bound and is not claimed as one. Two overshoots
+//      remain outside this number, both deliberate. A step ALREADY UNDER WAY when the
+//      deadline trips finishes its attempt and runs its own exit checks (themselves
+//      close stages, at the full timeout each): grading real work always completes, or
+//      the run is unreadable after the money is spent. And that same mid-step deadline
+//      still routes through the ONE replan — the meter's own terminal, unchanged — so
+//      it pays a drafting call (floored at MIN_CALL_TIMEOUT_MS) before the new plan's
+//      first step is the one refused.
 //   2. BA-18's provider timeout is the only instrument that fires on the ABSENCE
 //      of events. Measured (F61/C2): 1,259ms against a socket that accepts and
 //      never answers; without it the bound is the OS TCP timeout (~2h). Deriving
@@ -79,6 +102,7 @@ export function isWallTimeout(err, clock) {
  * @typedef {object} Clock
  * @property {boolean} bounded whether the operator set a cap at all
  * @property {number|null} requestedMs the operator's number; `null` when unbounded
+ * @property {number} closeStages how many close stages one verdict can pay for (W5)
  * @property {() => number} elapsedMs wall time since the clock was created
  * @property {() => number} remainingMs what is left, floored at 0; `Infinity` when unbounded
  * @property {() => boolean} expired whether the deadline has passed (always false when unbounded)
@@ -89,12 +113,15 @@ export function isWallTimeout(err, clock) {
 
 /**
  * Start a wall clock for one run.
- * @param {{ maxWallMs?: number|null, now?: () => number }} [opts] `maxWallMs`:
- *   the signed operator cap, or absent/null for an honestly unbounded run.
- *   `now`: injected for tests — the default is the real clock.
+ * @param {{ maxWallMs?: number|null, closeStages?: number, now?: () => number }} [opts]
+ *   `maxWallMs`: the signed operator cap, or absent/null for an honestly unbounded
+ *   run. `closeStages`: how many stages the job's close runs (W5) — each one gets
+ *   the FULL `closeTimeoutMs`, so this is the multiplier on the overshoot, not a
+ *   decoration. Defaults to 1, the single-predicate close. `now`: injected for
+ *   tests — the default is the real clock.
  * @returns {Clock}
  */
-export function createClock({ maxWallMs = null, now = () => Date.now() } = {}) {
+export function createClock({ maxWallMs = null, closeStages = 1, now = () => Date.now() } = {}) {
   const startedAt = now();
   // A cap is only a cap if it is a usable positive number. validateJob already
   // reds anything else, so this is the belt (a caller that hand-builds a spec
@@ -102,6 +129,14 @@ export function createClock({ maxWallMs = null, now = () => Date.now() } = {}) {
   // silent instant expiry).
   const bounded = typeof maxWallMs === 'number' && Number.isFinite(maxWallMs) && maxWallMs > 0;
   const cap = bounded ? maxWallMs : null;
+  // The same belt on the stage count. A close always runs at least once, so 1 is
+  // the floor: a 0 or a NaN sneaking in here would quote an enforced number BELOW
+  // the requested cap, which is the dishonesty this multiplier exists to remove.
+  const stages = typeof closeStages === 'number' && Number.isFinite(closeStages) && closeStages >= 1
+    ? Math.floor(closeStages) : 1;
+  /** the ONE arithmetic, so the advertised record and the enforced worst case
+   * cannot be computed two ways (the two-transforms class, F9). */
+  const enforced = (/** @type {number} */ closeTimeoutMs) => (cap === null ? null : cap + stages * closeTimeoutMs);
 
   const elapsedMs = () => now() - startedAt;
   const remainingMs = () => (cap === null ? Infinity : Math.max(0, cap - elapsedMs()));
@@ -113,10 +148,11 @@ export function createClock({ maxWallMs = null, now = () => Date.now() } = {}) {
   return {
     bounded,
     requestedMs: cap,
+    closeStages: stages,
     elapsedMs,
     remainingMs,
     expired,
-    enforcedMs: (closeTimeoutMs) => (cap === null ? null : cap + closeTimeoutMs),
+    enforcedMs: enforced,
     callTimeoutMs: (providerDefaultMs = PROVIDER_TIMEOUT_MS) => {
       if (cap === null) return providerDefaultMs;
       // Clamped BOTH ways. Upper: never above the provider's own default, which
@@ -129,7 +165,12 @@ export function createClock({ maxWallMs = null, now = () => Date.now() } = {}) {
     report: (closeTimeoutMs) => ({
       bounded,
       requestedMs: cap,
-      enforcedMs: cap === null ? null : cap + closeTimeoutMs,
+      // On the record, not just in the arithmetic: without it a reader seeing
+      // enforced 90min against a requested 30min cannot tell a 60-minute close
+      // timeout from four 15-minute stages, and an unexplained gap is exactly the
+      // kind of number a later reader rounds back down to the requested one.
+      closeStages: stages,
+      enforcedMs: enforced(closeTimeoutMs),
       elapsedMs: elapsedMs(),
       // null, not Infinity: JSON.stringify turns Infinity into null anyway, and
       // an append-only record must not depend on that coincidence — worse, a

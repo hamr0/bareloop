@@ -47,8 +47,9 @@ const spec = {
   // the human signs the DESTINATION; the agent authors the road
   goal: 'Fix any failure in src/ so the suite passes.',
   verdictType: 'green',
-  close: { type: 'predicate', cmd: 'npm test', expect: 0 },
-  checks: [{ name: 'suite-green', cmd: 'npm test', expect: 0 }],
+  // the close is an ORDERED LIST of named stages (PRD v1.28) — the check menu
+  // DERIVES from it; there is no separate `checks[]` field to author
+  close: [{ name: 'suite-green', cmd: 'npm test', expect: 0 }],
   tools: ['read', 'grep', 'write', 'edit'],
   escalation: { mode: 'decision-ready' },
 };
@@ -80,11 +81,11 @@ minting claim, or the shell-owned retry cap — all unknown-field reds.
 |---|---|---|
 | `job` | kebab-case slug | |
 | `description` | non-empty string | |
-| `provider` | `anthropic-api` | menu; part of the lineage key by definition |
+| `provider` | `anthropic-api` \| `clipipe-subscription` | menu (`PROVIDERS`); part of the lineage key by definition. Only `anthropic-api` is guaranteed (F48); `clipipe-subscription` drives the worker natively and needs `opts.nativeProvider` |
 | `conditions` | `{ providerPath?, closeVerbosity?, taskFraming?, scaffold? }` | declared keys only, string values — the environment label (consumed by the N3 lineage key; recorded on spines from run one) |
 | `cadence` | `{ unit: hour\|day\|week, every: 1..30 }` | validated now, consumed at N5 (Scheduler) |
 | `budgetUsd` | `0 < n <= shell cap` | ceiling chain: workflow ≤ job ≤ shell — each layer may tighten, never exceed |
-| `maxWallMs` | optional integer ms `>= MIN_WALL_MS` (one close timeout) | the run's wall clock. **NO DEFAULT, by ruling** — absent means time-unbounded *by explicit operator choice*, never by fallback (F45: a defaulted cap is a silent second ceiling). Enforcement is a BETWEEN-ROUND deadline, so the honest worst case is `maxWallMs + closeTimeoutMs` and both numbers are reported (`loop.stop()` cannot cut an in-flight call — F61 measured 500ms→4,018ms). Operator-only, tighten-only; adding or changing it changes the spec hash |
+| `maxWallMs` | optional integer ms `>= MIN_WALL_MS` (one close timeout) | the run's wall clock. **NO DEFAULT, by ruling** — absent means time-unbounded *by explicit operator choice*, never by fallback (F45: a defaulted cap is a silent second ceiling). Enforcement is a BETWEEN-ROUND deadline, so the honest worst case is `maxWallMs + closeStages × closeTimeoutMs` — every stage of a staged close gets the FULL timeout — and all three numbers are reported (`loop.stop()` cannot cut an in-flight call — F61 measured 500ms→4,018ms). The `MIN_WALL_MS` floor is a ONE-stage number, so a spec with many stages can validate while its overshoot dwarfs its cap: the clock reports that honestly rather than the floor pretending to prevent it (stage-aware floor parked, PRD v1.39). Operator-only, tighten-only; adding or changing it changes the spec hash |
 | `writeScope` | array of contained globs | the operator's outer fence; the plan's own scopes must fit inside it, same containment code |
 | `steps` | RETIRED | operator-authored `steps[]` was deleted (PRD v1.32); a spec carrying it reds `shape-retired:steps` by name rather than half-running |
 | `escalation` | `{ mode: "decision-ready" }` | the pain channel is not optional |
@@ -96,12 +97,76 @@ the step plan at run time (gated by `validatePlan`); the human signs only:
 |---|---|---|
 | `goal` | non-empty text | what the agent plans against |
 | `verdictType` | `green` \| `soft-green` \| `hitl` | declared radio, never inferred (`VERDICT_TYPES`, frozen). v1 ADMITS only `green`; declaring `soft-green`/`hitl` reds `request-red` with the type as a structured `verb` field (declared-but-locked — the tool-menu pattern) |
-| `close` | a close object (table below) | ONE close, the only truth; `green` demands a hard-class close (`close-hierarchy` red on a rubric/hitl close) |
-| `checks` | optional array of `{ name, cmd, expect, judged?, gapKeep? }` | the operator-SIGNED named-check menu: the predicate-close body plus a kebab slug `name`, validated by the same rules, executed under the same runClose machinery. Plans reference them via the `check-passes(name)` exit; the agent can never author, edit, or compose one. **Checks decide nothing and mint nothing** — a check result is a progress gate and a gap source only |
-| `tools` | optional unique subset of `TOOL_MENU` | the CEILING every plan step's grant must fit inside (defaults to the full menu); `run` is `LOCKED_TOOLS` and reds `request-red` — locked-but-listed, and the red IS the admission evidence the ledger tallies (a typo stays `invalid-value`). `edit` (BA-13) is the anchored exact-once replace, judged by the SAME writeScope fence as `write` |
+| `close` | **an ORDERED LIST of named stages** `[{ name, cmd, expect, judged?, gapKeep?, offer?, needs? }, ...]` (PRD v1.28), or a close object (table below) **only** for the declared-but-locked verdict classes | the destination, the only thing hand-authored; the check menu DERIVES from it (below). The plan flow executes a staged close directly and adapts a bare `predicate` object into a one-stage list; a `gold`/`rubric`/`hitl` object close validates (the declared-but-locked verdict classes still parse) but the plan flow refuses it at runtime as `close-unsupported` — it names no command to run |
+| `checks` | **RETIRED** (PRD v1.28/v1.32) | hand-authored checks are gone, not merely discouraged: declaring `checks` reds `checks-derived` by name. The check menu is DERIVED from the close's own stages instead — see **Staged close** below. The hazard this removes is measured, not theoretical: job #5's three hand-written checks were re-implementations of three stages the close already ran, and a hand-carved copy can drift LENIENT (the worker passes the operator's ruler and fails the real inspection) |
+| `tools` | optional unique subset of `TOOL_MENU` (14 verbs, below) | the CEILING every plan step's grant must fit inside (omitting it means the full menu — and the hash is taken over that RESOLVED form, so a `TOOL_MENU` widening flips an omitted-`tools` spec's hash and forces a re-sign; see `jobSpecHash`, MED-1); `run` is `LOCKED_TOOLS` and reds `request-red` — locked-but-listed, and the red IS the admission evidence the ledger tallies (a typo stays `invalid-value`). A ceiling of write-class and store-class verbs ONLY reds `invalid-value`: the scout surveys read-only, so it would be handed an empty menu and survey blind |
 
-**Close types and the hierarchy** (a close is data, never code; verdict-class laundering
-is a named red `close-hierarchy`):
+**`TOOL_MENU` — the worker's 14 verbs, in four components** (`src/job.js`; the verb→tool map
+is `TOOL_BY_VERB` in `src/tools.js`). The menu is an INVENTORY: every verb is an existing
+bare-agent or litectx primitive, none was built for it. A granted component's strategy line
+ships with the grant (`COMPONENT_STRATEGIES` — capability without strategy is inert, F19).
+
+| component | verbs | class |
+|---|---|---|
+| write | `write` · `edit` | tree writes, judged by the signed `writeScope` fence — `edit` (BA-13) is the anchored exact-once replace and goes through that SAME fence, not a weaker one |
+| select | `read` · `grep` · `recall` · `get` · `impact` · `related` · `recent` | read-only; every one is judged as a `read` action by that same fence, so the deny list applies through every door |
+| compress | `compress` · `peek` | read-only (a signature tier; a stash's head/tail) |
+| isolate | `stash` · `remember` · `forget` | STORE writes (the `.litectx` store, never the tree) — their own gate action types, so a store park can never be counted as a tree write by the F32 `workerWrites` instrument. **Not read-capable** |
+
+`run` is locked at every layer and always will be: a worker that can run commands can run
+its own close. `ctx_recall` serves BOTH axes — code pointers, plus any note written with
+`ctx_remember`, returned on a line labeled `memory` with the note's BODY inline (capped at
+400 chars). A note is a conclusion, not a pointer: there is no worker verb that dereferences
+a memory id, so a pointer-only reply would be inert. **`recall`, `get` and `impact` share ONE
+0-based line space** — the index's own index positions, one lower than the line an editor
+shows — and every one of the three says so in its own tool contract. The numbers are
+interchangeable handles: `impact`'s def range dereferences through `get` verbatim, and
+`recall` prints the same number for the same chunk. Rendering any one of them 1-based was
+tested and REFUTED: it would print two numbers for one chunk and turn `get`'s clean
+chunk-boundary refusal into a guessing game.
+
+**`impact` requires `ripgrep` (`rg`) on `PATH`.** litectx's caller scan shells out to `rg` and
+catches a missing binary exactly as it catches "no matches", so without it the verb reports
+`0 callers, risk low` — silently, in the false-isolation direction (LC-5, open upstream).
+Install `rg` wherever the worker runs, or leave `impact` off the spec's `tools` ceiling.
+
+**The store is caller-owned, and it is a LIVE cross-run channel.** `runJob`/`runPlan` root ONE
+litectx store at `<workdir>/.litectx` (`new LiteCtx({ root: workdir })`, `src/planrun.js`) — an
+on-disk SQLite index that OUTLIVES the run. A note written with `remember` lands there as a
+durable `fact`, and `ctx_recall` reads that tier back on any later run against the same
+workdir: agent notes persist across runs by default. The library ships NO reset — it never
+deletes the store, because what a run inherits is the caller's decision, not the runner's. A
+caller who wants a COLD baseline (an inheritance-OFF control arm, a reproducible re-run, any
+contrast between two runs) must remove `<workdir>/.litectx` itself between them; the in-repo U
+runner does exactly that with a one-line `rmSync`. The store is a derived, self-healing cache
+by litectx's own contract, so the only cost of deleting it is the re-index. Store writes are
+bounded: `stash`/`remember` payloads over **64KB** (`ISOLATE_MAX_BYTES`) come back as a
+refusal RESULT naming the actual size and the limit — worker feedback, never a throw, and
+nothing enters the store. The bound is per-payload (aggregate growth across distinct ids is a
+future threshold call); `forget` needs no cap — its id is a bound SQL parameter, never stored.
+
+**Staged close — the check menu DERIVES from it (PRD v1.28, `checkMenu` in `src/job.js`).**
+Every stage is a `predicate` command body (the same `cmd`/`expect`/`judged?`/`gapKeep?`
+contract the single close object has always used) plus:
+
+| stage field | shape | notes |
+|---|---|---|
+| `name` | unique kebab-case slug | the plan references it via `check-passes(name)`; duplicates red `duplicate-id` |
+| `offer` | optional boolean, default offered | `offer: false` hides the stage from the derived menu — it never reaches the agent. For a stage that cannot stand alone as a ruler: a PRECONDITION (e.g. "the seed commit exists" — passes instantly, teaches nothing) or the **final grading stage** — of the six specs in `jobs/`, four hide a final `verdict` stage and two hide a `changed-from-seed` precondition instead (a per-spec convention, not a schema rule — nothing stops a stage named last from being offered except the spec author remembering to set the flag; preflight's `check-menu` event always names the full menu either way, so a forgotten flag is visible in the run's own record) |
+| `needs` | optional non-empty array of EARLIER stage names | a stage that reads what an earlier stage built (e.g. "the public API matches what an earlier stage emitted") names its prerequisite chain; picking it via `check-passes` runs the chain first, then the stage itself. Every name must be declared before this stage (`invalid-value` otherwise); `needs` + `offer: false` together is incoherent (`invalid-value`) — a stage with a chain to run must be reachable |
+
+The stages run in declared order as the close itself; the first red renders the verdict and
+later stages never run. `checkMenu(close)` returns only the offerable stages (each with its
+run chain, prerequisites first); a hidden or partial menu is an acceptable case, never a
+failure — `check-menu` on the spine reports `hidden` + `meaning` whenever the derived menu is
+narrower than the stage list.
+
+**Close types and the hierarchy — the OBJECT form, which survives only for the
+declared-but-locked verdict classes** (a close is data, never code; verdict-class laundering
+is a named red `close-hierarchy`). The go-forward shape is the staged list above; a
+`predicate` object is legal shorthand for a one-stage list and the plan flow adapts it, but
+`gold`/`rubric`/`hitl` validate and then refuse at runtime (`close-unsupported`) since v1
+admits `verdictType: green` only:
 
 | type | fields (exact — extras red) | legal class |
 |---|---|---|
@@ -125,7 +190,7 @@ code said.
 
 It is a **floor, not a zero-check**: `node --test` reports a crashed file as ONE failing
 test, so "zero executed" never fires. Declare it against the suite's real size
-(`{ pattern: "^ℹ tests (\\d+)$", min: 300 }` for a 391-test suite, with
+(`{ pattern: "^ℹ tests (\\d+)$", min: 300 }` for a 558-test suite, with
 `--test-reporter=spec`, which prints both the counts and the failures at the end). It
 catches *"the arbiter did not run"* — wrong tree, broken argv, a failed shared import — not
 *"one test file is broken"*, which is an honest red the worker should fix.
@@ -171,23 +236,34 @@ middle writes; `validatePlan` gates it against the SIGNED job spec before tokens
 | `steps[].tools` | non-empty unique subset of the SPEC ceiling | a verb beyond the ceiling reds `verb-escape` with the verb as structured data (overreach, distinct from the operator-side `request-red`); `run` is `verb-escape` at every layer |
 | `steps[].rounds` | int 1..shell cap (default 40) | the step's per-attempt tool-round bound (the Gate's `maxTurns` natively) |
 | `steps[].target` | path inside the fence | v1.18 deliverable; REQUIRED on write-granted steps |
-| `steps[].exit` | 1..2 items (`MAX_EXITS_PER_STEP`), ALL must pass (AND-only, no OR/NOT) | closed menu (`EXIT_TYPES`): `artifact-written(path, pattern?)` · `tree-changed(scope)` · `json-valid(path)` · `check-passes(name)`. **`tree-changed.scope` is a MENU, not a glob the agent authors** — `legalScopes(writeScope, dirs, cap?)` enumerates the signed fence entries plus the real directories beneath them (shallowest-first, capped at `MAX_SCOPE_MENU`=24), `planPrompt` lists them verbatim, and `validatePlan` accepts membership only. Pass the SAME array to both via `opts.scopes`; omitted, it derives from `writeScope` alone — never a free-text fallback. An off-menu value that escapes the fence still reds `scope-escape` (the ledger's attribution class), an in-fence unoffered value reds `invalid-value` carrying the menu. `runPlan` emits `scope-menu {offered, truncated, offerableCount?, cap?}` so a capped menu is never silently complete. `check-passes` must name a SIGNED check (`check-unknown` red names the signed menu); on a write-granted step it must be paired with `tree-changed` (`exit-illegal` — the seed tree is green, a lone check would pass untouched, F17/F46). `artifact-written.pattern` must compile AND survive a ReDoS shape check — an unbounded quantifier over a group that itself repeats unboundedly (`(a+)+`, `(\d*)*`, even wrapped: `((a+))+`) is an `invalid-value` red (F49, catastrophic-backtracking footgun; rewrite without a repeated group inside a repeat). Exits verify FORM, not truth — progress gates; the operator's close stays the one arbiter |
+| `steps[].model` | optional; `sonnet` \| `haiku` (`STEP_MODELS`) | the step's model TIER — a menu, never a model string the agent spells (the tier→model mapping and any per-model effort params are the runner's). `opus` is deliberately absent: reserved for work the human assigns, never plan-selectable. Off-menu reds `invalid-value`. A step naming a tier when the caller supplied no `providerFor` factory is an `interpreter-red` STOP, never a silent run on the default tier |
+| `steps[].attempts` | optional; int `1..capRuns` | TIGHTEN-only: the step's own retry cap inside `ralph`, floored against the shell's `capRuns` (default 3). Above it reds `bounds`; a plan may narrow the shell's cap, never raise it |
+| `steps[].scope` | optional; one value from the SAME menu `tree-changed` uses | narrows this step's live WRITE fence to a subset of the signed `writeScope` — chosen from the offered scope menu (below), never authored. Off-menu reds `invalid-value` carrying the menu |
+| `steps[].exit` | 1..2 items (`MAX_EXITS_PER_STEP`), ALL must pass (AND-only, no OR/NOT) | closed menu (`EXIT_TYPES`): `artifact-written(path, pattern?)` · `tree-changed(scope)` · `json-valid(path)` · `check-passes(name)`. **`tree-changed.scope` is a MENU, not a glob the agent authors** — the runner enumerates the signed fence entries plus the real directories beneath them (shallowest-first, capped at `MAX_SCOPE_MENU`=24; `legalScopes` in `src/plan.js`), `planPrompt` lists them verbatim, and `validatePlan` accepts membership only — the SAME array on both sides, so what was offered is what is accepted; omitted, it derives from `writeScope` alone — never a free-text fallback. An off-menu value that escapes the fence still reds `scope-escape` (the ledger's attribution class), an in-fence unoffered value reds `invalid-value` carrying the menu. `runPlan` emits `scope-menu {offered, truncated, offerableCount?, cap?}` so a capped menu is never silently complete. `check-passes` must name a stage on the close's DERIVED menu (`check-unknown` red names the offered menu — no operator authors this list, it comes straight from `checkMenu(close)`); on a write-granted step it must be paired with `tree-changed` (`exit-illegal` — the seed tree is green, a lone check would pass untouched, F17/F46). **`check-passes` also requires a write-class verb (`write`/`edit`) on the SAME step** (`exit-illegal` — BREAKING for plan authors: a read-only "verify" step carrying a check used to validate and no longer does). A failing check's gap is re-delivered to that step's OWN worker, so a step holding a check must be able to act on it; a read-only one is a mailbox with no hands and stalls to cap on a byte-identical gap (measured on 4 of 4 drafted plans). The check belongs on the step that fixes; the run's final verification is the operator's close, which the agent never authors. The rule is stated identically in the drafter prompt and the validator, so the two can never disagree — and it is suppressed when `tools` failed to parse (the step's hands are unknowable then, and the real defect already redded: one defect, one red). `artifact-written.pattern` must compile AND survive a ReDoS shape check — an unbounded quantifier over a group that itself repeats unboundedly (`(a+)+`, `(\d*)*`, even wrapped: `((a+))+`) is an `invalid-value` red (F49, catastrophic-backtracking footgun; rewrite without a repeated group inside a repeat). Exits verify FORM, not truth — progress gates; the operator's close stays the one arbiter |
 
-Red vocabulary (all three validators): `parse-error`, `unknown-field`, `missing-required`,
+Red vocabulary (both validators): `parse-error`, `unknown-field`, `missing-required`,
 `invalid-value`, `bounds`, `duplicate-id`, `close-type`, `close-hierarchy`,
-`secret-literal`, `scope-escape`, `fence-invalid` (a malformed `jobWriteScope` fence — attributed to `jobWriteScope`, never the workflow config), `shape-conflict` (both job shapes declared),
+`secret-literal`, `scope-escape`,
 `request-red` (locked-but-listed: a locked tool or verdictType — admission demand the
-ledger tallies), plus the workflow-side verb reds (`verb-illegal`,
-`verb-placement`, `verb-params`, `slot-overflow`) and the plan-side reds (`verb-escape`,
-`exit-illegal`, `check-unknown`, `job-invalid` — a plan validated against a missing or
-non-plan-shape job fails CLOSED). The `secret-literal` sweep is
+ledger tallies), plus the plan-side reds (`verb-escape`,
+`exit-illegal`, `check-unknown`, `step-scope-escape` — a scoped step whose `target` falls
+outside its OWN narrowed scope (in-fence but gate-denied ground: the step's gate is built
+from the narrowed prefix, so the pair is rejected at validation instead of burning attempts
+on refusals). It binds WRITES, not observations: on the exit side it fires only on a
+`tree-changed` scope DISJOINT from the step's (a scope that CONTAINS it fires exactly when
+the narrow one does), and `artifact-written`/`json-valid` paths carry no step-scope red at
+all — the evaluator asks nothing about who wrote the file, so naming a prior step's artifact
+is legal and satisfiable. `job-invalid` — a plan validated against a
+missing or non-plan-shape job fails CLOSED). `stageClose(close)` is the ONE staging
+every check-menu consumer shares (array → itself; legacy object predicate → its
+one-stage list, named `close`; gold/rubric/hitl → null). The `secret-literal` sweep is
 defense-in-depth against known token shapes — env-only loading remains the law, not the
 sweep.
 
 ## Public API
 
-*Landed through N2 + the Layer 2 core (spine + shell + three validators + interpreter
-with text/tool middles + the plan executor + extractor + runJob). Still TBD: N3
+*Landed through N2 + the Layer 2 core (spine + shell + the two validators + the plan
+executor + extractor + runJob). Still TBD: N3
 (contrast-bit extractor live), N4 (verdict classes — gold/rubric close EXECUTION), N5
 (scheduler + budget ops + CLI), N6 (panel).*
 
@@ -200,7 +276,10 @@ written.
 ### `ralph({ middle, close?, judge?, capRuns, emit, redact?, closeTimeoutMs?, cwd?, expect?, judged?, gapKeep?, workerWrites? })` → `'green' | 'escalated'` — `src/ralph.js`
 
 The dumb outer shell: `while close-red and under-cap: run the middle`. `close` is an argv
-whose exit code is truth (`runClose` is also exported); the red gap text feeds the next
+whose exit code is truth (`runClose` is also exported — **async since 0.6: `runClose` and
+`runStages` return Promises**; the child is awaited instead of spawnSync so a running close
+no longer freezes the host event loop (F68); every close semantic — timeout signal, output
+bounds, gap shape, exit bands — is byte-identical); the red gap text feeds the next
 iteration, tail-biased when bounded (400 head + 1500 tail — the assertion diff lives at
 the end). **`cwd` is where the close RUNS, and it is load-bearing (F8):** a close is a
 repository command (`npm test`, `make check`) and every one of them is cwd-relative — run
@@ -213,7 +292,21 @@ matching failure lines are preserved in a capped kept-failures block regardless 
 they print (F28: the first real firing delivered a gap with zero failure names). The gap
 also combines stdout+stderr, so a stdout failure survives stderr noise.
 `closeTimeoutMs` caps the close's wall clock (default 120s) — shell/operator
-territory, inexpressible in any config.
+territory, inexpressible in any config. A faulted close is asked to leave with SIGTERM and,
+if it is still there 2s later, ended with SIGKILL: SIGTERM is a request a close can decline
+(its own handler, a trapping wrapper), and without a second deadline the wait never resolves.
+The verdict is untouched — the FIRST fault named the outcome and the kill only enforces it.
+
+**The close child's environment is stripped of credential-shaped variables before it runs**
+(`CLOSE_ENV_DENY` in `src/ralph.js`: provider keys, `AWS_*`, and any name ending
+`_API_KEY`/`_SECRET`/`_TOKEN`/`_PASSWORD`/`_CREDENTIAL(S)`) — a close judges a tree and never
+needs them. A COPY is stripped, never `process.env`, so the host keeps the key it spends every
+round. This is exposure reduction, not a sandbox: worker-authored code run by the close still
+has network and your OS user's permissions. The strip has no opt-out — no plan, config, or
+spec field can widen it — so if your close genuinely needs a credential-shaped variable
+(`AWS_*` regions/profiles included, e.g. a suite booting against localstack with a test DB
+password), it will not be there and the close reds; set such values inside the close command
+itself, not the inherited environment.
 
 **The forbidden zone (PRD v1.11 / F17).** `runClose` returns a verdict ONLY when judgment
 was rendered. `expect` (the signed exit code, default 0) and `judged` define the two clean
@@ -270,18 +363,24 @@ close types, and hierarchy. Never throws on JSON text or plain parsed data (the 
 contract); returns the parsed spec on ok, `null` on any red. A spec carrying the retired
 `steps[]` reds `shape-retired` by name (PRD v1.32) rather than falling through to a
 generic unknown-field. Menus exported: `CLOSE_TYPES`, `CLASS_BY_CLOSE`, `GOLD_COMPARE`,
-`CADENCE_UNITS`, `PROVIDERS`, `CONDITION_KEYS`, `TOOL_MENU`, `LOCKED_TOOLS`,
-`VERDICT_TYPES`, `LOCKED_VERDICTS`.
+`CADENCE_UNITS`, `PROVIDERS`, `CONDITION_KEYS`, `TOOL_MENU`, `LOCKED_TOOLS`, `STORE_VERBS`,
+`VERDICT_TYPES`, `LOCKED_VERDICTS` — plus `checkMenu` itself.
 
-### `validatePlan(input, { job, maxStepRounds? })` → `{ ok, reds, plan }` — `src/plan.js`
+### `validatePlan(input, { job, maxStepRounds?, scopes?, capRuns? })` → `{ ok, reds, plan }` — `src/plan.js`
 
-The third validator: gates the AGENT-authored plan doc (`schema: "plan-v1"`) against the
-SIGNED job spec before tokens burn — the ceiling, the fence, and the checks menu all come
+`validateJob`'s SIBLING in the two-document split, never a third validator over it (the
+two-doc split's third validator never happens: plan-v1 gates the PLAN, the job spec stays
+the arbiter's only home). Gates the AGENT-authored plan doc (`schema: "plan-v1"`) against
+the SIGNED job spec before tokens burn — the ceiling, the fence, and the checks menu all come
 from `job` (a missing or non-plan-shape job fails CLOSED, `job-invalid`). Never throws;
 same `{ code, path, detail }` red shape as its siblings; `verb-escape` reds carry the
 escaping verb as a structured `verb` field (the ledger keys on it). `maxStepRounds`
-(default 40 — the shell's tool-mode per-attempt bound) ceilings every step's `rounds`.
-Menus exported: `EXIT_TYPES`, `MAX_EXITS_PER_STEP`, `MAX_PLAN_STEPS`, `WRITE_VERBS`.
+(default 40 — the shell's tool-mode per-attempt bound) ceilings every step's `rounds`;
+`capRuns` (default 3) ceilings every step's `attempts`; `scopes` is the offered
+`tree-changed` scope menu — the array of scope strings the drafter prompt listed, which
+`runJob`/`runPlan` build internally from the signed fence plus the real directories beneath
+it (a direct `validatePlan` caller may pass its own array); omitted, it derives from the
+signed `writeScope` alone, never a free-text fallback. Menus exported: `EXIT_TYPES`, `MAX_EXITS_PER_STEP`, `MAX_PLAN_STEPS`, `WRITE_VERBS` — plus `stageClose`.
 
 ### `snapshotScope(dir, scope)` / `evalExits(exits, { dir, snapshot?, runCheck? })` — `src/exits.js`
 
@@ -294,22 +393,38 @@ the snapshot): an identical re-write is NOT a change (F43) and git status is nev
 consulted (F45). `artifact-written` rejects zero-byte files. `check-passes` delegates
 through the `runCheck` seam (the runner wires runClose); an unwired or crashed seam
 fails CLOSED with `fault` carrying a runClose verdict name — an instrument fault
-escalates through `CLOSE_FAULTS`, never masquerades as worker feedback. Failing details
-are counts and names only, never file bodies (they ride the append-only spine).
+escalates through `CLOSE_FAULTS`, never masquerades as worker feedback. Failing details are
+mostly counts and names — with one exception that matters: `json-valid` embeds `JSON.parse`'s
+own message, and V8 quotes a window of the SOURCE inside it, so that detail can carry file
+bytes the worker chose. The plan runner redacts EVERY detail (`scrub`/`SECRET_PATTERNS`, the
+ONE inventory) at the emission boundary, before anything rides the append-only spine. The
+module itself does not scrub: a direct `evalExits` caller wiring results into its own log
+must apply its own redaction.
 
 ### `jobSpecHash(job)` / `checkApproval(job, approvals)` — `src/job.js`
 
 The pure half of **human-signs-always**: an agent may draft a job spec, but no job runs
 until a human approves that exact version. `jobSpecHash` is sha256 over canonical JSON
-(key-order independent) — any edit changes the hash, so an edited spec is unapproved by
-construction. `checkApproval(job, approvals)` is a pure predicate over
-`{ specHash, signer, ts }` records; the approval record lives OUTSIDE the document it
-signs and is shell/human territory, never agent-writable. The N2 runner enforces it.
+(key-order independent) of the **RESOLVED** spec (MED-1): an omitted `tools` is filled in
+with the concrete current `TOOL_MENU` before canonicalization, because that is the ceiling
+`plan.js` and `planrun.js` actually read. So any SEMANTIC edit changes the hash and an
+edited spec is unapproved by construction — but not every BYTE edit: writing today's full
+menu into a spec that omitted `tools` is hash-NEUTRAL, since the two spell the same
+ceiling. The direction that matters bites instead — a `TOOL_MENU` WIDENING (a library
+upgrade) flips the hash of an omitted-`tools` spec whose bytes never moved, straight into
+the refuse-until-reapproved machinery. That is the point: the signature pins WHICH menu it
+covers, so an already-signed ceiling can never grow unsigned. A spec that named its own
+`tools` hashes exactly as before. **BREAKING** for an approval held against an
+omitted-`tools` spec: it re-signs once. `checkApproval(job, approvals)` is a pure predicate
+over `{ specHash, signer, ts }` records, canonicalizing the SAME resolved form (a gate
+reading a different form than the mint would unapprove every omitted-`tools` spec); the
+approval record lives OUTSIDE the document it signs and is shell/human territory, never
+agent-writable. The N2 runner enforces it.
 Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
 `coordination-red` — a failure between units (scope contention, step order, store
 races), never to be folded into worker/interpreter reds.
 
-### `runJob(spec, { approvals, workdir, provider, nativeProvider?, emit, capRuns?, shellCapUsd?, closeTimeoutMs?, layerRoot? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, shellCapUsd?, closeTimeoutMs?, layerRoot? })` → outcome — `src/run.js`
 
 The runner — the shell's top layer, and the ONE entry. It composes everything below it and
 interprets nothing itself. Sequence: **approval gate** (human-signs-always — refuses an
@@ -320,30 +435,49 @@ known-answer round-trip before tokens: `smoke-red` — a silent degradation thro
 
 Outcomes: `green | already-green | escalated | unapproved-spec | job-red | smoke-red |
 plan-red | check-red | close-red | close-unsupported | pricing-red | provider-red |
-interpreter-red | cap-halt | wall-halt | step-red:<id>`. `provider-red` is a transport throw
-or a worker round the API cut off mid-generation (`truncated:max_tokens`, BA-6 — before
-which it laundered into a clean finish, F25): no verdict exists and the failed round's spend
-is only partly known (F6). `cap-halt` is the wallet; `wall-halt` is the clock (F64 — a
-timeout derived from the run's own deadline is a governance stop, never a transport
-casualty). Every one of them is a decision-ready escalation with a terminal `job-end`: the
-spine never dangles.
+interpreter-red | cap-halt | wall-halt | step-stalled | step-red:<id>`. `provider-red` is a
+transport throw or a worker round the API cut off mid-generation (`truncated:max_tokens`,
+BA-6 — before which it laundered into a clean finish, F25): no verdict exists and the failed
+round's spend is only partly known (F6). `cap-halt` is the wallet; `wall-halt` is the clock
+(F64 — a timeout derived from the run's own deadline is a governance stop, never a transport
+casualty). **`cap-halt` reaches you from the close-fix loop too, not only from a step:** the
+shell spells attempt-exhaustion and a money-gate halt with the same category, so both the
+step loop and the fix loop read the WALLET to tell them apart — a drained wallet is
+`cap-halt` (the resume-to-cap checkpoint), attempts spent with money still on the table is
+the designed `escalated` terminal ("the close is still red"). The fix worker's gate is built
+with the wallet at its most drained, which is exactly where a money cut would otherwise
+masquerade as a capability read (F45). `step-stalled` is the F66 stall fuse giving up: no
+completed round for 5 minutes,
+three times on one call — each stall silently abandons the hung call and reissues it
+(self-heal first); only the third throws. Inside a step it is the THIRD replan trigger
+(with `cap-halt` and `step-variance`); outside a step it escalates under its own name, never
+laundered into `provider-red`, and carries `spendComplete:false` (an abandoned call may
+already have been billed). **The reissue is wall-aware:** past the run's deadline the fuse does
+not self-heal — self-heal is what a run does with time left — and it gives up as `wall-halt`,
+not `step-stalled`, since a replan has nothing left to re-allocate. Every one of them is a
+decision-ready escalation with a terminal `job-end`: the spine never dangles.
 
 **Every `job-end` carries the money, on every path**: `{ outcome, spentUsd, spendComplete }`
 (plus `step`/`cause`/`detail` where the outcome has them). `spentUsd` is the accumulated sum
 of PRICED rounds ONLY — never an estimate from token counts or averages (cap-not-estimate) —
 and it is stated even on the pre-token reds, where the honest figure is a real `0`.
-`spendComplete` says whether that figure is EXACT: `false` means one or more rounds came back
-unpriced (F6), so `spentUsd` is a FLOOR ("at least $X", true total unknowable) and must not be
-read as a total. Both fields are present on all outcomes, so a consumer never branches on
+`spendComplete` says whether that figure is EXACT; `false` means `spentUsd` is a FLOOR ("at
+least $X", true total unknowable) and must not be read as a total. Three things set it, all
+the same class — a call whose cost is unknowable from here: a round that came back unpriced
+(F6); a run that ABSORBED a stall, because the fuse's silent reissue may pay twice for one
+answer and the flag is one-way whatever the outcome; and a `wall-halt` that cut a call
+mid-flight (`cutMidCall`). A wall stop read BETWEEN iterations or steps has no call in flight,
+so it stays exact. Both fields are present on all outcomes, so a consumer never branches on
 field presence and never has to launder a missing `spentUsd` into `$0`.
 
 **The plan flow (Layer 2).** `job-start` carries `shape: 'plan'` + the goal; plan steps are
 tool-mode by construction. The flow (`runPlan`, also exported for direct callers who own
 their own ledger): **close precheck** (`already-green` is a
-DISTINCT zero-token outcome; a forbidden-zone verdict escalates before spend) → **checks
-preflight** (every SIGNED check runs once at $0 — an unrunnable check is a `check-red`
-stop before tokens, not a fault mid-plan) → **SCOUT** (read-only by construction: the
-write verbs are not in its menu; hard-bounded rounds) → **PLAN** (the decompose call —
+DISTINCT zero-token outcome; a forbidden-zone verdict escalates before spend) → **check-menu
+preflight** (`check-menu` names the derived menu, then every OFFERED stage's chain runs once
+at $0 — an unrunnable stage is a `check-red` stop before tokens, not a fault mid-plan) →
+**SCOUT** (read-only by construction: neither the
+write-class nor the store-class verbs are in its menu; hard-bounded rounds) → **PLAN** (the decompose call —
 the planner never sees the repo, only the scout blob; drafted against a schema
 description with check NAMES only; `validatePlan` gates it, one redraft with the reds
 fed back, then `plan-red`) → **EXECUTE** (strictly sequential micro-loops: `ralph` with
@@ -359,11 +493,24 @@ the gap — NEVER the budget, the close command, a check's command, or the arbit
 
 **Time and materials (T + A, PRD v1.27/v1.29).** `runPlan` starts ONE wall clock per run
 (`createClock`, `src/clock.js`) from the signed `maxWallMs` and emits `wall-clock` with the
-requested AND enforced numbers up front. Enforcement is a **between-round deadline** — the
-only seam that exists, since `loop.stop()` cannot cut an in-flight call (F61: fired at 500ms,
+requested AND enforced numbers up front, plus the `closeStages` count that explains the gap
+between them (`enforcedMs = maxWallMs + closeStages × closeTimeoutMs`, one expression — the
+stage count comes from `stageClose`, the same staging the runner executes). Enforcement is a
+**between-round deadline** — the only seam that exists, since `loop.stop()` cannot cut an
+in-flight call (F61: fired at 500ms,
 returned at 4,018ms) — so an attempt that crosses the deadline mid-flight emits `wall-bounded`,
-is judged, and feeds its gap forward exactly like a round-bounded attempt; the run-level
-terminal `wall-halt` is decided by the step loop after the step returns. Time reporting is
+is judged, and feeds its gap forward exactly like a round-bounded attempt. **The close is never
+bounded by the wall and always runs to completion** — a deadline that kills grading leaves the
+run unreadable after the money is spent (the F45 class, money generalized to time); what the
+wall stops is the START of new work. Three sites decide the run-level terminal `wall-halt`, all
+on the same clock: the step loop after a step returns, a step that would BEGIN already expired,
+and the close-fix loop before it opens another iteration — which then stops on the verdict the
+last close already minted (hamr: *"when time is up, keep the grade we already have and stop"*),
+carrying that verdict, the iterations spent, and a progress `trend` (`moving` | `stalled` |
+`unknown`, read off the last two close gaps) so the human can pick between raising `maxWallMs`
+(resume-to-cap: the stop IS the checkpoint) and revising the goal — both spec edits, both a new
+hash to re-sign. `cutMidCall` on the `wall-halt` record splits the deadline seen INSIDE a
+provider call from the deadline read between them. Time reporting is
 licensed at ~90% accuracy by ruling: imprecision is fine, reporting an unknown or unbounded
 duration as `0` never is (F6 extended to time — unbounded reports `null`, never `Infinity`).
 The planner (never the worker) receives a **materials** block at draft and at replan —
@@ -375,6 +522,17 @@ or time with its exits unmoved is pre-empted at the head of its next attempt so 
 re-allocates instead. **Known and recorded (F63): that trigger fired 0 times across 18
 archived spines / 54 steps** (near misses 0.35–0.45) — the threshold is arbiter territory,
 deliberately not fitted to those points. The ONE-replan ceiling is unchanged.
+
+**Per-step model tiers — `providerFor` (P).** A plan step may declare a `model` TIER
+(`sonnet` \| `haiku`, `STEP_MODELS`). The tier menu is signed into the schema; mapping a tier
+onto a real model (and any per-model provider params) is the RUNNER's territory, so both
+`runJob` and `runPlan` take `providerFor?: (tier: string) => provider`. It is called ONLY for
+a step that declared a tier, once per such step — the scout, the plan drafter and every
+untiered step stay on `opts.provider`, so a caller that never plans tiers can omit it
+entirely. Cache per tier on your side if you want one instance reused. **A plan naming a tier
+when no factory was supplied is an `interpreter-red` STOP**, named as a wiring gap rather than
+a plan defect: running the default tier as if the choice had been honoured is the F50
+blind-instrument class, and the whole point of the field is that the choice is observable.
 
 **Two worker surfaces — API and native clipipe (BA-16, module 4d).** The plan flow is
 provider-agnostic: the close, the checks, and the exit evaluator are commands and form
@@ -427,8 +585,7 @@ re-run with the close's verdict; without this a model one-shots and can eat the 
 reads before ever writing). It is NOT allowed to read the run's own machinery (F14): the gate
 audit, the smoke store and the litectx store are denied — the agent neither authors the
 arbiter nor reads its books. N2 bounds (honest): `gold`/`rubric` closes refuse
-`close-unsupported` (execution lands at N4); `target` is required only for text-mode
-steps.
+`close-unsupported` (execution lands at N4).
 
 ### `updateLedger({ ledgerFile, spineFiles })` → `{ appended, fold }` — `src/ledger.js`
 
@@ -445,9 +602,14 @@ failures can't derive), `runtime-red`, `provider-red`, `pricing-red` (F6), possi
 `capability-gap` (cap-halt + request-red in one spine), `broken-close` (consumer-attributed),
 `request-red` (admission demand for a locked verb — keyed on the red's structured
 `verb` field, prose-quoted verb as legacy fallback), `retention-red`, `config-red`
-(drafting friction — attributed to bareloop's own schema/prompt). Deliberate exclusions:
-bare `cap-halt` (a budget story), `close-verdict`/`artifact-red` (worker stories),
-`gate-red` (governance working as intended), `pr-red` (operator environment).
+(drafting friction — attributed to bareloop's own schema/prompt). Deliberate exclusions
+(`EXCLUDED_ESCALATIONS`, a runtime set — anything outside classified ∪ excluded is
+counted as unmapped, never dropped): `cap-halt`/`wall-halt` (budget stories, money and
+time), `step-stalled` (the stall fuse firing is our governance, not an observed provider
+failure), `step-variance` (a planning story), `gate-red`/`smoke-red` (governance working
+as intended / already counted), `hitl-close`/`close-unsupported` (by design),
+`close-timeout`/`close-killed`/`close-crashed` (the arbiter's own named terminals, F17);
+`close-verdict`/`artifact-red` stay worker stories, `pr-red` operator environment.
 `suggestedAsk` on every row is a template seed for an upstream ask — filing stays human;
 status rows (`open → filed → fixed → consumed`) are human-appended, and the fold shows
 the latest per key. Pure pieces exported for custom folds: `classifyIncidents(events,
@@ -458,8 +620,10 @@ panel reads the same file at N6.
 
 Three layers. An **outer shell** (dumb, permanent): per-run budget cap via bareguard,
 retry cap, verdict collection, escalation routing — stateless across runs; nothing inside
-negotiates with it. An **emergent middle**: the authored workflow config — steps, per-step
-verdict class, memory binding, write scopes — schema-validated. A **floor**: append-only
+negotiates with it. An **emergent middle**: the AGENT-authored plan — bounded steps, each
+with its granted verbs, its round and attempt caps, its narrowed write scope and its
+form-checkable exits — schema-validated by `validatePlan` before tokens burn (the
+operator-authored `steps[]` shape is deleted, PRD v1.32). A **floor**: append-only
 JSONL spine (single source for every UI), litectx store per job, per-run ledger. Built on
 the bare suite: bareagent, bareguard, litectx, barebrowse, baremobile — the full surface
 is disclosed to the authoring agent; only admitted verbs are callable per job.

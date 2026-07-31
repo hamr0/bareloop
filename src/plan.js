@@ -9,16 +9,22 @@
 //     `request-red`, which is admission demand against the product menu)
 //   bounds ≤ the shell caps                → `bounds`
 //   scopes/targets inside the signed fence → `scope-escape` / `invalid-value`
+//   …and, on a step that NARROWED the fence with `scope`, the step's WRITES are
+//     judged against that narrowed prefix too → `step-scope-escape` (the runner
+//     gates the step from it, so an in-fence-but-out-of-scope target is a write
+//     denied on every attempt with no red anywhere — W3). Exits are observations,
+//     not writes: only a `tree-changed` scope DISJOINT from the step's scope is
+//     unsatisfiable, and the artifact paths are not constrained at all
 //   exits from the closed menu only        → `exit-illegal` (arbiter
 //     inexpressibility: an exit is declarative data the shell evaluates with
 //     its own fixed code — `run` cannot be laundered through it)
-//   check references resolve against the SIGNED checks menu → `check-unknown`
+//   check references resolve against the menu DERIVED from the signed close → `check-unknown`
 //     (decision 1: a check the spec doesn't sign does not exist)
 //
 // Like its siblings (validate.js, job.js) it never throws on JSON text or
 // plain parsed data; every failure is a named {code, path, detail} red.
 
-import { TOOL_MENU, LOCKED_TOOLS } from './job.js';
+import { TOOL_MENU, LOCKED_TOOLS, WRITE_VERBS, checkMenu } from './job.js';
 import { globToPrefix, scopeContained, isObj, isNonEmptyString, sweepSecretLiterals } from './validate.js';
 
 /** the closed exit menu (PRD v1.12 §3 + decision 1's `check-passes`): the
@@ -33,8 +39,10 @@ export const MAX_EXITS_PER_STEP = 2;
 export const MAX_PLAN_STEPS = 8;
 /** the write-class verbs (BA-13: `edit` is judged by the same fence as
  * `write`) — a step granting one is a WRITE step for the F17 pairing rule
- * and the v1.18 target requirement */
-export const WRITE_VERBS = Object.freeze(['write', 'edit']);
+ * and the v1.18 target requirement. RE-EXPORTED from job.js, never re-declared:
+ * ONE inventory (the SECRET_PATTERNS precedent) — a second copy lets a third
+ * write-class verb land in one list and stay invisible to the other. */
+export { WRITE_VERBS };
 /** scope-menu bound: the menu is a PROMPT ingredient on every draft and
  * redraft, so an unbounded repo would price the drafting call by its directory
  * count. Shallow entries survive the cap (see `legalScopes`) because they are
@@ -89,7 +97,13 @@ const PLAN_FIELDS = ['schema', 'steps'];
 // order; a field nothing consumes is a live-looking knob with zero effect
 // (the F16 inert-op class). The arbiter's own vocabulary (close, budget,
 // fence) is absent by construction — unknown-field at every depth.
-const STEP_FIELDS = ['id', 'action', 'tools', 'rounds', 'target', 'exit'];
+const STEP_FIELDS = ['id', 'action', 'tools', 'rounds', 'target', 'exit', 'model', 'attempts', 'scope'];
+/** P (design record 2026-07-28): the signed per-step model-tier menu. Closed by
+ * construction — the agent picks a tier, never names an arbitrary model string
+ * (the tier→model mapping and any effort params are the RUNNER's, per provider).
+ * opus is deliberately absent: reserved for fresh builds hamr explicitly assigns,
+ * never plan-selectable. */
+export const STEP_MODELS = Object.freeze(['sonnet', 'haiku']);
 const EXIT_FIELDS = {
   'artifact-written': ['type', 'path', 'pattern'],
   'tree-changed': ['type', 'scope'],
@@ -154,7 +168,22 @@ export function hasNestedQuantifier(src) {
     if (c === '[') {                            // character class: quantifier chars inside are literals
       i++;
       if (src[i] === '^') i++;
-      if (src[i] === ']') i++;                  // a leading ] is a literal member, not the close
+      // NO POSIX leading-`]`-is-a-literal rule: JS is not POSIX here. `[]` is the
+      // EMPTY class (matches nothing) and `[^]` the any-char idiom — both close at
+      // that first `]`. Skipping it ran the scan past the class's real end and
+      // swallowed every quantifier after it, so `x[^](a+)+$` read as safe while
+      // RegExp.test on it does not finish in 15s on a 31-char body. A false
+      // NEGATIVE is the dangerous direction (F49), so the scan follows JS.
+      //
+      // Honest limit on the monotonicity claim: this is a PARSE correction, not
+      // the "add rejections only" tightening F49's rule contemplates, and it is
+      // not strictly rejection-monotonic. Measured over 14,862 compilable
+      // generated patterns (2,369 previously rejected): 2 rejections disappear,
+      // both pathological `[]`-bearing shapes whose old `true` came from the very
+      // misparse being fixed, and both verified to finish RegExp.test in ~0ms.
+      // Every entry of the checked-in REDOS_BAD/GOOD/OVERREJECTED corpus is
+      // unchanged. So no real hazard was un-rejected — but the claim is
+      // "measured, no hazard lost", never "monotonic by construction".
       while (i < src.length && src[i] !== ']') { if (src[i] === '\\') i++; i++; }
       continue;
     }
@@ -181,6 +210,35 @@ export function hasNestedQuantifier(src) {
   return false;
 }
 
+/**
+ * The close, as the ordered STAGE LIST the plan flow actually executes (PRD
+ * v1.28). A staged close is already that list; the legacy object form is the
+ * ONE-stage list it stands for, named `close`. Anything else — a gold, rubric or
+ * hitl close, which names no command to run — is null, and the runner escalates
+ * `close-unsupported` before any tokens.
+ *
+ * W4 — this is the ONE staging, and it exists because there used to be two. The
+ * runner synthesized the single stage and derived its check menu from THAT, while
+ * `planPrompt` and `validatePlan` called `checkMenu` on the RAW spec — where an
+ * object close is not an array, so the menu came back empty. The result was a
+ * runner announcing and preflighting a stage the drafter was never offered and the
+ * validator would have redded `check-unknown`. Same class as the two-transforms
+ * defects before it: the fix is one derivation every consumer calls, not three
+ * copies kept in step by comment.
+ *
+ * Lives here rather than beside `checkMenu` in job.js only because job.js owns the
+ * SIGNED vocabulary and this is the consumer-side reading of it; `plan.js` is the
+ * lowest module every check-menu consumer already imports (planrun imports plan,
+ * never the reverse), so it is the one place all three can share without a cycle.
+ * @param {any} close the spec's `close` field, any shape
+ * @returns {any[]|null} the stage list, or null when the close names no command
+ */
+export function stageClose(close) {
+  if (Array.isArray(close)) return close;
+  if (!isObj(close) || close.type !== 'predicate') return null;
+  return [{ name: 'close', cmd: close.cmd, expect: close.expect, judged: close.judged, gapKeep: close.gapKeep }];
+}
+
 /** @typedef {{code: string, path: string, detail?: string, verb?: string}} Red */
 
 /**
@@ -188,7 +246,7 @@ export function hasNestedQuantifier(src) {
  * job spec. Never throws on JSON text or plain parsed data; every failure is
  * a named red. Returns the parsed plan on ok (single parse), null on any red.
  * @param {object|string} input parsed plan, or raw JSON text (parse failures are a red)
- * @param {{ job?: any, maxStepRounds?: number, scopes?: string[] }} [opts] `job`: the
+ * @param {{ job?: any, maxStepRounds?: number, scopes?: string[], capRuns?: number }} [opts] `job`: the
  *   validateJob-GREEN four-field spec (the ceiling, the fence, and the checks
  *   menu all come from it — a missing or non-plan-shape job fails CLOSED);
  *   `maxStepRounds`: the shell's per-step rounds ceiling (interpret's
@@ -198,7 +256,7 @@ export function hasNestedQuantifier(src) {
  *   writeScope — never a free-text fallback (F50).
  * @returns {{ ok: boolean, reds: Red[], plan: object|null }}
  */
-export function validatePlan(input, { job, maxStepRounds = 40, scopes } = {}) {
+export function validatePlan(input, { job, maxStepRounds = 40, scopes, capRuns = 3 } = {}) {
   /** @type {Red[]} */
   const reds = [];
   /** @type {(code: string, path: string, detail?: string) => void} */
@@ -207,15 +265,32 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes } = {}) {
   // The signed side, fail-CLOSED (the validate.js fence-invalid pattern): the
   // ceiling/fence/menu are meaningless without a plan-shape spec, and an open
   // gate on a malformed one would validate a plan against nothing.
-  if (!isObj(job) || !isNonEmptyString(/** @type {any} */ (job).goal) || !Array.isArray(/** @type {any} */ (job).writeScope)) {
-    return { ok: false, reds: [{ code: 'job-invalid', path: 'job', detail: 'a plan validates only against a validateJob-green plan shape spec (goal/verdictType/close/checks[]) — validate the job first' }], plan: null };
+  // The writeScope's MEMBERS are checked here too, not just its arrayness:
+  // `globToPrefix` below calls `.replace` on each one, so a non-string member
+  // threw `TypeError: scope.replace is not a function` out of a function whose
+  // contract is that plain data only ever yields a named red. Same
+  // `isNonEmptyString` question `legalScopes` already asks of the same field.
+  if (!isObj(job) || !isNonEmptyString(/** @type {any} */ (job).goal) || !Array.isArray(/** @type {any} */ (job).writeScope)
+    || !(/** @type {any[]} */ (/** @type {any} */ (job).writeScope)).every(isNonEmptyString)) {
+    return { ok: false, reds: [{ code: 'job-invalid', path: 'job', detail: 'a plan validates only against a validateJob-green plan shape spec (goal/verdictType/close) — validate the job first' }], plan: null };
   }
   const spec = /** @type {Record<string, any>} */ (job);
   /** the signed tool ceiling — validateJob permits omission, meaning the full menu */
   const ceiling = Array.isArray(spec.tools) ? spec.tools : [...TOOL_MENU];
   const fence = spec.writeScope.map(globToPrefix);
   const insideFence = (/** @type {string} */ p) => fence.some((f) => p === f || p.startsWith(f + '/'));
-  const checkNames = Array.isArray(spec.checks) ? spec.checks.map((/** @type {any} */ c) => c?.name).filter(isNonEmptyString) : [];
+  // The check menu DERIVES from the close's stages (PRD v1.28) — the agent
+  // references a piece of the operator's own inspection, never a ruler someone
+  // hand-carved beside it. One derivation, shared with the runner, so what the
+  // prompt offers and what the validator accepts cannot drift apart — which means
+  // reading the close through `stageClose`, the same staging the runner EXECUTES
+  // (W4: reading the raw field here made the legacy object form's stage invisible
+  // to the validator and the prompt while the runner ran it).
+  // `?? []` is the null case spelled out: a close that names no command to run
+  // (gold/rubric/hitl) stages nothing, so it offers nothing — the runner
+  // escalates `close-unsupported` on the same null, and an empty menu is already
+  // the honest reading here (every check-passes becomes a check-unknown).
+  const checkNames = checkMenu(stageClose(spec.close) ?? []).map((m) => m.name);
   // The offered scope menu. A caller-supplied menu must be the same one the
   // prompt enumerated; with none, derive from the signed fence — fail-CLOSED,
   // so omitting the option narrows the agent's choices and never widens them.
@@ -261,6 +336,7 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes } = {}) {
       // verb as structured data (the ledger counts overreach per verb) — an
       // unknown string stays a typo (invalid-value), never an escape
       let writeStep = false;
+      let toolsParsed = false;
       if (s.tools === undefined) red('missing-required', `${at}.tools`, 'every step declares its grant — the narrowed menu is the step boundary');
       else if (!(Array.isArray(s.tools) && s.tools.length > 0
                  && s.tools.every((/** @type {unknown} */ t) => typeof t === 'string')
@@ -280,12 +356,72 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes } = {}) {
           reds.push({ code: 'verb-escape', path: `${at}.tools`, verb: t, detail: `"${t}" is outside the signed ceiling [${ceiling.join(', ')}] — the plan may narrow the grant, never widen it` });
         }
         writeStep = s.tools.some((/** @type {string} */ t) => WRITE_VERBS.includes(t));
+        toolsParsed = true;
       }
 
       // rounds ≤ the shell cap (cap-not-estimate; the step bound IS maxTurns)
       if (!(Number.isInteger(s.rounds) && s.rounds >= 1 && s.rounds <= maxStepRounds)) {
         red('bounds', `${at}.rounds`, `integer 1..${maxStepRounds} — the step bound is the Gate's maxTurns, it may tighten the shell cap, never exceed it`);
       }
+
+      // P (design record 2026-07-28): the widened vocabulary — every field
+      // optional, every field tighten-only, every legal set handed over as a
+      // MENU (choose-don't-describe: illegal is inexpressible, never described)
+      if (s.model !== undefined && !STEP_MODELS.includes(s.model)) {
+        red('invalid-value', `${at}.model`, `menu: ${STEP_MODELS.join('|')} — the tier menu is signed; the agent picks a tier, never names a model`);
+      }
+      if (s.attempts !== undefined && !(Number.isInteger(s.attempts) && s.attempts >= 1 && s.attempts <= capRuns)) {
+        red('bounds', `${at}.attempts`, `integer 1..${capRuns} — a step may tighten the shell's attempt cap, never exceed it`);
+      }
+      if (s.scope !== undefined && !scopeMenu.includes(s.scope)) {
+        red('invalid-value', `${at}.scope`, `menu: [${scopeMenu.join(', ')}] — a per-step write scope narrows the fence from the same menu tree-changed uses`);
+      }
+      // W3 — a step that NARROWS the fence is gated by its own scope, not the
+      // signed one: planrun's mkWorker builds this step's Gate writeScope from
+      // `globToPrefix(scope)`. So a TARGET that is in-fence but OUTSIDE the step's
+      // own scope is a write the gate denies on every attempt — the step burns its
+      // whole attempt budget on refusals and no red is raised anywhere, because
+      // each half was individually legal and nothing checked the PAIR. Checking it
+      // here makes the incoherent pair inexpressible at the validation gate rather
+      // than discovered at the runtime one.
+      //
+      // The rule binds WRITES, not OBSERVATIONS. An exit is evaluated by the shell
+      // (src/exits.js), never written by the worker, so the step's gate constrains
+      // it only where the evaluator's own semantics say so — measured, not assumed:
+      //   - `tree-changed` passes iff ANY file under ITS scope changed, so a scope
+      //     that CONTAINS the step's scope contains the step's writable ground and
+      //     fires exactly when the narrow one does. Only a DISJOINT scope is
+      //     unsatisfiable: it can pass only if ground this gate refuses changed.
+      //     Hence overlap, not containment (and the menu is shallowest-first while
+      //     the prompt says copy one value, so the widest scope is the LIKELIEST
+      //     draft — containment here would tax the natural plan, the exact F60
+      //     class `legalScopes` exists to eliminate).
+      //   - `artifact-written`/`json-valid` read and parse the named file and ask
+      //     nothing about who wrote it, so a path outside the step's scope naming a
+      //     PRIOR step's artifact is legal AND satisfiable (v1 is strictly
+      //     sequential — that composition is the natural shape). No step-scope red
+      //     belongs on those arms: it would claim a constraint the evaluator does
+      //     not impose. A path nothing ever produces still fails at runtime, with
+      //     the mechanical "<path> was not written (does not exist)" gap.
+      //
+      // Fence FIRST, narrowed scope SECOND (see the target/scope arms): the menu is
+      // fence-filtered by `legalScopes`, so containment in the scope normally
+      // implies containment in the fence — but a caller-supplied menu is data, and
+      // deriving the fence check FROM it would let a bad menu widen what is
+      // accepted. Kept as two ordered checks, the narrowed one can only tighten.
+      // An OFF-MENU scope carries no narrowing (it already redded above): one
+      // defect, one red — a second red derived from a value the agent cannot use
+      // would charge the ledger twice for the same mistake.
+      const stepScope = s.scope !== undefined && scopeMenu.includes(s.scope) ? s.scope : null;
+      const stepPrefix = stepScope === null ? null : globToPrefix(stepScope);
+      /** contained by the step's OWN scope — vacuously true on an unscoped step,
+       * which is what keeps every pre-W3 plan byte-identical. The WRITE test. */
+      const insideStepScope = (/** @type {string} */ p) => stepPrefix === null
+        || p === stepPrefix || p.startsWith(stepPrefix + '/');
+      /** shares ground with the step's own scope — either prefix contains the
+       * other. The OBSERVATION test: what `tree-changed` needs to be satisfiable. */
+      const overlapsStepScope = (/** @type {string} */ p) => stepPrefix === null
+        || p === stepPrefix || p.startsWith(stepPrefix + '/') || stepPrefix.startsWith(p + '/');
 
       // target (v1.18): the per-step deliverable — required on write steps,
       // always inside the signed fence when present
@@ -295,9 +431,11 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes } = {}) {
         red('invalid-value', `${at}.target`, 'a relative path inside the run dir — no absolute paths, no ".." segments');
       } else if (!insideFence(globToPrefix(s.target))) {
         red('scope-escape', `${at}.target`, `"${s.target}" is outside the signed fence [${spec.writeScope.join(', ')}]`);
+      } else if (!insideStepScope(globToPrefix(s.target))) {
+        red('step-scope-escape', `${at}.target`, `"${s.target}" is inside the signed fence but outside this step's own scope "${stepScope}" — the step's gate is built from that narrowed prefix, so every write to this target would be denied`);
       }
 
-      validateExit(s, at, red, { checkNames, fence: spec.writeScope, insideFence, writeStep, scopeMenu });
+      validateExit(s, at, red, { checkNames, fence: spec.writeScope, insideFence, writeStep, toolsParsed, scopeMenu, stepScope, overlapsStepScope });
     });
   }
 
@@ -314,9 +452,13 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes } = {}) {
  * @param {Record<string, any>} s the step
  * @param {string} at step path prefix
  * @param {(code: string, path: string, detail?: string) => void} red
- * @param {{ checkNames: string[], fence: string[], insideFence: (p: string) => boolean, writeStep: boolean, scopeMenu: string[] }} ctx
+ * @param {{ checkNames: string[], fence: string[], insideFence: (p: string) => boolean, writeStep: boolean, toolsParsed: boolean, scopeMenu: string[], stepScope: string|null, overlapsStepScope: (p: string) => boolean }} ctx
+ *   `stepScope`/`overlapsStepScope` (W3): the step's OWN narrowed fence when it
+ *   declared a legal `scope`, null/always-true otherwise. Exits are OBSERVATIONS,
+ *   not writes, so only `tree-changed` is constrained by it and only against
+ *   DISJOINTness — see the arm for the measured semantics.
  */
-function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep, scopeMenu }) {
+function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep, toolsParsed, scopeMenu, stepScope, overlapsStepScope }) {
   if (!Array.isArray(s.exit) || s.exit.length === 0) {
     red('missing-required', `${at}.exit`, `non-empty array from the closed menu ${EXIT_TYPES.join('|')} — ALL listed exits must pass (AND-only); a step without an exit has no progress gate`);
     return;
@@ -342,7 +484,7 @@ function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep, s
       else if (!checkNames.includes(e.name)) {
         // decision 1: a check the spec doesn't sign DOES NOT EXIST — and the
         // detail names the signed menu so the replan can aim, not guess
-        red('check-unknown', eAt, `"${e.name}" is not a signed check — the agent references checks, never authors them; signed menu: [${checkNames.join(', ') || 'none'}]`);
+        red('check-unknown', eAt, `"${e.name}" is not an offered close stage — the agent references stages of the operator's close, never authors a ruler; offered: [${checkNames.join(', ') || 'none'}]`);
       }
     } else if (e.type === 'tree-changed') {
       hasTreeChanged = true;
@@ -367,8 +509,25 @@ function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep, s
         } else {
           red('invalid-value', `${eAt}.scope`, `one of the offered scopes: [${scopeMenu.join(', ')}]`);
         }
+      } else if (!overlapsStepScope(globToPrefix(e.scope))) {
+        // W3: an offered, in-fence scope can still be DISJOINT from the step's own
+        // narrowed fence. Measured against src/exits.js: `tree-changed` passes iff
+        // some file under ITS scope changed against the pre-step snapshot, and that
+        // snapshot already holds every earlier step's bytes — so a disjoint scope
+        // can only pass if ground this step's gate refuses changed. Unsatisfiable on
+        // every attempt, which is exactly the burn W3 closes.
+        // A WIDER (containing) scope is NOT redded: it contains the step's writable
+        // ground and fires exactly when the narrow one does.
+        red('step-scope-escape', `${eAt}.scope`, `"${e.scope}" is disjoint from this step's own scope "${stepScope}" — the step's gate allows writes only under "${stepScope}", and this exit passes only if a file under "${e.scope}" changed, so no write this step can make would ever satisfy it (a scope that contains "${stepScope}" is fine)`);
       }
     } else { // artifact-written | json-valid — a named file path inside the fence
+      // NO step-scope check here, deliberately (W3): src/exits.js reads and parses
+      // the named file and asks nothing about who wrote it, so a path outside the
+      // step's own scope naming a PRIOR step's artifact is legal AND satisfiable —
+      // and v1 is strictly sequential, so that composition is the natural shape.
+      // A red would claim a constraint the evaluator does not impose. A path nothing
+      // ever produces still fails at runtime with the mechanical "was not written"
+      // gap — the honest direction, versus taxing a legal draft with a redraft.
       if (!isNonEmptyString(e.path) || !scopeContained(e.path)) {
         red('invalid-value', `${eAt}.path`, 'a relative file path inside the run dir — no absolute paths, no ".." segments');
       } else if (!insideFence(globToPrefix(e.path))) {
@@ -396,5 +555,19 @@ function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep, s
   // validation law, stated in the plan itself (never hardwired shell code).
   if (writeStep && hasCheck && !hasTreeChanged) {
     red('exit-illegal', `${at}.exit`, 'check-passes on a write-granted step requires the tree-changed conjunct — the seed tree is green, so a lone check would pass on the untouched repo (F17/F46 already-green trap)');
+  }
+  // The inverse trap, measured (runs ms4l5p6w/ms57zr7c: 4 of 4 drafted plans):
+  // a failing check's gap is re-delivered to THIS step's own worker, so a step
+  // holding a check must be able to act on it. A read-only "verify" step is a
+  // mailbox with no hands — the gap arrives, nothing can edit, the loop stalls
+  // to cap on a byte-identical gap. The outer close is the run's verification;
+  // forbidding this shape pushes the check onto the step that fixes (the one
+  // shape that has ever greened this job).
+  // …and only when the grant PARSED: with `tools` missing/malformed the step's
+  // hands are unknowable, and a mailbox red derived from the false default would
+  // charge the ledger with a violation the agent never committed (the real
+  // defect already redded as missing-required/invalid-value). One defect, one red.
+  if (toolsParsed && !writeStep && hasCheck) {
+    red('exit-illegal', `${at}.exit`, `check-passes on a step with no write-class tool (${WRITE_VERBS.join('|')}) — the check's failure gap comes back to this step's own worker, which cannot edit; attach the check to the step that fixes (the operator's close already verifies the finished run)`);
   }
 }

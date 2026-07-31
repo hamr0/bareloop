@@ -4,7 +4,138 @@
 // arbiter). Stateless across runs and stdlib-only by design: it must stay too
 // dumb to be gamed. Do not make it smarter.
 
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
+
+// ── the close's child process, run WITHOUT freezing the host (F68) ───────────
+// The close used to run through `spawnSync`, which blocks the host event loop for
+// the child's entire duration: F68 measured 9 loop-freeze records in one green run
+// (worst 74.3s, bracketing a ~65s close exactly) and 4 more bracketing three
+// check-preflights — "the close-runner freezes the loop it reports to". While a
+// close ran, the stall fuse's timers could not fire, the lag sampler recorded a
+// block, and any in-flight instrument shared the freeze.
+//
+// ONLY THE WAIT IS ASYNC. Every observable semantic below is spawnSync's own,
+// replicated field for field, because the close is the arbiter and its reading of
+// the world must not shift by a byte:
+//   - the same `{error, status, signal, stdout, stderr}` result shape;
+//   - the same 1 MiB PER-STREAM output ceiling, reported the same way spawnSync
+//     reports it — an `ENOBUFS` error with the child killed (so an over-long close
+//     stays `failed`/broken-close, exactly as before, rather than silently
+//     becoming a red on truncated output);
+//   - the same deadline behaviour: SIGTERM at `timeoutMs`, surfaced as an
+//     `ETIMEDOUT` error (which runClose reads BEFORE any exit code, so the
+//     forbidden zone's `timed-out` band is unchanged);
+//   - the same stdin: closed immediately, so a close that reads stdin sees EOF
+//     instead of hanging on a pipe nobody will ever write to.
+// The one deliberate difference is prose: a spawn fault names itself `spawn …`
+// rather than `spawnSync …` in its message, because that is now what happened.
+// Nothing parses that string (it rides out as an escalation `detail`).
+const CLOSE_MAX_BUFFER = 1024 * 1024; // spawnSync's default maxBuffer, per stream
+const CLOSE_KILL_SIGNAL = 'SIGTERM';  // spawnSync's default killSignal
+// SIGTERM is a REQUEST, and a close is free to refuse it — a runner installing its
+// own handler, a wrapper that traps to clean up. There is no second deadline after
+// the first, so a refused SIGTERM leaves the wait below pending FOREVER: no `close`
+// event ever arrives, and the run's only remaining stop is the out-of-process
+// watchdog. The grace is the escalation — long enough for an honest close to flush
+// and leave on its own terms, then SIGKILL, which nothing can refuse. Verdict
+// semantics are untouched: the FIRST fault already named the outcome, and the kill
+// only enforces it. (spawnSync sends killSignal and then simply keeps waiting; this
+// is the one place the arbiter's clock is deliberately harder than its reference.)
+const CLOSE_KILL_GRACE_MS = 2000;
+
+/**
+ * @param {string} cmd
+ * @param {string[]} args
+ * @param {{env: NodeJS.ProcessEnv, cwd?: string, timeoutMs?: number}} o
+ * @returns {Promise<{error: (Error & {code?: string})|null, status: number|null, signal: string|null, stdout: string, stderr: string}>}
+ */
+function spawnClose(cmd, args, { env, cwd, timeoutMs }) {
+  return new Promise((resolve) => {
+    const child = spawn(cmd, args, { env, cwd });
+    /** @type {Buffer[]} */ const outChunks = [];
+    /** @type {Buffer[]} */ const errChunks = [];
+    let outBytes = 0, errBytes = 0;
+    /** @type {(Error & {code?: string})|null} */
+    let error = null;
+    /** @type {NodeJS.Timeout|undefined} */
+    let timer;
+    /** @type {NodeJS.Timeout|undefined} */
+    let killTimer;
+
+    // The FIRST fault wins and kills the child, exactly as spawnSync does: a close
+    // that blew the buffer and then hit the deadline is one story, not two. The
+    // escalation rides inside that same first-fault-wins guard, so a child is asked
+    // once and, if it refuses, ended once.
+    const fault = (/** @type {string} */ code) => {
+      if (error) return;
+      error = Object.assign(new Error(`spawn ${cmd} ${code}`), { code, syscall: `spawn ${cmd}`, path: cmd, spawnargs: args });
+      try { child.kill(CLOSE_KILL_SIGNAL); } catch { /* already gone — nothing to kill */ }
+      // …and SIGKILL if it is still there after the grace. `unref` so this timer can
+      // never hold the host's event loop open by itself (F68's whole point) — and it
+      // is cleared on `close`, so it cannot fire at a child that already left.
+      killTimer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* gone in the meantime */ } }, CLOSE_KILL_GRACE_MS);
+      killTimer.unref();
+    };
+
+    child.stdout.on('data', (/** @type {Buffer} */ c) => { outBytes += c.length; outChunks.push(c); if (outBytes > CLOSE_MAX_BUFFER) fault('ENOBUFS'); });
+    child.stderr.on('data', (/** @type {Buffer} */ c) => { errBytes += c.length; errChunks.push(c); if (errBytes > CLOSE_MAX_BUFFER) fault('ENOBUFS'); });
+    // A spawn failure (ENOENT, an unreadable cwd) arrives as an event here and as
+    // `result.error` in spawnSync; `close` still fires after it, so there is ONE
+    // resolution path and the promise can never be left pending.
+    child.on('error', (e) => { if (!error) error = e; });
+    child.on('close', (status, signal) => {
+      clearTimeout(timer);
+      clearTimeout(killTimer);
+      resolve({
+        error, status, signal,
+        // Concat-then-decode, never per-chunk: a multi-byte character straddling a
+        // chunk boundary must not become two replacement characters — spawnSync
+        // decodes the whole buffer once, and the judged/gapKeep patterns read this.
+        stdout: Buffer.concat(outChunks).toString('utf8'),
+        stderr: Buffer.concat(errChunks).toString('utf8'),
+      });
+    });
+    if (typeof timeoutMs === 'number' && timeoutMs > 0 && Number.isFinite(timeoutMs)) timer = setTimeout(() => fault('ETIMEDOUT'), timeoutMs);
+    // stdin closed at once (spawnSync with no `input` hands the child EOF): a close
+    // that reads stdin gets the same EOF instead of blocking on an idle pipe. The
+    // error swallow is for the ordinary case where the child has already exited.
+    child.stdin?.on('error', () => {});
+    child.stdin?.end();
+  });
+}
+
+/**
+ * What the close child must NOT be able to read (operator ruling, 2026-07-31:
+ * "strip it when unnecessary, minimize unneeded exposure").
+ *
+ * The close child executes WORKER-AUTHORED CODE. `pytest`, `npm test`, `tsc`
+ * run whatever the worker just wrote into the tree, in a child that — before
+ * this — inherited the whole operator environment, credentials included. None
+ * of git/npm/tsc/pytest/mypy needs an API key to judge a tree, so the exposure
+ * bought nothing and is removed. This is EXPOSURE REDUCTION, not a sandbox:
+ * see the threat-model note in the PRD (v1.41) and README for what remains.
+ *
+ * Two rules, deliberately kept BOTH ways round:
+ *  - `names` / `prefixes` — the knowns. A literal denylist is a chase (every
+ *    new provider mints a new variable), so it is not load-bearing on its own;
+ *    it exists for names the shape rule cannot see (`AWS_ACCESS_KEY_ID`).
+ *  - `shape` — the NAME-SHAPE rule, which is what bounds the chase: anything
+ *    whose name ends in the credential suffixes goes, whoever minted it and
+ *    whether or not anyone here has heard of it. Case-insensitive; no `g` flag,
+ *    so `.test` stays stateless and safe to reuse across every key.
+ *
+ * It is arbiter territory like the rest of this file: no drafted plan or config
+ * can express, widen, or opt out of it.
+ * @type {Readonly<{names: readonly string[], prefixes: readonly string[], shape: RegExp}>}
+ */
+export const CLOSE_ENV_DENY = Object.freeze({
+  names: Object.freeze([
+    'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY',
+    'ANTHROPIC_AUTH_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN', 'NPM_TOKEN',
+  ]),
+  prefixes: Object.freeze(['AWS_']),
+  shape: /(_API_KEY|_SECRET|_TOKEN|_PASSWORD|_CREDENTIALS?)$/i,
+});
 
 /**
  * Run a close command; its exit code is the verdict (hard green, PRD §4).
@@ -68,18 +199,26 @@ import { spawnSync } from 'node:child_process';
  *   (the workdir — the tree it is judging), the exit code the SIGNED spec calls
  *   success, the judgment-rendered signal, and the kept-failures pattern. All
  *   five are arbiter territory: the drafted workflow config cannot express any.
- * @returns {{verdict: 'satisfied'|'needs_revision'|'failed'|'timed-out'|'killed'|'crashed',
+ * @returns {Promise<{verdict: 'satisfied'|'needs_revision'|'failed'|'timed-out'|'killed'|'crashed',
  *   gap?: string, exitCode?: number, signal?: string, detail?: string,
- *   judgedCount?: number|null, unaudited?: boolean}}
+ *   judgedCount?: number|null, unaudited?: boolean}>}
  */
-export function runClose(close, redact = (s) => s, { timeoutMs = 120_000, cwd, expect = 0, judged, gapKeep } = {}) {
+export async function runClose(close, redact = (s) => s, { timeoutMs = 120_000, cwd, expect = 0, judged, gapKeep } = {}) {
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT; // a `node --test` close inherits this from a test runner and silently no-ops — a fake green
-  const r = spawnSync(close[0], close.slice(1), { env, cwd, encoding: 'utf8', timeout: timeoutMs });
+  // …and the operator's credentials go with it (CLOSE_ENV_DENY above). A COPY is
+  // stripped, never `process.env` itself: the host still needs its key (bare-agent
+  // reads it every round) — only the child that runs worker-authored code is blinded.
+  for (const name of Object.keys(env)) {
+    if (CLOSE_ENV_DENY.names.includes(name)
+      || CLOSE_ENV_DENY.prefixes.some((p) => name.startsWith(p))
+      || CLOSE_ENV_DENY.shape.test(name)) delete env[name];
+  }
+  const r = await spawnClose(close[0], close.slice(1), { env, cwd, timeoutMs });
 
   // ── forbidden zone, before any exit code is believed ──────────────────────
   if (r.error) {
-    // spawnSync reports BOTH "cannot run" and "ran too long" through `error`;
+    // The runner reports BOTH "cannot run" and "ran too long" through `error`;
     // they are different human decisions, so they get different names.
     const code = /** @type {NodeJS.ErrnoException} */ (r.error).code;
     if (code === 'ETIMEDOUT') return { verdict: 'timed-out', detail: `close exceeded ${timeoutMs}ms and was killed — it never finished judging` };
@@ -129,6 +268,56 @@ export function runClose(close, redact = (s) => s, { timeoutMs = 120_000, cwd, e
     exitCode: r.status,
     ...(judged ? { judgedCount } : { unaudited: true }),
   };
+}
+
+/**
+ * Run a STAGED close (PRD v1.28) — an ordered list of named command stages, run
+ * in order until one renders a verdict that is not `satisfied`. The return is
+ * runClose's own shape, so every consumer (the precheck, ralph's judge, the
+ * escalation's CLOSE_FAULTS routing) is unchanged: a staged close is still ONE
+ * verdict, not a scoreboard.
+ *
+ * Two additions, both mechanical information the worker can act on:
+ *  - `stage` names which stage rendered the verdict. The close's output must
+ *    never name the CULPRIT FILE (v1.12/F28 — the worker finds that itself), and
+ *    naming the wall it hit is the opposite of that: it is the mechanical genre
+ *    that converts (F38/F46), not the answer.
+ *  - `stages` is the ordered record of what actually ran. A stage after the
+ *    first red never runs, so a later green can never mask an earlier failure.
+ *
+ * The same function runs a DERIVED CHECK: a check is its stage's chain
+ * (`checkMenu` puts the prerequisites first), so there is one execution path for
+ * the close and for the rulers derived from it — never two, which is the F9
+ * two-transforms class applied to the arbiter.
+ *
+ * @param {any[]} stages the stage list (already validated by validateJob)
+ * @param {(s: string) => string} [redact] scrub, applied at capture on EVERY stage
+ * @param {{timeoutMs?: number, cwd?: string}} [opts]
+ * @returns {Promise<any>} runClose's verdict shape, plus `stage` and `stages`
+ */
+export async function runStages(stages, redact = (s) => s, { timeoutMs, cwd } = {}) {
+  const ran = [];
+  let last;
+  for (const st of stages) {
+    // Sequential by construction (F68): stages run one at a time under a single
+    // await, so nothing here ever has two closes in flight against one tree.
+    const r = await runClose(st.cmd.trim().split(/\s+/), redact, {
+      timeoutMs, cwd, expect: st.expect, judged: st.judged, gapKeep: st.gapKeep,
+    });
+    ran.push({ name: st.name, verdict: r.verdict, ...(r.exitCode !== undefined ? { exitCode: r.exitCode } : {}) });
+    last = r;
+    if (r.verdict !== 'satisfied') {
+      return {
+        ...r,
+        stage: st.name,
+        stages: ran,
+        // The gap says WHICH wall, then the wall's own output. A worker handed
+        // three stages' worth of output cannot tell which one it must satisfy.
+        ...(r.gap ? { gap: `close stage "${st.name}" failed:\n${r.gap}` } : {}),
+      };
+    }
+  }
+  return { ...last, stages: ran };
 }
 
 // Tail-biased bound: a test runner's useful output (the assertion diff, the
@@ -295,12 +484,30 @@ export async function ralph({ middle, close, judge, capRuns, emit, redact, close
         // REPLANS, so the message must not say anything broke.
         'step-variance': ['A step consumed a large share of the run with its exits still red — the meter stopped it before another attempt.',
           ['let the planner re-allocate what is left (replan)', 'raise the budget and rerun', 'abandon the task']],
-        // T/F64 — the run's WALL CLOCK stopped this, and the caller's deadline came
-        // back as the provider's own timeout. A governance stop, not a fault and not
-        // a transport casualty: the message must not send a human to debug a socket,
-        // and the remedy is the operator's cap, not a retry.
-        'wall-halt': ['The run reached its wall-clock cap mid-attempt — time ran out, not capability.',
-          ['raise maxWallMs and rerun (the stop is the checkpoint)', 'abandon the task']],
+        // T/F64 — the run's WALL CLOCK stopped this: either the caller's deadline
+        // came back as the provider's own timeout (F64, mid-attempt) or the caller
+        // read the clock and declined to START another attempt (W-2, between them).
+        // A governance stop either way, not a fault and not a transport casualty:
+        // the message must not send a human to debug a socket, and the remedy is the
+        // operator's cap, not a retry. The wording says neither "mid-attempt" nor
+        // "between attempts", because one entry serves both and a category that
+        // narrates the wrong half is worse than one that narrates neither.
+        // The two levers are BOTH spec edits (a changed spec hash the runner refuses
+        // until it is re-approved), and they point opposite ways — which is why the
+        // caller's detail carries the progress trend that says which one fits.
+        'wall-halt': ['The run reached its wall-clock cap — time ran out, not capability. Nothing is discarded: the last verdict rendered stands, and the stop is the checkpoint.',
+          ['raise maxWallMs and rerun (resume-to-cap; a spec edit, so the new hash needs re-approval)',
+            'revise the goal/spec so the work fits the time (same re-approval)',
+            'abandon the task']],
+        // F66 — the STALL WATCHDOG gave up: no round completed for the stall window,
+        // three times over, and reissuing the call did not recover it. It borrows both
+        // siblings' rules. Like `step-variance`, the caller reads this category and
+        // REPLANS, so the planner's lever leads. Like `wall-halt`, nothing broke — the
+        // socket stayed alive the whole time (that is the measured mechanism), so the
+        // message must not send a human to debug transport, and the default's "fix the
+        // interpreter" would aim a human at the one component that did nothing wrong.
+        'step-stalled': ['The model stopped producing rounds and reissuing the call did not recover it — a stall, not a fault.',
+          ['let the planner re-allocate what is left (replan)', 'retry the run', 'check provider status', 'abandon the task']],
       };
       // Object.hasOwn, not bare lookup: a category named after an
       // Object.prototype member ("toString") would return the inherited
@@ -323,7 +530,7 @@ export async function ralph({ middle, close, judge, capRuns, emit, redact, close
     emit('middle-done', { iteration });
     const v = judge
       ? await judge()
-      : runClose(/** @type {string[]} */ (close), redact, { timeoutMs: closeTimeoutMs ?? 120_000, cwd, expect, judged, gapKeep });
+      : await runClose(/** @type {string[]} */ (close), redact, { timeoutMs: closeTimeoutMs ?? 120_000, cwd, expect, judged, gapKeep });
     // Worker-crash attribution (F32, measured in F31: 4 of 7 battery rows). A crash is
     // still not a verdict (F17) — but a crash that FOLLOWS worker writes, on a run whose
     // precheck proved the close judged at baseline (run.js escalates a crash-at-precheck

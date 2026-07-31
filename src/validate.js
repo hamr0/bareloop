@@ -10,6 +10,8 @@
 // v1.32). What remains is what the live path imports — the primitives were
 // housed here, they were never part of the dead schema.
 
+import { redact } from 'bareguard';
+
 /**
  * Map a schema writeScope entry to its enforcement prefix. bareguard
  * fs.writeScope is prefix-containment, not glob (adaptlearn F4/F9): the
@@ -93,8 +95,13 @@ const SECRET_RE = new RegExp(SECRET_PATTERNS.map((r) => r.source).join('|'));
  * Scan a RAW text stream (a spine file, a close's output, a transcript) for
  * known secret shapes and return the literal matches. The ONE spelling of the
  * text-side scan, for the same reason SECRET_PATTERNS is the ONE inventory: a
- * hand-rolled copy that misses a shape is a leak on the very output it guards
- * (seven copies of this expression lived in scripts/ before it landed here).
+ * hand-rolled copy that misses a shape is a leak on the very output it guards.
+ * The dedup is now COMPLETE and the count is grepped, not remembered: all 11
+ * call sites in scripts/ go through this function, and zero hand-rolled copies
+ * of the expression remain anywhere in the repo. (F40 landed the helper and
+ * converted 2 of 7 sites; the 5 it left alone plus 4 that accreted afterwards
+ * were converted in one sweep, byte-identical behaviour — measured equivalent
+ * on 900 spiked real spines, 0 divergences.)
  * `sweepSecretLiterals` is the config-tree twin — same shapes, tree walk.
  * Never throws; returns [] for a missing stream.
  * @param {unknown} raw
@@ -105,6 +112,23 @@ export function scanSecrets(raw) {
   // a fresh global clone per call: a shared /g regex carries lastIndex between
   // calls and would skip matches on the next stream
   return SECRET_PATTERNS.flatMap((re) => text.match(new RegExp(re.source, `${re.flags.replace('g', '')}g`)) ?? []);
+}
+
+/**
+ * Mask known secret shapes in a text. The REDACTION twin of `scanSecrets` and
+ * the ONE spelling of it: detection and redaction read the same inventory, so a
+ * shape the validator reds can never be a shape the redactor passes (a divergence
+ * there is a leak on the very output the validator was guarding). Housed beside
+ * the inventory rather than at each consumer for the same reason `scanSecrets`
+ * is — a hand-rolled copy is how the two drift.
+ * Consumers: the plan flow's spine/close/prompt `scrub`, and the isolate verbs,
+ * which write model-authored text into `<workdir>/.litectx` — a file INSIDE the
+ * tree that outlives the run and reads back through ctx_recall.
+ * @param {unknown} raw
+ * @returns {string}
+ */
+export function redactSecrets(raw) {
+  return redact(String(raw ?? ''), { patterns: SECRET_PATTERNS });
 }
 
 /**

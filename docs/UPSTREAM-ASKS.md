@@ -25,6 +25,11 @@ it · the fix (upstream commit/PR) · the version bareloop consumed.**
 > the clipipe cross-surface battery (F48). Full entry at the end of the queue. The
 > 2026-07-15 snapshot below stands for everything prior.
 
+> **2026-07-31 update:** **OPEN — LC-5** (litectx): a missing `ripgrep` makes `impact()`
+> read "0 callers, risk low" — the false-isolation its own contract names as "the one
+> dangerous error" is documented but not *detected*; the ask is a runtime distinguisher
+> (ENOENT ≠ no-matches). Found by bareloop's CI going red on it. Full entry at the end.
+
 **The queue is EMPTY: BA-13 delivered in `bare-agent@0.29.0`** (same day it was filed) and
 consumed by bareloop the same session (TOOL_MENU/TOOL_BY_VERB gain `edit`; F32). Everything
 prior was already closed: `bare-agent@0.27.0` and `litectx 0.29.1` cleared the earlier queue.
@@ -1110,3 +1115,195 @@ frequency claim did not, and it is corrected here before the ask is implemented.
 **Related.** BA-14 (2026-07-16) is the same family one layer down — a stale pooled keep-alive
 socket surfacing as `EPIPE`, fixed by widening the retry predicate. BA-18 is the case that
 predicate cannot reach: the socket does not error, it simply never answers.
+
+## BA-19 — RESOLVED (bare-agent 0.35.0, same-day): total-duration `deadlineMs` beside the idle bound
+
+**Delivered exactly as asked, verified against shipped source (never the changelog):**
+`deadlineMs` per call, `code:'EDEADLINE'` with `context.bound:'deadline'` (and the idle trip
+now carries `context.bound:'idle'` — the discriminator on BOTH bounds, criterion 2 exceeded),
+`retryable:false` (terminal — hamr's choice via the shape question: a deadline is a hard
+ceiling the caller set to STOP; auto-retry would re-spend up to another full `deadlineMs`),
+disabled by default, `0` a no-op, timer unref'd. Criterion 3's ordering (idle fires first
+when `timeoutMs < deadlineMs`) documented at the source.
+
+**Consumed:** bareloop 0.34.0 → 0.35.0, full suite 449/449 + typecheck green. **Wiring
+`deadlineMs` into worker calls is PARKED:** the F66 fuse already self-heals this class above
+the transport (validated on the paid surface), and adding a second call bound to the clock's
+derivation is arbiter territory — named, not shipped unilaterally.
+
+<details><summary>Original ask as filed (2026-07-28)</summary>
+
+### BA-19 — `timeoutMs` bounds socket INACTIVITY only; nothing bounds a call's TOTAL duration — a slow-but-trickling response hangs a caller for hours (2026-07-28, U run ms3197n8 / F66)
+
+**Symptom, observed once at full cost.** One `generate()` call on `AnthropicProvider`
+(bare-agent 0.34.0, `timeoutMs` derived and forwarded per call — verified at `loop.js:732`)
+ran for **274 minutes** and ended in `read ECONNRESET`, not a timeout. Zero rounds, zero
+events, ≥$3.23 of a $10 budget consumed by a run that produced no verdict. The reset — not a
+`TimeoutError` — is the proof of mechanism: the idle timer never tripped, so bytes WERE
+arriving at the socket for 4.5 hours without the response ever completing.
+
+**Source read before filing.** `applyRequestTimeout` (`src/provider-http.js`) is one
+`req.setTimeout(...)`. Node resets that timer on ANY socket activity; the docstring says so
+plainly: *"the timer resets on activity, so a slow-but-streaming response is not killed."*
+That is the correct behavior for the quantity it watches — BA-18 asked for an idle bound and
+got a good one. But it means bare-agent has NO bound on total call duration: a response that
+trickles a byte every few minutes is invisible to every timer in the library, forever.
+
+**The ask.** A per-call total-duration deadline beside (not replacing) the idle bound —
+`deadlineMs` or an `AbortSignal`, whichever fits the provider surface. The two quantities are
+independent failure modes: a silent socket (BA-18) and a zombie stream (this ask).
+
+**FAIL-able acceptance criteria:**
+1. A mock server that streams one byte every `idle/2` ms and never completes: a call with
+   `deadlineMs: X` rejects within `X + ε`. Today this call NEVER returns until the kernel
+   gives up — the criterion fails on 0.34.0 by construction.
+2. The rejection is typed and DISTINGUISHABLE from the idle trip (a distinct `code`, or a
+   field naming which bound fired) — a consumer routing governance stops vs transport
+   casualties (bareloop's F64 discriminator) must not have to guess which timer spoke.
+3. The idle bound still works unchanged with a deadline set: a silent socket trips the idle
+   timer FIRST when `timeoutMs < deadlineMs`. (Guards against the fix replacing one bound
+   with the other.)
+4. Per-call overridable; disable semantics consistent with `timeoutMs` (`0`/`Infinity`).
+
+**Filed WITH its own limiting evidence (standing rule):** n=1 — one 274-minute hang, one run.
+bareloop no longer depends on this fix: the F66 in-process stall fuse (heartbeat = a round,
+5-min window, 3 strikes then replan) self-heals this class at the harness layer, and the F67
+outside watchdog bounds even a frozen harness. This ask is defense-in-depth for consumers who
+have neither. A deliberately long single call (large `maxTokens`, slow model) is a legitimate
+multi-minute stream — a default deadline would kill it, so **disabled-by-default is the
+defensible shape**; the ask is for the KNOB, not for a new default.
+
+</details>
+
+## LC-3 — RESOLVED (litectx 0.31.0, same-day): `index({ yield: true })` cooperative yielding, shape B as decided
+
+**Delivered as the yield-only shape (hamr's fork call: atomicity is an integrity property,
+liveness a comfort property — never trade the first for the second), verified against shipped
+source: `setImmediate` between per-file parses, store byte-identical, single `applyChanges`
+transaction preserved, default `false` unchanged.**
+
+**Acceptance read on bareloop's own fixture (the 155-file spare patient, n=4), stated with
+the miss on record:** max single block **189–252ms** — the binding clause (≤500ms) passes
+every run with ~2× headroom; liveness **54.0–57.8%** — the ≥60% proxy clause MISSES by the
+letter here (upstream measured ~63% on litectx's own tree; the tick-ratio is fixture-sensitive
+to file-size distribution). Consumed on the binding clause: no timer any consumer named runs
+can perceive a ≤252ms block. The %-proxy's fixture sensitivity is the lesson — the next
+liveness criterion should be max-block-only, which is the quantity a host actually feels.
+NOT re-amended to pass: the criterion was amended once for a principled reason (atomicity);
+amending it again after the measurement would be fitting the bar to the result.
+
+**Consumed:** litectx 0.29.1 → 0.31.0; `planrun.js` worker setup now indexes with
+`{ yield: true }` (every worker path — scout, step, fix). Full suite 449/449 + typecheck.
+
+<details><summary>Original ask as filed (2026-07-28)</summary>
+
+### LC-3 — `index()` blocks the host event loop for its full duration: async in signature, synchronous in substance (2026-07-28, U run ms3wawub diagnosis)
+
+**Measured before filing, on litectx 0.30.0 via bareloop's own construction (`new LiteCtx({root})`,
+`index({force:true})`), patient a 155-file copy of litectx itself:** index took **4,409ms** during
+which a 100ms host interval fired **2 of 44 due ticks — 4.5% event-loop liveness**. An in-run
+observation during U diagnostics read the same shape (1 tick where 19 were due). `index()` is
+`async` and is awaited — but the work inside (tree-sitter chunking, better-sqlite3 upserts,
+`collectFiles`) is CPU/sync, so the `await` yields microtasks, never the loop.
+
+**Why a host cares.** bareloop calls `lc.index()` at worker setup inside the same process that
+runs its safety timers (a stall fuse, a wall clock, an event-loop lag sampler). During an index
+pass all of them are dead — timers cannot fire, sockets cannot be read, spines cannot be written.
+Seconds today; it scales with repo size and would multiply under embeddings (which force a
+rebuild to take effect at all).
+
+**Filed WITH its own limiting evidence (standing rule, and this repo has misattributed blame to
+litectx before — LC-2 was withdrawn as our own stale index):**
+- On this 155-file repo the block is ~4.4s, and INCREMENTAL passes are ms-scale (7ms measured
+  elsewhere for 206 files) — the cost is real only on force/first passes and version-skew heals.
+- bareloop's own 65-second freeze that triggered this investigation was NOT litectx: it was
+  bareloop's `ralph.js` running closes via `spawnSync` — owned on our side, tracked separately.
+- bareloop can also mitigate alone (call `index()` from a worker thread), so this is a
+  quality-of-embedding ask, not a blocker.
+
+**The ask.** A non-blocking option for `index()` — either a worker-thread offload
+(`index({offthread:true})` or a documented `indexInWorker()`), or an inter-file yield
+(`setImmediate` between files) so the host loop breathes between parses. Default behavior may
+stay exactly as it is; the ask is a knob.
+
+**FAIL-able acceptance criteria:**
+1. During a force index of a fixture that takes ≥2s, with the option enabled: no single
+   event-loop block exceeds 500ms, and a 100ms host interval fires ≥60% of due ticks
+   (today: max block 1142ms, 4.5% liveness).
+   *(AMENDED 2026-07-28, criterion was ours to correct: the original ≥80% bar overshot the
+   functional need — every consumer named here runs second/minute-scale timers, and litectx's
+   POC showed reaching 80% costs the store's single-transaction atomicity. An integrity
+   property must not be traded to hit a comfort number nobody needs; yield-only (~63%
+   liveness, ~250ms max block, atomicity intact) is the shape this criterion now accepts by
+   design, not by exception.)*
+2. Identical output: chunk count, edge count, and stored stamp match the blocking path on the
+   same fixture, byte for byte where content is compared.
+3. Concurrent reads during an off-thread index either serialize safely or fail cleanly with a
+   named error — never a corrupt store.
+
+</details>
+
+## LC-5 — a missing `ripgrep` reads as "0 callers, risk low": the documented §7.2 false-isolation should be DETECTED at runtime, not only documented (2026-07-31, v0.6.0 release gate / CI red)
+
+**Measured before filing (standing rule), on litectx 0.31.0 as shipped:**
+
+- bareloop's CI (ubuntu-latest, no ripgrep on the image) has failed **deterministically on
+  exactly 2 tests since 2026-07-28 10:55** — the commit that introduced `ctx_impact` tests
+  (green immediately before, red every run after, 18 consecutive runs). Both failures are
+  `impact()` reporting `risk low — 0 confirmed caller(s), 0 mention(s)` for a symbol with
+  2 real callers in the fixture.
+- Reproduced locally by construction: clean checkout + fresh `npm ci` (Node 20, matching CI)
+  passes **558/558** with `rg` present; with only `rg` shadowed by a failing stub, **exactly
+  the same 2 tests fail and nothing else** (18/20 in the file; callees and the import graph
+  still work — they are tree-sitter/index paths, not `rg` paths). Same signature as CI,
+  byte for byte on the readout.
+- Source trace (`src/impact.js`, 0.31.0): both `rg` call sites swallow the spawn failure
+  into a valid-empty result —
+  - `rgWordMatches` (`:182-187`): `catch { if (e.stdout) out = e.stdout; else return []; }`
+    — the comment anticipates **exit 1 = "no matches"**, but the same branch also eats
+    **ENOENT = "rg never ran"**. The distinguishing bit (`e.code === 'ENOENT'` vs
+    `e.status === 1`) is in hand and discarded.
+  - `rgListFiles` (`:312-316`): identical swallow. This one feeds the **barrel/alias caller
+    sweep** — the "crux false-isolation mode" the file's own §7.2 comment says a name-only
+    search can't see; with rg absent it silently sees nothing either.
+
+**The defect, stated against litectx's own doctrine.** The adopter contract already says it
+plainly (Gotchas: *"a symbol can read as isolated purely because the tool is absent (a §7.2
+false-isolation, the one dangerous error)"*) — so this is **not** an undocumented-dependency
+report. The ask is narrower: a documented footgun is still armed. Docs protect the operator
+who reads them; they cannot protect the *consumer of the readout at runtime* — in bareloop's
+case an LLM worker handed the `ctx_impact` text, which has no way to know `rg` was absent and
+takes "0 confirmed callers" as licence to change freely. impact's whole hedging design exists
+because under-counting is the dangerous direction; a missing tool currently produces the
+**maximal under-count** wearing the normal hedged coat. (bareloop's house rule for the same
+shape: unknown is reported as unknown, never rendered as 0.)
+
+**Filed WITH its own limiting evidence (standing rule):**
+- The requirement **is** documented, in three places (README mechanism note, context.md
+  Gotchas, context.md Constraints). Our CI blindness was **our own missed contract read** —
+  owned on our side and fixed regardless of this ask (one-line ripgrep install in our CI).
+- Blast radius is bounded and correctly documented: `recall()`/`index()`/`get()` don't touch
+  `rg`; only `impact()` degrades.
+- n=1 environment class (CI images without rg), but the mechanism is deterministic, not flaky.
+
+**The ask.** Distinguish "rg ran and found nothing" (exit 1 — a valid empty) from "rg never
+ran" (ENOENT/spawn failure) at **both** call sites, and surface the second case loudly.
+Either shape is fine by us — upstream's pick:
+- **(a) refuse:** `impact()` throws a named error (e.g. code `RIPGREP_MISSING`) whose message
+  names ripgrep and the PATH requirement; or
+- **(b) hedge honestly:** the readout carries an explicit, machine-distinguishable hedge
+  (e.g. `caller sweep unavailable: ripgrep (rg) not found on PATH — caller/mention counts
+  are UNKNOWN, not zero`) and does not present `confirmed`/`mentions` as exact zeros.
+
+**FAIL-able acceptance criteria:**
+1. With `rg` absent from PATH, `impact()` on a symbol that has real callers must NOT return
+   a readout identical in shape to genuine isolation: either a named throw (a), or a hedge
+   naming ripgrep plus counts not presented as exact zeros (b). Test: run litectx's own
+   impact test with PATH scrubbed of `rg`.
+2. With `rg` present and genuinely zero matches, behavior is byte-identical to today
+   (exit 1 stays a valid empty — no new failure mode for the legitimate case).
+3. Both call sites covered: the alias/barrel sweep (`rgListFiles`) must not silently
+   contribute an empty candidate set when rg is missing — a barrel-reached caller must not
+   vanish without the same loud signal.
+4. A crashed rg with partial stdout (the existing `e.stdout` salvage branch) keeps today's
+   salvage behavior — the new signal fires only when rg produced nothing because it never ran.

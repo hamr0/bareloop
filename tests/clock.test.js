@@ -85,6 +85,45 @@ test('bounded: enforcedMs reports the HONEST number — requested plus one close
   assert.equal(c.enforcedMs(120_000), 2_820_000, '47 minutes, what can actually happen');
 });
 
+// ─── W5: the overshoot is PER STAGE ───
+
+test('W5: a STAGED close multiplies the overshoot — every stage runs under the full closeTimeoutMs (runStages), so a 4-stage close is 4 of them, not 1', () => {
+  // jobs/aurora-u-spawner-types.json exactly: a 30-minute cap, a 4-stage close, a
+  // 900s per-stage timeout. Quoting 45 minutes against a 90-minute worst case is
+  // F6 in a time coat — the same arithmetic the U runner's outside watchdog
+  // already does (CLOSE_TIMEOUT_MS * spec.close.length).
+  const c = createClock({ maxWallMs: 1_800_000, closeStages: 4, now: fakeNow().now });
+  assert.equal(c.closeStages, 4);
+  assert.equal(c.requestedMs, 1_800_000, '30 minutes, what the operator asked for');
+  assert.equal(c.enforcedMs(900_000), 5_400_000, '90 minutes, what can actually happen — never 45');
+});
+
+test('W5: a single-stage close is unchanged — one stage, one close timeout (the object-form/predicate regression)', () => {
+  const one = createClock({ maxWallMs: 1_800_000, closeStages: 1, now: fakeNow().now });
+  const dflt = createClock({ maxWallMs: 1_800_000, now: fakeNow().now });
+  assert.equal(one.enforcedMs(900_000), 2_700_000);
+  assert.equal(dflt.closeStages, 1, 'an omitted stage count is the single predicate close, never zero');
+  assert.equal(dflt.enforcedMs(900_000), 2_700_000, 'the default must not have moved');
+});
+
+test('W5: the stage count is belted — a garbage count can never quote an enforced number BELOW the cap it enforces', () => {
+  for (const bad of [0, -3, NaN, Infinity, null, undefined, '4']) {
+    const c = createClock({ maxWallMs: 1_800_000, closeStages: /** @type {any} */ (bad), now: fakeNow().now });
+    assert.equal(c.closeStages, 1, `closeStages ${String(bad)} must floor at one close`);
+    assert.equal(c.enforcedMs(900_000), 2_700_000);
+  }
+  assert.equal(createClock({ maxWallMs: 1_800_000, closeStages: 2.7, now: fakeNow().now }).closeStages, 2, 'a fractional count floors to whole stages');
+});
+
+test('W5: the ADVERTISED record equals the ENFORCED computation from the same inputs — one arithmetic, never two', () => {
+  const c = createClock({ maxWallMs: 1_800_000, closeStages: 4, now: fakeNow().now });
+  assert.equal(c.report(900_000).enforcedMs, c.enforcedMs(900_000));
+  assert.equal(c.report(900_000).enforcedMs, c.requestedMs + c.closeStages * 900_000);
+  const un = createClock({ closeStages: 4, now: fakeNow().now });
+  assert.equal(un.report(900_000).enforcedMs, un.enforcedMs(900_000), 'unbounded: null both ways — no stage count invents a ceiling');
+  assert.equal(un.enforcedMs(900_000), null);
+});
+
 // ─── the derived per-call timeout ───
 
 test('the per-call timeout is min(provider default, remaining): early in a long run it is the provider default', () => {
@@ -116,11 +155,11 @@ test('report() carries both numbers and the bounded flag — one shape for the s
   const bounded = createClock({ maxWallMs: 600_000, now: f.now });
   f.at(60_000);
   assert.deepEqual(bounded.report(120_000), {
-    bounded: true, requestedMs: 600_000, enforcedMs: 720_000, elapsedMs: 60_000, remainingMs: 540_000,
+    bounded: true, requestedMs: 600_000, closeStages: 1, enforcedMs: 720_000, elapsedMs: 60_000, remainingMs: 540_000,
   });
   const un = createClock({ now: fakeNow().now });
   assert.deepEqual(un.report(120_000), {
-    bounded: false, requestedMs: null, enforcedMs: null, elapsedMs: 0, remainingMs: null,
+    bounded: false, requestedMs: null, closeStages: 1, enforcedMs: null, elapsedMs: 0, remainingMs: null,
   });
 });
 

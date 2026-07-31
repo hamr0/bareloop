@@ -5,7 +5,519 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.6.0] — 2026-07-31
+
+### Added
+- **P — the worker's palette widens 6 → 14 verbs, and a step gains a vocabulary** (design
+  record 2026-07-28). The plan surface exposed two of litectx's verbs and the agent could
+  choose almost nothing about HOW a step ran (F56).
+  - `TOOL_MENU` (`src/job.js`) is now four components: **write** (`write` · `edit`), **select**
+    (`read` · `grep` · `recall` · `get` · `impact` · `related` · `recent`), **compress**
+    (`compress` · `peek`), **isolate** (`stash` · `remember` · `forget`). Every verb maps to an
+    EXISTING litectx/bare-agent implementation — the menu is an INVENTORY, nothing was built to
+    fill it. Select/compress verbs are gate-judged as `read` actions through the same fence;
+    isolate verbs write the `.litectx` STORE and carry their OWN gate action types, so a store
+    park can never be counted as a tree write by the F32 `workerWrites` instrument. `run` stays
+    locked at every layer.
+  - New `WRITE_VERBS` / `STORE_VERBS` split: **neither class is read-capable**, so the scout's
+    grant filters both, and a ceiling made only of them reds `invalid-value` at sign time (a
+    write-only ceiling hands the scout an empty menu and it surveys blind).
+  - Each component ships its F19 strategy line (`COMPONENT_STRATEGIES`, `src/tools.js`),
+    composed into the persona only for components with a granted verb — capability without
+    strategy is inert, and a strategy for a verb the worker does not hold is noise.
+  - **Three new step fields, each legal set handed over as a MENU** (`src/plan.js`,
+    choose-don't-describe): `model` (`sonnet` | `haiku`, `STEP_MODELS` — `opus` deliberately
+    absent, hamr-assigned only, never plan-selectable), `attempts` (integer `1..capRuns`), and
+    `scope` (one value from the same `legalScopes` menu `tree-changed` uses). All optional, all
+    **tighten-only** — a plan may narrow the shell's caps and the signed fence, never widen them.
+  - **Each field is WIRED or REFUSED, never silently ignored** (the F50 blind-instrument class):
+    `scope` narrows the live gate fence (proven — an in-job-fence write denied by the step's own
+    scope), `attempts` tightens `ralph`'s cap (proven — exactly one iteration), and `model` routes
+    that step's worker through a new **`providerFor(tier)`** factory on `runJob`/`runPlan`.
+    **A step naming a tier when the caller supplied no factory is a NAMED `interpreter-red` stop**
+    — a wiring gap, not a plan defect — never a silent run on the default tier as if the choice
+    had been honoured.
+  - `scripts/run-u.mjs` supplies that factory (the tier→model mapping is the RUNNER's territory,
+    never the schema's) and gains a `--model` tier flag, and now **deletes `.litectx` at every
+    reset — cold means cold**: the isolate verbs persist across runs, so an uncleaned store would
+    leak run N's memory into run N+1's "cold" baseline and quietly poison the reuse rung's OFF arm.
+  - The U job specs widen to the full catalog, which is a NEW spec hash and therefore UNSIGNED
+    until hamr's explicit in-turn approval — widening the menu never silently changes a signed
+    spec's meaning.
+  - POC-first paid three times before a line of module code (recall hits carry no id — the path
+    IS the key; `impact`'s `confirmed`/`mentions` are counts, not arrays; `purge()` covers neither
+    stash nor memory, so a cold reset must delete the store). The tool tests run against a REAL
+    LiteCtx over a real fixture: the impact-shape test failed once against live data and was fixed
+    from the measured shape, not the assumed one.
+- **F66 — the in-process stall fuse** (`src/stall.js`): bare-agent's `timeoutMs` bounds
+  socket INACTIVITY (resets on every byte), so a slow-but-trickling call hung a run for 274
+  minutes (U run ms3197n8). The fuse's heartbeat is a completed ROUND — no round for 5
+  minutes abandons the call and silently reissues it (self-heal, hamr's ruling); three
+  stalls throw `step-stalled`, the third replan trigger. Validated on the paid surface: a
+  real slow call stalled and its reissue answered; three real in-flight calls abandoned at
+  the ceiling; late answers from abandoned sockets swallowed. Mutation battery 6/6 (the
+  surviving mutant was a real hole matching the production failure shape — fixed).
+- **F67 — the outside watchdog** (`scripts/u-watchdog.mjs`): U run ms3jh76q froze its event
+  loop 81.5 minutes and every in-process guard froze with it. A separate process sharing
+  nothing with the run — reads one file's mtime, calls kill(2), records the reason on disk
+  BEFORE the signal. Two triggers: stale spine and wall+grace. Battery includes a
+  hard-frozen-loop victim (`for(;;);`) — the exact case it exists for. Mutation 5/5.
+- **Event-loop lag sampler** in `scripts/run-u.mjs`: records any ≥3s loop block with
+  from/until timestamps to `<spine>.lag.jsonl` — the instrument that localized the
+  spawnSync-close blocks (below) on its first run.
+- **BREAKING for plan authors — `step-scope-escape`: a scoped step's TARGET must sit inside
+  its OWN narrowed scope** (`src/plan.js`, W3). A plan that validated before can red now. A
+  step may narrow the signed fence with `scope`, and `runPlan` builds that step's gate from
+  the narrowed prefix — so a target inside the signed fence but outside the step's own scope
+  was a write the gate denied on every attempt: the step burned its whole attempt budget on
+  refusals with no red anywhere, because each half was individually legal and nothing checked
+  the PAIR. The rule binds WRITES, not observations, and the exit arms were measured against
+  `src/exits.js` rather than assumed. `tree-changed` reds only when its scope is DISJOINT from
+  the step's — a scope that CONTAINS the step's contains its writable ground and fires exactly
+  when the narrow one does, and the menu is shallowest-first while the prompt says copy one
+  value, so containment would tax the likeliest draft (the F60 class `legalScopes` exists to
+  remove). `artifact-written`/`json-valid` paths carry NO step-scope red at all: the evaluator
+  reads and parses the named file and asks nothing about who wrote it, so a path naming a
+  PRIOR step's artifact is legal AND satisfiable under strictly-sequential v1 — a red there
+  would claim a constraint the evaluator does not impose. An off-menu `scope` carries no
+  narrowing (it already redded): one defect, one red.
+- **Four documented names are now actually exported** (`src/index.js`): `runStages`,
+  `checkMenu`, `STORE_VERBS` and `stageClose`. Each was named as adopter-reachable in this
+  CHANGELOG or in `bareloop.context.md` while the index never handed it out — a
+  documented-but-unexported name is a false contract the adopter discovers by importing it.
+  `tests/index.test.js` pins the documented surface by name (a NAME check; each export's
+  semantics stay owned by its own module's tests), so the docs and the index cannot drift
+  apart silently again.
+- **A per-payload cap on the isolate verbs** — `ISOLATE_MAX_BYTES` = 64KB, hamr's threshold
+  (`src/tools.js`). `ctx_stash`/`ctx_remember` write the `.litectx` store, which the
+  writeScope fence does not judge: the one worker surface that writes UNGATED bytes, and
+  unbounded it grows for as many rounds as the wallet funds. Over-cap comes back as a refusal
+  RESULT naming the actual size and the limit — worker feedback, never a throw (throws stay
+  the BA-4 param-guard class) — and nothing enters the store; both tool descriptions state
+  the bound. The residual is named rather than hidden: this bounds ONE PAYLOAD, and N
+  distinct ids are N payloads, so the aggregate stays unbounded. An aggregate cap is a
+  threshold, and thresholds are hamr's call.
+- **`step-stalled` has its own DECISIONS entry** (`src/ralph.js`). F66's terminal fell through
+  to the generic default, which points a human at the interpreter — the one component that did
+  nothing wrong. A stall is not a fault: the socket stayed alive the whole time (that is the
+  measured mechanism), so the entry says so and leads with the planner's lever (replan) instead
+  of sending anyone to debug transport.
+- **`ctx_impact` ships litectx's hedges** (`src/tools.js`), as `caveat` lines. litectx's impact
+  is deliberately asymmetric — over-count safe, under-count dangerous — so "isolated / low
+  risk" only ever ships HEDGED, and dropping the caveat left `risk low — 0 confirmed caller(s)`
+  reading as a licence to change the symbol freely, the one act the asymmetry exists to
+  prevent. The spine's `hits` field is counted BEFORE the caveats are appended and keeps its
+  old meaning (impact content) — a caveat qualifies the count, it is not more of it, and
+  re-meaning a shipped field is how a field stops measuring what its readers think it measures.
+
+### Fixed
+- **The close-fix loop laundered a transport casualty into a flat `escalated`**
+  (`src/planrun.js`). The step loop restores an escalation's own category (F11: the outcome and
+  the spine escalation must agree); the fix loop did not, so a `provider-red` raised there came
+  back as `escalated` — and `run.js` keys the F44 `spendComplete:false` floor on the OUTCOME, so
+  the run reported an exact-looking total for a call that may never have billed back. Now
+  mirrored. Found by the hardening pass, PARKED, and fixed only on hamr's explicit go.
+- **The close-fix loop could not tell a drained wallet from spent attempts** (`src/planrun.js`,
+  F45 class). The shell spells BOTH terminals `cap-halt` — attempt-exhaustion and a money-gate
+  halt thrown mid-attempt — so the category alone cannot split them and only the wallet can.
+  The fix worker's gate is built with the wallet at its MOST drained (every step's spend is
+  behind it), which is precisely where a money cut masquerades as "the fix failed" and becomes
+  a false capability read. The fix loop now reads the wallet exactly as the step loop does: a
+  drained wallet returns `cap-halt` (the resume-to-cap checkpoint — the stop IS the
+  checkpoint), attempts spent with money still on the table stays the designed `escalated`
+  terminal ("the close is still red"). Reachability validated before the fix: nothing guards
+  money between the last step and the close. Verdict routing is arbiter territory — fixed only
+  on hamr's explicit go.
+- **`ctx_recall` was blind to the memory axis, so `ctx_remember` was write-only through the tool
+  surface** (`src/tools.js`). The isolate strategy promises *"record a durable conclusion with
+  `ctx_remember` so a later step can `ctx_recall` it"* — and the recall handler hardcoded
+  `kind: 'code'`, so no note ever came back. The library-level round-trip test could not see it:
+  it called `lc.recall` directly, not the verb the worker holds. Recall now queries the fact axis
+  alongside code and returns each note on a line labeled `memory` with its BODY inline (capped at
+  400 chars, so a bloated note cannot page the context). The body rides because a note is a
+  CONCLUSION, not a pointer — there is no worker verb that dereferences a memory id. Same parked-
+  then-explicit-go path as above.
+- **The aurora U close type-checked another repository** (`scripts/u-spawner-close.mjs`):
+  mypy's `explicit_package_bases` named the patient's files `packages.spawner.src.*`, so
+  sibling imports fell through to the editable install — a symlink to a DIFFERENT aurora
+  checkout. Proven with a planted probe, fixed with `MYPYPATH`; latent not active (seed
+  error count unchanged, both prior greens re-verified under the fixed instrument).
+- **The stall fuse could be disarmed by the very call it abandoned** (`src/stall.js`, F70). An
+  abandoned call is not dead — it keeps streaming (ms3197n8's socket lived 274 minutes past
+  the fuse) — so a late beat from that corpse re-armed the watch timing its REPLACEMENT, and
+  the replacement could then hang forever without tripping the fuse built for exactly that.
+  One shared `Loop` compounded it, letting a corpse's round bound stop the live call. Now
+  generation-scoped: `watch`/`beat`/`isCurrent` all carry the generation of the call that
+  issued them, and each issued call gets its own `Loop`. Orphan rounds stay metered — an
+  abandoned call may already have been billed.
+- **The outside watchdog could kill a stranger, or kill a live verdict**
+  (`scripts/u-watchdog.mjs`, `scripts/run-u.mjs`, F70). Liveness was `kill(pid, 0)`, which
+  answers "does SOME process hold this pid" — and after the SIGKILL/OOM case the watchdog
+  exists for, the kernel can recycle that pid onto an unrelated process. Liveness is now the
+  PARENT LINK (`process.ppid === pid`), which pid reuse cannot forge, and a guard aimed at a
+  non-parent REFUSES to arm at startup (exit 2, no marker) rather than running as a
+  plausible-looking guard pointed at nothing. Separately, its stale-spine window was sized
+  BELOW the longest legal silence — `runStages` emits nothing between stages, so a legal close
+  can be quiet for `closeTimeoutMs × stages` — and is now sized from the spec's own stage count
+  plus a margin. Test fixtures rewritten so the victim spawns its own watchdog: the only shape
+  that exercises the real parent link. **That closed the stale trigger's half of "kill a live
+  verdict" only:** the DEADLINE trigger still killed on the clock alone, on a wall grace whose
+  default covered one close stage, and hamr ruled the whole trigger must read activity before
+  it signals — the redesign is under *Changed*, below.
+- **The ledger counted every stall as a bareloop bug, and then aimed it at the wrong package**
+  (`src/ledger.js`, F70 + review). `classifyIncidents` had no branch for `step-stalled`, so the
+  F66 fuse's own terminal fell through to "unclassified escalation category" — real upstream
+  evidence filed as a fake defect of ours. It was first routed through the TYPED-LIB branch
+  `interpreter-red` uses, and the rendered ask refuted that: `StallError` stamps
+  `lib: 'bare-agent'` at the throw site, so a live ask read *"bare-agent: the provider path
+  failed — worker stalled…"* when **nothing observed the provider path fail**. A stall is the
+  ABSENCE of beats. `step-stalled` is now a NAMED member of `EXCLUDED_ESCALATIONS` beside
+  `cap-halt` and `wall-halt` (operator ruling, on the wall-halt shape): our own governance
+  firing is not an upstream bug, and the stall evidence still rides the spine's own escalation
+  event, which is where a real ask would be sourced from anyway. Excluded by name, never
+  silently dropped — the excluded-set is executable and counted.
+- **`checkMenu` expanded `needs` one level only** (`src/job.js`, F70), so a chain of
+  prerequisites ran incomplete — reproducing the false red `needs` exists to prevent, one level
+  deeper. Now a transitive fixed-point walk, ordered by close position, visiting each stage at
+  most once (cycle-safe by construction).
+- **`ctx_impact` printed `calls undefined:undefined` for every callee** (`src/tools.js`, F70).
+  litectx returns `defs` and `callers` as objects with a path and a line, but `callees` as bare
+  NAMES; the readout assumed the object shape uniformly.
+- **The aurora U close floored on tests PASSED, not EXECUTED** (`scripts/u-spawner-close.mjs`,
+  the F40 class recurring in a close written after the rule was minted). A skipped or deselected
+  test could hide a red without pushing the passed-count under the floor, and only one summary
+  bucket was read. Now floors on `executed = collected − (skipped + deselected)` and sums every
+  red tally; validated on the real patient (209 executed).
+- `WRITE_VERBS` was declared twice — `src/plan.js` held its own frozen copy of `src/job.js`'s
+  array, so a third write-class verb could land in one and not the other. `plan.js` now
+  re-exports the one inventory (identity-tested, not deep-equal).
+- **One defect, one red:** the mailbox rule fired on a step whose `tools` grant failed to
+  parse, deriving a second red from a false default on top of the correct
+  `missing-required`/`invalid-value` for the bad field. It now fires only on a PARSED grant —
+  the step's hands are unknowable otherwise, and the real defect already redded.
+- **The retrieval verbs' line numbers are named as ONE 0-based handle space**
+  (`src/tools.js`). `recall`, `get` and `impact` all print the index's own 0-based positions —
+  one lower than the line an editor shows — and each now says so in its own tool contract. The
+  tempting alternative (render `impact` 1-based, since its numbers look display-only) was
+  tested against a real index and REFUTED: `impact`'s def range dereferences through `get`
+  verbatim and `recall` prints the same number for the same chunk, so renumbering one tool
+  would print two numbers for one chunk and turn `get`'s clean chunk-boundary refusal into a
+  guessing game.
+- **The wall clock advertised a one-stage close** (`src/clock.js`, `src/planrun.js`, W5).
+  Enforcement is `maxWallMs + closeTimeoutMs` only when the close is ONE command; a staged
+  close (PRD v1.28) runs its stages one at a time and hands EACH the full `closeTimeoutMs`, so
+  a 4-stage close at 900s is 60 minutes of close, not 15 — and the run's own outside watchdog
+  already sized its stale window that way, which made it the same arithmetic disagreeing with
+  itself. `createClock` now takes `closeStages` (threaded from `stageClose`, the ONE staging
+  the runner executes — never a second count), `enforcedMs` is the one expression both the
+  advertised record and the worst case are computed from, and `report()` puts `closeStages` on
+  the `wall-clock` record: without it a reader seeing enforced 90min against a requested 30min
+  cannot tell one 60-minute timeout from four 15-minute stages, and an unexplained gap is
+  exactly the number a later reader rounds back down to the requested one. The `MIN_WALL_MS`
+  floor is deliberately left at one stage — a threshold is operator territory, parked in
+  PRD v1.39 rather than re-derived here.
+- **A run that ABSORBED a stall reported its spend as exact** (`src/run.js`, W1). The terminal
+  `step-stalled` already carried `spendComplete: false`; the common case does not reach it —
+  the F66 fuse abandons the hung call and silently reissues it (self-heal), and an abandoned
+  call is not a call that was never billed. So a run that stalls and then ends green, escalated
+  or at the cap also holds a FLOOR, not a total. `runJob` now watches the `stall` event and the
+  flag is one-way: any absorbed stall makes `spendComplete: false` on the job-end, whatever the
+  outcome. The same honesty applies to the wall: a `wall-halt` that cut a call mid-flight
+  (`cutMidCall`) reports a floor, while a wall stop read BETWEEN iterations — where no call was
+  in flight — stays exact.
+- **The ctx verbs' spine channel was unscrubbed** (`src/planrun.js`). Every field a `ctx-tool`
+  event carries is MODEL-CHOSEN text — a recall query, a stash id, a symbol, a path the worker
+  spelled — and the spine is append-only: a log that captures a key captures it forever. The
+  emitter is now scrubbed once at the WIRING, with the same ONE inventory (`SECRET_PATTERNS`)
+  the close output goes through, so a new ctx verb cannot forget it — seventeen scrubbed call
+  sites would have been seventeen chances to.
+- **A failing `json-valid` exit could put file bytes on the spine** (`src/planrun.js`). An exit
+  detail is supposed to be names and counts, but `json-valid` embeds `JSON.parse`'s own message
+  and V8 quotes a window of the SOURCE inside it — a body of 20 characters or fewer is quoted
+  WHOLE, and the short-prefix secret shapes (`xoxb-…`) fit inside that window — so the detail
+  can carry file bytes the WORKER chose, into a log that is append-only forever. `runPlan` now
+  scrubs every detail once at the `judge()` boundary, with the same ONE inventory
+  (`SECRET_PATTERNS`) the close output and the ctx-verb channel ride through. The boundary is
+  the place, not the three consumers below it: the same details become the `exit-eval` record,
+  a fault's escalation `detail`, and the worker gap ralph puts on the spine as
+  `close-verdict.gap` — scrubbing at the source makes the leak inexpressible, scrubbing per
+  consumer makes it something the next consumer has to remember. `evalExits` itself is
+  untouched and does NOT scrub; it is a public export, so an adopter wiring its results into
+  their own log applies their own redaction.
+- **The stall fuse could reissue a call past the run's wall** (`src/stall.js`, L4). The clock is
+  consulted where a ROUND completes and after a step returns; a stall completes no round and
+  returns from no step, so nothing read it between the wall passing and the next reissue — a
+  worker stalling at its wall could be reissued for up to `maxStalls × stallMs` of calls the run
+  had already declined to authorize. The watch now takes the wall as a callback and reads it
+  FIRST, before the decision to spend again: past the deadline it gives up as `wall-halt`
+  (never `step-stalled`, which is a replan trigger — there is nothing left to re-allocate, and
+  the only remedy is `maxWallMs`). Not a retreat from the self-heal ruling: self-heal is what a
+  run does with time left.
+- **A close that refused SIGTERM hung the run forever** (`src/ralph.js`). On a fault
+  (`ENOBUFS`, timeout) the child is asked to leave, but SIGTERM is a REQUEST — a runner with
+  its own handler or a trapping wrapper can decline it — and there was no second deadline, so
+  no `close` event ever arrived and the run's only remaining stop was the out-of-process
+  watchdog. A 2s grace, then SIGKILL, which nothing can refuse; the timer is `unref`'d so it
+  can never hold the host loop open (F68's whole point) and cleared on `close` so it cannot
+  fire at a child that already left. Verdict semantics are untouched: the FIRST fault already
+  named the outcome and the kill only enforces it.
+- **The ReDoS detector mis-parsed an EMPTY character class and passed the hazard through**
+  (`src/plan.js`, F49). The scan carried the POSIX rule *"a leading `]` is a literal member"* —
+  which is not JS: `[]` is the EMPTY class and `[^]` the any-char idiom, and both CLOSE at that
+  first `]`. Skipping it ran the scan past the class's real end and swallowed every quantifier
+  after it, so `x[^](a+)+$` read as SAFE while `RegExp.test` on it does not finish in 15s on a
+  31-char body — an agent-authored exit pattern that passed validation and then hangs the run's
+  event loop, which is the whole failure F49 exists to make inexpressible. A false NEGATIVE is
+  the dangerous direction, so the scan now follows JS. Four cases join `REDOS_BAD`
+  (`x[^](a+)+$`, `(([^]+))+`, `(([]a+))+`, `[^]x(a+)+`). **The monotonicity claim is stated
+  honestly rather than assumed:** this is a PARSE correction, not the add-rejections-only
+  tightening F49's rule contemplates, and it is not rejection-monotonic by construction.
+  Measured over 14,862 compilable generated patterns (2,369 previously rejected), exactly 2
+  rejections disappear — both pathological `[]`-bearing shapes whose old `true` came from the
+  very misparse being fixed, both verified to finish `RegExp.test` in ~0ms — and every entry of
+  the checked-in `REDOS_BAD`/`GOOD`/`OVERREJECTED` corpus is unchanged. The claim is "measured,
+  no hazard lost", never "monotonic by construction".
+- **The isolate verbs wrote model-authored text into the tree unscrubbed** (`src/tools.js`,
+  `src/validate.js`). `ctx_stash`/`ctx_remember` park worker-chosen bytes in
+  `<workdir>/.litectx` — a file INSIDE the tree that outlives the step and reads back inline
+  through `ctx_recall` — which is the hard line's own sentence (*a record that captures a key
+  captures it forever*), one hop away from the spine it was already written for. Both the
+  PAYLOAD and the KEY now go through `redactSecrets`, a new export housed beside the inventory
+  in `src/validate.js` so detection (`scanSecrets`) and redaction read the ONE
+  `SECRET_PATTERNS` list and cannot drift apart. It is IMPORTED, not injected: an injected
+  redactor is one a future caller can forget to pass, and this leak has to be inexpressible,
+  not optional. Every id-taking verb (`ctx_peek`, `ctx_forget`) scrubs on LOOKUP with the same
+  transform, or a stash would be unreachable by the id the worker spelled; and the
+  `ISOLATE_MAX_BYTES` cap is measured on the SCRUBBED payload — the one that actually enters
+  the store — because a size read off the pre-redaction text reports bytes that never landed
+  (the F6 blind-instrument class). The plan flow's own `scrub` collapses onto the same helper.
+- **The gate audit was the one persistent channel still logging worker-chosen text in
+  cleartext** (`src/planrun.js`). `gate-audit.jsonl` lives IN THE TREE and is append-only, and
+  the `Gate` was built without a `secrets` config — so it ran on bareguard's default-on
+  backstop, which covers `apiKey`/`authorization`/`Bearer …`/`sk-…` and nothing else. Measured:
+  a `ghp_` token landed in cleartext through every model-authored identifier an action carries
+  (an isolate verb's `id`, a path the worker spelled), and masked once the gate is handed
+  `SECRET_PATTERNS`. Content was never reachable here — `toolAction` reduces a write to
+  `{bytes}` — but the identifiers are raw model text. Third channel, same ONE inventory.
+- **A plan `parse-error` could carry the DRAFT's bytes onto the spine** (`src/planrun.js`, the
+  `judge()` precedent one layer up). A `parse-error` red's detail is `JSON.parse`'s own message,
+  and V8 quotes a window of the SOURCE inside it — a body of 20 characters or fewer is quoted
+  WHOLE, which is exactly the short-prefix secret shapes. That source is the model's draft, so
+  the red rode onto `plan-validate`, onto `plan-red`, and back into the redraft prompt. Every
+  red's detail is now scrubbed ONCE at the validation boundary, before any consumer reads it —
+  the boundary, not the three emit sites, because scrubbing here makes the leak inexpressible
+  while scrubbing per consumer makes it something the next consumer has to remember.
+- **A strategy line could name a tool the worker was never granted** (`src/tools.js`,
+  `src/planrun.js`) — F19 inverted, and worse than silence: the model spends rounds reaching
+  for a menu entry that does not exist. The strategy prose was gated per COMPONENT, so any one
+  isolate verb lit a paragraph prescribing `ctx_peek` (a COMPRESS verb), either retrieval verb
+  lit the two-step `ctx_recall` → `ctx_get` recipe, and any one select verb named all three.
+  New `strategyFor(granted)` assembles the same prose SENTENCE BY SENTENCE, each clause gated
+  on its own verb, with the select paragraph's `a, b, and c` grammar preserved. The full-menu
+  text is unchanged BY TEST, not by comment: `strategyFor(TOOL_MENU)` is asserted
+  byte-identical to the concatenated paragraphs, so a partial grant can only ever see LESS,
+  never different.
+- **The eight palette verbs had no failure path** (`src/tools.js`). `ctx_get` has always
+  wrapped its own failures into a refusal RESULT and emitted them; the eight verbs P added
+  (`impact`, `related`, `recent`, `compress`, `stash`, `peek`, `remember`, `forget`) threw
+  straight out of the tool loop instead — and a thrown call is the most invisible result there
+  is, indistinguishable from a verb that was never reached, so the worker's fall-back to a
+  whole-file read reads as a free choice instead of a forced one (the F18 blindness rule). A
+  shared `guarded()` wrapper now hands the worker a refusal naming the real cause (a locked
+  store, a corrupt index) and emits `outcome:'error', bytes:0` to the spine — one round instead
+  of the run, and never a rethrow (L1: throws stay reserved for the BA-4 param-guard class).
+  Its field reader is deliberately defensive, since a field reader that throws would take the
+  emit down with it — the hole this closes.
+- **`validatePlan` could THROW on plain parsed data** (`src/plan.js`). Its contract is that
+  every failure is a named red; `Array.isArray(job.writeScope)` admitted the array and asked
+  nothing about its MEMBERS, so the next line's `globToPrefix` hit `scope.replace is not a
+  function` and a `TypeError` escaped the validator. The fail-closed guard now asks the same
+  `isNonEmptyString` question of each member that `legalScopes` already asks of the same field.
+- **Three enforced rules the drafter prompt never stated** (`src/planrun.js`). A bound the
+  validator reds but the prompt omits is a round burnt on a rule the drafter had no way to
+  know: `attempts` said "integer" while `validatePlan` reds outside `1..capRuns`, and BOTH
+  `step-scope-escape` reds (a `target` outside its own step's narrowed scope; a `tree-changed`
+  scope disjoint from it) were enforced silently. `planPrompt` now takes `capRuns` from the
+  SAME source the validator bounds against — one number, so prompt and validator cannot drift
+  — and states both scope rules in its own voice.
+- **The `check-passes` exit example was the one malformed line among four** (`src/planrun.js`).
+  It carried the enumerated check menu INSIDE its JSON `"name"` string, so the example the
+  drafter is most likely to copy did not parse. The menu now sits BESIDE the example as its own
+  copy-it-character-for-character line, and the regression test parses EVERY exit example, one
+  per `EXIT_TYPES` entry, rather than the single `tree-changed` line it happened to pick.
+- **The U close scripts' suppression rules missed two escapes that the paid runs actually
+  emit, and mislabelled a broken instrument as a timeout** (`scripts/u-litectx-close.mjs`,
+  `scripts/u-spawner-close.mjs`).
+  - The JSDoc WILDCARD (`{*}`, `{?}`) is `any` under a spelling the `any` rule cannot see — it
+    contains no letters. Measured against this repo's own `tsc` (`--noEmit --strict --allowJs
+    --checkJs`): a naked `function f(v)` reports TS7006, while `@param {*}`, `@param { * }`,
+    `@param {?}` and a `@typedef {*} Loose` used from a `@param {Loose}` each report ZERO
+    errors. So the new `any-star` rule matches the tag GENERICALLY (`@\w+`) rather than from a
+    list of tags — a list of tags is a list of holes. `{*[]}` / `{Array<*>}` are deliberately
+    NOT matched: measured, they still error on non-array use, so they are `any[]`, which the
+    `any` rule already covers.
+  - The CAST rule read its type body with `[^}]*`, which an inner brace closes early — so
+    `/** @type {{ a: number }[]} */ (expr)` walked straight through. That shape is not
+    hypothetical: it appears in this repo's own paid U-run diffs (`run3-ms3wawub`,
+    `run-ms5uxhej`). Now `.*`, which is bounded by construction — every rule is tested against
+    ONE diff line at a time.
+  - A `spawnSync` that produced NO exit code was reported as *"timed out"* whatever killed it.
+    Measured shapes (node 22): a timeout is `{status:null, signal:'SIGTERM',
+    error.code:'ETIMEDOUT'}`, a `maxBuffer` overflow is the same with `ENOBUFS`, an external
+    kill is `{status:null, signal:'SIGKILL'}` with no error at all. Collapsing them hands the
+    operator a wrong cause and hides a broken instrument behind a bound that never fired (the
+    casualty-vs-evidence class); each now names itself. The spawner close also gains the
+    sibling's `maxBuffer` (1 << 28) — a red pytest run prints every traceback, and the overflow
+    does not truncate, it SIGTERMs the child, i.e. a real red arriving dressed as an instrument
+    stop.
+- **A close child ending in `process.exit()` drops its own queued stdout, and the runner read
+  the short capture as a short close** (F71, `tests/staged-run.test.js`,
+  `tests/ralph.test.js`). One test's staged-close fixture arrived truncated about 1 run in 250
+  under load — stream ending mid-line, the `FAILED:` names gone, exit code still 1 — which is
+  the F28 failure-names-lost class arriving nondeterministically. Root cause is the CHILD's:
+  node discards whatever is still queued on its stdout pipe when the process calls
+  `process.exit()`, and the parent then sees a clean EOF, a real exit code and no fault, so a
+  lost tail is indistinguishable from a close that simply printed less. Measured 7/500 shorts
+  with `process.exit(1)` against 0/500 with `process.exitCode = 1` on the identical fixture, and
+  12/12 deterministically with a 50ms reader stall. The earlier reading in that test's comment —
+  *"pipe writes are synchronous on Linux, so there is nothing pending to drop"*, and *"only the
+  runClose path loses bytes"* — is REFUTED on both halves and rewritten with the measurements
+  that refuted it. What shipped is the fixture's `process.exitCode` spelling (now named as the
+  fix it is, not a free tidy), a precondition asserting the stage's LAST line reached the gap
+  so a short arrival can never again surface as a confusing `gapKeep` failure three assertions
+  later, and a whole-capture guard pinning the half the RUNNER owns: past the pipe's 64KB
+  capacity, with the host loop frozen mid-stream, a close that exits cleanly is captured WHOLE
+  (mutation-checked — it kills a reader that caps accumulation at 64KB, 4/4). The residual is
+  named, not hidden: the production close scripts still end in `process.exit()`, safe today
+  only because they self-cap their output at 40 lines, which is inside the measured-immune
+  band. See F71.
+
+### Changed
+- **BREAKING for adopters — `runClose` and `runStages` are async and return Promises**
+  (`src/ralph.js`). The close child is awaited instead of `spawnSync`, so a running close no
+  longer freezes the host event loop (F68 — measured: a 3-stage close went from 0 host ticks
+  during 3.5s of close to 126 ticks with a worst gap of 26ms). Every close semantic is
+  byte-identical, verified by a 25-case old-vs-new differential: timeout signal (SIGTERM →
+  `timed-out`), 1 MiB per-stream output ceiling (`ENOBUFS` → broken-close, deliberately not
+  widened — an over-long close must not be judged on truncated output), gap shape/bounds,
+  exit bands, redaction, cwd, stdin EOF. The one visible difference: a spawn fault's detail
+  prose says `spawn` instead of `spawnSync` (nothing parses it).
+- **BREAKING for plan authors — `check-passes` now requires a write-class verb (`write`/`edit`)
+  on the SAME step** (`src/plan.js`, `exit-illegal`). A shape that validated before is rejected
+  now: a read-only "verify" step that carries a check. Measured before it was built (P-read runs
+  ms4l5p6w / ms57zr7c): 4 of 4 drafted plans put every `check-passes` on a read-only verify step,
+  and both runs stalled to cap on a byte-identical gap delivered to a worker that could not edit.
+  A failing check's gap is re-delivered to THAT step's own worker, so the step must be able to act
+  on it — a read-only one is a mailbox with no hands. The check belongs on the step that fixes;
+  the run's final verification is the operator's close, which the agent never authors. The drafter
+  prompt states the same law, so prompt and validator can never disagree. The red is SUPPRESSED
+  when `tools` failed to parse: the step's hands are unknowable then, and charging the ledger with
+  a violation derived from a false default would double-red one defect.
+- **BREAKING for an adopter holding an approval for an omitted-`tools` spec — the spec hash is
+  taken over the RESOLVED spec** (`src/job.js`, MED-1). `tools` is optional and its absence
+  means the whole `TOOL_MENU`; `plan.js` and `planrun.js` resolve it with exactly that
+  predicate at runtime, so an omitted-`tools` spec's ceiling GREW every time the menu did while
+  its bytes never moved — and that widening was unsigned. `jobSpecHash` and `checkApproval` now
+  canonicalize the same resolved form, with an omitted `tools` filled in as the concrete current
+  menu, so a signature pins WHICH menu it covers and a menu change flips the hash straight into
+  the existing refuse-until-reapproved machinery. A spec that named its own ceiling hashes
+  byte-for-byte as before — no migration for a signature already in flight — and an approval
+  minted for an omitted-`tools` spec re-signs once. Writing today's full menu into a spec that
+  omitted `tools` is hash-NEUTRAL, which is the point: the two spell the same ceiling. The
+  resolve sits INSIDE each path's existing throw guard, because a spread runs getters.
+- **The wall PAUSES the run; it never cuts the grade** (`src/planrun.js`, `src/ralph.js`, W-2 —
+  hamr: *"when time is up, keep the grade we already have and stop"*). The close is never
+  bounded by the wall and always runs to completion: a deadline that kills grading leaves the
+  run unreadable after the money is already spent (the F45 class, generalized from money to
+  time). What the wall stops is the START of new work — past the deadline the close-fix loop
+  opens no further iteration, and the same rule covers a step that would begin already expired.
+  The run then stops on the verdict the last close minted, and nothing after the deadline is
+  allowed to change it. The iteration it declines was guaranteed worthless anyway: the metered
+  round check stops the fix worker on its FIRST round so it writes nothing, and the iteration
+  then re-runs the FULL staged close over an unchanged tree to mint the verdict already on the
+  record — `capRuns` times over. The stop is a decision-ready `wall-halt` carrying the verdict
+  that stands, how much of the loop was actually spent, and a progress TREND read off the two
+  most recent close gaps: byte-identical is `stalled`, different is `moving`, and one grade
+  alone is `unknown` — never rounded up to `stalled`, which would recommend rewriting a goal on
+  no evidence (F6's rule applied to a trend). The trend exists because the two levers point
+  opposite ways, and both are spec edits whose new hash needs re-approval: raise `maxWallMs`
+  and resume (resume-to-cap — the stop IS the checkpoint) or revise the goal so the work fits
+  the time; abandon is the third. `cutMidCall` still splits the two readings, so which
+  instrument saw the deadline stays on the record, and the step-site record names its two
+  caps SEPARATELY: `capRuns` is the RUN's attempt cap — what the fix-site record has always
+  written — and `stepAttemptCap` is the step's own tightened cap, the number that actually
+  bounded THIS step. Previously the one key carried both meanings depending on which site
+  emitted it, leaving a reader of two records of the same type no way to tell which. It is
+  not a universal bound and is not claimed as one: a STEP already under way still runs its
+  own exit checks after the deadline.
+- **The close child no longer inherits the operator's credentials** (`src/ralph.js`,
+  `CLOSE_ENV_DENY`, PRD v1.41 — hamr: *"strip it when unnecessary, minimize unneeded
+  exposure"*). `runClose` built the child's env as `{...process.env}` minus
+  `NODE_TEST_CONTEXT`, and that child is not an ordinary subprocess: `npm test`, `pytest`,
+  `tsc` execute **worker-authored code**, with network, in the tree they are about to judge.
+  Nothing that judges a tree needs a provider key, so the exposure bought nothing. Two rules,
+  deliberately both: the KNOWNS (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`,
+  `GOOGLE_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `GITHUB_TOKEN`, `GH_TOKEN`, `NPM_TOKEN`, the whole
+  `AWS_*` prefix) exist only for names the shape rule cannot see, and the NAME-SHAPE rule —
+  anything ending `_API_KEY`/`_SECRET`/`_TOKEN`/`_PASSWORD`/`_CREDENTIAL(S)`, case-insensitive
+  — is the load-bearing one, because a literal denylist is a chase every new provider extends.
+  A COPY is stripped, never `process.env`: the host keeps the key bare-agent spends every
+  round. Placed at `runClose`, the single close-spawn seam, so `runStages` and every derived
+  `check-passes` inherit the same blinding — one instrument, never two. **Stated as what it is:
+  exposure reduction, NOT a sandbox.** bareloop runs locally as the operator's OS user, so
+  worker-authored code still has that user's file access (including the shell profile that
+  exports the variables just stripped) and the network. Real containment is a different
+  mechanism, unbuilt, and claimed nowhere; README and `bareloop.context.md` carry the same
+  boundary note. Arbiter territory: no drafted plan or config can express, widen, or opt out.
+- **Scripts — unshipped, but the surface a user actually runs.**
+  - The outside watchdog's DEADLINE kill is ACTIVITY-AWARE (hamr: *"the kill from outside should
+    check for activity/bytes or other markers for activity, not a silent kill"*). Past the
+    deadline it kills only when the spine has ALSO been flat for a full stall-fuse window;
+    past-deadline-but-still-writing logs LOUD every poll and is never killed — the in-process
+    fuses and the money cap own bounding a run that is alive, this guard owns processes that are
+    dead. Every kill states the trigger, the deadline arithmetic and the marker's value and age
+    before the signal goes out. ONE marker, spine bytes: a CPU marker (`/proc` utime+stime) was
+    built alongside it and REMOVED after measuring broken in BOTH directions — a close runs its
+    suite in a CHILD whose ticks are credited only at reap, so a live close read DEAD; and
+    `run-u`'s own 1s lag sampler wakes the watchdog, so a wedged run read ALIVE at production
+    constants (its kill tests passed only at a dead-window:poll ratio of 5:1 where production
+    runs 60:1). hamr: *"keep what is simpler/available"*.
+  - The wall grace is `stages × closeTimeoutMs`, and `run-u` passes it. The watchdog's own
+    default is ONE stage, so a 4-stage close left on the default put the outside deadline at
+    wall+15min while a legal close can still be mid-verdict at wall+60min. A spec that sets no
+    `maxWallMs` now OMITS `--wall-ms` and names the unbounded choice out loud on both sides of
+    the process boundary, instead of passing the string `undefined` — which fell back to the
+    null default and silently disarmed the deadline trigger while the header still claimed a
+    wall. Same NaN-disarms-a-guard class, one flag over.
+  - `run-u`'s spine leak check is a TRIPWIRE, not a note in the margin: on any hit the run exits
+    **3** (distinct from 2 = operator/config and 1 = stale `--approve`) and the BRIDGE is NOT
+    written — a spine carrying a secret must never graduate into a reusable artifact that
+    outlives the run. Count and path only, never the matched content: echoing it to stdout is
+    the same leak, one hop on.
+  - `run-u` can no longer be killed by its own guard's startup. The watchdog path was taken
+    from `new URL(...).pathname`, which stays percent-ENCODED — a checkout under a directory
+    with a space hands `spawn` a `%20` path that does not exist, and the guard dies at second
+    zero on the one run it exists to protect (`fileURLToPath` now, the spelling the sibling
+    scripts already use). And a spawn failure arrives as an EVENT: an unhandled `'error'` on a
+    ChildProcess is an uncaught exception, so a guard that could not start would have ENDED the
+    paid run. It is handled LOUDLY instead — the run continues UNGUARDED from outside, under
+    its own fuses, wall and money cap, and says so, because a reader must never mistake a
+    missing watchdog marker for "the guard was watching and never fired".
+  - **All nine remaining hand-rolled secret scans in `scripts/` now call the canonical
+    `scanSecrets`** (11 call sites, 2 already canonical). F40 parked the conversion; hamr
+    retired the park on his word, and both risks it guarded were closed by MEASUREMENT rather
+    than assumption — equivalence on 900 spiked real-spine cases (670 hits, 0 divergences,
+    with the comparison demonstrated ABLE to diverge), and archived evidence that can no longer
+    shift. FINDINGS addendum sits on the F40 block; the JSONL spine-reader park is untouched.
+- **litectx ^0.29.1 → ^0.31.0** (LC-3 delivered, yield-only shape — atomicity intact,
+  `setImmediate` between parses). Every worker's index call now passes `{ yield: true }`, so the
+  F66 stall fuse's timers, the wall clock and the lag sampler stay alive through an index pass
+  instead of dying inside one long block. Consumed on the BINDING max-block clause (189–252ms,
+  n=4, 2× headroom) **with the miss on record**: liveness read 54–58% on our fixture against a
+  60% proxy bar, and the criterion was NOT re-amended after measurement.
+- bare-agent 0.34.0 → 0.35.0 (BA-19 delivered: `deadlineMs` total-call bound, `EDEADLINE`,
+  `context.bound` discriminator, terminal by design; bareloop wiring PARKED — the F66 fuse
+  already self-heals this class above the transport).
 
 ### Removed
 - **BREAKING — the legacy operator-authored `steps[]` path is deleted** (PRD v1.32, hamr:
@@ -86,6 +598,53 @@ feature lands, **patch** = docs, fixes, scaffolding.
   - **Threshold decided at 0.5 with that inertness on the table** (hamr, *"keep 0.5"*, PRD
     v1.31). It is therefore a guard set ABOVE the observed population, not a tuned trigger —
     moving it to 0.35 to catch those four points would be fitting the number to the data.
+- **The staged close — the user authors the DESTINATION, never the road** (PRD v1.28, hamr:
+  *"there shouldn't be user authoring anywhere, that defies the point of bareloop"*). `checks[]`
+  is retired outright: a spec that still declares it reds `checks-derived` **by name**, not a
+  bare `unknown-field`. In its place the operator's close becomes an ORDERED LIST of NAMED
+  STAGES, and the check menu the agent picks from is DERIVED from that list — nobody
+  hand-authors a check per job, ever.
+  - `close: [{ name, cmd, expect, judged?, gapKeep?, offer?, needs? }, ...]` (`src/job.js`) —
+    kebab-case unique names, every stage a `predicate` command body (a rubric/hitl stage is
+    inexpressible by shape); `needs` must name EARLIER stages and is incoherent with
+    `offer: false` on the same stage (a chain with nothing to reach it). A single `predicate`
+    close object is legal shorthand the plan flow adapts into a one-stage list; a
+    `gold`/`rubric`/`hitl` object close still validates (the declared-but-locked verdict
+    classes) but the plan flow refuses it at runtime as `close-unsupported` — it names no
+    command to run. `checkMenu(close)` (`src/job.js`) derives the offerable stages, each
+    carrying the ordered chain (prerequisites, then itself) that a `check-passes(name)` pick
+    must run.
+  - `runStages` (`src/ralph.js`) runs a stage list as ONE close: first red renders the verdict,
+    later stages never run; the gap names the failing STAGE, never a culprit file (v1.12/F28
+    untouched); the secrets scrub runs on every stage.
+  - `runPlan` (`src/planrun.js`) wires the close precheck, the check-menu preflight (now
+    emitting `check-menu {offered, hidden?, meaning?}` — a partial menu is a stage that cannot
+    stand alone as a ruler, never a failure), the `check-passes` seam, the outer close, and the
+    fix loop through `runStages`; `validatePlan` (`src/plan.js`) derives its legal
+    `check-passes` names from `checkMenu(job.close)` instead of a separately-signed list. Every
+    job spec in `jobs/` migrated to the staged shape.
+  - **Two decisions taken 2026-07-26 (hamr, *"agreed on both, validate your claims"*), built and
+    validated:**
+    - **Layer R's red-set is the FAILING STAGE's, per attempt.** A staged close has N
+      `gapKeep`s, so `createRoot().observe()` (`src/root.js`) now takes `redStage`/`redKeep`
+      and REFUSES to compare red-sets across a stage change (a different wall is a different
+      failure — the same bucket as one-known-one-UNKNOWN, never a fire). `root-injected` gains
+      an optional `redStage`. **Measured, not assumed:** the rejected alternative — one union
+      `gapKeep` pattern fixed for the run — was rejected because job #4's two close stages are
+      near-clones of one grader (7 of 12 kept-line templates byte-identical), so a union
+      kept-set can read identical across a stage change and false-fire, which "inert when not
+      stuck" forbids.
+    - **The grading stage is not lendable.** Of the six specs in `jobs/`, the four with a final
+      `verdict` stage set `offer: false` on it; the other two have no grading stage at all and
+      hide a `changed-from-seed` PRECONDITION instead. The flag is kept **per-spec**, not as a
+      schema rule — "the last stage is the grade" holds where it applies and is unproven in
+      general. `check-menu` preflight always
+      announces the derived menu either way, so a forgotten flag is visible in the run's own
+      record; a test reads every spec in `jobs/` and reds if any offers a stage NAMED `verdict`.
+      The guard is stated over the convention that exists rather than over position — the fifth
+      spec proved "the last stage is the grade" is not structural.
+  - **Scripted-provider evidence only — the staged close has not yet run against a real
+    model.**
 
 ### Changed
 - **The `tree-changed` scope is now a MENU the agent picks from, not a glob it authors and
