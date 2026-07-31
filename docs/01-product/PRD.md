@@ -2414,3 +2414,13 @@ So the strip removes credential **environment variables** from the child. A loca
 remains **inside the operator's trust boundary**. Real containment — a container, a user
 namespace, a network-denied cgroup — is a different mechanism, unbuilt, and is not claimed
 anywhere. What IS claimed is the ruling: where the exposure is unnecessary, it is stripped.
+
+**2026-07-31 — `names` extended, operator-ruled "add" on delta-review finding L1.** The
+shape rule needs a `_`-bounded suffix, so a MEASURED set of real credential spellings was
+reaching the close child untouched: `PGPASSWORD`, `PGPASSFILE`, `PGSSLKEY`, `MYSQL_PWD`,
+`REDISCLI_AUTH`, `STRIPE_KEY`, `STRIPE_SECRET_KEY`, `SSH_PRIVATE_KEY`, `PRIVATE_KEY`,
+`SECRET_KEY`, and the bare `TOKEN`/`SECRET`/`API_KEY`/`PASSWORD`/`PASSWD`. All are added to
+`names` (documented tool variables only — `PGPASS` is NOT one: libpq names the file with
+`PGPASSFILE`). The shape regex is deliberately NOT loosened: widening it to `*_KEY$` would
+strip ordinary config, and exact-name matching is what keeps `PGHOST`/`SECRETS_DIR`/
+`TOKENIZERS_PARALLELISM` alive — a second over-strip control now asserts exactly that.

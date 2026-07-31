@@ -118,7 +118,12 @@ function spawnClose(cmd, args, { env, cwd, timeoutMs }) {
  * Two rules, deliberately kept BOTH ways round:
  *  - `names` / `prefixes` — the knowns. A literal denylist is a chase (every
  *    new provider mints a new variable), so it is not load-bearing on its own;
- *    it exists for names the shape rule cannot see (`AWS_ACCESS_KEY_ID`).
+ *    it exists for names the shape rule STRUCTURALLY cannot see — either no
+ *    `_`-bounded credential suffix at all (`AWS_ACCESS_KEY_ID`, `PGPASSWORD`,
+ *    `MYSQL_PWD`), a `*_KEY` that is not `*_API_KEY` (`SSH_PRIVATE_KEY`), or a
+ *    BARE spelling with nothing in front of the suffix (`TOKEN`, `SECRET`).
+ *    Names are matched EXACTLY, which is what keeps connection config out of
+ *    the strip (`PGHOST`, `SECRETS_DIR`, `TOKENIZERS_PARALLELISM` all survive).
  *  - `shape` — the NAME-SHAPE rule, which is what bounds the chase: anything
  *    whose name ends in the credential suffixes goes, whoever minted it and
  *    whether or not anyone here has heard of it. Case-insensitive; no `g` flag,
@@ -130,8 +135,18 @@ function spawnClose(cmd, args, { env, cwd, timeoutMs }) {
  */
 export const CLOSE_ENV_DENY = Object.freeze({
   names: Object.freeze([
+    // provider keys
     'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY',
     'ANTHROPIC_AUTH_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN', 'NPM_TOKEN',
+    // credential spellings the shape rule structurally cannot see, because their
+    // names carry no `_`-bounded suffix (operator ruling 2026-07-31, "add", on a
+    // delta-review finding that MEASURED every one of these reaching the child).
+    // Documented tools' own variables, not invented ones:
+    'PGPASSWORD', 'PGPASSFILE', 'PGSSLKEY',   // libpq (`PGPASS` is NOT a libpq variable — the FILE is ~/.pgpass, named by PGPASSFILE)
+    'MYSQL_PWD', 'REDISCLI_AUTH',             // mysql client, redis-cli
+    'STRIPE_KEY', 'STRIPE_SECRET_KEY',        // `*_KEY` is not `*_API_KEY`: the shape rule misses it
+    'SSH_PRIVATE_KEY', 'PRIVATE_KEY', 'SECRET_KEY',
+    'TOKEN', 'SECRET', 'API_KEY', 'PASSWORD', 'PASSWD', // the bare spellings; a suffix rule needs a prefix to bound
   ]),
   prefixes: Object.freeze(['AWS_']),
   shape: /(_API_KEY|_SECRET|_TOKEN|_PASSWORD|_CREDENTIALS?)$/i,

@@ -298,14 +298,17 @@ if it is still there 2s later, ended with SIGKILL: SIGTERM is a request a close 
 The verdict is untouched — the FIRST fault named the outcome and the kill only enforces it.
 
 **The close child's environment is stripped of credential-shaped variables before it runs**
-(`CLOSE_ENV_DENY` in `src/ralph.js`: provider keys, `AWS_*`, and any name ending
-`_API_KEY`/`_SECRET`/`_TOKEN`/`_PASSWORD`/`_CREDENTIAL(S)`) — a close judges a tree and never
+(`CLOSE_ENV_DENY` in `src/ralph.js`: provider keys, `AWS_*`, any name ending
+`_API_KEY`/`_SECRET`/`_TOKEN`/`_PASSWORD`/`_CREDENTIAL(S)`, plus known credential spellings
+the suffix rule cannot see — `PGPASSWORD`, `MYSQL_PWD`, `SSH_PRIVATE_KEY`, bare
+`TOKEN`/`SECRET`/`API_KEY`, …) — a close judges a tree and never
 needs them. A COPY is stripped, never `process.env`, so the host keeps the key it spends every
 round. This is exposure reduction, not a sandbox: worker-authored code run by the close still
 has network and your OS user's permissions. The strip has no opt-out — no plan, config, or
 spec field can widen it — so if your close genuinely needs a credential-shaped variable
 (`AWS_*` regions/profiles included, e.g. a suite booting against localstack with a test DB
-password), it will not be there and the close reds; set such values inside the close command
+password, or `PGPASSWORD` for one that hits a real postgres), it will not be there and the
+close reds; set such values inside the close command
 itself, not the inherited environment.
 
 **The forbidden zone (PRD v1.11 / F17).** `runClose` returns a verdict ONLY when judgment

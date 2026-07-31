@@ -145,10 +145,12 @@ test('a real node --test close reds under the test runner (NODE_TEST_CONTEXT str
 // back out — the only instrument that can see what the child actually got. ----
 
 /** A close that reports which of the named vars its own process can see, plus
- * whether PATH/HOME survived. Exits 1 so the report rides out as the gap. */
-const envProbe = (/** @type {string[]} */ names) => ['node', '-e',
-  `const want=${JSON.stringify(names)};`
+ * whether PATH/HOME survived. `keep` is the over-strip control: names that must
+ * ALL still be there. Exits 1 so the report rides out as the gap. */
+const envProbe = (/** @type {string[]} */ names, /** @type {string[]} */ keep = []) => ['node', '-e',
+  `const want=${JSON.stringify(names)}; const keep=${JSON.stringify(keep)};`
   + 'console.log("SEEN=" + want.filter((k) => k in process.env).join(","));'
+  + 'console.log("LOST=" + keep.filter((k) => !(k in process.env)).join(","));'
   + 'console.log("PATH=" + (process.env.PATH ? 1 : 0) + " HOME=" + (process.env.HOME ? 1 : 0));'
   + 'console.log("BENIGN=" + (process.env.BARELOOP_TEST_BENIGN ?? "")); process.exit(1)'];
 
@@ -173,16 +175,31 @@ test('the close child cannot read the operator\'s credentials — explicit names
     // the name-shape rule, on names no literal list would ever hold
     ACME_INTERNAL_API_KEY: 'acme', VAULT_SECRET: 'v', SOME_SERVICE_TOKEN: 't',
     DB_PASSWORD: 'p', GOOGLE_APPLICATION_CREDENTIALS: '/tmp/creds.json', MY_CREDENTIAL: 'c',
+    // the credential spellings the shape rule CANNOT see — no `_`-bounded suffix
+    // (measured surviving into the child; operator ruling 2026-07-31, "add")
+    PGPASSWORD: 'pg', PGPASSFILE: '/tmp/.pgpass', PGSSLKEY: '/tmp/client.key',
+    MYSQL_PWD: 'my', REDISCLI_AUTH: 'r',
+    STRIPE_KEY: 'sk_test', STRIPE_SECRET_KEY: 'sk_live',
+    SSH_PRIVATE_KEY: '-----BEGIN', PRIVATE_KEY: '-----BEGIN', SECRET_KEY: 'django',
+    TOKEN: 't', SECRET: 's', API_KEY: 'k', PASSWORD: 'p', PASSWD: 'p',
     // the control: a benign var with no credential shape must still reach the close
     BARELOOP_TEST_BENIGN: 'kept',
   };
-  await withParentEnv(planted, async () => {
+  // the over-strip control: connection CONFIG and near-miss names are not
+  // credentials and must survive (the exact-name match is what keeps them).
+  const benign = {
+    PGHOST: 'localhost', PGUSER: 'postgres', PGDATABASE: 'app', MYSQL_HOST: 'localhost',
+    TOKENIZERS_PARALLELISM: 'false', SECRETS_DIR: '/run/secrets', API_KEYS_PATH: '/tmp/k',
+  };
+  await withParentEnv({ ...planted, ...benign }, async () => {
     const names = Object.keys(planted).filter((k) => k !== 'BARELOOP_TEST_BENIGN');
+    const keep = Object.keys(benign);
     // confound check: the hazard must be present in THIS process or the test is vacuous
     assert.ok(names.every((k) => k in process.env), 'the parent must hold every planted var');
-    const v = await runClose(envProbe(names));
+    const v = await runClose(envProbe(names, keep));
     assert.equal(v.verdict, 'needs_revision');
     assert.match(v.gap, /^SEEN=$/m, `no credential-shaped var may reach the close child — got: ${v.gap}`);
+    assert.match(v.gap, /^LOST=$/m, `config and near-miss names are not credentials — got: ${v.gap}`);
     assert.match(v.gap, /^PATH=1 HOME=1$/m, 'PATH and HOME are what a close needs to RUN — they survive');
     assert.match(v.gap, /^BENIGN=kept$/m, 'a benign var still reaches the close (the strip is a denylist, not an allowlist)');
   });
