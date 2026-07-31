@@ -307,3 +307,95 @@ test('money on the job-end: an UNPRICED round halts pricing-red and the priced s
   assert.equal(end.outcome, 'pricing-red');
   assert.equal(end.spendComplete, false, 'the sum is a floor, and says so');
 });
+
+// ── F64 at the job-end: `wall-halt` is TWO stops wearing one name, and only one of
+// them states an exact figure. A deadline read BETWEEN rounds (or between attempts,
+// W-2) stops a run with nothing in flight — every round it counted came back and was
+// billed, so the sum IS the total. A deadline that landed INSIDE a call comes back as
+// the provider's own timeout, and that call returned no usage at all: it may already
+// have been billed and will never say so. Same unknown as the transport floor and the
+// self-healed stall above, so the same honest answer — and the discriminator is the
+// wall-halt record's own `cutMidCall`, never the outcome (keying on the outcome would
+// floor the exact stop too, which is the same dishonesty pointing the other way).
+//
+// The wall is mocked at `Date`, the one seam a runJob-level test has: `maxWallMs` has
+// a two-minute floor (MIN_WALL_MS — a cap under one close cannot fund its own close),
+// so a real-time test would have to run for two minutes to read a deadline. Only Date
+// is mocked; setTimeout, the spawned close and the real plan flow are untouched.
+
+/** the plan-shape job with the operator's time cap set at its floor */
+const wallJob = () => ({ ...planJob(), maxWallMs: 120_000 });
+
+const etimedout = () => Object.assign(new Error('[AnthropicProvider] request timed out'), { code: 'ETIMEDOUT' });
+
+test('a MID-CALL wall-halt states spendComplete:false — the cut call returned no usage, so the priced sum is a FLOOR (F64/F6)', async (t) => {
+  const wd = makePlanWork('wall-mid-call');
+  const job = wallJob();
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
+  let n = 0;
+  const provider = {
+    calls: [],
+    async generate() {
+      n += 1;
+      provider.calls.push(n);
+      // the scout answers and is billed; the DRAFTING call is the one the wall lands
+      // inside, and it rejects with exactly the timeout clock.callTimeoutMs() asked for
+      if (n === 2) { t.mock.timers.tick(200_000); throw etimedout(); }
+      return { text: 'no tests exist yet', usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(job, { approvals: approve(job), workdir: wd, provider, emit: makeSpine(file), capRuns: 2 });
+
+  assert.equal(outcome, 'wall-halt', 'the run\'s own deadline is a governance stop, never a transport casualty (F64)');
+  const events = readSpine(file);
+  assert.equal(events.find((e) => e.type === 'wall-halt').cutMidCall, true,
+    'the discriminator is ON the record — the meter reads the field, it does not re-derive the reading');
+  const end = events.find((e) => e.type === 'job-end');
+  assert.equal(end.outcome, 'wall-halt');
+  assert.ok(end.spentUsd > 0, 'the priced sum still rides out — a floor is a real number, not a blank');
+  assert.equal(end.spendComplete, false, 'the cut call may already have been billed and never told us: the sum is a FLOOR and says so');
+});
+
+test('CONTROL: a BETWEEN-ATTEMPTS wall-halt keeps spendComplete:true — nothing was in flight, so the exact total must not be dressed up as a floor', async (t) => {
+  const wd = makePlanWork('wall-between-attempts');
+  const job = wallJob();
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write the missing test.', tools: ['write'], rounds: 6,
+      target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    }],
+  });
+  let n = 0;
+  const provider = {
+    calls: [],
+    async generate() {
+      n += 1;
+      provider.calls.push(n);
+      const scripted = [{ text: 'no tests exist yet' }, { text: plan }][n - 1] ?? { text: 'a step attempt that must never be bought' };
+      return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const file = join(wd, 'spine.jsonl');
+  // the wall passes once the plan is ACCEPTED — the run's own state, never a call
+  // count, so the trigger cannot silently retarget if the number of calls changes
+  const spine = makeSpine(file);
+  const emit = (/** @type {string} */ type, /** @type {any} */ data) => {
+    const e = spine(type, data);
+    if (type === 'plan-accepted') t.mock.timers.tick(200_000);
+    return e;
+  };
+  const outcome = await runJob(job, { approvals: approve(job), workdir: wd, provider, emit, capRuns: 2 });
+
+  assert.equal(outcome, 'wall-halt', 'the first step would begin past the deadline, so it is never funded (W-2 at the step site)');
+  const events = readSpine(file);
+  assert.equal(events.find((e) => e.type === 'wall-halt').cutMidCall, false, 'read between attempts, with no call in flight');
+  const end = events.find((e) => e.type === 'job-end');
+  assert.equal(end.outcome, 'wall-halt');
+  assert.ok(end.spentUsd > 0, 'the scout and the draft were bought and billed');
+  assert.equal(end.spendComplete, true,
+    'every round this sum counted came back priced — the flag tracks the mid-call cut, not merely "a wall-halt happened"');
+});

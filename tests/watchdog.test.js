@@ -137,6 +137,11 @@ test('a run PAST the deadline but still ACTIVE is NOT killed — and says so, lo
   // alone no longer kills: the in-process fuses and the money cap bound a run that
   // is alive, and this guard bounds one that is dead. Killing a progressing run at
   // the deadline is how a live verdict gets destroyed mid-close.
+  //
+  // Its liveness is BYTES — the beat below appends real spine events. That is the
+  // only liveness the guard reads (the CPU marker was removed as measured-broken),
+  // and this test is the live half of the should-differ spine pair whose dead half
+  // is the kill test below.
   const { dir, spine } = tmp(t);
   writeFileSync(spine, '{"type":"job-start"}\n');
   const w = guardedRun(t, ['--spine', spine, '--stale-ms', '60000', '--wall-ms', '400', '--grace-ms', '200', '--dead-ms', '400', '--poll-ms', '100']);
@@ -150,50 +155,65 @@ test('a run PAST the deadline but still ACTIVE is NOT killed — and says so, lo
   assert.equal(existsSync(join(dir, 'spine.jsonl.watchdog.json')), false, 'no kill, no verdict');
 });
 
-test('past the deadline with every marker flat, the run is killed — and the kill names the deadline and the markers', async (t) => {
+test('past the deadline with the spine flat, the run is killed — and the kill names the deadline and the marker', async (t) => {
   // The other half of the pair. Same shape as the test above, one difference: this
-  // victim is idle, so nothing is moving — no bytes, no CPU. `--stale-ms 60000`
-  // puts the stale trigger far out of reach, so the ONLY thing that can fire here
-  // is the deadline trigger.
+  // victim writes nothing, so the spine is cold. `--stale-ms 60000` puts the stale
+  // trigger far out of reach, so the ONLY thing that can fire here is the deadline
+  // trigger.
+  //
+  // The window is sized at the PRODUCTION RATIO, not at a value that merely fires
+  // fast: dead:poll is 60:1 here exactly as it is in production (300_000 : 5_000),
+  // so the marker has to stay flat across ~60 real polls to earn the kill. The
+  // earlier version of this test ran at `--dead-ms 500` — three orders below
+  // production — which is precisely how a marker that can never go flat at the real
+  // constants passed its tests anyway.
   const { dir, spine } = tmp(t);
   writeFileSync(spine, '{"type":"job-start"}\n');
-  const w = guardedRun(t, ['--spine', spine, '--stale-ms', '60000', '--wall-ms', '400', '--grace-ms', '200', '--dead-ms', '500', '--poll-ms', '100']);
+  const w = guardedRun(t, ['--spine', spine, '--stale-ms', '60000', '--wall-ms', '400', '--grace-ms', '200', '--dead-ms', '3000', '--poll-ms', '50']);
   await waitUntil(() => !alive(w.proc.pid));
-  assert.equal(alive(w.proc.pid), false, 'past its deadline and executing nothing at all, the run is dead — that is this guard\'s job');
+  assert.equal(alive(w.proc.pid), false, 'past its deadline and producing nothing at all, the run is dead — that is this guard\'s job');
   assert.match(w.output(), /KILL wall-dead/, 'the kill is announced before the signal, never after');
   assert.match(w.output(), /past the deadline/i, 'it says WHICH deadline passed');
-  assert.match(w.output(), /markers checked/, 'and which markers it looked at');
+  assert.match(w.output(), /marker checked/, 'and which marker it looked at');
   assert.match(w.output(), /"spine":\{.*"coldMs"/, 'with the spine marker\'s own last value and age');
-  assert.match(w.output(), /"cpu":\{/, 'and the CPU marker\'s');
   const rec = JSON.parse(readFileSync(join(dir, 'spine.jsonl.watchdog.json'), 'utf8'));
   assert.equal(rec.reason, 'wall-dead');
   assert.equal(rec.enforcedMs, 600, 'the deadline it enforced is wall + grace, on the record');
   assert.match(rec.judgement, /flat/, 'the record says why the process was judged dead, not just that it was killed');
-  assert.ok(rec.markers.spine.coldMs >= 500, 'the marker ages are the evidence — they belong in the record');
-  // The repo's own platform is Linux, where the CPU marker is real. The other branch
-  // (`markers.cpu.unavailable`) is the documented degrade for a host without /proc,
-  // announced at startup rather than left silent.
-  if (process.platform === 'linux') assert.equal(typeof rec.markers.cpu.ticks, 'number', 'on Linux the CPU marker is a real /proc reading');
+  assert.ok(rec.markers.spine.coldMs >= 3000, 'the marker age is the evidence — it belongs in the record');
 });
 
-test('a busy-looping victim past the deadline is held alive by the CPU marker alone', async (t) => {
-  // The pair that proves the /proc marker is WIRED, not decorative: identical flags
-  // to the test above and an equally cold spine — the one difference is that this
-  // victim burns CPU. The idle one dies; this one must not. Two should-differ
-  // conditions that produced the same result would mean the marker was never read.
+test('a busy-looping victim past the deadline is killed too — burning CPU is not progress', async (t) => {
+  // This test used to assert the opposite: that a /proc CPU marker held this victim
+  // alive. That marker is gone, because it was MEASURED broken both directions —
+  // dead-reading a live close (a child's ticks land on the parent only at reap) and
+  // alive-reading a dead run (run-u's own 1s lag sampler moves the parent's ticks
+  // every ~3.3s, so at the production dead window it could never go flat). hamr's
+  // ruling: "keep what is simpler/available" — the spine.
   //
-  // It is also the deliberate asymmetry: this process IS wedged (a `for(;;)` never
-  // finishes a job), and CPU cannot tell working from spinning. So the CPU marker
-  // only ever DELAYS the kill to the stale window — which is 60s away here, and is
-  // the trigger that reaps this shape in the F67 test above.
+  // So the pair below is deliberately no longer a should-differ pair on CPU: this
+  // victim and the idle one above differ ONLY in CPU, and must now share a fate.
+  // The should-differ pair that proves the marker is wired is the SPINE one — the
+  // beating-spine test above lives, this cold-spine one dies.
+  //
+  // It is not a duplicate of the hard-frozen F67 test either: that one reaches this
+  // same victim through the STALE trigger, this one through the DEADLINE trigger
+  // (`--stale-ms 60000` holds stale out of reach). A `for(;;)` process is wedged —
+  // it will never finish a job — and both triggers must be able to reap it.
   const { dir, spine } = tmp(t);
   writeFileSync(spine, '{"type":"job-start"}\n');
-  const w = guardedRun(t, ['--spine', spine, '--stale-ms', '60000', '--wall-ms', '400', '--grace-ms', '200', '--dead-ms', '500', '--poll-ms', '100'], { freeze: true });
-  await waitUntil(() => /PAST DEADLINE/.test(w.output()));
-  await sleep(1500);
-  assert.equal(alive(w.proc.pid), true, 'a process that is still executing is not judged dead by the clock');
-  assert.match(w.output(), /still ACTIVE on cpu/, 'and the CPU marker is named as the one holding the kill off');
-  assert.equal(existsSync(join(dir, 'spine.jsonl.watchdog.json')), false, 'no kill, no verdict');
+  const w = guardedRun(t, ['--spine', spine, '--stale-ms', '60000', '--wall-ms', '400', '--grace-ms', '200', '--dead-ms', '3000', '--poll-ms', '50'], { freeze: true });
+  await waitUntil(() => !alive(w.proc.pid));
+  assert.equal(alive(w.proc.pid), false, 'a spun-out loop burns CPU forever and produces nothing — the deadline trigger must still reap it');
+  assert.match(w.output(), /KILL wall-dead/, 'and it dies to the deadline trigger, not only to the stale one');
+  // The victim burns a core the whole time, so a CPU marker would have vetoed this
+  // kill forever. Nothing in the guard's own words may name CPU as liveness — this
+  // is the assertion that fails the moment the marker is wired back in. (The
+  // `still ACTIVE on spine` lines before the kill are correct and expected: the
+  // deadline at wall+grace is crossed before the dead window has run out.)
+  assert.doesNotMatch(w.output(), /cpu/i, 'CPU is not liveness any more — only real spine bytes hold the kill off');
+  const rec = JSON.parse(readFileSync(join(dir, 'spine.jsonl.watchdog.json'), 'utf8'));
+  assert.equal(rec.reason, 'wall-dead');
 });
 
 test('the watchdog exits on its own when the run finishes normally', async (t) => {

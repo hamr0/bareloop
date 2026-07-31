@@ -20,6 +20,23 @@
 //      outside watchdog already sized its stale window this way
 //      (scripts/run-u.mjs: `CLOSE_TIMEOUT_MS * spec.close.length`); the clock
 //      quoting the 1× number was the same arithmetic disagreeing with itself.
+//      That figure counts ONE close, and the RUNNER is what holds both of its loops
+//      to one: past the deadline it refuses to open a new fix iteration and stops on
+//      the verdict the last close already minted (W-2), and it refuses to open a
+//      STEP's attempt on the same reading — a step that would begin past the deadline
+//      is never funded. Before that second refusal a step starting with zero time left
+//      burned every attempt it was allowed (measured on the real flow: three attempts,
+//      three judged exits, all past the deadline), because the variance meter scores a
+//      step's time share against what the run had left when the step BEGAN and so is
+//      structurally blind to a step that began with nothing.
+//      It is still not a universal bound and is not claimed as one. Two overshoots
+//      remain outside this number, both deliberate. A step ALREADY UNDER WAY when the
+//      deadline trips finishes its attempt and runs its own exit checks (themselves
+//      close stages, at the full timeout each): grading real work always completes, or
+//      the run is unreadable after the money is spent. And that same mid-step deadline
+//      still routes through the ONE replan — the meter's own terminal, unchanged — so
+//      it pays a drafting call (floored at MIN_CALL_TIMEOUT_MS) before the new plan's
+//      first step is the one refused.
 //   2. BA-18's provider timeout is the only instrument that fires on the ABSENCE
 //      of events. Measured (F61/C2): 1,259ms against a socket that accepts and
 //      never answers; without it the bound is the OS TCP timeout (~2h). Deriving

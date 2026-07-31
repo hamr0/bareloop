@@ -65,6 +65,50 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - **Event-loop lag sampler** in `scripts/run-u.mjs`: records any ≥3s loop block with
   from/until timestamps to `<spine>.lag.jsonl` — the instrument that localized the
   spawnSync-close blocks (below) on its first run.
+- **BREAKING for plan authors — `step-scope-escape`: a scoped step's TARGET must sit inside
+  its OWN narrowed scope** (`src/plan.js`, W3). A plan that validated before can red now. A
+  step may narrow the signed fence with `scope`, and `runPlan` builds that step's gate from
+  the narrowed prefix — so a target inside the signed fence but outside the step's own scope
+  was a write the gate denied on every attempt: the step burned its whole attempt budget on
+  refusals with no red anywhere, because each half was individually legal and nothing checked
+  the PAIR. The rule binds WRITES, not observations, and the exit arms were measured against
+  `src/exits.js` rather than assumed. `tree-changed` reds only when its scope is DISJOINT from
+  the step's — a scope that CONTAINS the step's contains its writable ground and fires exactly
+  when the narrow one does, and the menu is shallowest-first while the prompt says copy one
+  value, so containment would tax the likeliest draft (the F60 class `legalScopes` exists to
+  remove). `artifact-written`/`json-valid` paths carry NO step-scope red at all: the evaluator
+  reads and parses the named file and asks nothing about who wrote it, so a path naming a
+  PRIOR step's artifact is legal AND satisfiable under strictly-sequential v1 — a red there
+  would claim a constraint the evaluator does not impose. An off-menu `scope` carries no
+  narrowing (it already redded): one defect, one red.
+- **Four documented names are now actually exported** (`src/index.js`): `runStages`,
+  `checkMenu`, `STORE_VERBS` and `stageClose`. Each was named as adopter-reachable in this
+  CHANGELOG or in `bareloop.context.md` while the index never handed it out — a
+  documented-but-unexported name is a false contract the adopter discovers by importing it.
+  `tests/index.test.js` pins the documented surface by name (a NAME check; each export's
+  semantics stay owned by its own module's tests), so the docs and the index cannot drift
+  apart silently again.
+- **A per-payload cap on the isolate verbs** — `ISOLATE_MAX_BYTES` = 64KB, hamr's threshold
+  (`src/tools.js`). `ctx_stash`/`ctx_remember` write the `.litectx` store, which the
+  writeScope fence does not judge: the one worker surface that writes UNGATED bytes, and
+  unbounded it grows for as many rounds as the wallet funds. Over-cap comes back as a refusal
+  RESULT naming the actual size and the limit — worker feedback, never a throw (throws stay
+  the BA-4 param-guard class) — and nothing enters the store; both tool descriptions state
+  the bound. The residual is named rather than hidden: this bounds ONE PAYLOAD, and N
+  distinct ids are N payloads, so the aggregate stays unbounded. An aggregate cap is a
+  threshold, and thresholds are hamr's call.
+- **`step-stalled` has its own DECISIONS entry** (`src/ralph.js`). F66's terminal fell through
+  to the generic default, which points a human at the interpreter — the one component that did
+  nothing wrong. A stall is not a fault: the socket stayed alive the whole time (that is the
+  measured mechanism), so the entry says so and leads with the planner's lever (replan) instead
+  of sending anyone to debug transport.
+- **`ctx_impact` ships litectx's hedges** (`src/tools.js`), as `caveat` lines. litectx's impact
+  is deliberately asymmetric — over-count safe, under-count dangerous — so "isolated / low
+  risk" only ever ships HEDGED, and dropping the caveat left `risk low — 0 confirmed caller(s)`
+  reading as a licence to change the symbol freely, the one act the asymmetry exists to
+  prevent. The spine's `hits` field is counted BEFORE the caveats are appended and keeps its
+  old meaning (impact content) — a caveat qualifies the count, it is not more of it, and
+  re-meaning a shipped field is how a field stops measuring what its readers think it measures.
 
 ### Fixed
 - **The close-fix loop laundered a transport casualty into a flat `escalated`**
@@ -116,7 +160,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
   BELOW the longest legal silence — `runStages` emits nothing between stages, so a legal close
   can be quiet for `closeTimeoutMs × stages` — and is now sized from the spec's own stage count
   plus a margin. Test fixtures rewritten so the victim spawns its own watchdog: the only shape
-  that exercises the real parent link.
+  that exercises the real parent link. **That closed the stale trigger's half of "kill a live
+  verdict" only:** the DEADLINE trigger still killed on the clock alone, on a wall grace whose
+  default covered one close stage, and hamr ruled the whole trigger must read activity before
+  it signals — the redesign is under *Changed*, below.
 - **The ledger counted every stall as a bareloop bug** (`src/ledger.js`, F70).
   `classifyIncidents` had no branch for `step-stalled`, so the F66 fuse's own terminal fell
   through to "unclassified escalation category" — real upstream evidence filed as a fake defect
@@ -150,6 +197,51 @@ feature lands, **patch** = docs, fixes, scaffolding.
   verbatim and `recall` prints the same number for the same chunk, so renumbering one tool
   would print two numbers for one chunk and turn `get`'s clean chunk-boundary refusal into a
   guessing game.
+- **The wall clock advertised a one-stage close** (`src/clock.js`, `src/planrun.js`, W5).
+  Enforcement is `maxWallMs + closeTimeoutMs` only when the close is ONE command; a staged
+  close (PRD v1.28) runs its stages one at a time and hands EACH the full `closeTimeoutMs`, so
+  a 4-stage close at 900s is 60 minutes of close, not 15 — and the run's own outside watchdog
+  already sized its stale window that way, which made it the same arithmetic disagreeing with
+  itself. `createClock` now takes `closeStages` (threaded from `stageClose`, the ONE staging
+  the runner executes — never a second count), `enforcedMs` is the one expression both the
+  advertised record and the worst case are computed from, and `report()` puts `closeStages` on
+  the `wall-clock` record: without it a reader seeing enforced 90min against a requested 30min
+  cannot tell one 60-minute timeout from four 15-minute stages, and an unexplained gap is
+  exactly the number a later reader rounds back down to the requested one. The `MIN_WALL_MS`
+  floor is deliberately left at one stage — a threshold is operator territory, parked in
+  PRD v1.39 rather than re-derived here.
+- **A run that ABSORBED a stall reported its spend as exact** (`src/run.js`, W1). The terminal
+  `step-stalled` already carried `spendComplete: false`; the common case does not reach it —
+  the F66 fuse abandons the hung call and silently reissues it (self-heal), and an abandoned
+  call is not a call that was never billed. So a run that stalls and then ends green, escalated
+  or at the cap also holds a FLOOR, not a total. `runJob` now watches the `stall` event and the
+  flag is one-way: any absorbed stall makes `spendComplete: false` on the job-end, whatever the
+  outcome. The same honesty applies to the wall: a `wall-halt` that cut a call mid-flight
+  (`cutMidCall`) reports a floor, while a wall stop read BETWEEN iterations — where no call was
+  in flight — stays exact.
+- **The ctx verbs' spine channel was unscrubbed** (`src/planrun.js`). Every field a `ctx-tool`
+  event carries is MODEL-CHOSEN text — a recall query, a stash id, a symbol, a path the worker
+  spelled — and the spine is append-only: a log that captures a key captures it forever. The
+  emitter is now scrubbed once at the WIRING, with the same ONE inventory (`SECRET_PATTERNS`)
+  the close output goes through, so a new ctx verb cannot forget it — seventeen scrubbed call
+  sites would have been seventeen chances to.
+- **The stall fuse could reissue a call past the run's wall** (`src/stall.js`, L4). The clock is
+  consulted where a ROUND completes and after a step returns; a stall completes no round and
+  returns from no step, so nothing read it between the wall passing and the next reissue — a
+  worker stalling at its wall could be reissued for up to `maxStalls × stallMs` of calls the run
+  had already declined to authorize. The watch now takes the wall as a callback and reads it
+  FIRST, before the decision to spend again: past the deadline it gives up as `wall-halt`
+  (never `step-stalled`, which is a replan trigger — there is nothing left to re-allocate, and
+  the only remedy is `maxWallMs`). Not a retreat from the self-heal ruling: self-heal is what a
+  run does with time left.
+- **A close that refused SIGTERM hung the run forever** (`src/ralph.js`). On a fault
+  (`ENOBUFS`, timeout) the child is asked to leave, but SIGTERM is a REQUEST — a runner with
+  its own handler or a trapping wrapper can decline it — and there was no second deadline, so
+  no `close` event ever arrived and the run's only remaining stop was the out-of-process
+  watchdog. A 2s grace, then SIGKILL, which nothing can refuse; the timer is `unref`'d so it
+  can never hold the host loop open (F68's whole point) and cleared on `close` so it cannot
+  fire at a child that already left. Verdict semantics are untouched: the FIRST fault already
+  named the outcome and the kill only enforces it.
 
 ### Changed
 - **BREAKING for adopters — `runClose` and `runStages` are async and return Promises**
@@ -172,6 +264,69 @@ feature lands, **patch** = docs, fixes, scaffolding.
   prompt states the same law, so prompt and validator can never disagree. The red is SUPPRESSED
   when `tools` failed to parse: the step's hands are unknowable then, and charging the ledger with
   a violation derived from a false default would double-red one defect.
+- **BREAKING for an adopter holding an approval for an omitted-`tools` spec — the spec hash is
+  taken over the RESOLVED spec** (`src/job.js`, MED-1). `tools` is optional and its absence
+  means the whole `TOOL_MENU`; `plan.js` and `planrun.js` resolve it with exactly that
+  predicate at runtime, so an omitted-`tools` spec's ceiling GREW every time the menu did while
+  its bytes never moved — and that widening was unsigned. `jobSpecHash` and `checkApproval` now
+  canonicalize the same resolved form, with an omitted `tools` filled in as the concrete current
+  menu, so a signature pins WHICH menu it covers and a menu change flips the hash straight into
+  the existing refuse-until-reapproved machinery. A spec that named its own ceiling hashes
+  byte-for-byte as before — no migration for a signature already in flight — and an approval
+  minted for an omitted-`tools` spec re-signs once. Writing today's full menu into a spec that
+  omitted `tools` is hash-NEUTRAL, which is the point: the two spell the same ceiling. The
+  resolve sits INSIDE each path's existing throw guard, because a spread runs getters.
+- **The wall PAUSES the run; it never cuts the grade** (`src/planrun.js`, `src/ralph.js`, W-2 —
+  hamr: *"when time is up, keep the grade we already have and stop"*). The close is never
+  bounded by the wall and always runs to completion: a deadline that kills grading leaves the
+  run unreadable after the money is already spent (the F45 class, generalized from money to
+  time). What the wall stops is the START of new work — past the deadline the close-fix loop
+  opens no further iteration, and the same rule covers a step that would begin already expired.
+  The run then stops on the verdict the last close minted, and nothing after the deadline is
+  allowed to change it. The iteration it declines was guaranteed worthless anyway: the metered
+  round check stops the fix worker on its FIRST round so it writes nothing, and the iteration
+  then re-runs the FULL staged close over an unchanged tree to mint the verdict already on the
+  record — `capRuns` times over. The stop is a decision-ready `wall-halt` carrying the verdict
+  that stands, how much of the loop was actually spent, and a progress TREND read off the two
+  most recent close gaps: byte-identical is `stalled`, different is `moving`, and one grade
+  alone is `unknown` — never rounded up to `stalled`, which would recommend rewriting a goal on
+  no evidence (F6's rule applied to a trend). The trend exists because the two levers point
+  opposite ways, and both are spec edits whose new hash needs re-approval: raise `maxWallMs`
+  and resume (resume-to-cap — the stop IS the checkpoint) or revise the goal so the work fits
+  the time; abandon is the third. `cutMidCall` still splits the two readings, so which
+  instrument saw the deadline stays on the record. It is not a universal bound and is not
+  claimed as one: a STEP already under way still runs its own exit checks after the deadline.
+- **Scripts — unshipped, but the surface a user actually runs.**
+  - The outside watchdog's DEADLINE kill is ACTIVITY-AWARE (hamr: *"the kill from outside should
+    check for activity/bytes or other markers for activity, not a silent kill"*). Past the
+    deadline it kills only when the spine has ALSO been flat for a full stall-fuse window;
+    past-deadline-but-still-writing logs LOUD every poll and is never killed — the in-process
+    fuses and the money cap own bounding a run that is alive, this guard owns processes that are
+    dead. Every kill states the trigger, the deadline arithmetic and the marker's value and age
+    before the signal goes out. ONE marker, spine bytes: a CPU marker (`/proc` utime+stime) was
+    built alongside it and REMOVED after measuring broken in BOTH directions — a close runs its
+    suite in a CHILD whose ticks are credited only at reap, so a live close read DEAD; and
+    `run-u`'s own 1s lag sampler wakes the watchdog, so a wedged run read ALIVE at production
+    constants (its kill tests passed only at a dead-window:poll ratio of 5:1 where production
+    runs 60:1). hamr: *"keep what is simpler/available"*.
+  - The wall grace is `stages × closeTimeoutMs`, and `run-u` passes it. The watchdog's own
+    default is ONE stage, so a 4-stage close left on the default put the outside deadline at
+    wall+15min while a legal close can still be mid-verdict at wall+60min. A spec that sets no
+    `maxWallMs` now OMITS `--wall-ms` and names the unbounded choice out loud on both sides of
+    the process boundary, instead of passing the string `undefined` — which fell back to the
+    null default and silently disarmed the deadline trigger while the header still claimed a
+    wall. Same NaN-disarms-a-guard class, one flag over.
+  - `run-u`'s spine leak check is a TRIPWIRE, not a note in the margin: on any hit the run exits
+    **3** (distinct from 2 = operator/config and 1 = stale `--approve`) and the BRIDGE is NOT
+    written — a spine carrying a secret must never graduate into a reusable artifact that
+    outlives the run. Count and path only, never the matched content: echoing it to stdout is
+    the same leak, one hop on.
+  - **All nine remaining hand-rolled secret scans in `scripts/` now call the canonical
+    `scanSecrets`** (11 call sites, 2 already canonical). F40 parked the conversion; hamr
+    retired the park on his word, and both risks it guarded were closed by MEASUREMENT rather
+    than assumption — equivalence on 900 spiked real-spine cases (670 hits, 0 divergences,
+    with the comparison demonstrated ABLE to diverge), and archived evidence that can no longer
+    shift. FINDINGS addendum sits on the F40 block; the JSONL spine-reader park is untouched.
 - **litectx ^0.29.1 → ^0.31.0** (LC-3 delivered, yield-only shape — atomicity intact,
   `setImmediate` between parses). Every worker's index call now passes `{ yield: true }`, so the
   F66 stall fuse's timers, the wall clock and the lag sampler stay alive through an index pass

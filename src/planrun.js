@@ -120,6 +120,46 @@ function materialsBlock(m) {
 }
 
 /**
+ * W-2 — the progress TREND, read off the two most recent close gaps.
+ *
+ * A run stopped by its wall hands the human a lever choice, and the two levers
+ * point opposite ways: more TIME only helps work that was still moving, and a goal
+ * the run cannot reach does not become reachable by being given longer. The
+ * cheapest honest discriminator is already in the fix loop's hand — consecutive
+ * close output. A byte-identical gap means the last attempt moved nothing the
+ * arbiter can see; a different one means the tree was still changing under it.
+ *
+ * Deliberately NOT a new instrument (no red counting, no red-set diffing): two
+ * strings the loop already holds, compared for equality. `unknown` is the honest
+ * reading when only one grade exists — never rounded up to "stalled", which would
+ * recommend rewriting a goal on no evidence at all (F6's rule, applied to a trend
+ * instead of a number).
+ * @param {string[]} gaps close gaps, oldest first
+ * @returns {{trend: 'stalled'|'moving'|'unknown', reading: string, lever: string}}
+ */
+function gapTrend(gaps) {
+  if (gaps.length < 2) {
+    return {
+      trend: 'unknown',
+      reading: 'only one close grade exists, so there is nothing to compare',
+      lever: 'read the last close output before choosing between more time and a different goal',
+    };
+  }
+  const [prev, last] = gaps.slice(-2);
+  return prev === last
+    ? {
+      trend: 'stalled',
+      reading: 'the last two close outputs are byte-identical — the previous attempt moved nothing the close can see',
+      lever: 'more time alone is unlikely to help; revise the goal/spec first',
+    }
+    : {
+      trend: 'moving',
+      reading: 'the last two close outputs differ — the tree was still changing under the close when time ran out',
+      lever: 'the work was progressing; raising maxWallMs is the lever that fits',
+    };
+}
+
+/**
  * The plan-drafting prompt: a schema DESCRIPTION built from the live validator
  * menus — never a copyable example (the drafter must author, not echo; the
  * run.js draftPrompt precedent). Check NAMES only: a check's command is
@@ -358,15 +398,32 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     cutMidCall: false,
     ...extra,
   });
-  const WALL_OPTIONS = ['raise maxWallMs and rerun (resume-to-cap: the stop is the checkpoint)', 'abandon the run'];
+  /** the wall's decision-ready levers, BYTE-IDENTICAL to ralph's own `wall-halt`
+   * entry (ralph.js DECISIONS). One category must hand a human ONE option list: which
+   * site read the clock is an implementation detail, and a shorter list here quietly
+   * withheld the second lever (revise the goal) from every stop this file escalates.
+   * Both levers are spec edits — a changed spec hash the runner refuses until it is
+   * re-approved — which is why each carries its own re-approval note, and why the
+   * caller's detail carries the progress trend that says which lever fits. */
+  const WALL_OPTIONS = [
+    'raise maxWallMs and rerun (resume-to-cap; a spec edit, so the new hash needs re-approval)',
+    'revise the goal/spec so the work fits the time (same re-approval)',
+    'abandon the task',
+  ];
 
   const closeOpts = { timeoutMs: closeTimeoutMs, cwd: workdir };
   /** @type {string|undefined} the stage that rendered the LAST close verdict (Layer R's red-set source) */
   let closeStage;
+  /** @type {any} the LAST close verdict itself (W-2). A wall stop KEEPS the grade
+   * the arbiter has already rendered rather than re-deriving one: past the deadline
+   * the run's answer is whatever the close last said, and nothing after the deadline
+   * is allowed to change it (hamr: *"keep the grade we already have and stop"*). */
+  let lastCloseVerdict;
   /** the close, as ONE verdict: every stage in order, first red wins */
   const judgeClose = async () => {
     const v = await runStages(stagedClose, scrub, closeOpts);
     closeStage = v.stage;
+    lastCloseVerdict = v;
     return v;
   };
 
@@ -759,8 +816,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
           // the only seam that exists: loop.stop() is read at the round boundary and
           // cannot cut an in-flight call (F61/C1, measured — fired at 500ms, returned
           // at 4,018ms). Stopping here judges the partial work and feeds the gap
-          // forward exactly as a round-bounded attempt does; the run-level terminal is
-          // decided by the step loop, which reads the clock after the step returns.
+          // forward exactly as a round-bounded attempt does — this seam never decides a
+          // terminal. Three sites do, each reading the clock with nothing in flight: the
+          // step loop after a step returns (between steps), the head of a step's attempt
+          // (a step that would BEGIN past the deadline is never funded), and the head of
+          // a close-fix iteration (W-2 — the run stops on the verdict already minted).
           if (clock.expired()) {
             attemptBounded = roundIteration;
             emit('wall-bounded', { phase, iteration: roundIteration, ...clock.report(closeTimeoutForReport) });
@@ -954,6 +1014,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   const stepOutcomes = [];
   let replanned = false;
   const planExecuted = () => emit('plan-executed', { steps: stepOutcomes, replanned });
+  /** @type {object|null} W-2 at the STEP site — set when the WALL refused to open a
+   * step's attempt. It carries that stop's own record fields, and its presence is what
+   * lets the step loop's terminal tell this reading apart from F64's mid-call one
+   * without consulting the clock a second time (two clock reads for one event is how
+   * the two instruments come to disagree). Exactly the fix loop's `wallStop`, one
+   * layer up. */
+  let stepWallStop = null;
 
   /** @param {any} step */
   const executeStep = async (step) => {
@@ -1026,6 +1093,49 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
           err.category = 'step-variance';
           throw err;
         }
+      }
+      // T/W-2 at the STEP site, and it sits BELOW the meter deliberately. The meter is
+      // the instrument for a step that was ALREADY RUNNING when the deadline passed:
+      // that step reads a time share of 1 and routes to the ONE replan exactly as it
+      // always has. The case it is structurally blind to is a step that STARTS past the
+      // deadline — its share is measured against what the run had left when it began,
+      // which is zero, so the share is zero forever and the step burns every attempt it
+      // is allowed. (Measured on the real flow: three attempts, three judged exits, all
+      // past the deadline.) The two are exhaustive and do not overlap: past the deadline
+      // a step that began with time left reads a share of exactly 1, so the meter always
+      // fires first for it — which is why this check only ever reaches attempt 1, and why
+      // the routing of a step that was already running is untouched.
+      //
+      // Every one of those attempts is worthless by construction: the metered clock
+      // check stops the worker on its FIRST round, so it writes nothing, and the judge
+      // still runs the step's exits — themselves close stages, at the full close timeout
+      // each — to re-mint the red already on the record. hamr's ruling, the same one the
+      // close-fix loop applies: when time is up, keep the grade we already have and
+      // stop. Resume-to-cap extended from money to time — the stop IS the checkpoint.
+      //
+      // The placement IS the mechanism, and the in-flight case falls out of it with
+      // nothing added: a deadline landing DURING an attempt still lets that attempt and
+      // its judge run to completion, because the clock is not consulted again until the
+      // next attempt is about to start. Grading real work always completes — a wall that
+      // kills grading leaves the run unreadable after the money is spent (F45).
+      if (clock.expired()) {
+        stepWallStop = {
+          cutMidCall: false,
+          phase: `step:${step.id}`,
+          stepsDone: idx,
+          stepsPlanned: plan.steps.length,
+          attemptsUsed: iteration - 1,
+          capRuns: stepCap,
+        };
+        // No trend here, and none invented: `gapTrend` reads consecutive CLOSE output,
+        // and a step that never ran has no grade of its own to compare. The lever the
+        // human needs is on the run-level record either way.
+        const err = /** @type {CategorizedError} */ (new Error(
+          `the wall-clock cap passed before step "${step.id}" attempt ${iteration} could start — `
+          + `the step was never funded to run. ${idx} of ${plan.steps.length} step(s) completed before it. `
+          + 'Nothing after the deadline is allowed to change the verdict the run already has.'));
+        err.category = 'wall-halt';
+        throw err;
       }
       w.setIteration(iteration);
       iterationNow = iteration;
@@ -1194,8 +1304,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // agree (F11); what is still missing is the run-level TIME record, which the
     // between-steps site emits and this path must too. Never a replan trigger and
     // never a casualty: time ran out, and the stop IS the checkpoint.
+    // W-2 adds the step loop's SECOND wall reading: the deadline seen at the head of
+    // an attempt, with no call in flight. `stepWallStop` is that reading's own record
+    // (attempts used, steps done); its absence means the deadline landed inside a call
+    // instead, which is F64's cutMidCall stop — and run.js keys the job-end money floor
+    // on exactly that field, so conflating the two would report an unknown as exact.
     if (cat === 'wall-halt') {
-      emitWallHalt({ cutMidCall: true, phase: `step:${step.id}`, stepsDone: idx, stepsPlanned: plan.steps.length });
+      emitWallHalt(stepWallStop ?? { cutMidCall: true, phase: `step:${step.id}`, stepsDone: idx, stepsPlanned: plan.steps.length });
       planExecuted();
       return 'wall-halt';
     }
@@ -1244,6 +1359,12 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   }
   emit('fix-loop', { gapBytes: Buffer.byteLength(post.gap ?? '') });
   let fixOutcome;
+  /** @type {object|null} W-2 — set when the WALL stopped the fix loop BETWEEN
+   * iterations. It carries that stop's own record fields, and its presence is what
+   * lets the post-loop branch tell this reading apart from F64's mid-call one
+   * without consulting the clock a second time (two clock reads for one event is
+   * how the two instruments come to disagree). */
+  let wallStop = null;
   try {
     // Layer R for the close-fix loop — the plan flow's single ralph loop judged
     // by the REAL close (the plan flow's single ralph loop, and the
@@ -1258,8 +1379,58 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       ? createRoot({ redact: scrub, writesInformative: true })
       : null;
     const w = await mkWorker({ granted: ceiling, phase: 'fix', attemptRounds: maxStepRounds, attempts: capRuns, writable: true, root: fixRoot });
+    // W-2's only input, and it is already in this loop's hand: the close gaps seen
+    // so far, oldest first. `post.gap` is the grade the loop OPENED on; every later
+    // entry is what ralph carried back from the close that judged the previous
+    // attempt (or, after a worker-crash, F32's routed gap — still the feedback that
+    // attempt actually received). Nothing is instrumented for this.
+    const gaps = [post.gap ?? ''];
     /** @param {number} iteration @param {string} [gap] */
     const middle = async (iteration, gap) => {
+      if (gap !== undefined) gaps.push(gap);
+      // T/W-2 — the wall, read before a NEW fix attempt is started, and never
+      // around the close itself. hamr's ruling: *"when time is up, keep the grade
+      // we already have and stop … run tests (free) and when done if original time
+      // is past due, pause and ask user to increase time or adjust prompt"*.
+      //
+      // Past the deadline this iteration is guaranteed to be worthless: the metered
+      // round check stops the fix worker on its FIRST round, so it writes nothing,
+      // and the iteration then re-runs the FULL staged close over an unchanged tree
+      // (four stages × closeTimeoutMs = 60 minutes on the shipped spec) only to mint
+      // the verdict already on the record — capRuns times over. So the run stops
+      // here, ON that verdict. Resume-to-cap extended from money to time: the stop
+      // IS the checkpoint, and the human tops up (v1.12).
+      //
+      // The placement IS the mechanism, and the in-flight case falls out of it with
+      // nothing added: a deadline that lands DURING an attempt still lets that
+      // attempt's close run to completion, because the clock is not consulted again
+      // until the next iteration is about to start. The close is never bounded — a
+      // wall that kills grading leaves the run unreadable after the money is spent
+      // (the F45 class), so the one thing this must never do is stop a close.
+      if (clock.expired()) {
+        const t = gapTrend(gaps);
+        wallStop = {
+          cutMidCall: false,
+          phase: 'fix',
+          iterationsUsed: iteration - 1,
+          capRuns,
+          verdict: lastCloseVerdict?.verdict,
+          ...(lastCloseVerdict?.stage ? { stage: lastCloseVerdict.stage } : {}),
+          trend: t.trend,
+        };
+        // The detail carries what the human needs to pick a lever and nothing else:
+        // the verdict that stands, how much of the loop was actually spent, and the
+        // trend that says which of the two spec edits fits. It never names a culprit
+        // file (F28) — that is the worker's job, not the escalation's.
+        const err = /** @type {CategorizedError} */ (new Error(
+          `the wall-clock cap passed before fix attempt ${iteration} could start. `
+          + `The verdict stands as the last close rendered it: ${lastCloseVerdict?.verdict ?? 'unknown'}`
+          + `${lastCloseVerdict?.stage ? ` at stage "${lastCloseVerdict.stage}"` : ''}, `
+          + `after ${iteration - 1} of ${capRuns} fix iteration(s). `
+          + `Progress trend: ${t.trend} — ${t.reading}; ${t.lever}.`));
+        err.category = 'wall-halt';
+        throw err;
+      }
       w.setIteration(iteration);
       // the red-set's source travels WITH the gap: `closeStage` is the stage the
       // judge stopped at for the attempt this gap came from, and its own gapKeep
@@ -1296,7 +1467,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // F64 in the close-fix loop: the same governance stop, and it must not ride out
     // as a bare `escalated` either — that reads as "the fix failed" when the fix was
     // never given the time to run.
-    emitWallHalt({ cutMidCall: true, phase: 'fix' });
+    // W-2 adds the loop's SECOND wall reading: the deadline seen between iterations,
+    // where a real grade already exists and is kept. `wallStop` is that reading's own
+    // record (verdict, iterations used, trend); its absence means the deadline landed
+    // inside a call instead, which is F64's cutMidCall stop.
+    emitWallHalt(wallStop ?? { cutMidCall: true, phase: 'fix' });
     return 'wall-halt';
   }
   if (fixOutcome !== 'green' && lastEscalation?.category === 'cap-halt') {

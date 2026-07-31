@@ -443,12 +443,21 @@ export async function ralph({ middle, close, judge, capRuns, emit, redact, close
         // REPLANS, so the message must not say anything broke.
         'step-variance': ['A step consumed a large share of the run with its exits still red — the meter stopped it before another attempt.',
           ['let the planner re-allocate what is left (replan)', 'raise the budget and rerun', 'abandon the task']],
-        // T/F64 — the run's WALL CLOCK stopped this, and the caller's deadline came
-        // back as the provider's own timeout. A governance stop, not a fault and not
-        // a transport casualty: the message must not send a human to debug a socket,
-        // and the remedy is the operator's cap, not a retry.
-        'wall-halt': ['The run reached its wall-clock cap mid-attempt — time ran out, not capability.',
-          ['raise maxWallMs and rerun (the stop is the checkpoint)', 'abandon the task']],
+        // T/F64 — the run's WALL CLOCK stopped this: either the caller's deadline
+        // came back as the provider's own timeout (F64, mid-attempt) or the caller
+        // read the clock and declined to START another attempt (W-2, between them).
+        // A governance stop either way, not a fault and not a transport casualty:
+        // the message must not send a human to debug a socket, and the remedy is the
+        // operator's cap, not a retry. The wording says neither "mid-attempt" nor
+        // "between attempts", because one entry serves both and a category that
+        // narrates the wrong half is worse than one that narrates neither.
+        // The two levers are BOTH spec edits (a changed spec hash the runner refuses
+        // until it is re-approved), and they point opposite ways — which is why the
+        // caller's detail carries the progress trend that says which one fits.
+        'wall-halt': ['The run reached its wall-clock cap — time ran out, not capability. Nothing is discarded: the last verdict rendered stands, and the stop is the checkpoint.',
+          ['raise maxWallMs and rerun (resume-to-cap; a spec edit, so the new hash needs re-approval)',
+            'revise the goal/spec so the work fits the time (same re-approval)',
+            'abandon the task']],
         // F66 — the STALL WATCHDOG gave up: no round completed for the stall window,
         // three times over, and reissuing the call did not recover it. It borrows both
         // siblings' rules. Like `step-variance`, the caller reads this category and

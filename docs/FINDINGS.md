@@ -1869,6 +1869,23 @@ instruments** whose recorded runs are pre-registered evidence; behaviour-preserv
 not, rewriting them post-hoc muddies the record for a drift-prevention win, and they
 carry no test coverage to catch a mistake. New scripts use the helper.
 
+> **Addendum 2026-07-30 — the scanSecrets park is RETIRED (hamr's word, this date).**
+> The 0.6.0 release gate's review re-flagged the hand-rolled copies; the sweep
+> converted all of them (nine by then — four more had accreted in post-F40 scripts)
+> before the park was noticed, and the reversal was surfaced to hamr rather than
+> papered over. hamr ruled the park spent: *"if its irrelevant compared to where we
+> are or has been invalidated by any of probes, why should we keep it?"* The two risks
+> the park guarded are both retired by measurement, not assumption: (1) equivalence
+> was proven on 900 spiked real-spine cases (all five token shapes × three offsets,
+> 670 hits, 0 divergences) with a comparison demonstrated ABLE to diverge (a
+> deliberately broken copy reads 4 vs 5); (2) the recorded evidence cannot shift —
+> the battery runs are archived and finished, and three of the five instruments can
+> no longer execute at all (their job specs are retired; pre-existing ENOENT verified
+> against HEAD). The count in this block ("five of the seven") was also stale twice
+> over — the grepped truth at conversion time was 11 call sites, 2 already canonical,
+> 9 converted. No test files referenced the five scripts (checked at retirement —
+> nothing to delete or archive). The JSONL spine-reader park above is untouched.
+
 **One PLAUSIBLE, latent:** a single `opts.target` threads to every text-mode step, so
 two text-mode predicate steps would clobber each other's artifact. The schema permits
 it; no shipped job comes near it; single-artifact text mode is documented intent.
@@ -3731,6 +3748,27 @@ which legitimately runs ~55s+ after the last round — killing mid-close destroy
 verdict). The kill is RECORDED at `<spine>.watchdog.json` BEFORE the signal goes out: a run
 stopped by the arbiter must never read as a mystery crash (the governance-stop vs casualty
 line, F45/F64). SIGTERM, then SIGKILL after 10s.
+
+> **Addendum 2026-07-30 — the deadline trigger is ACTIVITY-AWARE now (hamr's ruling,
+> 0.6.0 release gate).** The paragraph above describes the original design; two of its
+> numbers went stale and one rule changed. (1) The wall grace is sized
+> `stages × closeTimeoutMs` (the 900s default covered ONE close stage; a staged close
+> legally runs N — the old arithmetic could kill a live verdict, the exact damage the
+> grace exists to prevent) and run-u passes it explicitly. (2) hamr's ruling, verbatim:
+> "the kill from outside should check for activity/bytes or other markers for activity,
+> not a silent kill" — the deadline kill now fires only when the deadline passed AND the
+> spine has been flat for a full fuse window (300s); past-deadline-but-writing logs LOUD
+> every poll and is never killed (the in-process fuses and the money cap own bounding a
+> live run). Every kill prints the trigger, the deadline arithmetic, and the marker's
+> value/age before the signal. (3) A CPU marker (/proc utime+stime) was built alongside
+> and REMOVED after the release review measured it broken both directions — child CPU is
+> credited only at reap so a live close reads dead, and run-u's own 1s lag sampler ticks
+> the parent so a wedged run reads alive at production constants; its kill tests had only
+> passed at a 5:1 dead-window:poll ratio where production is 60:1. Spine-bytes-only is
+> the marker ("keep what is simpler/available" — hamr). The STALE trigger is unchanged
+> and remains the trigger that actually catches the F67 wedge; a wall-less spec now
+> omits `--wall-ms` and prints the unbounded choice loudly instead of passing the
+> string "undefined" (which silently disarmed the deadline trigger).
 
 ### Validation
 

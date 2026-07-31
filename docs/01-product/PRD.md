@@ -2303,3 +2303,57 @@ note cap — threshold hamr's, verbatim in-turn). Full record in the branch log 
    correctly never touches params — a tier with no factory is an interpreter-red STOP —
    so the coherence burden sits in scripts). Standing rule stays: menus first; a pair
    check is for what menus cannot express.
+
+## Addendum v1.40 — 2026-07-31 (the wall PAUSES the run: the close is never bounded, the stop is the checkpoint, and the outside kill needs evidence — hamr, rulings given 2026-07-30)
+
+Three rulings on TIME, all given while W-2/W-3 were being built. None of them touches the
+arbiter's ownership: the agent still never authors, adjusts or reads its own wall.
+
+### 1. The close is never bounded by the wall, and never counts against it
+
+A deadline that stops grading leaves the run **unreadable after the money is already
+spent** — the F45 class (a money cap binding mid-attempt killed the row before it could be
+graded, and 4 such rows were counted as evidence) generalized from money to time. So the
+wall bounds the *work*, never the *judgement*: a close already in flight when the deadline
+trips runs to completion, and the run's enforced worst case is stated honestly as
+`maxWallMs + closeStages × closeTimeoutMs` (W5 — a staged close hands EVERY stage the full
+timeout) rather than quoting the one-stage number the code used to advertise.
+
+### 2. The wall PAUSES; it does not cut the grade — resume-to-cap, extended from money to time
+
+hamr, verbatim: *"when time is up, keep the grade we already have and stop"* — and
+*"run tests (free) and when done if original time is past due, pause and ask user to increase
+time or adjust prompt"*. Past the deadline no NEW work starts: the close-fix loop opens no
+further iteration and a step that would begin already expired does not begin. The run stops
+on the verdict the last close minted, and nothing after the deadline may change it.
+
+This is v1.12's resume-to-cap with time in money's place: **the stop IS the checkpoint.** The
+human holds two levers and they point opposite ways — raise `maxWallMs` and resume, or revise
+the goal so the work fits the time — so the stop is decision-ready and carries a progress
+TREND (`moving` | `stalled` | `unknown`, read off the last two close gaps) that says which one
+fits. Both levers are **spec edits**: a new hash, re-signed before the run is allowed to
+resume. The trend is a READING for the human, never a gate — nothing routes on it, and one
+grade alone reports `unknown` rather than rounding up to `stalled` (F6's rule, applied to a
+trend instead of a number).
+
+### 3. The outside kill requires EVIDENCE of death, not a clock — and the marker is spine bytes
+
+hamr, verbatim: *"the kill from outside should check for activity/bytes or other markers for
+activity, not a silent kill"*. The out-of-process watchdog (F67) may kill on its deadline only
+when the spine has ALSO been flat for a full stall-fuse window; past-deadline-but-still-writing
+is logged loud on every poll and never killed — the in-process fuses and the money cap own
+bounding a run that is *alive*, this guard owns processes that are *dead*. Every kill states
+the trigger, the deadline arithmetic and the marker's value and age before the signal goes out.
+
+ONE marker, and the second was deleted rather than kept as decoration: a CPU-liveness marker
+(`/proc` utime+stime) measured broken in BOTH directions — a live close read DEAD (child ticks
+are credited only at reap) and a wedged run read ALIVE (the runner's own lag sampler ticks the
+parent), with its kill tests passing only three orders of magnitude below production
+constants. hamr: *"keep what is simpler/available"* — the spine, which is the marker that
+actually distinguishes progress from silence.
+
+### What this does not decide
+
+`MIN_WALL_MS` stays a one-stage floor (parked in v1.39): advertised = enforced holds, the
+floor is merely permissive. Nothing here changes the money path, the verdict classes, or who
+may author a bound — budgets and walls remain operator territory, permanently.

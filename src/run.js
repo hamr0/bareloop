@@ -104,6 +104,17 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // and the provider never told us. So a run that stalls and then ends green (or
   // escalated, or at the cap) also holds a FLOOR, not a total.
   let stalled = false;
+  // F64: did the wall cut this run from INSIDE a provider call? A `wall-halt` is two
+  // stops wearing one name. Read between rounds (or between attempts, W-2) it is the
+  // cleanest terminal there is — nothing was in flight, every round the sum counted
+  // came back priced, and the figure is exact. But the deadline can also land inside a
+  // call and come back as the provider's own timeout, and THAT call returned no usage
+  // at all: it may already have been billed and will never say so. Same unknown as the
+  // transport floor and the self-healed stall, so the same honest answer.
+  // The discriminator is the wall-halt record's own `cutMidCall` field, never the
+  // outcome — keying on the outcome would floor the exact stop too, which is the same
+  // dishonesty pointing the other way.
+  let cutMidCall = false;
   // The money on the terminal record, and whether the money is EXACT. `spentUsd`
   // is the accumulated sum of PRICED rounds ONLY — never an estimate derived
   // from tokens or averages (cap-not-estimate). When any round came back
@@ -111,7 +122,7 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // says so machine-readably instead of dressing a floor up as exact. Emitted on
   // EVERY job-end (true when everything was priced) so no consumer ever has to
   // branch on field presence.
-  const spend = () => ({ spentUsd, spendComplete: !unpriced && !stalled });
+  const spend = () => ({ spentUsd, spendComplete: !unpriced && !stalled && !cutMidCall });
   // 1. human-signs-always — before ANY provider call (N1 decision #1)
   if (!checkApproval(rawSpec, approvals)) {
     emit('job-end', { outcome: 'unapproved-spec', detail: 'no approval record matches this exact spec version', ...spend() });
@@ -161,6 +172,10 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
     // indistinguishable), so from this point the priced sum is a floor no matter
     // how the run ends — the flag is one-way and read by `spend()`.
     if (type === 'stall') stalled = true;
+    // F64: the plan flow's own TIME record says which of the two wall stops this was.
+    // One-way, and read by `spend()` — the run ends on this record either way, but the
+    // between-rounds stop must keep its exact figure rather than inheriting a floor.
+    if (type === 'wall-halt' && /** @type {any} */ (data)?.cutMidCall === true) cutMidCall = true;
     return emit(type, data);
   };
   const pricingRed = () => {

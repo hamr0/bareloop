@@ -18,14 +18,15 @@
 //   - it parses no JSON (a malformed spine must not blind the guard)
 //   - it imports nothing from src/ (no shared code means no shared failure)
 //   - it holds no model of what the run is doing (nothing to get out of sync)
-//   - it reads bytes and ticks, not meaning (cost is one stat(2) + one small read)
+//   - it reads bytes, not meaning (cost is one stat(2) per poll)
 //
 // TWO triggers, ONE reconciled decision (hamr's ruling, 2026-07-30: "the kill from
 // outside should check for activity/bytes or other markers for activity, not a
 // silent kill"):
 //   STALE  no progress for longer than the worst LEGAL silence → the run is wedged
-//   DEAD   past the deadline (wall + stages × close timeout) AND every activity
-//          marker flat → the process is not executing anything at all
+//   DEAD   past the deadline (wall + stages × close timeout) AND the spine flat for
+//          the whole dead window → the process is producing nothing, and its own
+//          deadline has already funded every legal silence
 // Past the deadline but still ACTIVE is NOT a kill any more. The in-process fuses
 // and the money cap own bounding a run that is alive; this guard owns processes
 // that are dead. A live run is never killed from outside purely by the clock —
@@ -34,8 +35,8 @@
 // decision table sits above the decision code.
 //
 // The kill is RECORDED next to the spine, and it is never silent: before the
-// signal goes out this process says which deadline passed, which markers it
-// checked, their last values and ages, and why it judged the process dead. A run
+// signal goes out this process says which deadline passed, which marker it
+// checked, its last value and age, and why it judged the process dead. A run
 // stopped by the arbiter must never read as a mystery crash — that is the
 // distinction between a governance stop and a casualty, and it decides whether the
 // row is evidence or noise (F45/F48).
@@ -43,7 +44,7 @@
 // Usage:
 //   node scripts/u-watchdog.mjs --spine <path> --pid <n>
 //        [--stale-ms N] [--wall-ms N] [--grace-ms N] [--dead-ms N] [--poll-ms N]
-import { statSync, readFileSync, writeFileSync } from 'node:fs';
+import { statSync, writeFileSync } from 'node:fs';
 
 const arg = (/** @type {string} */ n, /** @type {string|null} */ dflt = null) => {
   const i = process.argv.indexOf(`--${n}`);
@@ -92,9 +93,9 @@ const wallMs = num('wall-ms', null);
 // its own (scripts/run-u.mjs does; a 4-stage close needs 60min, not 15min, and the
 // stale window already got this arithmetic under F67 while the grace did not).
 const graceMs = num('grace-ms', 900_000) ?? 900_000;
-// How long every activity marker must be flat, PAST the deadline, before the
-// process is judged dead. Derived, not chosen: it is the in-process stall fuse's
-// own window (F66, hamr's 5 minutes). Past the deadline the grace has ALREADY paid
+// How long the spine must be flat, PAST the deadline, before the process is judged
+// dead. Derived, not chosen: it is the in-process stall fuse's own window (F66,
+// hamr's 5 minutes). Past the deadline the grace has ALREADY paid
 // for every legal close stage, so there is no legal silence left to protect — one
 // fuse window is patience, not budget. Never above the stale window, which would
 // make it inert.
@@ -108,78 +109,55 @@ const iso = (/** @type {number} */ ms) => new Date(ms).toISOString();
 // is not (see the startup refusal above).
 const alive = () => process.ppid === pid;
 
-// ── ACTIVITY MARKERS ────────────────────────────────────────────────────────────
-// "Is it dead" is answered by EVIDENCE, never by the clock alone. Two independent
-// markers, and they are deliberately NOT symmetric:
+// ── THE ACTIVITY MARKER ─────────────────────────────────────────────────────────
+// "Is it dead" is answered by EVIDENCE, never by the clock alone. ONE marker:
 //
 //   spine  PROGRESS. Bytes reaching the run's own append-only log. Growth here is
 //          the run doing the job. One stat(2): size OR mtime moving counts.
-//   cpu    LIVENESS. utime+stime (plus reaped children's, since a close runs its
-//          suite in a child while the parent's own time stays flat) from
-//          /proc/<pid>/stat. FLAT means the process is executing nothing at all.
-//          MOVING means it is executing something — which is NOT the same as
-//          progressing: a spun-out event loop burns 100% CPU forever (exactly
-//          F67's own hard-frozen victim). So the CPU marker may only ever VETO the
-//          deadline kill; it never vetoes the stale kill, and it can therefore
-//          delay a kill to the stale window but never past it.
 //
-// The /proc read is safe against the pid-reuse hazard for the same reason the
-// liveness check is: every poll re-checks the parent link FIRST, and a pid the
-// kernel recycled cannot be this process's parent. Do not read /proc without that
-// check in front of it.
+// ONE on purpose. A second, CPU-liveness marker (utime+stime+cutime+cstime from
+// /proc/<pid>/stat) was built here and then MEASURED broken in BOTH directions, so
+// it is deleted rather than kept as decoration:
+//   - it read DEAD on a live run. A close runs its suite in a CHILD, and a child's
+//     ticks are credited to the parent only when the parent REAPS it — so the
+//     busiest minutes of a multi-minute close show a parent whose own ticks never
+//     move.
+//   - it read ALIVE on a dead one. run-u's event-loop lag sampler wakes this very
+//     process every second, moving its ticks roughly every 3.3s; at the production
+//     constants (deadMs 300_000 against pollMs 5_000) the marker could therefore
+//     never go flat, and the deadline kill could effectively never fire. The kill
+//     tests only passed at --dead-ms 500 — three orders of magnitude below what
+//     production runs on.
+// An instrument that cannot see the variable makes every reading unusable, and a
+// veto that is always ON is not a safety, it is a disarmed trigger. hamr's ruling,
+// 2026-07-30: "keep what is simpler/available" — the spine, which is the marker
+// that actually distinguishes progress from silence.
 
 /** spine size+mtime in one stat(2). A missing file reads as the watchdog's own
  * start: a run that wedges BEFORE its first event is the most stalled run there
  * is, and treating "no file" as "no news is good news" would blind the guard to
  * exactly that case. */
 const readSpine = () => { try { const st = statSync(spine); return { mtimeMs: st.mtimeMs, size: st.size }; } catch { return { mtimeMs: startedAt, size: -1 }; } };
-/** utime+stime+cutime+cstime in clock ticks, or null when /proc is not readable
- * (non-Linux, or the process is gone). The comm field can itself contain spaces
- * and parentheses, so the fields are counted from the LAST ')' — the standard
- * parse, and the reason this is not a naive split. */
-const readCpuTicks = () => {
-  try {
-    const raw = readFileSync(`/proc/${pid}/stat`, 'utf8');
-    const f = raw.slice(raw.lastIndexOf(')') + 2).split(' '); // f[0] is field 3 (state)
-    const ticks = Number(f[11]) + Number(f[12]) + Number(f[13]) + Number(f[14]); // utime stime cutime cstime
-    return Number.isFinite(ticks) ? ticks : null;
-  } catch { return null; }
-};
 
 let spineSeen = readSpine();
 let spineMovedAt = spineSeen.mtimeMs;
-let cpuTicks = readCpuTicks();
-let cpuMovedAt = startedAt;
-// Degrade EXPLICITLY, never silently: an instrument that quietly stops reading one
-// of its two markers is the blind-instrument class, and the reader of the kill
-// record must be able to see which markers actually existed.
-let cpuOk = cpuTicks !== null;
-if (!cpuOk) console.error(`[u-watchdog] NOTICE: /proc/${pid}/stat is not readable on this platform — the CPU liveness marker is UNAVAILABLE; degrading to the spine marker alone (the stale trigger is unaffected; the deadline trigger now judges on progress only)`);
 
-/** advance each marker's last-movement stamp. Called once per poll, before any
- * decision reads them. */
+/** advance the marker's last-movement stamp. Called once per poll, before any
+ * decision reads it. */
 function sampleMarkers(/** @type {number} */ now) {
   const st = readSpine();
   if (st.size !== spineSeen.size) spineMovedAt = now;
   if (st.mtimeMs > spineMovedAt) spineMovedAt = st.mtimeMs;
   spineSeen = st;
-  if (cpuOk) {
-    const t = readCpuTicks();
-    if (t === null) {
-      cpuOk = false;
-      console.error(`[u-watchdog] NOTICE: /proc/${pid}/stat stopped being readable — the CPU liveness marker is DROPPED from here on; the spine marker alone decides`);
-    } else if (t !== cpuTicks) { cpuTicks = t; cpuMovedAt = now; }
-  }
 }
-/** what every log line and every kill record says about the markers: the value,
- * its age, and — when a marker is missing — that it is missing. */
+/** what every log line and every kill record says about the marker: its value and
+ * its age. Kept under a `markers` key — the record is a read-once forensic
+ * artifact, and a reader comparing an old kill to a new one should see the shape
+ * hold and the CPU entry simply be gone. */
 const markerReport = (/** @type {number} */ now) => ({
   spine: { path: spine, bytes: spineSeen.size < 0 ? 'no file yet' : spineSeen.size, lastMovedAt: iso(spineMovedAt), coldMs: now - spineMovedAt },
-  cpu: cpuOk
-    ? { ticks: cpuTicks, lastMovedAt: iso(cpuMovedAt), coldMs: now - cpuMovedAt }
-    : { unavailable: `/proc/${pid}/stat not readable — spine-only` },
 });
-const coldMs = (/** @type {number} */ now) => ({ spine: now - spineMovedAt, cpu: cpuOk ? now - cpuMovedAt : null });
+const spineColdMs = (/** @type {number} */ now) => now - spineMovedAt;
 
 function stop(/** @type {string} */ reason, /** @type {string} */ judgement, /** @type {object} */ detail) {
   const now = Date.now();
@@ -203,7 +181,7 @@ function stop(/** @type {string} */ reason, /** @type {string} */ judgement, /**
   // marker evidence that says the process is dead rather than slow.
   console.error(`[u-watchdog] KILL ${reason}: pid ${pid} judged DEAD — ${judgement}`);
   console.error(`[u-watchdog]   deadline: ${JSON.stringify({ elapsedMs: record.elapsedMs, wallMs, graceMs, staleMs, deadMs, ...detail })}`);
-  console.error(`[u-watchdog]   markers checked: ${JSON.stringify(markers)}`);
+  console.error(`[u-watchdog]   marker checked: ${JSON.stringify(markers)}`);
   try { process.kill(pid, 'SIGTERM'); } catch { /* already gone */ }
   // SIGTERM lets the run flush its spine. A wedged event loop cannot run a signal
   // handler, so SIGKILL is the one that actually lands — but only after giving the
@@ -214,28 +192,27 @@ function stop(/** @type {string} */ reason, /** @type {string} */ judgement, /**
   }, 10_000);
 }
 
-console.error(`[u-watchdog] watching pid ${pid} — markers [spine${cpuOk ? ' + cpu' : ' only (no /proc)'}], stale ${Math.round(staleMs / 1000)}s${wallMs ? `, wall ${Math.round(wallMs / 1000)}s (+${Math.round(graceMs / 1000)}s grace, then ${Math.round(deadMs / 1000)}s of flat markers)` : ', no wall'}`);
+console.error(`[u-watchdog] watching pid ${pid} — marker [spine], stale ${Math.round(staleMs / 1000)}s${wallMs ? `, wall ${Math.round(wallMs / 1000)}s (+${Math.round(graceMs / 1000)}s grace, then ${Math.round(deadMs / 1000)}s of a flat spine)` : ', no wall'}`);
 
 // ── THE DECISION ────────────────────────────────────────────────────────────────
-// One table, evaluated every poll after the markers are sampled. "Past deadline"
+// One table, evaluated every poll after the marker is sampled. "Past deadline"
 // means elapsed >= wallMs + graceMs, where the grace is stages × close timeout.
 //
-//   past deadline | spine (progress)  | cpu (liveness)   | action
-//   --------------+-------------------+------------------+---------------------------
-//   any           | cold >= staleMs   | any              | KILL 'stale'
-//   no            | cold <  staleMs   | any              | quiet — the run is inside
-//                 |                   |                  |   its worst legal silence
-//   yes           | cold <  deadMs    | any              | LOUD, no kill (progressing)
-//   yes           | cold >= deadMs    | cold <  deadMs   | LOUD, no kill (executing)
-//   yes           | cold >= deadMs    | cold >= deadMs   | KILL 'wall-dead'
-//                 |                   | or unavailable   |
+//   past deadline | spine (progress)  | action
+//   --------------+-------------------+--------------------------------------------
+//   any           | cold >= staleMs   | KILL 'stale'
+//   no            | cold <  staleMs   | quiet — the run is inside its worst legal
+//                 |                   |   silence
+//   yes           | cold <  deadMs    | LOUD, no kill (still progressing)
+//   yes           | cold >= deadMs    | KILL 'wall-dead'
 //
 // Two things this table says on purpose:
-//   1. The CPU marker cannot veto 'stale'. A hard-frozen event loop burns CPU
-//      forever and emits nothing — F67's own case, and the one this guard exists
-//      for. CPU-moving means "executing", never "progressing", so it may only
-//      delay the deadline kill up to the stale window, never past it.
-//   2. Past the deadline with a marker still moving, NOTHING is killed. The
+//   1. Only BYTES hold a kill off. Nothing else is consulted — in particular not
+//      CPU, which was measured unable to tell a working process from a spun-out
+//      one and, worse, unable to go flat at all at the production constants (see
+//      THE ACTIVITY MARKER above). A hard-frozen event loop burns 100% CPU forever
+//      and emits nothing; it is F67's own case, and it must die on both triggers.
+//   2. Past the deadline with the spine still moving, NOTHING is killed. The
 //      in-process fuses (F66), the wall clock and the money cap own bounding a run
 //      that is alive; this guard owns processes that are dead. It says so loudly
 //      every poll rather than going quiet — the overshoot is still a fact the
@@ -244,26 +221,23 @@ const tick = setInterval(() => {
   if (!alive()) { clearInterval(tick); process.exit(0); } // the run finished on its own
   const now = Date.now();
   sampleMarkers(now);
-  const cold = coldMs(now);
+  const spineCold = spineColdMs(now);
   const elapsed = now - startedAt;
 
-  if (cold.spine >= staleMs) {
+  if (spineCold >= staleMs) {
     clearInterval(tick);
-    stop('stale', `the spine has not grown for ${Math.round(cold.spine / 1000)}s, past the ${Math.round(staleMs / 1000)}s window sized above the worst LEGAL silence (a full staged close) — the run is producing nothing, whatever it is or is not burning CPU on`, { coldMs: cold.spine });
+    stop('stale', `the spine has not grown for ${Math.round(spineCold / 1000)}s, past the ${Math.round(staleMs / 1000)}s window sized above the worst LEGAL silence (a full staged close) — the run is producing nothing, whatever it is or is not burning CPU on`, { coldMs: spineCold });
     return;
   }
   if (wallMs === null || elapsed < wallMs + graceMs) return;
 
   const overMs = elapsed - (wallMs + graceMs);
-  const moving = [];
-  if (cold.spine < deadMs) moving.push(`spine (grew ${Math.round(cold.spine / 1000)}s ago, ${spineSeen.size < 0 ? 'no file yet' : `${spineSeen.size} bytes`})`);
-  if (cpuOk && /** @type {number} */ (cold.cpu) < deadMs) moving.push(`cpu (${cpuTicks} ticks, moved ${Math.round(/** @type {number} */ (cold.cpu) / 1000)}s ago)`);
-  if (moving.length) {
-    // LOUD, every poll. hamr: the outside kill checks for activity markers, not the
+  if (spineCold < deadMs) {
+    // LOUD, every poll. hamr: the outside kill checks for activity/bytes, not the
     // clock alone — so an overrun that is still working gets named, not executed.
-    console.error(`[u-watchdog] PAST DEADLINE by ${Math.round(overMs / 1000)}s (wall ${Math.round(wallMs / 1000)}s + ${Math.round(graceMs / 1000)}s close grace) — NOT killing: still ACTIVE on ${moving.join(', ')}. This guard stops DEAD processes; a live run is bounded by its own fuses and its money cap.`);
+    console.error(`[u-watchdog] PAST DEADLINE by ${Math.round(overMs / 1000)}s (wall ${Math.round(wallMs / 1000)}s + ${Math.round(graceMs / 1000)}s close grace) — NOT killing: still ACTIVE on spine (grew ${Math.round(spineCold / 1000)}s ago, ${spineSeen.size < 0 ? 'no file yet' : `${spineSeen.size} bytes`}). This guard stops DEAD processes; a live run is bounded by its own fuses and its money cap.`);
     return;
   }
   clearInterval(tick);
-  stop('wall-dead', `${Math.round(overMs / 1000)}s past the deadline (wall ${Math.round(wallMs / 1000)}s + ${Math.round(graceMs / 1000)}s close grace, which has already funded every legal close stage) AND every activity marker flat for at least ${Math.round(deadMs / 1000)}s — no bytes, no CPU, nothing left that could still be running`, { requestedMs: wallMs, enforcedMs: wallMs + graceMs, pastDeadlineMs: overMs });
+  stop('wall-dead', `${Math.round(overMs / 1000)}s past the deadline (wall ${Math.round(wallMs / 1000)}s + ${Math.round(graceMs / 1000)}s close grace, which has already funded every legal close stage) AND the spine flat for at least ${Math.round(deadMs / 1000)}s — no bytes are reaching the run's own log, so there is nothing left that could still be producing a verdict`, { requestedMs: wallMs, enforcedMs: wallMs + graceMs, pastDeadlineMs: overMs });
 }, pollMs);

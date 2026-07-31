@@ -85,7 +85,7 @@ minting claim, or the shell-owned retry cap — all unknown-field reds.
 | `conditions` | `{ providerPath?, closeVerbosity?, taskFraming?, scaffold? }` | declared keys only, string values — the environment label (consumed by the N3 lineage key; recorded on spines from run one) |
 | `cadence` | `{ unit: hour\|day\|week, every: 1..30 }` | validated now, consumed at N5 (Scheduler) |
 | `budgetUsd` | `0 < n <= shell cap` | ceiling chain: workflow ≤ job ≤ shell — each layer may tighten, never exceed |
-| `maxWallMs` | optional integer ms `>= MIN_WALL_MS` (one close timeout) | the run's wall clock. **NO DEFAULT, by ruling** — absent means time-unbounded *by explicit operator choice*, never by fallback (F45: a defaulted cap is a silent second ceiling). Enforcement is a BETWEEN-ROUND deadline, so the honest worst case is `maxWallMs + closeTimeoutMs` and both numbers are reported (`loop.stop()` cannot cut an in-flight call — F61 measured 500ms→4,018ms). Operator-only, tighten-only; adding or changing it changes the spec hash |
+| `maxWallMs` | optional integer ms `>= MIN_WALL_MS` (one close timeout) | the run's wall clock. **NO DEFAULT, by ruling** — absent means time-unbounded *by explicit operator choice*, never by fallback (F45: a defaulted cap is a silent second ceiling). Enforcement is a BETWEEN-ROUND deadline, so the honest worst case is `maxWallMs + closeStages × closeTimeoutMs` — every stage of a staged close gets the FULL timeout — and all three numbers are reported (`loop.stop()` cannot cut an in-flight call — F61 measured 500ms→4,018ms). The `MIN_WALL_MS` floor is a ONE-stage number, so a spec with many stages can validate while its overshoot dwarfs its cap: the clock reports that honestly rather than the floor pretending to prevent it (stage-aware floor parked, PRD v1.39). Operator-only, tighten-only; adding or changing it changes the spec hash |
 | `writeScope` | array of contained globs | the operator's outer fence; the plan's own scopes must fit inside it, same containment code |
 | `steps` | RETIRED | operator-authored `steps[]` was deleted (PRD v1.32); a spec carrying it reds `shape-retired:steps` by name rather than half-running |
 | `escalation` | `{ mode: "decision-ready" }` | the pain channel is not optional |
@@ -134,7 +134,11 @@ deletes the store, because what a run inherits is the caller's decision, not the
 caller who wants a COLD baseline (an inheritance-OFF control arm, a reproducible re-run, any
 contrast between two runs) must remove `<workdir>/.litectx` itself between them; the in-repo U
 runner does exactly that with a one-line `rmSync`. The store is a derived, self-healing cache
-by litectx's own contract, so the only cost of deleting it is the re-index.
+by litectx's own contract, so the only cost of deleting it is the re-index. Store writes are
+bounded: `stash`/`remember` payloads over **64KB** (`ISOLATE_MAX_BYTES`) come back as a
+refusal RESULT naming the actual size and the limit — worker feedback, never a throw, and
+nothing enters the store. The bound is per-payload (aggregate growth across distinct ids is a
+future threshold call); `forget` needs no cap — its id is a bound SQL parameter, never stored.
 
 **Staged close — the check menu DERIVES from it (PRD v1.28, `checkMenu` in `src/job.js`).**
 Every stage is a `predicate` command body (the same `cmd`/`expect`/`judged?`/`gapKeep?`
@@ -238,10 +242,14 @@ Red vocabulary (all three validators): `parse-error`, `unknown-field`, `missing-
 `request-red` (locked-but-listed: a locked tool or verdictType — admission demand the
 ledger tallies), plus the workflow-side verb reds (`verb-illegal`,
 `verb-placement`, `verb-params`, `slot-overflow`) and the plan-side reds (`verb-escape`,
-`exit-illegal`, `check-unknown`, `step-scope-escape` — a scoped step whose `target` or
-exit path falls outside its OWN narrowed scope (in-fence but gate-denied ground: the
-step's gate is built from the narrowed prefix, so the pair is rejected at validation
-instead of burning attempts on refusals), `job-invalid` — a plan validated against a
+`exit-illegal`, `check-unknown`, `step-scope-escape` — a scoped step whose `target` falls
+outside its OWN narrowed scope (in-fence but gate-denied ground: the step's gate is built
+from the narrowed prefix, so the pair is rejected at validation instead of burning attempts
+on refusals). It binds WRITES, not observations: on the exit side it fires only on a
+`tree-changed` scope DISJOINT from the step's (a scope that CONTAINS it fires exactly when
+the narrow one does), and `artifact-written`/`json-valid` paths carry no step-scope red at
+all — the evaluator asks nothing about who wrote the file, so naming a prior step's artifact
+is legal and satisfiable. `job-invalid` — a plan validated against a
 missing or non-plan-shape job fails CLOSED). `stageClose(close)` is the ONE staging
 every check-menu consumer shares (array → itself; legacy object predicate → its
 one-stage list, named `close`; gold/rubric/hitl → null). The `secret-literal` sweep is
@@ -280,7 +288,10 @@ matching failure lines are preserved in a capped kept-failures block regardless 
 they print (F28: the first real firing delivered a gap with zero failure names). The gap
 also combines stdout+stderr, so a stdout failure survives stderr noise.
 `closeTimeoutMs` caps the close's wall clock (default 120s) — shell/operator
-territory, inexpressible in any config.
+territory, inexpressible in any config. A faulted close is asked to leave with SIGTERM and,
+if it is still there 2s later, ended with SIGKILL: SIGTERM is a request a close can decline
+(its own handler, a trapping wrapper), and without a second deadline the wait never resolves.
+The verdict is untouched — the FIRST fault named the outcome and the kill only enforces it.
 
 **The forbidden zone (PRD v1.11 / F17).** `runClose` returns a verdict ONLY when judgment
 was rendered. `expect` (the signed exit code, default 0) and `judged` define the two clean
@@ -337,8 +348,8 @@ close types, and hierarchy. Never throws on JSON text or plain parsed data (the 
 contract); returns the parsed spec on ok, `null` on any red. A spec carrying the retired
 `steps[]` reds `shape-retired` by name (PRD v1.32) rather than falling through to a
 generic unknown-field. Menus exported: `CLOSE_TYPES`, `CLASS_BY_CLOSE`, `GOLD_COMPARE`,
-`CADENCE_UNITS`, `PROVIDERS`, `CONDITION_KEYS`, `TOOL_MENU`, `LOCKED_TOOLS`,
-`VERDICT_TYPES`, `LOCKED_VERDICTS`.
+`CADENCE_UNITS`, `PROVIDERS`, `CONDITION_KEYS`, `TOOL_MENU`, `LOCKED_TOOLS`, `STORE_VERBS`,
+`VERDICT_TYPES`, `LOCKED_VERDICTS` — plus `checkMenu` itself.
 
 ### `validatePlan(input, { job, maxStepRounds?, scopes?, capRuns? })` → `{ ok, reds, plan }` — `src/plan.js`
 
@@ -350,7 +361,7 @@ escaping verb as a structured `verb` field (the ledger keys on it). `maxStepRoun
 (default 40 — the shell's tool-mode per-attempt bound) ceilings every step's `rounds`;
 `capRuns` (default 3) ceilings every step's `attempts`; `scopes` is the offered scope menu
 (pass the SAME array the prompt listed — omitted, it derives from the signed `writeScope`,
-never a free-text fallback). Menus exported: `EXIT_TYPES`, `MAX_EXITS_PER_STEP`, `MAX_PLAN_STEPS`, `WRITE_VERBS`.
+never a free-text fallback). Menus exported: `EXIT_TYPES`, `MAX_EXITS_PER_STEP`, `MAX_PLAN_STEPS`, `WRITE_VERBS` — plus `stageClose`.
 
 ### `snapshotScope(dir, scope)` / `evalExits(exits, { dir, snapshot?, runCheck? })` — `src/exits.js`
 
@@ -406,16 +417,22 @@ three times on one call — each stall silently abandons the hung call and reiss
 (self-heal first); only the third throws. Inside a step it is the THIRD replan trigger
 (with `cap-halt` and `step-variance`); outside a step it escalates under its own name, never
 laundered into `provider-red`, and carries `spendComplete:false` (an abandoned call may
-already have been billed). Every one of them is a decision-ready escalation with a terminal
-`job-end`: the spine never dangles.
+already have been billed). **The reissue is wall-aware:** past the run's deadline the fuse does
+not self-heal — self-heal is what a run does with time left — and it gives up as `wall-halt`,
+not `step-stalled`, since a replan has nothing left to re-allocate. Every one of them is a
+decision-ready escalation with a terminal `job-end`: the spine never dangles.
 
 **Every `job-end` carries the money, on every path**: `{ outcome, spentUsd, spendComplete }`
 (plus `step`/`cause`/`detail` where the outcome has them). `spentUsd` is the accumulated sum
 of PRICED rounds ONLY — never an estimate from token counts or averages (cap-not-estimate) —
 and it is stated even on the pre-token reds, where the honest figure is a real `0`.
-`spendComplete` says whether that figure is EXACT: `false` means one or more rounds came back
-unpriced (F6), so `spentUsd` is a FLOOR ("at least $X", true total unknowable) and must not be
-read as a total. Both fields are present on all outcomes, so a consumer never branches on
+`spendComplete` says whether that figure is EXACT; `false` means `spentUsd` is a FLOOR ("at
+least $X", true total unknowable) and must not be read as a total. Three things set it, all
+the same class — a call whose cost is unknowable from here: a round that came back unpriced
+(F6); a run that ABSORBED a stall, because the fuse's silent reissue may pay twice for one
+answer and the flag is one-way whatever the outcome; and a `wall-halt` that cut a call
+mid-flight (`cutMidCall`). A wall stop read BETWEEN iterations or steps has no call in flight,
+so it stays exact. Both fields are present on all outcomes, so a consumer never branches on
 field presence and never has to launder a missing `spentUsd` into `$0`.
 
 **The plan flow (Layer 2).** `job-start` carries `shape: 'plan'` + the goal; plan steps are
@@ -441,11 +458,24 @@ the gap — NEVER the budget, the close command, a check's command, or the arbit
 
 **Time and materials (T + A, PRD v1.27/v1.29).** `runPlan` starts ONE wall clock per run
 (`createClock`, `src/clock.js`) from the signed `maxWallMs` and emits `wall-clock` with the
-requested AND enforced numbers up front. Enforcement is a **between-round deadline** — the
-only seam that exists, since `loop.stop()` cannot cut an in-flight call (F61: fired at 500ms,
+requested AND enforced numbers up front, plus the `closeStages` count that explains the gap
+between them (`enforcedMs = maxWallMs + closeStages × closeTimeoutMs`, one expression — the
+stage count comes from `stageClose`, the same staging the runner executes). Enforcement is a
+**between-round deadline** — the only seam that exists, since `loop.stop()` cannot cut an
+in-flight call (F61: fired at 500ms,
 returned at 4,018ms) — so an attempt that crosses the deadline mid-flight emits `wall-bounded`,
-is judged, and feeds its gap forward exactly like a round-bounded attempt; the run-level
-terminal `wall-halt` is decided by the step loop after the step returns. Time reporting is
+is judged, and feeds its gap forward exactly like a round-bounded attempt. **The close is never
+bounded by the wall and always runs to completion** — a deadline that kills grading leaves the
+run unreadable after the money is spent (the F45 class, money generalized to time); what the
+wall stops is the START of new work. Three sites decide the run-level terminal `wall-halt`, all
+on the same clock: the step loop after a step returns, a step that would BEGIN already expired,
+and the close-fix loop before it opens another iteration — which then stops on the verdict the
+last close already minted (hamr: *"when time is up, keep the grade we already have and stop"*),
+carrying that verdict, the iterations spent, and a progress `trend` (`moving` | `stalled` |
+`unknown`, read off the last two close gaps) so the human can pick between raising `maxWallMs`
+(resume-to-cap: the stop IS the checkpoint) and revising the goal — both spec edits, both a new
+hash to re-sign. `cutMidCall` on the `wall-halt` record splits the deadline seen INSIDE a
+provider call from the deadline read between them. Time reporting is
 licensed at ~90% accuracy by ruling: imprecision is fine, reporting an unknown or unbounded
 duration as `0` never is (F6 extended to time — unbounded reports `null`, never `Infinity`).
 The planner (never the worker) receives a **materials** block at draft and at replan —

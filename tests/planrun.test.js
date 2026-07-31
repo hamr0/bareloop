@@ -1044,6 +1044,15 @@ test('F64: a wall-derived timeout during PLAN DRAFTING is a wall-halt too — th
   assert.equal(esc.category, 'wall-halt');
   assert.equal(esc.phase, 'plan', 'the phase says where the clock ran out');
   assert.ok(events.find((e) => e.type === 'wall-halt'), 'the clock\'s numbers reach the spine on the drafting path too');
+  // This file's OWN option list (WALL_OPTIONS), pinned — the only test that reads it.
+  // Nothing used to, so it silently drifted to two levers while ralph's entry for the
+  // same category offered three: one category, one option list, whichever site read
+  // the clock. Both levers are spec edits, so each names its re-approval.
+  assert.deepEqual(esc.options, [
+    'raise maxWallMs and rerun (resume-to-cap; a spec edit, so the new hash needs re-approval)',
+    'revise the goal/spec so the work fits the time (same re-approval)',
+    'abandon the task',
+  ]);
 });
 
 test('T: the between-steps wall terminal — a run whose clock expires after a green step STOPS, and the stop is the checkpoint', async (t) => {
@@ -1429,6 +1438,277 @@ test('CLOSE-FIX-LOOP exhaustion CONTROL: attempts spent WITH money left stays es
   assert.equal(esc.category, 'cap-halt', 'ralph names attempt-exhaustion cap-halt too — the SAME category, which is why the wallet is the split');
   assert.equal(outcome, 'escalated',
     'attempts spent with money on the table is a capability terminal, and it must keep riding out as escalated');
+});
+
+// ── W-2: the wall, read BETWEEN close-fix iterations. Nothing used to read the
+// clock between the last step and the outer close, and the fix loop re-ran the FULL
+// staged close every iteration with no wall read at all. Past the deadline each fix
+// worker is stopped on its first round by the metered clock check — it writes
+// nothing — so every post-wall iteration was zero work plus a full re-grade of an
+// UNCHANGED tree, minting the verdict already on the record, capRuns times over (60
+// minutes each on the shipped four-stage spec). hamr's ruling: keep the grade we
+// already have and stop, then ask the human for more time or a different goal.
+
+/** the events emitted from the `fix-loop` marker onward — the close-fix loop's own
+ * record, separated from the step loop's (which emits the same event types). */
+const afterFixLoop = (events) => {
+  const i = events.findIndex((e) => e.type === 'fix-loop');
+  assert.ok(i >= 0, 'the fix loop opened — every assertion below is about what happened inside it');
+  return events.slice(i);
+};
+
+/** a close whose RED OUTPUT tracks the tree (a real suite's does), so two
+ * consecutive grades can legitimately differ. Still stricter than the `clean-run`
+ * check, which is what opens the fix loop at all. @param {string} wd */
+const byteReportingClose = (wd) => writeFileSync(join(wd, 'close.mjs'), `import { existsSync, readFileSync } from 'node:fs';
+const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
+const t = existsSync(p) ? readFileSync(p, 'utf8') : '';
+if (t.includes('import')) process.exit(0);
+console.log(\`FAILED close: \${t.length} bytes, still no import\`); process.exit(1);\n`);
+
+test('W-2: the wall past the outer close STOPS the fix loop on the verdict already minted — one close post-steps, zero fix rounds, no re-grade of an unchanged tree', async (t) => {
+  const wd = makePatient(t);
+  strictCloseOverCheck(wd);
+  const clk = fakeClock();
+  let n = 0;
+  const provider = {
+    name: 'wall-at-outer-close',
+    async generate() {
+      n += 1;
+      const scripted = [
+        { text: 'scout' },
+        { text: PLAN(wd) },
+        { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok but no module use\n' })] },
+        { text: 'wrote it' },
+      ][n - 1] ?? { text: 'a fix attempt that must never be bought' };
+      if (n === 4) clk.advance(700_000); // the step greened, and the clock is now spent
+      return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now, capRuns: 3 });
+
+  assert.equal(outcome, 'wall-halt', 'time ran out — a governance stop, never "the fix failed"');
+  const inFix = afterFixLoop(events);
+  assert.equal(inFix.filter((e) => e.type === 'close-verdict').length, 0,
+    'ZERO closes ran inside the fix loop: the only post-steps grade is the outer close, and it is the one the run stops on');
+  assert.equal(events.filter((e) => e.type === 'outer-close').length, 1, 'exactly one close ran after the steps');
+  assert.equal(events.filter((e) => e.type === 'worker-round' && e.phase === 'fix').length, 0,
+    'not a single fix-worker round was bought past the deadline');
+
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'wall-halt', 'the escalation names the same category the outcome does (F11)');
+  assert.match(esc.detail, /needs_revision/, 'the detail states the verdict that STANDS — the grade is kept, never re-derived');
+  assert.match(esc.detail, /stage "verdict"/, 'and which stage rendered it');
+  assert.match(esc.detail, /0 of 3 fix iteration/, 'and how much of the loop was actually spent');
+  assert.match(esc.detail, /trend: unknown/, 'one grade cannot make a trend, and the honest reading says so rather than guessing "stalled"');
+  assert.match(esc.options.join(' | '), /maxWallMs/, 'lever one: more time');
+  assert.match(esc.options.join(' | '), /revise the goal/, 'lever two: a different goal — the trend is what tells the human which');
+  assert.match(esc.options.join(' | '), /abandon/, 'lever three');
+  assert.doesNotMatch(esc.decision, /transport|network|socket/i, 'never a socket to debug');
+
+  const wh = events.filter((e) => e.type === 'wall-halt').at(-1);
+  assert.ok(wh, 'the run-level TIME record carries the clock\'s own numbers');
+  assert.equal(wh.cutMidCall, false, 'read BETWEEN iterations, not inside a call (F64 is the other reading)');
+  assert.equal(wh.phase, 'fix');
+  assert.equal(wh.trend, 'unknown', 'the trend rides as a FIELD, not only as prose');
+  assert.equal(wh.iterationsUsed, 0);
+  assert.equal(wh.verdict, 'needs_revision');
+  assert.equal(wh.requestedMs, 600_000);
+});
+
+test('W-2 CONTROL: with time still on the clock the fix loop iterates exactly as before — the check must cost the healthy run nothing', async (t) => {
+  const wd = makePatient(t);
+  strictCloseOverCheck(wd);
+  const clk = fakeClock(); // never advanced: the wall is set and never reached
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok but no module use\n' })] },
+    { text: 'wrote it' },
+    { text: 'fix attempt — writes nothing, so the close stays red' },
+  ]);
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now, capRuns: 2 });
+
+  assert.equal(outcome, 'escalated', 'attempts spent with time and money left is the designed capability terminal');
+  assert.equal(afterFixLoop(events).filter((e) => e.type === 'close-verdict').length, 2,
+    'both fix iterations ran and both were graded — the wall check fired zero times');
+  assert.equal(events.filter((e) => e.type === 'worker-round' && e.phase === 'fix').length, 2, 'both fix workers were bought');
+  assert.equal(events.filter((e) => e.type === 'wall-halt').length, 0, 'no time record on a run that never ran out of time');
+  assert.equal(events.filter((e) => e.type === 'escalation').at(-1).category, 'cap-halt');
+});
+
+/**
+ * The trend fixtures. IDENTICAL in every respect but one: what the single fix
+ * attempt writes, and therefore whether the close it triggers reports the same
+ * bytes as the grade before it. Same close, same plan, same clock, same call
+ * positions — so a difference in the trend can only come from the gaps.
+ * @param {string} fixContent what the fix worker writes on its one attempt
+ */
+const trendRun = async (t, fixContent) => {
+  const wd = makePatient(t);
+  byteReportingClose(wd);
+  const clk = fakeClock();
+  let n = 0;
+  const provider = {
+    name: 'wall-after-one-fix',
+    async generate() {
+      n += 1;
+      const scripted = [
+        { text: 'scout' },
+        { text: PLAN(wd) },
+        { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+        { text: 'wrote it' },                                                                    // step greens; outer close reds → G0
+        { toolCalls: [tcall('t2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: fixContent })] },
+        { text: 'fix attempt done' },                                                            // …and the wall passes HERE
+      ][n - 1] ?? { text: 'never bought' };
+      if (n === 6) clk.advance(700_000);
+      return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  return go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now, capRuns: 3 });
+};
+
+test('W-2 trend: a fix attempt that MOVED the close reads "moving" — and its close ran to completion even though the wall passed mid-attempt', async (t) => {
+  const { outcome, events } = await trendRun(t, 'ok and six more bytes\n');
+  assert.equal(outcome, 'wall-halt');
+
+  // the in-flight case, which falls out of WHERE the check sits rather than out of
+  // a second mechanism: the deadline landed during fix attempt 1, that attempt's
+  // close still ran and graded real pre-deadline work, and only THEN did the loop
+  // stop. A close is never bounded — a wall that kills grading leaves the run
+  // unreadable after the money is spent (F45).
+  assert.equal(afterFixLoop(events).filter((e) => e.type === 'close-verdict').length, 1,
+    'the expiring attempt was still graded; the SECOND iteration is the one that never started');
+  assert.ok(events.some((e) => e.type === 'wall-bounded' && e.phase === 'fix'),
+    'the wall did land inside that attempt — otherwise this proves nothing about the in-flight case');
+
+  const wh = events.filter((e) => e.type === 'wall-halt').at(-1);
+  assert.equal(wh.trend, 'moving', 'consecutive close outputs differ, so the work was still changing when time ran out');
+  assert.equal(wh.iterationsUsed, 1);
+  assert.match(events.filter((e) => e.type === 'escalation').at(-1).detail, /raising maxWallMs is the lever that fits/);
+});
+
+test('W-2 trend: a fix attempt that changed NOTHING the close can see reads "stalled" — and points the human at the goal, not the clock', async (t) => {
+  const { outcome, events } = await trendRun(t, 'ok\n'); // byte-identical to what step one wrote
+  assert.equal(outcome, 'wall-halt');
+  const wh = events.filter((e) => e.type === 'wall-halt').at(-1);
+  assert.equal(wh.trend, 'stalled', 'byte-identical close output across two grades');
+  assert.equal(wh.iterationsUsed, 1);
+  assert.match(events.filter((e) => e.type === 'escalation').at(-1).detail, /revise the goal\/spec first/,
+    'more time does not make an unreachable goal reachable — the trend is what separates the two levers');
+});
+
+// ── W-2 at the STEP site. The fix loop's wall read has a sibling one layer up: a
+// STEP that would BEGIN past the deadline. The variance meter cannot see that one —
+// it measures a step's share against what the run had left when the step STARTED,
+// and a step that started with nothing left has a time share of 0 forever, so the
+// meter never fires and the step burns every attempt it is allowed. Each of those
+// attempts is worthless by construction: the metered clock check stops the worker on
+// its FIRST round so it writes nothing, and the judge still runs the step's exits —
+// themselves close stages, at the full close timeout each — to re-mint the red
+// already on the record. Same ruling as the fix loop's: when time is up, keep the
+// grade we already have and stop.
+
+/** the events emitted from the FIRST `step-start` onward — the step loop's own
+ * record, separated from the close precheck's (which spawns the same check stages). */
+const afterStepStart = (events) => {
+  const i = events.findIndex((e) => e.type === 'step-start');
+  assert.ok(i >= 0, 'a step opened — every assertion below is about what happened inside the step loop');
+  return events.slice(i);
+};
+
+test('W-2 (step site): a step that would START past the deadline is never funded — zero attempts, zero rounds, zero exit checks', async (t) => {
+  const wd = makePatient(t);
+  const clk = fakeClock();
+  let n = 0;
+  const provider = {
+    name: 'wall-before-step-one',
+    async generate() {
+      n += 1;
+      const scripted = [{ text: 'scout' }, { text: PLAN(wd) }][n - 1] ?? { text: 'a step attempt that must never be bought' };
+      if (n === 2) clk.advance(700_000); // the plan is drafted, and the clock is spent
+      return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now, capRuns: 3 });
+
+  assert.equal(outcome, 'wall-halt', 'time ran out before the step could start — a governance stop, never a step-red');
+  assert.equal(n, 2, 'not one provider call was bought past the deadline');
+  const inStep = afterStepStart(events);
+  assert.equal(inStep.filter((e) => e.type === 'worker-round').length, 0, 'zero rounds inside the step');
+  assert.equal(inStep.filter((e) => e.type === 'exit-eval').length, 0,
+    'the judge never ran: a step\'s exits are close stages, and re-grading an untouched tree with them is the cost this closes');
+  assert.equal(inStep.filter((e) => e.type === 'check-run').length, 0, 'so no check stage was spawned either');
+  assert.equal(inStep.filter((e) => e.type === 'iteration-start').length, 1,
+    'exactly ONE attempt was opened and it was refused at its head — never capRuns of them');
+  assert.equal(inStep.filter((e) => e.type === 'middle-done').length, 0, 'and that attempt never ran');
+  assert.equal(events.filter((e) => e.type === 'outer-close').length, 0,
+    'nor does the run mint a fresh full close past the deadline: the grade it has is the close precheck\'s');
+
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'wall-halt', 'the escalation names the same category the outcome does (F11)');
+  assert.match(esc.options.join(' | '), /maxWallMs/, 'lever one: more time');
+  assert.match(esc.options.join(' | '), /revise the goal/, 'lever two: a different goal');
+  assert.doesNotMatch(esc.decision, /transport|network|socket/i, 'never a socket to debug');
+
+  const wh = events.filter((e) => e.type === 'wall-halt').at(-1);
+  assert.ok(wh, 'the run-level TIME record carries the clock\'s own numbers');
+  assert.equal(wh.cutMidCall, false,
+    'read BETWEEN attempts with no call in flight — F64 is the other reading, and the job-end money floor keys on exactly this field');
+  assert.equal(wh.phase, 'step:write-test');
+  assert.equal(wh.stepsDone, 0);
+  assert.equal(wh.stepsPlanned, 1);
+  assert.equal(wh.attemptsUsed, 0);
+  assert.equal(wh.requestedMs, 600_000);
+});
+
+test('W-2 (step site) CONTROL: a step ALREADY RUNNING when the wall passes keeps its old behaviour — the attempt finishes, the judge runs, and the METER is what stops it', async (t) => {
+  const wd = makePatient(t);
+  const clk = fakeClock();
+  const replanned = PLAN(wd, [{
+    id: 'second-go', action: 'Write it properly.', tools: ['write'], rounds: 4,
+    target: 'tests/test_x.mjs', exit: [{ type: 'tree-changed', scope: 'tests/**' }],
+  }]);
+  let n = 0;
+  const provider = {
+    name: 'wall-during-step-one',
+    async generate() {
+      n += 1;
+      const scripted = [
+        { text: 'scout' },
+        { text: PLAN(wd) },
+        { text: 'writing', toolCalls: [tcall('1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'nope\n' })] },
+        { text: 'attempt 1 done' },   // …and the wall passes HERE, with the step under way
+        { text: replanned },
+      ][n - 1] ?? { text: 'never bought' };
+      if (n === 4) clk.advance(700_000);
+      return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now, capRuns: 3 });
+
+  // scoped to the FIRST step — the step that was already running when the wall
+  // passed. What the run does AFTER the replan is the other test's subject.
+  const stepOne = afterStepStart(events).slice(0, afterStepStart(events).findIndex((e) => e.type === 'replan'));
+  assert.equal(stepOne.filter((e) => e.type === 'middle-done').length, 1,
+    'the in-flight attempt ran to completion — the wall never cuts work already under way');
+  assert.equal(stepOne.filter((e) => e.type === 'exit-eval').length, 1, 'and its judge ran: grading real work always completes (F45)');
+
+  const variance = events.find((e) => e.type === 'variance');
+  assert.ok(variance, 'the METER is the instrument for a step that was already running — it sees the whole remaining time gone');
+  assert.equal(variance.axis, 'time');
+  assert.equal(variance.timeShare, 1);
+  assert.equal(variance.iteration, 2, 'stopped at the HEAD of attempt 2, so attempt 1\'s work is not discarded');
+  assert.equal(events.filter((e) => e.type === 'escalation')[0].category, 'step-variance',
+    'a running step is stopped by the meter exactly as before — never by the step-site wall check');
+  const replan = events.find((e) => e.type === 'replan');
+  assert.ok(replan, 'and it still routes to the ONE replan rather than to a stop');
+  assert.equal(replan.trigger, 'step-variance');
+
+  // The TAIL is the fix above, not this control: the REPLANNED plan's first step is
+  // the one that would begin past the deadline, and that is the step the run refuses.
+  assert.equal(outcome, 'wall-halt');
+  assert.equal(events.filter((e) => e.type === 'wall-halt').at(-1).phase, 'step:second-go');
 });
 
 test('SCOUT casualty: a transport death on the survey call ends the run as provider-red BEFORE a plan is ever drafted', async (t) => {
