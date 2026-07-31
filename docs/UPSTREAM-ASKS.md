@@ -25,6 +25,11 @@ it · the fix (upstream commit/PR) · the version bareloop consumed.**
 > the clipipe cross-surface battery (F48). Full entry at the end of the queue. The
 > 2026-07-15 snapshot below stands for everything prior.
 
+> **2026-07-31 update:** **OPEN — LC-5** (litectx): a missing `ripgrep` makes `impact()`
+> read "0 callers, risk low" — the false-isolation its own contract names as "the one
+> dangerous error" is documented but not *detected*; the ask is a runtime distinguisher
+> (ENOENT ≠ no-matches). Found by bareloop's CI going red on it. Full entry at the end.
+
 **The queue is EMPTY: BA-13 delivered in `bare-agent@0.29.0`** (same day it was filed) and
 consumed by bareloop the same session (TOOL_MENU/TOOL_BY_VERB gain `edit`; F32). Everything
 prior was already closed: `bare-agent@0.27.0` and `litectx 0.29.1` cleared the earlier queue.
@@ -1237,3 +1242,68 @@ stay exactly as it is; the ask is a knob.
    named error — never a corrupt store.
 
 </details>
+
+## LC-5 — a missing `ripgrep` reads as "0 callers, risk low": the documented §7.2 false-isolation should be DETECTED at runtime, not only documented (2026-07-31, v0.6.0 release gate / CI red)
+
+**Measured before filing (standing rule), on litectx 0.31.0 as shipped:**
+
+- bareloop's CI (ubuntu-latest, no ripgrep on the image) has failed **deterministically on
+  exactly 2 tests since 2026-07-28 10:55** — the commit that introduced `ctx_impact` tests
+  (green immediately before, red every run after, 18 consecutive runs). Both failures are
+  `impact()` reporting `risk low — 0 confirmed caller(s), 0 mention(s)` for a symbol with
+  2 real callers in the fixture.
+- Reproduced locally by construction: clean checkout + fresh `npm ci` (Node 20, matching CI)
+  passes **558/558** with `rg` present; with only `rg` shadowed by a failing stub, **exactly
+  the same 2 tests fail and nothing else** (18/20 in the file; callees and the import graph
+  still work — they are tree-sitter/index paths, not `rg` paths). Same signature as CI,
+  byte for byte on the readout.
+- Source trace (`src/impact.js`, 0.31.0): both `rg` call sites swallow the spawn failure
+  into a valid-empty result —
+  - `rgWordMatches` (`:182-187`): `catch { if (e.stdout) out = e.stdout; else return []; }`
+    — the comment anticipates **exit 1 = "no matches"**, but the same branch also eats
+    **ENOENT = "rg never ran"**. The distinguishing bit (`e.code === 'ENOENT'` vs
+    `e.status === 1`) is in hand and discarded.
+  - `rgListFiles` (`:312-316`): identical swallow. This one feeds the **barrel/alias caller
+    sweep** — the "crux false-isolation mode" the file's own §7.2 comment says a name-only
+    search can't see; with rg absent it silently sees nothing either.
+
+**The defect, stated against litectx's own doctrine.** The adopter contract already says it
+plainly (Gotchas: *"a symbol can read as isolated purely because the tool is absent (a §7.2
+false-isolation, the one dangerous error)"*) — so this is **not** an undocumented-dependency
+report. The ask is narrower: a documented footgun is still armed. Docs protect the operator
+who reads them; they cannot protect the *consumer of the readout at runtime* — in bareloop's
+case an LLM worker handed the `ctx_impact` text, which has no way to know `rg` was absent and
+takes "0 confirmed callers" as licence to change freely. impact's whole hedging design exists
+because under-counting is the dangerous direction; a missing tool currently produces the
+**maximal under-count** wearing the normal hedged coat. (bareloop's house rule for the same
+shape: unknown is reported as unknown, never rendered as 0.)
+
+**Filed WITH its own limiting evidence (standing rule):**
+- The requirement **is** documented, in three places (README mechanism note, context.md
+  Gotchas, context.md Constraints). Our CI blindness was **our own missed contract read** —
+  owned on our side and fixed regardless of this ask (one-line ripgrep install in our CI).
+- Blast radius is bounded and correctly documented: `recall()`/`index()`/`get()` don't touch
+  `rg`; only `impact()` degrades.
+- n=1 environment class (CI images without rg), but the mechanism is deterministic, not flaky.
+
+**The ask.** Distinguish "rg ran and found nothing" (exit 1 — a valid empty) from "rg never
+ran" (ENOENT/spawn failure) at **both** call sites, and surface the second case loudly.
+Either shape is fine by us — upstream's pick:
+- **(a) refuse:** `impact()` throws a named error (e.g. code `RIPGREP_MISSING`) whose message
+  names ripgrep and the PATH requirement; or
+- **(b) hedge honestly:** the readout carries an explicit, machine-distinguishable hedge
+  (e.g. `caller sweep unavailable: ripgrep (rg) not found on PATH — caller/mention counts
+  are UNKNOWN, not zero`) and does not present `confirmed`/`mentions` as exact zeros.
+
+**FAIL-able acceptance criteria:**
+1. With `rg` absent from PATH, `impact()` on a symbol that has real callers must NOT return
+   a readout identical in shape to genuine isolation: either a named throw (a), or a hedge
+   naming ripgrep plus counts not presented as exact zeros (b). Test: run litectx's own
+   impact test with PATH scrubbed of `rg`.
+2. With `rg` present and genuinely zero matches, behavior is byte-identical to today
+   (exit 1 stays a valid empty — no new failure mode for the legitimate case).
+3. Both call sites covered: the alias/barrel sweep (`rgListFiles`) must not silently
+   contribute an empty candidate set when rg is missing — a barrel-reached caller must not
+   vanish without the same loud signal.
+4. A crashed rg with partial stdout (the existing `e.stdout` salvage branch) keeps today's
+   salvage behavior — the new signal fires only when rg produced nothing because it never ran.
