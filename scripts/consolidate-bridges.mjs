@@ -26,7 +26,7 @@
 // `--dry-run` prints exactly what it would write and touches nothing.
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TOOL_MENU } from '../src/job.js';
 import { stageClose } from '../src/plan.js';
@@ -57,12 +57,36 @@ if (!registryDir) {
 }
 const sources = from.length ? from : DEFAULT_SOURCES;
 
+// --- the patient slug: ONE spelling, shared with the other writer -----------
+//
+// D6 counts DISTINCT patient strings, so two spellings of ONE physical patient
+// mint a `proven` that no second instance ever paid for. The canonical slug is the
+// PATIENT WORKDIR basename (`aurora-u`, `litectx-u`) — exactly what
+// `scripts/run-reuse.mjs` writes from its JOBS table. This script reads a SPINE
+// dir, whose convention in `scripts/run-u.mjs` is `<patient>-bareloop`, so the
+// patient is the dir name with that suffix stripped. A source directory that does
+// not carry the convention is REFUSED, never guessed at: guessing here is how the
+// second spelling got in.
+const SPINE_SUFFIX = '-bareloop';
+
+/** @param {string} dir a spine directory @returns {string} the patient slug */
+function patientFromSpineDir(dir) {
+  const slug = basename(resolve(dir));
+  if (!slug.endsWith(SPINE_SUFFIX) || slug.length === SPINE_SUFFIX.length) {
+    die(`source directory ${dir}: expected a spine dir named <patient>${SPINE_SUFFIX} (scripts/run-u.mjs's layout).\n`
+      + `  The PATIENT slug is the patient workdir basename — the same spelling scripts/run-reuse.mjs writes — and it is\n`
+      + `  never guessed from a differently-named directory: a second spelling of one patient falsely mints \`proven\` (D6).`);
+  }
+  return slug.slice(0, -SPINE_SUFFIX.length);
+}
+
 // --- read the old files ----------------------------------------------------
 
 /** @type {{file: string, patient: string, job: string, runid: string, specHash: string|null, greenAt: string|null, plan: any}[]} */
 const olds = [];
 for (const dir of sources) {
   if (!existsSync(dir)) die(`source directory not found: ${dir}`);
+  const patient = patientFromSpineDir(dir);
   for (const f of readdirSync(dir).filter((n) => /^bridge-.*\.json$/.test(n)).sort()) {
     const file = join(dir, f);
     let o;
@@ -72,9 +96,9 @@ for (const dir of sources) {
     }
     olds.push({
       file,
-      // the PATIENT is the instance this green ran against; the spine-dir slug is
-      // the identifier the old files leave behind (D6 counts DISTINCT patients)
-      patient: basename(dir),
+      // the PATIENT is the instance this green ran against, spelled the ONE way
+      // both writers spell it (D6 counts DISTINCT patients — see above)
+      patient,
       job: o.job,
       runid: o.runid,
       specHash: typeof o.specHash === 'string' ? o.specHash : null,

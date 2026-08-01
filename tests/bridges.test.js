@@ -22,7 +22,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -573,10 +573,14 @@ const SCRIPT = new URL('../scripts/consolidate-bridges.mjs', import.meta.url).pa
 const run = (args) => spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8' });
 
 /** two old-shape files for ONE real job, one of them missing specHash+greenAt
- * exactly like `bridge-aurora-u-spawner-types-ms2c0ls7.json` does on disk */
-function oldSourceDir(t) {
-  const dir = mkdtempSync(join(tmpdir(), 'aurora-u-bareloop-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+ * exactly like `bridge-aurora-u-spawner-types-ms2c0ls7.json` does on disk.
+ *
+ * The directory is a REAL spine dir — run-u.mjs's `<patient>-bareloop` layout —
+ * because the PATIENT SLUG is derived from its name, and a fixture that did not
+ * carry that shape would be testing a directory name that never exists on disk. */
+function oldSourceDir(t, spine = 'aurora-u-bareloop') {
+  const dir = join(tmp(t, 'consolidate-src-'), spine);
+  mkdirSync(dir);
   const plan = { schema: 'plan-v1', steps: [{ id: 'a', action: 'x', tools: ['read', 'edit'], rounds: 10, exit: [{ type: 'check-passes', name: 'typecheck' }] }] };
   writeFileSync(join(dir, 'bridge-aurora-u-spawner-types-ms2c0ls7.json'), JSON.stringify({ job: 'aurora-u-spawner-types', runid: 'ms2c0ls7', recovered_from: 'spine', plan }));
   writeFileSync(join(dir, 'bridge-aurora-u-spawner-types-ms7flkok.json'), JSON.stringify({ job: 'aurora-u-spawner-types', specHash: 'b'.repeat(64), runid: 'ms7flkok', greenAt: '2026-07-30T11:40:49.970Z', plan }));
@@ -641,6 +645,45 @@ test('consolidate REFUSES to overwrite an existing entry without --force', (t) =
   assert.match(again.stderr, /REFUSED/);
   assert.equal(readFileSync(join(dir, 'aurora-u-spawner-types.json'), 'utf8'), first);
   assert.equal(run([dir, '--from', src, '--force']).status, 0);
+});
+
+// --- the patient slug is ONE spelling, both writers ------------------------
+// D6 counts DISTINCT patient strings, so two spellings of ONE physical patient
+// mint a `proven` no second instance ever paid for. The canonical slug is the
+// PATIENT WORKDIR basename (`aurora-u`, `litectx-u` — run-reuse.mjs's JOBS
+// table); consolidation reads a SPINE dir (`<patient>-bareloop`), so it must
+// strip the suffix rather than write the dir name it happened to be handed.
+
+test('consolidate writes the PATIENT slug, not the spine-dir name (one spelling, both writers)', (t) => {
+  const src = oldSourceDir(t, 'aurora-u-bareloop');
+  const dir = tmp(t, 'consolidate-slug-');
+  const r = run([dir, '--from', src]);
+  assert.equal(r.status, 0, r.stderr);
+  const b = loadRegistry(dir).bridges[0];
+  assert.deepEqual(b.versions.map((v) => v.patient), ['aurora-u', 'aurora-u'], 'the spine dir is <patient>-bareloop; the patient is the workdir basename');
+  assert.deepEqual(b.history.map((h) => h.patient), ['aurora-u', 'aurora-u']);
+});
+
+test('consolidated greens cannot mint a FALSE proven against a run-reuse green on the same patient', (t) => {
+  const src = oldSourceDir(t, 'aurora-u-bareloop');
+  const dir = tmp(t, 'consolidate-collision-');
+  assert.equal(run([dir, '--from', src]).status, 0);
+  const b = loadRegistry(dir).bridges[0];
+  assert.equal(deriveStatus(b.history), 'candidate', 'two greens on ONE patient is a candidate');
+  // run-reuse.mjs writes the workdir basename. The SAME physical patient must
+  // not read as a second distinct one.
+  const after = appendGreen(b, { runid: 'ms9zzzzz', patient: 'aurora-u', at: '2026-08-01T00:00:00.000Z', plan: PLAN, costUsd: 2.4, spendComplete: true, wallMs: 600_000, rounds: 40 });
+  assert.equal(after.ok, true, after.reds.map((x) => `${x.code}:${x.path}`).join(', '));
+  assert.equal(deriveStatus(after.bridge.history), 'candidate', 'a third green on the same patient still proves nothing — a second spelling here would falsely mint proven');
+});
+
+test('consolidate REFUSES a source dir that is not a <patient>-bareloop spine dir — never guesses', (t) => {
+  const src = oldSourceDir(t, 'aurora-u');
+  const dir = tmp(t, 'consolidate-notspine-');
+  const r = run([dir, '--from', src]);
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /-bareloop/, 'the refusal names the convention it could not read');
+  assert.deepEqual(readdirSync(dir), [], 'a refused source writes nothing');
 });
 
 test('consolidate refuses a file it cannot read as a probe-era bridge — never guesses', (t) => {
