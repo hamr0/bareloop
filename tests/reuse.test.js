@@ -27,6 +27,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { validateEnvelope, resolveTrySpec, selectBridge, runReuse, REUSE_GRADED_RED } from '../src/reuse.js';
 import { makeRegistry, saveBridge, loadRegistry, loadBridge, deriveStatus } from '../src/bridges.js';
 import { jobSpecHash } from '../src/job.js';
@@ -303,6 +304,63 @@ test('R1: a GRADED RED writes a history row ONLY — the recipe is never edited 
   assert.ok(REUSE_GRADED_RED.includes('escalated'));
 });
 
+test('the row names the stage that rendered the LAST verdict — `outer-close` is only the pre-fix-loop reading', async () => {
+  // FAITHFUL to planrun's real emission order (the point of this test): `outer-close`
+  // fires ONCE, BEFORE the close-fix loop; every later verdict arrives as ralph's
+  // `close-verdict`. `escalated` — the only outcome that demotes — is decided AFTER that
+  // loop, so a row read from `outer-close` names a stale stage whenever the fix loop
+  // moved the wall. A step's own exit-loop verdict carries NO stage and must not count.
+  const job = JOB({
+    close: [
+      { name: 'stage-a', cmd: 'node a.mjs', expect: 0, gapKeep: '^FAILED' },
+      { name: 'stage-b', cmd: 'node b.mjs', expect: 0, gapKeep: '^FAILED' },
+    ],
+  });
+  const dir = seed(BRIDGE('alpha', { closeStageNames: ['stage-a', 'stage-b'] }));
+  const runs = async (/** @type {any} */ spec, /** @type {any} */ opts) => {
+    opts.emit('worker-round', { kind: 'turn', costUsd: 0.5 });
+    opts.emit('plan-accepted', { plan: PLAN('tried') });
+    opts.emit('close-verdict', { iteration: 1, verdict: 'needs_revision' }); // a STEP's exit loop — no stage
+    opts.emit('outer-close', { verdict: 'needs_revision', stage: 'stage-a' });
+    opts.emit('fix-loop', { gapBytes: 120 });
+    opts.emit('close-verdict', { iteration: 1, verdict: 'needs_revision', stage: 'stage-a' });
+    opts.emit('close-verdict', { iteration: 2, verdict: 'needs_revision', stage: 'stage-b' }); // stage-a fixed; stage-b is the wall now
+    opts.emit('job-end', { outcome: 'escalated', spentUsd: 1, spendComplete: true });
+    return 'escalated';
+  };
+  const r = await runReuse(runOpts({
+    job,
+    envelope: ENVELOPE({ bridgeTries: 1 }),
+    registryDir: dir,
+    selectionProvider: picker({ choice: 'alpha', reason: 'fits' }),
+    runJob: runs,
+  }));
+  assert.equal(r.tries[0].failingStage, 'stage-b', 'the stage the close actually ended at, not the one it opened at');
+  assert.equal(loadBridge(join(dir, 'alpha.json')).bridge.history.at(-1).failingStage, 'stage-b', 'and that is what the demoting row records');
+
+  // …and the FALLBACK: when the fix loop dies before rendering a verdict of its own, the
+  // only close reading that exists is `outer-close`'s — and a STEP's stage-less verdict
+  // (the exit evaluator's, sitting later in no slice but earlier in this one) must not
+  // blank it out.
+  const dir2 = seed(BRIDGE('alpha', { closeStageNames: ['stage-a', 'stage-b'] }));
+  const died = async (/** @type {any} */ spec, /** @type {any} */ opts) => {
+    opts.emit('worker-round', { kind: 'turn', costUsd: 0.5 });
+    opts.emit('close-verdict', { iteration: 1, verdict: 'needs_revision' }); // a step exit loop — no stage
+    opts.emit('outer-close', { verdict: 'needs_revision', stage: 'stage-a' });
+    opts.emit('fix-loop', { gapBytes: 90 });
+    opts.emit('job-end', { outcome: 'provider-red', spentUsd: 0.6, spendComplete: false });
+    return 'provider-red'; // the fix worker's transport died before any close-verdict
+  };
+  const r2 = await runReuse(runOpts({
+    job,
+    envelope: ENVELOPE({ bridgeTries: 1 }),
+    registryDir: dir2,
+    selectionProvider: picker({ choice: 'alpha', reason: 'fits' }),
+    runJob: died,
+  }));
+  assert.equal(r2.tries[0].failingStage, 'stage-a', 'no later close verdict exists, so outer-close stands — a stage-less step verdict never overrides it');
+});
+
 test('R1: a CASUALTY is recorded under its own outcome and does NOT demote', async () => {
   // a PROVEN entry (greens on two distinct patients) — the only status a red can drop
   const proven = BRIDGE('alpha', {
@@ -457,6 +515,98 @@ test('R1: a cold green on a job that ALREADY has a bridge of that name appends, 
   assert.equal(after.versions.length, 2, 'the founding green survived');
 });
 
+test('R1: a cold green NEVER appends across close SHAPES — it forks under a derived name, and the fork is visible', async () => {
+  // the entry on disk greened on close [typecheck]; the job's close has since been
+  // re-signed to [lint, suite]. Appending would promote an old-shape entry to `proven`
+  // on the strength of a green that a DIFFERENT close rendered — and would hand the
+  // old-shape load gate a plan that never satisfied it.
+  const dir = seed(BRIDGE('types-migration'));
+  const before = loadBridge(join(dir, 'types-migration.json')).bridge;
+  const job = JOB({
+    close: [
+      { name: 'lint', cmd: 'node lint.mjs', expect: 0, gapKeep: '^FAILED' },
+      { name: 'suite', cmd: 'node suite.mjs', expect: 0, gapKeep: '^FAILED' },
+    ],
+  });
+  const cold = () => runReuse(runOpts({
+    job,
+    envelope: ENVELOPE({ bridgeTries: 0 }),
+    registryDir: dir,
+    runJob: scriptedRuns([{ outcome: 'green', plan: PLAN('new-shape-plan'), closeStage: 'suite', spentUsd: 1 }]),
+  }));
+
+  const r = await cold();
+  assert.equal(r.outcome, 'green');
+  const after = loadBridge(join(dir, 'types-migration.json')).bridge;
+  assert.deepEqual(after, before, 'the old-shape entry is untouched — a green another close rendered is not its green');
+  assert.equal(deriveStatus(after.history), 'candidate', 'no false promotion across two different close shapes');
+
+  const forked = `types-migration-${createHash('sha256').update(['lint', 'suite'].join('\n')).digest('hex').slice(0, 8)}`;
+  const minted = loadBridge(join(dir, `${forked}.json`));
+  assert.equal(minted.ok, true, `the green is PRESERVED under the derived name: ${JSON.stringify(minted.reds)}`);
+  assert.deepEqual(minted.bridge.closeStageNames, ['lint', 'suite']);
+  assert.equal(minted.bridge.versions[0].plan.steps[0].id, 'new-shape-plan');
+  const w = r.bridgeWrites.at(-1);
+  assert.equal(w.name, forked, 'the record names the file that was actually written');
+  assert.match(w.action, /shape-forked/, 'a reader must SEE it was forked, not silently filed');
+  assert.equal(w.shapeForked, true);
+
+  // and the fork is a real home: a second green of the same shape APPENDS to it
+  const r2 = await cold();
+  assert.equal(r2.outcome, 'green');
+  assert.equal(loadBridge(join(dir, `${forked}.json`)).bridge.versions.length, 2, 'the derived name is stable — the second green appends, never a third file');
+  assert.match(r2.bridgeWrites.at(-1).action, /^appendGreen-shape-forked$/);
+});
+
+test('R1: a derived name held by a DIFFERENT shape is refused, never appended to blind', async () => {
+  // the derived name is derived FROM the shape, so this only happens if the file was
+  // repurposed by hand — and the answer is the same one the mint-collision guard gives:
+  // refuse, name it, and leave whatever greens are there alone.
+  const dir = seed(BRIDGE('types-migration'));
+  const job = JOB({
+    close: [
+      { name: 'lint', cmd: 'node lint.mjs', expect: 0, gapKeep: '^FAILED' },
+      { name: 'suite', cmd: 'node suite.mjs', expect: 0, gapKeep: '^FAILED' },
+    ],
+  });
+  const forked = `types-migration-${createHash('sha256').update(['lint', 'suite'].join('\n')).digest('hex').slice(0, 8)}`;
+  assert.equal(saveBridge(dir, BRIDGE(forked, { closeStageNames: ['someone-elses-stage'] })).ok, true);
+  const held = readFileSync(join(dir, `${forked}.json`), 'utf8');
+  const r = await runReuse(runOpts({
+    job,
+    envelope: ENVELOPE({ bridgeTries: 0 }),
+    registryDir: dir,
+    runJob: scriptedRuns([{ outcome: 'green', plan: PLAN('new-shape-plan'), closeStage: 'suite', spentUsd: 1 }]),
+  }));
+  assert.equal(r.outcome, 'green', 'the JOB still greened — the registry write is a separate fact');
+  assert.equal(r.bridgeWrites.at(-1).action, 'none');
+  assert.equal(r.bridgeWrites.at(-1).reds[0].code, 'shape-fork-collision');
+  assert.equal(readFileSync(join(dir, `${forked}.json`), 'utf8'), held, 'the entry that was there is untouched');
+});
+
+test('R1: the same stages in a DIFFERENT ORDER are a different shape too — the load gate\'s own rule, not a looser one', async () => {
+  // `loadGate` rule 2: "same names in the same ORDER is v1's definition of the same
+  // kinds". A cold green must hold the entry to exactly that, or it files a green the
+  // gate would never let anyone reuse — and inflates the entry's status doing it.
+  const dir = seed(BRIDGE('types-migration', { closeStageNames: ['lint', 'suite'] }));
+  const job = JOB({
+    close: [
+      { name: 'suite', cmd: 'node suite.mjs', expect: 0, gapKeep: '^FAILED' },
+      { name: 'lint', cmd: 'node lint.mjs', expect: 0, gapKeep: '^FAILED' },
+    ],
+  });
+  const r = await runReuse(runOpts({
+    job,
+    envelope: ENVELOPE({ bridgeTries: 0 }),
+    registryDir: dir,
+    runJob: scriptedRuns([{ outcome: 'green', plan: PLAN('reordered'), closeStage: 'lint', spentUsd: 1 }]),
+  }));
+  assert.equal(r.outcome, 'green');
+  assert.equal(loadBridge(join(dir, 'types-migration.json')).bridge.versions.length, 1, 'the reversed close is NOT the same recipe kind');
+  const forked = `types-migration-${createHash('sha256').update(['suite', 'lint'].join('\n')).digest('hex').slice(0, 8)}`;
+  assert.equal(loadBridge(join(dir, `${forked}.json`)).ok, true, 'the green lands under the shape it actually greened');
+});
+
 test('R1: a cold green REFUSES to mint over a file it could not read — an unreadable entry is not an absent one', async () => {
   const dir = freshRegistry();
   // `loadRegistry` skips-and-reports this file; minting over it would destroy whatever
@@ -511,6 +661,36 @@ test('D3: a refused PIN stops the run and hands the decision back — nothing is
   assert.equal(r.outcome, 'selection-refused');
   assert.equal(runs.calls.length, 0, 'no run is started on a decision nobody made');
   assert.match(r.decision, /beta/);
+  // the terminal's own claim, locked: a refusal can only ever land with ZERO paid tries,
+  // because the pin stops travelling the moment it has had one (see the test above). That
+  // is what makes "Nothing was run" a true sentence rather than an assumption.
+  assert.equal(r.triesUsed, 0);
+  assert.match(r.decision, /Nothing was run/);
+});
+
+test('D3: once the PIN has had its paid try, the next try proceeds unpinned — a spent pin never kills the envelope', async () => {
+  // the pin is honoured, runs, and reds. Its name is now in `exclude`, so it is OFF the
+  // listing — restating it as the pin makes EVERY possible answer a refusal, and the run
+  // would die as "nothing was run" with a paid try behind it and a try still authorized.
+  const dir = seed(BRIDGE('alpha'), BRIDGE('beta'));
+  const provider = picker({ choice: 'alpha', reason: 'the pin fits' }, { choice: 'beta', reason: 'next best' });
+  const runs = scriptedRuns([
+    { outcome: 'escalated', closeStage: 'typecheck', spentUsd: 1 },
+    { outcome: 'green', plan: PLAN('second-try'), closeStage: 'typecheck', spentUsd: 1 },
+  ]);
+  const r = await runReuse(runOpts({
+    envelope: ENVELOPE({ bridgeTries: 2 }),
+    registryDir: dir,
+    pinned: 'alpha',
+    selectionProvider: provider,
+    runJob: runs,
+  }));
+  assert.equal(r.outcome, 'green');
+  assert.equal(runs.calls.length, 2, 'the second authorized try actually ran');
+  assert.equal(runs.calls[1].bridge.name, 'beta');
+  assert.match(provider.calls[0], /PINNED the workflow "alpha"/, 'try 1 states the pin — D3, the pin enters the call');
+  assert.doesNotMatch(provider.calls[1], /PINNED the workflow/, 'try 2 states no pin: the pinned name has had its try and is off the listing');
+  assert.ok(!r.decision || !/Nothing was run/.test(r.decision), 'no terminal may claim nothing ran once a try has been paid for');
 });
 
 // ── the decision-ready readout (D7 / F6 / F45) ──────────────────────────────
@@ -539,6 +719,39 @@ test('every row is decision-ready: bridge, stage, spend vs cap, time vs cap, and
   assert.equal(r.triesAuthorized, 1);
   assert.equal(r.triesUsed, 1);
   assert.ok(r.decision, 'a non-green return is decision-ready');
+});
+
+test('F6: a NATIVE try counts its real turns, and a slice with no turn signal reports UNKNOWN, never 0', async () => {
+  // the native worker surface meters differently: one `worker-turn` per turn (cost null
+  // by design) and ONE `worker-round` of kind 'session' carrying the authoritative cost.
+  // Counting only `worker-round`+kind:'turn' reads every native try as 0 rounds — a
+  // count that reads as exact while the work is invisible (F6).
+  const dir = freshRegistry();
+  const native = async (/** @type {any} */ spec, /** @type {any} */ opts) => {
+    for (let i = 0; i < 3; i += 1) opts.emit('worker-turn', { kind: 'turn', costUsd: null, pricing: null });
+    opts.emit('worker-round', { kind: 'session', costUsd: 0.9, pricing: 'session' });
+    opts.emit('plan-accepted', { plan: PLAN('native-plan') });
+    opts.emit('outer-close', { verdict: 'satisfied' });
+    opts.emit('job-end', { outcome: 'green', spentUsd: 0.9, spendComplete: true });
+    return 'green';
+  };
+  const r = await runReuse(runOpts({ envelope: ENVELOPE({ bridgeTries: 0 }), registryDir: dir, runJob: native }));
+  assert.equal(r.outcome, 'green');
+  assert.equal(r.tries[0].rounds, 3, 'the native turns are the try\'s real turn count');
+  assert.equal(loadBridge(join(dir, 'types-migration.json')).bridge.versions[0].rounds, 3, 'and that is what the minted version records');
+
+  // priced work with NO turn signal at all: the instrument cannot see the count, so it
+  // says so. A zero here would read as "the worker did nothing" for money that was spent.
+  const dir2 = freshRegistry();
+  const blind = async (/** @type {any} */ spec, /** @type {any} */ opts) => {
+    opts.emit('plan-accepted', { plan: PLAN('blind-plan') });
+    opts.emit('outer-close', { verdict: 'satisfied' });
+    opts.emit('job-end', { outcome: 'green', spentUsd: 1.5, spendComplete: true });
+    return 'green';
+  };
+  const r2 = await runReuse(runOpts({ envelope: ENVELOPE({ bridgeTries: 0 }), registryDir: dir2, runJob: blind }));
+  assert.equal(r2.tries[0].rounds, null, 'unknown is unknown — never a zero that reads as exact');
+  assert.equal(loadBridge(join(dir2, 'types-migration.json')).bridge.versions[0].rounds, null);
 });
 
 test('F6: reuse spend is the SUM of every try plus the selection calls, and a floor stays a floor', async () => {
@@ -590,6 +803,59 @@ test('a stop no further try could change (unsigned spec) ends the run on the FIR
   assert.equal(runs.calls.length, 1, 'the answer is already known — a second try and a cold leg would only repeat it');
   assert.match(r.decision, /new spec version/i);
   assert.match(r.options.join(' '), new RegExp(r.specHash), 'the decision hands over the hash to sign');
+});
+
+test('a run-level WIRING fault ends the run on the first try — it never burns the envelope on innocent bridges', async () => {
+  // Both are $0 deterministic terminals runPlan returns before (or independently of) any
+  // recipe: a close the plan flow cannot execute, and a missing provider factory. Every
+  // further try — and the cold leg — would reproduce them verbatim, filling the readout
+  // with rows that all say the same thing and burying the one fact the operator needs.
+  for (const [outcome, names] of [['close-unsupported', /close/i], ['interpreter-red', /wiring|interpreter/i]]) {
+    const dir = seed(BRIDGE('alpha'), BRIDGE('beta'));
+    const runs = scriptedRuns([{ outcome, spentUsd: 0 }]);
+    const r = await runReuse(runOpts({
+      envelope: ENVELOPE({ bridgeTries: 2 }),
+      registryDir: dir,
+      selectionProvider: picker({ choice: 'alpha', reason: 'a' }, { choice: 'beta', reason: 'b' }),
+      runJob: runs,
+    }));
+    assert.equal(r.outcome, outcome);
+    assert.equal(r.category, outcome, 'the stop keeps its own name — never the misleading `reuse-exhausted`');
+    assert.equal(runs.calls.length, 1, `${outcome}: try 2 and the cold leg would only repeat the answer`);
+    assert.ok(r.decision, 'the stop is decision-ready');
+    assert.match(r.decision, names, 'the decision names the fault as a spec/wiring one, not a recipe verdict');
+    assert.match(r.decision, /not|never/i);
+    assert.equal(loadBridge(join(dir, 'beta.json')).bridge.history.length, 1, 'the bridge never tried is untouched');
+    assert.equal(deriveStatus(loadBridge(join(dir, 'alpha.json')).bridge.history), 'candidate', 'a wiring casualty is not evidence about the recipe');
+  }
+});
+
+test('the hard stop the LEDGER classifies is not re-filed — one wiring fault is one incident, never two', async () => {
+  // `interpreter-red` is not in the ledger's excluded set: it is CLASSIFIED, and aims a
+  // runtime-red at a library. runJob already files it at the fault's own site with its
+  // typed `lib`, so a reuse-level copy would count one fault twice against an upstream
+  // package — the step-stalled lesson. (`close-unsupported` is excluded, so its
+  // reuse-level escalation is free, exactly like `smoke-red`'s.)
+  /** @type {any[]} */
+  const events = [];
+  const emit = (/** @type {string} */ type, /** @type {any} */ data) => { const ev = { type, seq: events.length, ...(data ?? {}) }; events.push(ev); return ev; };
+  const dir = seed(BRIDGE('alpha'));
+  const runs = async (/** @type {any} */ spec, /** @type {any} */ opts) => {
+    // planrun's own emission for a missing native provider factory, verbatim in shape
+    opts.emit('escalation', { category: 'interpreter-red', decisionReady: true, decision: 'no native provider factory was wired into the runner.', options: ['wire it'] });
+    opts.emit('job-end', { outcome: 'interpreter-red', spentUsd: 0, spendComplete: true });
+    return 'interpreter-red';
+  };
+  const r = await runReuse(runOpts({
+    emit, envelope: ENVELOPE({ bridgeTries: 1 }), registryDir: dir,
+    selectionProvider: picker({ choice: 'alpha', reason: 'a' }), runJob: runs,
+  }));
+  assert.equal(r.outcome, 'interpreter-red');
+  assert.ok(r.decision, 'the stop is still decision-ready in the RETURN value');
+  assert.equal(events.filter((e) => e.type === 'escalation' && e.category === 'interpreter-red').length, 1,
+    'exactly one escalation for one fault — the reuse runner does not re-file the fault site\'s own');
+  assert.equal(classifyIncidents(events).filter((o) => o.class === 'runtime-red' || o.class === 'provider-red').length, 1,
+    'and therefore exactly one ledger incident against an upstream package');
 });
 
 test('every escalation this runner emits is a category the ledger can classify — no unmapped class', async () => {

@@ -44,6 +44,7 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { loadRegistry, saveBridge, appendGreen, appendRed, mintBridge, registryExists } from './bridges.js';
 import { renderListing, selectionPrompt } from './selection.js';
@@ -81,6 +82,37 @@ const { Loop } = require('bare-agent');
  *    started.
  */
 export const REUSE_GRADED_RED = Object.freeze(['escalated']);
+
+/**
+ * v1's definition of "the same KIND of recipe" — and it is the LOAD GATE's own: the
+ * close-stage names, in the same order (`bridges.loadGate` rule 2). One predicate,
+ * shared with the gate rather than spelled a second time here: a cold green appending
+ * to an entry the gate would refuse at the door is the two-transforms class pointed
+ * at the registry.
+ * @param {any} entry a registry entry @param {string[]} stageNames this job's close
+ */
+function sameCloseShape(entry, stageNames) {
+  const stored = Array.isArray(entry?.closeStageNames) ? entry.closeStageNames : null;
+  return !!stored && stored.length === stageNames.length
+    && stored.every((/** @type {unknown} */ s, /** @type {number} */ i) => s === stageNames[i]);
+}
+
+/**
+ * The name a cold green FORKS to when the entry of the job's own name greened a
+ * different close. Derived from the shape itself, so it is deterministic: the same
+ * close always lands in the same file, and the next green of that shape appends there
+ * instead of minting a third entry.
+ *
+ * The separator is a HYPHEN, not the `~` first proposed: the registry name IS the
+ * filename and `validateBridge` holds it to the same kebab alphabet the job validator
+ * uses (`^[a-z0-9][a-z0-9-]*$`), so a `~` name would be refused by the entry's own
+ * validator and the green would be lost — which is the exact failure this fork exists
+ * to prevent.
+ * @param {string} name @param {string[]} stageNames @returns {string}
+ */
+function shapeForkName(name, stageNames) {
+  return `${name}-${createHash('sha256').update(stageNames.join('\n')).digest('hex').slice(0, 8)}`;
+}
 
 /** the selection call's token ceiling. The answer is one small JSON object, but the cap
  * is sized for the drafter's reason, not the answer's: an adaptive-thinking model can
@@ -301,6 +333,17 @@ function readTry(events) {
   const je = last('job-end');
   const oc = last('outer-close');
   const pa = last('plan-accepted');
+  // The stage that rendered the LAST verdict. `outer-close` is emitted ONCE, BEFORE the
+  // close-fix loop — and `escalated`, the only outcome that demotes, is decided AFTER
+  // it — so reading the stage from `outer-close` names a stale wall whenever the fix
+  // loop moved it. Every later verdict arrives as ralph's `close-verdict`; a STEP's
+  // exit-loop verdict comes through the same event type but carries no stage (its judge
+  // is the form evaluator, not the close), which is exactly what disqualifies it here.
+  const cv = events.filter((e) => e.type === 'close-verdict' && isNonEmptyString(e.stage)).at(-1) ?? null;
+  const stage = cv ?? oc;
+  const turns = events.filter((e) => (e.type === 'worker-round' && e.kind === 'turn') || e.type === 'worker-turn').length;
+  const pricedWork = events.some((e) => e.type === 'worker-round' || e.type === 'worker-turn')
+    || (typeof je?.spentUsd === 'number' && je.spentUsd > 0);
   return {
     // F6: a job-end that never landed is an UNKNOWN spend, not a zero. `spentUsd` is
     // read as a number or explicit null, and `spendComplete` can never be true without
@@ -310,11 +353,17 @@ function readTry(events) {
     // the plan AS EXECUTED (R1): the last accepted plan is the one that ran — a replan
     // emits its own `plan-accepted`, and it is the post-replan artifact that inherits
     plan: pa?.plan ?? null,
-    rounds: events.filter((e) => e.type === 'worker-round' && e.kind === 'turn').length,
+    // The worker's turn count, across BOTH metering surfaces. The Loop path emits one
+    // `worker-round` of kind 'turn' per turn; the NATIVE path emits `worker-turn` per
+    // turn plus ONE `worker-round` of kind 'session' carrying the authoritative cost —
+    // so counting only the first spelling reads every native try as 0. And a slice that
+    // shows priced work with no turn signal at all is an UNKNOWN count, never a zero:
+    // a zero there reads as "the worker did nothing" for money that was spent (F6).
+    rounds: turns > 0 ? turns : (pricedWork ? null : 0),
     // which stage rendered the verdict, and whether the close was reached AT ALL — the
     // second is F45's visible half: a try whose cap bound before any grading is a
     // casualty by shape, and the row says so instead of leaving it to be inferred
-    failingStage: isNonEmptyString(oc?.stage) ? oc.stage : null,
+    failingStage: isNonEmptyString(stage?.stage) ? stage.stage : null,
     closeReached: oc !== null,
   };
 }
@@ -409,8 +458,13 @@ export async function runReuse(opts) {
   };
 
   /** every terminal goes through here, so a caller reads ONE shape whatever stopped it
-   * @param {string} outcome @param {object} [extra] */
-  const done = (outcome, extra = {}) => {
+   * @param {string} outcome @param {object} [extra]
+   * @param {boolean} [escalate] emit the reuse-level escalation. False for the ONE stop
+   *   whose category the ledger CLASSIFIES (`interpreter-red`): runJob already filed it
+   *   from the fault's own site with its typed `lib`, and a second copy would count one
+   *   wiring fault twice against an upstream package. The terminal stays decision-ready
+   *   in the RETURN value either way. */
+  const done = (outcome, extra = {}, escalate = true) => {
     const out = {
       outcome, tries, selection, spentUsd, spendComplete, bridgeWrites,
       triesAuthorized: isObj(opts.envelope) ? /** @type {any} */ (opts.envelope).bridgeTries : null,
@@ -419,7 +473,7 @@ export async function runReuse(opts) {
       ...extra,
     };
     emit('reuse-end', { outcome: out.outcome, triesUsed: out.triesUsed, triesAuthorized: out.triesAuthorized, spentUsd: out.spentUsd, spendComplete: out.spendComplete, bridgeWrites: bridgeWrites.map((w) => `${w.action} ${w.name}`) });
-    if (out.decision) {
+    if (out.decision && escalate) {
       // the escalation's CATEGORY names the REUSE-level stop, not the last try's outcome:
       // each try already escalated under its own name from inside `runJob`, and repeating
       // that name here would file the envelope's story under the run's. Every category
@@ -545,16 +599,26 @@ export async function runReuse(opts) {
   };
 
   /** save a bridge result and record the write, whatever produced it
-   * @param {{ok: boolean, reds: any[], bridge: any}} r @param {string|null} name @param {string} action */
-  const commit = (r, name, action) => {
+   * @param {{ok: boolean, reds: any[], bridge: any}} r @param {string|null} name @param {string} action
+   * @param {object} [extra] fields that make the write's own story visible on the record */
+  const commit = (r, name, action, extra = {}) => {
     if (!r.ok) {
-      const w = { name, action: 'none', file: null, reds: r.reds };
+      const w = { name, action: 'none', file: null, reds: r.reds, ...extra };
       bridgeWrites.push(w);
       emit('bridge-write', w);
       return w;
     }
     const s = saveBridge(registryDir, r.bridge);
-    const w = { name: r.bridge.name, action: s.ok ? action : 'none', file: s.file, reds: s.reds };
+    const w = { name: r.bridge.name, action: s.ok ? action : 'none', file: s.file, reds: s.reds, ...extra };
+    bridgeWrites.push(w);
+    emit('bridge-write', w);
+    return w;
+  };
+
+  /** a refused write, recorded exactly like a committed one so a reader never has to
+   * branch on presence @param {string} name @param {any} red @param {object} [extra] */
+  const refuseWrite = (name, red, extra = {}) => {
+    const w = { name, action: 'none', file: null, reds: [red], ...extra };
     bridgeWrites.push(w);
     emit('bridge-write', w);
     return w;
@@ -573,23 +637,48 @@ export async function runReuse(opts) {
    * @param {any|null} bridge @param {any} meta @param {any} record
    */
   function writeGreen(bridge, meta, record) {
+    // the BRIDGE leg needs no shape check: `runJob`'s own load gate already proved this
+    // entry is the same kind of recipe as this job, at the door, before a token was spent
+    // (a mismatch never gets here — it returns `recipe-stale`).
     if (bridge) return commit(appendGreen(bridge, record), bridge.name, 'appendGreen');
+
     // the COLD leg's green. `mintBridge` is for a name nobody holds; a name that already
     // holds greens APPENDS, because a cold run of a job that already has a bridge is
     // another version of that workflow, and overwriting it would destroy the green that
     // minted it.
-    const existing = loadRegistry(registryDir).bridges.find((/** @type {any} */ b) => b.name === meta.name);
-    if (existing) return commit(appendGreen(existing, record), meta.name, 'appendGreen');
+    //
+    // But the name is the JOB's slug, and a job's CLOSE can be re-signed under that same
+    // slug. Appending across two close shapes does two wrong things at once: it counts a
+    // green another close rendered toward this entry's distinct-patient status (a false
+    // `proven`), and it hands the load gate — which matches on exactly these stage names
+    // — a plan that satisfied a different verification. So the shape is checked here with
+    // the gate's own predicate, and a mismatch neither appends NOR discards the green: it
+    // forks to a deterministic derived name, with the fork ON the record.
+    const stageNames = Array.isArray(meta.closeStageNames) ? meta.closeStageNames : [];
+    const entries = loadRegistry(registryDir).bridges;
+    const existing = entries.find((/** @type {any} */ b) => b.name === meta.name);
+    if (existing && sameCloseShape(existing, stageNames)) return commit(appendGreen(existing, record), meta.name, 'appendGreen');
+
+    const forked = existing !== undefined;
+    const target = forked ? shapeForkName(meta.name, stageNames) : meta.name;
+    /** the fork's own story, carried on every write record it produces */
+    const mark = forked ? { shapeForked: true, forkedFrom: meta.name, closeStageNames: [...stageNames] } : {};
+    const held = forked ? entries.find((/** @type {any} */ b) => b.name === target) : undefined;
+    if (held) {
+      // the derived name is derived FROM the shape, so a readable entry there matches by
+      // construction; a mismatch would mean two different closes hashed the same, and
+      // that is refused rather than appended blind
+      return sameCloseShape(held, stageNames)
+        ? commit(appendGreen(held, record), target, 'appendGreen-shape-forked', mark)
+        : refuseWrite(target, { code: 'shape-fork-collision', path: `${target}.json`, detail: `the derived name for close [${stageNames.join(' → ')}] is already held by an entry of a different shape — refusing to append this green to a recipe another close greened` }, mark);
+    }
     // A file of that name that `loadRegistry` could not READ is not an absent entry — it
     // is an entry nobody can see, and minting over it destroys whatever greens it held.
     // `loadRegistry` skips-and-reports for that reason; the mint must not undo the skip.
-    if (existsSync(join(registryDir, `${meta.name}.json`))) {
-      const w = { name: meta.name, action: 'none', file: null, reds: [{ code: 'mint-collision', path: `${meta.name}.json`, detail: 'a file of this name exists but could not be read as a bridge — refusing to mint over it, because whatever greens it holds are not recoverable once overwritten. Repair or move it, then re-run.' }] };
-      bridgeWrites.push(w);
-      emit('bridge-write', w);
-      return w;
+    if (existsSync(join(registryDir, `${target}.json`))) {
+      return refuseWrite(target, { code: 'mint-collision', path: `${target}.json`, detail: 'a file of this name exists but could not be read as a bridge — refusing to mint over it, because whatever greens it holds are not recoverable once overwritten. Repair or move it, then re-run.' }, mark);
     }
-    return commit(mintBridge(meta, record), meta.name, 'mint');
+    return commit(mintBridge({ ...meta, name: target }, record), target, forked ? 'mint-shape-forked' : 'mint', mark);
   }
 
   /**
@@ -615,12 +704,30 @@ export async function runReuse(opts) {
         decision: 'The litectx primitive failed its known-answer check. No run verdict is trustworthy on a degraded primitive, and a second try would be judged by the same degraded one.',
         options: ['fix the primitive/store', 'abandon the run'],
       },
+      'close-unsupported': {
+        decision: 'The plan flow cannot execute this job\'s close — it runs commands whose exit codes are truth. Nothing was judged, and no workflow can be graded by a close that will not run, so the next try and the cold leg would refuse identically for $0 apiece.',
+        options: ['restate the close as a staged (or single predicate) close — a spec edit, whose new hash needs re-approval', 'wait for the verdict-classes rung'],
+      },
+      'interpreter-red': {
+        // NOT re-filed as an escalation. `interpreter-red` is one of the categories the
+        // ledger CLASSIFIES — it aims a runtime-red at a library — and runJob already
+        // emitted it at the fault's own site with its typed `lib`. A second copy from
+        // here would count ONE wiring fault twice against an upstream package, which is
+        // the step-stalled lesson exactly. The stop is still decision-ready in the
+        // return value, and the spine still carries the fault's own escalation.
+        refile: false,
+        decision: 'The run stopped on a wiring/interpreter fault — the runner or a primitive it was handed is not correctly bound. That is a property of the RUN, not of any stored workflow: every further try would reproduce it, and so would the cold leg.',
+        options: ['fix the wiring the escalation names (provider factory, store binding)', 'abandon the run'],
+      },
     };
     const d = decisions[row.runOutcome];
-    // the category IS the outcome here: each of these names its own story exactly, and
-    // all three are in the ledger's excluded set (operator input and a degraded
-    // primitive, never a library failing)
-    return d ? done(row.runOutcome, { category: row.runOutcome, ...d }) : null;
+    if (!d) return null;
+    // the category IS the outcome here: each of these names its own story exactly. All
+    // but one are in the ledger's excluded set (operator input, a degraded primitive, a
+    // close the flow cannot run — never a library failing); the one that is not is the
+    // one that does not re-file.
+    const { refile = true, ...decision } = d;
+    return done(row.runOutcome, { category: row.runOutcome, ...decision }, refile);
   };
 
   // ── 3. the tries
@@ -629,9 +736,15 @@ export async function runReuse(opts) {
     // reads, and a registry read once at the top would hand every later selection a
     // history that stopped at the start of the run
     const registry = loadRegistry(registryDir);
+    // The pin travels only until it has had its try. Once its name is in `tried` it is
+    // EXCLUDED from the listing, so restating it as the pin makes every answer the model
+    // can legally give a refusal (D3 refuses anything that is not the pin) — and the run
+    // would end "nothing was run" with a paid try behind it and tries still authorized.
+    // A spent pin is a decision already honoured, not a standing instruction.
+    const pinNow = pinned && !tried.has(pinned) ? pinned : null;
     const sel = await selectBridge({
       registry, job, ask: askText, provider: selectionProvider ?? provider,
-      pinned, shortlist, forceCold, exclude: [...tried],
+      pinned: pinNow, shortlist, forceCold, exclude: [...tried],
     });
     selection.push({ n, ...sel, listing: undefined });
     account(sel.costUsd, sel.spendComplete);
