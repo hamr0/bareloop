@@ -651,7 +651,105 @@ read are NAMED, so the listing can never be quietly shorter than the directory. 
 deterministic by name and it never throws. `selectionPrompt` wraps that listing with the ask
 and D3's two standing rules — *"none matches"* is a first-class answer that means the agent
 drafts new, and a PINNED workflow may be refused only EXPLICITLY, with a reason. The
-selection CALL, the pin/shortlist/force-cold flow and the parse of the answer are YOURS.
+selection CALL, the pin/shortlist/force-cold flow and the parse of the answer are YOURS —
+or `runReuse` below, which is the shipped one.
+
+### The reuse ENVELOPE and `runReuse` (Layer 3, D7) — `src/reuse.js`
+
+`runReuse` is `runJob` under an operator-signed **envelope**: try a stored workflow, then
+another, then draft cold — hamr's *"$5 and 30 mins x2 then start anew"*. It composes; it
+decides nothing the arbiter owns.
+
+**`validateEnvelope(input, { job? })` → `{ ok, reds, envelope }`.** The envelope is
+`{ perTryBudgetUsd, perTryWallMs, bridgeTries }` and **all three are required and
+explicit — there is no default for any of them**, for `maxWallMs`'s reason: a defaulted
+cap is a silent second ceiling. `bridgeTries: 0` is legal and means force-cold. With a
+`job`, the composition is checked: the per-try numbers may only **TIGHTEN** the signed
+spec — a per-try budget above `job.budgetUsd`, or a wall above `job.maxWallMs`, is
+`envelope-widens`, never a silent raise. (A spec with no `maxWallMs` is time-unbounded by
+explicit choice, so any wall tightens it.)
+
+**`resolveTrySpec(job, envelope)` → the per-try spec.** Every try — cold leg included —
+runs THIS spec, so the envelope's numbers are the numbers all the way down. Tightening
+makes a genuinely different spec, so it makes a different **spec hash**: the tightened run
+is a new spec VERSION and `runJob`'s approval gate refuses it until the operator signs
+that hash. `runReuse` hands `approvals` straight through and has no way to forge one.
+**Show `jobSpecHash(resolveTrySpec(...))` at your approval gate** — that is the hash that
+runs (`scripts/run-reuse.mjs` does exactly this). An envelope equal to the spec's own
+numbers is hash-identical and the existing signature still covers it.
+
+**`selectBridge({ registry, job, ask, provider, pinned?, shortlist?, forceCold?, exclude? })`.**
+ONE model call on the drafter-tier provider **you** hand in (no provider is constructed
+inside), rendering `renderListing` + `selectionPrompt` and parsing a strict
+`{"choice": <name|null>, "reason": "…"}` through the repo's one `extractArtifact`. Returns
+`{ choice, reason, called, refused, forcedCold, red, costUsd, spendComplete, candidates }`.
+`forceCold` and an empty candidate set skip the call entirely ($0, no tokens). A name that
+is not on the listing it was given is a named red, never used. **A pin does not bypass the
+call** (D3): it is stated in the prompt, and if the answer names anything else the result
+is `{refused: true}` — the substitute is NOT adopted and the decision goes back to you.
+Cost is metered and reported: `costUsd` is a number or an explicit `null` (F6).
+
+**`runReuse({ job, approvals, registryDir, envelope, patient, workdir, provider, emit, … })`.**
+Envelope → registry → up to `bridgeTries` tries → the cold leg. Per try: selection runs
+against a **freshly reloaded** registry with the already-tried names excluded, the chosen
+entry rides into `runJob` (whose own load gate is the D2 shape check — a `recipe-stale`
+refusal costs $0 and simply moves to the next candidate), and then **the box is written
+(R1)**: a green appends a VERSION carrying the plan AS EXECUTED (read from the run's own
+`plan-accepted`) plus a history row; a graded red appends a history row only; a casualty
+appends a row under its **own** outcome name and cannot demote. **A green ends the loop.**
+Tries exhausted → a cold run under the same per-try numbers, whose green mints a new
+bridge named for the job slug (or appends, if that name already holds greens — clobbering
+a green is exactly what R1 exists to prevent). A cold RED writes nothing: the entry bar is
+a green.
+
+**Which outcomes are a graded RED** (`REUSE_GRADED_RED`): only `escalated` — the terminal
+where the close judged the tree, the bounded fix loop spent its attempts with money still
+on the table, and the close was still red. Everything else non-green is a **casualty** and
+keeps its own name: `cap-halt`/`wall-halt` (governance), `provider-red`/`step-stalled`
+(transport), `close-red`/`close-unsupported` (the close FAULTED and rendered no judgment),
+`recipe-stale` (refused at the door), `plan-red`/`step-red:*`/`check-red` (the flow stopped
+before the close ever judged). All of them are recorded in full on the history row, which
+is where D6 puts the detail a human reads; the coarse status ladder is left alone.
+
+**Result:** `{ outcome, tries[], selection[], spentUsd, spendComplete, bridgeWrites[],
+decision, options, detail, reds, triesUsed, triesAuthorized, envelope, specHash }`. Every
+try row is **decision-ready**: `bridge`, `runOutcome`, `verdictClass`, `failingStage`,
+`spentUsd` vs `capUsd`, `wallMs` vs `wallCapMs`, `capBound`, `wallBound`, `rounds`, and
+`closeReached`. `spentUsd` is the sum of PRICED figures only across tries AND selection
+calls; one unknown makes `spendComplete` false, and a try whose `job-end` never landed
+reports `spentUsd: null` — never a `0` that reads as exact (F6).
+
+> **The selection calls sit OUTSIDE the per-try caps**, by construction: they happen
+> before a try starts, so no try's ledger can hold them. They are small (one short prompt
+> each, no tools) and they ARE metered — every one lands in `selection[].costUsd` and in
+> the total — but a reader budgeting `perTryBudgetUsd × (bridgeTries + 1)` should know
+> that is the caps' sum, not the run's ceiling. Named here rather than folded in: an
+> advertised number the run does not enforce is the thing this repo does not ship.
+
+> **F45, and why there is no threshold here.** A try's budget must fund **the attempt PLUS
+> its close** — a cap that dies mid-grading produces an unreadable row, and an unreadable
+> row is a casualty, not evidence. Nothing in this process can know what a close costs (it
+> is your command, at your price), so **no threshold is invented** — threshold-setting is
+> arbiter territory, set from a measured base rate, never fitted to the sample in hand.
+> What the module does instead is make the bind VISIBLE: `closeReached: false` next to
+> `capBound: true` on a row IS the diagnosis. Size the envelope with that in hand.
+
+Fallthrough to the next bridge, and to cold, is automatic **only because the envelope
+pre-authorized it**. Nothing else is: a refused pin (`selection-refused`), an unusable
+selection answer (`selection-red`), a missing registry (`registry-red`) and an
+envelope that will not compose (`envelope-red`) all STOP with a decision-ready escalation
+and hand the call back to you. So do the three answers **no further try could change** —
+`unapproved-spec` (a tightened envelope makes a new spec version, and it is signed, not
+inherited: the decision hands you the exact hash), `job-red`, and `smoke-red` — which end
+the run on the try that hit them rather than reproducing themselves down the whole
+envelope. Every category this emits is in the ledger's executable excluded-set, so none of
+them lands as an unclassified library bug.
+
+`scripts/run-reuse.mjs` is the reference operator runner: `--job`, `--registry`, and the
+three envelope numbers `--budget` / `--wall` / `--tries`, plus optional `--pin` /
+`--force-cold`, with the approval gate on the resolved hash, the F67 outside watchdog
+(sized for the SUM of the tries, not one), the seed refusal, the gate-audit relocation and
+the secrets scan.
 
 ### `updateLedger({ ledgerFile, spineFiles })` → `{ appended, fold }` — `src/ledger.js`
 

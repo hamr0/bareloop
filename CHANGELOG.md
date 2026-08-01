@@ -54,6 +54,66 @@ feature lands, **patch** = docs, fixes, scaffolding.
     the answer belong to the caller.
   - **The cold path is byte-identical without a bridge** (the F47 works-both-ways rule),
     pinned by test: no new event fires and no starting draft appears anywhere in the prompt.
+  - **`src/reuse.js` — the D7 ENVELOPE and the REUSE RUNNER.** hamr's sentence made
+    executable: *"we ask user for cost/time and how many workflows to try before starting
+    new like $5 and 30 mins x2 then start anew if both red"*.
+    - **`validateEnvelope(input, { job? })`** — `{ perTryBudgetUsd, perTryWallMs,
+      bridgeTries }`, **all three required and explicit, no defaults** (a defaulted cap is
+      a silent second ceiling); `bridgeTries: 0` = force-cold. The envelope may only
+      **TIGHTEN** the signed spec — a per-try number above `job.budgetUsd`/`job.maxWallMs`
+      is `envelope-widens`, never a silent raise.
+    - **`resolveTrySpec(job, envelope)`** — the per-try spec every try runs, cold leg
+      included. Tightening moves the SPEC HASH, so a tightened run is a new spec VERSION
+      the operator signs; `runReuse` passes `approvals` straight through and cannot forge
+      one. An envelope equal to the spec's numbers is hash-identical.
+    - **`selectBridge({registry, job, ask, provider, pinned?, shortlist?, forceCold?,
+      exclude?})`** — ONE model call on the caller's drafter-tier provider (none is
+      constructed inside), parsed through the repo's one `extractArtifact` into a strict
+      `{choice, reason}`. `forceCold` and an empty candidate set skip the call for $0. A
+      name outside the listing is a red, never used. **A pin does not bypass the call**
+      (D3): it is stated in the prompt, and an answer naming anything else returns
+      `{refused: true}` — the substitute is NOT adopted and the decision goes back to the
+      operator. Cost metered and reported (F6).
+    - **`runReuse({job, approvals, registryDir, envelope, patient, workdir, provider,
+      emit, …})`** — selection → try → box → next try → cold. Selection re-reads the
+      registry per try with the tried names excluded; **a green ENDS the loop**; tries
+      exhausted falls through to a cold run under the same per-try numbers, whose green
+      mints a new bridge for the job slug (or appends if that name already holds greens —
+      clobbering a green is what R1 exists to prevent), and whose red writes nothing (the
+      entry bar is a green). Every non-green return is decision-ready. The three answers
+      **no further try could change** — `unapproved-spec` (a tightened envelope is a new
+      spec version, signed not inherited; the decision hands over the exact hash),
+      `job-red`, `smoke-red` — end the run where they happen instead of reproducing
+      themselves down the whole envelope. A cold green also REFUSES to mint over a file of
+      that name it could not read (`mint-collision`): an unreadable entry is not an absent
+      one, and whatever greens it held are gone once overwritten.
+    - **`REUSE_GRADED_RED`** — only `escalated` demotes: the terminal where the close
+      judged the tree, the fix loop spent its attempts with money still on the table, and
+      the close was still red. Every other non-green outcome is a CASUALTY recorded under
+      its own name (`cap-halt`/`wall-halt` governance, `provider-red`/`step-stalled`
+      transport, `close-red` the close FAULTING and rendering no judgment, `recipe-stale`
+      refused at the door, `plan-red`/`step-red:*`/`check-red` stopping before the close
+      ever judged). Full detail still lands on the history row.
+    - **F45 made visible instead of thresholded.** A try's budget must fund the attempt
+      PLUS its close, and nothing in-process can know what a close costs — so **no
+      threshold is invented** (threshold-setting is arbiter territory, from a measured
+      base rate). Instead every try row carries `spentUsd` vs `capUsd`, `wallMs` vs
+      `wallCapMs`, `capBound`, `wallBound` and **`closeReached`**: a cap that died before
+      any grading is a fact on the row, not an inference.
+    - **New spine events:** `reuse-start`, `selection-result`, `try-start`, `try-end`,
+      `bridge-write`, `reuse-end`, plus `envelope-red`. **New escalation categories**
+      `reuse-exhausted` / `selection-refused` / `selection-red` / `registry-red` /
+      `envelope-red`, all added to the ledger's executable excluded-set — the envelope and
+      the operator speaking, never a library failing (a real transport fault out of the
+      selection call still classifies as `provider-red`).
+  - **`selectionPrompt(listing, ask, pinned?)`** gained the optional pin argument, so the
+    pin sentence has ONE spelling rather than being assembled by each caller.
+  - **`scripts/run-reuse.mjs`** — the reference operator runner: `--job` / `--registry` /
+    `--budget` / `--wall` / `--tries` (+ `--pin` / `--force-cold`), approval gate on the
+    RESOLVED per-try hash, seed refusal (it never resets the patient for you), F67 outside
+    watchdog sized for the SUM of the tries, gate-audit relocation, secrets scan, and a
+    sleep-inhibitor note in the header (F72 — a suspend freezes every guard, including the
+    watchdog).
 
 ## [0.6.0] — 2026-07-31
 

@@ -44,4 +44,11 @@ export {
   loadBridge, loadRegistry, saveBridge, makeRegistry, registryExists,
 } from './bridges.js';
 export { renderListing, selectionPrompt } from './selection.js';
+// Layer 3 modules 4+5 — the D7 envelope and the reuse runner. `runReuse` composes
+// `runJob` under an operator-signed envelope (three explicit numbers, tighten-only) and
+// is the only thing in the library that WRITES the registry — minting is a graded
+// green's privilege (R1), never a caller's. `validateEnvelope`/`resolveTrySpec` are
+// exported because an operator runner has to show the resolved per-try spec's HASH at
+// its approval gate: a tightened envelope is a new spec version, and the human signs it.
+export { validateEnvelope, resolveTrySpec, selectBridge, runReuse, REUSE_GRADED_RED } from './reuse.js';
 export { classifyIncidents, foldLedger, ledgerDeltas, updateLedger, LEDGER_CLASSES } from './ledger.js';

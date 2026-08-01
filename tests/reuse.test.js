@@ -1,0 +1,693 @@
+// Layer 3 modules 4+5 — the D7 ENVELOPE and the REUSE RUNNER, as behaviour tests.
+//
+// What is under test is the COMPOSITION, and the four rulings it must not be able to
+// break:
+//
+//  - **D7** — three explicit operator numbers, no defaults (a defaulted cap is a silent
+//    second ceiling), and the envelope may only TIGHTEN a signed cap. An envelope that
+//    widens `budgetUsd`/`maxWallMs` is a validation red, never a silent raise.
+//  - **R1** — only a green writes the box. A green appends a VERSION (the plan as
+//    executed); a graded red appends a HISTORY ROW only; a casualty is not a red.
+//  - **D3** — a pinned workflow is refused only EXPLICITLY, and the decision then goes
+//    back to the operator. The picker can never silently substitute another one, and it
+//    can never silently be overridden either.
+//  - **F6/F45** — spend and time are reported honestly per try (unknown is unknown), and
+//    the row says whether the close was ever reached, so a cap that could not fund
+//    attempt+close is VISIBLE rather than inferred.
+//
+// The job runner is injected (`runJob`), exactly as the provider is: a try is a real
+// paid run, and the loop's own logic — selection order, exclusion, minting, exhaustion —
+// is what these tests are for. ONE test at the bottom wires the REAL `runJob` through
+// `runReuse`, because a scripted fake cannot prove the composition itself works (the
+// standing lesson: a fake that never reaches the real seam masks the bug that lives
+// there).
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { validateEnvelope, resolveTrySpec, selectBridge, runReuse, REUSE_GRADED_RED } from '../src/reuse.js';
+import { makeRegistry, saveBridge, loadRegistry, loadBridge, deriveStatus } from '../src/bridges.js';
+import { jobSpecHash } from '../src/job.js';
+import { classifyIncidents } from '../src/ledger.js';
+import { runJob } from '../src/run.js';
+import { scriptedProvider } from './helpers.js';
+
+const base = mkdtempSync(join(tmpdir(), 'reuse-test-'));
+let n = 0;
+const freshRegistry = () => makeRegistry(join(base, `reg-${n += 1}`));
+
+// ── fixtures ────────────────────────────────────────────────────────────────
+const JOB = (over = {}) => ({
+  schema: 'job-v1',
+  job: 'types-migration',
+  description: 'a plan-shape job with a staged close',
+  provider: 'anthropic-api',
+  cadence: { unit: 'day', every: 1 },
+  budgetUsd: 5,
+  maxWallMs: 1_800_000,
+  writeScope: ['src/**'],
+  goal: 'Make the package pass tsc --strict without weakening the tests.',
+  verdictType: 'green',
+  close: [{ name: 'typecheck', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' }],
+  tools: ['read', 'write', 'edit'],
+  escalation: { mode: 'decision-ready' },
+  ...over,
+});
+
+const ENVELOPE = (over = {}) => ({ perTryBudgetUsd: 5, perTryWallMs: 1_800_000, bridgeTries: 2, ...over });
+
+const PLAN = (id = 'fix-types') => ({
+  schema: 'plan-v1',
+  steps: [{ id, action: 'Fix the types.', tools: ['read', 'edit'], rounds: 8, target: 'src/x.js', exit: [{ type: 'tree-changed', scope: 'src/**' }] }],
+});
+
+const BRIDGE = (name, over = {}) => ({
+  schema: 'bridge-v1',
+  name,
+  goal: 'Make the package pass tsc --strict without weakening the tests.',
+  specHash: 'signed-hash',
+  closeStageNames: ['typecheck'],
+  toolsUsed: ['read', 'edit'],
+  versions: [{ plan: PLAN(), runid: 'ms1', greenAt: '2026-07-27T10:00:00Z', patient: 'aurora-u', costUsd: 2.21, wallMs: 534_000, rounds: 40 }],
+  history: [{ at: '2026-07-27T10:00:00Z', runid: 'ms1', patient: 'aurora-u', outcome: 'green', failingStage: null, costUsd: 2.21, spendComplete: true, wallMs: 534_000, rounds: 40 }],
+  ...over,
+});
+
+/** a registry directory seeded with the given entries */
+const seed = (...bridges) => {
+  const dir = freshRegistry();
+  for (const b of bridges) {
+    const r = saveBridge(dir, b);
+    assert.equal(r.ok, true, `fixture bridge must be valid: ${JSON.stringify(r.reds)}`);
+  }
+  return dir;
+};
+
+/** a selection provider that answers with one JSON pick (the real answer shape) */
+const picker = (...answers) => scriptedProvider(answers.map((a) => ({ text: typeof a === 'string' ? a : JSON.stringify(a) })));
+
+/**
+ * A scripted JOB RUNNER with runJob's own emission contract: every entry emits the
+ * events the reuse runner reads back (job-end money, plan-accepted, outer-close,
+ * worker-round) and returns runJob's outcome string. The seam is the same class as the
+ * provider — a try is a real paid run, and nothing about the loop's logic needs one.
+ */
+const scriptedRuns = (script) => {
+  /** @type {any[]} */
+  const calls = [];
+  let i = 0;
+  const fn = async (/** @type {any} */ spec, /** @type {any} */ opts) => {
+    const s = script[Math.min(i, script.length - 1)];
+    i += 1;
+    calls.push({ spec, bridge: opts.bridge, shellCapUsd: opts.shellCapUsd, workdir: opts.workdir });
+    opts.emit('worker-round', { kind: 'turn', costUsd: s.costUsd ?? 0.5 });
+    if (s.plan !== undefined) opts.emit('plan-accepted', { plan: s.plan });
+    if (s.closeStage !== undefined) opts.emit('outer-close', { verdict: s.outcome === 'green' ? 'satisfied' : 'red', stage: s.closeStage });
+    opts.emit('job-end', { outcome: s.outcome, spentUsd: s.spentUsd ?? 1, spendComplete: s.spendComplete ?? true });
+    return s.outcome;
+  };
+  return Object.assign(fn, { calls });
+};
+
+const runOpts = (over = {}) => ({
+  job: JOB(),
+  approvals: [],
+  registryDir: null,
+  envelope: ENVELOPE(),
+  patient: 'litectx-u',
+  workdir: base,
+  provider: picker({ choice: null, reason: 'none' }),
+  selectionProvider: picker({ choice: null, reason: 'none' }),
+  emit: () => ({}),
+  ...over,
+});
+
+// ── D7: the envelope ────────────────────────────────────────────────────────
+
+test('envelope: all three numbers are REQUIRED and explicit — no defaults', () => {
+  for (const missing of ['perTryBudgetUsd', 'perTryWallMs', 'bridgeTries']) {
+    const env = ENVELOPE();
+    delete env[missing];
+    const v = validateEnvelope(env, { job: JOB() });
+    assert.equal(v.ok, false, `${missing} must be required`);
+    assert.ok(v.reds.some((r) => r.path === missing && r.code === 'missing-required'), JSON.stringify(v.reds));
+  }
+});
+
+test('envelope: bridgeTries 0 is LEGAL (force-cold); a negative or fractional count is not', () => {
+  assert.equal(validateEnvelope(ENVELOPE({ bridgeTries: 0 }), { job: JOB() }).ok, true);
+  assert.equal(validateEnvelope(ENVELOPE({ bridgeTries: -1 }), { job: JOB() }).ok, false);
+  assert.equal(validateEnvelope(ENVELOPE({ bridgeTries: 1.5 }), { job: JOB() }).ok, false);
+});
+
+test('envelope: an envelope that WIDENS the signed budget is a red, never a silent raise', () => {
+  const v = validateEnvelope(ENVELOPE({ perTryBudgetUsd: 9 }), { job: JOB() }); // spec says 5
+  assert.equal(v.ok, false);
+  assert.ok(v.reds.some((r) => r.code === 'envelope-widens' && r.path === 'perTryBudgetUsd'), JSON.stringify(v.reds));
+});
+
+test('envelope: an envelope that WIDENS the signed wall is a red', () => {
+  const v = validateEnvelope(ENVELOPE({ perTryWallMs: 3_600_000 }), { job: JOB() }); // spec says 1_800_000
+  assert.equal(v.ok, false);
+  assert.ok(v.reds.some((r) => r.code === 'envelope-widens' && r.path === 'perTryWallMs'), JSON.stringify(v.reds));
+});
+
+test('envelope: TIGHTENING is legal in both directions, and a time-unbounded spec can always be bounded', () => {
+  assert.equal(validateEnvelope(ENVELOPE({ perTryBudgetUsd: 2, perTryWallMs: 600_000 }), { job: JOB() }).ok, true);
+  const unbounded = JOB();
+  delete unbounded.maxWallMs;
+  assert.equal(validateEnvelope(ENVELOPE({ perTryWallMs: 3_600_000 }), { job: unbounded }).ok, true,
+    'a spec with no wall is unbounded — ANY wall is a tightening');
+});
+
+test('resolveTrySpec: the per-try numbers ride on the spec, and an unchanged envelope is HASH-IDENTICAL', () => {
+  const job = JOB();
+  const same = resolveTrySpec(job, ENVELOPE());
+  assert.equal(jobSpecHash(same), jobSpecHash(job), 'an envelope equal to the spec needs no new signature');
+  const tighter = resolveTrySpec(job, ENVELOPE({ perTryBudgetUsd: 2, perTryWallMs: 600_000 }));
+  assert.equal(tighter.budgetUsd, 2);
+  assert.equal(tighter.maxWallMs, 600_000);
+  assert.notEqual(jobSpecHash(tighter), jobSpecHash(job), 'a tightened spec is a NEW spec version and must be re-signed');
+});
+
+// ── D3: selection ───────────────────────────────────────────────────────────
+
+test('selection: the model picks a name from the listing, and the choice + reason come back', async () => {
+  const dir = seed(BRIDGE('alpha'), BRIDGE('beta'));
+  const registry = loadRegistry(dir);
+  const provider = picker({ choice: 'beta', reason: 'same kind of migration' });
+  const sel = await selectBridge({ registry, job: JOB(), ask: 'tighten the types', provider });
+  assert.equal(sel.choice, 'beta');
+  assert.match(sel.reason, /same kind/);
+  assert.equal(sel.called, true);
+  assert.equal(typeof sel.costUsd, 'number', 'the selection call is metered (F6)');
+  assert.match(provider.calls[0], /SELECT-WORKFLOW/);
+  assert.match(provider.calls[0], /\[alpha\]/);
+});
+
+test('selection: "none matches" is a first-class answer and carries its reason', async () => {
+  const dir = seed(BRIDGE('alpha'));
+  const sel = await selectBridge({ registry: loadRegistry(dir), job: JOB(), ask: 'x', provider: picker({ choice: null, reason: 'different kind of work' }) });
+  assert.equal(sel.choice, null);
+  assert.match(sel.reason, /different kind/);
+});
+
+test('selection: a name that is NOT in the listing is a red, never used', async () => {
+  const dir = seed(BRIDGE('alpha'));
+  const sel = await selectBridge({ registry: loadRegistry(dir), job: JOB(), ask: 'x', provider: picker({ choice: 'invented', reason: 'made it up' }) });
+  assert.equal(sel.choice, null);
+  assert.ok(sel.red, 'a hallucinated name is a named red');
+  assert.equal(sel.red.code, 'selection-invalid');
+});
+
+test('selection: unparseable output is a red, not a silent cold fall-back', async () => {
+  const dir = seed(BRIDGE('alpha'));
+  const sel = await selectBridge({ registry: loadRegistry(dir), job: JOB(), ask: 'x', provider: picker('I think alpha looks good, honestly.') });
+  assert.equal(sel.choice, null);
+  assert.ok(sel.red);
+});
+
+test('selection: a PIN is stated in the call and CONFIRMED — not bypassed', async () => {
+  const dir = seed(BRIDGE('alpha'), BRIDGE('beta'));
+  const provider = picker({ choice: 'beta', reason: 'the pin fits' });
+  const sel = await selectBridge({ registry: loadRegistry(dir), job: JOB(), ask: 'x', provider, pinned: 'beta' });
+  assert.equal(sel.called, true, 'a pin still runs the call — the model may refuse it (D3)');
+  assert.match(provider.calls[0], /beta/);
+  assert.match(provider.calls[0].toLowerCase(), /pin/);
+  assert.equal(sel.choice, 'beta');
+  assert.notEqual(sel.refused, true);
+});
+
+test('selection: a pin the model declines comes back REFUSED with the reason — never silently substituted', async () => {
+  const dir = seed(BRIDGE('alpha'), BRIDGE('beta'));
+  const sel = await selectBridge({ registry: loadRegistry(dir), job: JOB(), ask: 'x', provider: picker({ choice: 'alpha', reason: 'beta greened on a different close' }), pinned: 'beta' });
+  assert.equal(sel.refused, true);
+  assert.equal(sel.choice, null, 'the substitute is NOT adopted — the decision goes back to the operator');
+  assert.match(sel.reason, /different close/);
+});
+
+test('selection: a shortlist restricts the listing to those names', async () => {
+  const dir = seed(BRIDGE('alpha'), BRIDGE('beta'), BRIDGE('gamma'));
+  const provider = picker({ choice: 'gamma', reason: 'ok' });
+  const sel = await selectBridge({ registry: loadRegistry(dir), job: JOB(), ask: 'x', provider, shortlist: ['beta', 'gamma'] });
+  assert.doesNotMatch(provider.calls[0], /\[alpha\]/, 'a name outside the shortlist is not offered');
+  assert.match(provider.calls[0], /\[gamma\]/);
+  assert.equal(sel.choice, 'gamma');
+});
+
+test('selection: forceCold and an EMPTY registry both skip the call entirely — $0, no tokens', async () => {
+  const provider = picker({ choice: 'alpha', reason: 'x' });
+  const cold = await selectBridge({ registry: loadRegistry(seed(BRIDGE('alpha'))), job: JOB(), ask: 'x', provider, forceCold: true });
+  assert.equal(cold.called, false);
+  assert.equal(cold.choice, null);
+  assert.equal(cold.costUsd, 0);
+  const empty = await selectBridge({ registry: loadRegistry(freshRegistry()), job: JOB(), ask: 'x', provider });
+  assert.equal(empty.called, false);
+  assert.equal(empty.choice, null);
+  assert.equal(provider.calls.length, 0, 'neither path spent a token');
+});
+
+// ── the try loop ────────────────────────────────────────────────────────────
+
+test('try loop: a GREEN on the first try ENDS the loop — the job is done', async () => {
+  const dir = seed(BRIDGE('alpha'), BRIDGE('beta'));
+  const runs = scriptedRuns([{ outcome: 'green', plan: PLAN('as-executed'), closeStage: 'typecheck' }]);
+  const r = await runReuse(runOpts({
+    registryDir: dir,
+    selectionProvider: picker({ choice: 'alpha', reason: 'fits' }),
+    runJob: runs,
+  }));
+  assert.equal(r.outcome, 'green');
+  assert.equal(runs.calls.length, 1, 'a green must not fall through to a second try or to the cold leg');
+  assert.equal(r.tries.length, 1);
+});
+
+test('R1: a green appends a VERSION carrying the plan AS EXECUTED, and the box is saved', async () => {
+  const dir = seed(BRIDGE('alpha'));
+  const r = await runReuse(runOpts({
+    registryDir: dir,
+    selectionProvider: picker({ choice: 'alpha', reason: 'fits' }),
+    runJob: scriptedRuns([{ outcome: 'green', plan: PLAN('as-executed'), closeStage: 'typecheck', spentUsd: 1.75 }]),
+  }));
+  assert.equal(r.outcome, 'green');
+  const saved = loadBridge(join(dir, 'alpha.json'));
+  assert.equal(saved.ok, true, JSON.stringify(saved.reds));
+  assert.equal(saved.bridge.versions.length, 2, 'the green minted the NEXT version');
+  assert.equal(saved.bridge.versions.at(-1).plan.steps[0].id, 'as-executed', 'the plan that RAN is what inherits');
+  assert.equal(saved.bridge.versions.at(-1).patient, 'litectx-u');
+  assert.equal(saved.bridge.versions.at(-1).costUsd, 1.75);
+  assert.equal(saved.bridge.history.at(-1).outcome, 'green');
+  assert.equal(deriveStatus(saved.bridge.history), 'proven', 'greens on two distinct patients');
+});
+
+test('R1: a GRADED RED writes a history row ONLY — the recipe is never edited by a red', async () => {
+  const dir = seed(BRIDGE('alpha'));
+  const before = loadBridge(join(dir, 'alpha.json')).bridge;
+  const r = await runReuse(runOpts({
+    envelope: ENVELOPE({ bridgeTries: 1 }),
+    registryDir: dir,
+    selectionProvider: picker({ choice: 'alpha', reason: 'fits' }),
+    runJob: scriptedRuns([
+      { outcome: 'escalated', closeStage: 'typecheck', plan: PLAN('tried'), spentUsd: 2 },
+      { outcome: 'escalated', closeStage: 'typecheck', spentUsd: 2 }, // the cold leg
+    ]),
+  }));
+  assert.notEqual(r.outcome, 'green');
+  const after = loadBridge(join(dir, 'alpha.json')).bridge;
+  assert.deepEqual(after.versions, before.versions, 'a red mints NO version');
+  assert.equal(after.history.length, before.history.length + 1);
+  assert.equal(after.history.at(-1).outcome, 'red');
+  assert.equal(after.history.at(-1).failingStage, 'typecheck', 'the row names the stage that rendered the red');
+  assert.ok(REUSE_GRADED_RED.includes('escalated'));
+});
+
+test('R1: a CASUALTY is recorded under its own outcome and does NOT demote', async () => {
+  // a PROVEN entry (greens on two distinct patients) — the only status a red can drop
+  const proven = BRIDGE('alpha', {
+    versions: [
+      { plan: PLAN(), runid: 'ms1', greenAt: '2026-07-27T10:00:00Z', patient: 'aurora-u', costUsd: 1, wallMs: 1000, rounds: 4 },
+      { plan: PLAN(), runid: 'ms2', greenAt: '2026-07-28T10:00:00Z', patient: 'litectx-u', costUsd: 1, wallMs: 1000, rounds: 4 },
+    ],
+    history: [
+      { at: '2026-07-27T10:00:00Z', runid: 'ms1', patient: 'aurora-u', outcome: 'green', failingStage: null, costUsd: 1, spendComplete: true, wallMs: 1000, rounds: 4 },
+      { at: '2026-07-28T10:00:00Z', runid: 'ms2', patient: 'litectx-u', outcome: 'green', failingStage: null, costUsd: 1, spendComplete: true, wallMs: 1000, rounds: 4 },
+    ],
+  });
+  const dir = seed(proven);
+  assert.equal(deriveStatus(proven.history), 'proven');
+  const r = await runReuse(runOpts({
+    envelope: ENVELOPE({ bridgeTries: 1 }),
+    registryDir: dir,
+    patient: 'third-patient',
+    selectionProvider: picker({ choice: 'alpha', reason: 'fits' }),
+    runJob: scriptedRuns([
+      { outcome: 'provider-red', spentUsd: 0.4, spendComplete: false },
+      { outcome: 'provider-red', spentUsd: 0.4, spendComplete: false },
+    ]),
+  }));
+  assert.equal(r.tries[0].verdictClass, 'casualty');
+  const after = loadBridge(join(dir, 'alpha.json')).bridge;
+  assert.equal(after.history.at(-1).outcome, 'provider-red', 'the casualty keeps its OWN name');
+  assert.equal(deriveStatus(after.history), 'proven', 'a casualty is never evidence — it cannot demote');
+  assert.equal(after.history.at(-1).spendComplete, false, 'the floor travels with the spend (F44)');
+});
+
+test('an ALREADY-GREEN tree ends the loop but mints NOTHING — no unearned learning credit', async () => {
+  const dir = seed(BRIDGE('alpha'));
+  const runs = scriptedRuns([{ outcome: 'already-green' }]); // no plan-accepted: nothing was drafted
+  const r = await runReuse(runOpts({
+    registryDir: dir,
+    selectionProvider: picker({ choice: 'alpha', reason: 'fits' }),
+    runJob: runs,
+  }));
+  assert.equal(runs.calls.length, 1, 'the job is done — there is nothing to try');
+  const after = loadBridge(join(dir, 'alpha.json')).bridge;
+  assert.equal(after.versions.length, 1, 'no plan ran, so no plan inherits (R1)');
+  assert.equal(r.bridgeWrites[0].action, 'none');
+  assert.equal(r.bridgeWrites[0].reds[0].code, 'no-plan-executed');
+});
+
+test('try loop: after a red the NEXT try re-runs selection with the failed bridge EXCLUDED', async () => {
+  const dir = seed(BRIDGE('alpha'), BRIDGE('beta'));
+  const provider = picker({ choice: 'alpha', reason: 'first' }, { choice: 'beta', reason: 'second' });
+  const runs = scriptedRuns([
+    { outcome: 'escalated', closeStage: 'typecheck', spentUsd: 1 },
+    { outcome: 'green', plan: PLAN('second-try'), closeStage: 'typecheck', spentUsd: 1 },
+  ]);
+  const r = await runReuse(runOpts({ registryDir: dir, selectionProvider: provider, runJob: runs }));
+  assert.equal(r.outcome, 'green');
+  assert.equal(runs.calls.length, 2);
+  assert.equal(runs.calls[0].bridge.name, 'alpha');
+  assert.equal(runs.calls[1].bridge.name, 'beta');
+  assert.doesNotMatch(provider.calls[1], /\[alpha\]/, 'the failed bridge is not offered again');
+  assert.match(provider.calls[1], /\[beta\]/);
+});
+
+test('try loop: the registry is RE-READ before each try, so the next pick sees rows written since the run began', async () => {
+  const dir = seed(BRIDGE('alpha'), BRIDGE('gamma'));
+  const provider = picker({ choice: 'alpha', reason: 'first' }, { choice: 'gamma', reason: 'second' });
+  // between selection 1 and selection 2 the registry changes on disk (here: gamma takes a
+  // red, exactly as the runner's own R1 write does for the bridge it just tried). A
+  // listing built from a registry read ONCE at the top would still show gamma at 0 reds.
+  const runs = async (spec, opts) => {
+    const g = loadBridge(join(dir, 'gamma.json')).bridge;
+    if (g.history.length === 1) {
+      const next = JSON.parse(readFileSync(join(dir, 'gamma.json'), 'utf8'));
+      next.history.push({ at: null, runid: 'external', patient: 'somewhere-else', outcome: 'red', failingStage: 'typecheck', costUsd: 1, spendComplete: true, wallMs: 1000, rounds: 3 });
+      assert.equal(saveBridge(dir, next).ok, true);
+    }
+    opts.emit('job-end', { outcome: 'escalated', spentUsd: 1, spendComplete: true });
+    opts.emit('outer-close', { verdict: 'red', stage: 'typecheck' });
+    return 'escalated';
+  };
+  await runReuse(runOpts({ registryDir: dir, selectionProvider: provider, runJob: runs }));
+  assert.match(provider.calls[1], /\[gamma\][\s\S]*?1 green · 1 red/, 'the second listing carries the row written after the first selection');
+});
+
+test('try loop: a load-gate refusal costs nothing, is recorded, and moves to the next candidate', async () => {
+  const stale = BRIDGE('stale', { closeStageNames: ['some-other-stage'] });
+  const dir = seed(stale, BRIDGE('beta'));
+  const runs = scriptedRuns([
+    { outcome: 'recipe-stale', spentUsd: 0 },
+    { outcome: 'green', plan: PLAN('beta-ran'), closeStage: 'typecheck', spentUsd: 1 },
+  ]);
+  const r = await runReuse(runOpts({
+    registryDir: dir,
+    selectionProvider: picker({ choice: 'stale', reason: 'looks close' }, { choice: 'beta', reason: 'next' }),
+    runJob: runs,
+  }));
+  assert.equal(r.outcome, 'green');
+  assert.equal(r.tries[0].runOutcome, 'recipe-stale');
+  assert.equal(r.tries[0].spentUsd, 0, 'a gate refusal is $0');
+  assert.equal(runs.calls[1].bridge.name, 'beta');
+});
+
+test('try loop: tries EXHAUSTED falls through to a COLD run under the SAME per-try numbers', async () => {
+  const dir = seed(BRIDGE('alpha'), BRIDGE('beta'));
+  const runs = scriptedRuns([
+    { outcome: 'escalated', closeStage: 'typecheck', spentUsd: 1 },
+    { outcome: 'escalated', closeStage: 'typecheck', spentUsd: 1 },
+    { outcome: 'green', plan: PLAN('cold-plan'), closeStage: 'typecheck', spentUsd: 1 },
+  ]);
+  const r = await runReuse(runOpts({
+    envelope: ENVELOPE({ bridgeTries: 2, perTryBudgetUsd: 3, perTryWallMs: 900_000 }),
+    registryDir: dir,
+    selectionProvider: picker({ choice: 'alpha', reason: 'a' }, { choice: 'beta', reason: 'b' }),
+    runJob: runs,
+  }));
+  assert.equal(r.outcome, 'green');
+  assert.equal(runs.calls.length, 3);
+  assert.equal(runs.calls[2].bridge, null, 'the cold leg carries NO bridge');
+  for (const c of runs.calls) {
+    assert.equal(c.spec.budgetUsd, 3, 'every try — cold included — runs under the per-try budget');
+    assert.equal(c.spec.maxWallMs, 900_000);
+    assert.equal(c.shellCapUsd, 3, 'advertised == enforced');
+  }
+  assert.equal(r.tries.at(-1).mode, 'cold');
+});
+
+test('R1: a COLD green MINTS a new bridge named for the job slug', async () => {
+  const dir = freshRegistry();
+  const r = await runReuse(runOpts({
+    envelope: ENVELOPE({ bridgeTries: 0 }),
+    registryDir: dir,
+    runJob: scriptedRuns([{ outcome: 'green', plan: PLAN('cold-plan'), closeStage: 'typecheck', spentUsd: 2.5 }]),
+  }));
+  assert.equal(r.outcome, 'green');
+  const minted = loadBridge(join(dir, 'types-migration.json'));
+  assert.equal(minted.ok, true, JSON.stringify(minted.reds));
+  assert.equal(minted.bridge.goal, JOB().goal);
+  assert.deepEqual(minted.bridge.closeStageNames, ['typecheck']);
+  assert.deepEqual(minted.bridge.toolsUsed.sort(), ['edit', 'read']);
+  assert.equal(minted.bridge.versions[0].plan.steps[0].id, 'cold-plan');
+  assert.equal(deriveStatus(minted.bridge.history), 'candidate');
+});
+
+test('R1: a cold green on a job that ALREADY has a bridge of that name appends, never clobbers', async () => {
+  const dir = seed(BRIDGE('types-migration'));
+  const r = await runReuse(runOpts({
+    envelope: ENVELOPE({ bridgeTries: 0 }),
+    registryDir: dir,
+    runJob: scriptedRuns([{ outcome: 'green', plan: PLAN('cold-plan'), closeStage: 'typecheck' }]),
+  }));
+  assert.equal(r.outcome, 'green');
+  const after = loadBridge(join(dir, 'types-migration.json')).bridge;
+  assert.equal(after.versions.length, 2, 'the founding green survived');
+});
+
+test('R1: a cold green REFUSES to mint over a file it could not read — an unreadable entry is not an absent one', async () => {
+  const dir = freshRegistry();
+  // `loadRegistry` skips-and-reports this file; minting over it would destroy whatever
+  // greens it holds, and they are not recoverable once overwritten
+  writeFileSync(join(dir, 'types-migration.json'), '{ this is not a bridge');
+  const r = await runReuse(runOpts({
+    envelope: ENVELOPE({ bridgeTries: 0 }),
+    registryDir: dir,
+    runJob: scriptedRuns([{ outcome: 'green', plan: PLAN('cold-plan'), closeStage: 'typecheck' }]),
+  }));
+  assert.equal(r.outcome, 'green', 'the JOB still greened — the registry write is a separate fact');
+  assert.equal(r.bridgeWrites[0].action, 'none');
+  assert.equal(r.bridgeWrites[0].reds[0].code, 'mint-collision');
+  assert.equal(readFileSync(join(dir, 'types-migration.json'), 'utf8'), '{ this is not a bridge', 'the file is untouched');
+});
+
+test('R1: a cold RED writes nothing — the entry bar is a green (failed plans never enter the registry)', async () => {
+  const dir = freshRegistry();
+  const r = await runReuse(runOpts({
+    envelope: ENVELOPE({ bridgeTries: 0 }),
+    registryDir: dir,
+    runJob: scriptedRuns([{ outcome: 'escalated', closeStage: 'typecheck' }]),
+  }));
+  assert.notEqual(r.outcome, 'green');
+  assert.equal(loadRegistry(dir).bridges.length, 0);
+  assert.equal(r.bridgeWrites.length, 0);
+});
+
+test('selection saying "none matches" goes straight to cold without burning a try', async () => {
+  const dir = seed(BRIDGE('alpha'));
+  const runs = scriptedRuns([{ outcome: 'green', plan: PLAN('cold'), closeStage: 'typecheck' }]);
+  const r = await runReuse(runOpts({
+    registryDir: dir,
+    selectionProvider: picker({ choice: null, reason: 'a different kind of job entirely' }),
+    runJob: runs,
+  }));
+  assert.equal(r.outcome, 'green');
+  assert.equal(runs.calls.length, 1);
+  assert.equal(runs.calls[0].bridge, null);
+  assert.equal(r.selection.at(-1).choice, null);
+});
+
+test('D3: a refused PIN stops the run and hands the decision back — nothing is run cold behind the operator', async () => {
+  const dir = seed(BRIDGE('alpha'), BRIDGE('beta'));
+  const runs = scriptedRuns([{ outcome: 'green' }]);
+  const r = await runReuse(runOpts({
+    registryDir: dir,
+    pinned: 'beta',
+    selectionProvider: picker({ choice: 'alpha', reason: 'beta is the wrong kind' }),
+    runJob: runs,
+  }));
+  assert.equal(r.outcome, 'selection-refused');
+  assert.equal(runs.calls.length, 0, 'no run is started on a decision nobody made');
+  assert.match(r.decision, /beta/);
+});
+
+// ── the decision-ready readout (D7 / F6 / F45) ──────────────────────────────
+
+test('every row is decision-ready: bridge, stage, spend vs cap, time vs cap, and whether the close was reached', async () => {
+  const dir = seed(BRIDGE('alpha'));
+  const r = await runReuse(runOpts({
+    envelope: ENVELOPE({ bridgeTries: 1, perTryBudgetUsd: 4, perTryWallMs: 600_000 }),
+    registryDir: dir,
+    selectionProvider: picker({ choice: 'alpha', reason: 'fits' }),
+    runJob: scriptedRuns([
+      { outcome: 'escalated', closeStage: 'typecheck', spentUsd: 3.9 },
+      { outcome: 'cap-halt', spentUsd: 4, spendComplete: true }, // the cold leg, cap-bound with no close
+    ]),
+  }));
+  const [t0, t1] = r.tries;
+  assert.equal(t0.bridge, 'alpha');
+  assert.equal(t0.failingStage, 'typecheck');
+  assert.equal(t0.spentUsd, 3.9);
+  assert.equal(t0.capUsd, 4, 'the cap the row is read against travels WITH the row (F45)');
+  assert.equal(t0.wallCapMs, 600_000);
+  assert.equal(typeof t0.wallMs, 'number');
+  assert.equal(t0.closeReached, true);
+  assert.equal(t1.closeReached, false, 'a try whose budget never funded a close is VISIBLE, not inferred (F45)');
+  assert.equal(t1.capBound, true);
+  assert.equal(r.triesAuthorized, 1);
+  assert.equal(r.triesUsed, 1);
+  assert.ok(r.decision, 'a non-green return is decision-ready');
+});
+
+test('F6: reuse spend is the SUM of every try plus the selection calls, and a floor stays a floor', async () => {
+  const dir = seed(BRIDGE('alpha'));
+  const r = await runReuse(runOpts({
+    envelope: ENVELOPE({ bridgeTries: 1 }),
+    registryDir: dir,
+    selectionProvider: picker({ choice: 'alpha', reason: 'fits' }),
+    runJob: scriptedRuns([
+      { outcome: 'escalated', closeStage: 'typecheck', spentUsd: 1.25 },
+      { outcome: 'provider-red', spentUsd: 0.5, spendComplete: false },
+    ]),
+  }));
+  const selCost = r.selection.reduce((a, s) => a + (s.costUsd ?? 0), 0);
+  assert.ok(Math.abs(r.spentUsd - (1.75 + selCost)) < 1e-9, `${r.spentUsd} vs ${1.75 + selCost}`);
+  assert.equal(r.spendComplete, false, 'one incomplete try makes the whole figure a FLOOR');
+});
+
+test('F6: a try whose job-end never landed reports UNKNOWN cost, never $0', async () => {
+  const dir = freshRegistry();
+  const crash = async () => { throw new Error('the runner itself died'); };
+  const r = await runReuse(runOpts({ envelope: ENVELOPE({ bridgeTries: 0 }), registryDir: dir, runJob: crash }));
+  assert.equal(r.tries[0].spentUsd, null, 'unknown is unknown — never a zero that reads as exact');
+  assert.equal(r.tries[0].spendComplete, false);
+  assert.equal(r.spendComplete, false);
+});
+
+test('a missing registry directory is a named red before anything is spent', async () => {
+  const r = await runReuse(runOpts({ registryDir: join(base, 'no-such-registry') }));
+  assert.equal(r.outcome, 'registry-red');
+  assert.equal(r.tries.length, 0);
+});
+
+test('an invalid envelope stops before the registry is even read', async () => {
+  const r = await runReuse(runOpts({ envelope: ENVELOPE({ perTryBudgetUsd: 99 }) }));
+  assert.equal(r.outcome, 'envelope-red');
+  assert.ok(r.reds.some((x) => x.code === 'envelope-widens'));
+});
+
+test('a stop no further try could change (unsigned spec) ends the run on the FIRST try, not after all of them', async () => {
+  const dir = seed(BRIDGE('alpha'), BRIDGE('beta'));
+  const runs = scriptedRuns([{ outcome: 'unapproved-spec', spentUsd: 0 }]);
+  const r = await runReuse(runOpts({
+    registryDir: dir,
+    selectionProvider: picker({ choice: 'alpha', reason: 'a' }, { choice: 'beta', reason: 'b' }),
+    runJob: runs,
+  }));
+  assert.equal(r.outcome, 'unapproved-spec');
+  assert.equal(runs.calls.length, 1, 'the answer is already known — a second try and a cold leg would only repeat it');
+  assert.match(r.decision, /new spec version/i);
+  assert.match(r.options.join(' '), new RegExp(r.specHash), 'the decision hands over the hash to sign');
+});
+
+test('every escalation this runner emits is a category the ledger can classify — no unmapped class', async () => {
+  /** @type {any[]} */
+  const events = [];
+  const emit = (type, data) => { const ev = { type, seq: events.length, ...(data ?? {}) }; events.push(ev); return ev; };
+  const dir = seed(BRIDGE('alpha'), BRIDGE('beta'));
+
+  // 1. the envelope refuses to compose
+  await runReuse(runOpts({ emit, envelope: ENVELOPE({ perTryBudgetUsd: 99 }) }));
+  // 2. the registry path does not exist
+  await runReuse(runOpts({ emit, registryDir: join(base, 'nope') }));
+  // 3. the model refuses a pin
+  await runReuse(runOpts({ emit, registryDir: dir, pinned: 'beta', selectionProvider: picker({ choice: 'alpha', reason: 'wrong kind' }), runJob: scriptedRuns([{ outcome: 'green' }]) }));
+  // 4. the selection answer is unusable
+  await runReuse(runOpts({ emit, registryDir: dir, selectionProvider: picker('not json at all'), runJob: scriptedRuns([{ outcome: 'green' }]) }));
+  // 5. every authorized attempt spent
+  await runReuse(runOpts({
+    emit, registryDir: dir, envelope: ENVELOPE({ bridgeTries: 1 }),
+    selectionProvider: picker({ choice: 'alpha', reason: 'fits' }),
+    runJob: scriptedRuns([{ outcome: 'escalated', closeStage: 'typecheck' }]),
+  }));
+
+  const cats = events.filter((e) => e.type === 'escalation').map((e) => e.category);
+  assert.deepEqual([...new Set(cats)].sort(), ['envelope-red', 'registry-red', 'reuse-exhausted', 'selection-red', 'selection-refused']);
+  const unclassified = classifyIncidents(events).filter((o) => o.class === 'runtime-red' && /unclassified escalation/.test(o.detail));
+  assert.deepEqual(unclassified, [], 'a category outside the ledger\'s executable excluded-set is COUNTED, never silently dropped — these must all be in it');
+});
+
+// ── the composition, through the REAL runJob ────────────────────────────────
+
+test('REAL runJob: a cold green through runReuse mints a bridge the registry can read back', async () => {
+  const workdir = join(base, 'real-run');
+  mkdirSync(join(workdir, 'src'), { recursive: true });
+  writeFileSync(join(workdir, 'src', 'mod.mjs'), 'export const x = 1;\n');
+  // the close: green only once the worker has written the file
+  writeFileSync(join(workdir, 'close.mjs'), `import { existsSync } from 'node:fs';
+if (existsSync(new URL('./src/typed.mjs', import.meta.url).pathname)) process.exit(0);
+console.log('FAILED src/typed.mjs missing'); process.exit(1);\n`);
+
+  const job = JOB({
+    job: 'real-types',
+    budgetUsd: 1.5,
+    maxWallMs: undefined,
+    writeScope: ['src/**'],
+    goal: 'Create src/typed.mjs.',
+    close: [{ name: 'typed-exists', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' }],
+    tools: ['read', 'write'],
+  });
+  delete job.maxWallMs;
+  const envelope = { perTryBudgetUsd: 1.5, perTryWallMs: 600_000, bridgeTries: 0 };
+  const trySpec = resolveTrySpec(job, envelope);
+  const approvals = [{ specHash: jobSpecHash(trySpec), signer: 'test', ts: 'now' }];
+
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-typed', action: 'Create the file.', tools: ['write'], rounds: 4,
+      target: 'src/typed.mjs',
+      exit: [{ type: 'tree-changed', scope: 'src/**' }],
+    }],
+  });
+  const provider = scriptedProvider([
+    { text: 'src/ holds one module' },              // scout
+    { text: plan },                                  // draft
+    { toolCalls: [{ id: 't1', name: 'shell_write', arguments: { path: join(workdir, 'src/typed.mjs'), content: 'export const y = 2;\n' } }] },
+    { text: 'done' },
+  ]);
+
+  const dir = freshRegistry();
+  const r = await runReuse({
+    job, approvals, registryDir: dir, envelope, patient: 'real-patient',
+    workdir, provider, selectionProvider: provider,
+    emit: () => ({}), capRuns: 2, closeTimeoutMs: 30_000,
+  });
+  assert.equal(r.outcome, 'green', JSON.stringify(r.tries));
+  const minted = loadBridge(join(dir, 'real-types.json'));
+  assert.equal(minted.ok, true, JSON.stringify(minted.reds));
+  assert.equal(minted.bridge.versions[0].plan.steps[0].id, 'write-typed');
+  assert.deepEqual(minted.bridge.closeStageNames, ['typed-exists']);
+  assert.equal(minted.bridge.versions[0].patient, 'real-patient');
+  assert.ok(existsSync(join(workdir, 'src', 'typed.mjs')));
+  assert.equal(typeof minted.bridge.versions[0].costUsd, 'number', 'the real run priced its rounds');
+});
+
+test('REAL runJob: an unsigned per-try spec is refused by the approval gate — the envelope cannot forge a signature', async () => {
+  const workdir = join(base, 'real-unsigned');
+  mkdirSync(workdir, { recursive: true });
+  writeFileSync(join(workdir, 'close.mjs'), 'process.exit(1);\n');
+  const job = JOB({ job: 'unsigned-types', budgetUsd: 1.5, close: [{ name: 's', cmd: 'node close.mjs', expect: 0, gapKeep: '^F' }] });
+  // signed at the SPEC's numbers; the envelope tightens them, so the run is a NEW version
+  const approvals = [{ specHash: jobSpecHash(job), signer: 'test', ts: 'now' }];
+  const r = await runReuse({
+    job, approvals, registryDir: freshRegistry(),
+    envelope: { perTryBudgetUsd: 1, perTryWallMs: 300_000, bridgeTries: 0 },
+    patient: 'p', workdir, provider: scriptedProvider([{ text: 'x' }]), selectionProvider: scriptedProvider([{ text: 'x' }]),
+    emit: () => ({}),
+  });
+  assert.equal(r.tries[0].runOutcome, 'unapproved-spec');
+  assert.equal(r.tries[0].spentUsd, 0);
+});

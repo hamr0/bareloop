@@ -117,9 +117,20 @@ export function renderListing(registry) {
  * @param {string} listing `renderListing`'s text — verbatim, so the picker sees exactly
  *   what the human inspecting the registry sees
  * @param {string} ask the job's goal sentence, in the operator's own words
+ * @param {string|null} [pinned] the operator's PIN, stated IN the call. D3 rules that a
+ *   pin is never bypassed and never silently overridden — so the pin does not skip the
+ *   call, it enters it, and the model's only legal ways out are confirming it or
+ *   refusing it by name with a reason. Stated here rather than assembled by the runner:
+ *   a second spelling of the pin sentence is a second prompt, and the two would drift.
  * @returns {string}
  */
-export function selectionPrompt(listing, ask) {
+export function selectionPrompt(listing, ask, pinned = null) {
+  const pin = pinned
+    ? `\nThe operator has PINNED the workflow "${pinned}". Start from it unless it is genuinely the
+wrong kind of recipe for this ask. If you cannot use it, you must say so by picking a
+DIFFERENT name (or null) and giving the reason — the operator's pick is then handed back
+to the operator, never quietly replaced by yours.\n`
+    : '';
   return `SELECT-WORKFLOW
 A previous run's workflow can be handed to the planner as a STARTING DRAFT for a new job —
 it saves the planner starting from a blank page. Your job is to decide whether any workflow
@@ -129,7 +140,7 @@ The ask:
 ${ask}
 
 ${listing}
-
+${pin}
 Rules:
 - Pick AT MOST ONE workflow, by its exact name, copied character for character from the listing.
 - A workflow is worth reusing when it did the same KIND of work — the same sort of change,
