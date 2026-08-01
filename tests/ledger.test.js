@@ -193,6 +193,7 @@ test('deliberate exclusions classify to NOTHING: governance working, worker stor
     ev('escalation', { category: 'smoke-red', decisionReady: true, detail: 'dup of primitive-smoke' }), // counted via primitive-smoke
     ev('escalation', { category: 'hitl-close', decisionReady: true, step: 'pr' }), // by design
     ev('escalation', { category: 'close-unsupported', decisionReady: true, step: 'x' }), // honest refusal
+    ev('escalation', { category: 'recipe-stale', decisionReady: true, detail: 'recipe-stale:closeStageNames' }), // Layer 3: the load gate refusing a wrong-KIND recipe IS the mechanism working
     ev('escalation', { category: 'close-timeout', decisionReady: true, step: 'x' }), // close-verdict red (worker/operator story)
     ev('escalation', { category: 'close-killed', decisionReady: true, step: 'x' }), // F17 named terminal, not a lib bug
     ev('escalation', { category: 'close-crashed', decisionReady: true, step: 'x' }), // ditto

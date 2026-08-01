@@ -32,4 +32,16 @@ export { validatePlan, stageClose, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEP
 export { snapshotScope, evalExits } from './exits.js';
 export { runPlan } from './planrun.js';
 export { runJob } from './run.js';
+// Layer 3 — the REUSE registry (bridge-v1) and D3's display half. The registry is a
+// directory of plain files at an OPERATOR-supplied path (never a default location), the
+// load gate is the code half of D2's split, and `renderListing`/`selectionPrompt` are
+// pure text: they send nothing, parse nothing and decide nothing. The selection CALL and
+// the pin/shortlist/force-cold flow are the adopter's, which is why the pieces they need
+// are exported rather than kept internal to the runner.
+export {
+  BRIDGE_SCHEMA, validateBridge, deriveStatus, listingRow, loadGate,
+  mintBridge, appendGreen, appendRed,
+  loadBridge, loadRegistry, saveBridge, makeRegistry, registryExists,
+} from './bridges.js';
+export { renderListing, selectionPrompt } from './selection.js';
 export { classifyIncidents, foldLedger, ledgerDeltas, updateLedger, LEDGER_CLASSES } from './ledger.js';

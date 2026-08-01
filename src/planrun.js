@@ -28,6 +28,7 @@ import { createStallWatch, STALL_MS, MAX_STALLS } from './stall.js';
 import { TOOL_MENU, STORE_VERBS, checkMenu } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, strategyFor } from './tools.js';
 import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
+import { validateBridge, loadGate } from './bridges.js';
 import { extractArtifact } from './text.js';
 import { createClock, isWallTimeout } from './clock.js';
 
@@ -160,6 +161,41 @@ function gapTrend(gaps) {
 }
 
 /**
+ * Layer 3 (D4) — the MECHANICAL START. A loaded bridge is handed to the drafter as a
+ * STARTING DRAFT, not as a contract: it is appended to the ordinary drafting prompt and
+ * the result passes the ORDINARY validator. No second, looser path exists for an
+ * inherited plan.
+ *
+ * The framing is the pre-probe's arm C (`scripts/reuse-preprobe.mjs` ARM_FRAME.C),
+ * carried through the execution probe (`scripts/reuse-exec-probe.mjs` C_BLOCK) that
+ * greened this job shape end to end. It is reproduced VERBATIM because that exact text
+ * is what the draft-tier read and the execution kill-gate were measured against —
+ * reworded, this would be a different arm than the one that passed.
+ *
+ * ONE token is not verbatim, and deliberately: the probe's job had FOUR close stages and
+ * said so. A prompt that tells a two-stage job it shares "the same four close stages" is
+ * a falsehood handed to the planner, so the count is read off the job's own staged close
+ * (which the load gate has already proven equal to the bridge's). The small numbers are
+ * spelled, so on the four-stage shape the probe validated this renders byte-identical to
+ * the text it validated.
+ * @param {number} n how many stages both closes have
+ * @param {object} plan the bridge version's plan, as executed
+ */
+function startingDraftBlock(n, plan) {
+  const count = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'][n] ?? String(n);
+  return `
+
+YOUR STARTING DRAFT — begin from the plan below and tweak it.
+This plan greened a same-shape job (the same ${count} close stages) on a DIFFERENT repository. Take it
+as your starting draft rather than starting from a blank page: keep what carries over, change what
+this repository needs. Everything you submit must be legal for THIS job as described above — its
+paths, scopes, verbs, bounds and check names. Output the finished plan as the single JSON object
+required above, and nothing else.
+
+${JSON.stringify(plan, null, 2)}`;
+}
+
+/**
  * The plan-drafting prompt: a schema DESCRIPTION built from the live validator
  * menus — never a copyable example (the drafter must author, not echo; the
  * run.js draftPrompt precedent). Check NAMES only: a check's command is
@@ -178,15 +214,21 @@ function gapTrend(gaps) {
  *   TIGHTEN. Interpolated the way every sibling bound is: `validatePlan` reds outside
  *   `1..capRuns`, and a prompt that says only "integer" spends a round teaching it.
  *   Defaults to validatePlan's own default so existing callers are unchanged.
+ * @param {object|null} [startingDraft] Layer 3 (D4) — a loaded bridge's plan, handed over
+ *   as the draft to TWEAK. Omitted/null is the COLD path and renders byte-identically to
+ *   the pre-Layer-3 prompt: the block is additive, never surgery on the prompt's interior,
+ *   so the two paths cannot drift (the F47 works-both-ways rule). Only the runner passes
+ *   it, and only for the FIRST draft phase — a replan drafts from the run's own state.
  */
-export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, capRuns = 3) {
+export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, capRuns = 3, startingDraft = null) {
   const scopeMenu = Array.isArray(scopes) && scopes.length ? scopes : legalScopes(job.writeScope ?? []);
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
   // W4: the menu comes off the STAGED close — the same one derivation `runPlan`
   // executes and `validatePlan` accepts against. Reading `job.close` raw here left
   // the legacy object form offering nothing while the runner preflighted a stage.
   // (`?? []`: a close naming no command stages nothing, so it offers nothing)
-  const checkNames = checkMenu(stageClose(job.close) ?? []).map((m) => m.name);
+  const closeStages = stageClose(job.close) ?? [];
+  const checkNames = checkMenu(closeStages).map((m) => m.name);
   const doc = `DRAFT-PLAN
 You are planning how to accomplish a goal in a repository, as an ordered list of bounded
 steps (schema "plan-v1"). The plan is pure declarative JSON validated by a strict schema;
@@ -234,6 +276,12 @@ ${materialsBlock(materials)}
 Repository survey (from a read-only scout):
 ${scoutBlob || '(no scout notes)'}`;
   let p = doc;
+  // BEFORE the failure/reds appendices, so the last word to a redrafting planner stays
+  // the validator's "fix every red". The execution probe injected at the provider seam
+  // and could only append at the very end; it recorded that ordering as its own known
+  // wart. Owning the prompt is what lets it be fixed — and on the first draft (no
+  // failure, no reds) the render is byte-identical to the probe's.
+  if (startingDraft) p += startingDraftBlock(closeStages.length, startingDraft);
   if (failure) p += `\n\nWhat happened when the previous plan ran:\n${failure}\nPlan differently — a repeat of the same steps will fail the same way.`;
   if (reds) p += `\n\nYour previous plan was REJECTED with these reds (code:path):\n${JSON.stringify(reds)}\nFix every red. Output ONLY the corrected JSON object.`;
   return p;
@@ -279,15 +327,24 @@ ${scoutBlob || '(no scout notes)'}`;
  *   first plan-flow job to emit `root-injected` runs the pre-registered ON-vs-OFF acceptance
  *   read (the Layer R default-flip, LAYERS.md ⚠). Excluded on native (clipipe): the native
  *   worker has no onToolResult seam, so the tee cannot settle and same-path rewrites are blind.
+ * @param {unknown} [opts.bridge] Layer 3 (D3/D4) — a bridge-v1 registry entry to REUSE as the
+ *   drafter's starting point. Absent is the COLD path and is byte-identical to the pre-Layer-3
+ *   flow. Present, the D2-split LOAD GATE runs at the door, before the close precheck and
+ *   before any token: on a pass the newest version's plan (the run-as-executed artifact)
+ *   rides into the FIRST draft prompt only; on a fail the run returns the distinct terminal
+ *   `recipe-stale` having spent nothing. Selecting the entry — the listing, the pin, the
+ *   LLM's pick — is the CALLER's, and so is falling back to cold: a silent automatic
+ *   fall-back would spend a run's budget on a decision nobody made.
  * @param {() => number} [opts.now] the wall clock's time source, injected. The real clock is the
  *   default; a caller supplies this to drive time deterministically (the same seam `createClock`
  *   already exposes — a run's terminal cannot otherwise be exercised without waiting out a cap
  *   whose floor is one close timeout).
  * @returns {Promise<string>} 'green' | 'already-green' | 'escalated' | 'plan-red' |
- *   'check-red' | 'close-red' | 'close-unsupported' | 'pricing-red' | 'cap-halt' |
- *   'wall-halt' | 'provider-red' | 'interpreter-red' | 'step-stalled' | `step-red:<id>`
+ *   'check-red' | 'close-red' | 'close-unsupported' | 'recipe-stale' | 'pricing-red' |
+ *   'cap-halt' | 'wall-halt' | 'provider-red' | 'interpreter-red' | 'step-stalled' |
+ *   `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, capRuns = 3, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, now }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, capRuns = 3, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now }) {
   workdir = resolve(workdir);
   // ONE spelling of the redaction, housed next to the inventory it reads
   // (src/validate.js) — the same helper the isolate verbs scrub the litectx store
@@ -348,6 +405,46 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       options: ['wire a native CLIPipeProvider factory (opts.nativeProvider)', 'change the job provider to a Loop-driven one'],
     });
     return 'interpreter-red';
+  }
+
+  // ── THE BRIDGE LOAD GATE (Layer 3, D2 as SPLIT by the 2026-08-01 addendum).
+  // Asked AT THE DOOR: *"is this the right KIND of recipe?"* — verdict type, close-stage
+  // kinds, verbs within the signed menu, and NOTHING instance-bound (paths, scopes and
+  // targets are expected to be yesterday's bricks; the full validatePlan judges the
+  // TWEAKED draft at draft time, D4).
+  //
+  // It sits FIRST among the things that cost anything, and above the clock and the close
+  // precheck deliberately: the gate is $0 and deterministic while a precheck is real wall
+  // time (four stages at the shipped timeout is an hour). It sits BELOW the two guards
+  // above it because those say the JOB cannot run at all, which outranks "this recipe does
+  // not fit". Consequence, named rather than discovered later: a refused run never learns
+  // whether the tree was already green — the caller's cold rerun does.
+  //
+  // The entry is re-validated here even though the caller is contracted to pass a valid
+  // one. Not defensive decoration: the very next thing this code does is reach into
+  // `versions.at(-1).plan`, and a half-written file that reached a reader anyway must come
+  // back as named reds, never as a TypeError out of the runner (`loadRegistry` already
+  // skips-and-reports for the same reason).
+  let startingDraft = null;
+  if (bridge != null) {
+    const bv = validateBridge(bridge);
+    const gate = bv.ok ? loadGate(bv.bridge, job) : { ok: false, reds: bv.reds };
+    const name = typeof (/** @type {any} */ (bridge)?.name) === 'string' ? /** @type {any} */ (bridge).name : null;
+    if (!gate.ok) {
+      emit('bridge-gate', { outcome: 'recipe-stale', name, reds: gate.reds });
+      emit('escalation', {
+        category: 'recipe-stale', decisionReady: true,
+        decision: `The selected workflow${name ? ` "${name}"` : ''} is not the right KIND of recipe for this job, so it was refused before anything was spent. Reusing it is not a decision this run can make for you.`,
+        options: ['rerun COLD (draft a new plan from scratch)', 'select a different workflow from the registry', 'change the job spec so the shapes match (a spec edit — the new hash needs re-approval)'],
+        detail: gate.reds.map((/** @type {any} */ r) => `${r.code}:${r.path}${r.detail ? ` — ${r.detail}` : ''}`).join('\n'),
+      });
+      return 'recipe-stale';
+    }
+    // `versions` is oldest-first and non-empty by the validator's entry bar, so the newest
+    // green's plan-as-executed is the one that inherits (R1) — never the founding one.
+    const newest = bv.bridge.versions.at(-1);
+    startingDraft = newest.plan;
+    emit('bridge-loaded', { name: bv.bridge.name, versions: bv.bridge.versions.length, runid: newest.runid });
   }
 
   // T (PRD v1.27/v1.29) — the run's wall clock, STARTED HERE, before the close
@@ -999,11 +1096,20 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // is actually left, which is the adaptation channel.
     const materials = { balanceUsd: remainingUsd(), remainingMs: clock.bounded ? clock.remainingMs() : null, ...(progress ? { progress } : {}) };
     emit('materials', { phase, ...materials });
+    // D5 — the bridge rides into the FIRST draft phase ONLY. A replan drafts from the
+    // RUN'S OWN STATE (what failed, what is left): re-handing the recipe there would
+    // answer the replan's question with the material the run just demonstrated does not
+    // work, and would spend the one revision the ceiling allows on a second unmeasured
+    // arm. Exactly the rule the execution probe held at the provider seam, moved to where
+    // the phase is known rather than inferred from the prompt's own text.
+    // The REDRAFT (a validator rejection inside this same phase) keeps it: one red must
+    // not silently convert a warm run to a cold one.
+    const starting = phase === 'draft' ? startingDraft : null;
     const draftPlan = async (/** @type {any[]|null} */ reds) => {
       drafter.setIteration(reds ? 'redraft' : 'draft');
       // capRuns is the SAME number validatePlan bounds `attempts` against below —
       // one source, so the prompt and the validator cannot drift apart
-      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials, capRuns), []);
+      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials, capRuns, starting), []);
       return extractArtifact(r.text).code ?? '';
     };
     // Scrubbed HERE, once, before any consumer reads them — the judge() precedent

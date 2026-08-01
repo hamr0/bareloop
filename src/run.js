@@ -79,6 +79,13 @@ async function primitiveSmoke(workdir) {
  * @param {number} [opts.capRuns] shell-owned per-step attempt cap
  * @param {number} [opts.shellCapUsd] the shell's hard USD ceiling
  * @param {number} [opts.closeTimeoutMs] close wall-clock cap (shell territory)
+ * @param {unknown} [opts.bridge] Layer 3 — a bridge-v1 entry to reuse as the drafter's
+ *   STARTING DRAFT (design record 2026-08-01, D4), forwarded to the plan flow. Omitted is
+ *   the cold path and is byte-identical to a pre-Layer-3 run. WHICH entry (the listing, an
+ *   operator pin, the LLM's pick) is the caller's decision, and so is what to do when the
+ *   load gate refuses one: a refusal returns the distinct `recipe-stale` outcome with zero
+ *   spend rather than silently drafting cold, because starting a paid run on a decision
+ *   nobody made is the same class of error as widening a cap to manufacture a green.
  * @param {boolean} [opts.layerRoot=false] Layer R (within-run ratchet) — shell
  *        territory, threaded to the plan flow. Defaults OFF
  *        (decided 2026-07-21): fixation is extinct on every current job (F41), so
@@ -88,10 +95,10 @@ async function primitiveSmoke(workdir) {
  *        binding.)
  * @returns {Promise<string>} outcome: 'green' | 'already-green' | 'escalated' |
  *   'unapproved-spec' | 'job-red' | 'smoke-red' | 'plan-red' | 'check-red' |
- *   'close-red' | 'close-unsupported' | 'pricing-red' | 'provider-red' |
+ *   'close-red' | 'close-unsupported' | 'recipe-stale' | 'pricing-red' | 'provider-red' |
  *   'interpreter-red' | 'cap-halt' | 'wall-halt' | 'step-stalled' | `step-red:<id>`
  */
-export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, emit, capRuns = 3, shellCapUsd = 2, closeTimeoutMs, layerRoot = false }) {
+export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, emit, capRuns = 3, shellCapUsd = 2, closeTimeoutMs, layerRoot = false, bridge = null }) {
   // 0. the ledger's counters, declared FIRST so that every job-end — including
   // the pre-token reds below — can state a real figure. An omitted `spentUsd` is
   // not a zero: a consumer reads `undefined` and either crashes or launders it
@@ -190,7 +197,7 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // accounts it natively (F12) and the job-end money contract is unchanged.
   {
     const outcome = await runPlan(job, {
-      workdir, provider, nativeProvider, providerFor, emit: meter, capRuns, closeTimeoutMs, layerRoot,
+      workdir, provider, nativeProvider, providerFor, emit: meter, capRuns, closeTimeoutMs, layerRoot, bridge,
       remainingUsd: () => Math.min(shellCapUsd, job.budgetUsd - spentUsd),
       isUnpriced: () => unpriced, // F6: let the plan flow bail in-flight, not just after it returns
     });

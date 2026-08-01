@@ -31,6 +31,11 @@ test('the documented public surface is actually exported from src/index.js', () 
     'snapshotScope', 'evalExits',
     'runPlan', 'runJob',
     'classifyIncidents', 'foldLedger', 'ledgerDeltas', 'updateLedger', 'LEDGER_CLASSES',
+    // Layer 3 — the reuse registry (bridge-v1) and D3's listing/selection text
+    'BRIDGE_SCHEMA', 'validateBridge', 'deriveStatus', 'listingRow', 'loadGate',
+    'mintBridge', 'appendGreen', 'appendRed',
+    'loadBridge', 'loadRegistry', 'saveBridge', 'makeRegistry', 'registryExists',
+    'renderListing', 'selectionPrompt',
   ];
   const missing = documented.filter((n) => bareloop[n] === undefined);
   assert.deepEqual(missing, [], `documented but not exported — the adopter contract is false: ${missing.join(', ')}`);

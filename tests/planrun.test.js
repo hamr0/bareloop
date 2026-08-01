@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runPlan } from '../src/planrun.js';
+import { runPlan, planPrompt } from '../src/planrun.js';
 import { ralph } from '../src/ralph.js';
 import { validateJob } from '../src/job.js';
 import { StallError, MAX_STALLS } from '../src/stall.js';
@@ -80,11 +80,11 @@ const collector = () => {
   return { events, emit: (type, data = {}) => { const e = { type, ...data }; events.push(e); return e; } };
 };
 
-async function go(wd, provider, { job = JOB(wd), capRuns = 3, layerRoot = false, scoutRounds, now, providerFor } = {}) {
+async function go(wd, provider, { job = JOB(wd), capRuns = 3, layerRoot = false, scoutRounds, now, providerFor, bridge } = {}) {
   const jv = validateJob(job);
   assert.deepEqual(jv.reds, [], 'the test job must be validateJob-green');
   const { events, emit } = collector();
-  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns, layerRoot, remainingUsd: () => 1.5, ...(scoutRounds ? { scoutRounds } : {}), ...(now ? { now } : {}), ...(providerFor ? { providerFor } : {}) });
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns, layerRoot, remainingUsd: () => 1.5, ...(scoutRounds ? { scoutRounds } : {}), ...(now ? { now } : {}), ...(providerFor ? { providerFor } : {}), ...(bridge ? { bridge } : {}) });
   return { outcome, events };
 }
 
@@ -1988,4 +1988,194 @@ test('W3: the incoherent narrowed-scope plan is rejected at the VALIDATION gate 
   assert.equal(red?.code, 'step-scope-escape', `got ${JSON.stringify(events.filter((e) => e.type === 'plan-red'))}`);
   assert.match(red.detail ?? '', /tests\/\*\*/, 'the gap names the step\'s own narrowed scope so the redraft can aim');
   assert.equal(events.filter((e) => e.type === 'step-start').length, 0, 'no step ever ran — the burn is what this closes');
+});
+
+// ── Layer 3 module 3: MECHANICAL START — the bridge as the drafter's starting
+// draft (design record 2026-08-01, D3/D4/D5 + the D2-SPLIT addendum).
+//
+// The probe (scripts/reuse-exec-probe.mjs) proved the mechanism by INJECTING at
+// the provider seam; this graduates it into the shipped path. What the tests hold:
+//  - D2 (split): the load gate runs AT THE DOOR — before the close precheck, before
+//    the scout, before any token. A refusal is the `recipe-stale` terminal, never a
+//    crash and never an automatic silent fall-back to cold drafting.
+//  - D4: the bridge is a STARTING DRAFT — appended to the SAME drafting prompt, judged
+//    by the SAME validator. No second, looser path exists for an inherited plan.
+//  - D5: the one-replan ceiling is untouched, and a REPLAN draft never re-injects the
+//    bridge — it drafts from the run's own state (the probe's own rule, kept).
+//  - the COLD path is byte-identical when no bridge is passed (the F47 "works both
+//    ways" lesson): no marker in the prompt, and no new event on the spine.
+
+/** the recipe's plan: same SHAPE, and its paths are the OTHER repository's — instance-bound
+ * fields are EXPECTED to be wrong here, which is the whole D2-split finding */
+const BRIDGE_PLAN = {
+  schema: 'plan-v1',
+  steps: [{
+    id: 'write-the-missing-test', action: 'Write the missing test file, as the recipe did on the other repository.',
+    tools: ['write'], rounds: 6, target: 'spec/other_spec.mjs',
+    exit: [{ type: 'tree-changed', scope: 'spec/**' }],
+  }],
+};
+/** an OLDER version of the same recipe — `versions` is oldest-first, so this one must NOT
+ * be the plan that reaches the prompt */
+const BRIDGE_PLAN_OLD = { schema: 'plan-v1', steps: [{ id: 'stale-first-cut', action: 'the superseded first cut', tools: ['write'], rounds: 4, target: 'spec/old_spec.mjs', exit: [{ type: 'tree-changed', scope: 'spec/**' }] }] };
+const greenRow = (runid, patient) => ({ at: '2026-07-30T00:00:00Z', runid, patient, outcome: 'green', failingStage: null, costUsd: 2.21, spendComplete: true, wallMs: 534_000, rounds: 40 });
+const version = (plan, runid, patient) => ({ plan, runid, greenAt: '2026-07-30T00:00:00Z', patient, costUsd: 2.21, wallMs: 534_000, rounds: 40 });
+const BRIDGE = (over = {}) => ({
+  schema: 'bridge-v1',
+  name: 'plan-patient-suite',
+  goal: 'Write the missing test so the suite greens.',
+  specHash: null,
+  closeStageNames: ['clean-run', 'verdict'],
+  toolsUsed: ['write'],
+  versions: [version(BRIDGE_PLAN_OLD, 'ms-older', 'other-repo'), version(BRIDGE_PLAN, 'ms-newest', 'third-repo')],
+  history: [greenRow('ms-older', 'other-repo'), greenRow('ms-newest', 'third-repo')],
+  ...over,
+});
+const MARKER = 'YOUR STARTING DRAFT';
+
+test('planPrompt COLD is byte-identical with the starting-draft argument absent, null, or undefined (the F47 works-both-ways pin)', () => {
+  const wd = '/tmp/does-not-matter';
+  const job = JOB(wd);
+  const args = [job, 'scout notes', null, 40, null, undefined, { balanceUsd: 1.5 }, 3];
+  const cold = planPrompt(...args);
+  assert.equal(planPrompt(...args, null), cold, 'an explicit null is the cold render');
+  assert.equal(planPrompt(...args, undefined), cold, 'and so is an explicit undefined');
+  assert.ok(!cold.includes(MARKER), 'no mechanical-start marker exists on the cold path');
+});
+
+test('planPrompt with a starting draft: the cold prompt is intact as a PREFIX, plus the verbatim framing and the plan pretty-printed', () => {
+  const wd = '/tmp/does-not-matter';
+  const job = JOB(wd);
+  const args = [job, 'scout notes', null, 40, null, undefined, { balanceUsd: 1.5 }, 3];
+  const cold = planPrompt(...args);
+  const warm = planPrompt(...args, BRIDGE_PLAN);
+  assert.ok(warm.startsWith(cold), 'the shipped prompt is unchanged and the block is ADDITIVE — never surgery on its interior');
+  // the framing is the pre-probe's arm C, the language the draft read was measured on
+  assert.match(warm, /YOUR STARTING DRAFT — begin from the plan below and tweak it\./);
+  assert.match(warm, /Take it\nas your starting draft rather than starting from a blank page: keep what carries over, change what\nthis repository needs\./);
+  assert.match(warm, /Everything you submit must be legal for THIS job as described above/);
+  // the stage count is TRUE for THIS job (two stages), never the probe job's hardcoded four
+  assert.match(warm, /the same two close stages/);
+  assert.ok(warm.includes(JSON.stringify(BRIDGE_PLAN, null, 2)), 'the plan rides pretty-printed, exactly as the probe handed it over');
+});
+
+test('planPrompt keeps the reds appendix LAST: a redraft is still told to fix its reds after the starting draft', () => {
+  const wd = '/tmp/does-not-matter';
+  const job = JOB(wd);
+  const reds = [{ code: 'invalid-value', path: 'steps.0.scope' }];
+  const warm = planPrompt(job, 'scout', reds, 40, null, undefined, { balanceUsd: 1.5 }, 3, BRIDGE_PLAN);
+  assert.ok(warm.indexOf(MARKER) < warm.indexOf('Your previous plan was REJECTED'),
+    'the block lands BEFORE the reds instruction — the probe recorded the opposite ordering as its own known wart');
+  assert.ok(warm.trimEnd().endsWith('Output ONLY the corrected JSON object.'), 'the last word to a redrafting planner is still the validator\'s');
+});
+
+test('a bridge that PASSES the load gate becomes the drafter\'s starting draft; bridge-loaded names the NEWEST version', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout notes' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'done' },
+  ]);
+  const { outcome, events } = await go(wd, provider, { bridge: BRIDGE() });
+  assert.equal(outcome, 'green');
+  const loaded = events.find((e) => e.type === 'bridge-loaded');
+  assert.ok(loaded, `bridge-loaded is on the spine — events: ${events.map((e) => e.type).join(' ')}`);
+  assert.equal(loaded.name, 'plan-patient-suite');
+  assert.equal(loaded.versions, 2);
+  assert.equal(loaded.runid, 'ms-newest', 'the NEWEST version is the one that inherits (versions are oldest-first)');
+  assert.ok(!events.some((e) => e.type === 'bridge-gate'), 'a passing gate is recorded as the load, not as a refusal');
+
+  const draft = provider.calls[1];
+  assert.ok(draft.includes(MARKER), 'the DRAFT prompt carries the mechanical start');
+  assert.ok(draft.includes(JSON.stringify(BRIDGE_PLAN, null, 2)), 'and it carries the newest version\'s plan');
+  assert.ok(!draft.includes(JSON.stringify(BRIDGE_PLAN_OLD, null, 2)), 'never the superseded one');
+  assert.ok(!provider.calls[0].includes(MARKER), 'the SCOUT is untouched — the bridge is a drafting material, not a worker\'s');
+  for (const p of provider.calls.slice(2)) assert.ok(!p.includes(MARKER), 'and no step worker ever sees it');
+});
+
+test('the tweaked draft passes the SAME validator — no second, looser path exists for an inherited plan (D4)', async (t) => {
+  const wd = makePatient(t);
+  // the drafter hands back the recipe UNCHANGED: its `spec/**` scope is outside this
+  // job's signed fence, so the shipped validator must red it exactly as it would a cold draft
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: JSON.stringify(BRIDGE_PLAN) },
+    { text: JSON.stringify(BRIDGE_PLAN) },
+  ]);
+  const { outcome, events } = await go(wd, provider, { bridge: BRIDGE() });
+  assert.equal(outcome, 'plan-red', 'an inherited plan that does not fit THIS job is rejected like any other');
+  assert.ok(events.some((e) => e.type === 'plan-red'), 'and the reds are on the spine');
+  assert.ok(provider.calls[2].includes(MARKER), 'the arm HOLDS across a validator-rejected redraft — one red must not silently convert the run to cold');
+});
+
+test('D5: a REPLAN draft never re-injects the bridge — it drafts from the run\'s own state, and the one-replan ceiling is untouched', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout notes' },
+    { text: PLAN(wd) },
+    { text: 'thinking about it' },   // attempt 1: no write
+    { text: 'still thinking' },      // attempt 2: no write → cap → replan
+    { text: PLAN(wd, [{
+      id: 'write-test-2', action: 'Actually write tests/test_x.mjs now.',
+      tools: ['write'], rounds: 6, target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    }]) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'done' },
+  ]);
+  const { outcome, events } = await go(wd, provider, { capRuns: 2, bridge: BRIDGE() });
+  assert.equal(outcome, 'green');
+  assert.equal(events.filter((e) => e.type === 'replan').length, 1, 'exactly one replan — reuse buys no extra revision allowance');
+  const replanDraft = provider.calls[4];
+  assert.ok(replanDraft.includes('What happened when the previous plan ran:'), 'this IS the replan draft');
+  assert.ok(!replanDraft.includes(MARKER), 'and it carries NO starting draft — the run\'s own state is the material now');
+  assert.equal(events.filter((e) => e.type === 'bridge-loaded').length, 1, 'the bridge is loaded once, at the door');
+});
+
+test('a bridge that FAILS the load gate is the recipe-stale terminal: zero tokens, no close precheck, never a crash', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([{ text: 'scout' }, { text: PLAN(wd) }]);
+  // same job, a recipe that inspects something else — the D2-split gate's stage-kind check
+  const { outcome, events } = await go(wd, provider, { bridge: BRIDGE({ closeStageNames: ['typecheck', 'suite-green'] }) });
+  assert.equal(outcome, 'recipe-stale');
+  assert.equal(provider.calls.length, 0, 'refused at the door — not one token was spent');
+  assert.ok(!events.some((e) => e.type === 'close-precheck'), 'and not one close stage was run either');
+  assert.ok(!events.some((e) => e.type === 'scout-start'));
+  const gate = events.find((e) => e.type === 'bridge-gate');
+  assert.ok(gate, `bridge-gate is on the spine — events: ${events.map((e) => e.type).join(' ')}`);
+  assert.equal(gate.outcome, 'recipe-stale');
+  assert.equal(gate.name, 'plan-patient-suite');
+  assert.equal(gate.reds[0].code, 'recipe-stale');
+  assert.match(gate.reds[0].path, /closeStageNames/);
+  assert.ok(!events.some((e) => e.type === 'bridge-loaded'));
+  const esc = events.find((e) => e.type === 'escalation');
+  assert.equal(esc?.category, 'recipe-stale');
+  assert.equal(esc.decisionReady, true, 'cold drafting is the CALLER\'s decision — never an automatic silent fall-back');
+  assert.ok(esc.options.some((o) => /cold/i.test(o)), `the cold option is offered by name: ${JSON.stringify(esc?.options)}`);
+});
+
+test('a MALFORMED bridge is refused at the same door, by its own reds — never a throw on the way to reading its plan', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([{ text: 'scout' }, { text: PLAN(wd) }]);
+  for (const bad of [BRIDGE({ versions: [], history: [] }), BRIDGE({ schema: 'bridge-v2' }), { not: 'a bridge' }, 'nonsense']) {
+    const { outcome, events } = await go(wd, provider, { bridge: bad });
+    assert.equal(outcome, 'recipe-stale', `refused: ${JSON.stringify(bad).slice(0, 60)}`);
+    assert.ok(events.find((e) => e.type === 'bridge-gate')?.reds.length > 0, 'the reds say WHY, they are never an empty refusal');
+    assert.equal(provider.calls.length, 0);
+  }
+});
+
+test('COLD path unchanged: with no bridge opt, no bridge event fires and the drafting prompt carries no starting draft', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout notes' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'done' },
+  ]);
+  const { outcome, events } = await go(wd, provider);
+  assert.equal(outcome, 'green');
+  assert.ok(!events.some((e) => e.type === 'bridge-loaded' || e.type === 'bridge-gate'), 'no bridge event exists on a cold run');
+  for (const p of provider.calls) assert.ok(!p.includes(MARKER), 'and nothing anywhere carries a starting draft');
 });

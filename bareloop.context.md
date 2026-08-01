@@ -427,7 +427,7 @@ Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
 `coordination-red` — a failure between units (scope contention, step order, store
 races), never to be folded into worker/interpreter reds.
 
-### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, shellCapUsd?, closeTimeoutMs?, layerRoot? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, shellCapUsd?, closeTimeoutMs?, layerRoot?, bridge? })` → outcome — `src/run.js`
 
 The runner — the shell's top layer, and the ONE entry. It composes everything below it and
 interprets nothing itself. Sequence: **approval gate** (human-signs-always — refuses an
@@ -437,8 +437,8 @@ known-answer round-trip before tokens: `smoke-red` — a silent degradation thro
 `min(job budget − spent, shell cap)`.
 
 Outcomes: `green | already-green | escalated | unapproved-spec | job-red | smoke-red |
-plan-red | check-red | close-red | close-unsupported | pricing-red | provider-red |
-interpreter-red | cap-halt | wall-halt | step-stalled | step-red:<id>`. `provider-red` is a
+plan-red | check-red | close-red | close-unsupported | recipe-stale | pricing-red |
+provider-red | interpreter-red | cap-halt | wall-halt | step-stalled | step-red:<id>`. `provider-red` is a
 transport throw or a worker round the API cut off mid-generation (`truncated:max_tokens`,
 BA-6 — before which it laundered into a clean finish, F25): no verdict exists and the failed
 round's spend is only partly known (F6). `cap-halt` is the wallet; `wall-halt` is the clock
@@ -589,6 +589,69 @@ reads before ever writing). It is NOT allowed to read the run's own machinery (F
 audit, the smoke store and the litectx store are denied — the agent neither authors the
 arbiter nor reads its books. N2 bounds (honest): `gold`/`rubric` closes refuse
 `close-unsupported` (execution lands at N4).
+
+### The reuse registry (Layer 3) — `src/bridges.js`, `src/selection.js`
+
+A **bridge** is the plan a green actually executed, kept so the next run of the same SHAPE
+starts from it instead of cold. Storage is a directory of plain JSON files at an
+**operator-supplied path** — no database, no default location (a missing registry reds
+rather than being conjured). Everything here is either a pure derivation or an explicit
+read/write of one file; nothing decides a run.
+
+**Writing the box (R1 — only a green writes it).** `mintBridge(meta, record)` builds a new
+entry from a FIRST green — there is deliberately no way to create one without a green, so a
+failed plan cannot enter the registry even by accident. `appendGreen(bridge, record)` adds
+the plan AS EXECUTED as the next **version** plus a history row; `appendRed(bridge, record)`
+writes a **history row only** and never touches `versions` — a red demotes, it does not edit
+the recipe. Both are pure (a new entry is returned; the input is untouched).
+`saveBridge(dir, bridge)` writes atomically (temp + rename) and REFUSES an entry its own
+validator rejects; `loadBridge` / `loadRegistry` read back, and a malformed file is
+**skipped and reported** (`ok:false` with one red per bad file) rather than silently
+dropped. `makeRegistry` is separate from `saveBridge` on purpose: saving must never conjure
+a registry from a typo'd path.
+
+**Status is DERIVED, never stored** (`deriveStatus`): **candidate** = one green, **proven** =
+greens on ≥2 DISTINCT patients, and a `red` on a proven entry drops it back to candidate.
+A **casualty is not a red** — only the literal outcome `red` demotes; `provider-red`,
+`wall-halt`, `close-crashed` and friends are casualties and are never evidence in either
+direction. There is deliberately **no probability score**: n=1 is an anecdote whichever way
+it points, and a percentage over 2–3 runs is fake precision. `costUsd`/`wallMs`/`rounds` are
+a number or an EXPLICIT `null`, and the key is REQUIRED either way, so an unknown has to be
+said rather than omitted (F6 — an omitted key is how a `?? 0` gets written downstream).
+
+**`loadGate(bridge, job)` → `{ ok, reds }` — the load-time gate.** Exactly three checks,
+asked *"is this the right KIND of recipe?"*: the job's **verdict type**, the **close-stage
+kinds** (v1: the same stage names in the same order), and every stored verb **within THIS
+job's signed menu** (an omitted `tools` means the concrete current `TOOL_MENU`, MED-1).
+**Nothing about paths, scopes or targets** — those are instance-bound and are EXPECTED to
+red: every recipe from a different day names yesterday's bricks, and that is what a recipe
+IS. The full `validatePlan` still judges the TWEAKED draft at draft time; no second, looser
+path exists for an inherited plan. A failing gate is a RESULT (`recipe-stale`), never a throw.
+
+**`runJob`/`runPlan` take `bridge?`** — a validated entry to reuse. The gate runs **at the
+door**: before the clock, before the close precheck, before any token. On a pass, the
+**newest** version's plan rides into the FIRST drafting prompt as a starting draft
+(`bridge-loaded {name, versions, runid}` on the spine) and everything after it is the
+ordinary shipped path — same validator, same redraft-on-reds, same ONE-replan ceiling, and a
+**replan never re-injects the bridge** (it drafts from the run's own state). On a fail the
+run returns the distinct terminal **`recipe-stale`** with `bridge-gate {outcome, name, reds}`
+and a decision-ready escalation, having spent nothing. **Falling back to cold is the
+caller's decision, not an automatic silent fallback** — starting a paid run on a decision
+nobody made is the same class of error as widening a cap to manufacture a green. Omit
+`bridge` and the flow is byte-identical to a pre-Layer-3 run: no new event, and no starting
+draft anywhere in the prompt.
+
+**`renderListing(registry)` / `selectionPrompt(listing, ask)` — `src/selection.js`.** Pure
+text: they read no file, call no model and decide nothing. `renderListing` takes
+`loadRegistry`'s result (or a bare array) and renders one compact block per bridge — name,
+the goal sentence it greened, status, greens/reds with the last outcome, and the cost/time
+BAND of its greens. An unknown cost or duration renders `UNKNOWN` and a partial aggregate
+says how many it skipped (never a `$0.00` that reads as exact); entries that could not be
+read are NAMED, so the listing can never be quietly shorter than the directory. Ordering is
+deterministic by name and it never throws. `selectionPrompt` wraps that listing with the ask
+and D3's two standing rules — *"none matches"* is a first-class answer that means the agent
+drafts new, and a PINNED workflow may be refused only EXPLICITLY, with a reason. The
+selection CALL, the pin/shortlist/force-cold flow and the parse of the answer are YOURS.
 
 ### `updateLedger({ ledgerFile, spineFiles })` → `{ appended, fold }` — `src/ledger.js`
 

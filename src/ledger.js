@@ -79,6 +79,11 @@ const EXCLUDED_ESCALATIONS = new Set([
   'smoke-red',          // already counted via primitive-smoke
   'hitl-close',         // by design: a human is the close
   'close-unsupported',  // honest refusal, by design
+  // Layer 3 (D2 split): the bridge load gate refused a wrong-KIND recipe at the door.
+  // That is the mechanism WORKING — every recipe from a different day is a candidate for
+  // refusal, and the run stopped having spent nothing. Filing it upstream would aim a bug
+  // report at a library for our own gate doing its job (the step-stalled lesson).
+  'recipe-stale',
   'close-timeout',      // close-verdict reds: the arbiter's own named terminals
   'close-killed',       // (F17) — operator/environment stories, never a suite lib
   'close-crashed',

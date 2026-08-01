@@ -5,6 +5,56 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Added
+- **Layer 3, the REUSE rung — the registry, the load gate, and the MECHANICAL START**
+  (design record `docs/plans/2026-08-01-layer-3-reuse-design.md`; execution probe green
+  before any of it was built). A green's plan is now an artifact the next run of the same
+  SHAPE can start from, instead of being discarded.
+  - **`src/bridges.js` — the registry (D1/D6).** A directory of plain JSON files at an
+    OPERATOR-supplied path (no database, no new dependency, no default location).
+    `mintBridge` / `appendGreen` / `appendRed` / `saveBridge` / `loadBridge` /
+    `loadRegistry` / `makeRegistry` / `registryExists` / `validateBridge` / `listingRow` /
+    `deriveStatus`, all exported. **Only a green writes the box (R1):** a red writes a
+    history row and never touches `versions`. **Status is DERIVED, never stored (D6):**
+    candidate = one green, proven = greens on two DISTINCT patients, a red on a proven
+    entry demotes it — and a CASUALTY is not a red. There is deliberately no probability
+    score. Costs and durations are a number or an EXPLICIT `null` with the key required
+    either way, so an unknown is said rather than omitted (F6).
+  - **`loadGate(bridge, job)` — D2 as SPLIT (2026-08-01 addendum).** Three shape checks at
+    the door — verdict type, close-stage kinds, verbs within the signed menu — and
+    **nothing about paths, scopes or targets**: those are instance-bound and expected to
+    red, which the pre-probe measured the drafter fixing unaided (3/3 legal after tweak),
+    while the gate as originally frozen would have refused every cross-patient recipe.
+  - **`bridge?` on `runJob` and `runPlan` — the mechanical start (D4).** With a bridge, the
+    gate runs before the clock, the close precheck and any token; on a pass the NEWEST
+    version's plan-as-executed becomes the drafter's STARTING DRAFT inside the ordinary
+    drafting prompt (`planPrompt` gained an optional `startingDraft` argument). The tweaked
+    plan then passes the SAME `validatePlan` every cold draft passes — **no second, looser
+    path exists for an inherited plan** — and the ONE-replan ceiling is untouched (D5): a
+    replan drafts from the run's own state and never re-injects the bridge.
+  - **New terminal `recipe-stale`** (`runJob`/`runPlan`): a bridge that fails the load gate
+    is refused at the door with `bridge-gate {outcome, name, reds}` on the spine, a
+    decision-ready escalation, and **zero spend**. Falling back to cold drafting is the
+    CALLER's decision, never an automatic silent fallback. Classified as a deliberate
+    ledger exclusion — the gate refusing a wrong-KIND recipe is the mechanism working, not
+    a library bug to file upstream.
+  - **New spine events:** `bridge-gate` (a refusal, with its reds) and `bridge-loaded`
+    (`{name, versions, runid}` — which version inherited).
+  - **`src/selection.js` — D3's display half.** `renderListing(registry)` renders the
+    operator/LLM-facing workflow listing (name, goal, status, greens/reds, the cost/time
+    band of the greens), deterministic by name and total on garbage; an unknown cost or
+    time renders `UNKNOWN` and a partial aggregate says how many it skipped, and registry
+    entries that could not be read are NAMED so the listing is never quietly shorter than
+    the directory. `selectionPrompt(listing, ask)` is the pure prompt text for the pick,
+    carrying D3's two standing rules: *"none matches"* is a first-class answer that means
+    drafting new, and a PINNED workflow may be refused only EXPLICITLY, with a reason. Both
+    are pure text — the selection call, the pin/shortlist/force-cold flow and the parse of
+    the answer belong to the caller.
+  - **The cold path is byte-identical without a bridge** (the F47 works-both-ways rule),
+    pinned by test: no new event fires and no starting draft appears anywhere in the prompt.
+
 ## [0.6.0] — 2026-07-31
 
 ### Added
