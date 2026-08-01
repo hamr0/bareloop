@@ -4245,3 +4245,118 @@ the harness that produced it had substituted a `cat` for the node child that was
 dropping — the stall was faithfully reproduced, the party under test was not. The rule that
 catches it is the pre-flight one this repo already has: **could this test have produced the
 positive?** A control that swaps out the suspected mechanism is not a control.
+
+---
+
+## F72 — a machine SUSPEND freezes every guard including the outside watchdog, and from inside the artifacts it is indistinguishable from an event-loop freeze
+
+**Status: minted 2026-08-01 from the reuse execution probe's second launch (spine
+`reuse-exec-ms9lwtuf.jsonl`, litectx-u). No product defect fired and none is claimed: the run
+was healthy when the machine went to sleep under it. The OPERATIONAL fix is already in use (a
+sleep inhibitor around probe launches). The DESIGN remedies are named below and PARKED
+per-piece for hamr's rulings. One reading produced by this event was reported and then
+WITHDRAWN — it is recorded here as the assistant's own instrument error.**
+
+### What happened
+
+The launch was 12.2 minutes into a healthy run: a 2-step plan accepted, **step 1 green in
+2m21s**, step 2 walking its typecheck gap **61 → 20 strict errors** across two iterations, 68
+rounds, $1.6308 spent. Then the machine idle-suspended.
+
+| when (UTC) | event |
+|---|---|
+| 00:14:06.074 | last spine event — `worker-round`, seq 108 |
+| **00:14:12** | journal: `systemd-logind: The system will suspend now!` (02:14:12 local) |
+| 00:14:13 | journal: `user.slice: Unit now frozen` — everything the operator's session owns |
+| 00:14:13.246 | the 1s lag sampler's last tick |
+| 07:45:56.364 | thaw (journal: *"slept 7h31m42s"*); lag record `blockedMs: 27,103,118` |
+| 07:45:56.368 | the F67 watchdog's kill record — reason `stale`, `coldMs 27,108,007` vs its `staleMs 4,200,000` |
+| 07:45:56.370 | the buffered provider response completes — **6 ms** after the first post-thaw tick |
+| 07:45:56.372 | `wall-bounded`: `elapsedMs 27,841,506` against `requestedMs 2,700,000` |
+
+**The suspend request lands six seconds after the last spine event.** Nothing was wrong with
+the run.
+
+### Every guard shares the freeze — including the one built NOT to
+
+F67's lesson was that a guard inside the process shares that process's fate, and the answer
+was a separate process. A suspend takes the whole `user.slice`, so the separate process is
+frozen too — the watchdog is spawned by the run and lives in the same `session-7.scope`,
+`frozen-by-parent`.
+
+| guard | why it could not fire |
+|---|---|
+| F66 stall fuse (`src/stall.js`) | armed around the pending call, but a `setTimeout` — node timers run off a monotonic clock that does not accrue across suspend, and the event loop is frozen regardless |
+| BA-18 idle timeout | a `req.setTimeout` inside the same frozen process |
+| in-process wall-clock consult sites | read where a round completes and after a step returns — neither happened |
+| the 1s lag sampler | frozen; it recorded the gap only in retrospect, and it decides nothing |
+| **the F67 outside watchdog** | separate process, **same frozen `user.slice`** |
+
+On thaw all of them resumed at once and the outcome was over-determined: `src/clock.js` — the
+run's only clock, and a **realtime** one (`now = () => Date.now()`) — stamped **expired**, and
+the watchdog killed on its **first thaw poll**.
+
+### Two instrument lessons
+
+**(a) Two clocks in two timezones is the blind-instrument class wearing a new coat.** The
+journal prints **local** (CEST, UTC+2); the spine prints **UTC**. Reading a journal suspend
+line as if it were UTC put the freeze **87 minutes after** the last spine event and produced
+the reported claim *"87 awake minutes with no guard firing"* — which would have been a real
+and serious product defect. It was **WITHDRAWN**: the line being read was an **earlier,
+unrelated** suspend at 01:41:45 local, and the run's actual freeze is six seconds after its
+last event. The offsets reconcile exactly; nothing about the guards failed.
+
+**(b) Without the journal, this run's artifacts are byte-indistinguishable from a genuine
+event-loop freeze.** A frozen loop and a frozen machine leave the same spine: last event, long
+silence, wall past its cap, a watchdog kill on the stale trigger. **No in-process instrument
+can tell the operator which occurred** — the evidence that separates them lives outside the
+process, in the system journal.
+
+### Root cause
+
+- **Nothing anywhere takes a sleep inhibitor.** `grep systemd-inhibit` over the repo returns
+  **zero call sites**: a multi-hour paid run is launched with no claim on the machine staying
+  awake.
+- **Nothing detects RESUME.** The divergence is measurable with what already exists — the 1s
+  lag sampler is exactly the instrument that sees a realtime jump a monotonic timer did not
+  accrue — but nothing reads it, and no run says "I was suspended" rather than "I went quiet".
+
+### Fixes
+
+**Operational, already in use:** probe launches are wrapped in
+`systemd-inhibit --what=sleep:idle` (block mode, held for the duration — verified). The green
+relaunch ran under it.
+
+**Design, PARKED per-piece for hamr's rulings:**
+
+- **A — a liveness contract.** What a run is entitled to assume about the machine under it,
+  and what it must assert before spending.
+- **B — a kill-checks-before-kill taxonomy.** *Extends W-3* ("the kill from outside should
+  check for activity/bytes or other markers for activity, not a silent kill"): a resume marker
+  is another such check, and it distinguishes a dead run from a suspended one before the
+  signal goes out.
+- **C — resume-after-kill.** The **PRD v1.22 named gap**, still open: *within-run resume from a
+  transport-hit plan — the plan-as-executed spine already holds the checkpoint; not yet wired.*
+- **D — unpark BA-19's `deadlineMs`.** Delivered in bare-agent 0.35.0 and **parked at that
+  consume** (the F66 fuse already self-heals the class above it).
+
+### Also recorded: the remembered taxonomy is not bare-agent's
+
+Checked at the source rather than from memory. **bare-agent's `circuit-breaker.js` is a plain
+3-state breaker** (`closed`/`open`/`half-open`, per-key failure count, `threshold 5` /
+`resetAfter 60s`) with **no error categories** at all, and **`checkpoint.js` is HITL tool
+approval** (a tool-name list, `send`/`waitForReply`, 5-minute auto-deny) — **not resume**. The
+categorised-recovery taxonomy that was remembered is **aurora's**
+(`packages/spawner/src/aurora_spawner/{circuit_breaker,recovery,timeout_policy}.py`), and the
+true **resume** precedent in this programme's own history is **adaptlearn's `--resume`
+world-replay** (hash-verified ledger replay; it completed a cohort across a provider outage
+without re-spending, 48 rows replayed free).
+
+### Lesson
+
+**A guard's isolation is only as strong as the boundary it is isolated across.** F67 moved the
+guard out of the process; this event moved the failure out of the process too, to a scope that
+contains both. The general rule the two of them make: **name the scope your guard shares with
+the thing it guards** — event loop, process, session slice, machine, host — because a failure
+at or above that scope takes them together, and the artifacts it leaves will look exactly like
+the failure the guard was built to catch.

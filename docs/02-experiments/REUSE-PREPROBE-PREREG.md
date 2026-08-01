@@ -379,3 +379,123 @@ probe, regardless of direction.**
 **Success or failure of THIS PROBE is NOT success or failure of the RUNG.** A red here is a
 finding about **THIS bridge**, on **THIS patient**, at **n=1**, on **TYPES**, in **one
 direction** — and **every result sentence carries that qualifier**.
+
+---
+
+## Addendum — 2026-08-01, EXECUTION PROBE POST-FIRE READ (GREEN, audited; one baseline attribution corrected)
+
+Fired 2026-08-01 under the frozen prereg above. Primary artifacts:
+`docs/02-experiments/reuse-exec-probe-msacobr7.json` (the green run) and
+`reuse-exec-probe-msac6sre.json` (the provider-red casualty), plus the spines
+`reuse-exec-{ms9lsxjp,ms9lwtuf,msac6sre,msacobr7}.jsonl` beside the patient. The harness
+prints no verdict language; the read below is the operator's.
+
+### Four launches, honestly ledgered
+
+| # | runid | end | spend | what happened |
+|---|---|---|---|---|
+| 1 | `ms9lsxjp` | operator shell-timeout kill | **$0.1110** | died mid-scout (8 scout rounds, `scout-truncated {bytes:0}`), no draft, no plan — **casualty** |
+| 2 | `ms9lwtuf` | machine idle-suspend, **00:14:12Z** | **$1.6308** | 12.2 healthy minutes then frozen — **casualty** |
+| 3 | `msac6sre` | provider-red at **12.0 min** | **≥$1.9499** (`spendComplete:false`) | 64 rounds, 2-step plan, step 1 green again — **casualty** |
+| 4 | `msacobr7` | **GREEN** | **$4.7129** of $10 | the permitted relaunch, under a sleep inhibitor |
+
+**Launch 2's autopsy, in full, because the first reading of it was WRONG.** The suspend
+request lands at 00:14:12Z (journal `systemd-logind: The system will suspend now!`,
+02:14:12 local) — **six seconds after the last spine event** (`worker-round`, seq 108,
+00:14:06.074Z). The trajectory to that point was healthy, not stuck: a 2-step plan accepted,
+**step 1 green in 2m21s** (one iteration), step 2 walking its typecheck gap **61 → 20 strict
+errors** across two iterations, 68 rounds, $1.6308. The initially-reported *"87 awake minutes,
+the stall fuse failed"* reading was **manufactured by a timezone confound** — the journal
+prints local (UTC+2), the spine prints UTC — and is **WITHDRAWN**. Every guard, the F67
+**outside** watchdog included, was frozen in the same `user.slice`; there is **no product
+defect in this launch**. Full mechanism in **F72**.
+
+### The green row (`msacobr7`)
+
+- **$4.7129 of $10**, `spendComplete:true`; **31.6 min of 45** (1,898,988 ms); **139 rounds**.
+- **2-step, bridge-shaped plan accepted** on the first draft (`plan-validate draft-1`, zero
+  reds). **Injection engaged: 1 injected · 0 passed through**, +3,067 chars onto a 10,283-char
+  DRAFT-PLAN prompt.
+- **NO replan** (`replanned:false`).
+- **Step 1** green in one iteration (8m29s). **Step 2 converged in 3 iterations** — `typecheck`
+  `needs_revision` ×2 (**56 errors → 7 errors**) → **satisfied**.
+- **The OUTER close then caught a red the step exits could not see**: `no-suppressions`,
+  1 suppression added in `src/tsalias.js`. **The fix loop fired and corrected it → green.**
+  Recorded honestly: the fix loop took **two** iterations, and its first made things worse
+  (1 → 4 suppressions) before the second cleared **all four stages** —
+  `changed-from-seed` · `typecheck` · `suite-green` · `no-suppressions`, all satisfied.
+- 47 allowed writes across **10 distinct files**; 0 spine leaks.
+
+### Green AUDITED, not asserted
+
+All four close stages were **re-run independently on the as-left tree by the operator after
+the run** — `changed-from-seed`, `typecheck`, `suite-green`, `no-suppressions` — **all exit
+0**. The winning diff is preserved as `reuse-exec-msacobr7.patch` beside the spine; it is
+**byte-identical to the patient's current `git diff`** (10 files, +217/−44, HEAD still at the
+frozen seed `96813a4`), so the audited artifact is the one on record.
+
+**Bridges asserted unchanged (R1).** Both result files record `bridgeGuard: 5 hashed, 0
+changed`. Launches 1 and 2 died before writing a result file, so their exit comparison never
+ran — carried independently by the five bridge files' own mtimes, all of which predate
+2026-07-30.
+
+### PRIMARY READ (frozen §4): **GREEN within the envelope — the mechanical path clears its execution kill-gate**
+
+Carried structure survived contact with a different patient: **4 of 4 arm-C drafts across both
+probes kept the bridge's 2-step shape** (pre-probe C1–C3, plus this run), and this one carried
+a real job to an **audited** green. *(The two casualty launches also drafted 2-step plans —
+6 of 6 counting them — but a casualty is never evidence, so they are not in the count.)*
+
+### CORRECTION — the operator's own error, in §3 of the execution prereg
+
+§3 above calls the **$2.21 / 8.9 min** and **$2.47** baselines *"two cold greens of this
+identical job."* **That is FALSE.** Against the archive they are **aurora-u** greens:
+`u-ms2c0ls7` ($2.2072, 8.9 min) and `u-ms2ddxjc` ($2.4691, 12.6 min), job
+`aurora-u-spawner-types`, spec hash `ab3cfd97…`, under a **$5 / 30 min** envelope — same
+SHAPE, **different patient, and a different envelope**. Every secondary cost/time comparison
+in the result files is therefore a **cross-patient** reference and **nothing mints in either
+direction**.
+
+**Two further claims in that correction do NOT survive the archive, and the archive wins:**
+
+1. *"litectx-u has NO cold green baseline"* — **refuted.** `litectx-u-types` has **two prior
+   cold greens**: `u-ms3wawub` (2026-07-28, green, **$5.7655**, 37.0 min, 3-step plan, spec
+   hash `037fa937…`) and `u-ms5uxhej` (2026-07-29, green, **$4.2942**, 23.9 min, 3-step plan,
+   spec hash **`25d8c5ee…` — the identical signed hash this probe ran under**). Both minted
+   bridges, which is why two `bridge-litectx-u-types-*.json` files exist. The two
+   transport-class deaths are real and remain casualties (`u-ms3197n8` provider-red $3.2264
+   `spendComplete:false`; `u-ms3jh76q` wall-halt $3.1923, both 2026-07-27), but they are not
+   the whole record — the patient's fuller record also holds `u-ms4l5p6w` step-red,
+   `u-ms57zr7c` step-red, `u-ms5a24tz` plan-red, `u-ms5aou4a` provider-red.
+2. *"this green is also the first this patient has ever produced"* — **refuted**: it is the
+   **third** green on `litectx-u-types`.
+
+**What this changes, stated plainly.** A same-patient, same-signed-hash **cold** green
+(`u-ms5uxhej`) exists, so the "no cold-vs-bridge contrast exists on this patient" clause is
+**withdrawn as written**. What does not change is the frozen §5 rule: **n=1 against n=2 is an
+anecdote in BOTH directions and no lift claim mints from this probe.** One recorded
+observation, carrying that qualifier and no more: on this patient the two **cold** plans were
+**3-step** while all three bridge-start drafts were **2-step**.
+
+### Also corrected: the fix loop's firing count
+
+This is the **third** recorded firing of the outer grader's fix loop, not the second — and the
+**second** that converted to green. The full record: `u-ms2ddxjc` (aurora-u, 2026-07-26,
+gapBytes 390 → green — the "$2.47 U run 3"), `u-ms3jh76q` (litectx-u, 2026-07-27, gapBytes
+4,505, fired and the run then wall-halted), and this run (gapBytes 404 → green).
+
+### Total probe spend
+
+**$8.4046 across all four launches** ($0.1110 + $1.6308 + $1.9499 + $4.7129) — reported as a
+**FLOOR** per F6: launch 3 carries `spendComplete:false`, so its abandoned call may already
+have been billed. *(A fifth spine, `reuse-exec-msa5ab6s.jsonl`, exists from 09:04Z: aborted
+during check-preflight with **zero worker rounds and $0.0000** spent. It is recorded here for
+completeness and changes no total.)*
+
+### Both instruments are now read (design record §5)
+
+- **Draft tier** — rule 1: readable lineage **DEAD**; rule 3: the mechanical path **LIVES**.
+- **Execution tier** — the kill-gate is **CLEARED** on an **audited** green.
+
+The machinery build — **MECHANICAL-START ONLY** — is the next step, per hamr's standing
+*"agreed to all cont"*.

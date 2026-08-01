@@ -1,0 +1,238 @@
+{
+  "probe": "reuse-exec-probe",
+  "dry": false,
+  "what": "ONE full real run of jobs/litectx-u-types.json through the shipped runJob flow, identical to scripts/run-u.mjs's litectx-types target EXCEPT that the plan drafter's prompt carries arm C's mechanical-start block (the aurora bridge as the starting draft).",
+  "prereg": "docs/02-experiments/REUSE-PREPROBE-PREREG.md",
+  "designRecord": "docs/plans/2026-08-01-layer-3-reuse-design.md",
+  "runid": "msac6sre",
+  "startedAt": "2026-08-01T12:17:29.988Z",
+  "model": "claude-sonnet-5",
+  "n": 1,
+  "qualifier": "n1-anecdote — one run, against cold baselines drawn from a DIFFERENT patient of the same shape; this number classifies nothing on its own",
+  "primaryRead": {
+    "outcome": "provider-red",
+    "outcomeClass": "casualty",
+    "green": false,
+    "envelope": {
+      "budgetUsd": 10,
+      "maxWallMs": 2700000
+    },
+    "withinBudget": true,
+    "withinWall": true,
+    "note": "the read against the frozen rules is the operator's — this file states what happened, never what it means"
+  },
+  "money": {
+    "spentUsd": 1.9499054000000007,
+    "spendComplete": false,
+    "honesty": "FLOOR, not a total (F6/F44): a round came back unpriced, or a call was abandoned/cut mid-flight and may already have been billed",
+    "budgetUsd": 10
+  },
+  "time": {
+    "wallMs": 718226,
+    "wallMin": 12,
+    "maxWallMs": 2700000,
+    "wallLabel": "45min",
+    "accuracy": "wall-clock around runJob, ~90% licensed accuracy (F6 extended to time) — never a rounded-to-zero unknown"
+  },
+  "rounds": 64,
+  "replan": {
+    "fired": false,
+    "events": [],
+    "note": "a replan draft is passed through the wrapper UNTOUCHED — it drafts from the run's own state, not from the bridge again"
+  },
+  "stageCycles": {
+    "close-precheck": {
+      "needs_revision@changed-from-seed": 1
+    },
+    "check:no-suppressions": {
+      "satisfied": 1
+    },
+    "step:fix-core-modules-strict-types:exit-eval": {
+      "red": 1
+    },
+    "step:fix-core-modules-strict-types:close-verdict": {
+      "satisfied": 1
+    }
+  },
+  "injection": {
+    "arm": "C — mechanical start (reuse-preprobe.mjs ARM_FRAME.C, verbatim)",
+    "blockChars": 3067,
+    "bridgeFile": "/home/hamr/PycharmProjects/bareloop-patients/aurora-u-bareloop/bridge-aurora-u-spawner-types-ms7flkok.json",
+    "bridgeJob": "aurora-u-spawner-types",
+    "bridgeRunid": "ms7flkok",
+    "bridgeGreenAt": "2026-07-30T11:40:49.970Z",
+    "bridgeSteps": 2,
+    "log": [
+      {
+        "phase": "draft",
+        "promptChars": 10027,
+        "injectedChars": 3067,
+        "at": "2026-08-01T12:19:42.257Z"
+      }
+    ],
+    "identifiedBy": "the prompt's own opening word (DRAFT-PLAN) plus planPrompt's replan/redraft markers — never a call count",
+    "redraftPolicy": "a validator-rejected REDRAFT stays in arm C (the block is appended again), so one validator red cannot silently convert the run to arm A. Consequence: on a redraft the block lands AFTER planPrompt's own \"fix every red\" instruction."
+  },
+  "plan": {
+    "accepted": {
+      "schema": "plan-v1",
+      "steps": [
+        {
+          "id": "fix-core-modules-strict-types",
+          "action": "In src/assemble.js, src/chunker.js, src/compress.js, src/contextgraph.js, src/docparse.js, src/edges.js, src/embedder.js, and src/gitsig.js, resolve all tsc --strict violations (noImplicitAny, strictFunctionTypes, strictBindCallApply, strictPropertyInitialization, noImplicitThis, alwaysStrict, useUnknownInCatchVariables — strictNullChecks is already on) using honest JSDoc annotations and type-narrowing only. Specifically: add explicit @param/@returns/@type JSDoc to functions, callbacks, and destructured options that currently infer implicit any; narrow `catch (e)` blocks with `e instanceof Error` (or equivalent) rather than assuming Error shape; add `@this` JSDoc tags to functions that reference `this` outside a proper method context; ensure class fields have JSDoc types or safe initializers for strictPropertyInitialization. Do not add `@ts-ignore`, `as any`, non-null assertions (`!`), or any other suppression. Do not modify tsconfig.json. Do not modify any file under test/.",
+          "tools": [
+            "read",
+            "grep",
+            "edit"
+          ],
+          "rounds": 30,
+          "target": "src/assemble.js",
+          "scope": "src/**",
+          "exit": [
+            {
+              "type": "tree-changed",
+              "scope": "src/**"
+            },
+            {
+              "type": "check-passes",
+              "name": "no-suppressions"
+            }
+          ]
+        },
+        {
+          "id": "fix-remaining-modules-typecheck",
+          "action": "Across the remaining src files — src/impact.js, src/index.js, src/indexer.js, src/langdef.js, src/memory-store.js, src/store.js, src/tokenize.js, src/tsalias.js, src/writegate.js, and everything under src/grammars/** — fix any remaining tsc --strict errors (implicit any, unnarrowed catch variables, strictFunctionTypes/strictBindCallApply mismatches on callbacks/handlers, noImplicitThis, strictPropertyInitialization). If a cross-module signature mismatch requires a matching adjustment back in one of the core files touched previously (assemble.js, chunker.js, compress.js, contextgraph.js, docparse.js, edges.js, embedder.js, gitsig.js), make that matching fix too. Use only honest JSDoc annotations and type-narrowing; never add `@ts-ignore`, `as any`, or non-null assertions. Do not modify tsconfig.json or any file under test/. Keep iterating until the whole src/** tree passes tsc --strict.",
+          "tools": [
+            "read",
+            "grep",
+            "edit"
+          ],
+          "rounds": 30,
+          "target": "src/**",
+          "scope": "src/**",
+          "exit": [
+            {
+              "type": "tree-changed",
+              "scope": "src/**"
+            },
+            {
+              "type": "check-passes",
+              "name": "typecheck"
+            }
+          ]
+        }
+      ]
+    },
+    "firstAccepted": {
+      "schema": "plan-v1",
+      "steps": [
+        {
+          "id": "fix-core-modules-strict-types",
+          "action": "In src/assemble.js, src/chunker.js, src/compress.js, src/contextgraph.js, src/docparse.js, src/edges.js, src/embedder.js, and src/gitsig.js, resolve all tsc --strict violations (noImplicitAny, strictFunctionTypes, strictBindCallApply, strictPropertyInitialization, noImplicitThis, alwaysStrict, useUnknownInCatchVariables — strictNullChecks is already on) using honest JSDoc annotations and type-narrowing only. Specifically: add explicit @param/@returns/@type JSDoc to functions, callbacks, and destructured options that currently infer implicit any; narrow `catch (e)` blocks with `e instanceof Error` (or equivalent) rather than assuming Error shape; add `@this` JSDoc tags to functions that reference `this` outside a proper method context; ensure class fields have JSDoc types or safe initializers for strictPropertyInitialization. Do not add `@ts-ignore`, `as any`, non-null assertions (`!`), or any other suppression. Do not modify tsconfig.json. Do not modify any file under test/.",
+          "tools": [
+            "read",
+            "grep",
+            "edit"
+          ],
+          "rounds": 30,
+          "target": "src/assemble.js",
+          "scope": "src/**",
+          "exit": [
+            {
+              "type": "tree-changed",
+              "scope": "src/**"
+            },
+            {
+              "type": "check-passes",
+              "name": "no-suppressions"
+            }
+          ]
+        },
+        {
+          "id": "fix-remaining-modules-typecheck",
+          "action": "Across the remaining src files — src/impact.js, src/index.js, src/indexer.js, src/langdef.js, src/memory-store.js, src/store.js, src/tokenize.js, src/tsalias.js, src/writegate.js, and everything under src/grammars/** — fix any remaining tsc --strict errors (implicit any, unnarrowed catch variables, strictFunctionTypes/strictBindCallApply mismatches on callbacks/handlers, noImplicitThis, strictPropertyInitialization). If a cross-module signature mismatch requires a matching adjustment back in one of the core files touched previously (assemble.js, chunker.js, compress.js, contextgraph.js, docparse.js, edges.js, embedder.js, gitsig.js), make that matching fix too. Use only honest JSDoc annotations and type-narrowing; never add `@ts-ignore`, `as any`, or non-null assertions. Do not modify tsconfig.json or any file under test/. Keep iterating until the whole src/** tree passes tsc --strict.",
+          "tools": [
+            "read",
+            "grep",
+            "edit"
+          ],
+          "rounds": 30,
+          "target": "src/**",
+          "scope": "src/**",
+          "exit": [
+            {
+              "type": "tree-changed",
+              "scope": "src/**"
+            },
+            {
+              "type": "check-passes",
+              "name": "typecheck"
+            }
+          ]
+        }
+      ]
+    },
+    "steps": 2,
+    "omitted": false
+  },
+  "writes": {
+    "allowed": 15,
+    "distinctFiles": 3
+  },
+  "coldBaselines": {
+    "source": "recorded facts from the U runs (2026-07-27 episode; PRD v1.34) — NOT re-measured by this probe",
+    "patient": "aurora-u (same job SHAPE, different patient) — a loose envelope, never a control",
+    "runs": [
+      {
+        "label": "U run 1 (cold)",
+        "costUsd": 2.21,
+        "wallMin": 8.9
+      },
+      {
+        "label": "U run 3 (cold)",
+        "costUsd": 2.47,
+        "wallMin": null
+      }
+    ]
+  },
+  "vsColdBaselines": {
+    "qualifier": "n1-anecdote — one run, against cold baselines drawn from a DIFFERENT patient of the same shape; this number classifies nothing on its own",
+    "costDeltaUsd": {
+      "vsRun1": -0.2601,
+      "vsRun3": -0.5201,
+      "qualifier": "n1-anecdote — one run, against cold baselines drawn from a DIFFERENT patient of the same shape; this number classifies nothing on its own"
+    },
+    "wallDeltaMin": {
+      "vsRun1": 3.07,
+      "vsRun3": null,
+      "qualifier": "n1-anecdote — one run, against cold baselines drawn from a DIFFERENT patient of the same shape; this number classifies nothing on its own"
+    },
+    "note": "the baselines are aurora-u runs (different patient, same shape) and this is litectx-u — the two are not a matched pair, and neither the cost nor the wall delta is attributable to the injection on n=1"
+  },
+  "escalations": [
+    {
+      "category": "provider-red",
+      "decision": "The provider path failed mid-run (transport, not logic) — no verdict exists and the spend for the failed call is unknown (F6)."
+    }
+  ],
+  "spineLeakCount": 0,
+  "artifacts": {
+    "spine": "/home/hamr/PycharmProjects/bareloop-patients/litectx-u-bareloop/reuse-exec-msac6sre.jsonl",
+    "gateAudit": "/home/hamr/PycharmProjects/bareloop-patients/litectx-u-bareloop/reuse-exec-msac6sre-gate-audit.jsonl",
+    "lag": null,
+    "watchdogMarker": null
+  },
+  "bridgeGuard": {
+    "snapshotBefore": 5,
+    "changed": []
+  },
+  "notes": [
+    "COLLECTION ONLY — no verdict language. The read against the prereg's frozen rules is the operator's.",
+    "n=1: primary read is green-within-envelope; every comparative field carries an n1-anecdote qualifier.",
+    "This probe NEVER writes a bridge, on a green or otherwise (R1: minting belongs to the reuse machinery; run-u.mjs mints, this deliberately does not). No bridge-*.json under the patients dir changed while it ran — asserted, not assumed.",
+    "The patient reset is the OPERATOR's: this harness refuses on a non-seed tree rather than resetting it (the reuse-preprobe precedent). It DOES remove the derived, git-ignored .litectx store, for cold parity with the baselines.",
+    "A provider-red is a CASUALTY, never evidence: one relaunch is allowed by the frozen rules, and the relaunch is the operator's — this harness never re-fires a real-dollar run on its own.",
+    "A wall-halt or cap-halt is not a failure to explain away: the stop IS the result, and the run keeps the last verdict the arbiter minted.",
+    "The only difference from a run-u litectx-types run is the drafter-prompt injection; every other provider call was forwarded byte-untouched."
+  ]
+}

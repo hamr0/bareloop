@@ -1,0 +1,251 @@
+{
+  "probe": "reuse-exec-probe",
+  "dry": false,
+  "what": "ONE full real run of jobs/litectx-u-types.json through the shipped runJob flow, identical to scripts/run-u.mjs's litectx-types target EXCEPT that the plan drafter's prompt carries arm C's mechanical-start block (the aurora bridge as the starting draft).",
+  "prereg": "docs/02-experiments/REUSE-PREPROBE-PREREG.md",
+  "designRecord": "docs/plans/2026-08-01-layer-3-reuse-design.md",
+  "runid": "msacobr7",
+  "startedAt": "2026-08-01T12:31:07.774Z",
+  "model": "claude-sonnet-5",
+  "n": 1,
+  "qualifier": "n1-anecdote — one run, against cold baselines drawn from a DIFFERENT patient of the same shape; this number classifies nothing on its own",
+  "primaryRead": {
+    "outcome": "green",
+    "outcomeClass": "green",
+    "green": true,
+    "envelope": {
+      "budgetUsd": 10,
+      "maxWallMs": 2700000
+    },
+    "withinBudget": true,
+    "withinWall": true,
+    "note": "the read against the frozen rules is the operator's — this file states what happened, never what it means"
+  },
+  "money": {
+    "spentUsd": 4.7128994,
+    "spendComplete": true,
+    "honesty": "exact: every counted round was priced",
+    "budgetUsd": 10
+  },
+  "time": {
+    "wallMs": 1898988,
+    "wallMin": 31.6,
+    "maxWallMs": 2700000,
+    "wallLabel": "45min",
+    "accuracy": "wall-clock around runJob, ~90% licensed accuracy (F6 extended to time) — never a rounded-to-zero unknown"
+  },
+  "rounds": 139,
+  "replan": {
+    "fired": false,
+    "events": [],
+    "note": "a replan draft is passed through the wrapper UNTOUCHED — it drafts from the run's own state, not from the bridge again"
+  },
+  "stageCycles": {
+    "close-precheck": {
+      "needs_revision@changed-from-seed": 1
+    },
+    "check:no-suppressions": {
+      "satisfied": 1
+    },
+    "step:fix-core-store-and-graph-annotations:exit-eval": {
+      "red": 1
+    },
+    "step:fix-core-store-and-graph-annotations:close-verdict": {
+      "satisfied": 1
+    },
+    "check:typecheck": {
+      "needs_revision": 2,
+      "satisfied": 1
+    },
+    "step:fix-remaining-modules-verify-strict-typecheck:exit-eval": {
+      "red": 3
+    },
+    "step:fix-remaining-modules-verify-strict-typecheck:close-verdict": {
+      "needs_revision": 2,
+      "satisfied": 1
+    },
+    "outer-close": {
+      "needs_revision@no-suppressions": 1
+    },
+    "fix-loop:close-verdict": {
+      "needs_revision@no-suppressions": 1,
+      "satisfied": 1
+    }
+  },
+  "injection": {
+    "arm": "C — mechanical start (reuse-preprobe.mjs ARM_FRAME.C, verbatim)",
+    "blockChars": 3067,
+    "bridgeFile": "/home/hamr/PycharmProjects/bareloop-patients/aurora-u-bareloop/bridge-aurora-u-spawner-types-ms7flkok.json",
+    "bridgeJob": "aurora-u-spawner-types",
+    "bridgeRunid": "ms7flkok",
+    "bridgeGreenAt": "2026-07-30T11:40:49.970Z",
+    "bridgeSteps": 2,
+    "log": [
+      {
+        "phase": "draft",
+        "promptChars": 10283,
+        "injectedChars": 3067,
+        "at": "2026-08-01T12:33:24.341Z"
+      }
+    ],
+    "identifiedBy": "the prompt's own opening word (DRAFT-PLAN) plus planPrompt's replan/redraft markers — never a call count",
+    "redraftPolicy": "a validator-rejected REDRAFT stays in arm C (the block is appended again), so one validator red cannot silently convert the run to arm A. Consequence: on a redraft the block lands AFTER planPrompt's own \"fix every red\" instruction."
+  },
+  "plan": {
+    "accepted": {
+      "schema": "plan-v1",
+      "steps": [
+        {
+          "id": "fix-core-store-and-graph-annotations",
+          "action": "Working only under src/ (do not touch anything in test/), make src/store.js, src/indexer.js, src/memory-store.js, src/contextgraph.js, src/impact.js, and src/embedder.js compile cleanly under TypeScript's full `strict` mode (strictNullChecks plus noImplicitAny, strictFunctionTypes, strictBindCallApply, strictPropertyInitialization, noImplicitThis, useUnknownInCatchVariables, alwaysStrict) as checked via JSDoc-driven `tsc --strict --checkJs` over these files. Concretely: add precise JSDoc `@param`/`@returns`/`@type` annotations to any function/variable currently inferred as implicit any (especially SQLite row objects, tree-sitter/AST node parameters, and callback signatures used with better-sqlite3's bind/call/apply-style APIs); give explicit generics to Map/Set/array literals that are otherwise inferred as any; narrow every `catch (e)` block by checking `e instanceof Error` (or similar) before accessing `.message`/properties, since e is now `unknown`; and narrow any Optional/nullable value (e.g. from better-sqlite3 prepared statement results or optional constructor fields) with explicit guards before use. Do not add `!`, `as any`, `@ts-ignore`, `@ts-expect-error`, or any other suppression comment, and do not relax or bypass type errors — fix them with real type information matching the codebase's existing JSDoc style. Do not modify tsconfig.json or any file under test/.",
+          "tools": [
+            "read",
+            "grep",
+            "edit"
+          ],
+          "rounds": 30,
+          "target": "src/store.js",
+          "scope": "src/**",
+          "exit": [
+            {
+              "type": "tree-changed",
+              "scope": "src/**"
+            },
+            {
+              "type": "check-passes",
+              "name": "no-suppressions"
+            }
+          ]
+        },
+        {
+          "id": "fix-remaining-modules-verify-strict-typecheck",
+          "action": "Working only under src/ (do not touch anything in test/), fix all remaining TypeScript `strict`-mode (strictNullChecks, noImplicitAny, strictFunctionTypes, strictBindCallApply, strictPropertyInitialization, noImplicitThis, useUnknownInCatchVariables, alwaysStrict) errors reported when JSDoc-driven `tsc --strict --checkJs` runs over the whole src/ tree, in particular src/docparse.js, src/edges.js, src/chunker.js, src/compress.js, src/gitsig.js, src/writegate.js, src/tokenize.js, src/langdef.js, src/tsalias.js, src/assemble.js, src/index.js, and everything under src/grammars/. If the typecheck report also surfaces cross-file signature mismatches touching src/store.js, src/indexer.js, src/memory-store.js, src/contextgraph.js, src/impact.js, or src/embedder.js, fix those too so the whole package is consistent. Use precise JSDoc `@param`/`@returns`/`@type` annotations, explicit generics for containers, `catch (e) { if (e instanceof Error) ... }`-style narrowing, and explicit guards for any Optional/nullable value; never use `!`, `as any`, `@ts-ignore`, `@ts-expect-error`, or any other suppression, and never weaken or edit any file under test/. Keep iterating on the reported errors until the entire package passes a full `tsc --strict` typecheck with zero errors.",
+          "tools": [
+            "read",
+            "grep",
+            "edit"
+          ],
+          "rounds": 35,
+          "target": "src/index.js",
+          "scope": "src/**",
+          "exit": [
+            {
+              "type": "tree-changed",
+              "scope": "src/**"
+            },
+            {
+              "type": "check-passes",
+              "name": "typecheck"
+            }
+          ]
+        }
+      ]
+    },
+    "firstAccepted": {
+      "schema": "plan-v1",
+      "steps": [
+        {
+          "id": "fix-core-store-and-graph-annotations",
+          "action": "Working only under src/ (do not touch anything in test/), make src/store.js, src/indexer.js, src/memory-store.js, src/contextgraph.js, src/impact.js, and src/embedder.js compile cleanly under TypeScript's full `strict` mode (strictNullChecks plus noImplicitAny, strictFunctionTypes, strictBindCallApply, strictPropertyInitialization, noImplicitThis, useUnknownInCatchVariables, alwaysStrict) as checked via JSDoc-driven `tsc --strict --checkJs` over these files. Concretely: add precise JSDoc `@param`/`@returns`/`@type` annotations to any function/variable currently inferred as implicit any (especially SQLite row objects, tree-sitter/AST node parameters, and callback signatures used with better-sqlite3's bind/call/apply-style APIs); give explicit generics to Map/Set/array literals that are otherwise inferred as any; narrow every `catch (e)` block by checking `e instanceof Error` (or similar) before accessing `.message`/properties, since e is now `unknown`; and narrow any Optional/nullable value (e.g. from better-sqlite3 prepared statement results or optional constructor fields) with explicit guards before use. Do not add `!`, `as any`, `@ts-ignore`, `@ts-expect-error`, or any other suppression comment, and do not relax or bypass type errors — fix them with real type information matching the codebase's existing JSDoc style. Do not modify tsconfig.json or any file under test/.",
+          "tools": [
+            "read",
+            "grep",
+            "edit"
+          ],
+          "rounds": 30,
+          "target": "src/store.js",
+          "scope": "src/**",
+          "exit": [
+            {
+              "type": "tree-changed",
+              "scope": "src/**"
+            },
+            {
+              "type": "check-passes",
+              "name": "no-suppressions"
+            }
+          ]
+        },
+        {
+          "id": "fix-remaining-modules-verify-strict-typecheck",
+          "action": "Working only under src/ (do not touch anything in test/), fix all remaining TypeScript `strict`-mode (strictNullChecks, noImplicitAny, strictFunctionTypes, strictBindCallApply, strictPropertyInitialization, noImplicitThis, useUnknownInCatchVariables, alwaysStrict) errors reported when JSDoc-driven `tsc --strict --checkJs` runs over the whole src/ tree, in particular src/docparse.js, src/edges.js, src/chunker.js, src/compress.js, src/gitsig.js, src/writegate.js, src/tokenize.js, src/langdef.js, src/tsalias.js, src/assemble.js, src/index.js, and everything under src/grammars/. If the typecheck report also surfaces cross-file signature mismatches touching src/store.js, src/indexer.js, src/memory-store.js, src/contextgraph.js, src/impact.js, or src/embedder.js, fix those too so the whole package is consistent. Use precise JSDoc `@param`/`@returns`/`@type` annotations, explicit generics for containers, `catch (e) { if (e instanceof Error) ... }`-style narrowing, and explicit guards for any Optional/nullable value; never use `!`, `as any`, `@ts-ignore`, `@ts-expect-error`, or any other suppression, and never weaken or edit any file under test/. Keep iterating on the reported errors until the entire package passes a full `tsc --strict` typecheck with zero errors.",
+          "tools": [
+            "read",
+            "grep",
+            "edit"
+          ],
+          "rounds": 35,
+          "target": "src/index.js",
+          "scope": "src/**",
+          "exit": [
+            {
+              "type": "tree-changed",
+              "scope": "src/**"
+            },
+            {
+              "type": "check-passes",
+              "name": "typecheck"
+            }
+          ]
+        }
+      ]
+    },
+    "steps": 2,
+    "omitted": false
+  },
+  "writes": {
+    "allowed": 47,
+    "distinctFiles": 10
+  },
+  "coldBaselines": {
+    "source": "recorded facts from the U runs (2026-07-27 episode; PRD v1.34) — NOT re-measured by this probe",
+    "patient": "aurora-u (same job SHAPE, different patient) — a loose envelope, never a control",
+    "runs": [
+      {
+        "label": "U run 1 (cold)",
+        "costUsd": 2.21,
+        "wallMin": 8.9
+      },
+      {
+        "label": "U run 3 (cold)",
+        "costUsd": 2.47,
+        "wallMin": null
+      }
+    ]
+  },
+  "vsColdBaselines": {
+    "qualifier": "n1-anecdote — one run, against cold baselines drawn from a DIFFERENT patient of the same shape; this number classifies nothing on its own",
+    "costDeltaUsd": {
+      "vsRun1": 2.5029,
+      "vsRun3": 2.2429,
+      "qualifier": "n1-anecdote — one run, against cold baselines drawn from a DIFFERENT patient of the same shape; this number classifies nothing on its own"
+    },
+    "wallDeltaMin": {
+      "vsRun1": 22.75,
+      "vsRun3": null,
+      "qualifier": "n1-anecdote — one run, against cold baselines drawn from a DIFFERENT patient of the same shape; this number classifies nothing on its own"
+    },
+    "note": "the baselines are aurora-u runs (different patient, same shape) and this is litectx-u — the two are not a matched pair, and neither the cost nor the wall delta is attributable to the injection on n=1"
+  },
+  "escalations": [],
+  "spineLeakCount": 0,
+  "artifacts": {
+    "spine": "/home/hamr/PycharmProjects/bareloop-patients/litectx-u-bareloop/reuse-exec-msacobr7.jsonl",
+    "gateAudit": "/home/hamr/PycharmProjects/bareloop-patients/litectx-u-bareloop/reuse-exec-msacobr7-gate-audit.jsonl",
+    "lag": null,
+    "watchdogMarker": null
+  },
+  "bridgeGuard": {
+    "snapshotBefore": 5,
+    "changed": []
+  },
+  "notes": [
+    "COLLECTION ONLY — no verdict language. The read against the prereg's frozen rules is the operator's.",
+    "n=1: primary read is green-within-envelope; every comparative field carries an n1-anecdote qualifier.",
+    "This probe NEVER writes a bridge, on a green or otherwise (R1: minting belongs to the reuse machinery; run-u.mjs mints, this deliberately does not). No bridge-*.json under the patients dir changed while it ran — asserted, not assumed.",
+    "The patient reset is the OPERATOR's: this harness refuses on a non-seed tree rather than resetting it (the reuse-preprobe precedent). It DOES remove the derived, git-ignored .litectx store, for cold parity with the baselines.",
+    "A provider-red is a CASUALTY, never evidence: one relaunch is allowed by the frozen rules, and the relaunch is the operator's — this harness never re-fires a real-dollar run on its own.",
+    "A wall-halt or cap-halt is not a failure to explain away: the stop IS the result, and the run keeps the last verdict the arbiter minted.",
+    "The only difference from a run-u litectx-types run is the drafter-prompt injection; every other provider call was forwarded byte-untouched."
+  ]
+}
