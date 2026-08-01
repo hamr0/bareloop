@@ -681,10 +681,25 @@ explicit choice, so any wall tightens it.)
 runs THIS spec, so the envelope's numbers are the numbers all the way down. Tightening
 makes a genuinely different spec, so it makes a different **spec hash**: the tightened run
 is a new spec VERSION and `runJob`'s approval gate refuses it until the operator signs
-that hash. `runReuse` hands `approvals` straight through and has no way to forge one.
-**Show `jobSpecHash(resolveTrySpec(...))` at your approval gate** — that is the hash that
-runs (`scripts/run-reuse.mjs` does exactly this). An envelope equal to the spec's own
-numbers is hash-identical and the existing signature still covers it.
+that hash. `runReuse` hands `approvals` straight through and has no way to forge one. An
+envelope equal to the spec's own numbers leaves this spec hash-identical.
+
+**`resolveReuse(job, envelope)` → `{ schema: 'reuse-v1', spec, bridgeTries }`, and
+`reuseSpecHash(resolved)` → the hash your operator signs. Show THIS one at your approval
+gate** (`scripts/run-reuse.mjs` does). The envelope is three numbers and the third is a
+MULTIPLIER — the worst case a reuse run authorizes is
+`perTryBudgetUsd × (bridgeTries + 1)` — so a signature over the per-try spec alone covers
+only budget and wall, and `--tries 0` and `--tries 9` print the same hash. The signed
+artifact is therefore the per-try spec WRAPPED with the count. It is a wrapper rather than
+a field on the spec because `validateJob` reds unknown top-level fields: a `bridgeTries`
+written onto the spec would flip the hash and then make every try a `job-red`. The hash is
+composed from `jobSpecHash` (so MED-1's resolved-`tools` pinning is inherited, with no
+second canonicalizer to drift) under a `reuse-v1` domain prefix, and `runReuse` reads its
+loop bound back off the same resolved object — the count enforced is the count signed.
+**This is a signing-SCHEME change: any hash signed before the count was folded in no
+longer matches, by design, and there is no legacy acceptance path — re-sign once.** Your
+gate still mints `approvals` for `runJob` at the PER-TRY SPEC's `jobSpecHash`, which the
+matching approval hash entails (it is a function of exactly that hash plus the count).
 
 **`selectBridge({ registry, job, ask, provider, pinned?, shortlist?, forceCold?, exclude? })`.**
 ONE model call on the drafter-tier provider **you** hand in (no provider is constructed
@@ -720,7 +735,9 @@ before the close ever judged). All of them are recorded in full on the history r
 is where D6 puts the detail a human reads; the coarse status ladder is left alone.
 
 **Result:** `{ outcome, tries[], selection[], spentUsd, spendComplete, bridgeWrites[],
-decision, options, detail, reds, triesUsed, triesAuthorized, envelope, specHash }`. Every
+decision, options, detail, reds, triesUsed, triesAuthorized, envelope, specHash,
+approvalHash }` — `specHash` is the per-try spec's (what `runJob`'s own gate reads),
+`approvalHash` is the operator's, covering all three envelope numbers. Every
 try row is **decision-ready**: `bridge`, `runOutcome`, `verdictClass`, `failingStage`,
 `spentUsd` vs `capUsd`, `wallMs` vs `wallCapMs`, `capBound`, `wallBound`, `rounds`, and
 `closeReached`. `spentUsd` is the sum of PRICED figures only across tries AND selection
@@ -755,7 +772,8 @@ them lands as an unclassified library bug.
 
 `scripts/run-reuse.mjs` is the reference operator runner: `--job`, `--registry`, and the
 three envelope numbers `--budget` / `--wall` / `--tries`, plus optional `--pin` /
-`--force-cold`, with the approval gate on the resolved hash, the F67 outside watchdog
+`--force-cold`, with the approval gate on `reuseSpecHash` (all three numbers — a hash
+signed for a different `--tries` is refused, and says so), the F67 outside watchdog
 (sized for the SUM of the tries, not one), the seed refusal, the gate-audit relocation and
 the secrets scan.
 

@@ -215,6 +215,55 @@ export function resolveTrySpec(job, envelope) {
   return { ...job, budgetUsd: envelope.perTryBudgetUsd, maxWallMs: envelope.perTryWallMs };
 }
 
+/**
+ * The RESOLVED REUSE ARTIFACT — the thing the operator actually signs.
+ *
+ * The envelope is THREE numbers, and the third one is a MULTIPLIER: the worst case a
+ * reuse run authorizes is `perTryBudgetUsd × (bridgeTries + 1)`. A signature taken over
+ * the per-try spec alone covers only two of the three — `--tries 0` and `--tries 9` hash
+ * identically while authorizing ten times the spend. So the signed artifact is this
+ * WRAPPER, and `reuseSpecHash` is what an approval gate prints and compares.
+ *
+ * It is a wrapper rather than a field on the spec because `validateJob` reds every
+ * unknown top-level field: a `bridgeTries` written onto the per-try spec would flip the
+ * hash and then make every try a `job-red`. The spec half stays exactly the spec `runJob`
+ * executes, unchanged in kind.
+ *
+ * `bridgeTries` is READ ONCE, here, and the run's loop bound is read back off this same
+ * object — the number enforced and the number signed are the same number from the same
+ * place, never two reads of the envelope that a later edit could separate.
+ *
+ * @param {object} job the signed spec
+ * @param {{perTryBudgetUsd: number, perTryWallMs: number, bridgeTries: number}} envelope
+ * @returns {{schema: string, spec: any, bridgeTries: number}}
+ */
+export function resolveReuse(job, envelope) {
+  return { schema: 'reuse-v1', spec: resolveTrySpec(job, envelope), bridgeTries: envelope.bridgeTries };
+}
+
+/**
+ * The APPROVAL HASH: one number covering all three envelope numbers.
+ *
+ * Composed from the repo's ONE spec hasher rather than re-canonizing the wrapper, so the
+ * per-try spec half is hashed exactly as `jobSpecHash` hashes it — MED-1's resolved-`tools`
+ * pinning included, and with no second canonicalizer that could drift from it. The
+ * `reuse-v1` prefix is domain separation: a reuse approval can never collide with a bare
+ * job approval.
+ *
+ * **This is a signing-SCHEME change, and it invalidates every hash signed before it — by
+ * design.** A signature that did not cover the try count never covered the run's worst
+ * case, so it is not carried forward: there is no legacy acceptance path, and re-signing
+ * once is the whole migration.
+ *
+ * @param {{spec: any, bridgeTries: number}} resolved a `resolveReuse` artifact
+ * @returns {string} sha256 hex
+ */
+export function reuseSpecHash(resolved) {
+  return createHash('sha256')
+    .update(`reuse-v1\nspec:${jobSpecHash(resolved.spec)}\nbridgeTries:${JSON.stringify(resolved.bridgeTries)}\n`)
+    .digest('hex');
+}
+
 // ── D3: the selection call ──────────────────────────────────────────────────
 
 /**
@@ -428,7 +477,9 @@ function readTry(events) {
  *   selection order, exclusion, minting, exhaustion — is not testable against one.
  * @param {() => number} [opts.now] the clock, injected (per-try wall measurement)
  * @returns {Promise<any>} `{ outcome, tries, selection, spentUsd, spendComplete,
- *   bridgeWrites, decision, options, reds, triesAuthorized, triesUsed, envelope, specHash }`
+ *   bridgeWrites, decision, options, reds, triesAuthorized, triesUsed, envelope, specHash,
+ *   approvalHash }` — `specHash` is the per-try spec's (what `runJob`'s own gate reads);
+ *   `approvalHash` is the OPERATOR's, covering all three envelope numbers
  */
 export async function runReuse(opts) {
   const {
@@ -467,9 +518,12 @@ export async function runReuse(opts) {
   const done = (outcome, extra = {}, escalate = true) => {
     const out = {
       outcome, tries, selection, spentUsd, spendComplete, bridgeWrites,
-      triesAuthorized: isObj(opts.envelope) ? /** @type {any} */ (opts.envelope).bridgeTries : null,
+      // read off the SIGNED artifact once one exists — the count reported IS the count
+      // enforced IS the count hashed. The raw echo covers the envelope-red case only,
+      // where nothing resolved and nothing ran.
+      triesAuthorized: resolved ? resolved.bridgeTries : (isObj(opts.envelope) ? /** @type {any} */ (opts.envelope).bridgeTries : null),
       triesUsed: tries.filter((t) => t.mode === 'bridge').length,
-      envelope: env?.envelope ?? null, specHash: trySpecHash, reds: [], decision: null, options: [], category: null,
+      envelope: env?.envelope ?? null, specHash: trySpecHash, approvalHash, reds: [], decision: null, options: [], category: null,
       ...extra,
     };
     emit('reuse-end', { outcome: out.outcome, triesUsed: out.triesUsed, triesAuthorized: out.triesAuthorized, spentUsd: out.spentUsd, spendComplete: out.spendComplete, bridgeWrites: bridgeWrites.map((w) => `${w.action} ${w.name}`) });
@@ -486,6 +540,11 @@ export async function runReuse(opts) {
 
   // ── 1. the envelope, before anything is read or spent
   let trySpecHash = null;
+  /** the operator-facing signature: all three envelope numbers, one hash */
+  let approvalHash = null;
+  /** @type {{schema: string, spec: any, bridgeTries: number}|null} the SIGNED artifact —
+   * every number this run enforces is read back off it, never off the raw envelope */
+  let resolved = null;
   const env = validateEnvelope(opts.envelope, { job });
   if (!env.ok) {
     emit('envelope-red', { reds: env.reds });
@@ -497,11 +556,15 @@ export async function runReuse(opts) {
     });
   }
   const envelope = env.envelope;
-  const trySpec = resolveTrySpec(job, envelope);
+  // the signed artifact, resolved ONCE: the per-try spec `runJob` executes plus the try
+  // count, hashed together so the signature covers the run's whole worst case
+  resolved = resolveReuse(job, envelope);
+  const trySpec = resolved.spec;
   trySpecHash = jobSpecHash(trySpec);
+  approvalHash = reuseSpecHash(resolved);
   emit('reuse-start', {
-    job: job.job, patient, registryDir, specHash: trySpecHash,
-    perTryBudgetUsd: envelope.perTryBudgetUsd, perTryWallMs: envelope.perTryWallMs, bridgeTries: envelope.bridgeTries,
+    job: job.job, patient, registryDir, specHash: trySpecHash, approvalHash,
+    perTryBudgetUsd: envelope.perTryBudgetUsd, perTryWallMs: envelope.perTryWallMs, bridgeTries: resolved.bridgeTries,
     pinned, shortlist, forceCold,
   });
 
@@ -694,7 +757,13 @@ export async function runReuse(opts) {
     const decisions = {
       'unapproved-spec': {
         decision: `No approval record matches the per-try spec (hash ${trySpecHash}). Tightening the caps with an envelope makes a NEW spec version, and a new version is signed, not inherited — nothing was run.`,
-        options: [`sign this version: --approve ${trySpecHash}`, 'use an envelope equal to the spec\'s own caps, which is hash-identical and already signed'],
+        options: [
+          // the approval hash, never the per-try spec's: the number an operator TYPES
+          // covers all three envelope numbers, and handing over the inner one would send
+          // them to sign a version that leaves the try count unsigned
+          `sign this envelope: --approve ${approvalHash} (the approval hash covers all three numbers — per-try budget, per-try wall AND ${resolved ? resolved.bridgeTries : 'the'} tries)`,
+          'use an envelope equal to the spec\'s own caps, which leaves the per-try spec hash-identical',
+        ],
       },
       'job-red': {
         decision: 'The per-try spec did not validate, so no try can run — every further attempt would reproduce this exact refusal.',
@@ -731,7 +800,9 @@ export async function runReuse(opts) {
   };
 
   // ── 3. the tries
-  for (let n = 1; n <= envelope.bridgeTries; n += 1) {
+  // the bound is read off the SIGNED artifact, not the raw envelope: the count that
+  // authorizes spend here is the count the operator's signature covers
+  for (let n = 1; n <= resolved.bridgeTries; n += 1) {
     // reloaded per try: the row the LAST try just wrote is part of what the next pick
     // reads, and a registry read once at the top would hand every later selection a
     // history that stopped at the start of the run
@@ -784,7 +855,7 @@ export async function runReuse(opts) {
   if (coldStop) return coldStop;
   return done(cold.runOutcome, {
     category: 'reuse-exhausted',
-    decision: `Every authorized attempt is spent: ${tries.filter((t) => t.mode === 'bridge').length} workflow ${tries.filter((t) => t.mode === 'bridge').length === 1 ? 'try' : 'tries'} of ${envelope.bridgeTries}, then a cold draft, and the job's own verification is still not satisfied. The envelope pre-authorized exactly this much and no more.`,
+    decision: `Every authorized attempt is spent: ${tries.filter((t) => t.mode === 'bridge').length} workflow ${tries.filter((t) => t.mode === 'bridge').length === 1 ? 'try' : 'tries'} of ${resolved.bridgeTries}, then a cold draft, and the job's own verification is still not satisfied. The envelope pre-authorized exactly this much and no more.`,
     options: [
       'raise the envelope (more tries, or a bigger per-try budget/wall) and rerun — resume-to-cap, the stop IS the checkpoint',
       'revise the goal or the close — a spec edit, whose new hash needs re-approval',

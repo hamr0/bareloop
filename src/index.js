@@ -50,5 +50,9 @@ export { renderListing, selectionPrompt } from './selection.js';
 // green's privilege (R1), never a caller's. `validateEnvelope`/`resolveTrySpec` are
 // exported because an operator runner has to show the resolved per-try spec's HASH at
 // its approval gate: a tightened envelope is a new spec version, and the human signs it.
-export { validateEnvelope, resolveTrySpec, selectBridge, runReuse, REUSE_GRADED_RED } from './reuse.js';
+// `resolveReuse`/`reuseSpecHash` are the pair that gate must actually PRINT: the try
+// count multiplies the worst case, so a signature over the per-try spec alone leaves it
+// unsigned — a runner showing `jobSpecHash(resolveTrySpec(...))` prints the same hash for
+// 0 tries and for 9.
+export { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED } from './reuse.js';
 export { classifyIncidents, foldLedger, ledgerDeltas, updateLedger, LEDGER_CLASSES } from './ledger.js';

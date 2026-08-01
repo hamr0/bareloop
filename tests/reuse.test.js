@@ -26,11 +26,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { validateEnvelope, resolveTrySpec, selectBridge, runReuse, REUSE_GRADED_RED } from '../src/reuse.js';
+import { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED } from '../src/reuse.js';
 import { makeRegistry, saveBridge, loadRegistry, loadBridge, deriveStatus } from '../src/bridges.js';
-import { jobSpecHash } from '../src/job.js';
+import { jobSpecHash, validateJob } from '../src/job.js';
 import { classifyIncidents } from '../src/ledger.js';
 import { runJob } from '../src/run.js';
 import { scriptedProvider } from './helpers.js';
@@ -171,6 +173,47 @@ test('resolveTrySpec: the per-try numbers ride on the spec, and an unchanged env
   assert.equal(tighter.budgetUsd, 2);
   assert.equal(tighter.maxWallMs, 600_000);
   assert.notEqual(jobSpecHash(tighter), jobSpecHash(job), 'a tightened spec is a NEW spec version and must be re-signed');
+});
+
+// ── the SIGNED artifact: all three envelope numbers, one hash ───────────────
+//
+// The envelope is THREE operator numbers and the worst case is
+// `perTryBudgetUsd × (bridgeTries + 1)`, so a signature covering only the per-try budget
+// and wall leaves the MULTIPLIER unsigned: `--tries 0` and `--tries 9` would print the
+// same hash while authorizing ten times the spend. The resolved artifact the operator
+// signs is therefore the WRAPPER `{ spec, bridgeTries }`, not the per-try spec alone —
+// `validateJob` reds an unknown field, so `bridgeTries` cannot ride ON the spec without
+// making every try a `job-red` (asserted below, so nobody "simplifies" it back).
+
+test('the approval hash pins ALL THREE envelope numbers — changing only the try count flips it', () => {
+  const job = JOB();
+  const two = reuseSpecHash(resolveReuse(job, ENVELOPE({ bridgeTries: 2 })));
+  const three = reuseSpecHash(resolveReuse(job, ENVELOPE({ bridgeTries: 3 })));
+  assert.notEqual(two, three, 'tries is the spend MULTIPLIER — a signature blind to it signs an unknown worst case');
+  // and the other two still bite, through the per-try spec they resolve onto
+  assert.notEqual(two, reuseSpecHash(resolveReuse(job, ENVELOPE({ bridgeTries: 2, perTryBudgetUsd: 2 }))));
+  assert.notEqual(two, reuseSpecHash(resolveReuse(job, ENVELOPE({ bridgeTries: 2, perTryWallMs: 600_000 }))));
+});
+
+test('the approval hash is STABLE: the same three numbers hash the same, from either key order', () => {
+  const job = JOB();
+  const a = reuseSpecHash(resolveReuse(job, { perTryBudgetUsd: 3, perTryWallMs: 900_000, bridgeTries: 1 }));
+  const b = reuseSpecHash(resolveReuse(JOB(), { bridgeTries: 1, perTryWallMs: 900_000, perTryBudgetUsd: 3 }));
+  assert.equal(a, b, 'a signature must survive a re-run of the same envelope');
+  assert.match(a, /^[0-9a-f]{64}$/);
+});
+
+test('the signed artifact WRAPS the per-try spec — tries on the spec itself would job-red every try', () => {
+  const job = JOB();
+  const resolved = resolveReuse(job, ENVELOPE({ bridgeTries: 2 }));
+  // the half runJob executes is a valid job spec, unchanged in kind
+  assert.equal(validateJob(resolved.spec, { shellCapUsd: 100 }).ok, true, JSON.stringify(validateJob(resolved.spec, { shellCapUsd: 100 }).reds));
+  assert.equal(resolved.bridgeTries, 2);
+  assert.equal(resolved.spec.bridgeTries, undefined, 'the count never rides ON the spec');
+  // the evidence for that choice, as a guard: validateJob reds any unknown field
+  const onSpec = validateJob({ ...resolved.spec, bridgeTries: 2 }, { shellCapUsd: 100 });
+  assert.equal(onSpec.ok, false);
+  assert.ok(onSpec.reds.some((r) => r.code === 'unknown-field' && r.path === 'bridgeTries'));
 });
 
 // ── D3: selection ───────────────────────────────────────────────────────────
@@ -802,7 +845,12 @@ test('a stop no further try could change (unsigned spec) ends the run on the FIR
   assert.equal(r.outcome, 'unapproved-spec');
   assert.equal(runs.calls.length, 1, 'the answer is already known — a second try and a cold leg would only repeat it');
   assert.match(r.decision, /new spec version/i);
-  assert.match(r.options.join(' '), new RegExp(r.specHash), 'the decision hands over the hash to sign');
+  // the hash handed over is the one the operator TYPES at `--approve`, which covers all
+  // three envelope numbers — handing over the per-try spec's inner hash would send them
+  // to sign a version that leaves the try count unsigned
+  assert.match(r.options.join(' '), new RegExp(r.approvalHash), 'the decision hands over the approval hash to sign');
+  assert.match(r.options.join(' '), /tries/i, 'and says the signature covers the try count');
+  assert.notEqual(r.approvalHash, r.specHash, 'the approval hash is not the per-try spec hash');
 });
 
 test('a run-level WIRING fault ends the run on the first try — it never burns the envelope on innocent bridges', async () => {
@@ -956,4 +1004,58 @@ test('REAL runJob: an unsigned per-try spec is refused by the approval gate — 
   });
   assert.equal(r.tries[0].runOutcome, 'unapproved-spec');
   assert.equal(r.tries[0].spentUsd, 0);
+});
+
+// ── the RUNNER's approval gate (scripts/run-reuse.mjs) ──────────────────────
+//
+// The gate itself, at the seam where the operator meets it: the script's own hash
+// arithmetic and its refusal, exercised as a process. No paid run is involved — every
+// case below stops at (or immediately after) the comparison, before an API key is even
+// read. This is the seam that matters, because the number the operator types is compared
+// HERE, and a library-level hash that nothing prints is not a signature.
+
+/** run the reference runner and return `{ status, stdout, stderr }` — never a paid run:
+ * every case here stops at the approval gate or at the missing-key refusal right after it
+ * @param {string[]} args @param {Record<string,string>} [env] */
+const runner = (args, env = {}) => {
+  const { ANTHROPIC_API_KEY: _drop, ...clean } = process.env;
+  return spawnSync(process.execPath, [fileURLToPath(new URL('../scripts/run-reuse.mjs', import.meta.url)), ...args], {
+    encoding: 'utf8', env: { ...clean, ...env },
+  });
+};
+
+test('the runner PRINTS a hash that moves with --tries, and refuses one signed for a different count', () => {
+  const dir = freshRegistry();
+  const base2 = ['--job', 'litectx-types', '--registry', dir, '--budget', '10', '--wall', '45'];
+  const hashOf = (/** @type {string} */ tries) => {
+    const r = runner([...base2, '--tries', tries]);
+    assert.equal(r.status, 0, r.stderr);
+    const m = r.stdout.match(/hash\s+([0-9a-f]{64})/);
+    assert.ok(m, `the gate must print the hash to sign:\n${r.stdout}`);
+    return m[1];
+  };
+  const two = hashOf('2');
+  const nine = hashOf('9');
+  assert.notEqual(two, nine, 'the printed hash covers the try count — the spend multiplier is signed');
+
+  // the operator holds the hash for 2 tries and asks for 9: REFUSED
+  const wrong = runner([...base2, '--tries', '9', '--approve', two]);
+  assert.equal(wrong.status, 1);
+  assert.match(wrong.stderr, /REFUSED/);
+  assert.match(`${wrong.stdout}${wrong.stderr}`, /tries/i, 'the refusal says the hash now covers the try count, so a stale one is explained');
+
+  // and the matching hash PASSES the gate — the next refusal is the missing key, which
+  // only a run that got past the signature ever reaches
+  const right = runner([...base2, '--tries', '2', '--approve', two]);
+  assert.equal(right.status, 2, right.stdout);
+  assert.match(right.stderr, /ANTHROPIC_API_KEY/);
+});
+
+test('the runner\'s printed hash IS the library\'s — one arithmetic, not two', () => {
+  const dir = freshRegistry();
+  const r = runner(['--job', 'litectx-types', '--registry', dir, '--budget', '10', '--wall', '45', '--tries', '2']);
+  assert.equal(r.status, 0, r.stderr);
+  const spec = JSON.parse(readFileSync(new URL('../jobs/litectx-u-types.json', import.meta.url), 'utf8'));
+  const expected = reuseSpecHash(resolveReuse(spec, { perTryBudgetUsd: 10, perTryWallMs: 2_700_000, bridgeTries: 2 }));
+  assert.match(r.stdout, new RegExp(`hash\\s+${expected}`), 'a runner computing its own hash is a second signature scheme');
 });

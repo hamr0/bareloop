@@ -29,10 +29,13 @@
 //     this runner REFUSES on a dirty tree and prints the command instead (the
 //     reuse-preprobe/exec-probe precedent): the reset is operator-performed, so a
 //     half-solved tree is a stop the operator sees rather than a state a harness erased.
-//  2. **The approved hash is the RESOLVED PER-TRY spec's.** The envelope tightens
-//     `budgetUsd`/`maxWallMs`, which makes a new spec VERSION — so that is the version
-//     the human signs. An envelope equal to the spec's own numbers is hash-identical and
-//     the existing signature still covers it.
+//  2. **The approved hash covers ALL THREE envelope numbers.** The envelope tightens
+//     `budgetUsd`/`maxWallMs`, which makes a new spec VERSION — and `--tries` multiplies
+//     the whole thing, so the signed artifact is the per-try spec WRAPPED with the try
+//     count (`resolveReuse` + `reuseSpecHash`). An envelope equal to the spec's own
+//     numbers leaves the per-try spec hash-identical, but the approval hash is still its
+//     own number: a hash signed before the count was folded in will not match, and
+//     re-signing once is the whole migration (there is no legacy acceptance path).
 //  3. **The gate audit is CUMULATIVE across tries.** Every try runs in the same workdir,
 //     so one audit file holds them all; it is relocated once, at the end, beside the
 //     spine. Said here because a reader counting writes must know they span tries.
@@ -41,7 +44,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawn } from 'node:child_process';
 import { join, resolve } from 'node:path';
-import { runReuse, validateEnvelope, resolveTrySpec } from '../src/reuse.js';
+import { runReuse, validateEnvelope, resolveReuse, reuseSpecHash } from '../src/reuse.js';
 import { jobSpecHash } from '../src/job.js';
 import { makeSpine } from '../src/spine.js';
 import { scanSecrets } from '../src/validate.js';
@@ -112,15 +115,22 @@ if (!ev.ok) {
   console.error('\nThe envelope may only TIGHTEN the signed caps. Raising them is a spec edit, and the new hash needs re-approval.');
   process.exit(2);
 }
-// the hash the human signs is the hash that RUNS: the resolved per-try spec's
-const trySpec = resolveTrySpec(spec, ev.envelope);
-const specHash = jobSpecHash(trySpec);
+// The hash the human signs is the hash that RUNS — and it covers ALL THREE envelope
+// numbers, not two. The worst case a reuse run authorizes is
+// `perTryBudgetUsd × (tries + 1)`, so a signature over the per-try spec alone (budget +
+// wall) leaves the MULTIPLIER unsigned: `--tries 0` and `--tries 9` printed the same hash.
+// `resolveReuse` wraps the per-try spec with the count and `reuseSpecHash` hashes them
+// together. The per-try spec's OWN hash is still computed, because `runJob`'s inner gate
+// reads that one — see the approvals mint below.
+const resolved = resolveReuse(spec, ev.envelope);
+const specHash = jobSpecHash(resolved.spec);
+const approvalHash = reuseSpecHash(resolved);
 const tightened = specHash !== jobSpecHash(spec);
 
 const registryDir = resolve(REGISTRY);
 if (!registryExists(registryDir)) die(`--registry ${registryDir} does not exist — create it (the path is operator-supplied and never conjured)`);
 
-if (arg('approve') !== specHash) {
+if (arg('approve') !== approvalHash) {
   const listing = loadRegistry(registryDir);
   console.log('REUSE — a stored workflow first, a cold draft last, REAL dollars');
   console.log(`  spec      jobs/${target.spec}${tightened ? '  (TIGHTENED by the envelope → a NEW spec version)' : '  (envelope equals the spec — hash unchanged)'}`);
@@ -135,13 +145,21 @@ if (arg('approve') !== specHash) {
   console.log(`  registry  ${registryDir}`);
   console.log(`  selection ${FORCE_COLD ? 'FORCED COLD (no workflow offered)' : PIN ? `PINNED "${PIN}" (the model may refuse it only explicitly, with a reason)` : 'the model picks, or declares none matches'}`);
   console.log(`  goal      "${spec.goal}"`);
-  console.log(`  hash      ${specHash}`);
+  console.log(`  hash      ${approvalHash}`);
+  console.log(`            covers ALL THREE envelope numbers — the per-try spec (${specHash.slice(0, 12)}…: budget + wall) AND --tries ${ev.envelope.bridgeTries}, because tries is the spend MULTIPLIER`);
   console.log('');
   console.log(renderListing(listing));
-  if (arg('approve') !== null) console.error(`\nREFUSED: --approve ${arg('approve')} does not match this spec version + envelope.`);
+  if (arg('approve') !== null) {
+    console.error(`\nREFUSED: --approve ${arg('approve')} does not match this spec version + envelope.`);
+    // said plainly, because the scheme CHANGED: a hash signed before the try count was
+    // folded in will not match, and neither will one signed for a different --tries.
+    // That is correct — a signature that never covered the multiplier never covered the
+    // run's worst case — and there is no legacy acceptance path. Re-sign once.
+    console.error('The approval hash now includes --tries (it used to cover only the per-try budget and wall), so a hash signed under the old scheme — or for a different try count — will NOT match. Re-sign the hash printed above.');
+  }
   console.log('\nLaunch under a sleep inhibitor — a suspend freezes every guard, including the outside watchdog (F72):');
   console.log(`  systemd-inhibit --what=idle:sleep --why="bareloop reuse" env ANTHROPIC_API_KEY=... \\
-    node scripts/run-reuse.mjs --job ${jobKey} --registry ${REGISTRY} --budget ${budget} --wall ${wallMin} --tries ${tries}${PIN ? ` --pin ${PIN}` : ''}${FORCE_COLD ? ' --force-cold' : ''} --approve ${specHash}`);
+    node scripts/run-reuse.mjs --job ${jobKey} --registry ${REGISTRY} --budget ${budget} --wall ${wallMin} --tries ${tries}${PIN ? ` --pin ${PIN}` : ''}${FORCE_COLD ? ' --force-cold' : ''} --approve ${approvalHash}`);
   process.exit(arg('approve') === null ? 0 : 1);
 }
 
@@ -166,6 +184,11 @@ mkdirSync(spineDir, { recursive: true });
 const runid = Date.now().toString(36);
 const spineFile = join(spineDir, `reuse-${runid}.jsonl`);
 
+// The record `runJob`'s OWN gate reads, which is the per-try spec's hash — minted here
+// only because `--approve` just matched `approvalHash`, and that hash is a function of
+// exactly this `specHash` plus the try count. So the operator's one signature ENTAILS
+// this record; nothing is forged and no second decision is made. `runReuse` still hands
+// `approvals` straight through and still has no way to mint one itself.
 const approvals = [{ specHash, signer: process.env.USER ?? 'human', ts: new Date().toISOString() }];
 const provider = new AnthropicProvider({ apiKey, model: MODEL });
 /** @type {Record<string, any>} */
@@ -272,7 +295,7 @@ if (existsSync(lagFile)) {
 }
 // the whole result beside the spine: the per-try rows are the decision-ready record, and
 // a reader must not have to reconstruct them from stdout
-writeFileSync(`${spineFile}.reuse.json`, `${JSON.stringify({ runid, jobKey, specHash, envelope: ev.envelope, result }, null, 2)}\n`);
+writeFileSync(`${spineFile}.reuse.json`, `${JSON.stringify({ runid, jobKey, approvalHash, specHash, envelope: ev.envelope, result }, null, 2)}\n`);
 console.log(`\nspine     ${spineFile}`);
 if (auditFile) console.log(`audit     ${auditFile} (CUMULATIVE across every try — they share one workdir)`);
 console.log(`patient   left AS THE RUN LEFT IT (read it before the next run resets to the seed)`);

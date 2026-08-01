@@ -37,7 +37,7 @@ test('the documented public surface is actually exported from src/index.js', () 
     'loadBridge', 'loadRegistry', 'saveBridge', 'makeRegistry', 'registryExists',
     'renderListing', 'selectionPrompt',
     // Layer 3 modules 4+5 — the envelope and the reuse runner
-    'validateEnvelope', 'resolveTrySpec', 'selectBridge', 'runReuse', 'REUSE_GRADED_RED',
+    'validateEnvelope', 'resolveTrySpec', 'resolveReuse', 'reuseSpecHash', 'selectBridge', 'runReuse', 'REUSE_GRADED_RED',
   ];
   const missing = documented.filter((n) => bareloop[n] === undefined);
   assert.deepEqual(missing, [], `documented but not exported — the adopter contract is false: ${missing.join(', ')}`);
