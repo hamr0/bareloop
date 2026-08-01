@@ -2179,3 +2179,107 @@ test('COLD path unchanged: with no bridge opt, no bridge event fires and the dra
   assert.ok(!events.some((e) => e.type === 'bridge-loaded' || e.type === 'bridge-gate'), 'no bridge event exists on a cold run');
   for (const p of provider.calls) assert.ok(!p.includes(MARKER), 'and nothing anywhere carries a starting draft');
 });
+
+// ── BA-19 / F72 park D: the TOTAL-duration deadline at the provider seam.
+//
+// BA-18's `timeoutMs` bounds socket INACTIVITY only, so a call that trickles bytes
+// forever is invisible to it (F66: 274 minutes inside one call, the bound correctly
+// passed). BA-19 adds an absolute ceiling. Wiring it raises exactly one question this
+// repo has already answered once, on the other bound: when it trips, is that the
+// operator's own governance number binding, or a dead socket? F64's answer is the
+// clock, not the error code — and these three tests hold both halves of it.
+
+/** bare-agent's BA-19 rejection shape (`provider-http.js` applyRequestDeadline):
+ * a DIFFERENT code from the idle bound's, no category, and terminal */
+const deadlineError = () => Object.assign(new Error('[AnthropicProvider] request exceeded its total deadline of 600000ms'), { code: 'EDEADLINE', retryable: false, context: { bound: 'deadline' } });
+
+test('BA-19: a wall-derived DEADLINE trip is a wall-halt, not a provider-red — the run set that ceiling from its own remaining time, so the trip is governance (F64, on the new bound)', async (t) => {
+  const wd = makePatient(t);
+  const clk = fakeClock();
+  let n = 0;
+  const provider = {
+    name: 'deadline-trip',
+    async generate() {
+      n += 1;
+      // the worker's first round: the call outlives the wall and bare-agent's
+      // TOTAL-duration timer — the one this run armed — destroys the request
+      if (n === 3) { clk.advance(700_000); throw deadlineError(); }
+      const scripted = [{ text: 'scout' }, { text: PLAN(wd) }][n - 1] ?? { text: 'done' };
+      return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now });
+
+  assert.equal(outcome, 'wall-halt', 'a deadline this run derived is the run running out of time — never a casualty');
+  const cats = events.filter((e) => e.type === 'escalation').map((e) => e.category);
+  assert.ok(cats.includes('wall-halt'), `the escalation names the same category the outcome does — saw ${cats.join(', ')}`);
+  assert.ok(!cats.includes('provider-red'), 'nothing on the spine may call the operator\'s own ceiling a transport failure');
+  const wh = events.filter((e) => e.type === 'wall-halt').at(-1);
+  assert.ok(wh, 'the clock\'s numbers reach the spine, exactly as on the idle bound');
+  assert.equal(wh.cutMidCall, true, 'the deadline landed INSIDE a call — that is the whole reason this bound exists');
+  const esc = events.filter((e) => e.type === 'escalation').find((e) => e.category === 'wall-halt');
+  assert.match(esc.options.join(' '), /maxWallMs/, 'the lever is raise-the-cap, not retry-the-provider');
+});
+
+test('BA-19 control: a DEADLINE trip with wall time REMAINING stays a provider-red — the discriminator is the clock, never the code, so a deadline this run did not derive is still transport (F64\'s pre-registered must-not-change control)', async (t) => {
+  const wd = makePatient(t);
+  const clk = fakeClock();
+  let n = 0;
+  const provider = {
+    name: 'foreign-deadline',
+    async generate() {
+      n += 1;
+      // identical rejection, identical call position; the clock is NOT expired, so
+      // this ceiling cannot have come from the wall (a provider constructed with its
+      // own deadlineMs, say) and the row is a casualty like any other
+      if (n === 3) { clk.advance(1_000); throw deadlineError(); }
+      const scripted = [{ text: 'scout' }, { text: PLAN(wd) }][n - 1] ?? { text: 'done' };
+      return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now });
+
+  assert.equal(outcome, 'provider-red');
+  assert.equal(events.filter((e) => e.type === 'wall-halt').length, 0, 'no wall-halt record on a run that never ran out of time');
+});
+
+test('BA-19 wiring: every provider call carries a deadlineMs derived from the wall REMAINING at that call — and an unbounded run carries none at all (the knob is absent, not 0 and not a default)', async (t) => {
+  // The blind-instrument guard on this whole module: a `deadlineMs` computed and never
+  // handed to the provider is F50 in a new coat ("wired ≠ the code exists"). bare-agent
+  // forwards loop.run's options straight into provider.generate (loop.js:732), so the
+  // observable is the third argument.
+  /** @param {any[]} seen */
+  const capturing = (seen) => {
+    let n = 0;
+    return {
+      name: 'capture-options',
+      async generate(_messages, _tools, options) {
+        n += 1;
+        seen.push(options ?? {});
+        const scripted = [{ text: 'scout' }, { text: PLAN(_wd) }][n - 1] ?? { text: 'done' };
+        return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+      },
+    };
+  };
+  let _wd = makePatient(t);
+  /** @type {any[]} */
+  const bounded = [];
+  const clk = fakeClock();
+  await go(_wd, capturing(bounded), { job: JOB(_wd, { maxWallMs: 600_000 }), now: clk.now });
+  assert.ok(bounded.length >= 2, 'the scout and the drafter both went through the seam');
+  for (const o of bounded) {
+    assert.equal(typeof o.deadlineMs, 'number', 'a bounded run arms the total-duration ceiling on every call');
+    assert.equal(o.deadlineMs, 600_000, 'and the number is the wall\'s remainder read at call time (this fake clock never advances, so it is the full wall)');
+    assert.ok(o.deadlineMs >= o.timeoutMs, 'the idle bound trips first on a SILENT socket; only a live-but-never-finishing stream reaches the deadline (bare-agent provider-http.js:92)');
+  }
+
+  _wd = makePatient(t);
+  /** @type {any[]} */
+  const unbounded = [];
+  await go(_wd, capturing(unbounded), { now: fakeClock().now }); // JOB() sets no maxWallMs
+  assert.ok(unbounded.length >= 2);
+  for (const o of unbounded) {
+    assert.ok(!('deadlineMs' in o), 'an operator who set no wall gets NO ceiling — omitted entirely, so nothing downstream can read a default into it (F45)');
+    assert.equal(typeof o.timeoutMs, 'number', 'the idle bound is unchanged: BA-18 still bounds a hang with no run budget');
+  }
+});

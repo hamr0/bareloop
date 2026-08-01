@@ -21,7 +21,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createClock, isWallTimeout, MIN_CALL_TIMEOUT_MS, PROVIDER_TIMEOUT_MS, TIMEOUT_CODE } from '../src/clock.js';
+import { createClock, isWallTimeout, MIN_CALL_TIMEOUT_MS, PROVIDER_TIMEOUT_MS, TIMEOUT_CODE, DEADLINE_CODE } from '../src/clock.js';
 
 /** a controllable clock: `at(ms)` moves it, so elapsed time is exact */
 function fakeNow(start = 1_000_000) {
@@ -206,4 +206,74 @@ test('isWallTimeout: only the provider timeout code counts — every other trans
 
 test('isWallTimeout: the code is bare-agent\'s own (BA-18) — pinned, because a rename upstream silently reopens F64', () => {
   assert.equal(TIMEOUT_CODE, 'ETIMEDOUT');
+});
+
+// ─── BA-19: the TOTAL-call-duration deadline (F72 park D) ───
+//
+// BA-18's `timeoutMs` is an IDLE bound — `req.setTimeout`, reset by every byte — so a
+// response that trickles forever never trips it (F66's 274-minute call; bare-agent's own
+// provider-http.js:82 says the same). BA-19 adds an absolute ceiling that no byte resets.
+//
+// It is DISABLED by default upstream (`resolveTimeoutMs(..., 0, 'deadlineMs')`,
+// provider-http.js:45-56), and it stays disabled here whenever the operator set no wall:
+// a deadline picked out of the air is a silent second ceiling, which is exactly what
+// `maxWallMs` having no default exists to prevent (F45). So the ONLY source of this number
+// is the wall's own remainder — which is also what makes a trip a governance stop rather
+// than a casualty (F64).
+
+const edeadline = () => Object.assign(new Error('[AnthropicProvider] request exceeded its total deadline of 600000ms'), { code: DEADLINE_CODE, retryable: false, context: { bound: 'deadline' } });
+
+test('callDeadlineMs: an UNBOUNDED run gets NO deadline at all — null, never a number, because a defaulted cap is a silent second ceiling (F45)', () => {
+  const f = fakeNow();
+  const c = createClock({ now: f.now });
+  assert.equal(c.callDeadlineMs(), null);
+  f.at(10 * 60 * 60_000);
+  assert.equal(c.callDeadlineMs(), null, 'ten hours in, still no invented ceiling — the operator chose unbounded');
+});
+
+test('callDeadlineMs: the deadline is the REMAINING wall read at call time, not at run start — a constant would bound the last call by the first call\'s budget', () => {
+  const f = fakeNow();
+  const c = createClock({ maxWallMs: 3_600_000, now: f.now });
+  assert.equal(c.callDeadlineMs(), 3_600_000, 'at t=0 the whole wall is still ahead');
+  f.at(600_000);
+  assert.equal(c.callDeadlineMs(), 3_000_000, 'ten minutes in, the ceiling has shrunk by exactly that');
+  f.at(3_000_000);
+  assert.equal(c.callDeadlineMs(), 600_000);
+});
+
+test('callDeadlineMs is NOT clamped to the provider default the way callTimeoutMs is — the idle bound above its own default would be inert, a total-duration ceiling above it is the whole point', () => {
+  const f = fakeNow();
+  const c = createClock({ maxWallMs: 3_600_000, now: f.now });
+  assert.equal(c.callTimeoutMs(), PROVIDER_TIMEOUT_MS, 'the idle bound saturates at 10 min');
+  assert.ok(c.callDeadlineMs() > PROVIDER_TIMEOUT_MS, 'the deadline does not — a trickling stream must still be bounded at the wall');
+});
+
+test('callDeadlineMs floors at MIN_CALL_TIMEOUT_MS, exactly as the call timeout does — a 50ms ceiling is certain to trip and 0 would DISABLE the bound upstream (provider-http.js: `if (!(deadlineMs > 0)) return`)', () => {
+  const f = fakeNow();
+  const c = createClock({ maxWallMs: 600_000, now: f.now });
+  f.at(599_950);
+  assert.equal(c.callDeadlineMs(), MIN_CALL_TIMEOUT_MS);
+  f.at(700_000);
+  assert.equal(c.callDeadlineMs(), MIN_CALL_TIMEOUT_MS, 'past the deadline it is still a usable positive number — never 0, which upstream reads as "no bound"');
+});
+
+test('isWallTimeout: a DEADLINE trip past the cap is the run\'s own wall coming back — the value was derived from it, so it is governance, never a casualty (F64 class, new code)', () => {
+  const f = fakeNow();
+  const c = createClock({ maxWallMs: 600_000, now: f.now });
+  f.at(600_000);
+  assert.equal(isWallTimeout(edeadline(), c), true);
+});
+
+test('isWallTimeout control: a DEADLINE trip with time still on the clock stays transport — the discriminator is the WALL, never the error code, so a foreign deadline (a provider constructed with its own) can never be laundered into a governance stop', () => {
+  const f = fakeNow();
+  const c = createClock({ maxWallMs: 600_000, now: f.now });
+  f.at(599_999);
+  assert.equal(isWallTimeout(edeadline(), c), false);
+  const un = createClock({ now: fakeNow().now });
+  assert.equal(isWallTimeout(edeadline(), un), false, 'and an unbounded run has no wall to attribute it to at all');
+});
+
+test('isWallTimeout: the deadline code is bare-agent\'s own (BA-19) — pinned beside BA-18\'s, because a rename upstream silently reopens F64 on the new bound', () => {
+  assert.equal(DEADLINE_CODE, 'EDEADLINE');
+  assert.notEqual(DEADLINE_CODE, TIMEOUT_CODE, 'two bounds, two codes — upstream splits them so a consumer can tell which timer fired');
 });

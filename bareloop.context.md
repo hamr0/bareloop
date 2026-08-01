@@ -502,7 +502,15 @@ stage count comes from `stageClose`, the same staging the runner executes). Enfo
 **between-round deadline** — the only seam that exists, since `loop.stop()` cannot cut an
 in-flight call (F61: fired at 500ms,
 returned at 4,018ms) — so an attempt that crosses the deadline mid-flight emits `wall-bounded`,
-is judged, and feeds its gap forward exactly like a round-bounded attempt. **The close is never
+is judged, and feeds its gap forward exactly like a round-bounded attempt. A call that never
+returns is bounded by the two per-call numbers the same clock derives and `runPlan` passes to
+every provider call: `timeoutMs` (BA-18, idle — reset by every byte) and `deadlineMs` (BA-19,
+TOTAL duration — reset by nothing, so it is the bound for a stream that trickles forever, F66's
+274-minute call). Both are the wall's own remainder read at call time, and `deadlineMs` is
+**omitted entirely** on a time-unbounded run — no wall, no derived ceiling (F45). Because both
+came from the wall, a trip past the cap routes `wall-halt`, never `provider-red`; the
+discriminator is `clock.expired()` and never the error code, so a timeout with time still on the
+clock stays the transport casualty it is (F64). **The close is never
 bounded by the wall and always runs to completion** — a deadline that kills grading leaves the
 run unreadable after the money is spent (the F45 class, money generalized to time); what the
 wall stops is the START of new work. Three sites decide the run-level terminal `wall-halt`, all

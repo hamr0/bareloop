@@ -43,8 +43,8 @@
 //
 // Usage:
 //   node scripts/u-watchdog.mjs --spine <path> --pid <n>
-//        [--stale-ms N] [--wall-ms N] [--grace-ms N] [--dead-ms N] [--poll-ms N]
-import { statSync, writeFileSync } from 'node:fs';
+//        [--stale-ms N] [--wall-ms N] [--grace-ms N] [--dead-ms N] [--poll-ms N] [--term-grace-ms N]
+import { statSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
 
 const arg = (/** @type {string} */ n, /** @type {string|null} */ dflt = null) => {
   const i = process.argv.indexOf(`--${n}`);
@@ -60,7 +60,7 @@ const num = (/** @type {string} */ n, /** @type {number|null} */ dflt) => {
 const spine = arg('spine');
 const pid = Number(arg('pid'));
 if (!spine || !Number.isInteger(pid) || pid <= 0) {
-  console.error('usage: u-watchdog.mjs --spine <path> --pid <n> [--stale-ms N] [--wall-ms N] [--grace-ms N] [--dead-ms N] [--poll-ms N]');
+  console.error('usage: u-watchdog.mjs --spine <path> --pid <n> [--stale-ms N] [--wall-ms N] [--grace-ms N] [--dead-ms N] [--poll-ms N] [--term-grace-ms N]');
   process.exit(2);
 }
 // The watched pid must be this process's PARENT. kill(pid, 0) answers "is SOME
@@ -101,6 +101,12 @@ const graceMs = num('grace-ms', 900_000) ?? 900_000;
 // make it inert.
 const deadMs = Math.min(num('dead-ms', 300_000) ?? 300_000, staleMs);
 const pollMs = num('poll-ms', 5_000) ?? 5_000;
+// How long SIGTERM gets before SIGKILL. A flag, not a constant, for the same reason
+// every other window here is one — and because a test cannot exercise the escalation
+// against a ten-minute wait. The DEFAULT is unchanged (10s): long enough for a live run
+// to flush its spine, short enough that a run swallowing the polite signal cannot
+// outlive its own guard.
+const termGraceMs = num('term-grace-ms', 10_000) ?? 10_000;
 
 const startedAt = Date.now();
 const iso = (/** @type {number} */ ms) => new Date(ms).toISOString();
@@ -164,32 +170,67 @@ function stop(/** @type {string} */ reason, /** @type {string} */ judgement, /**
   const markers = markerReport(now);
   const record = {
     watchdog: 'u-watchdog', reason, killed: true, pid, spine,
+    // Was the target still THERE when the decision was taken (F72 park B — the checks
+    // that ran before the signal belong in the record, not only in the reasoning). It
+    // is the parent link, not `kill(pid, 0)`: a pid probe answers "is SOME process
+    // holding this pid" and cannot survive pid reuse (see the startup refusal). A
+    // `false` here says the run died on its own between the last poll and this line —
+    // a different event from stopping a running process, and the record must be able
+    // to say which one happened.
+    pidAlive: alive(),
     at: iso(now),
     startedAt: iso(startedAt),
     elapsedMs: now - startedAt,
-    staleMs, wallMs, graceMs, deadMs,
+    // Every bound this guard was ARMED with, so the decision is reproducible from the
+    // record alone — including the two that shape what happens next (`pollMs`, which
+    // says how many flat observations the age above represents, and `termGraceMs`,
+    // which says how long the run had to die politely).
+    staleMs, wallMs, graceMs, deadMs, pollMs, termGraceMs,
     lastEventAt: iso(spineMovedAt),
     judgement, markers,
     ...detail,
   };
-  // Write the verdict BEFORE the kill: if this process dies mid-stop, the record
-  // of why must already be on disk. A kill with no explanation is the failure
-  // mode this whole file exists to prevent.
-  try { writeFileSync(`${spine}.watchdog.json`, `${JSON.stringify(record, null, 2)}\n`); } catch { /* best-effort */ }
+  // Write the verdict BEFORE the kill: if this process dies mid-stop, the record of why
+  // must already be on disk. A kill with no explanation is the failure mode this whole
+  // file exists to prevent.
+  //
+  // TEMP + RENAME, because the record is read by a script that runs after a crash
+  // (run-u.mjs / run-reuse.mjs both `JSON.parse` it): rename is atomic within a
+  // directory, so a reader can only ever see the whole file or no file — never the
+  // half-written one a direct write leaves if this process is killed mid-write.
+  //
+  // And it is WRAPPED, because a guard that can be disarmed through its own logging is
+  // not a guard (F70: the instrument carrying the failure mode it exists to catch). The
+  // kill below runs whether or not this succeeded; a failure is named on stderr so a
+  // missing marker is never read as "the guard never fired".
+  const reportPath = `${spine}.watchdog.json`;
+  const tmpPath = `${reportPath}.tmp`;
+  try {
+    writeFileSync(tmpPath, `${JSON.stringify(record, null, 2)}\n`);
+    renameSync(tmpPath, reportPath);
+  } catch (e) {
+    console.error(`[u-watchdog] REPORT WRITE FAILED (${reportPath}): ${e?.message ?? e} — the kill still proceeds; this stderr IS the record now`);
+    try { unlinkSync(tmpPath); } catch { /* nothing to clean, or unwritable too */ }
+  }
   // NEVER a silent kill (hamr, 2026-07-30). Three lines, in the order a reader
   // needs them: what fired, which bound it was measured against, and the exact
   // marker evidence that says the process is dead rather than slow.
   console.error(`[u-watchdog] KILL ${reason}: pid ${pid} judged DEAD — ${judgement}`);
   console.error(`[u-watchdog]   deadline: ${JSON.stringify({ elapsedMs: record.elapsedMs, wallMs, graceMs, staleMs, deadMs, ...detail })}`);
   console.error(`[u-watchdog]   marker checked: ${JSON.stringify(markers)}`);
+  console.error(`[u-watchdog]   SIGTERM -> pid ${pid}; SIGKILL in ${termGraceMs}ms if it is still there`);
   try { process.kill(pid, 'SIGTERM'); } catch { /* already gone */ }
   // SIGTERM lets the run flush its spine. A wedged event loop cannot run a signal
   // handler, so SIGKILL is the one that actually lands — but only after giving the
-  // recoverable case its chance.
+  // recoverable case its chance. A run that INSTALLS a handler and swallows the signal
+  // reaches the same place: the polite signal is an opportunity, never a veto.
   setTimeout(() => {
-    if (alive()) { try { process.kill(pid, 'SIGKILL'); } catch { /* raced */ } }
+    if (alive()) {
+      console.error(`[u-watchdog]   SIGKILL -> pid ${pid}: it survived the ${termGraceMs}ms grace`);
+      try { process.kill(pid, 'SIGKILL'); } catch { /* raced */ }
+    }
     process.exit(1);
-  }, 10_000);
+  }, termGraceMs);
 }
 
 console.error(`[u-watchdog] watching pid ${pid} — marker [spine], stale ${Math.round(staleMs / 1000)}s${wallMs ? `, wall ${Math.round(wallMs / 1000)}s (+${Math.round(graceMs / 1000)}s grace, then ${Math.round(deadMs / 1000)}s of a flat spine)` : ', no wall'}`);

@@ -18,7 +18,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, writeFileSync, existsSync, readFileSync, appendFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, appendFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -319,4 +319,139 @@ test('run-u sizes the wall grace as stages x close timeout — and passes it', (
   assert.match(src, /const closeStages = Array\.isArray\(spec\.close\) \? spec\.close\.length : 1;/);
   assert.match(src, /const worstCloseSilenceMs = CLOSE_TIMEOUT_MS \* closeStages;/);
   assert.match(src, /'--grace-ms', String\(worstCloseSilenceMs\)/, 'and it is actually passed to the guard');
+});
+
+// ── F72 park B: kill-CHECKS-before-kill, on the record.
+//
+// W-3 (hamr, 2026-07-30): "the kill from outside should check for activity/bytes or
+// other markers for activity, not a silent kill". The guard already checks and already
+// speaks; what these tests hold is that the CHECK ITSELF survives to disk, in a form a
+// reader can audit after the fact — which trigger fired, what the marker actually said
+// at the moment of decision, whether the process was even still there, and which
+// numbers the guard was armed with. F72 is why every stamp is UTC: two clocks in two
+// timezones (journal local, spine UTC) manufactured a false 87-minute reading that had
+// to be withdrawn.
+//
+// RATIO NOTE. The stale trigger here runs at 120:1 (stale 3000 : poll 25), which is the
+// guard's OWN default ratio (600_000 : 5_000) — the marker must read flat across ~120
+// real polls to earn the kill. The two shipped callers configure it HIGHER still
+// (run-u.mjs and run-reuse.mjs pass `--stale-ms worstCloseSilence + 600_000`, which is
+// 4_200_000 : 5_000 = 840:1 on the 4-stage U spec), and a higher ratio is strictly more
+// flat polls, i.e. strictly harder to reach. Testing at 5:1 is what let a marker that
+// could never go flat at production constants pass its tests once already.
+
+/** a victim that INSTALLS a SIGTERM handler and ignores it — the wedged-but-signalable
+ * case. `freeze` cannot be used for this: a hard-frozen loop never services a handler,
+ * so it dies to SIGTERM's kernel default and would prove nothing about the escalation.
+ *
+ * The handler also reports whether the report was ALREADY on disk when the signal
+ * arrived. That is the only vantage point from which the write-then-signal order is
+ * observable at all: from outside, a report written a microsecond after SIGTERM looks
+ * identical to one written before it.
+ *
+ * @param {{ after: (fn: () => void) => void }} t
+ * @param {string[]} args
+ * @param {string} markerPath the report the guard is expected to have written first
+ */
+function ignoringRun(t, args, markerPath) {
+  const src = `const { spawn } = require('node:child_process');
+    const { existsSync } = require('node:fs');
+    const c = spawn(process.execPath, [${JSON.stringify(WATCHDOG)}, ...${JSON.stringify(args)}, '--pid', String(process.pid)], { stdio: ['ignore', 'inherit', 'inherit'] });
+    c.unref();
+    process.on('SIGTERM', () => { process.stdout.write('MARKER_AT_SIGTERM ' + existsSync(${JSON.stringify(markerPath)}) + '\\nIGNORED_SIGTERM\\n'); });
+    process.stdout.write('WATCHDOG_PID ' + c.pid + '\\n');
+    setInterval(() => {}, 1000);`;
+  const p = spawn(process.execPath, ['-e', src], { stdio: ['ignore', 'pipe', 'pipe'] });
+  t.after(() => { try { p.kill('SIGKILL'); } catch { /* already gone */ } });
+  let out = '';
+  let wdPid = 0;
+  p.stdout.on('data', (d) => { out += d; const m = String(out).match(/WATCHDOG_PID (\d+)/); if (m) wdPid = Number(m[1]); });
+  p.stderr.on('data', (d) => { out += d; });
+  t.after(() => { try { if (wdPid) process.kill(wdPid, 'SIGKILL'); } catch { /* already gone */ } });
+  return { proc: p, output: () => out };
+}
+
+test('the pre-kill report carries every check the decision was made on: the trigger, the marker\'s value AND age, whether the process was still there, and every bound the guard was armed with', async (t) => {
+  const { dir, spine } = tmp(t);
+  const body = '{"type":"job-start"}\n';
+  writeFileSync(spine, body);
+  const w = guardedRun(t, ['--spine', spine, '--stale-ms', '3000', '--poll-ms', '25', '--wall-ms', '900000', '--grace-ms', '60000', '--dead-ms', '300000', '--term-grace-ms', '500']);
+  const marker = join(dir, 'spine.jsonl.watchdog.json');
+  await waitUntil(() => existsSync(marker), 20_000);
+  const rec = JSON.parse(readFileSync(marker, 'utf8'));
+
+  assert.equal(rec.reason, 'stale', 'WHICH trigger fired — a reader must never have to infer it from prose');
+  assert.equal(rec.killed, true);
+  assert.equal(rec.pid, w.proc.pid, 'and WHICH process it was aimed at');
+  assert.equal(rec.pidAlive, true, 'whether the target was still alive when the decision was taken — a kill aimed at a corpse is a different event from one that stopped a running process');
+
+  // the marker's own evidence: the value and the age, not a verdict about them
+  assert.equal(rec.markers.spine.bytes, body.length, 'the spine\'s SIZE at the decision — the byte count W-3 asks the guard to check');
+  assert.ok(rec.markers.spine.coldMs >= 3000, `the age that earned the kill (${rec.markers.spine.coldMs}ms against a 3000ms window)`);
+  assert.equal(rec.markers.spine.path, spine);
+
+  // every number it was armed with, so the decision is reproducible from the record alone
+  // `deadMs` is asked for as 300_000 and ENFORCED at 3000, because the guard clamps it
+  // to the stale window (a dead window above it could never be reached). The record
+  // must show what it was ARMED with, never what was requested — a record quoting the
+  // request would make the arithmetic in it wrong, which is the whole reason it exists.
+  assert.deepEqual(
+    { staleMs: rec.staleMs, wallMs: rec.wallMs, graceMs: rec.graceMs, deadMs: rec.deadMs, pollMs: rec.pollMs, termGraceMs: rec.termGraceMs },
+    { staleMs: 3000, wallMs: 900_000, graceMs: 60_000, deadMs: 3000, pollMs: 25, termGraceMs: 500 },
+  );
+
+  // F72: ONE timezone, everywhere. The withdrawn "87 awake minutes with no guard
+  // firing" claim came from reading a LOCAL journal stamp against a UTC spine — the
+  // blind-instrument class in a new coat. Every stamp this file writes is UTC ISO, and
+  // that is asserted rather than assumed.
+  for (const [k, v] of [['at', rec.at], ['startedAt', rec.startedAt], ['lastEventAt', rec.lastEventAt], ['markers.spine.lastMovedAt', rec.markers.spine.lastMovedAt]]) {
+    assert.match(v, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/, `${k} must be UTC ISO with the Z — a local stamp read against the UTC spine manufactured a false finding once (F72)`);
+    assert.equal(new Date(v).toISOString(), v, `${k} must round-trip`);
+  }
+  assert.ok(Date.parse(rec.at) - Date.parse(rec.lastEventAt) >= 3000, 'the two stamps are on the same clock, so their difference is the age it acted on');
+  assert.equal(existsSync(`${marker}.tmp`), false, 'the report lands by rename — no temp file survives a successful write');
+});
+
+test('a run that IGNORES SIGTERM is SIGKILLed after the grace — the escalation is real, and the report is already on disk before either signal', async (t) => {
+  // The recoverable case gets its chance first: SIGTERM lets a live run flush its spine.
+  // A run that installs a handler and does nothing with it must not be able to outlive
+  // its own guard by catching the polite signal — that would be F70 again (a guard
+  // defeated through the mechanism it was given to be gentle).
+  const { dir, spine } = tmp(t);
+  writeFileSync(spine, '{"type":"job-start"}\n');
+  const marker = join(dir, 'spine.jsonl.watchdog.json');
+  const w = ignoringRun(t, ['--spine', spine, '--stale-ms', '3000', '--poll-ms', '25', '--term-grace-ms', '1000'], marker);
+  await waitUntil(() => existsSync(marker), 20_000);
+  const killedAt = Date.now();
+  assert.equal(await waitUntil(() => !alive(w.proc.pid), 20_000), true, 'a SIGTERM-swallowing run still dies — SIGKILL is not catchable');
+  assert.match(w.output(), /IGNORED_SIGTERM/, 'and the victim really did swallow the first signal — otherwise this test proves nothing about the escalation');
+  assert.match(w.output(), /MARKER_AT_SIGTERM true/, 'the report was on disk by the time the victim ran its handler');
+  // WEAK ON PURPOSE, and recorded as weak: the line above cannot fail. Signal delivery
+  // is asynchronous relative to the sender's next statements, so a report written
+  // microseconds AFTER `process.kill` still lands before the victim's handler is
+  // scheduled — measured by moving the write below the SIGTERM, where this assertion
+  // still passed. The ordering requirement is real (a guard killed mid-stop must
+  // already have said why) but it is not observable from outside the guard, so it is
+  // pinned at the only place it IS observable: the source. That mutant dies here.
+  const src = readFileSync(new URL('../scripts/u-watchdog.mjs', import.meta.url), 'utf8');
+  const wrote = src.indexOf('renameSync(tmpPath, reportPath)');
+  const signalled = src.indexOf("process.kill(pid, 'SIGTERM')");
+  assert.ok(wrote > 0 && signalled > 0, 'both sites still exist under these names');
+  assert.ok(wrote < signalled, 'the report is written BEFORE the signal goes out — a kill with no explanation on disk is the failure mode this whole file exists to prevent');
+  assert.ok(Date.now() - killedAt >= 500, 'the grace was actually given, not skipped: SIGKILL is the last resort, never the first move');
+  assert.match(w.output(), /SIGKILL/, 'the escalation is announced too — a hard kill is never quieter than a polite one');
+});
+
+test('a report that CANNOT be written does not defeat the kill — the guard must not be disarmable through its own reporting (F70)', async (t) => {
+  // The failure is real, not simulated: a DIRECTORY sits on the report path, so the
+  // rename cannot land. Nothing in the kill path may depend on that write succeeding —
+  // a guard whose trigger runs through its own logging is a guard with an off switch.
+  const { dir, spine } = tmp(t);
+  writeFileSync(spine, '{"type":"job-start"}\n');
+  mkdirSync(join(dir, 'spine.jsonl.watchdog.json'));
+  const w = guardedRun(t, ['--spine', spine, '--stale-ms', '3000', '--poll-ms', '25', '--term-grace-ms', '500']);
+  assert.equal(await waitUntil(() => !alive(w.proc.pid), 20_000), true, 'the kill proceeds with no report at all');
+  assert.match(w.output(), /KILL stale/, 'and the decision is still spoken in full on stderr — the record is degraded, never silent');
+  assert.match(w.output(), /REPORT WRITE FAILED/, 'the failure to record is itself reported, so a missing marker is never read as "the guard never fired"');
+  assert.equal(existsSync(join(dir, 'spine.jsonl.watchdog.json.tmp')), false, 'and a failed write leaves no half-report behind to be mistaken for one');
 });

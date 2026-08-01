@@ -477,6 +477,33 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   });
 
   /**
+   * The per-call TIME bounds, in ONE place so the two `loop.run` sites cannot drift
+   * (the two-transforms class, F9). bare-agent forwards a run's options straight into
+   * `provider.generate` (loop.js:732), so both knobs land on the request:
+   *
+   *   timeoutMs   BA-18, IDLE: `req.setTimeout`, reset by every byte. Bounds a silent
+   *               socket and nothing else.
+   *   deadlineMs  BA-19, TOTAL: a plain timer no byte resets. This is the bound for
+   *               the F66 shape — a call that trickles forever while the run's own
+   *               wall passes (274 minutes, with the idle bound correctly armed).
+   *
+   * `deadlineMs` is OMITTED, never zeroed, when the run is unbounded: the operator set
+   * no wall, so there is no ceiling to derive, and inventing one is the silent second
+   * ceiling F45 exists to forbid. Omission is also the honest spelling upstream — an
+   * absent knob inherits the provider's own default (disabled), while an explicitly
+   * garbage value THROWS there (`resolveTimeoutMs`, provider-http.js:53).
+   *
+   * The NATIVE (clipipe) worker does not call this and never did: the CLI owns the
+   * transport, there is no `ClientRequest` for either timer to arm, and that path
+   * passes neither bound today. Stated rather than assumed — an unbounded native call
+   * is bounded by the F66 stall fuse and the outside watchdog, not by this.
+   */
+  const callBounds = () => {
+    const deadlineMs = clock.callDeadlineMs();
+    return { timeoutMs: clock.callTimeoutMs(), ...(deadlineMs === null ? {} : { deadlineMs }) };
+  };
+
+  /**
    * F64 — ONE categoriser for a throw out of a provider call, so the seams cannot
    * drift. A `HaltError` is the budget gate. The run's OWN deadline coming back as
    * bare-agent's `TimeoutError` (`callTimeoutMs()` is derived from the wall) is a
@@ -967,7 +994,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
      */
     const askFrom = async (msgs, prompt) => {
       try {
-        return await stallWatch.watch((gen) => newLoop(gen).run([...msgs, { role: 'user', content: prompt }], [], { cacheMessages: true, maxTokens: 32000, timeoutMs: clock.callTimeoutMs() }));
+        return await stallWatch.watch((gen) => newLoop(gen).run([...msgs, { role: 'user', content: prompt }], [], { cacheMessages: true, maxTokens: 32000, ...callBounds() }));
       } catch (e) {
         throw categorize(e).err;
       }
@@ -975,7 +1002,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const ask = async (prompt, defs = toolDefs) => {
       let r;
       try {
-        r = await stallWatch.watch((gen) => newLoop(gen).run([{ role: 'user', content: prompt }], defs, { cacheMessages: true, maxTokens: 32000, timeoutMs: clock.callTimeoutMs() }));
+        r = await stallWatch.watch((gen) => newLoop(gen).run([{ role: 'user', content: prompt }], defs, { cacheMessages: true, maxTokens: 32000, ...callBounds() }));
       } catch (e) {
         throw categorize(e).err;
       }
