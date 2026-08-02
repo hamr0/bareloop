@@ -25,15 +25,28 @@ inheritance with ledger-counted attribution.
 The pitch in one line: **workflows that earn their own design, with receipts** — every
 inherited rule carries the green that minted it and the contrast that attributed it.
 
+**What you keep is the workflow, not the session.** An agent figures your recurring,
+verifiable job out once; what survives is a verified, self-healing workflow you can run
+again — with bounded spend under an envelope *you* sign, deterministic verification you
+don't author, and cost and time reported honestly (an unknown is reported unknown, never
+rounded to zero). *Direction, not yet shipped:* a local workbench where you experiment with
+a job, graduate a workflow once it greens, and **export** it — signed spec, workflow, close
+scripts and a thin runner that depends on bareloop, so the whole self-healing library
+(bare-agent · bareguard · litectx) comes along as npm dependencies. That bundle runs
+headless as an enclosed CLI and asks you the same signing questions at the prompt that the
+workbench would. It is a dependency, never generated standalone code: the gate travels with
+it and never disappears.
+
 > **Status: Layer 2 — accepted.** The agent now authors its own workflow: `runJob()`
 > takes a signed job spec, surveys the repo, **drafts a validated plan of bounded steps**
 > (each with an operator-signed self-check it may reference but never author), and runs it
 > under an un-gameable outer close and one budget it can only tighten. On the real-model
 > acceptance battery (F47) the emergent flow converted a job the same worker failed 4/4
 > before — 3/3 runs, clearing the owned bar every time, composing its own check exits. The
-> within-run ratchet (Layer R) ships armed-and-inert by measurement (F41). Next: **N3 —
-> executed inheritance**, where the workflow persists and improves across runs (the
-> ladder's kill-switch question).
+> within-run ratchet (Layer R) ships armed-and-inert by measurement (F41). **In flight:
+> N3 — executed inheritance**, where a workflow that greened is kept, offered to the next
+> similar job, and improved as executed instead of drafted from scratch (the ladder's
+> kill-switch question).
 
 ## Quick start
 
@@ -63,14 +76,14 @@ Three layers; nothing inside negotiates with the layer above it.
 | **Emergent middle** | The authored plan: bounded steps, each with its granted verbs, its own round/attempt caps, its write scope and its form-checkable exits — schema-validated, red before tokens burn | yes — authored and improved by the agent |
 | **Floor** | Append-only JSONL spine (single source for every UI), litectx store per job, per-run ledger | never — the record |
 
-Every checkpoint in a workflow carries its own **verdict class**, and the class decides
-what the run's learning is worth:
+Every job declares a **verdict class**, and the class decides what the run's learning is
+worth. Today exactly one is built:
 
-| Verdict | Truth source | Mints inheritance? |
-|---|---|---|
-| **Hard green** | predicate / exit-code (tests, build, lint) | automatically |
-| **Soft green** | rubric / assessment | only with HITL confirm or N consistent repeats |
-| **HITL green** | a human is the close (PR merge, "publish") | yes — and merge stays human, forever |
+| Verdict | Truth source | Mints inheritance? | Status |
+|---|---|---|---|
+| **Hard green** | predicate / exit-code (tests, build, lint) | automatically | **built** |
+| **Soft green** | rubric / assessment | only with HITL confirm or N consistent repeats | declared, not built (rung N4) |
+| **HITL green** | a human is the close (PR merge, "publish") | yes — and merge stays human, forever | declared, not built (rung N4) |
 
 The full bare-suite surface is *disclosed* to the authoring agent; only *admitted* verbs
 are callable per job. A request against a locked primitive is a structured red — real

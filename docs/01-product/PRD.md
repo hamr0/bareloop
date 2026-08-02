@@ -2460,3 +2460,120 @@ the drafts differ, and only on hamr's word.
 **"Change as needed" is amendment discipline, not licence:** POC and pre-probe results amend
 the design record by **dated addendum**, never by silent rewrite, and a frozen rule is never
 loosened after a number exists.
+
+## Addendum v1.43 — 2026-08-02 (the circuit breaker closes A–D, and resume becomes an ECONOMIC contract: every paid unit is paid once, the checkpoint is a completed step, and the signature covers the tries — hamr)
+
+F72 parked four pieces (A liveness contract, B kill-checks-before-kill, C resume-after-kill,
+D unpark BA-19's `deadlineMs`). All four are now answered. **None of them touches who owns a
+bound:** budgets, walls, caps and verdicts remain operator territory, permanently.
+
+### 1. Where the four landed — including the one that is a PROCEDURE, not a mechanism
+
+| | landed as | where |
+|---|---|---|
+| **A — liveness contract** | **an operator PROCEDURE, surfaced by the runner, not an in-code assertion.** No process can assert that the machine under it will stay awake, and a harness that grabs a system lock nobody asked for is the wrong side of the line — so the runner PRINTS the `systemd-inhibit --what=idle:sleep` launch line on every dry-run and launch and never shells out to it. Stated plainly rather than dressed as a mechanism. | `scripts/run-reuse.mjs` |
+| **B — kill checks before it kills** | the watchdog's pre-kill report extended with `pidAlive` / `pollMs` / `termGraceMs`, written atomically (temp+rename) so a **report failure can never defeat the kill** (F70's class), the `SIGKILL` escalation announced, kill tests run at PRODUCTION window:poll ratios | `4278ad6` |
+| **C — resume after kill** | `--resume <runid\|spine-path>` — §2 below | `c04cdcf` |
+| **D — BA-19's `deadlineMs` unparked** | a per-call total-duration deadline derived from the **remaining wall at call time**; **no `maxWallMs` → no deadline** (an unbounded run stays a visible operator choice, never clamped to the idle default), floored at `MIN_CALL_TIMEOUT_MS`; `EDEADLINE` routed by the clock discriminator — **expired → wall-halt, time-left → provider-red** — with F64's control pinned by a must-not-change test. Native has no HTTP seam to arm; said, not papered over. | `4278ad6` |
+
+### 2. Resume is an economics contract: every paid unit is paid once
+
+hamr's two rulings, verbatim and in order given:
+
+> *"money, signature and checkpoint (starts from where it stopped) if mid loop, restart that
+> loop"*
+
+> *"even if it gets killed by outside, it should allow resume and start last step instead from
+> the beginning, why would i want to waste more money on something i already started, our goal
+> is to find ways to save money and time"*
+
+The second **supersedes the try-level reading of the first**, on measured evidence (F76): a
+try-level restart re-paid $0.25 then $0.40 of scout across two resumes and left the third leg
+structurally unable to finish — $1.42 and 2m 50s to redo three steps that had just cost $7.82.
+
+- **The checkpoint is a COMPLETED STEP's exit** — the finest unit the spine can PROVE finished
+  and the tree can show. A half-executed step is not a checkpoint and a worker transcript is
+  not a checkpoint. The try-restart survives for exactly one case: death before a plan was
+  accepted, where nothing durable exists to resume to.
+- **Restarts are funded from the REMAINDER, never a fresh allotment.** Prior spend and prior
+  wall fold into the run's own ledger and clock (`priorSpentUsd` / `priorWallMs` /
+  `priorElapsedMs`). The signed caps are untouched — tightening the spec would flip the signed
+  hash, which is structurally impossible without forging a signature — so *advertised =
+  enforced* survives a kill, and a kill cannot widen the signed worst case one kill at a time.
+  If the remainder cannot fund the restart the run caps honestly, having launched nothing.
+- **What resume does not buy back, named rather than discovered later:** a call killed before
+  it returned wrote no event, so money it may already have been billed for is not on the spine
+  and cannot be folded. The fold is a FLOOR in exactly the case `spendComplete: false` already
+  marks (F6). Likewise a lost R1 registry write is reported as LOST (`r1Missing`) and never
+  re-derived — a green's version must be the plan as executed, and the resume reader is not
+  where that is decided.
+- **A resume never resets the patient**, and never resumes a live pid. The dirty tree is the
+  dead legs' real progress; only HEAD moving off the seed (operator intervention) stops it.
+
+### 3. The signature covers the TRIES — hamr: *"fold tries into the hash"*
+
+A reuse run's total authorized exposure is `perTryBudgetUsd × (bridgeTries + 1)`, so a
+signature taken over the per-try spec alone signs a fraction of the money and the same hash
+prints for `--tries 2` and `--tries 9`. The **signed artifact is the wrapper**
+`{ schema: 'reuse-v1', spec, bridgeTries }`, hashed by `reuseSpecHash` — composed from the ONE
+`jobSpecHash` so MED-1's resolved-tools pinning is inherited and no second canonicalizer
+exists. The `reuse-v1` prefix is domain separation: a reuse approval can never collide with a
+bare job approval. The loop bound, the reported `triesAuthorized` and the exhaustion message
+all read the SAME resolved object the hash covers — no parallel bookkeeping.
+
+Consequences, accepted deliberately: **signatures taken before the fold are refused**, naming
+the scheme change, with both hashes printed side by side; there is no legacy acceptance path,
+and re-signing once is the whole migration. A **resume must match the hash both ways** — the
+current arguments AND the dead run's own `reuse-start` record — because a resume continues one
+signed run, never any run.
+
+Putting `bridgeTries` on the job spec itself was **refuted by test, not by preference**:
+`validateJob` reds unknown fields, so that shape would have job-red'd every try.
+
+## Addendum v1.44 — 2026-08-02 (the product is the EXPORTED artifact: the local UI is a workbench, the bundle is an enclosed CLI, and the arbiter travels with it — hamr, interview this session)
+
+This addendum records hamr's answers on what bareloop SHIPS to a user. It changes no doctrine;
+it names the delivery form that the doctrine has to survive.
+
+### 1. The local app is a workbench; the product is what leaves it
+
+The UI is where a user **experiments** with a job, **graduates** a workflow (a green mints a
+bridge; a green on a second distinct patient proves it — D6), and then **exports** it. The
+value the user keeps is the exported artifact, not the session that produced it.
+
+### 2. The export bundle — a dependency, never a code generator
+
+The bundle is: **the signed spec + the bridge + the close scripts + a thin runner that has
+bareloop as a dependency** (and pulls bare-agent / bareguard / litectx transitively). It runs
+**headless, as an enclosed CLI**.
+
+**It surfaces the SAME operator questions at the CLI that it would in the UI** — the approval
+hash, the envelope, the verdict class. The questions do not disappear because the UI did; they
+change surface. A bundle that ran without asking them would be a different product.
+
+### 3. Export is not EJECT — and the reason is the arbiter
+
+**bareloop never generates standalone loop code.** An ejected loop is a **forked arbiter**: a
+downstream copy of the close, the budget and the fence that can drift from the one the library
+ships and can be edited by whoever holds the copy. That is the hard line (§3: the agent never
+authors its arbiter; merge stays human forever) defeated by distribution instead of by
+authorship.
+
+So **the arbiter RELOCATES with the bundle and never disappears.** Wherever the bundle runs,
+budgets, caps, verdicts and merge live outside the emergent part, in the dependency, exactly as
+they do locally.
+
+### 4. Verdict classes: declared in the contract, green-only until built
+
+The export contract **declares** the verdict class, but v1 admits **green only**. `soft-green`
+and `hitl` were deleted with the legacy `steps[]` path (v1.32) and their return is the
+verdict-classes rung; `soft-green` still needs the RSI judged-floor analog before it can gate
+anything. Declaring the field now keeps the bundle's shape stable across that rung instead of
+forcing a contract change later.
+
+### 5. Sequencing update
+
+**soft-green + hitl come IMMEDIATELY after Layer 3 closes — ahead of genre-widening and ahead
+of the UI.** This sharpens v1.23/v1.32 (which placed the verdict-classes rung post-Layer-3
+without ordering it against the other candidates) rather than reversing them. Genre-widening
+(the second-genre question F51–F55 left open) and the workbench UI both queue behind it.

@@ -4360,3 +4360,335 @@ contains both. The general rule the two of them make: **name the scope your guar
 the thing it guards** — event loop, process, session slice, machine, host — because a failure
 at or above that scope takes them together, and the artifacts it leaves will look exactly like
 the failure the guard was built to catch.
+
+## F73 — the first end-to-end REUSE run: the same-repo bridge burned $4.74 without reaching the close, the CROSS-LANGUAGE one greened in 14.7 minutes, and the cost read is confounded by a shared workdir
+
+**Status: minted 2026-08-02 from the first paid run of the whole reuse path (spine
+`bareloop-patients/litectx-u-bareloop/reuse-msarycnt.jsonl`, patient litectx-u, 2026-08-01
+19:38:49 → 20:21:01 UTC, 42.2 min, $6.1467, `spendComplete: true`). The MACHINERY read is
+positive and n=1. The COST read is not made: the run does not show reuse being cheaper, and
+the one comparison that would be flattering is confounded by construction. Both halves are
+stated below at the confidence the artifacts support.**
+
+### The envelope, as actually signed
+
+`reuse-start`: `perTryBudgetUsd 10`, `perTryWallMs 2,700,000` (45 min), `bridgeTries 2`,
+`pinned null`, `shortlist null`, `forceCold false`. D7's shape exactly; the numbers are the
+operator's, larger than the design record's illustrative `$5 / 30 min / ×2`. This run predates
+the try-count fold (F74's sibling change, `f44526e`) — its `reuse-start` carries no
+`approvalHash`; the resume run the next day does.
+
+### Try 1 — the "direct match", and it never reached the close
+
+The selector was called with both candidates and chose `litectx-u-types`, verbatim reason:
+*"It targets the exact same goal—making litectx pass tsc --strict without weakening
+tests—so it's a direct match, not just a same-kind analog."* It loaded version `ms5uxhej`
+(2 versions on the entry).
+
+| | |
+|---|---|
+| plan drafted from the bridge | 3 steps (`fix-index-js-strict`, `fix-remaining-src-strict`, `verify-strict-typecheck`) |
+| first stop | `cap-halt`, `capRuns 3`, 3 × `needs_revision` |
+| replan (D5's one ceiling, used once) | collapsed to a single step `finish-strict-typecheck` |
+| second stop | `cap-halt`, `capRuns 3` again → `job-end {outcome: step-red}` |
+| spend / rounds / wall | **$4.7442 · 222 rounds · 1,646,425 ms (27.4 min)** |
+| `closeReached` | **false** |
+| `capBound` / `wallBound` | **false / false** |
+
+**The envelope was not the binding constraint** — $4.74 of $10, 27.4 min of 45. What bound was
+the plan's own attempt ladder, twice. `verdictClass: casualty` (only `escalated` demotes), so
+the bridge took a history row — `outcome "step-red:finish-strict-typecheck"`, cost, wall and
+rounds all recorded — and **no demotion mark**. That row was read back the next day: the
+resume run's selector cited it verbatim (*"despite its last run ending red"*) and picked the
+bridge anyway.
+
+### Try 2 — the cross-language analog, and it greened
+
+Fallthrough was automatic (pre-authorized by the envelope, D7). The selector, now offered only
+`aurora-u-spawner-types`, chose it: *"Both tasks are the same kind of work—making a package
+pass a strict static type-checker without weakening its tests—so the workflow's approach
+transfers despite the language/tool difference."*
+
+**The carry is real and it is cross-language.** The loaded version (`ms7flkok`) is a 2-step
+**Python / mypy** plan whose steps target
+`packages/spawner/src/aurora_spawner/spawner.py` and the rest of that package. The plan the
+drafter produced from it is a 2-step **JS / tsc** plan targeting `src/impact.js` (`fmtOf`'s
+`@returns {string}` vs a `null` return) and `src/tsalias.js` (`loadTsPaths`'s TS2339/TS7006),
+same tools, same `tree-changed` + `check-passes` exit shape. It passed the ordinary
+`validatePlan` — no second, looser path (D4).
+
+Close: `changed-from-seed` ✓, `typecheck` ✓, `suite-green` ✓, **`no-suppressions` red** (9 casts
+added). The outer fix loop fired (`gapBytes 1572`) and converted across three iterations
+(`typecheck` red → `no-suppressions` red → `typecheck` red → green). **$1.3971 · 52 rounds ·
+879,179 ms (14.65 min)**, `job-end green`, `spendComplete true`.
+
+`reuse-end`: `outcome green`, `triesUsed 2 / triesAuthorized 2`, `spentUsd 6.1467`,
+`bridgeWrites ["appendCasualty litectx-u-types", "appendGreen aurora-u-spawner-types"]`.
+Selection cost $0.0054 across both calls, accounted to the RUN and never to a try.
+
+### The first PROVEN bridge
+
+Verified against the live registry rather than asserted: `deriveStatus` over
+`bridges/aurora-u-spawner-types.json` now reads **`proven`** — greens on `aurora-u` ×3 and
+`litectx-u` ×1, two distinct patients under one close shape. `litectx-u-types` reads
+`candidate` (2 greens, both `litectx-u`). This is the programme's first proven entry, and it
+was minted by a green on a patient the recipe had never seen.
+
+### The cost read, and why it is NOT made
+
+| run | spend | rounds | wall |
+|---|---|---|---|
+| cold green `u-ms3wawub` (litectx-u) | $5.7655 | 176 | 37.0 min |
+| cold green `u-ms5uxhej` (litectx-u) | $4.2942 | 132 | 23.9 min |
+| **reuse run `msarycnt`, whole** | **$6.1467** | 274 | 42.2 min |
+
+The reuse run cost **more than both cold greens**, in money and in time. **No lift is claimed
+and none is visible at n=1.**
+
+And the flattering comparison — "try 2 greened for $1.40 against a $4.29 cold baseline" — is
+**not available**, because the two tries shared a tree. `scripts/run-reuse.mjs` states it in
+its own header (*"The patient is NOT reset… Every try runs in the same workdir"*), by design:
+the reset is operator-performed so a half-solved tree is a stop the operator sees rather than
+a state the harness erased. Try 2 therefore started on the tree try 1 left after $4.74 of
+edits, and **its own close proves the inheritance**: after two surgical edits the `typecheck`
+and `suite-green` stages were already satisfied, and the `no-suppressions` red named casts in
+`src/docparse.js` and `src/store.js` — **files try 2 never targeted**. Try 2's $1.40 is the
+cost of finishing try 1's work, not of solving the job.
+
+### What IS readable, unconfounded, at n=1
+
+The path ran end to end with no human in it: selection called and answered twice; the D2-split
+load gate admitted a cross-patient, cross-language bridge at the door; the drafter re-aimed
+yesterday's bricks unaided and the tweaked plan cleared the same validator as any cold draft;
+the one-replan ceiling held; R1 wrote after every try (casualty then green); the envelope's
+fallthrough fired without nagging; and the first `proven` status was earned.
+
+**One observation recorded without a rule attached:** the selector's stated reason was a poor
+predictor. It called the same-repo, same-goal, same-close entry a *"direct match"* and that try
+spent $4.74 without reaching the close; it called the cross-language entry a *"same-kind
+analog"* and that one greened. n=1, two picks, nothing minted — logged because this is exactly
+the axis an auto-matcher would be built on, and D2 deliberately did not build one.
+
+### Lesson
+
+**A rung's first paid run validates the machinery; it does not price it.** Reading cost off a
+run whose tries share a workdir measures continuation, not replication — and the honest move is
+to say so rather than quote the $1.40. The next cost comparison has to be whole-run against
+whole-cold-run, or reset the patient between tries; try-against-cold is structurally
+unreadable.
+
+## F74 — the false-proven hazard, and it had TWO doors: two spellings of one patient, and two closes under one name
+
+**Status: minted 2026-08-02. Door (i) was found by auditing the LIVE registry after F73's run
+and fixed in `bd04ade`; door (ii) was found by whole-branch review of code written the same day
+and fixed in `33b104e`. Neither is a bug in `deriveStatus`, which is correct and was never
+touched. Both feed it a lie.**
+
+### The claim being protected
+
+D6: **PROVEN = greens on ≥2 DISTINCT PATIENTS under one close shape.** `deriveStatus`
+(`src/bridges.js:80–98`) implements exactly that — it counts distinct `patient` STRINGS on
+rows whose `outcome` is `green`, and an unattributable green (no patient string) is skipped
+because it cannot prove a second instance. `proven` is the only credential in the system that
+licenses "this recipe travels", so it is the only one worth faking.
+
+### Door (i) — two registry writers, two spellings of one physical patient
+
+| writer | wrote | example |
+|---|---|---|
+| `scripts/consolidate-bridges.mjs` | the SPINE dir name | `litectx-u-bareloop` |
+| `scripts/run-reuse.mjs` | the PATIENT workdir basename | `litectx-u` |
+
+The seed data came from consolidation; the live path writes the other spelling. On the live
+registry that meant `litectx-u-types` held two greens spelled `litectx-u-bareloop` and — from
+F73's try 1 — one row spelled `litectx-u`. **That row happened to be a red.** One green under
+the second spelling and D6 would have minted `proven` on a bridge that had never left its own
+patient: a set of size 2 built from one machine.
+
+**Fix (`bd04ade`).** The canonical slug is the patient workdir basename (hamr's call), and
+consolidation now DERIVES it from `run-u.mjs`'s `<patient>-bareloop` spine-dir convention and
+**refuses a directory that does not carry it** rather than guessing — guessing is how the
+second spelling got in. `scripts/migrate-bridge-patient-slugs.mjs` repairs the rows already on
+disk: dry-run first, idempotent, every write through `saveBridge` (validate, then temp+rename,
+so a concurrent read sees the old entry or the new one and never a half-written file), and it
+migrates **both** the history rows and the version rows because both carry `patient`. It
+refuses rather than half-fixes in three cases — a slug that would strip to the empty string, an
+entry its own validator rejects, and a `name` that disagrees with the filename. Applied to the
+live registry: **aurora stays genuinely proven (`aurora-u` + `litectx-u`), litectx collapses
+two spellings to one.** Three tests TDD, including a direct `deriveStatus` false-proven repro.
+
+### Door (ii) — a cold green appended across two different close shapes
+
+The cold leg's green looked up the entry holding the job's NAME and appended to it. But the
+name is the job's slug, and **a job's CLOSE can be re-signed under that same slug.** Appending
+across two close shapes does two wrong things at once: it counts a green that ANOTHER close
+rendered toward this entry's distinct-patient status, and it hands the load gate — which
+matches on exactly those stage names — a plan that satisfied a different verification.
+
+**Fix (`33b104e`).** `sameCloseShape` mirrors `loadGate` rule 2 (the close-stage names, in
+order) as ONE predicate shared with the gate rather than spelled a second time — a cold green
+appending to an entry the gate would refuse at the door is the two-transforms class pointed at
+the registry. A mismatch **neither appends nor discards**: it forks to a deterministic
+`<job>-<sha256(stages)[0:8]>`, with `shapeForked` / `forkedFrom` / `closeStageNames` on the
+write record, so the same close always lands in the same file and the next green of that shape
+appends there instead of minting a third entry. A derived name already held by a
+differently-shaped entry is refused (`shape-fork-collision`), not appended blind.
+
+**One reviewer suggestion was refuted before it shipped:** the proposed `~` separator for the
+fork name would have been rejected by the registry's own `SLUG_RE`
+(`^[a-z0-9][a-z0-9-]*$`) at `validateBridge`, and the green would have been **lost** — which is
+precisely the failure the fork exists to prevent. A hyphen was used instead.
+
+### What the two share
+
+Both let an undisciplined source feed a derived credential: one by letting the PATIENT be
+spelled two ways, the other by letting the CLOSE be two different closes. And both fixes hold
+the same line in the same direction — **neither ever throws a green away.** The migration
+refuses a file it cannot rewrite honestly; the shape fork files the green under a derived name.
+
+### Lesson
+
+**A derived status is only as honest as the discipline feeding its inputs — and the moment two
+code paths can write the same field, they will eventually disagree.** The fix is not to teach
+the reader to tolerate both spellings; it is to make ONE writer's spelling the only spelling
+and to hold both writers to the SAME predicate the gate already uses. The disagreement's
+symptom is worse than a wrong number: it is a credential the system never earned.
+
+## F75 — an outside stop SIGKILLs the whole process group, and no in-process guard can ever see it coming: the only recovery is resume
+
+**Status: minted 2026-08-02 from the live paid resume validation (spine
+`bareloop-patients/litectx-u-bareloop/reuse-msc6w93z.jsonl`, patient litectx-u, three legs,
+three external stops). No product defect fired and none is claimed: every guard behaved
+correctly, and none of them was in a position to matter.**
+
+### Three legs, three stops
+
+| leg | pid | window (UTC) | rounds | spend | where the spine stops |
+|---|---|---|---|---|---|
+| 1 | 1078039 | 19:24:52 → 19:28:17.951 (3m 26s) | 17 | $0.3639 | 21 s into step `fix-index-js-strict` |
+| 2 | 1080307 | 19:29:07 → 20:05:09.995 (36m 3s) | 216 | **$7.8194** | close-fix-loop **iteration 4**, right after a `middle-done` |
+| 3 | 1090576 | 20:12:57 → 20:15:47.529 (2m 50s) | 9 | $0.4035 | at the draft's `materials`, seconds after the scout returned |
+
+**No leg emitted a terminal.** No `job-end`, no `wall-halt`, no `cap-halt`, no escalation — the
+spine simply stops mid-stream and the next `runner-start` appears. And **no
+`reuse-msc6w93z.jsonl.watchdog.json` was ever written**: the F67 outside watchdog did not fire
+on any of the three. Every stop came from outside the run's entire guard set.
+
+### Why no in-process guard can cover this
+
+F72's rule was *name the scope your guard shares with the thing it guards.* A stop issued
+through the session harness is issued **at the process group** — the scope that contains the
+runner, its close children, the watchdog the runner spawns, and the `systemd-inhibit` wrapper
+the operator wraps around all of them (`scripts/run-reuse.mjs` deliberately does not shell out
+to the inhibitor itself: *"a harness that grabs a system lock nobody asked for is the wrong
+side of the line"*). W-3's report-before-kill, extended in `4278ad6`, is a property of **our**
+watchdog's kills and covers only those. There is no handler that survives `SIGKILL` and no
+deadline that fires on a stop nobody scheduled.
+
+**Operator-console evidence, recorded here because it is the only place the distinction is
+visible and it is NOT in the spine:** leg 1's kill left the `systemd-inhibit` wrapper alive to
+print *"terminated by signal KILL"*; leg 2's stop took the wrapper with it and printed no such
+line, and the session harness labelled leg 1 *failed* and leg 2 *stopped*. The difference is in
+what the stopper reached, not in what the run did — the run's own artifacts are identical in
+both cases.
+
+### So the design answer is recovery, and the money says why
+
+Leg 2 alone did **36 real minutes and $7.82** of work, and had all three plan steps green with
+the close already in its fix loop when it was stopped. Without resume that is $7.82 thrown
+away for nothing the operator changed.
+
+**The fold is exact, and the artifacts prove it rather than assert it.** Leg 3's `resume-start`
+declares `priorSpentUsd 8.1833219` — which is leg 1's $0.3638755 plus leg 2's $7.8194464, to
+the last digit — and `priorWallMs 2,359,393`, which is 196,501 + 2,162,892: the two legs' own
+windows, with the 7m 47s **dead gap between them excluded**. `remainingCapUsd 1.8166781` and
+`remainingWallMs 340,606` are the signed $10 / 45 min minus exactly that. A kill therefore
+cannot widen the signed worst case one kill at a time.
+
+Also verified live on the record: both resumes carry `approvalHash 6bb0cadd…` matched against
+the dead run's own `reuse-start` (a resume continues ONE signed run, never any run), and the
+liveness gate refuses to resume while a `runner-start` pid is still alive.
+
+### Lesson
+
+**A guard bounds what the run does; it cannot bound what is done TO the run.** Above the scope
+your guard shares with the process, prevention is not on the menu — the only design that pays
+is one that makes the interruption cheap, and "cheap" is measured in what the next launch has
+to buy again. That measurement is F76.
+
+## F76 — resume at TRY granularity re-buys work the run already owns: $0.25 then $0.40 of scout re-paid, and the third leg could not have finished
+
+**Status: minted 2026-08-02 from the same three-leg run as F75. The build was CORRECT against
+the ruling it was given and WRONG against the purpose of that ruling, and only a paid run
+showed the difference. hamr's correction supersedes; the step-level reader is in build.**
+
+### What was built, and from which words
+
+hamr's checkpoint ruling, verbatim, as implemented in `c04cdcf`:
+
+> *"money, signature and checkpoint (starts from where it stopped) if mid loop, restart that
+> loop"*
+
+Read as the **TRY** loop: a `try-start` with no `try-end` was never graded, so it was never
+consumed — it restarts **from its beginning**, under the remainder of its signed per-try
+numbers. Scout again, draft again, every finished step again.
+
+### What that cost, measured
+
+| leg | scout + draft re-paid | rounds |
+|---|---|---|
+| 1 (original) | $0.1713 | 10 |
+| 2 (first resume) | **$0.2504** | 10 |
+| 3 (second resume) | **$0.4035** | 9 — scout only; killed before the draft returned |
+
+The re-paid scout is the visible half. **The re-executed steps are the larger half.** Leg 2's
+restart at step 1 was fair — leg 1 had been in step 1 for 21 seconds. Leg 3's was not: leg 2
+had left three green steps and a graded close on disk, and leg 3 restarted at the scout
+anyway. It opened with **$1.8167 and 5m 41s** of signed remainder, spent **$0.4035 and 2m 50s**
+just reaching the draft, and had $1.4132 and 2m 50s left to redo three steps that had just
+cost $7.82. **It could not have finished, and the granularity guaranteed it.**
+
+### hamr's correction, verbatim
+
+> *"even if it gets killed by outside, it should allow resume and start last step instead from
+> the beginning, why would i want to waste more money on something i already started, our goal
+> is to find ways to save money and time"*
+
+### v2 — the finest checkpoint the spine can PROVE
+
+A **completed step's exit** is the finest honest checkpoint, because it is the only unit whose
+state is provable from the record and present on disk. Three readings, each grounded in one
+event the executor already emits: no `plan-accepted` in the window → no seed (the kill landed
+in the scout or the draft, nothing durable exists); `plan-accepted` with no `outer-close` after
+it → `phase: 'steps'` against the LAST accepted plan (a replan emits its own, and it is the
+post-replan plan that was executing); `outer-close` after it → `phase: 'close'`, and the close
+re-runs for no tokens because it is a command over the tree.
+
+**Completion is `step-end{outcome:'green'}` OR `step-skipped`** — the second is not a detail. A
+resumed leg records its inherited steps as skips, so a reader counting only `step-end` would
+make every resume-of-a-resume re-buy exactly the work the previous resume correctly skipped.
+
+**What is NOT a checkpoint, stated so it is never assumed:** a half-executed step (no provable
+state) and a worker transcript (not state at all). And a green under a plan the run later
+replanned away is deliberately not counted — the executor resets its own index at a replan, so
+those greens belong to a plan nobody is executing.
+
+**The try-restart is not deleted.** It remains the correct answer for exactly one case — death
+before a plan was accepted, which is legs 1 and 3 of this very run.
+
+### Limits carried on the record, not discovered later
+
+A call killed **before it returned** left no `worker-round`, so money it may already have been
+billed for is not on the spine and cannot be folded — the fold is a floor in exactly the case
+`spendComplete: false` already marks (F6). And a `plan-accepted` whose plan is unreadable
+yields **no seed** rather than a half plan: steps skipped by index against a plan nobody
+validated is worse than paying again.
+
+### Lesson
+
+**"Resume from where it stopped" is a granularity question before it is a mechanism question,
+and the answer is never the coarsest unit that is easy to reconstruct — it is the finest unit
+the run can PROVE it finished.** Coarser than that and the operator pays twice for work already
+on disk; finer than that and the resume is guessing. This one was only visible because the
+resume path was validated with real money on a real kill: a scripted resume would have restored
+the same state for free and read as a pass.
