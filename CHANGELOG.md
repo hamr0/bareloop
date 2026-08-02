@@ -114,6 +114,42 @@ feature lands, **patch** = docs, fixes, scaffolding.
     watchdog sized for the SUM of the tries, gate-audit relocation, secrets scan, and a
     sleep-inhibitor note in the header (F72 — a suspend freezes every guard, including the
     watchdog).
+  - **RESUME AFTER A KILL (module C).** A killed reuse run comes back losing as little as
+    possible — hamr's ruling: *"money, signature and checkpoint (starts from where it
+    stopped) if mid loop, restart that loop"*.
+    - **`readResume(events, {deathAt?})`** turns a dead run's OWN spine back into the
+      state a resume continues from: which tries completed (never re-run, bridges still
+      spoken for), whether a try was mid-flight (a `try-start` with no `try-end` — never
+      graded, so never consumed), what that attempt already spent in money and wall, and
+      which signed envelope the spine belongs to. Spend is summed from `worker-round`
+      ONLY — the same event `runJob`'s ledger accounts — so a selection call's cost is
+      never attributed to a worker (F45); a restarted try DECLARES its inherited fold on
+      its own `try-start`, so a resume of a resume folds once rather than double-billing
+      an abandoned attempt. A try whose `job-end` landed is COMPLETE, not restarted, and
+      a registry row lost to the kill is named (`r1Missing`), never re-derived.
+    - **The remainder, never a fresh allotment.** `runJob` gained `priorSpentUsd` /
+      `priorWallMs` and `createClock` gained `priorElapsedMs`: the killed attempt's spend
+      and time FOLD IN, so the restart runs under what is left of the SIGNED per-try
+      numbers. The caps themselves are never rewritten — they are in the spec hash, and
+      editing them would need a signature nobody typed. An unfundable remainder caps
+      honestly (`cap-halt`, or `wall-halt` below one close timeout) having launched
+      nothing.
+    - **`runReuse({… resume})`** seeds the completed tries, restarts the mid-flight one
+      against the SAME workflow with no second selection call, and carries on into
+      whatever the envelope still authorizes. It refuses (`resume-red`, ledger-excluded)
+      a seed signed under a different envelope, or a restart whose workflow has left the
+      registry. New spine event `resume-start`; `try-start` gains the declared fold.
+    - **`resumeTreeGate({head, seed, dirty})`** — a resumed patient is CONTINUED, never
+      reset: the dead tries' edits are real progress. Only HEAD moving off the seed (a
+      commit or rebase under the dead run — operator intervention) stops it.
+    - **`makeSpine(file, {startSeq})`** so a resumed process continues one append-only
+      log with `seq` still monotonic, and **`scripts/run-reuse.mjs --resume <runid|path>`**:
+      it refuses a spine that is missing, corrupt mid-file, already terminal, or whose
+      process is STILL ALIVE (pid from the run's new `runner-start` record and the
+      watchdog report, discriminated by `/proc/<pid>/cmdline` because pids are recycled),
+      prints both hashes on an envelope mismatch, previews the whole reconstruction
+      before you sign, archives the killed run's watchdog record so it cannot be read as
+      this run's, and sizes the watchdog for the REMAINING work.
 
 ## [0.6.0] — 2026-07-31
 

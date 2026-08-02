@@ -86,6 +86,17 @@ async function primitiveSmoke(workdir) {
  *   load gate refuses one: a refusal returns the distinct `recipe-stale` outcome with zero
  *   spend rather than silently drafting cold, because starting a paid run on a decision
  *   nobody made is the same class of error as widening a cap to manufacture a green.
+ * @param {number} [opts.priorSpentUsd=0] RESUME (module C) — money a PREVIOUS, killed
+ *   attempt of this same try already spent. It seeds the ledger, so the restarted
+ *   attempt runs under the REMAINDER of the signed `budgetUsd` and the terminal
+ *   `job-end` states the try's WHOLE spend across both attempts. hamr's ruling: "a
+ *   budget ceiling folds in prior spend so re-invoking cannot silently widen it" —
+ *   the fold is the seam precisely because the CAP is in the spec hash, so
+ *   tightening the cap instead would make a new spec version needing a signature
+ *   nobody typed. The caller reconstructs the figure from the dead run's own spine.
+ * @param {number} [opts.priorWallMs=0] RESUME — the same ruling in a time coat: wall
+ *   time the killed attempt already consumed, folded into the run clock so the
+ *   restart gets the remainder of the SIGNED wall, never a fresh allotment.
  * @param {boolean} [opts.layerRoot=false] Layer R (within-run ratchet) — shell
  *        territory, threaded to the plan flow. Defaults OFF
  *        (decided 2026-07-21): fixation is extinct on every current job (F41), so
@@ -98,12 +109,17 @@ async function primitiveSmoke(workdir) {
  *   'close-red' | 'close-unsupported' | 'recipe-stale' | 'pricing-red' | 'provider-red' |
  *   'interpreter-red' | 'cap-halt' | 'wall-halt' | 'step-stalled' | `step-red:<id>`
  */
-export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, emit, capRuns = 3, shellCapUsd = 2, closeTimeoutMs, layerRoot = false, bridge = null }) {
+export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, emit, capRuns = 3, shellCapUsd = 2, closeTimeoutMs, layerRoot = false, bridge = null, priorSpentUsd = 0, priorWallMs = 0 }) {
   // 0. the ledger's counters, declared FIRST so that every job-end — including
   // the pre-token reds below — can state a real figure. An omitted `spentUsd` is
   // not a zero: a consumer reads `undefined` and either crashes or launders it
   // into $0 (F12's class, at the terminal record instead of mid-attempt).
-  let spentUsd = 0;
+  //
+  // It starts at the RESUME fold rather than at 0 when a killed attempt of this
+  // same try already spent money (see `priorSpentUsd`). Belted like every other
+  // number that enters the arbiter's arithmetic: a garbage fold is 0, never a NaN
+  // that would poison every later comparison into "no cap".
+  let spentUsd = typeof priorSpentUsd === 'number' && Number.isFinite(priorSpentUsd) && priorSpentUsd > 0 ? priorSpentUsd : 0;
   let unpriced = false;
   // W1: did this run ABSORB a stall? The terminal `step-stalled` is the rare case;
   // the common one self-heals (src/stall.js abandons the hung call and reissues),
@@ -197,7 +213,7 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // accounts it natively (F12) and the job-end money contract is unchanged.
   {
     const outcome = await runPlan(job, {
-      workdir, provider, nativeProvider, providerFor, emit: meter, capRuns, closeTimeoutMs, layerRoot, bridge,
+      workdir, provider, nativeProvider, providerFor, emit: meter, capRuns, closeTimeoutMs, layerRoot, bridge, priorWallMs,
       remainingUsd: () => Math.min(shellCapUsd, job.budgetUsd - spentUsd),
       isUnpriced: () => unpriced, // F6: let the plan flow bail in-flight, not just after it returns
     });

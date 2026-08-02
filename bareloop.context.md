@@ -777,6 +777,58 @@ signed for a different `--tries` is refused, and says so), the F67 outside watch
 (sized for the SUM of the tries, not one), the seed refusal, the gate-audit relocation and
 the secrets scan.
 
+#### Resuming a killed run (module C)
+
+A reuse run is up to `tries + 1` full jobs long, so a kill mid-run is a real event and it
+must not cost the whole envelope. **`readResume(events, {deathAt?})`** reads the dead
+run's own spine back into the state a resume continues from: `{ started, approvalHash,
+completed[], tried[], restart, r1Missing, spentUsd, spendComplete, carrySpentUsd,
+carrySpendComplete, ended, greened, … }`. Hand that object to
+**`runReuse({…, resume})`** and the run picks up where it stopped.
+
+- **Completed tries are not re-run.** They come back as rows (marked `inherited`) and
+  their bridges stay excluded from every later selection. A try whose `job-end` landed —
+  the close judged it — counts as completed even if the kill beat its `try-end`; paying
+  again for a verdict already rendered is exactly what resume exists to avoid. If the
+  kill also beat the registry write, that row is LOST and named (`r1Missing`); nothing is
+  invented in its place.
+- **A mid-flight try RESTARTS** against the same workflow, with **no second selection
+  call** (that pick was made and paid for), and it is not counted as consumed.
+- **Under the REMAINDER, never a fresh allotment.** The killed attempt's spend and wall
+  FOLD IN (`runJob`'s `priorSpentUsd`/`priorWallMs`, `createClock`'s `priorElapsedMs`), so
+  the restart gets what is left of the signed per-try numbers. The caps are never
+  rewritten — they are in the spec hash. An unfundable remainder is an honest `cap-halt`
+  (or `wall-halt`, below one close timeout: a try that cannot fund its close produces an
+  unreadable row) with **nothing launched**. Topping up is a new envelope, and a new
+  envelope is a new signature.
+- **Money stays honest end to end.** `carrySpentUsd` (completed tries + selection calls)
+  seeds the resumed ledger; the mid-try fold is deliberately NOT in it, because it comes
+  back inside the restarted try's own terminal — counting it in both places would bill it
+  twice. A try row's `spentUsd` is therefore the try's WHOLE spend across both attempts,
+  and a floor stays a floor.
+- **Refusals** (`resume-red`, in the ledger's excluded set): a seed signed under a
+  DIFFERENT envelope than the one being enforced (both hashes are named), and a restart
+  whose workflow has left the registry (substituting another would override a decision
+  the runner did not make).
+- **The patient is CONTINUED, not reset** — `resumeTreeGate({head, seed, dirty})`: a dirty
+  tree is the dead tries' real progress; only HEAD moving off the seed (a commit or rebase
+  under the dead run) stops the resume.
+- **One run, one log:** the resumed process appends to the dead spine and passes
+  `makeSpine(file, {startSeq})` so `seq` stays monotonic, keeps the dead run's runid (the
+  R1 rows point at a spine FILE), and leaves the cumulative `gate-audit.jsonl` in the
+  workdir to be relocated once at the end as usual.
+- **Known limit (F6):** a call killed BEFORE it returned wrote no event, so money it may
+  already have been billed for is not on the spine and cannot be folded — the same limit
+  every guard here has (a hung `generate()` leaves zero trace).
+
+`scripts/run-reuse.mjs --resume <runid|spine path>` is the operator seam: it refuses a
+spine that is missing, corrupt mid-file, already terminal, or whose process is STILL
+ALIVE (pids from the run's `runner-start` record and the watchdog report, discriminated
+by `/proc/<pid>/cmdline`, because a live pid can be a recycled stranger), prints the whole
+reconstruction as a preview before you sign, archives the killed run's watchdog record so
+the readout cannot mistake it for this run's, and sizes the outside watchdog for the work
+that is actually LEFT.
+
 ### `updateLedger({ ledgerFile, spineFiles })` → `{ appended, fold }` — `src/ledger.js`
 
 The upstream ledger: spines fold into ONE append-only incident JSONL both the consumer

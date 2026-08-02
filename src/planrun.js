@@ -335,6 +335,12 @@ ${scoutBlob || '(no scout notes)'}`;
  *   `recipe-stale` having spent nothing. Selecting the entry — the listing, the pin, the
  *   LLM's pick — is the CALLER's, and so is falling back to cold: a silent automatic
  *   fall-back would spend a run's budget on a decision nobody made.
+ * @param {number} [opts.priorWallMs=0] RESUME (module C) — wall time a PREVIOUS, killed
+ *   attempt of this same try already consumed, folded into the run clock (see
+ *   `createClock`'s `priorElapsedMs`). The SIGNED `maxWallMs` is never rewritten: it is in
+ *   the spec hash, and a resume that edited it would need a signature nobody typed. The
+ *   restarted attempt simply starts already partly spent, so a kill can never buy a fresh
+ *   allotment of the operator's wall.
  * @param {() => number} [opts.now] the wall clock's time source, injected. The real clock is the
  *   default; a caller supplies this to drive time deterministically (the same seam `createClock`
  *   already exposes — a run's terminal cannot otherwise be exercised without waiting out a cap
@@ -344,7 +350,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   'cap-halt' | 'wall-halt' | 'provider-red' | 'interpreter-red' | 'step-stalled' |
  *   `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, capRuns = 3, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, capRuns = 3, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0 }) {
   workdir = resolve(workdir);
   // ONE spelling of the redaction, housed next to the inventory it reads
   // (src/validate.js) — the same helper the isolate verbs scrub the litectx store
@@ -467,7 +473,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // one. `stagedClose` is the SAME staging the runner executes (never a second
   // count), and it is non-null here by the close-unsupported guard above — a close
   // that names no command escalated before this line, so there is no null to thread.
-  const clock = createClock({ maxWallMs: job.maxWallMs ?? null, closeStages: stagedClose.length, ...(now ? { now } : {}) });
+  //
+  // RESUME (module C): `priorWallMs` is time a killed attempt of this same try already
+  // consumed. It folds into the clock's start, never into `maxWallMs` — the cap stays the
+  // signed one in the record and in the hash, and only the REMAINDER is left to run.
+  const clock = createClock({ maxWallMs: job.maxWallMs ?? null, closeStages: stagedClose.length, priorElapsedMs: priorWallMs, ...(now ? { now } : {}) });
   const closeTimeoutForReport = closeTimeoutMs ?? 120_000;
   emit('wall-clock', {
     ...clock.report(closeTimeoutForReport),

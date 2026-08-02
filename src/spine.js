@@ -11,10 +11,15 @@ import { appendFileSync } from 'node:fs';
 /**
  * Create an emitter bound to one JSONL file.
  * @param {string} file absolute path; created on first emit
+ * @param {{startSeq?: number}} [opts] `startSeq`: the last `seq` already IN the file, for a
+ *   process that CONTINUES an existing spine (a resumed run appends to the dead run's own
+ *   log — module C). `seq` is monotonic per SPINE, so a second series restarting at 1
+ *   would give one append-only log two rows with the same number and silently break every
+ *   reader that orders by it. Default 0: a fresh file, which is every other caller.
  * @returns {(type: string, data?: object) => object} emit — returns the event as written
  */
-export function makeSpine(file) {
-  let seq = 0;
+export function makeSpine(file, { startSeq = 0 } = {}) {
+  let seq = typeof startSeq === 'number' && Number.isFinite(startSeq) && startSeq > 0 ? Math.floor(startSeq) : 0;
   return function emit(type, data = {}) {
     // type/seq/ts are the envelope's, by mechanism not comment: callers spread
     // foreign objects into events, and a payload that grows one of these keys

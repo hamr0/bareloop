@@ -94,6 +94,11 @@ const EXCLUDED_ESCALATIONS = new Set([
   'reuse-exhausted',
   'selection-refused',
   'selection-red',
+  // Layer 3 (module C) — a RESUME that refuses to continue: the seed was signed under a
+  // different envelope, or the workflow the killed run was part-way through is no longer
+  // in the registry. Both are the operator's own state speaking (a stale signature, an
+  // edited registry), and both stop having run nothing.
+  'resume-red',
   'registry-red',       // the operator-supplied registry path does not exist — a typo, not a bug
   'envelope-red',       // the envelope does not compose with the signed spec — operator input
   // the reuse runner also STOPS on the three answers no further try could change, and

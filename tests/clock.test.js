@@ -277,3 +277,38 @@ test('isWallTimeout: the deadline code is bare-agent\'s own (BA-19) — pinned b
   assert.equal(DEADLINE_CODE, 'EDEADLINE');
   assert.notEqual(DEADLINE_CODE, TIMEOUT_CODE, 'two bounds, two codes — upstream splits them so a consumer can tell which timer fired');
 });
+
+// ─── the RESUMED leg: prior elapsed folds in (module C, resume-after-kill) ───
+//
+// hamr's checkpoint ruling: a run killed mid-try restarts THAT try under the
+// REMAINDER of its signed per-try numbers — "a budget ceiling folds in prior spend
+// so re-invoking cannot silently widen it", and the wall is the same ruling in a
+// time coat. The signed cap is NEVER edited (that would be a new spec version and a
+// new hash); what changes is that the clock starts already partly spent.
+
+test('resume: priorElapsedMs folds into the clock — the SIGNED cap is unchanged and the remainder is what is left of it', () => {
+  const f = fakeNow();
+  const c = createClock({ maxWallMs: 600_000, priorElapsedMs: 400_000, now: f.now });
+  assert.equal(c.requestedMs, 600_000, 'the cap the operator signed is the cap reported — a resume never rewrites it');
+  assert.equal(c.elapsedMs(), 400_000, 'the dead attempt\'s time is already consumed');
+  assert.equal(c.remainingMs(), 200_000);
+  assert.equal(c.expired(), false);
+  f.at(200_000);
+  assert.equal(c.expired(), true, 'the fold is what makes the remainder bind — a fresh allotment would widen the signed worst case');
+  assert.equal(c.report(120_000).elapsedMs, 400_000 + 200_000, 'the record states the try\'s WHOLE elapsed, both attempts');
+});
+
+test('resume: a prior fold BEYOND the cap expires the clock immediately — it can never read as a fresh allotment', () => {
+  const f = fakeNow();
+  const c = createClock({ maxWallMs: 600_000, priorElapsedMs: 900_000, now: f.now });
+  assert.equal(c.expired(), true);
+  assert.equal(c.remainingMs(), 0, 'floored at 0, never negative');
+});
+
+test('resume: a garbage or absent prior fold is 0, never a silent shift of the deadline', () => {
+  const f = fakeNow();
+  for (const bad of [undefined, null, NaN, -5, 'lots', Infinity]) {
+    const c = createClock({ maxWallMs: 600_000, priorElapsedMs: /** @type {any} */ (bad), now: f.now });
+    assert.equal(c.elapsedMs(), 0, `priorElapsedMs ${String(bad)} must not move the clock`);
+  }
+});

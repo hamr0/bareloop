@@ -39,12 +39,34 @@
 //  3. **The gate audit is CUMULATIVE across tries.** Every try runs in the same workdir,
 //     so one audit file holds them all; it is relocated once, at the end, beside the
 //     spine. Said here because a reader counting writes must know they span tries.
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, renameSync } from 'node:fs';
+//
+// ── --resume <runid|spine path> (module C) ───────────────────────────────────
+// "killing and coming back is not an option" — but when a kill DOES happen, the run
+// comes back losing as little as possible. `--resume` reads the dead run's OWN spine,
+// keeps every try that completed, and RESTARTS the try that was mid-flight (it was
+// never graded, so it was never consumed) under the REMAINDER of that try's signed
+// per-try numbers. Four things it refuses to do, each for a ruling already paid for:
+//
+//   - it never resumes a run whose process is still ALIVE (that is a double-run);
+//   - it never resumes under a different envelope than the dead run was signed under
+//     — both hashes are printed and the operator decides;
+//   - it never gives a restarted try a FRESH allotment: prior spend and prior wall
+//     fold in, so a kill cannot widen the signed worst case one kill at a time. If the
+//     remainder cannot fund the restart the run caps honestly, having launched nothing;
+//   - it never RESETS the patient. A dirty tree is the dead tries' real progress and is
+//     continued as the run left it; only HEAD moving off the seed (a commit or rebase
+//     under the dead run — operator intervention) stops it.
+//
+// It CONTINUES the dead spine rather than opening a new one (one run, one log, `seq`
+// carried on), and it leaves the unrelocated `gate-audit.jsonl` in the workdir exactly
+// where the dead run left it: the audit is cumulative by design, so the resumed legs
+// append to the same file and it is relocated once at the end, as usual.
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, renameSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawn } from 'node:child_process';
 import { join, resolve } from 'node:path';
-import { runReuse, validateEnvelope, resolveReuse, reuseSpecHash } from '../src/reuse.js';
+import { runReuse, validateEnvelope, resolveReuse, reuseSpecHash, readResume, resumeTreeGate } from '../src/reuse.js';
 import { jobSpecHash } from '../src/job.js';
 import { makeSpine } from '../src/spine.js';
 import { scanSecrets } from '../src/validate.js';
@@ -130,8 +152,143 @@ const tightened = specHash !== jobSpecHash(spec);
 const registryDir = resolve(REGISTRY);
 if (!registryExists(registryDir)) die(`--registry ${registryDir} does not exist — create it (the path is operator-supplied and never conjured)`);
 
+// ── --resume: read the dead run's spine BEFORE the approval gate ─────────────
+// Everything here happens before a key is read and before a dollar is committed, and
+// every failure is a refusal rather than a fresh run wearing a resume flag.
+const RESUME = arg('resume');
+const spineDirDefault = join(resolve(target.workdir), '..', target.spine);
+/** the dead spine. `--resume` takes the runid (the conventional
+ * `<spine dir>/reuse-<runid>.jsonl`) or an explicit path — the path form is what makes
+ * these gates testable without touching an operator's real spine directory. */
+const deadSpineFile = RESUME === null ? null
+  : (RESUME.includes('/') || RESUME.endsWith('.jsonl') ? resolve(RESUME) : join(spineDirDefault, `reuse-${RESUME}.jsonl`));
+/** @type {any} */
+let dead = null;
+/** the runid the resumed legs keep: the R1 rows point back at a spine FILE, so the id
+ * is the file's, never a fresh one (a new id would name a spine that does not exist) */
+let resumedRunid = null;
+if (deadSpineFile !== null) {
+  if (!existsSync(deadSpineFile)) die(`--resume: no spine at ${deadSpineFile} — a resume continues a run that happened, and this one left no log`);
+  let raw;
+  try { raw = readFileSync(deadSpineFile, 'utf8'); } catch (e) { die(`--resume: cannot read ${deadSpineFile}: ${e.message}`); }
+  /** @type {any[]} */
+  const deadEvents = [];
+  const lines = raw.split('\n');
+  lines.forEach((line, i) => {
+    if (!line.trim()) return;
+    try { deadEvents.push(JSON.parse(line)); } catch (e) {
+      // a kill can land mid-append, so a broken LAST line is the failure being modelled
+      // and is tolerated (named, never silently dropped). A broken line anywhere else is
+      // a corrupt log, and reconstructing from one would invent a history.
+      if (i >= lines.length - 2) console.error(`--resume: ignoring a truncated final line in ${deadSpineFile} (a kill mid-append — the expected shape)`);
+      else die(`--resume: ${deadSpineFile} is corrupt at line ${i + 1} (${e.message}) — a reconstruction from a damaged log would invent a history`);
+    }
+  });
+
+  // is the dead run actually DEAD? Resuming a live one double-runs it: two processes,
+  // one workdir, one registry. The pids come from the run's own `runner-start` record
+  // and from the watchdog's kill report.
+  const watchdogFile = `${deadSpineFile}.watchdog.json`;
+  /** @type {any} */
+  let watchdog = null;
+  if (existsSync(watchdogFile)) { try { watchdog = JSON.parse(readFileSync(watchdogFile, 'utf8')); } catch { /* an unreadable report is not evidence of life */ } }
+  const pids = new Set([...deadEvents.filter((e) => e.type === 'runner-start' && Number.isInteger(e.pid)).map((e) => e.pid), ...(Number.isInteger(watchdog?.pid) ? [watchdog.pid] : [])]);
+  for (const pid of pids) {
+    let alive = true;
+    try { process.kill(pid, 0); } catch { alive = false; }
+    if (!alive) continue;
+    // A live pid is not proof: the kernel recycles pids, and refusing on a stranger
+    // would strand a resume forever. `/proc/<pid>/cmdline` is the discriminator — and
+    // when it cannot be read, the refusal is the safe direction (a double-run is
+    // unrecoverable; a false refusal costs the operator one sentence).
+    let cmdline = null;
+    try { cmdline = readFileSync(`/proc/${pid}/cmdline`, 'utf8').replace(/\0/g, ' ').trim(); } catch { /* no /proc, or not ours */ }
+    if (cmdline === null) die(`--resume: pid ${pid} from ${deadSpineFile} is still alive and this process cannot read its command line to tell whether it is the run. Refusing: two processes on one workdir is unrecoverable, a false refusal is not.`);
+    if (cmdline.includes('run-reuse.mjs')) die(`--resume: pid ${pid} is STILL ALIVE and running run-reuse (${cmdline.slice(0, 120)}). Resuming a live run would double-run it — stop it first, or wait for it to come back to you.`);
+    console.error(`--resume: pid ${pid} is alive but is NOT this runner (${cmdline.slice(0, 80)}) — the pid was recycled; continuing.`);
+  }
+
+  // the watchdog's kill record is later, better evidence of how long the dead attempt
+  // really lived than its last spine event — and folding an UNDER-count of the wall
+  // would hand the restart time the dead attempt already burned
+  const killedAt = Date.parse(String(watchdog?.at ?? ''));
+  dead = readResume(deadEvents, Number.isFinite(killedAt) ? { deathAt: killedAt } : {});
+  if (!dead.started) die(`--resume: ${deadSpineFile} carries no reuse-start — that is not a reuse run's spine`);
+  if (dead.ended) die(`--resume: that run reached its own terminal (${dead.endOutcome}) — there is nothing to resume. Start a fresh run.`);
+  if (dead.greened) die('--resume: that run already GREENED — there is nothing to resume.');
+  if (dead.approvalHash !== approvalHash) {
+    console.error('--resume REFUSED: that run was signed under a DIFFERENT envelope than the one you are offering.');
+    console.error(`  the dead run's approval hash   ${dead.approvalHash}`);
+    console.error(`  this envelope's approval hash  ${approvalHash}   ($${ev.envelope.perTryBudgetUsd}/try · ${(ev.envelope.perTryWallMs / 60000).toFixed(0)}min/try · ${ev.envelope.bridgeTries} tries)`);
+    console.error('A resume continues ONE signed run. Resume with the envelope it was signed under, or start a fresh run under this one.');
+    process.exit(2);
+  }
+  const m = /^reuse-(.+)\.jsonl$/.exec(deadSpineFile.split('/').at(-1) ?? '');
+  resumedRunid = m ? m[1] : (deadSpineFile.split('/').at(-1) ?? '').replace(/\.jsonl$/, '');
+  dead.fromRunid = resumedRunid;
+}
+
+// ── what this process will ACTUALLY attempt ──────────────────────────────────
+// ONE arithmetic, read by the preview the operator signs against AND by the outside
+// watchdog's arming. Two spellings of it disagreed the first time this was rendered: the
+// preview promised "1 further workflow try" on a run whose COLD leg was what got killed,
+// and the guard was armed for two attempts that were never coming (F70's shape — a guard
+// that cannot fire before the run is long dead).
+//
+// The rules, all from the loop's own behaviour:
+//   - a COLD restart means the try loop was already LEFT (exhausted, or the model said
+//     none matches, and either way that decision was made and paid for) — no further
+//     bridge try is opened, and the restart IS the cold leg;
+//   - a cold leg already RUN means everything the envelope authorized is spent;
+//   - otherwise the unspent bridge tries remain, and the cold leg after them.
+const restartIsCold = dead?.restart?.mode === 'cold';
+const coldAlreadyRun = dead ? dead.completed.some((/** @type {any} */ t) => t.mode === 'cold') : false;
+const bridgeTriesSpent = dead
+  ? dead.completed.filter((/** @type {any} */ t) => t.mode === 'bridge').length + (dead.restart?.mode === 'bridge' ? 1 : 0)
+  : 0;
+const furtherBridgeTries = !dead ? ev.envelope.bridgeTries
+  : (restartIsCold || coldAlreadyRun ? 0 : Math.max(0, ev.envelope.bridgeTries - bridgeTriesSpent));
+const coldLegsToRun = !dead ? 1 : (restartIsCold || coldAlreadyRun ? 0 : 1);
+/** the restarted attempt runs on its REMAINDER, not a whole cap */
+const restartWallMs = dead?.restart ? Math.max(0, ev.envelope.perTryWallMs - dead.restart.priorWallMs) : 0;
+const plannedWallMs = ev.envelope.perTryWallMs * (furtherBridgeTries + coldLegsToRun) + restartWallMs;
+/** how many CLOSES the guard's grace has to cover: one per attempt that will run */
+const plannedAttempts = furtherBridgeTries + coldLegsToRun + (dead?.restart ? 1 : 0);
+
 if (arg('approve') !== approvalHash) {
   const listing = loadRegistry(registryDir);
+  if (dead) {
+    // the RESUME preview: what is inherited, what restarts, and on what remainder. Read
+    // before signing, because signing this hash authorizes exactly the attempts below.
+    const rs = dead.restart;
+    console.log('RESUME — continuing a killed run, REAL dollars');
+    console.log(`  spine     ${deadSpineFile}  (run ${resumedRunid})`);
+    console.log(`  spent     ${dead.spentUsd == null ? 'UNKNOWN' : `${dead.spendComplete ? '' : '≥'}$${dead.spentUsd.toFixed(4)}`} before the kill${dead.deathAtKnown ? '' : ' (the death time is UNKNOWN — no wall could be folded)'}`);
+    for (const t of dead.completed) {
+      console.log(`  kept      try ${t.n} ${t.mode}${t.bridge ? ` "${t.bridge}"` : ''} → ${t.runOutcome}`
+        + ` (${t.spentUsd === null ? 'spend UNKNOWN' : `${t.spendComplete ? '' : '≥'}$${t.spentUsd.toFixed(4)}`}) — NOT re-run`);
+    }
+    if (dead.r1Missing) console.log('  NOTE      the last try was graded but the kill landed before its registry row was written — that row is LOST, and the resumed run does not invent it');
+    if (rs) {
+      console.log(`  restart   try ${rs.n} ${rs.mode}${rs.bridge ? ` "${rs.bridge}"` : ''} — it was never graded, so it is not consumed`);
+      console.log(`            already spent on it: ${rs.priorSpendComplete ? '' : '≥'}$${rs.priorSpentUsd.toFixed(4)} and ${(rs.priorWallMs / 60000).toFixed(1)}min — FOLDED IN, so it restarts on the REMAINDER`);
+      console.log(`            remainder: $${(ev.envelope.perTryBudgetUsd - rs.priorSpentUsd).toFixed(4)} of $${ev.envelope.perTryBudgetUsd} and ${((ev.envelope.perTryWallMs - rs.priorWallMs) / 60000).toFixed(1)}min of ${(ev.envelope.perTryWallMs / 60000).toFixed(0)}min`);
+    } else {
+      console.log('  restart   nothing was mid-flight — the kill landed between tries');
+    }
+    console.log(`  left      ${furtherBridgeTries} further workflow tr${furtherBridgeTries === 1 ? 'y' : 'ies'} of ${ev.envelope.bridgeTries} authorized`
+      + `${coldLegsToRun ? ', then the cold draft' : restartIsCold ? ' — the restart IS the cold draft, and the try loop was already left' : ' — the cold draft already ran; this run has nothing left to authorize'}`);
+    console.log(`  guard     the outside watchdog is armed for ${(plannedWallMs / 60000).toFixed(0)}min — the work actually LEFT, not the whole envelope`);
+    console.log(`  patient   ${target.workdir} — continued AS THE RUN LEFT IT (dirty is expected; it is never reset here)`);
+    console.log(`  registry  ${registryDir}`);
+    console.log(`  hash      ${approvalHash}`);
+    console.log('            the SAME signature the dead run carried — a resume continues one signed run, never a new envelope');
+    if (arg('approve') !== null) console.error(`\nREFUSED: --approve ${arg('approve')} does not match this spec version + envelope.`);
+    console.log('\nLaunch under a sleep inhibitor (F72):');
+    console.log(`  systemd-inhibit --what=idle:sleep --why="bareloop reuse" env ANTHROPIC_API_KEY=... \\
+    node scripts/run-reuse.mjs --job ${jobKey} --registry ${REGISTRY} --budget ${budget} --wall ${wallMin} --tries ${tries} --resume ${RESUME} --approve ${approvalHash}`);
+    process.exit(arg('approve') === null ? 0 : 1);
+  }
   console.log('REUSE — a stored workflow first, a cold draft last, REAL dollars');
   console.log(`  spec      jobs/${target.spec}${tightened ? '  (TIGHTENED by the envelope → a NEW spec version)' : '  (envelope equals the spec — hash unchanged)'}`);
   console.log(`  envelope  $${ev.envelope.perTryBudgetUsd}/try · ${(ev.envelope.perTryWallMs / 60000).toFixed(0)}min/try · ${ev.envelope.bridgeTries} workflow tr${ev.envelope.bridgeTries === 1 ? 'y' : 'ies'}, then cold`);
@@ -172,17 +329,36 @@ const git = (/** @type {string[]} */ a) => execFileSync('git', ['-C', wd, ...a],
 // half-solved tree is a stop the operator sees, never a state the harness silently erased
 const head = git(['rev-parse', 'HEAD']);
 const dirty = git(['status', '--porcelain']);
-if (head !== target.seed || dirty) {
+if (dead) {
+  // a RESUME inherits the tree: the dead tries' edits are work this run already paid
+  // for, and resetting them would throw away the progress resume exists to keep. Only a
+  // moved HEAD stops it (see `resumeTreeGate`).
+  const gate = resumeTreeGate({ head, seed: target.seed, dirty });
+  if (!gate.ok) {
+    console.error(`PATIENT REFUSED — ${gate.detail}`);
+    console.error('This is a decision for you, not the harness: reset and start fresh, or put HEAD back where the dead run left it and resume again.');
+    process.exit(2);
+  }
+  if (gate.detail) console.log(`patient   ${gate.detail}`);
+} else if (head !== target.seed || dirty) {
   console.error(`PATIENT REFUSED — ${head !== target.seed ? `HEAD is ${head.slice(0, 12)}, not the frozen seed ${target.seed.slice(0, 12)}` : 'the tree has uncommitted changes'}.`);
   console.error('A run that inherits the previous run\'s edits measures the wrong thing. Reset it yourself:');
   console.error(`  git -C ${wd} reset --hard ${target.seed} && git -C ${wd} clean -fd && rm -rf ${join(wd, '.litectx')}`);
+  console.error('(To CONTINUE a killed run instead of starting over, that is `--resume <runid>` — it keeps the tree and the tries the dead run already paid for.)');
   process.exit(2);
 }
 
 const spineDir = join(wd, '..', target.spine);
 mkdirSync(spineDir, { recursive: true });
-const runid = Date.now().toString(36);
-const spineFile = join(spineDir, `reuse-${runid}.jsonl`);
+// ONE run, ONE log: a resume appends to the dead run's own spine and keeps its runid, so
+// the R1 rows it writes (`<runid>-t<n>`) still name a file that exists. `seq` continues
+// from the last row already in it — a second series restarting at 1 would put two rows
+// with the same number in one append-only record.
+const runid = dead ? resumedRunid : Date.now().toString(36);
+const spineFile = dead ? deadSpineFile : join(spineDir, `reuse-${runid}.jsonl`);
+const startSeq = dead
+  ? readFileSync(spineFile, 'utf8').split('\n').filter((l) => l.trim()).reduce((max, l) => { try { const s = JSON.parse(l).seq; return typeof s === 'number' && s > max ? s : max; } catch { return max; } }, 0)
+  : 0;
 
 // The record `runJob`'s OWN gate reads, which is the per-try spec's hash — minted here
 // only because `--approve` just matched `approvalHash`, and that hash is a function of
@@ -196,24 +372,42 @@ const tierCache = {};
 const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= DEFAULT_TIER_MODELS[tier] === MODEL ? provider : new AnthropicProvider({ apiKey, model: DEFAULT_TIER_MODELS[tier] }));
 
 const started = Date.now();
-console.log(`\n== REUSE run ${runid} ==  $${ev.envelope.perTryBudgetUsd}/try · ${(ev.envelope.perTryWallMs / 60000).toFixed(0)}min/try · ${ev.envelope.bridgeTries} tries then cold · ${MODEL}`);
+console.log(`\n== ${dead ? 'RESUMED' : 'REUSE'} run ${runid} ==  $${ev.envelope.perTryBudgetUsd}/try · ${(ev.envelope.perTryWallMs / 60000).toFixed(0)}min/try · ${ev.envelope.bridgeTries} tries then cold · ${MODEL}`);
 
 // F67 — the OUTSIDE watchdog. Same arithmetic as run-u, with ONE difference that matters:
 // the run's wall is per TRY, and the process legitimately lives for (tries + 1) of them,
 // so the outside deadline is the SUM. A watchdog holding one try's wall would reap a
 // healthy run the moment it started its second attempt — the guard destroying the thing
 // it guards (F70).
+//
+// A RESUME sizes the same arithmetic against the work that is actually LEFT: the tries
+// already completed will not run again, and the restarted try has only its remainder. A
+// watchdog armed for the whole envelope on a run with one attempt to go is a guard that
+// cannot fire before the run is long dead.
 const closeStages = Array.isArray(spec.close) ? spec.close.length : 1;
 const worstCloseSilenceMs = CLOSE_TIMEOUT_MS * closeStages;
-const totalWallMs = ev.envelope.perTryWallMs * (ev.envelope.bridgeTries + 1);
+// `plannedWallMs` / `plannedAttempts` come from the ONE arithmetic above — the same two
+// numbers the preview printed for the operator to sign against. They are read here
+// directly rather than recomputed: the first version of this file computed the guard's
+// arming twice and the two spellings disagreed the moment a resume changed the shape.
+// The DEAD run's kill record sits at the path this run's watchdog will write, and the
+// readout at the bottom reads that path. Left in place it would report the previous
+// process's kill as if this one had been reaped — the blind-instrument class, told by
+// one file answering for two runs. It is ARCHIVED beside the spine rather than deleted:
+// the record of why the first process died is evidence, and evidence is not tidied away.
+if (dead && existsSync(`${spineFile}.watchdog.json`)) {
+  const archived = `${spineFile}.watchdog-${Date.parse(String(JSON.parse(readFileSync(`${spineFile}.watchdog.json`, 'utf8')).at ?? '')) || 'unknown'}.json`;
+  renameSync(`${spineFile}.watchdog.json`, archived);
+  console.log(`watchdog  the killed run's own kill record archived → ${archived}`);
+}
 const watchdog = spawn(process.execPath, [
   fileURLToPath(new URL('./u-watchdog.mjs', import.meta.url)),
   '--spine', spineFile,
   '--pid', String(process.pid),
   '--stale-ms', String(worstCloseSilenceMs + 600_000),
-  '--wall-ms', String(totalWallMs),
-  // the grace must cover a legal close per try, exactly as run-u's does per run
-  '--grace-ms', String(worstCloseSilenceMs * (ev.envelope.bridgeTries + 1)),
+  '--wall-ms', String(plannedWallMs),
+  // the grace must cover a legal close per remaining attempt, exactly as run-u's does per run
+  '--grace-ms', String(worstCloseSilenceMs * Math.max(1, plannedAttempts)),
 ], { stdio: ['ignore', 'ignore', 'inherit'] });
 watchdog.on('error', (e) => {
   console.error(`\nWATCHDOG FAILED TO START (${e.message}) — this run is UNGUARDED from outside: a frozen event loop will NOT be reaped (F67). The run continues under its own fuses, wall clock and money cap.`);
@@ -234,14 +428,21 @@ const lagTimer = setInterval(() => {
   lagDue = now + LAG_POLL_MS;
 }, LAG_POLL_MS);
 
+const emit = makeSpine(spineFile, { startSeq });
+// the run's own liveness record, so a later `--resume` can ask "is that process still
+// there?" of something better than a guess. Written by the RUNNER because the pid is the
+// runner's, not the library's.
+emit('runner-start', { pid: process.pid, jobKey, model: MODEL, resumedFrom: dead ? resumedRunid : null, argv: argv.filter((a) => a !== '--approve' && a !== arg('approve')) });
+
 let result;
 try {
   result = await runReuse({
     job: spec, approvals, registryDir, envelope: ev.envelope,
     patient: target.patient, workdir: wd, provider, providerFor,
-    emit: makeSpine(spineFile), runid,
+    emit, runid,
     capRuns: CAP_RUNS, closeTimeoutMs: CLOSE_TIMEOUT_MS,
     ...(PIN ? { pinned: PIN } : {}),
+    ...(dead ? { resume: dead } : {}),
     forceCold: FORCE_COLD,
   });
 } finally {
@@ -261,8 +462,12 @@ let auditFile = null;
 if (existsSync(auditSrc)) { auditFile = join(spineDir, `reuse-${runid}-gate-audit.jsonl`); renameSync(auditSrc, auditFile); }
 
 console.log(`\noutcome   ${result.outcome}`);
+// F6 on a resumed run: the figure is the WHOLE job — the killed legs plus this one. The
+// carried half is stated separately so a reader can see both, and neither half is ever
+// dropped to make the other look exact.
 console.log(`spent     ${result.spentUsd == null ? 'UNKNOWN' : `${result.spendComplete ? '' : '≥'}$${result.spentUsd.toFixed(4)}`} (tries + selection calls) against $${(ev.envelope.perTryBudgetUsd * (ev.envelope.bridgeTries + 1)).toFixed(2)} of per-try caps`);
-console.log(`wall      ${elapsedMin}min`);
+if (dead) console.log(`          of which ${dead.carrySpendComplete ? '' : '≥'}$${(dead.carrySpentUsd ?? 0).toFixed(4)} was spent by the KILLED run and is carried, never re-counted and never dropped`);
+console.log(`wall      ${elapsedMin}min${dead ? ' in THIS process (the killed run\'s time is folded into the try it was running, not into this line)' : ''}`);
 console.log(`tries     ${result.triesUsed} workflow tr${result.triesUsed === 1 ? 'y' : 'ies'} of ${result.triesAuthorized} authorized${result.tries.some((t) => t.mode === 'cold') ? ', then a cold draft' : ''}`);
 for (const s of result.selection) {
   console.log(`selection #${s.n} ${s.called ? '' : '(no call) '}→ ${s.choice ?? 'NONE MATCHES'}${s.refused ? ' [REFUSED THE PIN]' : ''}: ${s.reason}`);
@@ -270,7 +475,9 @@ for (const s of result.selection) {
 for (const t of result.tries) {
   const money = t.spentUsd === null ? 'spend UNKNOWN' : `${t.spendComplete ? '' : '≥'}$${t.spentUsd.toFixed(4)}`;
   console.log(`try ${t.n}     ${t.mode}${t.bridge ? ` "${t.bridge}"` : ''} → ${t.runOutcome}${t.failingStage ? ` (stage ${t.failingStage})` : ''}`
-    + `  ${money}/$${t.capUsd} · ${(t.wallMs / 60000).toFixed(1)}/${(t.wallCapMs / 60000).toFixed(0)}min · ${t.rounds} rounds · close ${t.closeReached ? 'reached' : 'NEVER REACHED'}`);
+    + `  ${money}/$${t.capUsd} · ${(t.wallMs / 60000).toFixed(1)}/${(t.wallCapMs / 60000).toFixed(0)}min · ${t.rounds} rounds · close ${t.closeReached ? 'reached' : 'NEVER REACHED'}`
+    + `${t.inherited ? '  [from the killed run — not re-run]' : ''}`
+    + `${t.restarted ? `  [RESTARTED after the kill; ${t.spendComplete === false ? '≥' : ''}$${(t.priorSpentUsd ?? 0).toFixed(4)} and ${((t.priorWallMs ?? 0) / 60000).toFixed(1)}min of that was the dead attempt's]` : ''}`);
 }
 for (const w of result.bridgeWrites) console.log(`registry  ${w.action} ${w.name ?? '(unnamed)'}${w.file ? ` → ${w.file}` : ''}${w.reds?.length ? ` — REDS: ${w.reds.map((r) => r.code).join(', ')}` : ''}`);
 if (result.decision) {
@@ -295,7 +502,13 @@ if (existsSync(lagFile)) {
 }
 // the whole result beside the spine: the per-try rows are the decision-ready record, and
 // a reader must not have to reconstruct them from stdout
-writeFileSync(`${spineFile}.reuse.json`, `${JSON.stringify({ runid, jobKey, approvalHash, specHash, envelope: ev.envelope, result }, null, 2)}\n`);
-console.log(`\nspine     ${spineFile}`);
-if (auditFile) console.log(`audit     ${auditFile} (CUMULATIVE across every try — they share one workdir)`);
+writeFileSync(`${spineFile}.reuse.json`, `${JSON.stringify({
+  runid, jobKey, approvalHash, specHash, envelope: ev.envelope,
+  // what was inherited, so the file explains its own numbers without the spine
+  ...(dead ? { resumedFrom: resumedRunid, carried: { spentUsd: dead.carrySpentUsd, spendComplete: dead.carrySpendComplete, triesCompleted: dead.completed.length, r1Missing: dead.r1Missing }, restarted: dead.restart } : {}),
+  result,
+}, null, 2)}\n`);
+console.log(`\nspine     ${spineFile}${dead ? ` (CONTINUED from the killed run ${resumedRunid} — one run, one log)` : ''}`);
+if (auditFile) console.log(`audit     ${auditFile} (CUMULATIVE across every try${dead ? ', killed run included — they share one workdir' : ' — they share one workdir'})`);
 console.log(`patient   left AS THE RUN LEFT IT (read it before the next run resets to the seed)`);
+if (dead) console.log(`resume    to continue THIS run if it dies again: --resume ${runid} --approve ${approvalHash}`);

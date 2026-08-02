@@ -54,5 +54,11 @@ export { renderListing, selectionPrompt } from './selection.js';
 // count multiplies the worst case, so a signature over the per-try spec alone leaves it
 // unsigned — a runner showing `jobSpecHash(resolveTrySpec(...))` prints the same hash for
 // 0 tries and for 9.
-export { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED } from './reuse.js';
+// Module C (resume after a kill) exports its two operator-side halves for the same
+// reason: `readResume` is what turns a dead run's spine back into the state a resume
+// continues from (which tries completed, which one restarts, on what remainder), and
+// `resumeTreeGate` is the ruling that a resumed patient is continued dirty and never
+// reset. Both are read by a runner BEFORE the approval gate, so neither can live behind
+// `runReuse`'s own entry.
+export { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED, readResume, resumeTreeGate } from './reuse.js';
 export { classifyIncidents, foldLedger, ledgerDeltas, updateLedger, LEDGER_CLASSES } from './ledger.js';

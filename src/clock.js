@@ -130,16 +130,31 @@ export function isWallTimeout(err, clock) {
 
 /**
  * Start a wall clock for one run.
- * @param {{ maxWallMs?: number|null, closeStages?: number, now?: () => number }} [opts]
+ * @param {{ maxWallMs?: number|null, closeStages?: number, now?: () => number, priorElapsedMs?: number }} [opts]
  *   `maxWallMs`: the signed operator cap, or absent/null for an honestly unbounded
  *   run. `closeStages`: how many stages the job's close runs (W5) — each one gets
  *   the FULL `closeTimeoutMs`, so this is the multiplier on the overshoot, not a
  *   decoration. Defaults to 1, the single-predicate close. `now`: injected for
- *   tests — the default is the real clock.
+ *   tests — the default is the real clock. `priorElapsedMs`: time this attempt's
+ *   PREDECESSOR already consumed (see below).
  * @returns {Clock}
  */
-export function createClock({ maxWallMs = null, closeStages = 1, now = () => Date.now() } = {}) {
-  const startedAt = now();
+export function createClock({ maxWallMs = null, closeStages = 1, now = () => Date.now(), priorElapsedMs = 0 } = {}) {
+  // RESUME (module C) — hamr's checkpoint ruling in a time coat: a run killed
+  // mid-try restarts THAT try under the REMAINDER of its signed per-try numbers,
+  // because "a budget ceiling folds in prior spend so re-invoking cannot silently
+  // widen it". The fold happens HERE rather than by editing `maxWallMs`, and that
+  // is the whole point: the cap the operator signed stays the number reported and
+  // the number hashed (a rewritten cap is a new spec version needing a new
+  // signature), while the clock simply starts already partly spent. A fresh
+  // allotment on every kill would let a resumed run outlive the worst case the
+  // operator signed, one kill at a time.
+  //
+  // Belted like `maxWallMs` above: a non-finite, negative or garbage fold is 0. A
+  // NaN here would make every comparison false and silently unbound the run, which
+  // is the inverse of what the fold exists to do.
+  const prior = typeof priorElapsedMs === 'number' && Number.isFinite(priorElapsedMs) && priorElapsedMs > 0 ? priorElapsedMs : 0;
+  const startedAt = now() - prior;
   // A cap is only a cap if it is a usable positive number. validateJob already
   // reds anything else, so this is the belt (a caller that hand-builds a spec
   // must not be able to turn a garbage value into a silent unbounded run OR a

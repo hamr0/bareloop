@@ -417,6 +417,249 @@ function readTry(events) {
   };
 }
 
+/** the three-way verdict read of a runJob outcome, in ONE place: a green, the one
+ * GRADED red that demotes (D6), or a casualty that keeps its own name. Both the live
+ * try loop and the resume reader classify through this — two spellings of "what kind
+ * of answer was that" is how a casualty ends up demoting a recipe.
+ * @param {string} outcome @returns {'green'|'red'|'casualty'} */
+function verdictClassOf(outcome) {
+  if (outcome === 'green' || outcome === 'already-green') return 'green';
+  return REUSE_GRADED_RED.includes(outcome) ? 'red' : 'casualty';
+}
+
+// ── module C: RESUME AFTER KILL ─────────────────────────────────────────────
+
+/**
+ * Read a killed reuse run's OWN SPINE back into the state a resume continues from.
+ *
+ * hamr's checkpoint ruling is the whole contract: *"money, signature and checkpoint
+ * (starts from where it stopped) if mid loop, restart that loop"*. So this reader
+ * answers exactly four questions, and nothing else:
+ *
+ *  1. **Which tries COMPLETED** — they are never re-run, and their bridges stay
+ *     spoken for exactly as if the loop had carried on.
+ *  2. **Was the process mid-try** — a `try-start` with no matching `try-end`. That
+ *     try was never graded, so it is not consumed: it RESTARTS from its beginning.
+ *  3. **What that dead attempt already spent, in money and in wall time** — folded
+ *     into the restart so it runs under the REMAINDER of its signed per-try numbers.
+ *  4. **Which envelope this spine belongs to** — the `reuse-start` record's own
+ *     approval hash, so a resume can prove it is continuing the SAME signed run.
+ *
+ * **F45 governs the arithmetic here.** A window's spend is summed from `worker-round`
+ * ONLY — the same event `runJob`'s own ledger accounts, no other. The selection calls
+ * are real money and are counted, but as the RUN's cost and never as a try's: a
+ * picker's tokens are not a worker's, and attributing them to a try would misstate
+ * both the fold and the row. `worker-turn` (native attribution, cost null by design)
+ * is deliberately not summed, exactly as the live ledger does not sum it.
+ *
+ * **The declared fold, not a re-derivation.** A restarted try's own `try-start`
+ * carries the fold it inherited (`priorSpentUsd`/`priorWallMs`), so a resume OF a
+ * resume adds only its own new rounds. Re-deriving from the whole file would bill an
+ * abandoned attempt twice.
+ *
+ * **KNOWN LIMIT, stated rather than discovered later.** A call that was killed BEFORE it
+ * returned left no event at all — no `worker-round`, no `selection-result` — so money it
+ * may already have been billed for is not on the spine and cannot be folded. This reader
+ * can only account writers that WROTE (the same limit the runner's own guards have: a
+ * hung `generate()` leaves zero trace). The fold is therefore a floor in exactly the case
+ * `priorSpendComplete` already marks, and one lost selection call is re-paid by the
+ * resumed pick rather than silently attributed to a try.
+ *
+ * **A try whose `job-end` landed is COMPLETE, not mid-flight.** The close already
+ * rendered its verdict; restarting would pay a second time for an answer already in
+ * hand. When the death fell between that verdict and the registry write, the row that
+ * was lost is NAMED (`r1Missing`) rather than silently absent — and never re-derived,
+ * because a green's version has to be the plan AS EXECUTED and this reader is not
+ * where that is decided.
+ *
+ * @param {any[]} events the dead spine's events, parsed, in file order
+ * @param {{deathAt?: number|null}} [opts] `deathAt`: when the process is judged to have
+ *   died (the watchdog's kill record, which is later and better evidence than the last
+ *   event). Defaults to the last event's own timestamp — the last sign of life there is.
+ * @returns {any} `{ started, approvalHash, specHash, patient, job, bridgeTries,
+ *   perTryBudgetUsd, perTryWallMs, ended, endOutcome, greened, completed, tried,
+ *   selectionCostUsd, selectionComplete, strayRounds, r1Missing, restart, deathAtKnown,
+ *   spentUsd, spendComplete, carrySpentUsd, carrySpendComplete }`
+ */
+export function readResume(events, { deathAt = null } = {}) {
+  const list = Array.isArray(events) ? events.filter(isObj) : [];
+  // the FIRST reuse-start is the envelope this spine was opened under. A resumed spine
+  // holds one per process; the signature gate compares against the ORIGINAL, because
+  // that is the run being continued.
+  const head = list.find((e) => e.type === 'reuse-start') ?? null;
+  const end = list.filter((e) => e.type === 'reuse-end').at(-1) ?? null;
+
+  /** @type {any[]} */
+  const completed = [];
+  /** @type {string[]} */
+  const tried = [];
+  let selectionCostUsd = 0;
+  let selectionComplete = true;
+  let strayRounds = 0;
+  let strayCostUsd = 0;
+  /** @type {any} the try currently open: a `try-start` with no `try-end` yet */
+  let open = null;
+
+  /** @param {any} ev */
+  const openTry = (ev) => ({
+    n: ev.n, mode: ev.mode, bridge: ev.bridge ?? null,
+    startedAtMs: Date.parse(String(ev.ts)),
+    // the fold this attempt was ALREADY carrying (a restart declares it on its own
+    // try-start) — never re-derived from the file
+    declaredSpentUsd: typeof ev.priorSpentUsd === 'number' && Number.isFinite(ev.priorSpentUsd) ? ev.priorSpentUsd : 0,
+    declaredWallMs: typeof ev.priorWallMs === 'number' && Number.isFinite(ev.priorWallMs) ? ev.priorWallMs : 0,
+    declaredComplete: ev.priorSpendComplete !== false,
+    roundsUsd: 0, roundsComplete: true, r1Written: false, jobEnd: null,
+    /** @type {any[]} the window's own events, so the SAME `readTry` the live loop uses
+     * reads a graded-but-unrecorded try — never a second reader spelling it differently */
+    seen: [],
+  });
+
+  for (const ev of list) {
+    if (ev.type === 'selection-result') {
+      if (typeof ev.costUsd === 'number' && Number.isFinite(ev.costUsd)) selectionCostUsd += ev.costUsd;
+      else selectionComplete = false;
+      continue;
+    }
+    if (ev.type === 'try-start') {
+      // a new try-start while one is OPEN means the open one was abandoned (a kill, and
+      // this is the restart). Its spend is not added here: the restart's own try-start
+      // declares the fold it inherited, so counting the window again would double-bill.
+      if (open && open.bridge) tried.push(open.bridge);
+      open = openTry(ev);
+      continue;
+    }
+    if (!open) {
+      // a priced worker round outside every try window: nothing in this runner emits
+      // one, so it is a writer this reader does not model. It is COUNTED and reported
+      // rather than dropped — the blind-instrument class is what F45 is about.
+      if (ev.type === 'worker-round') {
+        strayRounds += 1;
+        if (typeof ev.costUsd === 'number' && Number.isFinite(ev.costUsd)) strayCostUsd += ev.costUsd;
+        else selectionComplete = false;
+      }
+      continue;
+    }
+    open.seen.push(ev);
+    if (ev.type === 'worker-round') {
+      // the ONE event the live ledger accounts (src/run.js) — same rule, same spelling
+      if (typeof ev.costUsd === 'number' && Number.isFinite(ev.costUsd)) open.roundsUsd += ev.costUsd;
+      else open.roundsComplete = false;
+    } else if (ev.type === 'job-end') {
+      open.jobEnd = ev;
+    } else if (ev.type === 'bridge-write') {
+      open.r1Written = true;
+    } else if (ev.type === 'try-end') {
+      completed.push({ ...ev, seq: undefined, ts: undefined, inherited: true });
+      if (open.bridge) tried.push(open.bridge);
+      open = null;
+    }
+  }
+
+  const lastTs = list.length ? Date.parse(String(list.at(-1).ts)) : NaN;
+  const died = typeof deathAt === 'number' && Number.isFinite(deathAt) ? deathAt : lastTs;
+  const deathAtKnown = Number.isFinite(died);
+
+  /** @type {any} */
+  let restart = null;
+  let r1Missing = false;
+  if (open) {
+    if (open.jobEnd) {
+      // GRADED: runJob returned and the close had its say. Not a restart — the row is
+      // reconstructed with the live loop's own reader, and the registry write that the
+      // death may have cost is named.
+      const read = readTry(open.seen);
+      completed.push({
+        n: open.n, mode: open.mode, bridge: open.bridge,
+        runOutcome: open.jobEnd.outcome, verdictClass: verdictClassOf(String(open.jobEnd.outcome)),
+        failingStage: read.failingStage, closeReached: read.closeReached,
+        spentUsd: read.spentUsd, spendComplete: read.spendComplete,
+        capUsd: head?.perTryBudgetUsd ?? null,
+        wallMs: deathAtKnown && Number.isFinite(open.startedAtMs) ? open.declaredWallMs + (died - open.startedAtMs) : null,
+        wallCapMs: head?.perTryWallMs ?? null,
+        rounds: read.rounds, inherited: true, rowLostToKill: true,
+      });
+      if (open.bridge) tried.push(open.bridge);
+      r1Missing = !open.r1Written;
+    } else {
+      restart = {
+        n: open.n, mode: open.mode, bridge: open.bridge,
+        priorSpentUsd: open.declaredSpentUsd + open.roundsUsd,
+        priorSpendComplete: open.declaredComplete && open.roundsComplete,
+        priorWallMs: deathAtKnown && Number.isFinite(open.startedAtMs)
+          ? open.declaredWallMs + Math.max(0, died - open.startedAtMs)
+          : open.declaredWallMs,
+      };
+      if (open.bridge) tried.push(open.bridge);
+    }
+  }
+
+  // the money, in two figures that are deliberately NOT the same one:
+  //  - `carry*` is what a resumed run seeds its own ledger with. The restart's fold is
+  //    excluded, because it is handed to `runJob` as `priorSpentUsd` and comes back
+  //    inside the restarted try's own terminal — seeding it here too would count it twice.
+  //  - `spentUsd` is everything the dead run spent, which is what a human reads.
+  let carrySpentUsd = selectionCostUsd + strayCostUsd;
+  let carrySpendComplete = selectionComplete;
+  for (const t of completed) {
+    if (typeof t.spentUsd === 'number' && Number.isFinite(t.spentUsd)) carrySpentUsd += t.spentUsd;
+    else carrySpendComplete = false;
+    if (t.spendComplete !== true) carrySpendComplete = false;
+  }
+  const spentUsd = carrySpentUsd + (restart ? restart.priorSpentUsd : 0);
+  const spendComplete = carrySpendComplete && (!restart || restart.priorSpendComplete);
+
+  return {
+    started: head !== null,
+    approvalHash: head?.approvalHash ?? null,
+    specHash: head?.specHash ?? null,
+    patient: head?.patient ?? null,
+    job: head?.job ?? null,
+    bridgeTries: typeof head?.bridgeTries === 'number' ? head.bridgeTries : null,
+    perTryBudgetUsd: head?.perTryBudgetUsd ?? null,
+    perTryWallMs: head?.perTryWallMs ?? null,
+    ended: end !== null,
+    endOutcome: end?.outcome ?? null,
+    greened: completed.some((t) => t.verdictClass === 'green'),
+    completed,
+    tried,
+    selectionCostUsd, selectionComplete, strayRounds,
+    r1Missing, restart, deathAtKnown,
+    spentUsd, spendComplete, carrySpentUsd, carrySpendComplete,
+  };
+}
+
+/**
+ * The PATIENT gate for a resume, which is deliberately NOT the fresh-launch one.
+ *
+ * A fresh reuse run refuses a dirty tree: a run that inherits the previous run's edits
+ * measures the wrong thing. A RESUME is the opposite case — the dead tries' work is real
+ * progress this run already paid for, the tries share one workdir by design, and the tree
+ * is reset between RUNS by the operator, never by the harness. So a dirty tree is exactly
+ * what a resume expects to find, and it is continued as the run left it: not reset, not
+ * refused.
+ *
+ * What IS refused is HEAD moving off the seed. That is not the run's own work — nothing
+ * in the flow commits — so it means a human committed, rebased or checked something out
+ * under the dead run. The reconstruction's premise (this tree is where try N left it) no
+ * longer holds, and that decision comes back to the operator.
+ *
+ * @param {{head: string, seed: string, dirty: string}} state as `git rev-parse HEAD` and
+ *   `git status --porcelain` report it
+ * @returns {{ok: boolean, detail: string|null}}
+ */
+export function resumeTreeGate({ head, seed, dirty }) {
+  if (head !== seed) {
+    return {
+      ok: false,
+      detail: `HEAD is ${String(head).slice(0, 12)}, not the frozen seed ${String(seed).slice(0, 12)} — something COMMITTED or rebased under the dead run. Nothing in a run does that, so this is operator intervention and the resume stops rather than continuing on a tree it cannot vouch for.`,
+    };
+  }
+  // `dirty` is not even read for a verdict: it is the expected state. Named in the return
+  // so a caller can report what it is continuing on top of.
+  return { ok: true, detail: dirty ? `continuing a WORKING tree (${dirty.trimEnd().split('\n').length} changed paths) — the dead tries' progress is kept, never reset` : null };
+}
+
 /**
  * Run a job under the reuse envelope: select a stored workflow, try it, and — if the
  * envelope pre-authorized it — try the next one, then draft cold.
@@ -447,6 +690,16 @@ function readTry(events) {
  * a refused pin, an unreadable selection answer and a missing registry all STOP and hand
  * the decision back.
  *
+ * **RESUME (module C).** With `resume` — a `readResume` reading of the dead run's own
+ * spine — the same loop picks up where a killed run stopped: the completed tries are
+ * seeded in (never re-run, their bridges never re-offered), a try that was mid-flight is
+ * RESTARTED from its beginning against the SAME workflow and with NO second selection
+ * call (the pick was made and paid for), and it runs under the REMAINDER of its own
+ * signed per-try numbers. The remainder is expressed as a FOLD of the dead attempt's
+ * spend and wall — never as tightened caps — because the caps are in the spec hash and
+ * rewriting them would need a signature nobody typed. If the remainder cannot fund the
+ * restart the run caps honestly, having launched nothing.
+ *
  * @param {object} opts
  * @param {object} opts.job the signed job spec
  * @param {unknown} opts.approvals approval records — passed straight through to `runJob`;
@@ -472,6 +725,9 @@ function readTry(events) {
  * @param {number} [opts.capRuns] forwarded
  * @param {number} [opts.closeTimeoutMs] forwarded
  * @param {boolean} [opts.layerRoot] forwarded
+ * @param {any} [opts.resume] RESUME (module C) — a `readResume` reading of the KILLED
+ *   run's own spine. Its `approvalHash` must match this run's, or the run refuses:
+ *   a resume continues ONE signed run, not any run.
  * @param {typeof shippedRunJob} [opts.runJob] the job runner. An injected seam of the
  *   same class as `provider`: a try is a real paid run, and the loop's own logic —
  *   selection order, exclusion, minting, exhaustion — is not testable against one.
@@ -489,6 +745,9 @@ export async function runReuse(opts) {
     runJob = shippedRunJob, now = () => Date.now(),
   } = opts;
   const runid = opts.runid ?? Date.now().toString(36);
+  const resume = isObj(opts.resume) ? /** @type {any} */ (opts.resume) : null;
+  /** a try that inherits nothing: the ordinary, non-resumed attempt */
+  const NO_PRIOR = { spentUsd: 0, wallMs: 0, spendComplete: true };
 
   /** @type {any[]} */
   const tries = [];
@@ -583,11 +842,24 @@ export async function runReuse(opts) {
   const tried = new Set();
 
   /** the shared per-try execution: run the job, read the spine, write the box (R1).
-   * @param {any|null} bridge @param {number} n @returns {Promise<any>} the try row */
-  const runTry = async (bridge, n) => {
+   * @param {any|null} bridge @param {number} n
+   * @param {{spentUsd: number, wallMs: number, spendComplete: boolean}} [prior] RESUME — what a
+   *   KILLED attempt of this same try already consumed. It is FOLDED into the attempt
+   *   (`runJob`'s own ledger and clock start partly spent) rather than shrinking the caps,
+   *   so the signed per-try numbers stay the numbers hashed and the numbers reported.
+   * @returns {Promise<any>} the try row */
+  const runTry = async (bridge, n, prior = NO_PRIOR) => {
     const mode = bridge ? 'bridge' : 'cold';
     const name = bridge ? bridge.name : null;
-    emit('try-start', { n, mode, bridge: name, capUsd: envelope.perTryBudgetUsd, wallCapMs: envelope.perTryWallMs });
+    const resumed = prior.spentUsd > 0 || prior.wallMs > 0;
+    emit('try-start', {
+      n, mode, bridge: name, capUsd: envelope.perTryBudgetUsd, wallCapMs: envelope.perTryWallMs,
+      // DECLARED on the spine, and only when there is one — a non-resumed run's spine
+      // stays byte-identical. The declaration is what makes a resume OF a resume fold
+      // once: the next reader adds this attempt's own rounds to the number stated here
+      // instead of re-deriving the whole history and double-billing an abandoned attempt.
+      ...(resumed ? { priorSpentUsd: prior.spentUsd, priorWallMs: prior.wallMs, priorSpendComplete: prior.spendComplete, resumedFrom: resume?.fromRunid ?? runid } : {}),
+    });
     /** @type {any[]} the try's OWN slice of the spine — the caller's emitter still sees
      * every event; this is a tap, never a replacement (the run's books stay one book) */
     const seen = [];
@@ -601,6 +873,7 @@ export async function runReuse(opts) {
         ...(capRuns !== undefined ? { capRuns } : {}),
         ...(closeTimeoutMs !== undefined ? { closeTimeoutMs } : {}),
         ...(layerRoot !== undefined ? { layerRoot } : {}),
+        ...(resumed ? { priorSpentUsd: prior.spentUsd, priorWallMs: prior.wallMs } : {}),
         bridge,
       });
     } catch (e) {
@@ -611,12 +884,17 @@ export async function runReuse(opts) {
       seen.push({ type: 'runner-crashed', detail: String(/** @type {Error} */ (e)?.message ?? e) });
     }
     const read = readTry(seen);
-    const wallMs = now() - started;
-    const verdictClass = outcome === 'green' || outcome === 'already-green' ? 'green'
-      : REUSE_GRADED_RED.includes(outcome) ? 'red' : 'casualty';
+    // the try's WHOLE wall, both attempts: the fold is time this try already consumed,
+    // and a row quoting only the restart's minutes against the signed cap would read as
+    // a try that ran comfortably inside a wall it had in fact nearly exhausted
+    const wallMs = prior.wallMs + (now() - started);
+    const verdictClass = verdictClassOf(outcome);
     const row = /** @type {Record<string, any>} */ ({
       n, mode, bridge: name, runOutcome: outcome, verdictClass,
       failingStage: read.failingStage, closeReached: read.closeReached,
+      // `spentUsd` is the try's WHOLE spend: `runJob`'s ledger started at the fold, so
+      // its terminal already states both attempts. The dead attempt's money is never
+      // laundered into $0 by a restart (F6/F12).
       spentUsd: read.spentUsd, spendComplete: read.spendComplete, capUsd: envelope.perTryBudgetUsd,
       // `capBound` is the row's own reading of the money bind, and it is the OUTCOME that
       // says so — never a comparison of spend against cap, which cannot tell a run that
@@ -624,8 +902,13 @@ export async function runReuse(opts) {
       capBound: outcome === 'cap-halt',
       wallMs, wallCapMs: envelope.perTryWallMs, wallBound: outcome === 'wall-halt',
       rounds: read.rounds, plan: read.plan, bridgeWrite: null,
+      ...(resumed ? { restarted: true, priorSpentUsd: prior.spentUsd, priorWallMs: prior.wallMs } : {}),
     });
-    account(read.spentUsd, read.spendComplete);
+    // F6 on the resumed row: when the restart could not say what it spent, the fold is
+    // still a KNOWN floor and is kept as one — dropping it would report less money than
+    // the run is already known to have spent.
+    if (read.spentUsd === null && prior.spentUsd > 0) account(prior.spentUsd, false);
+    else account(read.spentUsd, read.spendComplete);
 
     // ── R1: the box. A green mints the next version FROM THE PLAN AS EXECUTED; anything
     // else writes a history row and leaves the recipe untouched.
@@ -799,10 +1082,127 @@ export async function runReuse(opts) {
     return done(row.runOutcome, { category: row.runOutcome, ...decision }, refile);
   };
 
-  // ── 3. the tries
+  /** what to do once a try has returned: a green ends the run, and the stops no further
+   * try could change end it too. Shared by the loop and by a resumed RESTART, which is
+   * the same event happening at a different point in the same sequence.
+   * @param {any} row @returns {any|null} the terminal, or null to carry on */
+  const afterTry = (row) => (row.verdictClass === 'green' ? done('green', { decision: null }) : hardStop(row));
+
+  // ── 3. RESUME (module C): pick up where the killed run stopped
+  //
+  // Three things are seeded and one is restarted. The completed tries come back as rows
+  // (so the readout is the whole run, not the last leg of it) and their bridges come back
+  // as SPENT (so no workflow this run already paid for is offered again); the money comes
+  // back as the carried figure — deliberately WITHOUT any mid-try fold, which travels
+  // into the restarted try's own ledger instead and would otherwise be counted twice.
+  /** the cold leg's fold, when the kill landed inside the COLD attempt @type {any} */
+  let coldRestart = null;
+  let startN = 1;
+  if (resume) {
+    // the signature half of hamr's ruling: a resume continues ONE signed run. The
+    // envelope is re-validated and re-hashed above from the CURRENT arguments, so a
+    // mismatch here means the seed came from a different envelope than the one this
+    // process is about to enforce — refused with both hashes named, exactly like a
+    // fresh launch under a stale signature.
+    if (isNonEmptyString(resume.approvalHash) && resume.approvalHash !== approvalHash) {
+      return done('resume-red', {
+        category: 'resume-red',
+        decision: 'The run being resumed was signed under a DIFFERENT envelope than this one, so nothing was run — a resume continues one signed run, never any run.',
+        options: ['resume with the envelope the dead run was signed under', 'start a fresh run under this envelope (the dead run\'s tries are then not inherited)'],
+        detail: `dead run's approval hash ${resume.approvalHash}\nthis envelope's approval hash ${approvalHash}`,
+      });
+    }
+    for (const t of Array.isArray(resume.completed) ? resume.completed : []) {
+      tries.push({ ...t, inherited: true });
+      if (typeof t.n === 'number' && t.n >= startN) startN = t.n + 1;
+    }
+    for (const name of Array.isArray(resume.tried) ? resume.tried : []) if (isNonEmptyString(name)) tried.add(name);
+    // seeded through the SAME accountant the live legs use, so the floor rules are one
+    // rule: a carried figure that is not a finite number, or that arrived flagged
+    // incomplete, makes the resumed run's total a floor too.
+    account(typeof resume.carrySpentUsd === 'number' ? resume.carrySpentUsd : null, resume.carrySpendComplete !== false);
+
+    const rs = isObj(resume.restart) ? /** @type {any} */ (resume.restart) : null;
+    const prior = rs
+      ? {
+        spentUsd: typeof rs.priorSpentUsd === 'number' && Number.isFinite(rs.priorSpentUsd) && rs.priorSpentUsd > 0 ? rs.priorSpentUsd : 0,
+        wallMs: typeof rs.priorWallMs === 'number' && Number.isFinite(rs.priorWallMs) && rs.priorWallMs > 0 ? rs.priorWallMs : 0,
+        spendComplete: rs.priorSpendComplete !== false,
+      }
+      : NO_PRIOR;
+    const remainingCapUsd = envelope.perTryBudgetUsd - prior.spentUsd;
+    const remainingWallMs = envelope.perTryWallMs - prior.wallMs;
+    emit('resume-start', {
+      fromRunid: resume.fromRunid ?? null, approvalHash,
+      triesCompleted: tries.map((t) => ({ n: t.n, mode: t.mode, bridge: t.bridge, runOutcome: t.runOutcome })),
+      tried: [...tried],
+      carriedUsd: resume.carrySpentUsd ?? null, carriedComplete: resume.carrySpendComplete !== false,
+      r1Missing: resume.r1Missing === true,
+      restart: rs ? { n: rs.n, mode: rs.mode, bridge: rs.bridge ?? null, priorSpentUsd: prior.spentUsd, priorWallMs: prior.wallMs, priorSpendComplete: prior.spendComplete, remainingCapUsd, remainingWallMs } : null,
+      nextTry: rs ? null : startN,
+    });
+
+    if (rs) {
+      // "if mid loop, restart that loop" — under the REMAINDER, and only if the
+      // remainder can actually fund an attempt PLUS its close. It cannot be topped up
+      // from here: raising a per-try number is a spec edit whose new hash the operator
+      // signs (D7), so an unfundable restart STOPS, having launched nothing. The stop IS
+      // the checkpoint — everything already earned is on the spine and in the box.
+      const unfundable = remainingCapUsd <= 0
+        ? {
+          outcome: 'cap-halt',
+          decision: `Try ${rs.n} was killed with ${prior.spendComplete ? '' : 'at least '}$${prior.spentUsd.toFixed(4)} of its $${envelope.perTryBudgetUsd} already spent, so no money remains to restart it. Prior spend folds into the ceiling — a kill can never buy a fresh allotment — so the run stops here with everything earned so far kept.`,
+          detail: `remaining for try ${rs.n}: $${remainingCapUsd.toFixed(4)} of $${envelope.perTryBudgetUsd}`,
+        }
+        : remainingWallMs < MIN_WALL_MS
+          ? {
+            outcome: 'wall-halt',
+            decision: `Try ${rs.n} was killed with ${(prior.wallMs / 60000).toFixed(1)}min of its ${(envelope.perTryWallMs / 60000).toFixed(1)}min already spent, leaving less than one close timeout. A try that cannot fund its own close produces an unreadable row, and an unreadable row is a casualty rather than evidence (F45), so nothing was launched.`,
+            detail: `remaining for try ${rs.n}: ${remainingWallMs}ms, below the ${MIN_WALL_MS}ms floor (one close timeout)`,
+          }
+          : null;
+      if (unfundable) {
+        return done(unfundable.outcome, {
+          category: unfundable.outcome,
+          decision: unfundable.decision,
+          detail: unfundable.detail,
+          options: [
+            'raise the envelope (a bigger per-try budget/wall) and resume again — that is a NEW envelope, so it needs a new signature (--approve the printed hash)',
+            'revise the goal or the close — a spec edit, whose new hash needs re-approval',
+            'abandon the run',
+          ],
+        });
+      }
+      if (rs.mode === 'cold') {
+        // every bridge try was already spent before the cold leg started: the loop below
+        // has nothing left to authorize, and the restart IS the cold attempt
+        coldRestart = { n: typeof rs.n === 'number' ? rs.n : tries.length + 1, prior };
+        startN = resolved.bridgeTries + 1;
+      } else {
+        const entry = loadRegistry(registryDir).bridges.find((/** @type {any} */ b) => b.name === rs.bridge);
+        if (!entry) {
+          // the pick was the operator's and the model's, made and paid for. Substituting
+          // another workflow — or falling to cold — would be the runner overriding a
+          // decision it did not make (D3's rule, at the resume seam).
+          return done('resume-red', {
+            category: 'resume-red',
+            decision: `The workflow the killed run was part-way through (${JSON.stringify(rs.bridge)}) is no longer in the registry, so try ${rs.n} cannot be restarted and nothing was run. Which workflow this run continues from is not the runner's to change.`,
+            options: [`restore ${JSON.stringify(rs.bridge)} to the registry and resume again`, 'start a fresh run (the completed tries are then not inherited)'],
+            detail: `registry ${registryDir}`,
+          });
+        }
+        tried.add(entry.name);
+        const stop = afterTry(await runTry(entry, rs.n, prior));
+        if (stop) return stop;
+        startN = rs.n + 1;
+      }
+    }
+  }
+
+  // ── 4. the tries
   // the bound is read off the SIGNED artifact, not the raw envelope: the count that
   // authorizes spend here is the count the operator's signature covers
-  for (let n = 1; n <= resolved.bridgeTries; n += 1) {
+  for (let n = startN; n <= resolved.bridgeTries; n += 1) {
     // reloaded per try: the row the LAST try just wrote is part of what the next pick
     // reads, and a registry read once at the top would hand every later selection a
     // history that stopped at the start of the run
@@ -840,18 +1240,23 @@ export async function runReuse(opts) {
     const entry = loadRegistry(registryDir).bridges.find((/** @type {any} */ b) => b.name === sel.choice);
     if (!entry) break; // the listing named it and the directory no longer holds it — cold
     tried.add(sel.choice);
-    const row = await runTry(entry, n);
-    if (row.verdictClass === 'green') {
-      return done('green', { decision: null });
-    }
-    const stop = hardStop(row);
+    const stop = afterTry(await runTry(entry, n));
     if (stop) return stop;
   }
 
-  // ── 4. "then start anew" — the cold leg, under the SAME per-try numbers
-  const cold = await runTry(null, tries.length + 1);
-  if (cold.verdictClass === 'green') return done('green');
-  const coldStop = hardStop(cold);
+  // ── 5. "then start anew" — the cold leg, under the SAME per-try numbers (or, when the
+  // kill landed inside the cold attempt itself, under what is LEFT of them)
+  //
+  // A resumed run can arrive here with the cold leg ALREADY RUN: the killed process
+  // finished it and died before its own terminal (a narrow window, but a real one — and
+  // the one where a second draft would cost a whole extra attempt the envelope never
+  // authorized). The inherited row IS the cold leg; nothing is re-run, and the run keeps
+  // the verdict that attempt actually earned.
+  const inheritedCold = coldRestart ? null : tries.find((t) => t.mode === 'cold' && t.inherited) ?? null;
+  const cold = coldRestart
+    ? await runTry(null, coldRestart.n, coldRestart.prior)
+    : inheritedCold ?? await runTry(null, tries.length + 1);
+  const coldStop = afterTry(cold);
   if (coldStop) return coldStop;
   return done(cold.runOutcome, {
     category: 'reuse-exhausted',
