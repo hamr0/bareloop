@@ -4692,3 +4692,35 @@ the run can PROVE it finished.** Coarser than that and the operator pays twice f
 on disk; finer than that and the resume is guessing. This one was only visible because the
 resume path was validated with real money on a real kill: a scripted resume would have restored
 the same state for free and read as a pass.
+
+### Addendum — 2026-08-03: the named live-unvalidated remainder is CLOSED — paid step-resume fired and greened, audited
+
+Leg 4 of `reuse-msc6w93z` (setsid-detached, inhibitor held, launched before the session
+pause) closed the loop C v2 left open:
+
+- **The resume seeded exactly as designed.** `try-start{n:1}` carried
+  `resumedAt:{phase:'close', stepsDone:3, stepsPlanned:3}` with
+  `priorSpentUsd:8.5868288` / `priorWallMs:2529760` folded in; all three steps recorded
+  `step-skipped{provenBy:'step-end', provenSeq:115/160/274}` — the $8.59 the dead legs paid
+  was inherited, not re-bought.
+- **The fold made the wall honest.** Try 1's remainder ran the $0 close-fix path until the
+  FOLDED clock crossed the cap: `wall-halt` at `elapsedMs:2712026` vs `wallCapMs:2700000`,
+  `wallBound:true`, `cutMidCall:false` — the whole-try clock, not the leg's own 20 minutes.
+- **The ladder then did its job.** Try 2 rolled to the `aurora-u-spawner-types` bridge with
+  a fresh $10: one step cap-halted → replan → two greens → **run GREEN at $4.0762 / 20.0min
+  / 113 rounds**, `spendComplete:true`. All four close stages re-run independently on the
+  as-left tree by the operator: **exit 0, 0, 0, 0**; winning diff preserved
+  (`reuse-msc6w93z.patch`, 10 files +319/−65, HEAD still at seed `96813a4`).
+- **R1 wrote both truths:** `appendCasualty` on the litectx bridge (try 1's wall-halt),
+  `appendGreen` on the aurora bridge — the aurora bridge's third green, second cross-patient.
+
+Total msc6w93z spend across all four legs: **$12.67, spendComplete:true**. The known
+cosmetic (`failingStage:"no-suppressions"` on a GREEN try row) reproduced on try 2's
+try-end and stays on the tail-review list.
+
+One operational defect found by the leg-4 launch itself, filed here so it is never
+repeated: the detached launch passed the API key as `env ANTHROPIC_API_KEY=$(pass ...)`
+**argv**, which exposes the key in `/proc` cmdline (and it landed in a process listing
+this session). The pattern is corrected to a shell env-assignment prefix
+(`ANTHROPIC_API_KEY="$(pass ...)" setsid ...`), which inherits through the environment and
+never touches argv; the exposed key is flagged to hamr for rotation.

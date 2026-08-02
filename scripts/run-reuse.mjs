@@ -94,6 +94,20 @@ const JOBS = {
     seed: '96813a43bbcbac6a808ff610c6751a8736e2903e',
     patient: 'litectx-u',
   },
+  'pulselog-types': {
+    spec: 'pulselog-u-types.json',
+    workdir: '/home/hamr/PycharmProjects/bareloop-patients/pulselog-u',
+    spine: 'pulselog-u-bareloop',
+    seed: '92d71a7c1253f8f2430e2d308ecfef01c826b5c2',
+    patient: 'pulselog-u',
+  },
+  'baremobile-types': {
+    spec: 'baremobile-u-types.json',
+    workdir: '/home/hamr/PycharmProjects/bareloop-patients/baremobile-u',
+    spine: 'baremobile-u-bareloop',
+    seed: 'd9b318fac78036bd3db35f68c4b1eb5ee634244d',
+    patient: 'baremobile-u',
+  },
 };
 const CLOSE_TIMEOUT_MS = 900_000; // run-u's number: headroom over the slowest stage, not a budget
 const CAP_RUNS = 4;

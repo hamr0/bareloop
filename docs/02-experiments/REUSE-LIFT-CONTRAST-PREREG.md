@@ -185,3 +185,42 @@ consistent execution win on small TYPES jobs?", nothing finer.
 - **Other models, other verdict types, soft-green/hitl territory** — out of scope.
 - **Long-horizon inheritance** (rules accreting across many generations) — this is one
   bridge, one hop.
+
+---
+
+## Addendum — 2026-08-03, $0 STATIC SCREEN (candidates selected; calibration NOT yet fired)
+
+Run after the freeze commit, before any paid number. All figures are $0 measurements with
+the real instruments (the repo's own `npx tsc --noEmit --strict`, the repo's own
+`npm test` TAP counters).
+
+**Pool swept:** 15 local repos; 7 had the required shape (tsconfig + node-test suite):
+bareagent 97 · bareguard 137 · barebrowse 654 · baremobile 407 · mailproof 1 ·
+knowless 1 · pulselog 67 whole-repo strict errors. **None lands in [10,30] whole-repo**,
+so both jobs use a SCOPED typecheck — precedented by aurora-u itself (mypy scoped to the
+spawner package). The stage's green = zero strict errors in the scope files AND
+outside-scope errors ≤ the seed's own count (fixing the target can never be bought by
+breaking the rest; the ceiling branch was sabotage-tested and fires).
+
+**Admitted to calibration (both pass every $0 clause):**
+
+| job | patient (copied local) | seed | scope | in-scope errs | suite at seed |
+|---|---|---|---|---|---|
+| A `pulselog-u-types` | `bareloop-patients/pulselog-u` | `92d71a7c1253` | `src/email.js` + `src/backup.js` | **27** | 67/67 green |
+| B `baremobile-u-types` | `bareloop-patients/baremobile-u` | `d9b318fac780` | `src/errors.js` + `src/aria.js` | **29** | 321/321 green |
+
+Error classes eyeballed in both scopes: implicit-any params/bindings and
+object-property narrowing — in-repo JSDoc typing work, no upstream-dependency wall.
+Closes (`scripts/u-pulselog-close.mjs`, `scripts/u-baremobile-close.mjs`) validated at
+seed: changed-from-seed red (identical tree), typecheck red naming exactly 27/29,
+suite-green green, no-suppressions green — every stage judged, prefixes distinct.
+
+**Registry snapshot frozen** at `bareloop-patients/bridges-snapshot-liftcontrast/`
+(copied 2026-08-03 00:28, after msc6w93z's final append and before any programme run):
+aurora-u-spawner-types (3 greens, 2 cross-patient) + litectx-u-types. Both are
+cross-patient relative to pulselog/baremobile by construction.
+
+**Resolved spec hashes, awaiting hamr's signature (nothing paid fires without it):**
+
+- `pulselog-u-types` → `c1fe83e112a160f8b90b27641b1381d62837d4b6f8a26804dc3316f046a4229b`
+- `baremobile-u-types` → `9e4e0b9d3ff6756b01b9909e5818b9bcbc2957173d927700366dbe961c284c49`
