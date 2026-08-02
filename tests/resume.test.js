@@ -22,12 +22,14 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { readResume, runReuse, resolveReuse, reuseSpecHash } from '../src/reuse.js';
+import { runPlan } from '../src/planrun.js';
+import { validateJob, jobSpecHash } from '../src/job.js';
 import { makeRegistry, saveBridge } from '../src/bridges.js';
 import { makeSpine } from '../src/spine.js';
 import { readSpine, scriptedProvider } from './helpers.js';
@@ -944,4 +946,366 @@ test('runner --resume: the preview counts the attempts the resumed run will ACTU
   assert.equal(r3.status, 0, r3.stderr);
   assert.match(r3.stdout, /nothing left to authorize/);
   assert.equal(guardMin(r3.stdout), 0, 'no attempt will run, so no attempt is funded');
+});
+
+// ── module C v2: the STEP-LEVEL checkpoint ──────────────────────────────────
+//
+// hamr's ruling supersedes the try-restart reading, verbatim: *"even if it gets killed by
+// outside, it should allow resume and start last step instead from the beginning, why
+// would i want to waste more money on something i already started, our goal is to find
+// ways to save money and time"*.
+//
+// So the reader answers a finer question than "which try was open": WHERE in that try the
+// kill landed. The fixtures below are recordings of the REAL executor — `runPlan`, a real
+// spawned close, a scripted provider — replayed inside a real reuse try window and then
+// truncated. A hand-authored event list can only contain the vocabulary its author
+// remembered; this reader has to survive the vocabulary the executor actually writes.
+
+/** a real patient: the close greens iff every named file exists (real spawned node) */
+function patientDir(needs) {
+  const wd = join(base, `patient-${n += 1}`);
+  mkdirSync(join(wd, 'src'), { recursive: true });
+  mkdirSync(join(wd, 'tests'), { recursive: true });
+  writeFileSync(join(wd, 'close.mjs'), `import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+const here = dirname(fileURLToPath(import.meta.url));
+const missing = ${JSON.stringify(needs)}.filter((p) => !existsSync(join(here, p)));
+if (!missing.length) { console.log('all present'); process.exit(0); }
+console.log('FAILED missing ' + missing.join(', ')); process.exit(1);
+`);
+  return wd;
+}
+
+const STEPJOB = (over = {}) => ({
+  ...JOB(),
+  job: 'plan-patient',
+  writeScope: ['src/**', 'tests/**'],
+  close: [{ name: 'files-present', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' }],
+  ...over,
+});
+
+const STEP_A = { id: 'seed-src', action: 'Write src/a.mjs.', tools: ['write'], rounds: 4, target: 'src/a.mjs', exit: [{ type: 'artifact-written', path: 'src/a.mjs' }] };
+const STEP_B = { id: 'write-test', action: 'Write tests/test_x.mjs with an ok assertion.', tools: ['write'], rounds: 4, target: 'tests/test_x.mjs', exit: [{ type: 'artifact-written', path: 'tests/test_x.mjs', pattern: 'ok' }] };
+const TWO_STEP = { schema: 'plan-v1', steps: [STEP_A, STEP_B] };
+const wcall = (id, path, content) => ({ toolCalls: [{ id, name: 'shell_write', arguments: { path, content } }] });
+
+/** record a REAL plan flow: real executor, real spawned close, scripted provider */
+async function recordFlow(wd, script, { job = STEPJOB(), capRuns = 3, resumeSeed } = {}) {
+  const jv = validateJob(job, { shellCapUsd: job.budgetUsd });
+  assert.deepEqual(jv.reds, [], 'the fixture job must be validateJob-green');
+  /** @type {any[]} */
+  const events = [];
+  const outcome = await runPlan(jv.job, {
+    workdir: wd,
+    provider: scriptedProvider(script),
+    emit: (/** @type {string} */ type, /** @type {any} */ data = {}) => { const e = { type, ...data }; events.push(e); return e; },
+    remainingUsd: () => 5,
+    capRuns,
+    ...(resumeSeed ? { resumeSeed } : {}),
+  });
+  return { events, outcome };
+}
+
+/** a runJob stand-in that REPLAYS a recorded real flow into the try's own emitter */
+const replayRun = (recorded, outcome) => async (/** @type {any} */ _spec, /** @type {any} */ opts) => {
+  for (const { type, ...data } of recorded) opts.emit(type, data);
+  opts.emit('job-end', { outcome, spentUsd: 2, spendComplete: true });
+  return outcome;
+};
+
+/** a full reuse spine whose single COLD try is a recorded real plan flow */
+async function spineOfFlow(recorded, outcome = 'green') {
+  const file = join(base, `flow-${n += 1}.jsonl`);
+  await runReuse({
+    job: JOB(), approvals: [], registryDir: seed(BRIDGE('alpha')),
+    envelope: { perTryBudgetUsd: 5, perTryWallMs: 1_800_000, bridgeTries: 0 },
+    patient: 'litectx-u', workdir: base, provider: picker(), emit: makeSpine(file), runid: 'deadrun',
+    runJob: replayRun(recorded, outcome),
+  });
+  return { file, events: readSpine(file) };
+}
+
+/** the green two-step flow every step-level fixture is cut out of */
+const twoStepScript = (wd) => [
+  { text: 'src/ is empty and tests/ has nothing yet — two files are needed.' },
+  { text: JSON.stringify(TWO_STEP) },
+  wcall('a', join(wd, 'src', 'a.mjs'), 'export const a = 1;\n'),
+  { text: 'wrote src/a.mjs' },
+  wcall('b', join(wd, 'tests', 'test_x.mjs'), 'ok — asserts a\n'),
+  { text: 'wrote tests/test_x.mjs' },
+];
+
+test('checkpoint: a kill DURING a step reconstructs the accepted plan and the steps that finished — the finest checkpoint the spine can prove, not the try\'s beginning', async () => {
+  const wd = patientDir(['src/a.mjs', 'tests/test_x.mjs']);
+  const flow = await recordFlow(wd, twoStepScript(wd));
+  assert.equal(flow.outcome, 'green', 'the fixture must be a real, complete flow before it is cut');
+  const { events } = await spineOfFlow(flow.events);
+
+  const r = readResume(killedAfter(events, (e) => e.type === 'step-start' && e.step === 'write-test'));
+  assert.ok(r.restart, 'the try was mid-flight');
+  const s = r.restart.seed;
+  assert.ok(s, 'and it carries a step-level seed — a try-level restart would re-pay the scout, the draft AND step 1');
+  assert.equal(s.phase, 'steps');
+  assert.deepEqual(s.plan.steps.map((/** @type {any} */ x) => x.id), ['seed-src', 'write-test'], 'the plan is the one the dead run ACCEPTED, read off its own plan-accepted');
+  assert.deepEqual(s.completedSteps.map((/** @type {any} */ c) => c.id), ['seed-src']);
+  assert.equal(s.completedSteps[0].by, 'step-end');
+  const proof = events.find((e) => e.type === 'step-end' && e.step === 'seed-src');
+  assert.equal(s.completedSteps[0].seq, proof.seq, 'the seed names the spine event that PROVES the completion');
+});
+
+test('checkpoint: a kill BETWEEN two steps counts the one that finished and NOT the one that never started', async () => {
+  const wd = patientDir(['src/a.mjs', 'tests/test_x.mjs']);
+  const flow = await recordFlow(wd, twoStepScript(wd));
+  const { events } = await spineOfFlow(flow.events);
+
+  const cut = killedAfter(events, (e) => e.type === 'step-end' && e.step === 'seed-src');
+  assert.ok(!cut.some((e) => e.type === 'step-start' && e.step === 'write-test'), 'the fixture really is cut between the two steps');
+  const s = readResume(cut).restart.seed;
+  assert.deepEqual(s.completedSteps.map((/** @type {any} */ c) => c.id), ['seed-src'],
+    'a step with no start of its own is not complete — inferring it would skip work nobody did');
+  assert.equal(s.phase, 'steps');
+});
+
+test('checkpoint: a kill in the CLOSE-FIX loop reports phase close — every step is done, and what remains is the close (which re-runs for no tokens)', async () => {
+  const wd = patientDir(['src/a.mjs', 'tests/test_x.mjs', 'src/fix.mjs']);
+  const flow = await recordFlow(wd, [
+    ...twoStepScript(wd),
+    wcall('f', join(wd, 'src', 'fix.mjs'), 'export const fixed = true;\n'),
+    { text: 'fixed the close' },
+  ]);
+  assert.equal(flow.outcome, 'green');
+  assert.ok(flow.events.some((e) => e.type === 'fix-loop'), 'the fixture really reached the close-fix loop');
+  const { events } = await spineOfFlow(flow.events);
+
+  const s = readResume(killedAfter(events, (e) => e.type === 'fix-loop')).restart.seed;
+  assert.equal(s.phase, 'close');
+  assert.deepEqual(s.completedSteps.map((/** @type {any} */ c) => c.id), ['seed-src', 'write-test'],
+    'every step is complete: the resume skips them all and continues fixing');
+});
+
+test('checkpoint: a kill BEFORE any plan was accepted has no seed at all — the scout/draft death restarts the try, exactly as it always did', async () => {
+  const wd = patientDir(['src/a.mjs', 'tests/test_x.mjs']);
+  const flow = await recordFlow(wd, twoStepScript(wd));
+  const { events } = await spineOfFlow(flow.events);
+
+  const cut = killedAfter(events, (e) => e.type === 'scout-result');
+  assert.ok(!cut.some((e) => e.type === 'plan-accepted'), 'the fixture is cut before a plan existed');
+  const r = readResume(cut);
+  assert.ok(r.restart, 'the try still restarts');
+  assert.equal(r.restart.seed, null, 'with nothing to reload — no plan was ever accepted, so nothing paid is re-payable');
+});
+
+test('checkpoint: a resume OF a resume reads step-skipped as completion evidence — otherwise the second kill re-pays for what the first resume already skipped', async () => {
+  const wd = patientDir(['src/a.mjs', 'tests/test_x.mjs']);
+  // the FIRST resume: a real flow driven by a seed, so the spine carries the executor's
+  // own `step-skipped` records rather than `step-end` ones for the inherited step
+  const resumed = await recordFlow(wd, [
+    wcall('b', join(wd, 'tests', 'test_x.mjs'), 'ok\n'),
+    { text: 'wrote the test' },
+  ], { resumeSeed: { phase: 'steps', plan: TWO_STEP, completedSteps: [{ id: 'seed-src', seq: 11, by: 'step-end' }] } });
+  assert.ok(resumed.events.some((e) => e.type === 'step-skipped'), 'the fixture is a real resumed leg');
+  const { events } = await spineOfFlow(resumed.events);
+
+  const s = readResume(killedAfter(events, (e) => e.type === 'step-start' && e.step === 'write-test')).restart.seed;
+  assert.deepEqual(s.completedSteps.map((/** @type {any} */ c) => c.id), ['seed-src'],
+    'a step SKIPPED by the previous resume is still a completed step — reading only step-end would re-run it and pay for it twice');
+  assert.equal(s.completedSteps[0].by, 'step-skipped', 'and the evidence names which kind of record proved it');
+  assert.deepEqual(s.plan.steps.map((/** @type {any} */ x) => x.id), ['seed-src', 'write-test']);
+});
+
+test('checkpoint: after a REPLAN the plan to reload is the LAST accepted one, and the greens under the abandoned plan do not count', async () => {
+  const wd = patientDir(['src/a.mjs', 'tests/test_x.mjs']);
+  const planB = { schema: 'plan-v1', steps: [{ ...STEP_B, id: 'second-go' }] };
+  const flow = await recordFlow(wd, [
+    { text: 'scout notes' },
+    { text: JSON.stringify(TWO_STEP) },
+    wcall('a', join(wd, 'src', 'a.mjs'), 'export const a = 1;\n'),
+    { text: 'wrote src/a.mjs' },
+    { text: 'attempt 1 — writes nothing' },
+    { text: 'attempt 2 — writes nothing' },
+    { text: JSON.stringify(planB) },
+    wcall('b', join(wd, 'tests', 'test_x.mjs'), 'ok\n'),
+    { text: 'wrote the test' },
+  ], { capRuns: 2 });
+  assert.ok(flow.events.some((e) => e.type === 'replan'), 'the fixture really replanned');
+  const { events } = await spineOfFlow(flow.events);
+
+  const s = readResume(killedAfter(events, (e) => e.type === 'step-start' && e.step === 'second-go')).restart.seed;
+  assert.deepEqual(s.plan.steps.map((/** @type {any} */ x) => x.id), ['second-go'], 'the LAST accepted plan is the one that was running');
+  assert.deepEqual(s.completedSteps, [],
+    'and seed-src\'s green belongs to the plan the replan ABANDONED — carrying it over would skip a step of a plan nobody has executed');
+});
+
+test('resume end to end: the restarted try RELOADS the plan and re-pays for nothing that finished — not the scout, not the draft, not the completed step (real runJob)', async () => {
+  // the whole chain on the real runner: readResume → runReuse → runJob → runPlan. The
+  // scripted provider is the one legitimate seam; the close, the plan flow, the ledger
+  // and the registry write are all real.
+  const wd = patientDir(['src/a.mjs', 'tests/test_x.mjs']);
+  const job = STEPJOB();
+  const envelope = { perTryBudgetUsd: 5, perTryWallMs: 1_800_000, bridgeTries: 0 };
+  const approvals = [{ specHash: jobSpecHash({ ...job, budgetUsd: 5, maxWallMs: 1_800_000 }), signer: 'hamr', ts: '2026-08-02T00:00:00Z' }];
+  const dir = freshRegistry();
+  const file = join(base, `chain-${n += 1}.jsonl`);
+
+  // ── the run that gets killed: it drafts, finishes step 1, and dies inside step 2
+  const cold = scriptedProvider(twoStepScript(wd));
+  await runReuse({
+    job, approvals, registryDir: dir, envelope, patient: 'litectx-u', workdir: wd,
+    provider: cold, emit: makeSpine(file), runid: 'deadrun',
+  });
+  const full = readSpine(file);
+  assert.ok(full.some((e) => e.type === 'try-end' && e.runOutcome === 'green'), `the fixture run must really green: ${full.filter((e) => e.type === 'escalation').map((e) => e.category)}`);
+  const paidCold = cold.calls.length;
+  assert.ok(paidCold >= 6, `the cold run paid for a scout, a draft and two steps (${paidCold} calls)`);
+  truncateTo(file, killedAfter(full, (e) => e.type === 'step-start' && e.step === 'write-test'));
+  // the tree as the kill left it: step 1's file landed, step 2's never did
+  rmSync(join(wd, 'tests', 'test_x.mjs'));
+  assert.equal(existsSync(join(wd, 'src', 'a.mjs')), true, 'the completed step\'s work is on disk — that is what makes skipping it honest');
+
+  // ── the resume
+  const dead = readResume(readSpine(file));
+  const worker = scriptedProvider([
+    wcall('b', join(wd, 'tests', 'test_x.mjs'), 'ok — asserts a\n'),
+    { text: 'wrote tests/test_x.mjs' },
+  ]);
+  const result = await runReuse({
+    job, approvals, registryDir: dir, envelope, patient: 'litectx-u', workdir: wd,
+    provider: worker, emit: makeSpine(file), runid: 'deadrun', resume: dead,
+  });
+
+  assert.equal(result.outcome, 'green');
+  assert.equal(worker.calls.length, 2, `the resumed leg paid for ONE step and nothing else (${worker.calls.length} calls vs ${paidCold} cold) — the scout, the draft and step 1 are not re-bought`);
+  const resumedLeg = readSpine(file).slice(full.findIndex((e) => e.type === 'step-start' && e.step === 'write-test'));
+  assert.ok(!resumedLeg.some((e) => e.type === 'scout-start'), 'no second scout');
+  assert.ok(resumedLeg.some((e) => e.type === 'scout-skipped'), 'and the skip is on the record');
+  assert.ok(!resumedLeg.some((e) => e.type === 'plan-validate'), 'no second draft');
+  assert.deepEqual(resumedLeg.filter((e) => e.type === 'step-skipped').map((e) => e.step), ['seed-src']);
+  assert.ok(resumedLeg.some((e) => e.type === 'step-start' && e.step === 'write-test'), 'the in-flight step runs fresh');
+
+  // R1 honesty: the green mints from the plan AS EXECUTED, which on a resumed leg is the
+  // RELOADED plan — a leg that greened without emitting one would mint nothing at all
+  const write = result.bridgeWrites.at(-1);
+  assert.notEqual(write.action, 'none', `the green wrote its bridge version: ${JSON.stringify(write.reds ?? [])}`);
+  const minted = JSON.parse(readFileSync(write.file, 'utf8'));
+  assert.deepEqual(minted.versions.at(-1).plan.steps.map((/** @type {any} */ s) => s.id), ['seed-src', 'write-test'],
+    'and the version it mints is the whole plan the try executed across both legs');
+
+  // and the money is still the WHOLE try, both attempts (unchanged from v1)
+  const row = result.tries.at(-1);
+  assert.equal(row.restarted, true);
+  assert.ok(row.spentUsd >= row.priorSpentUsd, `the row states the try's whole spend (${row.spentUsd}), never the restart's alone`);
+});
+
+test('runner --resume: the preview says WHERE it resumes — the step it restarts at, what will NOT be re-paid, and the money left', async () => {
+  // caught by RENDERING again: the operator signs a hash that authorizes real dollars,
+  // and "resuming try 1" says nothing about whether that means re-drafting from scratch
+  // or picking up at the last step. The two cost very different amounts.
+  const wd = patientDir(['src/a.mjs', 'tests/test_x.mjs', 'src/fix.mjs']);
+  const flow = await recordFlow(wd, [
+    ...twoStepScript(wd),
+    wcall('f', join(wd, 'src', 'fix.mjs'), 'export const fixed = true;\n'),
+    { text: 'fixed the close' },
+  ]);
+  assert.equal(flow.outcome, 'green');
+
+  /** the real flow, replayed inside a real litectx-job try window, then cut */
+  const deadAt = async (pred) => {
+    const dir = seed(BRIDGE('alpha'));
+    const file = join(base, `u-steps-${n += 1}.jsonl`);
+    await runReuse({
+      job: LITECTX, approvals: [], registryDir: dir, envelope: U_ENVELOPE,
+      patient: 'litectx-u', workdir: base, provider: picker(), runid: 'deadrun',
+      selectionProvider: picker({ choice: 'alpha', reason: 'a' }),
+      emit: makeSpine(file), runJob: replayRun(flow.events, 'green'),
+    });
+    truncateTo(file, killedAfter(readSpine(file), pred));
+    return { file, dir };
+  };
+
+  // ── A. killed inside step 2 of 2
+  const a = await deadAt((e) => e.type === 'step-start' && e.step === 'write-test');
+  const ra = runner([...uArgs(a.dir), '--resume', a.file]);
+  assert.equal(ra.status, 0, ra.stderr);
+  assert.match(ra.stdout, /step 2 of 2 "write-test"/, 'the operator is told the exact step the run picks up at');
+  assert.match(ra.stdout, /1 step[^\n]*SKIPPED|SKIPPED[^\n]*1 step/i, 'and that one finished step will not be re-paid');
+  assert.match(ra.stdout, /no re-?scout|not re-?scout/i, 'the scout and the draft are named as things this resume does not buy again');
+  assert.match(ra.stdout, /\$\d+\.\d+ .*remain/i, 'with the money that is actually left for the try');
+
+  // ── B. killed inside the close-fix loop: every step is done
+  const b = await deadAt((e) => e.type === 'fix-loop');
+  const rb = runner([...uArgs(b.dir), '--resume', b.file]);
+  assert.equal(rb.status, 0, rb.stderr);
+  assert.match(rb.stdout, /close/i);
+  assert.match(rb.stdout, /2 steps? (are |already )?(done|complete)/i, 'all of them skipped — the close is what remains');
+  assert.doesNotMatch(rb.stdout, /step 1 of 2|step 2 of 2/, 'it does not claim to restart at a step when no step is left to run');
+
+  // ── C. killed before a plan existed: the honest reading is the try's beginning
+  const c = await deadAt((e) => e.type === 'scout-result');
+  const rc = runner([...uArgs(c.dir), '--resume', c.file]);
+  assert.equal(rc.status, 0, rc.stderr);
+  assert.match(rc.stdout, /beginning of the try/i);
+  assert.match(rc.stdout, /no plan was accepted|nothing paid is re-?payable/i, 'and it says why — never a silent full restart dressed as a checkpoint');
+});
+
+test('checkpoint: a resume that dies BEFORE accepting its reloaded plan reaches back through the abandoned attempt — the real msc6w93z leg-3 shape', async () => {
+  // The real killed run: leg 2 finished all three steps and died in the close-fix loop;
+  // leg 3 restarted, spent its close precheck, and died in the redraft. Reading only the
+  // OPEN window there says "no plan was accepted" and throws away a checkpoint leg 2
+  // paid $8.18 for. The window is abandoned; the WORK it proved is not.
+  const wd = patientDir(['src/a.mjs', 'tests/test_x.mjs']);
+  const flow = await recordFlow(wd, twoStepScript(wd));
+  const { file, events } = await spineOfFlow(flow.events);
+  const dead = killedAfter(events, (e) => e.type === 'step-start' && e.step === 'write-test');
+  const ts = dead.at(-1).ts;
+
+  // the next attempt: it declares its fold and dies during the close precheck, before
+  // any plan of its own was accepted
+  const secondLeg = [
+    ...dead,
+    { type: 'try-start', n: 1, mode: 'cold', bridge: null, priorSpentUsd: 2, priorWallMs: 60_000, ts, seq: 9001 },
+    { type: 'close-precheck', verdict: 'needs_revision', stage: 'files-present', ts, seq: 9002 },
+  ];
+  const r = readResume(secondLeg);
+  assert.ok(r.restart, 'the try is still mid-flight');
+  const s = r.restart.seed;
+  assert.ok(s, 'the checkpoint survives an attempt that died before it could re-accept the plan');
+  assert.deepEqual(s.plan.steps.map((/** @type {any} */ x) => x.id), ['seed-src', 'write-test']);
+  assert.deepEqual(s.completedSteps.map((/** @type {any} */ c) => c.id), ['seed-src']);
+  const pa = dead.find((e) => e.type === 'plan-accepted');
+  assert.equal(s.planSeq, pa.seq, 'and it names the plan-accepted it was read from, so the reach-back is traceable');
+
+  // but only for the SAME try: a checkpoint belongs to the attempt that earned it
+  const otherTry = [
+    ...dead,
+    { type: 'try-start', n: 2, mode: 'cold', bridge: null, ts, seq: 9001 },
+  ];
+  assert.equal(readResume(otherTry).restart.seed, null,
+    'try 2 inherits nothing from try 1 — reaching a plan across tries would run one try\'s workflow as another\'s');
+  assert.equal(file.length > 0, true);
+});
+
+test('checkpoint: a step that FAILED its exits is NOT a completed step — only a satisfied exit licenses a skip', async () => {
+  const wd = patientDir(['src/a.mjs', 'tests/test_x.mjs']);
+  const planB = { schema: 'plan-v1', steps: [{ ...STEP_B, id: 'second-go' }] };
+  const flow = await recordFlow(wd, [
+    { text: 'scout notes' },
+    { text: JSON.stringify(TWO_STEP) },
+    wcall('a', join(wd, 'src', 'a.mjs'), 'export const a = 1;\n'),
+    { text: 'wrote src/a.mjs' },
+    { text: 'attempt 1 — writes nothing' },
+    { text: 'attempt 2 — writes nothing' },
+    { text: JSON.stringify(planB) },
+    wcall('b', join(wd, 'tests', 'test_x.mjs'), 'ok\n'),
+    { text: 'wrote the test' },
+  ], { capRuns: 2 });
+  const { events } = await spineOfFlow(flow.events);
+
+  // the kill lands after the step EXHAUSTED its attempts and before the replan drafted:
+  // its step-end is on the spine, and its outcome is not green
+  const cut = killedAfter(events, (e) => e.type === 'step-end' && e.step === 'write-test');
+  assert.notEqual(cut.at(-1).outcome, 'green', 'the fixture really did record a failed step-end');
+  const s = readResume(cut).restart.seed;
+  assert.deepEqual(s.completedSteps.map((/** @type {any} */ c) => c.id), ['seed-src'],
+    'a step-end is not a completion — a red one names work still to do, and skipping it would hand the close a step nobody finished');
 });

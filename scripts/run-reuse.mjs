@@ -273,6 +273,23 @@ if (arg('approve') !== approvalHash) {
       console.log(`  restart   try ${rs.n} ${rs.mode}${rs.bridge ? ` "${rs.bridge}"` : ''} — it was never graded, so it is not consumed`);
       console.log(`            already spent on it: ${rs.priorSpendComplete ? '' : '≥'}$${rs.priorSpentUsd.toFixed(4)} and ${(rs.priorWallMs / 60000).toFixed(1)}min — FOLDED IN, so it restarts on the REMAINDER`);
       console.log(`            remainder: $${(ev.envelope.perTryBudgetUsd - rs.priorSpentUsd).toFixed(4)} of $${ev.envelope.perTryBudgetUsd} and ${((ev.envelope.perTryWallMs - rs.priorWallMs) / 60000).toFixed(1)}min of ${(ev.envelope.perTryWallMs / 60000).toFixed(0)}min`);
+      // WHERE it picks up. Without this line "restart try 1" covers two attempts that
+      // cost very different amounts — one that re-drafts from nothing, and one that
+      // resumes at the last step — and the operator is signing a hash that authorizes
+      // the dollars either way. So the line states what will NOT be bought again.
+      const sd = rs.seed;
+      const left = `$${(ev.envelope.perTryBudgetUsd - rs.priorSpentUsd).toFixed(2)} remaining for it`;
+      if (!sd) {
+        console.log(`  at        the beginning of the try — it died before a plan was accepted, so nothing paid is re-payable (${left})`);
+      } else if (sd.phase === 'close') {
+        console.log(`  at        the close and its fix loop — all ${sd.plan.steps.length} steps are done and are SKIPPED; the close re-runs for no tokens (${left})`);
+        console.log('            the plan is reloaded from this run\'s own spine: no re-scout, no re-draft, no step re-run');
+      } else {
+        const nth = sd.completedSteps.length;
+        const next = sd.plan.steps[nth];
+        console.log(`  at        step ${nth + 1} of ${sd.plan.steps.length} ${JSON.stringify(next?.id ?? '(unknown)')} — ${nth} step${nth === 1 ? '' : 's'} already finished and SKIPPED, not re-paid (${left})`);
+        console.log('            the plan is reloaded from this run\'s own spine: no re-scout, no re-draft');
+      }
     } else {
       console.log('  restart   nothing was mid-flight — the kill landed between tries');
     }

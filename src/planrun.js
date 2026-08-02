@@ -341,6 +341,31 @@ ${scoutBlob || '(no scout notes)'}`;
  *   the spec hash, and a resume that edited it would need a signature nobody typed. The
  *   restarted attempt simply starts already partly spent, so a kill can never buy a fresh
  *   allotment of the operator's wall.
+ * @param {any} [opts.resumeSeed] RESUME (module C v2) — the FINEST honest checkpoint of a
+ *   KILLED run of this same try, read off its own spine by `readResume` (src/reuse.js) and
+ *   by nothing else: `{ phase, plan, completedSteps: [{id, seq, by}] }`. hamr's ruling is
+ *   the whole contract — *"it should allow resume and start last step instead from the
+ *   beginning, why would i want to waste more money on something i already started"* — so
+ *   with a seed this flow re-pays for NO paid unit the dead run already bought:
+ *
+ *   - the SCOUT does not run (`scout-skipped`, never silence). Its survey is not on the
+ *     spine (only its byte count is), so the ONE consequence is stated rather than
+ *     discovered: a replan after a resume drafts from an empty survey plus the failure
+ *     brief. Re-scouting to refill it would re-pay the exact call this exists to save.
+ *   - the PLAN is not re-drafted. It is reloaded from the seed and RE-VALIDATED against
+ *     the current signed spec; a plan that no longer validates is `plan-red` by name
+ *     (`resume-plan-red`), never run. It is then emitted as this leg's own
+ *     `plan-accepted` (`phase: 'resume'`) — R1 mints a bridge version from the plan AS
+ *     EXECUTED, read back off the spine, so a leg that greens without one would mint
+ *     nothing.
+ *   - a step whose exit was already SATISFIED is skipped, in prefix order, each with its
+ *     own `step-skipped` record naming the event that proves it. Never a fake
+ *     step-start/step-end pair, and never silence: a reader must be able to tell skipped
+ *     from run (the resume-to-cap invariant).
+ *
+ *   The worker's conversation is deliberately NOT replayed — a transcript is not a
+ *   checkpoint, and every attempt is fresh by the loop's own design. Absent is the
+ *   ordinary path and is byte-identical to a run that was never killed.
  * @param {() => number} [opts.now] the wall clock's time source, injected. The real clock is the
  *   default; a caller supplies this to drive time deterministically (the same seam `createClock`
  *   already exposes — a run's terminal cannot otherwise be exercised without waiting out a cap
@@ -350,7 +375,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   'cap-halt' | 'wall-halt' | 'provider-red' | 'interpreter-red' | 'step-stalled' |
  *   `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, capRuns = 3, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0 }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, capRuns = 3, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null }) {
   workdir = resolve(workdir);
   // ONE spelling of the redaction, housed next to the inventory it reads
   // (src/validate.js) — the same helper the isolate verbs scrub the litectx store
@@ -1067,48 +1092,63 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // ── 1. SCOUT — read-only by construction: the write-class verbs are simply
   // not in its menu (the menu is the grant), and its gate fences zero paths
   let scoutBlob = '';
-  emit('scout-start', { rounds: scoutRounds });
-  try {
-    const scout = await mkWorker({ granted: ceiling.filter((v) => !WRITE_VERBS.includes(v) && !STORE_VERBS.includes(v)), phase: 'scout', attemptRounds: scoutRounds, attempts: 1, writable: false });
-    scout.setIteration(1);
-    const r = await scout.ask([
-      'Survey this repository READ-ONLY for the goal below. Report: the relevant layout, the key files and symbols, and your best hypothesis about what the work requires. Be concise — your notes brief a planner that cannot see the repository.',
-      `Repository root (absolute): ${workdir}\nEvery path you pass to a tool MUST be absolute and inside this root.`,
-      `Goal:\n${job.goal}`,
-      pre.gap && `The job's verification is currently failing. Its output on the tree as it stands:\n${pre.gap}`,
-    ].filter(Boolean).join('\n\n'));
-    scoutBlob = scrub(r.text ?? '').slice(0, SCOUT_BLOB_MAX);
-    // F59 — RESERVE the summary round. The round bound is enforced from the
-    // metering callback (loop.stop), so a scout still calling tools on its last
-    // round is halted mid-tool-use and `text` is empty: it spends the whole
-    // allowance exploring and never writes the survey that is its ONLY
-    // deliverable. Measured on 15 of 18 archived runs, which then drafted from
-    // `(no scout notes)` while still paying ~12% of the run (F55) for the walk.
-    // The recovery is one TOOLLESS round on the SAME conversation (`r.msgs`
-    // carries the exploration): with no tools offered, text is the only possible
-    // output — a mechanical guarantee, never a prose plea to summarise (F19/F37:
-    // a pacing mandate in the persona was violated 6/6).
-    // The trigger is BOUNDED-and-short, never short alone: a terse survey that
-    // finished on its own was not cut off and has nothing to recover. The archive
-    // separates cleanly on exactly this pair — every truncated scout was bounded
-    // with 0-86 bytes, and the two that finished naturally wrote 5991/8056.
-    if (scout.wasBounded() && Buffer.byteLength(scoutBlob) < SCOUT_MIN_BYTES && Array.isArray(r.msgs) && r.msgs.length) {
-      emit('scout-truncated', { bytes: Buffer.byteLength(scoutBlob) });
-      const s2 = await scout.askFrom(r.msgs, 'You are out of exploration turns. Write your survey NOW, from what you have already read: the relevant layout, the key files and symbols, and your best hypothesis about what the work requires. Text only.');
-      const recovered = scrub(s2?.text ?? '').slice(0, SCOUT_BLOB_MAX);
-      if (Buffer.byteLength(recovered) > Buffer.byteLength(scoutBlob)) scoutBlob = recovered;
+  // RESUME (module C v2): the survey is a PAID unit the killed run already bought, and
+  // the plan it briefed is being reloaded rather than re-drafted — so there is nothing
+  // left for it to brief. Skipping it is the whole point of the ruling ("why would i
+  // want to waste more money on something i already started"), and the skip is a RECORD
+  // rather than silence, with the one consequence named on it: the survey text is not on
+  // the spine (only its byte count ever was), so a replan after a resume drafts from an
+  // empty survey plus its failure brief. Re-scouting to refill it would re-pay exactly
+  // the call this exists to save.
+  if (resumeSeed) {
+    emit('scout-skipped', {
+      reason: 'resumed', phase: resumeSeed.phase ?? null,
+      meaning: 'the killed run already paid for this survey; its plan is reloaded, not re-drafted. A replan after this point drafts from an empty survey plus the failure brief.',
+    });
+  } else {
+    emit('scout-start', { rounds: scoutRounds });
+    try {
+      const scout = await mkWorker({ granted: ceiling.filter((v) => !WRITE_VERBS.includes(v) && !STORE_VERBS.includes(v)), phase: 'scout', attemptRounds: scoutRounds, attempts: 1, writable: false });
+      scout.setIteration(1);
+      const r = await scout.ask([
+        'Survey this repository READ-ONLY for the goal below. Report: the relevant layout, the key files and symbols, and your best hypothesis about what the work requires. Be concise — your notes brief a planner that cannot see the repository.',
+        `Repository root (absolute): ${workdir}\nEvery path you pass to a tool MUST be absolute and inside this root.`,
+        `Goal:\n${job.goal}`,
+        pre.gap && `The job's verification is currently failing. Its output on the tree as it stands:\n${pre.gap}`,
+      ].filter(Boolean).join('\n\n'));
+      scoutBlob = scrub(r.text ?? '').slice(0, SCOUT_BLOB_MAX);
+      // F59 — RESERVE the summary round. The round bound is enforced from the
+      // metering callback (loop.stop), so a scout still calling tools on its last
+      // round is halted mid-tool-use and `text` is empty: it spends the whole
+      // allowance exploring and never writes the survey that is its ONLY
+      // deliverable. Measured on 15 of 18 archived runs, which then drafted from
+      // `(no scout notes)` while still paying ~12% of the run (F55) for the walk.
+      // The recovery is one TOOLLESS round on the SAME conversation (`r.msgs`
+      // carries the exploration): with no tools offered, text is the only possible
+      // output — a mechanical guarantee, never a prose plea to summarise (F19/F37:
+      // a pacing mandate in the persona was violated 6/6).
+      // The trigger is BOUNDED-and-short, never short alone: a terse survey that
+      // finished on its own was not cut off and has nothing to recover. The archive
+      // separates cleanly on exactly this pair — every truncated scout was bounded
+      // with 0-86 bytes, and the two that finished naturally wrote 5991/8056.
+      if (scout.wasBounded() && Buffer.byteLength(scoutBlob) < SCOUT_MIN_BYTES && Array.isArray(r.msgs) && r.msgs.length) {
+        emit('scout-truncated', { bytes: Buffer.byteLength(scoutBlob) });
+        const s2 = await scout.askFrom(r.msgs, 'You are out of exploration turns. Write your survey NOW, from what you have already read: the relevant layout, the key files and symbols, and your best hypothesis about what the work requires. Text only.');
+        const recovered = scrub(s2?.text ?? '').slice(0, SCOUT_BLOB_MAX);
+        if (Buffer.byteLength(recovered) > Buffer.byteLength(scoutBlob)) scoutBlob = recovered;
+      }
+    } catch (e) {
+      return relay(e, 'scout');
     }
-  } catch (e) {
-    return relay(e, 'scout');
+    emit('scout-result', { bytes: Buffer.byteLength(scoutBlob) });
+    // F59 — the LOUD half. `scout-result {bytes: 0}` was emitted faithfully 18 times
+    // out of 18 and read by nobody: an instrument that works but has no consumer is a
+    // log line, not evidence. A survey that is still empty after its reserved round is
+    // now a NAMED condition. It is never a halt — F59's own evidence is that 3 of 5
+    // archived greens had an empty scout, so failing the run here would be a worse
+    // error than the one being fixed.
+    if (Buffer.byteLength(scoutBlob) < SCOUT_MIN_BYTES) emit('scout-empty', { bytes: Buffer.byteLength(scoutBlob), rounds: scoutRounds });
   }
-  emit('scout-result', { bytes: Buffer.byteLength(scoutBlob) });
-  // F59 — the LOUD half. `scout-result {bytes: 0}` was emitted faithfully 18 times
-  // out of 18 and read by nobody: an instrument that works but has no consumer is a
-  // log line, not evidence. A survey that is still empty after its reserved round is
-  // now a NAMED condition. It is never a halt — F59's own evidence is that 3 of 5
-  // archived greens had an empty scout, so failing the run here would be a worse
-  // error than the one being fixed.
-  if (Buffer.byteLength(scoutBlob) < SCOUT_MIN_BYTES) emit('scout-empty', { bytes: Buffer.byteLength(scoutBlob), rounds: scoutRounds });
   // F6 in-flight: an unpriced round means the cap cannot govern spend it cannot
   // see — halt at the boundary rather than run the whole plan blind (the caller
   // emits pricing-red; runPlan just stops burning tokens). Legacy halts per-step.
@@ -1173,16 +1213,70 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     return pv;
   };
   let plan;
-  try {
-    const pv = await obtainPlan('draft', null);
+  /** RESUME: how many leading steps of the reloaded plan are already SATISFIED and are
+   * therefore skipped. Zero on every other path, and reset to zero by a replan — the new
+   * plan's steps are not the dead plan's steps, even where an id repeats. */
+  let skipCount = 0;
+  if (resumeSeed) {
+    // The plan is RELOADED, not re-drafted — but it is re-validated against the spec that
+    // is signed NOW. The dead run validated it against the spec it was signed under, and
+    // between the kill and the resume the menu, the fence or the close can have moved
+    // (registry/schema drift). A stale plan is refused BY NAME with zero spent; running
+    // it would execute a plan the current signature does not admit, which is the one
+    // thing no reconstruction is allowed to do.
+    const pv = validatePlan(resumeSeed.plan, { job, maxStepRounds, scopes: scopeMenu, capRuns });
+    // scrubbed at the boundary for `validate()`'s own reason: a `parse-error` detail
+    // quotes a window of the SOURCE, and the spine is append-only forever
+    const reds = pv.reds.map((r) => (typeof r.detail === 'string' ? { ...r, detail: scrub(r.detail) } : r));
     if (!pv.ok) {
-      for (const r of pv.reds) emit('plan-red', r);
+      emit('resume-plan-red', { reds, phase: resumeSeed.phase ?? null });
+      for (const r of reds) emit('plan-red', r);
+      emit('escalation', {
+        category: 'plan-red', decisionReady: true, phase: 'resume',
+        decision: 'The plan the killed run was executing no longer validates against this job spec, so the resume ran nothing. A reconstruction may re-use a plan; it may never run one the current signature does not admit.',
+        options: [
+          'rerun WITHOUT --resume (the run drafts a cold plan against the current spec — the killed run\'s steps are then not inherited)',
+          'restore the spec version the dead run was signed under and resume again',
+        ],
+        detail: reds.map((r) => `${r.code}:${r.path}${r.detail ? ` — ${r.detail}` : ''}`).join('\n'),
+      });
       return 'plan-red';
     }
     plan = /** @type {any} */ (pv.plan);
-    emit('plan-accepted', { plan });
-  } catch (e) {
-    return relay(e, 'plan');
+    // The skip set is a PREFIX match on the plan's own step ids, never a count: a count
+    // would skip whatever happens to sit at that index. Steps run strictly sequentially
+    // and idx only advances on a satisfied exit, so the dead run's completions ARE a
+    // prefix — and a seed that does not line up stops the skipping there and says so on
+    // the record, which re-runs work rather than skipping work nobody did (the safe
+    // direction of the two).
+    const completed = Array.isArray(resumeSeed.completedSteps) ? resumeSeed.completedSteps : [];
+    while (skipCount < completed.length && skipCount < plan.steps.length
+      && completed[skipCount]?.id === plan.steps[skipCount].id) skipCount += 1;
+    emit('resume-seed', {
+      phase: resumeSeed.phase ?? null,
+      planSteps: plan.steps.map((/** @type {any} */ s) => s.id),
+      completed: completed.map((/** @type {any} */ c) => c?.id ?? null),
+      skipping: skipCount,
+      ...(skipCount < completed.length
+        ? { divergence: `${completed.length} step(s) were completed but only ${skipCount} line up with the reloaded plan in order — the rest are RUN, never skipped on an id that does not match` }
+        : {}),
+    });
+    // this leg's own plan-accepted: R1 mints a bridge version from the plan AS EXECUTED,
+    // read back off the spine, so a resumed leg that greens without one would mint
+    // nothing. `phase` says where it came from — it was accepted, not drafted.
+    emit('plan-accepted', { plan, phase: 'resume' });
+  } else {
+    try {
+      const pv = await obtainPlan('draft', null);
+      if (!pv.ok) {
+        for (const r of pv.reds) emit('plan-red', r);
+        return 'plan-red';
+      }
+      plan = /** @type {any} */ (pv.plan);
+      emit('plan-accepted', { plan });
+    } catch (e) {
+      return relay(e, 'plan');
+    }
   }
   if (isUnpriced()) return 'pricing-red'; // F6: the plan drafting round came back unpriced — halt before steps
 
@@ -1376,6 +1470,25 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   let idx = 0;
   while (idx < plan.steps.length) {
     const step = plan.steps[idx];
+    // RESUME: this step's exit was already satisfied before the kill. It is not re-run —
+    // that is the money and the time the ruling is about — and it is not silent either:
+    // the record is its OWN type carrying the event that proves it, so a reader can tell
+    // a skipped step from a run one (the resume-to-cap invariant, which a fake
+    // step-start/step-end pair would destroy). The step's ARTIFACT is not reconstructed:
+    // its text was a prompt ingredient, never a checkpoint, and its real product is on
+    // disk where the next step will find it.
+    if (idx < skipCount) {
+      const proof = resumeSeed.completedSteps[idx];
+      emit('step-skipped', {
+        step: step.id,
+        provenBy: proof?.by ?? null,
+        provenSeq: typeof proof?.seq === 'number' ? proof.seq : null,
+        meaning: 'the killed run satisfied this step\'s exits — it is not re-run and not re-paid',
+      });
+      stepOutcomes.push({ id: step.id, outcome: 'skipped' });
+      idx += 1;
+      continue;
+    }
     let res;
     try {
       res = await executeStep(step);
@@ -1497,6 +1610,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // it names steps the current plan does not contain)
       artifacts.length = 0;
       idx = 0;
+      // and for exactly the same reason a RESUME's skip set dies here: an id the new
+      // plan happens to re-use names a step this run never did, so inheriting the
+      // dead run's green for it would skip work nobody has done
+      skipCount = 0;
       continue;
     }
     // F64 — the wall stopped this attempt from INSIDE a provider call (the derived

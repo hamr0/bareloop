@@ -430,6 +430,74 @@ function verdictClassOf(outcome) {
 // ── module C: RESUME AFTER KILL ─────────────────────────────────────────────
 
 /**
+ * The STEP-LEVEL checkpoint inside a killed try's window — the ONE reader, so the seed
+ * is derived from the spine and from nothing else (no parallel bookkeeping).
+ *
+ * hamr's ruling supersedes the try-restart reading, verbatim: *"even if it gets killed by
+ * outside, it should allow resume and start last step instead from the beginning, why
+ * would i want to waste more money on something i already started, our goal is to find
+ * ways to save money and time"*. A try-level restart re-pays for the scout, the draft and
+ * every step that had already finished; this reads the FINEST checkpoint the spine can
+ * actually prove, and refuses to guess past it.
+ *
+ * Three readings, and each is grounded in one event the executor emits:
+ *
+ *  - **No `plan-accepted` in the window** → `null`. The kill landed in the scout or the
+ *    draft, nothing durable was produced, and the existing try-restart is already right.
+ *  - **`plan-accepted` and no `outer-close` after it** → `phase: 'steps'`. The plan is the
+ *    LAST accepted one (a replan emits its own, and it is the post-replan plan that was
+ *    executing), and the completed steps are the ones judged after it.
+ *  - **`outer-close` after it** → `phase: 'close'`. Every step finished; what remains is
+ *    the close and its fix loop. The close re-runs for no tokens — it is a command over
+ *    the tree, stateless by construction.
+ *
+ * **Completion is `step-end{outcome:'green'}` OR `step-skipped`.** The second is not a
+ * detail: a resumed leg records its inherited steps as skips, so a reader that counted
+ * only `step-end` would make every resume-of-a-resume re-run and re-pay for exactly the
+ * work the previous resume correctly skipped. Both carry the `seq` of the record they
+ * rest on, so a skip can always be traced to the event that licensed it.
+ *
+ * A green under a plan the run later REPLANNED away is deliberately not counted: the
+ * executor resets its own index and artifacts at a replan, so those greens belong to a
+ * plan nobody is executing any more.
+ *
+ * @param {any[]} seen the open try's own events, in file order
+ * @returns {{phase: string, plan: any, completedSteps: {id: string, seq: number|null, by: string}[], planSeq: number|null}|null}
+ */
+function readStepCheckpoint(seen) {
+  let at = -1;
+  for (let i = 0; i < seen.length; i += 1) if (seen[i].type === 'plan-accepted') at = i;
+  if (at === -1) return null;
+  const plan = seen[at].plan;
+  // A plan-accepted whose plan is unreadable cannot be reloaded — and a HALF plan is
+  // worse than none, because the steps read against it would skip by index into
+  // something nobody validated. No seed is the honest answer, and it degrades to
+  // exactly the try-restart this run already had.
+  //
+  // UNREACHABLE through the runner today and deliberately kept (the `runCheck` precedent):
+  // a kill mid-append leaves a truncated final LINE, which the runner drops before
+  // parsing, so a partial plan-accepted never reaches this reader from a real spine. It is
+  // defence against a second caller, not a live path.
+  if (!isObj(plan) || !Array.isArray(/** @type {any} */ (plan).steps)) return null;
+  const after = seen.slice(at + 1);
+  /** @type {{id: string, seq: number|null, by: string}[]} */
+  const completedSteps = [];
+  for (const e of after) {
+    const done = (e.type === 'step-end' && e.outcome === 'green') || e.type === 'step-skipped';
+    if (done && isNonEmptyString(e.step)) {
+      completedSteps.push({ id: e.step, seq: typeof e.seq === 'number' ? e.seq : null, by: e.type });
+    }
+  }
+  return {
+    phase: after.some((e) => e.type === 'outer-close') ? 'close' : 'steps',
+    plan,
+    completedSteps,
+    // the record this reading rests on, so a reach-back is traceable to its own evidence
+    planSeq: typeof seen[at].seq === 'number' ? seen[at].seq : null,
+  };
+}
+
+/**
  * Read a killed reuse run's OWN SPINE back into the state a resume continues from.
  *
  * hamr's checkpoint ruling is the whole contract: *"money, signature and checkpoint
@@ -499,6 +567,10 @@ export function readResume(events, { deathAt = null } = {}) {
   let strayCostUsd = 0;
   /** @type {any} the try currently open: a `try-start` with no `try-end` yet */
   let open = null;
+  /** @type {{n: any, seen: any[]}[]} windows a kill abandoned, oldest first — kept ONLY
+   * so a checkpoint can be reached back through an attempt that died before re-accepting
+   * its own plan. Their money is never re-read from here (the restart declares its fold). */
+  const abandoned = [];
 
   /** @param {any} ev */
   const openTry = (ev) => ({
@@ -525,7 +597,15 @@ export function readResume(events, { deathAt = null } = {}) {
       // a new try-start while one is OPEN means the open one was abandoned (a kill, and
       // this is the restart). Its spend is not added here: the restart's own try-start
       // declares the fold it inherited, so counting the window again would double-bill.
-      if (open && open.bridge) tried.push(open.bridge);
+      //
+      // Its CHECKPOINT is kept, though. Measured on the real killed run: leg 3 restarted,
+      // spent its close precheck and died in the redraft, so its own window carries no
+      // plan-accepted at all — reading only the open window there discards a checkpoint
+      // leg 2 paid $8.18 to reach. The window is abandoned; the work it proved is not.
+      if (open) {
+        if (open.bridge) tried.push(open.bridge);
+        abandoned.push({ n: open.n, seen: open.seen });
+      }
       open = openTry(ev);
       continue;
     }
@@ -584,6 +664,19 @@ export function readResume(events, { deathAt = null } = {}) {
     } else {
       restart = {
         n: open.n, mode: open.mode, bridge: open.bridge,
+        // WHERE inside the try the kill landed — the plan it accepted and the steps it
+        // finished, or null when it died before a plan existed (hamr: "start last step
+        // instead from the beginning"). Money and signature are unchanged by it.
+        //
+        // Read from THIS window first, and only then from the newest abandoned window of
+        // the SAME try: an attempt that died before re-accepting the plan (the real leg-3
+        // shape) still has its predecessor's checkpoint standing behind it, and the work
+        // that checkpoint proves is on disk either way. Never across tries — a plan
+        // belongs to the try that earned it, and running one try's workflow as another's
+        // is the substitution D3 forbids at the selection seam.
+        seed: readStepCheckpoint(open.seen)
+          ?? abandoned.filter((w) => w.n === open.n).map((w) => readStepCheckpoint(w.seen)).filter(Boolean).at(-1)
+          ?? null,
         priorSpentUsd: open.declaredSpentUsd + open.roundsUsd,
         priorSpendComplete: open.declaredComplete && open.roundsComplete,
         priorWallMs: deathAtKnown && Number.isFinite(open.startedAtMs)
@@ -847,8 +940,13 @@ export async function runReuse(opts) {
    *   KILLED attempt of this same try already consumed. It is FOLDED into the attempt
    *   (`runJob`'s own ledger and clock start partly spent) rather than shrinking the caps,
    *   so the signed per-try numbers stay the numbers hashed and the numbers reported.
+   * @param {any} [seed] RESUME (v2) — WHERE that attempt was killed (`readResume`'s
+   *   `restart.seed`): the plan it accepted and the steps it finished. The fold says how
+   *   much of the try's allowance is gone; this says how much of its WORK is done, so the
+   *   restart re-pays for neither the scout, the draft, nor a finished step. Null is the
+   *   scout/draft death, where nothing paid is re-payable and the try simply restarts.
    * @returns {Promise<any>} the try row */
-  const runTry = async (bridge, n, prior = NO_PRIOR) => {
+  const runTry = async (bridge, n, prior = NO_PRIOR, seed = null) => {
     const mode = bridge ? 'bridge' : 'cold';
     const name = bridge ? bridge.name : null;
     const resumed = prior.spentUsd > 0 || prior.wallMs > 0;
@@ -859,6 +957,10 @@ export async function runReuse(opts) {
       // once: the next reader adds this attempt's own rounds to the number stated here
       // instead of re-deriving the whole history and double-billing an abandoned attempt.
       ...(resumed ? { priorSpentUsd: prior.spentUsd, priorWallMs: prior.wallMs, priorSpendComplete: prior.spendComplete, resumedFrom: resume?.fromRunid ?? runid } : {}),
+      // WHERE it picks up, on the row's own record: a try that restarts at step 3 of 4 is
+      // a materially different attempt from one that restarts at its beginning, and a
+      // reader must not have to infer which happened from the absence of a scout.
+      ...(seed ? { resumedAt: { phase: seed.phase, stepsDone: seed.completedSteps.length, stepsPlanned: seed.plan?.steps?.length ?? null } } : {}),
     });
     /** @type {any[]} the try's OWN slice of the spine — the caller's emitter still sees
      * every event; this is a tap, never a replacement (the run's books stay one book) */
@@ -874,6 +976,7 @@ export async function runReuse(opts) {
         ...(closeTimeoutMs !== undefined ? { closeTimeoutMs } : {}),
         ...(layerRoot !== undefined ? { layerRoot } : {}),
         ...(resumed ? { priorSpentUsd: prior.spentUsd, priorWallMs: prior.wallMs } : {}),
+        ...(seed ? { resumeSeed: seed } : {}),
         bridge,
       });
     } catch (e) {
@@ -1138,7 +1241,7 @@ export async function runReuse(opts) {
       tried: [...tried],
       carriedUsd: resume.carrySpentUsd ?? null, carriedComplete: resume.carrySpendComplete !== false,
       r1Missing: resume.r1Missing === true,
-      restart: rs ? { n: rs.n, mode: rs.mode, bridge: rs.bridge ?? null, priorSpentUsd: prior.spentUsd, priorWallMs: prior.wallMs, priorSpendComplete: prior.spendComplete, remainingCapUsd, remainingWallMs } : null,
+      restart: rs ? { n: rs.n, mode: rs.mode, bridge: rs.bridge ?? null, priorSpentUsd: prior.spentUsd, priorWallMs: prior.wallMs, priorSpendComplete: prior.spendComplete, remainingCapUsd, remainingWallMs, resumedAt: rs.seed ? { phase: rs.seed.phase, stepsDone: rs.seed.completedSteps.length, stepsPlanned: rs.seed.plan?.steps?.length ?? null } : null } : null,
       nextTry: rs ? null : startN,
     });
 
@@ -1176,7 +1279,7 @@ export async function runReuse(opts) {
       if (rs.mode === 'cold') {
         // every bridge try was already spent before the cold leg started: the loop below
         // has nothing left to authorize, and the restart IS the cold attempt
-        coldRestart = { n: typeof rs.n === 'number' ? rs.n : tries.length + 1, prior };
+        coldRestart = { n: typeof rs.n === 'number' ? rs.n : tries.length + 1, prior, seed: rs.seed ?? null };
         startN = resolved.bridgeTries + 1;
       } else {
         const entry = loadRegistry(registryDir).bridges.find((/** @type {any} */ b) => b.name === rs.bridge);
@@ -1192,7 +1295,7 @@ export async function runReuse(opts) {
           });
         }
         tried.add(entry.name);
-        const stop = afterTry(await runTry(entry, rs.n, prior));
+        const stop = afterTry(await runTry(entry, rs.n, prior, rs.seed ?? null));
         if (stop) return stop;
         startN = rs.n + 1;
       }
@@ -1254,7 +1357,7 @@ export async function runReuse(opts) {
   // the verdict that attempt actually earned.
   const inheritedCold = coldRestart ? null : tries.find((t) => t.mode === 'cold' && t.inherited) ?? null;
   const cold = coldRestart
-    ? await runTry(null, coldRestart.n, coldRestart.prior)
+    ? await runTry(null, coldRestart.n, coldRestart.prior, coldRestart.seed)
     : inheritedCold ?? await runTry(null, tries.length + 1);
   const coldStop = afterTry(cold);
   if (coldStop) return coldStop;

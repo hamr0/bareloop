@@ -97,6 +97,12 @@ async function primitiveSmoke(workdir) {
  * @param {number} [opts.priorWallMs=0] RESUME — the same ruling in a time coat: wall
  *   time the killed attempt already consumed, folded into the run clock so the
  *   restart gets the remainder of the SIGNED wall, never a fresh allotment.
+ * @param {any} [opts.resumeSeed] RESUME (module C v2) — WHERE inside the killed attempt
+ *   the kill landed, read off its own spine by `readResume`: the plan it accepted and the
+ *   steps that reached their exits. Forwarded verbatim to the plan flow, which reloads
+ *   the plan instead of re-scouting and re-drafting, and skips the finished steps.
+ *   hamr's ruling: *"start last step instead from the beginning, why would i want to
+ *   waste more money on something i already started"*. Absent is the ordinary path.
  * @param {boolean} [opts.layerRoot=false] Layer R (within-run ratchet) — shell
  *        territory, threaded to the plan flow. Defaults OFF
  *        (decided 2026-07-21): fixation is extinct on every current job (F41), so
@@ -109,7 +115,7 @@ async function primitiveSmoke(workdir) {
  *   'close-red' | 'close-unsupported' | 'recipe-stale' | 'pricing-red' | 'provider-red' |
  *   'interpreter-red' | 'cap-halt' | 'wall-halt' | 'step-stalled' | `step-red:<id>`
  */
-export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, emit, capRuns = 3, shellCapUsd = 2, closeTimeoutMs, layerRoot = false, bridge = null, priorSpentUsd = 0, priorWallMs = 0 }) {
+export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, emit, capRuns = 3, shellCapUsd = 2, closeTimeoutMs, layerRoot = false, bridge = null, priorSpentUsd = 0, priorWallMs = 0, resumeSeed = null }) {
   // 0. the ledger's counters, declared FIRST so that every job-end — including
   // the pre-token reds below — can state a real figure. An omitted `spentUsd` is
   // not a zero: a consumer reads `undefined` and either crashes or launders it
@@ -213,7 +219,7 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // accounts it natively (F12) and the job-end money contract is unchanged.
   {
     const outcome = await runPlan(job, {
-      workdir, provider, nativeProvider, providerFor, emit: meter, capRuns, closeTimeoutMs, layerRoot, bridge, priorWallMs,
+      workdir, provider, nativeProvider, providerFor, emit: meter, capRuns, closeTimeoutMs, layerRoot, bridge, priorWallMs, resumeSeed,
       remainingUsd: () => Math.min(shellCapUsd, job.budgetUsd - spentUsd),
       isUnpriced: () => unpriced, // F6: let the plan flow bail in-flight, not just after it returns
     });

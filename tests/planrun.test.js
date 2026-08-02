@@ -80,11 +80,11 @@ const collector = () => {
   return { events, emit: (type, data = {}) => { const e = { type, ...data }; events.push(e); return e; } };
 };
 
-async function go(wd, provider, { job = JOB(wd), capRuns = 3, layerRoot = false, scoutRounds, now, providerFor, bridge } = {}) {
+async function go(wd, provider, { job = JOB(wd), capRuns = 3, layerRoot = false, scoutRounds, now, providerFor, bridge, resumeSeed } = {}) {
   const jv = validateJob(job);
   assert.deepEqual(jv.reds, [], 'the test job must be validateJob-green');
   const { events, emit } = collector();
-  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns, layerRoot, remainingUsd: () => 1.5, ...(scoutRounds ? { scoutRounds } : {}), ...(now ? { now } : {}), ...(providerFor ? { providerFor } : {}), ...(bridge ? { bridge } : {}) });
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns, layerRoot, remainingUsd: () => 1.5, ...(scoutRounds ? { scoutRounds } : {}), ...(now ? { now } : {}), ...(providerFor ? { providerFor } : {}), ...(bridge ? { bridge } : {}), ...(resumeSeed ? { resumeSeed } : {}) });
   return { outcome, events };
 }
 
@@ -2282,4 +2282,167 @@ test('BA-19 wiring: every provider call carries a deadlineMs derived from the wa
     assert.ok(!('deadlineMs' in o), 'an operator who set no wall gets NO ceiling — omitted entirely, so nothing downstream can read a default into it (F45)');
     assert.equal(typeof o.timeoutMs, 'number', 'the idle bound is unchanged: BA-18 still bounds a hang with no run budget');
   }
+});
+
+// ── RESUME, step level (module C v2) ────────────────────────────────────────
+//
+// hamr's ruling, verbatim: *"even if it gets killed by outside, it should allow resume
+// and start last step instead from the beginning, why would i want to waste more money
+// on something i already started, our goal is to find ways to save money and time"*.
+//
+// So the seed is the finest checkpoint the dead run's own spine can PROVE: the plan it
+// accepted and the steps that reached their exits. Nothing here re-pays for a paid unit —
+// not the scout, not the draft, not a finished step — and nothing here is inferred: a
+// skipped step says so on the spine, with the event it relies on.
+
+/** the two-step plan the resume fixtures reload: one step per fenced directory */
+const TWO_STEP = (wd) => ({
+  schema: 'plan-v1',
+  steps: [
+    { id: 'seed-src', action: 'Write src/a.mjs.', tools: ['write'], rounds: 4, target: 'src/a.mjs', exit: [{ type: 'artifact-written', path: 'src/a.mjs' }] },
+    { id: 'write-test', action: 'Write tests/test_x.mjs with an ok assertion.', tools: ['write'], rounds: 4, target: 'tests/test_x.mjs', exit: [{ type: 'artifact-written', path: 'tests/test_x.mjs', pattern: 'ok' }] },
+  ],
+});
+/** the job those steps are fenced by — both directories writable */
+const TWO_STEP_JOB = (wd) => JOB(wd, { writeScope: ['src/**', 'tests/**'] });
+
+test('resume seed: the accepted plan is RELOADED — no scout, no draft — and the step that already finished is SKIPPED with the evidence it rests on', async (t) => {
+  const wd = makePatient(t);
+  const plan = TWO_STEP(wd);
+  // the only calls this run may make are the REMAINING step's: a scout call or a draft
+  // call would consume the first entry and the assertions below would catch it
+  const provider = scriptedProvider([
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok — asserts x\n' })] },
+    { text: 'wrote tests/test_x.mjs' },
+  ]);
+  const { outcome, events } = await go(wd, provider, {
+    job: TWO_STEP_JOB(wd),
+    resumeSeed: { phase: 'steps', plan, completedSteps: [{ id: 'seed-src', seq: 42, by: 'step-end' }] },
+  });
+
+  assert.equal(outcome, 'green');
+  assert.equal(provider.calls.length, 2, `only the remaining step was paid for: ${provider.calls.join(' | ').slice(0, 200)}`);
+  assert.ok(!events.some((e) => e.type === 'scout-start'), 'the scout is not re-paid');
+  assert.ok(events.some((e) => e.type === 'scout-skipped'), 'and its absence is a RECORD, never silence');
+  assert.ok(!events.some((e) => e.type === 'plan-validate' && String(e.phase).startsWith('draft')), 'the draft is not re-paid');
+  assert.ok(events.some((e) => e.type === 'plan-accepted' && e.phase === 'resume'), 'the reloaded plan is this leg\'s plan-as-executed — R1 reads it back off the spine');
+
+  const skipped = events.filter((e) => e.type === 'step-skipped');
+  assert.deepEqual(skipped.map((e) => e.step), ['seed-src']);
+  assert.equal(skipped[0].provenSeq, 42, 'the skip names the event that proves it');
+  assert.ok(!events.some((e) => e.type === 'step-start' && e.step === 'seed-src'), 'never a fake step-start for a step that did not run');
+  assert.ok(!events.some((e) => e.type === 'step-end' && e.step === 'seed-src'), 'and never a fake step-end either');
+  assert.ok(events.some((e) => e.type === 'step-start' && e.step === 'write-test'), 'the in-flight step DOES run, fresh');
+  const exec = events.find((e) => e.type === 'plan-executed');
+  assert.deepEqual(exec.steps, [{ id: 'seed-src', outcome: 'skipped' }, { id: 'write-test', outcome: 'green' }],
+    'the plan-as-executed record tells skipped from run — a reader can never mistake one for the other');
+  assert.equal(existsSync(join(wd, 'src', 'a.mjs')), false, 'the skipped step is genuinely not re-run');
+});
+
+test('resume seed at the CLOSE: every step is skipped and the run goes straight to the close, which re-runs and opens its fix loop', async (t) => {
+  const wd = makePatient(t);
+  const plan = TWO_STEP(wd);
+  const provider = scriptedProvider([
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'fixed' },
+  ]);
+  const { outcome, events } = await go(wd, provider, {
+    job: TWO_STEP_JOB(wd),
+    resumeSeed: {
+      phase: 'close',
+      plan,
+      completedSteps: [{ id: 'seed-src', seq: 10, by: 'step-end' }, { id: 'write-test', seq: 20, by: 'step-end' }],
+    },
+  });
+
+  assert.equal(outcome, 'green');
+  assert.equal(provider.calls.length, 2, 'the only worker paid for is the fix loop\'s');
+  assert.ok(!events.some((e) => e.type === 'scout-start'));
+  assert.ok(!events.some((e) => e.type === 'step-start'), 'no step is re-run — the steps were done when the kill landed');
+  assert.deepEqual(events.filter((e) => e.type === 'step-skipped').map((e) => e.step), ['seed-src', 'write-test']);
+  assert.ok(events.some((e) => e.type === 'outer-close'), 'the close re-runs — it is a command, stateless and free of tokens');
+  assert.ok(events.some((e) => e.type === 'fix-loop'), 'and the fix loop continues under the folded remainder');
+});
+
+test('resume seed: a stored plan that no longer VALIDATES is refused by name — an invalid plan is never run', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([{ text: 'must never be called' }]);
+  const stale = {
+    schema: 'plan-v1',
+    // `run` has never been in the menu and the signed spec does not grant it: a plan
+    // carrying it is the registry/schema-drift case
+    steps: [{ id: 'x', action: 'Do it.', tools: ['run'], rounds: 4, target: 'tests/test_x.mjs', exit: [{ type: 'artifact-written', path: 'tests/test_x.mjs' }] }],
+  };
+  const { outcome, events } = await go(wd, provider, {
+    job: TWO_STEP_JOB(wd),
+    resumeSeed: { phase: 'steps', plan: stale, completedSteps: [] },
+  });
+
+  assert.equal(outcome, 'plan-red');
+  assert.equal(provider.calls.length, 0, 'nothing was spent on a plan that cannot legally run');
+  const named = events.find((e) => e.type === 'resume-plan-red');
+  assert.ok(named, `the refusal is its own record: ${events.map((e) => e.type).join(' ')}`);
+  assert.ok(named.reds.length > 0, 'and it carries the reds that refused it');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'plan-red', 'the escalation and the outcome agree (F11)');
+  assert.match(esc.decision, /resum/i, 'and the decision says this is the RESUMED plan, not a fresh draft the model got wrong');
+  assert.ok(!events.some((e) => e.type === 'step-start'));
+});
+
+test('resume seed: a REPLAN after a resume clears the skip set — the new plan\'s steps are not the dead plan\'s steps', async (t) => {
+  const wd = makePatient(t);
+  const plan = TWO_STEP(wd);
+  const replanned = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [
+      { id: 'seed-src', action: 'Write src/a.mjs (same id, NEW plan).', tools: ['write'], rounds: 4, target: 'src/a.mjs', exit: [{ type: 'artifact-written', path: 'src/a.mjs' }] },
+      { id: 'second-go', action: 'Write the test properly.', tools: ['write'], rounds: 4, target: 'tests/test_x.mjs', exit: [{ type: 'artifact-written', path: 'tests/test_x.mjs', pattern: 'ok' }] },
+    ],
+  });
+  const provider = scriptedProvider([
+    { text: 'attempt 1 — writes nothing' },          // resumed step 2, attempt 1 → exit red
+    { text: 'attempt 2 — writes nothing' },          // attempt 2 → exhausted, funds left
+    { text: replanned },                              // the ONE replan draft
+    { toolCalls: [tcall('a', 'shell_write', { path: join(wd, 'src', 'a.mjs'), content: 'export const a = 1;\n' })] },
+    { text: 'wrote src/a.mjs' },
+    { toolCalls: [tcall('b', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'wrote the test' },
+  ]);
+  const { outcome, events } = await go(wd, provider, {
+    job: TWO_STEP_JOB(wd),
+    capRuns: 2,
+    resumeSeed: { phase: 'steps', plan, completedSteps: [{ id: 'seed-src', seq: 7, by: 'step-end' }] },
+  });
+
+  assert.equal(outcome, 'green');
+  assert.ok(events.some((e) => e.type === 'replan'), 'the resumed step exhausted its attempts with funds left, so the one replan fired');
+  assert.deepEqual(events.filter((e) => e.type === 'step-skipped').map((e) => e.step), ['seed-src'],
+    'exactly ONE skip: the dead plan\'s completed step. The new plan re-uses that id and must NOT inherit its green');
+  const startsAfterReplan = events.slice(events.findIndex((e) => e.type === 'replan')).filter((e) => e.type === 'step-start');
+  assert.deepEqual(startsAfterReplan.map((e) => e.step), ['seed-src', 'second-go'],
+    'every step of the new plan runs — a skip set that survived the replan would silently skip work nobody did');
+  assert.equal(existsSync(join(wd, 'src', 'a.mjs')), true);
+});
+
+test('resume seed: a completed step that does not line up with the reloaded plan is RUN, never skipped on a mismatched id', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { toolCalls: [tcall('a', 'shell_write', { path: join(wd, 'src', 'a.mjs'), content: 'export const a = 1;\n' })] },
+    { text: 'wrote src/a.mjs' },
+    { toolCalls: [tcall('b', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'wrote the test' },
+  ]);
+  const { outcome, events } = await go(wd, provider, {
+    job: TWO_STEP_JOB(wd),
+    // a seed naming a step this plan does not have at that position: the skip is a PREFIX
+    // match on ids, never a count, so it stops rather than skipping whatever sits there
+    resumeSeed: { phase: 'steps', plan: TWO_STEP(wd), completedSteps: [{ id: 'a-step-from-another-plan', seq: 3, by: 'step-end' }] },
+  });
+
+  assert.equal(outcome, 'green');
+  assert.deepEqual(events.filter((e) => e.type === 'step-skipped').map((e) => e.step), [], 'nothing is skipped on an id that does not match');
+  assert.deepEqual(events.filter((e) => e.type === 'step-start').map((e) => e.step), ['seed-src', 'write-test'], 'both steps run — re-doing work is the safe direction, skipping work nobody did is not');
+  const seedRec = events.find((e) => e.type === 'resume-seed');
+  assert.equal(seedRec.skipping, 0);
+  assert.match(seedRec.divergence, /line up/, 'and the divergence is on the record, never a silent discard');
 });

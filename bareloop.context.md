@@ -782,8 +782,8 @@ the secrets scan.
 A reuse run is up to `tries + 1` full jobs long, so a kill mid-run is a real event and it
 must not cost the whole envelope. **`readResume(events, {deathAt?})`** reads the dead
 run's own spine back into the state a resume continues from: `{ started, approvalHash,
-completed[], tried[], restart, r1Missing, spentUsd, spendComplete, carrySpentUsd,
-carrySpendComplete, ended, greened, … }`. Hand that object to
+completed[], tried[], restart (with its step-level `seed`), r1Missing, spentUsd,
+spendComplete, carrySpentUsd, carrySpendComplete, ended, greened, … }`. Hand that object to
 **`runReuse({…, resume})`** and the run picks up where it stopped.
 
 - **Completed tries are not re-run.** They come back as rows (marked `inherited`) and
@@ -794,6 +794,33 @@ carrySpendComplete, ended, greened, … }`. Hand that object to
   invented in its place.
 - **A mid-flight try RESTARTS** against the same workflow, with **no second selection
   call** (that pick was made and paid for), and it is not counted as consumed.
+- **It restarts at the STEP it died on, not at its beginning.** hamr's ruling: *"start
+  last step instead from the beginning, why would i want to waste more money on something
+  i already started"*. `restart.seed` is the finest checkpoint the dead spine can PROVE —
+  `{phase, plan, completedSteps[{id, seq, by}], planSeq}` — and it rides into `runJob`
+  (and on to `runPlan`) as `resumeSeed`:
+  - **scout: skipped** (`scout-skipped`, never silence). Its survey is not on the spine,
+    so the one consequence is stated rather than discovered: a replan after a resume
+    drafts from an empty survey plus its failure brief.
+  - **plan: reloaded, not re-drafted** — from the LAST `plan-accepted` in the window (a
+    replan emits its own, and the post-replan plan is the one that was running). It is
+    **re-validated** against the spec signed NOW; a plan that no longer validates is
+    `plan-red` by name (`resume-plan-red`) with nothing run. It is then re-emitted as this
+    leg's own `plan-accepted {phase:'resume'}`, because R1 mints a bridge version from the
+    plan AS EXECUTED read back off the spine.
+  - **completed steps: skipped**, in prefix order by id, each with its own `step-skipped`
+    record naming the event that proves it (`step-end{green}` — or an earlier
+    `step-skipped`, so a resume of a resume does not re-pay for what the first one saved).
+    Never a fake step-start/step-end pair; `plan-executed` records them as `skipped`.
+  - **`phase: 'close'`** (an `outer-close` in the window) means every step is done: they
+    are all skipped and the run goes straight to the close, which re-runs for no tokens.
+  - A window with **no `plan-accepted`** (a scout/draft death) has no seed and simply
+    restarts the try — nothing paid is re-payable there. If that window is itself an
+    abandoned resume, the checkpoint is read from the newest abandoned window **of the
+    same try** (measured on the real killed run: leg 3 died in its redraft, and reading
+    only its own window would have discarded a checkpoint leg 2 paid $8.18 to reach).
+  - The worker's conversation is **not** replayed — a transcript is not a checkpoint, and
+    every attempt is fresh by the loop's own design.
 - **Under the REMAINDER, never a fresh allotment.** The killed attempt's spend and wall
   FOLD IN (`runJob`'s `priorSpentUsd`/`priorWallMs`, `createClock`'s `priorElapsedMs`), so
   the restart gets what is left of the signed per-try numbers. The caps are never
@@ -825,9 +852,11 @@ carrySpendComplete, ended, greened, … }`. Hand that object to
 spine that is missing, corrupt mid-file, already terminal, or whose process is STILL
 ALIVE (pids from the run's `runner-start` record and the watchdog report, discriminated
 by `/proc/<pid>/cmdline`, because a live pid can be a recycled stranger), prints the whole
-reconstruction as a preview before you sign, archives the killed run's watchdog record so
-the readout cannot mistake it for this run's, and sizes the outside watchdog for the work
-that is actually LEFT.
+reconstruction as a preview before you sign — including WHERE it picks up ("step 2 of 3
+\"verify-strict-typecheck\" — 1 step already finished and SKIPPED, not re-paid"), so the
+signature covers an attempt whose real cost you can see — archives the killed run's
+watchdog record so the readout cannot mistake it for this run's, and sizes the outside
+watchdog for the work that is actually LEFT.
 
 ### `updateLedger({ ledgerFile, spineFiles })` → `{ appended, fold }` — `src/ledger.js`
 
