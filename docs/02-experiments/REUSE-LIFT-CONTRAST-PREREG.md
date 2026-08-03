@@ -344,3 +344,39 @@ spent. A second replacement's paid calibration is prescribed by this prereg's ow
 "screening continues until two candidates are admitted or the pool is exhausted", but
 the per-hash signature gate is structural and is NOT inferred: this hash waits for
 hamr's explicit word.
+
+---
+
+## Addendum — 2026-08-03 (evening), ladder shipped; recal u-msdonzxl = INSTRUMENT CASUALTY; close fixed; one relaunch
+
+Context: hamr diagnosed the two step-red calibrations as OUR defect ("if workflow
+fails in dense jobs then it failed at planning and self healing. why not fix that?");
+the fixed-count step ladder was replaced by the progress-governed strike ladder
+(F77–F79, commit 6c53d3e) with hamr's rulings recorded in F80. He then ordered:
+"go build it with opus and you orchestrate and validate it against the last repo
+that failed" — bareagent-u.
+
+**Recal u-msdonzxl (fixed ladder, same signed hash 1c35a1eb…): INSTRUMENT CASUALTY,
+not a screen row.** wall-halt $2.2119 / 25.6min / 89 rounds. The spine decomposes:
+both plan steps greened at iteration 1 (the tree at that point carried 18 added
+suppressions — the step check `check-passes(typecheck)` greens on suppressed code BY
+DESIGN; `no-suppressions` at the close is the stage built to catch it). The close
+never reached it: `changed-from-seed` false-redded on **`gate-audit.jsonl`** — the
+ARBITER'S OWN in-flight audit file, which the F-5 untracked sweep did not exclude
+(u-msdonzxl was the first run ever to execute the v2 sweep MID-RUN; pulselog's
+calibration ran the v1 close, and its v2 re-audit ran post-run, after the audit had
+been relocated). The close-fix loop burned 3 iterations on a red the worker can
+neither read nor delete (fs-denied, outside writeScope), then the wall expired.
+The row mints nothing in any direction. Programme spend **$9.8676 of $40**.
+
+**Fix, validated before any relaunch:** all six close scripts now exclude exactly
+TWO named arbiter books from the untracked sweep: `.litectx/` and root
+`gate-audit.jsonl` (exact name — a worker-authored `src/gate-audit.jsonl` still
+counts). Three-way validation on a clean patient: arbiter-file-only reads
+identical-to-seed; worker `src/gate-audit.jsonl` counts as changed; an outside
+untracked file still reds. Spec hashes unchanged (close scripts are not part of the
+spec hash; the cmd strings did not move).
+
+**Relaunch:** one relaunch of bareagent-u on the fixed instrument completes hamr's
+validation order — the casualty was ours, same precedent as calibration B's junk-probe
+relaunch. Screen read at the 5× floor per the frozen rules.

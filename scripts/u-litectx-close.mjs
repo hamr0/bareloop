@@ -104,7 +104,14 @@ const git = (/** @type {string[]} */ args) => {
 const untrackedFiles = () => {
   const o = git(['ls-files', '--others', '--exclude-standard']);
   if (o === null) stop('git ls-files (untracked sweep) failed');
-  return o.split('\n').filter(Boolean).filter((f) => !f.startsWith('.litectx/'));
+  // TWO arbiter books, both named: `.litectx/` (the retrieval store) and
+  // `gate-audit.jsonl` (the gate's own in-flight audit, relocated beside the spine
+  // only at run end). The audit exclusion was paid for live (u-msdonzxl): the v2
+  // sweep's first mid-run firing red-carded the ARBITER'S OWN FILE as a worker
+  // change, and the fix loop burned to the wall on a red the worker can neither
+  // read nor delete. Exact name, never a pattern: a worker-authored
+  // `src/gate-audit.jsonl` must still count.
+  return o.split('\n').filter(Boolean).filter((f) => !f.startsWith('.litectx/') && f !== 'gate-audit.jsonl');
 };
 const changedFiles = () => {
   if (git(['rev-parse', '--verify', `${SEED_REF}^{commit}`]) === null) stop(`frozen seed commit ${SEED_REF.slice(0, 12)} not found in the patient`);
