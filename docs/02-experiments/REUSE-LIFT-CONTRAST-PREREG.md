@@ -459,6 +459,44 @@ arbiter-authored note template: named, scoped, PARKED for explicit go.
 Consequence for the pool: all three rejections are trap-tainted; bareagent-u's
 step-red may be curable by (a)+(b) without touching caps or budgets.
 
+---
+
+## Addendum — 2026-08-04, remedies (a)+(b) landed and fired: u-msdsmkid step-red — THIRD rejection; the trap prose is CURED and two deeper mechanisms are now on the record
+
+hamr's go ("1+2 sounds good if you can land them" + "ok" to fire): both remedies
+landed TDD (commit 01e41a7, 855/855, sabotage-proven) and bareagent-u re-fired on
+the same signed hash. **u-msdsmkid: step-red at `fix-recurse-strict`, $3.5428 /
+25.7 min / 102 rounds, replan fired — FAILS must-GREEN. Third rejection, now on
+trap-fixed instruments.** Programme spend **$16.4773 of $40**.
+
+**What the fixes measurably changed (n=1 each, mechanism reads not minted rules):**
+- **The exit-freedom law CONVERTED the drafting prose.** Zero file-prohibition
+  sentences in BOTH plans (vs "Do not modify any file outside src/loop.js" in both
+  u-msdpuaej plans); the only prohibitions left are legitimate tsconfig guards.
+- **The never-wrote line fired by construction** (the last gap named recurse.js;
+  the audit shows loop.js-only writes) — prompts are not spine-recorded, so the
+  render is test-proven, not spine-proven.
+
+**Why it still redded — two NEW grounded mechanisms:**
+1. **Positive-scope confinement.** With no prohibition anywhere, the action "Edit
+   src/loop.js …" still directs all work at one file: the gate audit shows
+   **17 writes, all loop.js — recurse.js received ZERO writes across the entire
+   run**, both plans. The prose trap was the removable half; the target/action
+   framing itself still confines the worker. Plan-1 trajectory 22→20→19→19
+   (no-write strike)→19 (repeat strike), cap-halt with both files still red.
+2. **Replan CHECK-SHEDDING (new genre).** The redrafted plan dropped
+   `check-passes` from BOTH steps — exits became tree-changed + artifact-written,
+   form only. Step `fix-loop-strict` then "greened" at iteration 2 **on form
+   alone** (unearned; only the outer close could catch it, and wall+money expired
+   first at step 2's variance stop). A checkless write step is legal today
+   (checks decide nothing by doctrine — but a replan that REMOVES truth coverage
+   converts a red step into a fake-green step and burns the wall). Candidate
+   rule needs its own $0 replay before any build; recorded for hamr, not built.
+
+**Pool state:** bareagent-u is OUT ×3. `bareguard-u` (hash `2b8dbdaf…`) remains
+the last shaped candidate — paid calibration fires only on hamr's explicit
+signature; if it fails, the pool is exhausted and the programme stop-and-reports.
+
 **Density observation, still recorded-not-minted (n=4 now):** the run died with 19
 errors pinned in `recurse.js` — the densest file, again at/over the ~15 band from the
 n=3 observation above.
