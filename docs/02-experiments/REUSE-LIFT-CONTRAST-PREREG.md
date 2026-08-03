@@ -224,3 +224,70 @@ cross-patient relative to pulselog/baremobile by construction.
 
 - `pulselog-u-types` → `c1fe83e112a160f8b90b27641b1381d62837d4b6f8a26804dc3316f046a4229b`
 - `baremobile-u-types` → `9e4e0b9d3ff6756b01b9909e5818b9bcbc2957173d927700366dbe961c284c49`
+
+Signed by hamr, verbatim, 2026-08-03 in-turn: *"approved, fire calibration on both
+hashes"* — covering calibration AND the contrast under the $40.
+
+---
+
+## Addendum — 2026-08-03, CALIBRATION RESULTS + hamr's 5× RULING + job-B replacement
+
+**Calibration outcomes (screen evidence only, never contrast rows):**
+
+- **A `pulselog-u-types` (u-mscwz0e3): GREEN** $1.2922 / 15.1 min / 70 rounds; 2-step
+  plan; fix loop fired once (no-suppressions caught, then fixed) — not attempt-1-trivial.
+  Green re-audited on the v2 (F-5-fixed) close: all four stages exit 0, zero non-store
+  untracked files — unexploited. Drafting (scout $0.1289 + plan $0.0201) = $0.1490;
+  execution = $1.1432; **ratio 7.67× — FAILS the frozen 10× clause** as frozen.
+- **B `baremobile-u-types`: REJECTED — must-GREEN failed.** Launch 1 (u-mscxqm6q)
+  provider-red casualty ≥$0.1282 (scout probed `cp -a`-carried ignored dev junk;
+  junk since removed from both patients). The ONE permitted relaunch (u-mscxuziw)
+  died step-red $0.8313 / 11.1 min: attempt ladder exhausted at step
+  `fix-errors-js-types`, close never judged, money and wall unbound. No further
+  relaunch is licensed; the candidate is out.
+
+**Screen design tension, reported to hamr before any ruling:** at sonnet's measured
+efficiency (~$0.04/error execution, ~$0.15 drafting overhead) the 10× floor needs ~36+
+in-scope errors — OUTSIDE the frozen [10,30] band. The two frozen clauses are jointly
+near-unsatisfiable at this job size; threshold changes are arbiter territory.
+
+**hamr's ruling, verbatim, 2026-08-03 in-turn:** *"5x approved, screen the replacement
+and fire"* — the execution/drafting floor resets **10× → 5×** (arbiter decision, made
+AFTER seeing both calibrations and recorded here before anything further fires; every
+other frozen clause unchanged). Consequences:
+
+- **A `pulselog-u-types` is ADMITTED** (7.67× ≥ 5×; every other calibration clause
+  already passed). Contrast envelope per §3: budget ≥ 2×$1.2922 and wall ≥ 1.5×15.1min —
+  **the signed $4 / 25min spec already satisfies both**; envelope FROZEN as-is, no
+  re-sign needed.
+- **One replacement candidate is screened for the job-B slot**, per the same frozen
+  screen (at the 5× floor).
+
+**Job-B replacement — `bareagent-u-types` — $0 static screen (all real instruments):**
+
+| clause | measured | verdict |
+|---|---|---|
+| strict errors in scope, [10,30] | `src/recurse.js` 19 + `src/loop.js` 30−19=11 → **30** | PASS (band edge, inclusive) |
+| suite green at seed | 1044 tests executed, 0 fail (npm's own exit 0, not a piped `$?`) | PASS |
+| errors eyeball-fixable | unknown-`err` narrowing, implicit-any params/vars, index-signature narrowing — in-repo JSDoc work, no upstream wall | PASS |
+
+Patient `bareloop-patients/bareagent-u` copied local from
+`~/PycharmProjects/bareagent`, seed `0037182a5a369d380e1635e0e4ab13e3557cfab9`,
+porcelain clean; ignored dev junk (`.claude` `.barebrowse` `.idea` `.litectx`
+`.mcp-bridge.json` `agnews.csv`) removed per the calibration-B lesson; `node_modules`
+kept (the suite needs it). OUTSIDE_MAX 67 (whole-repo 97 − 30 in scope), TESTS_MIN 1044.
+Close `scripts/u-bareagent-close.mjs` pattern-copied from the v2 pulselog close WITH the
+F-5 untracked sweep; validated at seed: changed-from-seed red exit 1 (identical tree),
+typecheck red exit 1 naming exactly 30, suite-green exit 0, no-suppressions exit 0.
+
+**Resolved spec hash:**
+
+- `bareagent-u-types` → `1c35a1eb63190bf520a94dc86281f67e6be5e9a813df7d5ed7608ce84ca68859`
+
+**Signature:** hamr's same in-turn order — *"5x approved, screen the replacement and
+fire"* — is recorded as the prospective approval for this hash: it explicitly ordered
+the replacement screened and fired without a further pause, the spec is a
+pattern-copy of the already-signed pulselog spec (same shape, same $4 / 25min
+envelope, scope and patient swapped), and the hash is minted here before the paid
+run. Calibration fires on this authority; the contrast fires under the same order
+once the calibration passes the (5×-floored) screen.

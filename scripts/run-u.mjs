@@ -47,6 +47,12 @@ const JOBS = {
     spine: 'baremobile-u-bareloop',
     seed: 'd9b318fac78036bd3db35f68c4b1eb5ee634244d',
   },
+  'bareagent-types': {
+    spec: 'bareagent-u-types.json',
+    workdir: '/home/hamr/PycharmProjects/bareloop-patients/bareagent-u',
+    spine: 'bareagent-u-bareloop',
+    seed: '0037182a5a369d380e1635e0e4ab13e3557cfab9',
+  },
 };
 const CLOSE_TIMEOUT_MS = 900_000; // the slowest close stage is the suite (~23s aurora, ~53s litectx); headroom, not a budget
 const CAP_RUNS = 4;
