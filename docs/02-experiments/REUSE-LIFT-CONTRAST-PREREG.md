@@ -409,14 +409,27 @@ suppression path never materialized either — the worker attempted no suppressi
   (wrote=true, repeatOf 2) → strikes 1 then 2 → **cap-halt 2/2**, decision-ready.
   Both strike genres (no-write repeat, wrote-but-unmoved repeat) observed in one run.
 
-**Root cause of the red — planning scope, not the ladder and not the close.** The
-spec goal names BOTH files ("Make src/recurse.js and src/loop.js pass tsc --strict")
-but both drafted plans scoped the edit step to `src/loop.js` ONLY (34 allowed writes,
-1 distinct file). The worker cleared loop.js completely (gap file list shrank from
-recurse+loop to recurse-only) then ground against recurse.js errors it was never
-scoped to touch. The replanner rebuilt the same single-file scope even with the gap
-naming recurse.js in hand — the known "replan cannot heal what the planner doesn't
-know" class (rules belong at the validation gate; recorded, not fixed here).
+**Root cause of the red — an unsatisfiable step exit, not file coverage, not the
+ladder, not the close.** [CORRECTED same night: the first committed version of this
+paragraph said the plans "scoped edits to loop.js only" — wrong; the operator's plan
+extraction truncated to the first step (the blind-instrument class again). The full
+records show both plans carried BOTH files.] Both plans were 2 steps: step 1
+`fix-loop-strict` (target src/loop.js, "do not modify any file outside src/loop.js"),
+step 2 `fix-recurse-strict` (target src/recurse.js). But step 1's exit was
+`check-passes(typecheck)`, and the typecheck check judges BOTH goal files — so step
+1's exit is structurally unsatisfiable within step 1's own mandate: the worker
+cleared loop.js completely by iteration 3 (gap file list shrank to recurse-only) and
+then ground against 19 recurse.js errors it was instructed not to touch. Step 2 —
+which would have cleared exactly those errors — NEVER RAN in either attempt. The
+replanner, handed the mechanism note and the recurse-naming gap, rebuilt the same
+shape (the plan LOOKS correct; the exit/mandate mismatch is invisible unless named).
+**Third instance of the mailbox class** (a step whose exit cannot be satisfied by
+what the step is allowed to do): (1) check on a read-only step — cured by a gate
+rule; (2) haiku's verbatim rebuild — cured by the tier floor; (3) whole-goal check
+as a mid-plan single-file step's exit — no gate rule yet. Candidate rule (gate
+territory, hamr's call): red any plan where a non-final step's exit check judges
+beyond the step's own target; equivalently only the final step may carry the
+whole-goal check. Recorded, not built.
 
 **Density observation, still recorded-not-minted (n=4 now):** the run died with 19
 errors pinned in `recurse.js` — the densest file, again at/over the ~15 band from the
