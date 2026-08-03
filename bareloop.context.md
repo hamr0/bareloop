@@ -237,7 +237,7 @@ middle writes; `validatePlan` gates it against the SIGNED job spec before tokens
 | `steps[].rounds` | int 1..shell cap (default 40) | the step's per-attempt tool-round bound (the Gate's `maxTurns` natively) |
 | `steps[].target` | path inside the fence | v1.18 deliverable; REQUIRED on write-granted steps |
 | `steps[].model` | optional; `sonnet` \| `haiku` (`STEP_MODELS`) | the step's model TIER — a menu, never a model string the agent spells (the tier→model mapping and any per-model effort params are the runner's). `opus` is deliberately absent: reserved for work the human assigns, never plan-selectable. Off-menu reds `invalid-value`. A step naming a tier when the caller supplied no `providerFor` factory is an `interpreter-red` STOP, never a silent run on the default tier |
-| `steps[].attempts` | optional; int `1..capRuns` | TIGHTEN-only: the step's own retry cap inside `ralph`, floored against the shell's `capRuns` (default 3). Above it reds `bounds`; a plan may narrow the shell's cap, never raise it |
+| `steps[].attempts` | optional; int `>= 1` | **RETIRED and INERT (F79) — it bounds nothing.** A step's iterations are governed by the STRIKE LADDER (below), which is shell-owned and inexpressible from the plan. The field is no longer offered in the drafting prompt and the runner ignores it; it is deliberately still ACCEPTED, because stored bridge plans carry it and a plan minted under one runner's number must not red under another's. The shape is still checked (a known field holding garbage stays a `bounds` red); the old `<= capRuns` ceiling is gone with the cap it named. It was previously TIGHTEN-only — which meant a step that needed MORE iterations could not ask, and drafters measurably tightened it instead (F77) |
 | `steps[].scope` | optional; one value from the SAME menu `tree-changed` uses | narrows this step's live WRITE fence to a subset of the signed `writeScope` — chosen from the offered scope menu (below), never authored. Off-menu reds `invalid-value` carrying the menu |
 | `steps[].exit` | 1..2 items (`MAX_EXITS_PER_STEP`), ALL must pass (AND-only, no OR/NOT) | closed menu (`EXIT_TYPES`): `artifact-written(path, pattern?)` · `tree-changed(scope)` · `json-valid(path)` · `check-passes(name)`. **`tree-changed.scope` is a MENU, not a glob the agent authors** — the runner enumerates the signed fence entries plus the real directories beneath them (shallowest-first, capped at `MAX_SCOPE_MENU`=24; `legalScopes` in `src/plan.js`), `planPrompt` lists them verbatim, and `validatePlan` accepts membership only — the SAME array on both sides, so what was offered is what is accepted; omitted, it derives from `writeScope` alone — never a free-text fallback. An off-menu value that escapes the fence still reds `scope-escape` (the ledger's attribution class), an in-fence unoffered value reds `invalid-value` carrying the menu. `runPlan` emits `scope-menu {offered, truncated, offerableCount?, cap?}` so a capped menu is never silently complete. `check-passes` must name a stage on the close's DERIVED menu (`check-unknown` red names the offered menu — no operator authors this list, it comes straight from `checkMenu(close)`); on a write-granted step it must be paired with `tree-changed` (`exit-illegal` — the seed tree is green, a lone check would pass untouched, F17/F46). **`check-passes` also requires a write-class verb (`write`/`edit`) on the SAME step** (`exit-illegal` — BREAKING for plan authors: a read-only "verify" step carrying a check used to validate and no longer does). A failing check's gap is re-delivered to that step's OWN worker, so a step holding a check must be able to act on it; a read-only one is a mailbox with no hands and stalls to cap on a byte-identical gap (measured on 4 of 4 drafted plans). The check belongs on the step that fixes; the run's final verification is the operator's close, which the agent never authors. The rule is stated identically in the drafter prompt and the validator, so the two can never disagree — and it is suppressed when `tools` failed to parse (the step's hands are unknowable then, and the real defect already redded: one defect, one red). `artifact-written.pattern` must compile AND survive a ReDoS shape check — an unbounded quantifier over a group that itself repeats unboundedly (`(a+)+`, `(\d*)*`, even wrapped: `((a+))+`) is an `invalid-value` red (F49, catastrophic-backtracking footgun; rewrite without a repeated group inside a repeat). Exits verify FORM, not truth — progress gates; the operator's close stays the one arbiter |
 
@@ -273,9 +273,18 @@ Append-only JSONL event emitter bound to one file. `seq` monotonic per spine, `t
 last. Consumers are pure listeners; nothing reads the file back. Returns each event as
 written.
 
-### `ralph({ middle, close?, judge?, capRuns, emit, redact?, closeTimeoutMs?, cwd?, expect?, judged?, gapKeep?, workerWrites? })` → `'green' | 'escalated'` — `src/ralph.js`
+### `ralph({ middle, close?, judge?, capRuns?, ladder?, emit, redact?, closeTimeoutMs?, cwd?, expect?, judged?, gapKeep?, workerWrites? })` → `'green' | 'escalated'` — `src/ralph.js`
 
-The dumb outer shell: `while close-red and under-cap: run the middle`. `close` is an argv
+The dumb outer shell: `while close-red and not exhausted: run the middle`. **Exhaustion has
+two alternative rules and you supply exactly one** — `capRuns` (a fixed number of middle runs)
+or `ladder` (the PROGRESS governor, `createLadder` from `src/ladder.js`). With a ladder the
+iteration count floats and the loop ends on STRIKES instead; ralph still interprets nothing —
+it hands the ladder each red iteration's gap and reads back a boolean. Both rules exhaust
+through the SAME terminal: category `cap-halt`, the same three records in the same order, so
+nothing downstream (the ledger's excluded-set, the step loop's one replan trigger) has to know
+which rule fired. `runPlan` wires a ladder per step and leaves `capRuns` on the close-fix loop;
+`createLadder` itself is INTERNAL (not on the public surface), so a direct `ralph` caller uses
+`capRuns` — the strike rule reaches you through `runJob`/`runPlan`'s `strikeLimit`. `close` is an argv
 whose exit code is truth (`runClose` is also exported — **async since 0.6: `runClose` and
 `runStages` return Promises**; the child is awaited instead of spawnSync so a running close
 no longer freezes the host event loop (F68); every close semantic — timeout signal, output
@@ -369,7 +378,7 @@ generic unknown-field. Menus exported: `CLOSE_TYPES`, `CLASS_BY_CLOSE`, `GOLD_CO
 `CADENCE_UNITS`, `PROVIDERS`, `CONDITION_KEYS`, `TOOL_MENU`, `LOCKED_TOOLS`, `STORE_VERBS`,
 `VERDICT_TYPES`, `LOCKED_VERDICTS` — plus `checkMenu` itself.
 
-### `validatePlan(input, { job, maxStepRounds?, scopes?, capRuns? })` → `{ ok, reds, plan }` — `src/plan.js`
+### `validatePlan(input, { job, maxStepRounds?, scopes? })` → `{ ok, reds, plan }` — `src/plan.js`
 
 `validateJob`'s SIBLING in the two-document split, never a third validator over it (the
 two-doc split's third validator never happens: plan-v1 gates the PLAN, the job spec stays
@@ -379,7 +388,8 @@ from `job` (a missing or non-plan-shape job fails CLOSED, `job-invalid`). Never 
 same `{ code, path, detail }` red shape as its siblings; `verb-escape` reds carry the
 escaping verb as a structured `verb` field (the ledger keys on it). `maxStepRounds`
 (default 40 — the shell's tool-mode per-attempt bound) ceilings every step's `rounds`;
-`capRuns` (default 3) ceilings every step's `attempts`; `scopes` is the offered
+**the `capRuns?` option is GONE** (F79) — it existed only to ceiling `attempts`, now
+retired-but-accepted, so a plan carries no iteration bound to check; `scopes` is the offered
 `tree-changed` scope menu — the array of scope strings the drafter prompt listed, which
 `runJob`/`runPlan` build internally from the signed fence plus the real directories beneath
 it (a direct `validatePlan` caller may pass its own array); omitted, it derives from the
@@ -427,7 +437,7 @@ Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
 `coordination-red` — a failure between units (scope contention, step order, store
 races), never to be folded into worker/interpreter reds.
 
-### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, shellCapUsd?, closeTimeoutMs?, layerRoot?, bridge? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, layerRoot?, bridge? })` → outcome — `src/run.js`
 
 The runner — the shell's top layer, and the ONE entry. It composes everything below it and
 interprets nothing itself. Sequence: **approval gate** (human-signs-always — refuses an
@@ -444,9 +454,10 @@ BA-6 — before which it laundered into a clean finish, F25): no verdict exists 
 round's spend is only partly known (F6). `cap-halt` is the wallet; `wall-halt` is the clock
 (F64 — a timeout derived from the run's own deadline is a governance stop, never a transport
 casualty). **`cap-halt` reaches you from the close-fix loop too, not only from a step:** the
-shell spells attempt-exhaustion and a money-gate halt with the same category, so both the
+shell spells exhaustion (strikes on a step, runs in the fix loop) and a money-gate halt with
+the same category, so both the
 step loop and the fix loop read the WALLET to tell them apart — a drained wallet is
-`cap-halt` (the resume-to-cap checkpoint), attempts spent with money still on the table is
+`cap-halt` (the resume-to-cap checkpoint), exhaustion with money still on the table is
 the designed `escalated` terminal ("the close is still red"). The fix worker's gate is built
 with the wallet at its most drained, which is exactly where a money cut would otherwise
 masquerade as a capability read (F45). `step-stalled` is the F66 stall fuse giving up: no
@@ -484,15 +495,44 @@ write-class nor the store-class verbs are in its menu; hard-bounded rounds) → 
 the planner never sees the repo, only the scout blob; drafted against a schema
 description with check NAMES only; `validatePlan` gates it, one redraft with the reds
 fed back, then `plan-red`) → **EXECUTE** (strictly sequential micro-loops: `ralph` with
-the exit-evaluator judge; tree snapshots at step start; the gap names every failing
+the exit-evaluator judge, each step under its own STRIKE LADDER — below; tree snapshots at
+step start; the gap names every failing
 wall — mechanical genre, F46's measured mechanism; artifacts feed forward labeled by
 step id) → **ONE replan**, triggered by exhaustion OR variance (an instrument stop never
 replans) → **the operator's close**, a red feeding ONE bounded fix loop judged by the
-REAL close. `plan-executed` (the plan-as-executed record, design law #2) lands on the
+REAL close and bounded by `capRuns` (default 3; the runners use 4). `plan-executed` (the plan-as-executed record, design law #2) lands on the
 spine on every path that executed steps. Additional outcomes: `already-green |
 plan-red | check-red | close-red | wall-halt`. Worker prompts hold the v1.12 §5 contract
 (mutation-proven): the absolute repo root, the step's action/target, prior artifacts,
 the gap — NEVER the budget, the close command, a check's command, or the arbiter's books.
+
+**The strike ladder — how a STEP ends (F77–F79).** A plan step is **not** bounded by a
+number of iterations. It runs until it stops making PROGRESS: a *strike* is a red iteration
+that repeats an already-seen gap or wrote nothing, and `strikeLimit` strikes (shell option on
+`runJob`/`runPlan`, **default 2**) end the step. Concretely — repeats are matched against a
+**seen-set** for the whole step, never just the last gap (an A→B→A oscillator is real and
+last-only reads it as progress); the gap is normalized for COMPARISON only (TAP `duration_ms`
+lines, ISO stamps and `ms` figures dropped so a re-run is byte-stable — error counts, file
+names and line numbers all SURVIVE, so `30 errors` → `22 errors` is progress and not a
+repeat), and the gap the worker sees is never rewritten; "wrote" is the **count delta of the
+gate audit's allow-decision write/edit records** (the F32 instrument — never `git status`,
+never a tree diff, and never the path SET, which is constant after iteration 1 when a step
+rewrites one target); strikes are **sticky** — a good iteration in between never repays one.
+Everything else that bounds a step is unchanged and each still ends it on its own authority:
+the wallet, the wall, the variance meter and the stall fuse. The ceiling is **arbiter
+territory** — the plan cannot express it, tighten it or raise it — and the practical
+consequence for a caller is that a **converging step now runs on the money and wall you
+signed** instead of stopping at a count, so size those two numbers for the job (the ladder
+adds no third ceiling of its own). The exhaustion terminal is the same `cap-halt` category
+as before; the spine gains a per-iteration `ladder` record
+(`{iteration, strike, strikes, limit, wrote, repeatOf, distinctGaps}`), and the `cap-halt`,
+escalation and wall-stop records carry `strikes`/`strikeLimit`/`distinctGaps` beside the
+iteration count rather than a cap the step no longer has. **The replan brief
+names the mechanism**: which shape ended the step (converging-cut / stalled-no-write /
+repeated-gap, with the iteration numbers as evidence), the gap trajectory, and how much money
+and wall the stop left unspent (time reported UNBOUNDED when no wall was set, never `0`). It
+names no culprit file — F28 applies to the replan channel too. **Only the step loop uses the
+ladder**; the close-fix loop keeps `capRuns` (its own replay evidence does not exist yet).
 
 **Time and materials (T + A, PRD v1.27/v1.29).** `runPlan` starts ONE wall clock per run
 (`createClock`, `src/clock.js`) from the signed `maxWallMs` and emits `wall-clock` with the
@@ -890,9 +930,10 @@ panel reads the same file at N6.
 ## Architecture
 
 Three layers. An **outer shell** (dumb, permanent): per-run budget cap via bareguard,
-retry cap, verdict collection, escalation routing — stateless across runs; nothing inside
+retry cap (a count on the close-fix loop, a shell-owned STRIKE ceiling on a plan step),
+verdict collection, escalation routing — stateless across runs; nothing inside
 negotiates with it. An **emergent middle**: the AGENT-authored plan — bounded steps, each
-with its granted verbs, its round and attempt caps, its narrowed write scope and its
+with its granted verbs, its round cap, its narrowed write scope and its
 form-checkable exits — schema-validated by `validatePlan` before tokens burn (the
 operator-authored `steps[]` shape is deleted, PRD v1.32). A **floor**: append-only
 JSONL spine (single source for every UI), litectx store per job, per-run ledger. Built on

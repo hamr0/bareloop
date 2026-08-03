@@ -73,7 +73,7 @@ Three layers; nothing inside negotiates with the layer above it.
 | Layer | What it is | Emergent? |
 |---|---|---|
 | **Outer shell** | Per-run budget cap (bareguard), retry cap, verdict collection, escalation routing. Stateless across runs | never — permanent, dumb, un-gameable |
-| **Emergent middle** | The authored plan: bounded steps, each with its granted verbs, its own round/attempt caps, its write scope and its form-checkable exits — schema-validated, red before tokens burn | yes — authored and improved by the agent |
+| **Emergent middle** | The authored plan: bounded steps, each with its granted verbs, its own round cap, its write scope and its form-checkable exits — schema-validated, red before tokens burn. A step keeps iterating while it is making progress; when it stops, the shell ends it and the planner re-allocates | yes — authored and improved by the agent |
 | **Floor** | Append-only JSONL spine (single source for every UI), litectx store per job, per-run ledger | never — the record |
 
 Every job declares a **verdict class**, and the class decides what the run's learning is

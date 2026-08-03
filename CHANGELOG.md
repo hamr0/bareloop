@@ -7,6 +7,38 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Changed
+- **A plan step is bounded by PROGRESS, not by a count** (`src/ladder.js`; F77–F79). The step
+  loop's fixed iteration cap is replaced by a strike ladder: a *strike* is a red iteration that
+  repeats an already-seen gap (matched against a seen-set for the whole step, never just the
+  last one) or made no gate-audit writes (the F32 record-count instrument — never `git status`,
+  never a tree diff); strikes are sticky and `strikeLimit` of them (new shell option on
+  `runJob`/`runPlan`, **default 2**) ends the step. Gaps are normalized for comparison only —
+  timing bytes dropped, counts and file names kept — so a shrinking error count reads as
+  progress. The wallet, the wall, the variance meter and the stall fuse keep every bit of their
+  authority; the exhaustion terminal is the same `cap-halt`. Measured motivation: two
+  calibrations died `step-red` while still converging with money and wall unspent; a $0 replay
+  over 110 archived step ladders showed every converging red continuing and thrash ending
+  same-or-one-earlier. **`capRuns` now bounds the CLOSE-FIX loop only.** New per-iteration spine
+  record `ladder`; exhaustion records carry `strikes`/`strikeLimit`/`distinctGaps`.
+- **The replan brief names the MECHANISM.** An exhausted step now tells the redrafting planner
+  which shape ended it (converging-cut / stalled-no-write / repeated-gap, with iteration numbers
+  as evidence), its gap trajectory, and how much money and wall the stop left unspent (time
+  reported UNBOUNDED when no wall was set, never `0`) — replacing *"it ran N attempts and its
+  exits were still red"*, which named no mechanism and read identically for opposite failures.
+- **Layer R's VERBATIM ratchet stage is retired on the STEP path** (hamr's ruling): fixation is
+  a repeat, so a fixated step strikes out before the fourth iteration can open. The stage stays
+  reachable in the close-fix loop and fully unit-covered; Layer R still ships OFF by default.
+
+### Deprecated
+- **`steps[].attempts` is retired and INERT.** It is no longer offered in the drafting prompt
+  and the runner ignores it. It is still ACCEPTED by `validatePlan` — stored bridge plans carry
+  it, and a plan minted under one runner's number must not red under another's — with the shape
+  still checked and the old `<= capRuns` ceiling dropped. It was TIGHTEN-only, which made the
+  correct heal for a converging step inexpressible. `validatePlan`'s `capRuns?` option is
+  removed with the ceiling it fed (it existed only to bound `attempts`; an extra property is
+  ignored, so no direct caller breaks).
+
 ### Added
 - **Layer 3, the REUSE rung — the registry, the load gate, and the MECHANICAL START**
   (design record `docs/plans/2026-08-01-layer-3-reuse-design.md`; execution probe green

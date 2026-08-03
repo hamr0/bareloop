@@ -2577,3 +2577,84 @@ forcing a contract change later.
 of the UI.** This sharpens v1.23/v1.32 (which placed the verdict-classes rung post-Layer-3
 without ordering it against the other candidates) rather than reversing them. Genre-widening
 (the second-genre question F51–F55 left open) and the workbench UI both queue behind it.
+
+## Addendum v1.45 — 2026-08-03 (a step is bounded by PROGRESS, not by a count: the shell owns a strike ceiling, `attempts` retires, and the replan brief names the mechanism — hamr)
+
+The step loop's exhaustion rule was a fixed number of check-iterations (`capRuns`). F77 measured
+what that cost: two lift-contrast calibrations died as `step-red` with the signed envelope
+unspent — one of them still shrinking its own error count on every iteration (30 → 22 → 17 → 11,
+cut with $1.30 and ~6 minutes left) — and F73's try 1 had done the same a patient earlier. It is
+the silent-second-ceiling class (F37/16g) inside our own shell. hamr opened it directly:
+
+> *"if workflow fails in dense jobs then it failed at planning and self healing. why not fix
+> that?"*
+
+### 1. The rule, and who owns it
+
+**A step ends when it stops making progress, not when a counter runs out.** A *strike* is a red
+iteration that REPEATS an already-seen normalized gap (a seen-set, never last-only) or made no
+gate-audit writes (the F32 record-count instrument — never git status, never a tree diff). Two
+strikes end the step.
+
+**Ownership is unchanged and is the whole point of the shape.** The strike ceiling sits
+shell-side exactly where the count sat: the runner sets it, **the agent cannot express it, and
+no step may tighten or raise it** — arbiter territory, permanently, like every other bound. The
+number itself is hamr's (2), set before F78's threshold sweep independently landed on it; a
+threshold is never picked by the agent from a small observed sample.
+
+**The signed resource caps remain the only caps that matter to a run's economics:** money and
+the wall. The wallet, the wall (v1.40's W-2), the variance meter and the stall fuse are
+untouched and each still ends a step on its own authority. Exactly one bound was replaced —
+exhaustion-by-count — so a converging step now runs on the money and time the operator signed
+for it, and a thrashing one ends the same iteration or one earlier (F78, 110 archived ladders).
+
+### 2. `attempts` retires from the agent's surface — and is tolerated, never rejected
+
+A step's `attempts` field could only ever TIGHTEN below the shell's number, so the correct heal
+for a converging step was inexpressible and drafters measurably tightened it anyway (3, then 2
+on replan). It is **removed from the drafting menu and ignored by the runner**. It is
+deliberately **not redded**: stored bridge plans carry it, and refusing them would invalidate
+every recipe minted before today and break a frozen contrast mid-programme. Shape still checked,
+upper bound gone with the cap it named — a plan stored under one runner's number must never red
+under another's.
+
+### 3. The replan brief is a MECHANISM brief
+
+*"It ran N attempts and its exits were still red"* described a bound that no longer exists and
+named no mechanism — the same sentence for a converging step and a stalled one, handed to the
+one component whose job is to respond to it. The brief now carries which shape ended the step,
+the gap trajectory, and what the stop left unspent (with time reported UNBOUNDED, never zero —
+F6 extended to time). It names no culprit file; the ladder's inputs are counts and iteration
+numbers, so naming one is inexpressible (F28).
+
+### 4. Layer R's VERBATIM stage retires on the step path — hamr's ruling
+
+Fixation IS a repeat, so a fixated step strikes out before Layer R's fourth-iteration VERBATIM
+note can be injected. hamr confirmed **summary-only on the step path** (the stage stays
+reachable in the close-fix loop, keeps full unit coverage, and Layer R still ships OFF by
+default per v1.24/F41), and confirmed the resulting flow verbatim:
+
+> *"so, 2 strikes followed by handing notes on next replan/run"*
+
+The two alternatives are invalidated on evidence, not preference: raising the ceiling pays an
+extra stuck iteration on every thrash loop for a feature that ships OFF (F78's sweep), and
+exempting the post-ratchet iteration buys a louder note to a stuck worker — the one thing
+measured dead twice (F32/F39 delivery ≠ conversion) — through a guard-hole of exactly the F70
+class. **The notes moved recipient, not volume:** from the stuck worker (semantic genre, does
+not convert) to the replanner (mechanical genre, converts — F38/F46).
+
+### 5. The close-fix loop keeps its count — recorded, not overlooked
+
+`CAP_RUNS` is now the CLOSE-FIX loop's cap and nothing else. Its replay evidence does not exist
+(F78's corpus is step ladders), and converting it on another population's numbers is the move
+this programme keeps refusing. **A recorded follow-up: its own $0 replay over close-verdict gaps
+comes first.**
+
+### 6. Consequence for the lift-contrast programme
+
+The admission screen was **inverted** by this defect: two of three candidates were rejected for
+the harness's ceiling rather than their own hardness, and the screen was reporting workflow
+failure as patient hardness (F77). With the fix landed the screen is un-inverted — candidates
+are no longer pre-filtered by a harness defect — and the frozen prereg's clauses are otherwise
+unchanged. The rejected candidates are not retroactively admitted: a re-run on the fixed code is
+a new calibration row, judged by the same frozen screen.

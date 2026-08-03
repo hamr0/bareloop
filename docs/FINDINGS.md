@@ -4724,3 +4724,271 @@ repeated: the detached launch passed the API key as `env ANTHROPIC_API_KEY=$(pas
 this session). The pattern is corrected to a shell env-assignment prefix
 (`ANTHROPIC_API_KEY="$(pass ...)" setsid ...`), which inherits through the environment and
 never touches argv; the exposed key is flagged to hamr for rotation.
+
+## F77 — the step loop's fixed count was a SILENT SECOND CEILING: two calibrations died still converging, with money and wall unspent, and the one lever the plan owned could only tighten it
+
+**Status: minted 2026-08-03 from the lift-contrast admission screen's own casualties. This is
+the F37/16g class shipping again — an advertised cap (money, wall) overridden by a lower,
+unadvertised one — this time in the SHELL's own step loop rather than in a provider default.
+Fixed the same day (F79); the fix's live validation is named there, not claimed here.**
+
+### The bound, and what it could not see
+
+A plan step's micro-loop ran `while exits red and iteration <= capRuns` — `capRuns` = 4 in
+both operator runners (`run-u.mjs`, `run-reuse.mjs`), 3 by library default. The count is
+blind to the only question that matters at the fourth red iteration: **is this step making
+progress?** It stopped a converging step and a thrashing step at exactly the same place.
+
+| run · patient · genre | in-scope error trajectory | how it ended | what the envelope still held |
+|---|---|---|---|
+| `u-msd916dh` · bareagent-u · TYPES | **30 → 22 → 17 → 11** | `step-red` at `strict-fix-recurse`; ladder exhausted 3/3, replan, then 2/2; close never judged | **$1.30 of $4 and ~6 of 25 min unspent** (`$2.7020 / 18.7 min / 82 rounds`) |
+| `u-mscxuziw` · baremobile-u · TYPES | **13 → 1** in scope, then 3 errors leaked OUTSIDE the scope (the close's anti-gaming ceiling correctly caught that), then byte-identical non-writes after the replan | `step-red` at `fix-errors-js-types`; close never judged | **money and wall unbound** (`$0.8313 / 11.1 min` of $4 / 25 min) |
+
+The two rows are opposite failures under one bound: the first was **still shrinking its own
+error count** when the count cut it; the second was **repeating itself and writing nothing**
+and had been finished for iterations. A number cannot tell them apart, so it treated them
+identically. F73's try 1 is the same shape a patient earlier (`cap-halt`, `capRuns 3`, twice,
+with **$4.74 of $10 and 27.4 of 45 min** unspent) — three runs, three patients, one ceiling.
+
+### The correct heal was INEXPRESSIBLE
+
+The plan's only iteration lever, `steps[].attempts`, was validated `1..capRuns` — **TIGHTEN
+only**. A step that needed a sixth iteration could not ask for one; the sole legal direction
+was down, and drafters measurably took it: `u-msd916dh`'s accepted plans carry
+`attempts [3, 3]` and then `[2, 2]` on the replan. The agent was handed a knob that could
+only make the defect worse, which is the palette-inertness class (F69) inverted — not an
+unused verb, an actively harmful one.
+
+### The replan brief was mechanism-blind
+
+The exhaustion sentence handed to the redrafting planner read, in full: *"It ran N attempts
+and its exits were still red."* That describes the bound, names no mechanism, and is
+identical for the converging step and the stalled one — so the planner, the ONE component
+whose whole job is to respond to the stop, could not tell which of two opposite fixes it
+needed. F28's rule (a bound that buries the failure defeats the arbiter) applied to the
+replan channel, unnoticed until now.
+
+### The defect INVERTED the experiment that found it
+
+Both rows above are lift-contrast **calibration** runs, judged against the frozen
+`must-GREEN` admission clause (`docs/02-experiments/REUSE-LIFT-CONTRAST-PREREG.md`, calibration
+addenda). Both were REJECTED. Neither was rejected for being too hard: both were rejected
+because the harness stopped them while the envelope still had money and time, and in one case
+while the error count was falling on every iteration. **The screen was measuring the workflow's
+own ceiling and reporting it as patient hardness** — two of three candidates burned
+($7.6557 of the $40 programme cap at that point) selecting AGAINST the jobs the product exists
+to do. A dense job is exactly where a fixed count binds first, which is hamr's read, verbatim:
+
+> *"if workflow fails in dense jobs then it failed at planning and self healing. why not fix
+> that?"*
+
+### Lesson
+
+**A count is not a bound on the thing you care about — it is a bound on a proxy, and the
+proxy fails precisely where the work is hardest.** Every prior appearance of this class was a
+cap under a cap (rounds under money, the 4096-token default under `maxTokens`); this one was a
+cap under an EXPERIMENT, and it corrupted the experiment's admissions before it corrupted any
+run. When a screening instrument starts rejecting candidates, audit the harness before
+believing the candidates were bad — the F45 rule (a money cut is a casualty, not evidence)
+generalizes to iterations.
+
+## F78 — the $0 strike replay: 110 archived step ladders say the progress rule continues every converging red, ends thrash same-or-earlier, and kills exactly one green
+
+**Status: minted 2026-08-03. The instrument is a $0 archival replay of the proposed rule
+against every step ladder in the spine archive, run BEFORE the build, on hamr's order
+(*"sticky strikes, run the $0 replay"*). It is decision evidence, not outcome evidence — the
+limit is stated at the bottom rather than discovered later.**
+
+### The corpus and the method
+
+190 spine files in the archive; **34 are plan-flow runs**; those hold **110 step ladders**
+(**77 that ended green, 33 that ran out of iterations**). Each ladder was replayed by
+re-reading its own recorded gaps and its own gate-audit write records under the candidate
+rule — a strike is a red iteration that REPEATS an already-seen normalized gap or made no
+write-class records — and asking where that rule would have stopped, versus where the count
+did.
+
+### What the replay said
+
+| question | answer |
+|---|---|
+| would a converging red be cut earlier? | **no — every converging red continues**, including both lift-contrast rejects (F77): under the rule they keep iterating on the money and wall they had left |
+| does thrash end sooner? | **same or one iteration earlier** — ~15 ladders save exactly one iteration at limit 2; nothing runs longer |
+| does last-gap comparison suffice? | **no.** Exactly one real **A→B→A oscillator** exists in the archive. A last-only comparison reads its third iteration as progress; only a SEEN-SET catches it |
+| would any green have died? | **exactly one.** A worker idle for three paid iterations with its checks otherwise passing — autopsied and classed **benign**: three iterations bought nothing and the strike would have ended a step that was already not working |
+
+### The threshold sweep — 2 is the knee, and it was hamr's number BEFORE it was measured
+
+| limit | effect on the archive |
+|---|---|
+| **1** | **kills 4 archive greens** — one bad iteration inside an otherwise working step ends it |
+| **2** | the knee: 1 green killed (benign, above), ~15 thrash ladders end one iteration earlier |
+| **3** | **stops almost nothing early** — 2 ladders versus 15 at limit 2; the rule is nearly inert |
+
+hamr set 2 and the sweep then landed on 2 independently. Recorded in that order because the
+order matters: the number is arbiter territory (a threshold is never picked by the agent from
+a small observed sample), and the measurement is corroboration, not authorship.
+
+### What this replay CANNOT read — stated, not discovered
+
+It proves the rule's **decisions against history**: which ladders it continues, which it
+ends, and how much earlier. It cannot prove that a step it continues then GREENS — no replay
+can, because the iterations it grants were never executed. **Only a live run proves a green.**
+The named live validation is the bareagent-u recalibration `u-msdonzxl` — the exact defect
+shape from F77, re-run on the fixed code under the same signed hash and envelope — in flight
+at the time of writing, and its outcome belongs on this finding, not to it in advance.
+
+Scope: step ladders only. The close-fix loop was deliberately excluded from the replay and
+therefore from the change (F79) — its gaps are close-verdict gaps, a different population,
+and it needs its own replay before its own rule.
+
+## F79 — the progress-governed step ladder: strikes replace the count, and the replan brief finally names the mechanism
+
+**Status: minted 2026-08-03, commit `6c53d3e` (opus build, orchestrator-verified). hamr's
+order, verbatim: *"go build it with opus and you orchestrate and validate it against the last
+repo that failed."* This finding records the mechanism and its evidence; the defect is F77 and
+the decision evidence is F78.**
+
+### The rule
+
+`src/ladder.js`. **A strike is a RED iteration that repeats an already-seen normalized gap OR
+made no gate-audit writes.** Two strikes end the step (`STRIKE_LIMIT = 2`).
+
+- **Repeat = a SEEN-SET, never last-only** — F78's oscillator is the reason, and the set lives
+  for the step, one ladder per step (a shared ladder would strike a fresh step for a gap an
+  earlier one had already produced).
+- **Normalization is deliberately NARROW**: only bytes a re-run changes on its own (TAP
+  `duration_ms` lines, ISO stamps, `ms` figures). **Error counts, file names and line numbers
+  all survive** — `30 errors` and `22 errors` must read as two different gaps, and a normalizer
+  that scrubbed numbers would turn the converging case this module exists to protect into an
+  instant strike. Comparison-only: the gap the worker sees is never rewritten. Gaps are hashed,
+  so the set holds no model or file bytes.
+- **`wrote` reads the gate audit's own record COUNT delta** — the F32 instrument, run-scoped,
+  allow-decision, write AND edit. **Never git status, never a tree diff** (F32), and **never
+  the path SET**: a plan step rewrites its one target every attempt, so the set is constant
+  after iteration 1 and would read every later iteration as idle — the Finding-3 trap Layer R
+  documents one module over. A missing `writeCount` seam THROWS (BA-4 param-guard class): a
+  strike rule running on one of its two signals with nothing on the record saying so is the
+  blind-instrument class.
+- **Strikes are STICKY** — never reset, never repaid by a good iteration in between, because a
+  counter a single good iteration zeroes can be held open forever by alternating.
+
+**Ownership is unchanged.** `STRIKE_LIMIT` sits shell-side exactly where the count sat: the
+runner sets it, the agent cannot express it, and no step may tighten OR raise it. What still
+bounds a converging step so nothing can run away — **the wallet, the wall (W-2), the variance
+meter (A), and the stall fuse** — is untouched and each still ends the ladder on its own
+authority. Exactly one bound was replaced: exhaustion-by-count. The exhaustion terminal is the
+same `cap-halt` category with the same three records in the same order, so the ledger's
+excluded-set and the step loop's ONE replan trigger key on the same name they always did.
+
+### `attempts` is RETIRED — and tolerated, which is the load-bearing half
+
+The field is gone from the drafting prompt and ignored by the runner. It is **not rejected**:
+the frozen bridge registry's stored plans carry `attempts`, and a bridge rides into the drafter
+as a starting draft through the ordinary validator — redding it would refuse every recipe
+minted before today and break a frozen contrast experiment mid-flight. The SHAPE is still
+checked (garbage in a known field stays a named red); the `<= capRuns` upper bound is gone with
+the cap it named, because a plan stored under one runner's number must not red under another's.
+Proven against the real artifact, not a fixture: `u-msd916dh`'s own accepted plans
+(`attempts [3,3]` and `[2,2]`) validate OK against the signed spec on the resume path.
+
+### The replan brief now names the mechanism
+
+The exhaustion sentence handed to the redrafting planner carries three things F77 showed it
+was missing: **which shape ended the step** (converging-cut / stalled-no-write / repeated-gap,
+with the iteration numbers as evidence), **the gap trajectory** (`N distinct exit output(s)
+over M iteration(s)`, plus an explicit *"every attempt moved the exit output, so the step was
+converging when it struck out"* when there were no repeats), and **what the stop left
+unspent** (balance and remaining minutes — `time UNBOUNDED` when the operator set no wall,
+never a rendered zero: F6 extended to time). It names no culprit file: the ladder's inputs are
+iteration numbers and counts, so naming one is inexpressible (F28's rule, replan side).
+
+### Two design calls made against instruments, not preference
+
+- **`maxTurns` is granted PER ITERATION, monotonically** (`Math.max` at the existing
+  `setIteration` seam), because a pre-multiplied ceiling can only pre-pay a KNOWN iteration
+  count and the ladder has none. Rebuilding the Gate per iteration was the alternative and was
+  **rejected**: the audit is run_id-scoped, so a fresh gate resets F32's crash-attribution
+  write set and Layer R's cross-attempt write history — two instruments broken to avoid one
+  addition. The real per-iteration bound (`loop.stop()` at `roundsThisAttempt >= attemptRounds`)
+  is unchanged either way.
+- **The close-fix loop keeps its count** (`CAP_RUNS = 4`, relabelled close-fix-only). Its
+  replay evidence does not exist — F78's corpus is step ladders — and converting it on the
+  strength of a different population's numbers is the thing this programme keeps refusing to
+  do. **Recorded follow-up, not an oversight**; it needs its own $0 replay over close-verdict
+  gaps first.
+
+### Evidence
+
+TDD, **22 tests watched failing** before any implementation (14 ladder unit + 8 integration);
+mutation **14/14 killed**, plus **one orchestrator-applied mutant** (strikes un-stuck) killed by
+2 tests and the suite restored green; **850/850 and typecheck clean**, re-run independently with
+real exits. Spec hashes untouched by the whole change — the runner accepted the already-signed
+`1c35a1eb…` unchanged.
+
+### Lesson
+
+**When a bound is wrong, replace the QUESTION it asks, not the number it holds.** Raising
+`capRuns` would have bought the converging step its iterations and bought thrash the same
+iterations; the count was never the defect, "how many" was. And the replacement's honesty
+depends entirely on its two signals being real instruments — which is why the write signal
+reads the gate audit's record count and the repeat signal reads a seen-set: both were chosen
+by naming the way the obvious version goes blind (F32's path-set, last-only comparison).
+
+## F80 — the strike ladder makes Layer R's VERBATIM ratchet unreachable on the step path, and hamr's ruling accepts it: the notes go to the REPLANNER, not louder to the stuck worker
+
+**Status: minted 2026-08-03. Found by the build's own tests (F79), surfaced to hamr as a named
+OPEN POINT rather than resolved unilaterally (arbiter/experiment territory), and settled by
+hamr's ruling the same session.**
+
+### The collision
+
+Layer R's escalation needs **three consecutive fixated attempts**: the summary note injects at
+iteration 3, the VERBATIM note at iteration 4. But **fixation is by its own definition a
+byte-identical red-set** — which is exactly what the strike ladder calls a repeat. So a
+fixated step strikes at iteration 2, strikes out at iteration 3, and **iteration 4 never
+opens**. With `layerRoot: true`, the VERBATIM stage is unreachable in the STEP loop.
+
+It remains reachable in the **close-fix loop** (still count-bounded, F79), and the stage keeps
+full unit coverage. **Layer R ships OFF by default (F41: fixation is extinct on every current
+job)**, so nothing shipped is broken today — the real cost is that Layer R's never-run ON/OFF
+acceptance read would now measure a different Layer R than the one designed, and that was
+hamr's to decide, not the build's.
+
+### hamr's ruling — option (a), confirmed
+
+Three exits were put up. hamr picked (a) after walking the mechanism through in plain language,
+and confirmed the resulting flow verbatim:
+
+> *"so, 2 strikes followed by handing notes on next replan/run"*
+
+Yes — **summary-only on the step path; the VERBATIM stage is retired there** (kept in the
+close-fix loop). The strikes force the replan, and the mechanism note goes to the REPLANNER.
+
+### Why the other two exits are INVALIDATED, not merely unchosen
+
+- **(b) raise `STRIKE_LIMIT` to 3** — invalidated by F78's own threshold sweep: limit 3 stops
+  almost nothing early (2 ladders versus 15), so it pays an extra stuck iteration on **every**
+  thrash loop in order to reach a stage of a feature that ships OFF.
+- **(c) exempt the iteration in which the ratchet just spoke** — invalidated twice over. By
+  **F32/F39**: delivery ≠ conversion — hand-delivering more state to a stuck worker was
+  measured dead twice (perfect aim, zero movement), so buying an iteration to say the same
+  thing LOUDER to the same stuck worker buys the one thing already proven not to convert. And
+  by **F70's guard-hole class**: an exemption is a hole a guard punches in itself, and this
+  programme has now twice shipped a guard disarmable by its own mechanism.
+
+### The channel shift IS the point
+
+The ratchet's note went from the shell to the **stuck worker** — the semantic-gap genre, which
+measurably does not convert (F39). The ladder's brief goes from the shell to the **replanner**
+— a mechanical gap (which shape, which iterations, what is left unspent) handed to the one
+component whose job is re-allocation, and mechanical is the genre that converts on the next
+attempt every time (F38/F46). The step's self-heal did not get quieter; it moved to the channel
+where feedback has ever been observed to land.
+
+### Lesson
+
+**Two independently correct guards can collide, and the resolution is a channel question
+before it is a threshold question.** The tempting fixes were both dial-turns (raise the limit,
+punch an exemption); the evidence said the note was aimed at the wrong recipient all along, and
+the collision is what made that visible.
