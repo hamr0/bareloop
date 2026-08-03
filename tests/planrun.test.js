@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runPlan, planPrompt } from '../src/planrun.js';
+import { runPlan, planPrompt, gapFilesNeverWritten } from '../src/planrun.js';
 import { ralph } from '../src/ralph.js';
 import { validateJob } from '../src/job.js';
 import { StallError, MAX_STALLS } from '../src/stall.js';
@@ -2509,6 +2509,23 @@ console.log(\`FAILED: \${n} error(s) remain\`); process.exit(1);\n`;
   return wd;
 }
 
+/** like makeConvergingPatient, but the check's red line NAMES a file — the
+ * mismatch-note tests point it at a file the worker does or does not write */
+function makeMismatchPatient(t, gapPath) {
+  const wd = mkdtempSync(join(tmpdir(), 'planrun-mismatch-'));
+  t.after(() => rmSync(wd, { recursive: true, force: true }));
+  mkdirSync(join(wd, 'tests'));
+  const probe = `import { existsSync, readFileSync } from 'node:fs';
+const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
+if (!existsSync(p)) { console.log('FAILED: tests/test_x.mjs is missing'); process.exit(1); }
+const n = (readFileSync(p, 'utf8').match(/TODO/g) ?? []).length;
+if (n === 0) { console.log('suite: clean'); process.exit(0); }
+console.log(\`FAILED: \${n} error(s) remain in ${gapPath}\`); process.exit(1);\n`;
+  writeFileSync(join(wd, 'close.mjs'), probe);
+  writeFileSync(join(wd, 'check.mjs'), probe);
+  return wd;
+}
+
 const LADDER_PLAN = (wd, over = {}) => PLAN(wd, [{
   id: 'shrink-errors', action: 'Remove the TODO markers from tests/test_x.mjs.',
   tools: ['write'], rounds: 4, target: 'tests/test_x.mjs',
@@ -2663,6 +2680,68 @@ test('LADDER: with NO wall set the brief reports the time left as unbounded — 
   const replanPrompt = provider.calls.find((c) => c.includes('What happened when the previous plan ran'));
   assert.match(replanPrompt, /time UNBOUNDED/, 'an unknown/unbounded duration is reported as such, never rendered as a number');
   assert.doesNotMatch(replanPrompt, /0 minute\(s\) of the run were still unspent/);
+});
+
+// ---- the prose-prohibition trap (u-msdpuaej, 2026-08-03) ----------------------
+// A drafter wrote "Do not modify any file outside src/loop.js" into a step whose
+// exit check judges the WHOLE goal; the worker obeyed the prose and ground to
+// death against errors in a file it was told to leave alone. Two fixes: the
+// planPrompt law (a step must be free to edit everything its check can report),
+// and a mechanical line in the replan brief naming the gap-files the step never
+// wrote (gap paths vs the F32 write audit — the F38 mechanical genre).
+
+test('gapFilesNeverWritten: names the gap files the write audit never touched, suffix-matched against absolute audit paths', () => {
+  const gap = 'check "typecheck" red:\nBAREAGENT red: tsc --strict reports 19 error(s) in src/recurse.js\nBAREAGENT | src/recurse.js(12,3): error TS7006\nBAREAGENT | src/loop.js(9,1): error TS18046';
+  const writes = ['/abs/patient/src/loop.js'];
+  assert.deepEqual(gapFilesNeverWritten(gap, writes), ['src/recurse.js'],
+    'recurse.js was red and never written; loop.js was written; tokens are deduped');
+});
+
+test('gapFilesNeverWritten: empty when every named file was written, when the gap is empty, and when no path-like token exists', () => {
+  assert.deepEqual(gapFilesNeverWritten('FAILED src/a.js', ['/p/src/a.js']), []);
+  assert.deepEqual(gapFilesNeverWritten('', ['/p/src/a.js']), []);
+  assert.deepEqual(gapFilesNeverWritten(undefined, []), []);
+  assert.deepEqual(gapFilesNeverWritten('3 error(s) remain', []), [],
+    'a gap with no path tokens yields no line — never a guess');
+  assert.deepEqual(gapFilesNeverWritten('exit 1 at step/two', []), [],
+    'a slash token without a file extension is not a file claim');
+});
+
+test('planPrompt states the exit-freedom law: a step must be free to edit every file its check can report — forbidding files the exit judges is the u-msdpuaej death', () => {
+  const p = planPrompt(JOB('/tmp/x'), 'scout notes', null, 40, null, undefined, { balanceUsd: 1.5 });
+  assert.match(p, /free to edit every file the check can report/i);
+  assert.match(p, /never\s+write an action that forbids/i);
+});
+
+test('REPLAN NOTE: the brief names file(s) the last gap reported that the step never wrote', async (t) => {
+  const wd = makeMismatchPatient(t, 'src/other.js');
+  const provider = scriptedProvider([
+    { text: 'scout notes' },
+    { text: LADDER_PLAN(wd) },
+    ...iterWrites(wd, ['TODO TODO\n', 'TODO TODO\n', 'TODO TODO\n']),
+    { text: LADDER_PLAN(wd, { id: 'second-go' }) },
+    { text: 'nothing' },
+  ]);
+  await go(wd, provider, { capRuns: 4 });
+  const replanPrompt = provider.calls.find((c) => c.includes('What happened when the previous plan ran'));
+  assert.ok(replanPrompt, 'the replan drafted');
+  assert.match(replanPrompt, /never wrote: src\/other\.js/,
+    'the mechanical mismatch fact rides in the brief — the fact the replanner kept failing to infer');
+});
+
+test('REPLAN NOTE control: when every gap-named file WAS written the line is absent — no invented mismatch', async (t) => {
+  const wd = makeMismatchPatient(t, 'tests/test_x.mjs');
+  const provider = scriptedProvider([
+    { text: 'scout notes' },
+    { text: LADDER_PLAN(wd) },
+    ...iterWrites(wd, ['TODO TODO\n', 'TODO TODO\n', 'TODO TODO\n']),
+    { text: LADDER_PLAN(wd, { id: 'second-go' }) },
+    { text: 'nothing' },
+  ]);
+  await go(wd, provider, { capRuns: 4 });
+  const replanPrompt = provider.calls.find((c) => c.includes('What happened when the previous plan ran'));
+  assert.ok(replanPrompt, 'the replan drafted');
+  assert.doesNotMatch(replanPrompt, /never wrote/);
 });
 
 test('LADDER (e) WALL beats progress: an expired clock ends a CONVERGING ladder — the governance stops keep every bit of their authority', async (t) => {

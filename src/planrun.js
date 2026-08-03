@@ -217,6 +217,42 @@ ${JSON.stringify(plan, null, 2)}`;
  *   so the two paths cannot drift (the F47 works-both-ways rule). Only the runner passes
  *   it, and only for the FIRST draft phase — a replan drafts from the run's own state.
  */
+/**
+ * Files named in an exit gap that the step's worker never wrote — the mechanical
+ * fact behind the prose-prohibition trap (u-msdpuaej, 2026-08-03): a drafter wrote
+ * "do not modify any file outside X" into a step whose exit check judges the whole
+ * goal, the worker obeyed, and the replanner — handed the gap AND the stall note —
+ * rebuilt the same shape, because inferring "the exit reds on files this step never
+ * touched" is exactly the semantic leap that fails (F38: mechanical gaps convert,
+ * semantic ones stall; 3/3 across the mailbox class). This computes that fact from
+ * the two books that already exist: path-like tokens in the gap text (extension
+ * required — a bare `step/two` is not a file claim) suffix-matched against the F32
+ * write audit's absolute paths. Advisory-only and fail-safe: extraction that finds
+ * nothing yields no line, never a guess.
+ *
+ * @param {string | undefined} gap the step's last exit gap text
+ * @param {string[] | undefined} writes the step's cumulative write-audit paths
+ * @returns {string[]} gap-named files with no matching write, in gap order
+ */
+export function gapFilesNeverWritten(gap, writes) {
+  if (typeof gap !== 'string' || gap === '') return [];
+  const tokens = gap.match(/[\w.-]+(?:\/[\w.-]+)+/g) ?? [];
+  const seen = new Set();
+  const out = [];
+  for (const raw of tokens) {
+    const p = raw.replace(/^\.\//, '');
+    if (!/\.[A-Za-z0-9]+$/.test(p.split('/').at(-1) ?? '')) continue;
+    if (seen.has(p)) continue;
+    seen.add(p);
+    const written = (writes ?? []).some((w) => {
+      const ws = String(w);
+      return ws === p || ws.endsWith(`/${p}`) || p.endsWith(`/${ws}`);
+    });
+    if (!written) out.push(p);
+  }
+  return out;
+}
+
 export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, startingDraft = null) {
   const scopeMenu = Array.isArray(scopes) && scopes.length ? scopes : legalScopes(job.writeScope ?? []);
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
@@ -259,6 +295,12 @@ strictly in array order. Each step (no other fields exist):
   the step must be able to act on the report. Do not plan a separate read-only
   "verify" step — attach the check to the step that does the fixing; the final
   verification after your plan is not yours to author.
+  A check judges the WHOLE goal, never just this step's deliverable: its report
+  can name files beyond the step's target. A step carrying a check-passes exit
+  must therefore be free to edit every file the check can report on — never
+  write an action that forbids editing other in-scope files (e.g. "do not
+  modify any file outside X"): a step ordered to leave a file alone while its
+  exit reds on that file can never finish, on any attempt.
   Reference checks by NAME only; you cannot author or modify one.
 
 Offered "scope" values for tree-changed — copy ONE of these exactly, character for
@@ -1502,6 +1544,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       ].filter(Boolean).join('\n\n'));
       lastText = scrub(r.text ?? '').slice(0, ARTIFACT_MAX);
     };
+    let lastGap = '';
     const judge = async () => {
       const { pass, results: raw } = await evalExits(step.exit, { dir: workdir, snapshot, runCheck });
       // Scrubbed HERE, once, before the results are read by anyone. An exit detail is
@@ -1525,10 +1568,14 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       if (faulty) return { verdict: /** @type {string} */ (faulty.fault), detail: faulty.detail };
       if (pass) return { verdict: 'satisfied' };
       // AND-only: the gap names EVERY failing wall (mechanical genre, F38)
-      return { verdict: 'needs_revision', gap: results.filter((r) => !r.pass).map((r) => r.detail).join('\n') };
+      lastGap = results.filter((r) => !r.pass).map((r) => r.detail).join('\n');
+      return { verdict: 'needs_revision', gap: lastGap };
     };
     const outcome = await ralph({ middle, judge, ladder, emit: emitL, workerWrites: w.workerWrites });
-    return { outcome, artifact: lastText, ladder };
+    // gap + writes ride out for the replan brief's mismatch line (the books this
+    // step already kept; the escalation's detail carries the meter/strike sentence,
+    // never the gap, so the brief cannot recover this fact from anywhere else)
+    return { outcome, artifact: lastText, ladder, writes: w.workerWrites(), gap: lastGap };
   };
 
   let idx = 0;
@@ -1658,8 +1705,16 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         : cat === 'step-stalled'
           ? 'It stalled: the model stopped producing rounds and reissuing the call did not recover it, so its exits were never judged.'
           : `${res.ladder.brief()} ${leftOver}`;
+      // The prose-prohibition trap's mechanical fact (u-msdpuaej): gap-named files
+      // the step never wrote. Computed from the step's own books; capped with the
+      // trim announced (the F32 gap convention). Empty extraction = no line.
+      const missed = gapFilesNeverWritten(res?.gap, res?.writes);
+      const missedLine = missed.length
+        ? `The last exit output names file(s) this step never wrote: ${missed.slice(0, 8).join(', ')}${missed.length > 8 ? ` (+${missed.length - 8} more)` : ''}.\n`
+        : '';
       const failure = `Step "${step.id}" (${step.action}) did not reach its exits. `
         + `${why}\n`
+        + missedLine
         + `Last exit state:\n${lastEscalation?.detail ?? '(none)'}\n`
         + `Steps completed so far: ${artifacts.map((a) => a.id).join(', ') || 'none'}.`;
       // The progress line IS the adaptation channel (addendum 2): the balance rides
