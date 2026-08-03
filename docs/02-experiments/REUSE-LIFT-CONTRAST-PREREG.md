@@ -431,6 +431,34 @@ territory, hamr's call): red any plan where a non-final step's exit check judges
 beyond the step's own target; equivalently only the final step may carry the
 whole-goal check. Recorded, not built.
 
+**$0 replay of the candidate rule (same night, hamr-approved): REFUTED.** Sweep of
+all 325 archived spines (39 with plan records, 59 plans): the categorical rule
+("check-passes only on the final step") would have redded 45 plans including **20
+non-final steps that actually GREENED** (several in fully-green runs). The rule is
+dead as drafted. The red side of the same sweep: **all three step-red calibrations
+(bareagent ×2, baremobile) died on the identical shape** — non-final one-file step
+gated by the seed-red whole-goal typecheck.
+
+**The differentiator, grounded to the gate audit:** pulselog's GREEN calibration
+(u-mscwz0e3) had the same shape — step 0 "annotate-email" (target src/email.js),
+exit = whole-goal typecheck — and greened because its worker IGNORED the file
+boundary: writes 11× backup.js vs 4× email.js inside step 0, fixing whatever the
+check named. bareagent's plan carried an explicit prose prohibition ("Do not modify
+any file outside src/loop.js"); its worker OBEYED it and ground to death. The
+writeScope fence allowed both files in both runs — **the trap is the plan forbidding
+in prose what its own exit requires.** Prose is not machine-validatable, so no hard
+gate rule exists for this; the density heuristic above is likely secondary to this
+trap.
+
+**Refined remedies (both cheap, both convert-genre per F38, awaiting hamr's go):**
+(a) a law line in the drafter AND replanner prompts — a step must be free to edit
+everything its exit check judges; never forbid what the exit requires; (b) one
+mechanical line in the replan note, computed F32-style from gap-vs-gate-audit —
+"the exit failed on files the step never wrote: <list>". (b) touches the
+arbiter-authored note template: named, scoped, PARKED for explicit go.
+Consequence for the pool: all three rejections are trap-tainted; bareagent-u's
+step-red may be curable by (a)+(b) without touching caps or budgets.
+
 **Density observation, still recorded-not-minted (n=4 now):** the run died with 19
 errors pinned in `recurse.js` — the densest file, again at/over the ~15 band from the
 n=3 observation above.
