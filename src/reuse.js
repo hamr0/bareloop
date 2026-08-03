@@ -578,8 +578,10 @@ export function readResume(events, { deathAt = null } = {}) {
     startedAtMs: Date.parse(String(ev.ts)),
     // the fold this attempt was ALREADY carrying (a restart declares it on its own
     // try-start) — never re-derived from the file
-    declaredSpentUsd: typeof ev.priorSpentUsd === 'number' && Number.isFinite(ev.priorSpentUsd) ? ev.priorSpentUsd : 0,
-    declaredWallMs: typeof ev.priorWallMs === 'number' && Number.isFinite(ev.priorWallMs) ? ev.priorWallMs : 0,
+    // `> 0` belt matches the four sibling fold sites (tail-review F-4): a negative
+    // declared fold on a corrupt spine must never cancel real rounds and widen the cap
+    declaredSpentUsd: typeof ev.priorSpentUsd === 'number' && Number.isFinite(ev.priorSpentUsd) && ev.priorSpentUsd > 0 ? ev.priorSpentUsd : 0,
+    declaredWallMs: typeof ev.priorWallMs === 'number' && Number.isFinite(ev.priorWallMs) && ev.priorWallMs > 0 ? ev.priorWallMs : 0,
     declaredComplete: ev.priorSpendComplete !== false,
     roundsUsd: 0, roundsComplete: true, r1Written: false, jobEnd: null,
     /** @type {any[]} the window's own events, so the SAME `readTry` the live loop uses
@@ -1207,7 +1209,10 @@ export async function runReuse(opts) {
     // mismatch here means the seed came from a different envelope than the one this
     // process is about to enforce — refused with both hashes named, exactly like a
     // fresh launch under a stale signature.
-    if (isNonEmptyString(resume.approvalHash) && resume.approvalHash !== approvalHash) {
+    // a seed with NO hash (a pre-hash-scheme spine) is a refusal, not a pass — the
+    // strict comparison catches null/undefined too (tail-review F-2); signed specs are
+    // never silently re-validated, and a missing signature is the least valid of all
+    if (resume.approvalHash !== approvalHash) {
       return done('resume-red', {
         category: 'resume-red',
         decision: 'The run being resumed was signed under a DIFFERENT envelope than this one, so nothing was run — a resume continues one signed run, never any run.',
@@ -1300,6 +1305,12 @@ export async function runReuse(opts) {
         startN = rs.n + 1;
       }
     }
+    // tail-review F-1: a dead run that had already RUN its cold leg left the bridge loop
+    // by DECISION (the model said none-matches), not by count — re-deriving startN from
+    // try numbers alone re-enters the loop and buys a paid bridge try the signed preview
+    // said would not happen, running it AFTER the cold leg (an order no fresh run can
+    // produce). One predicate, mirroring the runner's own coldAlreadyRun arithmetic.
+    if (!coldRestart && tries.some((t) => t.mode === 'cold' && t.inherited)) startN = resolved.bridgeTries + 1;
   }
 
   // ── 4. the tries
@@ -1372,7 +1383,7 @@ export async function runReuse(opts) {
     detail: tries.map((t) => `try ${t.n} (${t.mode}${t.bridge ? ` "${t.bridge}"` : ''}): ${t.runOutcome}`
       + `${t.failingStage ? ` at stage "${t.failingStage}"` : ''}`
       + ` — ${t.spentUsd === null ? 'spend UNKNOWN' : `${t.spendComplete ? '' : '≥'}$${t.spentUsd.toFixed(4)}`} of $${t.capUsd},`
-      + ` ${(t.wallMs / 60000).toFixed(1)}min of ${(t.wallCapMs / 60000).toFixed(1)}min,`
+      + ` ${typeof t.wallMs === 'number' && Number.isFinite(t.wallMs) ? `${(t.wallMs / 60000).toFixed(1)}min of ${(t.wallCapMs / 60000).toFixed(1)}min` : 'wall UNKNOWN'},`
       + ` close ${t.closeReached ? 'reached' : 'NEVER REACHED'}`).join('\n'),
   });
 }

@@ -1309,3 +1309,97 @@ test('checkpoint: a step that FAILED its exits is NOT a completed step — only 
   assert.deepEqual(s.completedSteps.map((/** @type {any} */ c) => c.id), ['seed-src'],
     'a step-end is not a completion — a red one names work still to do, and skipping it would hand the close a step nobody finished');
 });
+
+// ── tail-review F-1..F-4 (2026-08-03): the cold-completed loop hole and three belts ──
+
+test('resume: a COMPLETED cold leg closes the bridge loop — tries still authorized by COUNT are not bought after it (tail-review F-1)', async () => {
+  // the reviewer's repro: --tries 2, the model says none-matches at try 1, so the cold
+  // leg runs AS try 1 and completes; the kill lands between its try-end and reuse-end.
+  // The dead run left the loop EARLY — by decision, not by count — so a resume that
+  // re-derives startN from try numbers alone re-enters the loop and buys a paid bridge
+  // try the signed preview said would not happen (and a bridge try AFTER the cold leg is
+  // a semantic inversion a fresh run can never produce).
+  const dir = seed(BRIDGE('alpha'));
+  const { file, events } = await spineOf({
+    registryDir: dir,
+    envelope: { perTryBudgetUsd: 5, perTryWallMs: 1_800_000, bridgeTries: 2 },
+    selectionProvider: picker({ choice: null, reason: 'none matches' }),
+    runJob: scriptedRuns([{ outcome: 'escalated', closeStage: 'typecheck', spentUsd: 2 }]),
+  });
+  truncateTo(file, killedAfter(events, (e) => e.type === 'try-end' && e.mode === 'cold'));
+
+  const runs = recordingRuns([{ outcome: 'green', plan: PLAN('never'), closeStage: 'typecheck' }]);
+  const sel = picker({ choice: 'alpha', reason: 'would buy an unauthorized try' });
+  const { result } = await resumeOnto(file, {
+    registryDir: dir, selectionProvider: sel, runJob: runs,
+    envelope: { perTryBudgetUsd: 5, perTryWallMs: 1_800_000, bridgeTries: 2 },
+  });
+  assert.equal(sel.calls.length, 0, 'no selection call — the dead run already decided cold, and that decision is inherited');
+  assert.equal(runs.calls.length, 0, 'nothing is re-run: the cold leg completed, so the run has nothing left to authorize');
+  assert.equal(result.category, 'reuse-exhausted');
+  assert.equal(result.outcome, 'escalated', 'the run keeps the verdict the killed run\'s cold leg actually earned');
+});
+
+test('resume: a seed with NO approval hash is refused — a pre-hash spine never rides through the signature gate (tail-review F-2)', async () => {
+  const dir = seed(BRIDGE('alpha'));
+  const { file, events } = await spineOf({
+    registryDir: dir,
+    selectionProvider: picker({ choice: 'alpha', reason: 'a' }),
+    runJob: scriptedRuns([{ outcome: 'escalated', closeStage: 'typecheck', rounds: [0.2], spentUsd: 1 }]),
+  });
+  truncateTo(file, killedAfter(events, (e) => e.type === 'worker-round'));
+  const dead = readResume(readSpine(file));
+
+  const runs = recordingRuns([{ outcome: 'green' }]);
+  const result = await runReuse({
+    job: JOB(), approvals: [], registryDir: dir,
+    envelope: { perTryBudgetUsd: 5, perTryWallMs: 1_800_000, bridgeTries: 2 },
+    patient: 'litectx-u', workdir: base, provider: picker(), selectionProvider: picker(),
+    emit: makeSpine(file), runid: 'deadrun', runJob: runs,
+    resume: { ...dead, approvalHash: null }, // a spine written before the hash scheme
+  });
+  assert.equal(result.category, 'resume-red', 'a missing hash is a refusal, not a pass — signed specs are never silently re-validated');
+  assert.equal(runs.calls.length, 0);
+});
+
+test('resume: an inherited try whose wall is UNKNOWN reports wall UNKNOWN — never 0.0min (F6 extends to time; tail-review F-3)', async () => {
+  const dir = seed(BRIDGE('alpha'));
+  const { file, events } = await spineOf({
+    registryDir: dir,
+    envelope: { perTryBudgetUsd: 5, perTryWallMs: 1_800_000, bridgeTries: 2 },
+    selectionProvider: picker({ choice: null, reason: 'none matches' }),
+    runJob: scriptedRuns([{ outcome: 'escalated', closeStage: 'typecheck', spentUsd: 2 }]),
+  });
+  truncateTo(file, killedAfter(events, (e) => e.type === 'try-end' && e.mode === 'cold'));
+  const dead = readResume(readSpine(file));
+
+  const result = await runReuse({
+    job: JOB(), approvals: [], registryDir: dir,
+    envelope: { perTryBudgetUsd: 5, perTryWallMs: 1_800_000, bridgeTries: 2 },
+    patient: 'litectx-u', workdir: base, provider: picker(), selectionProvider: picker(),
+    emit: makeSpine(file), runid: 'deadrun', runJob: recordingRuns([{ outcome: 'green' }]),
+    // the graded-but-unrecorded reconstruction hands back wallMs: null when the death
+    // instant is unknowable — model that row as the reader would produce it
+    resume: { ...dead, completed: dead.completed.map((t) => ({ ...t, wallMs: null })) },
+  });
+  assert.equal(result.category, 'reuse-exhausted');
+  assert.match(result.detail, /wall UNKNOWN/, 'an unknown duration is reported as unknown');
+  assert.doesNotMatch(result.detail, /0\.0min of/, 'never rendered as 0 (hamr\'s F6-time ruling)');
+});
+
+test('readResume: a NEGATIVE declared fold on the dead spine clamps to $0 — a corrupt prior can never hand the restart a fuller cap than it earned (tail-review F-4)', async () => {
+  const dir = seed(BRIDGE('alpha'));
+  const { file, events } = await spineOf({
+    registryDir: dir,
+    selectionProvider: picker({ choice: 'alpha', reason: 'a' }),
+    runJob: scriptedRuns([{ outcome: 'escalated', closeStage: 'typecheck', rounds: [0.2], spentUsd: 1 }]),
+  });
+  const cut = killedAfter(events, (e) => e.type === 'worker-round')
+    .map((e) => (e.type === 'try-start' ? { ...e, priorSpentUsd: -3, priorWallMs: -60_000 } : e));
+  const dead = readResume(cut);
+  // the window's own round ($0.20) still counts — the discriminating claim is that the
+  // NEGATIVE declared fold contributed $0, not −$3 (pre-fix this read −$2.80 and the
+  // remainder arithmetic would have widened the signed cap)
+  assert.equal(dead.restart.priorSpentUsd, 0.2, 'a negative declared money fold contributes $0, exactly like the four sibling fold sites');
+  assert.ok(dead.restart.priorWallMs >= 0, 'a negative declared wall fold can never drag the measured wall below zero');
+});

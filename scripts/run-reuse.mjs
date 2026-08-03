@@ -506,7 +506,7 @@ for (const s of result.selection) {
 for (const t of result.tries) {
   const money = t.spentUsd === null ? 'spend UNKNOWN' : `${t.spendComplete ? '' : '≥'}$${t.spentUsd.toFixed(4)}`;
   console.log(`try ${t.n}     ${t.mode}${t.bridge ? ` "${t.bridge}"` : ''} → ${t.runOutcome}${t.failingStage ? ` (stage ${t.failingStage})` : ''}`
-    + `  ${money}/$${t.capUsd} · ${(t.wallMs / 60000).toFixed(1)}/${(t.wallCapMs / 60000).toFixed(0)}min · ${t.rounds} rounds · close ${t.closeReached ? 'reached' : 'NEVER REACHED'}`
+    + `  ${money}/$${t.capUsd} · ${typeof t.wallMs === 'number' && Number.isFinite(t.wallMs) ? `${(t.wallMs / 60000).toFixed(1)}/${(t.wallCapMs / 60000).toFixed(0)}min` : 'wall UNKNOWN'} · ${typeof t.rounds === 'number' ? `${t.rounds} rounds` : 'rounds UNKNOWN'} · close ${t.closeReached ? 'reached' : 'NEVER REACHED'}`
     + `${t.inherited ? '  [from the killed run — not re-run]' : ''}`
     + `${t.restarted ? `  [RESTARTED after the kill; ${t.spendComplete === false ? '≥' : ''}$${(t.priorSpentUsd ?? 0).toFixed(4)} and ${((t.priorWallMs ?? 0) / 60000).toFixed(1)}min of that was the dead attempt's]` : ''}`);
 }
