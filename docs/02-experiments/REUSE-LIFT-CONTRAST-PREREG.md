@@ -380,3 +380,48 @@ spec hash; the cmd strings did not move).
 **Relaunch:** one relaunch of bareagent-u on the fixed instrument completes hamr's
 validation order — the casualty was ours, same precedent as calibration B's junk-probe
 relaunch. Screen read at the 5× floor per the frozen rules.
+
+---
+
+## Addendum — 2026-08-03 (night), recal u-msdpuaej: honest step-red; bareagent-u REJECTED on a clean instrument; ladder validated live
+
+**Recal u-msdpuaej (fixed close, same signed hash 1c35a1eb…): step-red at
+`fix-loop-strict` — FAILS must-GREEN.** $3.0669 / 22.4 min / 105 rounds / 2 plan
+attempts (replan fired), spendComplete true. step-red is not provider-red: no further
+relaunch is licensed. **Candidate REJECTED per the frozen screen — the rejection now
+stands on a clean instrument.** Programme spend **$12.9345 of $40** ($9.8676 + $3.0669).
+
+**The instrument fix HELD.** No arbiter-book false red anywhere in the spine: every
+close-verdict gap is real `tsc --strict` output (30→30→19→20, then 21→19→19→19). The
+suppression path never materialized either — the worker attempted no suppressions
+(`no-suppressions` preflight satisfied, no designed-catch firing needed).
+
+**The strike ladder validated live — every mechanism fired, honestly:**
+
+- Attempt 1: iter 2 repeated iter 1's exit output with **wrote=false** → strike 1
+  (the no-write repeat path). Iter 3 moved 30→19 — distinct gap, no new strike,
+  strike count STICKY at 1 (by design). Iter 4 went 19→20 (up, but distinct) — no
+  strike; movement is movement. The **step-variance meter** then ended the attempt
+  (decision-ready, "consumed a large share of the run with its exits still red").
+- The replan carried the **mechanism brief** to the replanner (trigger
+  `step-variance`, reason verbatim in the spine, seq 118).
+- Attempt 2: iters 3 and 4 both repeated iter 2's exit output **while writing**
+  (wrote=true, repeatOf 2) → strikes 1 then 2 → **cap-halt 2/2**, decision-ready.
+  Both strike genres (no-write repeat, wrote-but-unmoved repeat) observed in one run.
+
+**Root cause of the red — planning scope, not the ladder and not the close.** The
+spec goal names BOTH files ("Make src/recurse.js and src/loop.js pass tsc --strict")
+but both drafted plans scoped the edit step to `src/loop.js` ONLY (34 allowed writes,
+1 distinct file). The worker cleared loop.js completely (gap file list shrank from
+recurse+loop to recurse-only) then ground against recurse.js errors it was never
+scoped to touch. The replanner rebuilt the same single-file scope even with the gap
+naming recurse.js in hand — the known "replan cannot heal what the planner doesn't
+know" class (rules belong at the validation gate; recorded, not fixed here).
+
+**Density observation, still recorded-not-minted (n=4 now):** the run died with 19
+errors pinned in `recurse.js` — the densest file, again at/over the ~15 band from the
+n=3 observation above.
+
+**Pool state:** bareagent-u is out twice (pre-fix and post-fix). `bareguard-u`
+(hash `2b8dbdaf…`) is the LAST shaped candidate, staged and validated at $0 —
+nothing paid fires without hamr's explicit signature on that hash.
