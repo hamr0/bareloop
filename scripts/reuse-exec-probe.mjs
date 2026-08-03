@@ -282,7 +282,7 @@ if (DRY) {
   const firstContent = (/** @type {any[]} */ ms) => ms.find((m) => m.role === 'user')?.content ?? '';
 
   // 1. the FIRST draft — the real shipped prompt, injected
-  const draft = planPrompt(spec, '(dry scout blob)', null, 40, null, scopes, materials, CAP_RUNS);
+  const draft = planPrompt(spec, '(dry scout blob)', null, 40, null, scopes, materials);
   check('shipped draft prompt starts with DRAFT-PLAN', draft.startsWith(DRAFT_PREFIX));
   await wrapped.generate([{ role: 'user', content: draft }]);
   const gotDraft = firstContent(seen.at(-1));
@@ -291,13 +291,13 @@ if (DRY) {
   check('draft: original prompt intact as a prefix', gotDraft.startsWith(draft));
 
   // 2. a REDRAFT (validator reds) — same draft phase, arm holds
-  const redraft = planPrompt(spec, '(dry scout blob)', [{ code: 'invalid-value', path: 'steps[0].scope' }], 40, null, scopes, materials, CAP_RUNS);
+  const redraft = planPrompt(spec, '(dry scout blob)', [{ code: 'invalid-value', path: 'steps[0].scope' }], 40, null, scopes, materials);
   check('shipped redraft prompt carries the reds marker', redraft.includes(REDRAFT_MARKER));
   await wrapped.generate([{ role: 'user', content: redraft }]);
   check('redraft: block appended', firstContent(seen.at(-1)).length === redraft.length + C_BLOCK.length);
 
   // 3. a REPLAN draft — untouched
-  const replan = planPrompt(spec, '(dry scout blob)', null, 40, 'Step "x" did not reach its exits.', scopes, { ...materials, progress: 'step 1 of 2 did not finish' }, CAP_RUNS);
+  const replan = planPrompt(spec, '(dry scout blob)', null, 40, 'Step "x" did not reach its exits.', scopes, { ...materials, progress: 'step 1 of 2 did not finish' });
   check('shipped replan prompt carries the replan marker', replan.includes(REPLAN_MARKER));
   await wrapped.generate([{ role: 'user', content: replan }]);
   check('replan: forwarded UNTOUCHED', firstContent(seen.at(-1)) === replan, `${replan.length} chars in, ${firstContent(seen.at(-1)).length} out`);
@@ -308,7 +308,7 @@ if (DRY) {
   check('worker call: byte-identical passthrough', firstContent(seen.at(-1)) === worker);
 
   // 5. the caller's own messages were never mutated
-  check('caller messages not mutated', draft === planPrompt(spec, '(dry scout blob)', null, 40, null, scopes, materials, CAP_RUNS));
+  check('caller messages not mutated', draft === planPrompt(spec, '(dry scout blob)', null, 40, null, scopes, materials));
   check('injection log classified the 3 draft-class calls, in order', injectionLog.length === 3 && injectionLog.map((l) => l.phase).join(',') === 'draft,redraft,replan', injectionLog.map((l) => l.phase).join(','));
 
   // 6. the bridge guard, on the real tree

@@ -246,7 +246,7 @@ export function stageClose(close) {
  * job spec. Never throws on JSON text or plain parsed data; every failure is
  * a named red. Returns the parsed plan on ok (single parse), null on any red.
  * @param {object|string} input parsed plan, or raw JSON text (parse failures are a red)
- * @param {{ job?: any, maxStepRounds?: number, scopes?: string[], capRuns?: number }} [opts] `job`: the
+ * @param {{ job?: any, maxStepRounds?: number, scopes?: string[] }} [opts] `job`: the
  *   validateJob-GREEN four-field spec (the ceiling, the fence, and the checks
  *   menu all come from it — a missing or non-plan-shape job fails CLOSED);
  *   `maxStepRounds`: the shell's per-step rounds ceiling (interpret's
@@ -256,7 +256,7 @@ export function stageClose(close) {
  *   writeScope — never a free-text fallback (F50).
  * @returns {{ ok: boolean, reds: Red[], plan: object|null }}
  */
-export function validatePlan(input, { job, maxStepRounds = 40, scopes, capRuns = 3 } = {}) {
+export function validatePlan(input, { job, maxStepRounds = 40, scopes } = {}) {
   /** @type {Red[]} */
   const reds = [];
   /** @type {(code: string, path: string, detail?: string) => void} */
@@ -370,8 +370,24 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes, capRuns =
       if (s.model !== undefined && !STEP_MODELS.includes(s.model)) {
         red('invalid-value', `${at}.model`, `menu: ${STEP_MODELS.join('|')} — the tier menu is signed; the agent picks a tier, never names a model`);
       }
-      if (s.attempts !== undefined && !(Number.isInteger(s.attempts) && s.attempts >= 1 && s.attempts <= capRuns)) {
-        red('bounds', `${at}.attempts`, `integer 1..${capRuns} — a step may tighten the shell's attempt cap, never exceed it`);
+      // `attempts` is TOLERATED-INERT (step ladder, 2026-08-03). It once tightened a
+      // fixed per-step attempt count; that count is gone — a step's iterations are
+      // governed by the strike ladder, and a field that could only ever TIGHTEN is
+      // the wrong shape for a progress rule (drafters measurably tightened it to 3,
+      // then to 2 on replan, which is the opposite of the heal a converging step
+      // needs). It is no longer OFFERED in the drafting prompt, and the runner
+      // ignores it.
+      //
+      // It is not REJECTED, and that is the load-bearing half: the frozen bridge
+      // registry's stored plans carry `attempts`, and a bridge rides into the drafter
+      // as a starting draft after passing the ordinary validator. Redding it here
+      // would refuse every stored recipe minted before today and ruin a frozen
+      // contrast experiment. The SHAPE is still checked — a known field holding
+      // garbage stays a named red — but the upper bound is gone with the cap it
+      // named: keeping `<= capRuns` would make a plan stored under one runner's
+      // number invalid under another's, for a field that decides nothing.
+      if (s.attempts !== undefined && !(Number.isInteger(s.attempts) && s.attempts >= 1)) {
+        red('bounds', `${at}.attempts`, 'integer >= 1 — the field is accepted for stored-plan compatibility and bounds nothing (the step ladder governs iterations)');
       }
       if (s.scope !== undefined && !scopeMenu.includes(s.scope)) {
         red('invalid-value', `${at}.scope`, `menu: [${scopeMenu.join(', ')}] — a per-step write scope narrows the fence from the same menu tree-changed uses`);

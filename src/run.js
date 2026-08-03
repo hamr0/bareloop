@@ -76,7 +76,9 @@ async function primitiveSmoke(workdir) {
  *   metered claude-json text provider for the toolless drafter); ignored on every Loop-driven provider
  * @param {(type: string, data?: object) => object} opts.emit spine emitter
  * @param {(tier: string) => any} [opts.providerFor] P: per-step model-tier provider factory (forwarded to the plan flow)
- * @param {number} [opts.capRuns] shell-owned per-step attempt cap
+ * @param {number} [opts.capRuns] shell-owned iteration cap for the plan flow's
+ *   CLOSE-FIX loop (a plan STEP runs under the strike ladder instead)
+ * @param {number} [opts.strikeLimit] shell-owned strike ceiling for a plan step's ladder
  * @param {number} [opts.shellCapUsd] the shell's hard USD ceiling
  * @param {number} [opts.closeTimeoutMs] close wall-clock cap (shell territory)
  * @param {unknown} [opts.bridge] Layer 3 — a bridge-v1 entry to reuse as the drafter's
@@ -115,7 +117,7 @@ async function primitiveSmoke(workdir) {
  *   'close-red' | 'close-unsupported' | 'recipe-stale' | 'pricing-red' | 'provider-red' |
  *   'interpreter-red' | 'cap-halt' | 'wall-halt' | 'step-stalled' | `step-red:<id>`
  */
-export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, emit, capRuns = 3, shellCapUsd = 2, closeTimeoutMs, layerRoot = false, bridge = null, priorSpentUsd = 0, priorWallMs = 0, resumeSeed = null }) {
+export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, layerRoot = false, bridge = null, priorSpentUsd = 0, priorWallMs = 0, resumeSeed = null }) {
   // 0. the ledger's counters, declared FIRST so that every job-end — including
   // the pre-token reds below — can state a real figure. An omitted `spentUsd` is
   // not a zero: a consumer reads `undefined` and either crashes or launders it
@@ -219,7 +221,7 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // accounts it natively (F12) and the job-end money contract is unchanged.
   {
     const outcome = await runPlan(job, {
-      workdir, provider, nativeProvider, providerFor, emit: meter, capRuns, closeTimeoutMs, layerRoot, bridge, priorWallMs, resumeSeed,
+      workdir, provider, nativeProvider, providerFor, emit: meter, capRuns, ...(strikeLimit !== undefined ? { strikeLimit } : {}), closeTimeoutMs, layerRoot, bridge, priorWallMs, resumeSeed,
       remainingUsd: () => Math.min(shellCapUsd, job.budgetUsd - spentUsd),
       isUnpriced: () => unpriced, // F6: let the plan flow bail in-flight, not just after it returns
     });

@@ -124,7 +124,11 @@ const JOBS = {
   },
 };
 const CLOSE_TIMEOUT_MS = 900_000; // run-u's number: headroom over the slowest stage, not a budget
-const CAP_RUNS = 4;
+const CAP_RUNS = 4;              // the CLOSE-FIX loop's iteration cap
+// The step ladder's strike ceiling (src/ladder.js). Shell-owned, exactly where the
+// step's fixed count used to be: a step ends when it stops making progress, not
+// after N tries, and this is the number of no-progress iterations it is allowed.
+const STRIKE_LIMIT = 2;
 const DEFAULT_TIER_MODELS = { sonnet: 'claude-sonnet-5', haiku: 'claude-haiku-4-5-20251001' };
 
 const argv = process.argv.slice(2);
@@ -485,7 +489,7 @@ try {
     job: spec, approvals, registryDir, envelope: ev.envelope,
     patient: target.patient, workdir: wd, provider, providerFor,
     emit, runid,
-    capRuns: CAP_RUNS, closeTimeoutMs: CLOSE_TIMEOUT_MS,
+    capRuns: CAP_RUNS, strikeLimit: STRIKE_LIMIT, closeTimeoutMs: CLOSE_TIMEOUT_MS,
     ...(PIN ? { pinned: PIN } : {}),
     ...(dead ? { resume: dead } : {}),
     forceCold: FORCE_COLD,

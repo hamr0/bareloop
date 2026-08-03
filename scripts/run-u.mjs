@@ -61,7 +61,11 @@ const JOBS = {
   },
 };
 const CLOSE_TIMEOUT_MS = 900_000; // the slowest close stage is the suite (~23s aurora, ~53s litectx); headroom, not a budget
-const CAP_RUNS = 4;
+const CAP_RUNS = 4;              // the CLOSE-FIX loop's iteration cap
+// The step ladder's strike ceiling (src/ladder.js). Shell-owned, exactly where the
+// step's fixed count used to be: a step ends when it stops making progress, not
+// after N tries, and this is the number of no-progress iterations it is allowed.
+const STRIKE_LIMIT = 2;
 
 const arg = (/** @type {string} */ n) => { const i = process.argv.indexOf(`--${n}`); return i === -1 ? null : (process.argv[i + 1] ?? ''); };
 // --model picks the DEFAULT worker tier (runner territory — the spec names no model, so
@@ -98,7 +102,7 @@ const WALL_LABEL = WALL_MS === null ? 'UNBOUNDED (spec sets no maxWallMs — del
 
 if (arg('approve') !== specHash) {
   console.log('U — user-mode e2e, ONE run, REAL dollars');
-  console.log(`  spec     jobs/${target.spec}  $${spec.budgetUsd}  wall ${WALL_LABEL}  capRuns=${CAP_RUNS}`);
+  console.log(`  spec     jobs/${target.spec}  $${spec.budgetUsd}  wall ${WALL_LABEL}  capRuns=${CAP_RUNS} (close-fix)  strikeLimit=${STRIKE_LIMIT} (step ladder)`);
   console.log(`  patient  ${WORKDIR} @ ${SEED.slice(0, 12)}`);
   console.log(`  goal     "${spec.goal}"`);
   console.log(`  hash     ${specHash}`);
@@ -222,7 +226,7 @@ let outcome;
 try {
   outcome = await runJob(spec, {
     approvals, workdir: wd, provider, providerFor, emit: makeSpine(spineFile),
-    shellCapUsd: spec.budgetUsd, capRuns: CAP_RUNS, closeTimeoutMs: CLOSE_TIMEOUT_MS,
+    shellCapUsd: spec.budgetUsd, capRuns: CAP_RUNS, strikeLimit: STRIKE_LIMIT, closeTimeoutMs: CLOSE_TIMEOUT_MS,
   });
 } finally {
   // the guard outlives the run only by accident, never by design

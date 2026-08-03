@@ -448,7 +448,18 @@ export const CLOSE_FAULTS = Object.freeze({
  *   zone, worker-crash routing (F32), and the cap taxonomy apply unchanged.
  *   Injected by run.js only; inexpressible in any config or plan — the agent
  *   never authors its judge any more than its close.
- * @param {number} opts.capRuns budget: max middle runs
+ * @param {number} [opts.capRuns] budget: max middle runs. Required UNLESS `ladder`
+ *   is supplied — the two exhaustion rules are alternatives, never both at once.
+ * @param {ReturnType<typeof import('./ladder.js').createLadder>} [opts.ladder]
+ *   the PROGRESS governor (src/ladder.js) that replaces the fixed count for a plan
+ *   STEP's micro-loop. With it, the loop is bounded by strikes rather than by a
+ *   number of runs: iterations float, and money, the wall, the variance meter and
+ *   the stall fuse keep every bit of their current authority (each still ends the
+ *   loop through the middle's own throw). Ralph still interprets nothing — it hands
+ *   the ladder the iteration's gap and reads back a boolean.
+ *
+ *   Deliberately NOT wired into the close-fix loop: that loop's replay evidence does
+ *   not exist yet, so it keeps its count (a recorded follow-up, not an oversight).
  * @param {(type: string, data?: object) => object} opts.emit a spine emitter
  * @param {(s: string) => string} [opts.redact] source scrubber for close output
  *   (secrets never enter the spine); injected so the shell stays stdlib-only
@@ -467,8 +478,11 @@ export const CLOSE_FAULTS = Object.freeze({
  *   with zero writes, a crash stays what it always was: an instrument stop.
  * @returns {Promise<'green'|'escalated'>}
  */
-export async function ralph({ middle, close, judge, capRuns, emit, redact, closeTimeoutMs, cwd, expect, judged, gapKeep, workerWrites }) {
-  emit('run-start', { capRuns, close: judge ? 'judge:injected' : /** @type {string[]} */ (close).join(' ') });
+export async function ralph({ middle, close, judge, capRuns, ladder, emit, redact, closeTimeoutMs, cwd, expect, judged, gapKeep, workerWrites }) {
+  emit('run-start', {
+    ...(ladder ? { strikeLimit: ladder.report().limit } : { capRuns }),
+    close: judge ? 'judge:injected' : /** @type {string[]} */ (close).join(' '),
+  });
   // The blind spot is NAMED, never hidden: with no judgment-rendered signal this
   // close cannot tell a crash from an honest red (they are byte-identical at the
   // exit-code seam), so the record says so out loud rather than passing the exit
@@ -478,7 +492,22 @@ export async function ralph({ middle, close, judge, capRuns, emit, redact, close
   if (!judged && !judge) emit('close-unaudited', { close: /** @type {string[]} */ (close).join(' '), meaning: 'no judgment-rendered signal declared — a crash-at-load is indistinguishable from an honest red for this close' });
   const verdicts = [];
   let gap;
-  for (let iteration = 1; iteration <= capRuns; iteration++) {
+  // ONE exhaustion terminal, two triggers — the same three records in the same
+  // order either way, so the count path and the ladder path cannot drift into
+  // reporting the stop differently. The CATEGORY is `cap-halt` for both, and
+  // deliberately: downstream counts escalation categories against an executable
+  // excluded-set (ledger.js), and the step loop routes its ONE replan off exactly
+  // this name. Only the trigger changed; the taxonomy did not.
+  /** @param {number} iteration @param {object} halt @param {object} spend @param {string} decision @param {string[]} options */
+  const exhausted = (iteration, halt, spend, decision, options) => {
+    emit('cap-halt', { category: 'cap-halt', meaning: 'not under cap — not "can\'t"', ...halt });
+    emit('escalation', { category: 'cap-halt', decisionReady: true, verdicts, spend, decision, options });
+    emit('run-end', { outcome: 'escalated', iterations: iteration });
+    return /** @type {'escalated'} */ ('escalated');
+  };
+  // With a ladder the count is not the bound: the loop runs until the ladder strikes
+  // out, or until the middle throws (money, wall, variance, stall — all unchanged).
+  for (let iteration = 1; ladder || iteration <= /** @type {number} */ (capRuns); iteration++) {
     emit('iteration-start', { iteration });
     try {
       await middle(iteration, gap);
@@ -569,30 +598,43 @@ export async function ralph({ middle, close, judge, capRuns, emit, redact, close
       gap = `Your edit CRASHED the test suite — it can no longer even load and judge (${v.detail}). `
         + `Files you have written this run: ${shown.join(', ')}${more > 0 ? ` (and ${more} more)` : ''}. `
         + 'Fix or revert your change so the suite can run again — nothing can pass while the suite cannot load.';
-      continue;
+    } else {
+      // Forbidden zone: no judgment was rendered, so there is no verdict. Escalate
+      // by the outcome's OWN name and never retry — retrying a broken arbiter is
+      // the §5b violation adaptlearn found live in its shipped shell (F25/Z-3).
+      const fault = Object.hasOwn(CLOSE_FAULTS, v.verdict) ? CLOSE_FAULTS[v.verdict] : undefined;
+      if (fault) {
+        emit('escalation', {
+          category: fault.category, decisionReady: true, verdicts,
+          spend: { runs: iteration, capRuns },
+          decision: fault.decision, options: fault.options, detail: v.detail,
+        });
+        emit('run-end', { outcome: 'escalated', iterations: iteration });
+        return 'escalated';
+      }
+      gap = v.gap; // feedback for the next middle run; the shell itself learns nothing
     }
-    // Forbidden zone: no judgment was rendered, so there is no verdict. Escalate
-    // by the outcome's OWN name and never retry — retrying a broken arbiter is
-    // the §5b violation adaptlearn found live in its shipped shell (F25/Z-3).
-    const fault = Object.hasOwn(CLOSE_FAULTS, v.verdict) ? CLOSE_FAULTS[v.verdict] : undefined;
-    if (fault) {
-      emit('escalation', {
-        category: fault.category, decisionReady: true, verdicts,
-        spend: { runs: iteration, capRuns },
-        decision: fault.decision, options: fault.options, detail: v.detail,
-      });
-      emit('run-end', { outcome: 'escalated', iterations: iteration });
-      return 'escalated';
+    // ── the ladder reads THIS red iteration, whichever gap it ended up with (a
+    // worker-crash gap is feedback the attempt really received, so it is a reading
+    // like any other). ONE call site, after both branches have settled `gap`: two
+    // would let a future branch quietly opt out of the bound.
+    if (ladder) {
+      const r = ladder.record({ iteration, gap });
+      emit('ladder', r);
+      if (ladder.struckOut()) {
+        const rep = ladder.report();
+        return exhausted(iteration,
+          { strikes: rep.strikes, strikeLimit: rep.limit, iterations: rep.iterations, distinctGaps: rep.distinctGaps },
+          { runs: iteration, strikes: rep.strikes, strikeLimit: rep.limit },
+          `${rep.strikes}/${rep.limit} strikes — the step stopped making progress. ${ladder.brief()} Continue, change approach, or stop?`,
+          ['let the planner re-allocate what is left (replan)', 'change approach', 'abandon the task']);
+      }
     }
-    gap = v.gap; // feedback for the next middle run; the shell itself learns nothing
   }
-  emit('cap-halt', { category: 'cap-halt', meaning: 'not under cap — not "can\'t"', capRuns });
-  emit('escalation', {
-    category: 'cap-halt', decisionReady: true, verdicts,
-    spend: { runs: capRuns, capRuns },
-    decision: `${capRuns}/${capRuns} runs spent, close still red. Continue, change approach, or stop?`,
-    options: ['raise the cap and rerun', 'change the middle/harness', 'abandon the task'],
-  });
-  emit('run-end', { outcome: 'escalated', iterations: capRuns });
-  return 'escalated';
+  // The FIXED-COUNT exhaustion, reached only without a ladder — today that is the
+  // close-fix loop alone, and its copy is unchanged because its bound is.
+  const spent = /** @type {number} */ (capRuns);
+  return exhausted(spent, { capRuns }, { runs: spent, capRuns },
+    `${spent}/${spent} runs spent, close still red. Continue, change approach, or stop?`,
+    ['raise the cap and rerun', 'change the middle/harness', 'abandon the task']);
 }

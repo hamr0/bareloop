@@ -636,11 +636,31 @@ test('Layer R ON: the ratchet note is injected into the third attempt\'s prompt 
     'the worker was told, in-prompt, that it is repeating itself');
 });
 
-test('Layer R ON: a THIRD consecutive fixated attempt escalates to VERBATIM — the worker\'s own teed content is surfaced back (the full tee path, end-to-end)', async (t) => {
+// ⚠ OPEN POINT FOR hamr — a COLLISION between two shipped mechanisms, recorded
+// here rather than resolved unilaterally (it is arbiter/experiment territory).
+//
+// Layer R's escalation needs THREE consecutive fixated attempts: streak 1 injects
+// the summary note at iteration 3, streak 2 injects the VERBATIM note at iteration
+// 4. But fixation is, by its own definition, a byte-identical red-set — which is
+// exactly what the step ladder calls a repeat. So a fixated step strikes at
+// iteration 2 and strikes out at iteration 3, and iteration 4 never opens.
+//
+// Net effect: with `layerRoot: true`, the VERBATIM stage is now unreachable in the
+// STEP loop. It remains reachable in the close-fix loop (still bounded by a count,
+// capRuns), and the stage itself keeps full unit coverage in tests/root.test.js.
+// Three ways out, none of them this build's to pick: accept summary-only on the
+// step path; raise STRIKE_LIMIT (2 is hamr's number); or exempt the iteration in
+// which the ratchet just spoke from striking. Layer R ships OFF by default (F41)
+// and its ON arm's acceptance read has never been run, so nothing shipped is
+// broken today — but that read would now measure a different Layer R than the one
+// designed, and that is the part hamr has to decide.
+//
+// This test asserts what the two mechanisms ACTUALLY do together now.
+test('Layer R ON + the step ladder: the ratchet reaches SUMMARY and the ladder ends the step first — VERBATIM is unreachable on the step path (open point above)', async (t) => {
   const wd = makePatient(t);
-  // four attempts: three non-'ok' rewrites of the one target (fixation each
-  // comparison), then the fix. streak 1 (summary) at attempt 3, streak 2
-  // (verbatim) at attempt 4 — the verbatim note carries attempt 3's own bytes.
+  // four attempts scripted: three non-'ok' rewrites of the one target (fixation
+  // each comparison), then the fix. Under the OLD fixed count the run reached
+  // attempt 4 and greened; under the ladder the byte-identical gap strikes twice.
   const provider = scriptedProvider([
     { text: 'scout' },
     { text: PLAN(wd) },
@@ -649,13 +669,15 @@ test('Layer R ON: a THIRD consecutive fixated attempt escalates to VERBATIM — 
     { toolCalls: [tcall('t3', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'SENTINEL placeholder 3\n' })] }, { text: 'a3' },
     { toolCalls: [tcall('t4', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok — fixed\n' })] }, { text: 'a4' },
   ]);
-  const { outcome, events } = await go(wd, provider, { layerRoot: true, capRuns: 4 });
-  const stages = events.filter((e) => e.type === 'root-injected').map((e) => e.stage);
-  assert.deepEqual(stages, ['summary', 'verbatim'], 'the ratchet escalated summary → verbatim across two stuck episodes');
-  // the verbatim note carries the worker's OWN previous content (attempt 3's bytes)
-  assert.ok(provider.calls.some((p) => typeof p === 'string' && p.includes('STILL repeating') && p.includes('SENTINEL placeholder 3')),
-    'the verbatim stage surfaced the worker\'s own teed content back to it');
-  assert.equal(outcome, 'green');
+  const { events } = await go(wd, provider, { layerRoot: true, capRuns: 4 });
+
+  const stages = events.filter((e) => e.type === 'root-injected' && e.step).map((e) => e.stage);
+  assert.deepEqual(stages, ['summary'], 'the ratchet fires once and never escalates: the ladder ends the step at iteration 3');
+  const reads = events.filter((e) => e.type === 'ladder').slice(0, 3);
+  assert.deepEqual(reads.map((e) => e.strike), [false, true, true],
+    'and it is the REPEAT that struck — the worker wrote a different file body every attempt');
+  assert.deepEqual(reads.map((e) => e.wrote), [true, true, true], 'writes were never the reason');
+  assert.equal(stepIterations(events).length, 3, 'attempt 4 — the one that would have carried VERBATIM, and the one that greened — never opened');
 });
 
 test('Layer R OFF (default): the SAME fixation script emits NO root-injected — armed only when asked', async (t) => {
@@ -1320,7 +1342,13 @@ test('P: a per-step scope NARROWS the live fence — a write the job fence allow
   assert.ok(!existsSync(join(wd, 'src', 'hack.mjs')), 'the out-of-step-scope write was denied by the NARROWED fence');
 });
 
-test('P: step.attempts=1 tightens the shell cap — exactly one iteration before the step stops', async (t) => {
+test('P: step.attempts is TOLERATED-INERT at the runner too — a stored bridge plan validates and the field bounds nothing', async (t) => {
+  // It used to tighten the shell's fixed per-step cap, and this test read exactly
+  // one iteration off it. The cap is gone: the step ladder governs iterations by
+  // progress, and a field that could only ever TIGHTEN is the wrong shape for that
+  // (drafters measurably tightened it to 3, then to 2 on replan). It is still
+  // ACCEPTED because the frozen bridge registry's stored plans carry it — refusing
+  // them would ruin a frozen contrast experiment.
   const wd = makePatient(t);
   const plan = JSON.stringify({
     schema: 'plan-v1',
@@ -1333,19 +1361,21 @@ test('P: step.attempts=1 tightens the shell cap — exactly one iteration before
   const provider = scriptedProvider([
     { text: 'scout notes' },
     { text: plan },
-    // the write lands but its content never satisfies the check → exit red
+    // the write lands but its content never satisfies the check → exit red, and the
+    // gap is byte-identical every iteration, so the ladder strikes out at two
     { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'not the magic word\n' })] },
     { text: 'wrote it (wrong)' },
+    { toolCalls: [tcall('t2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'still not it\n' })] },
+    { text: 'wrote it (wrong again)' },
     // the replan drafter fires next (cap-halt + funds left) — feed it junk so the
     // run ends; this test reads the ITERATION count, not the ending
     { text: 'not a plan' },
-    { text: 'still not a plan' },
-    { text: 'nope' },
   ]);
   const { events } = await go(wd, provider);
-  const stepIters = events.filter((e) => e.type === 'iteration-start');
-  assert.equal(stepIters.length, 1, `attempts:1 must stop after ONE iteration — saw ${stepIters.length}`);
-  assert.ok(events.some((e) => e.type === 'escalation' && e.category === 'cap-halt'), 'the tightened cap reads as cap-halt');
+  assert.equal(events.find((e) => e.type === 'plan-validate').ok, true, 'a plan carrying attempts is accepted');
+  const iterations = events.filter((e) => e.type === 'iteration-start' && e.iteration !== undefined);
+  assert.equal(iterations.filter((e) => e.iteration === 2).length >= 1, true,
+    'attempts: 1 bounded nothing — a second iteration ran under a step that declared one');
 });
 
 test('P: step.model routes the worker through providerFor(tier); the drafter stays on the default', async (t) => {
@@ -1814,15 +1844,16 @@ test('W-2 (step site): a step that would START past the deadline is never funded
   assert.equal(wh.requestedMs, 600_000);
 });
 
-test('W-2 (step site): the wall-halt record separates the RUN\'s cap from the step\'s TIGHTENED one — one key never carries two meanings', async (t) => {
-  // `capRuns` on the same record type means the run's attempt cap at the fix site.
-  // At the step site it used to carry `stepCap` — the per-step tightening — so two
-  // wall-halt records could disagree about what the number counts, with nothing on
-  // the record saying which. A step that TIGHTENS its attempts is the only shape
-  // that can tell them apart (with no `attempts` the two numbers are equal and the
-  // conflation is invisible), which is why this plan declares attempts: 1 under a
-  // run cap of 3. The record shape is new in this unreleased version, so naming the
-  // two things separately is free now and never later.
+test('W-2 (step site): the wall-halt record carries the LADDER state — never a count that no longer bounds anything here', async (t) => {
+  // This record used to carry `capRuns` (the run's cap) alongside `stepAttemptCap`
+  // (the step's tightening), named separately so one key could not carry two
+  // meanings. Neither number bounds a step any more — the strike ladder does — and a
+  // field whose name means something it no longer measures is worse than an absent
+  // one, because a reader cannot tell it went stale. The fix site still writes
+  // `capRuns` and still means it: that loop is still counted.
+  //
+  // The plan still declares `attempts: 1` on purpose: it is the shape that USED to
+  // change this record, so a stale reading would show up here first.
   const wd = makePatient(t);
   const clk = fakeClock();
   const tightened = PLAN(wd, [{
@@ -1845,8 +1876,11 @@ test('W-2 (step site): the wall-halt record separates the RUN\'s cap from the st
 
   const wh = events.filter((e) => e.type === 'wall-halt').at(-1);
   assert.equal(wh.phase, 'step:write-test', 'the STEP site wrote this record — the fix site is the other one');
-  assert.equal(wh.capRuns, 3, 'capRuns is the RUN\'s cap here, exactly as it is at the fix site');
-  assert.equal(wh.stepAttemptCap, 1, 'and the step\'s own tightening gets its own name, not the same key');
+  assert.equal(wh.strikes, 0, 'the ladder was governing this step, so the ladder state is what the record states');
+  assert.equal(wh.strikeLimit, 2);
+  assert.equal(wh.distinctGaps, 0, 'the step was refused at its head, so it judged nothing');
+  assert.equal(wh.capRuns, undefined, 'the close-fix cap never bounded this step and no longer claims to');
+  assert.equal(wh.stepAttemptCap, undefined, 'and the tightening it named bounds nothing either — the field is inert');
 });
 
 test('W-2 (step site) CONTROL: a step ALREADY RUNNING when the wall passes keeps its old behaviour — the attempt finishes, the judge runs, and the METER is what stops it', async (t) => {
@@ -2036,7 +2070,7 @@ const MARKER = 'YOUR STARTING DRAFT';
 test('planPrompt COLD is byte-identical with the starting-draft argument absent, null, or undefined (the F47 works-both-ways pin)', () => {
   const wd = '/tmp/does-not-matter';
   const job = JOB(wd);
-  const args = [job, 'scout notes', null, 40, null, undefined, { balanceUsd: 1.5 }, 3];
+  const args = [job, 'scout notes', null, 40, null, undefined, { balanceUsd: 1.5 }];
   const cold = planPrompt(...args);
   assert.equal(planPrompt(...args, null), cold, 'an explicit null is the cold render');
   assert.equal(planPrompt(...args, undefined), cold, 'and so is an explicit undefined');
@@ -2046,7 +2080,7 @@ test('planPrompt COLD is byte-identical with the starting-draft argument absent,
 test('planPrompt with a starting draft: the cold prompt is intact as a PREFIX, plus the verbatim framing and the plan pretty-printed', () => {
   const wd = '/tmp/does-not-matter';
   const job = JOB(wd);
-  const args = [job, 'scout notes', null, 40, null, undefined, { balanceUsd: 1.5 }, 3];
+  const args = [job, 'scout notes', null, 40, null, undefined, { balanceUsd: 1.5 }];
   const cold = planPrompt(...args);
   const warm = planPrompt(...args, BRIDGE_PLAN);
   assert.ok(warm.startsWith(cold), 'the shipped prompt is unchanged and the block is ADDITIVE — never surgery on its interior');
@@ -2063,7 +2097,7 @@ test('planPrompt keeps the reds appendix LAST: a redraft is still told to fix it
   const wd = '/tmp/does-not-matter';
   const job = JOB(wd);
   const reds = [{ code: 'invalid-value', path: 'steps.0.scope' }];
-  const warm = planPrompt(job, 'scout', reds, 40, null, undefined, { balanceUsd: 1.5 }, 3, BRIDGE_PLAN);
+  const warm = planPrompt(job, 'scout', reds, 40, null, undefined, { balanceUsd: 1.5 }, BRIDGE_PLAN);
   assert.ok(warm.indexOf(MARKER) < warm.indexOf('Your previous plan was REJECTED'),
     'the block lands BEFORE the reds instruction — the probe recorded the opposite ordering as its own known wart');
   assert.ok(warm.trimEnd().endsWith('Output ONLY the corrected JSON object.'), 'the last word to a redrafting planner is still the validator\'s');
@@ -2446,3 +2480,233 @@ test('resume seed: a completed step that does not line up with the reloaded plan
   assert.equal(seedRec.skipping, 0);
   assert.match(seedRec.divergence, /line up/, 'and the divergence is on the record, never a silent discard');
 });
+
+// ── THE STEP LADDER (design 2026-08-03). The step loop's exhaustion rule was a
+// FIXED COUNT (`capRuns`, 4 in the operator's runner) and it demonstrably cut
+// converging work: u-msd916dh went 30 → 22 → 17 → 11 scope errors and was stopped
+// with $1.30 and ~6 minutes unspent. It is replaced by a PROGRESS rule — a strike
+// per red iteration that repeats a gap or writes nothing, two strikes ends the
+// step — with money, wall, variance and the stall fuse keeping every bit of their
+// current authority.
+
+/** a patient whose close/check output MOVES with the tree: it counts TODO markers
+ * and reports the count, the way a real `tsc` reports an error count. The fixed
+ * `FAILED …` line of `makePatient` cannot express a trajectory at all, so a
+ * converging run there is inexpressible — the fixture has to be able to show the
+ * thing under test. */
+function makeConvergingPatient(t) {
+  const wd = mkdtempSync(join(tmpdir(), 'planrun-ladder-'));
+  t.after(() => rmSync(wd, { recursive: true, force: true }));
+  mkdirSync(join(wd, 'tests'));
+  const probe = `import { existsSync, readFileSync } from 'node:fs';
+const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
+if (!existsSync(p)) { console.log('FAILED: tests/test_x.mjs is missing'); process.exit(1); }
+const n = (readFileSync(p, 'utf8').match(/TODO/g) ?? []).length;
+if (n === 0) { console.log('suite: clean'); process.exit(0); }
+console.log(\`FAILED: \${n} error(s) remain\`); process.exit(1);\n`;
+  writeFileSync(join(wd, 'close.mjs'), probe);
+  writeFileSync(join(wd, 'check.mjs'), probe);
+  return wd;
+}
+
+const LADDER_PLAN = (wd, over = {}) => PLAN(wd, [{
+  id: 'shrink-errors', action: 'Remove the TODO markers from tests/test_x.mjs.',
+  tools: ['write'], rounds: 4, target: 'tests/test_x.mjs',
+  exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+  ...over,
+}]);
+
+/** one script entry pair per step iteration: a write, then the attempt's summary
+ * round. `scriptedProvider` sticks on the last entry, so once the list runs out the
+ * worker writes nothing more — which is itself a strike, so nothing can hang. */
+const iterWrites = (wd, contents) => contents.flatMap((content, i) => [
+  { toolCalls: [tcall(`w${i}`, 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content })] },
+  { text: `attempt ${i + 1} done` },
+]);
+
+/** the step's own iterations — the close precheck and the fix loop emit the same
+ * event type, so the window has to be cut at the step boundaries */
+const stepIterations = (events) => {
+  const a = events.findIndex((e) => e.type === 'step-start');
+  const b = events.findIndex((e) => e.type === 'step-end');
+  assert.ok(a >= 0, 'a step opened');
+  return events.slice(a, b === -1 ? undefined : b).filter((e) => e.type === 'iteration-start');
+};
+
+test('LADDER (a) CONVERGING: a step whose gap moves every iteration is NEVER struck out — it runs past the old fixed count and greens', async (t) => {
+  const wd = makeConvergingPatient(t);
+  // 5 iterations. The old rule (capRuns) would have cut this at 4 with the error
+  // count still falling — the exact shape of u-msd916dh.
+  const provider = scriptedProvider([
+    { text: 'scout notes' },
+    { text: LADDER_PLAN(wd) },
+    ...iterWrites(wd, ['TODO TODO TODO TODO\n', 'TODO TODO TODO\n', 'TODO TODO\n', 'TODO\n', 'clean\n']),
+  ]);
+  const { outcome, events } = await go(wd, provider, { capRuns: 4 });
+
+  assert.equal(outcome, 'green');
+  assert.equal(stepIterations(events).length, 5,
+    'five iterations under a fixed count of four — the count is no longer what bounds a step');
+  const reads = events.filter((e) => e.type === 'ladder');
+  assert.equal(reads.length, 4, 'one reading per RED iteration; the green one is never read');
+  assert.deepEqual(reads.map((e) => e.strike), [false, false, false, false], 'nothing struck: every gap moved and every iteration wrote');
+  assert.deepEqual(reads.map((e) => e.wrote), [true, true, true, true]);
+  assert.equal(reads.at(-1).distinctGaps, 4);
+  assert.equal(events.filter((e) => e.type === 'cap-halt').length, 0,
+    'and the gate never halted it either — the per-iteration turn allowance floats with the ladder');
+});
+
+test('LADDER (b) OSCILLATION A→B→A→B: the repeat strikes, and the second repeat ends the step', async (t) => {
+  const wd = makeConvergingPatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout notes' },
+    { text: LADDER_PLAN(wd) },
+    // 3 errors → 1 → 3 → 1: iterations 3 and 4 are gaps already seen. A last-only
+    // comparison reads every one of these as progress (the gap differs from the one
+    // before it every single time) — only a seen-set catches the cycle.
+    ...iterWrites(wd, ['TODO TODO TODO\n', 'TODO\n', 'TODO TODO TODO\n', 'TODO\n']),
+    { text: LADDER_PLAN(wd, { id: 'second-go' }) },
+    { text: 'the replanned step writes nothing either' },
+  ]);
+  const { outcome, events } = await go(wd, provider, { capRuns: 4 });
+
+  const reads = events.filter((e) => e.type === 'ladder');
+  assert.deepEqual(reads.slice(0, 4).map((e) => e.strike), [false, false, true, true],
+    'the oscillation is caught the moment a gap comes BACK, not when it merely repeats the last one');
+  assert.deepEqual(reads.slice(0, 4).map((e) => e.wrote), [true, true, true, true],
+    'the worker was writing the whole time — the repeat alone did this (the OR is an OR)');
+  assert.equal(reads[2].repeatOf, 1, 'and the record names the iteration the gap was first seen at');
+  assert.equal(reads[3].repeatOf, 2);
+  assert.equal(stepIterations(events).length, 4, 'two strikes ended it');
+  assert.equal(events.filter((e) => e.type === 'replan').length, 1, 'and the routing is unchanged: exactly one replan');
+  assert.match(outcome, /^step-red:/);
+});
+
+test('LADDER (c) IDLE: a worker that writes nothing strikes out in two iterations, whatever the fixed count says', async (t) => {
+  const wd = makeConvergingPatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout notes' },
+    { text: LADDER_PLAN(wd) },
+    { text: 'thinking about it' },   // iteration 1: text only
+    { text: 'still thinking' },      // iteration 2: text only → two strikes
+    { text: LADDER_PLAN(wd, { id: 'second-go' }) },
+    { text: 'the replanned step is idle too' },
+  ]);
+  const { outcome, events } = await go(wd, provider, { capRuns: 4 });
+
+  assert.equal(stepIterations(events).length, 2,
+    'STRIKE_LIMIT bounds it at two, NOT the fixed count of four — an idle worker is not bought three more times');
+  const reads = events.filter((e) => e.type === 'ladder').slice(0, 2); // the FIRST step's; the replanned one has its own
+  assert.deepEqual(reads.map((e) => [e.wrote, e.strike]), [[false, true], [false, true]]);
+  assert.equal(reads[0].repeatOf, null, 'the first gap was novel — it struck on the WRITE signal alone');
+  assert.equal(reads[1].strikes, 2);
+  assert.equal(events.filter((e) => e.type === 'replan').length, 1);
+  assert.match(outcome, /^step-red:/);
+});
+
+test('LADDER: the strike-out escalation stays category cap-halt (downstream counts categories) but says STRIKES, never "N/N runs spent"', async (t) => {
+  const wd = makeConvergingPatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout notes' },
+    { text: LADDER_PLAN(wd) },
+    { text: 'writes nothing' },
+    { text: LADDER_PLAN(wd, { id: 'second-go' }) },
+    { text: 'nor does the replanned one' },
+  ]);
+  const { events } = await go(wd, provider, { capRuns: 4 });
+  const esc = events.filter((e) => e.type === 'escalation' && e.category === 'cap-halt');
+  assert.ok(esc.length >= 1, 'the category is unchanged — a renamed category is counted as an unclassified escalation downstream');
+  assert.match(esc[0].decision, /strike/i, 'the copy names the real trigger');
+  assert.doesNotMatch(esc[0].decision, /runs spent/, 'the fixed-count sentence is a lie about what stopped it');
+  assert.equal(esc[0].spend.strikeLimit, 2);
+  assert.equal(esc[0].spend.strikes, 2);
+  const halt = events.filter((e) => e.type === 'cap-halt').at(0);
+  assert.equal(halt.strikes, 2);
+  assert.equal(halt.strikeLimit, 2);
+  assert.equal(halt.capRuns, undefined, 'a step ladder halt never carries a number that no longer bounds it');
+});
+
+test('LADDER: the replan brief names the SHAPE that ended the step, its evidence, and what was left on the table', async (t) => {
+  const wd = makeConvergingPatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout notes' },
+    { text: LADDER_PLAN(wd) },
+    // the same content three times: the gap is byte-identical, so iterations 2 and 3
+    // are both repeats and the worker wrote on every one of them
+    ...iterWrites(wd, ['TODO TODO\n', 'TODO TODO\n', 'TODO TODO\n']),
+    { text: LADDER_PLAN(wd, { id: 'second-go' }) },
+    { text: 'nothing' },
+  ]);
+  await go(wd, provider, { capRuns: 4, job: JOB(wd, { maxWallMs: 600_000 }) });
+
+  const replanPrompt = provider.calls.find((c) => c.includes('What happened when the previous plan ran'));
+  assert.ok(replanPrompt, 'the replan drafted');
+  assert.match(replanPrompt, /repeated itself/, 'WHICH shape ended the step');
+  assert.match(replanPrompt, /iteration 3 had already been seen at iteration 1/, 'and the evidence for it');
+  assert.match(replanPrompt, /1 distinct exit output\(s\) over 3 iteration\(s\)/, 'the gap trajectory, as a fact');
+  assert.doesNotMatch(replanPrompt, /stalled/, 'the worker wrote every iteration — the brief must not also claim it stalled');
+  assert.doesNotMatch(replanPrompt, /It ran \d+ attempts/, 'the old sentence described a bound that no longer exists');
+  assert.match(replanPrompt, /\$\d+\.\d\d and \d+ minute\(s\) of the run were still unspent/,
+    'and what the step left on the table — the money and the time a raised count would have bought');
+});
+
+test('LADDER: with NO wall set the brief reports the time left as unbounded — never 0 minutes (F6 extends to time)', async (t) => {
+  const wd = makeConvergingPatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout notes' },
+    { text: LADDER_PLAN(wd) },
+    ...iterWrites(wd, ['TODO TODO\n', 'TODO TODO\n', 'TODO TODO\n']),
+    { text: LADDER_PLAN(wd, { id: 'second-go' }) },
+    { text: 'nothing' },
+  ]);
+  await go(wd, provider, { capRuns: 4 }); // the JOB fixture sets no maxWallMs
+  const replanPrompt = provider.calls.find((c) => c.includes('What happened when the previous plan ran'));
+  assert.match(replanPrompt, /time UNBOUNDED/, 'an unknown/unbounded duration is reported as such, never rendered as a number');
+  assert.doesNotMatch(replanPrompt, /0 minute\(s\) of the run were still unspent/);
+});
+
+test('LADDER (e) WALL beats progress: an expired clock ends a CONVERGING ladder — the governance stops keep every bit of their authority', async (t) => {
+  const wd = makeConvergingPatient(t);
+  const clk = fakeClock();
+  let n = 0;
+  const script = [
+    { text: 'scout' },
+    { text: LADDER_PLAN(wd) },
+    ...iterWrites(wd, ['TODO TODO TODO\n', 'TODO TODO\n', 'TODO\n', 'clean\n']),
+  ];
+  // the replan's draft, once the meter stops the (still converging) first step
+  script.splice(6, 0, { text: LADDER_PLAN(wd, { id: 'second-go' }) });
+  const provider = {
+    name: 'wall-mid-convergence',
+    async generate() {
+      n += 1;
+      const s = script[n - 1] ?? { text: 'never bought' };
+      // the clock is spent right after iteration 2's summary round, with the error
+      // count still falling — progress is real and the clock wins anyway
+      if (n === 6) clk.advance(700_000);
+      return { text: s.text ?? '', toolCalls: s.toolCalls ?? [], usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now, capRuns: 4 });
+
+  assert.equal(outcome, 'wall-halt', 'time ran out — progress does not buy time the operator did not sign');
+  const reads = events.filter((e) => e.type === 'ladder');
+  assert.deepEqual(reads.map((e) => e.strike), [false, false],
+    'the ladder struck NOTHING: every gap moved and every iteration wrote — the clock alone stopped this run');
+  assert.equal(stepIterations(events).length, 3,
+    'iteration 3 opened and was refused at its head — the ladder never got to say whether it should continue');
+  assert.equal(events.filter((e) => e.type === 'escalation')[0].category, 'step-variance',
+    'a step ALREADY RUNNING when the deadline passes is stopped by the meter, exactly as before');
+
+  // …and the replanned step, which would BEGIN past the deadline, is never funded:
+  // the step-site W-2 check, whose record now carries the ladder's state
+  const wh = events.filter((e) => e.type === 'wall-halt').at(-1);
+  assert.equal(wh.phase, 'step:second-go');
+  assert.equal(wh.cutMidCall, false, 'read between attempts with no call in flight');
+  assert.equal(wh.strikes, 0, 'the record carries the state that was actually governing the ladder');
+  assert.equal(wh.strikeLimit, 2);
+  assert.equal(wh.distinctGaps, 0, 'a step refused at its head has judged nothing — zero is the true reading here');
+  assert.equal(wh.capRuns, undefined, 'never a field name meaning something it no longer measures');
+  assert.equal(wh.stepAttemptCap, undefined);
+});
+

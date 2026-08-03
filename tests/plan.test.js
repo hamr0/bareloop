@@ -602,17 +602,16 @@ test('planPrompt: the offered scopes are a STANDALONE list, and EVERY JSON exit 
 test('planPrompt states every bound and rule the validator ENFORCES — an unstated red is drafting friction the agent cannot see', () => {
   // The prompt is the whole contract the agent drafts against: a bound the
   // validator reds but the prompt never mentions is a round burnt on a rule the
-  // drafter had no way to know. Three had drifted: `attempts` said "integer" with
-  // no range while validatePlan reds outside 1..capRuns, and BOTH
-  // `step-scope-escape` reds (a target outside its own step's narrowed scope; a
-  // tree-changed scope disjoint from it) were enforced and never stated.
+  // drafter had no way to know. Both `step-scope-escape` reds (a target outside
+  // its own step's narrowed scope; a tree-changed scope disjoint from it) were
+  // enforced and never stated.
   const scopes = legalScopes(['tests/**'], ['tests/unit']);
-  // the live cap is interpolated the way every sibling bound is, never a constant
-  for (const capRuns of [2, 5]) {
-    const p = planPrompt(JOB, 'survey', null, 40, null, scopes, undefined, capRuns);
-    assert.match(p, new RegExp(`"attempts"[^\\n]*1\\.\\.${capRuns}`), `the attempts bound names the LIVE cap ${capRuns}`);
-  }
-  const p = planPrompt(JOB, 'survey', null, 40, null, scopes, undefined, 3);
+  const p = planPrompt(JOB, 'survey', null, 40, null, scopes, undefined);
+  // `attempts` is the mirror rule: a field the prompt must NOT offer, because the
+  // step ladder governs iterations and the field bounds nothing (validatePlan
+  // still tolerates it for stored bridge plans — offered and accepted are
+  // different questions, and only "offered" is the drafter's contract).
+  assert.doesNotMatch(p, /"attempts"/, 'the drafter is never offered a knob that decides nothing');
   assert.match(p, /"scope"/, 'the step scope field is offered');
   // stated as rules, in the prompt's own voice — matched on the load-bearing
   // words rather than the sentence, so a rewording does not break the pin
@@ -638,11 +637,22 @@ test('P: model from the closed tier menu is accepted; an off-menu value is inexp
   assert.match(r.reds[0].detail ?? '', /sonnet\|haiku/, 'the menu is handed over, not described');
 });
 
-test('P: attempts tightens the shell capRuns, never exceeds it', () => {
-  assert.deepEqual(validatePlan(mut((p) => { p.steps[1].attempts = 2; }), { job: JOB, capRuns: 4 }).reds, []);
-  const r = validatePlan(mut((p) => { p.steps[1].attempts = 9; }), { job: JOB, capRuns: 4 });
-  assert.equal(r.reds.length, 1);
-  assert.equal(r.reds[0].code, 'bounds');
+test('P: attempts is TOLERATED-INERT — any positive integer validates (stored bridge plans carry it), garbage still reds', () => {
+  // It used to tighten a fixed per-step attempt count. That count is gone (the
+  // step ladder governs iterations by progress), so the field bounds nothing and
+  // the prompt no longer offers it. It is NOT rejected, and that half is
+  // load-bearing: the frozen bridge registry's stored plans carry `attempts`, and
+  // a validator that redded them would refuse every recipe minted before today
+  // and ruin a frozen contrast experiment.
+  assert.deepEqual(validatePlan(mut((p) => { p.steps[1].attempts = 2; }), { job: JOB }).reds, []);
+  assert.deepEqual(validatePlan(mut((p) => { p.steps[1].attempts = 9; }), { job: JOB }).reds, [],
+    'no upper bound survives the cap it named — a plan stored under one runner\'s number must not be invalid under another\'s');
+  // the SHAPE is still checked: a known field holding garbage stays a named red
+  for (const bad of [0, -1, 1.5, 'two', null]) {
+    const r = validatePlan(mut((p) => { p.steps[1].attempts = bad; }), { job: JOB });
+    assert.equal(r.reds.length, 1, `attempts: ${JSON.stringify(bad)} must red`);
+    assert.equal(r.reds[0].code, 'bounds');
+  }
 });
 
 test('P: a per-step scope narrows the fence from the SAME menu tree-changed uses', () => {

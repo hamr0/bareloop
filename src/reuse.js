@@ -818,6 +818,7 @@ export function resumeTreeGate({ head, seed, dirty }) {
  * @param {any} [opts.providerFor] per-step model-tier factory, forwarded
  * @param {any} [opts.nativeProvider] native provider factory, forwarded
  * @param {number} [opts.capRuns] forwarded
+ * @param {number} [opts.strikeLimit] forwarded (a plan step's strike ceiling)
  * @param {number} [opts.closeTimeoutMs] forwarded
  * @param {boolean} [opts.layerRoot] forwarded
  * @param {any} [opts.resume] RESUME (module C) — a `readResume` reading of the KILLED
@@ -836,7 +837,7 @@ export async function runReuse(opts) {
   const {
     job, approvals, registryDir, patient, workdir, provider, selectionProvider,
     emit, ask, pinned = null, shortlist = null, forceCold = false,
-    providerFor, nativeProvider, capRuns, closeTimeoutMs, layerRoot,
+    providerFor, nativeProvider, capRuns, strikeLimit, closeTimeoutMs, layerRoot,
     runJob = shippedRunJob, now = () => Date.now(),
   } = opts;
   const runid = opts.runid ?? Date.now().toString(36);
@@ -975,6 +976,7 @@ export async function runReuse(opts) {
         approvals, workdir, provider, nativeProvider, providerFor, emit: tap,
         shellCapUsd: envelope.perTryBudgetUsd,
         ...(capRuns !== undefined ? { capRuns } : {}),
+        ...(strikeLimit !== undefined ? { strikeLimit } : {}),
         ...(closeTimeoutMs !== undefined ? { closeTimeoutMs } : {}),
         ...(layerRoot !== undefined ? { layerRoot } : {}),
         ...(resumed ? { priorSpentUsd: prior.spentUsd, priorWallMs: prior.wallMs } : {}),

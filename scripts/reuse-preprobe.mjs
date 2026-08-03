@@ -484,7 +484,7 @@ for (const arm of ORDER) {
           row = { arm, i, outcome: 'casualty', casualty: r.error, costUsd: r.priced ? r.costUsd : null, priced: r.priced };
         } else {
           const code = extractArtifact(r.text).code ?? '';
-          const pv = validatePlan(code, { job: spec, maxStepRounds: MAX_STEP_ROUNDS, capRuns: CAP_RUNS });
+          const pv = validatePlan(code, { job: spec, maxStepRounds: MAX_STEP_ROUNDS });
           let plan = null;
           try { plan = JSON.parse(code); } catch { /* unparseable — recorded as such */ }
           row = {
@@ -589,7 +589,7 @@ for (const [k, f] of Object.entries(SET_AXES)) {
 // exactly what this job offers (never a menu re-derived here).
 const scopeMenu = events.findLast((e) => e.type === 'scope-menu')?.offered;
 const bridgeGate = validatePlan(bridgePlanText, {
-  job: spec, maxStepRounds: MAX_STEP_ROUNDS, capRuns: CAP_RUNS,
+  job: spec, maxStepRounds: MAX_STEP_ROUNDS,
   ...(Array.isArray(scopeMenu) && scopeMenu.length ? { scopes: scopeMenu } : {}),
 });
 
