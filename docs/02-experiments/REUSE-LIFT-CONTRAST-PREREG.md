@@ -291,3 +291,56 @@ pattern-copy of the already-signed pulselog spec (same shape, same $4 / 25min
 envelope, scope and patient swapped), and the hash is minted here before the paid
 run. Calibration fires on this authority; the contrast fires under the same order
 once the calibration passes the (5×-floored) screen.
+
+---
+
+## Addendum — 2026-08-03, bareagent-u-types calibration REJECTED; pool re-swept; second replacement staged
+
+**Calibration (u-msd916dh, cold, on the signed hash): FAILS must-GREEN.** step-red at
+`strict-fix-recurse`: $2.7020 / 18.7 min / 82 rounds, 2-step plan, replan fired, attempt
+ladder exhausted (cap-halt 3/3 then 2/2), close never judged, money and wall unbound —
+the same failure class as baremobile's calibration (the rounds/attempt ladder binds
+before dollars, F73 class). step-red is not provider-red: no relaunch is licensed.
+**Candidate REJECTED per the frozen screen.** Programme spend now **$7.6557 of $40**
+($2.2517 prior + $2.7020).
+
+**Observation, recorded not minted (n=3, one run per candidate — anecdote tier):** the
+green calibration's scope had per-file densities 15+12; both reds died on their densest
+file (baremobile `errors.js` 16, bareagent `recurse.js` 19). Selection heuristic only —
+prefer scopes whose densest file stays well under ~15.
+
+**Pool re-sweep ($0, real instruments) for the job-B slot:**
+
+- `barebrowse` — **OUT at the static screen**: suite NOT green at seed (254 tests,
+  1 failing, exit 1) and 6.6 min runtime is a close hazard besides; `bidi.js`/`cdp.js`
+  additionally carry a TS7016 `ws` declaration wall (upstream-dependency class).
+- `mailproof` / `knowless` — 1 whole-repo error each, below band. OUT.
+- `bareguard` — **PASSES every $0 clause** with scope
+  `src/primitives/{classify,fs,spawn-rate,defer-rate,bash}.js`: **21 in-scope errors**
+  (9+4+3+3+2 — max density 9, well under every observed red), all TS2339/TS7006
+  (property-narrowing / implicit-any, in-repo JSDoc work; the repo's `proper-lockfile`
+  TS7016 wall sits in `audit.js`/`budget.js`, OUTSIDE the scope); suite at seed
+  **238 executed / 0 fail, exit 0** in the patient copy (the original repo shows 239 —
+  one test lives in ignored dev junk `notes/…/wire-test.mjs`, stripped from the patient;
+  TESTS_MIN is honestly 238). Estimated execution/drafting ratio at sonnet's measured
+  efficiency: 21 × ~$0.042 / ~$0.15 ≈ **5.9×** against the 5× floor.
+- This is the **last shaped candidate in the local pool** — if its calibration fails,
+  the pool is exhausted and the programme stop-and-reports (the one-job-contrast option
+  then needs a prereg amendment, hamr's call).
+
+Patient `bareloop-patients/bareguard-u` @ seed
+`2ae8fcd37041c186524a6eb5e953b9752cd602fa`, porcelain clean, dev junk stripped
+(tracked `harness-code-mode/` was briefly caught by the junk sweep and restored from
+git — porcelain re-verified 0). Close `scripts/u-bareguard-close.mjs` (F-5 untracked
+sweep included), validated at seed: changed-from-seed red exit 1, typecheck red exit 1
+naming exactly 21, suite-green exit 0 (238), no-suppressions exit 0. OUTSIDE_MAX 116.
+
+**Resolved spec hash, AWAITING hamr's signature (nothing paid fires without it):**
+
+- `bareguard-u-types` → `2b8dbdaf68e4c0dac9023d3c1c3816e387c617b91819fd714f67069f72ec387a`
+
+hamr's "screen the replacement and fire" covered ONE replacement (bareagent) — it is
+spent. A second replacement's paid calibration is prescribed by this prereg's own
+"screening continues until two candidates are admitted or the pool is exhausted", but
+the per-hash signature gate is structural and is NOT inferred: this hash waits for
+hamr's explicit word.

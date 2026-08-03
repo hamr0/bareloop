@@ -115,6 +115,13 @@ const JOBS = {
     seed: '0037182a5a369d380e1635e0e4ab13e3557cfab9',
     patient: 'bareagent-u',
   },
+  'bareguard-types': {
+    spec: 'bareguard-u-types.json',
+    workdir: '/home/hamr/PycharmProjects/bareloop-patients/bareguard-u',
+    spine: 'bareguard-u-bareloop',
+    seed: '2ae8fcd37041c186524a6eb5e953b9752cd602fa',
+    patient: 'bareguard-u',
+  },
 };
 const CLOSE_TIMEOUT_MS = 900_000; // run-u's number: headroom over the slowest stage, not a budget
 const CAP_RUNS = 4;
