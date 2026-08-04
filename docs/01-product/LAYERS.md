@@ -230,6 +230,67 @@ self-raise.
 
 ---
 
+## What lives where now (2026-08-04 flow update)
+
+The layers above are the map; this is the current inventory — every mechanic that has
+landed (or is in build) and which box it belongs to. Details and evidence live in the PRD
+addenda (v1.36–v1.46); this list is deliberately one line each.
+
+**The shell (judge + gap + cap — not a layer; governance lands here):**
+- **Money:** hard cap per run, metered per round. A money cap-halt is becoming what W-2
+  made of a time halt *(in build, v1.46)*: keep the last minted verdict, pause
+  decision-ready with an ACCURATE trend note — cut-while-converging / cut-while-flat /
+  can't-tell, computed per stage from the close's own graded numbers, never across axes,
+  never model prose — and the three levers: top up & resume (a re-sign) / revise / abandon.
+- **Time:** the wall cap (W-2: "when time is up, keep the grade we already have and stop";
+  the close is never bounded and never counts against the wall); the outside watchdog
+  whose kill requires deadline passed AND a flat spine (W-3 — never a silent kill); the
+  in-run stall fuse.
+- **Resume:** step-level, "the stop is the checkpoint" — kill-resume exists; money/wall
+  cap-halt resume on the user path is *in build* (spend folds in as prior spend, the
+  ceiling never silently widens; the top-up itself is a spec re-sign).
+- **Signing:** the resolved spec hash pins the tool menu that was signed (MED-1); tries,
+  budgets, and reuse envelopes fold into the hash — any widening forces a re-sign.
+- **Close hygiene:** env-strip on the close's environment; the close runs async; the
+  arbiter's own books are never read by the worker and never red the close.
+
+**Layer 1 — the wheel (the atom): unchanged.** attempt → judge → gap → retry; crash-by-cause
+routing (a crash after real writes feeds back, an instrument crash escalates); provider
+casualties are never evidence.
+
+**Layer R — the notebook: unchanged.** Continuity only, armed and OFF; under a staged close
+its red-set reads the stage that rendered the verdict and refuses to compare across a
+stage change.
+
+**Layer 2 — the road (where most of the recent work landed):**
+- **Draft-gate laws (losing shapes made inexpressible, never judged):** a `check-passes`
+  step must hold a write-class verb (the mailbox rule); a seed-red check may only gate the
+  FINAL write step (check-placement, Rule A-v2); a replan may not shed a predecessor's
+  check (check-shed, Rule B); nested-quantifier exit patterns are rejected statically.
+  Each law is also STATED in the drafting prompt from the same facts the validator judges.
+- **Prompt laws:** a step carrying a check is free to edit every file that check can
+  report on (exit-freedom); the replan brief carries the mechanical never-wrote line.
+- **The step ladder:** fixed attempt counts are gone — 2 strikes of no progress (per-stage
+  series, write-delta aware) force the replan, and the mechanism note goes to the
+  REPLANNER, the channel that converts; at most one replan, plus the variance trigger
+  (built, inert at 0.5).
+- **The close-fix loop:** its fixed iteration count retires for the SAME 2-strike
+  no-progress rule *(in build, v1.46)* — a run should die when it is out of ideas, not
+  out of money mid-convergence; money and wall keep full authority.
+- **Materials:** money and time handed to the planner as balances; the scout is
+  load-bearing (measured, not assumed); the staged close derives the check menu; the
+  drafting floor is the medium tier.
+
+**Layer 3 — the recipe box (machinery built, acceptance pending):**
+- A green run graduates its road (bridge) to CANDIDATE; demotion only on escalation —
+  a red never demotes, a casualty NEVER demotes; re-promotion is strict.
+- "Same job" means same SHAPE, never same instance (else the box is a lookup table).
+- One reuse green proves safe-and-legal, never beneficial — the acceptance read is the
+  frozen ON-vs-cold lift contrast (admission floor 5×), still ahead.
+- A tightened reuse envelope changes the resolved hash → re-sign.
+
+---
+
 ## The kid version (start here whenever the map stops making sense)
 
 A kid builds a LEGO castle. Mom pays for the bricks and decides if it goes on the shelf.
