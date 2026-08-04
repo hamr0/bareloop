@@ -38,6 +38,18 @@ feature lands, **patch** = docs, fixes, scaffolding.
   the declared fold (`priorSpentUsd` with its `priorSpendComplete`, and `priorWallMs`) when
   there is one, so a chain of resumes adds only each attempt's new rounds instead of
   re-deriving and double-billing.
+  **Validated live and pinned by cycle tests (F83).** Live: a signed top-up resumed a real
+  money cap-halt at its close checkpoint — finished step skipped, no re-scout or re-draft,
+  patient continued, watchdog armed on the REMAINDER — and greened, with `job-end` stating
+  the folded total across both legs. Pinned deterministically by five `$0` scripted-round
+  tests covering the whole cycle: leg-1 halt → top-up → leg-2 green at the checkpoint (a
+  close-precheck red proving the green was earned, not inherited); a **no-top-up control**
+  where the same budget buys no second pass and leaves a byte-identical tree (one
+  round-boundary overshoot round, the documented behaviour of a cap that binds BETWEEN
+  rounds); an **unsolvable cycle** where a topped-up leg making no per-stage progress
+  strikes out `flat` with the wallet still largely unburned — the fix loop's strike rule
+  governs a resumed leg exactly as it governs a cold one; and an F6 floor surviving halt →
+  fold → green terminal.
 - **Layer 3, the REUSE rung — the registry, the load gate, and the MECHANICAL START**
   (design record `docs/plans/2026-08-01-layer-3-reuse-design.md`; execution probe green
   before any of it was built). A green's plan is now an artifact the next run of the same
@@ -167,7 +179,13 @@ feature lands, **patch** = docs, fixes, scaffolding.
       attempt came back unpriced, `priorSpendComplete: false` rides one-way onto every
       `job-end` this run emits, so a resumed attempt states a floor instead of an
       exact-looking total (F6 — it was previously computed and recorded on `try-start` but
-      never reached the component whose terminal says so).
+      never reached the component whose terminal says so). **Known limit, unfixed (F83):**
+      the RESTART fold derives that completeness from two of `runJob`'s four floor causes
+      (a declared prior floor and an unpriced round), so a floor arising from a STALL or a
+      call cut mid-flight comes back exact at the resume seam. The graded branch of the same
+      reader consults the dead terminal's own `spendComplete`; the restart branch does not.
+      Parked rather than patched — the remedy has to be tested against the ordinary
+      killed-mid-flight restart, which has no `job-end` to read.
     - **`runReuse({… resume})`** seeds the completed tries, restarts the mid-flight one
       against the SAME workflow with no second selection call, and carries on into
       whatever the envelope still authorizes. It refuses (`resume-red`, ledger-excluded)

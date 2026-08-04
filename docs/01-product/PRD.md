@@ -2763,3 +2763,67 @@ replay §4 pre-registered.
 honest about what they see; unifying them (or keeping both) is arbiter territory and hamr's
 call. The **bareagent-u top-up** decision is still pending and is the resume feature's live
 validation candidate — a real cap-halt with work on disk, needing a re-sign to fire.
+
+## Addendum v1.48 — 2026-08-05 (the money halt's live read: bareagent-u is topped up, resumed, and GREEN — v1.47's parked top-up decision RESOLVED)
+
+hamr signed the top-up in-turn, verbatim: **"go 8/45"** — `jobs/bareagent-u-types.json`
+`budgetUsd` 4 → 8 and `maxWallMs` 25 → 45min, a spec edit that flipped the resolved hash to
+`22eb9b3e` and had to be re-signed to run at all. The run fired on it and greened. Evidence,
+numbers and both parked items are F83; commit `3fc6ee9` carries the re-sign and the cycle tests.
+
+### 1. What is now true
+
+**v1.46 §2–§4 have met a real halted tree.** v1.47 recorded them as built on tests and $0
+replay; `u-msf70nei` is the run. The `money-halt` readout (§2) made the top-up a decision
+rather than a guess; `run-u --resume` (§3) consumed the halt — re-entering at the close
+checkpoint with the single finished step skipped, no re-scout and no re-draft, the patient
+CONTINUED rather than reset, the fold declared once at `job-start`
+(`priorSpentUsd 4.1261` / `priorSpendComplete true` / `priorWallMs 24.9min`) against the
+SIGNED $8, and the outside watchdog armed on the 20.1-minute REMAINDER; and the new
+`close-trend` governor (§4) ran the fix loop that finished the job — its first live firing,
+on the spine as `ladder {governor:'close-trend', … noProgress:1, limit:2}`.
+
+**The green was earned in the resumed leg, not inherited.** The close re-ran first and redded
+on `no-suppressions` (5 added), the fix loop see-sawed exactly once (scrubbing the `any`s
+re-exposed 3 strict errors), and iteration 2 closed both axes: 7 allowed edits across 2 files,
+all four stages `satisfied`. `job-end` states the FOLDED total — `spentUsd 5.3389`,
+`spendComplete true` — for a leg that cost **$1.21 and 12.8 minutes**, with $2.66 unspent. All
+four close stages were re-run by hand afterwards: exit 0 each. A bridge record was minted from
+it, carrying the plan as executed (F81's RLM shape).
+
+**The resume rung's live read is done.** This is the first pause → top-up → resume → pass in
+programme history, and it closes the economic argument the resume rulings were made on: the
+second leg paid for one fix iteration and re-bought nothing the first leg already owned.
+
+**The cycle is pinned deterministically too** (5 tests, `$0`, all watched-fail with sabotage
+evidence): leg-1 halt → top-up → leg-2 green at the checkpoint; a **no-top-up control** where
+the same budget buys no second pass and leaves a byte-identical tree; the **unsolvable cycle**
+hamr asked for, where a topped-up flat leg strikes out at the fix-loop's strike limit with
+`$1.60 of $2` unburned — a top-up does not buy the right to burn the wallet on a dead axis;
+and an F6 floor surviving the whole cycle. Gate 931/931, typecheck clean.
+
+### 2. Parked for hamr (v1.47 §3's items, plus three new)
+
+Still open from v1.47: **two trend instruments** for one question (the wall halt's byte-equality
+`gapTrend` vs the money halt's per-stage numeric trend) — unifying them or keeping both is
+arbiter territory.
+
+New, from this run and its tests:
+
+- **The restart fold can launder a floor into an exact total (MED, F6 class, not fixed).**
+  `readResume`'s restart branch derives `priorSpendComplete` from 2 of the 4 causes `run.js`
+  uses for the same decision, so a floor arising from `stalled` or `cutMidCall` comes back
+  EXACT at the resume seam. The graded branch of the same reader consults the terminal's own
+  `spendComplete`; only the restart branch skips it. The remedy is a HYPOTHESIS and needs its
+  own test against the ordinary killed-mid-flight restart shape (no `job-end` at all) before it
+  ships — the standing rule that a fix read off source is tested as hard as the defect. This
+  run could not have caught it: the dead leg declared `spendComplete: true`.
+- **Should a pause readout span a RESUME CHAIN?** A resumed leg's trend is scoped to that leg's
+  own grades, per `src/trend.js`'s documented accuracy law. In the no-top-up control the leg
+  honestly reads `flat` while the CYCLE was converging (2 → 1) and the real blocker was the
+  absent top-up. Neither reading is wrong; they answer different questions, and which one the
+  human should see is hamr's call. The test leaves that trend unasserted rather than encoding
+  an answer.
+- **The `run-u` readout frames wall and money differently** (display only, small): money prints
+  the folded total (`$5.34 of $8`), wall prints the leg (`12.8min of 45min`) against the full
+  signed cap. The spine and the enforcement are both correct.

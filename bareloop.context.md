@@ -941,7 +941,14 @@ outside watchdog on the REMAINING wall. The top-up itself stays a spec edit the 
   seeds the resumed ledger; the mid-try fold is deliberately NOT in it, because it comes
   back inside the restarted try's own terminal — counting it in both places would bill it
   twice. A try row's `spentUsd` is therefore the try's WHOLE spend across both attempts,
-  and a floor stays a floor.
+  and a declared floor stays a floor. **Known limit, unfixed (F83):** the RESTART fold
+  derives that completeness from two of `runJob`'s four floor causes — a declared prior
+  floor and an unpriced round — so a floor arising from a STALL or a call cut mid-flight
+  comes back EXACT at the resume seam, and the resumed leg's terminal can say
+  `spendComplete: true` over a total built on a floor. `readTry`, the graded branch of the
+  same reader, does consult the dead terminal's own `spendComplete`; the restart branch
+  does not. Parked rather than patched, because the remedy has to be tested against the
+  ordinary killed-mid-flight restart, which has no `job-end` to read at all.
 - **Refusals** (`resume-red`, in the ledger's excluded set): a seed signed under a
   DIFFERENT envelope than the one being enforced (both hashes are named), and a restart
   whose workflow has left the registry (substituting another would override a decision

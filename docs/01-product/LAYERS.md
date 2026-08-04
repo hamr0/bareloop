@@ -234,7 +234,7 @@ self-raise.
 
 The layers above are the map; this is the current inventory — every mechanic that has
 landed (or is in build) and which box it belongs to. Details and evidence live in the PRD
-addenda (v1.36–v1.47); this list is deliberately one line each.
+addenda (v1.36–v1.48); this list is deliberately one line each.
 
 **The shell (judge + gap + cap — not a layer; governance lands here):**
 - **Money:** hard cap per run, metered per round. A money cap-halt is what W-2 made of a
@@ -247,9 +247,10 @@ addenda (v1.36–v1.47); this list is deliberately one line each.
   whose kill requires deadline passed AND a flat spine (W-3 — never a silent kill); the
   in-run stall fuse.
 - **Resume:** step-level, "the stop is the checkpoint" — kill-resume exists, and money/wall
-  cap-halt resume on the user path is *built* (`run-u --resume`: the patient is continued,
-  spend and wall fold in as prior, the ceiling never silently widens; the top-up itself is a
-  spec re-sign).
+  cap-halt resume on the user path is *built and LIVE-VALIDATED* (F83: a signed top-up
+  resumed bareagent-u's cap-halt at the close checkpoint and greened for $1.21/12.8min)
+  (`run-u --resume`: the patient is continued, spend and wall fold in as prior, the ceiling
+  never silently widens; the top-up itself is a spec re-sign).
 - **Signing:** the resolved spec hash pins the tool menu that was signed (MED-1); tries,
   budgets, and reuse envelopes fold into the hash — any widening forces a re-sign.
 - **Close hygiene:** env-strip on the close's environment; the close runs async; the

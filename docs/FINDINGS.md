@@ -5179,3 +5179,135 @@ feature — is this run converging? — is only as honest as the reading under i
 why the accuracy law got its own module, why an unreadable stage donates nothing rather than a
 zero, and why the retired count stayed on as the bound for the one case the new instrument is
 blind to.
+
+## F83 — the pause becomes a CONTINUE: bareagent-u's cap-halt is topped up, resumed at the checkpoint, and greens in 12.8 minutes for $1.21 — the first live pause → top-up → resume → pass in programme history
+
+**Date:** 2026-08-04/05 · **Resumed run:** `u-msf70nei` (GREEN, `spentUsd` 5.3389 of the
+signed $8, `spendComplete: true`) · **Dead leg:** F81's `u-msew1uy5` ($4.13 of $4, cap-halt,
+no-suppressions red by 5) · **Signature:** hamr verbatim *"go 8/45"* → `budgetUsd` 4 → 8,
+`maxWallMs` 25 → 45min, new resolved hash `22eb9b3e` · **Tests:** commit `3fc6ee9` (opus
+build, session as orchestrator/validator) · **Programme spend ~$21.82/$40.**
+
+### What this validates
+
+The feature chain PRD v1.46 §2–§4 specified and v1.47 recorded as BUILT had never met a real
+halted tree. All three legs of it fired at once here, on the patient that produced the halt:
+**§2** minted the decision-ready `money-halt` that made the top-up a decision instead of a
+guess; **§3**'s `run-u --resume` consumed it; **§4**'s `close-trend` governor ran the fix loop
+that finished the job. F82's evidence was tests and replay. This is the run.
+
+### What the spine says (primary artifacts, `u-msf70nei.jsonl` + its gate audit)
+
+- **Re-entered at the checkpoint, not at the beginning.** `scout-skipped {reason:'resumed',
+  phase:'close'}` · `resume-seed {phase:'close', planSteps:['fix-strict-typing'],
+  completed:[…], skipping:1}` · `step-skipped {provenBy:'step-end', provenSeq:135}` ·
+  `plan-executed` records the one step as `skipped`, `replanned:false`. No re-scout, no
+  re-draft, no re-paid step. The plan came back off the dead spine and re-validated against
+  the spec signed NOW (the new hash), then re-emitted as this leg's own `plan-accepted`.
+- **The patient was CONTINUED.** The dead leg's edits were on disk and stayed there
+  (`resumeTreeGate`); the close precheck judged that tree, not a seed.
+- **The fold is declared once, at `job-start`:** `priorSpentUsd 4.1261`,
+  `priorSpendComplete true`, `priorWallMs 1493945` (24.9min), against `budgetUsd: 8`. The
+  ceiling could not widen by being re-invoked.
+- **The watchdog armed on the REMAINDER:** `wall-clock {requestedMs:2700000,
+  elapsedMs:1493946, remainingMs:1206054}` — 20.1min left of the signed 45, not a fresh 45.
+- **The close ran first and redded honestly.** `outer-close` first judgment
+  `needs_revision`, stage `no-suppressions` — *5 suppression(s) added — suppressing an error
+  is not typing it*. The green was earned in this leg, never inherited.
+- **The see-saw appeared once more and the fix loop converted it.** Fix iteration 1 scrubbed
+  the `any`s and re-exposed **3** strict errors (`close-verdict` iteration 1, stage
+  `typecheck`); iteration 2 fixed those without re-suppressing and all four stages came back
+  `satisfied`. **7 allowed `edit` actions across 2 files** (`src/loop.js`, `src/recurse.js`)
+  — the F32 gate-audit instrument, not `git status`.
+- **F82 §4's new governor ran it, and is on the record doing so:** `ladder {governor:
+  'close-trend', iteration:1, stage:'typecheck', value:3, improved:false, comparable:true,
+  noProgress:1, limit:2}`. First live firing of the close-trend governor; it read a real
+  number off a real stage and did not have to end anything.
+- **Leg cost and time:** 12.8min wall (21:51:35 → 22:04:23) and **$1.2128** of new spend —
+  roughly the one fix-iteration F81 predicted the halt was short of. $2.66 of the topped-up
+  $8 went unspent.
+- **Books honest end to end:** `job-end {outcome:'green', spentUsd:5.3388775,
+  spendComplete:true}` — the FOLDED total (4.1261 + 1.2128), not the leg, and the dead leg's
+  own `spendComplete:true` is what licenses the `true` here.
+- **The green was independently audited** by re-running all four close stages by hand: exit 0
+  each. A bridge record was minted from it
+  (`bridge-bareagent-u-types-msf70nei.json`, `specHash 22eb9b3e`) carrying the plan **as
+  executed** — the RLM single step, exits `tree-changed(src/**) ∧ check-passes(typecheck)`,
+  the shape F81's gate rules made the drafter roll cold.
+
+### The money-pause cycle at library level (commit `3fc6ee9`, 5 tests, +329 lines)
+
+The live run is n=1 on a real provider. The cycle itself is now pinned deterministically with
+priced scripted rounds, `$0`:
+
+1. **leg 1** — the wallet drains INSIDE the fix loop → the run keeps its minted verdict and
+   pauses decision-ready (trend `converging`, kept verdict cross-checked, levers asserted
+   non-self-adjusting).
+2. **leg 2** — the topped-up resume greens AT THE CHECKPOINT: prefix skipped, the fold
+   declared once, total = sum of both legs, and a close-precheck RED proving the green was
+   earned rather than inherited.
+3. **the no-top-up CONTROL** — resuming on the SAME budget buys no second pass: one
+   round-boundary overshoot round (the documented behaviour — the cap binds BETWEEN rounds),
+   a **byte-identical tree**, and a second honest money-halt. Without this arm the cycle test
+   would only ever show the happy direction.
+4. **the UNSOLVABLE cycle** (hamr's ask, *"money negative cycle that can't be solved"*) — a
+   topped-up leg that makes no per-stage progress **strikes out at `FIX_STRIKE_LIMIT`** with
+   trend `flat` and revise-first levers, **$1.60 of $2 unburned**. The strike rule governs the
+   resumed fix loop exactly as it governs a cold one; a top-up does not buy the right to burn
+   the wallet on a dead axis.
+5. **the F6 floor cycle** — a declared floor survives leg-1 halt → `readResume` → leg-2 green
+   terminal. An unknown that enters the cycle does not come out exact.
+
+All five watched failing first with sabotage evidence; `tests/resume-u.test.js` fixtures were
+updated to track the signed 8/45 numbers. Gate **931/931**, typecheck clean.
+
+### PARKED (MED, probe-evidenced, NOT fixed): the restart fold can launder a floor into an exact total
+
+`readResume`'s restart branch computes `priorSpendComplete` from **2 of the 4 causes**
+`run.js` uses to decide the same thing:
+
+- `src/run.js:167` — `spendComplete: !unpriced && !stalled && !cutMidCall && !priorFloor`
+- `src/reuse.js:727` — `priorSpendComplete: open.declaredComplete && open.roundsComplete`
+
+A floor arising from `stalled` or `cutMidCall` is therefore **invisible at the resume seam**: a
+leg-1 `job-end` that honestly said `spendComplete: false` comes back EXACT, and leg 2 reports
+`spendComplete: true` on a total built on a floor. The asymmetry is the tell — `readTry`, the
+*graded* branch of the same reader (`src/reuse.js:401`), DOES consult the terminal's own
+`spendComplete`; only the restart branch skips it. This is the F6 class, one call upstream of
+where F82 added `priorFloor`, and it is why the live run's clean books are not proof of the
+mechanism: `u-msew1uy5` declared `spendComplete: true`, so the two readings could not disagree.
+
+The remedy — fold the landed terminal's `spendComplete` into the restart's completeness — is a
+**HYPOTHESIS, not a fix** (the standing rule: a fix proposed from reading is tested as hard as
+the defect). It has to be tried against the ordinary killed-mid-flight restart shape, where
+there is **no `job-end` at all** and the reader must not start refusing or floor-marking the
+resumes that work today. Awaits hamr.
+
+### PARKED (design question): a resumed leg's trend is scoped to its OWN grades, not the cycle
+
+Per `src/trend.js`'s documented spec a series is per stage **within a run**. In the no-top-up
+control the second leg honestly reads `flat` — it graded once and had nothing to compare —
+while the CYCLE was converging (2 → 1) and the real blocker was simply that no top-up arrived.
+Neither reading is wrong; they answer different questions. Whether the pause readout should
+span a resume chain is arbiter territory and hamr's call, so the test deliberately leaves the
+trend **unasserted** there rather than encoding either answer.
+
+### Small, unfixed: the readout frames wall and money differently
+
+`scripts/run-u.mjs`'s final read prints **money folded** (`spent $5.3389 of $8` — `job-end`'s
+total across both legs) and **wall leg-only** (`wall 12.8min of 45min` — `Date.now() - started`
+of THIS process against the full signed cap). Both numbers are true of different things and the
+line does not say which. The spine and the enforcement are both correct — the clock folded
+`priorWallMs` and armed the watchdog on 20.1min — so this is display only, and small. Recorded
+rather than patched blind.
+
+### Lesson
+
+**"The stop is the checkpoint" is now a measured claim, not a design slogan.** A run that had
+died four times on this patient was paused by its own budget with a graded tree on disk, handed
+its operator an accurate trend and three levers, took one signed top-up, and finished for
+$1.21 and 12.8 minutes — re-buying nothing it already owned. The economic argument for resume
+was that a killed run should not re-pay for finished work; the number here is the one that
+matters: the second leg paid for **one fix iteration**, which is exactly what F81 said was
+missing. And the parked MED is the same shape as everything else this rung turned up — not the
+feature failing, but a *reading* of a number, one seam upstream of where the last one was fixed.
