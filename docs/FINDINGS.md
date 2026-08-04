@@ -4992,3 +4992,61 @@ where feedback has ever been observed to land.
 before it is a threshold question.** The tempting fixes were both dial-turns (raise the limit,
 punch an exemption); the evidence said the note was aimed at the wrong recipient all along, and
 the collision is what made that visible.
+
+## F81 — the shape-lottery gate rules cure the trap class live: bareagent-u's fourth run rolls the RLM shape cold, steps green for the first time, and dies on money 5 suppressions from a full green
+
+**Date:** 2026-08-04 · **Run:** `u-msew1uy5` ($4.13, cap-halt, `spendComplete:true`) ·
+**Rules commit:** `28ee95f` · **Basis:** the $0 shape sweep (commit `8840809` session record)
+
+### What was built (hamr's "go")
+
+Two mechanical rules at the plan-validation gate, both STATED in the drafting prompt from the
+same facts object the validator judges (the mailbox precedent), neither asking any LLM to
+assess "is this job small":
+
+- **Rule A-v2 (`check-placement`)** — a check whose PREFLIGHT verdict was red (seed-red) may
+  only gate the plan's FINAL write step. Keyed on the spine-recorded preflight verdicts.
+  Green-at-seed checks stay free mid-plan (the 20 archived TESTGEN mid-plan greens).
+- **Rule B (`check-shed`)** — a replan may not drop a `check-passes` its predecessor plan
+  carried; it may move one (A-v2 decides where), never shed it. The 3 archived sheds were all
+  on step-red runs — zero historical greens blocked.
+
+TDD: 9 tests watched failing first (4 of them overreach controls), 3 sabotage mutants killed,
+869/869, spec hashes unchanged. Resume revalidation deliberately excluded (documented at the
+site): a paid, previously-legal plan is never refused over a drafting law minted after it.
+
+### What the live run showed (the patient that died three times)
+
+- **The prompt law alone steered the FIRST draft into the RLM shape** — one step, whole
+  territory, `tree-changed ∧ check-passes(typecheck)` — `plan-validate draft-1: ok`, zero
+  reds. The gate never had to fire; it stands as the backstop.
+- **Positive-scope confinement is gone:** attempt 1 changed BOTH goal files (u-msdsmkid's
+  worker put 17/17 writes into one file and never touched the other). The step converged
+  30→18→12→10→0 strict errors and **greened — the first honest step-green in this patient's
+  four-run history** (prior: step-red ×3, never past the step).
+- No replan fired, so Rule B's live validation is still pending a run that replans (its test
+  coverage is the wiring test + replay).
+
+### The residual that killed it: the suppression see-saw (NEW, shallower than the trap)
+
+The worker satisfied its one in-step ruler (typecheck) partly by typing things as `any`. The
+outer close's `no-suppressions` stage — a green-at-seed GUARD the step structurally cannot
+carry (`MAX_EXITS_PER_STEP` = 2, already spent on the F17 pair) — caught 12 added `any`s. The
+close-fix loop then see-sawed exactly as designed: remove `any`s → 2 real errors re-exposed →
+fix them → 5 `any`s left, both axes monotonically converging (12→5 suppressions, 2→0 errors)
+— and the money gate cut fix-iteration 3 mid-flight at $4.13 of the $4 budget. The tree it
+left: typecheck GREEN (0 errors, outside-scope unchanged), suite GREEN, changed-from-seed
+GREEN, `no-suppressions` red by 5. An honest cap-halt, roughly one fix-iteration (~$1) short.
+
+There was NO check-vs-close discrepancy: the mid-run "typecheck: 2 errors" close red judged a
+tree the fix worker had already edited (the operator's first reading conflated two trees and
+two stages — corrected in-session, the F26 first-reading class again).
+
+### Lesson
+
+**The shape lottery is closed by making the losing shapes inexpressible, not by teaching
+judgment** — a drafter that rolled the death shape three times rolls the winning shape cold
+once the law is stated and the gate backstops it. What remains is a different, smaller
+question: a close stage the step cannot carry is only discoverable at the outer close, and
+feeding it forward (goal prose? a third exit slot? nothing — the fix loop was converting) is
+operator/design territory, parked for hamr with the rerun/budget decision.
