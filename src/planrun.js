@@ -26,6 +26,7 @@ import { snapshotScope, evalExits } from './exits.js';
 import { createRoot } from './root.js';
 import { createStallWatch, STALL_MS, MAX_STALLS } from './stall.js';
 import { createLadder, STRIKE_LIMIT } from './ladder.js';
+import { createTrend, FIX_STRIKE_LIMIT } from './trend.js';
 import { TOOL_MENU, STORE_VERBS, checkMenu } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, strategyFor } from './tools.js';
 import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
@@ -371,8 +372,13 @@ ${scoutBlob || '(no scout notes)'}`;
  * @param {(tier: string) => any} [opts.providerFor] P: per-step model-tier factory
  *   (tier ∈ STEP_MODELS → a provider). A plan naming a tier with no factory supplied is an
  *   interpreter-red STOP — never silently run the default tier as if the choice was honoured.
- * @param {number} [opts.capRuns] shell-owned iteration cap for the CLOSE-FIX loop.
- *   It no longer bounds a plan step: steps run under the strike ladder below.
+ * @param {number} [opts.capRuns] shell-owned iteration cap, RETIRED as a governor
+ *   (v1.46 §4). It stopped bounding a plan step when the strike ladder landed, and it
+ *   stopped bounding the close-fix loop when the close trend rule did. It survives as
+ *   that loop's fallback for the ONE case the trend cannot read — a close whose output
+ *   carries no number at all — because a governor that cannot see the variable must
+ *   not be the governor, and the honest fallback is the cruder bound it replaced
+ *   rather than "unbounded". It lifts the moment a stage reports a comparable number.
  * @param {number} [opts.strikeLimit] shell-owned STRIKE ceiling for a plan step's
  *   ladder (src/ladder.js). Arbiter territory exactly as the count it replaced was —
  *   the runner sets it, the plan cannot express it, and no step may tighten or raise
@@ -647,6 +653,20 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     'revise the goal/spec so the work fits the time (same re-approval)',
     'abandon the task',
   ];
+  /** MONEY's levers (PRD v1.46 §2), the same three shapes the wall's are, because a
+   * money cut is the same KIND of stop: the run is out of an operator-owned
+   * allowance, not out of capability, and the last verdict rendered stands. hamr's
+   * ask was "halt and feedback… and needs to be accurate", so the readout that
+   * carries these also carries the trend that says WHICH of the first two fits.
+   *
+   * The first lever is a top-up the OPERATOR performs. `budgetUsd` is in the spec
+   * hash, so raising it is a new spec version somebody signs — the library only ever
+   * names the lever, and never adjusts a budget itself (the permanent hard line). */
+  const MONEY_OPTIONS = [
+    'top up budgetUsd and rerun with --resume (resume-to-cap; a spec edit, so the new hash needs re-approval)',
+    'revise the goal/spec so the work fits the budget (same re-approval)',
+    'abandon the task',
+  ];
 
   const closeOpts = { timeoutMs: closeTimeoutMs, cwd: workdir };
   /** @type {string|undefined} the stage that rendered the LAST close verdict (Layer R's red-set source) */
@@ -656,11 +676,48 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * the run's answer is whatever the close last said, and nothing after the deadline
    * is allowed to change it (hamr: *"keep the grade we already have and stop"*). */
   let lastCloseVerdict;
+  /** PRD v1.46 §2 — the RUN's own close trend, fed by every grade the arbiter
+   * renders (the precheck is the seed the work is measured against, so it is the
+   * first reading, not a discarded one). Read only by the halt readouts; it decides
+   * nothing and bounds nothing — the fix loop builds its OWN reader over its own
+   * grades, because "did this run make progress" and "is this loop out of ideas"
+   * are two questions and one instrument answering both is how they come to
+   * disagree. Per stage by construction (src/trend.js's accuracy law). */
+  const runTrend = createTrend({ stageOrder: stagedClose.map((/** @type {any} */ s) => s.name) });
+  /** the run-level MONEY record, one shape wherever the wallet stops the run —
+   * W-2's `emitWallHalt` in a money coat, and deliberately its mirror image. hamr's
+   * ruling for TIME was "keep the grade we already have and stop"; a money cut is
+   * the same stop with a different allowance behind it, so it keeps the same grade,
+   * states the same kind of trend, and hands over the same shape of lever list.
+   * `spentUsd` is NOT re-derived here: runJob's ledger owns that number and states
+   * it on `job-end` (F6 — a second, weaker arithmetic for the same figure is how
+   * two instruments come to disagree about one run's money). What this record can
+   * say exactly is the SIGNED ceiling and what is left against it. */
+  const emitMoneyHalt = (/** @type {object} */ extra) => {
+    const t = runTrend.verdict();
+    return emit('money-halt', {
+      meaning: 'not under cap — not "can\'t"',
+      budgetUsd: job.budgetUsd,
+      remainingUsd: remainingUsd(),
+      verdict: lastCloseVerdict?.verdict ?? null,
+      ...(lastCloseVerdict?.stage ? { stage: lastCloseVerdict.stage } : {}),
+      trend: t.trend,
+      reading: t.reading,
+      lever: t.lever,
+      series: t.series,
+      options: MONEY_OPTIONS,
+      ...extra,
+    });
+  };
   /** the close, as ONE verdict: every stage in order, first red wins */
   const judgeClose = async () => {
     const v = await runStages(stagedClose, scrub, closeOpts);
     closeStage = v.stage;
     lastCloseVerdict = v;
+    // Only a RED grade is a reading. A `satisfied` ends the run and a close FAULT
+    // rendered no judgment at all (CLOSE_FAULTS) — folding either into the series
+    // would put a non-number where the instrument expects a graded one.
+    if (v.verdict === 'needs_revision') runTrend.record({ gap: v.gap });
     return v;
   };
 
@@ -1195,10 +1252,16 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   const relay = (/** @type {any} */ e, /** @type {string} */ phase) => {
     const { category } = categorize(e);
     const detail = String(e?.message ?? e);
-    if (category === 'cap-halt') emit('cap-halt', { category, meaning: 'not under cap — not "can\'t"', detail });
+    if (category === 'cap-halt') {
+      emit('cap-halt', { category, meaning: 'not under cap — not "can\'t"', detail });
+      // v1.46 §2 — the money record rides beside the taxonomy record exactly as the
+      // wall's does one line down. Outside the loops there is usually no series yet,
+      // and the readout says `unknown` rather than inventing a direction (F6).
+      emitMoneyHalt({ phase, cutMidCall: true });
+    }
     if (category === 'wall-halt') emitWallHalt({ cutMidCall: true, phase });
     const DECIDE = {
-      'cap-halt': [`The budget gate tripped during ${phase} — the wallet cannot fund the plan flow.`, ['raise the job budget and rerun', 'abandon the run']],
+      'cap-halt': [`The budget gate tripped during ${phase} — the wallet cannot fund the plan flow.`, MONEY_OPTIONS],
       'wall-halt': [`The run reached its wall-clock cap during ${phase}. Time ran out, not capability.`, WALL_OPTIONS],
       // A stall OUTSIDE a step (scout, drafting, fix) has no step to replan, so it
       // surfaces — but it is named, never laundered into provider-red. The socket
@@ -1556,8 +1619,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
           // step when the wall stopped it. This record used to carry `capRuns` and
           // `stepAttemptCap` — two counts that no longer bound anything here — and a
           // field name that means something it no longer measures is worse than an
-          // absent one: a reader cannot tell it went stale. The fix site still writes
-          // `capRuns` and still means it, because that loop is still counted.
+          // absent one: a reader cannot tell it went stale. The FIX site's copy of this
+          // record dropped `capRuns` for the same reason at v1.46 §4, when the count
+          // stopped governing that loop too — neither wall record quotes a denominator
+          // now, because neither loop has one.
           strikes: ladder.report().strikes,
           strikeLimit: ladder.report().limit,
           distinctGaps: ladder.report().distinctGaps,
@@ -1817,7 +1882,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // stays a step-red (the stop is a result).
     if (cat === 'cap-halt') {
       planExecuted();
-      return remainingUsd() <= MONEY_MIN ? 'cap-halt' : `step-red:${step.id}`;
+      if (remainingUsd() > MONEY_MIN) return `step-red:${step.id}`;
+      // v1.46 §2: the money cut is decision-ready HERE too, and for the same reason
+      // W-2 gave the wall a record at every site it stops a run — a category that
+      // hands the human a readout at one seam and silence at another is the readout
+      // being a coincidence of where the stop happened.
+      emitMoneyHalt({ phase: `step:${step.id}`, cutMidCall: false, stepsDone: idx, stepsPlanned: plan.steps.length });
+      return 'cap-halt';
     }
     // A second `step-variance` after the one replan is spent is a STOP, and the stop
     // is the result — but it rides out as `step-red:<id>`, NOT as its own top-level
@@ -1862,6 +1933,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * without consulting the clock a second time (two clock reads for one event is
    * how the two instruments come to disagree). */
   let wallStop = null;
+  /** how many fix ITERATIONS the loop actually bought — counted here rather than
+   * read back off the trend reader, which lives inside the try and is out of scope
+   * by the time a terminal needs the number. */
+  let fixIterationsUsed = 0;
   try {
     // Layer R for the close-fix loop — the plan flow's single ralph loop judged
     // by the REAL close (the plan flow's single ralph loop, and the
@@ -1875,13 +1950,74 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const fixRoot = layerRoot && !native
       ? createRoot({ redact: scrub, writesInformative: true })
       : null;
-    const w = await mkWorker({ granted: ceiling, phase: 'fix', attemptRounds: maxStepRounds, attempts: capRuns, writable: true, root: fixRoot });
+    // `attempts: null` is the STRIKE-LADDER shape (mkWorker's own contract): the fix
+    // loop's iteration count no longer exists at construction time, so the gate's
+    // turn allowance is granted per iteration at `setIteration` instead of being
+    // pre-multiplied by a number nobody signed. The per-iteration bound is
+    // unchanged — `loop.stop()` at `attemptRounds` — which is the belt that actually
+    // holds. (v1.46 §4: `capRuns` retires as the governor.)
+    const w = await mkWorker({ granted: ceiling, phase: 'fix', attemptRounds: maxStepRounds, attempts: null, writable: true, root: fixRoot });
     // W-2's only input, and it is already in this loop's hand: the close gaps seen
     // so far, oldest first. `post.gap` is the grade the loop OPENED on; every later
     // entry is what ralph carried back from the close that judged the previous
     // attempt (or, after a worker-crash, F32's routed gap — still the feedback that
     // attempt actually received). Nothing is instrumented for this.
     const gaps = [post.gap ?? ''];
+    // ── v1.46 §4: the fix loop's GOVERNOR — progress, not a count ──
+    //
+    // MEASURED reason, the same shape as the step ladder's. The fixed `capRuns`
+    // could not tell converging work from thrash, so it stopped both at the same
+    // place: u-msew1uy5 was cut mid-convergence at fix iteration 3 while
+    // reuse-msc6w93z sat dead flat at 2 errors for SEVEN fix verdicts until the wall
+    // killed it. The $0 replay over all 8 archived fix loops came back clean both
+    // directions — 0 greens harmed (every historical green converted in <= 2
+    // verdicts), 1 waste case caught.
+    //
+    // The reader is SEEDED with the grade the loop opened on, because that is what
+    // the first fix attempt is measured against; without it the first attempt would
+    // have nothing to be compared to and the loop would spend a free iteration
+    // establishing what it already knew.
+    //
+    // `blindCap: capRuns` is not the count surviving in disguise. It binds ONLY
+    // while the instrument has never been able to compare anything (a close whose
+    // output carries no number at all), which is precisely the case where a strike
+    // would be minted out of ignorance. The moment a stage reports a comparable
+    // number the count is gone, and money and the wall are what remain.
+    const fixTrend = createTrend({
+      stageOrder: stagedClose.map((/** @type {any} */ s) => s.name),
+      limit: FIX_STRIKE_LIMIT,
+      blindCap: capRuns,
+    });
+    fixTrend.record({ gap: post.gap ?? '' });
+    /** ralph's `ladder` seam, filled by the trend reader instead of the step
+     * ladder's repeat/write pair. ONE exhaustion terminal, two triggers (ralph's own
+     * rule): the category stays `cap-halt` and the outcome stays `escalated`, so the
+     * ledger's class table, bridge grading and every downstream reader are untouched
+     * — only the TRIGGER changed. What it overrides is the terminal's PROSE: the
+     * step ladder's copy offers a replan, and there is no planner at the close. */
+    const fixGovernor = {
+      record: (/** @type {{iteration: number, gap?: string}} */ o) => {
+        fixIterationsUsed = o.iteration;
+        return { governor: 'close-trend', ...fixTrend.record({ gap: o.gap }), iteration: o.iteration };
+      },
+      struckOut: fixTrend.struckOut,
+      report: fixTrend.report,
+      brief: () => fixTrend.verdict().reading,
+      terminal: () => {
+        const rep = fixTrend.report();
+        const t = fixTrend.verdict();
+        return {
+          decision: rep.blind
+            ? `${rep.iterations - 1} fix iteration(s) spent and the close still red. Its output carries no number this run can compare, so no progress reading exists — the retired iteration count is what bounded the loop. Continue, change approach, or stop?`
+            : `${rep.strikes}/${rep.limit} strikes — the fix loop stopped making progress against the close's own numbers (${t.reading}). Continue, change approach, or stop?`,
+          options: [
+            'revise the goal/spec so the work is reachable (a spec edit, so the new hash needs re-approval)',
+            'top up budgetUsd and rerun with --resume, if the trend above says it was still converging',
+            'abandon the task',
+          ],
+        };
+      },
+    };
     /** @param {number} iteration @param {string} [gap] */
     const middle = async (iteration, gap) => {
       if (gap !== undefined) gaps.push(gap);
@@ -1910,7 +2046,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
           cutMidCall: false,
           phase: 'fix',
           iterationsUsed: iteration - 1,
-          capRuns,
+          // `capRuns` used to ride here as the DENOMINATOR ("0 of 3"). It retired as
+          // this loop's governor (v1.46 §4), so quoting it as the total would state a
+          // bound that no longer decides anything — the iterations spent are the fact,
+          // and there is no longer a number they are "of".
           verdict: lastCloseVerdict?.verdict,
           ...(lastCloseVerdict?.stage ? { stage: lastCloseVerdict.stage } : {}),
           trend: t.trend,
@@ -1923,7 +2062,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
           `the wall-clock cap passed before fix attempt ${iteration} could start. `
           + `The verdict stands as the last close rendered it: ${lastCloseVerdict?.verdict ?? 'unknown'}`
           + `${lastCloseVerdict?.stage ? ` at stage "${lastCloseVerdict.stage}"` : ''}, `
-          + `after ${iteration - 1} of ${capRuns} fix iteration(s). `
+          + `after ${iteration - 1} fix iteration(s). `
           + `Progress trend: ${t.trend} — ${t.reading}; ${t.lever}.`));
         err.category = 'wall-halt';
         throw err;
@@ -1952,7 +2091,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     fixOutcome = await ralph({
       // the staged close rides in as the JUDGE seam (one verdict, every stage in
       // order) — ralph's single-command path stays exactly what it was
-      middle, judge: async () => judgeClose(), capRuns, emit: emitL, redact: scrub,
+      // v1.46 §4: the PROGRESS governor rides in where `capRuns` used to. ralph's
+      // two exhaustion rules are alternatives and never both at once, so the count
+      // is not passed — it survives only inside the governor, as the bound for the
+      // case the trend instrument is blind.
+      middle, judge: async () => judgeClose(), ladder: fixGovernor, emit: emitL, redact: scrub,
       closeTimeoutMs, cwd: workdir, workerWrites: w.workerWrites,
     });
   } catch (e) {
@@ -1983,7 +2126,19 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // Attempts spent with money still on the table stays the designed terminal
     // ("close still red") and keeps riding out as `escalated` below.
     // (MED-4, fixed with hamr's explicit go, 2026-07-30.)
-    if (remainingUsd() <= MONEY_MIN) return 'cap-halt';
+    if (remainingUsd() <= MONEY_MIN) {
+      // v1.46 §2 — and THIS is the site hamr's ask was about: the money runs out
+      // deepest in the run, on the loop that holds a real grade. So the readout keeps
+      // that grade, names the stage that rendered it, and carries the run's own
+      // per-stage trend so the choice between "top up" and "revise the goal" is made
+      // on evidence rather than on how the operator felt about the last gap.
+      emitMoneyHalt({
+        phase: 'fix',
+        cutMidCall: false,
+        iterationsUsed: fixIterationsUsed,
+      });
+      return 'cap-halt';
+    }
   } else if (fixOutcome !== 'green' && typeof lastEscalation?.category === 'string') {
     // The step loop's category restoration (F11), mirrored: ralph returns the flat
     // 'escalated' on a middle throw while its escalation carries the real name — a

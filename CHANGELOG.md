@@ -7,7 +7,52 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+- **A MONEY halt is decision-ready, exactly as W-2 made the wall one** (PRD v1.46 §2). A run
+  cut by its budget KEEPS the verdict already minted and emits a new `money-halt` spine record
+  carrying `budgetUsd`, `remainingUsd`, the kept `verdict`/`stage`, a progress `trend`
+  (`converging | flat | unknown`) with the `reading` and `series` it judged, and three
+  `options`: top up and resume, revise the spec, abandon. Emitted at every site that cuts a run
+  on money — the step loop, the close-fix loop, and the scout/draft relay. **The library only
+  reports**: `budgetUsd` is in the spec hash, so a top-up is a spec edit a human signs, and
+  nothing in a run may widen its own budget (unchanged hard line).
+- **The close TREND instrument** (`src/trend.js`, internal). Reads a run's own close grades as
+  a series **per stage**, compared only against that stage's own best so far. Accuracy law:
+  never across stages — merging a staged close's axes reads a real see-saw (suppressions
+  12 → 5 while the type errors that scrub re-exposed went 2 → 0) as a regression. Never model
+  prose: the reading is the first number on the first red-marked line of the stage's output.
+  A stage that reports no number donates nothing — not a zero, not a strike, and the verdict
+  says `unknown` out loud (F6). Reaching a later stage than ever before counts as progress
+  (a staged close is first-red-wins). Known accepted limit, documented at the site: a
+  floor-shaped stage (`N tests executed, below the seed's M`) reads as not-improving rather
+  than converging — the fail-safe direction.
+- **`--resume` on `scripts/run-u.mjs`** (PRD v1.46 §3) — the third leg of the resume rulings.
+  It skips the patient reset (`resumeTreeGate` instead: a dirty tree is what a resume expects;
+  only a moved HEAD stops it), folds the halted run's money and wall in so the signed ceiling
+  cannot widen by being re-invoked, re-enters at the checkpoint the steps already earned, and
+  arms the outside watchdog on the REMAINING wall. `readResume` gains two options, both OFF by
+  default so the reuse loop is byte-unchanged: `direct` reads a plain `runJob` spine as one
+  implicit try, and `resumableOutcomes` reclassifies a landed `job-end` that is a GOVERNANCE
+  HALT (`cap-halt`/`wall-halt`) as a checkpoint rather than a graded row. Green and every red
+  stay non-resumable — a verdict already rendered is never re-bought. `job-start` now carries
+  the declared fold (`priorSpentUsd`/`priorWallMs`) when there is one, so a chain of resumes
+  adds only each attempt's new rounds instead of re-deriving and double-billing.
+
 ### Changed
+- **`capRuns` retires as the CLOSE-FIX loop's governor** (PRD v1.46 §4). That loop now ends on
+  the same 2-strike no-progress rule the step ladder uses, read off the close's own per-stage
+  numbers rather than repeats and writes. Validated by a $0 replay over every archived fix
+  loop before the build: 0 greens harmed (all three historical fix-loop greens converted in
+  ≤ 2 verdicts) and 1 real waste case caught (dead flat at 2 errors for 7 consecutive fix
+  verdicts until the wall killed it). `capRuns` survives ONLY as the bound for a close whose
+  output carries no number at all — a governor that cannot see the variable must not be the
+  governor — and lifts the moment a stage reports a comparable number. Money and the wall keep
+  every bit of their authority. The exhaustion terminal is unchanged in both category
+  (`cap-halt`) and outcome (`escalated`); `ralph`'s `ladder` option is now an INTERFACE two
+  governors implement, with an optional `terminal()` that overrides the exhaustion prose only
+  (the step ladder's copy offers a replan and there is no planner at the close). Every `ladder`
+  spine record now names its `governor` (`step-ladder` | `close-trend`). The wall-halt readout
+  no longer quotes `capRuns` as a denominator, because it no longer governs.
 - **A plan step is bounded by PROGRESS, not by a count** (`src/ladder.js`; F77–F79). The step
   loop's fixed iteration cap is replaced by a strike ladder: a *strike* is a red iteration that
   repeats an already-seen gap (matched against a seen-set for the whole step, never just the

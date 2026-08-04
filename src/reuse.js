@@ -540,22 +540,50 @@ function readStepCheckpoint(seen) {
  * because a green's version has to be the plan AS EXECUTED and this reader is not
  * where that is decided.
  *
+ * **THE HALT AMENDMENT (PRD v1.46 §3).** "A landed `job-end` is COMPLETE" is true of
+ * a VERDICT, and a governance halt is not one: a money cap-halt (and, W-2-symmetric,
+ * a wall-halt) means the run ran out of an operator-owned allowance with its work on
+ * disk and its plan on the spine — the exact case hamr's ruling was about ("why would
+ * i want to waste more money on something i already started"). `resumableOutcomes`
+ * names which terminals get read that way. It is EMPTY by default, so the reuse
+ * loop's own semantics are byte-unchanged: there, a cap-halted try was graded, its
+ * registry row was written, and turning it into a restart would re-run a try whose
+ * fold leaves it no money at all and duplicate its row. Green and every red stay
+ * non-resumable under any setting — a verdict already rendered is never re-bought.
+ *
+ * **DIRECT SPINES (`direct`).** A `runJob` spine has no `reuse-start` and no try
+ * windows, so this reader saw one as "not a reuse run" and every priced round in it
+ * as a STRAY. Opted in, the run itself is read as ONE implicit try opened at
+ * `job-start` — the same window machinery, never a second reader, because the whole
+ * failure class this reader exists to survive (F45) is the writer nobody modelled.
+ * The fold it declares comes off `job-start`'s own `priorSpentUsd`, exactly as a
+ * restarted try's comes off its `try-start`: re-deriving from the file would bill an
+ * abandoned attempt twice in a chain of resumes.
+ *
  * @param {any[]} events the dead spine's events, parsed, in file order
- * @param {{deathAt?: number|null}} [opts] `deathAt`: when the process is judged to have
- *   died (the watchdog's kill record, which is later and better evidence than the last
- *   event). Defaults to the last event's own timestamp — the last sign of life there is.
+ * @param {{deathAt?: number|null, direct?: boolean, resumableOutcomes?: string[]}} [opts]
+ *   `deathAt`: when the process is judged to have died (the watchdog's kill record,
+ *   which is later and better evidence than the last event). Defaults to the last
+ *   event's own timestamp — the last sign of life there is.
  * @returns {any} `{ started, approvalHash, specHash, patient, job, bridgeTries,
  *   perTryBudgetUsd, perTryWallMs, ended, endOutcome, greened, completed, tried,
  *   selectionCostUsd, selectionComplete, strayRounds, r1Missing, restart, deathAtKnown,
  *   spentUsd, spendComplete, carrySpentUsd, carrySpendComplete }`
  */
-export function readResume(events, { deathAt = null } = {}) {
+export function readResume(events, { deathAt = null, direct = false, resumableOutcomes = [] } = {}) {
   const list = Array.isArray(events) ? events.filter(isObj) : [];
+  /** which landed terminals are a CHECKPOINT rather than a graded row */
+  const resumableHalt = new Set(Array.isArray(resumableOutcomes) ? resumableOutcomes : []);
   // the FIRST reuse-start is the envelope this spine was opened under. A resumed spine
   // holds one per process; the signature gate compares against the ORIGINAL, because
   // that is the run being continued.
   const head = list.find((e) => e.type === 'reuse-start') ?? null;
   const end = list.filter((e) => e.type === 'reuse-end').at(-1) ?? null;
+  /** A DIRECT spine is one runJob with no envelope around it. It is read as a single
+   * implicit try ONLY when the caller asked for that AND there is genuinely no reuse
+   * envelope on the file — never inferred from the absence alone, because "this spine
+   * carries no reuse-start" is also the honest refusal a reuse runner needs. */
+  const directRun = direct && head === null && !list.some((e) => e.type === 'try-start');
 
   /** @type {any[]} */
   const completed = [];
@@ -611,6 +639,15 @@ export function readResume(events, { deathAt = null } = {}) {
       open = openTry(ev);
       continue;
     }
+    // A DIRECT spine's `job-start` opens the one implicit window, through the SAME
+    // constructor a `try-start` uses — the run IS the try. `n: 1` and `mode: 'direct'`
+    // are what it is: one attempt, no bridge, no envelope leg. The fold rides on the
+    // same three declared fields, so a chain of resumes is accounted identically.
+    if (directRun && !open && ev.type === 'job-start') {
+      open = openTry({ ...ev, n: 1, mode: 'direct', bridge: null });
+      open.seen.push(ev);
+      continue;
+    }
     if (!open) {
       // a priced worker round outside every try window: nothing in this runner emits
       // one, so it is a writer this reader does not model. It is COUNTED and reported
@@ -645,8 +682,15 @@ export function readResume(events, { deathAt = null } = {}) {
   /** @type {any} */
   let restart = null;
   let r1Missing = false;
+  /** v1.46 §3 — a landed terminal that is a governance HALT rather than a verdict.
+   * The close never got the say it was asked for: the run ran out of an operator-owned
+   * allowance with its work on disk and its plan on the spine, so the window is a
+   * CHECKPOINT and re-entering it is the ruling, not a second payment for an answer
+   * already in hand. Empty by default, which is what keeps the reuse loop's own
+   * graded-row semantics exactly where they were. */
+  const haltedResumable = open?.jobEnd ? resumableHalt.has(String(open.jobEnd.outcome)) : false;
   if (open) {
-    if (open.jobEnd) {
+    if (open.jobEnd && !haltedResumable) {
       // GRADED: runJob returned and the close had its say. Not a restart — the row is
       // reconstructed with the live loop's own reader, and the registry write that the
       // death may have cost is named.
@@ -704,17 +748,26 @@ export function readResume(events, { deathAt = null } = {}) {
   const spentUsd = carrySpentUsd + (restart ? restart.priorSpentUsd : 0);
   const spendComplete = carrySpendComplete && (!restart || restart.priorSpendComplete);
 
+  /** the terminal a DIRECT spine landed on, which is its `job-end` — there is no
+   * `reuse-end` on a run nobody wrapped in an envelope. A resumable halt is
+   * deliberately NOT "ended": the caller's refusal gate reads that field to mean
+   * "there is nothing left to continue", and the whole amendment is that on a halt
+   * there is. `endOutcome` names it either way, so nothing is hidden. */
+  const directEnd = directRun ? open?.jobEnd ?? null : null;
+  /** a direct spine's own head record — `job-start` carries the identity fields the
+   * envelope would otherwise supply (which job, which spec version, what ceiling) */
+  const directHead = directRun ? list.find((e) => e.type === 'job-start') ?? null : null;
   return {
-    started: head !== null,
+    started: head !== null || directHead !== null,
     approvalHash: head?.approvalHash ?? null,
-    specHash: head?.specHash ?? null,
+    specHash: head?.specHash ?? directHead?.specHash ?? null,
     patient: head?.patient ?? null,
-    job: head?.job ?? null,
+    job: head?.job ?? directHead?.job ?? null,
     bridgeTries: typeof head?.bridgeTries === 'number' ? head.bridgeTries : null,
-    perTryBudgetUsd: head?.perTryBudgetUsd ?? null,
+    perTryBudgetUsd: head?.perTryBudgetUsd ?? directHead?.budgetUsd ?? null,
     perTryWallMs: head?.perTryWallMs ?? null,
-    ended: end !== null,
-    endOutcome: end?.outcome ?? null,
+    ended: end !== null || (directEnd !== null && !haltedResumable),
+    endOutcome: end?.outcome ?? directEnd?.outcome ?? null,
     greened: completed.some((t) => t.verdictClass === 'green'),
     completed,
     tried,
@@ -979,7 +1032,12 @@ export async function runReuse(opts) {
         ...(strikeLimit !== undefined ? { strikeLimit } : {}),
         ...(closeTimeoutMs !== undefined ? { closeTimeoutMs } : {}),
         ...(layerRoot !== undefined ? { layerRoot } : {}),
-        ...(resumed ? { priorSpentUsd: prior.spentUsd, priorWallMs: prior.wallMs } : {}),
+        // the fold, and whether the fold is EXACT. `priorSpendComplete` used to stop at
+        // the `try-start` record: it was computed, written down, and then not handed to
+        // the one component whose `job-end` the row's own `spendComplete` is read off —
+        // so a restart of a partly-unpriced attempt came back looking exact. The unknown
+        // travels WITH the money it qualifies (F6).
+        ...(resumed ? { priorSpentUsd: prior.spentUsd, priorWallMs: prior.wallMs, priorSpendComplete: prior.spendComplete } : {}),
         ...(seed ? { resumeSeed: seed } : {}),
         bridge,
       });

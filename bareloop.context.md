@@ -277,13 +277,17 @@ written.
 
 The dumb outer shell: `while close-red and not exhausted: run the middle`. **Exhaustion has
 two alternative rules and you supply exactly one** — `capRuns` (a fixed number of middle runs)
-or `ladder` (the PROGRESS governor, `createLadder` from `src/ladder.js`). With a ladder the
-iteration count floats and the loop ends on STRIKES instead; ralph still interprets nothing —
-it hands the ladder each red iteration's gap and reads back a boolean. Both rules exhaust
-through the SAME terminal: category `cap-halt`, the same three records in the same order, so
-nothing downstream (the ledger's excluded-set, the step loop's one replan trigger) has to know
-which rule fired. `runPlan` wires a ladder per step and leaves `capRuns` on the close-fix loop;
-`createLadder` itself is INTERNAL (not on the public surface), so a direct `ralph` caller uses
+or `ladder` (a PROGRESS governor). With a governor the iteration count floats and the loop
+ends on STRIKES instead; ralph still interprets nothing — it hands the governor each red
+iteration's gap and reads back a boolean. Both rules exhaust through the SAME terminal:
+category `cap-halt`, the same three records in the same order, so nothing downstream (the
+ledger's excluded-set, the step loop's one replan trigger) has to know which rule fired.
+`ladder` is an INTERFACE, not one module: `runPlan` wires `createLadder` (`src/ladder.js`,
+repeats + writes) per step and — since v1.46 — the close TREND governor (`src/trend.js`,
+per-stage graded numbers) on the close-fix loop. A governor may supply an optional
+`terminal()` to override the exhaustion PROSE (the step ladder's copy offers a replan and
+there is no planner at the close); it may never override the category or the outcome. Both
+modules are INTERNAL (not on the public surface), so a direct `ralph` caller uses
 `capRuns` — the strike rule reaches you through `runJob`/`runPlan`'s `strikeLimit`. `close` is an argv
 whose exit code is truth (`runClose` is also exported — **async since 0.6: `runClose` and
 `runStages` return Promises**; the child is awaited instead of spawnSync so a running close
@@ -500,7 +504,8 @@ step start; the gap names every failing
 wall — mechanical genre, F46's measured mechanism; artifacts feed forward labeled by
 step id) → **ONE replan**, triggered by exhaustion OR variance (an instrument stop never
 replans) → **the operator's close**, a red feeding ONE bounded fix loop judged by the
-REAL close and bounded by `capRuns` (default 3; the runners use 4). `plan-executed` (the plan-as-executed record, design law #2) lands on the
+REAL close and governed by the close TREND rule below (`capRuns`, default 3, survives only as
+its blind fallback). `plan-executed` (the plan-as-executed record, design law #2) lands on the
 spine on every path that executed steps. Additional outcomes: `already-green |
 plan-red | check-red | close-red | wall-halt`. Worker prompts hold the v1.12 §5 contract
 (mutation-proven): the absolute repo root, the step's action/target, prior artifacts,
@@ -531,8 +536,41 @@ iteration count rather than a cap the step no longer has. **The replan brief
 names the mechanism**: which shape ended the step (converging-cut / stalled-no-write /
 repeated-gap, with the iteration numbers as evidence), the gap trajectory, and how much money
 and wall the stop left unspent (time reported UNBOUNDED when no wall was set, never `0`). It
-names no culprit file — F28 applies to the replan channel too. **Only the step loop uses the
-ladder**; the close-fix loop keeps `capRuns` (its own replay evidence does not exist yet).
+names no culprit file — F28 applies to the replan channel too.
+
+**The close TREND rule — how the CLOSE-FIX LOOP ends (PRD v1.46 §4).** `capRuns` retired as
+that loop's governor once its own $0 replay over every archived fix loop came back clean (0
+greens harmed — all three historical fix-loop greens converted in ≤ 2 verdicts; 1 real waste
+case caught, dead flat at 2 errors for 7 verdicts until the wall). It now stops on the same
+2-strike no-progress rule, read off a DIFFERENT signal: the close's own graded numbers, **per
+stage** (`src/trend.js`). A stage's series is the first number on the first red-marked line of
+its output, compared only against that stage's own BEST so far (never last-only, the same
+oscillator reason the ladder keeps a seen-set); reaching a LATER stage than ever before is
+progress too, since a staged close is first-red-wins. Two consecutive comparable readings with
+nothing improving ends the loop, under the unchanged `cap-halt` terminal and the unchanged
+`escalated` outcome. **Never across stages** — merging a staged close's axes into one series
+reads a real see-saw (suppressions 12 → 5 while the type errors it re-exposed went 2 → 0) as a
+regression, and that mistake is inexpressible here rather than avoided by care. A stage whose
+output carries no number donates NOTHING — not a zero, not a strike (F6): while the instrument
+has never been able to compare anything, `capRuns` is what bounds the loop, and it lifts the
+moment a stage reports a comparable number. Known accepted limit, stated: "lower is better" is
+not derivable from prose, so a floor-shaped stage (`N tests executed, below the seed's M`)
+reads as not-improving rather than converging — the fail-safe direction, since a false "flat"
+costs one conservative stop and a false "converging" costs a top-up spent on a dead run. The
+spine gains a per-iteration `ladder` record here too; every reading names its `governor`
+(`step-ladder` | `close-trend`) so two instruments under one event type can never be averaged
+into one number.
+
+**A MONEY halt is decision-ready (PRD v1.46 §2).** A cut by the wallet is the same KIND of
+stop the wall is, so it now reads out the same way: the verdict already minted is KEPT (never
+discarded, never re-derived), and a `money-halt` spine record carries `budgetUsd`,
+`remainingUsd`, the kept `verdict`/`stage`, the run's own per-stage `trend`
+(`converging | flat | unknown`) with the `reading` and `series` it judged, and three
+`options` — top up and resume, revise the spec, abandon. Emitted at every site that cuts a run
+on money (the step loop, the close-fix loop, and the scout/draft relay), exactly as
+`wall-halt` is. The trend obeys the accuracy law above and says `unknown` out loud when the
+close rendered no number (F6). **The library only ever REPORTS**: `budgetUsd` is in the spec
+hash, so a top-up is a spec edit a human signs — nothing in a run may widen its own budget.
 
 **Time and materials (T + A, PRD v1.27/v1.29).** `runPlan` starts ONE wall clock per run
 (`createClock`, `src/clock.js`) from the signed `maxWallMs` and emits `wall-clock` with the
@@ -820,11 +858,31 @@ the secrets scan.
 #### Resuming a killed run (module C)
 
 A reuse run is up to `tries + 1` full jobs long, so a kill mid-run is a real event and it
-must not cost the whole envelope. **`readResume(events, {deathAt?})`** reads the dead
-run's own spine back into the state a resume continues from: `{ started, approvalHash,
-completed[], tried[], restart (with its step-level `seed`), r1Missing, spentUsd,
+must not cost the whole envelope. **`readResume(events, {deathAt?, direct?, resumableOutcomes?})`**
+reads the dead run's own spine back into the state a resume continues from: `{ started,
+approvalHash, completed[], tried[], restart (with its step-level `seed`), r1Missing, spentUsd,
 spendComplete, carrySpentUsd, carrySpendComplete, ended, greened, … }`. Hand that object to
 **`runReuse({…, resume})`** and the run picks up where it stopped.
+
+Two options widen WHICH spines it reads, both OFF by default so the reuse loop's own
+semantics are byte-unchanged (PRD v1.46 §3):
+
+- **`direct: true`** reads a plain `runJob` spine — no envelope, no try windows — as ONE
+  implicit try opened at `job-start`, through the same window machinery rather than a second
+  reader. Without it such a spine is honestly refused (`started: false`), which is what a
+  reuse runner needs. `job-start` carries the DECLARED fold (`priorSpentUsd`/`priorWallMs`,
+  present only when there is one) exactly as `try-start` does, so a chain of resumes adds only
+  each attempt's own new rounds instead of re-deriving and double-billing.
+- **`resumableOutcomes: ['cap-halt', 'wall-halt']`** reclassifies a landed `job-end` whose
+  outcome is a GOVERNANCE HALT as a restart rather than a completed row. "A landed job-end is
+  complete" is true of a VERDICT; a halt means an operator-owned allowance ran out with the
+  work on disk and the plan on the spine. A green or any red stays non-resumable under every
+  setting — a verdict already rendered is never re-bought.
+
+`scripts/run-u.mjs --resume <runid|path>` is the operator-side consumer: it skips the patient
+reset (`resumeTreeGate` instead — a dirty tree is what a resume expects; only a moved HEAD
+stops it), folds the halted run's money and wall in, re-enters at the checkpoint, and arms the
+outside watchdog on the REMAINING wall. The top-up itself stays a spec edit the human signs.
 
 - **Completed tries are not re-run.** They come back as rows (marked `inherited`) and
   their bridges stay excluded from every later selection. A try whose `job-end` landed —

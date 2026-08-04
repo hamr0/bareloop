@@ -1681,7 +1681,11 @@ test('W-2: the wall past the outer close STOPS the fix loop on the verdict alrea
   assert.equal(esc.category, 'wall-halt', 'the escalation names the same category the outcome does (F11)');
   assert.match(esc.detail, /needs_revision/, 'the detail states the verdict that STANDS — the grade is kept, never re-derived');
   assert.match(esc.detail, /stage "verdict"/, 'and which stage rendered it');
-  assert.match(esc.detail, /0 of 3 fix iteration/, 'and how much of the loop was actually spent');
+  // The denominator is GONE, deliberately (v1.46 §4): `capRuns` retired as this
+  // loop's governor, so quoting "0 of 3" would state a bound that no longer decides
+  // anything. What is spent is the fact; there is no longer a number it is "of".
+  assert.match(esc.detail, /after 0 fix iteration/, 'and how much of the loop was actually spent');
+  assert.doesNotMatch(esc.detail, /of \d+ fix iteration/, 'never a denominator that no longer governs');
   assert.match(esc.detail, /trend: unknown/, 'one grade cannot make a trend, and the honest reading says so rather than guessing "stalled"');
   assert.match(esc.options.join(' | '), /maxWallMs/, 'lever one: more time');
   assert.match(esc.options.join(' | '), /revise the goal/, 'lever two: a different goal — the trend is what tells the human which');
@@ -2852,4 +2856,198 @@ test('Rule B WIRED: a replan that sheds the inherited check is refused check-she
   const replanPrompt = provider.calls.find((c) => c.includes('What happened when the previous plan ran'));
   assert.ok(replanPrompt, 'the replan drafted');
   assert.match(replanPrompt, /previous plan carried/i, 'Rule B is stated to the replanner, not just enforced');
+});
+
+// ══ PRD v1.46 §2 + §4 — the money halt gets the W-2 treatment, and the
+// close-fix loop's fixed count retires for the same progress rule ═════════════
+//
+// §2: a money cut keeps the verdict it already minted and pauses DECISION-READY
+// with a trend the human can act on. The accuracy law is PER STAGE (src/trend.js)
+// — never across axes, never model prose, and "can't tell" when there is no
+// number (F6). The library reports; it never adjusts a budget (hard line).
+//
+// §4: `capRuns` retires as the fix loop's GOVERNOR. The replacement is the same
+// 2-strike no-progress rule the step ladder runs, read off the close's own graded
+// numbers. Money and the wall keep every bit of their authority. Replay-validated
+// at $0 over all 8 archived fix loops: 0 greens harmed, 1 waste case caught.
+
+/** A close that COUNTS what is still missing — the numeric shape every shipped
+ * u-close has, and the one the trend instrument is built to read. Still stricter
+ * than the `clean-run` check (which greens on "ok"), so the fix loop opens.
+ * @param {string} wd @param {string[]} markers */
+const countingClose = (wd, markers = ['import', 'DONE']) => writeFileSync(join(wd, 'close.mjs'), `import { existsSync, readFileSync } from 'node:fs';
+const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
+const t = existsSync(p) ? readFileSync(p, 'utf8') : '';
+const missing = ${JSON.stringify(markers)}.filter((k) => !t.includes(k));
+if (missing.length === 0) process.exit(0);
+console.log(\`FAILED red: \${missing.length} requirement(s) missing\`); process.exit(1);\n`);
+
+/** one fix iteration: the write, then the attempt summary @param {string} wd */
+const fixWrite = (wd, content, tag) => [
+  { toolCalls: [tcall(tag, 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content })] },
+  { text: `fix ${tag}` },
+];
+
+test('§4 the close-fix loop is governed by PROGRESS, not the count: a converging close iterates PAST capRuns and greens', async (t) => {
+  const wd = makePatient(t);
+  countingClose(wd, ['A', 'B', 'C']);
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    ...fixWrite(wd, 'ok A\n', 't1'),          // the STEP: clean-run greens, close reds at 2 missing
+    ...fixWrite(wd, 'ok A B\n', 't2'),        // fix 1 → 1 missing   (improved)
+    ...fixWrite(wd, 'ok A B extra\n', 't3'),  // fix 2 → 1 missing   (flat, strike 1)
+    ...fixWrite(wd, 'ok A B C\n', 't4'),      // fix 3 → GREEN
+  ]);
+  // capRuns 2 is the RETIRED number: under the old bound fix 3 was never bought.
+  const { outcome, events } = await go(wd, provider, { capRuns: 2 });
+  assert.equal(outcome, 'green', 'the converging fix loop was allowed to finish — the count no longer governs');
+  assert.equal(afterFixLoop(events).filter((e) => e.type === 'close-verdict').length, 3,
+    'three fix iterations ran under a retired cap of two');
+});
+
+test('§4 two consecutive fix grades with NO stage improving ends the loop — under the SAME cap-halt taxonomy the count used', async (t) => {
+  const wd = makePatient(t);
+  countingClose(wd, ['A', 'B']);
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    ...fixWrite(wd, 'ok A\n', 't1'),        // step greens; close reds at 1 missing
+    ...fixWrite(wd, 'ok A x\n', 't2'),      // fix 1 → still 1 missing (strike 1)
+    ...fixWrite(wd, 'ok A y\n', 't3'),      // fix 2 → still 1 missing (strike 2 → out)
+    ...fixWrite(wd, 'ok A B\n', 't4'),      // never bought
+  ]);
+  // capRuns 9 so the retired count cannot possibly be what stopped it
+  const { outcome, events } = await go(wd, provider, { capRuns: 9 });
+  assert.equal(outcome, 'escalated', 'the designed "close still red" terminal, unchanged');
+  assert.equal(afterFixLoop(events).filter((e) => e.type === 'close-verdict').length, 2,
+    'exactly two fix iterations: the run stopped when it ran out of IDEAS, not out of money');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'cap-halt', 'ONE exhaustion terminal, two triggers — only the trigger changed, never the taxonomy');
+  assert.match(esc.decision, /2\/2 strike|no progress|stopped making progress/i, 'the decision names the progress rule that fired');
+  assert.doesNotMatch(esc.options.join(' | '), /replan/i, 'there is no planner at the close — never offer a lever that does not exist here');
+  const reads = events.filter((e) => e.type === 'ladder' && e.governor === 'close-trend');
+  assert.equal(reads.length, 2, 'both fix readings are on the spine under their own governor name');
+  assert.deepEqual(reads.map((r) => r.improved), [false, false]);
+});
+
+test('§4 BLIND CONTROL: a close the trend cannot read keeps the retired count as its bound — never unbounded, never a strike out of ignorance', async (t) => {
+  const wd = makePatient(t);
+  strictCloseOverCheck(wd); // its red output carries no count at all
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    ...fixWrite(wd, 'ok but no module use\n', 't1'),
+    { text: 'fix attempt — writes nothing' },
+  ]);
+  const { outcome, events } = await go(wd, provider, { capRuns: 3 });
+  assert.equal(outcome, 'escalated');
+  assert.equal(afterFixLoop(events).filter((e) => e.type === 'close-verdict').length, 3,
+    'exactly capRuns iterations — the blind fallback is the count it replaced, byte for byte');
+  const reads = events.filter((e) => e.type === 'ladder' && e.governor === 'close-trend');
+  assert.ok(reads.every((r) => r.comparable === false), 'no reading was comparable, so no reading struck');
+});
+
+test('§2 a fix loop cut by a DRAINED wallet emits a decision-ready money-halt: the kept verdict, a per-stage trend, and hamr\'s three levers', async (t) => {
+  const wd = makePatient(t);
+  countingClose(wd, ['A', 'B', 'C']);
+  // The drain is targeted at the RUN'S OWN STATE — the fix loop has opened AND has
+  // graded one attempt — never at a raw `close-verdict` count, which the STEP loop's
+  // own micro-loop also emits and which therefore fires long before the fix loop
+  // exists (the call-count trigger that silently retargets).
+  let fixOpen = false;
+  let fixGrades = 0;
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    ...fixWrite(wd, 'ok A\n', 't1'),      // step greens; close reds at 2 missing
+    ...fixWrite(wd, 'ok A B\n', 't2'),    // fix 1 → 1 missing (converging), and the wallet drains
+    { text: 'never bought' },
+  ]);
+  const { events, emit } = collector();
+  const jv = validateJob(JOB(wd));
+  const emit2 = (/** @type {string} */ type, /** @type {any} */ data = {}) => {
+    if (type === 'fix-loop') fixOpen = true;
+    if (fixOpen && type === 'close-verdict') fixGrades += 1;
+    return emit(type, data);
+  };
+  const outcome = await runPlan(jv.job, {
+    workdir: wd, provider, emit: emit2, capRuns: 9,
+    remainingUsd: () => (fixGrades >= 1 ? 0.0001 : 1.5),
+  });
+  assert.equal(outcome, 'cap-halt', 'a money cut is never a capability read — it is the resume-to-cap checkpoint');
+
+  const mh = events.filter((e) => e.type === 'money-halt').at(-1);
+  assert.ok(mh, 'the run-level MONEY record exists, exactly as W-2 gave TIME one');
+  assert.equal(mh.phase, 'fix');
+  assert.equal(mh.verdict, 'needs_revision', 'the verdict already minted is KEPT, never discarded and never re-derived');
+  assert.equal(mh.stage, 'verdict', 'and which stage rendered it');
+  assert.equal(mh.trend, 'converging', 'the close went 2 → 1 on its own stage: a top-up likely finishes it');
+  assert.match(mh.reading, /2 → 1/, 'the reading shows the series it judged, so the human can check the instrument');
+  assert.equal(mh.budgetUsd, 1.5);
+  assert.match(mh.options.join(' | '), /top up|budgetUsd/i, 'lever one: more money');
+  assert.match(mh.options.join(' | '), /revise the goal/i, 'lever two: a different goal — the trend says which');
+  assert.match(mh.options.join(' | '), /abandon/i, 'lever three');
+  assert.ok(mh.options.every((o) => !/self|automatic/i.test(o)), 'the library reports; it never adjusts a budget');
+});
+
+test('§2 CAN\'T TELL: a money cut on a close with no extractable number says so rather than inventing a direction (F6)', async (t) => {
+  const wd = makePatient(t);
+  strictCloseOverCheck(wd); // no count in its output, ever
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    ...fixWrite(wd, 'ok but no module use\n', 't1'),
+    { text: 'fix attempt' },
+  ]);
+  const { events, emit } = collector();
+  const jv = validateJob(JOB(wd));
+  let fixOpen = false;
+  const emit2 = (/** @type {string} */ type, /** @type {any} */ data = {}) => {
+    if (type === 'fix-loop') fixOpen = true;
+    return emit(type, data);
+  };
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit: emit2, capRuns: 3, remainingUsd: () => (fixOpen ? 0.0001 : 1.5) });
+  assert.equal(outcome, 'cap-halt');
+  const mh = events.filter((e) => e.type === 'money-halt').at(-1);
+  assert.ok(mh, 'the money record still lands — an unknown trend is a reading, not a reason to stay silent');
+  assert.equal(mh.trend, 'unknown', 'never "flat": recommending a goal rewrite on no evidence is F6 in a verdict\'s coat');
+  assert.match(mh.reading, /unknown|nothing the instrument can compare/i);
+});
+
+test('§2 a STEP-loop money cut gets the same record — the readout is symmetric to wall-halt at every site that emits one', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'nope\n' })] },
+    { text: 'attempt' },
+  ]);
+  const { events, emit } = collector();
+  const jv = validateJob(JOB(wd));
+  let calls = 0;
+  const remainingUsd = () => (++calls <= 2 ? 1.5 : 0.0001);
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 3, remainingUsd });
+  assert.equal(outcome, 'cap-halt');
+  const mh = events.filter((e) => e.type === 'money-halt').at(-1);
+  assert.ok(mh, 'the step loop\'s money cut is decision-ready too');
+  // the STEP site must be the emitter — without this pin, an extra remainingUsd()
+  // call added anywhere upstream would silently retarget the cut to the scout/plan
+  // site and this test would keep passing while testing nothing (review F2; the
+  // call-counting trigger stays, but the run's own state names the site)
+  assert.equal(mh.phase, 'step:write-test');
+  assert.match(mh.options.join(' | '), /top up|budgetUsd/i);
+  assert.equal(typeof mh.trend, 'string');
+});
+
+test('§2 CONTROL: a run that never runs out of money emits NO money-halt record — the readout costs the healthy run nothing', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    ...fixWrite(wd, 'ok — asserts x\n', 't1'),
+  ]);
+  const { outcome, events } = await go(wd, provider);
+  assert.equal(outcome, 'green');
+  assert.equal(events.filter((e) => e.type === 'money-halt').length, 0);
 });

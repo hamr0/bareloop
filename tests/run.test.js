@@ -484,3 +484,58 @@ test('resume: priorWallMs folds into the run clock — the signed wall is report
   assert.ok(wc.elapsedMs >= 500_000, `the dead attempt's time is already consumed: ${wc.elapsedMs}`);
   assert.ok(wc.remainingMs <= 100_000, `only the remainder is left: ${wc.remainingMs}`);
 });
+
+test('§3 resume: job-start DECLARES the fold it inherited — a chain of resumes is accounted from the record, never re-derived from the file', async () => {
+  // The `try-start` precedent, one level down. `readResume` reads a resumed run's
+  // prior spend off the record that DECLARES it, because re-deriving from a whole
+  // spine would bill an abandoned attempt twice. A direct runJob spine had no such
+  // record at all, so the second resume of a cap-halted run would have folded in
+  // only its own rounds and silently widened the ceiling by everything before them.
+  const wd = makePlanWork('plan-declared-fold');
+  const job = planJob();
+  const approvals = [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }];
+  const file = join(wd, 'spine.jsonl');
+  await runJob(job, {
+    approvals, workdir: wd, provider: scriptedProvider([{ text: 'scout' }, { text: 'plan' }]),
+    emit: makeSpine(file), priorSpentUsd: 0.75, priorWallMs: 90_000,
+  });
+  const start = readSpine(file).find((e) => e.type === 'job-start');
+  assert.equal(start.priorSpentUsd, 0.75, 'the money the dead attempt spent is ON the record a resume reads');
+  assert.equal(start.priorWallMs, 90_000, 'and so is the wall it burned');
+  assert.equal(start.priorSpendComplete, true);
+});
+
+test('§3 CONTROL: a COLD run\'s job-start carries no fold fields at all — an absent fold is absent, never a decorative zero', async () => {
+  const wd = makePlanWork('plan-no-fold');
+  const job = planJob();
+  const file = join(wd, 'spine.jsonl');
+  await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider: scriptedProvider([{ text: 'scout' }, { text: 'plan' }]), emit: makeSpine(file),
+  });
+  const start = readSpine(file).find((e) => e.type === 'job-start');
+  assert.equal('priorSpentUsd' in start, false);
+  assert.equal('priorWallMs' in start, false);
+});
+
+test('§3 resume: a FLOOR fold stays a floor — a dead run whose spend was only partly priced cannot come back as an exact total (F6)', async () => {
+  // The fold is the dead run's own figure, and `readResume` marks it
+  // `priorSpendComplete: false` when any round in it came back unpriced. Declaring
+  // it `true` here would launder an unknown into an exact number at the one record
+  // a human reads the money off — F6 wearing a resume's coat.
+  const wd = makePlanWork('plan-floor-fold');
+  const job = planJob();
+  const file = join(wd, 'spine.jsonl');
+  await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider: scriptedProvider([{ text: 'scout' }, { text: 'plan' }]),
+    emit: makeSpine(file), priorSpentUsd: 0.5, priorSpendComplete: false,
+  });
+  const events = readSpine(file);
+  assert.equal(events.find((e) => e.type === 'job-start').priorSpendComplete, false,
+    'the declaration carries the floor, so a resume OF this resume inherits the unknown');
+  const end = events.find((e) => e.type === 'job-end');
+  assert.ok(end.spentUsd >= 0.5, 'the floor is a real number and still rides out');
+  assert.equal(end.spendComplete, false,
+    'and the TOTAL is a floor too — every round of this attempt being priced does not repair the one before it');
+});

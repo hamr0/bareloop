@@ -1403,3 +1403,136 @@ test('readResume: a NEGATIVE declared fold on the dead spine clamps to $0 — a 
   assert.equal(dead.restart.priorSpentUsd, 0.2, 'a negative declared money fold contributes $0, exactly like the four sibling fold sites');
   assert.ok(dead.restart.priorWallMs >= 0, 'a negative declared wall fold can never drag the measured wall below zero');
 });
+
+// ══ PRD v1.46 §3 — CAP-HALT RESUME ON THE DIRECT (U) PATH ════════════════════
+//
+// Kill-resume existed (module C above) and W-2 gave the wall a decision-ready
+// pause, but a MONEY cap-halt — the case hamr's original "why would i want to
+// waste more money on something i already started" ruling was actually about —
+// fell between them: this reader classed any landed `job-end` as COMPLETE, and a
+// direct runJob spine has no try window for it to read at all.
+//
+// Both gaps close as OPTIONS on the ONE reader, never a second one, and both
+// default OFF so the reuse loop's graded-row semantics are byte-unchanged:
+//   `direct`             — read a plain runJob spine as a single implicit try.
+//   `resumableOutcomes`  — a landed job-end with one of these outcomes is a
+//                          RESTART (resumable on a top-up), not a completed row.
+
+/** A DIRECT runJob spine: a REAL recorded plan flow wrapped in the two records
+ * run.js itself puts around one. The body is the executor's own vocabulary (the
+ * reason this file refuses hand-authored fixtures); only the wrapper is authored,
+ * and only because runJob's ledger — not the plan flow — emits it.
+ * @param {any[]} flow @param {{outcome: string, spentUsd?: number, prior?: number}} o */
+const directSpine = (flow, { outcome, spentUsd = 2.5, prior }) => [
+  {
+    type: 'job-start', job: 'plan-patient', specHash: 'h1', budgetUsd: 5, shape: 'plan', goal: 'g',
+    ...(prior === undefined ? {} : { priorSpentUsd: prior, priorSpendComplete: true }),
+    ts: '2026-08-04T10:00:00.000Z', seq: 1,
+  },
+  ...flow.map((e, i) => ({ ...e, seq: i + 2 })),
+  { type: 'job-end', outcome, spentUsd, spendComplete: true, ts: '2026-08-04T10:20:00.000Z', seq: flow.length + 2 },
+];
+
+test('§3 a DIRECT runJob spine reads back through the SAME reader — one implicit try, opened at job-start', async () => {
+  const wd = patientDir(['src/a.mjs', 'tests/test_x.mjs']);
+  const flow = await recordFlow(wd, twoStepScript(wd));
+  const events = directSpine(flow.events, { outcome: 'cap-halt' });
+  const r = readResume(events, { direct: true, resumableOutcomes: ['cap-halt'] });
+  assert.equal(r.started, true, 'a direct spine is a run this reader can continue');
+  assert.ok(r.restart, 'and the money cut left something to continue');
+  assert.equal(r.endOutcome, 'cap-halt', 'the terminal it stopped on is named');
+});
+
+test('§3 a landed job-end whose outcome is a MONEY cap-halt is RESUMABLE-on-top-up, with the checkpoint the steps already earned', async () => {
+  const wd = patientDir(['src/a.mjs', 'tests/test_x.mjs']);
+  const flow = await recordFlow(wd, twoStepScript(wd));
+  const r = readResume(directSpine(flow.events, { outcome: 'cap-halt' }), { direct: true, resumableOutcomes: ['cap-halt', 'wall-halt'] });
+  assert.equal(r.completed.length, 0, 'a cap-halt is a CHECKPOINT, not a graded row — the run never reached a verdict it was asked for');
+  const s = r.restart.seed;
+  assert.ok(s, 'the plan it accepted and the steps it finished are the checkpoint');
+  assert.equal(s.phase, 'close', 'both steps landed, so the resume re-enters at the close and its fix loop');
+  assert.deepEqual(s.completedSteps.map((/** @type {any} */ c) => c.id), ['seed-src', 'write-test']);
+});
+
+test('§3 the fold is the dead run\'s OWN priced rounds — the ceiling never silently widens', async () => {
+  const wd = patientDir(['src/a.mjs', 'tests/test_x.mjs']);
+  const flow = await recordFlow(wd, twoStepScript(wd));
+  const rounds = flow.events.filter((e) => e.type === 'worker-round' && typeof e.costUsd === 'number');
+  assert.ok(rounds.length > 0, 'the recorded flow really did buy priced rounds — otherwise this test proves nothing');
+  const summed = rounds.reduce((a, e) => a + e.costUsd, 0);
+  const r = readResume(directSpine(flow.events, { outcome: 'cap-halt' }), { direct: true, resumableOutcomes: ['cap-halt'] });
+  assert.ok(Math.abs(r.restart.priorSpentUsd - summed) < 1e-9, `the fold is the summed worker-rounds (${summed}), never a re-derivation`);
+  assert.equal(r.restart.priorSpendComplete, true);
+  assert.ok(r.restart.priorWallMs > 0, 'and the wall it already burned rides with it');
+});
+
+test('§3 a resume OF a resume adds only its NEW rounds — job-start declares the fold it inherited', async () => {
+  const wd = patientDir(['src/a.mjs', 'tests/test_x.mjs']);
+  const flow = await recordFlow(wd, twoStepScript(wd));
+  const summed = flow.events.filter((e) => e.type === 'worker-round' && typeof e.costUsd === 'number').reduce((a, e) => a + e.costUsd, 0);
+  const r = readResume(directSpine(flow.events, { outcome: 'cap-halt', prior: 3.5 }), { direct: true, resumableOutcomes: ['cap-halt'] });
+  assert.ok(Math.abs(r.restart.priorSpentUsd - (3.5 + summed)) < 1e-9,
+    're-deriving from the whole file would bill the first attempt twice; the declared fold is what makes a chain of resumes honest');
+});
+
+test('§3 a GREEN or ESCALATED job-end stays NON-resumable even under the option — a verdict already rendered is never re-bought', async () => {
+  const wd = patientDir(['src/a.mjs', 'tests/test_x.mjs']);
+  const flow = await recordFlow(wd, twoStepScript(wd));
+  for (const outcome of ['green', 'escalated', 'step-red', 'provider-red']) {
+    const r = readResume(directSpine(flow.events, { outcome }), { direct: true, resumableOutcomes: ['cap-halt', 'wall-halt'] });
+    assert.equal(r.restart, null, `${outcome} must not become a restart`);
+    assert.equal(r.completed.length, 1, `${outcome} is a graded row`);
+  }
+});
+
+test('§3 CONTROL: both options are OFF by default — a bare runJob spine still refuses, and a reuse try graded cap-halt still keeps its row', async () => {
+  const wd = patientDir(['src/a.mjs', 'tests/test_x.mjs']);
+  const flow = await recordFlow(wd, twoStepScript(wd));
+  const bare = readResume(directSpine(flow.events, { outcome: 'cap-halt' }));
+  assert.equal(bare.started, false, 'no reuse-start and no opt-in: not a reuse run, and it says so rather than guessing');
+  assert.equal(bare.restart, null);
+  assert.equal(bare.completed.length, 0);
+
+  // the reuse path itself: a try that cap-halted and whose row landed is COMPLETE,
+  // exactly as before — the amendment must not rewrite the reuse loop's semantics
+  const { events } = await spineOfFlow(flow.events, 'cap-halt');
+  const reuse = readResume(killedAfter(events, (e) => e.type === 'job-end'));
+  assert.equal(reuse.restart, null, 'the reuse loop grades a cap-halted try and moves on — unchanged');
+  assert.equal(reuse.completed.length, 1);
+});
+
+test('§3 the reuse restart hands runJob whether its fold was EXACT — a floor that stops at the seam is F6 laundered one function call later', async () => {
+  // `readResume` already computes `restart.priorSpendComplete` and `runReuse` already
+  // records it on `try-start`, but it stopped there: the value never reached `runJob`,
+  // whose `job-end` is what `readTry` reads the row's own `spendComplete` off. So a
+  // restart of an attempt whose spend was only PARTLY priced came back looking exact.
+  // The same one-way flag now exists on `runJob`, so the seam is closed rather than
+  // recorded-and-dropped.
+  const dir = seed(BRIDGE('alpha'));
+  const { file } = await spineOf({
+    registryDir: dir,
+    selectionProvider: picker({ choice: 'alpha', reason: 'a' }),
+    // an UNPRICED round inside the try: readResume marks the fold incomplete
+    runJob: scriptedRuns([{ outcome: 'green', rounds: [0.4, null], closeStage: 'typecheck' }]),
+  });
+  const cut = readSpine(file);
+  truncateTo(file, cut.slice(0, cut.findIndex((e) => e.type === 'job-end')));
+  const dead = readResume(readSpine(file));
+  assert.equal(dead.restart?.priorSpendComplete, false, 'the fixture really did leave an unpriced round, or this test proves nothing');
+
+  /** @type {any[]} */
+  const seenOpts = [];
+  await resumeOnto(file, {
+    registryDir: dir,
+    selectionProvider: picker({ choice: null, reason: 'none' }),
+    runJob: async (/** @type {any} */ _s, /** @type {any} */ opts) => {
+      seenOpts.push(opts);
+      opts.emit('job-end', { outcome: 'escalated', spentUsd: 1, spendComplete: true });
+      return 'escalated';
+    },
+  });
+  assert.ok(seenOpts.length > 0, 'the restart really ran');
+  assert.equal(seenOpts[0].priorSpentUsd, dead.restart.priorSpentUsd);
+  assert.equal(seenOpts[0].priorSpendComplete, false,
+    'the unknown travels WITH the money it qualifies — a fold reported exact one call later is the same F6, just moved');
+});

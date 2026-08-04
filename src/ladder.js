@@ -126,8 +126,8 @@ export function createLadder({ limit = STRIKE_LIMIT, writeCount }) {
      * non-green, non-fault verdict — a green never reaches here, so every reading
      * is a failing iteration by construction.
      * @param {{iteration: number, gap?: string}} o
-     * @returns {{iteration: number, strike: boolean, strikes: number, limit: number,
-     *   wrote: boolean, repeatOf: number|null, distinctGaps: number}}
+     * @returns {{governor: string, iteration: number, strike: boolean, strikes: number,
+     *   limit: number, wrote: boolean, repeatOf: number|null, distinctGaps: number}}
      */
     record({ iteration, gap }) {
       iterations = iteration;
@@ -146,6 +146,11 @@ export function createLadder({ limit = STRIKE_LIMIT, writeCount }) {
       const strike = repeated || !wrote;
       if (strike) strikes += 1; // sticky: nothing anywhere decrements this
       return {
+        // WHICH governor produced this reading. Two of them emit under the one
+        // `ladder` spine type now (this one, and the close-fix loop's per-stage trend
+        // reader), and their fields differ — a reader that cannot tell them apart
+        // would average two different instruments into one number.
+        governor: 'step-ladder',
         iteration, strike, strikes, limit, wrote,
         repeatOf: repeated ? /** @type {number} */ (firstAt) : null,
         distinctGaps: firstSeen.size,

@@ -96,6 +96,11 @@ async function primitiveSmoke(workdir) {
  *   the fold is the seam precisely because the CAP is in the spec hash, so
  *   tightening the cap instead would make a new spec version needing a signature
  *   nobody typed. The caller reconstructs the figure from the dead run's own spine.
+ * @param {boolean} [opts.priorSpendComplete=true] RESUME — was that fold EXACT?
+ *   `readResume` reports false when any round inside the dead attempt came back
+ *   unpriced, which makes the fold a FLOOR. The unknown does not heal by being carried
+ *   forward, so it rides one-way onto every `job-end` this run emits: a total built on
+ *   a floor is a floor, and reporting it as exact is F6 in a resume's coat.
  * @param {number} [opts.priorWallMs=0] RESUME — the same ruling in a time coat: wall
  *   time the killed attempt already consumed, folded into the run clock so the
  *   restart gets the remainder of the SIGNED wall, never a fresh allotment.
@@ -117,7 +122,7 @@ async function primitiveSmoke(workdir) {
  *   'close-red' | 'close-unsupported' | 'recipe-stale' | 'pricing-red' | 'provider-red' |
  *   'interpreter-red' | 'cap-halt' | 'wall-halt' | 'step-stalled' | `step-red:<id>`
  */
-export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, layerRoot = false, bridge = null, priorSpentUsd = 0, priorWallMs = 0, resumeSeed = null }) {
+export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, layerRoot = false, bridge = null, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null }) {
   // 0. the ledger's counters, declared FIRST so that every job-end — including
   // the pre-token reds below — can state a real figure. An omitted `spentUsd` is
   // not a zero: a consumer reads `undefined` and either crashes or launders it
@@ -129,6 +134,12 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // that would poison every later comparison into "no cap".
   let spentUsd = typeof priorSpentUsd === 'number' && Number.isFinite(priorSpentUsd) && priorSpentUsd > 0 ? priorSpentUsd : 0;
   let unpriced = false;
+  // RESUME (v1.46 §3): was the FOLD itself exact? `readResume` marks it false when any
+  // round inside the dead attempt came back unpriced, and that unknown does not heal by
+  // being carried forward — every round of THIS attempt being priced repairs nothing
+  // about the one before it. One-way, like `stalled` and `cutMidCall`, and read by
+  // `spend()`, so the terminal states a floor instead of an exact-looking total (F6).
+  const priorFloor = spentUsd > 0 && priorSpendComplete === false;
   // W1: did this run ABSORB a stall? The terminal `step-stalled` is the rare case;
   // the common one self-heals (src/stall.js abandons the hung call and reissues),
   // and an abandoned call may already have been billed — a reissue can pay twice
@@ -153,7 +164,7 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // says so machine-readably instead of dressing a floor up as exact. Emitted on
   // EVERY job-end (true when everything was priced) so no consumer ever has to
   // branch on field presence.
-  const spend = () => ({ spentUsd, spendComplete: !unpriced && !stalled && !cutMidCall });
+  const spend = () => ({ spentUsd, spendComplete: !unpriced && !stalled && !cutMidCall && !priorFloor });
   // 1. human-signs-always — before ANY provider call (N1 decision #1)
   if (!checkApproval(rawSpec, approvals)) {
     emit('job-end', { outcome: 'unapproved-spec', detail: 'no approval record matches this exact spec version', ...spend() });
@@ -169,6 +180,14 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   emit('job-start', {
     job: job.job, specHash: jobSpecHash(job), budgetUsd: job.budgetUsd,
     shape: 'plan', goal: job.goal,
+    // RESUME (v1.46 §3) — the DECLARED fold, the `try-start` precedent one level
+    // down. A reader reconstructing a chain of resumes must add only each attempt's
+    // OWN new rounds; without this record the second resume of a halted run would
+    // re-derive from its own file alone and silently widen the ceiling by everything
+    // spent before it. Emitted only when there IS a fold: an absent fold is absent,
+    // and a decorative `0` would be indistinguishable from a run nobody folded.
+    ...(spentUsd > 0 ? { priorSpentUsd: spentUsd, priorSpendComplete: !priorFloor } : {}),
+    ...(typeof priorWallMs === 'number' && Number.isFinite(priorWallMs) && priorWallMs > 0 ? { priorWallMs } : {}),
   });
 
   // 2. known-answer smoke before tokens (A3: silent degradation throws nothing)

@@ -424,6 +424,27 @@ export const CLOSE_FAULTS = Object.freeze({
 });
 
 /**
+ * The exhaustion-by-PROGRESS seam, as a contract rather than "whatever one module
+ * happens to return". Two governors implement it and they read different signals —
+ * the step ladder's repeats-and-writes (src/ladder.js) and the close-fix loop's
+ * per-stage graded numbers (src/trend.js) — which is the whole reason ralph takes an
+ * interface here and interprets nothing itself.
+ *
+ * `record` returns the governor's own reading, which ralph emits verbatim and never
+ * inspects; each reading names its `governor` so two instruments under one spine type
+ * can never be averaged into one number. `report` is the only shape ralph itself
+ * reads. `terminal` is optional and overrides the exhaustion PROSE only — never the
+ * category, never the outcome.
+ *
+ * @typedef {object} LoopGovernor
+ * @property {(o: {iteration: number, gap?: string}) => object} record
+ * @property {() => boolean} struckOut
+ * @property {() => {strikes: number, limit: number, iterations: number, distinctGaps?: number}} report
+ * @property {() => string} brief
+ * @property {() => {decision: string, options: string[]}} [terminal]
+ */
+
+/**
  * The loop: `while close-red and under-cap: run the middle`. Stops at first
  * green (within-run tuning past a visible close is the fit-to-pass surface,
  * PRD §2). The two honest terminals are green and a decision-ready escalation;
@@ -450,7 +471,7 @@ export const CLOSE_FAULTS = Object.freeze({
  *   never authors its judge any more than its close.
  * @param {number} [opts.capRuns] budget: max middle runs. Required UNLESS `ladder`
  *   is supplied — the two exhaustion rules are alternatives, never both at once.
- * @param {ReturnType<typeof import('./ladder.js').createLadder>} [opts.ladder]
+ * @param {LoopGovernor} [opts.ladder]
  *   the PROGRESS governor (src/ladder.js) that replaces the fixed count for a plan
  *   STEP's micro-loop. With it, the loop is bounded by strikes rather than by a
  *   number of runs: iterations float, and money, the wall, the variance meter and
@@ -458,8 +479,15 @@ export const CLOSE_FAULTS = Object.freeze({
  *   loop through the middle's own throw). Ralph still interprets nothing — it hands
  *   the ladder the iteration's gap and reads back a boolean.
  *
- *   Deliberately NOT wired into the close-fix loop: that loop's replay evidence does
- *   not exist yet, so it keeps its count (a recorded follow-up, not an oversight).
+ *   The CLOSE-FIX loop now supplies one too (PRD v1.46 §4, once its own $0 replay
+ *   over all 8 archived fix loops came back clean: 0 greens harmed, 1 waste case
+ *   caught). Its governor reads a different signal — the close's own per-stage
+ *   graded numbers (src/trend.js), not repeats and writes — which is exactly why
+ *   this is a SEAM and not a hard-coded rule: ralph still interprets nothing.
+ *   An optional `terminal()` on the governor overrides the exhaustion prose, because
+ *   the step ladder's copy offers the human a replan and there is no planner at the
+ *   close. The category and the outcome are NOT overridable: one exhaustion terminal,
+ *   two triggers.
  * @param {(type: string, data?: object) => object} opts.emit a spine emitter
  * @param {(s: string) => string} [opts.redact] source scrubber for close output
  *   (secrets never enter the spine); injected so the shell stays stdlib-only
@@ -623,11 +651,21 @@ export async function ralph({ middle, close, judge, capRuns, ladder, emit, redac
       emit('ladder', r);
       if (ladder.struckOut()) {
         const rep = ladder.report();
+        // The governor may name its own decision/options; it may NOT name its own
+        // category or outcome. A stop is spelled the same either way (`cap-halt`,
+        // 'escalated') because downstream counts categories against an executable
+        // excluded-set — only the PROSE a human reads is governor-specific.
+        const term = typeof ladder.terminal === 'function' ? ladder.terminal() : null;
         return exhausted(iteration,
-          { strikes: rep.strikes, strikeLimit: rep.limit, iterations: rep.iterations, distinctGaps: rep.distinctGaps },
+          {
+            strikes: rep.strikes,
+            strikeLimit: rep.limit,
+            iterations: rep.iterations,
+            ...(rep.distinctGaps === undefined ? {} : { distinctGaps: rep.distinctGaps }),
+          },
           { runs: iteration, strikes: rep.strikes, strikeLimit: rep.limit },
-          `${rep.strikes}/${rep.limit} strikes — the step stopped making progress. ${ladder.brief()} Continue, change approach, or stop?`,
-          ['let the planner re-allocate what is left (replan)', 'change approach', 'abandon the task']);
+          term?.decision ?? `${rep.strikes}/${rep.limit} strikes — the step stopped making progress. ${ladder.brief()} Continue, change approach, or stop?`,
+          term?.options ?? ['let the planner re-allocate what is left (replan)', 'change approach', 'abandon the task']);
       }
     }
   }
