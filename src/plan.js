@@ -246,7 +246,7 @@ export function stageClose(close) {
  * job spec. Never throws on JSON text or plain parsed data; every failure is
  * a named red. Returns the parsed plan on ok (single parse), null on any red.
  * @param {object|string} input parsed plan, or raw JSON text (parse failures are a red)
- * @param {{ job?: any, maxStepRounds?: number, scopes?: string[] }} [opts] `job`: the
+ * @param {{ job?: any, maxStepRounds?: number, scopes?: string[], seedRed?: string[], priorChecks?: string[] }} [opts] `job`: the
  *   validateJob-GREEN four-field spec (the ceiling, the fence, and the checks
  *   menu all come from it — a missing or non-plan-shape job fails CLOSED);
  *   `maxStepRounds`: the shell's per-step rounds ceiling (interpret's
@@ -254,9 +254,23 @@ export function stageClose(close) {
  *   `scopes`: the offered `tree-changed` menu from `legalScopes` (the SAME array
  *   the drafting prompt enumerated). Omitted, it derives from the signed
  *   writeScope — never a free-text fallback (F50).
+ *
+ *   The two shape-lottery gate rules (2026-08-04) — both keyed on RECORDED
+ *   facts, never an LLM judgment of "is this job small", and both inactive
+ *   when their fact is omitted (resume/reuse callers stay byte-identical):
+ *   `seedRed`: check names whose PREFLIGHT verdict was needs_revision. Rule
+ *   A-v2 — a seed-red check is the goal itself, not a milestone; it may only
+ *   sit on the plan's FINAL write step (`check-placement`). The $0 archive
+ *   sweep: seed-red-check-on-an-early-step has 0 honest greens ever; the one
+ *   wide closing step greens 7/7. Green-at-seed checks stay free mid-plan
+ *   (the 20 TESTGEN mid-plan greens — a guard, not a goal).
+ *   `priorChecks`: the check names the PREDECESSOR plan carried (replan gate
+ *   only). Rule B — a redraft may not drop one (`check-shed`): exits without
+ *   the check verify FORM alone, so a shed lets the run "green" unearned
+ *   (u-msdsmkid mechanism b; the 3 archived sheds were all on step-red runs).
  * @returns {{ ok: boolean, reds: Red[], plan: object|null }}
  */
-export function validatePlan(input, { job, maxStepRounds = 40, scopes } = {}) {
+export function validatePlan(input, { job, maxStepRounds = 40, scopes, seedRed, priorChecks } = {}) {
   /** @type {Red[]} */
   const reds = [];
   /** @type {(code: string, path: string, detail?: string) => void} */
@@ -319,6 +333,14 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes } = {}) {
   } else if (plan.steps.length > MAX_PLAN_STEPS) {
     red('bounds', 'steps', `max ${MAX_PLAN_STEPS} steps — per-step rounds bound the spend, the step count bounds the claim on the wallet`);
   } else {
+    // Rule A-v2's anchor: the index of the plan's FINAL write-granted step. Read
+    // off the RAW steps (a step whose grant didn't parse counts as non-write —
+    // its own missing-required/invalid-value red already fired; deriving a
+    // placement charge from the false default would be a second red for one
+    // defect). -1 when no step writes: every check then reds as a mailbox anyway.
+    const lastWriteIdx = plan.steps.reduce((/** @type {number} */ acc, /** @type {any} */ s, /** @type {number} */ i) => (
+      isObj(s) && Array.isArray(s.tools) && s.tools.some((/** @type {unknown} */ t) => WRITE_VERBS.includes(/** @type {string} */ (t))) ? i : acc), -1);
+    const seedRedNames = Array.isArray(seedRed) ? seedRed.filter(isNonEmptyString) : [];
     const seen = new Set();
     plan.steps.forEach((/** @type {any} */ s, /** @type {number} */ i) => {
       const at = `steps.${i}`;
@@ -451,8 +473,26 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes } = {}) {
         red('step-scope-escape', `${at}.target`, `"${s.target}" is inside the signed fence but outside this step's own scope "${stepScope}" — the step's gate is built from that narrowed prefix, so every write to this target would be denied`);
       }
 
-      validateExit(s, at, red, { checkNames, fence: spec.writeScope, insideFence, writeStep, toolsParsed, scopeMenu, stepScope, overlapsStepScope });
+      validateExit(s, at, red, { checkNames, fence: spec.writeScope, insideFence, writeStep, toolsParsed, scopeMenu, stepScope, overlapsStepScope, seedRedNames, isFinalWrite: i === lastWriteIdx });
     });
+
+    // Rule B (`check-shed`, replan gate): the caller hands over the check names
+    // the PREDECESSOR plan carried; a redraft that drops one is refused. Exits
+    // without the check verify FORM alone (tree-changed/artifact-written), so a
+    // shed lets a step "green" with the truth unjudged — u-msdsmkid's replan
+    // dropped check-passes from BOTH steps and greened unearned on form. Set
+    // semantics on NAMES: where the check sits may move (A-v2 forces it to the
+    // final write step); that it is judged at all may not. One red listing every
+    // dropped name — one defect (the shed), one red.
+    if (Array.isArray(priorChecks)) {
+      const carried = new Set(plan.steps.flatMap((/** @type {any} */ s) => (isObj(s) && Array.isArray(s.exit)
+        ? s.exit.filter((/** @type {any} */ e) => isObj(e) && e.type === 'check-passes' && isNonEmptyString(e.name)).map((/** @type {any} */ e) => e.name)
+        : [])));
+      const dropped = priorChecks.filter(isNonEmptyString).filter((n) => !carried.has(n));
+      if (dropped.length) {
+        red('check-shed', 'steps', `the predecessor plan carried check-passes(${dropped.join(', ')}) and this redraft drops ${dropped.length === 1 ? 'it' : 'them'} — a replan may move a check, never shed it (the remaining exits verify form only, so a shed green would be unearned)`);
+      }
+    }
   }
 
   // 3. secrets sweep — the agent-authored document is the riskier entry point
@@ -468,13 +508,15 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes } = {}) {
  * @param {Record<string, any>} s the step
  * @param {string} at step path prefix
  * @param {(code: string, path: string, detail?: string) => void} red
- * @param {{ checkNames: string[], fence: string[], insideFence: (p: string) => boolean, writeStep: boolean, toolsParsed: boolean, scopeMenu: string[], stepScope: string|null, overlapsStepScope: (p: string) => boolean }} ctx
+ * @param {{ checkNames: string[], fence: string[], insideFence: (p: string) => boolean, writeStep: boolean, toolsParsed: boolean, scopeMenu: string[], stepScope: string|null, overlapsStepScope: (p: string) => boolean, seedRedNames: string[], isFinalWrite: boolean }} ctx
  *   `stepScope`/`overlapsStepScope` (W3): the step's OWN narrowed fence when it
  *   declared a legal `scope`, null/always-true otherwise. Exits are OBSERVATIONS,
  *   not writes, so only `tree-changed` is constrained by it and only against
  *   DISJOINTness — see the arm for the measured semantics.
+ *   `seedRedNames`/`isFinalWrite` (Rule A-v2): the preflight-red check names and
+ *   whether THIS step is the plan's final write step — see the check-passes arm.
  */
-function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep, toolsParsed, scopeMenu, stepScope, overlapsStepScope }) {
+function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep, toolsParsed, scopeMenu, stepScope, overlapsStepScope, seedRedNames, isFinalWrite }) {
   if (!Array.isArray(s.exit) || s.exit.length === 0) {
     red('missing-required', `${at}.exit`, `non-empty array from the closed menu ${EXIT_TYPES.join('|')} — ALL listed exits must pass (AND-only); a step without an exit has no progress gate`);
     return;
@@ -501,6 +543,16 @@ function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep, t
         // decision 1: a check the spec doesn't sign DOES NOT EXIST — and the
         // detail names the signed menu so the replan can aim, not guess
         red('check-unknown', eAt, `"${e.name}" is not an offered close stage — the agent references stages of the operator's close, never authors a ruler; offered: [${checkNames.join(', ') || 'none'}]`);
+      } else if (seedRedNames.includes(e.name) && writeStep && !isFinalWrite) {
+        // Rule A-v2 (`check-placement`): a check that was RED at preflight is
+        // the GOAL itself, not a milestone — it judges the whole territory, so
+        // an earlier step scoped to a slice can never satisfy it without
+        // crossing its own boundary (the bareagent-u death shape: 0 honest
+        // greens in the whole archive; the wide closing step greens 7/7). Only
+        // on a WRITE step and only when the anchor exists elsewhere: a
+        // read-only step already redded as a mailbox (one defect, one red),
+        // and a green-at-seed check is a guard, free to sit anywhere.
+        red('check-placement', eAt, `"${e.name}" was RED at preflight — a failing check is the goal itself and may only gate the plan's FINAL write step (make that step wide: free to edit any file it reports, iterating until it passes); an earlier step scoped to a slice can never satisfy a whole-goal check`);
       }
     } else if (e.type === 'tree-changed') {
       hasTreeChanged = true;

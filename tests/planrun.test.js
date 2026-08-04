@@ -1886,9 +1886,12 @@ test('W-2 (step site): the wall-halt record carries the LADDER state — never a
 test('W-2 (step site) CONTROL: a step ALREADY RUNNING when the wall passes keeps its old behaviour — the attempt finishes, the judge runs, and the METER is what stops it', async (t) => {
   const wd = makePatient(t);
   const clk = fakeClock();
+  // The replanned plan KEEPS check-passes(clean-run): Rule B (check-shed) refuses a
+  // redraft that drops an inherited check, and this test's subject is the WALL, not
+  // the shed — the step is refused at the deadline before its exits ever run.
   const replanned = PLAN(wd, [{
     id: 'second-go', action: 'Write it properly.', tools: ['write'], rounds: 4,
-    target: 'tests/test_x.mjs', exit: [{ type: 'tree-changed', scope: 'tests/**' }],
+    target: 'tests/test_x.mjs', exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
   }]);
   let n = 0;
   const provider = {
@@ -2789,3 +2792,64 @@ test('LADDER (e) WALL beats progress: an expired clock ends a CONVERGING ladder 
   assert.equal(wh.stepAttemptCap, undefined);
 });
 
+
+// ─── the shape-lottery gate rules, WIRED (2026-08-04): preflight verdicts →
+// Rule A-v2 at every draft gate; the accepted plan's checks → Rule B at the
+// replan gate. The $0 sweep: seed-red-check-on-early-step has 0 honest greens
+// ever; the one-wide-closing-step shape greens 7/7. Rules are mechanical
+// (recorded verdicts + predecessor exits), never an LLM assessing "small". ───
+
+test('Rule A-v2 WIRED: a draft putting the seed-red check on an EARLY write step reds check-placement, the law rides the prompt, the redraft greens', async (t) => {
+  const wd = makePatient(t);
+  const badPlan = PLAN(wd, [
+    {
+      id: 'prep-helper', action: 'Write tests/helper.mjs with shared fixtures.',
+      tools: ['write'], rounds: 4, target: 'tests/helper.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    },
+    {
+      id: 'write-test', action: 'Write tests/test_x.mjs asserting the module exports.',
+      tools: ['write'], rounds: 6, target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    },
+  ]);
+  const provider = scriptedProvider([
+    { text: 'src/mod.mjs exports x; tests/ is empty.' },   // scout
+    { text: badPlan },                                     // draft 1 — the death shape
+    { text: PLAN(wd) },                                    // redraft — the RLM shape
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok — asserts x\n' })] },
+    { text: 'wrote tests/test_x.mjs' },
+  ]);
+  const { outcome, events } = await go(wd, provider);
+  const v1 = events.find((e) => e.type === 'plan-validate' && e.phase === 'draft-1');
+  assert.equal(v1?.ok, false, 'the death shape is refused at the gate');
+  assert.ok(v1.reds.some((r) => r.code === 'check-placement'), `expected check-placement, got ${JSON.stringify(v1.reds)}`);
+  assert.equal(events.find((e) => e.type === 'plan-validate' && e.phase === 'draft-2')?.ok, true);
+  assert.equal(outcome, 'green', 'the redraft self-heals into the winning shape and the run greens');
+  // the law is STATED, not just enforced (mailbox precedent: gate + prompt) —
+  // and it names the seed-red check, which only the preflight wiring can know
+  const draftPrompt = provider.calls.find((c) => c.includes('DRAFT-PLAN'));
+  assert.ok(draftPrompt, 'a draft prompt exists');
+  assert.match(draftPrompt, /FINAL write step/i);
+  assert.match(draftPrompt, /"clean-run"/);
+});
+
+test('Rule B WIRED: a replan that sheds the inherited check is refused check-shed — a form-only redraft cannot fake a green (u-msdsmkid mechanism b)', async (t) => {
+  const wd = makeMismatchPatient(t, 'tests/test_x.mjs');
+  const shedPlan = LADDER_PLAN(wd, { id: 'second-go', exit: [{ type: 'tree-changed', scope: 'tests/**' }] });
+  const provider = scriptedProvider([
+    { text: 'scout notes' },
+    { text: LADDER_PLAN(wd) },
+    ...iterWrites(wd, ['TODO TODO\n', 'TODO TODO\n', 'TODO TODO\n']),
+    { text: shedPlan },   // replan draft 1 — sheds check-passes(clean-run)
+    { text: shedPlan },   // redraft — sheds again (sticks)
+  ]);
+  const { outcome, events } = await go(wd, provider, { capRuns: 4 });
+  const r1 = events.find((e) => e.type === 'plan-validate' && e.phase === 'replan-1');
+  assert.equal(r1?.ok, false, 'the shed redraft is refused at the gate');
+  assert.ok(r1.reds.some((r) => r.code === 'check-shed'), `expected check-shed, got ${JSON.stringify(r1.reds)}`);
+  assert.equal(outcome, 'plan-red', 'two shed drafts exhaust the redraft — the run stops honestly instead of greening on form');
+  const replanPrompt = provider.calls.find((c) => c.includes('What happened when the previous plan ran'));
+  assert.ok(replanPrompt, 'the replan drafted');
+  assert.match(replanPrompt, /previous plan carried/i, 'Rule B is stated to the replanner, not just enforced');
+});

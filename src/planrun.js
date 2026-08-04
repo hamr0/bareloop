@@ -216,6 +216,12 @@ ${JSON.stringify(plan, null, 2)}`;
  *   the pre-Layer-3 prompt: the block is additive, never surgery on the prompt's interior,
  *   so the two paths cannot drift (the F47 works-both-ways rule). Only the runner passes
  *   it, and only for the FIRST draft phase — a replan drafts from the run's own state.
+ * @param {{ seedRed?: string[], priorChecks?: string[] }} [checkFacts] the shape-lottery
+ *   gate rules, STATED as well as enforced (the mailbox precedent: a rule only the
+ *   validator knows costs a redraft per draft). `seedRed`: preflight-red check names —
+ *   Rule A-v2's law (final write step only, framed wide). `priorChecks`: the predecessor
+ *   plan's carried checks, replan phase only — Rule B's law (keep every one). Empty/omitted
+ *   renders byte-identically to the pre-rules prompt.
  */
 /**
  * Files named in an exit gap that the step's worker never wrote — the mechanical
@@ -253,9 +259,24 @@ export function gapFilesNeverWritten(gap, writes) {
   return out;
 }
 
-export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, startingDraft = null) {
+export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, startingDraft = null, checkFacts = {}) {
   const scopeMenu = Array.isArray(scopes) && scopes.length ? scopes : legalScopes(job.writeScope ?? []);
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
+  // The shape-lottery laws, stated where the check menu is offered (the mailbox
+  // precedent: a law only the validator knows costs a redraft per draft). Both
+  // render only when their FACT arrived — empty facts keep the prompt
+  // byte-identical to the pre-rules render.
+  const seedRedLaw = Array.isArray(checkFacts.seedRed) && checkFacts.seedRed.length
+    ? `\n  Check(s) RED at seed right now: ${JSON.stringify(checkFacts.seedRed)}. A failing check
+  is the goal itself, not a milestone: it may ONLY appear on your plan's FINAL write step.
+  Make that step wide — its action covers the whole goal, free to edit any file it reports,
+  iterating until the check passes. A failing check on any earlier step is rejected.`
+    : '';
+  const priorChecksLaw = Array.isArray(checkFacts.priorChecks) && checkFacts.priorChecks.length
+    ? `\n  Your previous plan carried these check-passes exits: ${JSON.stringify(checkFacts.priorChecks)}.
+  Keep every one of them in this new plan — a redraft that drops one of them is rejected:
+  the other exit forms verify form only, and a form-only green is unearned.`
+    : '';
   // W4: the menu comes off the STAGED close — the same one derivation `runPlan`
   // executes and `validatePlan` accepts against. Reading `job.close` raw here left
   // the legacy object form offering nothing while the runner preflighted a stage.
@@ -300,7 +321,7 @@ strictly in array order. Each step (no other fields exist):
   must therefore be free to edit every file the check can report on — never
   write an action that forbids editing other in-scope files (e.g. "do not
   modify any file outside X"): a step ordered to leave a file alone while its
-  exit reds on that file can never finish, on any attempt.
+  exit reds on that file can never finish, on any attempt.${seedRedLaw}${priorChecksLaw}
   Reference checks by NAME only; you cannot author or modify one.
 
 Offered "scope" values for tree-changed — copy ONE of these exactly, character for
@@ -661,6 +682,14 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // The menu is DERIVED from the close (PRD v1.28) — nobody authored it, so the
   // ruler and the real inspection cannot drift apart.
   const menu = checkMenu(stagedClose);
+  /** Rule A-v2's fact: check names RED at preflight (seed-red). A seed-red
+   * check is the GOAL, not a guard — validatePlan confines it to the final
+   * write step, and the drafting prompt states the same law. Recorded HERE,
+   * from the same preflight the spine records, never re-derived mid-run: the
+   * rule is defined on the SEED verdicts (a check a step turned green mid-run
+   * is still the goal the plan exists to flip).
+   * @type {string[]} */
+  const seedRed = [];
   emit('check-menu', {
     offered: menu.map((m) => m.name),
     ...(menu.length < stagedClose.length
@@ -669,6 +698,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   });
   for (const m of menu) {
     const v = await runStages(m.run, scrub, closeOpts);
+    if (v.verdict === 'needs_revision') seedRed.push(m.name);
     emit('check-preflight', { name: m.name, verdict: v.verdict, ...(m.run.length > 1 ? { chain: m.run.map((s2) => s2.name) } : {}) });
     const f = Object.hasOwn(CLOSE_FAULTS, v.verdict) ? CLOSE_FAULTS[v.verdict] : undefined;
     if (f) {
@@ -1282,9 +1312,21 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // The REDRAFT (a validator rejection inside this same phase) keeps it: one red must
     // not silently convert a warm run to a cold one.
     const starting = phase === 'draft' ? startingDraft : null;
+    // The shape-lottery facts, gate AND prompt from the ONE object (the scope-menu
+    // precedent: what is stated and what is enforced can never drift apart).
+    // `seedRed` rides every phase — the rule is defined on the SEED verdicts.
+    // `priorChecks` is the REPLAN gate only: the accepted plan's carried checks,
+    // which the redraft may move (A-v2 decides where) but never shed (Rule B —
+    // u-msdsmkid's replan dropped both checks and "greened" on form alone).
+    const checkFacts = {
+      seedRed,
+      ...(phase === 'replan' && plan
+        ? { priorChecks: [...new Set(/** @type {any[]} */ (plan.steps).flatMap((/** @type {any} */ s) => (Array.isArray(s.exit) ? s.exit : []).filter((/** @type {any} */ e) => e?.type === 'check-passes' && typeof e.name === 'string').map((/** @type {any} */ e) => e.name)))] }
+        : {}),
+    };
     const draftPlan = async (/** @type {any[]|null} */ reds) => {
       drafter.setIteration(reds ? 'redraft' : 'draft');
-      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials, starting), []);
+      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials, starting, checkFacts), []);
       return extractArtifact(r.text).code ?? '';
     };
     // Scrubbed HERE, once, before any consumer reads them — the judge() precedent
@@ -1297,7 +1339,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // emit sites: scrubbing here makes the leak inexpressible, scrubbing each
     // consumer makes it something the next consumer has to remember.
     const validate = (/** @type {string} */ t) => {
-      const v = validatePlan(t, { job, maxStepRounds, scopes: scopeMenu });
+      const v = validatePlan(t, { job, maxStepRounds, scopes: scopeMenu, ...checkFacts });
       return { ...v, reds: v.reds.map((r) => (typeof r.detail === 'string' ? { ...r, detail: scrub(r.detail) } : r)) };
     };
     let text = await draftPlan(null);
@@ -1322,6 +1364,12 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // (registry/schema drift). A stale plan is refused BY NAME with zero spent; running
     // it would execute a plan the current signature does not admit, which is the one
     // thing no reconstruction is allowed to do.
+    // The shape-lottery opts (seedRed/priorChecks) are deliberately NOT passed:
+    // they are DRAFTING laws — this gate guards signature drift, and refusing a
+    // paid, previously-legal plan over a shape rule minted after its draft would
+    // burn the very work resume exists to keep (hamr: "why would i want to waste
+    // more money on something i already started"). Omission = rules inactive, by
+    // the validator's contract.
     const pv = validatePlan(resumeSeed.plan, { job, maxStepRounds, scopes: scopeMenu });
     // scrubbed at the boundary for `validate()`'s own reason: a `parse-error` detail
     // quotes a window of the SOURCE, and the spine is append-only forever
