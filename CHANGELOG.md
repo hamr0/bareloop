@@ -35,56 +35,9 @@ feature lands, **patch** = docs, fixes, scaffolding.
   implicit try, and `resumableOutcomes` reclassifies a landed `job-end` that is a GOVERNANCE
   HALT (`cap-halt`/`wall-halt`) as a checkpoint rather than a graded row. Green and every red
   stay non-resumable — a verdict already rendered is never re-bought. `job-start` now carries
-  the declared fold (`priorSpentUsd`/`priorWallMs`) when there is one, so a chain of resumes
-  adds only each attempt's new rounds instead of re-deriving and double-billing.
-
-### Changed
-- **`capRuns` retires as the CLOSE-FIX loop's governor** (PRD v1.46 §4). That loop now ends on
-  the same 2-strike no-progress rule the step ladder uses, read off the close's own per-stage
-  numbers rather than repeats and writes. Validated by a $0 replay over every archived fix
-  loop before the build: 0 greens harmed (all three historical fix-loop greens converted in
-  ≤ 2 verdicts) and 1 real waste case caught (dead flat at 2 errors for 7 consecutive fix
-  verdicts until the wall killed it). `capRuns` survives ONLY as the bound for a close whose
-  output carries no number at all — a governor that cannot see the variable must not be the
-  governor — and lifts the moment a stage reports a comparable number. Money and the wall keep
-  every bit of their authority. The exhaustion terminal is unchanged in both category
-  (`cap-halt`) and outcome (`escalated`); `ralph`'s `ladder` option is now an INTERFACE two
-  governors implement, with an optional `terminal()` that overrides the exhaustion prose only
-  (the step ladder's copy offers a replan and there is no planner at the close). Every `ladder`
-  spine record now names its `governor` (`step-ladder` | `close-trend`). The wall-halt readout
-  no longer quotes `capRuns` as a denominator, because it no longer governs.
-- **A plan step is bounded by PROGRESS, not by a count** (`src/ladder.js`; F77–F79). The step
-  loop's fixed iteration cap is replaced by a strike ladder: a *strike* is a red iteration that
-  repeats an already-seen gap (matched against a seen-set for the whole step, never just the
-  last one) or made no gate-audit writes (the F32 record-count instrument — never `git status`,
-  never a tree diff); strikes are sticky and `strikeLimit` of them (new shell option on
-  `runJob`/`runPlan`, **default 2**) ends the step. Gaps are normalized for comparison only —
-  timing bytes dropped, counts and file names kept — so a shrinking error count reads as
-  progress. The wallet, the wall, the variance meter and the stall fuse keep every bit of their
-  authority; the exhaustion terminal is the same `cap-halt`. Measured motivation: two
-  calibrations died `step-red` while still converging with money and wall unspent; a $0 replay
-  over 110 archived step ladders showed every converging red continuing and thrash ending
-  same-or-one-earlier. **`capRuns` now bounds the CLOSE-FIX loop only.** New per-iteration spine
-  record `ladder`; exhaustion records carry `strikes`/`strikeLimit`/`distinctGaps`.
-- **The replan brief names the MECHANISM.** An exhausted step now tells the redrafting planner
-  which shape ended it (converging-cut / stalled-no-write / repeated-gap, with iteration numbers
-  as evidence), its gap trajectory, and how much money and wall the stop left unspent (time
-  reported UNBOUNDED when no wall was set, never `0`) — replacing *"it ran N attempts and its
-  exits were still red"*, which named no mechanism and read identically for opposite failures.
-- **Layer R's VERBATIM ratchet stage is retired on the STEP path** (hamr's ruling): fixation is
-  a repeat, so a fixated step strikes out before the fourth iteration can open. The stage stays
-  reachable in the close-fix loop and fully unit-covered; Layer R still ships OFF by default.
-
-### Deprecated
-- **`steps[].attempts` is retired and INERT.** It is no longer offered in the drafting prompt
-  and the runner ignores it. It is still ACCEPTED by `validatePlan` — stored bridge plans carry
-  it, and a plan minted under one runner's number must not red under another's — with the shape
-  still checked and the old `<= capRuns` ceiling dropped. It was TIGHTEN-only, which made the
-  correct heal for a converging step inexpressible. `validatePlan`'s `capRuns?` option is
-  removed with the ceiling it fed (it existed only to bound `attempts`; an extra property is
-  ignored, so no direct caller breaks).
-
-### Added
+  the declared fold (`priorSpentUsd` with its `priorSpendComplete`, and `priorWallMs`) when
+  there is one, so a chain of resumes adds only each attempt's new rounds instead of
+  re-deriving and double-billing.
 - **Layer 3, the REUSE rung — the registry, the load gate, and the MECHANICAL START**
   (design record `docs/plans/2026-08-01-layer-3-reuse-design.md`; execution probe green
   before any of it was built). A green's plan is now an artifact the next run of the same
@@ -205,12 +158,16 @@ feature lands, **patch** = docs, fixes, scaffolding.
       an abandoned attempt. A try whose `job-end` landed is COMPLETE, not restarted, and
       a registry row lost to the kill is named (`r1Missing`), never re-derived.
     - **The remainder, never a fresh allotment.** `runJob` gained `priorSpentUsd` /
-      `priorWallMs` and `createClock` gained `priorElapsedMs`: the killed attempt's spend
-      and time FOLD IN, so the restart runs under what is left of the SIGNED per-try
-      numbers. The caps themselves are never rewritten — they are in the spec hash, and
-      editing them would need a signature nobody typed. An unfundable remainder caps
+      `priorSpendComplete` / `priorWallMs` and `createClock` gained `priorElapsedMs`: the
+      killed attempt's spend and time FOLD IN, so the restart runs under what is left of the
+      SIGNED per-try numbers. The caps themselves are never rewritten — they are in the spec
+      hash, and editing them would need a signature nobody typed. An unfundable remainder caps
       honestly (`cap-halt`, or `wall-halt` below one close timeout) having launched
-      nothing.
+      nothing. **A floor stays a floor across the resume:** if any round inside the dead
+      attempt came back unpriced, `priorSpendComplete: false` rides one-way onto every
+      `job-end` this run emits, so a resumed attempt states a floor instead of an
+      exact-looking total (F6 — it was previously computed and recorded on `try-start` but
+      never reached the component whose terminal says so).
     - **`runReuse({… resume})`** seeds the completed tries, restarts the mid-flight one
       against the SAME workflow with no second selection call, and carries on into
       whatever the envelope still authorizes. It refuses (`resume-red`, ledger-excluded)
@@ -227,6 +184,52 @@ feature lands, **patch** = docs, fixes, scaffolding.
       prints both hashes on an envelope mismatch, previews the whole reconstruction
       before you sign, archives the killed run's watchdog record so it cannot be read as
       this run's, and sizes the watchdog for the REMAINING work.
+
+### Changed
+- **`capRuns` retires as the CLOSE-FIX loop's governor** (PRD v1.46 §4). That loop now ends on
+  the same 2-strike no-progress rule the step ladder uses, read off the close's own per-stage
+  numbers rather than repeats and writes. Validated by a $0 replay over every archived fix
+  loop before the build: 0 greens harmed (all three historical fix-loop greens converted in
+  ≤ 2 verdicts) and 1 real waste case caught (dead flat at 2 errors for 7 consecutive fix
+  verdicts until the wall killed it). `capRuns` survives ONLY as the bound for a close whose
+  output carries no number at all — a governor that cannot see the variable must not be the
+  governor — and lifts the moment a stage reports a comparable number. Money and the wall keep
+  every bit of their authority. The exhaustion terminal is unchanged in both category
+  (`cap-halt`) and outcome (`escalated`); `ralph`'s `ladder` option is now an INTERFACE two
+  governors implement, with an optional `terminal()` that overrides the exhaustion prose only
+  (the step ladder's copy offers a replan and there is no planner at the close). Every `ladder`
+  spine record now names its `governor` (`step-ladder` | `close-trend`). The wall-halt readout
+  no longer quotes `capRuns` as a denominator, because it no longer governs.
+- **A plan step is bounded by PROGRESS, not by a count** (`src/ladder.js`; F77–F79). The step
+  loop's fixed iteration cap is replaced by a strike ladder: a *strike* is a red iteration that
+  repeats an already-seen gap (matched against a seen-set for the whole step, never just the
+  last one) or made no gate-audit writes (the F32 record-count instrument — never `git status`,
+  never a tree diff); strikes are sticky and `strikeLimit` of them (new shell option on
+  `runJob`/`runPlan`, **default 2**) ends the step. Gaps are normalized for comparison only —
+  timing bytes dropped, counts and file names kept — so a shrinking error count reads as
+  progress. The wallet, the wall, the variance meter and the stall fuse keep every bit of their
+  authority; the exhaustion terminal is the same `cap-halt`. Measured motivation: two
+  calibrations died `step-red` while still converging with money and wall unspent; a $0 replay
+  over 110 archived step ladders showed every converging red continuing and thrash ending
+  same-or-one-earlier. **`capRuns` now bounds the CLOSE-FIX loop only.** New per-iteration spine
+  record `ladder`; exhaustion records carry `strikes`/`strikeLimit`/`distinctGaps`.
+- **The replan brief names the MECHANISM.** An exhausted step now tells the redrafting planner
+  which shape ended it (converging-cut / stalled-no-write / repeated-gap, with iteration numbers
+  as evidence), its gap trajectory, and how much money and wall the stop left unspent (time
+  reported UNBOUNDED when no wall was set, never `0`) — replacing *"it ran N attempts and its
+  exits were still red"*, which named no mechanism and read identically for opposite failures.
+- **Layer R's VERBATIM ratchet stage is retired on the STEP path** (hamr's ruling): fixation is
+  a repeat, so a fixated step strikes out before the fourth iteration can open. The stage stays
+  reachable in the close-fix loop and fully unit-covered; Layer R still ships OFF by default.
+
+### Deprecated
+- **`steps[].attempts` is retired and INERT.** It is no longer offered in the drafting prompt
+  and the runner ignores it. It is still ACCEPTED by `validatePlan` — stored bridge plans carry
+  it, and a plan minted under one runner's number must not red under another's — with the shape
+  still checked and the old `<= capRuns` ceiling dropped. It was TIGHTEN-only, which made the
+  correct heal for a converging step inexpressible. `validatePlan`'s `capRuns?` option is
+  removed with the ceiling it fed (it existed only to bound `attempts`; an extra property is
+  ignored, so no direct caller breaks).
 
 ## [0.6.0] — 2026-07-31
 

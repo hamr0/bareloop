@@ -76,7 +76,11 @@ const COUNT = /(?<![\w.])\d+(?:\.\d+)?(?!\w)/g;
  * is the last number, and reading the first would grade every iteration with the
  * constant seed baseline — flat by construction. Only such lines read last; every
  * other line keeps first-number (the live fleet's reference-suffixed lines —
- * `5 tests executed, below the seed's 12` — carry the truth up front). */
+ * `5 tests executed, below the seed's 12` — carry the truth up front).
+ * KNOWN LIMIT (same rule as the header's): an arrow line with a TRAILING reference
+ * number (`went 5 → 2 (seed was 30)`) would read the reference. No shipped close
+ * emits that shape; if one appears, the fix is that close's line format — this
+ * detector is never sharpened per-close (the F49 precedent). */
 const ARROW = /→/;
 
 /**

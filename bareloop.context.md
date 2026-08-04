@@ -441,7 +441,10 @@ Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
 `coordination-red` — a failure between units (scope contention, step order, store
 races), never to be folded into worker/interpreter reds.
 
-### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, layerRoot?, bridge? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, layerRoot?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed? })` → outcome — `src/run.js`
+
+The last four are the RESUME fold and are documented under *Resuming a killed run* below;
+they default to `0` / `true` / `0` / `null`, so a fresh run passes none of them.
 
 The runner — the shell's top layer, and the ONE entry. It composes everything below it and
 interprets nothing itself. Sequence: **approval gate** (human-signs-always — refuses an
@@ -458,13 +461,17 @@ BA-6 — before which it laundered into a clean finish, F25): no verdict exists 
 round's spend is only partly known (F6). `cap-halt` is the wallet; `wall-halt` is the clock
 (F64 — a timeout derived from the run's own deadline is a governance stop, never a transport
 casualty). **`cap-halt` reaches you from the close-fix loop too, not only from a step:** the
-shell spells exhaustion (strikes on a step, runs in the fix loop) and a money-gate halt with
+shell spells exhaustion (strikes on a step, and — since v1.46 — strikes in the fix loop as
+well, `capRuns` only while that loop's trend instrument is blind) and a money-gate halt with
 the same category, so both the
 step loop and the fix loop read the WALLET to tell them apart — a drained wallet is
 `cap-halt` (the resume-to-cap checkpoint), exhaustion with money still on the table is
 the designed `escalated` terminal ("the close is still red"). The fix worker's gate is built
 with the wallet at its most drained, which is exactly where a money cut would otherwise
-masquerade as a capability read (F45). `step-stalled` is the F66 stall fuse giving up: no
+masquerade as a capability read (F45). A `cap-halt` from the wallet also emits the
+decision-ready `money-halt` record described under the plan flow below — the kept verdict, the
+trend and the three levers — so a consumer never has to reconstruct the stop from the outcome
+name alone. `step-stalled` is the F66 stall fuse giving up: no
 completed round for 5 minutes,
 three times on one call — each stall silently abandons the hung call and reissues it
 (self-heal first); only the third throws. Inside a step it is the THIRD replan trigger
@@ -480,11 +487,13 @@ decision-ready escalation with a terminal `job-end`: the spine never dangles.
 of PRICED rounds ONLY — never an estimate from token counts or averages (cap-not-estimate) —
 and it is stated even on the pre-token reds, where the honest figure is a real `0`.
 `spendComplete` says whether that figure is EXACT; `false` means `spentUsd` is a FLOOR ("at
-least $X", true total unknowable) and must not be read as a total. Three things set it, all
+least $X", true total unknowable) and must not be read as a total. Four things set it, all
 the same class — a call whose cost is unknowable from here: a round that came back unpriced
 (F6); a run that ABSORBED a stall, because the fuse's silent reissue may pay twice for one
-answer and the flag is one-way whatever the outcome; and a `wall-halt` that cut a call
-mid-flight (`cutMidCall`). A wall stop read BETWEEN iterations or steps has no call in flight,
+answer and the flag is one-way whatever the outcome; a `wall-halt` that cut a call
+mid-flight (`cutMidCall`); and a RESUME whose fold was itself a floor
+(`priorSpendComplete: false` — an unknown does not heal by being carried forward, so every
+round of this attempt being priced repairs nothing about the one before it). A wall stop read BETWEEN iterations or steps has no call in flight,
 so it stays exact. Both fields are present on all outcomes, so a consumer never branches on
 field presence and never has to launder a missing `spentUsd` into `$0`.
 
@@ -870,9 +879,10 @@ semantics are byte-unchanged (PRD v1.46 §3):
 - **`direct: true`** reads a plain `runJob` spine — no envelope, no try windows — as ONE
   implicit try opened at `job-start`, through the same window machinery rather than a second
   reader. Without it such a spine is honestly refused (`started: false`), which is what a
-  reuse runner needs. `job-start` carries the DECLARED fold (`priorSpentUsd`/`priorWallMs`,
-  present only when there is one) exactly as `try-start` does, so a chain of resumes adds only
-  each attempt's own new rounds instead of re-deriving and double-billing.
+  reuse runner needs. `job-start` carries the DECLARED fold (`priorSpentUsd` with its
+  `priorSpendComplete`, and `priorWallMs`, each present only when there is one) exactly as
+  `try-start` does, so a chain of resumes adds only each attempt's own new rounds instead of
+  re-deriving and double-billing.
 - **`resumableOutcomes: ['cap-halt', 'wall-halt']`** reclassifies a landed `job-end` whose
   outcome is a GOVERNANCE HALT as a restart rather than a completed row. "A landed job-end is
   complete" is true of a VERDICT; a halt means an operator-owned allowance ran out with the
@@ -920,7 +930,8 @@ outside watchdog on the REMAINING wall. The top-up itself stays a spec edit the 
   - The worker's conversation is **not** replayed — a transcript is not a checkpoint, and
     every attempt is fresh by the loop's own design.
 - **Under the REMAINDER, never a fresh allotment.** The killed attempt's spend and wall
-  FOLD IN (`runJob`'s `priorSpentUsd`/`priorWallMs`, `createClock`'s `priorElapsedMs`), so
+  FOLD IN (`runJob`'s `priorSpentUsd`/`priorSpendComplete`/`priorWallMs`, `createClock`'s
+  `priorElapsedMs`), so
   the restart gets what is left of the signed per-try numbers. The caps are never
   rewritten — they are in the spec hash. An unfundable remainder is an honest `cap-halt`
   (or `wall-halt`, below one close timeout: a try that cannot fund its close produces an

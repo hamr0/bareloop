@@ -234,21 +234,22 @@ self-raise.
 
 The layers above are the map; this is the current inventory — every mechanic that has
 landed (or is in build) and which box it belongs to. Details and evidence live in the PRD
-addenda (v1.36–v1.46); this list is deliberately one line each.
+addenda (v1.36–v1.47); this list is deliberately one line each.
 
 **The shell (judge + gap + cap — not a layer; governance lands here):**
-- **Money:** hard cap per run, metered per round. A money cap-halt is becoming what W-2
-  made of a time halt *(in build, v1.46)*: keep the last minted verdict, pause
-  decision-ready with an ACCURATE trend note — cut-while-converging / cut-while-flat /
-  can't-tell, computed per stage from the close's own graded numbers, never across axes,
-  never model prose — and the three levers: top up & resume (a re-sign) / revise / abandon.
+- **Money:** hard cap per run, metered per round. A money cap-halt is what W-2 made of a
+  time halt *(built, v1.46/v1.47)*: keep the last minted verdict, pause decision-ready with
+  an ACCURATE trend note — cut-while-converging / cut-while-flat / can't-tell, computed per
+  stage from the close's own graded numbers, never across axes, never model prose — and the
+  three levers: top up & resume (a re-sign) / revise / abandon.
 - **Time:** the wall cap (W-2: "when time is up, keep the grade we already have and stop";
   the close is never bounded and never counts against the wall); the outside watchdog
   whose kill requires deadline passed AND a flat spine (W-3 — never a silent kill); the
   in-run stall fuse.
-- **Resume:** step-level, "the stop is the checkpoint" — kill-resume exists; money/wall
-  cap-halt resume on the user path is *in build* (spend folds in as prior spend, the
-  ceiling never silently widens; the top-up itself is a spec re-sign).
+- **Resume:** step-level, "the stop is the checkpoint" — kill-resume exists, and money/wall
+  cap-halt resume on the user path is *built* (`run-u --resume`: the patient is continued,
+  spend and wall fold in as prior, the ceiling never silently widens; the top-up itself is a
+  spec re-sign).
 - **Signing:** the resolved spec hash pins the tool menu that was signed (MED-1); tries,
   budgets, and reuse envelopes fold into the hash — any widening forces a re-sign.
 - **Close hygiene:** env-strip on the close's environment; the close runs async; the
@@ -274,9 +275,10 @@ stage change.
   series, write-delta aware) force the replan, and the mechanism note goes to the
   REPLANNER, the channel that converts; at most one replan, plus the variance trigger
   (built, inert at 0.5).
-- **The close-fix loop:** its fixed iteration count retires for the SAME 2-strike
-  no-progress rule *(in build, v1.46)* — a run should die when it is out of ideas, not
-  out of money mid-convergence; money and wall keep full authority.
+- **The close-fix loop:** its fixed iteration count retired for the SAME 2-strike
+  no-progress rule *(built, v1.46/v1.47)* — a run should die when it is out of ideas, not
+  out of money mid-convergence; the count survives only as the bound for a close that
+  reports no number at all; money and wall keep full authority.
 - **Materials:** money and time handed to the planner as balances; the scout is
   load-bearing (measured, not assumed); the staged close derives the check menu; the
   drafting floor is the medium tier.

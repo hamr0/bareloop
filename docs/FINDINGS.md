@@ -5050,3 +5050,132 @@ once the law is stated and the gate backstops it. What remains is a different, s
 question: a close stage the step cannot carry is only discoverable at the outer close, and
 feeding it forward (goal prose? a third exit slot? nothing — the fix loop was converting) is
 operator/design territory, parked for hamr with the rerun/budget decision.
+
+## F82 — the money halt becomes decision-ready: a per-stage trend instrument, a resume button on the U path, the fix loop's count retires — and the two defects the build turned up were both in an instrument
+
+**Status: minted 2026-08-04, commit `ae417ae` (opus build, session as orchestrator/validator;
+sonnet adversarial review after). Design: PRD v1.46 §2–§4. Motivating run: F81's `u-msew1uy5`,
+cut by its budget mid-convergence, five suppressions short. Replay precedent for §4: F78/F79.
+No paid run fired for this build, no spec hash changed, the bareagent-u patient untouched.**
+
+### What shipped
+
+- **(a) A money cap-halt keeps its last minted verdict and pauses DECISION-READY** — W-2's
+  wall treatment in a money coat. A new `money-halt` spine record carries the signed
+  `budgetUsd`, `remainingUsd`, the kept `verdict`/`stage`, a trend verdict
+  (`converging | flat | unknown`) with the `reading` and the `series` it judged, and three
+  W-2-symmetric levers (top up & resume · revise the spec · abandon). Emitted at **all three**
+  sites that cut a run on money — the step loop, the close-fix loop, and the scout/draft relay
+  — because a category that hands the human a readout at one seam and silence at another makes
+  the readout a coincidence of where the stop happened. `spentUsd` is not re-derived there:
+  runJob's ledger owns that figure (F6 — a second, weaker arithmetic for one run's money is how
+  two instruments come to disagree).
+- **(b) `--resume` on `scripts/run-u.mjs`** — the third leg of hamr's resume rulings, the one
+  the original *"why would i want to waste more money on something i already started"* was
+  actually about. It skips the seed reset (`resumeTreeGate`: a dirty tree is what a resume
+  expects; only a moved HEAD stops it), folds the dead run's spend in as `priorSpentUsd`
+  **against the SIGNED budget** so the ceiling can never widen by being re-invoked, and re-enters
+  at the checkpoint the finished steps already bought. When the remainder is zero or negative —
+  which is the commonest resume there will ever be, straight after a money cut — it prints an
+  explicit `⚠ NOTHING LEFT` block pointing at the spec re-sign, because a minus sign in a
+  balance line is not a warning. The top-up itself is not here and never will be: `budgetUsd`
+  is in the spec hash.
+- **(c) `CAP_RUNS` retires as the CLOSE-FIX loop's governor** for the same 2-strike
+  no-progress rule the step ladder uses (v1.45 §5's recorded follow-up, now run). The $0 replay
+  over all 8 archived fix loops came back clean both directions: **0 greens harmed** (all 3
+  historical fix-loop greens converted in ≤ 2 verdicts) and **1 real waste case caught** —
+  `reuse-msc6w93z`, dead flat at 2 errors for 7 consecutive fix verdicts until the wall killed
+  it, stopped at verdict 4 by the new rule.
+
+The instrument behind (a) and (c) is one module, `src/trend.js`, and its accuracy law is why it
+is its own file: **a series is PER STAGE, compared only against itself.** The operator's own $0
+sweep flattened a staged close's grades into one list and read `12, 2, 5, 0` as a regression —
+what actually happened (u-msew1uy5, F81) was two axes falling at once, suppressions 12 → 5 while
+the type errors that scrub re-exposed went 2 → 0. Merging the axes did not make the read noisy,
+it made it WRONG in the opposite direction, and it would have told hamr to abandon a converging
+run. In the shipped module the stages are separate buckets by construction: the mistake is
+inexpressible rather than avoided by care.
+
+### The two review findings — both instrument defects, both validated and fixed
+
+- **F1 — `readGrade` took a rule id's digit as the count.** The reading is the first number on
+  the first red-marked line, and types-close spells its verdict `D1a — … went 2 → 5`: the
+  regex donated the `1` from `D1a` to the governor on every iteration, i.e. a **constant** wrong
+  number, which reads as perfectly flat forever. Fixed twice over: numbers are taken as
+  standalone tokens only (not embedded in a word or a dotted token — `D1a`, `v1.2`), and a
+  before→after arrow line reads the **AFTER**, because reading the first number there would
+  grade every iteration against the constant seed baseline — flat by construction again. The
+  blind-instrument class, caught this time by review instead of by a paid run.
+- **F2 — a test inferred "where am I" by counting calls to an injected function.** The
+  step-loop money-cut test keyed on a call count that the feature under test changes; it now
+  pins to the run's own state (`mh.phase`). Same trap the doctrine names: a call-counting test
+  silently retargets the moment the number of calls moves.
+
+### The pre-existing F6 gap the build walked into
+
+`priorSpendComplete` was **computed** by `readResume` and **recorded** on `try-start` — and then
+never handed to `runJob`, the one component whose `job-end` the row's own `spendComplete` is read
+off. A resumed attempt whose dead leg contained an unpriced round therefore reported an **exact
+total** where the honest figure is a floor. Fixed on the reuse path and carried through the new
+U-path resume: the unknown travels with the money it qualifies, one-way (every round of THIS
+attempt being priced repairs nothing about the one before it), and `job-start` now declares the
+fold (`priorSpentUsd`/`priorSpendComplete`/`priorWallMs`) so a chain of resumes adds only each
+attempt's own new rounds instead of re-deriving and double-billing.
+
+### Three deviations from a naive reading of v1.46, each taken on evidence
+
+- **The `readResume` amendment is OPT-IN** (`direct`, `resumableOutcomes`), both OFF by default,
+  so the reuse loop's own semantics are byte-unchanged and control-pinned. There, a cap-halted
+  try was graded and its registry row written; reclassifying it as a checkpoint would re-run a
+  try whose fold leaves it no money and duplicate its row. Green and every red stay
+  non-resumable under any setting — a verdict already rendered is never re-bought.
+- **`capRuns` survives as the BLIND-instrument fallback, not as a vestige.** It binds only while
+  the trend has never been able to compare anything (a close whose output carries no number at
+  all), and lifts the moment a stage reports one. It is not decoration: a sabotage mutant that
+  removed the fallback proved the loop non-terminating in exactly that case. A governor that
+  cannot see the variable must not be the governor, and the honest fallback is the cruder bound
+  it replaced rather than "unbounded".
+- **A stage advance feeds the STRIKE rule but never headlines `converging`.** Reaching a later
+  stage than ever before is real progress no per-stage number can see (a staged close is
+  first-red-wins), so it repays a strike. It is kept out of the money readout's headline for a
+  measured reason: an advance is guaranteed on essentially every run that does any work at all
+  (the precheck reds at stage 1, the plan fixes stage 1, the close walks on), so an
+  ordering-only "converging" would be true of almost every run and could not discriminate the
+  one thing hamr asked it to — whether another dollar finishes this.
+
+Also stated at the site rather than discovered later: "lower is better" is not derivable from
+prose, so a **floor-shaped** stage (`N tests executed, below the seed's M`) reads as
+not-improving rather than converging. The fail-safe direction, deliberately — a false "flat"
+costs one conservative stop, a false "converging" costs a top-up spent on a dead run — and
+never to be sharpened (the F49 precedent).
+
+### PARKED, not resolved: two instruments now answer "was it progressing"
+
+W-2's wall-halt readout still uses `gapTrend` — **byte-equality of the last two close gaps**,
+verdicts `stalled`/`moving`/`unknown`. The money halt uses the new **per-stage numeric** trend,
+verdicts `flat`/`converging`/`unknown`. Two instruments, two vocabularies, one question, on two
+halts that are otherwise deliberate mirrors of each other. Nothing here is wrong today — each is
+honest about what it can see — but which one is the trend, or whether both stay, is arbiter
+territory and **hamr's call**, recorded rather than unified unilaterally. Still pending
+alongside it: the bareagent-u top-up decision. That tree is the live-validation candidate for
+the resume feature (it is a real cap-halt with work on disk), and firing it needs hamr's re-sign.
+
+### Evidence
+
+TDD watched-fail throughout; **57 new tests** (28 trend unit, 12 run-u resume gates, 7
+`readResume`, 7 plan-flow integration, 3 `runJob`); **7 sabotage mutants killed**; sonnet
+adversarial review verified **9 doctrine constraints held** and returned 2 findings, both
+validated against source and fixed (above). Final gate **926/926 and typecheck clean**. The
+reuse path is control-pinned byte-unchanged; no spec hash moved, so the already-signed specs
+still run.
+
+### Lesson
+
+**The instrument is where the defect lives, again — and this time review caught it before a
+paid run did.** Both review findings and the pre-existing gap are the same shape: a number that
+was computed and then read wrong (`D1a`'s digit), a number that was computed and then not
+delivered (`priorSpendComplete`), and a test that read its position off the wrong signal. The
+feature — is this run converging? — is only as honest as the reading under it, which is exactly
+why the accuracy law got its own module, why an unreadable stage donates nothing rather than a
+zero, and why the retired count stayed on as the bound for the one case the new instrument is
+blind to.

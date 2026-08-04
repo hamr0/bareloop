@@ -2722,3 +2722,44 @@ the gate rules now carry runs deep enough to reach the money line while still wo
 depth no prior run reached. Build order: §2+§3+§4 next (opus-delegated, session as
 orchestrator/validator), before the bareagent-u top-up decision consumes them; the lift-
 contrast (§ v1.42) remains the north star behind the rules decisions in flight.
+
+## Addendum v1.47 — 2026-08-04 (v1.46 §2–§4 are BUILT: the money halt reads out, the U path resumes, the fix loop is governed by progress — commit `ae417ae`)
+
+The money-halt package landed as specified (opus build, session as orchestrator/validator;
+sonnet adversarial review after, which verified 9 doctrine constraints held and returned 2
+findings, both validated and fixed). 926/926 and typecheck clean; no spec hash changed and no
+paid run fired. The evidence and both defects are F82.
+
+### 1. What is now true
+
+**§2 — a money cap-halt is decision-ready.** The run keeps its last minted verdict and emits a
+`money-halt` record at all three sites that cut a run on money (step loop, close-fix loop,
+scout/draft relay), carrying the signed ceiling, what is left, the kept verdict/stage, a trend
+verdict (`converging | flat | unknown`) and the three W-2-symmetric levers. The accuracy law is
+enforced by construction in `src/trend.js`: series are PER STAGE, and merging axes is
+inexpressible rather than merely discouraged. No extractable number → `unknown`, stated (F6).
+**§3 — `run-u --resume`** skips the seed reset, folds the dead run's spend and wall in against
+the SIGNED numbers, and re-enters at the checkpoint; the top-up stays a spec re-sign.
+**§4 — `CAP_RUNS` retires as the fix loop's governor** for the 2-strike per-stage rule, on the
+replay §4 pre-registered.
+
+### 2. Deviations from §2–§4 as written, each taken on evidence
+
+- **The `readResume` amendment is OPT-IN** (`direct`, `resumableOutcomes`), OFF by default, so
+  the reuse path stays control-pinned byte-unchanged: there a cap-halted try was graded and its
+  row written, and reclassifying it would re-run a try with no money left and duplicate the row.
+- **`capRuns` survives as the BLIND-instrument fallback**, binding only while the trend has
+  never compared anything and lifting the moment a stage reports a number. Not decoration — a
+  sabotage mutant proved the loop non-terminating without it.
+- **A stage advance feeds the strike rule but never headlines `converging`.** An advance is
+  guaranteed on essentially any run that does work, so an ordering-only "converging" could not
+  discriminate the one question §2 asks: does another dollar finish this.
+
+### 3. Parked for hamr
+
+**Two instruments now answer "was it progressing":** the wall halt's byte-equality `gapTrend`
+(`stalled`/`moving`/`unknown`) and the money halt's per-stage numeric trend
+(`flat`/`converging`/`unknown`) — on two halts that are otherwise deliberate mirrors. Both are
+honest about what they see; unifying them (or keeping both) is arbiter territory and hamr's
+call. The **bareagent-u top-up** decision is still pending and is the resume feature's live
+validation candidate — a real cap-halt with work on disk, needing a re-sign to fire.
