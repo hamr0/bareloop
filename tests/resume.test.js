@@ -29,6 +29,8 @@ import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { readResume, runReuse, resolveReuse, reuseSpecHash } from '../src/reuse.js';
 import { runPlan } from '../src/planrun.js';
+import { runJob } from '../src/run.js';
+import { FIX_STRIKE_LIMIT } from '../src/trend.js';
 import { validateJob, jobSpecHash } from '../src/job.js';
 import { makeRegistry, saveBridge } from '../src/bridges.js';
 import { makeSpine } from '../src/spine.js';
@@ -1535,4 +1537,331 @@ test('§3 the reuse restart hands runJob whether its fold was EXACT — a floor 
   assert.equal(seenOpts[0].priorSpentUsd, dead.restart.priorSpentUsd);
   assert.equal(seenOpts[0].priorSpendComplete, false,
     'the unknown travels WITH the money it qualifies — a fold reported exact one call later is the same F6, just moved');
+});
+
+// ══ PRD v1.46 §2+§3 — THE MONEY-PAUSE CYCLE, END TO END ══════════════════════
+//
+// The two halves above are each tested on their own: §2 gives a drained wallet a
+// decision-ready `money-halt` (tests/planrun.test.js), and §3 lets `readResume`
+// read a landed cap-halt as a CHECKPOINT rather than a graded row. What neither
+// covers is the thing hamr actually asked for — the WHOLE cycle, through the real
+// `runJob`:
+//
+//   leg 1 runs out of money mid-fix-loop and PAUSES on the grade it already has
+//     → `readResume` reads that pause off leg 1's own spine
+//       → the operator tops up (a re-signed spec) and hands the fold + the
+//          checkpoint back to `runJob`
+//         → leg 2 re-enters AT the checkpoint and greens, for the remainder.
+//
+// Everything below is real except the LLM: a real `runJob` (approval gate, smoke,
+// the ONE ledger), a real plan flow, real spawned closes, a real spine file read
+// back with the shipped reader. The provider is scripted — the shell-owned seam —
+// and it PRICES its rounds, because the wallet is the instrument under test: a
+// hand-injected `remainingUsd` would prove the readout fires, never that the money
+// arithmetic that fires it is right.
+
+/** the cycle's patient: two real close stages over ONE file.
+ *  `clean-run` greens on an `ok` assertion (the step's own in-run ruler);
+ *  `verdict` counts the requirements still missing, so its red line carries a
+ *  NUMBER and the per-stage trend has something to compare. */
+function cyclePatient() {
+  const wd = join(base, `cycle-${n += 1}`);
+  mkdirSync(join(wd, 'tests'), { recursive: true });
+  mkdirSync(join(wd, 'src'), { recursive: true });
+  writeFileSync(join(wd, 'src', 'mod.mjs'), 'export const x = 1;\n');
+  writeFileSync(join(wd, 'check.mjs'), `import { existsSync, readFileSync } from 'node:fs';
+const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
+if (existsSync(p) && readFileSync(p, 'utf8').includes('ok')) { console.log('suite: 1 passed'); process.exit(0); }
+console.log('FAILED red: test file missing or has no ok assertion'); process.exit(1);
+`);
+  writeFileSync(join(wd, 'close.mjs'), `import { existsSync, readFileSync } from 'node:fs';
+const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
+const t = existsSync(p) ? readFileSync(p, 'utf8') : '';
+const missing = ['A','B','C'].filter((k) => !t.includes(k));
+if (missing.length === 0) process.exit(0);
+console.log(\`FAILED red: \${missing.length} requirement(s) missing\`); process.exit(1);
+`);
+  return wd;
+}
+
+const CYCLEJOB = (over = {}) => ({
+  schema: 'job-v1',
+  job: 'money-cycle',
+  description: 'a plan-shape job whose wallet runs out inside the close-fix loop',
+  provider: 'anthropic-api',
+  cadence: { unit: 'day', every: 1 },
+  budgetUsd: 1.5,
+  writeScope: ['tests/**'],
+  goal: 'Write tests/test_x.mjs meeting every requirement the verdict names.',
+  verdictType: 'green',
+  close: [
+    { name: 'clean-run', cmd: 'node check.mjs', expect: 0, gapKeep: '^FAILED' },
+    { name: 'verdict', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' },
+  ],
+  tools: ['read', 'write', 'edit'],
+  escalation: { mode: 'decision-ready' },
+  ...over,
+});
+
+const CYCLE_PLAN = JSON.stringify({
+  schema: 'plan-v1',
+  steps: [{
+    id: 'write-test', action: 'Write tests/test_x.mjs.', tools: ['write'], rounds: 6,
+    target: 'tests/test_x.mjs',
+    exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+  }],
+});
+
+const cwrite = (wd, tag, content, costUsd) => ({
+  toolCalls: [{ id: tag, name: 'shell_write', arguments: { path: join(wd, 'tests', 'test_x.mjs'), content } }],
+  costUsd,
+});
+const approveJob = (job) => [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }];
+
+/**
+ * LEG 1: a real `runJob` whose $1.50 wallet drains INSIDE the close-fix loop, one
+ * fix attempt after the close's own number improved (2 requirements missing → 1).
+ *
+ * The drain is priced, not injected: the fix-1 rounds cost $0.73 each, which lands
+ * the ledger exactly on the signed budget, so the NEXT fix worker is built against
+ * an empty wallet and its second round trips the gate. The last tape entry is never
+ * bought — a tape that could keep answering would leave the stop ambiguous.
+ * @param {string} wd @param {object} [over] extra runJob opts (the fold, for a chain)
+ */
+async function moneyLeg1(wd, over = {}) {
+  const job = CYCLEJOB();
+  const provider = scriptedProvider([
+    { text: 'src/mod.mjs exports x; tests/ is empty.', costUsd: 0.01 },  // scout
+    { text: CYCLE_PLAN, costUsd: 0.01 },                                  // draft
+    cwrite(wd, 't1', 'ok A\n', 0.01),                                     // the STEP
+    { text: 'wrote the test', costUsd: 0.01 },
+    cwrite(wd, 't2', 'ok A B\n', 0.73),                                   // fix 1: 2 → 1 missing
+    { text: 'fix 1', costUsd: 0.73 },
+    cwrite(wd, 't3', 'ok A B\n', 0.02),                                   // fix 2: the wallet is empty
+    { text: 'never bought', costUsd: 0.5 },
+  ]);
+  const file = join(wd, 'spine-leg1.jsonl');
+  const outcome = await runJob(job, {
+    approvals: approveJob(job), workdir: wd, provider, emit: makeSpine(file), ...over,
+  });
+  return { job, outcome, file, provider, events: readSpine(file) };
+}
+
+/** the reader the operator's runner uses on a direct (U-path) spine */
+const readPause = (events) => readResume(events, { direct: true, resumableOutcomes: ['cap-halt', 'wall-halt'] });
+
+test('cycle leg 1: the wallet drains INSIDE the fix loop and the run PAUSES decision-ready — the minted verdict is kept, the trend picks the lever, the money is exact', async () => {
+  const wd = cyclePatient();
+  const { outcome, events, provider } = await moneyLeg1(wd);
+  assert.equal(outcome, 'cap-halt', 'a money cut is never a capability read — it is the resume-to-cap checkpoint');
+  assert.ok(provider.calls.length < 8, 'the last tape entry was never bought: the stop is the wallet, not the tape running out');
+
+  const mh = events.filter((e) => e.type === 'money-halt').at(-1);
+  assert.ok(mh, 'the decision-ready MONEY record exists (v1.46 §2)');
+  assert.equal(mh.phase, 'fix', 'the money ran out deepest in the run, on the loop that holds a real grade');
+  assert.equal(mh.cutMidCall, false);
+
+  // the LAST verdict the arbiter minted is KEPT, never discarded and never re-derived
+  const lastVerdict = events.filter((e) => e.type === 'close-verdict' && e.stage).at(-1);
+  assert.equal(mh.verdict, lastVerdict.verdict, 'the kept grade is the one the close actually last rendered');
+  assert.equal(mh.verdict, 'needs_revision');
+  assert.equal(mh.stage, 'verdict', 'and the stage that rendered it is named');
+
+  // the trend — the whole reason the readout is "accurate" rather than a shrug
+  assert.equal(mh.trend, 'converging', 'the close went 2 → 1 on its own stage: this run was still getting somewhere');
+  assert.match(mh.reading, /verdict 2 → 1/, 'the series it judged is shown, so a human can check the instrument');
+  assert.match(mh.lever, /top up/i, 'converging work is what a top-up finishes');
+
+  // the ceiling and what is left of it, honestly
+  assert.equal(mh.budgetUsd, 1.5, 'the SIGNED ceiling, never a re-derivation');
+  assert.ok(mh.remainingUsd <= 0.001, `the wallet really is empty: ${mh.remainingUsd}`);
+  assert.equal(mh.options.length, 3, 'hamr\'s three levers');
+  assert.match(mh.options.join(' | '), /top up budgetUsd/i);
+  assert.match(mh.options.join(' | '), /revise the goal/i);
+  assert.match(mh.options.join(' | '), /abandon/i);
+  assert.ok(mh.options.every((/** @type {string} */ o) => !/self|automatic/i.test(o)), 'the library reports a lever; it never pulls one');
+
+  // the money on the terminal, cross-checked against the rounds the ledger summed
+  const end = events.find((e) => e.type === 'job-end');
+  const rounds = events.filter((e) => e.type === 'worker-round').map((e) => e.costUsd);
+  assert.ok(rounds.every((c) => typeof c === 'number'), 'every round came back priced, so the figure can be exact');
+  assert.ok(Math.abs(end.spentUsd - rounds.reduce((a, c) => a + c, 0)) < 1e-9,
+    `the terminal states the sum of the rounds and nothing else: ${end.spentUsd} vs ${rounds.reduce((a, c) => a + c, 0)}`);
+  assert.equal(end.spendComplete, true, 'nothing was in flight and nothing was unpriced — an exact stop is reported exact');
+});
+
+test('cycle leg 2: the top-up resumes AT THE CHECKPOINT and greens — the finished prefix is skipped, the fold is declared once, and the total is both legs', async () => {
+  const wd = cyclePatient();
+  const leg1 = await moneyLeg1(wd);
+  assert.equal(leg1.outcome, 'cap-halt');
+  const leg1Spend = leg1.events.find((e) => e.type === 'job-end').spentUsd;
+
+  // ── the reader, on leg 1's OWN spine ──
+  const r = readPause(leg1.events);
+  assert.equal(r.started, true);
+  assert.equal(r.ended, false, 'a halt is not an ending: there is something left to continue');
+  assert.equal(r.endOutcome, 'cap-halt', 'and it is named rather than hidden');
+  assert.equal(r.completed.length, 0, 'the run never got the verdict it was asked for, so nothing is graded');
+  assert.equal(r.restart.seed.phase, 'close', 'every step landed: the resume re-enters at the close and its fix loop');
+  assert.deepEqual(r.restart.seed.completedSteps.map((/** @type {any} */ c) => c.id), ['write-test']);
+  assert.ok(Math.abs(r.restart.priorSpentUsd - leg1Spend) < 1e-9,
+    `the fold IS leg 1's own spend — two instruments, one number: ${r.restart.priorSpentUsd} vs ${leg1Spend}`);
+  assert.equal(r.restart.priorSpendComplete, true);
+
+  // ── the operator's top-up: a NEW spec version, and a NEW signature (never the
+  // library's own doing — `budgetUsd` is in the hash, so raising it is a re-sign)
+  const topped = CYCLEJOB({ budgetUsd: 2 });
+  assert.notEqual(jobSpecHash(topped), jobSpecHash(leg1.job), 'a top-up changes the spec hash: the runner refuses it until it is re-signed');
+  const provider2 = scriptedProvider([
+    cwrite(wd, 'f1', 'ok A B C\n', 0.05),
+    { text: 'the last requirement is in', costUsd: 0.05 },
+  ]);
+  const file2 = join(wd, 'spine-leg2.jsonl');
+  const outcome2 = await runJob(topped, {
+    approvals: approveJob(topped), workdir: wd, provider: provider2, emit: makeSpine(file2),
+    priorSpentUsd: r.restart.priorSpentUsd,
+    priorSpendComplete: r.restart.priorSpendComplete,
+    priorWallMs: r.restart.priorWallMs,
+    resumeSeed: r.restart.seed,
+  });
+  assert.equal(outcome2, 'green', 'the topped-up leg finishes the work the money cut off');
+  const ev2 = readSpine(file2);
+
+  // it re-entered AT the checkpoint — not from scratch
+  assert.equal(ev2.find((e) => e.type === 'close-precheck').verdict, 'needs_revision',
+    'the tree was still RED when leg 2 opened, so the green below was earned here and not inherited (never `already-green`)');
+  assert.ok(ev2.some((e) => e.type === 'scout-skipped'), 'the survey leg 1 paid for is not re-bought');
+  assert.equal(ev2.filter((e) => e.type === 'scout-result').length, 0);
+  assert.equal(ev2.find((e) => e.type === 'resume-seed').skipping, 1, 'the completed prefix is skipped by ID, never re-run');
+  assert.equal(ev2.find((e) => e.type === 'plan-accepted').phase, 'resume', 'the plan was reloaded, not re-drafted');
+  assert.ok(ev2.some((e) => e.type === 'step-skipped' && e.step === 'write-test'));
+  assert.equal(ev2.filter((e) => e.type === 'step-start').length, 0, 'no step was paid for twice');
+
+  // the fold is DECLARED once, on the record a chain of resumes reads
+  const start2 = ev2.find((e) => e.type === 'job-start');
+  assert.ok(Math.abs(start2.priorSpentUsd - leg1Spend) < 1e-9, 'never zero — laundering the dead leg to $0 is what the declaration exists to stop');
+  assert.equal(start2.budgetUsd, 2, 'the raised ceiling is the one on the record');
+
+  // the close that was red at the halt now passes, and the total is the SUM
+  assert.equal(ev2.filter((e) => e.type === 'close-verdict').at(-1).verdict, 'satisfied');
+  const end2 = ev2.find((e) => e.type === 'job-end');
+  const leg2Rounds = ev2.filter((e) => e.type === 'worker-round').reduce((a, e) => a + e.costUsd, 0);
+  assert.ok(leg2Rounds > 0, 'leg 2 really did buy rounds of its own');
+  assert.ok(Math.abs(end2.spentUsd - (leg1Spend + leg2Rounds)) < 1e-9,
+    `the try's WHOLE spend across both legs, neither reset nor doubled: ${end2.spentUsd} vs ${leg1Spend + leg2Rounds}`);
+  assert.equal(end2.spendComplete, true);
+});
+
+test('cycle CONTROL: resuming with the SAME budget buys no second pass — the run re-halts on the wallet it never got', async () => {
+  const wd = cyclePatient();
+  const leg1 = await moneyLeg1(wd);
+  const leg1Spend = leg1.events.find((e) => e.type === 'job-end').spentUsd;
+  const before = readFileSync(join(wd, 'tests', 'test_x.mjs'), 'utf8');
+  const r = readPause(leg1.events);
+
+  // NO top-up: the same signed spec, so the fold leaves the wallet at or below empty
+  const same = CYCLEJOB();
+  const provider2 = scriptedProvider([
+    cwrite(wd, 'f1', 'ok A B C\n', 0.05),
+    { text: 'the last requirement is in', costUsd: 0.05 },
+  ]);
+  const file2 = join(wd, 'spine-leg2.jsonl');
+  const outcome2 = await runJob(same, {
+    approvals: approveJob(same), workdir: wd, provider: provider2, emit: makeSpine(file2),
+    priorSpentUsd: r.restart.priorSpentUsd, priorSpendComplete: r.restart.priorSpendComplete,
+    priorWallMs: r.restart.priorWallMs, resumeSeed: r.restart.seed,
+  });
+  assert.equal(outcome2, 'cap-halt',
+    'no top-up, no second pass: the run re-halts on the same wallet rather than quietly running the work again for free');
+  const ev2 = readSpine(file2);
+  assert.equal(provider2.calls.length, 1,
+    'ONE round: the hard cap binds BETWEEN rounds, so an empty wallet still buys the first and halts before the second');
+  assert.equal(ev2.filter((e) => e.type === 'close-verdict').length, 0, 'no fix attempt ever completed — nothing was graded a second time');
+  assert.equal(readFileSync(join(wd, 'tests', 'test_x.mjs'), 'utf8'), before,
+    'and nothing reached the tree: the halt lands before the round\'s tool calls run');
+
+  const mh2 = ev2.filter((e) => e.type === 'money-halt').at(-1);
+  assert.ok(mh2, 'the re-halt is decision-ready too — a second silent stop would be the readout being a coincidence');
+  assert.ok(mh2.remainingUsd <= 0.001, `the wallet was already empty when the leg opened: ${mh2.remainingUsd}`);
+  const end2 = ev2.find((e) => e.type === 'job-end');
+  assert.equal(end2.outcome, 'cap-halt');
+  assert.ok(end2.spentUsd >= leg1Spend, 'the fold still rides the terminal — a re-halt never resets the meter to $0');
+});
+
+test('cycle UNSOLVABLE: a topped-up leg that makes no per-stage progress strikes out FLAT instead of burning the wallet', async () => {
+  const wd = cyclePatient();
+  const leg1 = await moneyLeg1(wd);
+  const r = readPause(leg1.events);
+
+  // the operator tops up — and the work turns out to be unreachable: every fix
+  // rewrites the file without ever satisfying the requirement the close names
+  const topped = CYCLEJOB({ budgetUsd: 2 });
+  const provider2 = scriptedProvider([
+    cwrite(wd, 'f1', 'ok A B x\n', 0.02), { text: 'fix a', costUsd: 0.02 },
+    cwrite(wd, 'f2', 'ok A B y\n', 0.02), { text: 'fix b', costUsd: 0.02 },
+    cwrite(wd, 'f3', 'ok A B C\n', 0.02), { text: 'never bought', costUsd: 0.02 },
+  ]);
+  const file2 = join(wd, 'spine-leg2.jsonl');
+  const outcome2 = await runJob(topped, {
+    approvals: approveJob(topped), workdir: wd, provider: provider2, emit: makeSpine(file2),
+    priorSpentUsd: r.restart.priorSpentUsd, priorSpendComplete: r.restart.priorSpendComplete,
+    priorWallMs: r.restart.priorWallMs, resumeSeed: r.restart.seed,
+  });
+  assert.equal(outcome2, 'escalated', 'the designed "close still red" terminal — the loop ran out of IDEAS, not of money');
+  const ev2 = readSpine(file2);
+
+  // the STRIKE stopped it, not the wallet
+  const reads = ev2.filter((e) => e.type === 'ladder' && e.governor === 'close-trend');
+  assert.equal(reads.length, FIX_STRIKE_LIMIT, `exactly ${FIX_STRIKE_LIMIT} no-progress readings and out — never a third paid attempt`);
+  assert.deepEqual(reads.map((e) => e.improved), [false, false]);
+  assert.equal(ev2.filter((e) => e.type === 'money-halt').length, 0, 'money was never the cut, so no money record is minted');
+  const end2 = ev2.find((e) => e.type === 'job-end');
+  assert.ok(end2.spentUsd < 2, `the topped-up wallet was NOT burned: $${end2.spentUsd} of a $2 ceiling`);
+  assert.ok(provider2.calls.length < 6, 'the third fix — the one that would have greened — was never bought');
+
+  // and the readout is the honest FLAT verdict, with the lever that follows from it
+  const esc = ev2.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'cap-halt', 'ONE exhaustion terminal, two triggers — only the trigger changed');
+  assert.match(esc.decision, /no stage improved — verdict 1 → 1 → 1/,
+    'the FLAT verdict\'s own prose, series and all — never "still progressing" on a run that never moved a number');
+  assert.match(esc.decision, /2\/2 strikes/, 'and it names the rule that fired');
+  assert.doesNotMatch(esc.decision, /nothing the instrument can compare/,
+    'numbers WERE reported, so "unknown" would be a blind reading of a sighted instrument');
+  assert.match(esc.options[0], /revise the goal\/spec/, 'lever one on a flat run: the work, not the wallet');
+  assert.match(esc.options.join(' | '), /if the trend above says it was still converging/,
+    'the top-up is offered CONDITIONALLY — this trend does not say that');
+});
+
+test('cycle F6: a DECLARED floor survives the whole cycle — leg 1\'s unknown rides the fold into leg 2\'s green terminal', async () => {
+  const wd = cyclePatient();
+  // leg 1 is itself a resume: it inherits a fold that was only PARTLY priced
+  const leg1 = await moneyLeg1(wd, { priorSpentUsd: 0.3, priorSpendComplete: false });
+  assert.equal(leg1.outcome, 'cap-halt');
+  const end1 = leg1.events.find((e) => e.type === 'job-end');
+  assert.equal(end1.spendComplete, false, 'every round of THIS leg being priced repairs nothing about the one before it');
+
+  const r = readPause(leg1.events);
+  assert.equal(r.restart.priorSpendComplete, false, 'the reader carries the floor forward off the declaration');
+  assert.ok(Math.abs(r.restart.priorSpentUsd - end1.spentUsd) < 1e-9, 'and the floor is still a real number, not a blank');
+
+  const topped = CYCLEJOB({ budgetUsd: 2 });
+  const provider2 = scriptedProvider([
+    cwrite(wd, 'f1', 'ok A B C\n', 0.05),
+    { text: 'the last requirement is in', costUsd: 0.05 },
+  ]);
+  const file2 = join(wd, 'spine-leg2.jsonl');
+  const outcome2 = await runJob(topped, {
+    approvals: approveJob(topped), workdir: wd, provider: provider2, emit: makeSpine(file2),
+    priorSpentUsd: r.restart.priorSpentUsd,
+    priorSpendComplete: r.restart.priorSpendComplete,
+    priorWallMs: r.restart.priorWallMs, resumeSeed: r.restart.seed,
+  });
+  assert.equal(outcome2, 'green');
+  const ev2 = readSpine(file2);
+  assert.equal(ev2.find((e) => e.type === 'job-start').priorSpendComplete, false,
+    'the declaration carries the floor, so a THIRD leg would inherit the unknown too');
+  assert.ok(ev2.filter((e) => e.type === 'worker-round').every((e) => typeof e.costUsd === 'number'),
+    'leg 2 itself bought nothing unpriced — or this test would be proving the wrong mechanism');
+  assert.equal(ev2.find((e) => e.type === 'job-end').spendComplete, false,
+    'a GREEN total built on a floor is still a floor: reporting it exact is F6 in a resume\'s coat');
 });

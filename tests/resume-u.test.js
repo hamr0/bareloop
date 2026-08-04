@@ -75,7 +75,7 @@ test('§3 the resume PREVIEW states what is inherited: the fold, the remainder, 
   assert.equal(code, 0, 'a preview with no --approve is a readout, not a refusal');
   assert.match(out, /RESUME/, 'it says plainly that this is a continuation, not a fresh run');
   assert.match(out, /\$2\.0000 and .* before the halt — FOLDED IN/, 'the halted run\'s own priced rounds, summed');
-  assert.match(out, /left     \$2\.0000 of \$4/, 'so what it may still spend is the REMAINDER of the signed budget');
+  assert.match(out, /left     \$6\.0000 of \$8/, 'so what it may still spend is the REMAINDER of the signed budget');
   assert.match(out, /at       the close and its fix loop/, 'every step finished, so it re-enters at the close');
   assert.match(out, /no re-scout, no re-draft/);
   assert.match(out, /NOT reset to the seed/, 'the patient keeps the work the halted run paid for');
@@ -164,14 +164,15 @@ test('§3 ORDERING (source tripwire): the resume read and the approval gate both
 });
 
 test('§3 a resume whose allowance is ALREADY SPENT says so plainly — the commonest resume there will ever be is exactly this one', () => {
-  // Read off the real halted run (u-msew1uy5): it spent $4.13 of a $4 budget and 24.9
-  // of 25 minutes, so the remainder is NEGATIVE by construction. A minus sign in a
-  // number column is not a warning, and signing the hash unchanged buys an immediate
-  // re-halt for a close precheck's worth of nothing.
-  const { code, out } = preview(['--resume', spineFile(haltedSpine({ rounds: [3.0, 1.13] }))]);
+  // The shape read off the real halted run (u-msew1uy5, which overspent its budget by
+  // $0.13): the remainder is NEGATIVE by construction. A minus sign in a number column
+  // is not a warning, and signing the hash unchanged buys an immediate re-halt for a
+  // close precheck's worth of nothing. (Rounds track the SIGNED budget — $8 since the
+  // 2026-08-04 "go 8/45" top-up — overspent by the same $0.13.)
+  const { code, out } = preview(['--resume', spineFile(haltedSpine({ rounds: [5.0, 3.13] }))]);
   assert.equal(code, 0);
   assert.match(out, /NOTHING LEFT/);
-  assert.match(out, /budgetUsd \$4 is already spent \(over by \$0\.1300\)/);
+  assert.match(out, /budgetUsd \$8 is already spent \(over by \$0\.1300\)/);
   assert.match(out, /RAISE the number\(s\)/);
   assert.match(out, /that is a spec edit, so the hash below changes and you sign the new one/);
 });
@@ -179,5 +180,5 @@ test('§3 a resume whose allowance is ALREADY SPENT says so plainly — the comm
 test('§3 CONTROL: a resume with allowance still on the table does NOT cry wolf', () => {
   const { out } = preview(['--resume', spineFile(haltedSpine({ rounds: [0.5] }))]);
   assert.doesNotMatch(out, /NOTHING LEFT/);
-  assert.match(out, /left     \$3\.5000 of \$4/);
+  assert.match(out, /left     \$7\.5000 of \$8/);
 });
