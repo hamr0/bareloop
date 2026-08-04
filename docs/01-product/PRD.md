@@ -2658,3 +2658,67 @@ failure as patient hardness (F77). With the fix landed the screen is un-inverted
 are no longer pre-filtered by a harness defect — and the frozen prereg's clauses are otherwise
 unchanged. The rejected candidates are not retroactively admitted: a re-run on the fixed code is
 a new calibration row, judged by the same frozen screen.
+
+## Addendum v1.46 — 2026-08-04 (the shape lottery closes at the gate, and money gets the W-2 treatment: an accurate halt-note, a continue button, and the fix-loop's count retires — hamr)
+
+### 1. The two shape-lottery gate rules (SHIPPED, commit `28ee95f`; validated live, F81)
+
+The $0 archive sweep settled the bareagent-u deaths as shape-selection, not capability:
+per-file decomposition carrying the whole-goal check on an early step has 0 honest greens
+ever; the wide closing step (the RLM shape) greens 7/7 whenever rolled. Two mechanical rules
+make the losing shapes inexpressible — neither asks any model to judge "is this job small":
+
+- **Rule A-v2 (`check-placement`)** — a check whose recorded PREFLIGHT verdict was red may
+  only gate the plan's FINAL write step. Green-at-seed checks (guards) stay free mid-plan.
+- **Rule B (`check-shed`)** — a replan may not drop a `check-passes` its predecessor carried;
+  it may move one, never shed it (the u-msdsmkid form-only fake green).
+
+Both laws are STATED in the drafting prompt from the same facts object the validator judges.
+Resume revalidation is exempt by design (a paid plan is never refused over a law minted after
+its draft). Live read (`u-msew1uy5`, F81): the drafter rolled the RLM shape on the FIRST
+draft, both goal files edited from attempt 1, first honest step-green in the patient's
+four-run history. Rule B still awaits a live replan for its live read.
+
+### 2. A MONEY halt becomes what W-2 made of a TIME halt (hamr: "money cap should halt and
+feedback… and needs to be accurate")
+
+A money cap-halt keeps its last minted verdict and pauses DECISION-READY, with a verdict on
+the run's own trend: **cut-while-CONVERGING** ("still progressing: errors 12→5, ~$/iteration
+— a top-up likely finishes it") or **cut-while-FLAT** ("nothing moved in the last N verdicts
+— more money is waste; revise the goal/prompt"). Accuracy law: the verdict is computed from
+the close's own graded numbers, PER STAGE — never across axes (the operator's own sweep
+instrument misread the typecheck/suppressions see-saw as "worse" by mixing them; the shipped
+readout must not repeat it), and never model prose. No extractable number → "can't tell",
+stated (F6). Levers, W-2-symmetric: top-up & resume (a re-sign) / revise the spec / abandon.
+
+### 3. Cap-halt RESUME on the U path (the missing third leg of hamr's resume rulings)
+
+Kill-resume existed (module C), wall-halt pauses decision-ready (W-2); a MONEY cap-halt —
+the case the original "why would I waste money on something I already started" ruling was
+about — fell between them: run-u has no resume and hard-resets the patient, and the resume
+reader classes a landed `job-end` as complete. The gap is closed as wiring, not new
+machinery: `--resume` on run-u skips the seed reset, folds the dead run's spend in as
+`priorSpentUsd` (the ceiling never silently widens), skips the completed plan prefix, and
+re-enters at the outer close + fix loop. The top-up itself remains a spec re-sign.
+
+### 4. The close-fix loop's count retires for the SAME strike rule (v1.45 §5's recorded
+replay: RUN, clean)
+
+The pre-registered $0 replay over every archived fix-loop (8 runs) came back clean both
+directions: **0 greens harmed** (all 3 historical fix-loop greens converted in ≤2 verdicts)
+and **1 real waste case caught** (`reuse-msc6w93z`: dead flat at 2 errors for 7 consecutive
+fix verdicts until the wall killed it; the 2-strike rule stops it at verdict 4).
+`CAP_RUNS` retires as the fix loop's governor; the ladder's 2-strike no-progress rule
+(per-stage series, same accuracy law as §2) replaces it. Money and wall keep every bit of
+their authority; the design intent, hamr verbatim: internal loops "catch a dead end instead
+of capping" — a run should die when it is out of ideas, not out of money mid-convergence.
+The money cap stays the hard outer line and is never self-adjusted (unchanged hard line).
+
+### 5. Evidence base and sequencing
+
+Money-cut deaths in the entire archive: 8 — seven the F45 clipipe casualty class (born
+unreadable), one `u-msew1uy5` (converging at the cut). The feedback features matter FORWARD:
+the gate rules now carry runs deep enough to reach the money line while still working, a
+depth no prior run reached. Build order: §2+§3+§4 next (opus-delegated, session as
+orchestrator/validator), before the bareagent-u top-up decision consumes them; the lift-
+contrast (§ v1.42) remains the north star behind the rules decisions in flight.
