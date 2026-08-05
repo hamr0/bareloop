@@ -46,7 +46,11 @@ it and never disappears.
 > within-run ratchet (Layer R) ships armed-and-inert by measurement (F41). **In flight:
 > N3 — executed inheritance**, where a workflow that greened is kept, offered to the next
 > similar job, and improved as executed instead of drafted from scratch (the ladder's
-> kill-switch question).
+> kill-switch question). As of 0.7.0 N3's machinery **ships** — the bridge registry, the
+> operator-signed reuse envelope, the selection call and step-level resume are all in the
+> public API — but shipping is not acceptance: one execution green proves reuse safe and
+> legal, never *beneficial*. The lift claim waits on the ON-vs-forced-cold contrast, which
+> has not fired. Until it does, treat reuse as available and unproven.
 
 ## Quick start
 

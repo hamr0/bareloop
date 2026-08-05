@@ -5,7 +5,7 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.7.0] — 2026-08-05
 
 ### Changed
 - **`ralph()` now REFUSES a call with no exhaustion rule** (public API). `capRuns` became
