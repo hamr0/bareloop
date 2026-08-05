@@ -2932,3 +2932,52 @@ It ships as a documented **KNOWN LIMIT at the site**, not parsed around. The roo
 spec-hash change and hamr's to sign. Sharpening the detector to tell two prose shapes apart is
 explicitly refused (the F49 precedent: a per-close sharpening is how one reader stops being one
 reader).
+
+**RETIRED for the `u-*` closes the same day** — hamr signed it in-turn, verbatim **"#1 fix"**,
+and commit `4ae9a3c` carries it. Every mixed stage was split *in the close*: `typecheck` keeps
+the in-scope faults with **`typecheck-outside`** immediately after it, and **`tests-kept`**
+carries the executed-count floor immediately before `suite-green`. Each new stage sits exactly
+where its branch already ran, so the gate sequence is byte-order identical to the old
+single-stage walk and first-red-wins is unchanged; `litectx`/`spawner` `typecheck` was verified
+single-population and left alone. `src/trend.js` keeps the paragraph as the historical record
+plus **the law for close authors** — one population per stage, and a new close that mixes two
+re-opens this, with the remedy always in that close's stage list. Consequences taken openly:
+all six `u-*` spec hashes flipped and the runner refuses them until re-signed (§5), and the two
+stored bridges (`aurora-u-spawner`, `litectx-u`) refuse to load until re-minted from a green
+under the new close — a changed close is a different KIND of job, which is what the load gate's
+close-stage check is for. Evidence: 20 new tests including a can-it-fail pre-flight against the
+pre-split tree, plus `$0` live validation (pulselog green on all four split stages, baremobile
+`typecheck-outside` RED 381 as its own series). Full read: **F84**.
+
+**The park does not close entirely, and the residue is named rather than rounded off:**
+
+- **`scripts/testgen-close.mjs` — STILL PARKED for hamr, on LIVE infrastructure.** Its
+  `verdict` stage renders a fault-detection RATE beside collected-unit COUNTS
+  (`killed=K/40 rate=R% … form=unit:N,integ:M`) — the same class, on the job that produced
+  F38/F39/F46/F47, and splitting it is the same spec-hash territory the `u-*` split was.
+- **`scripts/types-close.mjs` — deliberately AS-RUN.** Frozen screening infrastructure, five
+  populations. It graded a closed screen, so re-cutting it would edit the instrument a finished
+  measurement was taken with. It stays as it ran, named rather than quietly fixed.
+
+### 5. The signature trail across the split (recorded here because a spec cannot hold it)
+
+hamr signed the bareguard-u launch in-turn on 2026-08-05, verbatim:
+
+> **"#5 signed, run after merge"**
+
+against the then-current resolved hash
+`2b8dbdaf68e4c0dac9023d3c1c3816e387c617b91819fd714f67069f72ec387a`. `4ae9a3c` landed hours
+later and **flipped all six `u-*` hashes by construction** — a close's stage names are in the
+signed spec, so splitting a stage moves the hash whether or not anything else changed. That is
+refuse-until-re-signed working exactly as designed: a signature for the pre-split close does
+not authorize the post-split one, and no legacy acceptance path exists.
+
+bareguard-u's new hash is
+`f91c5fa5f10e4226ea26f9086f28e36a778104618ea69b7f4dadfc74c025d161`, **presented for hamr's
+re-sign at launch** — post-merge, which is his own stated sequencing.
+
+**Why this lives in the docs trail and nowhere else:** a spec never contains its own signature.
+Measured, not assumed — an approval field on the spec reds as an unknown field, and a hash taken
+over a document containing that hash is self-invalidating. The approvals array is the runner's
+input and hamr's in-turn words are the signature; this record is where the chain between two
+hashes stays legible.

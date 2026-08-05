@@ -152,7 +152,7 @@ contract the single close object has always used) plus:
 | stage field | shape | notes |
 |---|---|---|
 | `name` | unique kebab-case slug | the plan references it via `check-passes(name)`; duplicates red `duplicate-id` |
-| `offer` | optional boolean, default offered | `offer: false` hides the stage from the derived menu — it never reaches the agent. For a stage that cannot stand alone as a ruler: a PRECONDITION (e.g. "the seed commit exists" — passes instantly, teaches nothing) or the **final grading stage** — of the six specs in `jobs/`, four hide a final `verdict` stage and two hide a `changed-from-seed` precondition instead (a per-spec convention, not a schema rule — nothing stops a stage named last from being offered except the spec author remembering to set the flag; preflight's `check-menu` event always names the full menu either way, so a forgotten flag is visible in the run's own record) |
+| `offer` | optional boolean, default offered | `offer: false` hides the stage from the derived menu — it never reaches the agent. For a stage that cannot stand alone as a ruler: a PRECONDITION (e.g. "the seed commit exists" — passes instantly, teaches nothing) or the **final grading stage** — of the ten specs in `jobs/`, four hide a final `verdict` stage and six hide a `changed-from-seed` precondition instead (a per-spec convention, not a schema rule — nothing stops a stage named last from being offered except the spec author remembering to set the flag; preflight's `check-menu` event always names the full menu either way, so a forgotten flag is visible in the run's own record) |
 | `needs` | optional non-empty array of EARLIER stage names | a stage that reads what an earlier stage built (e.g. "the public API matches what an earlier stage emitted") names its prerequisite chain; picking it via `check-passes` runs the chain first, then the stage itself. Every name must be declared before this stage (`invalid-value` otherwise); `needs` + `offer: false` together is incoherent (`invalid-value`) — a stage with a chain to run must be reachable |
 
 The stages run in declared order as the close itself; the first red renders the verdict and
@@ -160,6 +160,19 @@ later stages never run. `checkMenu(close)` returns only the offerable stages (ea
 run chain, prerequisites first); a hidden or partial menu is an acceptable case, never a
 failure — `check-menu` on the spine reports `hidden` + `meaning` whenever the derived menu is
 narrower than the stage list.
+
+**The law for close authors: ONE POPULATION PER STAGE.** The trend reader buckets one series
+per stage NAME, and a stage name is not an axis — nothing in the library can stop a stage from
+redding on two structurally different measurements under one name, and a run that crosses that
+seam donates both genres to one series (a 29 → 4 across such a seam reads *converging* and
+would recommend a top-up on work that had only swapped which wall it was behind). If a stage
+can report two unlike numbers, **split it into two stages** in the close, each where its branch
+already runs — the gate sequence is unchanged because the close is first-red-wins. The shipped
+`u-*` closes were split exactly that way (`typecheck` / `typecheck-outside` /
+`tests-kept` / `suite-green`), and the fix is never a sharpened reader: `readGrade` is one
+reader for every close, deliberately (the F49 precedent). **Splitting a stage moves the spec
+hash** — stage names are in the signed spec — so it is a spec edit the operator re-signs, and
+it changes what stored bridges match (below).
 
 **Close types and the hierarchy — the OBJECT form, which survives only for the
 declared-but-locked verdict classes** (a close is data, never code; verdict-class laundering
@@ -764,6 +777,16 @@ job's signed menu** (an omitted `tools` means the concrete current `TOOL_MENU`, 
 red: every recipe from a different day names yesterday's bricks, and that is what a recipe
 IS. The full `validatePlan` still judges the TWEAKED draft at draft time; no second, looser
 path exists for an inherited plan. A failing gate is a RESULT (`recipe-stale`), never a throw.
+
+**A CHANGED CLOSE therefore expires every bridge minted under the old one.** The stored
+`closeStageNames` must match the job's stage names in the same order, so adding, renaming,
+splitting or reordering a stage makes existing entries fail the gate by construction. That is
+the doctrine, not a rough edge: a different close is a different KIND of job, and a recipe
+proven against one ruler has not been proven against another. The remedy is a fresh green under
+the new close, which mints the next version — an entry is **never edited into agreement**, and
+falling back to cold stays the caller's decision. In this repo the `u-*` close split
+(2026-08-05) put `aurora-u-spawner` and `litectx-u` in exactly that state; both are re-minted by
+their next green, not repaired.
 
 **`runJob`/`runPlan` take `bridge?`** — a validated entry to reuse. The gate runs **at the
 door**: before the clock, before the close precheck, before any token. On a pass, the

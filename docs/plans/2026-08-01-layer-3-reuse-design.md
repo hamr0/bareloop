@@ -560,3 +560,25 @@ AXIS SPLIT** — one close stage can red on two structurally different populatio
 name, which the trend's per-stage bucketing cannot see. It ships as a documented KNOWN LIMIT;
 the root fix is a stage split in the shipped closes, which changes stage names inside signed
 specs and is therefore **hamr's to sign** (F84; PRD v1.49 §4).
+
+**Decided the same day, after the above was written:** hamr signed it (*"#1 fix"*) and `4ae9a3c`
+split every mixed stage in the six `u-*` closes (`typecheck-outside` after `typecheck`,
+`tests-kept` before `suite-green`, each where its branch already ran — gate sequence byte-order
+identical). **Two consequences land directly on this record's decisions, and neither is a
+change to them:**
+
+- **D2 / the load gate did its job.** `aurora-u-spawner` and `litectx-u` now **refuse to load**
+  because their stored `closeStageNames` predate the split. That is the close-stage kinds check
+  behaving as R2 and D2 specify — a changed close is a different KIND of job — and the remedy is
+  re-minting from a green under the new close, never editing an entry into agreement. Expect a
+  registry with two entries in that state until the next green on each.
+- **D7 / the envelope is re-signed, not migrated.** All six `u-*` spec hashes flipped by
+  construction, so every signature predating the split is refused. The full signature trail —
+  hamr's pre-split bareguard sign-off, why a spec cannot carry its own signature, and the new
+  hash awaiting re-sign — is PRD v1.49 §5.
+
+**Still not decided, and still hamr's:** the same mixed-population class survives in
+`scripts/testgen-close.mjs`'s `verdict` stage (LIVE infrastructure — a rate beside collected
+counts, and splitting it is the same spec-hash territory), while `scripts/types-close.mjs` is
+frozen screening infrastructure left deliberately **as-run**, because re-cutting it would edit
+the instrument a finished measurement was taken with.

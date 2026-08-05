@@ -283,6 +283,38 @@ feature lands, **patch** = docs, fixes, scaffolding.
   removed with the ceiling it fed (it existed only to bound `attempts`; an extra property is
   ignored, so no direct caller breaks).
 
+### Changed (the close-stage AXIS SPLIT — hamr: "#1 fix")
+- **One POPULATION per close stage, so unlike numbers can never share a trend series.** The
+  trend reads one bucket per stage NAME, and a stage name is not an axis: `typecheck` red
+  either `N error(s) in <scope>` (the in-scope faults) or `the target files are clean but M
+  strict error(s) exist outside them` — a different population, reached only once the first is
+  zero — and `suite-green` mixed a failure count with an executed-count floor. A run crossing
+  either seam donated two genres to one series, so a 29 → 4 across it read **converging** and
+  would have recommended a top-up on work that had only swapped which wall it was behind.
+  Every mixed stage in the six `u-*` closes is now split: **`typecheck-outside`** carries the
+  outside-scope population immediately after `typecheck`, and **`tests-kept`** carries the
+  executed-count floor immediately before `suite-green`. Each new stage sits exactly where its
+  branch already ran, so the gate sequence is byte-order identical to the old single-stage
+  walk and first-red-wins is unchanged; `litectx`/`spawner` `typecheck` was verified
+  single-population and left alone. `src/trend.js`'s KNOWN LIMIT is rewritten as the historical
+  record plus **the law for close authors** — the remedy for a mixed stage is that close's stage
+  list, never a detector taught to tell two prose shapes apart (the F49 precedent).
+  - **All six `u-*` spec hashes flip**, by construction: a close's stage names are in the
+    signed spec, so the runner refuses every one of them until it is re-signed. That is
+    refuse-until-re-signed working, not a migration to smooth over.
+  - **Stored bridges whose `closeStageNames` predate the change refuse to load** — the load
+    gate's close-stage check is the doctrine that a changed close is a different KIND of job.
+    `aurora-u-spawner` and `litectx-u` are in that state now and are re-minted by a green under
+    the new close, never edited into agreement.
+  - **The F28 trim announcement is restored** where the split surfaced its loss: the
+    outside-scope branch pre-sliced its own echo, silently suppressing the "trimmed" notice a
+    gap bound must announce (a 341-line elide is visible again).
+  - **New `tests/close-stages.test.js` (20 tests)**, including a can-it-fail pre-flight against
+    the pre-split tree, spec↔script stage-list agreement over spawned real closes, and the
+    29 → 4 repro reading as two stages with a same-stage contrast proving the test can fail.
+    Live `$0` validation: pulselog green across all four split stages, baremobile
+    `typecheck-outside` RED at 381 reading correctly as its own series. **1007 tests.**
+
 ### Fixed (whole-branch review, 2026-08-05 — 4 opus finders over `main...layer-3-reuse`; F84)
 
 *Every confirmed finding fixed, each verified against source before it was believed; no fix

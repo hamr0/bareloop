@@ -5451,6 +5451,35 @@ termination claim is to run the loop.
 
 ### New PARK for hamr: one close stage, two measurement populations
 
+> **RETIRED for the `u-*` closes the same day, commit `4ae9a3c` (hamr: *"#1 fix"*) — the park
+> text below stands as the record of what was found.** Every mixed stage was SPLIT in the
+> close: `typecheck-outside` carries the outside-scope population immediately after
+> `typecheck`, `tests-kept` carries the executed-count floor immediately before `suite-green`,
+> each new stage sitting exactly where its branch already ran, so the gate sequence is
+> byte-order identical and first-red-wins is unchanged. All six `u-*` spec hashes flipped and
+> the runner refuses them until re-signed. **The park does not close entirely** — see the
+> residue below.
+
+**Residue, recorded precisely (2026-08-05):**
+
+- **`u-*` closes — FIXED.** Six specs re-hashed; `litectx`/`spawner` `typecheck` verified
+  single-population and left alone. `src/trend.js`'s KNOWN LIMIT is now the historical record
+  plus **the law for close authors**: one population per stage, and the remedy for a mixed one
+  is that close's stage list, never a sharpened detector (`readGrade` untouched, F49
+  precedent).
+- **`scripts/testgen-close.mjs` — STILL PARKED for hamr, and it is LIVE infrastructure.** Its
+  `verdict` stage renders `killed=K/40 rate=R% clean=green form=unit:N,integ:M` — a
+  fault-detection RATE and collected-unit COUNTS under one stage name. It is the same class,
+  on the job that produced F38/F39/F46/F47, so splitting it is not cosmetic; it is also a
+  stage-name change inside signed TESTGEN specs, which is the same spec-hash territory the
+  `u-*` split was.
+- **`scripts/types-close.mjs` — deliberately AS-RUN.** Frozen screening infrastructure with
+  five populations under its stages. It graded a closed screen; re-cutting it now would edit
+  the instrument a finished measurement was taken with, so it stays exactly as it ran, named
+  rather than quietly fixed.
+
+**The park as originally recorded:**
+
 The trend's accuracy law is *never across stages*, and it is enforced by construction — a
 series is one bucket per stage name. But **a stage name is not an axis.** The shipped closes red
 one stage on two structurally different populations: `u-*-close`'s `typecheck` reports either

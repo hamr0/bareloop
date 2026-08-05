@@ -244,8 +244,10 @@ addenda (v1.36–v1.49); this list is deliberately one line each.
   three levers: top up & resume (a re-sign) / revise / abandon. Both governance halts read
   that ONE instrument *(v1.49; byte-motion survives only inside `can't-tell`, never promoted
   to a direction)*, and a resumed leg's readout spans the CHAIN while the strike governor
-  stays leg-local — hamr's ruling, never mixed. Known limit, parked: one stage name can carry
-  two measurement populations, and splitting them is a spec-hash change.
+  stays leg-local — hamr's ruling, never mixed. **One population per stage** is the law for
+  close authors: every mixed `u-*` stage is now SPLIT *(v1.49 §4; six spec hashes re-signed,
+  two bridges expired by the load gate)* — the class survives only in `testgen-close`'s
+  `verdict` stage *(parked)* and in the frozen screen infra *(as-run)*.
 - **Time:** the wall cap (W-2: "when time is up, keep the grade we already have and stop";
   the close is never bounded and never counts against the wall); the outside watchdog
   whose kill requires deadline passed AND a flat spine (W-3 — never a silent kill); the
