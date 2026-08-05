@@ -180,7 +180,13 @@ export function createLadder({ limit = STRIKE_LIMIT, writeCount }) {
       }
       if (idle.length) parts.push(`it stalled — no file was written in iteration(s) ${idle.join(', ')}`);
       const trajectory = `${firstSeen.size} distinct exit output(s) over ${iterations} iteration(s)`;
-      const converging = repeats.length === 0
+      // BOTH signals gate it, because "converging" is a claim about the WORK and a
+      // moving exit output is only half the evidence for one. Gated on repeats alone
+      // it fired on an idle strike-out — "no file was written in iteration(s) 1, 2"
+      // and "the step was converging" in the same paragraph, handed to the one
+      // channel the redrafting planner adapts to. A step that wrote nothing was not
+      // converging whatever its exit bytes did (a close re-run moves its own).
+      const converging = repeats.length === 0 && idle.length === 0
         ? ' Every attempt moved the exit output, so the step was converging when it struck out.'
         : '';
       return `The step ladder ended it on ${strikes} strike(s) of ${limit}: ${parts.join('; ')}. `

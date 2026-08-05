@@ -297,6 +297,66 @@ test('a watchdog aimed at a pid that is not its parent REFUSES to arm — the pi
   assert.equal(existsSync(join(dir, 'spine.jsonl.watchdog.json')), false, 'a refusal is not a verdict — it leaves no marker');
 });
 
+/** a victim that spawns the guard and REPORTS ITS EXIT CODE. `guardedRun` unrefs the
+ * guard and makes it a grandchild of the test, so its exit code is unobservable there —
+ * and a startup refusal is exactly an exit code. The victim keeps the handle (no
+ * `unref`) so the 'exit' event is delivered, and it outlives the guard on a timer.
+ * @param {{ after: (fn: () => void) => void }} t
+ * @param {string[]} args watchdog flags; `--pid` is added by the victim (its own)
+ */
+function guardedExit(t, args) {
+  const src = `const { spawn } = require('node:child_process');
+    const c = spawn(process.execPath, [${JSON.stringify(WATCHDOG)}, ...${JSON.stringify(args)}, '--pid', String(process.pid)], { stdio: ['ignore', 'inherit', 'inherit'] });
+    c.on('exit', (code) => { process.stdout.write('WATCHDOG_EXIT ' + code + '\\n'); });
+    setInterval(() => {}, 1000);`;
+  const p = spawn(process.execPath, ['-e', src], { stdio: ['ignore', 'pipe', 'pipe'] });
+  t.after(() => { try { p.kill('SIGKILL'); } catch { /* already gone */ } });
+  let out = '';
+  p.stdout.on('data', (d) => { out += d; });
+  p.stderr.on('data', (d) => { out += d; });
+  return { proc: p, output: () => out };
+}
+
+test('a NON-POSITIVE --wall-ms is REFUSED loudly, never defaulted into an unarmed deadline', async (t) => {
+  // The hole this closes: `num()` fell back to its default on anything that was not a
+  // finite positive number, so `--wall-ms 0` disarmed the deadline trigger SILENTLY
+  // while the caller's own banner said "armed for 0min". Both producers can reach zero
+  // — run-u's `Math.max(0, WALL_MS - priorWallMs)` and run-reuse's `plannedWallMs` — and
+  // a wall remainder of nothing is a decision for the operator (W-2: past the wall
+  // nothing new starts), never an unbounded launch. It is the same
+  // NaN/undefined-disarms-a-guard class run-u.mjs already names one flag over.
+  const { dir, spine } = tmp(t);
+  writeFileSync(spine, '{"type":"job-start"}\n');
+  const w = guardedExit(t, ['--spine', spine, '--stale-ms', '60000', '--poll-ms', '100', '--wall-ms', '0']);
+  assert.equal(await waitUntil(() => /WATCHDOG_EXIT/.test(w.output()), 20_000), true, 'the guard must decide at startup, not arm and stay quiet');
+  assert.match(w.output(), /WATCHDOG_EXIT 2/, 'a flag the operator got wrong is an operator error (exit 2), the same code the parent-link refusal uses');
+  assert.match(w.output(), /REFUSED/);
+  assert.match(w.output(), /--wall-ms/, 'the refusal names the flag it could not accept');
+  assert.equal(existsSync(join(dir, 'spine.jsonl.watchdog.json')), false, 'a refusal is not a verdict — it leaves no marker');
+  assert.equal(alive(w.proc.pid), true, 'and it kills nothing on the way out');
+});
+
+test('a garbled numeric flag is refused too — a silent default is a second ceiling nobody chose', async (t) => {
+  const { spine } = tmp(t);
+  writeFileSync(spine, '{"type":"job-start"}\n');
+  const w = guardedExit(t, ['--spine', spine, '--stale-ms', 'soon', '--poll-ms', '100']);
+  assert.equal(await waitUntil(() => /WATCHDOG_EXIT/.test(w.output()), 20_000), true);
+  assert.match(w.output(), /WATCHDOG_EXIT 2/);
+  assert.match(w.output(), /--stale-ms/);
+});
+
+test('an OMITTED --wall-ms is still legal: the guard says "no wall" and the stale trigger stays armed', async (t) => {
+  // The control that keeps the refusal above from being a blanket ban: run-u OMITS the
+  // flag entirely on a spec with no `maxWallMs` (an unbounded run is a visible operator
+  // choice), and that path must keep working — a refusal on absence would break it.
+  const { spine } = tmp(t);
+  writeFileSync(spine, '{"type":"job-start"}\n');
+  const w = guardedRun(t, ['--spine', spine, '--stale-ms', '500', '--poll-ms', '100']);
+  await waitUntil(() => !alive(w.proc.pid));
+  assert.match(w.output(), /no wall/, 'the unbounded choice is loud on BOTH sides of the process boundary');
+  assert.equal(alive(w.proc.pid), false, 'and the STALE trigger — which needs no wall — is still armed');
+});
+
 test('run-u sizes the wall grace as stages x close timeout — and passes it', () => {
   // The defect this locks out: `--grace-ms` was never passed at all, so a 4-stage
   // close ran against the watchdog's own ONE-stage default (900s). The outside
@@ -319,6 +379,30 @@ test('run-u sizes the wall grace as stages x close timeout — and passes it', (
   assert.match(src, /const closeStages = Array\.isArray\(spec\.close\) \? spec\.close\.length : 1;/);
   assert.match(src, /const worstCloseSilenceMs = CLOSE_TIMEOUT_MS \* closeStages;/);
   assert.match(src, /'--grace-ms', String\(worstCloseSilenceMs\)/, 'and it is actually passed to the guard');
+});
+
+test('neither caller can hand the guard a zero wall: both REFUSE the launch above the spawn', () => {
+  // The other half of the refusal tested at the top of this file. The guard now stops
+  // on `--wall-ms 0` instead of defaulting it away — but a runner that reached that
+  // point at all would be launching a paid run with no time in it (W-2: past the wall
+  // nothing new starts), so each caller owns the same zero one step earlier. Pinned in
+  // SOURCE because neither refusal is reachable from here: run-u's needs a real
+  // patient repository past its approval gate (tests/resume-u.test.js drives that one
+  // end to end), and run-reuse's needs a registry, a signed envelope and a dead reuse
+  // spine. What this locks is the ORDER — a refusal below the spawn is a guard armed
+  // with the number the refusal exists to reject.
+  for (const [file, guard] of [
+    ['../scripts/run-u.mjs', /RESUME_WALL_MS !== null && RESUME_WALL_MS <= 0/],
+    ['../scripts/run-reuse.mjs', /if \(plannedWallMs <= 0\) \{/],
+  ]) {
+    const src = readFileSync(new URL(file, import.meta.url), 'utf8');
+    const refusalAt = src.search(guard);
+    const spawnAt = src.indexOf("'--wall-ms'");
+    assert.ok(refusalAt > 0, `${file}: the wall-exhausted refusal is gone`);
+    assert.ok(spawnAt > 0, `${file}: the guard's wall flag is gone`);
+    assert.ok(refusalAt < spawnAt, `${file}: the refusal must sit ABOVE the spawn — below it, the run is already paying`);
+    assert.match(src, /WALL ALREADY EXHAUSTED/, `${file}: the stop is decision-ready and says so in words`);
+  }
 });
 
 // ── F72 park B: kill-CHECKS-before-kill, on the record.

@@ -249,6 +249,21 @@ if (arg('approve') !== specHash) {
   process.exit(arg('approve') === null ? 0 : 1);
 }
 
+// W-2, on the launch side: "when time is up, keep the grade we already have and stop".
+// A resume whose wall remainder is zero or negative has no time to start anything in,
+// and launching it buys a scout and a precheck's worth of nothing before the clock
+// halts it. The preview above already warns; this REFUSES, because the warning is
+// advisory and this is the wall itself. It also closes the guard's half of the same
+// hole: `--wall-ms 0` used to reach u-watchdog, which defaulted it to null and armed
+// no deadline at all while this banner still claimed a wall.
+if (dead && RESUME_WALL_MS !== null && RESUME_WALL_MS <= 0) {
+  console.error(`WALL ALREADY EXHAUSTED — the halted run burned ${(dead.restart.priorWallMs / 60000).toFixed(1)}min of the signed ${/** @type {number} */ (WALL_MS) / 60000}min, so this resume starts with no time at all.`);
+  console.error('Nothing here refills it (a run may never widen its own cap). The lever is yours:');
+  console.error(`  - RAISE maxWallMs in jobs/${target.spec} — that is a spec edit, so the hash changes and you sign the new one with --approve;`);
+  console.error('  - or revise the goal/spec, or abandon the run and keep the verdict it already minted.');
+  process.exit(2);
+}
+
 const apiKey = process.env.ANTHROPIC_API_KEY;
 if (!apiKey) { console.error('ANTHROPIC_API_KEY not set (secrets load from the environment — never the tree)'); process.exit(2); }
 

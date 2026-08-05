@@ -126,10 +126,30 @@ test('selectionPrompt carries the ask, the listing, and D3\'s two standing rules
   assert.match(p, /drafts? (a )?new plan/i, 'the "none matches → draft new" exit is stated');
   assert.match(p, /pinned/i);
   assert.match(p, /reason/i, 'a pinned workflow may be refused only explicitly, with a reason');
+  // NOTE: the two lines above are satisfied by the standing RULES text, which is
+  // present on every render — they say nothing about the pin BLOCK. The pinned branch
+  // is exercised on its own below, against strings only that branch can produce.
   // choosing is not authoring (PRD v1.28): the picker is told outright it cannot edit
   // one, so the standing "no user authoring anywhere" line is stated where it binds
   assert.match(p, /choosing, not authoring/i);
   assert.match(p, /cannot edit, merge or invent/i);
+});
+
+test('a PIN renders its own block, naming the workflow — and an unpinned render omits it entirely', () => {
+  // The third argument is the whole pin mechanism, and nothing above ever passed one:
+  // `/pinned/i` and `/reason/i` both hit the always-present rules text, so the branch
+  // could be deleted with the suite still green. These assertions are on strings only
+  // the branch produces, with the un-pinned render as the control that can fail.
+  const listing = renderListing([BRIDGE({ name: 'beta' })]);
+  const ask = 'Make litectx pass tsc --strict without weakening the tests.';
+  const pinned = selectionPrompt(listing, ask, 'beta');
+  assert.match(pinned, /PINNED the workflow "beta"/, 'the operator\'s pick rides by name — a pin the picker cannot identify is not a pin');
+  assert.match(pinned, /never quietly replaced/, 'and the refusal rule: the operator\'s pick comes back to the operator, never swapped in silence');
+
+  const cold = selectionPrompt(listing, ask);
+  assert.doesNotMatch(cold, /PINNED the workflow/, 'no pin, no pin block — otherwise the picker is told it was handed a pick nobody made');
+  assert.doesNotMatch(cold, /never quietly replaced/);
+  assert.equal(selectionPrompt(listing, ask, null), cold, 'an explicit null pin is the same render as none');
 });
 
 test('selectionPrompt is pure: the same inputs render the same bytes, and it never mutates them', () => {

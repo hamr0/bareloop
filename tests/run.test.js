@@ -539,3 +539,25 @@ test('§3 resume: a FLOOR fold stays a floor — a dead run whose spend was only
   assert.equal(end.spendComplete, false,
     'and the TOTAL is a floor too — every round of this attempt being priced does not repair the one before it');
 });
+
+test('§3 resume: a fold of $0 that is NOT exact is still a floor — an unpriced dead leg does not become exact by having spent nothing countable', async () => {
+  // The degenerate fold, and the one the money conjunct got wrong: a leg killed with
+  // EVERY round unpriced sums to 0 and reports `spendComplete: false`. The figure is a
+  // floor of zero, not an exact zero — the dead leg bought rounds nobody could price.
+  // Keying the carry on `spentUsd > 0` read that as "no fold to qualify" and handed
+  // the resumed terminal an exact-looking total over a predecessor that said otherwise.
+  const wd = makePlanWork('plan-zero-floor-fold');
+  const job = planJob();
+  const file = join(wd, 'spine.jsonl');
+  await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider: scriptedProvider([{ text: 'scout' }, { text: 'plan' }]),
+    emit: makeSpine(file), priorSpentUsd: 0, priorSpendComplete: false,
+  });
+  const events = readSpine(file);
+  const start = events.find((e) => e.type === 'job-start');
+  assert.equal(start.priorSpendComplete, false,
+    'the declaration is emitted for the unknown ALONE — a resume of this resume must inherit it, and there is no money field to carry it');
+  assert.equal(events.find((e) => e.type === 'job-end').spendComplete, false,
+    'the unknown rides one-way onto the terminal, exactly as a non-zero floor fold does');
+});

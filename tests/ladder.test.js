@@ -158,14 +158,33 @@ test('the brief names the STALLED shape and the iterations that wrote nothing', 
   assert.doesNotMatch(b, /repeated itself/, 'no repeat happened — the brief must not invent one');
 });
 
-test('the brief says CONVERGING when every gap moved and only idleness struck it out', () => {
+test('the brief never calls an IDLE strike-out converging — the replanner is not handed a self-contradiction', () => {
+  // Both strikes are idleness: the worker wrote nothing, twice. The gaps still
+  // differed (a close re-run can move its own bytes), and reading that as progress
+  // put "no file was written in iteration(s) 1, 2" and "the step was converging"
+  // in one paragraph — handed to the only channel that adapts.
   const c = counter();
   const l = createLadder({ limit: 2, writeCount: c.read });
   l.record({ iteration: 1, gap: '30 errors' });
   l.record({ iteration: 2, gap: '22 errors' });
+  assert.equal(l.struckOut(), true, 'idleness alone really is what ended it — otherwise this proves nothing');
   const b = l.brief();
-  assert.match(b, /converging/, 'every attempt moved the exit output — the planner must be told that');
-  assert.match(b, /2 distinct exit output\(s\) over 2 iteration\(s\)/);
+  assert.match(b, /stalled — no file was written in iteration\(s\) 1, 2/);
+  assert.match(b, /2 distinct exit output\(s\) over 2 iteration\(s\)/, 'the moving trajectory is still stated, as evidence');
+  assert.doesNotMatch(b, /converging/, 'a step that wrote nothing was not converging, whatever its exit bytes did');
+});
+
+test('CONTROL: the converging sentence survives where it is true — no repeat and no idle iteration', () => {
+  // Unreachable at a strike-out BY CONSTRUCTION, and that is the finding: every
+  // strike is a repeat or an idle iteration, so before the gate the sentence could
+  // ONLY ever have fired next to the stall line it contradicted. It is read here on
+  // a ladder that has not struck out, which is the one path that can still reach it.
+  const c = counter();
+  const l = createLadder({ limit: 2, writeCount: c.read });
+  c.wrote(); l.record({ iteration: 1, gap: '30 errors' });
+  c.wrote(); l.record({ iteration: 2, gap: '22 errors' });
+  assert.equal(l.struckOut(), false);
+  assert.match(l.brief(), /Every attempt moved the exit output/, 'every gap novel and every iteration writing — the one shape the sentence describes');
 });
 
 test('the brief never names a file the close did not name — it carries counts and iteration numbers only', () => {

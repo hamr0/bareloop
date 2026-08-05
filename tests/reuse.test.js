@@ -435,6 +435,60 @@ test('R1: a CASUALTY is recorded under its own outcome and does NOT demote', asy
   assert.equal(after.history.at(-1).spendComplete, false, 'the floor travels with the spend (F44)');
 });
 
+/** a PROVEN entry: greens on two distinct patients — the only status a red can drop */
+const PROVEN = () => BRIDGE('alpha', {
+  versions: [
+    { plan: PLAN(), runid: 'ms1', greenAt: '2026-07-27T10:00:00Z', patient: 'aurora-u', costUsd: 1, wallMs: 1000, rounds: 4 },
+    { plan: PLAN(), runid: 'ms2', greenAt: '2026-07-28T10:00:00Z', patient: 'litectx-u', costUsd: 1, wallMs: 1000, rounds: 4 },
+  ],
+  history: [
+    { at: '2026-07-27T10:00:00Z', runid: 'ms1', patient: 'aurora-u', outcome: 'green', failingStage: null, costUsd: 1, spendComplete: true, wallMs: 1000, rounds: 4 },
+    { at: '2026-07-28T10:00:00Z', runid: 'ms2', patient: 'litectx-u', outcome: 'green', failingStage: null, costUsd: 1, spendComplete: true, wallMs: 1000, rounds: 4 },
+  ],
+});
+
+test('R1/D6 DEMOTION TABLE: `escalated` demotes a PROVEN entry; every other non-green outcome keeps its own name and leaves the status alone', async () => {
+  // The rule had ONE guard — `REUSE_GRADED_RED.includes('escalated')` — which is
+  // one-directional: it says the set CONTAINS the demoting outcome and nothing about what
+  // it must not contain. A widened set (`['escalated','step-red','cap-halt']`) survived
+  // the whole suite. This is the other direction, run through the real loop rather than
+  // asserted against the constant: what the registry actually records, and what the
+  // status ladder actually does, per outcome.
+  const run = async (/** @type {string} */ outcome) => {
+    const dir = seed(PROVEN());
+    assert.equal(deriveStatus(PROVEN().history), 'proven', 'the fixture starts proven, so a demotion is visible');
+    const r = await runReuse(runOpts({
+      envelope: ENVELOPE({ bridgeTries: 1 }),
+      registryDir: dir,
+      patient: 'third-patient',
+      selectionProvider: picker({ choice: 'alpha', reason: 'fits' }),
+      runJob: scriptedRuns([{ outcome, closeStage: 'typecheck', spentUsd: 0.4 }]),
+    }));
+    const after = loadBridge(join(dir, 'alpha.json')).bridge;
+    return { row: r.tries[0], last: after.history.at(-1), status: deriveStatus(after.history), versions: after.versions.length };
+  };
+
+  // the ONE graded red: the close judged the tree and the tree failed
+  const esc = await run('escalated');
+  assert.equal(esc.row.verdictClass, 'red');
+  assert.equal(esc.last.outcome, 'red', 'a graded red is recorded as the literal `red` the status ladder reads');
+  assert.notEqual(esc.status, 'proven', 'and it DEMOTES — that is the whole point of the set');
+  assert.equal(esc.versions, 2, 'a red still mints no version');
+
+  // everything else: a stop, a fault or a transport death. None of them is the close
+  // saying anything about this recipe, so none may cost the recipe its status.
+  // `step-red` appears in BOTH spellings on purpose: runJob RETURNS `step-red:<id>` but
+  // writes the BARE `step-red` onto job-end, and the resume reconstruction classifies
+  // from that record — so both strings genuinely reach the classifier.
+  for (const outcome of ['step-red:write-test', 'step-red', 'cap-halt', 'wall-halt', 'provider-red', 'close-red', 'step-stalled', 'pricing-red']) {
+    const c = await run(outcome);
+    assert.equal(c.row.verdictClass, 'casualty', `${outcome}: a casualty is never evidence (F45)`);
+    assert.equal(c.last.outcome, outcome, `${outcome}: the row keeps its OWN name, never flattened to 'red'`);
+    assert.equal(c.status, 'proven', `${outcome}: a proven recipe survives a stop that never graded it`);
+    assert.equal(c.versions, 2, `${outcome}: and nothing is minted either`);
+  }
+});
+
 test('an ALREADY-GREEN tree ends the loop but mints NOTHING — no unearned learning credit', async () => {
   const dir = seed(BRIDGE('alpha'));
   const runs = scriptedRuns([{ outcome: 'already-green' }]); // no plan-accepted: nothing was drafted

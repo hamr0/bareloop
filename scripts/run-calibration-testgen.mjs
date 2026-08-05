@@ -9,6 +9,15 @@
 // extend by up to 3 more runs (still under the $2 calibration cap); if still
 // fewer than 3, STOP and hand the design back.
 //
+// ARCHIVED INSTRUMENT — `capRuns: 1` no longer means one-shot. When this ran, `capRuns`
+// governed the loop's iterations; since the 2-strike progress ladder (PRD v1.46 §4) it
+// is only the close-fix loop's BLIND fallback, for a close whose output carries no
+// number the progress rule can read. Re-running this file as-is against today's library
+// would therefore produce LOOP-TIER rows under a header that says one-shot. The number
+// is left exactly as it ran — an archived instrument is not re-tuned, or its rows stop
+// being the rows it produced — so a re-run needs the protocol re-frozen, not the value
+// edited.
+//
 //   node scripts/run-calibration-testgen.mjs                    # prints hash + plan, spends nothing
 //   node scripts/run-calibration-testgen.mjs --approve <hash> --dry
 //   ANTHROPIC_API_KEY=... node scripts/run-calibration-testgen.mjs --approve <hash>

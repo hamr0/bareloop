@@ -11,6 +11,14 @@
 // Kill-rate/greens are RECORDED, never acceptance (pre-registered axis split).
 // All dollars NOTIONAL (subscription-equivalent) — never pooled with API rows.
 //
+// ARCHIVED INSTRUMENT — the arms' `capRuns` (1 vs 4) no longer governs the loop, so it no
+// longer SEPARATES them. When these rows ran it was the iteration cap; since the 2-strike
+// progress ladder (PRD v1.46 §4) it is only the close-fix loop's BLIND fallback, for a
+// close whose output carries no number the progress rule can read. A re-run against
+// today's library would let the BASELINE arm iterate — the one thing that arm was
+// defined by. The values are left exactly as they ran (an archived instrument stays
+// as-run); a re-run needs the protocol re-frozen, not the numbers edited.
+//
 //   node scripts/run-poc-layer2.mjs                    # prints hashes + plan, spends nothing
 //   node scripts/run-poc-layer2.mjs --approve <baselineHash>,<checkHash>
 

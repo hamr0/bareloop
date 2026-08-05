@@ -14,7 +14,8 @@
 // errors that scrub re-exposed went 2 → 0. Merging the axes did not make the read
 // noisy, it made it WRONG in the opposite direction, and it would have told hamr
 // to abandon a converging run. Here the stages are separate buckets by
-// construction, so the mistake is inexpressible rather than avoided by care.
+// construction, so the mistake is inexpressible ACROSS stages rather than avoided
+// by care — and expressible WITHIN one, which the second KNOWN LIMIT states.
 //
 // Two signals, both mechanical, both off the close's own output:
 //
@@ -35,6 +36,17 @@
 // repo has shipped six times. What bounds the loop while the instrument is blind
 // is `blindCap`: the fixed count this rule replaces, kept as the fallback for
 // exactly the case the new instrument cannot read, and lifted the moment it can.
+//
+// It bounds the CONSECUTIVE RUN of unreadable gradings, not the run's opening. The
+// first spelling asked "has this leg ever compared anything", a one-way latch — and
+// a stage ADVANCE satisfies it on essentially every run that does any work (the
+// verdict() comment below says so about itself). A 27-iteration repro: one advance
+// flipped the latch, every later grading was a numberless red at the same stage
+// (the shipped aurora TESTGEN `verdict` stage), and from there the loop accrued
+// neither a strike nor a blind tick — bounded by money and the wall alone, where the
+// retired count would have stopped it. "Lifted the moment it can read" is the rule,
+// so it must re-arm the moment it cannot: a streak carries its own baseline and
+// binds at exactly the length a blind-from-birth run does (pinned by test).
 //
 // MOTION — the third signal, and it is deliberately not a fourth verdict. W-2's
 // wall halt used to answer "was it progressing" from its own instrument: byte
@@ -91,6 +103,22 @@
 // "flat" costs one conservative stop, a false "converging" costs a top-up spent
 // on a dead run. Never sharpened to chase it (the F49 precedent): the dangerous
 // direction is the other one.
+//
+// KNOWN LIMIT, the accuracy law's own boundary: a series is one bucket PER STAGE
+// NAME, and a stage name is not the same thing as an axis. A close is free to red
+// on two structurally different populations under one name, and the shipped ones
+// do — u-*-close's `typecheck` reds either `reports N error(s) in <scope>` (the
+// in-scope faults) or `the target files are clean but M strict error(s) exist
+// outside them` (a different population entirely, reached only once the first is
+// zero), and `suite-green` has the same shape (`N test(s) now fail` beside a
+// floor). A run that crosses that seam donates both genres to one series, so a
+// 29 → 4 across it reads CONVERGING and recommends a top-up on work that just
+// swapped which wall it is behind — the u-msew1uy5 error, in the one place the
+// bucketing cannot see it. It is stated here rather than parsed around: the fix is
+// a STAGE SPLIT in the closes, which changes spec-adjacent stage names and is
+// hamr's to sign, never a detector taught to tell two prose shapes apart (the same
+// F49 precedent as above — a per-close sharpening is how this reader stops being
+// one reader).
 
 /** The strikes that end the close-fix loop. Shell-owned, exactly where the fixed
  * count was, and the SAME number the step ladder uses — hamr's 2. Validated by a
@@ -187,6 +215,11 @@ export function createTrend({ stageOrder = [], limit = FIX_STRIKE_LIMIT, blindCa
   let iterations = 0;
   let noProgress = 0;
   let comparableEver = false;
+  /** consecutive readings the instrument could not compare, reset by any it could.
+   * CONSECUTIVE and not cumulative: a run that reads, goes blind for a stage, then
+   * reads again is a governed run, and spending its bound on a healed patch would be
+   * the retired count returning through the back door. */
+  let uncomparableRun = 0;
   /** did the close ever get FURTHER through its stages than it had before? Kept
    * separately from the counts because it is the one kind of progress no per-stage
    * number can express — and it is the only evidence a run that never reported the
@@ -252,24 +285,40 @@ export function createTrend({ stageOrder = [], limit = FIX_STRIKE_LIMIT, blindCa
       iterations += 1;
       if (comparable) {
         comparableEver = true;
+        uncomparableRun = 0;
         noProgress = improved ? 0 : noProgress + 1;
+      } else {
+        uncomparableRun += 1;
       }
       // an UNCOMPARABLE reading neither strikes nor repays: it is an absence of
-      // evidence, and the governor must not mint either verdict from one (F6)
+      // evidence, and the governor must not mint either verdict from one (F6). It
+      // does lengthen the blind streak, which is a count of what the instrument
+      // could not read — never a judgment on what the attempt did.
 
       return { iteration: iterations, stage: st, value: v, improved, comparable, noProgress, limit, stageIndex: idx };
     },
 
     /** has the loop run out of ideas — or, while the instrument is blind, out of
-     * the count it replaced? Money and the wall are unchanged and bound it either way. */
+     * the count it replaced? Money and the wall are unchanged and bound it either way.
+     * The blind arm counts the streak PAST its own first reading, the same `- 1` the
+     * blind-from-birth path always used: a streak's opening grade is the baseline the
+     * blind iterations are measured from, so a never-comparable run binds on exactly
+     * the reading it always did. */
     struckOut: () => noProgress >= limit
-      || (!comparableEver && blindCap !== null && iterations - 1 >= blindCap),
+      || (blindCap !== null && uncomparableRun - 1 >= blindCap),
 
     /** the reader's own books. COUNTS AND STAGE NAMES ONLY — no close bytes ever
      * enter a record from here, because the spine is append-only forever. */
     report: () => ({
       iterations, strikes: noProgress, limit,
-      blind: !comparableEver,
+      // "the instrument has nothing comparable IN PLAY", which is the question the
+      // terminal prose branches on — is the blind cap what bounded this loop, or the
+      // strikes? `!comparableEver` alone answered it only for a run blind from birth;
+      // on a run that went blind after one advance it read `false` and the terminal
+      // would have offered "0/2 strikes" as the reason a loop had just been stopped.
+      // A live streak is the same blindness and says so; a leg with no readings yet
+      // is blind on the first clause, exactly as the seed rule requires.
+      blind: !comparableEver || uncomparableRun > 0,
       stages: [...series.entries()].map(([name, vals]) => ({ stage: name, values: [...vals] })),
     }),
 

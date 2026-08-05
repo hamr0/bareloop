@@ -7,6 +7,13 @@
 // A green here is NOT drift (the seed is below bar by measurement, not
 // construction); it is the strongest P-ACT-UP.
 //
+// ARCHIVED INSTRUMENT — the `capRuns` this passes no longer governs the loop. When these
+// rows ran it was the iteration cap; since the 2-strike progress ladder (PRD v1.46 §4) it
+// is only the close-fix loop's BLIND fallback, for a close whose output carries no number
+// the progress rule can read. So a re-run of this file against today's library is NOT the
+// one-attempt instrument its row classes assume. The value is left as it ran — an
+// archived instrument stays as-run — and a re-run needs the protocol re-frozen instead.
+//
 //   node scripts/run-probe-testgen.mjs                    # prints hash + plan, spends nothing
 //   ANTHROPIC_API_KEY=... node scripts/run-probe-testgen.mjs --approve <hash>
 

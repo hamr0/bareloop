@@ -669,8 +669,11 @@ export async function ralph({ middle, close, judge, capRuns, ladder, emit, redac
       }
     }
   }
-  // The FIXED-COUNT exhaustion, reached only without a ladder — today that is the
-  // close-fix loop alone, and its copy is unchanged because its bound is.
+  // The FIXED-COUNT exhaustion, reached only without a ladder. Both callers inside this
+  // package now supply one (the step loop's `createLadder`, the close-fix loop's
+  // progress governor), so the only route left is the public export — kept because it IS
+  // the public export, and because a `capRuns` bound with no reachable exhaustion would
+  // be a bound in name only.
   const spent = /** @type {number} */ (capRuns);
   return exhausted(spent, { capRuns }, { runs: spent, capRuns },
     `${spent}/${spent} runs spent, close still red. Continue, change approach, or stop?`,

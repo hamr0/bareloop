@@ -145,7 +145,12 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // being carried forward — every round of THIS attempt being priced repairs nothing
   // about the one before it. One-way, like `stalled` and `cutMidCall`, and read by
   // `spend()`, so the terminal states a floor instead of an exact-looking total (F6).
-  const priorFloor = spentUsd > 0 && priorSpendComplete === false;
+  // Read off the FLAG alone, never conjoined with the money: a leg killed with every
+  // round unpriced folds $0 and still says `false`, and that is a floor OF zero, not an
+  // exact zero. Gating on `spentUsd > 0` dropped exactly that predecessor's unknown and
+  // handed the resumed terminal an exact-looking total. The param defaults `true`, so a
+  // run nobody resumed is unchanged.
+  const priorFloor = priorSpendComplete === false;
   // W1: did this run ABSORB a stall? The terminal `step-stalled` is the rare case;
   // the common one self-heals (src/stall.js abandons the hung call and reissues),
   // and an abandoned call may already have been billed — a reissue can pay twice
@@ -170,7 +175,10 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // says so machine-readably instead of dressing a floor up as exact. Emitted on
   // EVERY job-end (true when everything was priced) so no consumer ever has to
   // branch on field presence.
-  const spend = () => ({ spentUsd, spendComplete: !unpriced && !stalled && !cutMidCall && !priorFloor });
+  // ONE spelling of the four causes, so the terminal and the in-flight money readout can
+  // never disagree about whether the same run's figure is exact.
+  const spendComplete = () => !unpriced && !stalled && !cutMidCall && !priorFloor;
+  const spend = () => ({ spentUsd, spendComplete: spendComplete() });
   // 1. human-signs-always — before ANY provider call (N1 decision #1)
   if (!checkApproval(rawSpec, approvals)) {
     emit('job-end', { outcome: 'unapproved-spec', detail: 'no approval record matches this exact spec version', ...spend() });
@@ -192,7 +200,9 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
     // re-derive from its own file alone and silently widen the ceiling by everything
     // spent before it. Emitted only when there IS a fold: an absent fold is absent,
     // and a decorative `0` would be indistinguishable from a run nobody folded.
-    ...(spentUsd > 0 ? { priorSpentUsd: spentUsd, priorSpendComplete: !priorFloor } : {}),
+    // A fold of $0 that is NOT exact is still a fold — the unknown is the whole of what
+    // it inherited, and it is the only field that can carry it forward.
+    ...(spentUsd > 0 || priorFloor ? { priorSpentUsd: spentUsd, priorSpendComplete: !priorFloor } : {}),
     ...(typeof priorWallMs === 'number' && Number.isFinite(priorWallMs) && priorWallMs > 0 ? { priorWallMs } : {}),
   });
 
@@ -249,6 +259,7 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
       workdir, provider, nativeProvider, providerFor, emit: meter, capRuns, ...(strikeLimit !== undefined ? { strikeLimit } : {}), closeTimeoutMs, layerRoot, bridge, priorWallMs, resumeSeed, resumeGrades,
       remainingUsd: () => Math.min(shellCapUsd, job.budgetUsd - spentUsd),
       isUnpriced: () => unpriced, // F6: let the plan flow bail in-flight, not just after it returns
+      spendComplete, // …and let its money-halt readout say whether the remaining it quotes is exact
     });
     if (unpriced) return pricingRed();
     if (outcome.startsWith('step-red:')) {

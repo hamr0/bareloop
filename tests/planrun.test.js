@@ -1373,8 +1373,9 @@ test('P: step.attempts is TOLERATED-INERT at the runner too — a stored bridge 
   ]);
   const { events } = await go(wd, provider);
   assert.equal(events.find((e) => e.type === 'plan-validate').ok, true, 'a plan carrying attempts is accepted');
-  const iterations = events.filter((e) => e.type === 'iteration-start' && e.iteration !== undefined);
-  assert.equal(iterations.filter((e) => e.iteration === 2).length >= 1, true,
+  // cut at the STEP boundaries: the close precheck and the fix loop emit the same event
+  // type, so an unscoped filter can read a fix-loop iteration as the step's second one
+  assert.equal(stepIterations(events).filter((e) => e.iteration === 2).length >= 1, true,
     'attempts: 1 bounded nothing — a second iteration ran under a step that declared one');
 });
 
@@ -3126,6 +3127,38 @@ test('§2 a STEP-loop money cut gets the same record — the readout is symmetri
   assert.equal(mh.phase, 'step:write-test');
   assert.match(mh.options.join(' | '), /top up|budgetUsd/i);
   assert.equal(typeof mh.trend, 'string');
+});
+
+test('§2 the money-halt says whether the SPEND behind it is exact — an unknown-floor run\'s "remaining" is a floor too (F6)', async (t) => {
+  // The record states `remainingUsd` to four decimals. That figure is `budget − spent`,
+  // so a run whose spend is a FLOOR (a self-healed stall, a mid-call cut, a resumed leg
+  // inheriting an unpriced predecessor) has a remaining that is a CEILING — and stating
+  // it bare reads as exact. `emitWallHalt` has always carried its honest bound; this is
+  // the same duty on the money side. The four causes live in `runJob`'s ledger, so the
+  // record reads THAT state rather than deriving a second, weaker answer of its own.
+  const run = async (/** @type {(() => boolean)|undefined} */ spendComplete) => {
+    const wd = makePatient(t);
+    const provider = scriptedProvider([
+      { text: 'scout' },
+      { text: PLAN(wd) },
+      { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'nope\n' })] },
+      { text: 'attempt' },
+    ]);
+    const { events, emit } = collector();
+    const jv = validateJob(JOB(wd));
+    let calls = 0;
+    const outcome = await runPlan(jv.job, {
+      workdir: wd, provider, emit, capRuns: 3,
+      remainingUsd: () => (++calls <= 2 ? 1.5 : 0.0001),
+      ...(spendComplete ? { spendComplete } : {}),
+    });
+    assert.equal(outcome, 'cap-halt');
+    return events.filter((e) => e.type === 'money-halt').at(-1);
+  };
+  assert.equal((await run(() => false)).spendComplete, false,
+    'a floor spend makes the remaining a bound, and the record says so instead of quoting it as the number');
+  assert.equal((await run(() => true)).spendComplete, true, 'and an exact run keeps its exact figure — the honest direction points both ways');
+  assert.equal((await run(undefined)).spendComplete, true, 'the field is always present, so no consumer branches on presence');
 });
 
 test('§2 CONTROL: a run that never runs out of money emits NO money-halt record — the readout costs the healthy run nothing', async (t) => {

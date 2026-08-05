@@ -682,6 +682,12 @@ export function readResume(events, { deathAt = null, direct = false, resumableOu
     declaredSpentUsd: typeof ev.priorSpentUsd === 'number' && Number.isFinite(ev.priorSpentUsd) && ev.priorSpentUsd > 0 ? ev.priorSpentUsd : 0,
     declaredWallMs: typeof ev.priorWallMs === 'number' && Number.isFinite(ev.priorWallMs) && ev.priorWallMs > 0 ? ev.priorWallMs : 0,
     declaredComplete: ev.priorSpendComplete !== false,
+    // the ROUND fold, and the one field where absence and zero are different answers.
+    // A declared `null` is the predecessor saying it could not count its own turns, and
+    // it stays unknown forever after (F6); a MISSING field is a spine written before the
+    // declaration existed, or a try nobody resumed — both are honestly zero.
+    declaredRounds: !('priorRounds' in ev) ? 0
+      : (typeof ev.priorRounds === 'number' && Number.isFinite(ev.priorRounds) && ev.priorRounds >= 0 ? ev.priorRounds : null),
     roundsUsd: 0, roundsComplete: true, r1Written: false, jobEnd: null,
     /** @type {any[]} the window's own events, so the SAME `readTry` the live loop uses
      * reads a graded-but-unrecorded try — never a second reader spelling it differently */
@@ -766,19 +772,26 @@ export function readResume(events, { deathAt = null, direct = false, resumableOu
       // reconstructed with the live loop's own reader, and the registry write that the
       // death may have cost is named.
       const read = readTry(open.seen);
+      // the try STOPPED at its own terminal, not at the kill — the process may have gone
+      // on for minutes afterwards writing the box it never finished. The precise answer
+      // is on the record this branch is reading, so the kill time is the FALLBACK for a
+      // terminal whose stamp cannot be parsed, never the first reading.
+      const endedAt = Date.parse(String(open.jobEnd.ts));
+      const stoppedAt = Number.isFinite(endedAt) ? endedAt : died;
       completed.push({
         n: open.n, mode: open.mode, bridge: open.bridge,
         runOutcome: open.jobEnd.outcome, verdictClass: verdictClassOf(String(open.jobEnd.outcome)),
         failingStage: read.failingStage, closeReached: read.closeReached,
         spentUsd: read.spentUsd, spendComplete: read.spendComplete,
         capUsd: head?.perTryBudgetUsd ?? null,
-        wallMs: deathAtKnown && Number.isFinite(open.startedAtMs) ? open.declaredWallMs + (died - open.startedAtMs) : null,
+        wallMs: Number.isFinite(stoppedAt) && Number.isFinite(open.startedAtMs) ? open.declaredWallMs + (stoppedAt - open.startedAtMs) : null,
         wallCapMs: head?.perTryWallMs ?? null,
         rounds: read.rounds, inherited: true, rowLostToKill: true,
       });
       if (open.bridge) tried.push(open.bridge);
       r1Missing = !open.r1Written;
     } else {
+      const windowRounds = readTry(open.seen).rounds;
       restart = {
         n: open.n, mode: open.mode, bridge: open.bridge,
         // WHERE inside the try the kill landed — the plan it accepted and the steps it
@@ -828,6 +841,14 @@ export function readResume(events, { deathAt = null, direct = false, resumableOu
         priorWallMs: deathAtKnown && Number.isFinite(open.startedAtMs)
           ? open.declaredWallMs + Math.max(0, died - open.startedAtMs)
           : open.declaredWallMs,
+        // the ROUNDS the dead attempt bought, so the restarted try's row is read against
+        // the same span its money and its wall already are. Counted with `readTry` — the
+        // one turn-counting rule this file has — never a second arithmetic. Null when
+        // either half is unknown: a fold that cannot be established honestly is not
+        // folded, and the row states the unknown rather than a number it invented (F6).
+        priorRounds: open.declaredRounds !== null && typeof windowRounds === 'number'
+          ? open.declaredRounds + windowRounds
+          : null,
       };
       if (open.bridge) tried.push(open.bridge);
     }
@@ -996,7 +1017,7 @@ export async function runReuse(opts) {
   const runid = opts.runid ?? Date.now().toString(36);
   const resume = isObj(opts.resume) ? /** @type {any} */ (opts.resume) : null;
   /** a try that inherits nothing: the ordinary, non-resumed attempt */
-  const NO_PRIOR = { spentUsd: 0, wallMs: 0, spendComplete: true };
+  const NO_PRIOR = { spentUsd: 0, wallMs: 0, spendComplete: true, rounds: /** @type {number|null} */ (0), grades: /** @type {any[]} */ ([]) };
 
   /** @type {any[]} */
   const tries = [];
@@ -1092,10 +1113,15 @@ export async function runReuse(opts) {
 
   /** the shared per-try execution: run the job, read the spine, write the box (R1).
    * @param {any|null} bridge @param {number} n
-   * @param {{spentUsd: number, wallMs: number, spendComplete: boolean}} [prior] RESUME — what a
-   *   KILLED attempt of this same try already consumed. It is FOLDED into the attempt
-   *   (`runJob`'s own ledger and clock start partly spent) rather than shrinking the caps,
-   *   so the signed per-try numbers stay the numbers hashed and the numbers reported.
+   * @param {{spentUsd: number, wallMs: number, spendComplete: boolean, rounds: number|null, grades: any[]}} [prior]
+   *   RESUME — what a KILLED attempt of this same try already consumed, and what it
+   *   already measured. Money and wall are FOLDED into the attempt (`runJob`'s own ledger
+   *   and clock start partly spent) rather than shrinking the caps, so the signed per-try
+   *   numbers stay the numbers hashed and the numbers reported. `rounds` folds the same
+   *   way but on the ROW alone (nothing enforces a round bound here), and `null` — an
+   *   attempt whose turns could not be counted — is reported, never folded. `grades` are
+   *   the close readings that leg recorded, handed on as the run trend's BASELINES: they
+   *   feed the HALT READOUT alone and spend none of this attempt's bounds.
    * @param {any} [seed] RESUME (v2) — WHERE that attempt was killed (`readResume`'s
    *   `restart.seed`): the plan it accepted and the steps it finished. The fold says how
    *   much of the try's allowance is gone; this says how much of its WORK is done, so the
@@ -1112,7 +1138,10 @@ export async function runReuse(opts) {
       // stays byte-identical. The declaration is what makes a resume OF a resume fold
       // once: the next reader adds this attempt's own rounds to the number stated here
       // instead of re-deriving the whole history and double-billing an abandoned attempt.
-      ...(resumed ? { priorSpentUsd: prior.spentUsd, priorWallMs: prior.wallMs, priorSpendComplete: prior.spendComplete, resumedFrom: resume?.fromRunid ?? runid } : {}),
+      // `priorRounds` rides in that same declaration, INCLUDING when it is null: absence
+      // means "a spine older than this field", and a reader that cannot tell that from a
+      // predecessor's honest unknown would launder the unknown into a zero (F6).
+      ...(resumed ? { priorSpentUsd: prior.spentUsd, priorWallMs: prior.wallMs, priorSpendComplete: prior.spendComplete, priorRounds: prior.rounds, resumedFrom: resume?.fromRunid ?? runid } : {}),
       // WHERE it picks up, on the row's own record: a try that restarts at step 3 of 4 is
       // a materially different attempt from one that restarts at its beginning, and a
       // reader must not have to infer which happened from the absence of a scout.
@@ -1138,6 +1167,12 @@ export async function runReuse(opts) {
         // so a restart of a partly-unpriced attempt came back looking exact. The unknown
         // travels WITH the money it qualifies (F6).
         ...(resumed ? { priorSpentUsd: prior.spentUsd, priorWallMs: prior.wallMs, priorSpendComplete: prior.spendComplete } : {}),
+        // the dead leg's close grades, as the run trend's BASELINES. Same class of
+        // omission the fold above was: computed by `readResume`, declared on the record,
+        // and then not handed to the component whose halt readout is read off it — a
+        // restarted leg would report `flat` on a run that was converging. Only when there
+        // ARE grades: an empty array is the cold path, and the cold path stays identical.
+        ...(prior.grades.length ? { resumeGrades: prior.grades } : {}),
         ...(seed ? { resumeSeed: seed } : {}),
         bridge,
       });
@@ -1153,6 +1188,12 @@ export async function runReuse(opts) {
     // and a row quoting only the restart's minutes against the signed cap would read as
     // a try that ran comfortably inside a wall it had in fact nearly exhausted
     const wallMs = prior.wallMs + (now() - started);
+    // and the try's WHOLE round count, on the same fold and the same reason — a row
+    // reading "$8.59 / 20 rounds" for 113 rounds bought states two numbers measured over
+    // different spans. Unknown on either side stays unknown: an unfoldable count is
+    // reported as null, never as the half of it this leg happens to be able to see (F6).
+    // Cold, `prior.rounds` is 0 and this is exactly `read.rounds`.
+    const rounds = typeof read.rounds === 'number' && typeof prior.rounds === 'number' ? prior.rounds + read.rounds : null;
     const verdictClass = verdictClassOf(outcome);
     const row = /** @type {Record<string, any>} */ ({
       n, mode, bridge: name, runOutcome: outcome, verdictClass,
@@ -1166,8 +1207,8 @@ export async function runReuse(opts) {
       // finished at its cap from one the cap cut off.
       capBound: outcome === 'cap-halt',
       wallMs, wallCapMs: envelope.perTryWallMs, wallBound: outcome === 'wall-halt',
-      rounds: read.rounds, plan: read.plan, bridgeWrite: null,
-      ...(resumed ? { restarted: true, priorSpentUsd: prior.spentUsd, priorWallMs: prior.wallMs } : {}),
+      rounds, plan: read.plan, bridgeWrite: null,
+      ...(resumed ? { restarted: true, priorSpentUsd: prior.spentUsd, priorWallMs: prior.wallMs, priorRounds: prior.rounds } : {}),
     });
     // F6 on the resumed row: when the restart could not say what it spent, the fold is
     // still a KNOWN floor and is kept as one — dropping it would report less money than
@@ -1179,7 +1220,7 @@ export async function runReuse(opts) {
     // else writes a history row and leaves the recipe untouched.
     const record = {
       runid: `${runid}-t${n}`, patient, at: new Date(now()).toISOString(),
-      costUsd: read.spentUsd, spendComplete: read.spendComplete, wallMs, rounds: read.rounds,
+      costUsd: read.spentUsd, spendComplete: read.spendComplete, wallMs, rounds,
       ...(trySpecHash ? { specHash: trySpecHash } : {}),
     };
     if (verdictClass === 'green' && read.plan === null) {
@@ -1396,6 +1437,15 @@ export async function runReuse(opts) {
         spentUsd: typeof rs.priorSpentUsd === 'number' && Number.isFinite(rs.priorSpentUsd) && rs.priorSpentUsd > 0 ? rs.priorSpentUsd : 0,
         wallMs: typeof rs.priorWallMs === 'number' && Number.isFinite(rs.priorWallMs) && rs.priorWallMs > 0 ? rs.priorWallMs : 0,
         spendComplete: rs.priorSpendComplete !== false,
+        // the ROUNDS that attempt bought — folded like the wall so the row spans the same
+        // legs its money already does. `null` is the honest unknown and is NOT folded.
+        rounds: typeof rs.priorRounds === 'number' && Number.isFinite(rs.priorRounds) && rs.priorRounds >= 0 ? rs.priorRounds : null,
+        // the dead leg's close GRADES, carried to the restart's halt readout so it
+        // judges the chain and not just its own leg (readGradeSeed). Baselines only:
+        // `runJob` seeds the RUN trend with them and never the strike governor — "did
+        // this run make progress" and "is this loop out of ideas" are two questions,
+        // and one instrument answering both is how they come to disagree.
+        grades: Array.isArray(rs.grades) ? rs.grades : [],
       }
       : NO_PRIOR;
     const remainingCapUsd = envelope.perTryBudgetUsd - prior.spentUsd;
@@ -1406,7 +1456,10 @@ export async function runReuse(opts) {
       tried: [...tried],
       carriedUsd: resume.carrySpentUsd ?? null, carriedComplete: resume.carrySpendComplete !== false,
       r1Missing: resume.r1Missing === true,
-      restart: rs ? { n: rs.n, mode: rs.mode, bridge: rs.bridge ?? null, priorSpentUsd: prior.spentUsd, priorWallMs: prior.wallMs, priorSpendComplete: prior.spendComplete, remainingCapUsd, remainingWallMs, resumedAt: rs.seed ? { phase: rs.seed.phase, stepsDone: rs.seed.completedSteps.length, stepsPlanned: rs.seed.plan?.steps?.length ?? null } : null } : null,
+      // `gradesInherited` is a COUNT, and only when there is one to state: the seam
+      // carries stage names and numbers, never a close byte — the spine is append-only,
+      // so a gap that crosses here crosses for good.
+      restart: rs ? { n: rs.n, mode: rs.mode, bridge: rs.bridge ?? null, priorSpentUsd: prior.spentUsd, priorWallMs: prior.wallMs, priorSpendComplete: prior.spendComplete, remainingCapUsd, remainingWallMs, resumedAt: rs.seed ? { phase: rs.seed.phase, stepsDone: rs.seed.completedSteps.length, stepsPlanned: rs.seed.plan?.steps?.length ?? null } : null, ...(prior.grades.length ? { gradesInherited: prior.grades.length } : {}) } : null,
       nextTry: rs ? null : startN,
     });
 

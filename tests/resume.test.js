@@ -32,7 +32,7 @@ import { runPlan } from '../src/planrun.js';
 import { runJob } from '../src/run.js';
 import { FIX_STRIKE_LIMIT, readGrade } from '../src/trend.js';
 import { validateJob, jobSpecHash } from '../src/job.js';
-import { makeRegistry, saveBridge } from '../src/bridges.js';
+import { makeRegistry, saveBridge, loadBridge } from '../src/bridges.js';
 import { makeSpine } from '../src/spine.js';
 import { readSpine, scriptedProvider } from './helpers.js';
 
@@ -231,6 +231,25 @@ test('reconstruction: a try whose runJob RETURNED but whose row never landed is 
   assert.equal(withWrite.restart, null);
 });
 
+test('reconstruction: the inherited GRADED row\'s wall is measured to the try\'s own terminal, not to the kill that came minutes later', async () => {
+  // The try STOPPED when its close had its say; what the process did afterwards is not
+  // this try's time. The kill stamp is the only clock a MID-FLIGHT window has, but this
+  // branch is reading a window that landed a `job-end` — the precise answer is on the
+  // record in hand, and quoting the kill instead inflates a row read against a signed cap.
+  const dir = seed(BRIDGE('alpha'));
+  const { events } = await spineOf({
+    registryDir: dir,
+    selectionProvider: picker({ choice: 'alpha', reason: 'a' }),
+    runJob: scriptedRuns([{ outcome: 'escalated', closeStage: 'typecheck', spentUsd: 1.25, rounds: [0.6] }]),
+  });
+  const cut = killedAfter(events, (e) => e.type === 'job-end');
+  const endedAt = Date.parse(cut.at(-1).ts);
+  const r = readResume(cut, { deathAt: endedAt + 600_000 }); // the process lived ten more minutes
+  assert.equal(r.completed.length, 1);
+  assert.ok(r.completed[0].wallMs < 60_000,
+    `the row states the try's own wall (${r.completed[0].wallMs}ms), not the ten minutes the process outlived its verdict`);
+});
+
 test('reconstruction: a run that reached its OWN terminal has nothing to resume, and a GREEN one says so by name', async () => {
   const dir = seed(BRIDGE('alpha'));
   const { events } = await spineOf({
@@ -334,7 +353,7 @@ const recordingRuns = (script) => {
   const fn = async (/** @type {any} */ spec, /** @type {any} */ opts) => {
     const s = script[Math.min(i, script.length - 1)];
     i += 1;
-    calls.push({ spec, bridge: opts.bridge, priorSpentUsd: opts.priorSpentUsd, priorWallMs: opts.priorWallMs, shellCapUsd: opts.shellCapUsd });
+    calls.push({ spec, bridge: opts.bridge, priorSpentUsd: opts.priorSpentUsd, priorWallMs: opts.priorWallMs, shellCapUsd: opts.shellCapUsd, resumeGrades: opts.resumeGrades });
     for (const c of s.rounds ?? [0.25]) opts.emit('worker-round', { kind: 'turn', costUsd: c });
     if (s.plan !== undefined) opts.emit('plan-accepted', { plan: s.plan });
     if (s.closeStage !== undefined) opts.emit('outer-close', { verdict: s.outcome === 'green' ? 'satisfied' : 'red', stage: s.closeStage });
@@ -431,6 +450,110 @@ test('resume: the restart runs under the REMAINDER — prior spend and prior wal
   assert.equal(result.tries[0].capUsd, 5, 'the row is still read against the number the operator signed');
   assert.ok(result.tries[0].wallMs >= 400_000, `the ROW states the try's whole wall too (${result.tries[0].wallMs}) — a row quoting only the restart's minutes would read as a try that ran comfortably inside a wall it had nearly exhausted`);
   assert.equal(result.tries[0].spentUsd, 4.1, 'and the try\'s spend is the WHOLE try — both attempts, never the restart alone');
+});
+
+test('resume: the restart is HANDED the dead leg\'s close grades, so the halt readout spans the chain rather than restarting at this leg\'s first close', async () => {
+  // `readResume` has always COMPUTED `restart.grades` (readGradeSeed) and `runJob`
+  // has always accepted `resumeGrades` — the reuse runner was the one forwarder that
+  // never delivered them (F50's class: a parameter computed, carried past its consumer,
+  // and silently dropped). Without them a restarted leg that re-grades an unchanged tree
+  // reports `flat` — "revise the goal" — on a run that was converging when the money ran
+  // out. The seam is the HALT READOUT only; no strike and no bound is spent by it.
+  const dir = seed(BRIDGE('alpha'));
+  const graded = async (/** @type {any} */ spec, /** @type {any} */ opts) => {
+    opts.emit('worker-round', { kind: 'turn', costUsd: 0.5 });
+    opts.emit('plan-accepted', { plan: PLAN('grading') });
+    opts.emit('fix-loop', { gapBytes: 120 });
+    // the live instrument's own readings — taken verbatim, never re-parsed
+    opts.emit('ladder', { governor: 'close-trend', stage: 'typecheck', value: 12, iteration: 1 });
+    opts.emit('ladder', { governor: 'close-trend', stage: 'typecheck', value: 5, iteration: 2 });
+    opts.emit('job-end', { outcome: 'escalated', spentUsd: 0.5, spendComplete: true });
+    return 'escalated';
+  };
+  const { file, events } = await spineOf({
+    registryDir: dir,
+    selectionProvider: picker({ choice: 'alpha', reason: 'a' }),
+    runJob: graded,
+  });
+  truncateTo(file, killedAfter(events, (e) => e.type === 'ladder' && e.value === 5));
+
+  const runs = recordingRuns([{ outcome: 'green', plan: PLAN('restarted'), closeStage: 'typecheck', spentUsd: 1 }]);
+  const { dead, events: after } = await resumeOnto(file, { registryDir: dir, selectionProvider: picker(), runJob: runs });
+
+  assert.deepEqual(dead.restart.grades, [{ stage: 'typecheck', value: 12 }, { stage: 'typecheck', value: 5 }],
+    'the reader found them (the control: this half already worked)');
+  assert.deepEqual(runs.calls[0].resumeGrades, dead.restart.grades,
+    'and the restart RECEIVES them — computed-but-undelivered is the readout promising a chain the run never gets');
+
+  const rec = after.find((e) => e.type === 'resume-start');
+  assert.equal(rec.restart.gradesInherited, 2, 'the record says HOW MANY baselines crossed the seam');
+  assert.doesNotMatch(JSON.stringify(rec), /suppression|FAILED|gap/i,
+    'counts and stage names only — a close byte that crosses onto an append-only spine crosses for good');
+});
+
+test('CONTROL: a restart with NO grade to inherit hands over nothing and declares nothing — an absent baseline is absent, never a decorative zero', async () => {
+  const dir = seed(BRIDGE('alpha'));
+  const { file, events } = await spineOf({
+    registryDir: dir,
+    selectionProvider: picker({ choice: 'alpha', reason: 'a' }),
+    runJob: scriptedRuns([{ outcome: 'escalated', closeStage: 'typecheck', rounds: [0.8, 0.8], spentUsd: 2 }]),
+  });
+  truncateTo(file, killedAfter(events, (e) => e.type === 'worker-round' && e.costUsd === 0.8));
+
+  const runs = recordingRuns([{ outcome: 'green', plan: PLAN('restarted'), closeStage: 'typecheck', spentUsd: 3 }]);
+  const { events: after } = await resumeOnto(file, { registryDir: dir, selectionProvider: picker(), runJob: runs });
+
+  assert.equal(runs.calls[0].resumeGrades, undefined, 'the cold path stays byte-identical — no empty array to be read as a baseline');
+  assert.equal('gradesInherited' in after.find((e) => e.type === 'resume-start').restart, false);
+});
+
+test('resume: the try row\'s ROUNDS fold across both attempts, like its money and its wall — one row, one span', async () => {
+  // `spentUsd` and `wallMs` have always folded; `rounds` was leg-only, so a restarted
+  // try's registry row quoted the restart's turns against a spend covering both. Three
+  // numbers on one row measured over two different spans is the same class of readout
+  // defect as an exact-looking floor: each is defensible alone and they cannot all be
+  // right together.
+  const dir = seed(BRIDGE('alpha'));
+  const { file, events } = await spineOf({
+    registryDir: dir,
+    selectionProvider: picker({ choice: 'alpha', reason: 'a' }),
+    runJob: scriptedRuns([{ outcome: 'escalated', closeStage: 'typecheck', rounds: [0.5, 0.5, 0.5], spentUsd: 1.5 }]),
+  });
+  const cut = killedAfter(events, (e) => e.type === 'worker-round', 2); // all three bought
+  truncateTo(file, cut);
+  assert.equal(readResume(readSpine(file)).restart.priorRounds, 3, 'the dead attempt\'s turns are counted');
+
+  const runs = recordingRuns([{ outcome: 'green', plan: PLAN('restarted'), closeStage: 'typecheck', rounds: [0.4, 0.4], spentUsd: 2.3 }]);
+  const { result, events: after } = await resumeOnto(file, { registryDir: dir, selectionProvider: picker(), runJob: runs });
+
+  assert.equal(result.tries[0].rounds, 5, 'three the dead attempt bought plus two the restart did — the whole try');
+  assert.equal(result.tries[0].priorRounds, 3, 'and the row names the fold, so the split is readable rather than inferred');
+  assert.equal(after.find((e) => e.type === 'try-start' && e.priorRounds !== undefined).priorRounds, 3,
+    'DECLARED on the spine too, so a resume OF this resume folds once instead of re-deriving');
+  assert.equal(loadBridge(join(dir, 'alpha.json')).bridge.versions.at(-1).rounds, 5,
+    'the minted version inherits the same whole-try figure its cost and wall already do');
+});
+
+test('resume: an UNFOLDABLE round count stays null — a leg whose turns cannot be counted never contributes a number it does not have (F6)', async () => {
+  const dir = seed(BRIDGE('alpha'));
+  const { file, events } = await spineOf({
+    registryDir: dir,
+    selectionProvider: picker({ choice: 'alpha', reason: 'a' }),
+    runJob: scriptedRuns([{ outcome: 'escalated', closeStage: 'typecheck', rounds: [0.5], spentUsd: 1 }]),
+  });
+  truncateTo(file, killedAfter(events, (e) => e.type === 'worker-round'));
+
+  // the restart spends real money and emits no turn signal at all — `readTry` reads that
+  // as an UNKNOWN count, and an unknown plus a known is still unknown
+  const opaque = async (/** @type {any} */ spec, /** @type {any} */ opts) => {
+    opts.emit('plan-accepted', { plan: PLAN('restarted') });
+    opts.emit('outer-close', { verdict: 'satisfied', stage: 'typecheck' });
+    opts.emit('job-end', { outcome: 'green', spentUsd: 2, spendComplete: true });
+    return 'green';
+  };
+  const { result } = await resumeOnto(file, { registryDir: dir, selectionProvider: picker(), runJob: opaque });
+  assert.equal(result.tries[0].rounds, null, 'not the 1 the fold alone could see — a partial count reads as a whole one');
+  assert.equal(result.tries[0].priorRounds, 1, 'the half that IS known is still stated, just never summed into a total');
 });
 
 test('resume: a remainder that cannot fund the restart CAPS honestly — nothing is launched and the stop is the checkpoint', async () => {
@@ -551,7 +674,7 @@ test('resume: the resumed readout states TOTAL spend — the dead legs and the r
   });
   const cut = killedAfter(events, (e) => e.type === 'worker-round' && e.costUsd === 0.5);
   truncateTo(file, cut);
-  const dead = readResume(readSpine(cut ? file : file));
+  const dead = readResume(readSpine(file));
 
   const runs = recordingRuns([{ outcome: 'green', plan: PLAN('done'), closeStage: 'typecheck', spentUsd: 2.75 }]);
   const { result } = await resumeOnto(file, { registryDir: dir, selectionProvider: picker(), runJob: runs });
@@ -947,7 +1070,11 @@ test('runner --resume: the preview counts the attempts the resumed run will ACTU
   const r3 = runner([...uArgs(dir3, '1'), '--resume', file3]);
   assert.equal(r3.status, 0, r3.stderr);
   assert.match(r3.stdout, /nothing left to authorize/);
-  assert.equal(guardMin(r3.stdout), 0, 'no attempt will run, so no attempt is funded');
+  // W-2 on the launch side: zero attempts is NOTHING TO ARM, never "armed for 0min" —
+  // and never the wall's lever, because raising --wall buys no attempt here
+  assert.match(r3.stdout, /NOTHING TO ARM — no attempt will run/, 'the guard line names the true zero');
+  assert.doesNotMatch(r3.stdout, /armed for \d+min/, 'no armed-for banner on a run with nothing to fund');
+  assert.doesNotMatch(r3.stdout, /raise --wall/, 'the wall is not the lever when the tries are what ran out');
 });
 
 // ── module C v2: the STEP-LEVEL checkpoint ──────────────────────────────────
@@ -1257,7 +1384,7 @@ test('checkpoint: a resume that dies BEFORE accepting its reloaded plan reaches 
   // paid $8.18 for. The window is abandoned; the WORK it proved is not.
   const wd = patientDir(['src/a.mjs', 'tests/test_x.mjs']);
   const flow = await recordFlow(wd, twoStepScript(wd));
-  const { file, events } = await spineOfFlow(flow.events);
+  const { events } = await spineOfFlow(flow.events);
   const dead = killedAfter(events, (e) => e.type === 'step-start' && e.step === 'write-test');
   const ts = dead.at(-1).ts;
 
@@ -1284,7 +1411,6 @@ test('checkpoint: a resume that dies BEFORE accepting its reloaded plan reaches 
   ];
   assert.equal(readResume(otherTry).restart.seed, null,
     'try 2 inherits nothing from try 1 — reaching a plan across tries would run one try\'s workflow as another\'s');
-  assert.equal(file.length > 0, true);
 });
 
 test('checkpoint: a step that FAILED its exits is NOT a completed step — only a satisfied exit licenses a skip', async () => {
@@ -1688,6 +1814,23 @@ test('cycle leg 1: the wallet drains INSIDE the fix loop and the run PAUSES deci
   assert.ok(Math.abs(end.spentUsd - rounds.reduce((a, c) => a + c, 0)) < 1e-9,
     `the terminal states the sum of the rounds and nothing else: ${end.spentUsd} vs ${rounds.reduce((a, c) => a + c, 0)}`);
   assert.equal(end.spendComplete, true, 'nothing was in flight and nothing was unpriced — an exact stop is reported exact');
+  assert.equal(mh.spendComplete, true, 'and the money RECORD says the same — one run cannot have two answers about its own figure');
+});
+
+test('§2 the money-halt\'s "remaining" carries its honest bound: a run whose spend is a FLOOR states a ceiling, and says so (F6)', async () => {
+  // `remainingUsd` is `budget − spent`. On a floor spend that is a CEILING, and printing
+  // it to four decimals beside two exact-looking levers reads as the number. `emitWallHalt`
+  // has carried its honest bound since W-2; the money side had none — the state that
+  // answers it lives in the ONE ledger, so the record READS it rather than deriving a
+  // second, weaker answer. The floor here is an inherited one (a predecessor that could
+  // not price its own rounds), which rides in without moving a single figure of this
+  // leg's arithmetic — the cleanest way to see the flag travel and nothing else.
+  const wd = cyclePatient();
+  const { outcome, events } = await moneyLeg1(wd, { priorSpentUsd: 0, priorSpendComplete: false });
+  assert.equal(outcome, 'cap-halt', 'the same stop as the exact arm — only what is KNOWN about its money differs');
+  const mh = events.filter((e) => e.type === 'money-halt').at(-1);
+  assert.equal(mh.spendComplete, false, 'the unknown reaches the readout the operator picks a lever on');
+  assert.equal(events.find((e) => e.type === 'job-end').spendComplete, false, 'the terminal and the record agree');
 });
 
 // ── PRD v1.46 §3 (#2) — THE RESUMED LEG'S TREND JUDGES THE WHOLE CHAIN ───────

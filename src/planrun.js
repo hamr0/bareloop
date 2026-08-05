@@ -158,33 +158,6 @@ ${JSON.stringify(plan, null, 2)}`;
 }
 
 /**
- * The plan-drafting prompt: a schema DESCRIPTION built from the live validator
- * menus — never a copyable example (the drafter must author, not echo; the
- * run.js draftPrompt precedent). Check NAMES only: a check's command is
- * arbiter territory the planner never sees.
- * @param {any} job @param {string} scoutBlob @param {any[]|null} reds
- * @param {number} maxStepRounds @param {string|null} failure replan context
- * @param {string[]|undefined} scopes the offered `tree-changed` menu (`legalScopes`).
- *   Choose-don't-describe (§4): the agent picks a value, never authors a glob and
- *   guesses its shape. Omitted, it derives from the signed fence — the SAME
- *   fail-closed derivation `validatePlan` uses, so prompt and validator can never
- *   disagree about what was offered.
- * @param {{ balanceUsd?: number|null, remainingMs?: number|null, progress?: string }} [materials]
- *   what the run has LEFT (T/A). Omitted → no materials block at all, which is the
- *   pre-T behaviour and keeps every existing caller byte-identical.
- * @param {object|null} [startingDraft] Layer 3 (D4) — a loaded bridge's plan, handed over
- *   as the draft to TWEAK. Omitted/null is the COLD path and renders byte-identically to
- *   the pre-Layer-3 prompt: the block is additive, never surgery on the prompt's interior,
- *   so the two paths cannot drift (the F47 works-both-ways rule). Only the runner passes
- *   it, and only for the FIRST draft phase — a replan drafts from the run's own state.
- * @param {{ seedRed?: string[], priorChecks?: string[] }} [checkFacts] the shape-lottery
- *   gate rules, STATED as well as enforced (the mailbox precedent: a rule only the
- *   validator knows costs a redraft per draft). `seedRed`: preflight-red check names —
- *   Rule A-v2's law (final write step only, framed wide). `priorChecks`: the predecessor
- *   plan's carried checks, replan phase only — Rule B's law (keep every one). Empty/omitted
- *   renders byte-identically to the pre-rules prompt.
- */
-/**
  * Files named in an exit gap that the step's worker never wrote — the mechanical
  * fact behind the prose-prohibition trap (u-msdpuaej, 2026-08-03): a drafter wrote
  * "do not modify any file outside X" into a step whose exit check judges the whole
@@ -220,6 +193,33 @@ export function gapFilesNeverWritten(gap, writes) {
   return out;
 }
 
+/**
+ * The plan-drafting prompt: a schema DESCRIPTION built from the live validator
+ * menus — never a copyable example (the drafter must author, not echo; the
+ * run.js draftPrompt precedent). Check NAMES only: a check's command is
+ * arbiter territory the planner never sees.
+ * @param {any} job @param {string} scoutBlob @param {any[]|null} reds
+ * @param {number} maxStepRounds @param {string|null} failure replan context
+ * @param {string[]|undefined} scopes the offered `tree-changed` menu (`legalScopes`).
+ *   Choose-don't-describe (§4): the agent picks a value, never authors a glob and
+ *   guesses its shape. Omitted, it derives from the signed fence — the SAME
+ *   fail-closed derivation `validatePlan` uses, so prompt and validator can never
+ *   disagree about what was offered.
+ * @param {{ balanceUsd?: number|null, remainingMs?: number|null, progress?: string }} [materials]
+ *   what the run has LEFT (T/A). Omitted → no materials block at all, which is the
+ *   pre-T behaviour and keeps every existing caller byte-identical.
+ * @param {object|null} [startingDraft] Layer 3 (D4) — a loaded bridge's plan, handed over
+ *   as the draft to TWEAK. Omitted/null is the COLD path and renders byte-identically to
+ *   the pre-Layer-3 prompt: the block is additive, never surgery on the prompt's interior,
+ *   so the two paths cannot drift (the F47 works-both-ways rule). Only the runner passes
+ *   it, and only for the FIRST draft phase — a replan drafts from the run's own state.
+ * @param {{ seedRed?: string[], priorChecks?: string[] }} [checkFacts] the shape-lottery
+ *   gate rules, STATED as well as enforced (the mailbox precedent: a rule only the
+ *   validator knows costs a redraft per draft). `seedRed`: preflight-red check names —
+ *   Rule A-v2's law (final write step only, framed wide). `priorChecks`: the predecessor
+ *   plan's carried checks, replan phase only — Rule B's law (keep every one). Empty/omitted
+ *   renders byte-identically to the pre-rules prompt.
+ */
 export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, startingDraft = null, checkFacts = {}) {
   const scopeMenu = Array.isArray(scopes) && scopes.length ? scopes : legalScopes(job.writeScope ?? []);
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
@@ -403,6 +403,11 @@ ${scoutBlob || '(no scout notes)'}`;
  *   `flat` — "revise the goal" — on a run that was converging when its allowance ran
  *   out. Baselines only (src/trend.js's THE SEED): it spends none of this leg's own
  *   bounds and mints none of its strikes. Empty/omitted is the cold path.
+ * @param {() => boolean} [opts.spendComplete] is the run's spend EXACT, or a floor? The
+ *   ledger one level up owns the answer (unpriced rounds, a self-healed stall, a mid-call
+ *   cut, an inherited resume floor); the money-halt readout states it beside the remaining
+ *   it quotes, because `budget − floor` is a CEILING and printing it bare reads as exact
+ *   (F6). Defaults to exact, which is what every pre-record caller was implicitly saying.
  * @param {() => number} [opts.now] the wall clock's time source, injected. The real clock is the
  *   default; a caller supplies this to drive time deterministically (the same seam `createClock`
  *   already exposes — a run's terminal cannot otherwise be exercised without waiting out a cap
@@ -412,7 +417,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   'cap-halt' | 'wall-halt' | 'provider-red' | 'interpreter-red' | 'step-stalled' |
  *   `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [] }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [] }) {
   workdir = resolve(workdir);
   // ONE spelling of the redaction, housed next to the inventory it reads
   // (src/validate.js) — the same helper the isolate verbs scrub the litectx store
@@ -672,6 +677,14 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       meaning: 'not under cap — not "can\'t"',
       budgetUsd: job.budgetUsd,
       remainingUsd: remainingUsd(),
+      // …and whether that figure is EXACT. `remainingUsd` is `budget − spent`, so a run
+      // whose spend is a FLOOR has a remaining that is a CEILING, and quoting it bare to
+      // four decimals reads as the number. The four causes live in the ledger one level
+      // up (unpriced, self-healed stall, mid-call cut, an inherited floor), which is why
+      // this is READ from there and not re-derived here — a second, weaker arithmetic for
+      // the same question is how two instruments come to disagree. `emitWallHalt` has
+      // carried its honest bound since W-2; this is the same duty on the money side.
+      spendComplete: spendComplete(),
       verdict: lastCloseVerdict?.verdict ?? null,
       ...(lastCloseVerdict?.stage ? { stage: lastCloseVerdict.stage } : {}),
       trend: t.trend,
@@ -1701,7 +1714,16 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       const err = /** @type {CategorizedError} */ (e);
       const category = err instanceof HaltError ? 'cap-halt' : (typeof err.category === 'string' ? err.category : 'interpreter-red');
       stepOutcomes.push({ id: step.id, outcome: category });
-      if (category === 'cap-halt') emit('cap-halt', { category, meaning: 'not under cap — not "can\'t"', detail: String(err?.message ?? err) });
+      if (category === 'cap-halt') {
+        emit('cap-halt', { category, meaning: 'not under cap — not "can\'t"', detail: String(err?.message ?? err) });
+        // …and the MONEY record beside it, as every other cap-halt site emits one. A
+        // readout a human gets at three seams and not at the fourth is the readout being
+        // a coincidence of where the stop happened. UNREACHABLE today — nothing in
+        // mkWorker/gate.init/snapshotScope buys a round, so no wallet can drain here —
+        // which is why this is symmetry rather than a fix, and why it stays a `HaltError`
+        // branch instead of a widened one.
+        emitMoneyHalt({ phase: `step:${step.id}`, cutMidCall: false, stepsDone: idx, stepsPlanned: plan.steps.length });
+      }
       emit('escalation', {
         category, decisionReady: true, phase: `step:${step.id}`,
         decision: category === 'cap-halt'

@@ -50,11 +50,23 @@ const arg = (/** @type {string} */ n, /** @type {string|null} */ dflt = null) =>
   const i = process.argv.indexOf(`--${n}`);
   return i === -1 ? dflt : (process.argv[i + 1] ?? dflt);
 };
+// A flag the operator PASSED is never quietly replaced by a default. An ABSENT flag
+// takes its default (`--wall-ms` omitted is the legal unbounded choice, and run-u
+// omits it on a spec with no `maxWallMs`); a flag that is present and unreadable —
+// `0`, a negative, `undefined`, `soon` — is an operator error and stops this process
+// LOUD. Silently defaulting it disarms a trigger while the caller's own banner still
+// claims the bound, which is the guard reading zero and saying nothing: the
+// blind-instrument class, and W-2's case besides (a wall remainder of nothing is a
+// decision, not an unbounded launch).
 const num = (/** @type {string} */ n, /** @type {number|null} */ dflt) => {
   const v = arg(n);
   if (v === null) return dflt;
   const x = Number(v);
-  return Number.isFinite(x) && x > 0 ? x : dflt;
+  if (!Number.isFinite(x) || x <= 0) {
+    console.error(`[u-watchdog] REFUSED: --${n} ${JSON.stringify(v)} is not a positive number of milliseconds. It is NOT defaulted — a defaulted bound disarms this guard's trigger while the run's banner still advertises one. Pass a real remainder, or omit the flag to take the default deliberately (an omitted --wall-ms is the unbounded choice, and the STALE trigger stays armed either way).`);
+    process.exit(2);
+  }
+  return x;
 };
 
 const spine = arg('spine');

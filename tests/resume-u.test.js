@@ -18,6 +18,10 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+// the runner's OWN hash function: the launch-path tests below sign with the real
+// signature rather than a literal, so a spec edit cannot leave them approving a
+// version that no longer exists
+import { jobSpecHash } from '../src/job.js';
 
 const RUNNER = new URL('../scripts/run-u.mjs', import.meta.url).pathname;
 const SPEC = JSON.parse(readFileSync(new URL('../jobs/bareagent-u-types.json', import.meta.url), 'utf8'));
@@ -216,6 +220,58 @@ test('§3 a resume whose allowance is ALREADY SPENT says so plainly — the comm
   assert.match(out, /budgetUsd \$8 is already spent \(over by \$0\.1300\)/);
   assert.match(out, /RAISE the number\(s\)/);
   assert.match(out, /that is a spec edit, so the hash below changes and you sign the new one/);
+});
+
+// ── W-2 on the LAUNCH side: a wall remainder of nothing is a refusal ────────────
+// The preview's warning above covers the money arm; the WALL arm of the same block
+// had never been driven, and past it the runner used to launch anyway and hand the
+// outside guard `--wall-ms 0` — which u-watchdog defaulted to null, arming no
+// deadline at all while this banner still claimed a wall. Doctrine: past the wall
+// nothing new starts, and the stop is decision-ready with the lever named.
+
+/** a halted spine whose OWN clock spans `minutes` — the fold `readResume` computes is
+ * death-minus-start, so this is the only way to drive the wall arm */
+const longSpine = (minutes) => {
+  const t = (/** @type {number} */ m) => new Date(Date.parse('2026-08-04T10:00:00.000Z') + m * 60_000).toISOString();
+  return [
+    { type: 'job-start', job: SPEC.job, specHash: 'old-hash-0000', budgetUsd: SPEC.budgetUsd, shape: 'plan', goal: SPEC.goal, ts: t(0), seq: 1 },
+    { type: 'plan-accepted', plan: { schema: 'plan-v1', steps: [{ id: 'fix-types' }] }, ts: t(1), seq: 2 },
+    { type: 'worker-round', kind: 'turn', costUsd: 0.5, ts: t(2), seq: 3 },
+    { type: 'step-end', step: 'fix-types', outcome: 'green', ts: t(minutes - 1), seq: 20 },
+    { type: 'job-end', outcome: 'wall-halt', spentUsd: 0.5, spendComplete: true, ts: t(minutes), seq: 41 },
+  ];
+};
+
+test('§3 the WALL arm of the exhausted-allowance warning fires on its own, on the time axis', () => {
+  const { code, out } = preview(['--resume', spineFile(longSpine(50))]);
+  assert.equal(code, 0);
+  assert.match(out, /NOTHING LEFT/);
+  assert.match(out, /maxWallMs 45min is already burnt/, 'the TIME lever, named on its own — the money is untouched here');
+  assert.doesNotMatch(out, /budgetUsd .* is already spent/, 'and the money arm does not fire: $0.50 of $8 is not the problem');
+});
+
+test('§3 a resume with NO WALL LEFT is REFUSED at launch, before the key and before the patient', () => {
+  // Driven with the REAL signature, which is what makes this the launch path and not
+  // another preview: past the gate the runner must stop on its own wall rather than
+  // buy a scout and a precheck for a clock that has already run out. The key is empty
+  // in this environment, so a runner that did NOT refuse would fall through to the
+  // API-key check — a different exit-2 with a different message, which is exactly what
+  // the second assertion separates.
+  const { code, out } = preview(['--resume', spineFile(longSpine(50)), '--approve', jobSpecHash(SPEC)]);
+  assert.equal(code, 2, 'an operator-owned stop, on this file\'s convention (0 preview / 2 operator error)');
+  assert.match(out, /WALL ALREADY EXHAUSTED/);
+  assert.doesNotMatch(out, /ANTHROPIC_API_KEY not set/, 'it stops ABOVE the key read — nothing about this needs a secret');
+  assert.match(out, /RAISE maxWallMs/, 'and it names the lever, which is a spec edit and therefore a new signature');
+});
+
+test('§3 CONTROL: a resume with wall left is NOT refused — it goes on to the ordinary launch path', () => {
+  // The should-differ half. Same signature, same code path, one changed number: 20
+  // minutes burnt of 45 leaves 25, and the runner must walk straight past the wall
+  // refusal into the key check it always did.
+  const { code, out } = preview(['--resume', spineFile(longSpine(20)), '--approve', jobSpecHash(SPEC)]);
+  assert.equal(code, 2);
+  assert.doesNotMatch(out, /WALL ALREADY EXHAUSTED/);
+  assert.match(out, /ANTHROPIC_API_KEY not set/, 'the next gate down is where a healthy resume lands');
 });
 
 test('§3 CONTROL: a resume with allowance still on the table does NOT cry wolf', () => {

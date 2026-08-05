@@ -24,7 +24,7 @@
 //     env ANTHROPIC_API_KEY=... node scripts/run-reuse.mjs --job litectx-types \
 //     --registry ../bareloop-patients/bridges --budget 5 --wall 30 --tries 2 --approve <hash>
 //
-// ── THREE DELIBERATE DIFFERENCES FROM run-u.mjs, named rather than papered over ──
+// ── FOUR DELIBERATE DIFFERENCES FROM run-u.mjs, named rather than papered over ──
 //  1. **The patient is NOT reset.** run-u does `git reset --hard SEED && git clean -fd`;
 //     this runner REFUSES on a dirty tree and prints the command instead (the
 //     reuse-preprobe/exec-probe precedent): the reset is operator-performed, so a
@@ -36,7 +36,14 @@
 //     numbers leaves the per-try spec hash-identical, but the approval hash is still its
 //     own number: a hash signed before the count was folded in will not match, and
 //     re-signing once is the whole migration (there is no legacy acceptance path).
-//  3. **The gate audit is CUMULATIVE across tries.** Every try runs in the same workdir,
+//  3. **The leak scan cannot gate the registry write.** run-u scans its spine and REFUSES
+//     to write the bridge on a hit, because its one bridge is written at the end, after
+//     the scan. `runReuse` writes registry rows MID-RUN, per try, so there is no such
+//     moment here and no mid-run scan is built for one (a second, hand-rolled scanner is
+//     how the ONE inventory drifts). The real guard on this path is the plan validator's
+//     own secrets sweep, which runs before any plan executes; the end-of-run scan below
+//     stays what it is — a loud, non-zero-exit READOUT over the spine, not a gate.
+//  4. **The gate audit is CUMULATIVE across tries.** Every try runs in the same workdir,
 //     so one audit file holds them all; it is relocated once, at the end, beside the
 //     spine. Said here because a reader counting writes must know they span tries.
 //
@@ -69,7 +76,7 @@ import { join, resolve } from 'node:path';
 import { runReuse, validateEnvelope, resolveReuse, reuseSpecHash, readResume, resumeTreeGate } from '../src/reuse.js';
 import { jobSpecHash } from '../src/job.js';
 import { makeSpine } from '../src/spine.js';
-import { scanSecrets } from '../src/validate.js';
+import { scanSecrets, redactSecrets } from '../src/validate.js';
 import { registryExists, loadRegistry } from '../src/bridges.js';
 import { renderListing } from '../src/selection.js';
 
@@ -132,9 +139,21 @@ const STRIKE_LIMIT = 2;
 const DEFAULT_TIER_MODELS = { sonnet: 'claude-sonnet-5', haiku: 'claude-haiku-4-5-20251001' };
 
 const argv = process.argv.slice(2);
-const arg = (/** @type {string} */ n) => { const i = argv.indexOf(`--${n}`); return i === -1 ? null : (argv[i + 1] ?? ''); };
-const num = (/** @type {string} */ n) => { const v = arg(n); if (v === null) return null; const x = Number(v); return Number.isFinite(x) ? x : NaN; };
 const die = (/** @type {string} */ msg) => { console.error(msg); process.exit(2); };
+// Every flag here TAKES A VALUE, so a flag with nothing after it is a typo, not a
+// number. `Number('')` is 0 — and 0 is a legal `--tries` (force cold) and a legal
+// `--budget`-adjacent shape, so a trailing `--tries` used to reshape the signed run
+// into something the operator never typed and then hash it as if they had. A missing
+// value is an operator error and stops here; the next token starting with `--` is the
+// same mistake wearing the next flag's name.
+const arg = (/** @type {string} */ n) => {
+  const i = argv.indexOf(`--${n}`);
+  if (i === -1) return null;
+  const v = argv[i + 1];
+  if (v === undefined || v.startsWith('--')) die(`--${n} takes a value and none was given${v === undefined ? '' : ` (the next argument is ${JSON.stringify(v)}, which is another flag)`} — an empty value would be read as a number and would silently reshape the run you are signing`);
+  return /** @type {string} */ (v);
+};
+const num = (/** @type {string} */ n) => { const v = arg(n); if (v === null) return null; const x = Number(v); return Number.isFinite(x) ? x : NaN; };
 
 const jobKey = arg('job') ?? 'litectx-types';
 const target = JOBS[jobKey];
@@ -199,6 +218,12 @@ let dead = null;
 /** the runid the resumed legs keep: the R1 rows point back at a spine FILE, so the id
  * is the file's, never a fresh one (a new id would name a spine that does not exist) */
 let resumedRunid = null;
+/** the DEAD run's kill report, parsed ONCE and defensively (a truncated or mid-write
+ * report is not evidence of anything, least of all of life). Module-scoped because the
+ * archive step below reads the same file: a second bare `JSON.parse` there would abort a
+ * signed resume on a half-written byte the reader above already tolerated. */
+/** @type {any} */
+let deadWatchdog = null;
 if (deadSpineFile !== null) {
   if (!existsSync(deadSpineFile)) die(`--resume: no spine at ${deadSpineFile} — a resume continues a run that happened, and this one left no log`);
   let raw;
@@ -221,10 +246,8 @@ if (deadSpineFile !== null) {
   // one workdir, one registry. The pids come from the run's own `runner-start` record
   // and from the watchdog's kill report.
   const watchdogFile = `${deadSpineFile}.watchdog.json`;
-  /** @type {any} */
-  let watchdog = null;
-  if (existsSync(watchdogFile)) { try { watchdog = JSON.parse(readFileSync(watchdogFile, 'utf8')); } catch { /* an unreadable report is not evidence of life */ } }
-  const pids = new Set([...deadEvents.filter((e) => e.type === 'runner-start' && Number.isInteger(e.pid)).map((e) => e.pid), ...(Number.isInteger(watchdog?.pid) ? [watchdog.pid] : [])]);
+  if (existsSync(watchdogFile)) { try { deadWatchdog = JSON.parse(readFileSync(watchdogFile, 'utf8')); } catch { /* an unreadable report is not evidence of life */ } }
+  const pids = new Set([...deadEvents.filter((e) => e.type === 'runner-start' && Number.isInteger(e.pid)).map((e) => e.pid), ...(Number.isInteger(deadWatchdog?.pid) ? [deadWatchdog.pid] : [])]);
   for (const pid of pids) {
     let alive = true;
     try { process.kill(pid, 0); } catch { alive = false; }
@@ -243,7 +266,7 @@ if (deadSpineFile !== null) {
   // the watchdog's kill record is later, better evidence of how long the dead attempt
   // really lived than its last spine event — and folding an UNDER-count of the wall
   // would hand the restart time the dead attempt already burned
-  const killedAt = Date.parse(String(watchdog?.at ?? ''));
+  const killedAt = Date.parse(String(deadWatchdog?.at ?? ''));
   dead = readResume(deadEvents, Number.isFinite(killedAt) ? { deathAt: killedAt } : {});
   if (!dead.started) die(`--resume: ${deadSpineFile} carries no reuse-start — that is not a reuse run's spine`);
   if (dead.ended) die(`--resume: that run reached its own terminal (${dead.endOutcome}) — there is nothing to resume. Start a fresh run.`);
@@ -327,7 +350,16 @@ if (arg('approve') !== approvalHash) {
     }
     console.log(`  left      ${furtherBridgeTries} further workflow tr${furtherBridgeTries === 1 ? 'y' : 'ies'} of ${ev.envelope.bridgeTries} authorized`
       + `${coldLegsToRun ? ', then the cold draft' : restartIsCold ? ' — the restart IS the cold draft, and the try loop was already left' : ' — the cold draft already ran; this run has nothing left to authorize'}`);
-    console.log(`  guard     the outside watchdog is armed for ${(plannedWallMs / 60000).toFixed(0)}min — the work actually LEFT, not the whole envelope`);
+    if (plannedWallMs > 0) console.log(`  guard     the outside watchdog is armed for ${(plannedWallMs / 60000).toFixed(0)}min — the work actually LEFT, not the whole envelope`);
+    // W-2 on the launch side. Zero left is not "armed for 0min" — it is nothing to arm
+    // a guard for, and it used to reach u-watchdog as `--wall-ms 0`, which defaulted to
+    // null and armed no deadline at all. Said HERE too, before the signature, because a
+    // refusal the operator only meets after signing is a refusal one step too late.
+    // TWO zeros, two levers: a restart with its wall burned wants --wall; a run whose
+    // authorized attempts all ran wants --tries or nothing — naming the wrong lever
+    // would send the operator to re-sign a number that buys no attempt.
+    else if (dead?.restart) console.log('  guard     NO WALL LEFT — the restart burned its whole per-try wall; the run below REFUSES rather than launching (raise --wall, which re-signs)');
+    else console.log('  guard     NOTHING TO ARM — no attempt will run (every authorized attempt already did); the run below REFUSES rather than launching (raise --tries for another attempt, which re-signs, or read the run as it stands)');
     console.log(`  patient   ${target.workdir} — continued AS THE RUN LEFT IT (dirty is expected; it is never reset here)`);
     console.log(`  registry  ${registryDir}`);
     console.log(`  hash      ${approvalHash}`);
@@ -367,6 +399,21 @@ if (arg('approve') !== approvalHash) {
   console.log(`  systemd-inhibit --what=idle:sleep --why="bareloop reuse" env ANTHROPIC_API_KEY=... \\
     node scripts/run-reuse.mjs --job ${jobKey} --registry ${REGISTRY} --budget ${budget} --wall ${wallMin} --tries ${tries}${PIN ? ` --pin ${PIN}` : ''}${FORCE_COLD ? ' --force-cold' : ''} --approve ${approvalHash}`);
   process.exit(arg('approve') === null ? 0 : 1);
+}
+
+// W-2 ("when time is up, keep the grade we already have and stop"), on the launch side.
+// `plannedWallMs` is the work actually LEFT, and a resume can reach zero two ways: the
+// restarted try already burned its whole per-try wall, or every authorized attempt has
+// run. Either way there is no time to start anything in — and launching anyway used to
+// hand the outside guard `--wall-ms 0`, which it defaulted to null: an unbounded run
+// under a banner advertising a wall. The refusal names the lever; nothing here raises a
+// cap, and raising --wall re-signs the hash.
+if (plannedWallMs <= 0) {
+  console.error(`${dead?.restart ? 'WALL ALREADY EXHAUSTED' : 'NOTHING LEFT TO AUTHORIZE'} — nothing is left to run under this envelope (${furtherBridgeTries} further workflow tr${furtherBridgeTries === 1 ? 'y' : 'ies'}, ${coldLegsToRun} cold leg${dead?.restart ? `, restart remainder ${(restartWallMs / 60000).toFixed(1)}min of ${(ev.envelope.perTryWallMs / 60000).toFixed(0)}min` : ''}).`);
+  console.error('The killed run kept every verdict it minted; this process would buy a scout and a precheck before its own clock stopped it. The levers are yours:');
+  console.error('  - RAISE --wall (and/or --tries) — both are in the approval hash, so that is a new signature;');
+  console.error('  - or read the run as it stands and start a fresh one under a new envelope.');
+  process.exit(2);
 }
 
 const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -445,9 +492,17 @@ const worstCloseSilenceMs = CLOSE_TIMEOUT_MS * closeStages;
 // one file answering for two runs. It is ARCHIVED beside the spine rather than deleted:
 // the record of why the first process died is evidence, and evidence is not tidied away.
 if (dead && existsSync(`${spineFile}.watchdog.json`)) {
-  const archived = `${spineFile}.watchdog-${Date.parse(String(JSON.parse(readFileSync(`${spineFile}.watchdog.json`, 'utf8')).at ?? '')) || 'unknown'}.json`;
+  // the report was already parsed DEFENSIVELY when the pids were read; re-parsing it
+  // bare here would throw out of the module on a truncated report and abort a signed
+  // resume at the last gate before the run — the one file whose half-written state this
+  // process is specifically built to survive.
+  const killedAt = Date.parse(String(deadWatchdog?.at ?? ''));
+  // and the suffix must be UNIQUE: a literal `unknown` makes the SECOND unreadable
+  // report overwrite the first, which is evidence destroyed by a naming choice. The
+  // archive moment stands in when the kill moment cannot be read.
+  const archived = `${spineFile}.watchdog-${Number.isFinite(killedAt) ? killedAt : `unknown-${Date.now()}`}.json`;
   renameSync(`${spineFile}.watchdog.json`, archived);
-  console.log(`watchdog  the killed run's own kill record archived → ${archived}`);
+  console.log(`watchdog  the killed run's own kill record archived → ${archived}${Number.isFinite(killedAt) ? '' : ' (its kill time could not be read — the suffix is the ARCHIVE moment, so a second unreadable report cannot overwrite this one)'}`);
 }
 const watchdog = spawn(process.execPath, [
   fileURLToPath(new URL('./u-watchdog.mjs', import.meta.url)),
@@ -481,7 +536,14 @@ const emit = makeSpine(spineFile, { startSeq });
 // the run's own liveness record, so a later `--resume` can ask "is that process still
 // there?" of something better than a guess. Written by the RUNNER because the pid is the
 // runner's, not the library's.
-emit('runner-start', { pid: process.pid, jobKey, model: MODEL, resumedFrom: dead ? resumedRunid : null, argv: argv.filter((a) => a !== '--approve' && a !== arg('approve')) });
+// argv is operator-typed text going onto an APPEND-ONLY log, so it is masked at the
+// WRITE SITE, not audited afterwards: the whole-file `scanSecrets` at the readout runs
+// long after the bytes are permanent, and a log that captures a key captures it forever.
+// The documented launch pattern keeps the key in the environment (`env ANTHROPIC_API_KEY=…
+// node …`, never argv), so this is the residual channel closed, not a live leak plugged.
+// ONE spelling, the shipped inventory's (src/validate.js) — a hand-rolled mask here would
+// be the copy that misses a shape.
+emit('runner-start', { pid: process.pid, jobKey, model: MODEL, resumedFrom: dead ? resumedRunid : null, argv: argv.filter((a) => a !== '--approve' && a !== arg('approve')).map((a) => redactSecrets(a)) });
 
 let result;
 try {

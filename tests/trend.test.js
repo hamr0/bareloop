@@ -243,6 +243,69 @@ test('BLIND BACKSTOP lifts the moment the instrument CAN compare — a convergin
   assert.equal(tr.verdict().trend, 'converging');
 });
 
+test('BLIND BACKSTOP PIN: a blind-from-birth run strikes out on exactly the iteration the retired count bought it, at every cap', () => {
+  // The live-validated path, pinned before the streak rule was written so the rework
+  // could not shift it by one. `blindCap` iterations PAST the baseline, so the bound
+  // fires on reading cap+1 — never earlier (a strike minted on the baseline) and
+  // never later (a free iteration the retired count never bought).
+  for (const cap of [1, 2, 3]) {
+    const tr = createTrend({ stageOrder: STAGES, blindCap: cap });
+    const fired = [];
+    for (let i = 0; i < cap + 2; i += 1) {
+      tr.record({ gap: gapOf('verdict', `FAILED close: no count anywhere, attempt ${'abcde'[i]}`) });
+      fired.push(tr.struckOut());
+    }
+    assert.deepEqual(fired, [...Array(cap).fill(false), true, true],
+      `blindCap ${cap}: the bound must fire on reading ${cap + 1} exactly`);
+  }
+});
+
+test('BLIND BACKSTOP bounds a STREAK, not a birth: one stage advance must not disarm the bound for the rest of the run', () => {
+  // The 27-iteration repro. The blind arm used to hang off `comparableEver`, a
+  // one-way latch — and a stage ADVANCE flips it on essentially every run that does
+  // any work (verdict() says exactly that about itself). After the flip, a close
+  // whose reds carry no number — the shipped aurora TESTGEN `verdict` stage — accrued
+  // neither a strike nor a blind tick, and the fix loop ran bounded by money alone.
+  const tr = createTrend({ stageOrder: STAGES, blindCap: 2 });
+  tr.record({ gap: gapOf('changed-from-seed', 'red: the tree is identical to the seed') });
+  const adv = tr.record({ gap: gapOf('typecheck', 'FAILED, no count') });
+  assert.equal(adv.comparable, true, 'the advance really is the reading that used to latch the flag — otherwise this proves nothing');
+  const fired = [];
+  for (let i = 0; i < 5; i += 1) {
+    tr.record({ gap: gapOf('typecheck', `TESTGEN red: the suite is still not green — ${'abcde'[i]}`) });
+    fired.push(tr.struckOut());
+  }
+  assert.deepEqual(fired, [false, false, true, true, true], 'a blind streak binds at the same length a blind birth does');
+  assert.equal(tr.report().strikes, 0, 'and it binds without minting a strike out of ignorance — the bound is the retired count, not a verdict (F6)');
+  assert.equal(tr.report().blind, true, 'the books say WHICH bound ended it: the terminal prose branches on this field');
+});
+
+test('BLIND BACKSTOP never fires while the instrument is READING: a comparable-throughout run outlives the cap by any margin', () => {
+  const tr = createTrend({ stageOrder: STAGES, blindCap: 1, seed: [{ stage: 'typecheck', value: 40 }] });
+  for (const n of [30, 22, 17, 11, 9, 7, 4, 2, 1]) {
+    tr.record({ gap: gapOf('typecheck', `red: ${n} error(s)`) });
+    assert.equal(tr.struckOut(), false, 'nine converging readings under a cap of 1 — the count is retired wherever the instrument can see');
+  }
+  assert.equal(tr.report().blind, false);
+});
+
+test('BLIND BACKSTOP: a streak the instrument RECOVERS from resets — a blind patch mid-run never bounds a run that reads again', () => {
+  const tr = createTrend({ stageOrder: STAGES, blindCap: 2 });
+  tr.record({ gap: gapOf('typecheck', 'red: 9 error(s)') });
+  tr.record({ gap: gapOf('typecheck', 'red: 4 error(s)') });
+  tr.record({ gap: gapOf('typecheck', 'FAILED, the close crashed') });
+  tr.record({ gap: gapOf('typecheck', 'FAILED, the close crashed again') });
+  assert.equal(tr.struckOut(), false, 'two blind readings is the streak\'s own baseline plus one, not the bound');
+  tr.record({ gap: gapOf('typecheck', 'red: 2 error(s)') });
+  assert.equal(tr.struckOut(), false, 'the streak is CONSECUTIVE — a recovered instrument does not carry the dead run forward');
+  assert.equal(tr.report().blind, false, 'and the books stop calling it blind the moment it compares something again');
+  tr.record({ gap: gapOf('typecheck', 'FAILED, blind once more') });
+  tr.record({ gap: gapOf('typecheck', 'FAILED, and again') });
+  assert.equal(tr.struckOut(), false, 'the new streak starts from its own baseline');
+  tr.record({ gap: gapOf('typecheck', 'FAILED, and again after that') });
+  assert.equal(tr.struckOut(), true, 'and binds at the same length the first one would have');
+});
+
 test('report() carries counts and stage names only — never close output, which is the worker\'s bytes', () => {
   const tr = createTrend({ stageOrder: STAGES, blindCap: 3 });
   tr.record({ gap: gapOf('typecheck', 'red: 2 error(s) — SECRETISH sk-abc\n') });
@@ -368,16 +431,26 @@ test('SEED donates NO ordering signal: a dead leg\'s furthest stage is not this 
     'a stage REGRESSION against a seeded position would mint a strike for arriving — the seed sets numbers, never places');
 });
 
-test('SEED CONTROL: an empty seed (the cold path) reads byte-identically to no seed at all', () => {
-  const cold = createTrend({ stageOrder: STAGES, blindCap: 2 });
-  const seeded = createTrend({ stageOrder: STAGES, blindCap: 2, seed: [] });
-  for (const tr of [cold, seeded]) {
+test('SEED CONTROL: an empty seed reads identically to no seed — and a NON-empty one does not, which is what makes that a control', () => {
+  // The equality half alone proves nothing: `seed` DEFAULTS to `[]`, so both arms hold
+  // the same value and no change to the seed logic could ever separate them — a test
+  // that cannot fail. The positive arm below is the half that can: same recordings,
+  // same options, one real seed, and the verdicts must DIFFER.
+  const record = (/** @type {any} */ tr) => {
     tr.record({ gap: gapOf('typecheck', 'red: 5 error(s)') });
     tr.record({ gap: gapOf('typecheck', 'red: 5 error(s)') });
-  }
-  assert.deepEqual(seeded.report(), cold.report());
-  assert.deepEqual(seeded.verdict(), cold.verdict());
-  assert.equal(seeded.struckOut(), cold.struckOut());
+    return tr;
+  };
+  const cold = record(createTrend({ stageOrder: STAGES, blindCap: 2 }));
+  const empty = record(createTrend({ stageOrder: STAGES, blindCap: 2, seed: [] }));
+  assert.deepEqual(empty.report(), cold.report());
+  assert.deepEqual(empty.verdict(), cold.verdict());
+  assert.equal(empty.struckOut(), cold.struckOut());
+
+  const seeded = record(createTrend({ stageOrder: STAGES, blindCap: 2, seed: SEED }));
+  assert.notDeepEqual(seeded.verdict(), cold.verdict(), 'a real seed MUST move the readout — if it does not, the parameter is not wired in and the equality above is vacuous');
+  assert.equal(cold.verdict().trend, 'flat', 'the cold leg measured nothing but two identical readings');
+  assert.equal(seeded.verdict().trend, 'converging', 'the seeded one reads the CHAIN: 12 → 5 before the halt, then 5 here');
 });
 
 test('SEED ignores unreadable entries: a null value donates nothing, exactly as an unreadable gap does (F6)', () => {

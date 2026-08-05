@@ -29,7 +29,7 @@ import { join } from 'node:path';
 import { validateJob, TOOL_MENU } from '../src/job.js';
 import {
   BRIDGE_SCHEMA, deriveStatus, validateBridge, loadBridge, loadRegistry,
-  mintBridge, appendGreen, appendRed, saveBridge, listingRow, loadGate,
+  mintBridge, appendGreen, appendRed, saveBridge, listingRow, loadGate, registryExists,
 } from '../src/bridges.js';
 
 const clone = (/** @type {any} */ o) => JSON.parse(JSON.stringify(o));
@@ -694,6 +694,114 @@ test('consolidate refuses a file it cannot read as a probe-era bridge — never 
   assert.equal(r.status, 2);
   assert.match(r.stderr, /refusing to guess/);
   assert.deepEqual(readdirSync(dir), []);
+});
+
+// ---------------------------------------------------------------------------
+// the ONE-TIME patient-slug migration, driven as a real process, exactly like the
+// consolidation battery above. It rewrites the field `deriveStatus` COUNTS, so a
+// silent half-migration is a status nobody paid for — and it shipped with no test.
+// ---------------------------------------------------------------------------
+
+const MIGRATE = new URL('../scripts/migrate-bridge-patient-slugs.mjs', import.meta.url).pathname;
+const migrate = (args) => spawnSync(process.execPath, [MIGRATE, ...args], { encoding: 'utf8' });
+/** every file in a registry, by name → bytes: the only way to assert a dry run
+ * touched NOTHING rather than "wrote something that happens to read the same" */
+const snapshot = (dir) => Object.fromEntries(readdirSync(dir).sort().map((f) => [f, readFileSync(join(dir, f), 'utf8')]));
+
+/** a registry holding ONE entry greened on the SAME physical patient under BOTH
+ * spellings — the drift the migration exists to repair, and the only shape in which
+ * the status actually moves. */
+function driftedRegistry(t) {
+  const dir = tmp(t, 'migrate-');
+  const b = mut(BRIDGE, (x) => {
+    x.versions = [
+      { ...x.versions[0], patient: 'litectx-u' },
+      { ...clone(x.versions[0]), runid: 'ms4bbbbb', greenAt: '2026-07-29T00:00:00.000Z', patient: 'litectx-u-bareloop' },
+    ];
+    x.history = [
+      { ...x.history[0], patient: 'litectx-u' },
+      { ...clone(x.history[0]), runid: 'ms4bbbbb', at: '2026-07-29T00:00:00.000Z', patient: 'litectx-u-bareloop' },
+    ];
+  });
+  const w = saveBridge(dir, b);
+  assert.equal(w.ok, true, w.reds.map((x) => `${x.code}:${x.path}`).join(', '));
+  // the premise: BEFORE the migration the two spellings read as two instances
+  assert.equal(deriveStatus(loadRegistry(dir).bridges[0].history), 'proven', 'the drift really does mint a proven — otherwise this fixture tests nothing');
+  return dir;
+}
+
+test('migrate: refuses without a registry directory, and refuses one that is not a registry', (t) => {
+  const r = migrate([]);
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /registry DIRECTORY is required/);
+  const notADir = join(tmp(t, 'migrate-notdir-'), 'file.json');
+  writeFileSync(notADir, '{}');
+  assert.equal(migrate([notADir]).status, 2);
+});
+
+test('migrate --dry-run leaves the registry BYTE-IDENTICAL while reporting the same rewrite', (t) => {
+  const dir = driftedRegistry(t);
+  const before = snapshot(dir);
+  const r = migrate([dir, '--dry-run']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /would write/);
+  assert.match(r.stdout, /proven → candidate/, 'the dry run states the consequence it is not applying');
+  assert.deepEqual(snapshot(dir), before, 'a dry run touches nothing — not one byte');
+});
+
+test('migrate collapses the two spellings and the status DROPS proven → candidate (D6 counts patients)', (t) => {
+  const dir = driftedRegistry(t);
+  const r = migrate([dir]);
+  assert.equal(r.status, 0, r.stderr);
+  const reg = loadRegistry(dir);
+  assert.deepEqual(reg.reds, [], 'the migrated file still reads as a valid entry');
+  const b = reg.bridges[0];
+  assert.deepEqual(b.versions.map((v) => v.patient), ['litectx-u', 'litectx-u'], 'BOTH row kinds carry patient, and both are migrated');
+  assert.deepEqual(b.history.map((h) => h.patient), ['litectx-u', 'litectx-u']);
+  assert.equal(deriveStatus(b.history), 'candidate', 'one physical patient greened twice proves nothing — that is the false proven this migration retires');
+  assert.equal(listingRow(b).status, 'candidate');
+  // idempotent: a second pass finds nothing left to do and writes nothing
+  const after = snapshot(dir);
+  const again = migrate([dir]);
+  assert.equal(again.status, 0, again.stderr);
+  assert.match(again.stdout, /unchanged/);
+  assert.deepEqual(snapshot(dir), after);
+});
+
+test('migrate REFUSES a file whole rather than half-migrating it: a patient that strips to nothing', (t) => {
+  const dir = tmp(t, 'migrate-empty-');
+  const b = mut(BRIDGE, (x) => {
+    x.versions[0].patient = '-bareloop';
+    x.history[0].patient = '-bareloop';
+  });
+  assert.equal(saveBridge(dir, b).ok, true);
+  const before = snapshot(dir);
+  const r = migrate([dir]);
+  assert.equal(r.status, 1, 'a refused file is a non-zero exit — the operator must not read it as a clean pass');
+  assert.match(r.stderr, /REFUSED/);
+  assert.match(r.stderr, /empty string/);
+  assert.deepEqual(snapshot(dir), before, 'the file is left untouched, not half-rewritten');
+});
+
+test('migrate SKIPS an entry whose name disagrees with its filename — the write would land elsewhere', (t) => {
+  const dir = tmp(t, 'migrate-mismatch-');
+  const b = mut(BRIDGE, (x) => { x.history[0].patient = 'litectx-u-bareloop'; x.versions[0].patient = 'litectx-u-bareloop'; });
+  writeFileSync(join(dir, 'not-the-name.json'), `${JSON.stringify(b, null, 2)}\n`);
+  const before = snapshot(dir);
+  const r = migrate([dir]);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /SKIPPED/);
+  assert.match(r.stderr, /does not match the filename/);
+  assert.deepEqual(snapshot(dir), before, 'nothing is written, and nothing is re-homed under the name inside the file');
+});
+
+test('registryExists: a FILE is not a registry, and a missing path is not one either', (t) => {
+  const dir = tmp(t, 'registry-exists-');
+  const file = join(dir, 'entry.json');
+  writeFileSync(file, '{}');
+  assert.equal(registryExists(dir), true, 'a real directory is the only true case');
+  assert.equal(registryExists(file), false, 'a file that EXISTS is still not a directory — every caller then writes entries into a path that cannot hold them');
+  assert.equal(registryExists(join(dir, 'nope')), false);
 });
 
 test('loadGate fails CLOSED on malformed inputs and never throws', () => {
