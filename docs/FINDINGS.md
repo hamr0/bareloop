@@ -5473,6 +5473,17 @@ termination claim is to run the loop.
   on the job that produced F38/F39/F46/F47, so splitting it is not cosmetic; it is also a
   stage-name change inside signed TESTGEN specs, which is the same spec-hash territory the
   `u-*` split was.
+- **The split's COST, measured — the close walk runs `tsc` and `npm test` TWICE.** Each stage
+  is its own process spawn, so nothing is memoizable across them: `typecheck` and
+  `typecheck-outside` each call `strictErrors()`, and `tests-kept` and `suite-green` each call
+  `suite()`. Measured on the two patients: pulselog-u `tsc` 7.84s + `npm test` 8.28s = **+16s
+  per close walk**; baremobile-u `tsc` 10.22s + `npm test` 28.15s = **+38s**. Not a defect and
+  no code changed: the guards scale with the stage count on their own — `scripts/run-u.mjs`
+  reads `closeStages` off `spec.close.length` and `src/clock.js` sets the deadline at
+  `maxWallMs + closeStages × closeTimeoutMs`, so both the outside watchdog's stale window and
+  the run's own wall widened with the split — and W-2 means the close never counts against the
+  wall in the first place. Recorded because a known cost is recorded: the split bought accuracy
+  and paid seconds per iteration for it, and the number belongs beside the decision.
 - **`scripts/types-close.mjs` — deliberately AS-RUN.** Frozen screening infrastructure with
   five populations under its stages. It graded a closed screen; re-cutting it now would edit
   the instrument a finished measurement was taken with, so it stays exactly as it ran, named

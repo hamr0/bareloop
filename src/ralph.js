@@ -471,6 +471,9 @@ export const CLOSE_FAULTS = Object.freeze({
  *   never authors its judge any more than its close.
  * @param {number} [opts.capRuns] budget: max middle runs. Required UNLESS `ladder`
  *   is supplied — the two exhaustion rules are alternatives, never both at once.
+ *   The "unless" is ENFORCED at entry (a param guard that throws), not merely
+ *   documented: an optional-in-the-contract bound with nothing checking it made a
+ *   loop that never ran report a governance stop that never happened.
  * @param {LoopGovernor} [opts.ladder]
  *   the PROGRESS governor (src/ladder.js) that replaces the fixed count for a plan
  *   STEP's micro-loop. With it, the loop is bounded by strikes rather than by a
@@ -507,6 +510,25 @@ export const CLOSE_FAULTS = Object.freeze({
  * @returns {Promise<'green'|'escalated'>}
  */
 export async function ralph({ middle, close, judge, capRuns, ladder, emit, redact, closeTimeoutMs, cwd, expect, judged, gapKeep, workerWrites }) {
+  // PARAM GUARD (the BA-4 class — a caller's malformed argument, which is the one
+  // thing this shell throws for; a WORKER's bad reach comes back as a refusal
+  // RESULT instead, and that rule is about feedback, not about the API contract).
+  // `capRuns` became optional in this signature when `ladder` arrived, and nothing
+  // enforced the "unless". MEASURED with neither supplied: `1 <= undefined` is
+  // false, so the middle ran 0 times and ralph still emitted `cap-halt` and an
+  // escalation reading `undefined/undefined runs spent, close still red` — a
+  // governance stop narrated for a run that never happened, on the public export.
+  // A bound that reports halting a loop it never entered is exactly the
+  // blind-instrument class this repo keeps paying for, so the malformed call dies
+  // at the door instead of minting a record. The message names BOTH alternatives:
+  // either one repairs the call, and naming one would send the caller to the wrong
+  // repair.
+  if (!ladder && !(Number.isInteger(capRuns) && /** @type {number} */ (capRuns) > 0)) {
+    // quoted only for a string, so `"3"` reads as the type error it is while
+    // `NaN`/`undefined` read as themselves (JSON.stringify renders both as a lie)
+    const got = typeof capRuns === 'string' ? JSON.stringify(capRuns) : String(capRuns);
+    throw new Error(`ralph: capRuns must be a positive integer (got ${got}) unless a \`ladder\` governor is supplied — they are alternative exhaustion rules and a loop with neither cannot stop honestly`);
+  }
   emit('run-start', {
     ...(ladder ? { strikeLimit: ladder.report().limit } : { capRuns }),
     close: judge ? 'judge:injected' : /** @type {string[]} */ (close).join(' '),

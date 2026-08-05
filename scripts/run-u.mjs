@@ -129,12 +129,16 @@ const RESUME = arg('resume');
  * resumable — a green is done, and a red is an answer. */
 const RESUMABLE_HALTS = ['cap-halt', 'wall-halt'];
 const die = (/** @type {string} */ m) => { console.error(m); process.exit(2); };
-const spineDirFor = join(resolve(WORKDIR), '..', target.spine);
+/** the patient's tree, and the spine directory beside it — derived ONCE, here, because
+ * both the RESUME reader below and the live run further down need them. Two spellings of
+ * one path is how `--resume` comes to read a different directory than the run writes. */
+const wd = resolve(WORKDIR);
+const spineDir = join(wd, '..', target.spine);
 /** `--resume` takes the runid (the conventional `<spine dir>/u-<runid>.jsonl`) or an
  * explicit path — the path form is what makes these gates testable without touching
  * an operator's real spine directory. */
 const deadSpineFile = RESUME == null ? null
-  : (RESUME.includes('/') || RESUME.endsWith('.jsonl') ? resolve(RESUME) : join(spineDirFor, `u-${RESUME}.jsonl`));
+  : (RESUME.includes('/') || RESUME.endsWith('.jsonl') ? resolve(RESUME) : join(spineDir, `u-${RESUME}.jsonl`));
 /** @type {any} */
 let dead = null;
 if (deadSpineFile !== null) {
@@ -267,8 +271,8 @@ if (dead && RESUME_WALL_MS !== null && RESUME_WALL_MS <= 0) {
 const apiKey = process.env.ANTHROPIC_API_KEY;
 if (!apiKey) { console.error('ANTHROPIC_API_KEY not set (secrets load from the environment — never the tree)'); process.exit(2); }
 
-const wd = resolve(WORKDIR);
-const spineDir = join(wd, '..', target.spine);
+// `wd`/`spineDir` are derived once, above the resume reader that needs them; only the
+// directory's CREATION belongs here, after the preview/approval gates have exited.
 mkdirSync(spineDir, { recursive: true });
 const runid = Date.now().toString(36);
 const spineFile = join(spineDir, `u-${runid}.jsonl`);

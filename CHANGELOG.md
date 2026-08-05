@@ -8,6 +8,15 @@ feature lands, **patch** = docs, fixes, scaffolding.
 ## [Unreleased]
 
 ### Changed
+- **`ralph()` now REFUSES a call with no exhaustion rule** (public API). `capRuns` became
+  optional in the signature when the `ladder` governor arrived — *"required unless `ladder` is
+  supplied"* — and nothing enforced the "unless". With neither, `1 <= undefined` is false: the
+  middle ran **zero** times and the call still returned `escalated` after emitting `cap-halt`
+  and an escalation reading `undefined/undefined runs spent, close still red` — a governance
+  stop narrated for a loop that was never entered. A param guard at entry now throws, naming
+  both alternatives (either one repairs the call). `capRuns` must be a positive integer;
+  `0`, `2.5`, `'3'`, `null` and `NaN` are refused the same way. **No shipped path changes** —
+  both in-library callers (the step loop and the close-fix loop) pass a `ladder`.
 - **ONE progress instrument for both governance halts.** The wall halt used to run its own
   reader — byte equality of the last two close gaps, reporting `stalled` / `moving` / `unknown`
   beside the money halt's `flat` / `converging` / `unknown` on the same run. Two readers for one

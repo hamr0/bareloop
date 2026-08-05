@@ -21,10 +21,16 @@
 //      and the real new red lines.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { basename, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createTrend, readGrade } from '../src/trend.js';
 import { validateJob } from '../src/job.js';
+
+/** THIS checkout's scripts/, derived from the test file's own location — one
+ * derivation, used everywhere below. */
+const SCRIPTS_DIR = fileURLToPath(new URL('../scripts/', import.meta.url));
 
 /** every shipped u-close, paired with the spec whose close it implements */
 const PAIRS = readdirSync('jobs')
@@ -33,14 +39,29 @@ const PAIRS = readdirSync('jobs')
   .filter((p) => Array.isArray(p.job.close))
   .map((p) => {
     // the script is READ OFF the spec's own cmd, never hardcoded here: a test
-    // that names the pairing itself cannot catch the pairing drifting
+    // that names the pairing itself cannot catch the pairing drifting.
+    //
+    // Only the BASENAME is the pairing. A signed spec's `cmd` is an absolute path
+    // on the machine that signed it (`node /home/…/bareloop/scripts/u-x-close.mjs
+    // <stage>`), and that is spec content — changing one flips its hash — so the
+    // spec is right and resolving its prefix verbatim is what was wrong: CI checks
+    // this repo out somewhere else entirely and read 12 of these tests ENOENT on the
+    // runner while all 20 passed on the signing machine. The directory is THIS
+    // checkout's; the prefix in the cmd is one machine's accident.
     const m = /(\S*u-[a-z]+-close\.mjs)/.exec(p.job.close[0]?.cmd ?? '');
-    return m ? { ...p, script: m[1] } : null;
+    return m ? { ...p, name: basename(m[1]), script: join(SCRIPTS_DIR, basename(m[1])) } : null;
   })
   .filter(Boolean);
 
 test('the sweep found the shipped u-closes (an empty sweep would pass vacuously)', () => {
   assert.ok(PAIRS.length >= 6, `expected every u-close spec, saw ${PAIRS.length}: ${PAIRS.map((p) => p.spec)}`);
+});
+
+test('every spec-named close exists in THIS checkout (a pairing that resolves to nothing must RED, never filter away)', () => {
+  for (const { spec, name, script } of PAIRS) {
+    assert.ok(existsSync(script),
+      `${spec} runs ${name}, which is not in this repo's scripts/ (looked in ${SCRIPTS_DIR}) — a spec whose close is missing is a broken close, and a sweep that silently drops it guards nothing`);
+  }
 });
 
 // ── 1. the law, over the real close source ──────────────────────────────────
@@ -60,14 +81,14 @@ const stageBlocks = (/** @type {string} */ src) => {
 const countedReds = (/** @type {string} */ body) =>
   (body.match(/out\(`red:[^`]*`\)/g) ?? []).filter((l) => l.includes('${'));
 
-for (const { spec, script } of PAIRS) {
-  test(`${script}: no stage reds on two populations (F84 — one population per stage)`, () => {
+for (const { spec, name, script } of PAIRS) {
+  test(`${name}: no stage reds on two populations (F84 — one population per stage)`, () => {
     const blocks = stageBlocks(readFileSync(script, 'utf8'));
-    assert.ok(blocks.length >= 5, `${script}: expected the split stage list, saw [${blocks.map((b) => b.name)}]`);
+    assert.ok(blocks.length >= 5, `${name}: expected the split stage list, saw [${blocks.map((b) => b.name)}]`);
     for (const b of blocks) {
       const reds = countedReds(b.body);
       assert.ok(reds.length <= 1,
-        `${script} stage "${b.name}" reports ${reds.length} measured populations under one stage name — split it:\n  ${reds.join('\n  ')}`);
+        `${name} stage "${b.name}" reports ${reds.length} measured populations under one stage name — split it:\n  ${reds.join('\n  ')}`);
     }
     assert.ok(spec, 'the pair is real');
   });
@@ -79,7 +100,18 @@ for (const { spec, script } of PAIRS) {
 test('the one-population check FAILS on the pre-split close source (the defect was real and this test can see it)', () => {
   let before;
   try { before = execFileSync('git', ['show', 'f2be2b6:scripts/u-bareagent-close.mjs'], { encoding: 'utf8' }); }
-  catch { return; } // a shallow/exported tree has no history to read; the live checks above still bind
+  catch (e) {
+    // NEVER a silent `return`. This guard's whole job is proving the check above CAN
+    // fail, and a skip is indistinguishable from a pass in the output: it reported
+    // `ok` on the very CI run where twelve of its siblings were dying, because
+    // `actions/checkout` clones at fetch-depth 1 and this object was not on the
+    // runner. An inert can-it-fail guard is worse than none — it certifies the check
+    // it never ran. Both workflows now check out with `fetch-depth: 0`; if this ever
+    // fires again the history is genuinely unreachable and that is a real stop.
+    assert.fail(`the pre-split close source is unreadable, so this guard could NOT run: ${e.message}\n`
+      + 'It reads `f2be2b6:scripts/u-bareagent-close.mjs` — the real negative, straight out of git. '
+      + 'A shallow clone is the known cause: both .github/workflows/{ci,publish}.yml must keep `fetch-depth: 0` on their checkout step.');
+  }
   const mixed = stageBlocks(before).filter((b) => countedReds(b.body).length > 1).map((b) => b.name);
   assert.deepEqual(mixed.sort(), ['suite-green', 'typecheck'],
     'the pre-split close mixed exactly two stages — if this stops holding, the check above is no longer measuring what it claims');
@@ -87,8 +119,8 @@ test('the one-population check FAILS on the pre-split close source (the defect w
 
 // ── 2. spec ↔ script agreement, by spawning the real close ──────────────────
 
-for (const { spec, job, script } of PAIRS) {
-  test(`${script} declares exactly ${spec}'s stage list, in order`, () => {
+for (const { spec, job, name, script } of PAIRS) {
+  test(`${name} declares exactly ${spec}'s stage list, in order`, () => {
     // an unknown stage is an INSTRUMENT STOP (97), never a verdict — spawnSync,
     // because a non-zero exit is the expected result here, not a harness error
     const r = spawnSync('node', [script, '__not-a-stage__'], { encoding: 'utf8' });
@@ -135,7 +167,7 @@ const FLOOR_RED = "BAREAGENT red: 1040 tests executed, below the seed's 1044 —
 const FAIL_RED = 'BAREAGENT red: 3 test(s) now fail — a type annotation must describe what the code already does';
 
 test('the four red lines used below are the ones the shipped close actually emits', () => {
-  const src = readFileSync('scripts/u-bareagent-close.mjs', 'utf8');
+  const src = readFileSync(join(SCRIPTS_DIR, 'u-bareagent-close.mjs'), 'utf8');
   for (const frag of [
     'red: tsc --strict reports ${inScope.length} error(s) in ${SCOPE.join(\', \')}',
     'red: ${outside.length} strict error(s) outside ${SCOPE.join(\', \')}, above the seed\'s ${OUTSIDE_MAX}',
