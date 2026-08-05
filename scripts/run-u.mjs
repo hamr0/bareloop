@@ -210,6 +210,21 @@ if (arg('approve') !== specHash) {
     else if (sd.phase === 'close') console.log(`  at       the close and its fix loop — all ${sd.plan.steps.length} step(s) are done and are SKIPPED; the close re-runs for no tokens`);
     else console.log(`  at       step ${sd.completedSteps.length + 1} of ${sd.plan.steps.length} ${JSON.stringify(sd.plan.steps[sd.completedSteps.length]?.id ?? '(unknown)')} — ${sd.completedSteps.length} already finished and SKIPPED, not re-paid`);
     if (sd) console.log('           the plan is reloaded from that run\'s own spine: no re-scout, no re-draft');
+    // WHAT IT INHERITS as a trend baseline. Without this line the resumed run's
+    // halt readout can name a direction the leg itself never measured, and a reader
+    // has no way to tell that the number came from the leg before it.
+    const gs = dead.restart.grades ?? [];
+    // grouped PER STAGE and rendered `stage a → b`, the same spelling src/trend.js's
+    // own readout uses — a second way of writing one series is a second way of reading
+    // it, and the accuracy law is that a series belongs to one stage
+    const byStage = new Map();
+    for (const g of gs) {
+      const k = g.stage ?? '(unstaged)';
+      if (!byStage.has(k)) byStage.set(k, []);
+      byStage.get(k).push(g.value);
+    }
+    if (gs.length) console.log(`  trend    ${gs.length} close grade(s) inherited as baselines (${[...byStage].map(([k, vs]) => `${k} ${vs.join(' → ')}`).join('; ')}) — the halt readout spans BOTH legs`);
+    else console.log('  trend    no close grade to inherit — this leg\'s readout is judged on its own evidence');
     console.log('  patient  continued AS THE RUN LEFT IT — NOT reset to the seed');
     // The commonest resume there will ever be is the one straight after a money cut,
     // and on THAT spine the remainder is zero or negative by definition — the run
@@ -381,6 +396,11 @@ try {
       priorSpendComplete: dead.restart.priorSpendComplete,
       priorWallMs: dead.restart.priorWallMs,
       ...(dead.restart.seed ? { resumeSeed: dead.restart.seed } : {}),
+      // and the dead leg's own close GRADES, so this leg's halt readouts judge the
+      // whole chain rather than the leg. A leg that re-grades an unchanged tree is
+      // flat on its own evidence; the RUN — which is what the top-up decision is
+      // about — may have been converging when the allowance ran out.
+      ...(dead.restart.grades?.length ? { resumeGrades: dead.restart.grades } : {}),
     } : {}),
   });
 } finally {

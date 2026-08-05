@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url';
 import { readResume, runReuse, resolveReuse, reuseSpecHash } from '../src/reuse.js';
 import { runPlan } from '../src/planrun.js';
 import { runJob } from '../src/run.js';
-import { FIX_STRIKE_LIMIT } from '../src/trend.js';
+import { FIX_STRIKE_LIMIT, readGrade } from '../src/trend.js';
 import { validateJob, jobSpecHash } from '../src/job.js';
 import { makeRegistry, saveBridge } from '../src/bridges.js';
 import { makeSpine } from '../src/spine.js';
@@ -1690,6 +1690,116 @@ test('cycle leg 1: the wallet drains INSIDE the fix loop and the run PAUSES deci
   assert.equal(end.spendComplete, true, 'nothing was in flight and nothing was unpriced — an exact stop is reported exact');
 });
 
+// ── PRD v1.46 §3 (#2) — THE RESUMED LEG'S TREND JUDGES THE WHOLE CHAIN ───────
+//
+// A resumed leg is the same run continuing, so the halt readout it produces must
+// span both legs. Without the grade seed, leg 2 restarts the trend at its own first
+// close and can only ever report what IT saw — a leg cut after one grade reads
+// `unknown` while the run it continues had a measured direction, and a leg that is
+// flat on its own evidence reads `flat` on a chain that was converging. `readResume`
+// therefore hands the dead leg's recorded per-stage NUMBERS forward: counts and
+// stage names, never gap bytes (the spine is append-only forever).
+
+test('§3 grades: the dead leg\'s per-stage numbers come back in order, off its OWN spine, with no close bytes attached', async () => {
+  const wd = cyclePatient();
+  const leg1 = await moneyLeg1(wd);
+  assert.equal(leg1.outcome, 'cap-halt');
+
+  const r = readPause(leg1.events);
+  assert.deepEqual(r.restart.grades, [{ stage: 'verdict', value: 2 }, { stage: 'verdict', value: 1 }],
+    'the outer close graded 2 requirements missing and the one fix attempt got it to 1 — that IS the chain the resumed leg must be judged against');
+  // the whole leg's close output is on the spine; NONE of its bytes may ride the seam
+  assert.doesNotMatch(JSON.stringify(r.restart.grades), /requirement|missing|FAILED/,
+    'counts and stage names only — a gap that crosses this seam crosses it forever');
+});
+
+test('§3 grades: the PRIMARY source is the governor\'s own ladder reading, so nothing is re-parsed that was already read', async () => {
+  const wd = cyclePatient();
+  const leg1 = await moneyLeg1(wd);
+  const ladders = leg1.events.filter((e) => e.type === 'ladder' && e.governor === 'close-trend');
+  assert.equal(ladders.length, 1, 'the fix loop recorded exactly one graded iteration — the fixture this test rests on');
+  const r = readPause(leg1.events);
+  assert.deepEqual(r.restart.grades.at(-1), { stage: ladders[0].stage, value: ladders[0].value },
+    'the last grade is the ladder record verbatim: the reading the live instrument already made, never a second parse of the same bytes');
+});
+
+/** The plan whose step declares an `artifact-written` exit on a path carrying BOTH a
+ * `red` segment and a digit. That is the reachable shape behind the fallback's guard:
+ * the exit's failure detail is `tests/red/9.mjs was not written (does not exist)`,
+ * whose first (and only) line is red-marked AND carries a standalone 9 — so it parses
+ * as a perfectly well-formed close grade that is not a close grade at all. Paths are
+ * agent-authored, so this is a plan the drafter is free to write. */
+const RETRY_PLAN = JSON.stringify({
+  schema: 'plan-v1',
+  steps: [{
+    id: 'write-test', action: 'Write tests/test_x.mjs and the fixture beside it.',
+    tools: ['write'], rounds: 6, target: 'tests/test_x.mjs',
+    // no `check-passes` here: exits are AND-only and bounded at two, and a check on a
+    // write-granted step would need the tree-changed conjunct as well (the F17/F46
+    // already-green trap). The pair below is all this fixture needs.
+    exit: [{ type: 'artifact-written', path: 'tests/red/9.mjs' }, { type: 'tree-changed', scope: 'tests/**' }],
+  }],
+});
+
+/** LEG 1 with a STEP that fails that exit once before greening. A step's failing exit
+ * rides the spine as a `close-verdict` too — ralph emits one per judged iteration, and
+ * the step loop is a ralph loop — so a fallback that reads every `close-verdict` on the
+ * file would fold a STEP's reading into the run's CLOSE trend, in a bucket the close
+ * never named. @param {string} wd */
+async function moneyLeg1StepRetry(wd) {
+  const job = CYCLEJOB();
+  const w = (tag, files, costUsd) => ({
+    toolCalls: files.map(([rel, content], i) => ({ id: `${tag}-${i}`, name: 'shell_write', arguments: { path: join(wd, rel), content } })),
+    costUsd,
+  });
+  const provider = scriptedProvider([
+    { text: 'src/mod.mjs exports x; tests/ is empty.', costUsd: 0.01 },         // scout
+    { text: RETRY_PLAN, costUsd: 0.01 },                                        // draft
+    w('s1', [['tests/test_x.mjs', 'ok A\n']], 0.01),                            // step try 1: the fixture is missing
+    { text: 'wrote the test', costUsd: 0.01 },
+    w('s2', [['tests/red/9.mjs', 'fixture\n']], 0.01),                          // step try 2: green
+    { text: 'wrote the fixture too', costUsd: 0.01 },
+    w('f1', [['tests/test_x.mjs', 'ok A B\n']], 0.72),                          // fix 1: 2 → 1 missing
+    { text: 'fix 1', costUsd: 0.72 },
+    w('f2', [['tests/test_x.mjs', 'ok A B\n']], 0.02),                          // fix 2: the wallet is empty
+    { text: 'never bought', costUsd: 0.5 },
+  ]);
+  const file = join(wd, 'spine-retry.jsonl');
+  const outcome = await runJob(job, { approvals: approveJob(job), workdir: wd, provider, emit: makeSpine(file) });
+  return { outcome, events: readSpine(file) };
+}
+
+test('§3 grades FALLBACK: a spine predating the governor is read off its close-verdict gaps — and a STEP\'s failing exit is not one of them', async () => {
+  const wd = cyclePatient();
+  const leg1 = await moneyLeg1StepRetry(wd);
+  assert.equal(leg1.outcome, 'cap-halt');
+  // the fixture must actually contain the hazard, or this test guards nothing: a step
+  // `close-verdict` whose gap READS as a grade under the very same parser
+  const stepRed = leg1.events.filter((e) => e.type === 'close-verdict' && /tests\/red\/9\.mjs was not written/.test(String(e.gap ?? '')));
+  assert.equal(stepRed.length, 1, 'the step really did red once');
+  assert.deepEqual(readGrade(stepRed[0].gap), { stage: null, value: 9 },
+    'and its gap parses to a well-formed reading — an unnamed stage carrying a 9, which is exactly what must not reach the run\'s close trend');
+
+  // a pre-governor spine: the fix loop was bounded by the retired count and emitted
+  // no `close-trend` ladder record at all
+  const old = leg1.events.filter((e) => !(e.type === 'ladder' && e.governor === 'close-trend'));
+  const r = readPause(old);
+  assert.deepEqual(r.restart.grades, [{ stage: 'verdict', value: 2 }, { stage: 'verdict', value: 1 }],
+    'the chain, recovered from the close-verdict gaps the FIX loop left behind — and only those');
+  assert.ok(r.restart.grades.every((/** @type {any} */ g) => g.stage !== null),
+    'the step\'s reading landed in the unnamed bucket, and merging that into the run\'s close trend is the axis-merging the accuracy law forbids');
+});
+
+test('§3 grades: a run killed before any close reported a number seeds NOTHING — an absence is never dressed as a baseline', async () => {
+  const wd = cyclePatient();
+  const leg1 = await moneyLeg1(wd);
+  const early = killedAfter(leg1.events, (e) => e.type === 'plan-accepted');
+  const r = readResume(early, { direct: true, resumableOutcomes: ['cap-halt', 'wall-halt'] });
+  assert.ok(r.restart, 'killed mid-flight, so there is still a leg to restart');
+  assert.deepEqual(r.restart.grades, [],
+    'the precheck reded on a numberless line — an unreadable grade donates nothing, exactly as it does inside the instrument (F6)');
+});
+
 test('cycle leg 2: the top-up resumes AT THE CHECKPOINT and greens — the finished prefix is skipped, the fold is declared once, and the total is both legs', async () => {
   const wd = cyclePatient();
   const leg1 = await moneyLeg1(wd);
@@ -1769,7 +1879,7 @@ test('cycle CONTROL: resuming with the SAME budget buys no second pass — the r
   const outcome2 = await runJob(same, {
     approvals: approveJob(same), workdir: wd, provider: provider2, emit: makeSpine(file2),
     priorSpentUsd: r.restart.priorSpentUsd, priorSpendComplete: r.restart.priorSpendComplete,
-    priorWallMs: r.restart.priorWallMs, resumeSeed: r.restart.seed,
+    priorWallMs: r.restart.priorWallMs, resumeSeed: r.restart.seed, resumeGrades: r.restart.grades,
   });
   assert.equal(outcome2, 'cap-halt',
     'no top-up, no second pass: the run re-halts on the same wallet rather than quietly running the work again for free');
@@ -1783,6 +1893,18 @@ test('cycle CONTROL: resuming with the SAME budget buys no second pass — the r
   const mh2 = ev2.filter((e) => e.type === 'money-halt').at(-1);
   assert.ok(mh2, 'the re-halt is decision-ready too — a second silent stop would be the readout being a coincidence');
   assert.ok(mh2.remainingUsd <= 0.001, `the wallet was already empty when the leg opened: ${mh2.remainingUsd}`);
+  // THE CHAIN, and this is the reading the seed exists to make correct. On its own
+  // evidence leg 2 is flat: it re-graded the tree leg 1 left and nothing moved,
+  // because nothing was bought. But the RUN — which is what the human is deciding
+  // about — went 2 → 1 and was cut by an allowance, not by an idea running out.
+  // Judging the leg alone would recommend rewriting a goal that was converging.
+  assert.equal(mh2.trend, 'converging',
+    'the resumed leg judges the WHOLE tree: leg 1\'s 2 → 1 is inherited, so the readout spans the chain rather than the leg');
+  const verdictSeries = mh2.series.find((/** @type {any} */ s) => s.stage === 'verdict');
+  assert.deepEqual(verdictSeries.values.slice(0, 2), [2, 1],
+    'and the inherited prefix is VISIBLE, so a human can check the instrument rather than trust it');
+  assert.ok(verdictSeries.values.length > 2, 'leg 2\'s own re-grade of the unchanged tree sits after it, not instead of it');
+  assert.match(mh2.lever, /top up/i, 'converging work is what a top-up finishes — the lever follows the chain, not the leg');
   const end2 = ev2.find((e) => e.type === 'job-end');
   assert.equal(end2.outcome, 'cap-halt');
   assert.ok(end2.spentUsd >= leg1Spend, 'the fold still rides the terminal — a re-halt never resets the meter to $0');
@@ -1805,14 +1927,20 @@ test('cycle UNSOLVABLE: a topped-up leg that makes no per-stage progress strikes
   const outcome2 = await runJob(topped, {
     approvals: approveJob(topped), workdir: wd, provider: provider2, emit: makeSpine(file2),
     priorSpentUsd: r.restart.priorSpentUsd, priorSpendComplete: r.restart.priorSpendComplete,
-    priorWallMs: r.restart.priorWallMs, resumeSeed: r.restart.seed,
+    priorWallMs: r.restart.priorWallMs, resumeSeed: r.restart.seed, resumeGrades: r.restart.grades,
   });
   assert.equal(outcome2, 'escalated', 'the designed "close still red" terminal — the loop ran out of IDEAS, not of money');
   const ev2 = readSpine(file2);
 
-  // the STRIKE stopped it, not the wallet
+  // the STRIKE stopped it, not the wallet — and the resumed loop still gets its FULL
+  // ladder. The seed makes the loop's opening grade comparable against the chain's
+  // best, and a reader that struck on that would charge this leg a strike for merely
+  // re-grading the tree it inherited: no attempt was made between the two readings,
+  // and a strike is a judgment on an attempt. The inherited baselines are what the
+  // ATTEMPTS are measured against, never a verdict on the handover itself.
   const reads = ev2.filter((e) => e.type === 'ladder' && e.governor === 'close-trend');
-  assert.equal(reads.length, FIX_STRIKE_LIMIT, `exactly ${FIX_STRIKE_LIMIT} no-progress readings and out — never a third paid attempt`);
+  assert.equal(reads.length, FIX_STRIKE_LIMIT, `exactly ${FIX_STRIKE_LIMIT} no-progress readings and out — never a third paid attempt, and never a second cut short by the handover`);
+  assert.ok(r.restart.grades.length > 0, 'the seed really was non-empty — otherwise the sentence above guards nothing');
   assert.deepEqual(reads.map((e) => e.improved), [false, false]);
   assert.equal(ev2.filter((e) => e.type === 'money-halt').length, 0, 'money was never the cut, so no money record is minted');
   const end2 = ev2.find((e) => e.type === 'job-end');

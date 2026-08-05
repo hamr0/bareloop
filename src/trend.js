@@ -36,6 +36,53 @@
 // is `blindCap`: the fixed count this rule replaces, kept as the fallback for
 // exactly the case the new instrument cannot read, and lifted the moment it can.
 //
+// MOTION — the third signal, and it is deliberately not a fourth verdict. W-2's
+// wall halt used to answer "was it progressing" from its own instrument: byte
+// equality of the last two close gaps, reading `stalled` / `moving` / `unknown`
+// beside this module's `flat` / `converging` / `unknown`. Two instruments for one
+// question is how the two come to disagree, so the byte read moved in here and the
+// wall and the money halt now read ONE reader. It is strictly SUBORDINATE:
+//
+//   * where a stage reported a comparable NUMBER, motion is not consulted at all —
+//     a number is a direction and bytes are not, and a second opinion next to a
+//     real reading is only ever a chance to contradict it.
+//   * where no number exists, motion rides INSIDE `unknown` as a reading, never as
+//     the headline. "The close's output changed" is not "the run got better": it
+//     is compatible with thrash, with an oscillation, and with a worker rewriting
+//     the same file two ways. Promoting it to a direction is exactly the F6 error
+//     in a trend's coat, and the old vocabulary (`moving`) invited it.
+//
+// The gaps it compares are held IN MEMORY for one comparison and for nothing else.
+// Nothing this module emits or reports ever carries a close byte — the spine is
+// append-only forever, so a gap that leaks into a record leaks for good.
+//
+// THE SEED (PRD v1.46 §3, the resume chain). A resumed leg is the same run
+// continuing, so its readout must span the CHAIN rather than restart at its own
+// first grade: a leg that halted after one reading would otherwise read `unknown`
+// while the run it continues had a measured direction. `seed` folds the dead leg's
+// recorded per-stage numbers into the BASELINES — `series` (so the readout shows
+// the whole chain) and `best` (so this leg's first reading is a comparison rather
+// than an unknown). It folds into nothing else, and each omission is load-bearing:
+//
+//   * no ITERATION, because the leg's own bounds must not be spent by history.
+//   * no STRIKE, because a strike is a judgment on an attempt and the seed contains
+//     none of this leg's attempts.
+//   * no `comparableEver`, because that flag answers "can the instrument see
+//     anything THIS leg produced" — the blind cap must still govern a leg whose own
+//     readings never compare, and a seed that flipped it would disarm the backstop
+//     on a run the instrument cannot read.
+//   * no STAGE POSITION, because "further than ever before" is an ordering claim
+//     about one leg's walk through the close. Seeding it would make the resumed
+//     leg's first grade a stage REGRESSION and strike it for arriving.
+//
+// And it belongs to ONE of the two readers, never both — the "ONE PER SERIES" rule
+// below, now with a second reason. The halt readout asks "was the RUN converging
+// when its allowance cut it", which is a question about the chain; the fix loop's
+// governor asks "is THIS loop out of ideas", which is leg-local by definition. A
+// seeded governor was built and measured: a resumed loop that struck out dead flat
+// rendered its own terminal as "still progressing", because the chain had fallen
+// before the handover. One instance answering two questions, exactly as warned.
+//
 // KNOWN LIMIT, stated rather than discovered later. "Lower is better" is a
 // direction this module cannot derive from prose, and a minority of close stages
 // report a FLOOR instead of a fault count (`N tests executed, below the seed's
@@ -125,8 +172,12 @@ const UNSTAGED = '(unstaged)';
  *   the case the instrument cannot read at all. Counted in iterations PAST the
  *   baseline, so a blind loop runs exactly the number of attempts the old fixed
  *   count bought it. `null` = no fallback bound (money and the wall still apply).
+ * @param {{stage?: string|null, value?: number|null}[]} [opts.seed] RESUME — the
+ *   grades a PREVIOUS leg of this same run already recorded, oldest first, read off
+ *   its own spine. Baselines only (see THE SEED above). Empty/omitted is the cold
+ *   path and is byte-identical to the pre-resume reader.
  */
-export function createTrend({ stageOrder = [], limit = FIX_STRIKE_LIMIT, blindCap = null } = {}) {
+export function createTrend({ stageOrder = [], limit = FIX_STRIKE_LIMIT, blindCap = null, seed = [] } = {}) {
   /** @type {Map<string, number[]>} stage → every count it reported, in order */
   const series = new Map();
   /** @type {Map<string, number>} stage → the BEST (lowest) count it ever reported */
@@ -141,8 +192,24 @@ export function createTrend({ stageOrder = [], limit = FIX_STRIKE_LIMIT, blindCa
    * number can express — and it is the only evidence a run that never reported the
    * same stage twice has. */
   let advancedEver = false;
+  /** the last two gaps RECORDED, for the motion fallback and for nothing else. In
+   * memory only: never reported, never emitted, never returned (see MOTION above). */
+  const lastGaps = [];
 
   const idxOf = (/** @type {string} */ stage) => stageOrder.indexOf(stage);
+
+  // ── the seed, folded in BEFORE any reading of this leg: baselines only ──
+  // An unreadable seed entry donates nothing, exactly as an unreadable gap does —
+  // the same F6 rule, applied one seam earlier.
+  for (const s of Array.isArray(seed) ? seed : []) {
+    const v = typeof s?.value === 'number' && Number.isFinite(s.value) ? s.value : null;
+    if (v === null) continue;
+    const st = s.stage ?? UNSTAGED;
+    if (!series.has(st)) series.set(st, []);
+    /** @type {number[]} */ (series.get(st)).push(v);
+    const b = best.get(st);
+    if (b === undefined || v < b) best.set(st, v);
+  }
 
   return {
     /**
@@ -156,6 +223,8 @@ export function createTrend({ stageOrder = [], limit = FIX_STRIKE_LIMIT, blindCa
      */
     record({ gap, stage, value } = {}) {
       const read = stage === undefined && value === undefined ? readGrade(gap) : { stage: stage ?? null, value: value ?? null };
+      // the motion fallback's only input, held for one comparison (MOTION above)
+      if (typeof gap === 'string') { lastGaps.push(gap); if (lastGaps.length > 2) lastGaps.shift(); }
       const st = read.stage ?? UNSTAGED;
       const v = typeof read.value === 'number' && Number.isFinite(read.value) ? read.value : null;
       const idx = idxOf(st);
@@ -208,8 +277,8 @@ export function createTrend({ stageOrder = [], limit = FIX_STRIKE_LIMIT, blindCa
      * The DECISION-READY readout (PRD v1.46 §2): which way the run was going when
      * something cut it, in the three verdicts hamr named, and the lever each
      * implies. The library only reports — it never adjusts a budget (hard line).
-     * @returns {{trend: 'converging'|'flat'|'unknown', reading: string, lever: string,
-     *   series: {stage: string, values: number[]}[]}}
+     * @returns {{trend: 'converging'|'flat'|'unknown', motion: 'changed'|'unchanged'|null,
+     *   reading: string, lever: string, series: {stage: string, values: number[]}[]}}
      */
     verdict() {
       const rows = [...series.entries()].map(([name, vals]) => ({ stage: name, values: [...vals] }));
@@ -234,24 +303,42 @@ export function createTrend({ stageOrder = [], limit = FIX_STRIKE_LIMIT, blindCa
       // context — it just does not get to decide (F6: an unknown stays an unknown,
       // even when something adjacent to it is known).
       if (numeric.length === 0) {
+        // MOTION rides here and ONLY here: inside the unknown, as a reading. Two
+        // gaps are the minimum a comparison needs — one grade matching nothing is
+        // an absent comparison, and reporting that as "unchanged" would be the
+        // same rounding-up of an absence this branch exists to refuse.
+        const motion = lastGaps.length < 2 ? null : (lastGaps[0] === lastGaps[1] ? 'unchanged' : 'changed');
+        const base = advancedEver
+          ? 'no stage reported a comparable number twice — nothing the instrument can compare, though the close did reach a later stage than it had before'
+          : 'no stage reported a comparable number twice — nothing the instrument can compare, so the direction is unknown rather than assumed';
         return {
           trend: 'unknown',
-          reading: advancedEver
-            ? 'no stage reported a comparable number twice — nothing the instrument can compare, though the close did reach a later stage than it had before'
-            : 'no stage reported a comparable number twice — nothing the instrument can compare, so the direction is unknown rather than assumed',
-          lever: 'read the last close output before choosing between a top-up and a different goal',
+          motion,
+          reading: motion === 'unchanged'
+            ? `${base}; the close's output was byte-identical the last 2 times, so the previous attempt moved nothing the close can see`
+            : motion === 'changed'
+              ? `${base}; the close's output was still changing between grades, so something moved that the numbers cannot see`
+              : base,
+          lever: motion === 'unchanged'
+            ? 'a frozen close output strongly suggests the goal, not the allowance: revise the goal/spec first (a spec edit, so the new hash needs re-approval)'
+            : 'read the last close output before choosing between a top-up and a different goal',
           series: rows,
         };
       }
+      // Past this point a real number decided it, so motion is not consulted and is
+      // not reported: a byte comparison beside a measured direction can only ever
+      // contradict it, and the contradiction would be the weaker signal winning.
       return fell
         ? {
           trend: 'converging',
+          motion: null,
           reading: `still progressing — ${render}`,
           lever: 'top up budgetUsd and resume; the work was still converging when the money ran out (a spec edit, so the new hash needs re-approval)',
           series: rows,
         }
         : {
           trend: 'flat',
+          motion: null,
           reading: `no stage improved — ${render}`,
           lever: 'more money is unlikely to help; revise the goal/spec first (same re-approval)',
           series: rows,

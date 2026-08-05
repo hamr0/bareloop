@@ -81,6 +81,47 @@ test('§3 the resume PREVIEW states what is inherited: the fold, the remainder, 
   assert.match(out, /NOT reset to the seed/, 'the patient keeps the work the halted run paid for');
 });
 
+test('§3 the resume PREVIEW names the TREND baselines it inherits — a readout that spans two legs must say where the earlier one came from', () => {
+  // Rendered against the real script, because that is where a readout defect lives:
+  // the grades cross the seam as counts, and the operator's only sight of them is
+  // this line. Without it a resumed run can name a direction its own leg never
+  // measured, with nothing on screen to say the number came from the leg before.
+  const ev = haltedSpine();
+  const withGrades = ev.flatMap((e) => (e.type !== 'outer-close' ? [e] : [
+    { ...e, gap: 'close stage "no-suppressions" failed:\nBAREAGENT red: 12 suppression(s) added' },
+    { type: 'fix-loop', gapBytes: 80, ts: '2026-08-04T10:13:00.000Z', seq: 40.1 },
+    { type: 'ladder', governor: 'close-trend', stage: 'no-suppressions', value: 5, iteration: 1, ts: '2026-08-04T10:15:00.000Z', seq: 40.2 },
+  ]));
+  const { code, out } = preview(['--resume', spineFile(withGrades)]);
+  assert.equal(code, 0);
+  assert.match(out, /trend    2 close grade\(s\) inherited as baselines/, 'how many, and that they are BASELINES rather than this leg\'s own evidence');
+  assert.match(out, /no-suppressions 12 → 5/, 'and the series itself, so the operator can check the instrument rather than trust it');
+  assert.match(out, /spans BOTH legs/);
+  assert.doesNotMatch(out, /suppression\(s\) added/, 'counts and stage names only — no close bytes reach the operator\'s screen, or the spine behind it');
+});
+
+test('§3 tripwire: the runner still HANDS the inherited grades to runJob, not just prints them', () => {
+  // The preview line and the wiring are two different things, and the preview passing
+  // proves only the first. A `resumeGrades` that is rendered and never forwarded is the
+  // silently-ignored-parameter class F50 named — the readout would keep promising a
+  // chain reading the run never receives, and no behaviour test can see it from here
+  // (the script cannot be imported: it is top-level and it spends money past the gate).
+  // Loose on purpose: the two semantic pieces only, so reformatting cannot red this.
+  const src = readFileSync(RUNNER, 'utf8');
+  assert.match(src, /resumeGrades:\s*dead\.restart\.grades/,
+    'the dead leg\'s grades must reach runJob — printed-but-unwired is a readout that lies about what the run is doing');
+  assert.match(src, /grades\?\.length\s*\?/,
+    'and only when there ARE grades: an empty array is the cold path, and the cold path must stay byte-identical');
+});
+
+test('§3 the preview says so when there is NOTHING to inherit — silence would read as "no seam here"', () => {
+  // the stock fixture's outer-close carries no gap at all, so no grade is readable
+  const { code, out } = preview(['--resume', spineFile(haltedSpine())]);
+  assert.equal(code, 0);
+  assert.match(out, /trend    no close grade to inherit — this leg's readout is judged on its own evidence/,
+    'an absence is stated, never rounded up to a baseline (F6) and never left blank');
+});
+
 test('§3 the preview NAMES the hash change a top-up causes rather than hiding it — budgetUsd is in the signature', () => {
   const { out } = preview(['--resume', spineFile(haltedSpine())]);
   assert.match(out, /old-hash-000/, 'the hash the halted run was signed under');

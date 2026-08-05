@@ -441,7 +441,7 @@ Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
 `coordination-red` — a failure between units (scope contention, step order, store
 races), never to be folded into worker/interpreter reds.
 
-### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, layerRoot?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, layerRoot?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades? })` → outcome — `src/run.js`
 
 The last four are the RESUME fold and are documented under *Resuming a killed run* below;
 they default to `0` / `true` / `0` / `null`, so a fresh run passes none of them.
@@ -581,6 +581,34 @@ on money (the step loop, the close-fix loop, and the scout/draft relay), exactly
 close rendered no number (F6). **The library only ever REPORTS**: `budgetUsd` is in the spec
 hash, so a top-up is a spec edit a human signs — nothing in a run may widen its own budget.
 
+**ONE progress instrument, read by both halts.** The wall halt used to run its own: byte
+equality of the last two close gaps, reading `stalled` / `moving` / `unknown` beside the money
+halt's `flat` / `converging` / `unknown` on the same run. Both now read `runTrend`, the run's
+own `src/trend.js` reader. Where a stage reported a comparable NUMBER it decides; where none
+did, the byte comparison survives INSIDE `unknown` as a separate `motion` field
+(`changed | unchanged | null`) and as a clause in the `reading` — never as the headline
+verdict, because "the close's output changed" is not "the run got better" (F6 in a trend's
+coat), and never mapped onto `trend`, because that would put the promotion on the spine.
+`unchanged` points the lever at the goal; `changed` points it at reading the last close output.
+The two readers stay SEPARATE INSTANCES for separate questions (`src/trend.js`, "ONE PER
+SERIES"): the halt readouts ask *was the RUN converging when its allowance cut it*, the
+close-fix loop's governor asks *is THIS loop out of ideas*.
+
+**A resumed leg's readout judges the whole CHAIN.** `readResume`'s `restart.grades` carries the
+dead leg's recorded close grades forward — `[{stage, value}]`, counts and stage names only,
+never a gap byte — and `runJob`/`runPlan` take them as `resumeGrades`, which seed the run
+trend's BASELINES (`createTrend({seed})`). Without them a resumed leg restarts the trend at its
+own first close and can report `flat` — *revise the goal* — on a run that was converging when
+its allowance ran out. The seed folds into the series and the per-stage best and into nothing
+else: no iteration counted, no strike minted, no `comparableEver`, no stage position — it is
+history, not this leg's evidence, so the blind-cap backstop still governs a leg whose own
+readings never compare. The close-fix loop's governor is deliberately NOT seeded (it is the
+leg-local question). Sources, in order: the `ladder` records the live governor already wrote
+(`governor: 'close-trend'`, taken verbatim), the `close-precheck`/`outer-close` records, and —
+only on a spine predating that governor — the `close-verdict` records after the `fix-loop`
+marker, which is the same population and excludes a STEP's failing exit. Known limit: one spine
+is read, so a resume of a resume inherits the previous leg's chain and not the one before it.
+
 **Time and materials (T + A, PRD v1.27/v1.29).** `runPlan` starts ONE wall clock per run
 (`createClock`, `src/clock.js`) from the signed `maxWallMs` and emits `wall-clock` with the
 requested AND enforced numbers up front, plus the `closeStages` count that explains the gap
@@ -604,10 +632,10 @@ wall stops is the START of new work. Three sites decide the run-level terminal `
 on the same clock: the step loop after a step returns, a step that would BEGIN already expired,
 and the close-fix loop before it opens another iteration — which then stops on the verdict the
 last close already minted (hamr: *"when time is up, keep the grade we already have and stop"*),
-carrying that verdict, the iterations spent, and a progress `trend` (`moving` | `stalled` |
-`unknown`, read off the last two close gaps) so the human can pick between raising `maxWallMs`
-(resume-to-cap: the stop IS the checkpoint) and revising the goal — both spec edits, both a new
-hash to re-sign. `cutMidCall` on the `wall-halt` record splits the deadline seen INSIDE a
+carrying that verdict, the iterations spent, and the SAME progress reading the money halt
+carries (`trend`: `converging | flat | unknown`, plus `motion`) so the human can pick between
+raising `maxWallMs` (resume-to-cap: the stop IS the checkpoint) and revising the goal — both
+spec edits, both a new hash to re-sign. `cutMidCall` on the `wall-halt` record splits the deadline seen INSIDE a
 provider call from the deadline read between them. Time reporting is
 licensed at ~90% accuracy by ruling: imprecision is fine, reporting an unknown or unbounded
 duration as `0` never is (F6 extended to time — unbounded reports `null`, never `Infinity`).
@@ -869,7 +897,8 @@ the secrets scan.
 A reuse run is up to `tries + 1` full jobs long, so a kill mid-run is a real event and it
 must not cost the whole envelope. **`readResume(events, {deathAt?, direct?, resumableOutcomes?})`**
 reads the dead run's own spine back into the state a resume continues from: `{ started,
-approvalHash, completed[], tried[], restart (with its step-level `seed`), r1Missing, spentUsd,
+approvalHash, completed[], tried[], restart (with its step-level `seed` and its close
+`grades`), r1Missing, spentUsd,
 spendComplete, carrySpentUsd, carrySpendComplete, ended, greened, … }`. Hand that object to
 **`runReuse({…, resume})`** and the run picks up where it stopped.
 
@@ -929,6 +958,13 @@ outside watchdog on the REMAINING wall. The top-up itself stays a spec edit the 
     only its own window would have discarded a checkpoint leg 2 paid $8.18 to reach).
   - The worker's conversation is **not** replayed — a transcript is not a checkpoint, and
     every attempt is fresh by the loop's own design.
+- **Its TREND baselines come with it.** `restart.grades` is the dead leg's close grades in
+  order (`[{stage, value}]` — counts and stage names only, never a gap byte), and it rides
+  into `runJob`/`runPlan` as `resumeGrades` beside `resumeSeed`. It seeds the run trend's
+  baselines so the resumed leg's `money-halt`/`wall-halt` readouts judge the CHAIN: a leg
+  that re-grades an unchanged tree is flat on its own evidence while the RUN — what the
+  top-up decision is actually about — may have been converging when the money ran out. See
+  the trend section above for what the seed does and, deliberately, does not touch.
 - **Under the REMAINDER, never a fresh allotment.** The killed attempt's spend and wall
   FOLD IN (`runJob`'s `priorSpentUsd`/`priorSpendComplete`/`priorWallMs`, `createClock`'s
   `priorElapsedMs`), so

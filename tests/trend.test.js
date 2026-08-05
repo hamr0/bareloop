@@ -260,3 +260,143 @@ test('an explicit {stage, value} reading is accepted without a gap — the modul
   tr.record({ stage: 'typecheck', value: 9 });
   assert.equal(tr.record({ stage: 'typecheck', value: 4 }).improved, true);
 });
+
+// ── MOTION: the wall halt's byte-equality reading, folded in here ────────────
+//
+// W-2's `gapTrend` used to answer "was it progressing" from consecutive close
+// BYTES, next to this module answering it from per-stage numbers. Two instruments
+// for one question is how the two come to disagree, so the byte read moved in — as
+// a strictly SUBORDINATE signal. It never becomes a direction: "something changed"
+// is not "it got better", and dressing it as one is exactly what F6 forbids.
+
+test('MOTION: with NO comparable number and two byte-IDENTICAL gaps the verdict stays unknown and reports nothing-changed', () => {
+  const tr = createTrend({ stageOrder: STAGES });
+  tr.record({ gap: gapOf('verdict', 'FAILED close: the test never imports the module') });
+  tr.record({ gap: gapOf('verdict', 'FAILED close: the test never imports the module') });
+  const v = tr.verdict();
+  assert.equal(v.trend, 'unknown', 'motion is never promoted to a direction — an unknown stays unknown (F6)');
+  assert.equal(v.motion, 'unchanged');
+  assert.match(v.reading, /byte-identical/, 'the old "stalled" signal survives in substance, as a reading');
+  assert.match(v.lever, /revise the goal/i, 'a frozen close output strongly suggests the goal, not the allowance');
+});
+
+test('MOTION: with NO comparable number and DIFFERING gaps the verdict stays unknown and reports something-changed', () => {
+  const tr = createTrend({ stageOrder: STAGES });
+  tr.record({ gap: gapOf('verdict', 'FAILED close: 3 bytes, still no import') });
+  tr.record({ gap: gapOf('verdict', 'FAILED close: 21 bytes, still no import') });
+  const v = tr.verdict();
+  assert.equal(v.trend, 'unknown', 'a changing output is movement, not a measured direction');
+  assert.equal(v.motion, 'changed');
+  assert.match(v.reading, /still changing/, 'the old "moving" signal survives in substance');
+  assert.match(v.lever, /read the last close output/i, 'a changing output makes the raw output the informative thing to read');
+});
+
+test('MOTION needs TWO gaps: one grade compares against nothing, so the motion is null rather than a guess', () => {
+  const tr = createTrend({ stageOrder: STAGES });
+  tr.record({ gap: gapOf('verdict', 'FAILED close: no count anywhere') });
+  const v = tr.verdict();
+  assert.equal(v.trend, 'unknown');
+  assert.equal(v.motion, null, 'never "unchanged" by default — an absent comparison is not a match');
+  assert.match(v.reading, /nothing the instrument can compare/);
+});
+
+test('MOTION never outranks a NUMBER: two byte-identical gaps that both carry a falling count still read converging', () => {
+  // The wall halt's old instrument could only ever have said "stalled" here — the
+  // bytes are what it compared. This is the control for the unification's whole
+  // point: where numbers exist they decide, and motion is not consulted at all.
+  const tr = createTrend({ stageOrder: STAGES });
+  tr.record({ gap: gapOf('typecheck', 'red: 9 error(s)') });
+  tr.record({ gap: gapOf('typecheck', 'red: 4 error(s)') });
+  tr.record({ gap: gapOf('typecheck', 'red: 4 error(s)') }); // byte-identical to the one before
+  const v = tr.verdict();
+  assert.equal(v.trend, 'converging', 'the per-stage number fell 9 → 4; the last two gaps matching says nothing about that');
+  assert.equal(v.motion, null, 'motion is a FALLBACK, and a fallback that fires next to a real reading is a second opinion nobody asked for');
+});
+
+test('MOTION holds NO close bytes: the retained gaps live in memory only and never reach report() or verdict()', () => {
+  // The retained gap exists for ONE comparison and for nothing else. The spine is
+  // append-only forever, so a gap that leaks into an emitted structure leaks for good.
+  const tr = createTrend({ stageOrder: STAGES });
+  tr.record({ gap: gapOf('verdict', 'FAILED close: SECRETISH sk-abc appears here') });
+  tr.record({ gap: gapOf('verdict', 'FAILED close: SECRETISH sk-def appears here') });
+  assert.equal(tr.verdict().motion, 'changed', 'the comparison really did run on those bytes');
+  assert.doesNotMatch(JSON.stringify(tr.report()), /SECRETISH|sk-/, 'the report holds no close bytes at all');
+  assert.doesNotMatch(JSON.stringify(tr.verdict()), /SECRETISH|sk-/, 'and neither does the readout that carries the motion');
+});
+
+// ── the SEED: a resumed leg inherits the dead leg's per-stage numbers ────────
+
+/** the shape `readResume` hands over: counts and stage names, never gap bytes */
+const SEED = [{ stage: 'typecheck', value: 12 }, { stage: 'typecheck', value: 5 }];
+
+test('SEED folds into the BASELINES only: it counts no iteration, mints no strike, and never sets the instrument sighted on its own', () => {
+  const tr = createTrend({ stageOrder: STAGES, limit: 2, blindCap: 2, seed: SEED });
+  const rep = tr.report();
+  assert.equal(rep.iterations, 0, 'a seed is history, not this leg\'s work — counting it would spend the leg\'s own bound');
+  assert.equal(rep.strikes, 0, 'no reading of this leg has failed yet, so there is nothing to strike');
+  assert.equal(rep.blind, true, 'the seed is not evidence THIS leg can compare anything — the blind cap still governs a leg that reads nothing');
+  assert.equal(tr.struckOut(), false, 'a fresh leg is never born struck out');
+});
+
+test('SEED makes the FIRST reading of the resumed leg comparable against the pre-halt best — that is the whole point', () => {
+  const tr = createTrend({ stageOrder: STAGES, seed: SEED });
+  const r = tr.record({ gap: gapOf('typecheck', 'red: 3 error(s)') });
+  assert.equal(r.comparable, true, 'the chain\'s best is a real baseline: 3 against a best of 5 is a comparison, not an unknown');
+  assert.equal(r.improved, true);
+  const v = tr.verdict();
+  assert.equal(v.trend, 'converging');
+  assert.match(v.reading, /typecheck 12 → 5 → 3/, 'the readout spans the CHAIN, not just the leg — the money/wall reading hamr asked for');
+});
+
+test('SEED against the BEST, not the last: a resumed reading that only beats the dead leg\'s WORST is not progress', () => {
+  const tr = createTrend({ stageOrder: STAGES, seed: SEED });
+  const r = tr.record({ gap: gapOf('typecheck', 'red: 9 error(s)') });
+  assert.equal(r.improved, false, '9 is below the seed\'s first reading and above its best — the oscillator rule spans the seam too');
+  assert.equal(r.noProgress, 1);
+});
+
+test('SEED is per stage like every other reading: a stage the dead leg never graded starts with no baseline', () => {
+  const tr = createTrend({ stageOrder: STAGES, seed: SEED });
+  const r = tr.record({ gap: gapOf('suite-green', 'red: 4 test(s) failing') });
+  assert.equal(r.comparable, false, 'the accuracy law does not bend for a seed — typecheck\'s history is not suite-green\'s');
+});
+
+test('SEED donates NO ordering signal: a dead leg\'s furthest stage is not this leg\'s, so nothing advances on arrival', () => {
+  const tr = createTrend({ stageOrder: STAGES, seed: [{ stage: 'no-suppressions', value: 4 }] });
+  const r = tr.record({ gap: gapOf('typecheck', 'FAILED, no count') });
+  assert.equal(r.comparable, false,
+    'a stage REGRESSION against a seeded position would mint a strike for arriving — the seed sets numbers, never places');
+});
+
+test('SEED CONTROL: an empty seed (the cold path) reads byte-identically to no seed at all', () => {
+  const cold = createTrend({ stageOrder: STAGES, blindCap: 2 });
+  const seeded = createTrend({ stageOrder: STAGES, blindCap: 2, seed: [] });
+  for (const tr of [cold, seeded]) {
+    tr.record({ gap: gapOf('typecheck', 'red: 5 error(s)') });
+    tr.record({ gap: gapOf('typecheck', 'red: 5 error(s)') });
+  }
+  assert.deepEqual(seeded.report(), cold.report());
+  assert.deepEqual(seeded.verdict(), cold.verdict());
+  assert.equal(seeded.struckOut(), cold.struckOut());
+});
+
+test('SEED ignores unreadable entries: a null value donates nothing, exactly as an unreadable gap does (F6)', () => {
+  const tr = createTrend({ stageOrder: STAGES, seed: [{ stage: 'typecheck', value: null }, { stage: 'typecheck', value: 5 }] });
+  assert.deepEqual(tr.report().stages, [{ stage: 'typecheck', values: [5] }]);
+});
+
+test('SEED belongs to ONE reader: a seeded instance reads the CHAIN while an unseeded one on the same grades reads its own leg', () => {
+  // The two questions, side by side. The halt readout (seeded) is asked whether the
+  // RUN was converging when its allowance cut it; the fix loop's governor (unseeded)
+  // is asked whether THIS loop is out of ideas. On a resumed leg that re-grades an
+  // unchanged tree the honest answers differ — and a single instance answering both
+  // renders "still progressing" inside the terminal of a loop that just struck out.
+  const chain = createTrend({ stageOrder: STAGES, seed: SEED });      // 12 → 5 before the halt
+  const leg = createTrend({ stageOrder: STAGES });
+  for (const tr of [chain, leg]) {
+    tr.record({ gap: gapOf('typecheck', 'red: 5 error(s)') });
+    tr.record({ gap: gapOf('typecheck', 'red: 5 error(s)') });
+  }
+  assert.equal(chain.verdict().trend, 'converging', 'the RUN fell 12 → 5 and was cut by an allowance, not by an idea running out');
+  assert.equal(leg.verdict().trend, 'flat', 'this LEG moved nothing, and its governor must say so rather than inherit a direction it did not measure');
+});

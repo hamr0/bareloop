@@ -1686,7 +1686,7 @@ test('W-2: the wall past the outer close STOPS the fix loop on the verdict alrea
   // anything. What is spent is the fact; there is no longer a number it is "of".
   assert.match(esc.detail, /after 0 fix iteration/, 'and how much of the loop was actually spent');
   assert.doesNotMatch(esc.detail, /of \d+ fix iteration/, 'never a denominator that no longer governs');
-  assert.match(esc.detail, /trend: unknown/, 'one grade cannot make a trend, and the honest reading says so rather than guessing "stalled"');
+  assert.match(esc.detail, /trend: unknown/, 'no stage reported a comparable number twice, and the honest reading says so rather than guessing a direction');
   assert.match(esc.options.join(' | '), /maxWallMs/, 'lever one: more time');
   assert.match(esc.options.join(' | '), /revise the goal/, 'lever two: a different goal — the trend is what tells the human which');
   assert.match(esc.options.join(' | '), /abandon/, 'lever three');
@@ -1728,11 +1728,16 @@ test('W-2 CONTROL: with time still on the clock the fix loop iterates exactly as
  * attempt writes, and therefore whether the close it triggers reports the same
  * bytes as the grade before it. Same close, same plan, same clock, same call
  * positions — so a difference in the trend can only come from the gaps.
+ *
+ * Both closes below are deliberately NUMBERLESS to the trend instrument (no line
+ * is marked `red`), which is the case the byte comparison exists for: it is the
+ * FALLBACK inside `unknown`, never a verdict of its own.
  * @param {string} fixContent what the fix worker writes on its one attempt
+ * @param {(wd: string) => void} [close] the close to install (default: byte-reporting)
  */
-const trendRun = async (t, fixContent) => {
+const trendRun = async (t, fixContent, close = byteReportingClose) => {
   const wd = makePatient(t);
-  byteReportingClose(wd);
+  close(wd);
   const clk = fakeClock();
   let n = 0;
   const provider = {
@@ -1754,7 +1759,98 @@ const trendRun = async (t, fixContent) => {
   return go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now, capRuns: 3 });
 };
 
-test('W-2 trend: a fix attempt that MOVED the close reads "moving" — and its close ran to completion even though the wall passed mid-attempt', async (t) => {
+/** A close that COUNTS what is still missing — the numeric shape every shipped
+ * u-close has, and the one the trend instrument is built to read. Still stricter
+ * than the `clean-run` check (which greens on "ok"), so the fix loop opens.
+ * Declared HERE rather than beside its §4 users because the wall halt reads the
+ * same instrument they do — one close shape, two sites, never two spellings.
+ * @param {string} wd @param {string[]} markers */
+const countingClose = (wd, markers = ['import', 'DONE']) => writeFileSync(join(wd, 'close.mjs'), `import { existsSync, readFileSync } from 'node:fs';
+const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
+const t = existsSync(p) ? readFileSync(p, 'utf8') : '';
+const missing = ${JSON.stringify(markers)}.filter((k) => !t.includes(k));
+if (missing.length === 0) process.exit(0);
+console.log(\`FAILED red: \${missing.length} requirement(s) missing\`); process.exit(1);\n`);
+
+test('W-2 UNIFIED (a): a wall halt whose close reported NUMBERS reads the per-stage trend — converging, where the byte instrument could only ever have said "it changed"', async (t) => {
+  // The unification's whole point. The retired `gapTrend` compared two strings: it
+  // could say the output moved, never which WAY. Here the same stop reads the close's
+  // own falling count (2 → 1) and hands the human the lever that follows from a
+  // direction, on the same evidence the money halt one branch over reads.
+  const wd = makePatient(t);
+  countingClose(wd, ['A', 'B', 'C']);
+  const clk = fakeClock();
+  let n = 0;
+  const provider = {
+    name: 'wall-after-one-converging-fix',
+    async generate() {
+      n += 1;
+      const scripted = [
+        { text: 'scout' },
+        { text: PLAN(wd) },
+        { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok A\n' })] },
+        { text: 'wrote it' },                                                                  // outer close: 2 missing
+        { toolCalls: [tcall('t2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok A B\n' })] },
+        { text: 'fix attempt done' },                                                          // fix close: 1 missing
+      ][n - 1] ?? { text: 'never bought' };
+      if (n === 6) clk.advance(700_000);
+      return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now, capRuns: 3 });
+  assert.equal(outcome, 'wall-halt');
+
+  const wh = events.filter((e) => e.type === 'wall-halt').at(-1);
+  assert.equal(wh.trend, 'converging', 'the verdict stage went 2 → 1 — a DIRECTION, which no byte comparison can produce');
+  assert.equal(wh.motion, null, 'motion is the fallback, and a fallback beside a real number is a second opinion nobody asked for');
+  assert.equal(wh.iterationsUsed, 1);
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.match(esc.detail, /verdict 2 → 1/, 'the series it judged is shown, so a human can check the instrument');
+  assert.match(esc.detail, /top up|maxWallMs/i, 'converging work is what more allowance finishes');
+});
+
+test('W-2 UNIFIED: the wall reads the RUN\'s trend, not the fix loop\'s — the grade that existed BEFORE this leg\'s work is part of the chain', async (t) => {
+  // The discriminating case for WHICH instance the wall reads. The fix loop's own
+  // reader opens at the outer close and can never see the precheck; the run's reader
+  // is fed by every grade the arbiter renders, precheck first ("the seed the work is
+  // measured against"). Here the wall lands with ZERO fix iterations spent, so the
+  // fix loop holds exactly one grade and could only say "unknown" — while the run
+  // plainly went 2 → 1. Reading the loop's reader here would tell the human "I can't
+  // tell" about a run that had visibly converged.
+  const wd = makePatient(t);
+  countingClose(wd, ['A', 'B', 'C']);
+  // the patient starts with a test that already satisfies `clean-run`, so the PRECHECK
+  // reds on the same stage the outer close does — two readings of one axis
+  writeFileSync(join(wd, 'tests', 'test_x.mjs'), 'ok A\n');
+  const clk = fakeClock();
+  let n = 0;
+  const provider = {
+    name: 'wall-at-outer-close-with-numbers',
+    async generate() {
+      n += 1;
+      const scripted = [
+        { text: 'scout' },
+        { text: PLAN(wd) },
+        { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok A B\n' })] },
+        { text: 'wrote it' },
+      ][n - 1] ?? { text: 'a fix attempt that must never be bought' };
+      if (n === 4) clk.advance(700_000);
+      return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now, capRuns: 3 });
+  assert.equal(outcome, 'wall-halt');
+  assert.equal(events.find((e) => e.type === 'close-precheck').verdict, 'needs_revision',
+    'the precheck really did render a grade — otherwise there is nothing for the two readers to disagree about');
+
+  const wh = events.filter((e) => e.type === 'wall-halt').at(-1);
+  assert.equal(wh.iterationsUsed, 0, 'zero fix iterations: the fix loop holds ONE grade and cannot make a trend out of it');
+  assert.equal(wh.trend, 'converging', 'the RUN went 2 → 1 — the precheck is the baseline the step\'s work is measured against');
+  assert.match(events.filter((e) => e.type === 'escalation').at(-1).detail, /verdict 2 → 1/,
+    'and the series that says so is shown, the same one the money halt would show at this instant');
+});
+
+test('W-2 trend (c): with NO number anywhere, a fix attempt that MOVED the close reads unknown + something-changed — and its close ran to completion even though the wall passed mid-attempt', async (t) => {
   const { outcome, events } = await trendRun(t, 'ok and six more bytes\n');
   assert.equal(outcome, 'wall-halt');
 
@@ -1769,19 +1865,22 @@ test('W-2 trend: a fix attempt that MOVED the close reads "moving" — and its c
     'the wall did land inside that attempt — otherwise this proves nothing about the in-flight case');
 
   const wh = events.filter((e) => e.type === 'wall-halt').at(-1);
-  assert.equal(wh.trend, 'moving', 'consecutive close outputs differ, so the work was still changing when time ran out');
+  assert.equal(wh.trend, 'unknown', 'no stage reported a comparable number, and motion is never promoted to a direction (F6)');
+  assert.equal(wh.motion, 'changed', 'the old "moving" signal, preserved in substance and labelled as what it is');
   assert.equal(wh.iterationsUsed, 1);
-  assert.match(events.filter((e) => e.type === 'escalation').at(-1).detail, /raising maxWallMs is the lever that fits/);
+  assert.match(events.filter((e) => e.type === 'escalation').at(-1).detail, /still changing/,
+    'the tree was still moving under the close when time ran out — a reading, not a verdict');
 });
 
-test('W-2 trend: a fix attempt that changed NOTHING the close can see reads "stalled" — and points the human at the goal, not the clock', async (t) => {
+test('W-2 trend (b): with NO number anywhere, a fix attempt that changed NOTHING the close can see reads unknown + nothing-changed — and points the human at the goal, not the clock', async (t) => {
   const { outcome, events } = await trendRun(t, 'ok\n'); // byte-identical to what step one wrote
   assert.equal(outcome, 'wall-halt');
   const wh = events.filter((e) => e.type === 'wall-halt').at(-1);
-  assert.equal(wh.trend, 'stalled', 'byte-identical close output across two grades');
+  assert.equal(wh.trend, 'unknown', 'byte equality is evidence of no MOTION, which is not evidence of a direction');
+  assert.equal(wh.motion, 'unchanged', 'the old "stalled" signal, preserved in substance');
   assert.equal(wh.iterationsUsed, 1);
-  assert.match(events.filter((e) => e.type === 'escalation').at(-1).detail, /revise the goal\/spec first/,
-    'more time does not make an unreachable goal reachable — the trend is what separates the two levers');
+  assert.match(events.filter((e) => e.type === 'escalation').at(-1).detail, /revise the goal\/spec/,
+    'more time does not make an unreachable goal reachable — the frozen output is what points at the goal');
 });
 
 // ── W-2 at the STEP site. The fix loop's wall read has a sibling one layer up: a
@@ -2870,17 +2969,6 @@ test('Rule B WIRED: a replan that sheds the inherited check is refused check-she
 // 2-strike no-progress rule the step ladder runs, read off the close's own graded
 // numbers. Money and the wall keep every bit of their authority. Replay-validated
 // at $0 over all 8 archived fix loops: 0 greens harmed, 1 waste case caught.
-
-/** A close that COUNTS what is still missing — the numeric shape every shipped
- * u-close has, and the one the trend instrument is built to read. Still stricter
- * than the `clean-run` check (which greens on "ok"), so the fix loop opens.
- * @param {string} wd @param {string[]} markers */
-const countingClose = (wd, markers = ['import', 'DONE']) => writeFileSync(join(wd, 'close.mjs'), `import { existsSync, readFileSync } from 'node:fs';
-const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
-const t = existsSync(p) ? readFileSync(p, 'utf8') : '';
-const missing = ${JSON.stringify(markers)}.filter((k) => !t.includes(k));
-if (missing.length === 0) process.exit(0);
-console.log(\`FAILED red: \${missing.length} requirement(s) missing\`); process.exit(1);\n`);
 
 /** one fix iteration: the write, then the attempt summary @param {string} wd */
 const fixWrite = (wd, content, tag) => [

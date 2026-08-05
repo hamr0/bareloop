@@ -123,46 +123,6 @@ function materialsBlock(m) {
 }
 
 /**
- * W-2 — the progress TREND, read off the two most recent close gaps.
- *
- * A run stopped by its wall hands the human a lever choice, and the two levers
- * point opposite ways: more TIME only helps work that was still moving, and a goal
- * the run cannot reach does not become reachable by being given longer. The
- * cheapest honest discriminator is already in the fix loop's hand — consecutive
- * close output. A byte-identical gap means the last attempt moved nothing the
- * arbiter can see; a different one means the tree was still changing under it.
- *
- * Deliberately NOT a new instrument (no red counting, no red-set diffing): two
- * strings the loop already holds, compared for equality. `unknown` is the honest
- * reading when only one grade exists — never rounded up to "stalled", which would
- * recommend rewriting a goal on no evidence at all (F6's rule, applied to a trend
- * instead of a number).
- * @param {string[]} gaps close gaps, oldest first
- * @returns {{trend: 'stalled'|'moving'|'unknown', reading: string, lever: string}}
- */
-function gapTrend(gaps) {
-  if (gaps.length < 2) {
-    return {
-      trend: 'unknown',
-      reading: 'only one close grade exists, so there is nothing to compare',
-      lever: 'read the last close output before choosing between more time and a different goal',
-    };
-  }
-  const [prev, last] = gaps.slice(-2);
-  return prev === last
-    ? {
-      trend: 'stalled',
-      reading: 'the last two close outputs are byte-identical — the previous attempt moved nothing the close can see',
-      lever: 'more time alone is unlikely to help; revise the goal/spec first',
-    }
-    : {
-      trend: 'moving',
-      reading: 'the last two close outputs differ — the tree was still changing under the close when time ran out',
-      lever: 'the work was progressing; raising maxWallMs is the lever that fits',
-    };
-}
-
-/**
  * Layer 3 (D4) — the MECHANICAL START. A loaded bridge is handed to the drafter as a
  * STARTING DRAFT, not as a contract: it is appended to the ordinary drafting prompt and
  * the result passes the ORDINARY validator. No second, looser path exists for an
@@ -436,6 +396,13 @@ ${scoutBlob || '(no scout notes)'}`;
  *   The worker's conversation is deliberately NOT replayed — a transcript is not a
  *   checkpoint, and every attempt is fresh by the loop's own design. Absent is the
  *   ordinary path and is byte-identical to a run that was never killed.
+ * @param {{stage?: string|null, value?: number|null}[]} [opts.resumeGrades] RESUME — the
+ *   close GRADES the dead leg recorded, oldest first (`readResume`'s `restart.grades`).
+ *   A resumed leg is the same run continuing, so its halt readouts must judge the whole
+ *   chain: without this the trend restarts at this leg's first close and can report
+ *   `flat` — "revise the goal" — on a run that was converging when its allowance ran
+ *   out. Baselines only (src/trend.js's THE SEED): it spends none of this leg's own
+ *   bounds and mints none of its strikes. Empty/omitted is the cold path.
  * @param {() => number} [opts.now] the wall clock's time source, injected. The real clock is the
  *   default; a caller supplies this to drive time deterministically (the same seam `createClock`
  *   already exposes — a run's terminal cannot otherwise be exercised without waiting out a cap
@@ -445,7 +412,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   'cap-halt' | 'wall-halt' | 'provider-red' | 'interpreter-red' | 'step-stalled' |
  *   `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [] }) {
   workdir = resolve(workdir);
   // ONE spelling of the redaction, housed next to the inventory it reads
   // (src/validate.js) — the same helper the isolate verbs scrub the litectx store
@@ -682,8 +649,14 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * nothing and bounds nothing — the fix loop builds its OWN reader over its own
    * grades, because "did this run make progress" and "is this loop out of ideas"
    * are two questions and one instrument answering both is how they come to
-   * disagree. Per stage by construction (src/trend.js's accuracy law). */
-  const runTrend = createTrend({ stageOrder: stagedClose.map((/** @type {any} */ s) => s.name) });
+   * disagree. Per stage by construction (src/trend.js's accuracy law).
+   *
+   * On a RESUME it is SEEDED with the grades the dead leg recorded, so both halt
+   * readouts judge the whole chain rather than this leg alone: a leg that re-grades
+   * an unchanged tree is flat on its own evidence while the RUN — the thing the human
+   * is deciding about — may have been converging when its allowance ran out. Cold, the
+   * seed is empty and this is byte-identical to the pre-resume reader. */
+  const runTrend = createTrend({ stageOrder: stagedClose.map((/** @type {any} */ s) => s.name), seed: resumeGrades });
   /** the run-level MONEY record, one shape wherever the wallet stops the run —
    * W-2's `emitWallHalt` in a money coat, and deliberately its mirror image. hamr's
    * ruling for TIME was "keep the grade we already have and stop"; a money cut is
@@ -702,6 +675,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       verdict: lastCloseVerdict?.verdict ?? null,
       ...(lastCloseVerdict?.stage ? { stage: lastCloseVerdict.stage } : {}),
       trend: t.trend,
+      motion: t.motion,
       reading: t.reading,
       lever: t.lever,
       series: t.series,
@@ -1627,7 +1601,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
           strikeLimit: ladder.report().limit,
           distinctGaps: ladder.report().distinctGaps,
         };
-        // No trend here, and none invented: `gapTrend` reads consecutive CLOSE output,
+        // No trend here, and none invented: the trend instrument reads CLOSE grades,
         // and a step that never ran has no grade of its own to compare. The lever the
         // human needs is on the run-level record either way.
         const err = /** @type {CategorizedError} */ (new Error(
@@ -1957,12 +1931,6 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // unchanged — `loop.stop()` at `attemptRounds` — which is the belt that actually
     // holds. (v1.46 §4: `capRuns` retires as the governor.)
     const w = await mkWorker({ granted: ceiling, phase: 'fix', attemptRounds: maxStepRounds, attempts: null, writable: true, root: fixRoot });
-    // W-2's only input, and it is already in this loop's hand: the close gaps seen
-    // so far, oldest first. `post.gap` is the grade the loop OPENED on; every later
-    // entry is what ralph carried back from the close that judged the previous
-    // attempt (or, after a worker-crash, F32's routed gap — still the feedback that
-    // attempt actually received). Nothing is instrumented for this.
-    const gaps = [post.gap ?? ''];
     // ── v1.46 §4: the fix loop's GOVERNOR — progress, not a count ──
     //
     // MEASURED reason, the same shape as the step ladder's. The fixed `capRuns`
@@ -1983,6 +1951,21 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // output carries no number at all), which is precisely the case where a strike
     // would be minted out of ignorance. The moment a stage reports a comparable
     // number the count is gone, and money and the wall are what remain.
+    //
+    // DELIBERATELY NOT SEEDED with `resumeGrades`, and this is the one place the
+    // resume chain stops. The two readers answer two different questions (see
+    // `runTrend` above, and src/trend.js's "ONE PER SERIES"): the halt readout asks
+    // *was the RUN converging when its allowance cut it*, which spans both legs; this
+    // governor asks *is THIS loop out of ideas*, which is leg-local by definition.
+    // Seeding it was built and measured: a resumed loop that struck out dead flat
+    // rendered its own terminal as "still progressing — verdict 2 → 1 → 1 → 1 → 1",
+    // because the chain HAD fallen before the handover — a record contradicting
+    // itself, offering a conditional top-up ("if the trend above says it was still
+    // converging") on the exact run that had just proven it was not. It would also
+    // have moved the STRIKE rule on a resume (an attempt judged against the best the
+    // run ever reached rather than against the grade this loop opened on) — an
+    // unmeasured governance change, which is arbiter-adjacent territory. Both are the
+    // same error: one instance answering two questions.
     const fixTrend = createTrend({
       stageOrder: stagedClose.map((/** @type {any} */ s) => s.name),
       limit: FIX_STRIKE_LIMIT,
@@ -2020,7 +2003,6 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     };
     /** @param {number} iteration @param {string} [gap] */
     const middle = async (iteration, gap) => {
-      if (gap !== undefined) gaps.push(gap);
       // T/W-2 — the wall, read before a NEW fix attempt is started, and never
       // around the close itself. hamr's ruling: *"when time is up, keep the grade
       // we already have and stop … run tests (free) and when done if original time
@@ -2041,7 +2023,18 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // wall that kills grading leaves the run unreadable after the money is spent
       // (the F45 class), so the one thing this must never do is stop a close.
       if (clock.expired()) {
-        const t = gapTrend(gaps);
+        // ONE progress instrument, shared with the money halt (PRD v1.46 §2/§4).
+        // This site used to run its own `gapTrend`: byte equality of the last two
+        // close gaps, reading `stalled`/`moving` beside the money halt's per-stage
+        // `flat`/`converging` on the very same run. Two readers for one question is
+        // how the two come to disagree, and the byte reader could only ever report
+        // MOTION — that something changed, never which way. Folded into src/trend.js,
+        // where a per-stage NUMBER decides whenever one exists and the byte
+        // comparison survives as the reading inside `unknown` (never as a direction:
+        // "the output changed" is not "it got better", which is F6 in a trend's coat).
+        // `runTrend` is the run's own reader — the same instance the money halt reads
+        // — so a resume's inherited baselines reach this readout too.
+        const t = runTrend.verdict();
         wallStop = {
           cutMidCall: false,
           phase: 'fix',
@@ -2053,6 +2046,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
           verdict: lastCloseVerdict?.verdict,
           ...(lastCloseVerdict?.stage ? { stage: lastCloseVerdict.stage } : {}),
           trend: t.trend,
+          // MOTION rides as its OWN field rather than being mapped onto `trend`.
+          // Mapping `unchanged` → `flat` would dress a byte comparison as a measured
+          // direction on the spine, which is precisely what the unification refuses;
+          // a separate field keeps the old signal's substance without the false
+          // promotion. (Grepped first: no src/ or scripts/ reader consumed the old
+          // `stalled`/`moving` values — only this file's own tests, updated with it.)
+          motion: t.motion,
         };
         // The detail carries what the human needs to pick a lever and nothing else:
         // the verdict that stands, how much of the loop was actually spent, and the

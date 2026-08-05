@@ -51,6 +51,7 @@ import { renderListing, selectionPrompt } from './selection.js';
 import { stageClose } from './plan.js';
 import { MIN_WALL_MS, jobSpecHash } from './job.js';
 import { isObj, isNonEmptyString } from './validate.js';
+import { readGrade } from './trend.js';
 import { extractArtifact, priceOf } from './text.js';
 import { runJob as shippedRunJob } from './run.js';
 
@@ -498,6 +499,76 @@ function readStepCheckpoint(seen) {
 }
 
 /**
+ * The dead leg's CLOSE GRADES, in order — the trend baselines a resumed leg
+ * inherits (PRD v1.46 §3, and hamr's approved #2: *a resumed run's trend judges the
+ * whole tree*).
+ *
+ * Without this, a resumed leg's halt readout restarts the trend at its own first
+ * close: a leg cut after one grade reads `unknown` while the run it continues had a
+ * measured direction, and a leg that is flat on its own evidence reads `flat` on a
+ * chain that was converging — which recommends rewriting a goal that was working.
+ *
+ * WHAT COUNTS AS A CLOSE GRADE is exactly what the live reader counts (planrun's
+ * `runTrend` is fed at `judgeClose`, from every RED verdict the arbiter renders):
+ * the precheck, the outer close, and each of the fix loop's own closes. Nothing
+ * else. Read from the four records the executor already emits, in file order:
+ *
+ *  - `close-precheck` / `outer-close` — the two closes that ride under their own
+ *    record types. `needs_revision` only: a green ends the run, and a close FAULT
+ *    rendered no judgment at all, so folding either would put a non-grade in the
+ *    series (the same rule `judgeClose` applies).
+ *  - `ladder` with `governor: 'close-trend'` — the PRIMARY source for the fix loop.
+ *    It carries `{stage, value}` already read by the live instrument, so nothing is
+ *    parsed twice and the seam cannot disagree with the reading it inherits.
+ *  - `close-verdict` — the FALLBACK, for a spine written before that governor
+ *    existed (the fix loop was bounded by the retired count and emitted no ladder
+ *    reading at all). Used only when the spine carries no `close-trend` record.
+ *
+ * THE FALLBACK IS GUARDED, and the guard is the whole difficulty. `close-verdict` is
+ * ralph's record, and the STEP loop is a ralph loop too — a step's failing exit
+ * emits one, with a detail spelled `check "clean-run" red: …`. Parsed blind that
+ * line donates a number that is not a close grade at all, into a bucket the close
+ * never named: precisely the axis-merging src/trend.js's accuracy law forbids. So
+ * the fallback reads only records AFTER the `fix-loop` marker, which is exactly the
+ * population the primary source covers — the two sources are substitutable rather
+ * than merely similar.
+ *
+ * KNOWN LIMIT, stated rather than discovered later. This reads ONE spine, so a
+ * resume of a resume inherits leg 2's grades and not leg 1's: the seeded prefix is
+ * not re-emitted onto the new spine (it is history, not this leg's evidence, and a
+ * leg that re-emitted its inheritance would double-count it on the next read). The
+ * chain therefore shortens by one leg per resume. Fail-safe in the direction that
+ * matters: a shorter chain can only ever under-claim a direction.
+ *
+ * @param {any[]} seen the open window's own events, in file order
+ * @returns {{stage: string|null, value: number}[]} counts and stage names ONLY —
+ *   never a gap byte. The spine is append-only forever, so a close byte that
+ *   crosses this seam crosses it for good.
+ */
+function readGradeSeed(seen) {
+  const hasGovernor = seen.some((e) => e.type === 'ladder' && e.governor === 'close-trend');
+  /** @type {{stage: string|null, value: number}[]} */
+  const out = [];
+  let inFixLoop = false;
+  for (const e of seen) {
+    if (e.type === 'fix-loop') { inFixLoop = true; continue; }
+    /** @type {{stage: string|null, value: number|null}|null} */
+    let read = null;
+    if (e.type === 'close-precheck' || e.type === 'outer-close') {
+      if (e.verdict === 'needs_revision') read = readGrade(e.gap);
+    } else if (e.type === 'ladder' && e.governor === 'close-trend') {
+      // already read by the live instrument — taken verbatim, never re-parsed
+      read = { stage: isNonEmptyString(e.stage) ? e.stage : null, value: typeof e.value === 'number' ? e.value : null };
+    } else if (!hasGovernor && inFixLoop && e.type === 'close-verdict' && e.verdict === 'needs_revision') {
+      read = readGrade(e.gap);
+    }
+    // an unreadable grade donates NOTHING — not a zero, not a placeholder (F6)
+    if (read && typeof read.value === 'number' && Number.isFinite(read.value)) out.push({ stage: read.stage, value: read.value });
+  }
+  return out;
+}
+
+/**
  * Read a killed reuse run's OWN SPINE back into the state a resume continues from.
  *
  * hamr's checkpoint ruling is the whole contract: *"money, signature and checkpoint
@@ -723,6 +794,14 @@ export function readResume(events, { deathAt = null, direct = false, resumableOu
         seed: readStepCheckpoint(open.seen)
           ?? abandoned.filter((w) => w.n === open.n).map((w) => readStepCheckpoint(w.seen)).filter(Boolean).at(-1)
           ?? null,
+        // the CLOSE GRADES this leg recorded, so the resumed leg's halt readout spans
+        // the chain rather than restarting at its own first close (readGradeSeed).
+        // Read from THIS window only, never the abandoned ones: a plan checkpoint
+        // survives an abandoned attempt because the work it proves is on disk, but a
+        // grade is a reading of a tree at a moment, and the abandoned attempt's own
+        // restart already re-graded that tree. Counting both would enter the same
+        // reading twice and flatten a chain that moved.
+        grades: readGradeSeed(open.seen),
         priorSpentUsd: open.declaredSpentUsd + open.roundsUsd,
         // F83 — was that fold EXACT? Three sources, because `runJob` decides the same
         // question from more than this window can see (src/run.js: `!unpriced &&

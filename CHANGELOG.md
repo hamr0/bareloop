@@ -7,6 +7,23 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Changed
+- **ONE progress instrument for both governance halts.** The wall halt used to run its own
+  reader — byte equality of the last two close gaps, reporting `stalled` / `moving` / `unknown`
+  beside the money halt's `flat` / `converging` / `unknown` on the same run. Two readers for one
+  question is how the two come to disagree, and the byte reader could only ever report MOTION —
+  that something changed, never which way. Both halts now read the run's own `src/trend.js`
+  reader. Where a stage reported a comparable NUMBER it decides (so a wall halt on a converging
+  run now says `converging`, with the series, instead of "it moved"); where none did, the byte
+  comparison survives INSIDE `unknown` as a new `motion` field (`changed | unchanged | null`)
+  and as a clause in the `reading`, with the lever adapting (`unchanged` → revise the goal;
+  `changed` → read the last close output). **Never promoted to a direction and never mapped onto
+  `trend`** — "the close's output changed" is not "the run got better" (F6 in a trend's coat).
+  W-2's semantics are untouched: the grade already minted is kept, the three levers are the same
+  three, and the close is still never bounded by the wall. **Spine change:** the `wall-halt`
+  record's `trend` now carries the money halt's vocabulary and a sibling `motion` field; no
+  `src/` or `scripts/` reader consumed the old values (grepped).
+
 ### Added
 - **A MONEY halt is decision-ready, exactly as W-2 made the wall one** (PRD v1.46 §2). A run
   cut by its budget KEEPS the verdict already minted and emits a new `money-halt` spine record
@@ -26,6 +43,25 @@ feature lands, **patch** = docs, fixes, scaffolding.
   (a staged close is first-red-wins). Known accepted limit, documented at the site: a
   floor-shaped stage (`N tests executed, below the seed's M`) reads as not-improving rather
   than converging — the fail-safe direction.
+- **A resumed run's trend judges the WHOLE chain, not just the leg.** `readResume`'s `restart`
+  gains `grades`: the dead leg's close grades in order, as `[{stage, value}]` — counts and stage
+  names only, never a gap byte. `runJob`/`runPlan` take them as `resumeGrades` (beside
+  `resumeSeed`) and `createTrend` takes them as `seed`, folding them into the run trend's series
+  and per-stage bests. Without it a resumed leg restarts the trend at its own first close and can
+  report `flat` — *revise the goal* — on a run that was converging when its allowance ran out; a
+  leg that re-grades an unchanged tree is flat on its own evidence while the RUN is what the
+  top-up decision is about. The seed is history, not this leg's evidence, so it counts no
+  iteration, mints no strike, never sets `comparableEver` on its own (the blind-cap backstop
+  still governs a leg whose own readings never compare) and donates no stage position. The
+  close-fix loop's governor is deliberately **not** seeded — it answers the leg-local question
+  ("is this loop out of ideas"), and seeding it rendered "still progressing" inside the terminal
+  of a loop that had just struck out flat. Grades are read from the `ladder` records the live
+  governor already wrote (`governor: 'close-trend'`, verbatim, never re-parsed), from
+  `close-precheck`/`outer-close`, and — only on a spine predating that governor — from the
+  `close-verdict` records after the `fix-loop` marker, which is the same population and excludes
+  a STEP's failing exit. Known limit: one spine is read, so a resume of a resume inherits the
+  previous leg's chain and not the one before it. `scripts/run-u.mjs --resume` wires it and names
+  the inherited baselines in its preview.
 - **`--resume` on `scripts/run-u.mjs`** (PRD v1.46 §3) — the third leg of the resume rulings.
   It skips the patient reset (`resumeTreeGate` instead: a dirty tree is what a resume expects;
   only a moved HEAD stops it), folds the halted run's money and wall in so the signed ceiling
