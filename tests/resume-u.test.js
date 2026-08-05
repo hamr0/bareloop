@@ -182,3 +182,50 @@ test('§3 CONTROL: a resume with allowance still on the table does NOT cry wolf'
   assert.doesNotMatch(out, /NOTHING LEFT/);
   assert.match(out, /left     \$7\.5000 of \$8/);
 });
+
+// ══ F83's small unfixed item: the END banner framed wall and money differently ═
+//
+// The preview above is the only path these tests can drive — the end-of-run banner
+// sits past the approval gate, past a real patient reset and past a real `runJob`, so
+// no test in this file has ever read it. Its wall line was the leg's own stopwatch
+// (`Date.now() - started`) printed against the FULL signed cap, one line under a money
+// line printing `job-end`'s FOLDED total against the same signed cap. Measured on
+// u-msf70nei: `wall 12.8min of 45min` for a leg that resumed onto 24.9 already-burnt
+// minutes — the enforcement was right (the clock folded them, the watchdog armed on
+// the 20.1min remainder), the READING was not.
+//
+// The arithmetic is now one exported function, which is what makes it testable at all.
+import { wallLine } from '../scripts/u-readout.mjs';
+
+test('§3 banner: on a RESUMED leg the wall reads FOLDED against the signed cap — and still shows the leg, so neither number goes blind', () => {
+  // the real u-msf70nei numbers: 24.9min inherited, 12.8min bought in this leg
+  const line = wallLine({ legMs: 12.8 * 60_000, priorWallMs: 24.9 * 60_000, wallLabel: '45min' });
+  assert.equal(line, '37.7min of 45min (this leg 12.8min)',
+    'the total governs the cap (it is what the clock enforces), and the leg stays visible beside it');
+});
+
+test('§3 banner CONTROL: a NON-resumed run renders exactly as it always did — no fold, no parenthetical', () => {
+  assert.equal(wallLine({ legMs: 12.8 * 60_000, priorWallMs: 0, wallLabel: '45min' }), '12.8min of 45min');
+  assert.equal(wallLine({ legMs: 12.8 * 60_000, wallLabel: '45min' }), '12.8min of 45min',
+    'a cold run passes no fold at all, and an absent fold is a real zero');
+  assert.equal(
+    wallLine({ legMs: 90_000, wallLabel: 'UNBOUNDED (spec sets no maxWallMs — deliberate operator choice; no outside deadline)' }),
+    '1.5min of UNBOUNDED (spec sets no maxWallMs — deliberate operator choice; no outside deadline)',
+    'the unbounded label is passed through untouched — a run with no cap still reports the time it took',
+  );
+});
+
+test('§3 banner: a garbage fold contributes ZERO — the readout can never claim MORE wall than the leg actually took', () => {
+  // the belt every sibling fold site carries (clock.js `prior`, readResume's four):
+  // a NaN would print `NaNmin` and a negative would under-report the run
+  for (const bad of [-60_000, NaN, Infinity, null, undefined, 'soon']) {
+    assert.equal(wallLine({ legMs: 60_000, priorWallMs: /** @type {any} */ (bad), wallLabel: '45min' }), '1.0min of 45min',
+      `a ${String(bad)} fold is 0, never a rendered NaN and never a subtraction`);
+  }
+});
+
+test('§3 banner: the runner prints the folded line through THIS function — a second arithmetic in the script is how the two numbers disagreed in the first place', () => {
+  const src = readFileSync(RUNNER, 'utf8');
+  assert.match(src, /wall {6}\$\{wallLine\(/, 'the banner calls the shared helper');
+  assert.doesNotMatch(src, /\$\{elapsedMin\}min of/, 'and the old leg-only spelling is gone, not merely shadowed');
+});

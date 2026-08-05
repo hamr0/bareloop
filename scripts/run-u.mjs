@@ -18,6 +18,9 @@ import { scanSecrets } from '../src/validate.js';
 // --resume reads the halted run's own spine back through the SAME reader the reuse
 // path uses (never a second one) and keeps its patient the way it left it.
 import { readResume, resumeTreeGate } from '../src/reuse.js';
+// the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
+// end-of-run readout sits past the approval gate, so nothing could ever drive it here
+import { wallLine } from './u-readout.mjs';
 
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
@@ -385,7 +388,7 @@ try {
   try { watchdog.kill('SIGKILL'); } catch { /* already gone */ }
   clearInterval(lagTimer);
 }
-const elapsedMin = ((Date.now() - started) / 60000).toFixed(1);
+const legMs = Date.now() - started;
 
 // ── the read. Facts only: what happened, what it cost, and whether the record is
 // honest. No classification into pass/fail buckets — one run classifies nothing.
@@ -407,7 +410,10 @@ const writes = audit.filter((e) => e.decision === 'allow' && (e.action?.type ===
 
 console.log(`\noutcome   ${outcome}`);
 console.log(`spent     ${je?.spentUsd == null ? 'UNKNOWN' : `${je.spendComplete === false ? '≥' : ''}$${je.spentUsd.toFixed(4)}`} of $${spec.budgetUsd}`);
-console.log(`wall      ${elapsedMin}min of ${WALL_LABEL}`);
+// FOLDED, exactly like the money line above it: on a resume the cap governs both legs
+// together, and a leg-only wall next to a folded spend is two framings on one cap with
+// no label to tell them apart (F83). The leg stays on the line beside it.
+console.log(`wall      ${wallLine({ legMs, priorWallMs: dead ? dead.restart.priorWallMs : 0, wallLabel: WALL_LABEL })}`);
 console.log(`rounds    ${events.filter((e) => e.type === 'worker-round' && e.kind === 'turn').length}`);
 console.log(`writes    ${writes.length} allowed (${new Set(writes.map((e) => e.action?.path)).size} distinct files)`);
 console.log(`plan      ${plan ? `${plan.steps?.length ?? '?'} steps` : 'none validated'}`);

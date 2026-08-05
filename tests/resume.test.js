@@ -1865,3 +1865,86 @@ test('cycle F6: a DECLARED floor survives the whole cycle — leg 1\'s unknown r
   assert.equal(ev2.find((e) => e.type === 'job-end').spendComplete, false,
     'a GREEN total built on a floor is still a floor: reporting it exact is F6 in a resume\'s coat');
 });
+
+// ── F83's parked MED: the floor a leg MINTS, not the one it inherited ────────
+//
+// The test above carries a DECLARED floor across the seam, and it passed before this
+// fix — `declaredComplete` is one of the two causes the restart branch already read.
+// `runJob` decides the same question from FOUR (src/run.js: `!unpriced && !stalled &&
+// !cutMidCall && !priorFloor`), and the two the reader could not see are the two a leg
+// mints for itself: a self-healed stall and a wall that cut a call mid-flight. Both
+// leave every counted round PRICED, so nothing in the window shows them — the only
+// witness is the terminal's own `spendComplete`, which the restart branch ignored while
+// `readTry`, the graded branch of the same reader, has always consulted it.
+//
+// The mechanism here is real, not injected: a real `runJob` on a real patient, a wall
+// that expires inside a provider call, and F64's own `cutMidCall` discriminator doing
+// the flooring. The money that reaches the resumed leg is what is under test.
+
+/** a provider whose SECOND call burns the wall and then comes back as the provider's
+ * own timeout — F64's mid-call cut, the shape that floors a leg nothing else can see.
+ * @param {() => void} burnWall advances the mocked clock past the cap */
+const wallCutProvider = (burnWall) => {
+  const calls = [];
+  return {
+    calls,
+    async generate() {
+      calls.push(calls.length + 1);
+      if (calls.length === 2) {
+        burnWall();
+        throw Object.assign(new Error('[AnthropicProvider] request timed out'), { code: 'ETIMEDOUT' });
+      }
+      return { text: 'src/mod.mjs exports x; tests/ is empty.', usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.05, stopReason: 'end_turn' };
+    },
+  };
+};
+
+test('F83: a floor leg 1 MINTED (the wall cut a call mid-flight) reaches the resume seam — the restart fold reads the terminal, not just the rounds it can count', async (t) => {
+  const wd = cyclePatient();
+  const job = CYCLEJOB({ maxWallMs: 120_000 });
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
+  const provider = wallCutProvider(() => t.mock.timers.tick(200_000));
+  const file = join(wd, 'spine-wallcut.jsonl');
+  const outcome = await runJob(job, {
+    approvals: approveJob(job), workdir: wd, provider, emit: makeSpine(file), capRuns: 2,
+  });
+  assert.equal(outcome, 'wall-halt', 'the deadline landed INSIDE the call, which is the whole point of the fixture');
+  const events = readSpine(file);
+  const end = events.find((e) => e.type === 'job-end');
+  assert.equal(end.spendComplete, false, 'leg 1 really did end on a FLOOR — or this test proves nothing');
+  assert.ok(events.filter((e) => e.type === 'worker-round').every((e) => typeof e.costUsd === 'number'),
+    'and EVERY round it counted came back priced: the floor is invisible to any reader that only sums rounds');
+
+  const r = readPause(events);
+  assert.ok(r.restart, 'a wall-halt is a resumable governance stop, so there is a fold to hand on');
+  assert.equal(r.restart.priorSpendComplete, false,
+    'the unknown does not heal by being carried forward: a fold built on a floor is a floor (F6)');
+  assert.equal(r.spendComplete, false,
+    'and the reader\'s own top-level figure says the same thing — one rule, not two spellings of it');
+  assert.ok(r.restart.priorSpentUsd > 0, 'the floor is still a real number: a known figure is never dropped to keep the sum tidy');
+});
+
+test('F83 CONTROL: the ordinary killed-mid-flight restart is UNCHANGED — with no terminal in the window there is nothing to consult, and an EARLIER try\'s floor is not this fold\'s', async () => {
+  const dir = seed(BRIDGE('alpha'), BRIDGE('beta'));
+  const { events } = await spineOf({
+    registryDir: dir,
+    selectionProvider: picker({ choice: 'alpha', reason: 'a' }, { choice: 'beta', reason: 'b' }),
+    runJob: scriptedRuns([
+      // try 1 GRADED and declared a floor of its own — it belongs to the carry, never
+      // to the fold the restart is handed
+      { outcome: 'escalated', closeStage: 'typecheck', spentUsd: 1.5, rounds: [0.5, 0.5, 0.5], spendComplete: false },
+      { outcome: 'escalated', closeStage: 'typecheck', spentUsd: 2, rounds: [0.75, 0.75] },
+      { outcome: 'green', plan: PLAN('cold'), closeStage: 'typecheck', spentUsd: 1 },
+    ]),
+  });
+  // killed INSIDE try 2, after its first worker-round: the module-C shape, no job-end
+  const roundsIn2 = events.filter((e) => e.type === 'worker-round').slice(3);
+  const r = readResume(events.slice(0, events.indexOf(roundsIn2[0]) + 1));
+
+  assert.equal(r.restart.n, 2);
+  assert.equal(r.restart.priorSpentUsd, 0.75, 'the dead attempt\'s own priced round, exactly as before');
+  assert.equal(r.restart.priorSpendComplete, true,
+    'nothing is unknown about what THIS attempt spent — a resume that starts floor-marking the kills that work today is the fix pointing the wrong way');
+  assert.equal(r.completed[0].spendComplete, false, 'try 1\'s floor is read where it belongs: on try 1\'s own row');
+  assert.equal(r.spendComplete, false, 'so the RUN total is a floor, while the fold handed to the restart is not');
+});

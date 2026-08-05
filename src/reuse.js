@@ -724,7 +724,28 @@ export function readResume(events, { deathAt = null, direct = false, resumableOu
           ?? abandoned.filter((w) => w.n === open.n).map((w) => readStepCheckpoint(w.seen)).filter(Boolean).at(-1)
           ?? null,
         priorSpentUsd: open.declaredSpentUsd + open.roundsUsd,
-        priorSpendComplete: open.declaredComplete && open.roundsComplete,
+        // F83 — was that fold EXACT? Three sources, because `runJob` decides the same
+        // question from more than this window can see (src/run.js: `!unpriced &&
+        // !stalled && !cutMidCall && !priorFloor`):
+        //   - what the attempt DECLARED it inherited (`priorFloor`, one resume back),
+        //   - the rounds this reader can count (`unpriced`), and
+        //   - the attempt's OWN terminal, when it landed one.
+        // The third is what closes the seam. A `stalled` or `cutMidCall` floor leaves
+        // every counted round PRICED, so the first two read exact and the fold came
+        // back exact — a leg that honestly said `spendComplete: false` was laundered
+        // into an exact total one function call later (F6). `readTry`, the GRADED
+        // branch of this same reader, has always consulted the terminal; only this one
+        // skipped it, and the asymmetry was the tell.
+        //
+        // Read only where a terminal EXISTS — the resumable-halt shape. The ordinary
+        // killed-mid-flight restart has no `job-end` in its window at all and is
+        // unchanged by construction: nothing to consult is not an unknown, it is the
+        // same two sources as before. `!== false` matches `declaredComplete` above,
+        // the sibling fold field on the same object: `runJob` emits the flag on EVERY
+        // terminal precisely so no consumer branches on presence, so absence means a
+        // spine older than the flag, never a floor being hidden.
+        priorSpendComplete: open.declaredComplete && open.roundsComplete
+          && (open.jobEnd ? open.jobEnd.spendComplete !== false : true),
         priorWallMs: deathAtKnown && Number.isFinite(open.startedAtMs)
           ? open.declaredWallMs + Math.max(0, died - open.startedAtMs)
           : open.declaredWallMs,
