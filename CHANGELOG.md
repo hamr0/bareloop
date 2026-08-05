@@ -179,13 +179,11 @@ feature lands, **patch** = docs, fixes, scaffolding.
       attempt came back unpriced, `priorSpendComplete: false` rides one-way onto every
       `job-end` this run emits, so a resumed attempt states a floor instead of an
       exact-looking total (F6 — it was previously computed and recorded on `try-start` but
-      never reached the component whose terminal says so). **Known limit, unfixed (F83):**
-      the RESTART fold derives that completeness from two of `runJob`'s four floor causes
-      (a declared prior floor and an unpriced round), so a floor arising from a STALL or a
-      call cut mid-flight comes back exact at the resume seam. The graded branch of the same
-      reader consults the dead terminal's own `spendComplete`; the restart branch does not.
-      Parked rather than patched — the remedy has to be tested against the ordinary
-      killed-mid-flight restart, which has no `job-end` to read.
+      never reached the component whose terminal says so). The restart fold reads ALL four
+      of `runJob`'s floor causes: a landed resumable `job-end` carrying
+      `spendComplete: false` (a stall, or a call cut mid-flight) floors the fold exactly
+      like a declared prior floor or an unpriced round (F83's laundering finding, fixed;
+      the no-`job-end` killed-mid-flight restart is control-pinned unchanged).
     - **`runReuse({… resume})`** seeds the completed tries, restarts the mid-flight one
       against the SAME workflow with no second selection call, and carries on into
       whatever the envelope still authorizes. It refuses (`resume-red`, ledger-excluded)
