@@ -504,3 +504,101 @@ n=3 observation above.
 **Pool state:** bareagent-u is out twice (pre-fix and post-fix). `bareguard-u`
 (hash `2b8dbdaf…`) is the LAST shaped candidate, staged and validated at $0 —
 nothing paid fires without hamr's explicit signature on that hash.
+
+---
+
+## Addendum — 2026-08-06, POOL RE-OPENED: the three rejections were OLD CODE, not bad patients — re-screen registered BEFORE its numbers
+
+Written and committed **before either re-screen run returned a number.** The screen's
+clauses are NOT re-frozen and NOT loosened: the existing §3 clauses (must-GREEN inside the
+envelope, accepted plan ≥2 steps, execution ≥ 5× drafting, attempt-1-trivial discards)
+govern exactly as written. What changes is the POOL, and only because the instrument the
+rejections were measured on no longer exists.
+
+### The finding that re-opened the pool
+
+Every rejection in this prereg predates the fixes that followed it. Same patient, same
+signed spec, `bareagent-u`:
+
+| run | date | outcome | spend |
+|---|---|---|---|
+| u-msd916dh | 2026-08-03 | step-red | $2.7020 |
+| u-msdonzxl | 2026-08-03 | wall-halt (our own close bug) | $2.2119 |
+| u-msdpuaej | 2026-08-03 | step-red | $3.0669 |
+| u-msdsmkid | 2026-08-03 | step-red | $3.5428 |
+| u-msew1uy5 | 2026-08-04 | cap-halt | $4.1261 |
+| **u-msf70nei** | **2026-08-04** | **GREEN** | **$5.3389** |
+
+Landed between the last rejection and the green: the progress-governed strike ladder, the
+`planPrompt` exit-freedom law, the mechanical never-wrote replan line, Rule A-v2
+(`check-placement`), Rule B (`check-shed`), the money halt and the close-trend instrument.
+
+**Stated limit, so the green is not over-read:** u-msf70nei ran at **$8/45min** (an
+operator top-up) and was a **resume**, not a cold run. It proves `bareagent-u` is
+*winnable*; it does **not** satisfy the frozen screen, which requires a cold green inside
+$4/25min. That is precisely what the re-screen tests. The four earlier reds stay on the
+record as instrument-era rows and are neither deleted nor re-graded.
+
+### Registered reading rule (frozen here, before any number)
+
+- A re-screen GREEN admits the candidate on the §3 clauses as written (5× floor per
+  hamr's 2026-08-03 ruling). It does not retroactively convert any prior red into a pass.
+- A re-screen RED leaves the candidate OUT and the earlier rejections stand.
+- Re-screen rows are **screen evidence only, never contrast rows** (the standing
+  validation-run rule).
+- Both runs are COLD (`run-u.mjs` hard-resets to seed, `git clean -fd`, and `rmSync`s
+  `.litectx` — verified in source, not assumed).
+
+### Authorization (hamr, verbatim, in-turn 2026-08-06)
+
+- *"re-screen bareagent-u and baremobile-u cold at 4/25"*
+- *"hashes approvd and money 28-50"*
+
+`bareagent-u-types` was carrying the $8/45 top-up envelope; dropping it to $4/25 per that
+order is a spec edit, so its hash moved. Both hashes as run:
+
+- `bareagent-u-types` @ $4/25 → `eed6fe822d9709b5e0449c5b74a50af22154b81234d94011316dd593ca69204c`
+- `baremobile-u-types` @ $4/25 → `226930ff4de4c1dc7e5fc882f0b6cd799808ca53152c3ac98b41ec83b625ea0b`
+
+**Budget.** Programme spend reconstructed from the spines is ~$22 (screening $13.7753 +
+pre-probe green $4.0762 + cap-halt $4.1261); the $5.3389 F83 green is tracked on the raw-API
+account. A RANGE is not a cap (cap-not-estimate), so *"money 28-50"* is executed at its
+LOWER bound: **$28 additional is the working ceiling** and crossing it requires hamr's word
+again. This can under-spend his intent; it cannot over-spend it.
+
+### Two corrections to this document's own frozen text
+
+1. **§2's close shape is stale.** It names the 4-stage close
+   `changed-from-seed → typecheck → suite-green → no-suppressions`. The 2026-08-05 axis
+   split (one population per stage) made every u-* close SIX stages:
+   `changed-from-seed → typecheck → typecheck-outside → tests-kept → suite-green →
+   no-suppressions`. R2 "same SHAPE" now means the six-name ordered list.
+2. **The frozen registry snapshot is consequently DEAD.** Both entries store the 4-stage
+   list, so the shipped load gate refuses them — measured, not inferred:
+
+   ```
+   aurora-u-spawner-types -> loadGate ok: false   RED recipe-stale
+   litectx-u-types        -> loadGate ok: false   RED recipe-stale
+   ```
+
+   Every ON leg would therefore select nothing and run cold: **ON ≡ COLD, and the contrast
+   would read NULL for a reason that has nothing to do with reuse.** Re-minting the two
+   bridges under the new closes is the only way to make the ON arm real, and it deviates
+   from §2's "a copy taken at this prereg's commit". That deviation is hamr's call and is
+   NOT taken here.
+
+### Job A's admission evidence is now inexpressible
+
+`pulselog-u-types`' calibration plan (u-mscwz0e3) put `check-passes(typecheck)` on step 0
+of 2 while `typecheck` was `needs_revision` at preflight. Run through the shipped validator
+both directions:
+
+```
+WITHOUT Rule A-v2 (the regime it was admitted under): ACCEPTED
+WITH   Rule A-v2 (shipped in v0.7.0):                 REDDED — check-placement
+```
+
+Not treated as disqualifying — A-v2 forces the RLM shape that greens 7/7 in the archive, so
+the expected direction is help, not harm. But job A's 7.67× ratio and its must-GREEN were
+measured on a plan the gate now rejects, and that caveat travels with any sentence citing
+them.
