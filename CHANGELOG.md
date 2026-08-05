@@ -283,6 +283,94 @@ feature lands, **patch** = docs, fixes, scaffolding.
   removed with the ceiling it fed (it existed only to bound `attempts`; an extra property is
   ignored, so no direct caller breaks).
 
+### Fixed (whole-branch review, 2026-08-05 — 4 opus finders over `main...layer-3-reuse`; F84)
+
+*Every confirmed finding fixed, each verified against source before it was believed; no fix
+forced, and three finder claims corrected in detail during the fixing.*
+
+- **CRITICAL — the close trend's BLIND CAP was a one-way latch.** `capRuns` survives as the
+  fallback for a close whose output carries no comparable number, and it was armed by
+  "has this leg ever compared anything" — which a bare STAGE ADVANCE satisfies, on
+  essentially every run that does any work at all. One advance therefore disarmed the
+  fallback **permanently**: a later run of numberless reds (the shipped aurora TESTGEN
+  `verdict` stage is exactly that shape) accrued neither a strike nor a blind tick and was
+  bounded by money and the wall alone, where the retired count would have stopped it.
+  Reproduced by execution before the change — 27 iterations, no terminal. The cap now bounds
+  the **consecutive uncomparable streak**: it lifts the moment the instrument can read and
+  **re-arms the moment it cannot**, binding a recovered run never and a blind-from-birth run
+  on exactly the iteration it always did (pinned byte-stable by test, at every cap). The
+  `report()` `blind` flag follows the same question — a live streak IS blindness, so the
+  terminal no longer offers "0/2 strikes" as the reason a loop it did not strike out was
+  stopped.
+- **`priorFloor` no longer requires money to have been spent.** `runJob` derived it as
+  `spentUsd > 0 && priorSpendComplete === false`, so a resumed leg inheriting a fold of **$0
+  that was not exact** — every round of the dead attempt unpriced — came back reading as an
+  exact zero. A floor OF zero is still a floor (F6). Read off the flag alone now, and the
+  onward `job-start` declaration is emitted for that case too (`spentUsd > 0 || priorFloor`),
+  which is the only field that can carry the unknown forward.
+- **A reuse RESUME's halt readout now spans the chain.** `restart.grades` was computed by
+  `readResume`, declared on the record, and then handed to nobody: only `scripts/run-u.mjs`
+  passed `resumeGrades` on. `runReuse`'s own per-try execution now threads it into `runJob`,
+  so a restarted leg's `money-halt`/`wall-halt` trend judges the RUN rather than restarting at
+  this leg's first close and reporting `flat` — *revise the goal* — on a run that was
+  converging when its allowance ran out. `resume-start`'s `restart` states
+  `gradesInherited` (a COUNT; the seam carries stage names and numbers, never a close byte),
+  and only when there is one — the cold path is unchanged.
+- **The `money-halt` record carries `spendComplete`.** `remainingUsd` is `budget − spent`, so
+  a run whose spend is a FLOOR has a remaining that is a CEILING; quoting it to four decimals
+  read as the number. `runPlan` takes the ledger's own `spendComplete` (one spelling of the
+  four causes, never a second arithmetic) and states it beside the figure — the same duty
+  `wall-halt` has carried since W-2.
+- **A try row's ROUNDS fold across a resume, like its money and its wall.** A restarted try
+  reported only the restart's turns against a span its `$` already covered both legs of.
+  `try-start` declares `priorRounds` (including when it is `null`: absence means a spine older
+  than the field, an explicit null is a predecessor that could not count its own turns — and
+  an unfoldable count stays `null` rather than becoming the half this leg can see, F6). The
+  inherited-graded row's `wallMs` is likewise measured to the try's **own terminal** now, not
+  to a kill that may have landed minutes later.
+- **The replan brief no longer calls an IDLE strike-out "converging".** The sentence was gated
+  on repeats alone, so a step that wrote nothing in any iteration was handed *"no file was
+  written in iteration(s) 1, 2"* and *"the step was converging"* in the same paragraph — to
+  the one channel the redrafting planner adapts to. Both signals gate it now; a moving exit
+  output on a step that wrote nothing is a close re-running, not work converging.
+- **`planPrompt`'s JSDoc was detached from `planPrompt`.** An intervening helper landed between
+  the block and the function, so every parameter shipped as `any` in the generated `.d.ts`.
+  Reattached; no behaviour change, and the types are the contract.
+- **W-2 on the LAUNCH side: a zero wall remainder now REFUSES, loudly.** `--wall-ms 0` reached
+  `scripts/u-watchdog.mjs`, which defaulted a non-positive value to `null` and armed **no
+  deadline at all** while the runner's own banner still advertised one — a guard reading zero
+  and saying nothing. The watchdog now refuses any PRESENT-but-unreadable numeric flag
+  (`0`, negative, garbage) with exit 2, while an OMITTED `--wall-ms` stays the legal unbounded
+  choice with the stale trigger armed. Both runners refuse above the spawn, before the key and
+  before the patient: `scripts/run-u.mjs` on an exhausted resume remainder, `scripts/run-reuse.mjs`
+  on `plannedWallMs <= 0`. **Two zeros, two levers** — a restart whose wall is burned wants
+  `--wall` (NO WALL LEFT), a run whose authorized attempts have all run wants `--tries` or
+  nothing (NOTHING TO ARM) — because naming the wrong lever sends the operator to re-sign a
+  number that buys no attempt. Both are in the approval hash, so either is a new signature.
+- **`scripts/run-reuse.mjs` hardening.** A corrupt/truncated watchdog report can no longer abort
+  a signed resume at the last gate (it is parsed once, defensively, and reused; the archive
+  suffix falls back to the ARCHIVE moment so a second unreadable report cannot overwrite the
+  first). `runner-start`'s `argv` is redacted **at the write site** with the shipped
+  `redactSecrets` inventory — an append-only log that captures a key captures it forever, so an
+  after-the-fact whole-file scan is too late. A trailing value-flag (`--tries` with nothing
+  after it) now refuses instead of reading `Number('') === 0` and silently reshaping the run
+  being signed. The header's deliberate-differences list gains the fourth: the end-of-run leak
+  scan is a READOUT here, not a gate, because `runReuse` writes registry rows mid-run.
+- **Archived runners annotated** (`reuse-preprobe`, `run-calibration-testgen`, `run-poc-layer2`,
+  `run-probe-testgen`): their `CAP_RUNS` comments described the retired drafting-prompt
+  interpolation, not the close-fix loop's blind fallback it actually is now.
+
+- **Tests: 987 total** (from 959). The mutation-proven hole: a widening of `REUSE_GRADED_RED` — the
+  set whose members DEMOTE a proven bridge — survived the entire suite, so the demotion table
+  is now pinned outcome by outcome (`escalated` demotes; `step-red`/`cap-halt`/`wall-halt`/
+  `provider-red`/`close-red`/`step-stalled`/`pricing-red` are casualties and proven stays
+  proven). Plus the blind-cap backstop battery (blind-from-birth pin, streak-not-birth,
+  never-fires-while-reading, recovery resets), the launch-side refusals at all three sites,
+  the resume grade/round folds with their absent-baseline controls, the money-halt floor
+  readout, and a first battery for `scripts/migrate-bridge-patient-slugs.mjs` (dry-run
+  byte-identity, whole-file refusal over half-migration, name/filename disagreement — 4
+  mutants killed).
+
 ## [0.6.0] — 2026-07-31
 
 ### Added

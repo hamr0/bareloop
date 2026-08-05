@@ -561,19 +561,33 @@ nothing improving ends the loop, under the unchanged `cap-halt` terminal and the
 reads a real see-saw (suppressions 12 → 5 while the type errors it re-exposed went 2 → 0) as a
 regression, and that mistake is inexpressible here rather than avoided by care. A stage whose
 output carries no number donates NOTHING — not a zero, not a strike (F6): while the instrument
-has never been able to compare anything, `capRuns` is what bounds the loop, and it lifts the
-moment a stage reports a comparable number. Known accepted limit, stated: "lower is better" is
-not derivable from prose, so a floor-shaped stage (`N tests executed, below the seed's M`)
-reads as not-improving rather than converging — the fail-safe direction, since a false "flat"
-costs one conservative stop and a false "converging" costs a top-up spent on a dead run. The
-spine gains a per-iteration `ladder` record here too; every reading names its `governor`
+cannot compare, `capRuns` is what bounds the loop. It bounds the **consecutive run of
+unreadable gradings**, not the loop's opening — it lifts the moment a stage reports a
+comparable number and **re-arms the moment one stops**, so a loop that reads, goes blind and
+reads again is never bounded by it, while a loop that never compares anything binds on exactly
+the iteration the fixed count always bought it (F84: gating it on "has this loop ever compared
+anything" made a single stage ADVANCE disarm it for the rest of the run, and a numberless-red
+close then had money and the wall for a bound). Two known accepted limits, both stated at the
+site: (1) "lower is better" is not derivable from prose, so a floor-shaped stage (`N tests
+executed, below the seed's M`) reads as not-improving rather than converging — the fail-safe
+direction, since a false "flat" costs one conservative stop and a false "converging" costs a
+top-up spent on a dead run; (2) a series is one bucket per stage NAME, and a stage name is not
+an axis — a close free to red one stage on two different populations (`N error(s) in <scope>`
+vs `the target files are clean but M error(s) exist outside them`) donates both genres to one
+series, and a run crossing that seam can read converging on work that only swapped which wall
+it is behind. Neither is sharpened by teaching the reader to tell prose shapes apart (the F49
+precedent); the second's root fix is a stage split in the close, which is the spec's to change.
+The spine gains a per-iteration `ladder` record here too; every reading names its `governor`
 (`step-ladder` | `close-trend`) so two instruments under one event type can never be averaged
 into one number.
 
 **A MONEY halt is decision-ready (PRD v1.46 §2).** A cut by the wallet is the same KIND of
 stop the wall is, so it now reads out the same way: the verdict already minted is KEPT (never
 discarded, never re-derived), and a `money-halt` spine record carries `budgetUsd`,
-`remainingUsd`, the kept `verdict`/`stage`, the run's own per-stage `trend`
+`remainingUsd` **with its own `spendComplete`** (the remaining is `budget − spent`, so on a run
+whose spend is a FLOOR it is a CEILING and says so rather than reading as the number — the same
+duty `wall-halt` has carried since W-2; it is the ledger's one figure, never re-derived here),
+the kept `verdict`/`stage`, the run's own per-stage `trend`
 (`converging | flat | unknown`) with the `reading` and `series` it judged, and three
 `options` — top up and resume, revise the spec, abandon. Emitted at every site that cuts a run
 on money (the step loop, the close-fix loop, and the scout/draft relay), exactly as
@@ -857,7 +871,11 @@ try row is **decision-ready**: `bridge`, `runOutcome`, `verdictClass`, `failingS
 `spentUsd` vs `capUsd`, `wallMs` vs `wallCapMs`, `capBound`, `wallBound`, `rounds`, and
 `closeReached`. `spentUsd` is the sum of PRICED figures only across tries AND selection
 calls; one unknown makes `spendComplete` false, and a try whose `job-end` never landed
-reports `spentUsd: null` — never a `0` that reads as exact (F6).
+reports `spentUsd: null` — never a `0` that reads as exact (F6). On a RESTARTED try,
+`rounds` folds both attempts exactly as `spentUsd` and `wallMs` do (the row states one span,
+not a count from one leg against money from two), and the fold is declared on `try-start` as
+`priorRounds`; a leg whose turns cannot be counted leaves it `null` and the row keeps the
+unknown rather than reporting the half it can see.
 
 > **The selection calls sit OUTSIDE the per-try caps**, by construction: they happen
 > before a try starts, so no try's ledger can hold them. They are small (one short prompt
@@ -911,7 +929,10 @@ semantics are byte-unchanged (PRD v1.46 §3):
   reuse runner needs. `job-start` carries the DECLARED fold (`priorSpentUsd` with its
   `priorSpendComplete`, and `priorWallMs`, each present only when there is one) exactly as
   `try-start` does, so a chain of resumes adds only each attempt's own new rounds instead of
-  re-deriving and double-billing.
+  re-deriving and double-billing. **An inherited FLOOR is one** even when the money it qualifies
+  is `$0`: a leg whose every round came back unpriced folds nothing countable and is still not
+  exact, so the declaration is emitted to carry that unknown forward rather than letting it read
+  as an exact zero (F6).
 - **`resumableOutcomes: ['cap-halt', 'wall-halt']`** reclassifies a landed `job-end` whose
   outcome is a GOVERNANCE HALT as a restart rather than a completed row. "A landed job-end is
   complete" is true of a VERDICT; a halt means an operator-owned allowance ran out with the
@@ -922,6 +943,12 @@ semantics are byte-unchanged (PRD v1.46 §3):
 reset (`resumeTreeGate` instead — a dirty tree is what a resume expects; only a moved HEAD
 stops it), folds the halted run's money and wall in, re-enters at the checkpoint, and arms the
 outside watchdog on the REMAINING wall. The top-up itself stays a spec edit the human signs.
+**A zero wall remainder REFUSES the launch** (exit 2, before the key and before the patient):
+W-2 says a run out of time keeps the grade it has and stops, so a resume with no time to start
+anything in is a decision, not an unbounded launch — and launching it used to hand the outside
+watchdog `--wall-ms 0`, which it defaulted to `null` and armed no deadline at all under a banner
+still advertising one. The refusal names the lever: raise `maxWallMs`, which moves the spec hash
+and is re-signed.
 
 - **Completed tries are not re-run.** They come back as rows (marked `inherited`) and
   their bridges stay excluded from every later selection. A try whose `job-end` landed —
@@ -960,7 +987,10 @@ outside watchdog on the REMAINING wall. The top-up itself stays a spec edit the 
     every attempt is fresh by the loop's own design.
 - **Its TREND baselines come with it.** `restart.grades` is the dead leg's close grades in
   order (`[{stage, value}]` — counts and stage names only, never a gap byte), and it rides
-  into `runJob`/`runPlan` as `resumeGrades` beside `resumeSeed`. It seeds the run trend's
+  into `runJob`/`runPlan` as `resumeGrades` beside `resumeSeed` — on the LIBRARY path
+  (`runReuse` hands it to the restarted try itself) as well as through `run-u --resume`;
+  `resume-start`'s `restart` states `gradesInherited`, a count, and only when there is one.
+  It seeds the run trend's
   baselines so the resumed leg's `money-halt`/`wall-halt` readouts judge the CHAIN: a leg
   that re-grades an unchanged tree is flat on its own evidence while the RUN — what the
   top-up decision is actually about — may have been converging when the money ran out. See
@@ -1004,8 +1034,16 @@ by `/proc/<pid>/cmdline`, because a live pid can be a recycled stranger), prints
 reconstruction as a preview before you sign — including WHERE it picks up ("step 2 of 3
 \"verify-strict-typecheck\" — 1 step already finished and SKIPPED, not re-paid"), so the
 signature covers an attempt whose real cost you can see — archives the killed run's
-watchdog record so the readout cannot mistake it for this run's, and sizes the outside
-watchdog for the work that is actually LEFT.
+watchdog record so the readout cannot mistake it for this run's (defensively: a truncated
+report is not evidence of anything, and it can no longer abort a signed resume), and sizes the
+outside watchdog for the work that is actually LEFT. **Nothing left to run REFUSES the launch**
+(exit 2), with a lever per cause, because they are different asks: `NO WALL LEFT` when the
+restarted try burned its whole per-try wall (raise `--wall`), `NOTHING TO ARM` when every
+authorized attempt has already run (raise `--tries`, or read the run as it stands). Both are in
+the approval hash, so either is a new signature. Two smaller refusals in the same family: a flag
+given no value (`--tries` with nothing after it) stops rather than reading `Number('') === 0`
+and reshaping the run being signed, and `runner-start`'s recorded `argv` is redacted at the
+write site — the spine is append-only, so a scan after the bytes land is too late.
 
 ### `updateLedger({ ledgerFile, spineFiles })` → `{ appended, fold }` — `src/ledger.js`
 

@@ -2827,3 +2827,108 @@ New, from this run and its tests:
 - **The `run-u` readout frames wall and money differently** (display only, small): money prints
   the folded total (`$5.34 of $8`), wall prints the leg (`12.8min of 45min`) against the full
   signed cap. The spine and the enforcement are both correct.
+
+## Addendum v1.49 — 2026-08-05 (v1.48 §2's four parks are all RESOLVED, hamr's trend-scope ruling becomes doctrine, and the branch's review round lands one Critical and one new park)
+
+Three commits close out the money-halt/resume/trend work v1.46–v1.48 specified: `8e62749`
+(hamr: *"#1 fix it and verify/validate no regression"* / *"#4 fix"*), `12d997f`
+(hamr: *"go on 2 and 3"*), and `f2be2b6` (hamr: *"use /code-review medium for review with
+opus"*). Evidence and numbers are F83 and F84. No spec hash moved and no paid run fired.
+
+### 1. v1.48 §2's parks — all four resolved, with the commit that did it
+
+- **Two trend instruments for one question → UNIFIED** (`12d997f`). `gapTrend` is deleted.
+  Both governance halts read the run's own `src/trend.js`: where a stage reported a comparable
+  NUMBER it decides, and where none did, the byte comparison survives INSIDE `unknown` as a
+  `motion` field (`changed | unchanged | null`) and as a clause in the reading, with the lever
+  adapting (`unchanged` → revise the goal; `changed` → read the last close output). It is
+  **never promoted to a direction and never mapped onto `trend`** — "the close's output changed"
+  is not "the run got better" (F6 in a trend's coat). W-2's semantics are untouched: the grade
+  already minted is kept, the three levers are the same three, and the close is still never
+  bounded by the wall.
+- **The restart fold can launder a floor into an exact total → FIXED** (`8e62749`). The fold now
+  reads ALL four of `runJob`'s floor causes; the killed-mid-flight restart shape (no `job-end` at
+  all) is control-pinned unchanged, which is what the standing hypothesis rule demanded of a fix
+  proposed from reading. `f2be2b6` closed the sibling one seam further out: a fold of **$0 that
+  is not exact** is still a floor.
+- **Should a pause readout span a RESUME CHAIN? → YES, as the trend SEED** (`12d997f`).
+  `readResume`'s `restart.grades` carries the dead leg's close grades forward (`{stage, value}`
+  — counts and stage names only, never a gap byte) and seeds the run trend's baselines. Read
+  from the `ladder` records the live governor already wrote, from `close-precheck`/`outer-close`,
+  and — only on a spine predating that governor — from the `close-verdict` records after the
+  `fix-loop` marker. Validated against the REAL `u-msew1uy5` spine, and the no-top-up control
+  that F83 deliberately left unasserted now asserts the chain reading (`converging`, 2 → 1) as
+  the correct one.
+- **The `run-u` readout frames wall and money differently → FIXED** (`8e62749`). The wall line
+  now folds the prior leg exactly as the money line does, with UNBOUNDED rendered as UNBOUNDED.
+
+### 2. hamr's trend-scope ruling, recorded as doctrine
+
+Asked whether the seed should also govern the strike rule, hamr ruled, verbatim:
+
+> **"question 1 is for all, applies to money/time consolidated view #2 strike out is related
+> this step, both have diff goals and shouldn't be mixed up"**
+
+That is now the law of this instrument, in two clauses:
+
+- **The halt READOUT is the chain-spanning, consolidated money/time view.** It answers *was the
+  RUN converging when its allowance cut it* — for both governance halts, across a resume chain,
+  which is exactly the question a top-up decision is about.
+- **The STRIKE governor is leg-local and step-local.** It answers *is THIS loop out of ideas*,
+  on this leg's own evidence, and it is deliberately NOT seeded.
+- **The two are never mixed.** One instrument answering both questions is how they come to
+  disagree — the "ONE PER SERIES" law, stated at the site.
+
+The ruling **ratifies a measurement-driven deviation** `12d997f` had already taken: the
+unsolvable-cycle test caught that a chain-seeded governor rendered a dead-flat resumed loop as
+*still progressing* and offered a top-up on the very run that had just refuted one. The build
+deviated on that evidence and brought the question to hamr rather than shipping the deviation
+as a design; hamr's answer is the general rule the deviation was an instance of.
+
+### 3. The whole-branch review round (F84, commit `f2be2b6`)
+
+Medium `/code-review` with opus finders over `main...layer-3-reuse` (56 files, 16,422
+insertions), three opus fix batches, session orchestrating and validating. Every confirmed
+finding is fixed; **no fix was forced** — each claim was verified against source first, and
+three finder claims were corrected in detail during the fixing rather than implemented as
+reported. Gate 987/987 (from 959), typecheck and `build:types` clean.
+
+**The round's Critical: the blind cap was a one-way latch.** `capRuns` survives on this branch
+only as the bound for a close-fix loop whose close reports no comparable number (v1.46 §4). It
+was armed off "has this leg ever compared anything" — which a bare STAGE ADVANCE satisfies, on
+essentially every run that does any work at all — so one advance disarmed it permanently, and a
+numberless-red close (the shipped aurora TESTGEN `verdict` stage is that shape) ran bounded by
+money and the wall alone. Caught by an executed 27-iteration repro, not by reading. The cap now
+bounds the **consecutive uncomparable streak**: lifted the moment the instrument can read,
+re-armed the moment it cannot, and binding a blind-from-birth run on exactly the iteration the
+retired count always bought it.
+
+The rest, one line each: a mutation-proven hole where a widening of the bridge DEMOTION set
+survived the whole suite (now a table pinned outcome by outcome — `escalated` demotes, every
+other non-green is a casualty and proven stays proven); three F6 launderings (a $0-but-unknown
+fold, a `money-halt` `remainingUsd` that did not say whether it was exact, a resumed try row
+whose rounds spanned one leg while its money spanned two); `restart.grades` computed and
+declared but never handed to the library's own reuse resume — the F50 class, and the adopter
+contract had described the behaviour rather than the code; **W-2 on the launch side**, where a
+zero wall remainder used to reach the outside watchdog as `--wall-ms 0`, get defaulted to
+`null`, and arm no deadline at all under a banner advertising one — it now REFUSES at the
+watchdog and at both runners, with a lever per zero (`--wall` for a burned restart wall,
+`--tries` for a run whose authorized attempts have all run); and script hardening (a corrupt
+watchdog report can no longer abort a signed resume, `runner-start`'s argv is redacted at the
+write site, a trailing value-flag refuses instead of reading `Number('') === 0`).
+
+### 4. NEW park for hamr: the close-stage AXIS SPLIT (spec-hash territory)
+
+The trend's accuracy law is *never across stages*, enforced by construction. But **a stage name
+is not an axis**, and the shipped closes red one stage on two structurally different
+populations: `u-*-close`'s `typecheck` reports either `N error(s) in <scope>` or `the target
+files are clean but M strict error(s) exist outside them` — a different population, reached only
+once the first is zero — and `suite-green` has the same shape. A run crossing that seam donates
+both genres to one series, so a 29 → 4 across it reads **converging** and recommends a top-up on
+work that has only swapped which wall it is behind.
+
+It ships as a documented **KNOWN LIMIT at the site**, not parsed around. The root fix is a
+**stage split in the shipped closes**, which changes stage names inside signed specs — that is a
+spec-hash change and hamr's to sign. Sharpening the detector to tell two prose shapes apart is
+explicitly refused (the F49 precedent: a per-close sharpening is how one reader stops being one
+reader).

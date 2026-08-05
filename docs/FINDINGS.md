@@ -5151,6 +5151,13 @@ never to be sharpened (the F49 precedent).
 
 ### PARKED, not resolved: two instruments now answer "was it progressing"
 
+> **RESOLVED 2026-08-05, commit `12d997f` — recorded forward, the text below stands as
+> written.** hamr ruled on the scope (PRD v1.49 §2) and the two instruments were unified:
+> both halts now read the run's own `src/trend.js`, `gapTrend` is deleted, and the byte
+> comparison survives INSIDE `unknown` as a `motion` field, never promoted to a direction.
+> The blind-cap arm described just above was itself found latching and fixed in `f2be2b6`
+> (F84).
+
 W-2's wall-halt readout still uses `gapTrend` — **byte-equality of the last two close gaps**,
 verdicts `stalled`/`moving`/`unknown`. The money halt uses the new **per-stage numeric** trend,
 verdicts `flat`/`converging`/`unknown`. Two instruments, two vocabularies, one question, on two
@@ -5263,6 +5270,13 @@ updated to track the signed 8/45 numbers. Gate **931/931**, typecheck clean.
 
 ### PARKED (MED, probe-evidenced, NOT fixed): the restart fold can launder a floor into an exact total
 
+> **FIXED 2026-08-05, commit `8e62749` — recorded forward, the text below stands as written.**
+> The restart fold now reads ALL four of `runJob`'s floor causes (a landed resumable `job-end`
+> declaring `spendComplete: false` floors the fold exactly like a declared prior floor or an
+> unpriced round), with the killed-mid-flight restart shape — no `job-end` at all — control-pinned
+> unchanged, as the hypothesis rule required. `f2be2b6` closed the sibling case one seam further
+> out: a fold of **$0** that is not exact is still a floor (F84). PRD v1.49 §1.
+
 `readResume`'s restart branch computes `priorSpendComplete` from **2 of the 4 causes**
 `run.js` uses to decide the same thing:
 
@@ -5284,6 +5298,14 @@ there is **no `job-end` at all** and the reader must not start refusing or floor
 resumes that work today. Awaits hamr.
 
 ### PARKED (design question): a resumed leg's trend is scoped to its OWN grades, not the cycle
+
+> **RULED and IMPLEMENTED 2026-08-05, commit `12d997f` — recorded forward, the text below
+> stands as written.** The pause readout DOES span the chain: `readResume`'s `restart.grades`
+> seeds the run trend's baselines, validated against the real `u-msew1uy5` spine, and the
+> no-top-up control's deliberately-unasserted trend now asserts the chain reading
+> (`converging`, 2 → 1) as the correct one. hamr's scope ruling is the general law behind it
+> — the halt READOUT is the chain-spanning consolidated money/time view, the STRIKE governor
+> stays leg-local, and the two are never mixed (PRD v1.49 §1 and §2).
 
 Per `src/trend.js`'s documented spec a series is per stage **within a run**. In the no-top-up
 control the second leg honestly reads `flat` — it graded once and had nothing to compare —
@@ -5311,3 +5333,144 @@ was that a killed run should not re-pay for finished work; the number here is th
 matters: the second leg paid for **one fix iteration**, which is exactly what F81 said was
 missing. And the parked MED is the same shape as everything else this rung turned up — not the
 feature failing, but a *reading* of a number, one seam upstream of where the last one was fixed.
+
+## F84 — the whole-branch review of `layer-3-reuse`: a governor that had quietly stopped governing, a demotion table no test could break, and the two Criticals that only came out of RUNNING the code
+
+**Status: minted 2026-08-05, commit `f2be2b6` (medium `/code-review` over
+`main...layer-3-reuse`, opus finders + three opus fix batches, session as orchestrator and
+validator; hamr's order verbatim: *"use /code-review medium for review with opus"*). Scope:
+56 files, 16,422 insertions against `main` — the whole Layer 3 REUSE rung plus the money-halt
+package and the trend work that landed on top of it. No paid run fired; no spec hash moved.
+Gate after: 987/987 (from 959), typecheck and `build:types` clean.**
+
+### The two Criticals
+
+**(1) The close trend's blind cap was a one-way latch, so the fix loop's fallback bound could
+be disarmed by a run doing ordinary work.** `capRuns` survives on this branch for exactly one
+job: bounding a close-fix loop whose close reports no number the progress rule can compare (a
+governor that cannot see the variable must not be the governor — F82). It was armed off
+`comparableEver`: *has this leg ever compared anything*. A bare STAGE ADVANCE counts as
+comparable — and `src/trend.js`'s own `verdict()` comment says an advance is guaranteed on
+essentially every run that does any work at all. One advance therefore turned the fallback off
+for the rest of the run. A close that then redded numberlessly — the shipped aurora TESTGEN
+`verdict` stage is precisely that shape — accrued neither a strike nor a blind tick, and the
+loop was bounded by money and the wall alone, in the one case the retired count existed to
+stop.
+
+The finder did not read this out of the source; it **executed** a repro. Twenty-seven
+iterations: one advance, then numberless reds at one stage, `struckOut()` false throughout, no
+terminal. The fix bounds the **consecutive uncomparable streak** instead of the run's opening —
+"lifted the moment it can read" is the rule, so it must re-arm the moment it cannot. Pinned
+both directions before and after: a blind-from-birth run strikes out on exactly the iteration
+the retired count always bought it (byte-stable, at every cap), a comparable-throughout run
+outlives the cap by any margin, and a run that goes blind and RECOVERS is never bounded by it.
+`report().blind` was corrected with it — it answers the question the terminal prose branches on
+(*is the blind cap what stopped this, or the strikes*), and on a run blind after one advance it
+read `false`, which would have offered "0/2 strikes" as the reason a loop it had not struck out
+was stopped.
+
+**(2) `REUSE_GRADED_RED` had no test that could fail.** The set whose members DEMOTE a proven
+bridge is the whole of Layer 3's safety story on the registry side, and a mutant that WIDENED
+it survived the entire suite. The hole is now closed with a demotion table pinned outcome by
+outcome: `escalated` demotes (the close judged the tree, the fix loop spent its attempts with
+money still on the table, and the close was still red); `step-red`, `cap-halt`, `wall-halt`,
+`provider-red`, `close-red`, `step-stalled` and `pricing-red` are casualties that keep their own
+names and leave a proven entry proven. A casualty never demotes is hamr-endorsed doctrine, and
+until this commit it was doctrine no instrument enforced.
+
+### The warnings, all confirmed and all fixed
+
+Roughly eight, and they fall into three families the branch had already met:
+
+- **F6 launderings, one seam further out each time.** `priorFloor` was gated on `spentUsd > 0`,
+  so a fold of **$0 that was not exact** came back exact — a floor of zero is still a floor.
+  The `money-halt` record quoted `remainingUsd` to four decimals without saying whether the
+  spend behind it was exact, making a CEILING read as a number. A restarted try's row reported
+  only the restart's rounds against a span its money and wall already covered both legs of.
+- **Computed, declared, and then handed to nobody.** `readResume`'s `restart.grades` — the dead
+  leg's close grades — reached `runJob` only through `scripts/run-u.mjs`. The library's own
+  reuse resume never passed them, so a restarted leg's halt readout judged its own leg and
+  could say `flat` — *revise the goal* — on a run that was converging when its allowance ran
+  out. The adopter contract had described the library behaviour, not the shipped one.
+  Same shape as F50 and as F82's `priorSpendComplete`: wired ≠ the code exists.
+- **A guard reading zero and saying nothing.** `--wall-ms 0` reached `u-watchdog.mjs`, which
+  defaulted a non-positive value to `null` and armed **no deadline at all** while the runner's
+  banner said "armed for 0min". W-2 is *"when time is up, keep the grade we already have and
+  stop"* — a zero remainder is a decision, not an unbounded launch. The watchdog now refuses a
+  present-but-unreadable numeric flag outright (an OMITTED `--wall-ms` stays the legal
+  unbounded choice), and both runners refuse above the spawn, before the key and before the
+  patient.
+
+Also in the batch: the replan brief no longer calls an idle strike-out *converging*;
+`planPrompt`'s JSDoc was reattached (an intervening helper had detached it, shipping every
+parameter as `any` in the generated `.d.ts`); a corrupt watchdog report can no longer abort a
+signed resume; `runner-start`'s argv is redacted at the WRITE site (a log that captures a key
+captures it forever, so an after-the-fact scan is too late); a trailing value-flag refuses
+instead of reading `Number('') === 0` and reshaping the run being signed; and
+`scripts/migrate-bridge-patient-slugs.mjs` got its first battery (4 mutants killed).
+
+### Zero fixes forced — and three finder claims corrected in the fixing
+
+Every claim was verified against source before it was believed, and none had to be dropped as
+a false positive. Three were right about the defect and wrong in the detail, which is the part
+worth recording:
+
+- The ladder's *"the step was converging"* sentence was reported as sometimes-wrong. It is
+  **structurally unreachable at a strike-out except beside its own contradiction**: every
+  strike is a repeat or an idle iteration, and the sentence was gated on repeats alone, so at
+  a strike-out it could only ever have fired next to the stall line that denied it. The fix
+  gates it on both signals; the control test reads it on a ladder that has NOT struck out,
+  which is the one path where it is still true.
+- The zero-wall refusal on `scripts/run-reuse.mjs` was proposed as one message. A resume
+  reaches zero **two ways** — the restarted try burned its whole per-try wall, or every
+  authorized attempt has already run — and they take different levers (`--wall` vs `--tries`,
+  or reading the run as it stands). One message would have sent the operator to re-sign a
+  number that buys no attempt.
+- `wallMs` on an inherited graded row was measured to the kill. The try's own terminal is the
+  precise answer and is on the record being read; the kill time is the fallback for a stamp
+  that cannot be parsed, never the first reading.
+
+### Two review-methodology notes
+
+**A test can pin a defect as spec.** `tests/ladder.test.js` carried
+`test('the brief says CONVERGING when every gap moved and only idleness struck it out')` — an
+assertion, watched failing when it was written, that the brief must produce the exact
+self-contradiction the finder flagged. A green suite is not evidence a behaviour is intended;
+it is evidence somebody wrote down what the code does. The test is now inverted, with a control
+for the shape where the sentence is true.
+
+**Reading is not running — and this repo has now paid for that twice.** The operator's own
+manual pass over `src/trend.js` earlier the same day (`12d997f`, the commit that built the
+seed) reasoned about the blind-cap arm in prose — *"the blind-cap backstop still governs a leg
+whose own readings never compare"* — and did not see that the backstop had already stopped
+governing. An opus finder caught it by writing a 27-iteration repro and watching it not
+terminate. This extends the standing class — a defect visible only by RENDERING
+or RUNNING the real artifact (the malformed-JSON prompt, the silent cap) — from artifacts to
+**governors**: a bound is a claim about a loop's termination, and the cheap way to test a
+termination claim is to run the loop.
+
+### New PARK for hamr: one close stage, two measurement populations
+
+The trend's accuracy law is *never across stages*, and it is enforced by construction — a
+series is one bucket per stage name. But **a stage name is not an axis.** The shipped closes red
+one stage on two structurally different populations: `u-*-close`'s `typecheck` reports either
+`N error(s) in <scope>` (the in-scope faults) or `the target files are clean but M strict
+error(s) exist outside them` — a different population entirely, reached only once the first is
+zero — and `suite-green` has the same shape (`N test(s) now fail` beside a floor). A run that
+crosses that seam donates both genres to one series, so a 29 → 4 across it reads **converging**
+and recommends a top-up on work that has only swapped which wall it is behind. It is the
+u-msew1uy5 error in the one place the bucketing cannot see it.
+
+It is **stated at the site as a KNOWN LIMIT, not parsed around**. The root fix is a STAGE SPLIT
+in the shipped closes, which changes stage names inside signed specs — spec-hash territory, and
+hamr's to sign. Teaching the detector to tell two prose shapes apart is explicitly refused (the
+F49 precedent: a per-close sharpening is how one reader stops being one reader).
+
+### Lesson
+
+**A governor is a termination claim, and a termination claim is cheap to execute and expensive
+to read.** Both Criticals were invisible to careful reading and obvious to a running instrument
+— one to a repro loop, one to a mutant. They are also the same defect wearing two coats: a bound
+that had quietly stopped binding, and a demotion set that could be widened without any test
+noticing. The branch's own doctrine already said it (*a rule without a wired detector is prose,
+not protection*); what this round adds is that a detector nobody has watched FAIL is prose too.

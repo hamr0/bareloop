@@ -234,14 +234,18 @@ self-raise.
 
 The layers above are the map; this is the current inventory — every mechanic that has
 landed (or is in build) and which box it belongs to. Details and evidence live in the PRD
-addenda (v1.36–v1.48); this list is deliberately one line each.
+addenda (v1.36–v1.49); this list is deliberately one line each.
 
 **The shell (judge + gap + cap — not a layer; governance lands here):**
 - **Money:** hard cap per run, metered per round. A money cap-halt is what W-2 made of a
   time halt *(built, v1.46/v1.47)*: keep the last minted verdict, pause decision-ready with
   an ACCURATE trend note — cut-while-converging / cut-while-flat / can't-tell, computed per
-  stage from the close's own graded numbers, never across axes, never model prose — and the
-  three levers: top up & resume (a re-sign) / revise / abandon.
+  stage from the close's own graded numbers, never across STAGES, never model prose — and the
+  three levers: top up & resume (a re-sign) / revise / abandon. Both governance halts read
+  that ONE instrument *(v1.49; byte-motion survives only inside `can't-tell`, never promoted
+  to a direction)*, and a resumed leg's readout spans the CHAIN while the strike governor
+  stays leg-local — hamr's ruling, never mixed. Known limit, parked: one stage name can carry
+  two measurement populations, and splitting them is a spec-hash change.
 - **Time:** the wall cap (W-2: "when time is up, keep the grade we already have and stop";
   the close is never bounded and never counts against the wall); the outside watchdog
   whose kill requires deadline passed AND a flat spine (W-3 — never a silent kill); the

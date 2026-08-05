@@ -482,3 +482,81 @@ there: **the selector's stated reason was a poor predictor at n=1** (it called t
 bridge a *"direct match"* and the winning one a *"same-kind analog"*). That is the exact axis an
 auto-matcher would be built on, and D2's "no similarity engine in v1" stands — a matcher fitted
 to two picks is a threshold fitted to n=2, which is hamr's territory and nobody else's.
+
+---
+
+## Addendum — 2026-08-05 (D6's rules are now ENFORCED and one of them was never written down; D7's "gap trend" is superseded by one instrument; the build order absorbed unplanned governance work)
+
+Three commits since the last addendum touch this record: `ae417ae` (the money-halt package),
+`12d997f` (trend unification + the resume seed) and `f2be2b6` (the whole-branch review round).
+Reads: **F82**, **F83**, **F84**; PRD addenda **v1.46–v1.49**. None of them reopens a locked
+decision — this addendum records where the record has fallen behind the code, and one rule the
+code has always had that the record never stated.
+
+### 1. D6 — the graded-red amendment is now ENFORCED, and the RE-PROMOTION rule is stated here for the first time
+
+The 2026-08-02 addendum amended D6 so that only a literal `escalated` outcome demotes; a
+casualty judged nothing and demotes nothing. **That amendment had no test that could fail it
+until 2026-08-05.** F84's review found the hole by mutation: a widening of `REUSE_GRADED_RED`
+— the set whose members demote a proven entry — survived the entire suite. It is now pinned
+outcome by outcome (`escalated` demotes; `step-red`, `cap-halt`, `wall-halt`, `provider-red`,
+`close-red`, `step-stalled` and `pricing-red` are casualties, and proven stays proven). The
+decision is unchanged; what changed is that it is now protected rather than merely documented.
+
+**Never stated in this record, and it should have been:** `deriveStatus` treats a demotion as
+**clearing the distinct-patient set**, not as a one-notch step down. A demoted entry is
+therefore re-promoted only by **two fresh greens on two distinct patients** — the earlier
+greens do not count again. That is the strict direction and matches D6's own reasoning (a
+status is a claim about transmission across non-identical runs, and a red is evidence against
+the claim as it stood), but it was implementation-only until now. Recorded, not changed.
+
+Two smaller D6/D1 facts the code carries and the record did not: an unattributable green (no
+patient string) cannot prove a second instance and is skipped for status; and `reds` in the
+listing counts the literal `red` outcome only — a casualty is not a red in the count for the
+same reason it is not one in the ladder.
+
+### 2. D7 — "the gap trend" in the decision-ready return is superseded by ONE instrument
+
+D7 promises that each red returns decision-ready with *"which bridge, which stage rendered the
+red, the gap trend, and spend/time reported honestly per F6"*. The promise stands; the
+instrument behind the middle clause has been replaced twice since:
+
+- `gapTrend` — byte-equality of the last two close gaps — is **deleted** (`12d997f`). Both
+  governance halts now read the run's own per-stage numeric trend (`src/trend.js`); the byte
+  comparison survives only INSIDE `unknown` as a `motion` field and is never promoted to a
+  direction.
+- The decision-ready return is no longer only a try row: a run cut by its wallet emits a
+  `money-halt` record (kept verdict, `budgetUsd`, `remainingUsd` **with its own
+  `spendComplete`**, trend + reading + series, three levers), mirroring `wall-halt` (PRD v1.46
+  §2 / v1.49 §1).
+- A resumed leg's readout **spans the chain** — hamr's ruling, PRD v1.49 §2: the halt readout
+  is the consolidated money/time view across the chain, the strike governor stays leg-local,
+  and the two are never mixed.
+
+**D7's "never widened mid-run" also got a launch-side edge** (F84): a per-try wall remainder of
+zero now REFUSES the launch at both runners and at the outside watchdog, rather than launching
+under a guard that silently defaulted an unarmed deadline. Two zeros, two levers — a burned
+restart wall wants `--wall`, a run whose authorized attempts have all run wants `--tries` —
+and both are in the approval hash, so either is a new signature. The envelope decision is
+unchanged; this is the refusal it always implied.
+
+### 3. §5's build order — the sequence, and the two requirements still outstanding
+
+The order as written stands. What it no longer describes is the actual sequence: between step 3
+(the machinery) and step 4, the rung absorbed governance work this record did not anticipate —
+the money-halt package and the close-fix loop's progress governor (PRD v1.46), step-level
+resume, the step strike ladder replacing the fixed iteration count (PRD v1.45), and the trend
+unification and its resume seed (v1.49). None of it changes a locked decision here; all of it
+had to land before a reuse run's reds could honestly be called decision-ready.
+
+**Still outstanding, unstarted, and unchanged in ownership:** requirement (c), the
+bound-pressure ledger fold, and requirement (a), `drift-red` — which still needs a population
+of reuse runs before a base rate can be measured at all, and whose threshold is still hamr's.
+
+### 4. What this addendum does NOT decide
+
+Unchanged from §6 and from the 2026-08-02 addendum's §6. Added to the list: **the close-stage
+AXIS SPLIT** — one close stage can red on two structurally different populations under one
+name, which the trend's per-stage bucketing cannot see. It ships as a documented KNOWN LIMIT;
+the root fix is a stage split in the shipped closes, which changes stage names inside signed
+specs and is therefore **hamr's to sign** (F84; PRD v1.49 §4).
