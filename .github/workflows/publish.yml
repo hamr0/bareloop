@@ -29,7 +29,13 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 — this workflow runs `npm test` too, and the suite reads history:
+      # tests/close-stages.test.js proves its one-population check can fail against the
+      # pre-split close source (`git show f2be2b6:…`), which a default depth-1 clone does
+      # not have. Same reason and same fix as ci.yml; kept in step with it deliberately.
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           # Native-addon repos (e.g. better-sqlite3) may need `20` instead if the

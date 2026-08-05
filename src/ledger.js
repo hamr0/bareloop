@@ -79,6 +79,33 @@ const EXCLUDED_ESCALATIONS = new Set([
   'smoke-red',          // already counted via primitive-smoke
   'hitl-close',         // by design: a human is the close
   'close-unsupported',  // honest refusal, by design
+  // Layer 3 (D2 split): the bridge load gate refused a wrong-KIND recipe at the door.
+  // That is the mechanism WORKING — every recipe from a different day is a candidate for
+  // refusal, and the run stopped having spent nothing. Filing it upstream would aim a bug
+  // report at a library for our own gate doing its job (the step-stalled lesson).
+  'recipe-stale',
+  // Layer 3 (D7/D3) — the reuse runner's own three stops. Each is the ENVELOPE or the
+  // OPERATOR speaking, never a library failing: `reuse-exhausted` is the pre-authorized
+  // number of tries being spent (the money/time story, exactly like cap-halt);
+  // `selection-refused` is the model declining a pinned workflow, which D3 requires it to
+  // be able to do; `selection-red` is a model answer that was not the one JSON object it
+  // was asked for — a behaviour, not a transport fault (a real transport fault out of the
+  // selection call is classified as `provider-red` and is NOT excluded).
+  'reuse-exhausted',
+  'selection-refused',
+  'selection-red',
+  // Layer 3 (module C) — a RESUME that refuses to continue: the seed was signed under a
+  // different envelope, or the workflow the killed run was part-way through is no longer
+  // in the registry. Both are the operator's own state speaking (a stale signature, an
+  // edited registry), and both stop having run nothing.
+  'resume-red',
+  'registry-red',       // the operator-supplied registry path does not exist — a typo, not a bug
+  'envelope-red',       // the envelope does not compose with the signed spec — operator input
+  // the reuse runner also STOPS on the three answers no further try could change, and
+  // escalates each under its own name. Both are operator-input stories: an unsigned spec
+  // version and a spec that will not validate. (`smoke-red` is already excluded above.)
+  'unapproved-spec',
+  'job-red',
   'close-timeout',      // close-verdict reds: the arbiter's own named terminals
   'close-killed',       // (F17) — operator/environment stories, never a suite lib
   'close-crashed',

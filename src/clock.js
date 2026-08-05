@@ -68,6 +68,14 @@ export const MIN_CALL_TIMEOUT_MS = 30_000;
  * it as transport. */
 export const TIMEOUT_CODE = 'ETIMEDOUT';
 
+/** bare-agent's rejection code when its TOTAL-duration deadline trips (BA-19,
+ * `provider-http.js` → `applyRequestDeadline`). A DIFFERENT code from the idle
+ * bound's on purpose — upstream splits them precisely so a consumer routing
+ * governance stops apart from transport casualties can tell which timer fired. Like
+ * `TIMEOUT_CODE` it carries no `category`, so every default-to-transport catch site
+ * would file it as a casualty. */
+export const DEADLINE_CODE = 'EDEADLINE';
+
 /**
  * F64 — is this throw the run's OWN deadline coming back dressed as a provider
  * error? `callTimeoutMs()` hands the provider a bound derived from the wall, so
@@ -90,12 +98,20 @@ export const TIMEOUT_CODE = 'ETIMEDOUT';
  * the same (raise `maxWallMs`), and the alternative — calling a governance stop
  * transport on the chance that it was — is the failure this closes.
  *
+ * BOTH derived bounds land here, because both are derived from the same wall:
+ * BA-18's idle timeout (`callTimeoutMs`) and BA-19's total-duration deadline
+ * (`callDeadlineMs`). Adding the second CODE does not widen the rule — the
+ * discriminator is still `clock.expired()`, never the code. That matters for the
+ * deadline specifically: a provider someone else constructed with its own
+ * `deadlineMs` could throw this code on a run with time left, and that is transport,
+ * exactly as it was before.
+ *
  * @param {any} err the throw as caught
  * @param {Clock} clock the run's clock
  * @returns {boolean}
  */
 export function isWallTimeout(err, clock) {
-  return !!err && err.code === TIMEOUT_CODE && clock.expired();
+  return !!err && (err.code === TIMEOUT_CODE || err.code === DEADLINE_CODE) && clock.expired();
 }
 
 /**
@@ -108,21 +124,37 @@ export function isWallTimeout(err, clock) {
  * @property {() => boolean} expired whether the deadline has passed (always false when unbounded)
  * @property {(closeTimeoutMs: number) => number|null} enforcedMs the HONEST worst case
  * @property {(providerDefaultMs?: number) => number} callTimeoutMs the derived per-call bound
+ * @property {() => number|null} callDeadlineMs the derived per-call TOTAL-duration ceiling; `null` when unbounded
  * @property {(closeTimeoutMs: number) => object} report one spine-safe shape carrying both numbers
  */
 
 /**
  * Start a wall clock for one run.
- * @param {{ maxWallMs?: number|null, closeStages?: number, now?: () => number }} [opts]
+ * @param {{ maxWallMs?: number|null, closeStages?: number, now?: () => number, priorElapsedMs?: number }} [opts]
  *   `maxWallMs`: the signed operator cap, or absent/null for an honestly unbounded
  *   run. `closeStages`: how many stages the job's close runs (W5) — each one gets
  *   the FULL `closeTimeoutMs`, so this is the multiplier on the overshoot, not a
  *   decoration. Defaults to 1, the single-predicate close. `now`: injected for
- *   tests — the default is the real clock.
+ *   tests — the default is the real clock. `priorElapsedMs`: time this attempt's
+ *   PREDECESSOR already consumed (see below).
  * @returns {Clock}
  */
-export function createClock({ maxWallMs = null, closeStages = 1, now = () => Date.now() } = {}) {
-  const startedAt = now();
+export function createClock({ maxWallMs = null, closeStages = 1, now = () => Date.now(), priorElapsedMs = 0 } = {}) {
+  // RESUME (module C) — hamr's checkpoint ruling in a time coat: a run killed
+  // mid-try restarts THAT try under the REMAINDER of its signed per-try numbers,
+  // because "a budget ceiling folds in prior spend so re-invoking cannot silently
+  // widen it". The fold happens HERE rather than by editing `maxWallMs`, and that
+  // is the whole point: the cap the operator signed stays the number reported and
+  // the number hashed (a rewritten cap is a new spec version needing a new
+  // signature), while the clock simply starts already partly spent. A fresh
+  // allotment on every kill would let a resumed run outlive the worst case the
+  // operator signed, one kill at a time.
+  //
+  // Belted like `maxWallMs` above: a non-finite, negative or garbage fold is 0. A
+  // NaN here would make every comparison false and silently unbound the run, which
+  // is the inverse of what the fold exists to do.
+  const prior = typeof priorElapsedMs === 'number' && Number.isFinite(priorElapsedMs) && priorElapsedMs > 0 ? priorElapsedMs : 0;
+  const startedAt = now() - prior;
   // A cap is only a cap if it is a usable positive number. validateJob already
   // reds anything else, so this is the belt (a caller that hand-builds a spec
   // must not be able to turn a garbage value into a silent unbounded run OR a
@@ -162,6 +194,26 @@ export function createClock({ maxWallMs = null, closeStages = 1, now = () => Dat
       // would restore the ~2h OS-TCP hang on the last round of a tight budget.
       return Math.min(providerDefaultMs, Math.max(MIN_CALL_TIMEOUT_MS, remainingMs()));
     },
+    // BA-19 (F72 park D) — the TOTAL-duration ceiling beside the idle one. The idle
+    // bound resets on every byte, so a response that trickles forever never trips it
+    // (F66's 274-minute call, and F67's 81.5-minute freeze happened above it); this
+    // one is a plain timer that no byte resets.
+    //
+    // Three properties, each a rule this repo already paid for:
+    //   - NULL when unbounded. An operator who set no wall gets no ceiling — a
+    //     defaulted cap is a silent second ceiling (F45, and the reason `maxWallMs`
+    //     has no default). The caller must OMIT the knob on null, not pass a number.
+    //   - REMAINING, read at call time. A constant would bound the last call by the
+    //     first call's budget, which is the thing `callTimeoutMs` already refuses.
+    //   - NOT clamped to the provider default. That upper clamp exists on the idle
+    //     bound because a value above the provider's own default is inert; a
+    //     total-duration ceiling above it is the entire point of BA-19.
+    // The lower floor is shared with `callTimeoutMs` and for the same two reasons: a
+    // bound certain to trip manufactures a stop out of arithmetic, and `0` DISABLES
+    // the bound upstream (`if (!(deadlineMs > 0)) return`) — the exact inverse of the
+    // intent. A trip past the floor is still honest: the wall has expired by then, so
+    // `isWallTimeout` reads it as the governance stop it is.
+    callDeadlineMs: () => (cap === null ? null : Math.max(MIN_CALL_TIMEOUT_MS, remainingMs())),
     report: (closeTimeoutMs) => ({
       bounded,
       requestedMs: cap,

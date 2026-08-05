@@ -2460,3 +2460,524 @@ the drafts differ, and only on hamr's word.
 **"Change as needed" is amendment discipline, not licence:** POC and pre-probe results amend
 the design record by **dated addendum**, never by silent rewrite, and a frozen rule is never
 loosened after a number exists.
+
+## Addendum v1.43 — 2026-08-02 (the circuit breaker closes A–D, and resume becomes an ECONOMIC contract: every paid unit is paid once, the checkpoint is a completed step, and the signature covers the tries — hamr)
+
+F72 parked four pieces (A liveness contract, B kill-checks-before-kill, C resume-after-kill,
+D unpark BA-19's `deadlineMs`). All four are now answered. **None of them touches who owns a
+bound:** budgets, walls, caps and verdicts remain operator territory, permanently.
+
+### 1. Where the four landed — including the one that is a PROCEDURE, not a mechanism
+
+| | landed as | where |
+|---|---|---|
+| **A — liveness contract** | **an operator PROCEDURE, surfaced by the runner, not an in-code assertion.** No process can assert that the machine under it will stay awake, and a harness that grabs a system lock nobody asked for is the wrong side of the line — so the runner PRINTS the `systemd-inhibit --what=idle:sleep` launch line on every dry-run and launch and never shells out to it. Stated plainly rather than dressed as a mechanism. | `scripts/run-reuse.mjs` |
+| **B — kill checks before it kills** | the watchdog's pre-kill report extended with `pidAlive` / `pollMs` / `termGraceMs`, written atomically (temp+rename) so a **report failure can never defeat the kill** (F70's class), the `SIGKILL` escalation announced, kill tests run at PRODUCTION window:poll ratios | `4278ad6` |
+| **C — resume after kill** | `--resume <runid\|spine-path>` — §2 below | `c04cdcf` |
+| **D — BA-19's `deadlineMs` unparked** | a per-call total-duration deadline derived from the **remaining wall at call time**; **no `maxWallMs` → no deadline** (an unbounded run stays a visible operator choice, never clamped to the idle default), floored at `MIN_CALL_TIMEOUT_MS`; `EDEADLINE` routed by the clock discriminator — **expired → wall-halt, time-left → provider-red** — with F64's control pinned by a must-not-change test. Native has no HTTP seam to arm; said, not papered over. | `4278ad6` |
+
+### 2. Resume is an economics contract: every paid unit is paid once
+
+hamr's two rulings, verbatim and in order given:
+
+> *"money, signature and checkpoint (starts from where it stopped) if mid loop, restart that
+> loop"*
+
+> *"even if it gets killed by outside, it should allow resume and start last step instead from
+> the beginning, why would i want to waste more money on something i already started, our goal
+> is to find ways to save money and time"*
+
+The second **supersedes the try-level reading of the first**, on measured evidence (F76): a
+try-level restart re-paid $0.25 then $0.40 of scout across two resumes and left the third leg
+structurally unable to finish — $1.42 and 2m 50s to redo three steps that had just cost $7.82.
+
+- **The checkpoint is a COMPLETED STEP's exit** — the finest unit the spine can PROVE finished
+  and the tree can show. A half-executed step is not a checkpoint and a worker transcript is
+  not a checkpoint. The try-restart survives for exactly one case: death before a plan was
+  accepted, where nothing durable exists to resume to.
+- **Restarts are funded from the REMAINDER, never a fresh allotment.** Prior spend and prior
+  wall fold into the run's own ledger and clock (`priorSpentUsd` / `priorWallMs` /
+  `priorElapsedMs`). The signed caps are untouched — tightening the spec would flip the signed
+  hash, which is structurally impossible without forging a signature — so *advertised =
+  enforced* survives a kill, and a kill cannot widen the signed worst case one kill at a time.
+  If the remainder cannot fund the restart the run caps honestly, having launched nothing.
+- **What resume does not buy back, named rather than discovered later:** a call killed before
+  it returned wrote no event, so money it may already have been billed for is not on the spine
+  and cannot be folded. The fold is a FLOOR in exactly the case `spendComplete: false` already
+  marks (F6). Likewise a lost R1 registry write is reported as LOST (`r1Missing`) and never
+  re-derived — a green's version must be the plan as executed, and the resume reader is not
+  where that is decided.
+- **A resume never resets the patient**, and never resumes a live pid. The dirty tree is the
+  dead legs' real progress; only HEAD moving off the seed (operator intervention) stops it.
+
+### 3. The signature covers the TRIES — hamr: *"fold tries into the hash"*
+
+A reuse run's total authorized exposure is `perTryBudgetUsd × (bridgeTries + 1)`, so a
+signature taken over the per-try spec alone signs a fraction of the money and the same hash
+prints for `--tries 2` and `--tries 9`. The **signed artifact is the wrapper**
+`{ schema: 'reuse-v1', spec, bridgeTries }`, hashed by `reuseSpecHash` — composed from the ONE
+`jobSpecHash` so MED-1's resolved-tools pinning is inherited and no second canonicalizer
+exists. The `reuse-v1` prefix is domain separation: a reuse approval can never collide with a
+bare job approval. The loop bound, the reported `triesAuthorized` and the exhaustion message
+all read the SAME resolved object the hash covers — no parallel bookkeeping.
+
+Consequences, accepted deliberately: **signatures taken before the fold are refused**, naming
+the scheme change, with both hashes printed side by side; there is no legacy acceptance path,
+and re-signing once is the whole migration. A **resume must match the hash both ways** — the
+current arguments AND the dead run's own `reuse-start` record — because a resume continues one
+signed run, never any run.
+
+Putting `bridgeTries` on the job spec itself was **refuted by test, not by preference**:
+`validateJob` reds unknown fields, so that shape would have job-red'd every try.
+
+## Addendum v1.44 — 2026-08-02 (the product is the EXPORTED artifact: the local UI is a workbench, the bundle is an enclosed CLI, and the arbiter travels with it — hamr, interview this session)
+
+This addendum records hamr's answers on what bareloop SHIPS to a user. It changes no doctrine;
+it names the delivery form that the doctrine has to survive.
+
+### 1. The local app is a workbench; the product is what leaves it
+
+The UI is where a user **experiments** with a job, **graduates** a workflow (a green mints a
+bridge; a green on a second distinct patient proves it — D6), and then **exports** it. The
+value the user keeps is the exported artifact, not the session that produced it.
+
+### 2. The export bundle — a dependency, never a code generator
+
+The bundle is: **the signed spec + the bridge + the close scripts + a thin runner that has
+bareloop as a dependency** (and pulls bare-agent / bareguard / litectx transitively). It runs
+**headless, as an enclosed CLI**.
+
+**It surfaces the SAME operator questions at the CLI that it would in the UI** — the approval
+hash, the envelope, the verdict class. The questions do not disappear because the UI did; they
+change surface. A bundle that ran without asking them would be a different product.
+
+### 3. Export is not EJECT — and the reason is the arbiter
+
+**bareloop never generates standalone loop code.** An ejected loop is a **forked arbiter**: a
+downstream copy of the close, the budget and the fence that can drift from the one the library
+ships and can be edited by whoever holds the copy. That is the hard line (§3: the agent never
+authors its arbiter; merge stays human forever) defeated by distribution instead of by
+authorship.
+
+So **the arbiter RELOCATES with the bundle and never disappears.** Wherever the bundle runs,
+budgets, caps, verdicts and merge live outside the emergent part, in the dependency, exactly as
+they do locally.
+
+### 4. Verdict classes: declared in the contract, green-only until built
+
+The export contract **declares** the verdict class, but v1 admits **green only**. `soft-green`
+and `hitl` were deleted with the legacy `steps[]` path (v1.32) and their return is the
+verdict-classes rung; `soft-green` still needs the RSI judged-floor analog before it can gate
+anything. Declaring the field now keeps the bundle's shape stable across that rung instead of
+forcing a contract change later.
+
+### 5. Sequencing update
+
+**soft-green + hitl come IMMEDIATELY after Layer 3 closes — ahead of genre-widening and ahead
+of the UI.** This sharpens v1.23/v1.32 (which placed the verdict-classes rung post-Layer-3
+without ordering it against the other candidates) rather than reversing them. Genre-widening
+(the second-genre question F51–F55 left open) and the workbench UI both queue behind it.
+
+## Addendum v1.45 — 2026-08-03 (a step is bounded by PROGRESS, not by a count: the shell owns a strike ceiling, `attempts` retires, and the replan brief names the mechanism — hamr)
+
+The step loop's exhaustion rule was a fixed number of check-iterations (`capRuns`). F77 measured
+what that cost: two lift-contrast calibrations died as `step-red` with the signed envelope
+unspent — one of them still shrinking its own error count on every iteration (30 → 22 → 17 → 11,
+cut with $1.30 and ~6 minutes left) — and F73's try 1 had done the same a patient earlier. It is
+the silent-second-ceiling class (F37/16g) inside our own shell. hamr opened it directly:
+
+> *"if workflow fails in dense jobs then it failed at planning and self healing. why not fix
+> that?"*
+
+### 1. The rule, and who owns it
+
+**A step ends when it stops making progress, not when a counter runs out.** A *strike* is a red
+iteration that REPEATS an already-seen normalized gap (a seen-set, never last-only) or made no
+gate-audit writes (the F32 record-count instrument — never git status, never a tree diff). Two
+strikes end the step.
+
+**Ownership is unchanged and is the whole point of the shape.** The strike ceiling sits
+shell-side exactly where the count sat: the runner sets it, **the agent cannot express it, and
+no step may tighten or raise it** — arbiter territory, permanently, like every other bound. The
+number itself is hamr's (2), set before F78's threshold sweep independently landed on it; a
+threshold is never picked by the agent from a small observed sample.
+
+**The signed resource caps remain the only caps that matter to a run's economics:** money and
+the wall. The wallet, the wall (v1.40's W-2), the variance meter and the stall fuse are
+untouched and each still ends a step on its own authority. Exactly one bound was replaced —
+exhaustion-by-count — so a converging step now runs on the money and time the operator signed
+for it, and a thrashing one ends the same iteration or one earlier (F78, 110 archived ladders).
+
+### 2. `attempts` retires from the agent's surface — and is tolerated, never rejected
+
+A step's `attempts` field could only ever TIGHTEN below the shell's number, so the correct heal
+for a converging step was inexpressible and drafters measurably tightened it anyway (3, then 2
+on replan). It is **removed from the drafting menu and ignored by the runner**. It is
+deliberately **not redded**: stored bridge plans carry it, and refusing them would invalidate
+every recipe minted before today and break a frozen contrast mid-programme. Shape still checked,
+upper bound gone with the cap it named — a plan stored under one runner's number must never red
+under another's.
+
+### 3. The replan brief is a MECHANISM brief
+
+*"It ran N attempts and its exits were still red"* described a bound that no longer exists and
+named no mechanism — the same sentence for a converging step and a stalled one, handed to the
+one component whose job is to respond to it. The brief now carries which shape ended the step,
+the gap trajectory, and what the stop left unspent (with time reported UNBOUNDED, never zero —
+F6 extended to time). It names no culprit file; the ladder's inputs are counts and iteration
+numbers, so naming one is inexpressible (F28).
+
+### 4. Layer R's VERBATIM stage retires on the step path — hamr's ruling
+
+Fixation IS a repeat, so a fixated step strikes out before Layer R's fourth-iteration VERBATIM
+note can be injected. hamr confirmed **summary-only on the step path** (the stage stays
+reachable in the close-fix loop, keeps full unit coverage, and Layer R still ships OFF by
+default per v1.24/F41), and confirmed the resulting flow verbatim:
+
+> *"so, 2 strikes followed by handing notes on next replan/run"*
+
+The two alternatives are invalidated on evidence, not preference: raising the ceiling pays an
+extra stuck iteration on every thrash loop for a feature that ships OFF (F78's sweep), and
+exempting the post-ratchet iteration buys a louder note to a stuck worker — the one thing
+measured dead twice (F32/F39 delivery ≠ conversion) — through a guard-hole of exactly the F70
+class. **The notes moved recipient, not volume:** from the stuck worker (semantic genre, does
+not convert) to the replanner (mechanical genre, converts — F38/F46).
+
+### 5. The close-fix loop keeps its count — recorded, not overlooked
+
+`CAP_RUNS` is now the CLOSE-FIX loop's cap and nothing else. Its replay evidence does not exist
+(F78's corpus is step ladders), and converting it on another population's numbers is the move
+this programme keeps refusing. **A recorded follow-up: its own $0 replay over close-verdict gaps
+comes first.**
+
+### 6. Consequence for the lift-contrast programme
+
+The admission screen was **inverted** by this defect: two of three candidates were rejected for
+the harness's ceiling rather than their own hardness, and the screen was reporting workflow
+failure as patient hardness (F77). With the fix landed the screen is un-inverted — candidates
+are no longer pre-filtered by a harness defect — and the frozen prereg's clauses are otherwise
+unchanged. The rejected candidates are not retroactively admitted: a re-run on the fixed code is
+a new calibration row, judged by the same frozen screen.
+
+## Addendum v1.46 — 2026-08-04 (the shape lottery closes at the gate, and money gets the W-2 treatment: an accurate halt-note, a continue button, and the fix-loop's count retires — hamr)
+
+### 1. The two shape-lottery gate rules (SHIPPED, commit `28ee95f`; validated live, F81)
+
+The $0 archive sweep settled the bareagent-u deaths as shape-selection, not capability:
+per-file decomposition carrying the whole-goal check on an early step has 0 honest greens
+ever; the wide closing step (the RLM shape) greens 7/7 whenever rolled. Two mechanical rules
+make the losing shapes inexpressible — neither asks any model to judge "is this job small":
+
+- **Rule A-v2 (`check-placement`)** — a check whose recorded PREFLIGHT verdict was red may
+  only gate the plan's FINAL write step. Green-at-seed checks (guards) stay free mid-plan.
+- **Rule B (`check-shed`)** — a replan may not drop a `check-passes` its predecessor carried;
+  it may move one, never shed it (the u-msdsmkid form-only fake green).
+
+Both laws are STATED in the drafting prompt from the same facts object the validator judges.
+Resume revalidation is exempt by design (a paid plan is never refused over a law minted after
+its draft). Live read (`u-msew1uy5`, F81): the drafter rolled the RLM shape on the FIRST
+draft, both goal files edited from attempt 1, first honest step-green in the patient's
+four-run history. Rule B still awaits a live replan for its live read.
+
+### 2. A MONEY halt becomes what W-2 made of a TIME halt (hamr: "money cap should halt and
+feedback… and needs to be accurate")
+
+A money cap-halt keeps its last minted verdict and pauses DECISION-READY, with a verdict on
+the run's own trend: **cut-while-CONVERGING** ("still progressing: errors 12→5, ~$/iteration
+— a top-up likely finishes it") or **cut-while-FLAT** ("nothing moved in the last N verdicts
+— more money is waste; revise the goal/prompt"). Accuracy law: the verdict is computed from
+the close's own graded numbers, PER STAGE — never across axes (the operator's own sweep
+instrument misread the typecheck/suppressions see-saw as "worse" by mixing them; the shipped
+readout must not repeat it), and never model prose. No extractable number → "can't tell",
+stated (F6). Levers, W-2-symmetric: top-up & resume (a re-sign) / revise the spec / abandon.
+
+### 3. Cap-halt RESUME on the U path (the missing third leg of hamr's resume rulings)
+
+Kill-resume existed (module C), wall-halt pauses decision-ready (W-2); a MONEY cap-halt —
+the case the original "why would I waste money on something I already started" ruling was
+about — fell between them: run-u has no resume and hard-resets the patient, and the resume
+reader classes a landed `job-end` as complete. The gap is closed as wiring, not new
+machinery: `--resume` on run-u skips the seed reset, folds the dead run's spend in as
+`priorSpentUsd` (the ceiling never silently widens), skips the completed plan prefix, and
+re-enters at the outer close + fix loop. The top-up itself remains a spec re-sign.
+
+### 4. The close-fix loop's count retires for the SAME strike rule (v1.45 §5's recorded
+replay: RUN, clean)
+
+The pre-registered $0 replay over every archived fix-loop (8 runs) came back clean both
+directions: **0 greens harmed** (all 3 historical fix-loop greens converted in ≤2 verdicts)
+and **1 real waste case caught** (`reuse-msc6w93z`: dead flat at 2 errors for 7 consecutive
+fix verdicts until the wall killed it; the 2-strike rule stops it at verdict 4).
+`CAP_RUNS` retires as the fix loop's governor; the ladder's 2-strike no-progress rule
+(per-stage series, same accuracy law as §2) replaces it. Money and wall keep every bit of
+their authority; the design intent, hamr verbatim: internal loops "catch a dead end instead
+of capping" — a run should die when it is out of ideas, not out of money mid-convergence.
+The money cap stays the hard outer line and is never self-adjusted (unchanged hard line).
+
+### 5. Evidence base and sequencing
+
+Money-cut deaths in the entire archive: 8 — seven the F45 clipipe casualty class (born
+unreadable), one `u-msew1uy5` (converging at the cut). The feedback features matter FORWARD:
+the gate rules now carry runs deep enough to reach the money line while still working, a
+depth no prior run reached. Build order: §2+§3+§4 next (opus-delegated, session as
+orchestrator/validator), before the bareagent-u top-up decision consumes them; the lift-
+contrast (§ v1.42) remains the north star behind the rules decisions in flight.
+
+## Addendum v1.47 — 2026-08-04 (v1.46 §2–§4 are BUILT: the money halt reads out, the U path resumes, the fix loop is governed by progress — commit `ae417ae`)
+
+The money-halt package landed as specified (opus build, session as orchestrator/validator;
+sonnet adversarial review after, which verified 9 doctrine constraints held and returned 2
+findings, both validated and fixed). 926/926 and typecheck clean; no spec hash changed and no
+paid run fired. The evidence and both defects are F82.
+
+### 1. What is now true
+
+**§2 — a money cap-halt is decision-ready.** The run keeps its last minted verdict and emits a
+`money-halt` record at all three sites that cut a run on money (step loop, close-fix loop,
+scout/draft relay), carrying the signed ceiling, what is left, the kept verdict/stage, a trend
+verdict (`converging | flat | unknown`) and the three W-2-symmetric levers. The accuracy law is
+enforced by construction in `src/trend.js`: series are PER STAGE, and merging axes is
+inexpressible rather than merely discouraged. No extractable number → `unknown`, stated (F6).
+**§3 — `run-u --resume`** skips the seed reset, folds the dead run's spend and wall in against
+the SIGNED numbers, and re-enters at the checkpoint; the top-up stays a spec re-sign.
+**§4 — `CAP_RUNS` retires as the fix loop's governor** for the 2-strike per-stage rule, on the
+replay §4 pre-registered.
+
+### 2. Deviations from §2–§4 as written, each taken on evidence
+
+- **The `readResume` amendment is OPT-IN** (`direct`, `resumableOutcomes`), OFF by default, so
+  the reuse path stays control-pinned byte-unchanged: there a cap-halted try was graded and its
+  row written, and reclassifying it would re-run a try with no money left and duplicate the row.
+- **`capRuns` survives as the BLIND-instrument fallback**, binding only while the trend has
+  never compared anything and lifting the moment a stage reports a number. Not decoration — a
+  sabotage mutant proved the loop non-terminating without it.
+- **A stage advance feeds the strike rule but never headlines `converging`.** An advance is
+  guaranteed on essentially any run that does work, so an ordering-only "converging" could not
+  discriminate the one question §2 asks: does another dollar finish this.
+
+### 3. Parked for hamr
+
+**Two instruments now answer "was it progressing":** the wall halt's byte-equality `gapTrend`
+(`stalled`/`moving`/`unknown`) and the money halt's per-stage numeric trend
+(`flat`/`converging`/`unknown`) — on two halts that are otherwise deliberate mirrors. Both are
+honest about what they see; unifying them (or keeping both) is arbiter territory and hamr's
+call. The **bareagent-u top-up** decision is still pending and is the resume feature's live
+validation candidate — a real cap-halt with work on disk, needing a re-sign to fire.
+
+## Addendum v1.48 — 2026-08-05 (the money halt's live read: bareagent-u is topped up, resumed, and GREEN — v1.47's parked top-up decision RESOLVED)
+
+hamr signed the top-up in-turn, verbatim: **"go 8/45"** — `jobs/bareagent-u-types.json`
+`budgetUsd` 4 → 8 and `maxWallMs` 25 → 45min, a spec edit that flipped the resolved hash to
+`22eb9b3e` and had to be re-signed to run at all. The run fired on it and greened. Evidence,
+numbers and both parked items are F83; commit `3fc6ee9` carries the re-sign and the cycle tests.
+
+### 1. What is now true
+
+**v1.46 §2–§4 have met a real halted tree.** v1.47 recorded them as built on tests and $0
+replay; `u-msf70nei` is the run. The `money-halt` readout (§2) made the top-up a decision
+rather than a guess; `run-u --resume` (§3) consumed the halt — re-entering at the close
+checkpoint with the single finished step skipped, no re-scout and no re-draft, the patient
+CONTINUED rather than reset, the fold declared once at `job-start`
+(`priorSpentUsd 4.1261` / `priorSpendComplete true` / `priorWallMs 24.9min`) against the
+SIGNED $8, and the outside watchdog armed on the 20.1-minute REMAINDER; and the new
+`close-trend` governor (§4) ran the fix loop that finished the job — its first live firing,
+on the spine as `ladder {governor:'close-trend', … noProgress:1, limit:2}`.
+
+**The green was earned in the resumed leg, not inherited.** The close re-ran first and redded
+on `no-suppressions` (5 added), the fix loop see-sawed exactly once (scrubbing the `any`s
+re-exposed 3 strict errors), and iteration 2 closed both axes: 7 allowed edits across 2 files,
+all four stages `satisfied`. `job-end` states the FOLDED total — `spentUsd 5.3389`,
+`spendComplete true` — for a leg that cost **$1.21 and 12.8 minutes**, with $2.66 unspent. All
+four close stages were re-run by hand afterwards: exit 0 each. A bridge record was minted from
+it, carrying the plan as executed (F81's RLM shape).
+
+**The resume rung's live read is done.** This is the first pause → top-up → resume → pass in
+programme history, and it closes the economic argument the resume rulings were made on: the
+second leg paid for one fix iteration and re-bought nothing the first leg already owned.
+
+**The cycle is pinned deterministically too** (5 tests, `$0`, all watched-fail with sabotage
+evidence): leg-1 halt → top-up → leg-2 green at the checkpoint; a **no-top-up control** where
+the same budget buys no second pass and leaves a byte-identical tree; the **unsolvable cycle**
+hamr asked for, where a topped-up flat leg strikes out at the fix-loop's strike limit with
+`$1.60 of $2` unburned — a top-up does not buy the right to burn the wallet on a dead axis;
+and an F6 floor surviving the whole cycle. Gate 931/931, typecheck clean.
+
+### 2. Parked for hamr (v1.47 §3's items, plus three new)
+
+Still open from v1.47: **two trend instruments** for one question (the wall halt's byte-equality
+`gapTrend` vs the money halt's per-stage numeric trend) — unifying them or keeping both is
+arbiter territory.
+
+New, from this run and its tests:
+
+- **The restart fold can launder a floor into an exact total (MED, F6 class, not fixed).**
+  `readResume`'s restart branch derives `priorSpendComplete` from 2 of the 4 causes `run.js`
+  uses for the same decision, so a floor arising from `stalled` or `cutMidCall` comes back
+  EXACT at the resume seam. The graded branch of the same reader consults the terminal's own
+  `spendComplete`; only the restart branch skips it. The remedy is a HYPOTHESIS and needs its
+  own test against the ordinary killed-mid-flight restart shape (no `job-end` at all) before it
+  ships — the standing rule that a fix read off source is tested as hard as the defect. This
+  run could not have caught it: the dead leg declared `spendComplete: true`.
+- **Should a pause readout span a RESUME CHAIN?** A resumed leg's trend is scoped to that leg's
+  own grades, per `src/trend.js`'s documented accuracy law. In the no-top-up control the leg
+  honestly reads `flat` while the CYCLE was converging (2 → 1) and the real blocker was the
+  absent top-up. Neither reading is wrong; they answer different questions, and which one the
+  human should see is hamr's call. The test leaves that trend unasserted rather than encoding
+  an answer.
+- **The `run-u` readout frames wall and money differently** (display only, small): money prints
+  the folded total (`$5.34 of $8`), wall prints the leg (`12.8min of 45min`) against the full
+  signed cap. The spine and the enforcement are both correct.
+
+## Addendum v1.49 — 2026-08-05 (v1.48 §2's four parks are all RESOLVED, hamr's trend-scope ruling becomes doctrine, and the branch's review round lands one Critical and one new park)
+
+Three commits close out the money-halt/resume/trend work v1.46–v1.48 specified: `8e62749`
+(hamr: *"#1 fix it and verify/validate no regression"* / *"#4 fix"*), `12d997f`
+(hamr: *"go on 2 and 3"*), and `f2be2b6` (hamr: *"use /code-review medium for review with
+opus"*). Evidence and numbers are F83 and F84. No spec hash moved and no paid run fired.
+
+### 1. v1.48 §2's parks — all four resolved, with the commit that did it
+
+- **Two trend instruments for one question → UNIFIED** (`12d997f`). `gapTrend` is deleted.
+  Both governance halts read the run's own `src/trend.js`: where a stage reported a comparable
+  NUMBER it decides, and where none did, the byte comparison survives INSIDE `unknown` as a
+  `motion` field (`changed | unchanged | null`) and as a clause in the reading, with the lever
+  adapting (`unchanged` → revise the goal; `changed` → read the last close output). It is
+  **never promoted to a direction and never mapped onto `trend`** — "the close's output changed"
+  is not "the run got better" (F6 in a trend's coat). W-2's semantics are untouched: the grade
+  already minted is kept, the three levers are the same three, and the close is still never
+  bounded by the wall.
+- **The restart fold can launder a floor into an exact total → FIXED** (`8e62749`). The fold now
+  reads ALL four of `runJob`'s floor causes; the killed-mid-flight restart shape (no `job-end` at
+  all) is control-pinned unchanged, which is what the standing hypothesis rule demanded of a fix
+  proposed from reading. `f2be2b6` closed the sibling one seam further out: a fold of **$0 that
+  is not exact** is still a floor.
+- **Should a pause readout span a RESUME CHAIN? → YES, as the trend SEED** (`12d997f`).
+  `readResume`'s `restart.grades` carries the dead leg's close grades forward (`{stage, value}`
+  — counts and stage names only, never a gap byte) and seeds the run trend's baselines. Read
+  from the `ladder` records the live governor already wrote, from `close-precheck`/`outer-close`,
+  and — only on a spine predating that governor — from the `close-verdict` records after the
+  `fix-loop` marker. Validated against the REAL `u-msew1uy5` spine, and the no-top-up control
+  that F83 deliberately left unasserted now asserts the chain reading (`converging`, 2 → 1) as
+  the correct one.
+- **The `run-u` readout frames wall and money differently → FIXED** (`8e62749`). The wall line
+  now folds the prior leg exactly as the money line does, with UNBOUNDED rendered as UNBOUNDED.
+
+### 2. hamr's trend-scope ruling, recorded as doctrine
+
+Asked whether the seed should also govern the strike rule, hamr ruled, verbatim:
+
+> **"question 1 is for all, applies to money/time consolidated view #2 strike out is related
+> this step, both have diff goals and shouldn't be mixed up"**
+
+That is now the law of this instrument, in two clauses:
+
+- **The halt READOUT is the chain-spanning, consolidated money/time view.** It answers *was the
+  RUN converging when its allowance cut it* — for both governance halts, across a resume chain,
+  which is exactly the question a top-up decision is about.
+- **The STRIKE governor is leg-local and step-local.** It answers *is THIS loop out of ideas*,
+  on this leg's own evidence, and it is deliberately NOT seeded.
+- **The two are never mixed.** One instrument answering both questions is how they come to
+  disagree — the "ONE PER SERIES" law, stated at the site.
+
+The ruling **ratifies a measurement-driven deviation** `12d997f` had already taken: the
+unsolvable-cycle test caught that a chain-seeded governor rendered a dead-flat resumed loop as
+*still progressing* and offered a top-up on the very run that had just refuted one. The build
+deviated on that evidence and brought the question to hamr rather than shipping the deviation
+as a design; hamr's answer is the general rule the deviation was an instance of.
+
+### 3. The whole-branch review round (F84, commit `f2be2b6`)
+
+Medium `/code-review` with opus finders over `main...layer-3-reuse` (56 files, 16,422
+insertions), three opus fix batches, session orchestrating and validating. Every confirmed
+finding is fixed; **no fix was forced** — each claim was verified against source first, and
+three finder claims were corrected in detail during the fixing rather than implemented as
+reported. Gate 987/987 (from 959), typecheck and `build:types` clean.
+
+**The round's Critical: the blind cap was a one-way latch.** `capRuns` survives on this branch
+only as the bound for a close-fix loop whose close reports no comparable number (v1.46 §4). It
+was armed off "has this leg ever compared anything" — which a bare STAGE ADVANCE satisfies, on
+essentially every run that does any work at all — so one advance disarmed it permanently, and a
+numberless-red close (the shipped aurora TESTGEN `verdict` stage is that shape) ran bounded by
+money and the wall alone. Caught by an executed 27-iteration repro, not by reading. The cap now
+bounds the **consecutive uncomparable streak**: lifted the moment the instrument can read,
+re-armed the moment it cannot, and binding a blind-from-birth run on exactly the iteration the
+retired count always bought it.
+
+The rest, one line each: a mutation-proven hole where a widening of the bridge DEMOTION set
+survived the whole suite (now a table pinned outcome by outcome — `escalated` demotes, every
+other non-green is a casualty and proven stays proven); three F6 launderings (a $0-but-unknown
+fold, a `money-halt` `remainingUsd` that did not say whether it was exact, a resumed try row
+whose rounds spanned one leg while its money spanned two); `restart.grades` computed and
+declared but never handed to the library's own reuse resume — the F50 class, and the adopter
+contract had described the behaviour rather than the code; **W-2 on the launch side**, where a
+zero wall remainder used to reach the outside watchdog as `--wall-ms 0`, get defaulted to
+`null`, and arm no deadline at all under a banner advertising one — it now REFUSES at the
+watchdog and at both runners, with a lever per zero (`--wall` for a burned restart wall,
+`--tries` for a run whose authorized attempts have all run); and script hardening (a corrupt
+watchdog report can no longer abort a signed resume, `runner-start`'s argv is redacted at the
+write site, a trailing value-flag refuses instead of reading `Number('') === 0`).
+
+### 4. NEW park for hamr: the close-stage AXIS SPLIT (spec-hash territory)
+
+The trend's accuracy law is *never across stages*, enforced by construction. But **a stage name
+is not an axis**, and the shipped closes red one stage on two structurally different
+populations: `u-*-close`'s `typecheck` reports either `N error(s) in <scope>` or `the target
+files are clean but M strict error(s) exist outside them` — a different population, reached only
+once the first is zero — and `suite-green` has the same shape. A run crossing that seam donates
+both genres to one series, so a 29 → 4 across it reads **converging** and recommends a top-up on
+work that has only swapped which wall it is behind.
+
+It ships as a documented **KNOWN LIMIT at the site**, not parsed around. The root fix is a
+**stage split in the shipped closes**, which changes stage names inside signed specs — that is a
+spec-hash change and hamr's to sign. Sharpening the detector to tell two prose shapes apart is
+explicitly refused (the F49 precedent: a per-close sharpening is how one reader stops being one
+reader).
+
+**RETIRED for the `u-*` closes the same day** — hamr signed it in-turn, verbatim **"#1 fix"**,
+and commit `4ae9a3c` carries it. Every mixed stage was split *in the close*: `typecheck` keeps
+the in-scope faults with **`typecheck-outside`** immediately after it, and **`tests-kept`**
+carries the executed-count floor immediately before `suite-green`. Each new stage sits exactly
+where its branch already ran, so the gate sequence is byte-order identical to the old
+single-stage walk and first-red-wins is unchanged; `litectx`/`spawner` `typecheck` was verified
+single-population and left alone. `src/trend.js` keeps the paragraph as the historical record
+plus **the law for close authors** — one population per stage, and a new close that mixes two
+re-opens this, with the remedy always in that close's stage list. Consequences taken openly:
+all six `u-*` spec hashes flipped and the runner refuses them until re-signed (§5), and the two
+stored bridges (`aurora-u-spawner`, `litectx-u`) refuse to load until re-minted from a green
+under the new close — a changed close is a different KIND of job, which is what the load gate's
+close-stage check is for. Evidence: 20 new tests including a can-it-fail pre-flight against the
+pre-split tree, plus `$0` live validation (pulselog green on all four split stages, baremobile
+`typecheck-outside` RED 381 as its own series). Full read: **F84**.
+
+**The park does not close entirely, and the residue is named rather than rounded off:**
+
+- **`scripts/testgen-close.mjs` — STILL PARKED for hamr, on LIVE infrastructure.** Its
+  `verdict` stage renders a fault-detection RATE beside collected-unit COUNTS
+  (`killed=K/40 rate=R% … form=unit:N,integ:M`) — the same class, on the job that produced
+  F38/F39/F46/F47, and splitting it is the same spec-hash territory the `u-*` split was.
+- **`scripts/types-close.mjs` — deliberately AS-RUN.** Frozen screening infrastructure, five
+  populations. It graded a closed screen, so re-cutting it would edit the instrument a finished
+  measurement was taken with. It stays as it ran, named rather than quietly fixed.
+
+### 5. The signature trail across the split (recorded here because a spec cannot hold it)
+
+hamr signed the bareguard-u launch in-turn on 2026-08-05, verbatim:
+
+> **"#5 signed, run after merge"**
+
+against the then-current resolved hash
+`2b8dbdaf68e4c0dac9023d3c1c3816e387c617b91819fd714f67069f72ec387a`. `4ae9a3c` landed hours
+later and **flipped all six `u-*` hashes by construction** — a close's stage names are in the
+signed spec, so splitting a stage moves the hash whether or not anything else changed. That is
+refuse-until-re-signed working exactly as designed: a signature for the pre-split close does
+not authorize the post-split one, and no legacy acceptance path exists.
+
+bareguard-u's new hash is
+`f91c5fa5f10e4226ea26f9086f28e36a778104618ea69b7f4dadfc74c025d161`, **presented for hamr's
+re-sign at launch** — post-merge, which is his own stated sequencing.
+
+**Why this lives in the docs trail and nowhere else:** a spec never contains its own signature.
+Measured, not assumed — an approval field on the spec reds as an unknown field, and a hash taken
+over a document containing that hash is self-invalidating. The approvals array is the runner's
+input and hamr's in-turn words are the signature; this record is where the chain between two
+hashes stays legible.

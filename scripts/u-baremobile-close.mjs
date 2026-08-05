@@ -1,6 +1,6 @@
-// U (user-mode e2e) — the close for the litectx-u types job, as NAMED STAGES.
+// Lift-contrast job B — the close for the baremobile-u types job, as NAMED STAGES.
 //
-// One command, one stage per invocation: `node u-litectx-close.mjs <stage>`. The
+// One command, one stage per invocation: `node u-baremobile-close.mjs <stage>`. The
 // stages ARE the close (run in order, first red is the verdict) and the agent's
 // ruler menu DERIVES from them (PRD v1.28) — nobody hand-authors a check.
 //
@@ -8,48 +8,30 @@
 // readScope is the patient tree, so the arbiter's own instrument is out of reach by
 // construction (v1.12 — the worker never reads the arbiter's books).
 //
-// Second target for U, holding the JOB SHAPE from the aurora-u spawner close
-// (changed-from-seed → typecheck → tests-kept → suite-green → no-suppressions) while varying the
-// patient AND the toolchain (JS/JSDoc + tsc, not Python + mypy). Passing every stage
-// IS the grade — there is no separate grading stage, so no stage is `offer:false`
-// except the seed guard.
+// Holds the JOB SHAPE from the aurora-u/litectx-u closes (changed-from-seed →
+// typecheck → typecheck-outside → tests-kept → suite-green → no-suppressions)
+// while SCOPING the typecheck the way
+// aurora-u scoped mypy to the spawner package: the grade is zero strict errors in
+// the SCOPE files, with a ceiling on errors OUTSIDE the scope so fixing the target
+// can never be bought by breaking the rest (seed: 29 in scope, 378 outside).
 //
-// Output contract:
-//   every gap line is prefixed `LITECTX ` (the spec's gapKeep) so failures survive
-//   the gap bound; `LITECTX judged=1` is printed on every real judgment so the
-//   spec's judged floor can tell a rendered opinion from a crashed instrument (F17).
-//   The output NAMES NO CULPRIT FILE beyond what the tool itself reports — the
-//   worker finds its own way (v1.12/F28 governs the failure message, not the list).
+// Output contract: every gap line is prefixed `BAREMOBILE ` (the spec's gapKeep);
+// `BAREMOBILE judged=1` on every real judgment (F17); no culprit file is named beyond
+// what the tool itself reports.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/litectx-u';
-const SEED_REF = '96813a43bbcbac6a808ff610c6751a8736e2903e'; // the patient as seeded
+const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/baremobile-u';
+const SEED_REF = 'd9b318fac78036bd3db35f68c4b1eb5ee634244d'; // the patient as seeded
 const PKG_SRC = 'src';
-const TESTS_MIN = 410; // the seed's EXECUTED count (409 pass + 1 skipped) — executed, never passed (F40)
+const SCOPE = ['src/errors.js', 'src/aria.js']; // the job's target files
+const OUTSIDE_MAX = 378; // the seed's own outside-scope strict-error count — a ceiling, never a target
+const TESTS_MIN = 321; // the seed's EXECUTED count — executed, never passed (F40)
 const GAP_LINE_CAP = 40;
-// Suppressing an error is not typing it. `unknown` is deliberately NOT here: it forces
-// narrowing at the use site, which is real typing work.
-//   - `any` is matched only in TYPE position (after `{ < | ( [ : ,` or `as`, or `any[]`),
-//     never as the English word — this file's own prose says "any" and must not self-trip.
-//   - the JSDoc WILDCARD (`{*}`, `{?}`) is `any` under a different spelling and the `any`
-//     rule cannot see it — it contains no letters. Measured against this repo's own tsc
-//     (5.x, `--noEmit --strict --allowJs --checkJs`): a naked `function f(v)` reports
-//     TS7006, and `@param {*}` / `@param { * }` / `@param {?}` each report ZERO errors, as
-//     does a `@typedef {*} Loose` used from a `@param {Loose}`. So the tag is matched
-//     GENERICALLY (`@\w+`), not from a list: `@typedef`/`@yields`/`@template` silence
-//     exactly as well as `@param`, and a list of tags is a list of holes. `{*[]}` and
-//     `{Array<*>}` are deliberately NOT matched — measured, they still error on non-array
-//     use, so they are `any[]`, not a full escape, and the `any` rule already covers that
-//     shape's spelled form.
-//   - a JSDoc CAST (`/** @type {X} */ (expr)`) is the JS analog of Python's `cast(`: it
-//     asserts a type the checker could not derive. Declaration annotations (a `@type` line
-//     that does NOT open a parenthesised expression) are the real work and stay legal.
-//     The type body is matched with `.*`, not `[^}]*`: an inner brace (`@type {{a: number}}
-//     */ (y)`) closes `[^}]*` early and the whole cast walks through. Every rule here is
-//     tested against ONE diff line at a time (the loop below), so `.` can never run past
-//     the end of the line it was aimed at.
+// Suppressing an error is not typing it — same measured battery as u-litectx-close.mjs
+// (tsc 5.x, `--noEmit --strict --allowJs --checkJs`); see that file for the per-rule
+// measurement notes. `unknown` is deliberately legal: it forces narrowing.
 const SUPPRESSIONS = [
   { id: 'ts-ignore', re: /@ts-ignore/ },
   { id: 'ts-expect-error', re: /@ts-expect-error/ },
@@ -61,7 +43,7 @@ const SUPPRESSIONS = [
 ];
 
 const stage = process.argv[2];
-const out = (/** @type {string} */ line) => console.log(`LITECTX ${line}`);
+const out = (/** @type {string} */ line) => console.log(`BAREMOBILE ${line}`);
 /** every real judgment says so; an instrument stop (97) deliberately does not */
 const done = (/** @type {number} */ code) => { if (code !== 97) out('judged=1'); process.exit(code); };
 const stop = (/** @type {string} */ why) => { out(`instrument-stop: ${why}`); process.exit(97); };
@@ -70,13 +52,8 @@ const run = (/** @type {string} */ cmd, /** @type {string[]} */ args, timeoutMs 
   const r = spawnSync(cmd, args, { cwd: WORKDIR, encoding: 'utf8', timeout: timeoutMs, maxBuffer: 1 << 28, env: { ...process.env, NO_COLOR: '1' } });
   return { code: r.status, text: `${r.stdout ?? ''}${r.stderr ?? ''}`, timedOut: r.error?.code === 'ETIMEDOUT', why: r.error?.code ?? r.signal ?? 'no error, no signal' };
 };
-/** A spawn that produced NO exit code was not a judgment, so it is always an instrument
- * stop — but WHICH one matters. Measured shapes (node 22 spawnSync): a timeout is
- * `{status:null, signal:'SIGTERM', error.code:'ETIMEDOUT'}`; a maxBuffer overflow is
- * `{status:null, signal:'SIGTERM', error.code:'ENOBUFS'}`; an external kill is
- * `{status:null, signal:'SIGKILL'}` with no error at all. Reporting all three as "timed
- * out" hands the operator a wrong cause and hides a broken instrument behind a bound that
- * never fired (the casualty-vs-evidence class). */
+/** A spawn with NO exit code was not a judgment — which instrument-stop matters (see
+ * u-litectx-close.mjs for the measured spawnSync shapes). */
 const noExit = (/** @type {{code: number|null, timedOut: boolean, why: string}} */ r, /** @type {string} */ what) => {
   if (r.timedOut) stop(`${what} timed out`);
   if (r.code === null) stop(`${what} died without an exit code (${r.why}) — the instrument broke, the tree was never judged`);
@@ -93,11 +70,9 @@ const git = (/** @type {string[]} */ args) => {
   catch { return null; }
 };
 
-// ── the seed diff, shared by two stages. A missing seed commit is an INSTRUMENT
-// stop, never a red: the run cannot be judged at all if the baseline is unreadable.
 // `git diff <seed>` is blind to UNTRACKED files (tail-review F-5): a brand-new file under
 // src/ holding the suppressions would never be diffed, never scanned, and could re-export a
-// "clean" surface into the graded files — a constructible fake green. So the changed set is
+// "clean" surface into the SCOPE files — a constructible fake green. So the changed set is
 // diff PLUS untracked (`ls-files --others --exclude-standard`), with exactly one named
 // exclusion: `.litectx/` is the arbiter-side store the retrieval verbs create in the
 // workdir, not worker output, and it is not in the patient's .gitignore.
@@ -133,30 +108,55 @@ if (stage === 'changed-from-seed') {
   done(0);
 }
 
-if (stage === 'typecheck') {
+// ONE POPULATION PER STAGE — the law for close AUTHORS (F84, hamr-signed
+// 2026-08-05). The strict typecheck answers two structurally different questions:
+// how many faults are IN the target files, and how many errors exist OUTSIDE
+// them. Under one stage name those two counts land in one trend series, and a 29
+// (in-scope faults) followed by a 4 (outside-scope overflow) reads CONVERGING on
+// a run that has only swapped which wall it is behind. The trend reader is never
+// taught to tell two prose shapes apart (the F49 precedent) — the close splits.
+const strictErrors = () => {
   const r = run('npx', ['tsc', '--noEmit', '--strict'], 600_000);
   noExit(r, 'the strict typecheck');
   const errs = r.text.split('\n').map((s) => s.trimEnd()).filter((l) => /error TS\d+/.test(l));
-  if (errs.length === 0 && r.code === 0) { out('green: tsc --strict reports zero errors'); done(0); }
-  if (errs.length === 0) { stop(`tsc exited ${r.code} with no readable error lines — the run did not complete`); }
-  out(`red: tsc --strict reports ${errs.length} error(s)`);
-  echo(errs);
-  done(1);
+  if (errs.length === 0 && r.code !== 0) stop(`tsc exited ${r.code} with no readable error lines — the run did not complete`);
+  return {
+    inScope: errs.filter((l) => SCOPE.some((f) => l.startsWith(f))),
+    outside: errs.filter((l) => !SCOPE.some((f) => l.startsWith(f))),
+  };
+};
+
+if (stage === 'typecheck') {
+  const { inScope } = strictErrors();
+  if (inScope.length > 0) {
+    out(`red: tsc --strict reports ${inScope.length} error(s) in ${SCOPE.join(', ')}`);
+    echo(inScope);
+    done(1);
+  }
+  out(`green: tsc --strict reports zero errors in ${SCOPE.join(', ')}`);
+  done(0);
 }
 
-// ONE POPULATION PER STAGE — the law for close AUTHORS (F84, hamr-signed
-// 2026-08-05). The suite answers two structurally different questions: an
-// EXECUTED-COUNT FLOOR (higher is better, ~400-scale) and a FAILURE COUNT (lower
-// is better, single digits). Under one stage name both land in one trend series
-// and the reader compares unlike numbers. `tests-kept` runs FIRST — exactly
-// where the floor check sat inside the single stage — so a shrunken suite still
-// reds before any failure count is reported; the effective gate sequence is
-// unchanged. The trend reader is never taught to tell two prose shapes apart
-// (the F49 precedent); the close splits instead.
-//
-// `node --test` spec output is never byte-stable (duration stamps); the TAP summary
-// counters and `not ok` lines are. Count tests EXECUTED, never passed — a red tree
-// must not be able to hide under a passing-count floor (F40).
+// Runs IMMEDIATELY AFTER `typecheck`, which is exactly where the outside-scope
+// branch sat inside the single stage: `runStages` is first-red-wins, so the
+// worker still sees its in-scope faults before this ceiling can ever red. The
+// effective gate sequence is unchanged — only the series each number donates to.
+if (stage === 'typecheck-outside') {
+  const { outside } = strictErrors();
+  if (outside.length > OUTSIDE_MAX) {
+    out(`red: ${outside.length} strict error(s) outside ${SCOPE.join(', ')}, above the seed's ${OUTSIDE_MAX} — the target files are clean but new errors were introduced elsewhere, not fixed`);
+    echo(outside);
+    done(1);
+  }
+  out(`green: ${outside.length} strict error(s) outside ${SCOPE.join(', ')}, at or below the seed's ${OUTSIDE_MAX}`);
+  done(0);
+}
+
+// The same law, the same split: an EXECUTED-COUNT FLOOR (higher is better,
+// ~1000-scale) and a FAILURE COUNT (lower is better, single digits) are two
+// populations, and one series cannot hold both. `tests-kept` runs FIRST —
+// exactly where the floor check sat inside the single stage — so a shrunken
+// suite still reds before any failure count is ever reported.
 const suite = () => {
   const r = run('npm', ['test'], 900_000);
   noExit(r, 'the patient suite');
@@ -167,8 +167,6 @@ const suite = () => {
   return { code: r.code, tests, failed, notOk: r.text.split('\n').filter((l) => /^not ok \d+/.test(l)).map((s) => s.trim()) };
 };
 
-// a suite that SHRANK is not a suite that passes: deleting a test removes its failure
-// and is the cheapest way to green a behaviour gate
 if (stage === 'tests-kept') {
   const s = suite();
   if (s.tests < TESTS_MIN) { out(`red: ${s.tests} tests executed, below the seed's ${TESTS_MIN} — tests were lost, not kept`); echo(s.notOk); done(1); }
@@ -217,5 +215,5 @@ if (stage === 'no-suppressions') {
   done(0);
 }
 
-out(`instrument-stop: unknown stage "${stage ?? ''}" — the close is: changed-from-seed, typecheck, tests-kept, suite-green, no-suppressions`);
+out(`instrument-stop: unknown stage "${stage ?? ''}" — the close is: changed-from-seed, typecheck, typecheck-outside, tests-kept, suite-green, no-suppressions`);
 process.exit(97);

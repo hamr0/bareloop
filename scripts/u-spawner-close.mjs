@@ -15,6 +15,8 @@
 //   The output NAMES NO CULPRIT FILE beyond what the tool itself reports — the
 //   worker finds its own way (v1.12/F28 governs the failure message, not the list).
 import { execFileSync, spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/aurora-u';
 const SEED_REF = 'd661e507c5cd0981368d90ed3e3abf6e2bb9ed18'; // the patient as cloned
@@ -76,11 +78,28 @@ const git = (/** @type {string[]} */ args) => {
 
 // ── the seed diff, shared by two stages. A missing seed commit is an INSTRUMENT
 // stop, never a red: the run cannot be judged at all if the baseline is unreadable.
+// `git diff <seed>` is blind to UNTRACKED files (tail-review F-5): a brand-new file under
+// the package holding the suppressions would never be diffed, never scanned — a
+// constructible fake green. So the changed set is diff PLUS untracked
+// (`ls-files --others --exclude-standard`), with exactly one named exclusion: `.litectx/`
+// is the arbiter-side store the retrieval verbs create in the workdir, not worker output.
+const untrackedFiles = () => {
+  const o = git(['ls-files', '--others', '--exclude-standard']);
+  if (o === null) stop('git ls-files (untracked sweep) failed');
+  // TWO arbiter books, both named: `.litectx/` (the retrieval store) and
+  // `gate-audit.jsonl` (the gate's own in-flight audit, relocated beside the spine
+  // only at run end). The audit exclusion was paid for live (u-msdonzxl): the v2
+  // sweep's first mid-run firing red-carded the ARBITER'S OWN FILE as a worker
+  // change, and the fix loop burned to the wall on a red the worker can neither
+  // read nor delete. Exact name, never a pattern: a worker-authored
+  // `src/gate-audit.jsonl` must still count.
+  return o.split('\n').filter(Boolean).filter((f) => !f.startsWith('.litectx/') && f !== 'gate-audit.jsonl');
+};
 const changedFiles = () => {
   if (git(['rev-parse', '--verify', `${SEED_REF}^{commit}`]) === null) stop(`frozen seed commit ${SEED_REF.slice(0, 12)} not found in the patient`);
   const d = git(['diff', '--name-only', SEED_REF, '--']);
   if (d === null) stop('git diff against the seed failed');
-  return d.split('\n').filter(Boolean);
+  return [...new Set([...d.split('\n').filter(Boolean), ...untrackedFiles()])];
 };
 
 if (stage === 'changed-from-seed') {
@@ -118,7 +137,16 @@ if (stage === 'typecheck') {
   done(1);
 }
 
-if (stage === 'suite-green') {
+// ONE POPULATION PER STAGE — the law for close AUTHORS (F84, hamr-signed
+// 2026-08-05). The suite answers two structurally different questions: an
+// EXECUTED-COUNT FLOOR (higher is better, ~200-scale) and a FAILURE COUNT (lower
+// is better, single digits). Under one stage name both land in one trend series
+// and the reader compares unlike numbers. `tests-kept` runs FIRST — exactly
+// where the floor check sat inside the single stage — so a shrunken suite still
+// reds before any failure count is reported; the effective gate sequence is
+// unchanged. The trend reader is never taught to tell two prose shapes apart
+// (the F49 precedent); the close splits instead.
+const suite = () => {
   const r = run('python3', ['-m', 'pytest', PKG_TESTS, '-ra', '-p', 'no:cacheprovider']);
   noExit(r, 'the patient suite');
   // Count tests EXECUTED, never PASSED — a red tree must not be able to hide under a
@@ -148,29 +176,49 @@ if (stage === 'suite-green') {
   // close counts node:test's `# tests`, which folds skips in; this is the stricter read.)
   const notRun = tally(/(\d+) (?:skipped|deselected)\b/g);
   const executed = collected - notRun;
-  // a suite that SHRANK is not a suite that passes: removing a test removes its
-  // failure and is the cheapest way to green a behaviour gate
-  if (executed < TESTS_MIN) {
-    out(`red: ${executed} tests executed${notRun ? ` (${collected} collected, ${notRun} skipped/deselected)` : ''}, below the seed's ${TESTS_MIN} — tests were lost, not kept`);
-    echo(r.text.split('\n').filter((l) => l.startsWith('FAILED') || l.startsWith('ERROR')));
+  return { code: r.code, collected, notRun, executed, failed, lines: r.text.split('\n').filter((l) => l.startsWith('FAILED') || l.startsWith('ERROR')) };
+};
+
+// a suite that SHRANK is not a suite that passes: removing a test removes its
+// failure and is the cheapest way to green a behaviour gate
+if (stage === 'tests-kept') {
+  const s = suite();
+  if (s.executed < TESTS_MIN) {
+    out(`red: ${s.executed} tests executed${s.notRun ? ` (${s.collected} collected, ${s.notRun} skipped/deselected)` : ''}, below the seed's ${TESTS_MIN} — tests were lost, not kept`);
+    echo(s.lines);
     done(1);
   }
-  if (failed > 0 || r.code !== 0) {
-    out(`red: ${failed} test(s) now fail — a type annotation must describe what the code already does`);
-    echo(r.text.split('\n').filter((l) => l.startsWith('FAILED') || l.startsWith('ERROR')));
+  out(`green: ${s.executed} tests executed, at or above the seed's ${TESTS_MIN}`);
+  done(0);
+}
+
+if (stage === 'suite-green') {
+  const s = suite();
+  if (s.failed > 0 || s.code !== 0) {
+    out(`red: ${s.failed} test(s) now fail — a type annotation must describe what the code already does`);
+    echo(s.lines);
     done(1);
   }
-  out(`green: ${executed} tests executed, 0 failing`);
+  out(`green: ${s.executed} tests executed, 0 failing`);
   done(0);
 }
 
 if (stage === 'no-suppressions') {
   const changed = changedFiles().filter((f) => f.endsWith('.py'));
+  // an untracked file has no diff — EVERY line of it is added, so the whole file is scanned
+  const untracked = new Set(untrackedFiles());
   const hits = [];
   for (const f of changed) {
-    const d = git(['diff', '-U0', SEED_REF, '--', f]);
-    if (d === null) stop(`git diff failed for ${f}`);
-    for (const line of d.split('\n')) {
+    let added;
+    if (untracked.has(f)) {
+      let body; try { body = readFileSync(join(WORKDIR, f), 'utf8'); } catch { stop(`unreadable untracked file ${f}`); }
+      added = (body ?? '').split('\n').map((l) => `+${l}`);
+    } else {
+      const d = git(['diff', '-U0', SEED_REF, '--', f]);
+      if (d === null) stop(`git diff failed for ${f}`);
+      added = d.split('\n');
+    }
+    for (const line of added) {
       if (!line.startsWith('+') || line.startsWith('+++')) continue;
       for (const s of SUPPRESSIONS) if (s.re.test(line)) hits.push(`${f}: added ${s.id} — ${line.slice(1).trim()}`);
     }
@@ -185,5 +233,5 @@ if (stage === 'no-suppressions') {
   done(0);
 }
 
-out(`instrument-stop: unknown stage "${stage ?? ''}" — the close is: changed-from-seed, typecheck, suite-green, no-suppressions`);
+out(`instrument-stop: unknown stage "${stage ?? ''}" — the close is: changed-from-seed, typecheck, tests-kept, suite-green, no-suppressions`);
 process.exit(97);

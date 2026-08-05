@@ -76,9 +76,46 @@ async function primitiveSmoke(workdir) {
  *   metered claude-json text provider for the toolless drafter); ignored on every Loop-driven provider
  * @param {(type: string, data?: object) => object} opts.emit spine emitter
  * @param {(tier: string) => any} [opts.providerFor] P: per-step model-tier provider factory (forwarded to the plan flow)
- * @param {number} [opts.capRuns] shell-owned per-step attempt cap
+ * @param {number} [opts.capRuns] shell-owned iteration cap for the plan flow's
+ *   CLOSE-FIX loop (a plan STEP runs under the strike ladder instead)
+ * @param {number} [opts.strikeLimit] shell-owned strike ceiling for a plan step's ladder
  * @param {number} [opts.shellCapUsd] the shell's hard USD ceiling
  * @param {number} [opts.closeTimeoutMs] close wall-clock cap (shell territory)
+ * @param {unknown} [opts.bridge] Layer 3 — a bridge-v1 entry to reuse as the drafter's
+ *   STARTING DRAFT (design record 2026-08-01, D4), forwarded to the plan flow. Omitted is
+ *   the cold path and is byte-identical to a pre-Layer-3 run. WHICH entry (the listing, an
+ *   operator pin, the LLM's pick) is the caller's decision, and so is what to do when the
+ *   load gate refuses one: a refusal returns the distinct `recipe-stale` outcome with zero
+ *   spend rather than silently drafting cold, because starting a paid run on a decision
+ *   nobody made is the same class of error as widening a cap to manufacture a green.
+ * @param {number} [opts.priorSpentUsd=0] RESUME (module C) — money a PREVIOUS, killed
+ *   attempt of this same try already spent. It seeds the ledger, so the restarted
+ *   attempt runs under the REMAINDER of the signed `budgetUsd` and the terminal
+ *   `job-end` states the try's WHOLE spend across both attempts. hamr's ruling: "a
+ *   budget ceiling folds in prior spend so re-invoking cannot silently widen it" —
+ *   the fold is the seam precisely because the CAP is in the spec hash, so
+ *   tightening the cap instead would make a new spec version needing a signature
+ *   nobody typed. The caller reconstructs the figure from the dead run's own spine.
+ * @param {boolean} [opts.priorSpendComplete=true] RESUME — was that fold EXACT?
+ *   `readResume` reports false when any round inside the dead attempt came back
+ *   unpriced, which makes the fold a FLOOR. The unknown does not heal by being carried
+ *   forward, so it rides one-way onto every `job-end` this run emits: a total built on
+ *   a floor is a floor, and reporting it as exact is F6 in a resume's coat.
+ * @param {number} [opts.priorWallMs=0] RESUME — the same ruling in a time coat: wall
+ *   time the killed attempt already consumed, folded into the run clock so the
+ *   restart gets the remainder of the SIGNED wall, never a fresh allotment.
+ * @param {any} [opts.resumeSeed] RESUME (module C v2) — WHERE inside the killed attempt
+ *   the kill landed, read off its own spine by `readResume`: the plan it accepted and the
+ *   steps that reached their exits. Forwarded verbatim to the plan flow, which reloads
+ *   the plan instead of re-scouting and re-drafting, and skips the finished steps.
+ *   hamr's ruling: *"start last step instead from the beginning, why would i want to
+ *   waste more money on something i already started"*. Absent is the ordinary path.
+ * @param {{stage?: string|null, value?: number|null}[]} [opts.resumeGrades] RESUME — the
+ *   close grades the killed leg recorded (`readResume`'s `restart.grades`), forwarded to
+ *   the plan flow as the trend's BASELINES. A resumed run's halt readout judges the whole
+ *   chain, not just the leg: without them a leg that re-grades an unchanged tree reports
+ *   `flat` — "revise the goal" — on a run that was converging when the money ran out.
+ *   Counts and stage names only; no close bytes cross this seam. Absent is the cold path.
  * @param {boolean} [opts.layerRoot=false] Layer R (within-run ratchet) — shell
  *        territory, threaded to the plan flow. Defaults OFF
  *        (decided 2026-07-21): fixation is extinct on every current job (F41), so
@@ -88,16 +125,32 @@ async function primitiveSmoke(workdir) {
  *        binding.)
  * @returns {Promise<string>} outcome: 'green' | 'already-green' | 'escalated' |
  *   'unapproved-spec' | 'job-red' | 'smoke-red' | 'plan-red' | 'check-red' |
- *   'close-red' | 'close-unsupported' | 'pricing-red' | 'provider-red' |
+ *   'close-red' | 'close-unsupported' | 'recipe-stale' | 'pricing-red' | 'provider-red' |
  *   'interpreter-red' | 'cap-halt' | 'wall-halt' | 'step-stalled' | `step-red:<id>`
  */
-export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, emit, capRuns = 3, shellCapUsd = 2, closeTimeoutMs, layerRoot = false }) {
+export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, layerRoot = false, bridge = null, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [] }) {
   // 0. the ledger's counters, declared FIRST so that every job-end — including
   // the pre-token reds below — can state a real figure. An omitted `spentUsd` is
   // not a zero: a consumer reads `undefined` and either crashes or launders it
   // into $0 (F12's class, at the terminal record instead of mid-attempt).
-  let spentUsd = 0;
+  //
+  // It starts at the RESUME fold rather than at 0 when a killed attempt of this
+  // same try already spent money (see `priorSpentUsd`). Belted like every other
+  // number that enters the arbiter's arithmetic: a garbage fold is 0, never a NaN
+  // that would poison every later comparison into "no cap".
+  let spentUsd = typeof priorSpentUsd === 'number' && Number.isFinite(priorSpentUsd) && priorSpentUsd > 0 ? priorSpentUsd : 0;
   let unpriced = false;
+  // RESUME (v1.46 §3): was the FOLD itself exact? `readResume` marks it false when any
+  // round inside the dead attempt came back unpriced, and that unknown does not heal by
+  // being carried forward — every round of THIS attempt being priced repairs nothing
+  // about the one before it. One-way, like `stalled` and `cutMidCall`, and read by
+  // `spend()`, so the terminal states a floor instead of an exact-looking total (F6).
+  // Read off the FLAG alone, never conjoined with the money: a leg killed with every
+  // round unpriced folds $0 and still says `false`, and that is a floor OF zero, not an
+  // exact zero. Gating on `spentUsd > 0` dropped exactly that predecessor's unknown and
+  // handed the resumed terminal an exact-looking total. The param defaults `true`, so a
+  // run nobody resumed is unchanged.
+  const priorFloor = priorSpendComplete === false;
   // W1: did this run ABSORB a stall? The terminal `step-stalled` is the rare case;
   // the common one self-heals (src/stall.js abandons the hung call and reissues),
   // and an abandoned call may already have been billed — a reissue can pay twice
@@ -122,7 +175,10 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // says so machine-readably instead of dressing a floor up as exact. Emitted on
   // EVERY job-end (true when everything was priced) so no consumer ever has to
   // branch on field presence.
-  const spend = () => ({ spentUsd, spendComplete: !unpriced && !stalled && !cutMidCall });
+  // ONE spelling of the four causes, so the terminal and the in-flight money readout can
+  // never disagree about whether the same run's figure is exact.
+  const spendComplete = () => !unpriced && !stalled && !cutMidCall && !priorFloor;
+  const spend = () => ({ spentUsd, spendComplete: spendComplete() });
   // 1. human-signs-always — before ANY provider call (N1 decision #1)
   if (!checkApproval(rawSpec, approvals)) {
     emit('job-end', { outcome: 'unapproved-spec', detail: 'no approval record matches this exact spec version', ...spend() });
@@ -138,6 +194,16 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   emit('job-start', {
     job: job.job, specHash: jobSpecHash(job), budgetUsd: job.budgetUsd,
     shape: 'plan', goal: job.goal,
+    // RESUME (v1.46 §3) — the DECLARED fold, the `try-start` precedent one level
+    // down. A reader reconstructing a chain of resumes must add only each attempt's
+    // OWN new rounds; without this record the second resume of a halted run would
+    // re-derive from its own file alone and silently widen the ceiling by everything
+    // spent before it. Emitted only when there IS a fold: an absent fold is absent,
+    // and a decorative `0` would be indistinguishable from a run nobody folded.
+    // A fold of $0 that is NOT exact is still a fold — the unknown is the whole of what
+    // it inherited, and it is the only field that can carry it forward.
+    ...(spentUsd > 0 || priorFloor ? { priorSpentUsd: spentUsd, priorSpendComplete: !priorFloor } : {}),
+    ...(typeof priorWallMs === 'number' && Number.isFinite(priorWallMs) && priorWallMs > 0 ? { priorWallMs } : {}),
   });
 
   // 2. known-answer smoke before tokens (A3: silent degradation throws nothing)
@@ -190,9 +256,10 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // accounts it natively (F12) and the job-end money contract is unchanged.
   {
     const outcome = await runPlan(job, {
-      workdir, provider, nativeProvider, providerFor, emit: meter, capRuns, closeTimeoutMs, layerRoot,
+      workdir, provider, nativeProvider, providerFor, emit: meter, capRuns, ...(strikeLimit !== undefined ? { strikeLimit } : {}), closeTimeoutMs, layerRoot, bridge, priorWallMs, resumeSeed, resumeGrades,
       remainingUsd: () => Math.min(shellCapUsd, job.budgetUsd - spentUsd),
       isUnpriced: () => unpriced, // F6: let the plan flow bail in-flight, not just after it returns
+      spendComplete, // …and let its money-halt readout say whether the remaining it quotes is exact
     });
     if (unpriced) return pricingRed();
     if (outcome.startsWith('step-red:')) {

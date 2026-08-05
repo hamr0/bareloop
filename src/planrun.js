@@ -25,9 +25,12 @@ import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_
 import { snapshotScope, evalExits } from './exits.js';
 import { createRoot } from './root.js';
 import { createStallWatch, STALL_MS, MAX_STALLS } from './stall.js';
+import { createLadder, STRIKE_LIMIT } from './ladder.js';
+import { createTrend, FIX_STRIKE_LIMIT } from './trend.js';
 import { TOOL_MENU, STORE_VERBS, checkMenu } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, strategyFor } from './tools.js';
 import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
+import { validateBridge, loadGate } from './bridges.js';
 import { extractArtifact } from './text.js';
 import { createClock, isWallTimeout } from './clock.js';
 
@@ -120,43 +123,74 @@ function materialsBlock(m) {
 }
 
 /**
- * W-2 — the progress TREND, read off the two most recent close gaps.
+ * Layer 3 (D4) — the MECHANICAL START. A loaded bridge is handed to the drafter as a
+ * STARTING DRAFT, not as a contract: it is appended to the ordinary drafting prompt and
+ * the result passes the ORDINARY validator. No second, looser path exists for an
+ * inherited plan.
  *
- * A run stopped by its wall hands the human a lever choice, and the two levers
- * point opposite ways: more TIME only helps work that was still moving, and a goal
- * the run cannot reach does not become reachable by being given longer. The
- * cheapest honest discriminator is already in the fix loop's hand — consecutive
- * close output. A byte-identical gap means the last attempt moved nothing the
- * arbiter can see; a different one means the tree was still changing under it.
+ * The framing is the pre-probe's arm C (`scripts/reuse-preprobe.mjs` ARM_FRAME.C),
+ * carried through the execution probe (`scripts/reuse-exec-probe.mjs` C_BLOCK) that
+ * greened this job shape end to end. It is reproduced VERBATIM because that exact text
+ * is what the draft-tier read and the execution kill-gate were measured against —
+ * reworded, this would be a different arm than the one that passed.
  *
- * Deliberately NOT a new instrument (no red counting, no red-set diffing): two
- * strings the loop already holds, compared for equality. `unknown` is the honest
- * reading when only one grade exists — never rounded up to "stalled", which would
- * recommend rewriting a goal on no evidence at all (F6's rule, applied to a trend
- * instead of a number).
- * @param {string[]} gaps close gaps, oldest first
- * @returns {{trend: 'stalled'|'moving'|'unknown', reading: string, lever: string}}
+ * ONE token is not verbatim, and deliberately: the probe's job had FOUR close stages and
+ * said so. A prompt that tells a two-stage job it shares "the same four close stages" is
+ * a falsehood handed to the planner, so the count is read off the job's own staged close
+ * (which the load gate has already proven equal to the bridge's). The small numbers are
+ * spelled, so on the four-stage shape the probe validated this renders byte-identical to
+ * the text it validated.
+ * @param {number} n how many stages both closes have
+ * @param {object} plan the bridge version's plan, as executed
  */
-function gapTrend(gaps) {
-  if (gaps.length < 2) {
-    return {
-      trend: 'unknown',
-      reading: 'only one close grade exists, so there is nothing to compare',
-      lever: 'read the last close output before choosing between more time and a different goal',
-    };
+function startingDraftBlock(n, plan) {
+  const count = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'][n] ?? String(n);
+  return `
+
+YOUR STARTING DRAFT — begin from the plan below and tweak it.
+This plan greened a same-shape job (the same ${count} close stages) on a DIFFERENT repository. Take it
+as your starting draft rather than starting from a blank page: keep what carries over, change what
+this repository needs. Everything you submit must be legal for THIS job as described above — its
+paths, scopes, verbs, bounds and check names. Output the finished plan as the single JSON object
+required above, and nothing else.
+
+${JSON.stringify(plan, null, 2)}`;
+}
+
+/**
+ * Files named in an exit gap that the step's worker never wrote — the mechanical
+ * fact behind the prose-prohibition trap (u-msdpuaej, 2026-08-03): a drafter wrote
+ * "do not modify any file outside X" into a step whose exit check judges the whole
+ * goal, the worker obeyed, and the replanner — handed the gap AND the stall note —
+ * rebuilt the same shape, because inferring "the exit reds on files this step never
+ * touched" is exactly the semantic leap that fails (F38: mechanical gaps convert,
+ * semantic ones stall; 3/3 across the mailbox class). This computes that fact from
+ * the two books that already exist: path-like tokens in the gap text (extension
+ * required — a bare `step/two` is not a file claim) suffix-matched against the F32
+ * write audit's absolute paths. Advisory-only and fail-safe: extraction that finds
+ * nothing yields no line, never a guess.
+ *
+ * @param {string | undefined} gap the step's last exit gap text
+ * @param {string[] | undefined} writes the step's cumulative write-audit paths
+ * @returns {string[]} gap-named files with no matching write, in gap order
+ */
+export function gapFilesNeverWritten(gap, writes) {
+  if (typeof gap !== 'string' || gap === '') return [];
+  const tokens = gap.match(/[\w.-]+(?:\/[\w.-]+)+/g) ?? [];
+  const seen = new Set();
+  const out = [];
+  for (const raw of tokens) {
+    const p = raw.replace(/^\.\//, '');
+    if (!/\.[A-Za-z0-9]+$/.test(p.split('/').at(-1) ?? '')) continue;
+    if (seen.has(p)) continue;
+    seen.add(p);
+    const written = (writes ?? []).some((w) => {
+      const ws = String(w);
+      return ws === p || ws.endsWith(`/${p}`) || p.endsWith(`/${ws}`);
+    });
+    if (!written) out.push(p);
   }
-  const [prev, last] = gaps.slice(-2);
-  return prev === last
-    ? {
-      trend: 'stalled',
-      reading: 'the last two close outputs are byte-identical — the previous attempt moved nothing the close can see',
-      lever: 'more time alone is unlikely to help; revise the goal/spec first',
-    }
-    : {
-      trend: 'moving',
-      reading: 'the last two close outputs differ — the tree was still changing under the close when time ran out',
-      lever: 'the work was progressing; raising maxWallMs is the lever that fits',
-    };
+  return out;
 }
 
 /**
@@ -174,19 +208,42 @@ function gapTrend(gaps) {
  * @param {{ balanceUsd?: number|null, remainingMs?: number|null, progress?: string }} [materials]
  *   what the run has LEFT (T/A). Omitted → no materials block at all, which is the
  *   pre-T behaviour and keeps every existing caller byte-identical.
- * @param {number} [capRuns] the shell's attempt cap — the ceiling `attempts` may only
- *   TIGHTEN. Interpolated the way every sibling bound is: `validatePlan` reds outside
- *   `1..capRuns`, and a prompt that says only "integer" spends a round teaching it.
- *   Defaults to validatePlan's own default so existing callers are unchanged.
+ * @param {object|null} [startingDraft] Layer 3 (D4) — a loaded bridge's plan, handed over
+ *   as the draft to TWEAK. Omitted/null is the COLD path and renders byte-identically to
+ *   the pre-Layer-3 prompt: the block is additive, never surgery on the prompt's interior,
+ *   so the two paths cannot drift (the F47 works-both-ways rule). Only the runner passes
+ *   it, and only for the FIRST draft phase — a replan drafts from the run's own state.
+ * @param {{ seedRed?: string[], priorChecks?: string[] }} [checkFacts] the shape-lottery
+ *   gate rules, STATED as well as enforced (the mailbox precedent: a rule only the
+ *   validator knows costs a redraft per draft). `seedRed`: preflight-red check names —
+ *   Rule A-v2's law (final write step only, framed wide). `priorChecks`: the predecessor
+ *   plan's carried checks, replan phase only — Rule B's law (keep every one). Empty/omitted
+ *   renders byte-identically to the pre-rules prompt.
  */
-export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, capRuns = 3) {
+export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, startingDraft = null, checkFacts = {}) {
   const scopeMenu = Array.isArray(scopes) && scopes.length ? scopes : legalScopes(job.writeScope ?? []);
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
+  // The shape-lottery laws, stated where the check menu is offered (the mailbox
+  // precedent: a law only the validator knows costs a redraft per draft). Both
+  // render only when their FACT arrived — empty facts keep the prompt
+  // byte-identical to the pre-rules render.
+  const seedRedLaw = Array.isArray(checkFacts.seedRed) && checkFacts.seedRed.length
+    ? `\n  Check(s) RED at seed right now: ${JSON.stringify(checkFacts.seedRed)}. A failing check
+  is the goal itself, not a milestone: it may ONLY appear on your plan's FINAL write step.
+  Make that step wide — its action covers the whole goal, free to edit any file it reports,
+  iterating until the check passes. A failing check on any earlier step is rejected.`
+    : '';
+  const priorChecksLaw = Array.isArray(checkFacts.priorChecks) && checkFacts.priorChecks.length
+    ? `\n  Your previous plan carried these check-passes exits: ${JSON.stringify(checkFacts.priorChecks)}.
+  Keep every one of them in this new plan — a redraft that drops one of them is rejected:
+  the other exit forms verify form only, and a form-only green is unearned.`
+    : '';
   // W4: the menu comes off the STAGED close — the same one derivation `runPlan`
   // executes and `validatePlan` accepts against. Reading `job.close` raw here left
   // the legacy object form offering nothing while the runner preflighted a stage.
   // (`?? []`: a close naming no command stages nothing, so it offers nothing)
-  const checkNames = checkMenu(stageClose(job.close) ?? []).map((m) => m.name);
+  const closeStages = stageClose(job.close) ?? [];
+  const checkNames = checkMenu(closeStages).map((m) => m.name);
   const doc = `DRAFT-PLAN
 You are planning how to accomplish a goal in a repository, as an ordered list of bounded
 steps (schema "plan-v1"). The plan is pure declarative JSON validated by a strict schema;
@@ -201,7 +258,6 @@ strictly in array order. Each step (no other fields exist):
 - "rounds": integer 1..${maxStepRounds} — the step's per-attempt tool-round bound
 - "target": the step's deliverable path (REQUIRED when tools include write/edit), inside ${JSON.stringify(job.writeScope)}
 - "model" (optional): ${STEP_MODELS.join(' | ')} — a cheaper tier for mechanical steps; omit for the default
-- "attempts" (optional): integer 1..${capRuns} — TIGHTEN this step's retry cap below the shell's; you may never raise it
 - "scope" (optional): narrow this step's WRITE fence — copy one value from the offered scopes below.
   A narrowed "scope" is the ONLY ground this step can write: its "target" must sit
   inside it, and a "tree-changed" exit's scope must not be disjoint from it (one that
@@ -221,6 +277,12 @@ strictly in array order. Each step (no other fields exist):
   the step must be able to act on the report. Do not plan a separate read-only
   "verify" step — attach the check to the step that does the fixing; the final
   verification after your plan is not yours to author.
+  A check judges the WHOLE goal, never just this step's deliverable: its report
+  can name files beyond the step's target. A step carrying a check-passes exit
+  must therefore be free to edit every file the check can report on — never
+  write an action that forbids editing other in-scope files (e.g. "do not
+  modify any file outside X"): a step ordered to leave a file alone while its
+  exit reds on that file can never finish, on any attempt.${seedRedLaw}${priorChecksLaw}
   Reference checks by NAME only; you cannot author or modify one.
 
 Offered "scope" values for tree-changed — copy ONE of these exactly, character for
@@ -234,6 +296,12 @@ ${materialsBlock(materials)}
 Repository survey (from a read-only scout):
 ${scoutBlob || '(no scout notes)'}`;
   let p = doc;
+  // BEFORE the failure/reds appendices, so the last word to a redrafting planner stays
+  // the validator's "fix every red". The execution probe injected at the provider seam
+  // and could only append at the very end; it recorded that ordering as its own known
+  // wart. Owning the prompt is what lets it be fixed — and on the first draft (no
+  // failure, no reds) the render is byte-identical to the probe's.
+  if (startingDraft) p += startingDraftBlock(closeStages.length, startingDraft);
   if (failure) p += `\n\nWhat happened when the previous plan ran:\n${failure}\nPlan differently — a repeat of the same steps will fail the same way.`;
   if (reds) p += `\n\nYour previous plan was REJECTED with these reds (code:path):\n${JSON.stringify(reds)}\nFix every red. Output ONLY the corrected JSON object.`;
   return p;
@@ -264,7 +332,17 @@ ${scoutBlob || '(no scout notes)'}`;
  * @param {(tier: string) => any} [opts.providerFor] P: per-step model-tier factory
  *   (tier ∈ STEP_MODELS → a provider). A plan naming a tier with no factory supplied is an
  *   interpreter-red STOP — never silently run the default tier as if the choice was honoured.
- * @param {number} [opts.capRuns] shell-owned per-step attempt cap
+ * @param {number} [opts.capRuns] shell-owned iteration cap, RETIRED as a governor
+ *   (v1.46 §4). It stopped bounding a plan step when the strike ladder landed, and it
+ *   stopped bounding the close-fix loop when the close trend rule did. It survives as
+ *   that loop's fallback for the ONE case the trend cannot read — a close whose output
+ *   carries no number at all — because a governor that cannot see the variable must
+ *   not be the governor, and the honest fallback is the cruder bound it replaced
+ *   rather than "unbounded". It lifts the moment a stage reports a comparable number.
+ * @param {number} [opts.strikeLimit] shell-owned STRIKE ceiling for a plan step's
+ *   ladder (src/ladder.js). Arbiter territory exactly as the count it replaced was —
+ *   the runner sets it, the plan cannot express it, and no step may tighten or raise
+ *   it.
  * @param {number} [opts.closeTimeoutMs] close/check wall-clock cap (shell territory)
  * @param {number} [opts.maxStepRounds] the shell's per-step rounds ceiling (validatePlan's bound)
  * @param {number} [opts.scoutRounds] the read-only survey's round bound (F59: the LAST round is
@@ -279,15 +357,67 @@ ${scoutBlob || '(no scout notes)'}`;
  *   first plan-flow job to emit `root-injected` runs the pre-registered ON-vs-OFF acceptance
  *   read (the Layer R default-flip, LAYERS.md ⚠). Excluded on native (clipipe): the native
  *   worker has no onToolResult seam, so the tee cannot settle and same-path rewrites are blind.
+ * @param {unknown} [opts.bridge] Layer 3 (D3/D4) — a bridge-v1 registry entry to REUSE as the
+ *   drafter's starting point. Absent is the COLD path and is byte-identical to the pre-Layer-3
+ *   flow. Present, the D2-split LOAD GATE runs at the door, before the close precheck and
+ *   before any token: on a pass the newest version's plan (the run-as-executed artifact)
+ *   rides into the FIRST draft prompt only; on a fail the run returns the distinct terminal
+ *   `recipe-stale` having spent nothing. Selecting the entry — the listing, the pin, the
+ *   LLM's pick — is the CALLER's, and so is falling back to cold: a silent automatic
+ *   fall-back would spend a run's budget on a decision nobody made.
+ * @param {number} [opts.priorWallMs=0] RESUME (module C) — wall time a PREVIOUS, killed
+ *   attempt of this same try already consumed, folded into the run clock (see
+ *   `createClock`'s `priorElapsedMs`). The SIGNED `maxWallMs` is never rewritten: it is in
+ *   the spec hash, and a resume that edited it would need a signature nobody typed. The
+ *   restarted attempt simply starts already partly spent, so a kill can never buy a fresh
+ *   allotment of the operator's wall.
+ * @param {any} [opts.resumeSeed] RESUME (module C v2) — the FINEST honest checkpoint of a
+ *   KILLED run of this same try, read off its own spine by `readResume` (src/reuse.js) and
+ *   by nothing else: `{ phase, plan, completedSteps: [{id, seq, by}] }`. hamr's ruling is
+ *   the whole contract — *"it should allow resume and start last step instead from the
+ *   beginning, why would i want to waste more money on something i already started"* — so
+ *   with a seed this flow re-pays for NO paid unit the dead run already bought:
+ *
+ *   - the SCOUT does not run (`scout-skipped`, never silence). Its survey is not on the
+ *     spine (only its byte count is), so the ONE consequence is stated rather than
+ *     discovered: a replan after a resume drafts from an empty survey plus the failure
+ *     brief. Re-scouting to refill it would re-pay the exact call this exists to save.
+ *   - the PLAN is not re-drafted. It is reloaded from the seed and RE-VALIDATED against
+ *     the current signed spec; a plan that no longer validates is `plan-red` by name
+ *     (`resume-plan-red`), never run. It is then emitted as this leg's own
+ *     `plan-accepted` (`phase: 'resume'`) — R1 mints a bridge version from the plan AS
+ *     EXECUTED, read back off the spine, so a leg that greens without one would mint
+ *     nothing.
+ *   - a step whose exit was already SATISFIED is skipped, in prefix order, each with its
+ *     own `step-skipped` record naming the event that proves it. Never a fake
+ *     step-start/step-end pair, and never silence: a reader must be able to tell skipped
+ *     from run (the resume-to-cap invariant).
+ *
+ *   The worker's conversation is deliberately NOT replayed — a transcript is not a
+ *   checkpoint, and every attempt is fresh by the loop's own design. Absent is the
+ *   ordinary path and is byte-identical to a run that was never killed.
+ * @param {{stage?: string|null, value?: number|null}[]} [opts.resumeGrades] RESUME — the
+ *   close GRADES the dead leg recorded, oldest first (`readResume`'s `restart.grades`).
+ *   A resumed leg is the same run continuing, so its halt readouts must judge the whole
+ *   chain: without this the trend restarts at this leg's first close and can report
+ *   `flat` — "revise the goal" — on a run that was converging when its allowance ran
+ *   out. Baselines only (src/trend.js's THE SEED): it spends none of this leg's own
+ *   bounds and mints none of its strikes. Empty/omitted is the cold path.
+ * @param {() => boolean} [opts.spendComplete] is the run's spend EXACT, or a floor? The
+ *   ledger one level up owns the answer (unpriced rounds, a self-healed stall, a mid-call
+ *   cut, an inherited resume floor); the money-halt readout states it beside the remaining
+ *   it quotes, because `budget − floor` is a CEILING and printing it bare reads as exact
+ *   (F6). Defaults to exact, which is what every pre-record caller was implicitly saying.
  * @param {() => number} [opts.now] the wall clock's time source, injected. The real clock is the
  *   default; a caller supplies this to drive time deterministically (the same seam `createClock`
  *   already exposes — a run's terminal cannot otherwise be exercised without waiting out a cap
  *   whose floor is one close timeout).
  * @returns {Promise<string>} 'green' | 'already-green' | 'escalated' | 'plan-red' |
- *   'check-red' | 'close-red' | 'close-unsupported' | 'pricing-red' | 'cap-halt' |
- *   'wall-halt' | 'provider-red' | 'interpreter-red' | 'step-stalled' | `step-red:<id>`
+ *   'check-red' | 'close-red' | 'close-unsupported' | 'recipe-stale' | 'pricing-red' |
+ *   'cap-halt' | 'wall-halt' | 'provider-red' | 'interpreter-red' | 'step-stalled' |
+ *   `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, capRuns = 3, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, now }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [] }) {
   workdir = resolve(workdir);
   // ONE spelling of the redaction, housed next to the inventory it reads
   // (src/validate.js) — the same helper the isolate verbs scrub the litectx store
@@ -350,6 +480,46 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     return 'interpreter-red';
   }
 
+  // ── THE BRIDGE LOAD GATE (Layer 3, D2 as SPLIT by the 2026-08-01 addendum).
+  // Asked AT THE DOOR: *"is this the right KIND of recipe?"* — verdict type, close-stage
+  // kinds, verbs within the signed menu, and NOTHING instance-bound (paths, scopes and
+  // targets are expected to be yesterday's bricks; the full validatePlan judges the
+  // TWEAKED draft at draft time, D4).
+  //
+  // It sits FIRST among the things that cost anything, and above the clock and the close
+  // precheck deliberately: the gate is $0 and deterministic while a precheck is real wall
+  // time (four stages at the shipped timeout is an hour). It sits BELOW the two guards
+  // above it because those say the JOB cannot run at all, which outranks "this recipe does
+  // not fit". Consequence, named rather than discovered later: a refused run never learns
+  // whether the tree was already green — the caller's cold rerun does.
+  //
+  // The entry is re-validated here even though the caller is contracted to pass a valid
+  // one. Not defensive decoration: the very next thing this code does is reach into
+  // `versions.at(-1).plan`, and a half-written file that reached a reader anyway must come
+  // back as named reds, never as a TypeError out of the runner (`loadRegistry` already
+  // skips-and-reports for the same reason).
+  let startingDraft = null;
+  if (bridge != null) {
+    const bv = validateBridge(bridge);
+    const gate = bv.ok ? loadGate(bv.bridge, job) : { ok: false, reds: bv.reds };
+    const name = typeof (/** @type {any} */ (bridge)?.name) === 'string' ? /** @type {any} */ (bridge).name : null;
+    if (!gate.ok) {
+      emit('bridge-gate', { outcome: 'recipe-stale', name, reds: gate.reds });
+      emit('escalation', {
+        category: 'recipe-stale', decisionReady: true,
+        decision: `The selected workflow${name ? ` "${name}"` : ''} is not the right KIND of recipe for this job, so it was refused before anything was spent. Reusing it is not a decision this run can make for you.`,
+        options: ['rerun COLD (draft a new plan from scratch)', 'select a different workflow from the registry', 'change the job spec so the shapes match (a spec edit — the new hash needs re-approval)'],
+        detail: gate.reds.map((/** @type {any} */ r) => `${r.code}:${r.path}${r.detail ? ` — ${r.detail}` : ''}`).join('\n'),
+      });
+      return 'recipe-stale';
+    }
+    // `versions` is oldest-first and non-empty by the validator's entry bar, so the newest
+    // green's plan-as-executed is the one that inherits (R1) — never the founding one.
+    const newest = bv.bridge.versions.at(-1);
+    startingDraft = newest.plan;
+    emit('bridge-loaded', { name: bv.bridge.name, versions: bv.bridge.versions.length, runid: newest.runid });
+  }
+
   // T (PRD v1.27/v1.29) — the run's wall clock, STARTED HERE, before the close
   // precheck. The precheck is real wall time and F62 measured close/check gaps as
   // high as 328s on an archived run: a clock created after it would under-report
@@ -370,7 +540,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // one. `stagedClose` is the SAME staging the runner executes (never a second
   // count), and it is non-null here by the close-unsupported guard above — a close
   // that names no command escalated before this line, so there is no null to thread.
-  const clock = createClock({ maxWallMs: job.maxWallMs ?? null, closeStages: stagedClose.length, ...(now ? { now } : {}) });
+  //
+  // RESUME (module C): `priorWallMs` is time a killed attempt of this same try already
+  // consumed. It folds into the clock's start, never into `maxWallMs` — the cap stays the
+  // signed one in the record and in the hash, and only the REMAINDER is left to run.
+  const clock = createClock({ maxWallMs: job.maxWallMs ?? null, closeStages: stagedClose.length, priorElapsedMs: priorWallMs, ...(now ? { now } : {}) });
   const closeTimeoutForReport = closeTimeoutMs ?? 120_000;
   emit('wall-clock', {
     ...clock.report(closeTimeoutForReport),
@@ -378,6 +552,33 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       ? 'a between-round deadline; a close already in flight when it trips runs to completion'
       : 'NO time cap was set — time-unbounded by explicit operator choice, never by a default',
   });
+
+  /**
+   * The per-call TIME bounds, in ONE place so the two `loop.run` sites cannot drift
+   * (the two-transforms class, F9). bare-agent forwards a run's options straight into
+   * `provider.generate` (loop.js:732), so both knobs land on the request:
+   *
+   *   timeoutMs   BA-18, IDLE: `req.setTimeout`, reset by every byte. Bounds a silent
+   *               socket and nothing else.
+   *   deadlineMs  BA-19, TOTAL: a plain timer no byte resets. This is the bound for
+   *               the F66 shape — a call that trickles forever while the run's own
+   *               wall passes (274 minutes, with the idle bound correctly armed).
+   *
+   * `deadlineMs` is OMITTED, never zeroed, when the run is unbounded: the operator set
+   * no wall, so there is no ceiling to derive, and inventing one is the silent second
+   * ceiling F45 exists to forbid. Omission is also the honest spelling upstream — an
+   * absent knob inherits the provider's own default (disabled), while an explicitly
+   * garbage value THROWS there (`resolveTimeoutMs`, provider-http.js:53).
+   *
+   * The NATIVE (clipipe) worker does not call this and never did: the CLI owns the
+   * transport, there is no `ClientRequest` for either timer to arm, and that path
+   * passes neither bound today. Stated rather than assumed — an unbounded native call
+   * is bounded by the F66 stall fuse and the outside watchdog, not by this.
+   */
+  const callBounds = () => {
+    const deadlineMs = clock.callDeadlineMs();
+    return { timeoutMs: clock.callTimeoutMs(), ...(deadlineMs === null ? {} : { deadlineMs }) };
+  };
 
   /**
    * F64 — ONE categoriser for a throw out of a provider call, so the seams cannot
@@ -424,6 +625,20 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     'revise the goal/spec so the work fits the time (same re-approval)',
     'abandon the task',
   ];
+  /** MONEY's levers (PRD v1.46 §2), the same three shapes the wall's are, because a
+   * money cut is the same KIND of stop: the run is out of an operator-owned
+   * allowance, not out of capability, and the last verdict rendered stands. hamr's
+   * ask was "halt and feedback… and needs to be accurate", so the readout that
+   * carries these also carries the trend that says WHICH of the first two fits.
+   *
+   * The first lever is a top-up the OPERATOR performs. `budgetUsd` is in the spec
+   * hash, so raising it is a new spec version somebody signs — the library only ever
+   * names the lever, and never adjusts a budget itself (the permanent hard line). */
+  const MONEY_OPTIONS = [
+    'top up budgetUsd and rerun with --resume (resume-to-cap; a spec edit, so the new hash needs re-approval)',
+    'revise the goal/spec so the work fits the budget (same re-approval)',
+    'abandon the task',
+  ];
 
   const closeOpts = { timeoutMs: closeTimeoutMs, cwd: workdir };
   /** @type {string|undefined} the stage that rendered the LAST close verdict (Layer R's red-set source) */
@@ -433,11 +648,63 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * the run's answer is whatever the close last said, and nothing after the deadline
    * is allowed to change it (hamr: *"keep the grade we already have and stop"*). */
   let lastCloseVerdict;
+  /** PRD v1.46 §2 — the RUN's own close trend, fed by every grade the arbiter
+   * renders (the precheck is the seed the work is measured against, so it is the
+   * first reading, not a discarded one). Read only by the halt readouts; it decides
+   * nothing and bounds nothing — the fix loop builds its OWN reader over its own
+   * grades, because "did this run make progress" and "is this loop out of ideas"
+   * are two questions and one instrument answering both is how they come to
+   * disagree. Per stage by construction (src/trend.js's accuracy law).
+   *
+   * On a RESUME it is SEEDED with the grades the dead leg recorded, so both halt
+   * readouts judge the whole chain rather than this leg alone: a leg that re-grades
+   * an unchanged tree is flat on its own evidence while the RUN — the thing the human
+   * is deciding about — may have been converging when its allowance ran out. Cold, the
+   * seed is empty and this is byte-identical to the pre-resume reader. */
+  const runTrend = createTrend({ stageOrder: stagedClose.map((/** @type {any} */ s) => s.name), seed: resumeGrades });
+  /** the run-level MONEY record, one shape wherever the wallet stops the run —
+   * W-2's `emitWallHalt` in a money coat, and deliberately its mirror image. hamr's
+   * ruling for TIME was "keep the grade we already have and stop"; a money cut is
+   * the same stop with a different allowance behind it, so it keeps the same grade,
+   * states the same kind of trend, and hands over the same shape of lever list.
+   * `spentUsd` is NOT re-derived here: runJob's ledger owns that number and states
+   * it on `job-end` (F6 — a second, weaker arithmetic for the same figure is how
+   * two instruments come to disagree about one run's money). What this record can
+   * say exactly is the SIGNED ceiling and what is left against it. */
+  const emitMoneyHalt = (/** @type {object} */ extra) => {
+    const t = runTrend.verdict();
+    return emit('money-halt', {
+      meaning: 'not under cap — not "can\'t"',
+      budgetUsd: job.budgetUsd,
+      remainingUsd: remainingUsd(),
+      // …and whether that figure is EXACT. `remainingUsd` is `budget − spent`, so a run
+      // whose spend is a FLOOR has a remaining that is a CEILING, and quoting it bare to
+      // four decimals reads as the number. The four causes live in the ledger one level
+      // up (unpriced, self-healed stall, mid-call cut, an inherited floor), which is why
+      // this is READ from there and not re-derived here — a second, weaker arithmetic for
+      // the same question is how two instruments come to disagree. `emitWallHalt` has
+      // carried its honest bound since W-2; this is the same duty on the money side.
+      spendComplete: spendComplete(),
+      verdict: lastCloseVerdict?.verdict ?? null,
+      ...(lastCloseVerdict?.stage ? { stage: lastCloseVerdict.stage } : {}),
+      trend: t.trend,
+      motion: t.motion,
+      reading: t.reading,
+      lever: t.lever,
+      series: t.series,
+      options: MONEY_OPTIONS,
+      ...extra,
+    });
+  };
   /** the close, as ONE verdict: every stage in order, first red wins */
   const judgeClose = async () => {
     const v = await runStages(stagedClose, scrub, closeOpts);
     closeStage = v.stage;
     lastCloseVerdict = v;
+    // Only a RED grade is a reading. A `satisfied` ends the run and a close FAULT
+    // rendered no judgment at all (CLOSE_FAULTS) — folding either into the series
+    // would put a non-number where the instrument expects a graded one.
+    if (v.verdict === 'needs_revision') runTrend.record({ gap: v.gap });
     return v;
   };
 
@@ -459,6 +726,14 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // The menu is DERIVED from the close (PRD v1.28) — nobody authored it, so the
   // ruler and the real inspection cannot drift apart.
   const menu = checkMenu(stagedClose);
+  /** Rule A-v2's fact: check names RED at preflight (seed-red). A seed-red
+   * check is the GOAL, not a guard — validatePlan confines it to the final
+   * write step, and the drafting prompt states the same law. Recorded HERE,
+   * from the same preflight the spine records, never re-derived mid-run: the
+   * rule is defined on the SEED verdicts (a check a step turned green mid-run
+   * is still the goal the plan exists to flip).
+   * @type {string[]} */
+  const seedRed = [];
   emit('check-menu', {
     offered: menu.map((m) => m.name),
     ...(menu.length < stagedClose.length
@@ -467,6 +742,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   });
   for (const m of menu) {
     const v = await runStages(m.run, scrub, closeOpts);
+    if (v.verdict === 'needs_revision') seedRed.push(m.name);
     emit('check-preflight', { name: m.name, verdict: v.verdict, ...(m.run.length > 1 ? { chain: m.run.map((s2) => s2.name) } : {}) });
     const f = Object.hasOwn(CLOSE_FAULTS, v.verdict) ? CLOSE_FAULTS[v.verdict] : undefined;
     if (f) {
@@ -536,13 +812,39 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * denied, the wallet as its budget), granted tools only (the menu IS the
    * grant), per-attempt round bound via loop.stop() (F20), every round metered
    * with a phase label (F12).
-   * @param {{granted: string[], phase: string, attemptRounds: number, attempts: number, writable: boolean, root?: ReturnType<typeof createRoot>|null, fence?: string[]|null, workerProvider?: any}} o
+   * @param {{granted: string[], phase: string, attemptRounds: number, attempts: number|null, writable: boolean, root?: ReturnType<typeof createRoot>|null, fence?: string[]|null, workerProvider?: any}} o
    *   `root` (Layer R): when present, the worker's write-class actions are teed
    *   for the within-run ratchet — staged before the gate decides, discarded on
    *   deny/halt, settled to landed-or-not after execution (the two axes, F43/F7).
    *   Wired ONLY on the Loop path: the native session exposes no onToolResult seam.
+   *
+   *   `attempts` is how many iterations this worker will be asked for. `null` is the
+   *   STRIKE LADDER (src/ladder.js), where that count does not exist by design — see
+   *   the turn-allowance note below.
    */
   async function mkWorker({ granted, phase, attemptRounds, attempts, writable, root = null, fence = null, workerProvider = null }) {
+    /**
+     * The gate's LLM-turn allowance THROUGH iteration `i` — the old expression
+     * `attemptRounds * (attempts + 1)` with the iteration count made explicit
+     * (`i = attempts` reproduces it exactly, so a bounded worker is unchanged to
+     * the number).
+     * @param {number} i
+     */
+    const turnsThrough = (i) => attemptRounds * (i + 1);
+    // A pre-multiplied ceiling could only ever pre-pay a KNOWN iteration count, and
+    // the strike ladder has none: iterations float under money and the wall. So on
+    // that path the allowance is GRANTED PER ITERATION at `setIteration` — the seam
+    // that already resets the per-iteration round counter — leaving the belt exactly
+    // as tight per iteration as the pre-multiply made it, without inventing a
+    // ceiling nobody signed. It is monotonic (`Math.max`), so nothing can lower it.
+    //
+    // Rebuilding the Gate per iteration was the alternative and was REJECTED: the
+    // audit is run_id-scoped, so a fresh gate would reset F32's crash-attribution
+    // write set ("files you have written this run") and Layer R's cross-attempt
+    // write history to a single iteration — two instruments broken to avoid one
+    // addition. The REAL per-iteration bound is unchanged either way: `loop.stop()`
+    // at `roundsThisAttempt >= attemptRounds` (the `wasBounded` mechanism).
+    const maxTurns = turnsThrough(attempts ?? 1);
     const gate = new Gate({
       fs: {
         // P: a step's `scope` narrows the fence — the per-step prefixes are always a
@@ -553,7 +855,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         deny: [auditPath, join(workdir, '.smoke'), join(workdir, '.litectx')],
       },
       budget: { maxCostUsd: Math.max(remainingUsd(), 0.0001) },
-      limits: { maxTurns: attemptRounds * (attempts + 1) },
+      limits: { maxTurns },
       audit: { path: auditPath },
       // The gate audit is the THIRD persistent, append-only channel (beside the
       // spine and the ctx-verb events) and it lives IN THE TREE, so it gets the
@@ -569,21 +871,35 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     });
     await gate.init();
     // F32's instrument, run_id-scoped, write AND edit, allow-decision only —
-    // the same audit read as interpret's (never git status, F45)
-    const workerWrites = () => {
+    // the same audit read as interpret's (never git status, F45). ONE scan and ONE
+    // filter behind both readings: a future write-class verb that slipped into one
+    // and not the other would make the two instruments disagree about what a write
+    // is, which is the exact class the tee's `type`-not-name test exists to close.
+    const auditWrites = () => {
+      const paths = new Set();
+      let records = 0;
       try {
-        const paths = new Set();
         for (const line of readFileSync(auditPath, 'utf8').split('\n')) {
           if (!line) continue;
           let rec;
           try { rec = JSON.parse(line); } catch { continue; }
           if (rec.run_id === gate.runId && rec.phase === 'gate' && rec.decision === 'allow'
               && (rec.action?.type === 'write' || rec.action?.type === 'edit')
-              && typeof rec.action.path === 'string') paths.add(rec.action.path);
+              && typeof rec.action.path === 'string') { paths.add(rec.action.path); records += 1; }
         }
-        return [...paths];
-      } catch { return []; }
+      } catch { /* no audit yet → nothing written yet */ }
+      return { paths: [...paths], records };
     };
+    const workerWrites = () => auditWrites().paths;
+    /**
+     * The ladder's write signal: the cumulative RECORD count, never the path set.
+     * A plan step rewrites its one target every attempt, so the path set is constant
+     * after iteration 1 and a set-delta would read every later iteration as idle —
+     * the same Finding-3 trap Layer R documents, and it would strike a working
+     * worker out on its second attempt. The record count advances on every allowed
+     * write-class action, same path or not.
+     */
+    const writeCount = () => auditWrites().records;
     // Layer R tee (design record 2026-07-19; created per-step by executeStep).
     // The translator STAGES write/edit content and snapshots the pre-write hash
     // BEFORE the gate decides (Finding 6); the policy wrapper DISCARDS on a deny
@@ -652,6 +968,23 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     let roundsThisAttempt = 0;
     /** @type {number|string|undefined} */
     let attemptBounded;
+    /**
+     * Open an iteration: label the rounds, reset the per-iteration round counter,
+     * and — on the unbounded ladder only — GRANT this iteration's turn allowance to
+     * the gate. Raising `limits.maxTurns` is documented bareguard config read live
+     * by `Limits.preCheck()` on every record; the alternative (a fresh Gate per
+     * iteration) is the one that breaks instruments, so this is the smaller change.
+     * Monotonic by construction: a re-entry can only ever hold the allowance, never
+     * lower it. A bounded worker's ceiling is untouched — it was pre-paid in full.
+     * @param {number|string} i
+     */
+    const setIteration = (i) => {
+      roundIteration = i;
+      roundsThisAttempt = 0;
+      if (attempts === null && typeof i === 'number') {
+        gate.limits.maxTurns = Math.max(gate.limits.maxTurns, turnsThrough(i));
+      }
+    };
     const grantedNames = new Set(granted.map((v) => /** @type {Record<string, string>} */ (TOOL_BY_VERB)[v]));
     const shell = createShellTools().tools.filter((/** @type {{name: string}} */ t) => grantedNames.has(t.name));
     // F48: on native, bound shell_read below the CLI's tool-result display cap and hand back a
@@ -752,7 +1085,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         }
         return r;
       };
-      return { ask, askFrom, workerWrites, setIteration: (/** @type {number|string} */ i) => { roundIteration = i; roundsThisAttempt = 0; }, wasBounded: () => attemptBounded };
+      return { ask, askFrom, workerWrites, writeCount, setIteration, wasBounded: () => attemptBounded };
     }
 
     // ── LOOP path: the injected provider (anthropic-api and every other
@@ -763,7 +1096,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // onLlmResult meters exactly like an API round, so the drafter's spend is
     // never invisible (F6/F44). The gate policy is wired but idle (no tools).
     const loopProvider = native
-      ? /** @type {any} */ (nativeProvider)({ policy, maxTurns: attemptRounds * (attempts + 1), hasTools: false })
+      ? /** @type {any} */ (nativeProvider)({ policy, maxTurns, hasTools: false })
       : (workerProvider ?? provider);
     // F66 — the stall watchdog. bare-agent's `timeoutMs` bounds socket INACTIVITY,
     // not call duration (provider-http.js `req.setTimeout` resets on every byte),
@@ -870,7 +1203,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
      */
     const askFrom = async (msgs, prompt) => {
       try {
-        return await stallWatch.watch((gen) => newLoop(gen).run([...msgs, { role: 'user', content: prompt }], [], { cacheMessages: true, maxTokens: 32000, timeoutMs: clock.callTimeoutMs() }));
+        return await stallWatch.watch((gen) => newLoop(gen).run([...msgs, { role: 'user', content: prompt }], [], { cacheMessages: true, maxTokens: 32000, ...callBounds() }));
       } catch (e) {
         throw categorize(e).err;
       }
@@ -878,7 +1211,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const ask = async (prompt, defs = toolDefs) => {
       let r;
       try {
-        r = await stallWatch.watch((gen) => newLoop(gen).run([{ role: 'user', content: prompt }], defs, { cacheMessages: true, maxTokens: 32000, timeoutMs: clock.callTimeoutMs() }));
+        r = await stallWatch.watch((gen) => newLoop(gen).run([{ role: 'user', content: prompt }], defs, { cacheMessages: true, maxTokens: 32000, ...callBounds() }));
       } catch (e) {
         throw categorize(e).err;
       }
@@ -895,7 +1228,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       }
       return r;
     };
-    return { ask, askFrom, workerWrites, setIteration: (/** @type {number|string} */ i) => { roundIteration = i; roundsThisAttempt = 0; }, wasBounded: () => attemptBounded };
+    return { ask, askFrom, workerWrites, writeCount, setIteration, wasBounded: () => attemptBounded };
   }
 
   /** relay a throw from OUTSIDE ralph (scout/plan drafting/fix) as its honest
@@ -906,10 +1239,16 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   const relay = (/** @type {any} */ e, /** @type {string} */ phase) => {
     const { category } = categorize(e);
     const detail = String(e?.message ?? e);
-    if (category === 'cap-halt') emit('cap-halt', { category, meaning: 'not under cap — not "can\'t"', detail });
+    if (category === 'cap-halt') {
+      emit('cap-halt', { category, meaning: 'not under cap — not "can\'t"', detail });
+      // v1.46 §2 — the money record rides beside the taxonomy record exactly as the
+      // wall's does one line down. Outside the loops there is usually no series yet,
+      // and the readout says `unknown` rather than inventing a direction (F6).
+      emitMoneyHalt({ phase, cutMidCall: true });
+    }
     if (category === 'wall-halt') emitWallHalt({ cutMidCall: true, phase });
     const DECIDE = {
-      'cap-halt': [`The budget gate tripped during ${phase} — the wallet cannot fund the plan flow.`, ['raise the job budget and rerun', 'abandon the run']],
+      'cap-halt': [`The budget gate tripped during ${phase} — the wallet cannot fund the plan flow.`, MONEY_OPTIONS],
       'wall-halt': [`The run reached its wall-clock cap during ${phase}. Time ran out, not capability.`, WALL_OPTIONS],
       // A stall OUTSIDE a step (scout, drafting, fix) has no step to replan, so it
       // surfaces — but it is named, never laundered into provider-red. The socket
@@ -933,48 +1272,63 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // ── 1. SCOUT — read-only by construction: the write-class verbs are simply
   // not in its menu (the menu is the grant), and its gate fences zero paths
   let scoutBlob = '';
-  emit('scout-start', { rounds: scoutRounds });
-  try {
-    const scout = await mkWorker({ granted: ceiling.filter((v) => !WRITE_VERBS.includes(v) && !STORE_VERBS.includes(v)), phase: 'scout', attemptRounds: scoutRounds, attempts: 1, writable: false });
-    scout.setIteration(1);
-    const r = await scout.ask([
-      'Survey this repository READ-ONLY for the goal below. Report: the relevant layout, the key files and symbols, and your best hypothesis about what the work requires. Be concise — your notes brief a planner that cannot see the repository.',
-      `Repository root (absolute): ${workdir}\nEvery path you pass to a tool MUST be absolute and inside this root.`,
-      `Goal:\n${job.goal}`,
-      pre.gap && `The job's verification is currently failing. Its output on the tree as it stands:\n${pre.gap}`,
-    ].filter(Boolean).join('\n\n'));
-    scoutBlob = scrub(r.text ?? '').slice(0, SCOUT_BLOB_MAX);
-    // F59 — RESERVE the summary round. The round bound is enforced from the
-    // metering callback (loop.stop), so a scout still calling tools on its last
-    // round is halted mid-tool-use and `text` is empty: it spends the whole
-    // allowance exploring and never writes the survey that is its ONLY
-    // deliverable. Measured on 15 of 18 archived runs, which then drafted from
-    // `(no scout notes)` while still paying ~12% of the run (F55) for the walk.
-    // The recovery is one TOOLLESS round on the SAME conversation (`r.msgs`
-    // carries the exploration): with no tools offered, text is the only possible
-    // output — a mechanical guarantee, never a prose plea to summarise (F19/F37:
-    // a pacing mandate in the persona was violated 6/6).
-    // The trigger is BOUNDED-and-short, never short alone: a terse survey that
-    // finished on its own was not cut off and has nothing to recover. The archive
-    // separates cleanly on exactly this pair — every truncated scout was bounded
-    // with 0-86 bytes, and the two that finished naturally wrote 5991/8056.
-    if (scout.wasBounded() && Buffer.byteLength(scoutBlob) < SCOUT_MIN_BYTES && Array.isArray(r.msgs) && r.msgs.length) {
-      emit('scout-truncated', { bytes: Buffer.byteLength(scoutBlob) });
-      const s2 = await scout.askFrom(r.msgs, 'You are out of exploration turns. Write your survey NOW, from what you have already read: the relevant layout, the key files and symbols, and your best hypothesis about what the work requires. Text only.');
-      const recovered = scrub(s2?.text ?? '').slice(0, SCOUT_BLOB_MAX);
-      if (Buffer.byteLength(recovered) > Buffer.byteLength(scoutBlob)) scoutBlob = recovered;
+  // RESUME (module C v2): the survey is a PAID unit the killed run already bought, and
+  // the plan it briefed is being reloaded rather than re-drafted — so there is nothing
+  // left for it to brief. Skipping it is the whole point of the ruling ("why would i
+  // want to waste more money on something i already started"), and the skip is a RECORD
+  // rather than silence, with the one consequence named on it: the survey text is not on
+  // the spine (only its byte count ever was), so a replan after a resume drafts from an
+  // empty survey plus its failure brief. Re-scouting to refill it would re-pay exactly
+  // the call this exists to save.
+  if (resumeSeed) {
+    emit('scout-skipped', {
+      reason: 'resumed', phase: resumeSeed.phase ?? null,
+      meaning: 'the killed run already paid for this survey; its plan is reloaded, not re-drafted. A replan after this point drafts from an empty survey plus the failure brief.',
+    });
+  } else {
+    emit('scout-start', { rounds: scoutRounds });
+    try {
+      const scout = await mkWorker({ granted: ceiling.filter((v) => !WRITE_VERBS.includes(v) && !STORE_VERBS.includes(v)), phase: 'scout', attemptRounds: scoutRounds, attempts: 1, writable: false });
+      scout.setIteration(1);
+      const r = await scout.ask([
+        'Survey this repository READ-ONLY for the goal below. Report: the relevant layout, the key files and symbols, and your best hypothesis about what the work requires. Be concise — your notes brief a planner that cannot see the repository.',
+        `Repository root (absolute): ${workdir}\nEvery path you pass to a tool MUST be absolute and inside this root.`,
+        `Goal:\n${job.goal}`,
+        pre.gap && `The job's verification is currently failing. Its output on the tree as it stands:\n${pre.gap}`,
+      ].filter(Boolean).join('\n\n'));
+      scoutBlob = scrub(r.text ?? '').slice(0, SCOUT_BLOB_MAX);
+      // F59 — RESERVE the summary round. The round bound is enforced from the
+      // metering callback (loop.stop), so a scout still calling tools on its last
+      // round is halted mid-tool-use and `text` is empty: it spends the whole
+      // allowance exploring and never writes the survey that is its ONLY
+      // deliverable. Measured on 15 of 18 archived runs, which then drafted from
+      // `(no scout notes)` while still paying ~12% of the run (F55) for the walk.
+      // The recovery is one TOOLLESS round on the SAME conversation (`r.msgs`
+      // carries the exploration): with no tools offered, text is the only possible
+      // output — a mechanical guarantee, never a prose plea to summarise (F19/F37:
+      // a pacing mandate in the persona was violated 6/6).
+      // The trigger is BOUNDED-and-short, never short alone: a terse survey that
+      // finished on its own was not cut off and has nothing to recover. The archive
+      // separates cleanly on exactly this pair — every truncated scout was bounded
+      // with 0-86 bytes, and the two that finished naturally wrote 5991/8056.
+      if (scout.wasBounded() && Buffer.byteLength(scoutBlob) < SCOUT_MIN_BYTES && Array.isArray(r.msgs) && r.msgs.length) {
+        emit('scout-truncated', { bytes: Buffer.byteLength(scoutBlob) });
+        const s2 = await scout.askFrom(r.msgs, 'You are out of exploration turns. Write your survey NOW, from what you have already read: the relevant layout, the key files and symbols, and your best hypothesis about what the work requires. Text only.');
+        const recovered = scrub(s2?.text ?? '').slice(0, SCOUT_BLOB_MAX);
+        if (Buffer.byteLength(recovered) > Buffer.byteLength(scoutBlob)) scoutBlob = recovered;
+      }
+    } catch (e) {
+      return relay(e, 'scout');
     }
-  } catch (e) {
-    return relay(e, 'scout');
+    emit('scout-result', { bytes: Buffer.byteLength(scoutBlob) });
+    // F59 — the LOUD half. `scout-result {bytes: 0}` was emitted faithfully 18 times
+    // out of 18 and read by nobody: an instrument that works but has no consumer is a
+    // log line, not evidence. A survey that is still empty after its reserved round is
+    // now a NAMED condition. It is never a halt — F59's own evidence is that 3 of 5
+    // archived greens had an empty scout, so failing the run here would be a worse
+    // error than the one being fixed.
+    if (Buffer.byteLength(scoutBlob) < SCOUT_MIN_BYTES) emit('scout-empty', { bytes: Buffer.byteLength(scoutBlob), rounds: scoutRounds });
   }
-  emit('scout-result', { bytes: Buffer.byteLength(scoutBlob) });
-  // F59 — the LOUD half. `scout-result {bytes: 0}` was emitted faithfully 18 times
-  // out of 18 and read by nobody: an instrument that works but has no consumer is a
-  // log line, not evidence. A survey that is still empty after its reserved round is
-  // now a NAMED condition. It is never a halt — F59's own evidence is that 3 of 5
-  // archived greens had an empty scout, so failing the run here would be a worse
-  // error than the one being fixed.
-  if (Buffer.byteLength(scoutBlob) < SCOUT_MIN_BYTES) emit('scout-empty', { bytes: Buffer.byteLength(scoutBlob), rounds: scoutRounds });
   // F6 in-flight: an unpriced round means the cap cannot govern spend it cannot
   // see — halt at the boundary rather than run the whole plan blind (the caller
   // emits pricing-red; runPlan just stops burning tokens). Legacy halts per-step.
@@ -999,11 +1353,30 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // is actually left, which is the adaptation channel.
     const materials = { balanceUsd: remainingUsd(), remainingMs: clock.bounded ? clock.remainingMs() : null, ...(progress ? { progress } : {}) };
     emit('materials', { phase, ...materials });
+    // D5 — the bridge rides into the FIRST draft phase ONLY. A replan drafts from the
+    // RUN'S OWN STATE (what failed, what is left): re-handing the recipe there would
+    // answer the replan's question with the material the run just demonstrated does not
+    // work, and would spend the one revision the ceiling allows on a second unmeasured
+    // arm. Exactly the rule the execution probe held at the provider seam, moved to where
+    // the phase is known rather than inferred from the prompt's own text.
+    // The REDRAFT (a validator rejection inside this same phase) keeps it: one red must
+    // not silently convert a warm run to a cold one.
+    const starting = phase === 'draft' ? startingDraft : null;
+    // The shape-lottery facts, gate AND prompt from the ONE object (the scope-menu
+    // precedent: what is stated and what is enforced can never drift apart).
+    // `seedRed` rides every phase — the rule is defined on the SEED verdicts.
+    // `priorChecks` is the REPLAN gate only: the accepted plan's carried checks,
+    // which the redraft may move (A-v2 decides where) but never shed (Rule B —
+    // u-msdsmkid's replan dropped both checks and "greened" on form alone).
+    const checkFacts = {
+      seedRed,
+      ...(phase === 'replan' && plan
+        ? { priorChecks: [...new Set(/** @type {any[]} */ (plan.steps).flatMap((/** @type {any} */ s) => (Array.isArray(s.exit) ? s.exit : []).filter((/** @type {any} */ e) => e?.type === 'check-passes' && typeof e.name === 'string').map((/** @type {any} */ e) => e.name)))] }
+        : {}),
+    };
     const draftPlan = async (/** @type {any[]|null} */ reds) => {
       drafter.setIteration(reds ? 'redraft' : 'draft');
-      // capRuns is the SAME number validatePlan bounds `attempts` against below —
-      // one source, so the prompt and the validator cannot drift apart
-      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials, capRuns), []);
+      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials, starting, checkFacts), []);
       return extractArtifact(r.text).code ?? '';
     };
     // Scrubbed HERE, once, before any consumer reads them — the judge() precedent
@@ -1016,7 +1389,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // emit sites: scrubbing here makes the leak inexpressible, scrubbing each
     // consumer makes it something the next consumer has to remember.
     const validate = (/** @type {string} */ t) => {
-      const v = validatePlan(t, { job, maxStepRounds, scopes: scopeMenu, capRuns });
+      const v = validatePlan(t, { job, maxStepRounds, scopes: scopeMenu, ...checkFacts });
       return { ...v, reds: v.reds.map((r) => (typeof r.detail === 'string' ? { ...r, detail: scrub(r.detail) } : r)) };
     };
     let text = await draftPlan(null);
@@ -1030,16 +1403,76 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     return pv;
   };
   let plan;
-  try {
-    const pv = await obtainPlan('draft', null);
+  /** RESUME: how many leading steps of the reloaded plan are already SATISFIED and are
+   * therefore skipped. Zero on every other path, and reset to zero by a replan — the new
+   * plan's steps are not the dead plan's steps, even where an id repeats. */
+  let skipCount = 0;
+  if (resumeSeed) {
+    // The plan is RELOADED, not re-drafted — but it is re-validated against the spec that
+    // is signed NOW. The dead run validated it against the spec it was signed under, and
+    // between the kill and the resume the menu, the fence or the close can have moved
+    // (registry/schema drift). A stale plan is refused BY NAME with zero spent; running
+    // it would execute a plan the current signature does not admit, which is the one
+    // thing no reconstruction is allowed to do.
+    // The shape-lottery opts (seedRed/priorChecks) are deliberately NOT passed:
+    // they are DRAFTING laws — this gate guards signature drift, and refusing a
+    // paid, previously-legal plan over a shape rule minted after its draft would
+    // burn the very work resume exists to keep (hamr: "why would i want to waste
+    // more money on something i already started"). Omission = rules inactive, by
+    // the validator's contract.
+    const pv = validatePlan(resumeSeed.plan, { job, maxStepRounds, scopes: scopeMenu });
+    // scrubbed at the boundary for `validate()`'s own reason: a `parse-error` detail
+    // quotes a window of the SOURCE, and the spine is append-only forever
+    const reds = pv.reds.map((r) => (typeof r.detail === 'string' ? { ...r, detail: scrub(r.detail) } : r));
     if (!pv.ok) {
-      for (const r of pv.reds) emit('plan-red', r);
+      emit('resume-plan-red', { reds, phase: resumeSeed.phase ?? null });
+      for (const r of reds) emit('plan-red', r);
+      emit('escalation', {
+        category: 'plan-red', decisionReady: true, phase: 'resume',
+        decision: 'The plan the killed run was executing no longer validates against this job spec, so the resume ran nothing. A reconstruction may re-use a plan; it may never run one the current signature does not admit.',
+        options: [
+          'rerun WITHOUT --resume (the run drafts a cold plan against the current spec — the killed run\'s steps are then not inherited)',
+          'restore the spec version the dead run was signed under and resume again',
+        ],
+        detail: reds.map((r) => `${r.code}:${r.path}${r.detail ? ` — ${r.detail}` : ''}`).join('\n'),
+      });
       return 'plan-red';
     }
     plan = /** @type {any} */ (pv.plan);
-    emit('plan-accepted', { plan });
-  } catch (e) {
-    return relay(e, 'plan');
+    // The skip set is a PREFIX match on the plan's own step ids, never a count: a count
+    // would skip whatever happens to sit at that index. Steps run strictly sequentially
+    // and idx only advances on a satisfied exit, so the dead run's completions ARE a
+    // prefix — and a seed that does not line up stops the skipping there and says so on
+    // the record, which re-runs work rather than skipping work nobody did (the safe
+    // direction of the two).
+    const completed = Array.isArray(resumeSeed.completedSteps) ? resumeSeed.completedSteps : [];
+    while (skipCount < completed.length && skipCount < plan.steps.length
+      && completed[skipCount]?.id === plan.steps[skipCount].id) skipCount += 1;
+    emit('resume-seed', {
+      phase: resumeSeed.phase ?? null,
+      planSteps: plan.steps.map((/** @type {any} */ s) => s.id),
+      completed: completed.map((/** @type {any} */ c) => c?.id ?? null),
+      skipping: skipCount,
+      ...(skipCount < completed.length
+        ? { divergence: `${completed.length} step(s) were completed but only ${skipCount} line up with the reloaded plan in order — the rest are RUN, never skipped on an id that does not match` }
+        : {}),
+    });
+    // this leg's own plan-accepted: R1 mints a bridge version from the plan AS EXECUTED,
+    // read back off the spine, so a resumed leg that greens without one would mint
+    // nothing. `phase` says where it came from — it was accepted, not drafted.
+    emit('plan-accepted', { plan, phase: 'resume' });
+  } else {
+    try {
+      const pv = await obtainPlan('draft', null);
+      if (!pv.ok) {
+        for (const r of pv.reds) emit('plan-red', r);
+        return 'plan-red';
+      }
+      plan = /** @type {any} */ (pv.plan);
+      emit('plan-accepted', { plan });
+    } catch (e) {
+      return relay(e, 'plan');
+    }
   }
   if (isUnpriced()) return 'pricing-red'; // F6: the plan drafting round came back unpriced — halt before steps
 
@@ -1082,23 +1515,30 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const root = layerRoot && !native
       ? createRoot({ gapKeep: '\\S', redact: scrub, writesInformative: true })
       : null;
-    // P: the three widened step fields, each wired or refused — a silently-ignored
-    // optional field is the F50 blind-instrument class. `attempts` tightens the
-    // shell cap (validator already bounds it); `scope` narrows the fence to a
-    // menu value (a subset by construction); `model` swaps the worker's provider
-    // via the runner's factory — absent factory it must STOP, not silently run
-    // the default tier as if the choice had been honoured.
-    const stepCap = step.attempts !== undefined ? Math.min(step.attempts, capRuns) : capRuns;
+    // P: the widened step fields, each wired or refused — a silently-ignored
+    // optional field is the F50 blind-instrument class. `scope` narrows the fence to
+    // a menu value (a subset by construction); `model` swaps the worker's provider
+    // via the runner's factory — absent factory it must STOP, not silently run the
+    // default tier as if the choice had been honoured. `attempts` is the third and
+    // is now TOLERATED-INERT (see validatePlan): the ladder governs iterations by
+    // progress, and a field that could only ever TIGHTEN a count is the wrong shape
+    // for that — drafters measurably tightened it to 3, then to 2 on replan, which
+    // is the opposite of the heal a converging step needs.
     if (step.model !== undefined && !providerFor) {
       const err = /** @type {any} */ (new Error(`step "${step.id}" selects model tier "${step.model}" but the runner supplied no providerFor factory — wiring gap, not a plan defect`));
       err.category = 'interpreter-red';
       throw err;
     }
     const w = await mkWorker({
-      granted: step.tools, phase: `step:${step.id}`, attemptRounds: step.rounds, attempts: stepCap, writable: true, root,
+      granted: step.tools, phase: `step:${step.id}`, attemptRounds: step.rounds, attempts: null, writable: true, root,
       fence: step.scope !== undefined ? [resolve(workdir, globToPrefix(step.scope))] : null,
       workerProvider: step.model !== undefined && providerFor ? providerFor(step.model) : null,
     });
+    // ONE ladder per step: the seen-set and the strike count are this step's own
+    // history, and a shared one would strike a fresh step for a gap an earlier step
+    // had already seen. The write signal is the gate audit's own record count (F32's
+    // filter), never git status and never a tree diff.
+    const ladder = createLadder({ limit: strikeLimit, writeCount: w.writeCount });
     let lastText = '';
     let iterationNow = 0;
     // The meter's baseline: what the RUN had left when this step began. Shares are
@@ -1162,16 +1602,19 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
           stepsDone: idx,
           stepsPlanned: plan.steps.length,
           attemptsUsed: iteration - 1,
-          // BOTH, honestly named. `capRuns` means the RUN's attempt cap on every
-          // wall-halt record — the fix site writes exactly that — so this site must
-          // not quietly put the step's TIGHTENED cap under the same key: two records
-          // of one type disagreeing about what a number counts, with nothing on the
-          // record saying which, is the two-instruments class. The tightening is real
-          // information (it is what bounded THIS step) and keeps its own name.
-          capRuns,
-          stepAttemptCap: stepCap,
+          // The ladder's own state, because the ladder is what was governing this
+          // step when the wall stopped it. This record used to carry `capRuns` and
+          // `stepAttemptCap` — two counts that no longer bound anything here — and a
+          // field name that means something it no longer measures is worse than an
+          // absent one: a reader cannot tell it went stale. The FIX site's copy of this
+          // record dropped `capRuns` for the same reason at v1.46 §4, when the count
+          // stopped governing that loop too — neither wall record quotes a denominator
+          // now, because neither loop has one.
+          strikes: ladder.report().strikes,
+          strikeLimit: ladder.report().limit,
+          distinctGaps: ladder.report().distinctGaps,
         };
-        // No trend here, and none invented: `gapTrend` reads consecutive CLOSE output,
+        // No trend here, and none invented: the trend instrument reads CLOSE grades,
         // and a step that never ran has no grade of its own to compare. The lever the
         // human needs is on the run-level record either way.
         const err = /** @type {CategorizedError} */ (new Error(
@@ -1201,6 +1644,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       ].filter(Boolean).join('\n\n'));
       lastText = scrub(r.text ?? '').slice(0, ARTIFACT_MAX);
     };
+    let lastGap = '';
     const judge = async () => {
       const { pass, results: raw } = await evalExits(step.exit, { dir: workdir, snapshot, runCheck });
       // Scrubbed HERE, once, before the results are read by anyone. An exit detail is
@@ -1224,15 +1668,38 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       if (faulty) return { verdict: /** @type {string} */ (faulty.fault), detail: faulty.detail };
       if (pass) return { verdict: 'satisfied' };
       // AND-only: the gap names EVERY failing wall (mechanical genre, F38)
-      return { verdict: 'needs_revision', gap: results.filter((r) => !r.pass).map((r) => r.detail).join('\n') };
+      lastGap = results.filter((r) => !r.pass).map((r) => r.detail).join('\n');
+      return { verdict: 'needs_revision', gap: lastGap };
     };
-    const outcome = await ralph({ middle, judge, capRuns: stepCap, emit: emitL, workerWrites: w.workerWrites });
-    return { outcome, artifact: lastText };
+    const outcome = await ralph({ middle, judge, ladder, emit: emitL, workerWrites: w.workerWrites });
+    // gap + writes ride out for the replan brief's mismatch line (the books this
+    // step already kept; the escalation's detail carries the meter/strike sentence,
+    // never the gap, so the brief cannot recover this fact from anywhere else)
+    return { outcome, artifact: lastText, ladder, writes: w.workerWrites(), gap: lastGap };
   };
 
   let idx = 0;
   while (idx < plan.steps.length) {
     const step = plan.steps[idx];
+    // RESUME: this step's exit was already satisfied before the kill. It is not re-run —
+    // that is the money and the time the ruling is about — and it is not silent either:
+    // the record is its OWN type carrying the event that proves it, so a reader can tell
+    // a skipped step from a run one (the resume-to-cap invariant, which a fake
+    // step-start/step-end pair would destroy). The step's ARTIFACT is not reconstructed:
+    // its text was a prompt ingredient, never a checkpoint, and its real product is on
+    // disk where the next step will find it.
+    if (idx < skipCount) {
+      const proof = resumeSeed.completedSteps[idx];
+      emit('step-skipped', {
+        step: step.id,
+        provenBy: proof?.by ?? null,
+        provenSeq: typeof proof?.seq === 'number' ? proof.seq : null,
+        meaning: 'the killed run satisfied this step\'s exits — it is not re-run and not re-paid',
+      });
+      stepOutcomes.push({ id: step.id, outcome: 'skipped' });
+      idx += 1;
+      continue;
+    }
     let res;
     try {
       res = await executeStep(step);
@@ -1247,7 +1714,16 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       const err = /** @type {CategorizedError} */ (e);
       const category = err instanceof HaltError ? 'cap-halt' : (typeof err.category === 'string' ? err.category : 'interpreter-red');
       stepOutcomes.push({ id: step.id, outcome: category });
-      if (category === 'cap-halt') emit('cap-halt', { category, meaning: 'not under cap — not "can\'t"', detail: String(err?.message ?? err) });
+      if (category === 'cap-halt') {
+        emit('cap-halt', { category, meaning: 'not under cap — not "can\'t"', detail: String(err?.message ?? err) });
+        // …and the MONEY record beside it, as every other cap-halt site emits one. A
+        // readout a human gets at three seams and not at the fourth is the readout being
+        // a coincidence of where the stop happened. UNREACHABLE today — nothing in
+        // mkWorker/gate.init/snapshotScope buys a round, so no wallet can drain here —
+        // which is why this is symmetry rather than a fix, and why it stays a `HaltError`
+        // branch instead of a widened one.
+        emitMoneyHalt({ phase: `step:${step.id}`, cutMidCall: false, stepsDone: idx, stepsPlanned: plan.steps.length });
+      }
       emit('escalation', {
         category, decisionReady: true, phase: `step:${step.id}`,
         decision: category === 'cap-halt'
@@ -1321,13 +1797,33 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // is handed to the one component whose whole job is to respond to it. A
       // stall in particular never judged its exits at all — the exhaustion
       // sentence would invent a red the run never saw (F28's rule, replan side).
+      // The exhaustion branch is the one the ladder rewrote. "It ran N attempts and
+      // its exits were still red" described a bound that no longer exists AND said
+      // nothing about the mechanism — the planner could not tell a step that was
+      // converging from one repeating itself, which are opposite problems with
+      // opposite fixes. The ladder's own books answer that, and the balance says what
+      // the stop left on the table (the u-msd916dh reading: $1.30 and ~6min unspent
+      // behind a step that was still shrinking its error count). Time is reported as
+      // UNBOUNDED when the operator set no wall — never rendered as a number (F6
+      // extends to time).
+      const leftOver = `$${remainingUsd().toFixed(2)} and `
+        + `${clock.bounded ? `${Math.round(clock.remainingMs() / 60_000)} minute(s)` : 'time UNBOUNDED'} `
+        + 'of the run were still unspent when it stopped.';
       const why = cat === 'step-variance'
         ? 'It was stopped by the run\'s meter for consuming too large a share of what was left.'
         : cat === 'step-stalled'
           ? 'It stalled: the model stopped producing rounds and reissuing the call did not recover it, so its exits were never judged.'
-          : `It ran ${step.attempts !== undefined ? Math.min(step.attempts, capRuns) : capRuns} attempts and its exits were still red.`;
+          : `${res.ladder.brief()} ${leftOver}`;
+      // The prose-prohibition trap's mechanical fact (u-msdpuaej): gap-named files
+      // the step never wrote. Computed from the step's own books; capped with the
+      // trim announced (the F32 gap convention). Empty extraction = no line.
+      const missed = gapFilesNeverWritten(res?.gap, res?.writes);
+      const missedLine = missed.length
+        ? `The last exit output names file(s) this step never wrote: ${missed.slice(0, 8).join(', ')}${missed.length > 8 ? ` (+${missed.length - 8} more)` : ''}.\n`
+        : '';
       const failure = `Step "${step.id}" (${step.action}) did not reach its exits. `
         + `${why}\n`
+        + missedLine
         + `Last exit state:\n${lastEscalation?.detail ?? '(none)'}\n`
         + `Steps completed so far: ${artifacts.map((a) => a.id).join(', ') || 'none'}.`;
       // The progress line IS the adaptation channel (addendum 2): the balance rides
@@ -1354,6 +1850,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // it names steps the current plan does not contain)
       artifacts.length = 0;
       idx = 0;
+      // and for exactly the same reason a RESUME's skip set dies here: an id the new
+      // plan happens to re-use names a step this run never did, so inheriting the
+      // dead run's green for it would skip work nobody has done
+      skipCount = 0;
       continue;
     }
     // F64 — the wall stopped this attempt from INSIDE a provider call (the derived
@@ -1378,7 +1878,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // stays a step-red (the stop is a result).
     if (cat === 'cap-halt') {
       planExecuted();
-      return remainingUsd() <= MONEY_MIN ? 'cap-halt' : `step-red:${step.id}`;
+      if (remainingUsd() > MONEY_MIN) return `step-red:${step.id}`;
+      // v1.46 §2: the money cut is decision-ready HERE too, and for the same reason
+      // W-2 gave the wall a record at every site it stops a run — a category that
+      // hands the human a readout at one seam and silence at another is the readout
+      // being a coincidence of where the stop happened.
+      emitMoneyHalt({ phase: `step:${step.id}`, cutMidCall: false, stepsDone: idx, stepsPlanned: plan.steps.length });
+      return 'cap-halt';
     }
     // A second `step-variance` after the one replan is spent is a STOP, and the stop
     // is the result — but it rides out as `step-red:<id>`, NOT as its own top-level
@@ -1423,6 +1929,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * without consulting the clock a second time (two clock reads for one event is
    * how the two instruments come to disagree). */
   let wallStop = null;
+  /** how many fix ITERATIONS the loop actually bought — counted here rather than
+   * read back off the trend reader, which lives inside the try and is out of scope
+   * by the time a terminal needs the number. */
+  let fixIterationsUsed = 0;
   try {
     // Layer R for the close-fix loop — the plan flow's single ralph loop judged
     // by the REAL close (the plan flow's single ralph loop, and the
@@ -1436,16 +1946,85 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const fixRoot = layerRoot && !native
       ? createRoot({ redact: scrub, writesInformative: true })
       : null;
-    const w = await mkWorker({ granted: ceiling, phase: 'fix', attemptRounds: maxStepRounds, attempts: capRuns, writable: true, root: fixRoot });
-    // W-2's only input, and it is already in this loop's hand: the close gaps seen
-    // so far, oldest first. `post.gap` is the grade the loop OPENED on; every later
-    // entry is what ralph carried back from the close that judged the previous
-    // attempt (or, after a worker-crash, F32's routed gap — still the feedback that
-    // attempt actually received). Nothing is instrumented for this.
-    const gaps = [post.gap ?? ''];
+    // `attempts: null` is the STRIKE-LADDER shape (mkWorker's own contract): the fix
+    // loop's iteration count no longer exists at construction time, so the gate's
+    // turn allowance is granted per iteration at `setIteration` instead of being
+    // pre-multiplied by a number nobody signed. The per-iteration bound is
+    // unchanged — `loop.stop()` at `attemptRounds` — which is the belt that actually
+    // holds. (v1.46 §4: `capRuns` retires as the governor.)
+    const w = await mkWorker({ granted: ceiling, phase: 'fix', attemptRounds: maxStepRounds, attempts: null, writable: true, root: fixRoot });
+    // ── v1.46 §4: the fix loop's GOVERNOR — progress, not a count ──
+    //
+    // MEASURED reason, the same shape as the step ladder's. The fixed `capRuns`
+    // could not tell converging work from thrash, so it stopped both at the same
+    // place: u-msew1uy5 was cut mid-convergence at fix iteration 3 while
+    // reuse-msc6w93z sat dead flat at 2 errors for SEVEN fix verdicts until the wall
+    // killed it. The $0 replay over all 8 archived fix loops came back clean both
+    // directions — 0 greens harmed (every historical green converted in <= 2
+    // verdicts), 1 waste case caught.
+    //
+    // The reader is SEEDED with the grade the loop opened on, because that is what
+    // the first fix attempt is measured against; without it the first attempt would
+    // have nothing to be compared to and the loop would spend a free iteration
+    // establishing what it already knew.
+    //
+    // `blindCap: capRuns` is not the count surviving in disguise. It binds ONLY
+    // while the instrument has never been able to compare anything (a close whose
+    // output carries no number at all), which is precisely the case where a strike
+    // would be minted out of ignorance. The moment a stage reports a comparable
+    // number the count is gone, and money and the wall are what remain.
+    //
+    // DELIBERATELY NOT SEEDED with `resumeGrades`, and this is the one place the
+    // resume chain stops. The two readers answer two different questions (see
+    // `runTrend` above, and src/trend.js's "ONE PER SERIES"): the halt readout asks
+    // *was the RUN converging when its allowance cut it*, which spans both legs; this
+    // governor asks *is THIS loop out of ideas*, which is leg-local by definition.
+    // Seeding it was built and measured: a resumed loop that struck out dead flat
+    // rendered its own terminal as "still progressing — verdict 2 → 1 → 1 → 1 → 1",
+    // because the chain HAD fallen before the handover — a record contradicting
+    // itself, offering a conditional top-up ("if the trend above says it was still
+    // converging") on the exact run that had just proven it was not. It would also
+    // have moved the STRIKE rule on a resume (an attempt judged against the best the
+    // run ever reached rather than against the grade this loop opened on) — an
+    // unmeasured governance change, which is arbiter-adjacent territory. Both are the
+    // same error: one instance answering two questions.
+    const fixTrend = createTrend({
+      stageOrder: stagedClose.map((/** @type {any} */ s) => s.name),
+      limit: FIX_STRIKE_LIMIT,
+      blindCap: capRuns,
+    });
+    fixTrend.record({ gap: post.gap ?? '' });
+    /** ralph's `ladder` seam, filled by the trend reader instead of the step
+     * ladder's repeat/write pair. ONE exhaustion terminal, two triggers (ralph's own
+     * rule): the category stays `cap-halt` and the outcome stays `escalated`, so the
+     * ledger's class table, bridge grading and every downstream reader are untouched
+     * — only the TRIGGER changed. What it overrides is the terminal's PROSE: the
+     * step ladder's copy offers a replan, and there is no planner at the close. */
+    const fixGovernor = {
+      record: (/** @type {{iteration: number, gap?: string}} */ o) => {
+        fixIterationsUsed = o.iteration;
+        return { governor: 'close-trend', ...fixTrend.record({ gap: o.gap }), iteration: o.iteration };
+      },
+      struckOut: fixTrend.struckOut,
+      report: fixTrend.report,
+      brief: () => fixTrend.verdict().reading,
+      terminal: () => {
+        const rep = fixTrend.report();
+        const t = fixTrend.verdict();
+        return {
+          decision: rep.blind
+            ? `${rep.iterations - 1} fix iteration(s) spent and the close still red. Its output carries no number this run can compare, so no progress reading exists — the retired iteration count is what bounded the loop. Continue, change approach, or stop?`
+            : `${rep.strikes}/${rep.limit} strikes — the fix loop stopped making progress against the close's own numbers (${t.reading}). Continue, change approach, or stop?`,
+          options: [
+            'revise the goal/spec so the work is reachable (a spec edit, so the new hash needs re-approval)',
+            'top up budgetUsd and rerun with --resume, if the trend above says it was still converging',
+            'abandon the task',
+          ],
+        };
+      },
+    };
     /** @param {number} iteration @param {string} [gap] */
     const middle = async (iteration, gap) => {
-      if (gap !== undefined) gaps.push(gap);
       // T/W-2 — the wall, read before a NEW fix attempt is started, and never
       // around the close itself. hamr's ruling: *"when time is up, keep the grade
       // we already have and stop … run tests (free) and when done if original time
@@ -1466,15 +2045,36 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // wall that kills grading leaves the run unreadable after the money is spent
       // (the F45 class), so the one thing this must never do is stop a close.
       if (clock.expired()) {
-        const t = gapTrend(gaps);
+        // ONE progress instrument, shared with the money halt (PRD v1.46 §2/§4).
+        // This site used to run its own `gapTrend`: byte equality of the last two
+        // close gaps, reading `stalled`/`moving` beside the money halt's per-stage
+        // `flat`/`converging` on the very same run. Two readers for one question is
+        // how the two come to disagree, and the byte reader could only ever report
+        // MOTION — that something changed, never which way. Folded into src/trend.js,
+        // where a per-stage NUMBER decides whenever one exists and the byte
+        // comparison survives as the reading inside `unknown` (never as a direction:
+        // "the output changed" is not "it got better", which is F6 in a trend's coat).
+        // `runTrend` is the run's own reader — the same instance the money halt reads
+        // — so a resume's inherited baselines reach this readout too.
+        const t = runTrend.verdict();
         wallStop = {
           cutMidCall: false,
           phase: 'fix',
           iterationsUsed: iteration - 1,
-          capRuns,
+          // `capRuns` used to ride here as the DENOMINATOR ("0 of 3"). It retired as
+          // this loop's governor (v1.46 §4), so quoting it as the total would state a
+          // bound that no longer decides anything — the iterations spent are the fact,
+          // and there is no longer a number they are "of".
           verdict: lastCloseVerdict?.verdict,
           ...(lastCloseVerdict?.stage ? { stage: lastCloseVerdict.stage } : {}),
           trend: t.trend,
+          // MOTION rides as its OWN field rather than being mapped onto `trend`.
+          // Mapping `unchanged` → `flat` would dress a byte comparison as a measured
+          // direction on the spine, which is precisely what the unification refuses;
+          // a separate field keeps the old signal's substance without the false
+          // promotion. (Grepped first: no src/ or scripts/ reader consumed the old
+          // `stalled`/`moving` values — only this file's own tests, updated with it.)
+          motion: t.motion,
         };
         // The detail carries what the human needs to pick a lever and nothing else:
         // the verdict that stands, how much of the loop was actually spent, and the
@@ -1484,7 +2084,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
           `the wall-clock cap passed before fix attempt ${iteration} could start. `
           + `The verdict stands as the last close rendered it: ${lastCloseVerdict?.verdict ?? 'unknown'}`
           + `${lastCloseVerdict?.stage ? ` at stage "${lastCloseVerdict.stage}"` : ''}, `
-          + `after ${iteration - 1} of ${capRuns} fix iteration(s). `
+          + `after ${iteration - 1} fix iteration(s). `
           + `Progress trend: ${t.trend} — ${t.reading}; ${t.lever}.`));
         err.category = 'wall-halt';
         throw err;
@@ -1513,7 +2113,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     fixOutcome = await ralph({
       // the staged close rides in as the JUDGE seam (one verdict, every stage in
       // order) — ralph's single-command path stays exactly what it was
-      middle, judge: async () => judgeClose(), capRuns, emit: emitL, redact: scrub,
+      // v1.46 §4: the PROGRESS governor rides in where `capRuns` used to. ralph's
+      // two exhaustion rules are alternatives and never both at once, so the count
+      // is not passed — it survives only inside the governor, as the bound for the
+      // case the trend instrument is blind.
+      middle, judge: async () => judgeClose(), ladder: fixGovernor, emit: emitL, redact: scrub,
       closeTimeoutMs, cwd: workdir, workerWrites: w.workerWrites,
     });
   } catch (e) {
@@ -1544,7 +2148,19 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // Attempts spent with money still on the table stays the designed terminal
     // ("close still red") and keeps riding out as `escalated` below.
     // (MED-4, fixed with hamr's explicit go, 2026-07-30.)
-    if (remainingUsd() <= MONEY_MIN) return 'cap-halt';
+    if (remainingUsd() <= MONEY_MIN) {
+      // v1.46 §2 — and THIS is the site hamr's ask was about: the money runs out
+      // deepest in the run, on the loop that holds a real grade. So the readout keeps
+      // that grade, names the stage that rendered it, and carries the run's own
+      // per-stage trend so the choice between "top up" and "revise the goal" is made
+      // on evidence rather than on how the operator felt about the last gap.
+      emitMoneyHalt({
+        phase: 'fix',
+        cutMidCall: false,
+        iterationsUsed: fixIterationsUsed,
+      });
+      return 'cap-halt';
+    }
   } else if (fixOutcome !== 'green' && typeof lastEscalation?.category === 'string') {
     // The step loop's category restoration (F11), mirrored: ralph returns the flat
     // 'escalated' on a middle throw while its escalation carries the real name — a

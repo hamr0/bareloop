@@ -1,0 +1,99 @@
+{
+  "schema": "job-v1",
+  "job": "baremobile-u-types",
+  "description": "Lift-contrast job B (REUSE-LIFT-CONTRAST-PREREG): same job SHAPE as aurora-u-spawner-types and litectx-u-types (changed-from-seed -> typecheck -> suite-green -> no-suppressions), new patient, typecheck scoped to two files the way aurora-u scoped mypy to the spawner package. One sentence of problem, a budget, a clock, one close.",
+  "provider": "anthropic-api",
+  "cadence": {
+    "unit": "day",
+    "every": 1
+  },
+  "budgetUsd": 4,
+  "maxWallMs": 1500000,
+  "writeScope": [
+    "src/**"
+  ],
+  "goal": "Make src/errors.js and src/aria.js pass `tsc --strict` without weakening the tests and without introducing strict errors elsewhere.",
+  "verdictType": "green",
+  "close": [
+    {
+      "name": "changed-from-seed",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-baremobile-close.mjs changed-from-seed",
+      "expect": 0,
+      "judged": {
+        "pattern": "BAREMOBILE judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^BAREMOBILE ",
+      "offer": false
+    },
+    {
+      "name": "typecheck",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-baremobile-close.mjs typecheck",
+      "expect": 0,
+      "judged": {
+        "pattern": "BAREMOBILE judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^BAREMOBILE "
+    },
+    {
+      "name": "typecheck-outside",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-baremobile-close.mjs typecheck-outside",
+      "expect": 0,
+      "judged": {
+        "pattern": "BAREMOBILE judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^BAREMOBILE "
+    },
+    {
+      "name": "tests-kept",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-baremobile-close.mjs tests-kept",
+      "expect": 0,
+      "judged": {
+        "pattern": "BAREMOBILE judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^BAREMOBILE "
+    },
+    {
+      "name": "suite-green",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-baremobile-close.mjs suite-green",
+      "expect": 0,
+      "judged": {
+        "pattern": "BAREMOBILE judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^BAREMOBILE "
+    },
+    {
+      "name": "no-suppressions",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-baremobile-close.mjs no-suppressions",
+      "expect": 0,
+      "judged": {
+        "pattern": "BAREMOBILE judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^BAREMOBILE "
+    }
+  ],
+  "tools": [
+    "read",
+    "grep",
+    "write",
+    "edit",
+    "recall",
+    "get",
+    "impact",
+    "related",
+    "recent",
+    "compress",
+    "peek",
+    "stash",
+    "remember",
+    "forget"
+  ],
+  "escalation": {
+    "mode": "decision-ready"
+  }
+}

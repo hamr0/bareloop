@@ -13,7 +13,16 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 — the suite READS HISTORY. tests/close-stages.test.js proves its
+      # one-population check can fail by diffing against the pre-split close source
+      # (`git show f2be2b6:…`), and the default depth-1 clone does not have that object:
+      # the guard skipped and reported `ok` on a run where twelve of its siblings failed.
+      # The same must hold in publish.yml — a workflow fix belongs in EVERY workflow that
+      # runs the failing step (the ripgrep install landed here only, and publish then
+      # failed on the identical cause).
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
           node-version: "20"

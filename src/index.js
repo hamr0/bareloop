@@ -32,4 +32,33 @@ export { validatePlan, stageClose, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEP
 export { snapshotScope, evalExits } from './exits.js';
 export { runPlan } from './planrun.js';
 export { runJob } from './run.js';
+// Layer 3 — the REUSE registry (bridge-v1) and D3's display half. The registry is a
+// directory of plain files at an OPERATOR-supplied path (never a default location), the
+// load gate is the code half of D2's split, and `renderListing`/`selectionPrompt` are
+// pure text: they send nothing, parse nothing and decide nothing. The selection CALL and
+// the pin/shortlist/force-cold flow are the adopter's, which is why the pieces they need
+// are exported rather than kept internal to the runner.
+export {
+  BRIDGE_SCHEMA, validateBridge, deriveStatus, listingRow, loadGate,
+  mintBridge, appendGreen, appendRed,
+  loadBridge, loadRegistry, saveBridge, makeRegistry, registryExists,
+} from './bridges.js';
+export { renderListing, selectionPrompt } from './selection.js';
+// Layer 3 modules 4+5 — the D7 envelope and the reuse runner. `runReuse` composes
+// `runJob` under an operator-signed envelope (three explicit numbers, tighten-only) and
+// is the only thing in the library that WRITES the registry — minting is a graded
+// green's privilege (R1), never a caller's. `validateEnvelope`/`resolveTrySpec` are
+// exported because an operator runner has to show the resolved per-try spec's HASH at
+// its approval gate: a tightened envelope is a new spec version, and the human signs it.
+// `resolveReuse`/`reuseSpecHash` are the pair that gate must actually PRINT: the try
+// count multiplies the worst case, so a signature over the per-try spec alone leaves it
+// unsigned — a runner showing `jobSpecHash(resolveTrySpec(...))` prints the same hash for
+// 0 tries and for 9.
+// Module C (resume after a kill) exports its two operator-side halves for the same
+// reason: `readResume` is what turns a dead run's spine back into the state a resume
+// continues from (which tries completed, which one restarts, on what remainder), and
+// `resumeTreeGate` is the ruling that a resumed patient is continued dirty and never
+// reset. Both are read by a runner BEFORE the approval gate, so neither can live behind
+// `runReuse`'s own entry.
+export { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED, readResume, resumeTreeGate } from './reuse.js';
 export { classifyIncidents, foldLedger, ledgerDeltas, updateLedger, LEDGER_CLASSES } from './ledger.js';

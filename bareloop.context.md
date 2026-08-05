@@ -152,7 +152,7 @@ contract the single close object has always used) plus:
 | stage field | shape | notes |
 |---|---|---|
 | `name` | unique kebab-case slug | the plan references it via `check-passes(name)`; duplicates red `duplicate-id` |
-| `offer` | optional boolean, default offered | `offer: false` hides the stage from the derived menu — it never reaches the agent. For a stage that cannot stand alone as a ruler: a PRECONDITION (e.g. "the seed commit exists" — passes instantly, teaches nothing) or the **final grading stage** — of the six specs in `jobs/`, four hide a final `verdict` stage and two hide a `changed-from-seed` precondition instead (a per-spec convention, not a schema rule — nothing stops a stage named last from being offered except the spec author remembering to set the flag; preflight's `check-menu` event always names the full menu either way, so a forgotten flag is visible in the run's own record) |
+| `offer` | optional boolean, default offered | `offer: false` hides the stage from the derived menu — it never reaches the agent. For a stage that cannot stand alone as a ruler: a PRECONDITION (e.g. "the seed commit exists" — passes instantly, teaches nothing) or the **final grading stage** — of the ten specs in `jobs/`, four hide a final `verdict` stage and six hide a `changed-from-seed` precondition instead (a per-spec convention, not a schema rule — nothing stops a stage named last from being offered except the spec author remembering to set the flag; preflight's `check-menu` event always names the full menu either way, so a forgotten flag is visible in the run's own record) |
 | `needs` | optional non-empty array of EARLIER stage names | a stage that reads what an earlier stage built (e.g. "the public API matches what an earlier stage emitted") names its prerequisite chain; picking it via `check-passes` runs the chain first, then the stage itself. Every name must be declared before this stage (`invalid-value` otherwise); `needs` + `offer: false` together is incoherent (`invalid-value`) — a stage with a chain to run must be reachable |
 
 The stages run in declared order as the close itself; the first red renders the verdict and
@@ -160,6 +160,19 @@ later stages never run. `checkMenu(close)` returns only the offerable stages (ea
 run chain, prerequisites first); a hidden or partial menu is an acceptable case, never a
 failure — `check-menu` on the spine reports `hidden` + `meaning` whenever the derived menu is
 narrower than the stage list.
+
+**The law for close authors: ONE POPULATION PER STAGE.** The trend reader buckets one series
+per stage NAME, and a stage name is not an axis — nothing in the library can stop a stage from
+redding on two structurally different measurements under one name, and a run that crosses that
+seam donates both genres to one series (a 29 → 4 across such a seam reads *converging* and
+would recommend a top-up on work that had only swapped which wall it was behind). If a stage
+can report two unlike numbers, **split it into two stages** in the close, each where its branch
+already runs — the gate sequence is unchanged because the close is first-red-wins. The shipped
+`u-*` closes were split exactly that way (`typecheck` / `typecheck-outside` /
+`tests-kept` / `suite-green`), and the fix is never a sharpened reader: `readGrade` is one
+reader for every close, deliberately (the F49 precedent). **Splitting a stage moves the spec
+hash** — stage names are in the signed spec — so it is a spec edit the operator re-signs, and
+it changes what stored bridges match (below).
 
 **Close types and the hierarchy — the OBJECT form, which survives only for the
 declared-but-locked verdict classes** (a close is data, never code; verdict-class laundering
@@ -237,7 +250,7 @@ middle writes; `validatePlan` gates it against the SIGNED job spec before tokens
 | `steps[].rounds` | int 1..shell cap (default 40) | the step's per-attempt tool-round bound (the Gate's `maxTurns` natively) |
 | `steps[].target` | path inside the fence | v1.18 deliverable; REQUIRED on write-granted steps |
 | `steps[].model` | optional; `sonnet` \| `haiku` (`STEP_MODELS`) | the step's model TIER — a menu, never a model string the agent spells (the tier→model mapping and any per-model effort params are the runner's). `opus` is deliberately absent: reserved for work the human assigns, never plan-selectable. Off-menu reds `invalid-value`. A step naming a tier when the caller supplied no `providerFor` factory is an `interpreter-red` STOP, never a silent run on the default tier |
-| `steps[].attempts` | optional; int `1..capRuns` | TIGHTEN-only: the step's own retry cap inside `ralph`, floored against the shell's `capRuns` (default 3). Above it reds `bounds`; a plan may narrow the shell's cap, never raise it |
+| `steps[].attempts` | optional; int `>= 1` | **RETIRED and INERT (F79) — it bounds nothing.** A step's iterations are governed by the STRIKE LADDER (below), which is shell-owned and inexpressible from the plan. The field is no longer offered in the drafting prompt and the runner ignores it; it is deliberately still ACCEPTED, because stored bridge plans carry it and a plan minted under one runner's number must not red under another's. The shape is still checked (a known field holding garbage stays a `bounds` red); the old `<= capRuns` ceiling is gone with the cap it named. It was previously TIGHTEN-only — which meant a step that needed MORE iterations could not ask, and drafters measurably tightened it instead (F77) |
 | `steps[].scope` | optional; one value from the SAME menu `tree-changed` uses | narrows this step's live WRITE fence to a subset of the signed `writeScope` — chosen from the offered scope menu (below), never authored. Off-menu reds `invalid-value` carrying the menu |
 | `steps[].exit` | 1..2 items (`MAX_EXITS_PER_STEP`), ALL must pass (AND-only, no OR/NOT) | closed menu (`EXIT_TYPES`): `artifact-written(path, pattern?)` · `tree-changed(scope)` · `json-valid(path)` · `check-passes(name)`. **`tree-changed.scope` is a MENU, not a glob the agent authors** — the runner enumerates the signed fence entries plus the real directories beneath them (shallowest-first, capped at `MAX_SCOPE_MENU`=24; `legalScopes` in `src/plan.js`), `planPrompt` lists them verbatim, and `validatePlan` accepts membership only — the SAME array on both sides, so what was offered is what is accepted; omitted, it derives from `writeScope` alone — never a free-text fallback. An off-menu value that escapes the fence still reds `scope-escape` (the ledger's attribution class), an in-fence unoffered value reds `invalid-value` carrying the menu. `runPlan` emits `scope-menu {offered, truncated, offerableCount?, cap?}` so a capped menu is never silently complete. `check-passes` must name a stage on the close's DERIVED menu (`check-unknown` red names the offered menu — no operator authors this list, it comes straight from `checkMenu(close)`); on a write-granted step it must be paired with `tree-changed` (`exit-illegal` — the seed tree is green, a lone check would pass untouched, F17/F46). **`check-passes` also requires a write-class verb (`write`/`edit`) on the SAME step** (`exit-illegal` — BREAKING for plan authors: a read-only "verify" step carrying a check used to validate and no longer does). A failing check's gap is re-delivered to that step's OWN worker, so a step holding a check must be able to act on it; a read-only one is a mailbox with no hands and stalls to cap on a byte-identical gap (measured on 4 of 4 drafted plans). The check belongs on the step that fixes; the run's final verification is the operator's close, which the agent never authors. The rule is stated identically in the drafter prompt and the validator, so the two can never disagree — and it is suppressed when `tools` failed to parse (the step's hands are unknowable then, and the real defect already redded: one defect, one red). `artifact-written.pattern` must compile AND survive a ReDoS shape check — an unbounded quantifier over a group that itself repeats unboundedly (`(a+)+`, `(\d*)*`, even wrapped: `((a+))+`) is an `invalid-value` red (F49, catastrophic-backtracking footgun; rewrite without a repeated group inside a repeat). Exits verify FORM, not truth — progress gates; the operator's close stays the one arbiter |
 
@@ -273,9 +286,22 @@ Append-only JSONL event emitter bound to one file. `seq` monotonic per spine, `t
 last. Consumers are pure listeners; nothing reads the file back. Returns each event as
 written.
 
-### `ralph({ middle, close?, judge?, capRuns, emit, redact?, closeTimeoutMs?, cwd?, expect?, judged?, gapKeep?, workerWrites? })` → `'green' | 'escalated'` — `src/ralph.js`
+### `ralph({ middle, close?, judge?, capRuns?, ladder?, emit, redact?, closeTimeoutMs?, cwd?, expect?, judged?, gapKeep?, workerWrites? })` → `'green' | 'escalated'` — `src/ralph.js`
 
-The dumb outer shell: `while close-red and under-cap: run the middle`. `close` is an argv
+The dumb outer shell: `while close-red and not exhausted: run the middle`. **Exhaustion has
+two alternative rules and you supply exactly one** — `capRuns` (a fixed number of middle runs)
+or `ladder` (a PROGRESS governor). With a governor the iteration count floats and the loop
+ends on STRIKES instead; ralph still interprets nothing — it hands the governor each red
+iteration's gap and reads back a boolean. Both rules exhaust through the SAME terminal:
+category `cap-halt`, the same three records in the same order, so nothing downstream (the
+ledger's excluded-set, the step loop's one replan trigger) has to know which rule fired.
+`ladder` is an INTERFACE, not one module: `runPlan` wires `createLadder` (`src/ladder.js`,
+repeats + writes) per step and — since v1.46 — the close TREND governor (`src/trend.js`,
+per-stage graded numbers) on the close-fix loop. A governor may supply an optional
+`terminal()` to override the exhaustion PROSE (the step ladder's copy offers a replan and
+there is no planner at the close); it may never override the category or the outcome. Both
+modules are INTERNAL (not on the public surface), so a direct `ralph` caller uses
+`capRuns` — the strike rule reaches you through `runJob`/`runPlan`'s `strikeLimit`. `close` is an argv
 whose exit code is truth (`runClose` is also exported — **async since 0.6: `runClose` and
 `runStages` return Promises**; the child is awaited instead of spawnSync so a running close
 no longer freezes the host event loop (F68); every close semantic — timeout signal, output
@@ -369,7 +395,7 @@ generic unknown-field. Menus exported: `CLOSE_TYPES`, `CLASS_BY_CLOSE`, `GOLD_CO
 `CADENCE_UNITS`, `PROVIDERS`, `CONDITION_KEYS`, `TOOL_MENU`, `LOCKED_TOOLS`, `STORE_VERBS`,
 `VERDICT_TYPES`, `LOCKED_VERDICTS` — plus `checkMenu` itself.
 
-### `validatePlan(input, { job, maxStepRounds?, scopes?, capRuns? })` → `{ ok, reds, plan }` — `src/plan.js`
+### `validatePlan(input, { job, maxStepRounds?, scopes? })` → `{ ok, reds, plan }` — `src/plan.js`
 
 `validateJob`'s SIBLING in the two-document split, never a third validator over it (the
 two-doc split's third validator never happens: plan-v1 gates the PLAN, the job spec stays
@@ -379,7 +405,8 @@ from `job` (a missing or non-plan-shape job fails CLOSED, `job-invalid`). Never 
 same `{ code, path, detail }` red shape as its siblings; `verb-escape` reds carry the
 escaping verb as a structured `verb` field (the ledger keys on it). `maxStepRounds`
 (default 40 — the shell's tool-mode per-attempt bound) ceilings every step's `rounds`;
-`capRuns` (default 3) ceilings every step's `attempts`; `scopes` is the offered
+**the `capRuns?` option is GONE** (F79) — it existed only to ceiling `attempts`, now
+retired-but-accepted, so a plan carries no iteration bound to check; `scopes` is the offered
 `tree-changed` scope menu — the array of scope strings the drafter prompt listed, which
 `runJob`/`runPlan` build internally from the signed fence plus the real directories beneath
 it (a direct `validatePlan` caller may pass its own array); omitted, it derives from the
@@ -427,7 +454,10 @@ Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
 `coordination-red` — a failure between units (scope contention, step order, store
 races), never to be folded into worker/interpreter reds.
 
-### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, shellCapUsd?, closeTimeoutMs?, layerRoot? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, layerRoot?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades? })` → outcome — `src/run.js`
+
+The last four are the RESUME fold and are documented under *Resuming a killed run* below;
+they default to `0` / `true` / `0` / `null`, so a fresh run passes none of them.
 
 The runner — the shell's top layer, and the ONE entry. It composes everything below it and
 interprets nothing itself. Sequence: **approval gate** (human-signs-always — refuses an
@@ -437,19 +467,24 @@ known-answer round-trip before tokens: `smoke-red` — a silent degradation thro
 `min(job budget − spent, shell cap)`.
 
 Outcomes: `green | already-green | escalated | unapproved-spec | job-red | smoke-red |
-plan-red | check-red | close-red | close-unsupported | pricing-red | provider-red |
-interpreter-red | cap-halt | wall-halt | step-stalled | step-red:<id>`. `provider-red` is a
+plan-red | check-red | close-red | close-unsupported | recipe-stale | pricing-red |
+provider-red | interpreter-red | cap-halt | wall-halt | step-stalled | step-red:<id>`. `provider-red` is a
 transport throw or a worker round the API cut off mid-generation (`truncated:max_tokens`,
 BA-6 — before which it laundered into a clean finish, F25): no verdict exists and the failed
 round's spend is only partly known (F6). `cap-halt` is the wallet; `wall-halt` is the clock
 (F64 — a timeout derived from the run's own deadline is a governance stop, never a transport
 casualty). **`cap-halt` reaches you from the close-fix loop too, not only from a step:** the
-shell spells attempt-exhaustion and a money-gate halt with the same category, so both the
+shell spells exhaustion (strikes on a step, and — since v1.46 — strikes in the fix loop as
+well, `capRuns` only while that loop's trend instrument is blind) and a money-gate halt with
+the same category, so both the
 step loop and the fix loop read the WALLET to tell them apart — a drained wallet is
-`cap-halt` (the resume-to-cap checkpoint), attempts spent with money still on the table is
+`cap-halt` (the resume-to-cap checkpoint), exhaustion with money still on the table is
 the designed `escalated` terminal ("the close is still red"). The fix worker's gate is built
 with the wallet at its most drained, which is exactly where a money cut would otherwise
-masquerade as a capability read (F45). `step-stalled` is the F66 stall fuse giving up: no
+masquerade as a capability read (F45). A `cap-halt` from the wallet also emits the
+decision-ready `money-halt` record described under the plan flow below — the kept verdict, the
+trend and the three levers — so a consumer never has to reconstruct the stop from the outcome
+name alone. `step-stalled` is the F66 stall fuse giving up: no
 completed round for 5 minutes,
 three times on one call — each stall silently abandons the hung call and reissues it
 (self-heal first); only the third throws. Inside a step it is the THIRD replan trigger
@@ -465,11 +500,13 @@ decision-ready escalation with a terminal `job-end`: the spine never dangles.
 of PRICED rounds ONLY — never an estimate from token counts or averages (cap-not-estimate) —
 and it is stated even on the pre-token reds, where the honest figure is a real `0`.
 `spendComplete` says whether that figure is EXACT; `false` means `spentUsd` is a FLOOR ("at
-least $X", true total unknowable) and must not be read as a total. Three things set it, all
+least $X", true total unknowable) and must not be read as a total. Four things set it, all
 the same class — a call whose cost is unknowable from here: a round that came back unpriced
 (F6); a run that ABSORBED a stall, because the fuse's silent reissue may pay twice for one
-answer and the flag is one-way whatever the outcome; and a `wall-halt` that cut a call
-mid-flight (`cutMidCall`). A wall stop read BETWEEN iterations or steps has no call in flight,
+answer and the flag is one-way whatever the outcome; a `wall-halt` that cut a call
+mid-flight (`cutMidCall`); and a RESUME whose fold was itself a floor
+(`priorSpendComplete: false` — an unknown does not heal by being carried forward, so every
+round of this attempt being priced repairs nothing about the one before it). A wall stop read BETWEEN iterations or steps has no call in flight,
 so it stays exact. Both fields are present on all outcomes, so a consumer never branches on
 field presence and never has to launder a missing `spentUsd` into `$0`.
 
@@ -484,15 +521,120 @@ write-class nor the store-class verbs are in its menu; hard-bounded rounds) → 
 the planner never sees the repo, only the scout blob; drafted against a schema
 description with check NAMES only; `validatePlan` gates it, one redraft with the reds
 fed back, then `plan-red`) → **EXECUTE** (strictly sequential micro-loops: `ralph` with
-the exit-evaluator judge; tree snapshots at step start; the gap names every failing
+the exit-evaluator judge, each step under its own STRIKE LADDER — below; tree snapshots at
+step start; the gap names every failing
 wall — mechanical genre, F46's measured mechanism; artifacts feed forward labeled by
 step id) → **ONE replan**, triggered by exhaustion OR variance (an instrument stop never
 replans) → **the operator's close**, a red feeding ONE bounded fix loop judged by the
-REAL close. `plan-executed` (the plan-as-executed record, design law #2) lands on the
+REAL close and governed by the close TREND rule below (`capRuns`, default 3, survives only as
+its blind fallback). `plan-executed` (the plan-as-executed record, design law #2) lands on the
 spine on every path that executed steps. Additional outcomes: `already-green |
 plan-red | check-red | close-red | wall-halt`. Worker prompts hold the v1.12 §5 contract
 (mutation-proven): the absolute repo root, the step's action/target, prior artifacts,
 the gap — NEVER the budget, the close command, a check's command, or the arbiter's books.
+
+**The strike ladder — how a STEP ends (F77–F79).** A plan step is **not** bounded by a
+number of iterations. It runs until it stops making PROGRESS: a *strike* is a red iteration
+that repeats an already-seen gap or wrote nothing, and `strikeLimit` strikes (shell option on
+`runJob`/`runPlan`, **default 2**) end the step. Concretely — repeats are matched against a
+**seen-set** for the whole step, never just the last gap (an A→B→A oscillator is real and
+last-only reads it as progress); the gap is normalized for COMPARISON only (TAP `duration_ms`
+lines, ISO stamps and `ms` figures dropped so a re-run is byte-stable — error counts, file
+names and line numbers all SURVIVE, so `30 errors` → `22 errors` is progress and not a
+repeat), and the gap the worker sees is never rewritten; "wrote" is the **count delta of the
+gate audit's allow-decision write/edit records** (the F32 instrument — never `git status`,
+never a tree diff, and never the path SET, which is constant after iteration 1 when a step
+rewrites one target); strikes are **sticky** — a good iteration in between never repays one.
+Everything else that bounds a step is unchanged and each still ends it on its own authority:
+the wallet, the wall, the variance meter and the stall fuse. The ceiling is **arbiter
+territory** — the plan cannot express it, tighten it or raise it — and the practical
+consequence for a caller is that a **converging step now runs on the money and wall you
+signed** instead of stopping at a count, so size those two numbers for the job (the ladder
+adds no third ceiling of its own). The exhaustion terminal is the same `cap-halt` category
+as before; the spine gains a per-iteration `ladder` record
+(`{iteration, strike, strikes, limit, wrote, repeatOf, distinctGaps}`), and the `cap-halt`,
+escalation and wall-stop records carry `strikes`/`strikeLimit`/`distinctGaps` beside the
+iteration count rather than a cap the step no longer has. **The replan brief
+names the mechanism**: which shape ended the step (converging-cut / stalled-no-write /
+repeated-gap, with the iteration numbers as evidence), the gap trajectory, and how much money
+and wall the stop left unspent (time reported UNBOUNDED when no wall was set, never `0`). It
+names no culprit file — F28 applies to the replan channel too.
+
+**The close TREND rule — how the CLOSE-FIX LOOP ends (PRD v1.46 §4).** `capRuns` retired as
+that loop's governor once its own $0 replay over every archived fix loop came back clean (0
+greens harmed — all three historical fix-loop greens converted in ≤ 2 verdicts; 1 real waste
+case caught, dead flat at 2 errors for 7 verdicts until the wall). It now stops on the same
+2-strike no-progress rule, read off a DIFFERENT signal: the close's own graded numbers, **per
+stage** (`src/trend.js`). A stage's series is the first number on the first red-marked line of
+its output, compared only against that stage's own BEST so far (never last-only, the same
+oscillator reason the ladder keeps a seen-set); reaching a LATER stage than ever before is
+progress too, since a staged close is first-red-wins. Two consecutive comparable readings with
+nothing improving ends the loop, under the unchanged `cap-halt` terminal and the unchanged
+`escalated` outcome. **Never across stages** — merging a staged close's axes into one series
+reads a real see-saw (suppressions 12 → 5 while the type errors it re-exposed went 2 → 0) as a
+regression, and that mistake is inexpressible here rather than avoided by care. A stage whose
+output carries no number donates NOTHING — not a zero, not a strike (F6): while the instrument
+cannot compare, `capRuns` is what bounds the loop. It bounds the **consecutive run of
+unreadable gradings**, not the loop's opening — it lifts the moment a stage reports a
+comparable number and **re-arms the moment one stops**, so a loop that reads, goes blind and
+reads again is never bounded by it, while a loop that never compares anything binds on exactly
+the iteration the fixed count always bought it (F84: gating it on "has this loop ever compared
+anything" made a single stage ADVANCE disarm it for the rest of the run, and a numberless-red
+close then had money and the wall for a bound). Two known accepted limits, both stated at the
+site: (1) "lower is better" is not derivable from prose, so a floor-shaped stage (`N tests
+executed, below the seed's M`) reads as not-improving rather than converging — the fail-safe
+direction, since a false "flat" costs one conservative stop and a false "converging" costs a
+top-up spent on a dead run; (2) a series is one bucket per stage NAME, and a stage name is not
+an axis — a close free to red one stage on two different populations (`N error(s) in <scope>`
+vs `the target files are clean but M error(s) exist outside them`) donates both genres to one
+series, and a run crossing that seam can read converging on work that only swapped which wall
+it is behind. Neither is sharpened by teaching the reader to tell prose shapes apart (the F49
+precedent); the second's root fix is a stage split in the close, which is the spec's to change.
+The spine gains a per-iteration `ladder` record here too; every reading names its `governor`
+(`step-ladder` | `close-trend`) so two instruments under one event type can never be averaged
+into one number.
+
+**A MONEY halt is decision-ready (PRD v1.46 §2).** A cut by the wallet is the same KIND of
+stop the wall is, so it now reads out the same way: the verdict already minted is KEPT (never
+discarded, never re-derived), and a `money-halt` spine record carries `budgetUsd`,
+`remainingUsd` **with its own `spendComplete`** (the remaining is `budget − spent`, so on a run
+whose spend is a FLOOR it is a CEILING and says so rather than reading as the number — the same
+duty `wall-halt` has carried since W-2; it is the ledger's one figure, never re-derived here),
+the kept `verdict`/`stage`, the run's own per-stage `trend`
+(`converging | flat | unknown`) with the `reading` and `series` it judged, and three
+`options` — top up and resume, revise the spec, abandon. Emitted at every site that cuts a run
+on money (the step loop, the close-fix loop, and the scout/draft relay), exactly as
+`wall-halt` is. The trend obeys the accuracy law above and says `unknown` out loud when the
+close rendered no number (F6). **The library only ever REPORTS**: `budgetUsd` is in the spec
+hash, so a top-up is a spec edit a human signs — nothing in a run may widen its own budget.
+
+**ONE progress instrument, read by both halts.** The wall halt used to run its own: byte
+equality of the last two close gaps, reading `stalled` / `moving` / `unknown` beside the money
+halt's `flat` / `converging` / `unknown` on the same run. Both now read `runTrend`, the run's
+own `src/trend.js` reader. Where a stage reported a comparable NUMBER it decides; where none
+did, the byte comparison survives INSIDE `unknown` as a separate `motion` field
+(`changed | unchanged | null`) and as a clause in the `reading` — never as the headline
+verdict, because "the close's output changed" is not "the run got better" (F6 in a trend's
+coat), and never mapped onto `trend`, because that would put the promotion on the spine.
+`unchanged` points the lever at the goal; `changed` points it at reading the last close output.
+The two readers stay SEPARATE INSTANCES for separate questions (`src/trend.js`, "ONE PER
+SERIES"): the halt readouts ask *was the RUN converging when its allowance cut it*, the
+close-fix loop's governor asks *is THIS loop out of ideas*.
+
+**A resumed leg's readout judges the whole CHAIN.** `readResume`'s `restart.grades` carries the
+dead leg's recorded close grades forward — `[{stage, value}]`, counts and stage names only,
+never a gap byte — and `runJob`/`runPlan` take them as `resumeGrades`, which seed the run
+trend's BASELINES (`createTrend({seed})`). Without them a resumed leg restarts the trend at its
+own first close and can report `flat` — *revise the goal* — on a run that was converging when
+its allowance ran out. The seed folds into the series and the per-stage best and into nothing
+else: no iteration counted, no strike minted, no `comparableEver`, no stage position — it is
+history, not this leg's evidence, so the blind-cap backstop still governs a leg whose own
+readings never compare. The close-fix loop's governor is deliberately NOT seeded (it is the
+leg-local question). Sources, in order: the `ladder` records the live governor already wrote
+(`governor: 'close-trend'`, taken verbatim), the `close-precheck`/`outer-close` records, and —
+only on a spine predating that governor — the `close-verdict` records after the `fix-loop`
+marker, which is the same population and excludes a STEP's failing exit. Known limit: one spine
+is read, so a resume of a resume inherits the previous leg's chain and not the one before it.
 
 **Time and materials (T + A, PRD v1.27/v1.29).** `runPlan` starts ONE wall clock per run
 (`createClock`, `src/clock.js`) from the signed `maxWallMs` and emits `wall-clock` with the
@@ -502,17 +644,25 @@ stage count comes from `stageClose`, the same staging the runner executes). Enfo
 **between-round deadline** — the only seam that exists, since `loop.stop()` cannot cut an
 in-flight call (F61: fired at 500ms,
 returned at 4,018ms) — so an attempt that crosses the deadline mid-flight emits `wall-bounded`,
-is judged, and feeds its gap forward exactly like a round-bounded attempt. **The close is never
+is judged, and feeds its gap forward exactly like a round-bounded attempt. A call that never
+returns is bounded by the two per-call numbers the same clock derives and `runPlan` passes to
+every provider call: `timeoutMs` (BA-18, idle — reset by every byte) and `deadlineMs` (BA-19,
+TOTAL duration — reset by nothing, so it is the bound for a stream that trickles forever, F66's
+274-minute call). Both are the wall's own remainder read at call time, and `deadlineMs` is
+**omitted entirely** on a time-unbounded run — no wall, no derived ceiling (F45). Because both
+came from the wall, a trip past the cap routes `wall-halt`, never `provider-red`; the
+discriminator is `clock.expired()` and never the error code, so a timeout with time still on the
+clock stays the transport casualty it is (F64). **The close is never
 bounded by the wall and always runs to completion** — a deadline that kills grading leaves the
 run unreadable after the money is spent (the F45 class, money generalized to time); what the
 wall stops is the START of new work. Three sites decide the run-level terminal `wall-halt`, all
 on the same clock: the step loop after a step returns, a step that would BEGIN already expired,
 and the close-fix loop before it opens another iteration — which then stops on the verdict the
 last close already minted (hamr: *"when time is up, keep the grade we already have and stop"*),
-carrying that verdict, the iterations spent, and a progress `trend` (`moving` | `stalled` |
-`unknown`, read off the last two close gaps) so the human can pick between raising `maxWallMs`
-(resume-to-cap: the stop IS the checkpoint) and revising the goal — both spec edits, both a new
-hash to re-sign. `cutMidCall` on the `wall-halt` record splits the deadline seen INSIDE a
+carrying that verdict, the iterations spent, and the SAME progress reading the money halt
+carries (`trend`: `converging | flat | unknown`, plus `motion`) so the human can pick between
+raising `maxWallMs` (resume-to-cap: the stop IS the checkpoint) and revising the goal — both
+spec edits, both a new hash to re-sign. `cutMidCall` on the `wall-halt` record splits the deadline seen INSIDE a
 provider call from the deadline read between them. Time reporting is
 licensed at ~90% accuracy by ruling: imprecision is fine, reporting an unknown or unbounded
 duration as `0` never is (F6 extended to time — unbounded reports `null`, never `Infinity`).
@@ -590,6 +740,334 @@ audit, the smoke store and the litectx store are denied — the agent neither au
 arbiter nor reads its books. N2 bounds (honest): `gold`/`rubric` closes refuse
 `close-unsupported` (execution lands at N4).
 
+### The reuse registry (Layer 3) — `src/bridges.js`, `src/selection.js`
+
+A **bridge** is the plan a green actually executed, kept so the next run of the same SHAPE
+starts from it instead of cold. Storage is a directory of plain JSON files at an
+**operator-supplied path** — no database, no default location (a missing registry reds
+rather than being conjured). Everything here is either a pure derivation or an explicit
+read/write of one file; nothing decides a run.
+
+**Writing the box (R1 — only a green writes it).** `mintBridge(meta, record)` builds a new
+entry from a FIRST green — there is deliberately no way to create one without a green, so a
+failed plan cannot enter the registry even by accident. `appendGreen(bridge, record)` adds
+the plan AS EXECUTED as the next **version** plus a history row; `appendRed(bridge, record)`
+writes a **history row only** and never touches `versions` — a red demotes, it does not edit
+the recipe. Both are pure (a new entry is returned; the input is untouched).
+`saveBridge(dir, bridge)` writes atomically (temp + rename) and REFUSES an entry its own
+validator rejects; `loadBridge` / `loadRegistry` read back, and a malformed file is
+**skipped and reported** (`ok:false` with one red per bad file) rather than silently
+dropped. `makeRegistry` is separate from `saveBridge` on purpose: saving must never conjure
+a registry from a typo'd path.
+
+**Status is DERIVED, never stored** (`deriveStatus`): **candidate** = one green, **proven** =
+greens on ≥2 DISTINCT patients, and a `red` on a proven entry drops it back to candidate.
+A **casualty is not a red** — only the literal outcome `red` demotes; `provider-red`,
+`wall-halt`, `close-crashed` and friends are casualties and are never evidence in either
+direction. There is deliberately **no probability score**: n=1 is an anecdote whichever way
+it points, and a percentage over 2–3 runs is fake precision. `costUsd`/`wallMs`/`rounds` are
+a number or an EXPLICIT `null`, and the key is REQUIRED either way, so an unknown has to be
+said rather than omitted (F6 — an omitted key is how a `?? 0` gets written downstream).
+
+**`loadGate(bridge, job)` → `{ ok, reds }` — the load-time gate.** Exactly three checks,
+asked *"is this the right KIND of recipe?"*: the job's **verdict type**, the **close-stage
+kinds** (v1: the same stage names in the same order), and every stored verb **within THIS
+job's signed menu** (an omitted `tools` means the concrete current `TOOL_MENU`, MED-1).
+**Nothing about paths, scopes or targets** — those are instance-bound and are EXPECTED to
+red: every recipe from a different day names yesterday's bricks, and that is what a recipe
+IS. The full `validatePlan` still judges the TWEAKED draft at draft time; no second, looser
+path exists for an inherited plan. A failing gate is a RESULT (`recipe-stale`), never a throw.
+
+**A CHANGED CLOSE therefore expires every bridge minted under the old one.** The stored
+`closeStageNames` must match the job's stage names in the same order, so adding, renaming,
+splitting or reordering a stage makes existing entries fail the gate by construction. That is
+the doctrine, not a rough edge: a different close is a different KIND of job, and a recipe
+proven against one ruler has not been proven against another. The remedy is a fresh green under
+the new close, which mints the next version — an entry is **never edited into agreement**, and
+falling back to cold stays the caller's decision. In this repo the `u-*` close split
+(2026-08-05) put `aurora-u-spawner` and `litectx-u` in exactly that state; both are re-minted by
+their next green, not repaired.
+
+**`runJob`/`runPlan` take `bridge?`** — a validated entry to reuse. The gate runs **at the
+door**: before the clock, before the close precheck, before any token. On a pass, the
+**newest** version's plan rides into the FIRST drafting prompt as a starting draft
+(`bridge-loaded {name, versions, runid}` on the spine) and everything after it is the
+ordinary shipped path — same validator, same redraft-on-reds, same ONE-replan ceiling, and a
+**replan never re-injects the bridge** (it drafts from the run's own state). On a fail the
+run returns the distinct terminal **`recipe-stale`** with `bridge-gate {outcome, name, reds}`
+and a decision-ready escalation, having spent nothing. **Falling back to cold is the
+caller's decision, not an automatic silent fallback** — starting a paid run on a decision
+nobody made is the same class of error as widening a cap to manufacture a green. Omit
+`bridge` and the flow is byte-identical to a pre-Layer-3 run: no new event, and no starting
+draft anywhere in the prompt.
+
+**`renderListing(registry)` / `selectionPrompt(listing, ask)` — `src/selection.js`.** Pure
+text: they read no file, call no model and decide nothing. `renderListing` takes
+`loadRegistry`'s result (or a bare array) and renders one compact block per bridge — name,
+the goal sentence it greened, status, greens/reds with the last outcome, and the cost/time
+BAND of its greens. An unknown cost or duration renders `UNKNOWN` and a partial aggregate
+says how many it skipped (never a `$0.00` that reads as exact); entries that could not be
+read are NAMED, so the listing can never be quietly shorter than the directory. Ordering is
+deterministic by name and it never throws. `selectionPrompt` wraps that listing with the ask
+and D3's two standing rules — *"none matches"* is a first-class answer that means the agent
+drafts new, and a PINNED workflow may be refused only EXPLICITLY, with a reason. The
+selection CALL, the pin/shortlist/force-cold flow and the parse of the answer are YOURS —
+or `runReuse` below, which is the shipped one.
+
+### The reuse ENVELOPE and `runReuse` (Layer 3, D7) — `src/reuse.js`
+
+`runReuse` is `runJob` under an operator-signed **envelope**: try a stored workflow, then
+another, then draft cold — hamr's *"$5 and 30 mins x2 then start anew"*. It composes; it
+decides nothing the arbiter owns.
+
+**`validateEnvelope(input, { job? })` → `{ ok, reds, envelope }`.** The envelope is
+`{ perTryBudgetUsd, perTryWallMs, bridgeTries }` and **all three are required and
+explicit — there is no default for any of them**, for `maxWallMs`'s reason: a defaulted
+cap is a silent second ceiling. `bridgeTries: 0` is legal and means force-cold. With a
+`job`, the composition is checked: the per-try numbers may only **TIGHTEN** the signed
+spec — a per-try budget above `job.budgetUsd`, or a wall above `job.maxWallMs`, is
+`envelope-widens`, never a silent raise. (A spec with no `maxWallMs` is time-unbounded by
+explicit choice, so any wall tightens it.)
+
+**`resolveTrySpec(job, envelope)` → the per-try spec.** Every try — cold leg included —
+runs THIS spec, so the envelope's numbers are the numbers all the way down. Tightening
+makes a genuinely different spec, so it makes a different **spec hash**: the tightened run
+is a new spec VERSION and `runJob`'s approval gate refuses it until the operator signs
+that hash. `runReuse` hands `approvals` straight through and has no way to forge one. An
+envelope equal to the spec's own numbers leaves this spec hash-identical.
+
+**`resolveReuse(job, envelope)` → `{ schema: 'reuse-v1', spec, bridgeTries }`, and
+`reuseSpecHash(resolved)` → the hash your operator signs. Show THIS one at your approval
+gate** (`scripts/run-reuse.mjs` does). The envelope is three numbers and the third is a
+MULTIPLIER — the worst case a reuse run authorizes is
+`perTryBudgetUsd × (bridgeTries + 1)` — so a signature over the per-try spec alone covers
+only budget and wall, and `--tries 0` and `--tries 9` print the same hash. The signed
+artifact is therefore the per-try spec WRAPPED with the count. It is a wrapper rather than
+a field on the spec because `validateJob` reds unknown top-level fields: a `bridgeTries`
+written onto the spec would flip the hash and then make every try a `job-red`. The hash is
+composed from `jobSpecHash` (so MED-1's resolved-`tools` pinning is inherited, with no
+second canonicalizer to drift) under a `reuse-v1` domain prefix, and `runReuse` reads its
+loop bound back off the same resolved object — the count enforced is the count signed.
+**This is a signing-SCHEME change: any hash signed before the count was folded in no
+longer matches, by design, and there is no legacy acceptance path — re-sign once.** Your
+gate still mints `approvals` for `runJob` at the PER-TRY SPEC's `jobSpecHash`, which the
+matching approval hash entails (it is a function of exactly that hash plus the count).
+
+**`selectBridge({ registry, job, ask, provider, pinned?, shortlist?, forceCold?, exclude? })`.**
+ONE model call on the drafter-tier provider **you** hand in (no provider is constructed
+inside), rendering `renderListing` + `selectionPrompt` and parsing a strict
+`{"choice": <name|null>, "reason": "…"}` through the repo's one `extractArtifact`. Returns
+`{ choice, reason, called, refused, forcedCold, red, costUsd, spendComplete, candidates }`.
+`forceCold` and an empty candidate set skip the call entirely ($0, no tokens). A name that
+is not on the listing it was given is a named red, never used. **A pin does not bypass the
+call** (D3): it is stated in the prompt, and if the answer names anything else the result
+is `{refused: true}` — the substitute is NOT adopted and the decision goes back to you.
+Cost is metered and reported: `costUsd` is a number or an explicit `null` (F6).
+
+**`runReuse({ job, approvals, registryDir, envelope, patient, workdir, provider, emit, … })`.**
+Envelope → registry → up to `bridgeTries` tries → the cold leg. Per try: selection runs
+against a **freshly reloaded** registry with the already-tried names excluded, the chosen
+entry rides into `runJob` (whose own load gate is the D2 shape check — a `recipe-stale`
+refusal costs $0 and simply moves to the next candidate), and then **the box is written
+(R1)**: a green appends a VERSION carrying the plan AS EXECUTED (read from the run's own
+`plan-accepted`) plus a history row; a graded red appends a history row only; a casualty
+appends a row under its **own** outcome name and cannot demote. **A green ends the loop.**
+Tries exhausted → a cold run under the same per-try numbers, whose green mints a new
+bridge named for the job slug (or appends, if that name already holds greens — clobbering
+a green is exactly what R1 exists to prevent). A cold RED writes nothing: the entry bar is
+a green.
+
+**Which outcomes are a graded RED** (`REUSE_GRADED_RED`): only `escalated` — the terminal
+where the close judged the tree, the bounded fix loop spent its attempts with money still
+on the table, and the close was still red. Everything else non-green is a **casualty** and
+keeps its own name: `cap-halt`/`wall-halt` (governance), `provider-red`/`step-stalled`
+(transport), `close-red`/`close-unsupported` (the close FAULTED and rendered no judgment),
+`recipe-stale` (refused at the door), `plan-red`/`step-red:*`/`check-red` (the flow stopped
+before the close ever judged). All of them are recorded in full on the history row, which
+is where D6 puts the detail a human reads; the coarse status ladder is left alone.
+
+**Result:** `{ outcome, tries[], selection[], spentUsd, spendComplete, bridgeWrites[],
+decision, options, detail, reds, triesUsed, triesAuthorized, envelope, specHash,
+approvalHash }` — `specHash` is the per-try spec's (what `runJob`'s own gate reads),
+`approvalHash` is the operator's, covering all three envelope numbers. Every
+try row is **decision-ready**: `bridge`, `runOutcome`, `verdictClass`, `failingStage`,
+`spentUsd` vs `capUsd`, `wallMs` vs `wallCapMs`, `capBound`, `wallBound`, `rounds`, and
+`closeReached`. `spentUsd` is the sum of PRICED figures only across tries AND selection
+calls; one unknown makes `spendComplete` false, and a try whose `job-end` never landed
+reports `spentUsd: null` — never a `0` that reads as exact (F6). On a RESTARTED try,
+`rounds` folds both attempts exactly as `spentUsd` and `wallMs` do (the row states one span,
+not a count from one leg against money from two), and the fold is declared on `try-start` as
+`priorRounds`; a leg whose turns cannot be counted leaves it `null` and the row keeps the
+unknown rather than reporting the half it can see.
+
+> **The selection calls sit OUTSIDE the per-try caps**, by construction: they happen
+> before a try starts, so no try's ledger can hold them. They are small (one short prompt
+> each, no tools) and they ARE metered — every one lands in `selection[].costUsd` and in
+> the total — but a reader budgeting `perTryBudgetUsd × (bridgeTries + 1)` should know
+> that is the caps' sum, not the run's ceiling. Named here rather than folded in: an
+> advertised number the run does not enforce is the thing this repo does not ship.
+
+> **F45, and why there is no threshold here.** A try's budget must fund **the attempt PLUS
+> its close** — a cap that dies mid-grading produces an unreadable row, and an unreadable
+> row is a casualty, not evidence. Nothing in this process can know what a close costs (it
+> is your command, at your price), so **no threshold is invented** — threshold-setting is
+> arbiter territory, set from a measured base rate, never fitted to the sample in hand.
+> What the module does instead is make the bind VISIBLE: `closeReached: false` next to
+> `capBound: true` on a row IS the diagnosis. Size the envelope with that in hand.
+
+Fallthrough to the next bridge, and to cold, is automatic **only because the envelope
+pre-authorized it**. Nothing else is: a refused pin (`selection-refused`), an unusable
+selection answer (`selection-red`), a missing registry (`registry-red`) and an
+envelope that will not compose (`envelope-red`) all STOP with a decision-ready escalation
+and hand the call back to you. So do the three answers **no further try could change** —
+`unapproved-spec` (a tightened envelope makes a new spec version, and it is signed, not
+inherited: the decision hands you the exact hash), `job-red`, and `smoke-red` — which end
+the run on the try that hit them rather than reproducing themselves down the whole
+envelope. Every category this emits is in the ledger's executable excluded-set, so none of
+them lands as an unclassified library bug.
+
+`scripts/run-reuse.mjs` is the reference operator runner: `--job`, `--registry`, and the
+three envelope numbers `--budget` / `--wall` / `--tries`, plus optional `--pin` /
+`--force-cold`, with the approval gate on `reuseSpecHash` (all three numbers — a hash
+signed for a different `--tries` is refused, and says so), the F67 outside watchdog
+(sized for the SUM of the tries, not one), the seed refusal, the gate-audit relocation and
+the secrets scan.
+
+#### Resuming a killed run (module C)
+
+A reuse run is up to `tries + 1` full jobs long, so a kill mid-run is a real event and it
+must not cost the whole envelope. **`readResume(events, {deathAt?, direct?, resumableOutcomes?})`**
+reads the dead run's own spine back into the state a resume continues from: `{ started,
+approvalHash, completed[], tried[], restart (with its step-level `seed` and its close
+`grades`), r1Missing, spentUsd,
+spendComplete, carrySpentUsd, carrySpendComplete, ended, greened, … }`. Hand that object to
+**`runReuse({…, resume})`** and the run picks up where it stopped.
+
+Two options widen WHICH spines it reads, both OFF by default so the reuse loop's own
+semantics are byte-unchanged (PRD v1.46 §3):
+
+- **`direct: true`** reads a plain `runJob` spine — no envelope, no try windows — as ONE
+  implicit try opened at `job-start`, through the same window machinery rather than a second
+  reader. Without it such a spine is honestly refused (`started: false`), which is what a
+  reuse runner needs. `job-start` carries the DECLARED fold (`priorSpentUsd` with its
+  `priorSpendComplete`, and `priorWallMs`, each present only when there is one) exactly as
+  `try-start` does, so a chain of resumes adds only each attempt's own new rounds instead of
+  re-deriving and double-billing. **An inherited FLOOR is one** even when the money it qualifies
+  is `$0`: a leg whose every round came back unpriced folds nothing countable and is still not
+  exact, so the declaration is emitted to carry that unknown forward rather than letting it read
+  as an exact zero (F6).
+- **`resumableOutcomes: ['cap-halt', 'wall-halt']`** reclassifies a landed `job-end` whose
+  outcome is a GOVERNANCE HALT as a restart rather than a completed row. "A landed job-end is
+  complete" is true of a VERDICT; a halt means an operator-owned allowance ran out with the
+  work on disk and the plan on the spine. A green or any red stays non-resumable under every
+  setting — a verdict already rendered is never re-bought.
+
+`scripts/run-u.mjs --resume <runid|path>` is the operator-side consumer: it skips the patient
+reset (`resumeTreeGate` instead — a dirty tree is what a resume expects; only a moved HEAD
+stops it), folds the halted run's money and wall in, re-enters at the checkpoint, and arms the
+outside watchdog on the REMAINING wall. The top-up itself stays a spec edit the human signs.
+**A zero wall remainder REFUSES the launch** (exit 2, before the key and before the patient):
+W-2 says a run out of time keeps the grade it has and stops, so a resume with no time to start
+anything in is a decision, not an unbounded launch — and launching it used to hand the outside
+watchdog `--wall-ms 0`, which it defaulted to `null` and armed no deadline at all under a banner
+still advertising one. The refusal names the lever: raise `maxWallMs`, which moves the spec hash
+and is re-signed.
+
+- **Completed tries are not re-run.** They come back as rows (marked `inherited`) and
+  their bridges stay excluded from every later selection. A try whose `job-end` landed —
+  the close judged it — counts as completed even if the kill beat its `try-end`; paying
+  again for a verdict already rendered is exactly what resume exists to avoid. If the
+  kill also beat the registry write, that row is LOST and named (`r1Missing`); nothing is
+  invented in its place.
+- **A mid-flight try RESTARTS** against the same workflow, with **no second selection
+  call** (that pick was made and paid for), and it is not counted as consumed.
+- **It restarts at the STEP it died on, not at its beginning.** hamr's ruling: *"start
+  last step instead from the beginning, why would i want to waste more money on something
+  i already started"*. `restart.seed` is the finest checkpoint the dead spine can PROVE —
+  `{phase, plan, completedSteps[{id, seq, by}], planSeq}` — and it rides into `runJob`
+  (and on to `runPlan`) as `resumeSeed`:
+  - **scout: skipped** (`scout-skipped`, never silence). Its survey is not on the spine,
+    so the one consequence is stated rather than discovered: a replan after a resume
+    drafts from an empty survey plus its failure brief.
+  - **plan: reloaded, not re-drafted** — from the LAST `plan-accepted` in the window (a
+    replan emits its own, and the post-replan plan is the one that was running). It is
+    **re-validated** against the spec signed NOW; a plan that no longer validates is
+    `plan-red` by name (`resume-plan-red`) with nothing run. It is then re-emitted as this
+    leg's own `plan-accepted {phase:'resume'}`, because R1 mints a bridge version from the
+    plan AS EXECUTED read back off the spine.
+  - **completed steps: skipped**, in prefix order by id, each with its own `step-skipped`
+    record naming the event that proves it (`step-end{green}` — or an earlier
+    `step-skipped`, so a resume of a resume does not re-pay for what the first one saved).
+    Never a fake step-start/step-end pair; `plan-executed` records them as `skipped`.
+  - **`phase: 'close'`** (an `outer-close` in the window) means every step is done: they
+    are all skipped and the run goes straight to the close, which re-runs for no tokens.
+  - A window with **no `plan-accepted`** (a scout/draft death) has no seed and simply
+    restarts the try — nothing paid is re-payable there. If that window is itself an
+    abandoned resume, the checkpoint is read from the newest abandoned window **of the
+    same try** (measured on the real killed run: leg 3 died in its redraft, and reading
+    only its own window would have discarded a checkpoint leg 2 paid $8.18 to reach).
+  - The worker's conversation is **not** replayed — a transcript is not a checkpoint, and
+    every attempt is fresh by the loop's own design.
+- **Its TREND baselines come with it.** `restart.grades` is the dead leg's close grades in
+  order (`[{stage, value}]` — counts and stage names only, never a gap byte), and it rides
+  into `runJob`/`runPlan` as `resumeGrades` beside `resumeSeed` — on the LIBRARY path
+  (`runReuse` hands it to the restarted try itself) as well as through `run-u --resume`;
+  `resume-start`'s `restart` states `gradesInherited`, a count, and only when there is one.
+  It seeds the run trend's
+  baselines so the resumed leg's `money-halt`/`wall-halt` readouts judge the CHAIN: a leg
+  that re-grades an unchanged tree is flat on its own evidence while the RUN — what the
+  top-up decision is actually about — may have been converging when the money ran out. See
+  the trend section above for what the seed does and, deliberately, does not touch.
+- **Under the REMAINDER, never a fresh allotment.** The killed attempt's spend and wall
+  FOLD IN (`runJob`'s `priorSpentUsd`/`priorSpendComplete`/`priorWallMs`, `createClock`'s
+  `priorElapsedMs`), so
+  the restart gets what is left of the signed per-try numbers. The caps are never
+  rewritten — they are in the spec hash. An unfundable remainder is an honest `cap-halt`
+  (or `wall-halt`, below one close timeout: a try that cannot fund its close produces an
+  unreadable row) with **nothing launched**. Topping up is a new envelope, and a new
+  envelope is a new signature.
+- **Money stays honest end to end.** `carrySpentUsd` (completed tries + selection calls)
+  seeds the resumed ledger; the mid-try fold is deliberately NOT in it, because it comes
+  back inside the restarted try's own terminal — counting it in both places would bill it
+  twice. A try row's `spentUsd` is therefore the try's WHOLE spend across both attempts,
+  and a declared floor stays a floor — through ALL four of `runJob`'s floor causes: a
+  landed resumable `job-end` whose own `spendComplete` is `false` (a stall, or a call cut
+  mid-flight) floors the restart fold exactly like a declared prior floor or an unpriced
+  round does (F83's laundering finding, fixed the same day; the killed-mid-flight restart
+  with no `job-end` at all is control-pinned unchanged).
+- **Refusals** (`resume-red`, in the ledger's excluded set): a seed signed under a
+  DIFFERENT envelope than the one being enforced (both hashes are named), and a restart
+  whose workflow has left the registry (substituting another would override a decision
+  the runner did not make).
+- **The patient is CONTINUED, not reset** — `resumeTreeGate({head, seed, dirty})`: a dirty
+  tree is the dead tries' real progress; only HEAD moving off the seed (a commit or rebase
+  under the dead run) stops the resume.
+- **One run, one log:** the resumed process appends to the dead spine and passes
+  `makeSpine(file, {startSeq})` so `seq` stays monotonic, keeps the dead run's runid (the
+  R1 rows point at a spine FILE), and leaves the cumulative `gate-audit.jsonl` in the
+  workdir to be relocated once at the end as usual.
+- **Known limit (F6):** a call killed BEFORE it returned wrote no event, so money it may
+  already have been billed for is not on the spine and cannot be folded — the same limit
+  every guard here has (a hung `generate()` leaves zero trace).
+
+`scripts/run-reuse.mjs --resume <runid|spine path>` is the operator seam: it refuses a
+spine that is missing, corrupt mid-file, already terminal, or whose process is STILL
+ALIVE (pids from the run's `runner-start` record and the watchdog report, discriminated
+by `/proc/<pid>/cmdline`, because a live pid can be a recycled stranger), prints the whole
+reconstruction as a preview before you sign — including WHERE it picks up ("step 2 of 3
+\"verify-strict-typecheck\" — 1 step already finished and SKIPPED, not re-paid"), so the
+signature covers an attempt whose real cost you can see — archives the killed run's
+watchdog record so the readout cannot mistake it for this run's (defensively: a truncated
+report is not evidence of anything, and it can no longer abort a signed resume), and sizes the
+outside watchdog for the work that is actually LEFT. **Nothing left to run REFUSES the launch**
+(exit 2), with a lever per cause, because they are different asks: `NO WALL LEFT` when the
+restarted try burned its whole per-try wall (raise `--wall`), `NOTHING TO ARM` when every
+authorized attempt has already run (raise `--tries`, or read the run as it stands). Both are in
+the approval hash, so either is a new signature. Two smaller refusals in the same family: a flag
+given no value (`--tries` with nothing after it) stops rather than reading `Number('') === 0`
+and reshaping the run being signed, and `runner-start`'s recorded `argv` is redacted at the
+write site — the spine is append-only, so a scan after the bytes land is too late.
+
 ### `updateLedger({ ledgerFile, spineFiles })` → `{ appended, fold }` — `src/ledger.js`
 
 The upstream ledger: spines fold into ONE append-only incident JSONL both the consumer
@@ -622,9 +1100,10 @@ panel reads the same file at N6.
 ## Architecture
 
 Three layers. An **outer shell** (dumb, permanent): per-run budget cap via bareguard,
-retry cap, verdict collection, escalation routing — stateless across runs; nothing inside
+retry cap (a count on the close-fix loop, a shell-owned STRIKE ceiling on a plan step),
+verdict collection, escalation routing — stateless across runs; nothing inside
 negotiates with it. An **emergent middle**: the AGENT-authored plan — bounded steps, each
-with its granted verbs, its round and attempt caps, its narrowed write scope and its
+with its granted verbs, its round cap, its narrowed write scope and its
 form-checkable exits — schema-validated by `validatePlan` before tokens burn (the
 operator-authored `steps[]` shape is deleted, PRD v1.32). A **floor**: append-only
 JSONL spine (single source for every UI), litectx store per job, per-run ledger. Built on

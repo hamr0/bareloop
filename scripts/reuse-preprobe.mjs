@@ -92,7 +92,10 @@ const MODEL = 'claude-sonnet-5';
 /** runPlan's default per-step rounds ceiling — the same number the shipped drafter's
  * prompt and validator are built against (run.js passes no override) */
 const MAX_STEP_ROUNDS = 40;
-/** run-u.mjs's CAP_RUNS: the attempts ceiling interpolated into the drafting prompt */
+/** run-u.mjs's CAP_RUNS. It is NOT in the drafting prompt (the branch removed both that
+ * interpolation and `attempts` from the drafting menu); it is passed to runPlan below,
+ * where it survives as the close-fix loop's blind fallback — the bound for a close whose
+ * output carries no number the progress rule could read. */
 const CAP_RUNS = 4;
 /** run-u.mjs's CLOSE_TIMEOUT_MS — the litectx suite is the slow stage (~53s) */
 const CLOSE_TIMEOUT_MS = 900_000;
@@ -484,7 +487,7 @@ for (const arm of ORDER) {
           row = { arm, i, outcome: 'casualty', casualty: r.error, costUsd: r.priced ? r.costUsd : null, priced: r.priced };
         } else {
           const code = extractArtifact(r.text).code ?? '';
-          const pv = validatePlan(code, { job: spec, maxStepRounds: MAX_STEP_ROUNDS, capRuns: CAP_RUNS });
+          const pv = validatePlan(code, { job: spec, maxStepRounds: MAX_STEP_ROUNDS });
           let plan = null;
           try { plan = JSON.parse(code); } catch { /* unparseable — recorded as such */ }
           row = {
@@ -589,7 +592,7 @@ for (const [k, f] of Object.entries(SET_AXES)) {
 // exactly what this job offers (never a menu re-derived here).
 const scopeMenu = events.findLast((e) => e.type === 'scope-menu')?.offered;
 const bridgeGate = validatePlan(bridgePlanText, {
-  job: spec, maxStepRounds: MAX_STEP_ROUNDS, capRuns: CAP_RUNS,
+  job: spec, maxStepRounds: MAX_STEP_ROUNDS,
   ...(Array.isArray(scopeMenu) && scopeMenu.length ? { scopes: scopeMenu } : {}),
 });
 

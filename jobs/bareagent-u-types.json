@@ -1,0 +1,99 @@
+{
+  "schema": "job-v1",
+  "job": "bareagent-u-types",
+  "description": "Lift-contrast job B replacement (REUSE-LIFT-CONTRAST-PREREG addendum 2026-08-03): same job SHAPE as aurora-u-spawner-types, litectx-u-types and pulselog-u-types (changed-from-seed -> typecheck -> suite-green -> no-suppressions), new patient, typecheck scoped to two files the way aurora-u scoped mypy to the spawner package. One sentence of problem, a budget, a clock, one close.",
+  "provider": "anthropic-api",
+  "cadence": {
+    "unit": "day",
+    "every": 1
+  },
+  "budgetUsd": 8,
+  "maxWallMs": 2700000,
+  "writeScope": [
+    "src/**"
+  ],
+  "goal": "Make src/recurse.js and src/loop.js pass `tsc --strict` without weakening the tests and without introducing strict errors elsewhere.",
+  "verdictType": "green",
+  "close": [
+    {
+      "name": "changed-from-seed",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-bareagent-close.mjs changed-from-seed",
+      "expect": 0,
+      "judged": {
+        "pattern": "BAREAGENT judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^BAREAGENT ",
+      "offer": false
+    },
+    {
+      "name": "typecheck",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-bareagent-close.mjs typecheck",
+      "expect": 0,
+      "judged": {
+        "pattern": "BAREAGENT judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^BAREAGENT "
+    },
+    {
+      "name": "typecheck-outside",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-bareagent-close.mjs typecheck-outside",
+      "expect": 0,
+      "judged": {
+        "pattern": "BAREAGENT judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^BAREAGENT "
+    },
+    {
+      "name": "tests-kept",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-bareagent-close.mjs tests-kept",
+      "expect": 0,
+      "judged": {
+        "pattern": "BAREAGENT judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^BAREAGENT "
+    },
+    {
+      "name": "suite-green",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-bareagent-close.mjs suite-green",
+      "expect": 0,
+      "judged": {
+        "pattern": "BAREAGENT judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^BAREAGENT "
+    },
+    {
+      "name": "no-suppressions",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-bareagent-close.mjs no-suppressions",
+      "expect": 0,
+      "judged": {
+        "pattern": "BAREAGENT judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^BAREAGENT "
+    }
+  ],
+  "tools": [
+    "read",
+    "grep",
+    "write",
+    "edit",
+    "recall",
+    "get",
+    "impact",
+    "related",
+    "recent",
+    "compress",
+    "peek",
+    "stash",
+    "remember",
+    "forget"
+  ],
+  "escalation": {
+    "mode": "decision-ready"
+  }
+}

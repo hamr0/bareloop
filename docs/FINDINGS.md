@@ -4360,3 +4360,1157 @@ contains both. The general rule the two of them make: **name the scope your guar
 the thing it guards** — event loop, process, session slice, machine, host — because a failure
 at or above that scope takes them together, and the artifacts it leaves will look exactly like
 the failure the guard was built to catch.
+
+## F73 — the first end-to-end REUSE run: the same-repo bridge burned $4.74 without reaching the close, the CROSS-LANGUAGE one greened in 14.7 minutes, and the cost read is confounded by a shared workdir
+
+**Status: minted 2026-08-02 from the first paid run of the whole reuse path (spine
+`bareloop-patients/litectx-u-bareloop/reuse-msarycnt.jsonl`, patient litectx-u, 2026-08-01
+19:38:49 → 20:21:01 UTC, 42.2 min, $6.1467, `spendComplete: true`). The MACHINERY read is
+positive and n=1. The COST read is not made: the run does not show reuse being cheaper, and
+the one comparison that would be flattering is confounded by construction. Both halves are
+stated below at the confidence the artifacts support.**
+
+### The envelope, as actually signed
+
+`reuse-start`: `perTryBudgetUsd 10`, `perTryWallMs 2,700,000` (45 min), `bridgeTries 2`,
+`pinned null`, `shortlist null`, `forceCold false`. D7's shape exactly; the numbers are the
+operator's, larger than the design record's illustrative `$5 / 30 min / ×2`. This run predates
+the try-count fold (F74's sibling change, `f44526e`) — its `reuse-start` carries no
+`approvalHash`; the resume run the next day does.
+
+### Try 1 — the "direct match", and it never reached the close
+
+The selector was called with both candidates and chose `litectx-u-types`, verbatim reason:
+*"It targets the exact same goal—making litectx pass tsc --strict without weakening
+tests—so it's a direct match, not just a same-kind analog."* It loaded version `ms5uxhej`
+(2 versions on the entry).
+
+| | |
+|---|---|
+| plan drafted from the bridge | 3 steps (`fix-index-js-strict`, `fix-remaining-src-strict`, `verify-strict-typecheck`) |
+| first stop | `cap-halt`, `capRuns 3`, 3 × `needs_revision` |
+| replan (D5's one ceiling, used once) | collapsed to a single step `finish-strict-typecheck` |
+| second stop | `cap-halt`, `capRuns 3` again → `job-end {outcome: step-red}` |
+| spend / rounds / wall | **$4.7442 · 222 rounds · 1,646,425 ms (27.4 min)** |
+| `closeReached` | **false** |
+| `capBound` / `wallBound` | **false / false** |
+
+**The envelope was not the binding constraint** — $4.74 of $10, 27.4 min of 45. What bound was
+the plan's own attempt ladder, twice. `verdictClass: casualty` (only `escalated` demotes), so
+the bridge took a history row — `outcome "step-red:finish-strict-typecheck"`, cost, wall and
+rounds all recorded — and **no demotion mark**. That row was read back the next day: the
+resume run's selector cited it verbatim (*"despite its last run ending red"*) and picked the
+bridge anyway.
+
+### Try 2 — the cross-language analog, and it greened
+
+Fallthrough was automatic (pre-authorized by the envelope, D7). The selector, now offered only
+`aurora-u-spawner-types`, chose it: *"Both tasks are the same kind of work—making a package
+pass a strict static type-checker without weakening its tests—so the workflow's approach
+transfers despite the language/tool difference."*
+
+**The carry is real and it is cross-language.** The loaded version (`ms7flkok`) is a 2-step
+**Python / mypy** plan whose steps target
+`packages/spawner/src/aurora_spawner/spawner.py` and the rest of that package. The plan the
+drafter produced from it is a 2-step **JS / tsc** plan targeting `src/impact.js` (`fmtOf`'s
+`@returns {string}` vs a `null` return) and `src/tsalias.js` (`loadTsPaths`'s TS2339/TS7006),
+same tools, same `tree-changed` + `check-passes` exit shape. It passed the ordinary
+`validatePlan` — no second, looser path (D4).
+
+Close: `changed-from-seed` ✓, `typecheck` ✓, `suite-green` ✓, **`no-suppressions` red** (9 casts
+added). The outer fix loop fired (`gapBytes 1572`) and converted across three iterations
+(`typecheck` red → `no-suppressions` red → `typecheck` red → green). **$1.3971 · 52 rounds ·
+879,179 ms (14.65 min)**, `job-end green`, `spendComplete true`.
+
+`reuse-end`: `outcome green`, `triesUsed 2 / triesAuthorized 2`, `spentUsd 6.1467`,
+`bridgeWrites ["appendCasualty litectx-u-types", "appendGreen aurora-u-spawner-types"]`.
+Selection cost $0.0054 across both calls, accounted to the RUN and never to a try.
+
+### The first PROVEN bridge
+
+Verified against the live registry rather than asserted: `deriveStatus` over
+`bridges/aurora-u-spawner-types.json` now reads **`proven`** — greens on `aurora-u` ×3 and
+`litectx-u` ×1, two distinct patients under one close shape. `litectx-u-types` reads
+`candidate` (2 greens, both `litectx-u`). This is the programme's first proven entry, and it
+was minted by a green on a patient the recipe had never seen.
+
+### The cost read, and why it is NOT made
+
+| run | spend | rounds | wall |
+|---|---|---|---|
+| cold green `u-ms3wawub` (litectx-u) | $5.7655 | 176 | 37.0 min |
+| cold green `u-ms5uxhej` (litectx-u) | $4.2942 | 132 | 23.9 min |
+| **reuse run `msarycnt`, whole** | **$6.1467** | 274 | 42.2 min |
+
+The reuse run cost **more than both cold greens**, in money and in time. **No lift is claimed
+and none is visible at n=1.**
+
+And the flattering comparison — "try 2 greened for $1.40 against a $4.29 cold baseline" — is
+**not available**, because the two tries shared a tree. `scripts/run-reuse.mjs` states it in
+its own header (*"The patient is NOT reset… Every try runs in the same workdir"*), by design:
+the reset is operator-performed so a half-solved tree is a stop the operator sees rather than
+a state the harness erased. Try 2 therefore started on the tree try 1 left after $4.74 of
+edits, and **its own close proves the inheritance**: after two surgical edits the `typecheck`
+and `suite-green` stages were already satisfied, and the `no-suppressions` red named casts in
+`src/docparse.js` and `src/store.js` — **files try 2 never targeted**. Try 2's $1.40 is the
+cost of finishing try 1's work, not of solving the job.
+
+### What IS readable, unconfounded, at n=1
+
+The path ran end to end with no human in it: selection called and answered twice; the D2-split
+load gate admitted a cross-patient, cross-language bridge at the door; the drafter re-aimed
+yesterday's bricks unaided and the tweaked plan cleared the same validator as any cold draft;
+the one-replan ceiling held; R1 wrote after every try (casualty then green); the envelope's
+fallthrough fired without nagging; and the first `proven` status was earned.
+
+**One observation recorded without a rule attached:** the selector's stated reason was a poor
+predictor. It called the same-repo, same-goal, same-close entry a *"direct match"* and that try
+spent $4.74 without reaching the close; it called the cross-language entry a *"same-kind
+analog"* and that one greened. n=1, two picks, nothing minted — logged because this is exactly
+the axis an auto-matcher would be built on, and D2 deliberately did not build one.
+
+### Lesson
+
+**A rung's first paid run validates the machinery; it does not price it.** Reading cost off a
+run whose tries share a workdir measures continuation, not replication — and the honest move is
+to say so rather than quote the $1.40. The next cost comparison has to be whole-run against
+whole-cold-run, or reset the patient between tries; try-against-cold is structurally
+unreadable.
+
+## F74 — the false-proven hazard, and it had TWO doors: two spellings of one patient, and two closes under one name
+
+**Status: minted 2026-08-02. Door (i) was found by auditing the LIVE registry after F73's run
+and fixed in `bd04ade`; door (ii) was found by whole-branch review of code written the same day
+and fixed in `33b104e`. Neither is a bug in `deriveStatus`, which is correct and was never
+touched. Both feed it a lie.**
+
+### The claim being protected
+
+D6: **PROVEN = greens on ≥2 DISTINCT PATIENTS under one close shape.** `deriveStatus`
+(`src/bridges.js:80–98`) implements exactly that — it counts distinct `patient` STRINGS on
+rows whose `outcome` is `green`, and an unattributable green (no patient string) is skipped
+because it cannot prove a second instance. `proven` is the only credential in the system that
+licenses "this recipe travels", so it is the only one worth faking.
+
+### Door (i) — two registry writers, two spellings of one physical patient
+
+| writer | wrote | example |
+|---|---|---|
+| `scripts/consolidate-bridges.mjs` | the SPINE dir name | `litectx-u-bareloop` |
+| `scripts/run-reuse.mjs` | the PATIENT workdir basename | `litectx-u` |
+
+The seed data came from consolidation; the live path writes the other spelling. On the live
+registry that meant `litectx-u-types` held two greens spelled `litectx-u-bareloop` and — from
+F73's try 1 — one row spelled `litectx-u`. **That row happened to be a red.** One green under
+the second spelling and D6 would have minted `proven` on a bridge that had never left its own
+patient: a set of size 2 built from one machine.
+
+**Fix (`bd04ade`).** The canonical slug is the patient workdir basename (hamr's call), and
+consolidation now DERIVES it from `run-u.mjs`'s `<patient>-bareloop` spine-dir convention and
+**refuses a directory that does not carry it** rather than guessing — guessing is how the
+second spelling got in. `scripts/migrate-bridge-patient-slugs.mjs` repairs the rows already on
+disk: dry-run first, idempotent, every write through `saveBridge` (validate, then temp+rename,
+so a concurrent read sees the old entry or the new one and never a half-written file), and it
+migrates **both** the history rows and the version rows because both carry `patient`. It
+refuses rather than half-fixes in three cases — a slug that would strip to the empty string, an
+entry its own validator rejects, and a `name` that disagrees with the filename. Applied to the
+live registry: **aurora stays genuinely proven (`aurora-u` + `litectx-u`), litectx collapses
+two spellings to one.** Three tests TDD, including a direct `deriveStatus` false-proven repro.
+
+### Door (ii) — a cold green appended across two different close shapes
+
+The cold leg's green looked up the entry holding the job's NAME and appended to it. But the
+name is the job's slug, and **a job's CLOSE can be re-signed under that same slug.** Appending
+across two close shapes does two wrong things at once: it counts a green that ANOTHER close
+rendered toward this entry's distinct-patient status, and it hands the load gate — which
+matches on exactly those stage names — a plan that satisfied a different verification.
+
+**Fix (`33b104e`).** `sameCloseShape` mirrors `loadGate` rule 2 (the close-stage names, in
+order) as ONE predicate shared with the gate rather than spelled a second time — a cold green
+appending to an entry the gate would refuse at the door is the two-transforms class pointed at
+the registry. A mismatch **neither appends nor discards**: it forks to a deterministic
+`<job>-<sha256(stages)[0:8]>`, with `shapeForked` / `forkedFrom` / `closeStageNames` on the
+write record, so the same close always lands in the same file and the next green of that shape
+appends there instead of minting a third entry. A derived name already held by a
+differently-shaped entry is refused (`shape-fork-collision`), not appended blind.
+
+**One reviewer suggestion was refuted before it shipped:** the proposed `~` separator for the
+fork name would have been rejected by the registry's own `SLUG_RE`
+(`^[a-z0-9][a-z0-9-]*$`) at `validateBridge`, and the green would have been **lost** — which is
+precisely the failure the fork exists to prevent. A hyphen was used instead.
+
+### What the two share
+
+Both let an undisciplined source feed a derived credential: one by letting the PATIENT be
+spelled two ways, the other by letting the CLOSE be two different closes. And both fixes hold
+the same line in the same direction — **neither ever throws a green away.** The migration
+refuses a file it cannot rewrite honestly; the shape fork files the green under a derived name.
+
+### Lesson
+
+**A derived status is only as honest as the discipline feeding its inputs — and the moment two
+code paths can write the same field, they will eventually disagree.** The fix is not to teach
+the reader to tolerate both spellings; it is to make ONE writer's spelling the only spelling
+and to hold both writers to the SAME predicate the gate already uses. The disagreement's
+symptom is worse than a wrong number: it is a credential the system never earned.
+
+## F75 — an outside stop SIGKILLs the whole process group, and no in-process guard can ever see it coming: the only recovery is resume
+
+**Status: minted 2026-08-02 from the live paid resume validation (spine
+`bareloop-patients/litectx-u-bareloop/reuse-msc6w93z.jsonl`, patient litectx-u, three legs,
+three external stops). No product defect fired and none is claimed: every guard behaved
+correctly, and none of them was in a position to matter.**
+
+### Three legs, three stops
+
+| leg | pid | window (UTC) | rounds | spend | where the spine stops |
+|---|---|---|---|---|---|
+| 1 | 1078039 | 19:24:52 → 19:28:17.951 (3m 26s) | 17 | $0.3639 | 21 s into step `fix-index-js-strict` |
+| 2 | 1080307 | 19:29:07 → 20:05:09.995 (36m 3s) | 216 | **$7.8194** | close-fix-loop **iteration 4**, right after a `middle-done` |
+| 3 | 1090576 | 20:12:57 → 20:15:47.529 (2m 50s) | 9 | $0.4035 | at the draft's `materials`, seconds after the scout returned |
+
+**No leg emitted a terminal.** No `job-end`, no `wall-halt`, no `cap-halt`, no escalation — the
+spine simply stops mid-stream and the next `runner-start` appears. And **no
+`reuse-msc6w93z.jsonl.watchdog.json` was ever written**: the F67 outside watchdog did not fire
+on any of the three. Every stop came from outside the run's entire guard set.
+
+### Why no in-process guard can cover this
+
+F72's rule was *name the scope your guard shares with the thing it guards.* A stop issued
+through the session harness is issued **at the process group** — the scope that contains the
+runner, its close children, the watchdog the runner spawns, and the `systemd-inhibit` wrapper
+the operator wraps around all of them (`scripts/run-reuse.mjs` deliberately does not shell out
+to the inhibitor itself: *"a harness that grabs a system lock nobody asked for is the wrong
+side of the line"*). W-3's report-before-kill, extended in `4278ad6`, is a property of **our**
+watchdog's kills and covers only those. There is no handler that survives `SIGKILL` and no
+deadline that fires on a stop nobody scheduled.
+
+**Operator-console evidence, recorded here because it is the only place the distinction is
+visible and it is NOT in the spine:** leg 1's kill left the `systemd-inhibit` wrapper alive to
+print *"terminated by signal KILL"*; leg 2's stop took the wrapper with it and printed no such
+line, and the session harness labelled leg 1 *failed* and leg 2 *stopped*. The difference is in
+what the stopper reached, not in what the run did — the run's own artifacts are identical in
+both cases.
+
+### So the design answer is recovery, and the money says why
+
+Leg 2 alone did **36 real minutes and $7.82** of work, and had all three plan steps green with
+the close already in its fix loop when it was stopped. Without resume that is $7.82 thrown
+away for nothing the operator changed.
+
+**The fold is exact, and the artifacts prove it rather than assert it.** Leg 3's `resume-start`
+declares `priorSpentUsd 8.1833219` — which is leg 1's $0.3638755 plus leg 2's $7.8194464, to
+the last digit — and `priorWallMs 2,359,393`, which is 196,501 + 2,162,892: the two legs' own
+windows, with the 7m 47s **dead gap between them excluded**. `remainingCapUsd 1.8166781` and
+`remainingWallMs 340,606` are the signed $10 / 45 min minus exactly that. A kill therefore
+cannot widen the signed worst case one kill at a time.
+
+Also verified live on the record: both resumes carry `approvalHash 6bb0cadd…` matched against
+the dead run's own `reuse-start` (a resume continues ONE signed run, never any run), and the
+liveness gate refuses to resume while a `runner-start` pid is still alive.
+
+### Lesson
+
+**A guard bounds what the run does; it cannot bound what is done TO the run.** Above the scope
+your guard shares with the process, prevention is not on the menu — the only design that pays
+is one that makes the interruption cheap, and "cheap" is measured in what the next launch has
+to buy again. That measurement is F76.
+
+## F76 — resume at TRY granularity re-buys work the run already owns: $0.25 then $0.40 of scout re-paid, and the third leg could not have finished
+
+**Status: minted 2026-08-02 from the same three-leg run as F75. The build was CORRECT against
+the ruling it was given and WRONG against the purpose of that ruling, and only a paid run
+showed the difference. hamr's correction supersedes; the step-level reader is in build.**
+
+### What was built, and from which words
+
+hamr's checkpoint ruling, verbatim, as implemented in `c04cdcf`:
+
+> *"money, signature and checkpoint (starts from where it stopped) if mid loop, restart that
+> loop"*
+
+Read as the **TRY** loop: a `try-start` with no `try-end` was never graded, so it was never
+consumed — it restarts **from its beginning**, under the remainder of its signed per-try
+numbers. Scout again, draft again, every finished step again.
+
+### What that cost, measured
+
+| leg | scout + draft re-paid | rounds |
+|---|---|---|
+| 1 (original) | $0.1713 | 10 |
+| 2 (first resume) | **$0.2504** | 10 |
+| 3 (second resume) | **$0.4035** | 9 — scout only; killed before the draft returned |
+
+The re-paid scout is the visible half. **The re-executed steps are the larger half.** Leg 2's
+restart at step 1 was fair — leg 1 had been in step 1 for 21 seconds. Leg 3's was not: leg 2
+had left three green steps and a graded close on disk, and leg 3 restarted at the scout
+anyway. It opened with **$1.8167 and 5m 41s** of signed remainder, spent **$0.4035 and 2m 50s**
+just reaching the draft, and had $1.4132 and 2m 50s left to redo three steps that had just
+cost $7.82. **It could not have finished, and the granularity guaranteed it.**
+
+### hamr's correction, verbatim
+
+> *"even if it gets killed by outside, it should allow resume and start last step instead from
+> the beginning, why would i want to waste more money on something i already started, our goal
+> is to find ways to save money and time"*
+
+### v2 — the finest checkpoint the spine can PROVE
+
+A **completed step's exit** is the finest honest checkpoint, because it is the only unit whose
+state is provable from the record and present on disk. Three readings, each grounded in one
+event the executor already emits: no `plan-accepted` in the window → no seed (the kill landed
+in the scout or the draft, nothing durable exists); `plan-accepted` with no `outer-close` after
+it → `phase: 'steps'` against the LAST accepted plan (a replan emits its own, and it is the
+post-replan plan that was executing); `outer-close` after it → `phase: 'close'`, and the close
+re-runs for no tokens because it is a command over the tree.
+
+**Completion is `step-end{outcome:'green'}` OR `step-skipped`** — the second is not a detail. A
+resumed leg records its inherited steps as skips, so a reader counting only `step-end` would
+make every resume-of-a-resume re-buy exactly the work the previous resume correctly skipped.
+
+**What is NOT a checkpoint, stated so it is never assumed:** a half-executed step (no provable
+state) and a worker transcript (not state at all). And a green under a plan the run later
+replanned away is deliberately not counted — the executor resets its own index at a replan, so
+those greens belong to a plan nobody is executing.
+
+**The try-restart is not deleted.** It remains the correct answer for exactly one case — death
+before a plan was accepted, which is legs 1 and 3 of this very run.
+
+### Limits carried on the record, not discovered later
+
+A call killed **before it returned** left no `worker-round`, so money it may already have been
+billed for is not on the spine and cannot be folded — the fold is a floor in exactly the case
+`spendComplete: false` already marks (F6). And a `plan-accepted` whose plan is unreadable
+yields **no seed** rather than a half plan: steps skipped by index against a plan nobody
+validated is worse than paying again.
+
+### Lesson
+
+**"Resume from where it stopped" is a granularity question before it is a mechanism question,
+and the answer is never the coarsest unit that is easy to reconstruct — it is the finest unit
+the run can PROVE it finished.** Coarser than that and the operator pays twice for work already
+on disk; finer than that and the resume is guessing. This one was only visible because the
+resume path was validated with real money on a real kill: a scripted resume would have restored
+the same state for free and read as a pass.
+
+### Addendum — 2026-08-03: the named live-unvalidated remainder is CLOSED — paid step-resume fired and greened, audited
+
+Leg 4 of `reuse-msc6w93z` (setsid-detached, inhibitor held, launched before the session
+pause) closed the loop C v2 left open:
+
+- **The resume seeded exactly as designed.** `try-start{n:1}` carried
+  `resumedAt:{phase:'close', stepsDone:3, stepsPlanned:3}` with
+  `priorSpentUsd:8.5868288` / `priorWallMs:2529760` folded in; all three steps recorded
+  `step-skipped{provenBy:'step-end', provenSeq:115/160/274}` — the $8.59 the dead legs paid
+  was inherited, not re-bought.
+- **The fold made the wall honest.** Try 1's remainder ran the $0 close-fix path until the
+  FOLDED clock crossed the cap: `wall-halt` at `elapsedMs:2712026` vs `wallCapMs:2700000`,
+  `wallBound:true`, `cutMidCall:false` — the whole-try clock, not the leg's own 20 minutes.
+- **The ladder then did its job.** Try 2 rolled to the `aurora-u-spawner-types` bridge with
+  a fresh $10: one step cap-halted → replan → two greens → **run GREEN at $4.0762 / 20.0min
+  / 113 rounds**, `spendComplete:true`. All four close stages re-run independently on the
+  as-left tree by the operator: **exit 0, 0, 0, 0**; winning diff preserved
+  (`reuse-msc6w93z.patch`, 10 files +319/−65, HEAD still at seed `96813a4`).
+- **R1 wrote both truths:** `appendCasualty` on the litectx bridge (try 1's wall-halt),
+  `appendGreen` on the aurora bridge — the aurora bridge's third green, second cross-patient.
+
+Total msc6w93z spend across all four legs: **$12.67, spendComplete:true**. The known
+cosmetic (`failingStage:"no-suppressions"` on a GREEN try row) reproduced on try 2's
+try-end and stays on the tail-review list.
+
+One operational defect found by the leg-4 launch itself, filed here so it is never
+repeated: the detached launch passed the API key as `env ANTHROPIC_API_KEY=$(pass ...)`
+**argv**, which exposes the key in `/proc` cmdline (and it landed in a process listing
+this session). The pattern is corrected to a shell env-assignment prefix
+(`ANTHROPIC_API_KEY="$(pass ...)" setsid ...`), which inherits through the environment and
+never touches argv; the exposed key is flagged to hamr for rotation.
+
+## F77 — the step loop's fixed count was a SILENT SECOND CEILING: two calibrations died still converging, with money and wall unspent, and the one lever the plan owned could only tighten it
+
+**Status: minted 2026-08-03 from the lift-contrast admission screen's own casualties. This is
+the F37/16g class shipping again — an advertised cap (money, wall) overridden by a lower,
+unadvertised one — this time in the SHELL's own step loop rather than in a provider default.
+Fixed the same day (F79); the fix's live validation is named there, not claimed here.**
+
+### The bound, and what it could not see
+
+A plan step's micro-loop ran `while exits red and iteration <= capRuns` — `capRuns` = 4 in
+both operator runners (`run-u.mjs`, `run-reuse.mjs`), 3 by library default. The count is
+blind to the only question that matters at the fourth red iteration: **is this step making
+progress?** It stopped a converging step and a thrashing step at exactly the same place.
+
+| run · patient · genre | in-scope error trajectory | how it ended | what the envelope still held |
+|---|---|---|---|
+| `u-msd916dh` · bareagent-u · TYPES | **30 → 22 → 17 → 11** | `step-red` at `strict-fix-recurse`; ladder exhausted 3/3, replan, then 2/2; close never judged | **$1.30 of $4 and ~6 of 25 min unspent** (`$2.7020 / 18.7 min / 82 rounds`) |
+| `u-mscxuziw` · baremobile-u · TYPES | **13 → 1** in scope, then 3 errors leaked OUTSIDE the scope (the close's anti-gaming ceiling correctly caught that), then byte-identical non-writes after the replan | `step-red` at `fix-errors-js-types`; close never judged | **money and wall unbound** (`$0.8313 / 11.1 min` of $4 / 25 min) |
+
+The two rows are opposite failures under one bound: the first was **still shrinking its own
+error count** when the count cut it; the second was **repeating itself and writing nothing**
+and had been finished for iterations. A number cannot tell them apart, so it treated them
+identically. F73's try 1 is the same shape a patient earlier (`cap-halt`, `capRuns 3`, twice,
+with **$4.74 of $10 and 27.4 of 45 min** unspent) — three runs, three patients, one ceiling.
+
+### The correct heal was INEXPRESSIBLE
+
+The plan's only iteration lever, `steps[].attempts`, was validated `1..capRuns` — **TIGHTEN
+only**. A step that needed a sixth iteration could not ask for one; the sole legal direction
+was down, and drafters measurably took it: `u-msd916dh`'s accepted plans carry
+`attempts [3, 3]` and then `[2, 2]` on the replan. The agent was handed a knob that could
+only make the defect worse, which is the palette-inertness class (F69) inverted — not an
+unused verb, an actively harmful one.
+
+### The replan brief was mechanism-blind
+
+The exhaustion sentence handed to the redrafting planner read, in full: *"It ran N attempts
+and its exits were still red."* That describes the bound, names no mechanism, and is
+identical for the converging step and the stalled one — so the planner, the ONE component
+whose whole job is to respond to the stop, could not tell which of two opposite fixes it
+needed. F28's rule (a bound that buries the failure defeats the arbiter) applied to the
+replan channel, unnoticed until now.
+
+### The defect INVERTED the experiment that found it
+
+Both rows above are lift-contrast **calibration** runs, judged against the frozen
+`must-GREEN` admission clause (`docs/02-experiments/REUSE-LIFT-CONTRAST-PREREG.md`, calibration
+addenda). Both were REJECTED. Neither was rejected for being too hard: both were rejected
+because the harness stopped them while the envelope still had money and time, and in one case
+while the error count was falling on every iteration. **The screen was measuring the workflow's
+own ceiling and reporting it as patient hardness** — two of three candidates burned
+($7.6557 of the $40 programme cap at that point) selecting AGAINST the jobs the product exists
+to do. A dense job is exactly where a fixed count binds first, which is hamr's read, verbatim:
+
+> *"if workflow fails in dense jobs then it failed at planning and self healing. why not fix
+> that?"*
+
+### Lesson
+
+**A count is not a bound on the thing you care about — it is a bound on a proxy, and the
+proxy fails precisely where the work is hardest.** Every prior appearance of this class was a
+cap under a cap (rounds under money, the 4096-token default under `maxTokens`); this one was a
+cap under an EXPERIMENT, and it corrupted the experiment's admissions before it corrupted any
+run. When a screening instrument starts rejecting candidates, audit the harness before
+believing the candidates were bad — the F45 rule (a money cut is a casualty, not evidence)
+generalizes to iterations.
+
+## F78 — the $0 strike replay: 110 archived step ladders say the progress rule continues every converging red, ends thrash same-or-earlier, and kills exactly one green
+
+**Status: minted 2026-08-03. The instrument is a $0 archival replay of the proposed rule
+against every step ladder in the spine archive, run BEFORE the build, on hamr's order
+(*"sticky strikes, run the $0 replay"*). It is decision evidence, not outcome evidence — the
+limit is stated at the bottom rather than discovered later.**
+
+### The corpus and the method
+
+190 spine files in the archive; **34 are plan-flow runs**; those hold **110 step ladders**
+(**77 that ended green, 33 that ran out of iterations**). Each ladder was replayed by
+re-reading its own recorded gaps and its own gate-audit write records under the candidate
+rule — a strike is a red iteration that REPEATS an already-seen normalized gap or made no
+write-class records — and asking where that rule would have stopped, versus where the count
+did.
+
+### What the replay said
+
+| question | answer |
+|---|---|
+| would a converging red be cut earlier? | **no — every converging red continues**, including both lift-contrast rejects (F77): under the rule they keep iterating on the money and wall they had left |
+| does thrash end sooner? | **same or one iteration earlier** — ~15 ladders save exactly one iteration at limit 2; nothing runs longer |
+| does last-gap comparison suffice? | **no.** Exactly one real **A→B→A oscillator** exists in the archive. A last-only comparison reads its third iteration as progress; only a SEEN-SET catches it |
+| would any green have died? | **exactly one.** A worker idle for three paid iterations with its checks otherwise passing — autopsied and classed **benign**: three iterations bought nothing and the strike would have ended a step that was already not working |
+
+### The threshold sweep — 2 is the knee, and it was hamr's number BEFORE it was measured
+
+| limit | effect on the archive |
+|---|---|
+| **1** | **kills 4 archive greens** — one bad iteration inside an otherwise working step ends it |
+| **2** | the knee: 1 green killed (benign, above), ~15 thrash ladders end one iteration earlier |
+| **3** | **stops almost nothing early** — 2 ladders versus 15 at limit 2; the rule is nearly inert |
+
+hamr set 2 and the sweep then landed on 2 independently. Recorded in that order because the
+order matters: the number is arbiter territory (a threshold is never picked by the agent from
+a small observed sample), and the measurement is corroboration, not authorship.
+
+### What this replay CANNOT read — stated, not discovered
+
+It proves the rule's **decisions against history**: which ladders it continues, which it
+ends, and how much earlier. It cannot prove that a step it continues then GREENS — no replay
+can, because the iterations it grants were never executed. **Only a live run proves a green.**
+The named live validation is the bareagent-u recalibration `u-msdonzxl` — the exact defect
+shape from F77, re-run on the fixed code under the same signed hash and envelope — in flight
+at the time of writing, and its outcome belongs on this finding, not to it in advance.
+
+Scope: step ladders only. The close-fix loop was deliberately excluded from the replay and
+therefore from the change (F79) — its gaps are close-verdict gaps, a different population,
+and it needs its own replay before its own rule.
+
+## F79 — the progress-governed step ladder: strikes replace the count, and the replan brief finally names the mechanism
+
+**Status: minted 2026-08-03, commit `6c53d3e` (opus build, orchestrator-verified). hamr's
+order, verbatim: *"go build it with opus and you orchestrate and validate it against the last
+repo that failed."* This finding records the mechanism and its evidence; the defect is F77 and
+the decision evidence is F78.**
+
+### The rule
+
+`src/ladder.js`. **A strike is a RED iteration that repeats an already-seen normalized gap OR
+made no gate-audit writes.** Two strikes end the step (`STRIKE_LIMIT = 2`).
+
+- **Repeat = a SEEN-SET, never last-only** — F78's oscillator is the reason, and the set lives
+  for the step, one ladder per step (a shared ladder would strike a fresh step for a gap an
+  earlier one had already produced).
+- **Normalization is deliberately NARROW**: only bytes a re-run changes on its own (TAP
+  `duration_ms` lines, ISO stamps, `ms` figures). **Error counts, file names and line numbers
+  all survive** — `30 errors` and `22 errors` must read as two different gaps, and a normalizer
+  that scrubbed numbers would turn the converging case this module exists to protect into an
+  instant strike. Comparison-only: the gap the worker sees is never rewritten. Gaps are hashed,
+  so the set holds no model or file bytes.
+- **`wrote` reads the gate audit's own record COUNT delta** — the F32 instrument, run-scoped,
+  allow-decision, write AND edit. **Never git status, never a tree diff** (F32), and **never
+  the path SET**: a plan step rewrites its one target every attempt, so the set is constant
+  after iteration 1 and would read every later iteration as idle — the Finding-3 trap Layer R
+  documents one module over. A missing `writeCount` seam THROWS (BA-4 param-guard class): a
+  strike rule running on one of its two signals with nothing on the record saying so is the
+  blind-instrument class.
+- **Strikes are STICKY** — never reset, never repaid by a good iteration in between, because a
+  counter a single good iteration zeroes can be held open forever by alternating.
+
+**Ownership is unchanged.** `STRIKE_LIMIT` sits shell-side exactly where the count sat: the
+runner sets it, the agent cannot express it, and no step may tighten OR raise it. What still
+bounds a converging step so nothing can run away — **the wallet, the wall (W-2), the variance
+meter (A), and the stall fuse** — is untouched and each still ends the ladder on its own
+authority. Exactly one bound was replaced: exhaustion-by-count. The exhaustion terminal is the
+same `cap-halt` category with the same three records in the same order, so the ledger's
+excluded-set and the step loop's ONE replan trigger key on the same name they always did.
+
+### `attempts` is RETIRED — and tolerated, which is the load-bearing half
+
+The field is gone from the drafting prompt and ignored by the runner. It is **not rejected**:
+the frozen bridge registry's stored plans carry `attempts`, and a bridge rides into the drafter
+as a starting draft through the ordinary validator — redding it would refuse every recipe
+minted before today and break a frozen contrast experiment mid-flight. The SHAPE is still
+checked (garbage in a known field stays a named red); the `<= capRuns` upper bound is gone with
+the cap it named, because a plan stored under one runner's number must not red under another's.
+Proven against the real artifact, not a fixture: `u-msd916dh`'s own accepted plans
+(`attempts [3,3]` and `[2,2]`) validate OK against the signed spec on the resume path.
+
+### The replan brief now names the mechanism
+
+The exhaustion sentence handed to the redrafting planner carries three things F77 showed it
+was missing: **which shape ended the step** (converging-cut / stalled-no-write / repeated-gap,
+with the iteration numbers as evidence), **the gap trajectory** (`N distinct exit output(s)
+over M iteration(s)`, plus an explicit *"every attempt moved the exit output, so the step was
+converging when it struck out"* when there were no repeats), and **what the stop left
+unspent** (balance and remaining minutes — `time UNBOUNDED` when the operator set no wall,
+never a rendered zero: F6 extended to time). It names no culprit file: the ladder's inputs are
+iteration numbers and counts, so naming one is inexpressible (F28's rule, replan side).
+
+### Two design calls made against instruments, not preference
+
+- **`maxTurns` is granted PER ITERATION, monotonically** (`Math.max` at the existing
+  `setIteration` seam), because a pre-multiplied ceiling can only pre-pay a KNOWN iteration
+  count and the ladder has none. Rebuilding the Gate per iteration was the alternative and was
+  **rejected**: the audit is run_id-scoped, so a fresh gate resets F32's crash-attribution
+  write set and Layer R's cross-attempt write history — two instruments broken to avoid one
+  addition. The real per-iteration bound (`loop.stop()` at `roundsThisAttempt >= attemptRounds`)
+  is unchanged either way.
+- **The close-fix loop keeps its count** (`CAP_RUNS = 4`, relabelled close-fix-only). Its
+  replay evidence does not exist — F78's corpus is step ladders — and converting it on the
+  strength of a different population's numbers is the thing this programme keeps refusing to
+  do. **Recorded follow-up, not an oversight**; it needs its own $0 replay over close-verdict
+  gaps first.
+
+### Evidence
+
+TDD, **22 tests watched failing** before any implementation (14 ladder unit + 8 integration);
+mutation **14/14 killed**, plus **one orchestrator-applied mutant** (strikes un-stuck) killed by
+2 tests and the suite restored green; **850/850 and typecheck clean**, re-run independently with
+real exits. Spec hashes untouched by the whole change — the runner accepted the already-signed
+`1c35a1eb…` unchanged.
+
+### Lesson
+
+**When a bound is wrong, replace the QUESTION it asks, not the number it holds.** Raising
+`capRuns` would have bought the converging step its iterations and bought thrash the same
+iterations; the count was never the defect, "how many" was. And the replacement's honesty
+depends entirely on its two signals being real instruments — which is why the write signal
+reads the gate audit's record count and the repeat signal reads a seen-set: both were chosen
+by naming the way the obvious version goes blind (F32's path-set, last-only comparison).
+
+## F80 — the strike ladder makes Layer R's VERBATIM ratchet unreachable on the step path, and hamr's ruling accepts it: the notes go to the REPLANNER, not louder to the stuck worker
+
+**Status: minted 2026-08-03. Found by the build's own tests (F79), surfaced to hamr as a named
+OPEN POINT rather than resolved unilaterally (arbiter/experiment territory), and settled by
+hamr's ruling the same session.**
+
+### The collision
+
+Layer R's escalation needs **three consecutive fixated attempts**: the summary note injects at
+iteration 3, the VERBATIM note at iteration 4. But **fixation is by its own definition a
+byte-identical red-set** — which is exactly what the strike ladder calls a repeat. So a
+fixated step strikes at iteration 2, strikes out at iteration 3, and **iteration 4 never
+opens**. With `layerRoot: true`, the VERBATIM stage is unreachable in the STEP loop.
+
+It remains reachable in the **close-fix loop** (still count-bounded, F79), and the stage keeps
+full unit coverage. **Layer R ships OFF by default (F41: fixation is extinct on every current
+job)**, so nothing shipped is broken today — the real cost is that Layer R's never-run ON/OFF
+acceptance read would now measure a different Layer R than the one designed, and that was
+hamr's to decide, not the build's.
+
+### hamr's ruling — option (a), confirmed
+
+Three exits were put up. hamr picked (a) after walking the mechanism through in plain language,
+and confirmed the resulting flow verbatim:
+
+> *"so, 2 strikes followed by handing notes on next replan/run"*
+
+Yes — **summary-only on the step path; the VERBATIM stage is retired there** (kept in the
+close-fix loop). The strikes force the replan, and the mechanism note goes to the REPLANNER.
+
+### Why the other two exits are INVALIDATED, not merely unchosen
+
+- **(b) raise `STRIKE_LIMIT` to 3** — invalidated by F78's own threshold sweep: limit 3 stops
+  almost nothing early (2 ladders versus 15), so it pays an extra stuck iteration on **every**
+  thrash loop in order to reach a stage of a feature that ships OFF.
+- **(c) exempt the iteration in which the ratchet just spoke** — invalidated twice over. By
+  **F32/F39**: delivery ≠ conversion — hand-delivering more state to a stuck worker was
+  measured dead twice (perfect aim, zero movement), so buying an iteration to say the same
+  thing LOUDER to the same stuck worker buys the one thing already proven not to convert. And
+  by **F70's guard-hole class**: an exemption is a hole a guard punches in itself, and this
+  programme has now twice shipped a guard disarmable by its own mechanism.
+
+### The channel shift IS the point
+
+The ratchet's note went from the shell to the **stuck worker** — the semantic-gap genre, which
+measurably does not convert (F39). The ladder's brief goes from the shell to the **replanner**
+— a mechanical gap (which shape, which iterations, what is left unspent) handed to the one
+component whose job is re-allocation, and mechanical is the genre that converts on the next
+attempt every time (F38/F46). The step's self-heal did not get quieter; it moved to the channel
+where feedback has ever been observed to land.
+
+### Lesson
+
+**Two independently correct guards can collide, and the resolution is a channel question
+before it is a threshold question.** The tempting fixes were both dial-turns (raise the limit,
+punch an exemption); the evidence said the note was aimed at the wrong recipient all along, and
+the collision is what made that visible.
+
+## F81 — the shape-lottery gate rules cure the trap class live: bareagent-u's fourth run rolls the RLM shape cold, steps green for the first time, and dies on money 5 suppressions from a full green
+
+**Date:** 2026-08-04 · **Run:** `u-msew1uy5` ($4.13, cap-halt, `spendComplete:true`) ·
+**Rules commit:** `28ee95f` · **Basis:** the $0 shape sweep (commit `8840809` session record)
+
+### What was built (hamr's "go")
+
+Two mechanical rules at the plan-validation gate, both STATED in the drafting prompt from the
+same facts object the validator judges (the mailbox precedent), neither asking any LLM to
+assess "is this job small":
+
+- **Rule A-v2 (`check-placement`)** — a check whose PREFLIGHT verdict was red (seed-red) may
+  only gate the plan's FINAL write step. Keyed on the spine-recorded preflight verdicts.
+  Green-at-seed checks stay free mid-plan (the 20 archived TESTGEN mid-plan greens).
+- **Rule B (`check-shed`)** — a replan may not drop a `check-passes` its predecessor plan
+  carried; it may move one (A-v2 decides where), never shed it. The 3 archived sheds were all
+  on step-red runs — zero historical greens blocked.
+
+TDD: 9 tests watched failing first (4 of them overreach controls), 3 sabotage mutants killed,
+869/869, spec hashes unchanged. Resume revalidation deliberately excluded (documented at the
+site): a paid, previously-legal plan is never refused over a drafting law minted after it.
+
+### What the live run showed (the patient that died three times)
+
+- **The prompt law alone steered the FIRST draft into the RLM shape** — one step, whole
+  territory, `tree-changed ∧ check-passes(typecheck)` — `plan-validate draft-1: ok`, zero
+  reds. The gate never had to fire; it stands as the backstop.
+- **Positive-scope confinement is gone:** attempt 1 changed BOTH goal files (u-msdsmkid's
+  worker put 17/17 writes into one file and never touched the other). The step converged
+  30→18→12→10→0 strict errors and **greened — the first honest step-green in this patient's
+  four-run history** (prior: step-red ×3, never past the step).
+- No replan fired, so Rule B's live validation is still pending a run that replans (its test
+  coverage is the wiring test + replay).
+
+### The residual that killed it: the suppression see-saw (NEW, shallower than the trap)
+
+The worker satisfied its one in-step ruler (typecheck) partly by typing things as `any`. The
+outer close's `no-suppressions` stage — a green-at-seed GUARD the step structurally cannot
+carry (`MAX_EXITS_PER_STEP` = 2, already spent on the F17 pair) — caught 12 added `any`s. The
+close-fix loop then see-sawed exactly as designed: remove `any`s → 2 real errors re-exposed →
+fix them → 5 `any`s left, both axes monotonically converging (12→5 suppressions, 2→0 errors)
+— and the money gate cut fix-iteration 3 mid-flight at $4.13 of the $4 budget. The tree it
+left: typecheck GREEN (0 errors, outside-scope unchanged), suite GREEN, changed-from-seed
+GREEN, `no-suppressions` red by 5. An honest cap-halt, roughly one fix-iteration (~$1) short.
+
+There was NO check-vs-close discrepancy: the mid-run "typecheck: 2 errors" close red judged a
+tree the fix worker had already edited (the operator's first reading conflated two trees and
+two stages — corrected in-session, the F26 first-reading class again).
+
+### Lesson
+
+**The shape lottery is closed by making the losing shapes inexpressible, not by teaching
+judgment** — a drafter that rolled the death shape three times rolls the winning shape cold
+once the law is stated and the gate backstops it. What remains is a different, smaller
+question: a close stage the step cannot carry is only discoverable at the outer close, and
+feeding it forward (goal prose? a third exit slot? nothing — the fix loop was converting) is
+operator/design territory, parked for hamr with the rerun/budget decision.
+
+## F82 — the money halt becomes decision-ready: a per-stage trend instrument, a resume button on the U path, the fix loop's count retires — and the two defects the build turned up were both in an instrument
+
+**Status: minted 2026-08-04, commit `ae417ae` (opus build, session as orchestrator/validator;
+sonnet adversarial review after). Design: PRD v1.46 §2–§4. Motivating run: F81's `u-msew1uy5`,
+cut by its budget mid-convergence, five suppressions short. Replay precedent for §4: F78/F79.
+No paid run fired for this build, no spec hash changed, the bareagent-u patient untouched.**
+
+### What shipped
+
+- **(a) A money cap-halt keeps its last minted verdict and pauses DECISION-READY** — W-2's
+  wall treatment in a money coat. A new `money-halt` spine record carries the signed
+  `budgetUsd`, `remainingUsd`, the kept `verdict`/`stage`, a trend verdict
+  (`converging | flat | unknown`) with the `reading` and the `series` it judged, and three
+  W-2-symmetric levers (top up & resume · revise the spec · abandon). Emitted at **all three**
+  sites that cut a run on money — the step loop, the close-fix loop, and the scout/draft relay
+  — because a category that hands the human a readout at one seam and silence at another makes
+  the readout a coincidence of where the stop happened. `spentUsd` is not re-derived there:
+  runJob's ledger owns that figure (F6 — a second, weaker arithmetic for one run's money is how
+  two instruments come to disagree).
+- **(b) `--resume` on `scripts/run-u.mjs`** — the third leg of hamr's resume rulings, the one
+  the original *"why would i want to waste more money on something i already started"* was
+  actually about. It skips the seed reset (`resumeTreeGate`: a dirty tree is what a resume
+  expects; only a moved HEAD stops it), folds the dead run's spend in as `priorSpentUsd`
+  **against the SIGNED budget** so the ceiling can never widen by being re-invoked, and re-enters
+  at the checkpoint the finished steps already bought. When the remainder is zero or negative —
+  which is the commonest resume there will ever be, straight after a money cut — it prints an
+  explicit `⚠ NOTHING LEFT` block pointing at the spec re-sign, because a minus sign in a
+  balance line is not a warning. The top-up itself is not here and never will be: `budgetUsd`
+  is in the spec hash.
+- **(c) `CAP_RUNS` retires as the CLOSE-FIX loop's governor** for the same 2-strike
+  no-progress rule the step ladder uses (v1.45 §5's recorded follow-up, now run). The $0 replay
+  over all 8 archived fix loops came back clean both directions: **0 greens harmed** (all 3
+  historical fix-loop greens converted in ≤ 2 verdicts) and **1 real waste case caught** —
+  `reuse-msc6w93z`, dead flat at 2 errors for 7 consecutive fix verdicts until the wall killed
+  it, stopped at verdict 4 by the new rule.
+
+The instrument behind (a) and (c) is one module, `src/trend.js`, and its accuracy law is why it
+is its own file: **a series is PER STAGE, compared only against itself.** The operator's own $0
+sweep flattened a staged close's grades into one list and read `12, 2, 5, 0` as a regression —
+what actually happened (u-msew1uy5, F81) was two axes falling at once, suppressions 12 → 5 while
+the type errors that scrub re-exposed went 2 → 0. Merging the axes did not make the read noisy,
+it made it WRONG in the opposite direction, and it would have told hamr to abandon a converging
+run. In the shipped module the stages are separate buckets by construction: the mistake is
+inexpressible rather than avoided by care.
+
+### The two review findings — both instrument defects, both validated and fixed
+
+- **F1 — `readGrade` took a rule id's digit as the count.** The reading is the first number on
+  the first red-marked line, and types-close spells its verdict `D1a — … went 2 → 5`: the
+  regex donated the `1` from `D1a` to the governor on every iteration, i.e. a **constant** wrong
+  number, which reads as perfectly flat forever. Fixed twice over: numbers are taken as
+  standalone tokens only (not embedded in a word or a dotted token — `D1a`, `v1.2`), and a
+  before→after arrow line reads the **AFTER**, because reading the first number there would
+  grade every iteration against the constant seed baseline — flat by construction again. The
+  blind-instrument class, caught this time by review instead of by a paid run.
+- **F2 — a test inferred "where am I" by counting calls to an injected function.** The
+  step-loop money-cut test keyed on a call count that the feature under test changes; it now
+  pins to the run's own state (`mh.phase`). Same trap the doctrine names: a call-counting test
+  silently retargets the moment the number of calls moves.
+
+### The pre-existing F6 gap the build walked into
+
+`priorSpendComplete` was **computed** by `readResume` and **recorded** on `try-start` — and then
+never handed to `runJob`, the one component whose `job-end` the row's own `spendComplete` is read
+off. A resumed attempt whose dead leg contained an unpriced round therefore reported an **exact
+total** where the honest figure is a floor. Fixed on the reuse path and carried through the new
+U-path resume: the unknown travels with the money it qualifies, one-way (every round of THIS
+attempt being priced repairs nothing about the one before it), and `job-start` now declares the
+fold (`priorSpentUsd`/`priorSpendComplete`/`priorWallMs`) so a chain of resumes adds only each
+attempt's own new rounds instead of re-deriving and double-billing.
+
+### Three deviations from a naive reading of v1.46, each taken on evidence
+
+- **The `readResume` amendment is OPT-IN** (`direct`, `resumableOutcomes`), both OFF by default,
+  so the reuse loop's own semantics are byte-unchanged and control-pinned. There, a cap-halted
+  try was graded and its registry row written; reclassifying it as a checkpoint would re-run a
+  try whose fold leaves it no money and duplicate its row. Green and every red stay
+  non-resumable under any setting — a verdict already rendered is never re-bought.
+- **`capRuns` survives as the BLIND-instrument fallback, not as a vestige.** It binds only while
+  the trend has never been able to compare anything (a close whose output carries no number at
+  all), and lifts the moment a stage reports one. It is not decoration: a sabotage mutant that
+  removed the fallback proved the loop non-terminating in exactly that case. A governor that
+  cannot see the variable must not be the governor, and the honest fallback is the cruder bound
+  it replaced rather than "unbounded".
+- **A stage advance feeds the STRIKE rule but never headlines `converging`.** Reaching a later
+  stage than ever before is real progress no per-stage number can see (a staged close is
+  first-red-wins), so it repays a strike. It is kept out of the money readout's headline for a
+  measured reason: an advance is guaranteed on essentially every run that does any work at all
+  (the precheck reds at stage 1, the plan fixes stage 1, the close walks on), so an
+  ordering-only "converging" would be true of almost every run and could not discriminate the
+  one thing hamr asked it to — whether another dollar finishes this.
+
+Also stated at the site rather than discovered later: "lower is better" is not derivable from
+prose, so a **floor-shaped** stage (`N tests executed, below the seed's M`) reads as
+not-improving rather than converging. The fail-safe direction, deliberately — a false "flat"
+costs one conservative stop, a false "converging" costs a top-up spent on a dead run — and
+never to be sharpened (the F49 precedent).
+
+### PARKED, not resolved: two instruments now answer "was it progressing"
+
+> **RESOLVED 2026-08-05, commit `12d997f` — recorded forward, the text below stands as
+> written.** hamr ruled on the scope (PRD v1.49 §2) and the two instruments were unified:
+> both halts now read the run's own `src/trend.js`, `gapTrend` is deleted, and the byte
+> comparison survives INSIDE `unknown` as a `motion` field, never promoted to a direction.
+> The blind-cap arm described just above was itself found latching and fixed in `f2be2b6`
+> (F84).
+
+W-2's wall-halt readout still uses `gapTrend` — **byte-equality of the last two close gaps**,
+verdicts `stalled`/`moving`/`unknown`. The money halt uses the new **per-stage numeric** trend,
+verdicts `flat`/`converging`/`unknown`. Two instruments, two vocabularies, one question, on two
+halts that are otherwise deliberate mirrors of each other. Nothing here is wrong today — each is
+honest about what it can see — but which one is the trend, or whether both stay, is arbiter
+territory and **hamr's call**, recorded rather than unified unilaterally. Still pending
+alongside it: the bareagent-u top-up decision. That tree is the live-validation candidate for
+the resume feature (it is a real cap-halt with work on disk), and firing it needs hamr's re-sign.
+
+### Evidence
+
+TDD watched-fail throughout; **57 new tests** (28 trend unit, 12 run-u resume gates, 7
+`readResume`, 7 plan-flow integration, 3 `runJob`); **7 sabotage mutants killed**; sonnet
+adversarial review verified **9 doctrine constraints held** and returned 2 findings, both
+validated against source and fixed (above). Final gate **926/926 and typecheck clean**. The
+reuse path is control-pinned byte-unchanged; no spec hash moved, so the already-signed specs
+still run.
+
+### Lesson
+
+**The instrument is where the defect lives, again — and this time review caught it before a
+paid run did.** Both review findings and the pre-existing gap are the same shape: a number that
+was computed and then read wrong (`D1a`'s digit), a number that was computed and then not
+delivered (`priorSpendComplete`), and a test that read its position off the wrong signal. The
+feature — is this run converging? — is only as honest as the reading under it, which is exactly
+why the accuracy law got its own module, why an unreadable stage donates nothing rather than a
+zero, and why the retired count stayed on as the bound for the one case the new instrument is
+blind to.
+
+## F83 — the pause becomes a CONTINUE: bareagent-u's cap-halt is topped up, resumed at the checkpoint, and greens in 12.8 minutes for $1.21 — the first live pause → top-up → resume → pass in programme history
+
+**Date:** 2026-08-04/05 · **Resumed run:** `u-msf70nei` (GREEN, `spentUsd` 5.3389 of the
+signed $8, `spendComplete: true`) · **Dead leg:** F81's `u-msew1uy5` ($4.13 of $4, cap-halt,
+no-suppressions red by 5) · **Signature:** hamr verbatim *"go 8/45"* → `budgetUsd` 4 → 8,
+`maxWallMs` 25 → 45min, new resolved hash `22eb9b3e` · **Tests:** commit `3fc6ee9` (opus
+build, session as orchestrator/validator) · **Programme spend ~$21.82/$40.**
+
+### What this validates
+
+The feature chain PRD v1.46 §2–§4 specified and v1.47 recorded as BUILT had never met a real
+halted tree. All three legs of it fired at once here, on the patient that produced the halt:
+**§2** minted the decision-ready `money-halt` that made the top-up a decision instead of a
+guess; **§3**'s `run-u --resume` consumed it; **§4**'s `close-trend` governor ran the fix loop
+that finished the job. F82's evidence was tests and replay. This is the run.
+
+### What the spine says (primary artifacts, `u-msf70nei.jsonl` + its gate audit)
+
+- **Re-entered at the checkpoint, not at the beginning.** `scout-skipped {reason:'resumed',
+  phase:'close'}` · `resume-seed {phase:'close', planSteps:['fix-strict-typing'],
+  completed:[…], skipping:1}` · `step-skipped {provenBy:'step-end', provenSeq:135}` ·
+  `plan-executed` records the one step as `skipped`, `replanned:false`. No re-scout, no
+  re-draft, no re-paid step. The plan came back off the dead spine and re-validated against
+  the spec signed NOW (the new hash), then re-emitted as this leg's own `plan-accepted`.
+- **The patient was CONTINUED.** The dead leg's edits were on disk and stayed there
+  (`resumeTreeGate`); the close precheck judged that tree, not a seed.
+- **The fold is declared once, at `job-start`:** `priorSpentUsd 4.1261`,
+  `priorSpendComplete true`, `priorWallMs 1493945` (24.9min), against `budgetUsd: 8`. The
+  ceiling could not widen by being re-invoked.
+- **The watchdog armed on the REMAINDER:** `wall-clock {requestedMs:2700000,
+  elapsedMs:1493946, remainingMs:1206054}` — 20.1min left of the signed 45, not a fresh 45.
+- **The close ran first and redded honestly.** `outer-close` first judgment
+  `needs_revision`, stage `no-suppressions` — *5 suppression(s) added — suppressing an error
+  is not typing it*. The green was earned in this leg, never inherited.
+- **The see-saw appeared once more and the fix loop converted it.** Fix iteration 1 scrubbed
+  the `any`s and re-exposed **3** strict errors (`close-verdict` iteration 1, stage
+  `typecheck`); iteration 2 fixed those without re-suppressing and all four stages came back
+  `satisfied`. **7 allowed `edit` actions across 2 files** (`src/loop.js`, `src/recurse.js`)
+  — the F32 gate-audit instrument, not `git status`.
+- **F82 §4's new governor ran it, and is on the record doing so:** `ladder {governor:
+  'close-trend', iteration:1, stage:'typecheck', value:3, improved:false, comparable:true,
+  noProgress:1, limit:2}`. First live firing of the close-trend governor; it read a real
+  number off a real stage and did not have to end anything.
+- **Leg cost and time:** 12.8min wall (21:51:35 → 22:04:23) and **$1.2128** of new spend —
+  roughly the one fix-iteration F81 predicted the halt was short of. $2.66 of the topped-up
+  $8 went unspent.
+- **Books honest end to end:** `job-end {outcome:'green', spentUsd:5.3388775,
+  spendComplete:true}` — the FOLDED total (4.1261 + 1.2128), not the leg, and the dead leg's
+  own `spendComplete:true` is what licenses the `true` here.
+- **The green was independently audited** by re-running all four close stages by hand: exit 0
+  each. A bridge record was minted from it
+  (`bridge-bareagent-u-types-msf70nei.json`, `specHash 22eb9b3e`) carrying the plan **as
+  executed** — the RLM single step, exits `tree-changed(src/**) ∧ check-passes(typecheck)`,
+  the shape F81's gate rules made the drafter roll cold.
+
+### The money-pause cycle at library level (commit `3fc6ee9`, 5 tests, +329 lines)
+
+The live run is n=1 on a real provider. The cycle itself is now pinned deterministically with
+priced scripted rounds, `$0`:
+
+1. **leg 1** — the wallet drains INSIDE the fix loop → the run keeps its minted verdict and
+   pauses decision-ready (trend `converging`, kept verdict cross-checked, levers asserted
+   non-self-adjusting).
+2. **leg 2** — the topped-up resume greens AT THE CHECKPOINT: prefix skipped, the fold
+   declared once, total = sum of both legs, and a close-precheck RED proving the green was
+   earned rather than inherited.
+3. **the no-top-up CONTROL** — resuming on the SAME budget buys no second pass: one
+   round-boundary overshoot round (the documented behaviour — the cap binds BETWEEN rounds),
+   a **byte-identical tree**, and a second honest money-halt. Without this arm the cycle test
+   would only ever show the happy direction.
+4. **the UNSOLVABLE cycle** (hamr's ask, *"money negative cycle that can't be solved"*) — a
+   topped-up leg that makes no per-stage progress **strikes out at `FIX_STRIKE_LIMIT`** with
+   trend `flat` and revise-first levers, **$1.60 of $2 unburned**. The strike rule governs the
+   resumed fix loop exactly as it governs a cold one; a top-up does not buy the right to burn
+   the wallet on a dead axis.
+5. **the F6 floor cycle** — a declared floor survives leg-1 halt → `readResume` → leg-2 green
+   terminal. An unknown that enters the cycle does not come out exact.
+
+All five watched failing first with sabotage evidence; `tests/resume-u.test.js` fixtures were
+updated to track the signed 8/45 numbers. Gate **931/931**, typecheck clean.
+
+### PARKED (MED, probe-evidenced, NOT fixed): the restart fold can launder a floor into an exact total
+
+> **FIXED 2026-08-05, commit `8e62749` — recorded forward, the text below stands as written.**
+> The restart fold now reads ALL four of `runJob`'s floor causes (a landed resumable `job-end`
+> declaring `spendComplete: false` floors the fold exactly like a declared prior floor or an
+> unpriced round), with the killed-mid-flight restart shape — no `job-end` at all — control-pinned
+> unchanged, as the hypothesis rule required. `f2be2b6` closed the sibling case one seam further
+> out: a fold of **$0** that is not exact is still a floor (F84). PRD v1.49 §1.
+
+`readResume`'s restart branch computes `priorSpendComplete` from **2 of the 4 causes**
+`run.js` uses to decide the same thing:
+
+- `src/run.js:167` — `spendComplete: !unpriced && !stalled && !cutMidCall && !priorFloor`
+- `src/reuse.js:727` — `priorSpendComplete: open.declaredComplete && open.roundsComplete`
+
+A floor arising from `stalled` or `cutMidCall` is therefore **invisible at the resume seam**: a
+leg-1 `job-end` that honestly said `spendComplete: false` comes back EXACT, and leg 2 reports
+`spendComplete: true` on a total built on a floor. The asymmetry is the tell — `readTry`, the
+*graded* branch of the same reader (`src/reuse.js:401`), DOES consult the terminal's own
+`spendComplete`; only the restart branch skips it. This is the F6 class, one call upstream of
+where F82 added `priorFloor`, and it is why the live run's clean books are not proof of the
+mechanism: `u-msew1uy5` declared `spendComplete: true`, so the two readings could not disagree.
+
+The remedy — fold the landed terminal's `spendComplete` into the restart's completeness — is a
+**HYPOTHESIS, not a fix** (the standing rule: a fix proposed from reading is tested as hard as
+the defect). It has to be tried against the ordinary killed-mid-flight restart shape, where
+there is **no `job-end` at all** and the reader must not start refusing or floor-marking the
+resumes that work today. Awaits hamr.
+
+### PARKED (design question): a resumed leg's trend is scoped to its OWN grades, not the cycle
+
+> **RULED and IMPLEMENTED 2026-08-05, commit `12d997f` — recorded forward, the text below
+> stands as written.** The pause readout DOES span the chain: `readResume`'s `restart.grades`
+> seeds the run trend's baselines, validated against the real `u-msew1uy5` spine, and the
+> no-top-up control's deliberately-unasserted trend now asserts the chain reading
+> (`converging`, 2 → 1) as the correct one. hamr's scope ruling is the general law behind it
+> — the halt READOUT is the chain-spanning consolidated money/time view, the STRIKE governor
+> stays leg-local, and the two are never mixed (PRD v1.49 §1 and §2).
+
+Per `src/trend.js`'s documented spec a series is per stage **within a run**. In the no-top-up
+control the second leg honestly reads `flat` — it graded once and had nothing to compare —
+while the CYCLE was converging (2 → 1) and the real blocker was simply that no top-up arrived.
+Neither reading is wrong; they answer different questions. Whether the pause readout should
+span a resume chain is arbiter territory and hamr's call, so the test deliberately leaves the
+trend **unasserted** there rather than encoding either answer.
+
+### Small, unfixed: the readout frames wall and money differently
+
+`scripts/run-u.mjs`'s final read prints **money folded** (`spent $5.3389 of $8` — `job-end`'s
+total across both legs) and **wall leg-only** (`wall 12.8min of 45min` — `Date.now() - started`
+of THIS process against the full signed cap). Both numbers are true of different things and the
+line does not say which. The spine and the enforcement are both correct — the clock folded
+`priorWallMs` and armed the watchdog on 20.1min — so this is display only, and small. Recorded
+rather than patched blind.
+
+### Lesson
+
+**"The stop is the checkpoint" is now a measured claim, not a design slogan.** A run that had
+died four times on this patient was paused by its own budget with a graded tree on disk, handed
+its operator an accurate trend and three levers, took one signed top-up, and finished for
+$1.21 and 12.8 minutes — re-buying nothing it already owned. The economic argument for resume
+was that a killed run should not re-pay for finished work; the number here is the one that
+matters: the second leg paid for **one fix iteration**, which is exactly what F81 said was
+missing. And the parked MED is the same shape as everything else this rung turned up — not the
+feature failing, but a *reading* of a number, one seam upstream of where the last one was fixed.
+
+## F84 — the whole-branch review of `layer-3-reuse`: a governor that had quietly stopped governing, a demotion table no test could break, and the two Criticals that only came out of RUNNING the code
+
+**Status: minted 2026-08-05, commit `f2be2b6` (medium `/code-review` over
+`main...layer-3-reuse`, opus finders + three opus fix batches, session as orchestrator and
+validator; hamr's order verbatim: *"use /code-review medium for review with opus"*). Scope:
+56 files, 16,422 insertions against `main` — the whole Layer 3 REUSE rung plus the money-halt
+package and the trend work that landed on top of it. No paid run fired; no spec hash moved.
+Gate after: 987/987 (from 959), typecheck and `build:types` clean.**
+
+### The two Criticals
+
+**(1) The close trend's blind cap was a one-way latch, so the fix loop's fallback bound could
+be disarmed by a run doing ordinary work.** `capRuns` survives on this branch for exactly one
+job: bounding a close-fix loop whose close reports no number the progress rule can compare (a
+governor that cannot see the variable must not be the governor — F82). It was armed off
+`comparableEver`: *has this leg ever compared anything*. A bare STAGE ADVANCE counts as
+comparable — and `src/trend.js`'s own `verdict()` comment says an advance is guaranteed on
+essentially every run that does any work at all. One advance therefore turned the fallback off
+for the rest of the run. A close that then redded numberlessly — the shipped aurora TESTGEN
+`verdict` stage is precisely that shape — accrued neither a strike nor a blind tick, and the
+loop was bounded by money and the wall alone, in the one case the retired count existed to
+stop.
+
+The finder did not read this out of the source; it **executed** a repro. Twenty-seven
+iterations: one advance, then numberless reds at one stage, `struckOut()` false throughout, no
+terminal. The fix bounds the **consecutive uncomparable streak** instead of the run's opening —
+"lifted the moment it can read" is the rule, so it must re-arm the moment it cannot. Pinned
+both directions before and after: a blind-from-birth run strikes out on exactly the iteration
+the retired count always bought it (byte-stable, at every cap), a comparable-throughout run
+outlives the cap by any margin, and a run that goes blind and RECOVERS is never bounded by it.
+`report().blind` was corrected with it — it answers the question the terminal prose branches on
+(*is the blind cap what stopped this, or the strikes*), and on a run blind after one advance it
+read `false`, which would have offered "0/2 strikes" as the reason a loop it had not struck out
+was stopped.
+
+**(2) `REUSE_GRADED_RED` had no test that could fail.** The set whose members DEMOTE a proven
+bridge is the whole of Layer 3's safety story on the registry side, and a mutant that WIDENED
+it survived the entire suite. The hole is now closed with a demotion table pinned outcome by
+outcome: `escalated` demotes (the close judged the tree, the fix loop spent its attempts with
+money still on the table, and the close was still red); `step-red`, `cap-halt`, `wall-halt`,
+`provider-red`, `close-red`, `step-stalled` and `pricing-red` are casualties that keep their own
+names and leave a proven entry proven. A casualty never demotes is hamr-endorsed doctrine, and
+until this commit it was doctrine no instrument enforced.
+
+### The warnings, all confirmed and all fixed
+
+Roughly eight, and they fall into three families the branch had already met:
+
+- **F6 launderings, one seam further out each time.** `priorFloor` was gated on `spentUsd > 0`,
+  so a fold of **$0 that was not exact** came back exact — a floor of zero is still a floor.
+  The `money-halt` record quoted `remainingUsd` to four decimals without saying whether the
+  spend behind it was exact, making a CEILING read as a number. A restarted try's row reported
+  only the restart's rounds against a span its money and wall already covered both legs of.
+- **Computed, declared, and then handed to nobody.** `readResume`'s `restart.grades` — the dead
+  leg's close grades — reached `runJob` only through `scripts/run-u.mjs`. The library's own
+  reuse resume never passed them, so a restarted leg's halt readout judged its own leg and
+  could say `flat` — *revise the goal* — on a run that was converging when its allowance ran
+  out. The adopter contract had described the library behaviour, not the shipped one.
+  Same shape as F50 and as F82's `priorSpendComplete`: wired ≠ the code exists.
+- **A guard reading zero and saying nothing.** `--wall-ms 0` reached `u-watchdog.mjs`, which
+  defaulted a non-positive value to `null` and armed **no deadline at all** while the runner's
+  banner said "armed for 0min". W-2 is *"when time is up, keep the grade we already have and
+  stop"* — a zero remainder is a decision, not an unbounded launch. The watchdog now refuses a
+  present-but-unreadable numeric flag outright (an OMITTED `--wall-ms` stays the legal
+  unbounded choice), and both runners refuse above the spawn, before the key and before the
+  patient.
+
+Also in the batch: the replan brief no longer calls an idle strike-out *converging*;
+`planPrompt`'s JSDoc was reattached (an intervening helper had detached it, shipping every
+parameter as `any` in the generated `.d.ts`); a corrupt watchdog report can no longer abort a
+signed resume; `runner-start`'s argv is redacted at the WRITE site (a log that captures a key
+captures it forever, so an after-the-fact scan is too late); a trailing value-flag refuses
+instead of reading `Number('') === 0` and reshaping the run being signed; and
+`scripts/migrate-bridge-patient-slugs.mjs` got its first battery (4 mutants killed).
+
+### Zero fixes forced — and three finder claims corrected in the fixing
+
+Every claim was verified against source before it was believed, and none had to be dropped as
+a false positive. Three were right about the defect and wrong in the detail, which is the part
+worth recording:
+
+- The ladder's *"the step was converging"* sentence was reported as sometimes-wrong. It is
+  **structurally unreachable at a strike-out except beside its own contradiction**: every
+  strike is a repeat or an idle iteration, and the sentence was gated on repeats alone, so at
+  a strike-out it could only ever have fired next to the stall line that denied it. The fix
+  gates it on both signals; the control test reads it on a ladder that has NOT struck out,
+  which is the one path where it is still true.
+- The zero-wall refusal on `scripts/run-reuse.mjs` was proposed as one message. A resume
+  reaches zero **two ways** — the restarted try burned its whole per-try wall, or every
+  authorized attempt has already run — and they take different levers (`--wall` vs `--tries`,
+  or reading the run as it stands). One message would have sent the operator to re-sign a
+  number that buys no attempt.
+- `wallMs` on an inherited graded row was measured to the kill. The try's own terminal is the
+  precise answer and is on the record being read; the kill time is the fallback for a stamp
+  that cannot be parsed, never the first reading.
+
+### Two review-methodology notes
+
+**A test can pin a defect as spec.** `tests/ladder.test.js` carried
+`test('the brief says CONVERGING when every gap moved and only idleness struck it out')` — an
+assertion, watched failing when it was written, that the brief must produce the exact
+self-contradiction the finder flagged. A green suite is not evidence a behaviour is intended;
+it is evidence somebody wrote down what the code does. The test is now inverted, with a control
+for the shape where the sentence is true.
+
+**Reading is not running — and this repo has now paid for that twice.** The operator's own
+manual pass over `src/trend.js` earlier the same day (`12d997f`, the commit that built the
+seed) reasoned about the blind-cap arm in prose — *"the blind-cap backstop still governs a leg
+whose own readings never compare"* — and did not see that the backstop had already stopped
+governing. An opus finder caught it by writing a 27-iteration repro and watching it not
+terminate. This extends the standing class — a defect visible only by RENDERING
+or RUNNING the real artifact (the malformed-JSON prompt, the silent cap) — from artifacts to
+**governors**: a bound is a claim about a loop's termination, and the cheap way to test a
+termination claim is to run the loop.
+
+### New PARK for hamr: one close stage, two measurement populations
+
+> **RETIRED for the `u-*` closes the same day, commit `4ae9a3c` (hamr: *"#1 fix"*) — the park
+> text below stands as the record of what was found.** Every mixed stage was SPLIT in the
+> close: `typecheck-outside` carries the outside-scope population immediately after
+> `typecheck`, `tests-kept` carries the executed-count floor immediately before `suite-green`,
+> each new stage sitting exactly where its branch already ran, so the gate sequence is
+> byte-order identical and first-red-wins is unchanged. All six `u-*` spec hashes flipped and
+> the runner refuses them until re-signed. **The park does not close entirely** — see the
+> residue below.
+
+**Residue, recorded precisely (2026-08-05):**
+
+- **`u-*` closes — FIXED.** Six specs re-hashed; `litectx`/`spawner` `typecheck` verified
+  single-population and left alone. `src/trend.js`'s KNOWN LIMIT is now the historical record
+  plus **the law for close authors**: one population per stage, and the remedy for a mixed one
+  is that close's stage list, never a sharpened detector (`readGrade` untouched, F49
+  precedent).
+- **`scripts/testgen-close.mjs` — STILL PARKED for hamr, and it is LIVE infrastructure.** Its
+  `verdict` stage renders `killed=K/40 rate=R% clean=green form=unit:N,integ:M` — a
+  fault-detection RATE and collected-unit COUNTS under one stage name. It is the same class,
+  on the job that produced F38/F39/F46/F47, so splitting it is not cosmetic; it is also a
+  stage-name change inside signed TESTGEN specs, which is the same spec-hash territory the
+  `u-*` split was.
+- **The split's COST, measured — the close walk runs `tsc` and `npm test` TWICE.** Each stage
+  is its own process spawn, so nothing is memoizable across them: `typecheck` and
+  `typecheck-outside` each call `strictErrors()`, and `tests-kept` and `suite-green` each call
+  `suite()`. Measured on the two patients: pulselog-u `tsc` 7.84s + `npm test` 8.28s = **+16s
+  per close walk**; baremobile-u `tsc` 10.22s + `npm test` 28.15s = **+38s**. Not a defect and
+  no code changed: the guards scale with the stage count on their own — `scripts/run-u.mjs`
+  reads `closeStages` off `spec.close.length` and `src/clock.js` sets the deadline at
+  `maxWallMs + closeStages × closeTimeoutMs`, so both the outside watchdog's stale window and
+  the run's own wall widened with the split — and W-2 means the close never counts against the
+  wall in the first place. Recorded because a known cost is recorded: the split bought accuracy
+  and paid seconds per iteration for it, and the number belongs beside the decision.
+- **`scripts/types-close.mjs` — deliberately AS-RUN.** Frozen screening infrastructure with
+  five populations under its stages. It graded a closed screen; re-cutting it now would edit
+  the instrument a finished measurement was taken with, so it stays exactly as it ran, named
+  rather than quietly fixed.
+
+**The park as originally recorded:**
+
+The trend's accuracy law is *never across stages*, and it is enforced by construction — a
+series is one bucket per stage name. But **a stage name is not an axis.** The shipped closes red
+one stage on two structurally different populations: `u-*-close`'s `typecheck` reports either
+`N error(s) in <scope>` (the in-scope faults) or `the target files are clean but M strict
+error(s) exist outside them` — a different population entirely, reached only once the first is
+zero — and `suite-green` has the same shape (`N test(s) now fail` beside a floor). A run that
+crosses that seam donates both genres to one series, so a 29 → 4 across it reads **converging**
+and recommends a top-up on work that has only swapped which wall it is behind. It is the
+u-msew1uy5 error in the one place the bucketing cannot see it.
+
+It is **stated at the site as a KNOWN LIMIT, not parsed around**. The root fix is a STAGE SPLIT
+in the shipped closes, which changes stage names inside signed specs — spec-hash territory, and
+hamr's to sign. Teaching the detector to tell two prose shapes apart is explicitly refused (the
+F49 precedent: a per-close sharpening is how one reader stops being one reader).
+
+### Lesson
+
+**A governor is a termination claim, and a termination claim is cheap to execute and expensive
+to read.** Both Criticals were invisible to careful reading and obvious to a running instrument
+— one to a repro loop, one to a mutant. They are also the same defect wearing two coats: a bound
+that had quietly stopped binding, and a demotion set that could be widened without any test
+noticing. The branch's own doctrine already said it (*a rule without a wired detector is prose,
+not protection*); what this round adds is that a detector nobody has watched FAIL is prose too.

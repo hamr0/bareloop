@@ -15,6 +15,12 @@ import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
 import { makeSpine } from '../src/spine.js';
 import { scanSecrets } from '../src/validate.js';
+// --resume reads the halted run's own spine back through the SAME reader the reuse
+// path uses (never a second one) and keeps its patient the way it left it.
+import { readResume, resumeTreeGate } from '../src/reuse.js';
+// the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
+// end-of-run readout sits past the approval gate, so nothing could ever drive it here
+import { wallLine } from './u-readout.mjs';
 
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
@@ -35,9 +41,42 @@ const JOBS = {
     spine: 'litectx-u-bareloop',
     seed: '96813a43bbcbac6a808ff610c6751a8736e2903e',
   },
+  'pulselog-types': {
+    spec: 'pulselog-u-types.json',
+    workdir: '/home/hamr/PycharmProjects/bareloop-patients/pulselog-u',
+    spine: 'pulselog-u-bareloop',
+    seed: '92d71a7c1253f8f2430e2d308ecfef01c826b5c2',
+  },
+  'baremobile-types': {
+    spec: 'baremobile-u-types.json',
+    workdir: '/home/hamr/PycharmProjects/bareloop-patients/baremobile-u',
+    spine: 'baremobile-u-bareloop',
+    seed: 'd9b318fac78036bd3db35f68c4b1eb5ee634244d',
+  },
+  'bareagent-types': {
+    spec: 'bareagent-u-types.json',
+    workdir: '/home/hamr/PycharmProjects/bareloop-patients/bareagent-u',
+    spine: 'bareagent-u-bareloop',
+    seed: '0037182a5a369d380e1635e0e4ab13e3557cfab9',
+  },
+  'bareguard-types': {
+    spec: 'bareguard-u-types.json',
+    workdir: '/home/hamr/PycharmProjects/bareloop-patients/bareguard-u',
+    spine: 'bareguard-u-bareloop',
+    seed: '2ae8fcd37041c186524a6eb5e953b9752cd602fa',
+  },
 };
 const CLOSE_TIMEOUT_MS = 900_000; // the slowest close stage is the suite (~23s aurora, ~53s litectx); headroom, not a budget
+// The close-fix loop's RETIRED iteration cap (PRD v1.46 §4). It no longer governs:
+// that loop now stops on the same 2-strike no-progress rule the step ladder uses,
+// read off the close's own per-stage numbers. This number survives as the bound for
+// the one case that rule cannot read — a close whose output carries no number at all
+// — because a governor that cannot see the variable must not be the governor.
 const CAP_RUNS = 4;
+// The step ladder's strike ceiling (src/ladder.js). Shell-owned, exactly where the
+// step's fixed count used to be: a step ends when it stops making progress, not
+// after N tries, and this is the number of no-progress iterations it is allowed.
+const STRIKE_LIMIT = 2;
 
 const arg = (/** @type {string} */ n) => { const i = process.argv.indexOf(`--${n}`); return i === -1 ? null : (process.argv[i + 1] ?? ''); };
 // --model picks the DEFAULT worker tier (runner territory — the spec names no model, so
@@ -72,39 +111,202 @@ const specHash = jobSpecHash(spec);
 const WALL_MS = typeof spec.maxWallMs === 'number' && Number.isFinite(spec.maxWallMs) ? spec.maxWallMs : null;
 const WALL_LABEL = WALL_MS === null ? 'UNBOUNDED (spec sets no maxWallMs — deliberate operator choice; no outside deadline)' : `${WALL_MS / 60000}min`;
 
+// ── --resume: continue a run its own MONEY (or TIME) cap stopped ─────────────
+// PRD v1.46 §3, and it closes the third leg of hamr's resume rulings: kill-resume
+// existed on the reuse path and W-2 pauses the wall decision-ready, but the case the
+// original ruling was actually about — "why would i want to waste more money on
+// something i already started" — had no machinery on the U path at all. This runner
+// hard-reset the patient on every launch and the resume reader classed any landed
+// job-end as complete.
+//
+// The TOP-UP ITSELF IS NOT HERE and never will be: raising `budgetUsd` is a spec edit,
+// so it changes the hash and hamr signs the new one with `--approve`. This flag only
+// declines to throw away what the dead run already bought — the tree, the plan, the
+// steps that finished, and the money, which is folded IN so the ceiling cannot widen.
+const RESUME = arg('resume');
+/** the terminals that are a checkpoint rather than a verdict. Both are governance
+ * halts: an operator-owned allowance ran out with the work on disk. Nothing else is
+ * resumable — a green is done, and a red is an answer. */
+const RESUMABLE_HALTS = ['cap-halt', 'wall-halt'];
+const die = (/** @type {string} */ m) => { console.error(m); process.exit(2); };
+/** the patient's tree, and the spine directory beside it — derived ONCE, here, because
+ * both the RESUME reader below and the live run further down need them. Two spellings of
+ * one path is how `--resume` comes to read a different directory than the run writes. */
+const wd = resolve(WORKDIR);
+const spineDir = join(wd, '..', target.spine);
+/** `--resume` takes the runid (the conventional `<spine dir>/u-<runid>.jsonl`) or an
+ * explicit path — the path form is what makes these gates testable without touching
+ * an operator's real spine directory. */
+const deadSpineFile = RESUME == null ? null
+  : (RESUME.includes('/') || RESUME.endsWith('.jsonl') ? resolve(RESUME) : join(spineDir, `u-${RESUME}.jsonl`));
+/** @type {any} */
+let dead = null;
+if (deadSpineFile !== null) {
+  if (!existsSync(deadSpineFile)) die(`--resume: no spine at ${deadSpineFile} — a resume continues a run that happened, and this one left no log`);
+  let raw = '';
+  try { raw = readFileSync(deadSpineFile, 'utf8'); } catch (e) { die(`--resume: cannot read ${deadSpineFile}: ${e.message}`); }
+  /** @type {any[]} */
+  const deadEvents = [];
+  const lines = raw.split('\n');
+  lines.forEach((line, i) => {
+    if (!line.trim()) return;
+    try { deadEvents.push(JSON.parse(line)); } catch (e) {
+      // a kill can land mid-append, so a broken LAST line is the failure being modelled
+      // and is tolerated (named, never silently dropped). A broken line anywhere else is
+      // a corrupt log, and reconstructing from one would invent a history.
+      if (i >= lines.length - 2) console.error(`--resume: ignoring a truncated final line in ${deadSpineFile} (a kill mid-append — the expected shape)`);
+      else die(`--resume: ${deadSpineFile} is corrupt at line ${i + 1} (${e.message}) — a reconstruction from a damaged log would invent a history`);
+    }
+  });
+  // is the dead run actually dead? Two processes on one patient is unrecoverable; a
+  // false refusal costs one sentence. run-u's own pid is not on its spine, so the
+  // watchdog's report is the pid there is — and its absence is not evidence of life.
+  const wdFile = `${deadSpineFile}.watchdog.json`;
+  /** @type {any} */
+  let watchdog = null;
+  if (existsSync(wdFile)) { try { watchdog = JSON.parse(readFileSync(wdFile, 'utf8')); } catch { /* an unreadable report is not evidence of life */ } }
+  if (Number.isInteger(watchdog?.pid)) {
+    let alive = true;
+    try { process.kill(watchdog.pid, 0); } catch { alive = false; }
+    if (alive) {
+      let cmdline = null;
+      try { cmdline = readFileSync(`/proc/${watchdog.pid}/cmdline`, 'utf8').replace(/\0/g, ' ').trim(); } catch { /* no /proc, or not ours */ }
+      if (cmdline === null || cmdline.includes('run-u.mjs') || cmdline.includes('u-watchdog.mjs')) {
+        die(`--resume: pid ${watchdog.pid} from ${deadSpineFile} is still alive${cmdline ? ` (${cmdline.slice(0, 120)})` : ' and this process cannot read its command line'}. Two processes on one patient is unrecoverable — stop it first.`);
+      }
+      console.error(`--resume: pid ${watchdog.pid} is alive but is NOT this runner (${cmdline.slice(0, 80)}) — the pid was recycled; continuing.`);
+    }
+  }
+  // the watchdog's kill record is later, better evidence of how long the dead run
+  // really lived than its last spine event
+  const killedAt = Date.parse(String(watchdog?.at ?? ''));
+  dead = readResume(deadEvents, {
+    direct: true,
+    resumableOutcomes: RESUMABLE_HALTS,
+    ...(Number.isFinite(killedAt) ? { deathAt: killedAt } : {}),
+  });
+  if (!dead.started) die(`--resume: ${deadSpineFile} carries no job-start — that is not a bareloop run's spine`);
+  if (dead.job !== spec.job) die(`--resume: that spine is job "${dead.job}", not "${spec.job}" — a resume continues ONE job, and running another job's plan as this one's is a substitution nothing here is allowed to make`);
+  if (dead.greened) die('--resume: that run already GREENED — there is nothing to resume.');
+  if (dead.ended) die(`--resume: that run reached its own terminal (${dead.endOutcome}) — only a governance halt (${RESUMABLE_HALTS.join(' / ')}) leaves work to continue. Start a fresh run.`);
+  if (!dead.restart) die(`--resume: ${deadSpineFile} has no attempt to continue — it never opened one.`);
+}
+/** the restart runs on the REMAINDER of the signed wall, never a fresh allotment —
+ * "a budget ceiling folds in prior spend so re-invoking cannot silently widen it",
+ * in a time coat. Both the run's own clock and the outside watchdog read this one. */
+const RESUME_WALL_MS = WALL_MS === null || !dead ? WALL_MS : Math.max(0, WALL_MS - dead.restart.priorWallMs);
+
 if (arg('approve') !== specHash) {
-  console.log('U — user-mode e2e, ONE run, REAL dollars');
-  console.log(`  spec     jobs/${target.spec}  $${spec.budgetUsd}  wall ${WALL_LABEL}  capRuns=${CAP_RUNS}`);
+  console.log(dead ? 'U — RESUME, continuing a halted run, REAL dollars' : 'U — user-mode e2e, ONE run, REAL dollars');
+  console.log(`  spec     jobs/${target.spec}  $${spec.budgetUsd}  wall ${WALL_LABEL}  strikeLimit=${STRIKE_LIMIT} (step ladder + close-fix progress rule)`);
   console.log(`  patient  ${WORKDIR} @ ${SEED.slice(0, 12)}`);
   console.log(`  goal     "${spec.goal}"`);
+  if (dead) {
+    const rs = dead.restart;
+    console.log(`  spine    ${deadSpineFile}  → stopped on ${dead.endOutcome ?? 'a halt'}`);
+    console.log(`  spent    ${dead.spendComplete ? '' : '≥'}$${rs.priorSpentUsd.toFixed(4)} and ${(rs.priorWallMs / 60000).toFixed(1)}min before the halt — FOLDED IN, so this restarts on the REMAINDER`);
+    console.log(`  left     $${(spec.budgetUsd - rs.priorSpentUsd).toFixed(4)} of $${spec.budgetUsd}${WALL_MS === null ? '' : ` and ${(/** @type {number} */ (RESUME_WALL_MS) / 60000).toFixed(1)}min of ${WALL_MS / 60000}min`}`);
+    // WHERE it picks up. Without this line "resume" covers two runs that cost very
+    // different amounts — one that re-scouts and re-drafts from nothing, and one that
+    // re-enters at the close — and the hash being signed authorizes the dollars either way.
+    const sd = rs.seed;
+    if (!sd) console.log('  at       the beginning — it halted before a plan was accepted, so nothing paid is re-payable');
+    else if (sd.phase === 'close') console.log(`  at       the close and its fix loop — all ${sd.plan.steps.length} step(s) are done and are SKIPPED; the close re-runs for no tokens`);
+    else console.log(`  at       step ${sd.completedSteps.length + 1} of ${sd.plan.steps.length} ${JSON.stringify(sd.plan.steps[sd.completedSteps.length]?.id ?? '(unknown)')} — ${sd.completedSteps.length} already finished and SKIPPED, not re-paid`);
+    if (sd) console.log('           the plan is reloaded from that run\'s own spine: no re-scout, no re-draft');
+    // WHAT IT INHERITS as a trend baseline. Without this line the resumed run's
+    // halt readout can name a direction the leg itself never measured, and a reader
+    // has no way to tell that the number came from the leg before it.
+    const gs = dead.restart.grades ?? [];
+    // grouped PER STAGE and rendered `stage a → b`, the same spelling src/trend.js's
+    // own readout uses — a second way of writing one series is a second way of reading
+    // it, and the accuracy law is that a series belongs to one stage
+    const byStage = new Map();
+    for (const g of gs) {
+      const k = g.stage ?? '(unstaged)';
+      if (!byStage.has(k)) byStage.set(k, []);
+      byStage.get(k).push(g.value);
+    }
+    if (gs.length) console.log(`  trend    ${gs.length} close grade(s) inherited as baselines (${[...byStage].map(([k, vs]) => `${k} ${vs.join(' → ')}`).join('; ')}) — the halt readout spans BOTH legs`);
+    else console.log('  trend    no close grade to inherit — this leg\'s readout is judged on its own evidence');
+    console.log('  patient  continued AS THE RUN LEFT IT — NOT reset to the seed');
+    // The commonest resume there will ever be is the one straight after a money cut,
+    // and on THAT spine the remainder is zero or negative by definition — the run
+    // halted because the allowance was gone. Signing this hash unchanged buys an
+    // immediate re-halt. A minus sign three lines up is not a warning; this is.
+    const moneyLeft = spec.budgetUsd - rs.priorSpentUsd;
+    const timeLeft = RESUME_WALL_MS;
+    if (moneyLeft <= 0 || (timeLeft !== null && timeLeft <= 0)) {
+      console.log('  ⚠ NOTHING LEFT — this run halted because its allowance ran out, and nothing here refills it:');
+      if (moneyLeft <= 0) console.log(`            budgetUsd $${spec.budgetUsd} is already spent (${moneyLeft < 0 ? `over by $${(-moneyLeft).toFixed(4)}` : 'exactly'})`);
+      if (timeLeft !== null && timeLeft <= 0) console.log(`            maxWallMs ${/** @type {number} */ (WALL_MS) / 60000}min is already burnt`);
+      console.log(`            RAISE the number(s) in jobs/${target.spec} first — that is a spec edit, so the hash below changes and you sign the new one. Resuming as-is re-halts immediately for a close precheck's worth of nothing.`);
+    }
+    if (dead.specHash && dead.specHash !== specHash) {
+      console.log(`  NOTE     the halted run was signed under ${dead.specHash.slice(0, 12)}… and this spec hashes to ${specHash.slice(0, 12)}…`);
+      console.log('           that is what a TOP-UP looks like: budgetUsd is in the hash, so raising it is a spec edit you sign below. The reloaded plan is re-validated against THIS spec and refused by name if it no longer fits.');
+    }
+  }
   console.log(`  hash     ${specHash}`);
   if (arg('approve') !== null) console.error(`\nREFUSED: --approve ${arg('approve')} does not match this spec version.`);
-  console.log(`\nTo approve and run:\n  ANTHROPIC_API_KEY=... node scripts/run-u.mjs --job ${jobKey} --approve ${specHash}`);
+  console.log(`\nTo approve and run:\n  ANTHROPIC_API_KEY=... node scripts/run-u.mjs --job ${jobKey}${dead ? ` --resume ${RESUME}` : ''} --approve ${specHash}`);
   process.exit(arg('approve') === null ? 0 : 1);
+}
+
+// W-2, on the launch side: "when time is up, keep the grade we already have and stop".
+// A resume whose wall remainder is zero or negative has no time to start anything in,
+// and launching it buys a scout and a precheck's worth of nothing before the clock
+// halts it. The preview above already warns; this REFUSES, because the warning is
+// advisory and this is the wall itself. It also closes the guard's half of the same
+// hole: `--wall-ms 0` used to reach u-watchdog, which defaulted it to null and armed
+// no deadline at all while this banner still claimed a wall.
+if (dead && RESUME_WALL_MS !== null && RESUME_WALL_MS <= 0) {
+  console.error(`WALL ALREADY EXHAUSTED — the halted run burned ${(dead.restart.priorWallMs / 60000).toFixed(1)}min of the signed ${/** @type {number} */ (WALL_MS) / 60000}min, so this resume starts with no time at all.`);
+  console.error('Nothing here refills it (a run may never widen its own cap). The lever is yours:');
+  console.error(`  - RAISE maxWallMs in jobs/${target.spec} — that is a spec edit, so the hash changes and you sign the new one with --approve;`);
+  console.error('  - or revise the goal/spec, or abandon the run and keep the verdict it already minted.');
+  process.exit(2);
 }
 
 const apiKey = process.env.ANTHROPIC_API_KEY;
 if (!apiKey) { console.error('ANTHROPIC_API_KEY not set (secrets load from the environment — never the tree)'); process.exit(2); }
 
-const wd = resolve(WORKDIR);
-const spineDir = join(wd, '..', target.spine);
+// `wd`/`spineDir` are derived once, above the resume reader that needs them; only the
+// directory's CREATION belongs here, after the preview/approval gates have exited.
 mkdirSync(spineDir, { recursive: true });
 const runid = Date.now().toString(36);
 const spineFile = join(spineDir, `u-${runid}.jsonl`);
 
 const git = (/** @type {string[]} */ a) => execFileSync('git', ['-C', wd, ...a], { encoding: 'utf8' }).trim();
-// the patient starts at the seed, every time — a run that inherits the previous
-// run's edits is measuring the wrong thing
-git(['reset', '--hard', SEED]);
-git(['clean', '-fd']);
-// COLD MEANS COLD (P design record): the isolate verbs (stash/remember) persist in
-// .litectx across runs — an uncleaned store would leak run N's memory into run N+1's
-// "cold" baseline and quietly poison every contrast (the reuse rung's OFF arm above
-// all). The store is a derived, self-healing cache by litectx's own contract; the
-// re-index it costs is ~65s under yield. When the reuse rung lands, KEEPING the
-// store becomes an explicit ledger-attributed choice — never a leak.
-rmSync(join(wd, '.litectx'), { recursive: true, force: true });
-console.log(`patient reset — clean at ${git(['rev-parse', '--short', 'HEAD'])}, store cold`);
+if (dead) {
+  // A RESUME is the OPPOSITE case from a cold launch: the halted run's edits are work
+  // this budget already paid for, and resetting them would throw away exactly what
+  // resume exists to keep. A dirty tree is what a resume expects to find. Only a MOVED
+  // HEAD stops it — nothing in a run commits, so that means a human did, and the
+  // reconstruction's premise (this tree is where the run left it) no longer holds.
+  // The `.litectx` store is kept for the same reason: it is paid indexing, and the
+  // COLD-MEANS-COLD reset below is about a fresh baseline, which this is not.
+  const gate = resumeTreeGate({ head: git(['rev-parse', 'HEAD']), seed: SEED, dirty: git(['status', '--porcelain']) });
+  if (!gate.ok) {
+    console.error(`PATIENT REFUSED — ${gate.detail}`);
+    console.error('This is a decision for you, not the harness: reset and start fresh, or put HEAD back where the halted run left it and resume again.');
+    process.exit(2);
+  }
+  console.log(`patient   ${gate.detail ?? 'clean — the halted run left no uncommitted work'} (store kept: it is indexing this run already paid for)`);
+} else {
+  // the patient starts at the seed, every time — a run that inherits the previous
+  // run's edits is measuring the wrong thing
+  git(['reset', '--hard', SEED]);
+  git(['clean', '-fd']);
+  // COLD MEANS COLD (P design record): the isolate verbs (stash/remember) persist in
+  // .litectx across runs — an uncleaned store would leak run N's memory into run N+1's
+  // "cold" baseline and quietly poison every contrast (the reuse rung's OFF arm above
+  // all). The store is a derived, self-healing cache by litectx's own contract; the
+  // re-index it costs is ~65s under yield. When the reuse rung lands, KEEPING the
+  // store becomes an explicit ledger-attributed choice — never a leak.
+  rmSync(join(wd, '.litectx'), { recursive: true, force: true });
+  console.log(`patient reset — clean at ${git(['rev-parse', '--short', 'HEAD'])}, store cold`);
+}
 
 const approvals = [{ specHash, signer: process.env.USER ?? 'human', ts: new Date().toISOString() }];
 const provider = new AnthropicProvider({ apiKey, model: MODEL });
@@ -156,7 +358,11 @@ const watchdog = spawn(process.execPath, [
   // omitted entirely on an unbounded spec (see WALL_MS above): the watchdog's own
   // startup line then says "no wall", so the choice is loud on BOTH sides of the
   // process boundary and the STALE trigger — which needs no wall — stays armed.
-  ...(WALL_MS === null ? [] : ['--wall-ms', String(WALL_MS)]),
+  // On a RESUME this is the REMAINDER, not the signed total: the run's own clock
+  // starts at `priorWallMs`, so arming the outside guard for the whole wall again
+  // would put the two deadlines minutes apart and leave the guard unable to fire in
+  // time on exactly the run it is watching (F70's shape).
+  ...(RESUME_WALL_MS === null ? [] : ['--wall-ms', String(RESUME_WALL_MS)]),
   '--grace-ms', String(worstCloseSilenceMs),
 ], { stdio: ['ignore', 'ignore', 'inherit'] });
 // A spawn failure arrives as an EVENT, and an unhandled 'error' on a ChildProcess is
@@ -198,14 +404,30 @@ let outcome;
 try {
   outcome = await runJob(spec, {
     approvals, workdir: wd, provider, providerFor, emit: makeSpine(spineFile),
-    shellCapUsd: spec.budgetUsd, capRuns: CAP_RUNS, closeTimeoutMs: CLOSE_TIMEOUT_MS,
+    shellCapUsd: spec.budgetUsd, capRuns: CAP_RUNS, strikeLimit: STRIKE_LIMIT, closeTimeoutMs: CLOSE_TIMEOUT_MS,
+    // RESUME: the money and the wall the halted run already burned are FOLDED IN (so
+    // the signed ceiling cannot widen by being re-invoked), and the checkpoint it
+    // reached is handed over so the plan is reloaded rather than re-drafted and the
+    // finished steps are skipped rather than re-paid.
+    ...(dead ? {
+      priorSpentUsd: dead.restart.priorSpentUsd,
+      // and whether that fold was EXACT — a floor stays a floor across the resume (F6)
+      priorSpendComplete: dead.restart.priorSpendComplete,
+      priorWallMs: dead.restart.priorWallMs,
+      ...(dead.restart.seed ? { resumeSeed: dead.restart.seed } : {}),
+      // and the dead leg's own close GRADES, so this leg's halt readouts judge the
+      // whole chain rather than the leg. A leg that re-grades an unchanged tree is
+      // flat on its own evidence; the RUN — which is what the top-up decision is
+      // about — may have been converging when the allowance ran out.
+      ...(dead.restart.grades?.length ? { resumeGrades: dead.restart.grades } : {}),
+    } : {}),
   });
 } finally {
   // the guard outlives the run only by accident, never by design
   try { watchdog.kill('SIGKILL'); } catch { /* already gone */ }
   clearInterval(lagTimer);
 }
-const elapsedMin = ((Date.now() - started) / 60000).toFixed(1);
+const legMs = Date.now() - started;
 
 // ── the read. Facts only: what happened, what it cost, and whether the record is
 // honest. No classification into pass/fail buckets — one run classifies nothing.
@@ -227,7 +449,10 @@ const writes = audit.filter((e) => e.decision === 'allow' && (e.action?.type ===
 
 console.log(`\noutcome   ${outcome}`);
 console.log(`spent     ${je?.spentUsd == null ? 'UNKNOWN' : `${je.spendComplete === false ? '≥' : ''}$${je.spentUsd.toFixed(4)}`} of $${spec.budgetUsd}`);
-console.log(`wall      ${elapsedMin}min of ${WALL_LABEL}`);
+// FOLDED, exactly like the money line above it: on a resume the cap governs both legs
+// together, and a leg-only wall next to a folded spend is two framings on one cap with
+// no label to tell them apart (F83). The leg stays on the line beside it.
+console.log(`wall      ${wallLine({ legMs, priorWallMs: dead ? dead.restart.priorWallMs : 0, wallLabel: WALL_LABEL })}`);
 console.log(`rounds    ${events.filter((e) => e.type === 'worker-round' && e.kind === 'turn').length}`);
 console.log(`writes    ${writes.length} allowed (${new Set(writes.map((e) => e.action?.path)).size} distinct files)`);
 console.log(`plan      ${plan ? `${plan.steps?.length ?? '?'} steps` : 'none validated'}`);
@@ -240,6 +465,18 @@ const fixed = events.some((e) => e.type === 'fix-loop');
 console.log(`close     first judgment ${oc?.verdict ?? '-'}${oc?.stage ? ` (stage ${oc.stage})` : ''}${fixed ? ` → fix loop ran → ${outcome}` : ''}`);
 console.log(`replan    ${events.some((e) => e.type === 'replan') ? 'YES' : 'no'}`);
 for (const e of events.filter((x) => x.type === 'escalation')) console.log(`ESCALATION ${e.category}: ${(e.decision ?? '').slice(0, 160)}`);
+// v1.46 §2 — the MONEY halt reads out like the wall's: the verdict that STANDS, the
+// per-stage trend that says which lever fits, and the three levers themselves. The
+// run pauses decision-ready; nothing here adjusts a budget, and nothing here relaunches.
+const mh = events.findLast((e) => e.type === 'money-halt');
+if (mh) {
+  console.log(`\nMONEY HALT — the cap cut the run at $${mh.remainingUsd?.toFixed?.(4) ?? '?'} left of $${mh.budgetUsd}. The verdict already minted STANDS: ${mh.verdict ?? 'unknown'}${mh.stage ? ` at stage "${mh.stage}"` : ''}.`);
+  console.log(`  trend   ${mh.trend} — ${mh.reading}`);
+  console.log(`  lever   ${mh.lever}`);
+  for (const o of mh.options ?? []) console.log(`          · ${o}`);
+  console.log(`  resume  node scripts/run-u.mjs --job ${jobKey} --resume ${runid} --approve <the NEW hash after you edit budgetUsd>`);
+  console.log('          (the top-up is yours to sign — nothing in the run may widen its own budget)');
+}
 // A leak is the HARD LINE broken, not a note in the margin: an advisory that
 // prints a count and then exits 0 while still writing the bridge is a guard in
 // name only. On any hit the run fails LOUD (non-zero) and the bridge is NOT

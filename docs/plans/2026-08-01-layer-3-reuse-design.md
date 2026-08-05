@@ -382,3 +382,203 @@ bridge is a starting draft, not a contract — now the gate agrees with it); the
 BEFORE measurement, never re-amended after one" — the pre-probe fact that forced this is $0
 and deterministic, established by the validator, not by a paid measurement anyone is fitting
 to.
+
+---
+
+## Addendum — 2026-08-02 (the machinery runs end to end: the D2-split gate LIVE, the first proven bridge, two false-proven doors closed, the circuit breaker, and hamr's two rulings this session)
+
+**This addendum records what the paid runs and the review did to the frozen record. It amends;
+it rewrites nothing above. Where a decision is unchanged it is not restated.**
+
+### 1. The D2-split load gate, live
+
+The split ruled the day before was exercised for real on `reuse-msarycnt.jsonl` (2026-08-01),
+and it behaved as the ruling intended in the hardest available case.
+
+- **At the door**, the gate admitted `aurora-u-spawner-types` for a litectx job: same verdict
+  type, same close-stage kinds (`changed-from-seed` → `typecheck` → `suite-green` →
+  `no-suppressions`), verbs inside the signed menu. It asked **nothing** about paths, scopes or
+  targets — which is the whole point, because the stored plan names
+  `packages/spawner/src/aurora_spawner/*.py` and the patient is a JavaScript repo.
+- **At draft time**, the tweaked plan named `src/impact.js` and `src/tsalias.js` and passed the
+  ordinary `validatePlan`. No second path, no looser path.
+- The kid-version framing held literally: *every recipe from a different day names yesterday's
+  bricks.* On this run they were yesterday's bricks **in another language**, and the drafter
+  replaced them unaided.
+
+### 2. What the validation run returned — and the one number that is NOT claimed
+
+Full read: **F73** in `docs/FINDINGS.md`. In one line each, so this record is self-contained:
+
+- **Try 1** picked the same-repo `litectx-u-types` ("a direct match"), used its one replan, and
+  **cap-halted on attempts with the close never reached** — $4.7442 / 222 rounds / 27.4 min,
+  `closeReached false`, `capBound false`, `wallBound false`. The envelope was never the binding
+  constraint; the plan's own attempt ladder was.
+- **Try 2** picked the cross-language `aurora-u-spawner-types` ("same kind of work… despite the
+  language/tool difference") and **greened** — $1.3971 / 52 rounds / 14.65 min, one outer
+  fix-loop conversion off a `no-suppressions` red.
+- `reuse-end green`, `triesUsed 2/2`, **$6.1467**, writes `appendCasualty litectx-u-types` +
+  `appendGreen aurora-u-spawner-types`.
+- **`aurora-u-spawner-types` is now `proven`** — greens on `aurora-u` and `litectx-u`, the
+  programme's first entry to clear D6's two-distinct-patients bar.
+- **No cost lift is claimed.** The whole run cost more than both cold litectx greens ($4.2942 /
+  $5.7655), and the per-try comparison is unusable: the runner deliberately does not reset the
+  patient between tries, so try 2 ran on the tree try 1 left after $4.74 of edits — its own
+  close names suppressions in files it never targeted. D9's second instrument answered
+  *"does the machinery work end to end"*, not *"is reuse cheaper"*.
+
+### 3. Amendments to the locked decisions
+
+| decision | as frozen | as built, and why |
+|---|---|---|
+| **D6 — demotion** | *"A red on a PROVEN entry drops it to CANDIDATE."* | Built as **a GRADED red**: only the literal `escalated` outcome demotes. A try whose close never rendered a verdict **judged nothing**, so it demotes nothing — it is written as a **casualty row** carrying its own outcome string (`step-red:<step>`) plus honest cost/wall/rounds, and it **IS shown at selection**. Live proof both ways: try 1's casualty row left `litectx-u-types` undemoted, and the next day's selector read that row and cited it verbatim (*"despite its last run ending red"*) before picking the bridge anyway. |
+| **D1 — storage / attribution** | an entry carries the patient the green ran against | The two writers had drifted to **two spellings of one patient** (`consolidate-bridges.mjs` wrote the spine-dir `litectx-u-bareloop`; `run-reuse.mjs` writes the workdir `litectx-u`), and D6 counts distinct patient STRINGS — the live registry was **one green away from a false `proven`**. Canonical slug = the patient workdir basename; consolidation now derives it from the `<patient>-bareloop` convention and **refuses** a directory that does not carry it. Migration applied to the live registry (`bd04ade`). Full read: **F74**. |
+| **D1 / D6 — the cold leg's write** | *(not decided — the record did not anticipate two closes under one job slug)* | **New rule:** a cold green may append to an entry of the job's name only when the entry's close is the **same shape**, checked with the load gate's own predicate. A mismatch **forks** to a deterministic `<job>-<sha256(stages)[0:8]>` with the fork on the write record — never appended onto the wrong close, never discarded (`33b104e`). |
+| **D7 — the envelope** | three operator numbers, signed before the run | The signature now covers **all three**, via the wrapper `{schema:'reuse-v1', spec, bridgeTries}` hashed by `reuseSpecHash` — see §4. Signed live at `$10 / 45 min / ×2`, larger than the record's illustrative `$5 / 30 min / ×2`. |
+
+### 4. hamr's two rulings this session, verbatim
+
+**(a) The try count is part of the signature.**
+
+> *"fold tries into the hash"*
+
+A reuse run authorizes `perTryBudgetUsd × (bridgeTries + 1)`, so signing the per-try spec alone
+signs a fraction of the money and prints the same hash for `--tries 2` and `--tries 9`. The
+signed artifact became the wrapper `{ schema: 'reuse-v1', spec, bridgeTries }`
+(`reuseSpecHash`, composed from the one `jobSpecHash` — MED-1's resolved-tools pinning
+inherited, no second canonicalizer). Pre-fold signatures are refused naming the scheme change;
+there is no legacy acceptance path. Putting `bridgeTries` on the job spec was **refuted by
+test** — `validateJob` reds unknown fields, so it would have job-red'd every try. (`f44526e`)
+
+**(b) Resume restarts the STEP, not the try.**
+
+> *"even if it gets killed by outside, it should allow resume and start last step instead from
+> the beginning, why would i want to waste more money on something i already started, our goal
+> is to find ways to save money and time"*
+
+This supersedes the try-level reading of the earlier checkpoint ruling (*"money, signature and
+checkpoint (starts from where it stopped) if mid loop, restart that loop"*), on measured
+evidence from the live three-kill validation: $0.25 then $0.40 of scout re-paid across two
+resumes, and a third leg left structurally unable to finish. The checkpoint is a **completed
+step's exit** — the finest unit the spine can prove and the tree can show; try-restart survives
+only for death before a plan was accepted. Full read: **F75** (the external-stop class) and
+**F76** (the granularity measurement).
+
+### 5. The circuit breaker, and where each piece landed
+
+F72's four parked pieces, closed this session:
+
+| | landed | commit |
+|---|---|---|
+| **A** liveness contract | an operator PROCEDURE the runner PRINTS (`systemd-inhibit --what=idle:sleep`), never shelled out to — no process can assert its machine will stay awake, and a harness taking a system lock nobody asked for is the wrong side of the line | `scripts/run-reuse.mjs` |
+| **B** kill checks before it kills | watchdog pre-kill report extended (`pidAlive`/`pollMs`/`termGraceMs`, atomic write, report failure can never defeat the kill, `SIGKILL` escalation announced), kill tests at production window:poll ratios | `4278ad6` |
+| **C** resume after kill | `--resume` reading the dead run's own spine; remainder-funded, signature-gated both ways, liveness-gated, patient never reset | `c04cdcf` (try-level) → step-level per §4(b) |
+| **D** BA-19 `deadlineMs` unparked | per-call deadline from the REMAINING wall; no `maxWallMs` → no deadline; `EDEADLINE` split expired→wall-halt / time-left→provider-red, F64's control pinned by a must-not-change test | `4278ad6` |
+
+### 6. What this addendum does NOT decide
+
+Unchanged from §6 above, plus one item the paid runs put on the table and deliberately left
+there: **the selector's stated reason was a poor predictor at n=1** (it called the failing
+bridge a *"direct match"* and the winning one a *"same-kind analog"*). That is the exact axis an
+auto-matcher would be built on, and D2's "no similarity engine in v1" stands — a matcher fitted
+to two picks is a threshold fitted to n=2, which is hamr's territory and nobody else's.
+
+---
+
+## Addendum — 2026-08-05 (D6's rules are now ENFORCED and one of them was never written down; D7's "gap trend" is superseded by one instrument; the build order absorbed unplanned governance work)
+
+Three commits since the last addendum touch this record: `ae417ae` (the money-halt package),
+`12d997f` (trend unification + the resume seed) and `f2be2b6` (the whole-branch review round).
+Reads: **F82**, **F83**, **F84**; PRD addenda **v1.46–v1.49**. None of them reopens a locked
+decision — this addendum records where the record has fallen behind the code, and one rule the
+code has always had that the record never stated.
+
+### 1. D6 — the graded-red amendment is now ENFORCED, and the RE-PROMOTION rule is stated here for the first time
+
+The 2026-08-02 addendum amended D6 so that only a literal `escalated` outcome demotes; a
+casualty judged nothing and demotes nothing. **That amendment had no test that could fail it
+until 2026-08-05.** F84's review found the hole by mutation: a widening of `REUSE_GRADED_RED`
+— the set whose members demote a proven entry — survived the entire suite. It is now pinned
+outcome by outcome (`escalated` demotes; `step-red`, `cap-halt`, `wall-halt`, `provider-red`,
+`close-red`, `step-stalled` and `pricing-red` are casualties, and proven stays proven). The
+decision is unchanged; what changed is that it is now protected rather than merely documented.
+
+**Never stated in this record, and it should have been:** `deriveStatus` treats a demotion as
+**clearing the distinct-patient set**, not as a one-notch step down. A demoted entry is
+therefore re-promoted only by **two fresh greens on two distinct patients** — the earlier
+greens do not count again. That is the strict direction and matches D6's own reasoning (a
+status is a claim about transmission across non-identical runs, and a red is evidence against
+the claim as it stood), but it was implementation-only until now. Recorded, not changed.
+
+Two smaller D6/D1 facts the code carries and the record did not: an unattributable green (no
+patient string) cannot prove a second instance and is skipped for status; and `reds` in the
+listing counts the literal `red` outcome only — a casualty is not a red in the count for the
+same reason it is not one in the ladder.
+
+### 2. D7 — "the gap trend" in the decision-ready return is superseded by ONE instrument
+
+D7 promises that each red returns decision-ready with *"which bridge, which stage rendered the
+red, the gap trend, and spend/time reported honestly per F6"*. The promise stands; the
+instrument behind the middle clause has been replaced twice since:
+
+- `gapTrend` — byte-equality of the last two close gaps — is **deleted** (`12d997f`). Both
+  governance halts now read the run's own per-stage numeric trend (`src/trend.js`); the byte
+  comparison survives only INSIDE `unknown` as a `motion` field and is never promoted to a
+  direction.
+- The decision-ready return is no longer only a try row: a run cut by its wallet emits a
+  `money-halt` record (kept verdict, `budgetUsd`, `remainingUsd` **with its own
+  `spendComplete`**, trend + reading + series, three levers), mirroring `wall-halt` (PRD v1.46
+  §2 / v1.49 §1).
+- A resumed leg's readout **spans the chain** — hamr's ruling, PRD v1.49 §2: the halt readout
+  is the consolidated money/time view across the chain, the strike governor stays leg-local,
+  and the two are never mixed.
+
+**D7's "never widened mid-run" also got a launch-side edge** (F84): a per-try wall remainder of
+zero now REFUSES the launch at both runners and at the outside watchdog, rather than launching
+under a guard that silently defaulted an unarmed deadline. Two zeros, two levers — a burned
+restart wall wants `--wall`, a run whose authorized attempts have all run wants `--tries` —
+and both are in the approval hash, so either is a new signature. The envelope decision is
+unchanged; this is the refusal it always implied.
+
+### 3. §5's build order — the sequence, and the two requirements still outstanding
+
+The order as written stands. What it no longer describes is the actual sequence: between step 3
+(the machinery) and step 4, the rung absorbed governance work this record did not anticipate —
+the money-halt package and the close-fix loop's progress governor (PRD v1.46), step-level
+resume, the step strike ladder replacing the fixed iteration count (PRD v1.45), and the trend
+unification and its resume seed (v1.49). None of it changes a locked decision here; all of it
+had to land before a reuse run's reds could honestly be called decision-ready.
+
+**Still outstanding, unstarted, and unchanged in ownership:** requirement (c), the
+bound-pressure ledger fold, and requirement (a), `drift-red` — which still needs a population
+of reuse runs before a base rate can be measured at all, and whose threshold is still hamr's.
+
+### 4. What this addendum does NOT decide
+
+Unchanged from §6 and from the 2026-08-02 addendum's §6. Added to the list: **the close-stage
+AXIS SPLIT** — one close stage can red on two structurally different populations under one
+name, which the trend's per-stage bucketing cannot see. It ships as a documented KNOWN LIMIT;
+the root fix is a stage split in the shipped closes, which changes stage names inside signed
+specs and is therefore **hamr's to sign** (F84; PRD v1.49 §4).
+
+**Decided the same day, after the above was written:** hamr signed it (*"#1 fix"*) and `4ae9a3c`
+split every mixed stage in the six `u-*` closes (`typecheck-outside` after `typecheck`,
+`tests-kept` before `suite-green`, each where its branch already ran — gate sequence byte-order
+identical). **Two consequences land directly on this record's decisions, and neither is a
+change to them:**
+
+- **D2 / the load gate did its job.** `aurora-u-spawner` and `litectx-u` now **refuse to load**
+  because their stored `closeStageNames` predate the split. That is the close-stage kinds check
+  behaving as R2 and D2 specify — a changed close is a different KIND of job — and the remedy is
+  re-minting from a green under the new close, never editing an entry into agreement. Expect a
+  registry with two entries in that state until the next green on each.
+- **D7 / the envelope is re-signed, not migrated.** All six `u-*` spec hashes flipped by
+  construction, so every signature predating the split is refused. The full signature trail —
+  hamr's pre-split bareguard sign-off, why a spec cannot carry its own signature, and the new
+  hash awaiting re-sign — is PRD v1.49 §5.
+
+**Still not decided, and still hamr's:** the same mixed-population class survives in
+`scripts/testgen-close.mjs`'s `verdict` stage (LIVE infrastructure — a rate beside collected
+counts, and splitting it is the same spec-hash territory), while `scripts/types-close.mjs` is
+frozen screening infrastructure left deliberately **as-run**, because re-cutting it would edit
+the instrument a finished measurement was taken with.

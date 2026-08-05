@@ -602,17 +602,16 @@ test('planPrompt: the offered scopes are a STANDALONE list, and EVERY JSON exit 
 test('planPrompt states every bound and rule the validator ENFORCES — an unstated red is drafting friction the agent cannot see', () => {
   // The prompt is the whole contract the agent drafts against: a bound the
   // validator reds but the prompt never mentions is a round burnt on a rule the
-  // drafter had no way to know. Three had drifted: `attempts` said "integer" with
-  // no range while validatePlan reds outside 1..capRuns, and BOTH
-  // `step-scope-escape` reds (a target outside its own step's narrowed scope; a
-  // tree-changed scope disjoint from it) were enforced and never stated.
+  // drafter had no way to know. Both `step-scope-escape` reds (a target outside
+  // its own step's narrowed scope; a tree-changed scope disjoint from it) were
+  // enforced and never stated.
   const scopes = legalScopes(['tests/**'], ['tests/unit']);
-  // the live cap is interpolated the way every sibling bound is, never a constant
-  for (const capRuns of [2, 5]) {
-    const p = planPrompt(JOB, 'survey', null, 40, null, scopes, undefined, capRuns);
-    assert.match(p, new RegExp(`"attempts"[^\\n]*1\\.\\.${capRuns}`), `the attempts bound names the LIVE cap ${capRuns}`);
-  }
-  const p = planPrompt(JOB, 'survey', null, 40, null, scopes, undefined, 3);
+  const p = planPrompt(JOB, 'survey', null, 40, null, scopes, undefined);
+  // `attempts` is the mirror rule: a field the prompt must NOT offer, because the
+  // step ladder governs iterations and the field bounds nothing (validatePlan
+  // still tolerates it for stored bridge plans — offered and accepted are
+  // different questions, and only "offered" is the drafter's contract).
+  assert.doesNotMatch(p, /"attempts"/, 'the drafter is never offered a knob that decides nothing');
   assert.match(p, /"scope"/, 'the step scope field is offered');
   // stated as rules, in the prompt's own voice — matched on the load-bearing
   // words rather than the sentence, so a rewording does not break the pin
@@ -638,11 +637,22 @@ test('P: model from the closed tier menu is accepted; an off-menu value is inexp
   assert.match(r.reds[0].detail ?? '', /sonnet\|haiku/, 'the menu is handed over, not described');
 });
 
-test('P: attempts tightens the shell capRuns, never exceeds it', () => {
-  assert.deepEqual(validatePlan(mut((p) => { p.steps[1].attempts = 2; }), { job: JOB, capRuns: 4 }).reds, []);
-  const r = validatePlan(mut((p) => { p.steps[1].attempts = 9; }), { job: JOB, capRuns: 4 });
-  assert.equal(r.reds.length, 1);
-  assert.equal(r.reds[0].code, 'bounds');
+test('P: attempts is TOLERATED-INERT — any positive integer validates (stored bridge plans carry it), garbage still reds', () => {
+  // It used to tighten a fixed per-step attempt count. That count is gone (the
+  // step ladder governs iterations by progress), so the field bounds nothing and
+  // the prompt no longer offers it. It is NOT rejected, and that half is
+  // load-bearing: the frozen bridge registry's stored plans carry `attempts`, and
+  // a validator that redded them would refuse every recipe minted before today
+  // and ruin a frozen contrast experiment.
+  assert.deepEqual(validatePlan(mut((p) => { p.steps[1].attempts = 2; }), { job: JOB }).reds, []);
+  assert.deepEqual(validatePlan(mut((p) => { p.steps[1].attempts = 9; }), { job: JOB }).reds, [],
+    'no upper bound survives the cap it named — a plan stored under one runner\'s number must not be invalid under another\'s');
+  // the SHAPE is still checked: a known field holding garbage stays a named red
+  for (const bad of [0, -1, 1.5, 'two', null]) {
+    const r = validatePlan(mut((p) => { p.steps[1].attempts = bad; }), { job: JOB });
+    assert.equal(r.reds.length, 1, `attempts: ${JSON.stringify(bad)} must red`);
+    assert.equal(r.reds[0].code, 'bounds');
+  }
 });
 
 test('P: a per-step scope narrows the fence from the SAME menu tree-changed uses', () => {
@@ -834,4 +844,120 @@ test('W4: an ARRAY close is untouched by the staging hoist (regression control)'
   assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'check-unknown:steps.1.exit.1',
     '"close" is not a stage of THIS close — the staged name exists only for the object form');
   assert.match(planPrompt(JOB, 'survey', null, 40, null, legalScopes(['tests/**'])), /\["clean-run","form-floor","verdict"\]/);
+});
+
+// ─── the shape-lottery gate rules (2026-08-04, hamr "go") ───
+// The $0 sweep over every archived spine: per-file decomposition with the
+// whole-goal check on an EARLY step has 0 honest greens ever (bareagent ×3,
+// baremobile, ms4l5p6w, ms57zr7c all died there); the RLM shape — one wide
+// closing step carrying the real check, iterating — greens 7/7 whenever
+// rolled. Both rules are MECHANICAL (keyed on recorded preflight verdicts and
+// the predecessor plan's exits), never an LLM judgment of "is this job
+// small": the losing shape becomes inexpressible at the gate, the drafter is
+// never asked to assess decomposition.
+
+test('Rule A-v2 green: a seed-red check on the FINAL write step validates green (the RLM closing step)', () => {
+  // PLAN's own shape: steps.1 is the last write-granted step and carries
+  // check-passes(clean-run) — the 7/7 winning shape must stay legal untouched.
+  const r = validatePlan(PLAN, { job: JOB, seedRed: ['clean-run'] });
+  assert.deepEqual(r.reds, []);
+});
+
+test('Rule A-v2 red: a seed-red check on an EARLIER write step is check-placement (the bareagent-u death shape)', () => {
+  // u-msdpuaej/u-msdsmkid: step 1 of 2 carried the whole-goal check while its
+  // action scoped to a slice — unsatisfiable without crossing the step's own
+  // boundary, 0 honest greens in the whole archive. The F17 pairing is paid
+  // (tree-changed conjunct present) so the ONLY defect is the placement.
+  const r = validatePlan(mut((p) => {
+    p.steps[0].exit = [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }];
+  }), { job: JOB, seedRed: ['clean-run'] });
+  assert.equal(r.ok, false);
+  assert.equal(r.reds.length, 1, `exactly one red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'check-placement:steps.0.exit.1');
+  assert.match(r.reds[0].detail ?? '', /final write step/i);
+});
+
+test('Rule A-v2 is keyed on the RECORDED verdicts, never a default: seedRed omitted leaves the same plan green (resume/reuse callers byte-identical)', () => {
+  const early = mut((p) => {
+    p.steps[0].exit = [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }];
+  });
+  assert.deepEqual(validatePlan(early, OPTS).reds, []);
+});
+
+test('Rule A-v2 constrains ONLY seed-red names: a green-at-seed check stays free mid-plan (the 20 TESTGEN mid-plan greens)', () => {
+  const early = mut((p) => {
+    p.steps[0].exit = [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }];
+  });
+  assert.deepEqual(validatePlan(early, { job: JOB, seedRed: ['form-floor'] }).reds, []);
+});
+
+test('Rule A-v2: the final WRITE step need not be the final step — a trailing read-only step does not move the anchor', () => {
+  const r = validatePlan(mut((p) => {
+    p.steps[0].exit = [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }];
+    p.steps[1] = {
+      id: 'read-back', action: 'Read the suite and confirm the notes file lists every covered function.',
+      tools: ['read', 'get'], rounds: 4,
+      exit: [{ type: 'artifact-written', path: 'tests/notes.md' }],
+    };
+  }), { job: JOB, seedRed: ['clean-run'] });
+  assert.deepEqual(r.reds, [], 'steps.0 IS the final write step here — the seed-red check on it is the legal RLM anchor');
+});
+
+test('Rule A-v2 does not double-charge a mailbox: a seed-red check on a READ-ONLY step raises the mailbox red alone (one defect, one red)', () => {
+  const r = validatePlan(mut((p) => {
+    p.steps[1].tools = ['read', 'get'];
+    delete p.steps[1].target;
+    p.steps[1].exit = [{ type: 'check-passes', name: 'clean-run' }];
+  }), { job: JOB, seedRed: ['clean-run'] });
+  assert.equal(r.ok, false);
+  assert.equal(r.reds.length, 1, `exactly one red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(r.reds[0].code, 'exit-illegal');
+});
+
+test('Rule B red: a redraft that DROPS a predecessor plan\'s check-passes is check-shed (u-msdsmkid: exits became form-only and "greened" unearned)', () => {
+  const shed = mut((p) => { p.steps[1].exit = [{ type: 'tree-changed', scope: 'tests/**' }]; });
+  const r = validatePlan(shed, { job: JOB, priorChecks: ['clean-run'] });
+  assert.equal(r.ok, false);
+  assert.equal(r.reds.length, 1, `exactly one red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'check-shed:steps');
+  assert.match(r.reds[0].detail ?? '', /clean-run/);
+  // and the same shed plan with NO priorChecks stays green — the rule reads the
+  // predecessor's exits, never a default
+  assert.deepEqual(validatePlan(shed, OPTS).reds, []);
+});
+
+test('Rule B green: the redraft that KEEPS every inherited check validates green', () => {
+  assert.deepEqual(validatePlan(PLAN, { job: JOB, priorChecks: ['clean-run'] }).reds, []);
+});
+
+test('Rule B names ONLY the dropped check(s) — a kept one is never charged', () => {
+  // predecessor carried two checks; the redraft keeps clean-run, drops form-floor
+  const r = validatePlan(PLAN, { job: JOB, priorChecks: ['clean-run', 'form-floor'] });
+  assert.equal(r.ok, false);
+  assert.equal(r.reds.length, 1, `exactly one red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(r.reds[0].code, 'check-shed');
+  assert.match(r.reds[0].detail ?? '', /form-floor/);
+  assert.doesNotMatch(r.reds[0].detail ?? '', /"clean-run"/);
+});
+
+test('planPrompt states Rule A-v2 when seed-red checks exist: the failing check is the goal — final write step only, framed wide', () => {
+  const p = planPrompt(JOB, 'survey', null, 40, null, legalScopes(['tests/**']), undefined, null, { seedRed: ['clean-run'] });
+  assert.match(p, /"clean-run"/);
+  assert.match(p, /FINAL write step/i);
+  assert.match(p, /free to edit any file it reports/i);
+});
+
+test('planPrompt states Rule B on a replan: every inherited check must be kept', () => {
+  const p = planPrompt(JOB, 'survey', null, 40, null, legalScopes(['tests/**']), undefined, null, { priorChecks: ['clean-run'] });
+  assert.match(p, /previous plan carried/i);
+  assert.match(p, /"clean-run"/);
+  assert.match(p, /drops? .*(check|one of them).* (is|are) rejected|dropping (a|any) check.* rejected/i);
+});
+
+test('planPrompt without checkFacts renders byte-identical to the pre-rules prompt (additive, never surgery)', () => {
+  const scopes = legalScopes(['tests/**']);
+  assert.equal(
+    planPrompt(JOB, 'survey', null, 40, null, scopes, undefined, null, {}),
+    planPrompt(JOB, 'survey', null, 40, null, scopes, undefined, null),
+  );
 });

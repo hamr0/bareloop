@@ -399,3 +399,165 @@ test('CONTROL: a BETWEEN-ATTEMPTS wall-halt keeps spendComplete:true — nothing
   assert.equal(end.spendComplete, true,
     'every round this sum counted came back priced — the flag tracks the mid-call cut, not merely "a wall-halt happened"');
 });
+
+// ─── the RESUMED attempt: prior spend and prior wall FOLD IN (module C) ───
+//
+// hamr's checkpoint ruling: a run killed mid-try restarts THAT try under the
+// REMAINDER of its signed per-try numbers — "a budget ceiling folds in prior spend
+// so re-invoking cannot silently widen it". The seam is the FOLD, never a rewritten
+// cap: `budgetUsd`/`maxWallMs` are in the spec hash, so tightening them would be a
+// new spec version the operator has to re-sign, and a resume would then need a
+// signature nobody typed. The signed numbers stay exactly as signed; the restarted
+// attempt simply starts with part of them already consumed.
+
+test('resume: priorSpentUsd folds into the ONE ledger — the restarted attempt spends the REMAINDER of the signed budget, and job-end states the try\'s WHOLE spend', async () => {
+  // two workdirs on purpose: the cold arm WRITES the file the close reads, so re-running
+  // the resumed arm in the same tree would grade `already-green` and compare two
+  // different runs' spend (the control has to be the same work, not the same directory)
+  const wd = makePlanWork('plan-prior-spend-cold');
+  const wd2 = makePlanWork('plan-prior-spend-resumed');
+  const job = planJob();
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write the missing test.', tools: ['write'], rounds: 6,
+      target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }],
+    }],
+  });
+  const script = (/** @type {string} */ dir) => [
+    { text: 'no tests exist yet' },
+    { text: plan },
+    { toolCalls: [tcall2('t1', 'shell_write', { path: join(dir, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'wrote it' },
+  ];
+  const approvals = [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }];
+
+  const coldFile = join(wd, 'spine-cold.jsonl');
+  await runJob(job, { approvals, workdir: wd, provider: scriptedProvider(script(wd)), emit: makeSpine(coldFile) });
+  const coldSpend = readSpine(coldFile).find((e) => e.type === 'job-end').spentUsd;
+  assert.ok(coldSpend > 0);
+
+  const file = join(wd2, 'spine-resumed.jsonl');
+  await runJob(job, {
+    approvals, workdir: wd2, provider: scriptedProvider(script(wd2)), emit: makeSpine(file),
+    priorSpentUsd: 0.5,
+  });
+  const end = readSpine(file).find((e) => e.type === 'job-end');
+  assert.ok(Math.abs(end.spentUsd - (0.5 + coldSpend)) < 1e-9,
+    `the dead attempt's spend is never laundered to $0: ${end.spentUsd} vs ${0.5 + coldSpend}`);
+});
+
+test('resume: a prior fold DRAINS the wallet the run is handed — the planner reads the remainder, never a fresh allotment', async () => {
+  // the seam where "no fresh allotment" is observable: the balance the drafter is handed
+  // is the LIVE wallet (`remainingUsd()`), so a fold that consumed the budget shows up as
+  // a drained balance rather than the signed total. (Refusing to LAUNCH an unfundable
+  // restart at all is the reuse runner's job, one level up — a run that got this far has
+  // already been judged fundable; this test only pins that the money folded in.)
+  const wd = makePlanWork('plan-prior-exhausted');
+  const job = planJob(); // budgetUsd 1.5
+  const provider = scriptedProvider([{ text: 'scout' }, { text: 'plan' }]);
+  const file = join(wd, 'spine.jsonl');
+  await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file),
+    priorSpentUsd: 1.4,
+  });
+  const events = readSpine(file);
+  const materials = events.find((e) => e.type === 'materials');
+  assert.ok(materials.balanceUsd < 0.1, `the drafter is told what is LEFT (${materials.balanceUsd}), not the signed 1.5`);
+  assert.ok(events.find((e) => e.type === 'job-end').spentUsd >= 1.4, 'and the dead attempt\'s money is still on the terminal record — never laundered to $0');
+});
+
+test('resume: priorWallMs folds into the run clock — the signed wall is reported unchanged, the remainder is what is left', async () => {
+  const wd = makePlanWork('plan-prior-wall');
+  const job = { ...planJob(), maxWallMs: 600_000 };
+  const provider = scriptedProvider([{ text: 'scout' }, { text: 'plan' }]);
+  const file = join(wd, 'spine.jsonl');
+  await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file),
+    priorWallMs: 500_000,
+  });
+  const wc = readSpine(file).find((e) => e.type === 'wall-clock');
+  assert.equal(wc.requestedMs, 600_000, 'the SIGNED cap is what is reported — a resume never edits it');
+  assert.ok(wc.elapsedMs >= 500_000, `the dead attempt's time is already consumed: ${wc.elapsedMs}`);
+  assert.ok(wc.remainingMs <= 100_000, `only the remainder is left: ${wc.remainingMs}`);
+});
+
+test('§3 resume: job-start DECLARES the fold it inherited — a chain of resumes is accounted from the record, never re-derived from the file', async () => {
+  // The `try-start` precedent, one level down. `readResume` reads a resumed run's
+  // prior spend off the record that DECLARES it, because re-deriving from a whole
+  // spine would bill an abandoned attempt twice. A direct runJob spine had no such
+  // record at all, so the second resume of a cap-halted run would have folded in
+  // only its own rounds and silently widened the ceiling by everything before them.
+  const wd = makePlanWork('plan-declared-fold');
+  const job = planJob();
+  const approvals = [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }];
+  const file = join(wd, 'spine.jsonl');
+  await runJob(job, {
+    approvals, workdir: wd, provider: scriptedProvider([{ text: 'scout' }, { text: 'plan' }]),
+    emit: makeSpine(file), priorSpentUsd: 0.75, priorWallMs: 90_000,
+  });
+  const start = readSpine(file).find((e) => e.type === 'job-start');
+  assert.equal(start.priorSpentUsd, 0.75, 'the money the dead attempt spent is ON the record a resume reads');
+  assert.equal(start.priorWallMs, 90_000, 'and so is the wall it burned');
+  assert.equal(start.priorSpendComplete, true);
+});
+
+test('§3 CONTROL: a COLD run\'s job-start carries no fold fields at all — an absent fold is absent, never a decorative zero', async () => {
+  const wd = makePlanWork('plan-no-fold');
+  const job = planJob();
+  const file = join(wd, 'spine.jsonl');
+  await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider: scriptedProvider([{ text: 'scout' }, { text: 'plan' }]), emit: makeSpine(file),
+  });
+  const start = readSpine(file).find((e) => e.type === 'job-start');
+  assert.equal('priorSpentUsd' in start, false);
+  assert.equal('priorWallMs' in start, false);
+});
+
+test('§3 resume: a FLOOR fold stays a floor — a dead run whose spend was only partly priced cannot come back as an exact total (F6)', async () => {
+  // The fold is the dead run's own figure, and `readResume` marks it
+  // `priorSpendComplete: false` when any round in it came back unpriced. Declaring
+  // it `true` here would launder an unknown into an exact number at the one record
+  // a human reads the money off — F6 wearing a resume's coat.
+  const wd = makePlanWork('plan-floor-fold');
+  const job = planJob();
+  const file = join(wd, 'spine.jsonl');
+  await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider: scriptedProvider([{ text: 'scout' }, { text: 'plan' }]),
+    emit: makeSpine(file), priorSpentUsd: 0.5, priorSpendComplete: false,
+  });
+  const events = readSpine(file);
+  assert.equal(events.find((e) => e.type === 'job-start').priorSpendComplete, false,
+    'the declaration carries the floor, so a resume OF this resume inherits the unknown');
+  const end = events.find((e) => e.type === 'job-end');
+  assert.ok(end.spentUsd >= 0.5, 'the floor is a real number and still rides out');
+  assert.equal(end.spendComplete, false,
+    'and the TOTAL is a floor too — every round of this attempt being priced does not repair the one before it');
+});
+
+test('§3 resume: a fold of $0 that is NOT exact is still a floor — an unpriced dead leg does not become exact by having spent nothing countable', async () => {
+  // The degenerate fold, and the one the money conjunct got wrong: a leg killed with
+  // EVERY round unpriced sums to 0 and reports `spendComplete: false`. The figure is a
+  // floor of zero, not an exact zero — the dead leg bought rounds nobody could price.
+  // Keying the carry on `spentUsd > 0` read that as "no fold to qualify" and handed
+  // the resumed terminal an exact-looking total over a predecessor that said otherwise.
+  const wd = makePlanWork('plan-zero-floor-fold');
+  const job = planJob();
+  const file = join(wd, 'spine.jsonl');
+  await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider: scriptedProvider([{ text: 'scout' }, { text: 'plan' }]),
+    emit: makeSpine(file), priorSpentUsd: 0, priorSpendComplete: false,
+  });
+  const events = readSpine(file);
+  const start = events.find((e) => e.type === 'job-start');
+  assert.equal(start.priorSpendComplete, false,
+    'the declaration is emitted for the unknown ALONE — a resume of this resume must inherit it, and there is no money field to carry it');
+  assert.equal(events.find((e) => e.type === 'job-end').spendComplete, false,
+    'the unknown rides one-way onto the terminal, exactly as a non-zero floor fold does');
+});

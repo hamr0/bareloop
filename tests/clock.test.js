@@ -21,7 +21,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createClock, isWallTimeout, MIN_CALL_TIMEOUT_MS, PROVIDER_TIMEOUT_MS, TIMEOUT_CODE } from '../src/clock.js';
+import { createClock, isWallTimeout, MIN_CALL_TIMEOUT_MS, PROVIDER_TIMEOUT_MS, TIMEOUT_CODE, DEADLINE_CODE } from '../src/clock.js';
 
 /** a controllable clock: `at(ms)` moves it, so elapsed time is exact */
 function fakeNow(start = 1_000_000) {
@@ -88,8 +88,10 @@ test('bounded: enforcedMs reports the HONEST number — requested plus one close
 // ─── W5: the overshoot is PER STAGE ───
 
 test('W5: a STAGED close multiplies the overshoot — every stage runs under the full closeTimeoutMs (runStages), so a 4-stage close is 4 of them, not 1', () => {
-  // jobs/aurora-u-spawner-types.json exactly: a 30-minute cap, a 4-stage close, a
-  // 900s per-stage timeout. Quoting 45 minutes against a 90-minute worst case is
+  // the U shape as jobs/aurora-u-spawner-types.json ran it when this was written: a
+  // 30-minute cap, a 4-stage close, a 900s per-stage timeout (the close has since
+  // grown a stage — the arithmetic below is the claim, not the count).
+  // Quoting 45 minutes against a 90-minute worst case is
   // F6 in a time coat — the same arithmetic the U runner's outside watchdog
   // already does (CLOSE_TIMEOUT_MS * spec.close.length).
   const c = createClock({ maxWallMs: 1_800_000, closeStages: 4, now: fakeNow().now });
@@ -206,4 +208,109 @@ test('isWallTimeout: only the provider timeout code counts — every other trans
 
 test('isWallTimeout: the code is bare-agent\'s own (BA-18) — pinned, because a rename upstream silently reopens F64', () => {
   assert.equal(TIMEOUT_CODE, 'ETIMEDOUT');
+});
+
+// ─── BA-19: the TOTAL-call-duration deadline (F72 park D) ───
+//
+// BA-18's `timeoutMs` is an IDLE bound — `req.setTimeout`, reset by every byte — so a
+// response that trickles forever never trips it (F66's 274-minute call; bare-agent's own
+// provider-http.js:82 says the same). BA-19 adds an absolute ceiling that no byte resets.
+//
+// It is DISABLED by default upstream (`resolveTimeoutMs(..., 0, 'deadlineMs')`,
+// provider-http.js:45-56), and it stays disabled here whenever the operator set no wall:
+// a deadline picked out of the air is a silent second ceiling, which is exactly what
+// `maxWallMs` having no default exists to prevent (F45). So the ONLY source of this number
+// is the wall's own remainder — which is also what makes a trip a governance stop rather
+// than a casualty (F64).
+
+const edeadline = () => Object.assign(new Error('[AnthropicProvider] request exceeded its total deadline of 600000ms'), { code: DEADLINE_CODE, retryable: false, context: { bound: 'deadline' } });
+
+test('callDeadlineMs: an UNBOUNDED run gets NO deadline at all — null, never a number, because a defaulted cap is a silent second ceiling (F45)', () => {
+  const f = fakeNow();
+  const c = createClock({ now: f.now });
+  assert.equal(c.callDeadlineMs(), null);
+  f.at(10 * 60 * 60_000);
+  assert.equal(c.callDeadlineMs(), null, 'ten hours in, still no invented ceiling — the operator chose unbounded');
+});
+
+test('callDeadlineMs: the deadline is the REMAINING wall read at call time, not at run start — a constant would bound the last call by the first call\'s budget', () => {
+  const f = fakeNow();
+  const c = createClock({ maxWallMs: 3_600_000, now: f.now });
+  assert.equal(c.callDeadlineMs(), 3_600_000, 'at t=0 the whole wall is still ahead');
+  f.at(600_000);
+  assert.equal(c.callDeadlineMs(), 3_000_000, 'ten minutes in, the ceiling has shrunk by exactly that');
+  f.at(3_000_000);
+  assert.equal(c.callDeadlineMs(), 600_000);
+});
+
+test('callDeadlineMs is NOT clamped to the provider default the way callTimeoutMs is — the idle bound above its own default would be inert, a total-duration ceiling above it is the whole point', () => {
+  const f = fakeNow();
+  const c = createClock({ maxWallMs: 3_600_000, now: f.now });
+  assert.equal(c.callTimeoutMs(), PROVIDER_TIMEOUT_MS, 'the idle bound saturates at 10 min');
+  assert.ok(c.callDeadlineMs() > PROVIDER_TIMEOUT_MS, 'the deadline does not — a trickling stream must still be bounded at the wall');
+});
+
+test('callDeadlineMs floors at MIN_CALL_TIMEOUT_MS, exactly as the call timeout does — a 50ms ceiling is certain to trip and 0 would DISABLE the bound upstream (provider-http.js: `if (!(deadlineMs > 0)) return`)', () => {
+  const f = fakeNow();
+  const c = createClock({ maxWallMs: 600_000, now: f.now });
+  f.at(599_950);
+  assert.equal(c.callDeadlineMs(), MIN_CALL_TIMEOUT_MS);
+  f.at(700_000);
+  assert.equal(c.callDeadlineMs(), MIN_CALL_TIMEOUT_MS, 'past the deadline it is still a usable positive number — never 0, which upstream reads as "no bound"');
+});
+
+test('isWallTimeout: a DEADLINE trip past the cap is the run\'s own wall coming back — the value was derived from it, so it is governance, never a casualty (F64 class, new code)', () => {
+  const f = fakeNow();
+  const c = createClock({ maxWallMs: 600_000, now: f.now });
+  f.at(600_000);
+  assert.equal(isWallTimeout(edeadline(), c), true);
+});
+
+test('isWallTimeout control: a DEADLINE trip with time still on the clock stays transport — the discriminator is the WALL, never the error code, so a foreign deadline (a provider constructed with its own) can never be laundered into a governance stop', () => {
+  const f = fakeNow();
+  const c = createClock({ maxWallMs: 600_000, now: f.now });
+  f.at(599_999);
+  assert.equal(isWallTimeout(edeadline(), c), false);
+  const un = createClock({ now: fakeNow().now });
+  assert.equal(isWallTimeout(edeadline(), un), false, 'and an unbounded run has no wall to attribute it to at all');
+});
+
+test('isWallTimeout: the deadline code is bare-agent\'s own (BA-19) — pinned beside BA-18\'s, because a rename upstream silently reopens F64 on the new bound', () => {
+  assert.equal(DEADLINE_CODE, 'EDEADLINE');
+  assert.notEqual(DEADLINE_CODE, TIMEOUT_CODE, 'two bounds, two codes — upstream splits them so a consumer can tell which timer fired');
+});
+
+// ─── the RESUMED leg: prior elapsed folds in (module C, resume-after-kill) ───
+//
+// hamr's checkpoint ruling: a run killed mid-try restarts THAT try under the
+// REMAINDER of its signed per-try numbers — "a budget ceiling folds in prior spend
+// so re-invoking cannot silently widen it", and the wall is the same ruling in a
+// time coat. The signed cap is NEVER edited (that would be a new spec version and a
+// new hash); what changes is that the clock starts already partly spent.
+
+test('resume: priorElapsedMs folds into the clock — the SIGNED cap is unchanged and the remainder is what is left of it', () => {
+  const f = fakeNow();
+  const c = createClock({ maxWallMs: 600_000, priorElapsedMs: 400_000, now: f.now });
+  assert.equal(c.requestedMs, 600_000, 'the cap the operator signed is the cap reported — a resume never rewrites it');
+  assert.equal(c.elapsedMs(), 400_000, 'the dead attempt\'s time is already consumed');
+  assert.equal(c.remainingMs(), 200_000);
+  assert.equal(c.expired(), false);
+  f.at(200_000);
+  assert.equal(c.expired(), true, 'the fold is what makes the remainder bind — a fresh allotment would widen the signed worst case');
+  assert.equal(c.report(120_000).elapsedMs, 400_000 + 200_000, 'the record states the try\'s WHOLE elapsed, both attempts');
+});
+
+test('resume: a prior fold BEYOND the cap expires the clock immediately — it can never read as a fresh allotment', () => {
+  const f = fakeNow();
+  const c = createClock({ maxWallMs: 600_000, priorElapsedMs: 900_000, now: f.now });
+  assert.equal(c.expired(), true);
+  assert.equal(c.remainingMs(), 0, 'floored at 0, never negative');
+});
+
+test('resume: a garbage or absent prior fold is 0, never a silent shift of the deadline', () => {
+  const f = fakeNow();
+  for (const bad of [undefined, null, NaN, -5, 'lots', Infinity]) {
+    const c = createClock({ maxWallMs: 600_000, priorElapsedMs: /** @type {any} */ (bad), now: f.now });
+    assert.equal(c.elapsedMs(), 0, `priorElapsedMs ${String(bad)} must not move the clock`);
+  }
 });

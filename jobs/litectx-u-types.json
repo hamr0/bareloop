@@ -37,6 +37,16 @@
       "gapKeep": "^LITECTX "
     },
     {
+      "name": "tests-kept",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-litectx-close.mjs tests-kept",
+      "expect": 0,
+      "judged": {
+        "pattern": "LITECTX judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^LITECTX "
+    },
+    {
       "name": "suite-green",
       "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-litectx-close.mjs suite-green",
       "expect": 0,

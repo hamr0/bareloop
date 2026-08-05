@@ -795,3 +795,53 @@ test('judge seam: run-start labels the judge (no close argv exists to print); no
   assert.match(events.find((e) => e.type === 'run-start').close, /judge/);
   assert.equal(events.find((e) => e.type === 'close-unaudited'), undefined, 'the judged-floor story belongs to closes, not the exit judge');
 });
+
+// ─── the two exhaustion rules are ALTERNATIVES, and one of them must be real ──
+// Measured, not read: with neither `capRuns` nor `ladder`, `1 <= undefined` is
+// false, so the loop body never ran once and ralph still emitted a cap-halt plus
+// an escalation reading "undefined/undefined runs spent, close still red" — a
+// governance stop reported for a run that never happened, on the PUBLIC export.
+// That is this repo's named blind-instrument class: an instrument narrating a
+// bound it never enforced.
+
+test('no capRuns and no ladder: ralph REFUSES at entry — a loop with neither exhaustion rule cannot stop honestly', async () => {
+  const file = join(dir, 'no-bound.jsonl');
+  let ran = 0;
+  await assert.rejects(
+    () => ralph({ middle: () => { ran++; }, close: RED, emit: makeSpine(file) }),
+    (e) => {
+      // the refusal must name BOTH alternatives, because either one fixes it and a
+      // message naming one sends the caller to the wrong repair
+      assert.match(e.message, /capRuns/);
+      assert.match(e.message, /ladder/);
+      return true;
+    },
+  );
+  assert.equal(ran, 0, 'the middle never ran — no tokens are spent by a call that was already malformed');
+});
+
+test('a non-positive or non-integer capRuns is the same refusal — a bound of 0, 2.5 or "3" bounds nothing', async () => {
+  for (const bad of [0, -1, 2.5, '3', null, NaN]) {
+    await assert.rejects(
+      () => ralph({ middle: noop, close: RED, capRuns: /** @type {any} */ (bad), emit: () => ({}) }),
+      /capRuns/,
+      `capRuns: ${JSON.stringify(bad)} must be refused, never run as a bound`,
+    );
+  }
+});
+
+test('a ladder with no capRuns is LEGAL — the governor is the other exhaustion rule, not a missing one', async () => {
+  const file = join(dir, 'ladder-no-cap.jsonl');
+  let strikes = 0;
+  const ladder = {
+    record: () => ({ strikes: ++strikes }),
+    struckOut: () => strikes >= 2,
+    report: () => ({ strikes, limit: 2, iterations: strikes }),
+    brief: () => 'no progress.',
+  };
+  const outcome = await ralph({ middle: noop, close: RED, ladder, emit: makeSpine(file) });
+  assert.equal(outcome, 'escalated');
+  const events = readFileSync(file, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l));
+  assert.equal(events.filter((e) => e.type === 'middle-done').length, 2, 'the middle really ran — the ladder bounded it, not the absent count');
+  assert.equal(events.find((e) => e.type === 'escalation').category, 'cap-halt');
+});
