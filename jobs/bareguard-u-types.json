@@ -37,6 +37,26 @@
       "gapKeep": "^BAREGUARD "
     },
     {
+      "name": "typecheck-outside",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-bareguard-close.mjs typecheck-outside",
+      "expect": 0,
+      "judged": {
+        "pattern": "BAREGUARD judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^BAREGUARD "
+    },
+    {
+      "name": "tests-kept",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-bareguard-close.mjs tests-kept",
+      "expect": 0,
+      "judged": {
+        "pattern": "BAREGUARD judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^BAREGUARD "
+    },
+    {
       "name": "suite-green",
       "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-bareguard-close.mjs suite-green",
       "expect": 0,

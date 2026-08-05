@@ -104,21 +104,29 @@
 // on a dead run. Never sharpened to chase it (the F49 precedent): the dangerous
 // direction is the other one.
 //
-// KNOWN LIMIT, the accuracy law's own boundary: a series is one bucket PER STAGE
-// NAME, and a stage name is not the same thing as an axis. A close is free to red
-// on two structurally different populations under one name, and the shipped ones
-// do — u-*-close's `typecheck` reds either `reports N error(s) in <scope>` (the
-// in-scope faults) or `the target files are clean but M strict error(s) exist
-// outside them` (a different population entirely, reached only once the first is
-// zero), and `suite-green` has the same shape (`N test(s) now fail` beside a
-// floor). A run that crosses that seam donates both genres to one series, so a
-// 29 → 4 across it reads CONVERGING and recommends a top-up on work that just
-// swapped which wall it is behind — the u-msew1uy5 error, in the one place the
-// bucketing cannot see it. It is stated here rather than parsed around: the fix is
-// a STAGE SPLIT in the closes, which changes spec-adjacent stage names and is
-// hamr's to sign, never a detector taught to tell two prose shapes apart (the same
-// F49 precedent as above — a per-close sharpening is how this reader stops being
-// one reader).
+// THE LAW FOR CLOSE AUTHORS, which is where this module's boundary is enforced:
+// **one POPULATION per stage.** A series is one bucket per stage NAME, and a
+// stage name is not the same thing as an axis — nothing here can stop a close
+// from redding on two structurally different measurements under one name, and
+// the shipped ones once did. `typecheck` red either `reports N error(s) in
+// <scope>` (the in-scope faults) or `the target files are clean but M strict
+// error(s) exist outside them` (a different population entirely, reached only
+// once the first is zero), and `suite-green` had the same shape (`N test(s) now
+// fail` beside an executed-count floor). A run crossing that seam donated both
+// genres to one series, so a 29 → 4 across it read CONVERGING and would have
+// recommended a top-up on work that had only swapped which wall it was behind —
+// the u-msew1uy5 error, in the one place the bucketing could not see it.
+//
+// That shipped instance is RETIRED (F84, hamr-signed 2026-08-05): every u-*-close
+// stage that carried two populations was SPLIT in the close — `typecheck` keeps
+// the in-scope faults with `typecheck-outside` immediately after it, and
+// `tests-kept` carries the floor immediately before `suite-green` — each new
+// stage sitting exactly where its branch already ran, so first-red-wins holds the
+// same gate sequence. The record stays here because the fix belongs to the close
+// and must keep belonging to it: a new close that mixes two populations under one
+// name re-opens this, and the remedy is that close's stage list, never a detector
+// taught to tell two prose shapes apart (the same F49 precedent as above — a
+// per-close sharpening is how this reader stops being one reader).
 
 /** The strikes that end the close-fix loop. Shell-owned, exactly where the fixed
  * count was, and the SAME number the step ladder uses — hamr's 2. Validated by a

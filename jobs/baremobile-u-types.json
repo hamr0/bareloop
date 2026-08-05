@@ -37,6 +37,26 @@
       "gapKeep": "^BAREMOBILE "
     },
     {
+      "name": "typecheck-outside",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-baremobile-close.mjs typecheck-outside",
+      "expect": 0,
+      "judged": {
+        "pattern": "BAREMOBILE judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^BAREMOBILE "
+    },
+    {
+      "name": "tests-kept",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-baremobile-close.mjs tests-kept",
+      "expect": 0,
+      "judged": {
+        "pattern": "BAREMOBILE judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^BAREMOBILE "
+    },
+    {
       "name": "suite-green",
       "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-baremobile-close.mjs suite-green",
       "expect": 0,

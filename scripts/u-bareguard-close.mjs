@@ -10,7 +10,8 @@
 // construction (v1.12 — the worker never reads the arbiter's books).
 //
 // Holds the JOB SHAPE from the aurora-u/litectx-u/pulselog-u closes (changed-from-seed →
-// typecheck → suite-green → no-suppressions) while SCOPING the typecheck the way
+// typecheck → typecheck-outside → tests-kept → suite-green → no-suppressions)
+// while SCOPING the typecheck the way
 // aurora-u scoped mypy to the spawner package: the grade is zero strict errors in
 // the SCOPE files, with a ceiling on errors OUTSIDE the scope so fixing the target
 // can never be bought by breaking the rest (seed: 21 in scope, 116 outside).
@@ -108,42 +109,80 @@ if (stage === 'changed-from-seed') {
   done(0);
 }
 
-if (stage === 'typecheck') {
+// ONE POPULATION PER STAGE — the law for close AUTHORS (F84, hamr-signed
+// 2026-08-05). The strict typecheck answers two structurally different questions:
+// how many faults are IN the target files, and how many errors exist OUTSIDE
+// them. Under one stage name those two counts land in one trend series, and a 29
+// (in-scope faults) followed by a 4 (outside-scope overflow) reads CONVERGING on
+// a run that has only swapped which wall it is behind. The trend reader is never
+// taught to tell two prose shapes apart (the F49 precedent) — the close splits.
+const strictErrors = () => {
   const r = run('npx', ['tsc', '--noEmit', '--strict'], 600_000);
   noExit(r, 'the strict typecheck');
   const errs = r.text.split('\n').map((s) => s.trimEnd()).filter((l) => /error TS\d+/.test(l));
   if (errs.length === 0 && r.code !== 0) stop(`tsc exited ${r.code} with no readable error lines — the run did not complete`);
-  const inScope = errs.filter((l) => SCOPE.some((f) => l.startsWith(f)));
-  const outsideCount = errs.length - inScope.length;
+  return {
+    inScope: errs.filter((l) => SCOPE.some((f) => l.startsWith(f))),
+    outside: errs.filter((l) => !SCOPE.some((f) => l.startsWith(f))),
+  };
+};
+
+if (stage === 'typecheck') {
+  const { inScope } = strictErrors();
   if (inScope.length > 0) {
     out(`red: tsc --strict reports ${inScope.length} error(s) in ${SCOPE.join(', ')}`);
     echo(inScope);
     done(1);
   }
-  if (outsideCount > OUTSIDE_MAX) {
-    out(`red: the target files are clean but ${outsideCount} strict error(s) exist outside them, above the seed's ${OUTSIDE_MAX} — new errors were introduced elsewhere, not fixed`);
-    echo(errs.filter((l) => !SCOPE.some((f) => l.startsWith(f))).slice(0, GAP_LINE_CAP));
-    done(1);
-  }
-  out(`green: tsc --strict reports zero errors in ${SCOPE.join(', ')} (outside-scope ${outsideCount} <= seed's ${OUTSIDE_MAX})`);
+  out(`green: tsc --strict reports zero errors in ${SCOPE.join(', ')}`);
   done(0);
 }
 
-if (stage === 'suite-green') {
+// Runs IMMEDIATELY AFTER `typecheck`, which is exactly where the outside-scope
+// branch sat inside the single stage: `runStages` is first-red-wins, so the
+// worker still sees its in-scope faults before this ceiling can ever red. The
+// effective gate sequence is unchanged — only the series each number donates to.
+if (stage === 'typecheck-outside') {
+  const { outside } = strictErrors();
+  if (outside.length > OUTSIDE_MAX) {
+    out(`red: ${outside.length} strict error(s) outside ${SCOPE.join(', ')}, above the seed's ${OUTSIDE_MAX} — the target files are clean but new errors were introduced elsewhere, not fixed`);
+    echo(outside);
+    done(1);
+  }
+  out(`green: ${outside.length} strict error(s) outside ${SCOPE.join(', ')}, at or below the seed's ${OUTSIDE_MAX}`);
+  done(0);
+}
+
+// The same law, the same split: an EXECUTED-COUNT FLOOR (higher is better,
+// ~1000-scale) and a FAILURE COUNT (lower is better, single digits) are two
+// populations, and one series cannot hold both. `tests-kept` runs FIRST —
+// exactly where the floor check sat inside the single stage — so a shrunken
+// suite still reds before any failure count is ever reported.
+const suite = () => {
   const r = run('npm', ['test'], 900_000);
   noExit(r, 'the patient suite');
   const num = (/** @type {RegExp} */ re) => { const m = r.text.match(re); return m ? Number(m[1]) : NaN; };
   const tests = num(/^# tests (\d+)$/m);
   const failed = num(/^# fail (\d+)$/m);
   if (!Number.isFinite(tests) || !Number.isFinite(failed)) stop('the suite produced no readable TAP summary — the run did not complete');
-  const notOk = r.text.split('\n').filter((l) => /^not ok \d+/.test(l)).map((s) => s.trim());
-  if (tests < TESTS_MIN) { out(`red: ${tests} tests executed, below the seed's ${TESTS_MIN} — tests were lost, not kept`); echo(notOk); done(1); }
-  if (failed > 0 || r.code !== 0) {
-    out(`red: ${failed} test(s) now fail — a type annotation must describe what the code already does`);
-    echo(notOk);
+  return { code: r.code, tests, failed, notOk: r.text.split('\n').filter((l) => /^not ok \d+/.test(l)).map((s) => s.trim()) };
+};
+
+if (stage === 'tests-kept') {
+  const s = suite();
+  if (s.tests < TESTS_MIN) { out(`red: ${s.tests} tests executed, below the seed's ${TESTS_MIN} — tests were lost, not kept`); echo(s.notOk); done(1); }
+  out(`green: ${s.tests} tests executed, at or above the seed's ${TESTS_MIN}`);
+  done(0);
+}
+
+if (stage === 'suite-green') {
+  const s = suite();
+  if (s.failed > 0 || s.code !== 0) {
+    out(`red: ${s.failed} test(s) now fail — a type annotation must describe what the code already does`);
+    echo(s.notOk);
     done(1);
   }
-  out(`green: ${tests} tests executed, 0 failing`);
+  out(`green: ${s.tests} tests executed, 0 failing`);
   done(0);
 }
 
@@ -177,5 +216,5 @@ if (stage === 'no-suppressions') {
   done(0);
 }
 
-out(`instrument-stop: unknown stage "${stage ?? ''}" — the close is: changed-from-seed, typecheck, suite-green, no-suppressions`);
+out(`instrument-stop: unknown stage "${stage ?? ''}" — the close is: changed-from-seed, typecheck, typecheck-outside, tests-kept, suite-green, no-suppressions`);
 process.exit(97);

@@ -88,8 +88,10 @@ test('bounded: enforcedMs reports the HONEST number — requested plus one close
 // ─── W5: the overshoot is PER STAGE ───
 
 test('W5: a STAGED close multiplies the overshoot — every stage runs under the full closeTimeoutMs (runStages), so a 4-stage close is 4 of them, not 1', () => {
-  // jobs/aurora-u-spawner-types.json exactly: a 30-minute cap, a 4-stage close, a
-  // 900s per-stage timeout. Quoting 45 minutes against a 90-minute worst case is
+  // the U shape as jobs/aurora-u-spawner-types.json ran it when this was written: a
+  // 30-minute cap, a 4-stage close, a 900s per-stage timeout (the close has since
+  // grown a stage — the arithmetic below is the claim, not the count).
+  // Quoting 45 minutes against a 90-minute worst case is
   // F6 in a time coat — the same arithmetic the U runner's outside watchdog
   // already does (CLOSE_TIMEOUT_MS * spec.close.length).
   const c = createClock({ maxWallMs: 1_800_000, closeStages: 4, now: fakeNow().now });

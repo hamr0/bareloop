@@ -37,6 +37,16 @@
       "gapKeep": "^SPAWNER "
     },
     {
+      "name": "tests-kept",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-spawner-close.mjs tests-kept",
+      "expect": 0,
+      "judged": {
+        "pattern": "SPAWNER judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^SPAWNER "
+    },
+    {
       "name": "suite-green",
       "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-spawner-close.mjs suite-green",
       "expect": 0,

@@ -19,8 +19,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTrend, readGrade, FIX_STRIKE_LIMIT } from '../src/trend.js';
 
-/** the four stages of every shipped u-close, in the order runStages runs them */
-const STAGES = ['changed-from-seed', 'typecheck', 'suite-green', 'no-suppressions'];
+/** the stages of the shipped scope-typechecked u-closes, in the order runStages
+ * runs them. Six since the F84 stage split (2026-08-05): `typecheck-outside` and
+ * `tests-kept` carry the second population each of `typecheck` and `suite-green`
+ * used to red on under one name — see tests/close-stages.test.js, which is where
+ * that law is guarded. Here it is only an ORDERING fixture. */
+const STAGES = ['changed-from-seed', 'typecheck', 'typecheck-outside', 'tests-kept', 'suite-green', 'no-suppressions'];
 
 /** a gap exactly as `runStages` builds one: its own header, then the close's output */
 const gapOf = (stage, body) => `close stage "${stage}" failed:\n${body}`;
@@ -194,7 +198,7 @@ test('OSCILLATION 5 → 8 → 5 does NOT repay the strike — the comparison is 
 });
 
 test('STAGE ADVANCE is progress: the close getting FURTHER than it ever had is an improvement no per-stage number can see', () => {
-  // The first grade reds at typecheck; the next reds at no-suppressions, two stages
+  // The first grade reds at typecheck; the next reds at no-suppressions, four stages
   // later. Nothing about the suppressions count says so, but the typecheck wall the
   // run was stuck behind is gone — first-red-wins ordering is the evidence.
   const tr = createTrend({ stageOrder: STAGES });

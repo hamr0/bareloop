@@ -9,7 +9,7 @@
 // construction (v1.12 — the worker never reads the arbiter's books).
 //
 // Second target for U, holding the JOB SHAPE from the aurora-u spawner close
-// (changed-from-seed → typecheck → suite-green → no-suppressions) while varying the
+// (changed-from-seed → typecheck → tests-kept → suite-green → no-suppressions) while varying the
 // patient AND the toolchain (JS/JSDoc + tsc, not Python + mypy). Passing every stage
 // IS the grade — there is no separate grading stage, so no stage is `offer:false`
 // except the seed guard.
@@ -144,26 +144,46 @@ if (stage === 'typecheck') {
   done(1);
 }
 
-if (stage === 'suite-green') {
+// ONE POPULATION PER STAGE — the law for close AUTHORS (F84, hamr-signed
+// 2026-08-05). The suite answers two structurally different questions: an
+// EXECUTED-COUNT FLOOR (higher is better, ~400-scale) and a FAILURE COUNT (lower
+// is better, single digits). Under one stage name both land in one trend series
+// and the reader compares unlike numbers. `tests-kept` runs FIRST — exactly
+// where the floor check sat inside the single stage — so a shrunken suite still
+// reds before any failure count is reported; the effective gate sequence is
+// unchanged. The trend reader is never taught to tell two prose shapes apart
+// (the F49 precedent); the close splits instead.
+//
+// `node --test` spec output is never byte-stable (duration stamps); the TAP summary
+// counters and `not ok` lines are. Count tests EXECUTED, never passed — a red tree
+// must not be able to hide under a passing-count floor (F40).
+const suite = () => {
   const r = run('npm', ['test'], 900_000);
   noExit(r, 'the patient suite');
-  // `node --test` spec output is never byte-stable (duration stamps); the TAP summary
-  // counters and `not ok` lines are. Count tests EXECUTED, never passed — a red tree
-  // must not be able to hide under a passing-count floor (F40).
   const num = (/** @type {RegExp} */ re) => { const m = r.text.match(re); return m ? Number(m[1]) : NaN; };
   const tests = num(/^# tests (\d+)$/m);
   const failed = num(/^# fail (\d+)$/m);
   if (!Number.isFinite(tests) || !Number.isFinite(failed)) stop('the suite produced no readable TAP summary — the run did not complete');
-  const notOk = r.text.split('\n').filter((l) => /^not ok \d+/.test(l)).map((s) => s.trim());
-  // a suite that SHRANK is not a suite that passes: deleting a test removes its failure
-  // and is the cheapest way to green a behaviour gate
-  if (tests < TESTS_MIN) { out(`red: ${tests} tests executed, below the seed's ${TESTS_MIN} — tests were lost, not kept`); echo(notOk); done(1); }
-  if (failed > 0 || r.code !== 0) {
-    out(`red: ${failed} test(s) now fail — a type annotation must describe what the code already does`);
-    echo(notOk);
+  return { code: r.code, tests, failed, notOk: r.text.split('\n').filter((l) => /^not ok \d+/.test(l)).map((s) => s.trim()) };
+};
+
+// a suite that SHRANK is not a suite that passes: deleting a test removes its failure
+// and is the cheapest way to green a behaviour gate
+if (stage === 'tests-kept') {
+  const s = suite();
+  if (s.tests < TESTS_MIN) { out(`red: ${s.tests} tests executed, below the seed's ${TESTS_MIN} — tests were lost, not kept`); echo(s.notOk); done(1); }
+  out(`green: ${s.tests} tests executed, at or above the seed's ${TESTS_MIN}`);
+  done(0);
+}
+
+if (stage === 'suite-green') {
+  const s = suite();
+  if (s.failed > 0 || s.code !== 0) {
+    out(`red: ${s.failed} test(s) now fail — a type annotation must describe what the code already does`);
+    echo(s.notOk);
     done(1);
   }
-  out(`green: ${tests} tests executed, 0 failing`);
+  out(`green: ${s.tests} tests executed, 0 failing`);
   done(0);
 }
 
@@ -197,5 +217,5 @@ if (stage === 'no-suppressions') {
   done(0);
 }
 
-out(`instrument-stop: unknown stage "${stage ?? ''}" — the close is: changed-from-seed, typecheck, suite-green, no-suppressions`);
+out(`instrument-stop: unknown stage "${stage ?? ''}" — the close is: changed-from-seed, typecheck, tests-kept, suite-green, no-suppressions`);
 process.exit(97);

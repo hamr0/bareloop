@@ -370,10 +370,16 @@ test('run-u sizes the wall grace as stages x close timeout — and passes it', (
   const src = readFileSync(new URL('../scripts/run-u.mjs', import.meta.url), 'utf8');
   const spec = JSON.parse(readFileSync(new URL('../jobs/aurora-u-spawner-types.json', import.meta.url), 'utf8'));
   const stages = Array.isArray(spec.close) ? spec.close.length : 1;
-  assert.equal(stages, 4, 'the U target runs a 4-stage close — the case the one-stage default under-sized by 45 minutes');
+  // DERIVED from the spec, never pinned to a count: the close's stage list is a
+  // signed, editable thing (the F84 split took this spec from 4 stages to 5), and
+  // a test that hardcoded the number would red on a legal close edit while saying
+  // nothing about the arithmetic it exists to guard.
+  assert.ok(stages >= 4, `the U target runs a multi-stage close — got ${stages}`);
   const timeout = Number(/const CLOSE_TIMEOUT_MS = ([\d_]+)/.exec(src)?.[1]?.replace(/_/g, ''));
   assert.equal(timeout, 900_000, 'every stage runs under the full close timeout (src/clock.js W5)');
-  assert.equal(stages * timeout, 3_600_000, 'so the grace this spec needs is 60 minutes, not 15');
+  const ONE_STAGE_DEFAULT = 900_000; // the watchdog's own default — the defect's value
+  assert.ok(stages * timeout - ONE_STAGE_DEFAULT >= 2_700_000,
+    `the grace this spec needs is ${(stages * timeout) / 60_000} minutes — at least the 45 the one-stage default lost, got ${(stages * timeout - ONE_STAGE_DEFAULT) / 60_000}`);
   // legacy object-form close = ONE stage; `spec.close.length` on it is undefined, and
   // a NaN flag would have disarmed the window silently rather than loudly
   assert.match(src, /const closeStages = Array\.isArray\(spec\.close\) \? spec\.close\.length : 1;/);

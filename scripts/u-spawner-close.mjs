@@ -137,7 +137,16 @@ if (stage === 'typecheck') {
   done(1);
 }
 
-if (stage === 'suite-green') {
+// ONE POPULATION PER STAGE — the law for close AUTHORS (F84, hamr-signed
+// 2026-08-05). The suite answers two structurally different questions: an
+// EXECUTED-COUNT FLOOR (higher is better, ~200-scale) and a FAILURE COUNT (lower
+// is better, single digits). Under one stage name both land in one trend series
+// and the reader compares unlike numbers. `tests-kept` runs FIRST — exactly
+// where the floor check sat inside the single stage — so a shrunken suite still
+// reds before any failure count is reported; the effective gate sequence is
+// unchanged. The trend reader is never taught to tell two prose shapes apart
+// (the F49 precedent); the close splits instead.
+const suite = () => {
   const r = run('python3', ['-m', 'pytest', PKG_TESTS, '-ra', '-p', 'no:cacheprovider']);
   noExit(r, 'the patient suite');
   // Count tests EXECUTED, never PASSED — a red tree must not be able to hide under a
@@ -167,19 +176,30 @@ if (stage === 'suite-green') {
   // close counts node:test's `# tests`, which folds skips in; this is the stricter read.)
   const notRun = tally(/(\d+) (?:skipped|deselected)\b/g);
   const executed = collected - notRun;
-  // a suite that SHRANK is not a suite that passes: removing a test removes its
-  // failure and is the cheapest way to green a behaviour gate
-  if (executed < TESTS_MIN) {
-    out(`red: ${executed} tests executed${notRun ? ` (${collected} collected, ${notRun} skipped/deselected)` : ''}, below the seed's ${TESTS_MIN} — tests were lost, not kept`);
-    echo(r.text.split('\n').filter((l) => l.startsWith('FAILED') || l.startsWith('ERROR')));
+  return { code: r.code, collected, notRun, executed, failed, lines: r.text.split('\n').filter((l) => l.startsWith('FAILED') || l.startsWith('ERROR')) };
+};
+
+// a suite that SHRANK is not a suite that passes: removing a test removes its
+// failure and is the cheapest way to green a behaviour gate
+if (stage === 'tests-kept') {
+  const s = suite();
+  if (s.executed < TESTS_MIN) {
+    out(`red: ${s.executed} tests executed${s.notRun ? ` (${s.collected} collected, ${s.notRun} skipped/deselected)` : ''}, below the seed's ${TESTS_MIN} — tests were lost, not kept`);
+    echo(s.lines);
     done(1);
   }
-  if (failed > 0 || r.code !== 0) {
-    out(`red: ${failed} test(s) now fail — a type annotation must describe what the code already does`);
-    echo(r.text.split('\n').filter((l) => l.startsWith('FAILED') || l.startsWith('ERROR')));
+  out(`green: ${s.executed} tests executed, at or above the seed's ${TESTS_MIN}`);
+  done(0);
+}
+
+if (stage === 'suite-green') {
+  const s = suite();
+  if (s.failed > 0 || s.code !== 0) {
+    out(`red: ${s.failed} test(s) now fail — a type annotation must describe what the code already does`);
+    echo(s.lines);
     done(1);
   }
-  out(`green: ${executed} tests executed, 0 failing`);
+  out(`green: ${s.executed} tests executed, 0 failing`);
   done(0);
 }
 
@@ -213,5 +233,5 @@ if (stage === 'no-suppressions') {
   done(0);
 }
 
-out(`instrument-stop: unknown stage "${stage ?? ''}" — the close is: changed-from-seed, typecheck, suite-green, no-suppressions`);
+out(`instrument-stop: unknown stage "${stage ?? ''}" — the close is: changed-from-seed, typecheck, tests-kept, suite-green, no-suppressions`);
 process.exit(97);

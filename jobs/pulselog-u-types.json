@@ -37,6 +37,26 @@
       "gapKeep": "^PULSELOG "
     },
     {
+      "name": "typecheck-outside",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-pulselog-close.mjs typecheck-outside",
+      "expect": 0,
+      "judged": {
+        "pattern": "PULSELOG judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^PULSELOG "
+    },
+    {
+      "name": "tests-kept",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-pulselog-close.mjs tests-kept",
+      "expect": 0,
+      "judged": {
+        "pattern": "PULSELOG judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^PULSELOG "
+    },
+    {
       "name": "suite-green",
       "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-pulselog-close.mjs suite-green",
       "expect": 0,
