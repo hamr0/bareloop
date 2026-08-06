@@ -1795,7 +1795,7 @@ test('cycle leg 1: the wallet drains INSIDE the fix loop and the run PAUSES deci
 
   // the trend — the whole reason the readout is "accurate" rather than a shrug
   assert.equal(mh.trend, 'converging', 'the close fell on its own stage: this run was still getting somewhere');
-  // F76: the series opens at the stage's real SEED (3). The precheck is first-red-wins
+  // F85: the series opens at the stage's real SEED (3). The precheck is first-red-wins
   // and stops at an earlier stage, so before this the `verdict` stage's baseline was
   // simply missing from the run's own trend — the reader was under-fed, and a run
   // stopped after one grade of a stage read `unknown` about work that had a direction.

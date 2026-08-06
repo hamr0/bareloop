@@ -176,7 +176,7 @@ const REPLAN_GAP_KEEP = '\\S';
  * that chooses which files the next plan targets, was handed only the trend line
  * (`still progressing — typecheck 30 → 15 → 15 → 1`): converging, and silent about
  * WHERE. It re-targeted `src/loop.js`, already at zero errors; that step wrote
- * nothing and struck out. F76 gave the brief the trajectory; this gives it the
+ * nothing and struck out. F85 gave the brief the trajectory; this gives it the
  * artifact the trajectory is a summary OF.
  *
  * Handed over as TEXT, never as a parsed file list, and the trap is worth naming
@@ -204,7 +204,7 @@ const REPLAN_GAP_KEEP = '\\S';
  *     private slice here would be a second truncation scheme that silently drops
  *     the one detail line this whole helper exists to carry.
  *
- * No gap → the empty string, so the brief renders byte-identically to the pre-F77
+ * No gap → the empty string, so the brief renders byte-identically to the pre-F86
  * one. A labelled empty section would be an invitation to explain an absence the
  * run never observed (a stall never judged its exits at all).
  *
@@ -1542,7 +1542,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   /** @type {{id: string, outcome: string}[]} */
   const stepOutcomes = [];
   let replanned = false;
-  /** F76 (C): how many replans this run has actually drafted, and whether the
+  /** F85 (C): how many replans this run has actually drafted, and whether the
    * arbiter has already spent its ONE extra grant. Two variables and not one
    * counter compared against a limit, deliberately — a latch cannot be widened by
    * arithmetic, and the ceiling is the thing this rung must not move (v1.12). */
@@ -1625,7 +1625,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         const moneyShare = stepStartUsd > 0 ? (stepStartUsd - remainingUsd()) / stepStartUsd : 0;
         const timeShare = clock.bounded && stepStartMs > 0 ? (stepStartMs - clock.remainingMs()) / stepStartMs : 0;
         if (moneyShare >= VARIANCE_THRESHOLD || timeShare >= VARIANCE_THRESHOLD) {
-          // F76 — the meter REPORTS progress; it does not decide on it. The
+          // F85 — the meter REPORTS progress; it does not decide on it. The
           // condition above is the whole trigger and stays the whole trigger: a
           // converging step that is eating the run is still stopped, because this is
           // a governance instrument over an operator-owned allowance and a governor
@@ -1870,7 +1870,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // programme), and it is a genuine re-allocation rather than a stop. Both
     // triggers still need FUNDS LEFT, and both are bounded by the replan ceiling.
     const cat = lastEscalation?.category;
-    /** F76 — the run's measured trajectory at the moment of this stop, read ONCE
+    /** F85 — the run's measured trajectory at the moment of this stop, read ONCE
      * here off the same instance the meter and the money halt read. Both consumers
      * below are the replanner's: the trigger sentence and the brief. */
     const stopTrend = runTrend.verdict();
@@ -1882,7 +1882,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // by stopping. Same ONE-replan ceiling and same FUNDS-LEFT condition as the
     // other two: this changes the trigger, never the ceiling (v1.12).
     //
-    // F76 rewrote the variance branch. It used to be the FIXED string "…with its
+    // F85 rewrote the variance branch. It used to be the FIXED string "…with its
     // exits unmoved", printed for every step-variance stop whatever had happened —
     // and on u-msh70zla it was simply false: the exits had moved 24 → 15 → 14. The
     // sentence now states the meter's fact (a share of the run) and then the trend
@@ -1893,7 +1893,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       : cat === 'step-variance' ? `the meter stopped a step that was consuming the run — ${stopTrend.reading}`
       : cat === 'step-stalled' ? 'the model stopped producing rounds and reissuing the call did not recover it'
       : null;
-    // F76 (C) — the ARBITER's one additional replan. A second `step-variance` after
+    // F85 (C) — the ARBITER's one additional replan. A second `step-variance` after
     // the ceiling is spent used to be a hard stop, and on a run that was still
     // converging that stop threw away work the run had already paid for. So the
     // arbiter may grant ONE more, and every clause of that sentence is a constraint:
@@ -1945,7 +1945,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       const leftOver = `$${remainingUsd().toFixed(2)} and `
         + `${clock.bounded ? `${Math.round(clock.remainingMs() / 60_000)} minute(s)` : 'time UNBOUNDED'} `
         + 'of the run were still unspent when it stopped.';
-      // F76: the meter's branch states the METER's fact and then the run's measured
+      // F85: the meter's branch states the METER's fact and then the run's measured
       // one, in that order and as two separate claims — "it was stopped for eating
       // the run" and "here is what the run achieved" are different things, and the
       // old sentence quietly fused them into a verdict on the work.
@@ -1955,13 +1955,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         : cat === 'step-stalled'
           ? 'It stalled: the model stopped producing rounds and reissuing the call did not recover it, so its exits were never judged.'
           : `${res.ladder.brief()} ${leftOver}`;
-      // F77 — the close's OWN last output, verbatim (u-mshcpdg4). Everything above
+      // F86 — the close's OWN last output, verbatim (u-mshcpdg4). Everything above
       // this line is the run's narration of the stop: the meter's share sentence,
       // the trend's direction, the never-wrote fact, the escalation detail. None of
       // them says WHERE the remaining work is, because none of them is the close.
       // This is, and it goes over as text — see `closeGapBlock` for why a parsed
       // file list would reproduce the exact bug it is fixing. Empty gap → empty
-      // string → the brief is byte-identical to the pre-F77 one.
+      // string → the brief is byte-identical to the pre-F86 one.
       const gapBlock = closeGapBlock(res?.gap);
       const failure = `Step "${step.id}" (${step.action}) did not reach its exits. `
         + `${why}\n`
@@ -1972,7 +1972,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // in via obtainPlan's live read, and this says where the run got to. Both are
       // the planner re-allocating what remains across what is left — never a rate.
       //
-      // F76 adds the second half. This line used to count STEPS only ("step 1 of 1
+      // F85 adds the second half. This line used to count STEPS only ("step 1 of 1
       // did not finish; 0 step(s) completed before it") — structurally true and
       // silent about outcome, so a replanner reading it could only conclude that
       // nothing had been achieved. On u-msh70zla it concluded exactly that and threw
@@ -2038,7 +2038,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     }
     // A `step-variance` that earned no replan above is a STOP, and the stop is the
     // result. Reached in three ways now: the ordinary ceiling with the run reading
-    // `flat` or `unknown`; the arbiter's one grant already spent (F76's bound); or
+    // `flat` or `unknown`; the arbiter's one grant already spent (F85's bound); or
     // the wallet at dust. Each rides out as `step-red:<id>`, NOT as its own top-level
     // outcome. The category is a replan TRIGGER, never a run verdict: leaking it
     // upward would mint an outcome run.js and the ledger's class table do not know,

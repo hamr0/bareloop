@@ -1072,7 +1072,7 @@ test('A: the variance check NEVER fires on attempt 1 — the share is 0 by const
   assert.equal(outcome, 'green');
 });
 
-// ── F76: the meter REPORTS progress; it does not decide on it.
+// ── F85: the meter REPORTS progress; it does not decide on it.
 //
 // u-msh70zla is the whole reason this section exists. One wide step was
 // CONVERGING — its close counted 24 → 15 → 14 strict errors across three
@@ -1170,7 +1170,7 @@ async function countRun(wd, script, drains, { job, start = 1.5 } = {}) {
   return { outcome, events, provider };
 }
 
-test('F76-A: the meter still fires on a CONVERGING step — and the variance record now carries the trajectory it used to be silent about', async (t) => {
+test('F85-A: the meter still fires on a CONVERGING step — and the variance record now carries the trajectory it used to be silent about', async (t) => {
   const wd = makeCountingPatient(t, 30);
   const { events } = await countRun(wd, [
     { text: 'scout' }, { text: COUNT_PLAN() },
@@ -1200,7 +1200,7 @@ test('F76-A: the meter still fires on a CONVERGING step — and the variance rec
   assert.match(esc.detail, /24 → 15/, 'and the detail now states what the step actually achieved');
 });
 
-test('F76-A control: the meter fires identically on a FLAT expensive step, and reads it as flat — the reading can produce the negative, so this is not a silent disarm', async (t) => {
+test('F85-A control: the meter fires identically on a FLAT expensive step, and reads it as flat — the reading can produce the negative, so this is not a silent disarm', async (t) => {
   // Same money story, same fire — but the worker rewrites the file with the SAME
   // error count (whitespace only), so tree-changed passes and the number does not
   // move. If `converging` were the only reachable reading the instrument would be
@@ -1222,7 +1222,7 @@ test('F76-A control: the meter fires identically on a FLAT expensive step, and r
   assert.doesNotMatch(replan.reason, /still progressing/, 'and the replan brief says so too');
 });
 
-test('F76-A: the trigger gained no progress term — a converging step UNDER the threshold is not stopped', async (t) => {
+test('F85-A: the trigger gained no progress term — a converging step UNDER the threshold is not stopped', async (t) => {
   const wd = makeCountingPatient(t, 30);
   const { outcome, events } = await countRun(wd, [
     { text: 'scout' }, { text: COUNT_PLAN() },
@@ -1261,7 +1261,7 @@ const GUARD_CLOSE = [
   { name: 'typecheck', cmd: 'node count.mjs', expect: 0, gapKeep: '^red' },
 ];
 
-test('F76-A: the numeric stage\'s SEED comes from the check preflight — so the commonest stop of all, a meter firing on attempt 2, is readable instead of "unknown"', async (t) => {
+test('F85-A: the numeric stage\'s SEED comes from the check preflight — so the commonest stop of all, a meter firing on attempt 2, is readable instead of "unknown"', async (t) => {
   // The precheck is first-red-wins and stops at `changed-from-seed`, exactly as every
   // shipped close does on a cold tree. Without the preflight seed the `typecheck`
   // series holds ONE value when the meter fires, and one value is not a comparison —
@@ -1284,7 +1284,7 @@ test('F76-A: the numeric stage\'s SEED comes from the check preflight — so the
   assert.match(variance.reading, /typecheck 30 → 24/);
 });
 
-test('F76-B: the replan brief carries the MEASURED trajectory and never the hardcoded "unmoved" — the u-msh70zla regression', async (t) => {
+test('F85-B: the replan brief carries the MEASURED trajectory and never the hardcoded "unmoved" — the u-msh70zla regression', async (t) => {
   const wd = makeCountingPatient(t, 30);
   const { events, provider } = await countRun(wd, [
     { text: 'scout' }, { text: COUNT_PLAN() },
@@ -1314,7 +1314,7 @@ test('F76-B: the replan brief carries the MEASURED trajectory and never the hard
   assert.match(brief, /where the run got to.*24 → 15/s, 'and the materials block states it as well');
 });
 
-test('F76-C: a SECOND variance stop on a converging run earns ONE more replan — granted by the arbiter off a mechanical trend reading', async (t) => {
+test('F85-C: a SECOND variance stop on a converging run earns ONE more replan — granted by the arbiter off a mechanical trend reading', async (t) => {
   const wd = makeCountingPatient(t, 30);
   const step = (id) => COUNT_PLAN([{ id, action: 'Remove TODO markers from src/mod.mjs.', tools: ['write'], rounds: 6, target: 'src/mod.mjs', exit: [{ type: 'tree-changed', scope: 'src/**' }, { type: 'check-passes', name: 'typecheck' }] }]);
   const { outcome, events } = await countRun(wd, [
@@ -1341,7 +1341,7 @@ test('F76-C: a SECOND variance stop on a converging run earns ONE more replan �
     'the truth check survives the granted redraft — Rule B chains across both replans');
 });
 
-test('F76-C: the grant is BOUNDED — a THIRD variance stop is the stop, exactly as before', async (t) => {
+test('F85-C: the grant is BOUNDED — a THIRD variance stop is the stop, exactly as before', async (t) => {
   const wd = makeCountingPatient(t, 30);
   const step = (id) => COUNT_PLAN([{ id, action: 'Remove TODO markers from src/mod.mjs.', tools: ['write'], rounds: 6, target: 'src/mod.mjs', exit: [{ type: 'tree-changed', scope: 'src/**' }, { type: 'check-passes', name: 'typecheck' }] }]);
   const { outcome, events } = await countRun(wd, [
@@ -1359,7 +1359,7 @@ test('F76-C: the grant is BOUNDED — a THIRD variance stop is the stop, exactly
   assert.equal(outcome, 'step-red:plan-c', 'the stop rides out as a step-red, never as a new top-level outcome');
 });
 
-test('F76-C: a second variance stop on a FLAT run stops exactly as it does today — the grant is earned, never given', async (t) => {
+test('F85-C: a second variance stop on a FLAT run stops exactly as it does today — the grant is earned, never given', async (t) => {
   const wd = makeCountingPatient(t, 24);
   const step = (id) => COUNT_PLAN([{ id, action: 'Rewrite src/mod.mjs.', tools: ['write'], rounds: 6, target: 'src/mod.mjs', exit: [{ type: 'tree-changed', scope: 'src/**' }, { type: 'check-passes', name: 'typecheck' }] }]);
   const { outcome, events } = await countRun(wd, [
@@ -2110,7 +2110,7 @@ test('W-2 UNIFIED (a): a wall halt whose close reported NUMBERS reads the per-st
   assert.equal(wh.motion, null, 'motion is the fallback, and a fallback beside a real number is a second opinion nobody asked for');
   assert.equal(wh.iterationsUsed, 1);
   const esc = events.filter((e) => e.type === 'escalation').at(-1);
-  // F76: the series opens at 3, not at 2. The PRECHECK is first-red-wins and reds on
+  // F85: the series opens at 3, not at 2. The PRECHECK is first-red-wins and reds on
   // `clean-run` here, so it never reaches `verdict` at all — the stage's real seed is
   // the one the check PREFLIGHT rendered, and the run trend is now fed it. Pinned by
   // the precheck assertion below rather than asserted in prose: without it this
@@ -3436,7 +3436,7 @@ test('§2 CONTROL: a run that never runs out of money emits NO money-halt record
   assert.equal(events.filter((e) => e.type === 'money-halt').length, 0);
 });
 
-// ── F77: the REPLANNER is handed the close's own last output ───────────────────
+// ── F86: the REPLANNER is handed the close's own last output ───────────────────
 //
 // u-mshcpdg4 is the whole reason this section exists. The run reached ONE
 // remaining strict error and died anyway. The close said exactly where it was:
@@ -3519,7 +3519,7 @@ const gapAttempt = (wd, id, body) => [
   { text: `attempt ${id} done` },
 ];
 
-test('F77 unit: closeGapBlock carries the gap VERBATIM, labelled as the close\'s own output', () => {
+test('F86 unit: closeGapBlock carries the gap VERBATIM, labelled as the close\'s own output', () => {
   const gap = 'check "typecheck" red: close stage "typecheck" failed:\nBAREAGENT red: tsc --strict reports 1 error(s) in src/recurse.js, src/loop.js\nBAREAGENT ' + MSHCPDG4_DETAIL + '\nBAREAGENT judged=1\n';
   const block = closeGapBlock(gap);
   assert.ok(block.includes(gap.trim()), 'every byte of the gap reaches the planner — not a summary, not a parse');
@@ -3530,7 +3530,7 @@ test('F77 unit: closeGapBlock carries the gap VERBATIM, labelled as the close\'s
     'a count close\'s own words survive too — nothing here is tsc-shaped');
 });
 
-test('F77 unit CONTROL: no gap → the empty string, so the brief is byte-identical to the pre-F77 one', () => {
+test('F86 unit CONTROL: no gap → the empty string, so the brief is byte-identical to the pre-F86 one', () => {
   assert.equal(closeGapBlock(undefined), '');
   assert.equal(closeGapBlock(null), '');
   assert.equal(closeGapBlock(''), '');
@@ -3541,12 +3541,12 @@ test('F77 unit CONTROL: no gap → the empty string, so the brief is byte-identi
 // and after it (the block is the gap, and the gap named nothing). That is the
 // point — it is the assertion that would catch a parsed file list being
 // manufactured, which is the trap this whole design avoids.
-test('F77 unit CONTROL: a gap that names NO file invents nothing — no path, no file list, no guess', () => {
+test('F86 unit CONTROL: a gap that names NO file invents nothing — no path, no file list, no guess', () => {
   const block = closeGapBlock('red: unit=0 tests executed, below the seed\'s 12');
   assert.doesNotMatch(block, /[\w.-]+\/[\w.-]+/, 'nothing path-shaped is manufactured out of a gap that named no file');
 });
 
-test('F77 unit: an over-long gap is CAPPED and every trim is ANNOUNCED (F28: silent truncation is the disease)', () => {
+test('F86 unit: an over-long gap is CAPPED and every trim is ANNOUNCED (F28: silent truncation is the disease)', () => {
   // 120 red lines of 200 chars: past boundGap's envelope AND past the keep
   // block's 50-line cap, so BOTH announcements must appear.
   const gap = Array.from({ length: 120 }, (_, i) => `red: error ${i} ${'x'.repeat(190)}`).join('\n');
@@ -3557,14 +3557,14 @@ test('F77 unit: an over-long gap is CAPPED and every trim is ANNOUNCED (F28: sil
   assert.match(block, /red: error 0 /, 'the RED lines survive the truncation (gapKeep), which is the point of reusing the bound');
 });
 
-test('F77 unit: a secret-shaped string is masked BEFORE the prompt — one inventory, not a second spelling', () => {
+test('F86 unit: a secret-shaped string is masked BEFORE the prompt — one inventory, not a second spelling', () => {
   const secret = `sk-${'a'.repeat(30)}`;
   const block = closeGapBlock(`red: auth failed with ${secret} in src/mod.mjs`);
   assert.ok(!block.includes(secret), 'the literal never reaches the prompt');
   assert.deepEqual(scanSecrets(block), [], 'and the ONE inventory agrees it is clean');
 });
 
-test('F77: the replan brief carries the close\'s own last output — the u-mshcpdg4 regression', async (t) => {
+test('F86: the replan brief carries the close\'s own last output — the u-mshcpdg4 regression', async (t) => {
   const wd = makeGapShapePatient(t, {
     seed: 30,
     summary: 'red: tsc --strict reports {n} error(s) in src/recurse.js, src/loop.js',
@@ -3598,7 +3598,7 @@ test('F77: the replan brief carries the close\'s own last output — the u-mshcp
     'the runner hands over the close\'s words and no parsed file claim of its own — a regex cannot tell a summary line from a detail line');
 });
 
-test('F77 CONTROL: a gap that names no file leaves the brief naming no file — before and after', async (t) => {
+test('F86 CONTROL: a gap that names no file leaves the brief naming no file — before and after', async (t) => {
   const wd = makeGapShapePatient(t, { seed: 30, summary: 'red: {n} fault(s) remain, unit=0' });
   const job = GAP_JOB(wd, { close: [{ name: 'typecheck', cmd: 'node count.mjs', expect: 0, gapKeep: '^red' }] });
   const { provider } = await countRun(wd, [
@@ -3621,7 +3621,7 @@ test('F77 CONTROL: a gap that names no file leaves the brief naming no file — 
     'nothing file-shaped is invented out of a gap that named no file');
 });
 
-test('F77 CONTROL: a stall never judged its exits, so the brief carries NO close output — nothing is invented', async (t) => {
+test('F86 CONTROL: a stall never judged its exits, so the brief carries NO close output — nothing is invented', async (t) => {
   const wd = makePatient(t);
   const base = scriptedProvider([
     { text: 'scout notes' },
