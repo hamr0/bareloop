@@ -681,7 +681,8 @@ Signed job spec (goal, budget, final close, tool ceiling — **all human, unchan
    `withContext` shape) — this is the F21 wire: the channel from step to step that config-v1
    never had.
 6. **ONE replan per run** — mirrors the one-revision rule (v1.9 / M5). Unlimited replanning
-   would launder thrash as adaptation.
+   would launder thrash as adaptation. The ceiling now admits exactly one **bounded
+   exception**, granted by the arbiter and inexpressible to the agent — see v1.50 §2.
 7. **The human-signed outer close is the only truth.** plan-AS-EXECUTED + a per-step ledger are
    written to the spine; a **GREEN run's plan is minted for inheritance** (verdict-gated,
    doctrine untouched — law #2/#3), a red run's is not. **N3's kill-switch now has a real
@@ -728,7 +729,8 @@ OPERATOR signs the job spec:
      the next step's prompt opens with "Working context (read-only):"
      + goal + repo root + close output + all prior steps' artifacts,
      labeled by step id. No step starts blind. (The F21 wire.)
-   · a step that exhausts its bound → ONE replan per run
+   · a step that exhausts its bound → replan (ONE per run; the
+     one bounded exception to that ceiling is v1.50 §2)
      (Planner again, {info: scoutBlob + artifacts + what failed});
      still red after the replanned steps → escalate. The stop is a result.
         │
@@ -1584,9 +1586,18 @@ budget it was given)? That question is unanswerable today because the variable d
 **A — replan becomes TIME-relative, not exhaustion-only.** Today replan fires only when a
 step exhausts its attempts, and an instrument stop is not exhaustion — so a replan has fired
 **zero times in this programme** (F56). Retrigger it on time evidence: a step consuming a
-declared share of the run's REMAINING time with its exits unmoved. The hard cap on replan
-count stays (unlimited replanning launders thrash as adaptation, v1.12) — this changes the
-trigger, never the ceiling.
+declared share of the run's REMAINING time (money share carries the same threshold). The hard
+cap on replan count stays (unlimited replanning launders thrash as adaptation, v1.12) — this
+changes the trigger, never the ceiling.
+
+**Two clauses of this paragraph have since been corrected on evidence and are recorded here so
+the original does not read as still-current doctrine.** *"with its exits unmoved"* was written
+as a description of the firing condition and shipped as a hardcoded sentence the meter printed
+on every stop, whatever had happened — it stopped converging steps and said they had moved
+nothing. The trigger never read progress and still does not; the false clause is deleted and
+the stop now carries the measured reading (**v1.50 §1**, F85). And *"never the ceiling"* now
+carries one bounded, arbiter-granted exception (**v1.50 §2**). The F56 premise quoted above was
+itself later refuted — 8 replans had already fired when it was written (F63).
 
 **P — the primitive palette returns to what was agreed.** The build offers the agent
 **write · select · compress · isolate**, each with its own verb list, and the agent chooses
@@ -2981,3 +2992,207 @@ Measured, not assumed — an approval field on the spec reds as an unknown field
 over a document containing that hash is self-invalidating. The approvals array is the runner's
 input and hamr's in-turn words are the signature; this record is where the chain between two
 hashes stays legible.
+
+## Addendum v1.50 — 2026-08-06 (the variance meter REPORTS progress and still never decides on it, the replan ceiling gains one bounded exception, the replanner is handed the close's own output — and the rerun that tested all three is a RED, stated as one — hamr)
+
+Two commits on `variance-progress-abc`: `3d91b0e` (the meter's A/B/C, F85) and `5d17f88`
+(the replan brief carries the close gap, F86). Both opus builds, session orchestrating and
+validating. No spec hash moved — the fixes are library code, so `bareagent-u-types.json`'s
+resolved hash `eed6fe82…` is the same one already signed. Evidence and numbers are **F85** and
+**F86**; the live read is `u-mshsikhr` and it is **not a green**.
+
+### 1. The variance meter REPORTS progress — and decides nothing with it (A/B, F85)
+
+The meter stopped a step that was converging and then told the replanner the step's *"exits
+unmoved"* — a hardcoded string printed on every `step-variance` stop whatever had happened. On
+`u-msh70zla` the ladder recorded `distinctGaps` 1 → 2 → 3 with zero strikes while the brief said
+nothing had moved; the replanner, told it had achieved nothing, rebuilt a file already at zero
+errors, wrote nothing twice, and the run died with money and minutes unspent. Two instruments
+on one run and only one of them was right.
+
+hamr's ruling, verbatim:
+
+> **"meter is right but missing a piece ... it should give heads up on money/time + progress
+> for llm to judge."**
+
+**The doctrine, stated cleanly: the meter REPORTS, it never decides on progress.** The firing
+condition is byte-identical to what it always was — `moneyShare`/`timeShare >= 0.5`, both axes,
+the same threshold — because a progress term in the TRIGGER would make a governance instrument
+over an operator-owned allowance into a judge of capability. That is the arbiter line, not a
+tuning preference: the allowance is the operator's, and what the model can still achieve with it
+is not the allowance's question. What changed is only what the stop SAYS: the `variance` spine
+record and the escalation now carry `trend` / `motion` / `reading` / `series`, and the false
+sentence is deleted in favour of the measured reading (the materials `progress` line keeps its
+structural sentence and gains the close trend).
+
+**One reader, and that is the whole point.** The reading comes from `src/trend.js` — the same
+reader the money halt and the wall halt already use under v1.49 §1's unification. There is no
+second reader, because two instruments answering one question is precisely the defect being
+fixed here, and minting a private one would have re-committed it in the act of curing it.
+
+A prerequisite was found and fixed en route: `runTrend` was blind to step-level progress (it was
+fed only the close precheck and the outer fix loop) and read the WRAPPED gap, whose
+`check "x" red:` line carries no number. Both folds are corrected, plus a preflight seed so the
+counter has a baseline.
+
+### 2. The replan ceiling gains a BOUNDED exception (C) — still arbiter territory, in both directions
+
+A SECOND `step-variance` stop earns **exactly one more replan**, granted by the arbiter off a
+mechanical `converging` reading. `flat` and `unknown` stop exactly as before. A third variance
+stop is the stop.
+
+**The bound is a LATCH, not a comparison.** The grant is spent once and cannot be re-earned;
+nothing counts, compares or accumulates, so the ceiling cannot creep by arithmetic — which is the
+failure mode the standing law (*unlimited replanning launders thrash as adaptation*, v1.12,
+plan-v1 law #6) exists to forbid. The exception narrows that law by one, deliberately, rather
+than converting it into a budget the run can talk its way into.
+
+**The agent has no channel to it.** It never asks for it, is never offered it, and cannot
+influence whether it is granted — the reading is computed from the close's own graded numbers,
+not from anything the plan says about itself. That is *no self-adjusted budgets — ever* applied
+to the one bound that most looks like a mere retry count: a replan is a purchase of another
+plan's worth of the signed wallet, and the thing being replanned does not get to authorize it.
+
+**C has fired live exactly once, and it bought nothing measurable.** On `u-mshcpdg4` the arbiter
+granted the second replan on `converging` (`replan:2, granted:"converging"` on the spine) — and
+that replan is the one §3 is about: it aimed at an already-clean file, wrote nothing twice, and
+the run still step-redded. So the grant is *reachable and correctly gated*, not *shown to pay*.
+It did **not** fire on the rerun below, which took only one variance stop, so it has never yet
+run under both fixes. n=1, and the one observation is a red.
+
+### 3. The replanner is handed the CLOSE's own output (F86)
+
+`u-mshcpdg4` reached ONE remaining strict error and still died. The close gap named the work
+exactly — `src/recurse.js(978,115)` — and the REPLANNER, which is the component that chooses
+which files the next plan targets, never saw it. It received `still progressing — typecheck
+30 → 15 → 15 → 1`: a number with no address. It aimed the last plan at `src/loop.js`, already at
+zero errors, wrote nothing twice and took two strikes. **The balances at the moment that replan
+was granted were $1.10 and 82 seconds** — which is what it had to spend and threw away; the run
+itself ended with $0.8174 and ~6 seconds unspent (24.90 of 25 minutes). The two figures are
+different measurements and the commit message that minted this finding quoted only the first.
+
+**This is a design statement, not a patch.** The worker had the gap all along; the component that
+picks targets did not. §1 gave the replanner a trajectory, which is a direction; it still had no
+location. `closeGapBlock()` puts the last close gap into the replan brief, scrubbed through the
+one secret inventory (`redactSecrets`) and bounded by ralph's own `boundGap` — exported for it,
+so there is no second truncation scheme. Nothing lands on the spine: `src/trend.js`'s rule is
+that no record carries a close byte. An empty gap yields an empty string and a brief
+byte-identical to before.
+
+**It is handed over as TEXT and never as a parsed file list, and the reason is doctrine.** Line 1
+of that same gap reads `reports 1 error(s) in src/recurse.js, src/loop.js` — every file in
+SCOPE — and only line 2 names the culprit. A model tells a summary line from a detail line; a
+regex cannot. Close output shapes differ per close anyway (tsc `file:line`, pytest ids, a count
+close naming no file at all), so a parser here would be one reader per close, which is how one
+reader stops being one reader (the F49 precedent, restated in v1.49 §4).
+
+**The `never wrote` advisory is DELETED**, on hamr's order, verbatim:
+
+> **"delete it and rerun bareagent"**
+
+Measured on that very gap, `gapFilesNeverWritten` returned `["src/loop.js"]` — the already-clean
+file — for exactly the summary-vs-detail reason above, and said so as a **DIRECTIVE** beside an
+artifact that said the opposite. This worker follows directive prose (the positive-scope
+confinement genre). The general rule it violated is the one §1 is also about: **two readers of
+one question, with the parsed one wrong, delivered as an instruction rather than as evidence.**
+It also had no record of ever converting anything — it fired by construction on `u-msdsmkid` and
+that run still step-redded. The helper went with it (sole caller, no speculative code).
+
+### 4. The live read — `u-mshsikhr` is a RED
+
+Cold rerun, same patient, same signed hash, $4 / 25 min, sonnet; the first run under BOTH fixes.
+
+**Outcome: `step-red` on `strict-fix-recurse-remaining-errors`. $3.1545 of $4, 21.8 of 25
+minutes, 120 rounds, one replan.** It died on the step ladder's second strike at **two remaining
+strict errors**, with **$0.85 and ~3.2 minutes unspent**. `spendComplete: true`.
+
+**What the fixes DID buy, measured.** The one variance stop fired at iteration 3
+(`moneyShare 0.508` / `timeShare 0.642` / `axis money`) and reported `trend:"converging"`,
+`reading:"still progressing — typecheck 30 → 28 → 6"` — a genuinely converging step, stopped and
+correctly described, where the old instrument would have printed "exits unmoved". The replan then
+targeted the REMAINING ERRORS rather than a clean file, and the step wrote:
+
+| | `u-mshcpdg4` (pre-F86) | `u-mshsikhr` (post-F86) |
+|---|---|---|
+| what the replan targeted | `src/loop.js`, already clean | the remaining errors in `src/recurse.js` |
+| post-replan ladder | 2 iterations, `wrote:false` both | 4 iterations, `wrote:true` on 3 of 4 |
+| post-replan trajectory | none — nothing was written | `6 → 4 → 2 → 2` |
+
+**What they did NOT buy: a green.** The strike that ended it was correct and mechanical —
+iterations 3 and 4 produced a byte-identical gap, so the seen-set fired `repeatOf:3` (iteration 4
+struck WITH `wrote:true`; the write-delta rule does not rescue a repeated gap, which is F78/F79
+working as designed). Both surviving errors sit on ONE line of the patient:
+
+```
+src/recurse.js(975,21): error TS7006: Parameter 'result' implicitly has an 'any' type.
+src/recurse.js(975,29): error TS7006: Parameter 'c' implicitly has an 'any' type.
+```
+
+an un-annotated arrow function. **The tail failure is a WORKER conversion failure, not instrument
+blindness.** The gap named file, line, COLUMN and the exact error text — the mechanical genre by
+F38's definition — the worker held that address for three consecutive iterations, wrote on the
+fourth, and the two errors did not move. That is a different class from the one F86 fixed.
+
+**And it carries a CONFOUND that must travel with every sentence about it: the tail step ran on
+HAIKU — and so did every other replanned step this session.** The replanned step declared
+`model: "haiku"` and `rounds: 12` while the initial step ran the default sonnet at 30 rounds;
+legal under the P tier menu (v1.36's floor binds the drafter/default tier, not a step the planner
+tiers down), chosen by the planner, recorded on the spine. Across all three bareagent runs the
+planner made the **same** choice — `narrow-loop-catches` haiku/6, `finish-strict-typecheck`
+haiku/8, `strict-fix-recurse-remaining-errors` haiku/12 — and **all three failed**, against
+sonnet initial steps at 30–40 rounds every time.
+
+So "the worker could not convert a mechanical gap" is measured on the *below-floor* tier, at the
+step that carries the run's last mile, every time. This run does not isolate a sonnet capability
+limit at all; it isolates *a haiku step failing a mechanical gap under a tight round bound*,
+which is a much weaker and much less surprising claim. It also raises a design question the
+programme has not asked: the planner is spending its cheapest tier and its shortest bound on the
+step that finishes the job.
+
+**Stated without gloss: one run is one run.** F86 is validated as *the replanner now aims at the
+work* — nothing more. It is not validated as a green, as a conversion rate, or as a fix to the
+tail. Drafting $0.4217 / execution $2.7328 → 6.48×.
+
+### 5. Consequence for the lift-contrast programme — the job-B slot is empty
+
+- **bareagent-u is a RED re-screen.** Under the prereg's own frozen reading rule the candidate
+  stays **OUT** and the earlier rejection rows stand. Nothing is loosened and nothing is
+  retroactively admitted.
+- **baremobile-u greened cold** (`u-msgmyv27`, **$0.8137 / 10.6 min**, 36 rounds, 8 writes across
+  5 distinct files, no replan; a bridge was minted) — which answers the question the prereg's
+  2026-08-06 addendum registered, *is the patient winnable cold on current code*: **yes**. It
+  still **FAILS the unloosened §3 clauses**: the accepted plan is **1 step** against the frozen
+  **≥2 steps**, and drafting $0.2905 / execution $0.5232 = **1.80×** against the frozen **5×**
+  floor (hamr's 2026-08-03 ruling). It is **OUT**.
+- **Therefore: job A (`pulselog-u`) is the only admitted candidate, the job-B slot is EMPTY, and
+  `bareguard-u` remains parked on hamr's signature** (v1.49 §5 — re-sign at launch against the
+  post-split hash).
+
+No threshold change is proposed and nothing is loosened here; the state is named and the decision
+is hamr's. **This session's paid total is $10.0611 across four runs** ($0.8137 + $2.9103 +
+$3.1826 + $3.1545, every row `spendComplete:true`). What that leaves against hamr's $28–50 authorization band is his own accounting from
+the prereg's recorded ledger, not a figure asserted here.
+
+### 6. Parked / open for hamr
+
+- **C has one live observation and it is a red.** The grant fired on `u-mshcpdg4`, correctly gated
+  on `converging` — and the plan it bought aimed at an already-clean file and wrote nothing. The
+  rerun took one variance stop and never reached it, so C has never run under both fixes, which is
+  the only condition under which its purchase could have been aimed. Whether the exception earns
+  its narrowing of law #6 is unread at n=1.
+- **The tail conversion failure is OPEN — and it is NOT yet a counter-example to F38.** A gap
+  carrying file, line, column and error text did not convert across three iterations, which reads
+  at first like the sharpest challenge the programme has to a load-bearing finding. It is not, and
+  the reason is §4's confound: the step that failed was a **haiku** step under a 12-round bound,
+  below the sonnet floor every F38-era baseline was measured on. Nothing here licenses a claim
+  about the mechanical genre in general. The open questions, in the order the cheap-instrument
+  rule puts them: (a) **a $0 archive read** — this session is 3-for-3 on *planner tiers the
+  replanned step down to haiku with a short bound, and that step fails*; the archive says whether
+  that is a habit and whether such steps ever convert. (b) whether a per-step tier below the
+  default should be visible in the operator readout rather than only on the spine — a run whose
+  last mile silently runs on the cheapest tier is the F50 class one flag over. Neither is a paid
+  probe, and neither is a threshold change: if the pattern holds, the lever is a draft-gate law
+  or a prompt law, which is hamr's to call.
+- **The job-B slot is empty** and the lift contrast cannot run one-armed. The options are hamr's:
+  a further candidate screened under the unchanged clauses, a ruling on the clauses themselves
+  (which no measurement here licenses), or a contrast re-scoped to what job A alone can carry.

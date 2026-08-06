@@ -5514,3 +5514,362 @@ to read.** Both Criticals were invisible to careful reading and obvious to a run
 that had quietly stopped binding, and a demotion set that could be widened without any test
 noticing. The branch's own doctrine already said it (*a rule without a wired detector is prose,
 not protection*); what this round adds is that a detector nobody has watched FAIL is prose too.
+
+## F85 — the variance meter reported a false negative: it stopped a step that was converging and told the replanner the step's exits were "unmoved"
+
+**Status: minted 2026-08-06, commit `3d91b0e` (opus build, session as orchestrator and
+validator), branch `variance-progress-abc`. Instrument: the archived spine of `u-msh70zla`
+(bareagent-u, `step-red:narrow-loop-catches`, $2.9103 of $4), read against the run's own
+`close-verdict` gaps; confirmed post-fix on `u-mshcpdg4` and `u-mshsikhr`. hamr's ruling,
+verbatim: *"meter is right but missing a piece ... it should give heads up on money/time +
+progress for llm to judge."* No spec hash moved — every change is library code. Gate after:
+1019/1019, typecheck and `build:types` exit 0.**
+
+### The defect, in the run's own records
+
+`u-msh70zla` drafted a one-step plan over `src/loop.js` + `src/recurse.js` and worked it for
+three attempts. Its own books, all four instruments on one run:
+
+| what | the record |
+|---|---|
+| the ladder | `it1/it2/it3` — `strike:false`, `wrote:true`, `distinctGaps 1 → 2 → 3` |
+| the close | `24 → 15 → 14` strict errors across those three attempts (preflight seed 30) |
+| the meter | `{"step":"fix-strict-catch-narrowing","iteration":4,"threshold":0.5,"moneyShare":0.618,"timeShare":0.565,"axis":"money"}` |
+| the replan brief | `"the meter stopped a step that was consuming the run with its exits unmoved"` |
+
+The first two say the step was converging on every signal the repo owns. The fourth says the
+opposite, and it says it as a fact. The materials `progress` line handed to the same
+redrafting planner read `step 1 of 1 ("fix-strict-catch-narrowing") did not finish; 0 step(s)
+completed before it` — structurally true and silent about outcome, so the only thing a
+replanner could conclude from either sentence was that nothing had been achieved.
+
+**"With its exits unmoved" was a hardcoded string.** It was printed for every `step-variance`
+stop whatever had happened; nothing computed it and nothing could make it false. The pre-fix
+`variance` record carries the two shares, the threshold and the axis, and nothing else — there
+was no progress field to disagree with, because there was no progress reading anywhere in the
+branch.
+
+**What it cost, measured.** All 14 remaining errors were in `src/recurse.js`; the file
+`src/loop.js` was at zero. The replanner, told it had achieved nothing, drafted a first step
+whose action opens *"In src/loop.js only…"* with `target: "src/loop.js"`. Two iterations, both
+`wrote:false`, gap both times `0 files changed under src/** — the tree is byte-identical to
+the step start`, second `repeatOf:1`, two strikes, `cap-halt`. The run ended **$1.09 of $4 and
+~6.9 minutes of the 25-minute wall unspent**, having thrown away three attempts of real
+convergence.
+
+### The defect class — and the sharper second form
+
+This is the **blind-instrument class** this repo has now minted more times than any other: a
+governance instrument narrating a variable it could not see. The prerequisite defect below is
+the ordinary form of it.
+
+The second form is the one worth naming, because it is new here. **The meter's DECISION was
+correct and only its NOTES were wrong.** A step eating 62% of the run's remaining money with
+its exits still red should be stopped, and it was. Nothing in the pass/fail record disagrees
+with anything: the stop was right, the escalation category was right, the run's terminal was
+right. The falsehood lived entirely in the prose the stop handed to the one component whose
+job is to act on it. **A red/green audit is structurally incapable of catching this** — there
+is no red to find. It surfaces only by reading an instrument's narration against the artifact
+it is narrating, which is what the `u-msh70zla` autopsy did.
+
+### The prerequisite defect, found en route: `runTrend` could not see a step
+
+Before any of A/B/C could report anything true, the reader had to be able to read. Two folds
+were missing and one seam was wrong:
+
+- **The trend reader was fed only the close precheck and the outer fix loop.** Every grade a
+  STEP ever produced was donated to nobody. A meter firing mid-step therefore had nothing to
+  report about the step it was stopping — which is exactly the case it exists for.
+- **The step seam handed it the WRAPPED gap.** `evalExits` wraps a stage's output as
+  `check "<name>" red: …`, and that line carries the word `red` with no number on it, so
+  `readGrade` read the wrapper instead of the wall. Measured on `u-msh70zla`'s own archived
+  gaps: the raw gap reads `typecheck 24 → 15 → 14`, the wrapped gap reads **nothing at all**.
+  (Same seam Layer R already pays at the step path for a check's `^`-anchored `gapKeep` —
+  F50.)
+- **No preflight seed**, so a numeric stage had no baseline and a step's first grade had
+  nothing to compare against. Added **once per stage**: the precheck and the preflight loop
+  grade the same unchanged tree back to back with no work in between, and a repeated baseline
+  in a series reads as an attempt that achieved nothing — a phantom flat step handed to a
+  human and to the replanner, i.e. the same class of false story this whole change removes.
+
+### A / B / C — what hamr's ruling was built into
+
+- **A — the meter REPORTS progress and DECIDES nothing.** The firing condition is
+  byte-identical: `moneyShare >= 0.5 || timeShare >= 0.5`, both axes, same threshold, same
+  head-of-attempt position. **A progress term in the trigger was refused on principle, not on
+  taste.** The meter is a governance instrument over an operator-owned allowance; a governor
+  that suppressed itself whenever the work looked promising would be spending the budget on a
+  judgment about capability — which is the arbiter's side of hamr's law, permanently. The
+  reading is read off `runTrend` — the **same instance** the money halt reads (`src/trend.js`,
+  ONE PER SERIES). No second reader: two readers of one question is the defect being fixed.
+  The `variance` record and the escalation gain `trend` / `motion` / `reading` / `series` as
+  **appended** fields with the same names and shapes the money halt already emits.
+- **B — the false sentence is deleted.** The replan trigger sentence now states the meter's
+  fact and then the trend's measured reading, as two separate claims in that order: *"it was
+  stopped for eating the run"* and *"here is what the run achieved"* are different things, and
+  the old string quietly fused them into a verdict on the work. `unknown` stays `unknown` — a
+  close that reports no number donates nothing (F6). The materials `progress` line keeps its
+  structural sentence (a plan's shape is what the planner re-allocates) and gains
+  `close trend so far: …`.
+- **C — the arbiter's ONE extra replan.** A second `step-variance` stop after the ordinary
+  ceiling used to be a hard stop; on a converging run that threw away work already paid for.
+  The arbiter may now grant one more, and every clause is a constraint: **ONE**, bounded by a
+  latch rather than a comparison so the ceiling cannot creep (unlimited replanning launders
+  thrash as adaptation); **the ARBITER**, read mechanically off `runTrend`, never asked for,
+  never offered, never influenceable — the agent has no channel to it; **`converging`**, the
+  trend reader's own category, with no fresh number invented here (threshold-setting is
+  hamr's); **`step-variance` only** — an exhaustion or a stall after the ceiling is unchanged.
+  The spine carries `granted:"converging"` only when the grant fires, so a reader can never
+  mistake the ordinary ceiling for a grant.
+
+### Live evidence, post-fix
+
+- **`u-mshcpdg4`** — both `variance` records carry the measured reading
+  (`still progressing — typecheck 30 → 15` at iteration 2; `… 30 → 15 → 15 → 1` at iteration
+  3), and **C fired**: `{"replan":2,"granted":"converging"}`. The run reached **1 remaining
+  strict error** against `u-msh70zla`'s 14.
+- **`u-mshsikhr`** (the rerun, under both this and F86) — one variance stop, `moneyShare
+  0.508 / timeShare 0.642 / axis money`, `trend:"converging"`,
+  `reading:"still progressing — typecheck 30 → 28 → 6"`. A/B did on a live run exactly what
+  they were built to do: the meter stopped a genuinely converging step **and said so**.
+
+### What is NOT proven
+
+- **C has fired exactly once, and it bought nothing measurable.** On `u-mshcpdg4` the granted
+  second replan aimed at an already-clean file and the run still step-redded — that is F86's
+  defect, since fixed, but it means C has never once been observed converting a run. On
+  `u-mshsikhr` only one variance stop occurred, so C was never reached and remains
+  **unexercised under the current code**. n=1, no green: C is legal and bounded, not shown
+  beneficial.
+- **Nothing here is a claim about greens.** A/B changed what the replanner is told. Whether a
+  truer brief produces a better run is F86's read, and that read is red.
+- **One genre, one patient.** Every reading above is a `tsc --strict` error count on
+  bareagent-u. A close that reports no comparable number donates `unknown` by design, and how
+  often that is the real case across genres is unmeasured.
+
+### A documentation-integrity defect found in the same session: the F-number collision
+
+Both commits on this branch labelled their work **F76** (this finding) and **F77** (F86) in
+**32 source and test comments**, while `docs/FINDINGS.md` already publishes a different F76
+(*resume at TRY granularity re-buys work the run already owns*) and a different F77 (*the step
+loop's fixed count was a silent second ceiling*), and runs to F84. Verified that zero F76/F77
+references existed in those files before the branch, then renamed **F76 → F85** and
+**F77 → F86** across `src/planrun.js`, `tests/planrun.test.js` and `tests/resume.test.js` —
+comments and test names only, no behaviour change.
+
+Recorded as a defect and not a tidy-up: this repo's findings are the attribution ledger the
+whole programme reads back, and a source comment pointing at the wrong finding is a false
+citation that survives every gate. Nothing typechecks a cross-reference.
+
+### Lesson
+
+**An instrument can be right and still lie.** The stop was correct, the category was correct,
+the terminal was correct — and the sentence the stop handed to the only component that acts on
+it was a hardcoded falsehood that no test, no gate and no red/green audit could ever have
+flagged, because there was nothing red about it. The blind-instrument rule this repo keeps
+re-minting has a second half: after asking *can this instrument see the variable it governs*,
+ask *can it see the variable it NARRATES* — and then read what it says against the artifact it
+is saying it about.
+
+## F86 — the replan brief carries the close's own output; the parsed never-wrote line is deleted; and the rerun aims at the work and still dies at the tail
+
+**Status: minted 2026-08-06, commit `5d17f88` (opus build, session as orchestrator and
+validator), branch `variance-progress-abc`. Defect instrument: the archived spine of
+`u-mshcpdg4`. Live read: `u-mshsikhr`, the first run under both F85 and this — cold, same
+patient, same signed hash `eed6fe82…` (unchanged; the fixes are library code, not spec),
+$4 / 25 min, launched setsid-detached under `systemd-inhibit`. hamr's order, verbatim:
+*"delete it and rerun bareagent"*. Gate after: 1023/1023 (1027 minus the 4 tests deleted with
+the feature), typecheck and `build:types` exit 0.**
+
+### The defect: the worker saw the address, the replanner never did
+
+`u-mshcpdg4` got to **one remaining strict error** and died. Its last close gap, verbatim:
+
+```
+check "typecheck" red: close stage "typecheck" failed:
+BAREAGENT red: tsc --strict reports 1 error(s) in src/recurse.js, src/loop.js
+BAREAGENT | src/recurse.js(978,115): error TS2322: Type 'string | null | undefined' is not assignable to type 'string | null'.
+BAREAGENT judged=1
+```
+
+The worker read that on every attempt. The **replanner** — the component that chooses which
+files the next plan targets — received `still progressing — typecheck 30 → 15 → 15 → 1`: a
+number with no address. F85 had just given it the trajectory; the trajectory is a summary OF
+an artifact it was never shown.
+
+At the moment the arbiter granted that last replan (F85's C) the run still held **$1.10 and 82
+seconds of its declared wall**. The plan it drafted set `target: "src/loop.js"` and said *"fix
+only the remaining tsc --strict errors reported"*. `src/loop.js` was at **zero errors**. Two
+iterations, `wrote:false` both, second `repeatOf:1`, two strikes, `cap-halt`. The run ended
+`step-red:finish-strict-typecheck`, **$3.1826 of $4** — $0.82 and ~6 seconds of the 25-minute
+wall unspent.
+
+### The fix: the artifact, bounded and scrubbed, as TEXT
+
+`closeGapBlock(gap)` in `src/planrun.js`. The step's last exit gap goes into the replan brief
+under a labelled heading, and the two boundaries are **reused rather than respelled**:
+
+- **SCRUB** — `redactSecrets`, the one secret inventory. The gap arrives already scrubbed from
+  `judge`, so this is defense in depth at an egress point, which is where it belongs: the next
+  caller of this helper will not remember the upstream one.
+- **BOUND** — ralph's own `boundGap` (exported for it), the same envelope the close path uses,
+  so red lines survive the elision and every trim announces itself (F28). A private slice here
+  would be a second truncation scheme silently able to drop the one detail line the helper
+  exists to carry.
+
+Red-set is `REPLAN_GAP_KEEP = '\S'` — every non-blank line. Not the close stage's own
+`gapKeep`, for the reason F50 already pays at this seam: a shipped `gapKeep` is `^`-anchored
+(`^BAREAGENT `, `^red`, `^FAILED`) and the exit evaluator wraps stage output in
+`check "x" red: …`, so the anchor no longer sits where the pattern expects it. Keeping every
+line is correct rather than widened, because **a gap that reaches here is already a red-set**:
+`judge` builds it out of the failing exits only.
+
+**No spine field** — `src/trend.js`'s standing rule is that no record carries a close byte.
+**Empty gap → empty string**, so the brief renders byte-identical to the pre-F86 one; a
+labelled empty section would invite the planner to explain an absence the run never observed.
+
+### And the deletion: the parsed `never wrote` advisory, on hamr's order
+
+Deleted with this change: the advisory line *"The last exit output names file(s) this step
+never wrote: …"* and its sole-caller helper `gapFilesNeverWritten`.
+
+**Why a parsed file list is not the cheap version of this fix — it is the bug.** Line 1 of
+that very gap reads `reports 1 error(s) in src/recurse.js, src/loop.js` — every file in
+**scope** — and only line 2 names the culprit. Measured on that gap, the helper returned
+`["src/loop.js"]`: **the already-clean file**. It then said so as a **directive**, sitting
+beside the artifact that said the opposite, to a worker this programme has already measured
+following directive prose (positive-scope confinement, `u-msdsmkid`). Formats differ per close
+anyway — tsc `file(line,col)`, pytest test ids, a count close naming no file at all. A model
+can tell a summary line from a detail line; a regex reproduces the failure.
+
+**It also had zero conversion evidence.** It fired by construction on `u-msdsmkid` and that
+run still step-redded ($3.5428, `step-red:fix-recurse-strict`). Nothing was removed that had
+ever been observed to work.
+
+Verified by **execution, not reading**: sabotaging the wiring (`gapBlock = ''`) turns the
+`u-mshcpdg4` regression test red (`not ok 121`); restored byte-clean.
+
+### The rerun `u-mshsikhr` — the honest live read
+
+**Outcome: `step-red:strict-fix-recurse-remaining-errors`. $3.1545 of $4, spine span
+21 min 51 s of the 25-minute wall, 120 worker rounds, 27 gate-allowed edits over 2 files
+(`src/recurse.js` 16, `src/loop.js` 11), 6 check runs, 1 replan, `spendComplete:true`. NOT
+green.** Drafting $0.4217 (scout $0.3365 + plan $0.0852) against execution $2.7328 — 6.48×.
+
+**Plan 1 (`strict-fix-recurse-and-loop`, the RLM whole-territory shape) went 30 → 28 → 6**,
+and F85's meter stopped it at iteration 3 saying so.
+
+**What the replanner did with the gap it had never been shown before.** The gap it received:
+
+```
+BAREAGENT red: tsc --strict reports 6 error(s) in src/recurse.js, src/loop.js
+BAREAGENT | src/recurse.js(975,21): error TS7006: Parameter 'result' implicitly has an 'any' type.
+BAREAGENT | src/recurse.js(975,29): error TS7006: Parameter 'c' implicitly has an 'any' type.
+BAREAGENT | src/recurse.js(1022,21): error TS2339: Property 'message' does not exist on type '{}'.
+BAREAGENT | src/recurse.js(1022,49): error TS2339: Property 'message' does not exist on type '{}'.
+BAREAGENT | src/recurse.js(1079,90): error TS18046: 'err' is of type 'unknown'.
+BAREAGENT | src/recurse.js(1170,95): error TS18046: 'err' is of type 'unknown'.
+```
+
+The plan it drafted opens *"Finish making src/recurse.js and src/loop.js pass `tsc --strict`.
+**Only 6 errors remain, all in src/recurse.js:** (1) line 975 col 21/29 … (2) line 1022 col
+21/49 … (3) lines 1079 col 95 and 1170 col 95 …"* with `target: "src/recurse.js"`.
+
+Two things in that sentence are the finding. It enumerated all six addresses off the artifact,
+and **it correctly said "all in src/recurse.js" against a line 1 that names both files** —
+precisely the summary-versus-detail distinction the deleted regex got backwards. (It also
+paraphrased `1079,90` as *"col 95"* — a model transcribing, not a parser extracting, which is
+exactly the trade being made.)
+
+| | `u-mshcpdg4` (pre-F86) | `u-mshsikhr` (post-F86) |
+|---|---|---|
+| what the replan targeted | `src/loop.js`, already clean | the remaining errors in `src/recurse.js` |
+| post-replan ladder | 2 iterations, `wrote:false` both | 4 iterations, `wrote:true` on 3 of 4 |
+| post-replan trajectory | none (nothing written) | `6 → 4 → 2 → 2` |
+
+**The mechanism converted the failure it was built for.** That is the whole claim.
+
+### Where it died, with no gloss
+
+```
+plan1 it1 strike=false strikes=0 wrote=true  distinctGaps=1
+plan1 it2 strike=false strikes=0 wrote=true  distinctGaps=2   → variance stop, replan 1
+plan2 it1 strike=true  strikes=1 wrote=false distinctGaps=1
+plan2 it2 strike=false strikes=1 wrote=true  distinctGaps=2
+plan2 it3 strike=false strikes=1 wrote=true  distinctGaps=3
+plan2 it4 strike=true  strikes=2 wrote=true  distinctGaps=3 repeatOf=3   → cap-halt
+```
+
+The run ended on the ladder's second strike at **two remaining strict errors**, with **$0.85
+and ~3.1 minutes unspent**. The escalation is decision-ready and accurate: *"it repeated
+itself — the exit output at iteration 4 had already been seen at iteration 3; it stalled — no
+file was written in iteration(s) 1. Gap trajectory: 3 distinct exit output(s) over 4
+iteration(s)."*
+
+**The strike was correct and mechanical.** Iterations 3 and 4 produced a **byte-identical**
+345-byte gap (verified by `===` over the archived records), so the seen-set fired
+`repeatOf:3`. Note it struck **with `wrote:true`** — the write-delta rule did not save it
+because the gap repeated. That is F78/F79 working exactly as designed: a step that writes and
+changes nothing is the case the seen-set exists for.
+
+**Where the work actually stopped.** Both surviving errors are on **one line**:
+
+```
+src/recurse.js(975,21): error TS7006: Parameter 'result' implicitly has an 'any' type.
+src/recurse.js(975,29): error TS7006: Parameter 'c' implicitly has an 'any' type.
+```
+
+which in the patient is `const evaluate = (result, c) => runArbiter('broken-sensor', () =>
+sensor(result, { task, context: opts.context, contract: c.contract }));` — a single
+un-annotated arrow function. The gap named the file, the line, the **column** and the exact
+error text; the worker held that address for **three consecutive iterations**, wrote on
+iteration 4, and the two errors did not move.
+
+**So this is a worker conversion failure at the tail, not an instrument blindness** — a
+different failure from the one this finding fixed, and the first time the programme has seen
+it isolated with everything upstream demonstrably working.
+
+### What is proven, and what is not
+
+- **Proven:** the replanner now aims at the work. That is exactly and only what `closeGapBlock`
+  was built to do, and it did it on the first live run, against a pre-fix control that aimed at
+  a clean file twice.
+- **NOT proven — and must not be claimed:** that F86 produces greens. **The run is red.** One
+  run is one run; there is no second post-fix run, no ON/OFF contrast, and no green anywhere in
+  this pair.
+- **Named confound, unresolved here — and it is a PATTERN, not one step.** The tail step ran
+  `model: haiku` (per-step, legal: PRD v1.36's floor binds the drafter/default tier, not a
+  step the planner tiers down). Read across all three bareagent runs of this session, the
+  planner assigned haiku to **every replanned step**, each under a tight round bound, and
+  **every one of them failed**:
+
+  | run | replanned step | tier / rounds | outcome |
+  |---|---|---|---|
+  | u-msh70zla | `narrow-loop-catches` | haiku / 6 | step-red, wrote nothing |
+  | u-mshcpdg4 | `finish-strict-typecheck` (2nd replan) | haiku / 8 | step-red, wrote nothing |
+  | u-mshsikhr | `strict-fix-recurse-remaining-errors` | haiku / 12 | step-red at 2 errors |
+
+  The initial step was the default sonnet at 30–40 rounds in all three. So the conversion
+  failure above is measured on **haiku, at the step that carries the run's last mile, every
+  time** — which means this pair of runs does not isolate a sonnet capability limit at all.
+  Whether the same address converts under a sonnet tail step is untested, and n=3 on one
+  patient is a lead for a $0 archive read, not a finding.
+- **Open question flagged, not resolved:** F38's split says a **mechanical** gap — counts, named
+  walls, an exact address — converts on the next attempt every time attempts remain, and the
+  semantic genre is the one that stalls. This gap is as mechanical as the programme has ever
+  produced (file, line, column, error text, three iterations running) and it did not convert.
+  That is a live tension with a paid-for finding and it deserves its own instrument and its own
+  finding; it is recorded here, deliberately unexplained.
+
+### Lesson
+
+**A channel fix is validated by where the work gets aimed, not by the verdict at the end of the
+run** — and the two must be reported separately or the honest half of the result gets eaten by
+the red half. `closeGapBlock` moved the replanner from a clean file to the actual remaining
+errors and turned two idle iterations into three writing ones; the run still died, for an
+entirely different reason, two errors from done. Collapsing those into "it didn't work" would
+have discarded a measured conversion, and collapsing them into "it worked" would have been the
+fit-to-pass reading this programme keeps refusing. The other half: **the obvious cheap version
+of a channel fix reproduced the exact bug it was fixing** — parsing the gap resolved to the
+already-clean file, because a summary line and a detail line are distinguishable only by
+reading, which is the one thing a regex cannot do.

@@ -5,6 +5,120 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Changed
+- **The variance meter REPORTS progress — and still decides nothing on it** (F85, A+B;
+  `src/planrun.js`). The meter stopped a step that was CONVERGING and then told the redrafting
+  planner that step's exits were *"unmoved"*. Two instruments over one run, and only one of them
+  right. Live on `u-msh70zla`: the close gaps went 30 → 24 → 15 → 14 with the ladder recording
+  `distinctGaps 3` / `strikes 0`, while the replan brief said nothing had moved and the materials
+  said *"0 step(s) completed"* — so the replanner, told it had achieved nothing, rebuilt a file
+  that was already at zero errors, wrote nothing twice, and the run died with $1.09 and 7 minutes
+  unspent. hamr's ruling, verbatim: *"meter is right but missing a piece … it should give heads up
+  on money/time + progress for llm to judge."*
+  - **The firing condition is byte-identical** — `moneyShare`/`timeShare >= 0.5`, both axes, the
+    same threshold, the same throw. A progress term in the TRIGGER would make a governance
+    instrument over an operator-owned allowance judge capability, so a converging step that is
+    eating the run is still stopped. What was missing was never a term in the condition; it was
+    the READING.
+  - **The reading is read off `src/trend.js` — the SAME instance the money halt reads.** Nothing
+    new is computed at the meter: no second reader, because two instruments answering one question
+    is the exact defect being fixed. Per-stage, stage names and numbers only, and `unknown` stays
+    `unknown` — a close that reports no number donates nothing (F6).
+  - **The hardcoded `with its exits unmoved` string is DELETED.** It printed on every step-variance
+    stop whatever had happened, and on `u-msh70zla` it was simply false. The escalation detail —
+    which a human reads and which the replan brief quotes — now states the meter's fact (*a share of
+    the run was consumed*) and then the trend instrument's measured reading, as two separate claims
+    rather than one fused verdict on the work. The materials `progress` line keeps its structural
+    sentence (*"step N of M did not finish; K step(s) completed before it"* — a plan's shape is what
+    the planner re-allocates) and gains the close trend beside it.
+  - **Spine change:** the `variance` record gains `trend` / `motion` / `reading` / `series` — the
+    same four names and the same shapes the money halt already emits, so one reader parses a
+    progress reading wherever it appears. ADDED fields, never repurposed ones (the spine is
+    append-only forever). Measured post-fix on `u-mshcpdg4`, iteration 3 on `finish-strict-typecheck`:
+    `moneyShare 0.497`, `timeShare 0.769`, `axis time`, `trend "converging"`,
+    `reading "still progressing — typecheck 30 → 15 → 15 → 1"`,
+    `series [{stage:"typecheck",values:[30,15,15,1]}]` — against `u-msh70zla`'s pre-fix record, which
+    carried the shares and nothing else.
+- **`runTrend` was blind to everything a STEP achieves** (F85, the prerequisite found en route). The
+  run's trend reader was fed only the close PRECHECK and the outer fix loop, so a meter firing
+  mid-step had nothing to report about a step that had just gone 24 → 15 → 14. Two folds corrected:
+  a step's failing check is an arbiter-rendered close grade (same `runStages`, same chain, same stage
+  names) and is now recorded like one; and it is recorded on the RAW gap, because `evalExits` wraps
+  stage output as `check "<name>" red: …` and that wrapper line carries the word "red" with no number
+  on it — so every step grade used to donate a null. Measured on `u-msh70zla`'s own archived gaps:
+  raw reads `typecheck 24 → 15 → 14`, wrapped reads nothing at all. Plus a **preflight seed** so the
+  counter has a baseline: the precheck reds at the close's FIRST failing stage (first-red-wins) and
+  every shipped close opens with `changed-from-seed`, so the numeric stages had no baseline at all and
+  a run would read `unknown` on exactly the stop the readout exists for. Seeded ONCE PER STAGE, off the
+  reader's own books — the precheck and the preflight menu grade the same unchanged tree back to back,
+  and a repeated baseline in a series reads as an attempt that achieved nothing, which is the phantom
+  flat step this change exists to remove.
+- **`tests/resume-u.test.js` is decoupled from the live job spec.** It read
+  `jobs/bareagent-u-types.json` while hardcoding $8 / 45min, so an operator budget edit on a live spec
+  turned the suite red. Every number now derives from the spec it reads, proven by passing at a third
+  budget value. Suite: **1023 tests** (1027 minus the 4 deleted with the `never wrote` feature below);
+  typecheck and `build:types` exit 0.
+
+### Added
+- **A SECOND variance stop can earn ONE more replan — granted by the ARBITER, on a mechanical
+  reading** (F85, C). A second `step-variance` after the one-replan ceiling was spent used to be a
+  hard stop, and on a run that was still converging that stop threw away work already paid for. Every
+  clause of the grant is a constraint: **ONE**, bounded by a LATCH rather than a comparison so the
+  ceiling cannot creep by arithmetic (unlimited replanning launders thrash as adaptation, v1.12) — a
+  third variance stop is the stop, however well it is going; **the arbiter's**, read mechanically off
+  the same `runTrend` instance the meter and the money halt read, with the agent given no channel to
+  it — it never asks, is never offered it, and cannot influence it (no self-adjusted budgets, ever);
+  **`converging` only**, the trend instrument's own category with no fresh number invented here
+  (threshold-setting is the operator's), so `flat` and `unknown` stop exactly as before and an unknown
+  is never rounded up into a reason to spend (F6); and **`step-variance` only** — an exhaustion or a
+  stall after the ceiling is unchanged. `remainingUsd() > MONEY_MIN` still gates it, as it gates the
+  ordinary replan. **Spine change:** `replan` gains `replan` (which replan this is) and — only when the
+  arbiter granted one past the ordinary ceiling — `granted` with the reading it was granted on, so a
+  reader can never mistake the ceiling for a grant; `plan-executed` gains a `replans` count riding
+  BESIDE the shipped `replanned` boolean, never repurposing it. Live on `u-mshcpdg4`: three
+  `plan-accepted` records — the initial draft and two replans, the second granted on `converging`.
+- **`closeGapBlock(gap)` — the replan brief carries the close's OWN output** (F86; `src/planrun.js`).
+  `u-mshcpdg4` reached ONE remaining strict error and still died. The close gap named the work exactly
+  — `src/recurse.js(978,115)` — and the worker read it every attempt; the REPLANNER, which is the
+  component that chooses which files the next plan targets, saw only
+  *"still progressing — typecheck 30 → 15 → 15 → 1"*: a number with no address. It aimed the last plan
+  at `src/loop.js`, already at zero errors, wrote nothing twice, and took two strikes — with $1.10 and
+  82 seconds still on the clock at the moment that replan was granted (the run itself ended $0.8174 and
+  ~6 seconds short of its caps). F85 gave the brief the trajectory; this gives it the artifact the trajectory
+  is a summary OF. Handed over as **TEXT**, with both boundaries reused rather than respelled: scrubbed
+  through the one secret inventory (`redactSecrets`/`SECRET_PATTERNS`) because a prompt is an egress
+  point and the next caller will not remember the upstream scrub, and bounded by ralph's own `boundGap`
+  — now **exported** from `src/ralph.js` for it, since a private slice would be a second truncation
+  scheme that drifts on exactly the property that matters (whether the red lines survive, and whether
+  the trim announces itself, F28); the close path still calls it with the stage's own `gapKeep`,
+  byte-identically. The red-set is `REPLAN_GAP_KEEP = '\S'` — every non-blank line — because a shipped
+  `gapKeep` is `^`-anchored (`^BAREAGENT `, `^red`, `^FAILED`) and the exit evaluator wraps stage output
+  in `check "x" red: …`, so the anchor no longer sits where the pattern expects it; a gap that reaches
+  here is ALREADY a red-set (`judge` builds it out of the failing exits only), so keeping every line is
+  the correct instrument, not a widened one. **No spine field** — `src/trend.js`'s rule is that no
+  record carries a close byte. An empty gap yields the empty string, so the brief renders
+  byte-identically to the pre-F86 one (a labelled empty section would invite the planner to explain an
+  absence the run never observed). Verified by execution, not by reading: sabotaging the wiring
+  (`gapBlock = ''`) turns the `u-mshcpdg4` regression test red (`not ok 121`); restored byte-clean.
+
+### Removed
+- **`gapFilesNeverWritten()` and the `never wrote` replan advisory** (F86) — an EXPORT of
+  `src/planrun.js` is gone (it was never re-exported through the package entry, whose `exports` map
+  admits only `.`, so no adopter import breaks). hamr's order, verbatim: *"delete it and rerun
+  bareagent"*. The measured reason, on `u-mshcpdg4`'s own gap: the advisory resolved to
+  `src/loop.js` — the file already at zero errors — and said so as a DIRECTIVE, beside the artifact
+  that said the opposite; this worker follows directive prose (positive-scope confinement). It also had
+  no evidence of ever converting anything: it fired by construction on `u-msdsmkid`, and that run still
+  step-redded. The general rule it broke is why `closeGapBlock` hands over text instead: **a parsed
+  file list cannot tell a summary line from a detail line**. Line 1 of that very gap reads
+  `reports 1 error(s) in src/recurse.js, src/loop.js` — every file in SCOPE — and only line 2 names the
+  culprit; and the shapes differ per close anyway (tsc `file:line`, pytest test ids, a count close that
+  names no file at all). A model reading the artifact can make that distinction; a regex reproduces the
+  bug. Two readers of one question with the parsed one wrong is the same failure the variance meter just
+  had. Its 4 tests went with it, and its sole caller was the brief — no speculative code left behind.
+
 ## [0.7.0] — 2026-08-05
 
 ### Changed

@@ -524,8 +524,9 @@ fed back, then `plan-red`) → **EXECUTE** (strictly sequential micro-loops: `ra
 the exit-evaluator judge, each step under its own STRIKE LADDER — below; tree snapshots at
 step start; the gap names every failing
 wall — mechanical genre, F46's measured mechanism; artifacts feed forward labeled by
-step id) → **ONE replan**, triggered by exhaustion OR variance (an instrument stop never
-replans) → **the operator's close**, a red feeding ONE bounded fix loop judged by the
+step id) → **ONE replan**, triggered by exhaustion OR variance OR a stall (an instrument stop
+never replans) — plus at most ONE arbiter-granted extra on a second variance stop that reads
+`converging`, below → **the operator's close**, a red feeding ONE bounded fix loop judged by the
 REAL close and governed by the close TREND rule below (`capRuns`, default 3, survives only as
 its blind fallback). `plan-executed` (the plan-as-executed record, design law #2) lands on the
 spine on every path that executed steps. Additional outcomes: `already-green |
@@ -557,8 +558,16 @@ escalation and wall-stop records carry `strikes`/`strikeLimit`/`distinctGaps` be
 iteration count rather than a cap the step no longer has. **The replan brief
 names the mechanism**: which shape ended the step (converging-cut / stalled-no-write /
 repeated-gap, with the iteration numbers as evidence), the gap trajectory, and how much money
-and wall the stop left unspent (time reported UNBOUNDED when no wall was set, never `0`). It
-names no culprit file — F28 applies to the replan channel too.
+and wall the stop left unspent (time reported UNBOUNDED when no wall was set, never `0`).
+**It also carries the close's OWN last output for that step, verbatim** (F86) — labelled as the
+verification's own words, masked through the repo's one secret inventory and bounded by the
+same envelope the close path uses (so the red lines survive and every trim announces itself,
+F28); no gap, no block, and the brief is byte-identical to one drafted before this existed.
+Handed over as TEXT: the runner makes **no parsed file claim of its own** in this channel —
+a close's summary line ("N error(s) in a.js, b.js" — every file in scope) and its detail line
+(the one location actually failing) are indistinguishable to a regex, and the shapes differ per
+close anyway. What the planner is told about WHERE the work is comes from the close's own
+bytes, never from the runner's reading of them.
 
 **The close TREND rule — how the CLOSE-FIX LOOP ends (PRD v1.46 §4).** `capRuns` retired as
 that loop's governor once its own $0 replay over every archived fix loop came back clean (0
@@ -608,7 +617,9 @@ on money (the step loop, the close-fix loop, and the scout/draft relay), exactly
 close rendered no number (F6). **The library only ever REPORTS**: `budgetUsd` is in the spec
 hash, so a top-up is a spec edit a human signs — nothing in a run may widen its own budget.
 
-**ONE progress instrument, read by both halts.** The wall halt used to run its own: byte
+**ONE progress instrument, read by both halts — and REPORTED by the variance meter.** The
+`variance` record and its escalation carry the same four fields off the same instance (below);
+the meter is the one consumer that never decides on the reading. The wall halt used to run its own: byte
 equality of the last two close gaps, reading `stalled` / `moving` / `unknown` beside the money
 halt's `flat` / `converging` / `unknown` on the same run. Both now read `runTrend`, the run's
 own `src/trend.js` reader. Where a stage reported a comparable NUMBER it decides; where none
@@ -671,10 +682,34 @@ The planner (never the worker) receives a **materials** block at draft and at re
 spread on verification-gap duration, so a per-round constant describes almost no real round
 and a rate framing creates a rush-or-fake incentive. The replan trigger gains a second axis
 (`step-variance`): a step consuming ≥ `VARIANCE_THRESHOLD` (0.5) of the run's REMAINING money
-or time with its exits unmoved is pre-empted at the head of its next attempt so the planner
+or time — either axis — is pre-empted at the head of its next attempt so the planner
 re-allocates instead. **Known and recorded (F63): that trigger fired 0 times across 18
 archived spines / 54 steps** (near misses 0.35–0.45) — the threshold is arbiter territory,
-deliberately not fitted to those points. The ONE-replan ceiling is unchanged.
+deliberately not fitted to those points. It is no longer inert: it fires on real runs (F85).
+
+**The meter REPORTS progress; it never decides on it (F85).** The firing condition above is
+the whole trigger — a progress term inside it would let a governance instrument over an
+operator-owned allowance judge capability, and a converging step that is eating the run is
+still stopped. What the meter says about the work is a MEASURED reading, not an assertion: the
+`variance` spine record gains `trend` (`converging | flat | unknown`), `motion`, `reading` and
+`series` beside its unchanged `step`/`iteration`/`threshold`/`moneyShare`/`timeShare`/`axis`,
+and the escalation `detail` (which the replan brief quotes) ends with that same `reading` as a
+second, separate claim — "it was stopped for eating the run" and "here is what it achieved" are
+different statements. All of it is read off the SAME `src/trend.js` instance the money and wall
+halts read — one reader, so the meter and the halts can never disagree, and `unknown` stays
+`unknown` when the close reported no number (F6). This
+replaces a fixed sentence ("with its exits unmoved") that used to print on every variance stop
+whatever had happened; a consumer parsing that string will not find it.
+
+**The replan ceiling is no longer flatly ONE.** A SECOND `step-variance` stop earns exactly one
+more replan when the run's own reading is mechanically `converging`; it is granted by the
+ARBITER off that same reader, bounded by a latch rather than a counter compared against a
+limit, so it cannot creep — a third variance stop is the stop however well the run is going.
+`flat` and `unknown` stop exactly as before, and an exhaustion or stall stop past the ceiling
+is unchanged. The agent has no channel to it: it never asks, is never offered it, and cannot
+influence it (no self-adjusted budgets, ever). Observable on the spine as ADDED fields, never
+repurposed ones: `replan` records carry `replan: <n>` and — only on a granted one — `granted:
+"converging"`, and `plan-executed` carries `replans` beside the unchanged `replanned` boolean.
 
 **Per-step model tiers — `providerFor` (P).** A plan step may declare a `model` TIER
 (`sonnet` \| `haiku`, `STEP_MODELS`). The tier menu is signed into the schema; mapping a tier
@@ -792,7 +827,7 @@ their next green, not repaired.
 door**: before the clock, before the close precheck, before any token. On a pass, the
 **newest** version's plan rides into the FIRST drafting prompt as a starting draft
 (`bridge-loaded {name, versions, runid}` on the spine) and everything after it is the
-ordinary shipped path — same validator, same redraft-on-reds, same ONE-replan ceiling, and a
+ordinary shipped path — same validator, same redraft-on-reds, the same replan ceiling, and a
 **replan never re-injects the bridge** (it drafts from the run's own state). On a fail the
 run returns the distinct terminal **`recipe-stale`** with `bridge-gate {outcome, name, reds}`
 and a decision-ready escalation, having spent nothing. **Falling back to cold is the
