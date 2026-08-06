@@ -211,3 +211,111 @@ F87 cheat. If the guard can be talked out of existence, the design is broken.
 This rung sits after Layer 3's park (PRD v1.52) and before soft-green + hitl, which stand on
 it: a hitl close IS an operator declaration, and there is no declaration surface until this
 exists. It also unblocks the litectx-maintainer job, dark since `507adbb`.
+
+---
+
+## Addendum — 2026-08-07, GATE 1 RESULT: the catalogue is NOT sufficient as written
+
+**$0 static expressiveness replay over every hand-written close in `scripts/`.** Reading rule
+fixed before looking: a stage FITS if a kind plus parameters reproduces its verdict *and* its
+gap output; verdict-only reproduction counts as a HOLE, because the gap is what converts
+(F38/F39). Holes counted, not a pass rate.
+
+**Method limit, stated plainly:** this is an analysis, not a measurement. Its failure mode is
+the assistant's own optimism about what a kind "could" express. Gate 2's POC is what can
+actually falsify it.
+
+### Population
+
+| close | genre | shape |
+|---|---|---|
+| `u-bareagent`, `u-bareguard`, `u-baremobile`, `u-pulselog` | TYPES (JS) | identical modulo constants |
+| `u-litectx` | TYPES (JS) | as above, no `typecheck-outside` split |
+| `u-spawner` | TYPES (Python) | mypy + pytest instead of tsc + node:test |
+| `testgen-close` | TESTGEN | pre-staged single close: mutation kill-rate |
+| `types-close` | TYPES (earlier) | superseded by the `u-*` family |
+
+`testgen-close` was deliberately included. Excluding the hardest genre would have been fitting
+the replay to pass.
+
+### Result 1 — the six TYPES stage types fit, with four amendments to the kinds
+
+| stage | kind | amendment required |
+|---|---|---|
+| `changed-from-seed` | `files-changed` | **containment**: the assertion is "the changed set is non-empty AND lies wholly inside an allowed prefix". `files-changed` as written only says "named paths differ". Needs an allow-prefix parameter. |
+| `typecheck` | `count-not-worse` | needs a **line parser** (`/error TS\d+/`) and a **scope filter** (in-scope files only), baseline 0. |
+| `typecheck-outside` | `count-not-worse` | same kind, complementary filter, baseline from seed. Fits once the above lands. |
+| `tests-kept` | `count-not-worse` | needs a **direction** parameter — higher is better here. Parser differs per runner (node `# tests`; pytest `collected - skipped - deselected`). |
+| `suite-green` | `command-exit` + `count-not-worse` | genuinely **two assertions** (exit 0 AND failures 0). Either the kind admits a paired assertion or this is two stages. |
+| `no-suppressions` | `pattern-absent-in-diff` | needs a pattern list, an extension filter, and **untracked-file handling** (no diff exists, so every line counts as added). |
+
+**One thing works better than expected:** the baselines (`OUTSIDE_MAX 67`, `TESTS_MIN 1044`,
+`SEED_ERRORS 63`) never need declaring. D9's seed-verdict read measures them by running every
+stage at seed. The user is never asked for a number they could not know.
+
+### Result 2 — TESTGEN does NOT fit. A whole kind is missing
+
+`testgen-close` grades by running a frozen set of 40 mutants: restore source, apply mutant,
+run the suite, count kills, threshold the rate. No kind in D2 expresses that. It needs:
+
+- **`harness-loop`** — run N frozen cases, tally per-case outcomes, threshold on the rate.
+- a **frozen-artifact anchor check** (a mutant that no longer applies to the pristine source is
+  an instrument stop, never a miss)
+- a **tamper check** (the worker must not have edited the graded source)
+
+This is the genre most unlike TYPES, and it is where the catalogue breaks. Reported as a hole,
+not smoothed: **the catalogue as written covers one genre.**
+
+### Result 3 — three obligations that are NOT kinds, and were missing from this record
+
+These are cross-cutting runtime contracts every stage must honour. The record above never
+mentioned them, which was a gap in the design, not in the catalogue:
+
+1. **The instrument-stop contract.** Exit 97 with `judged=1` deliberately NOT emitted, for:
+   timeout, null exit code, unreadable output, missing seed commit. This is the
+   casualty-vs-evidence split (F45) and the F17 judged floor. A close that reports a broken
+   instrument as a red manufactures fake evidence.
+2. **The gap output contract.** Every line prefixed with the spec's `gapKeep`; line caps with
+   trims **announced, never silent** (F28); no culprit file named beyond what the tool itself
+   reports.
+3. **The changed-set primitive.** `git diff <seed>` PLUS untracked files, minus two named
+   arbiter books (`.litectx/`, `gate-audit.jsonl`). Both exclusions were paid for live - the
+   `gate-audit.jsonl` one red-carded the arbiter's own file mid-run (u-msdonzxl) and burned a
+   run to the wall. **No user could know to exclude these.** This is D5's principle operating
+   below the stage level, inside a shared primitive.
+
+### Result 4 — one LAW the authoring layer must enforce, omitted from this record
+
+**One population per stage** (F84, hamr-signed 2026-08-05). `typecheck` and
+`typecheck-outside` are split precisely because two populations under one stage name land in
+one trend series, where an in-scope 29 followed by an outside-scope 4 reads as CONVERGING on a
+run that merely swapped walls.
+
+An authoring LLM told *"check the types"* writes ONE stage. The split must be enforced
+mechanically at authoring - it is not something the model can be trusted to remember, and it
+is exactly the class of knowledge D5 exists to inject.
+
+### Result 5 — knowledge that came from paying, which no user can supply
+
+- `MYPYPATH` on the spawner close: without it mypy resolved sibling imports to a *different
+  checkout* via an editable install, so fixes were checked against unedited source. Found by
+  probe, not by reading.
+- pytest `-ra` and `-p no:cacheprovider`; `NO_COLOR`; per-stage timeouts; `maxBuffer`.
+- the frozen env whitelist on TESTGEN (worker tests execute as arbitrary code).
+
+Parameterisable, all of it - but nothing in the design DERIVES the need for them. This is the
+strongest argument for the repo-inspection enrichment in D1 being more than a convenience.
+
+### Gate 1 verdict
+
+**PASS for the TYPES genre with four kind amendments. FAIL as a general catalogue.**
+
+Not a stop. The build proceeds on the amended kinds, scoped to one genre, with `harness-loop`
+recorded as known-missing rather than discovered later. What changes in the plan:
+
+- D2's kind table gains the four amendments and `harness-loop` is listed as OUT of v1.
+- The three runtime contracts (Result 3) become part of the kind **executor**, specified
+  before any kind is written - they are not optional decoration and every kind inherits them.
+- The one-population law (Result 4) becomes an authoring-time validation rule, in the same
+  family as Rule A-v2: mechanically enforced, stated in the authoring prompt from the same
+  facts object the validator judges.
