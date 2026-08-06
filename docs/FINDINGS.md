@@ -5873,3 +5873,314 @@ fit-to-pass reading this programme keeps refusing. The other half: **the obvious
 of a channel fix reproduced the exact bug it was fixing** — parsing the gap resolved to the
 already-clean file, because a summary line and a detail line are distinguishable only by
 reading, which is the one thing a regex cannot do.
+
+## F87 — the suppression genre: the worker passes its step's check by silencing the type checker, and both halves of the reason are ours
+
+**Status: minted 2026-08-06, branch `variance-progress-abc`. Instruments: three archived
+spines — `u-mshx0zsn` (bareagent-u, wall-halt, $2.5574 of $4), `u-mshzdogs` (bareguard-u,
+escalated, $1.1177 of $4) and `u-mshzvkqw` (bareagent-u, **GREEN**, $3.2994 total) — plus a
+source audit of `src/planrun.js`, `src/plan.js`, `src/tools.js` and
+`scripts/u-bareagent-close.mjs`, and an independent re-run of all six close stages against the
+patient after the green. Session paid total through `u-mshzvkqw`: $14.4782. No library code
+changed for this finding; the only change it produced is a GOAL rewrite (commit `a219e05`,
+hamr: *"do 1 and rerun"*), which moved the bareagent-u spec hash to
+`e2f40abd44dbb587881784433ee31ca66b067808a02c66af2081f211560b9daa` — verified by recomputing
+`jobSpecHash` over the spec file as it stands.**
+
+### The observation: three runs, two patients, one mechanism
+
+In every one of them the plan's step went **green on its own check** and the operator's close
+then redded on `no-suppressions`.
+
+| run | patient | step exits | step outcome | outer close | run outcome |
+|---|---|---|---|---|---|
+| `u-mshx0zsn` | bareagent-u | `check-passes(typecheck)` + `tree-changed(src/**)` | green, iteration 2 | **11 suppressions added** | wall-halt at 25.43 min, $1.44 left |
+| `u-mshzdogs` | bareguard-u | `tree-changed(src/primitives/**)` + `check-passes(typecheck)` | green, iteration 2 | **2 suppressions added** | escalated (2/2 strikes) at 13.0 min |
+| `u-mshzvkqw` | bareagent-u (resume) | step skipped (already proven) | — | 1 error → **7 suppressions** → satisfied | **green**, $3.2994 total |
+
+`u-mshzdogs` is the sharp one, because **the fix loop made it worse**. Its first outer close
+named two added `any` annotations on inline predicate parameters. The fix attempt moved the
+suppression rather than removing it — it deleted the parameter annotation and asserted the
+shape inside the body instead:
+
+```
+src/primitives/defer-rate.js: added any  — const r = /** @type {{phase: string, action: (…)|null, decision: string}} */ (rec);
+src/primitives/defer-rate.js: added cast — const r = /** @type {{phase: string, action: (…)|null, decision: string}} */ (rec);
+```
+
+One line, two hits (`any` and `cast` are separate patterns), two files: **2 → 4**. En route the
+same rewrite produced two *new* strict errors of its own (`TS2322`, the narrowed predicate no
+longer assignable to `(rec: object) => boolean`). The close-trend ladder read `noProgress 1`
+then `noProgress 2` and struck the run out, correctly, on its own numbers: *"no stage improved
+— no-suppressions 2 → 4"*.
+
+### The wrong first explanation, and how it died
+
+The session's first reading was: **the planner wrote a gate that is satisfiable by cheating,
+and the worker cheated.** hamr's question killed it — *"panicked at running out of time if
+time/cap was passed?"* — because it forced the check nobody had run: **does the worker even
+know what time it is?**
+
+It does not. Verified in source, not inferred:
+
+- **`materialsBlock` (`src/planrun.js:113`) has exactly ONE call site**: `src/planrun.js:318`,
+  inside `planPrompt` (`src/planrun.js:247`). Money, time and the progress line are rendered
+  into the DRAFTING prompt and nowhere else. The `materials` spine record in these runs carries
+  `phase:"draft"` and nothing carries it further.
+- **The worker's system prompt is `PERSONA_TOOLS + strategyFor(granted)`**
+  (`src/planrun.js:1081`). Rendered for this job's grant (`read`/`grep`/`edit`) it is
+  **1,074 characters** — identical at 1,074 for bareguard's `read`/`grep`/`edit`/`write`.
+- **The only two economy-adjacent sentences in those 1,074 characters** are about read/write
+  economy, not about the run's allowance: *"every file you read is re-sent on every later round
+  and the run has a hard budget it can exhaust before you ever write"*, and *"Rewriting a whole
+  file to change one line is how trees get broken and budgets get burned"*. **No balance, no
+  clock, no remaining-round count, no countdown of any kind.**
+
+So the worker cannot be racing a deadline it has never been shown. This is not panic, and it is
+not sneaking past a judge it knows about — the worker was never told `no-suppressions` exists.
+
+### The real mechanism: a specification gap with two halves, both ours
+
+**(a) The plan schema gives a step exactly ONE check slot.** `MAX_EXITS_PER_STEP = 2`
+(`src/plan.js:36`, enforced at `:544`), and the drafter prompt states, verbatim:
+
+> A check-passes on a write-granted step MUST be paired with a tree-changed exit (the
+> repository starts green — a lone check would pass on the untouched tree).
+
+Two slots, one of them mandatory ⇒ **one check per step**. Both plans spent it identically and
+legally: `check-passes(typecheck)` + `tree-changed`. `no-suppressions` **was on the offered
+menu** — the `check-menu` record in all three runs reads
+`offered:["typecheck","typecheck-outside","tests-kept","suite-green","no-suppressions"]`,
+`hidden:["changed-from-seed"]` — and it **could not have been added without dropping
+`typecheck`**. Carrying both is inexpressible today.
+
+**(b) The goal named two constraints; the close judges six stages.** The goal in force for all
+three runs, verbatim from `job-start`:
+
+> Make src/recurse.js and src/loop.js pass `tsc --strict` without weakening the tests and
+> without introducing strict errors elsewhere.
+
+Map it onto the close: *"pass `tsc --strict`"* → `typecheck`; *"without weakening the tests"* →
+`tests-kept` + `suite-green`; *"without introducing strict errors elsewhere"* →
+`typecheck-outside`; `changed-from-seed` is a precondition (`offer:false`). **Exactly one of the
+six stages has no counterpart anywhere in the goal sentence — `no-suppressions` — and that is
+precisely the stage that redded, in three runs out of three, on two different patients.**
+
+Both the planner and the worker read the goal; the worker reads the step action, which
+paraphrases it. The agent spent its single check slot on the check the goal sentence asks for.
+**Given what it was told, that is the correct choice.** There is no misbehaviour to find here.
+
+### The structural gap, stated as doctrine
+
+**Nothing anywhere checks the goal text against the close's stage list.** The close is
+operator-authored and named in the signed spec; the goal is a separate sentence in the same
+spec; the only derivation that exists runs **close stages → the agent's check MENU**, one hop,
+one direction (`stageClose(job.close)` → `checkMenu` → the `checkNames` the drafter may copy).
+
+**That separation IS the arbiter rule and must not be weakened.** A goal that could edit the
+close, or a close derived from the goal, is the agent authoring its own grader. Nothing in this
+finding proposes touching it.
+
+What is missing is not a coupling but a **read-out**: the runner already knows every stage name
+at preflight — it emits them in `check-menu` and grades all six in `close-precheck` — and it
+surfaces none of that to the human writing the goal. The drift between "what you asked for" and
+"what done means" is unsurfaced, and the operator paid for it three times in one evening.
+hamr's direction, verbatim: *"we should learn and pass advise in ui and to user that you need
+clear goal and clear ask or 2 per workflow to satisfy and be clear as possible and probably
+later in ui they should be split into 2 places"*.
+
+There is a second, quieter reading worth naming. This repo's doctrine deliberately makes
+illegal things **inexpressible** (the `check-passes(name)` menu is the model). Here a
+**required** thing was inexpressible too — and from inside the schema the two are
+indistinguishable. Inexpressibility is a guard pointed in one direction; nothing checks which
+direction it is pointing.
+
+### How the close catches it — mechanical, never judged
+
+`no-suppressions` (`scripts/u-bareagent-close.mjs:189`) does not read intent and does not ask a
+model anything:
+
+1. `changedFiles()` — `git diff --name-only <SEED_REF>` ∪ untracked, against the frozen seed
+   commit `0037182a…`, filtered to `.js`/`.mjs`/`.cjs`.
+2. For a tracked file: `git diff -U0 <SEED_REF> -- <f>` and keep only lines starting `+` (never
+   `+++`). An untracked file has no diff, so every line of it counts as added.
+3. Grep each added line against **7 fixed patterns** — `@ts-ignore`, `@ts-expect-error`,
+   `@ts-nocheck`, `eslint-disable`, `any` (in the type positions), `{*}`/`{?}` JSDoc, and the
+   `@type {…} */ (expr)` cast.
+4. Every hit is returned in the gap as `<file>: added <id> — <line>` (cap 40, trims announced,
+   F28), followed by the advice line that names the honest alternative: *"`unknown` is fine (it
+   forces narrowing), `any` and `@ts-ignore` are not"*.
+
+Two properties follow and both matter. **Pre-existing `any` cannot trip it** — the population is
+added lines only, so the stage cannot punish the patient's own history. And **the gap is the
+mechanical genre (F38)**: it hands back the exact offending text, file by file, which is the
+genre this programme has measured converting.
+
+### The GREEN — `u-mshzvkqw` — and its audit
+
+A resume of the wall-halted `u-mshx0zsn` under a signed wall raise (25 → 45 min, hash
+`eb6aca00…`; **budget unchanged at $4**, so the resume folds prior spend: `priorSpentUsd`
+$2.5574, `priorWallMs` 1,525,943). `resume-seed` skipped the already-proven step
+(`step-skipped … provenBy:"step-end" provenSeq:92` — *"the killed run satisfied this step's
+exits — it is not re-run and not re-paid"*), and the leg ran the outer close and fix loop only.
+
+The close chain this leg, from the spine:
+
+```
+outer close   → typecheck red: 1 error   (src/recurse.js(1297,48), TS7053)
+fix iter 1    → no-suppressions red: 7 suppression(s) added
+fix iter 2    → satisfied
+```
+
+Suppressions across both legs went **11 → 7 → 0**: the worker went back and removed its own.
+Final `close-verdict` on the spine, all six:
+
+```
+changed-from-seed satisfied · typecheck satisfied · typecheck-outside satisfied
+tests-kept satisfied · suite-green satisfied · no-suppressions satisfied
+```
+
+And **independently re-verified afterwards** by the session re-running every stage of the close
+against the patient tree (each line is the stage's own `green:` output, abbreviated to
+stage + payload):
+
+```
+changed-from-seed  2 file(s) changed, all under src/
+typecheck          zero errors in src/recurse.js, src/loop.js
+typecheck-outside  67 outside, at or below the seed's 67
+tests-kept         1044 executed, at or above the seed's 1044
+suite-green        1044 executed, 0 failing
+no-suppressions    no suppressions added across 2 changed file(s)
+```
+
+`job-end`: `outcome:"green"`, `spentUsd` **$3.2994** of $4, `spendComplete:true`; **42.5 minutes
+of the raised 45-minute wall** across both legs (25.43 + 17.06), 35 worker rounds this leg. A
+bridge was minted.
+
+### The load-bearing conclusion: a loose goal was a COST hazard, never a correctness hazard
+
+**Nothing green was ever minted mid-run.** A step passing its own check is not a verdict — it is
+a form check the agent composed, and it mints nothing. The arbiter never approved a suppressed
+tree in any of the three runs: the close refused every suppressed version, named every offending
+line, and on `u-mshzvkqw` forced the honest fix. The loose goal cost **money and wall time** —
+11 suppressions written and then unwritten, a wall-halt, a bareguard run struck out — and cost
+**correctness nothing**.
+
+This distinction is the design property that held, and it must be stated sharply because it is
+easy to blur: the agent authors its checks and the operator authors the verdict, so an agent
+that composes a weak check buys itself extra loops, never a green. The very separation that
+allowed the drift is the same one that made the drift affordable.
+
+### Context, uncontrolled: the haiku drop
+
+Commit `75dfb4d` (hamr: *"haiku should be dropped to see if it passes"*) set
+`STEP_MODELS = ['sonnet']` (`src/plan.js:126`) after a $0 archive read. Re-derived today over
+the patient archive, the per-tier figures reproduce exactly:
+
+| tier | steps naming it | on a replanned plan | last step of its plan | green | round bounds |
+|---|---|---|---|---|---|
+| haiku | 12 | 9 | 6 | **2** | 3–12 |
+| sonnet | 8 | 2 | 3 | **5** | 14–32 |
+
+(The archive totals have since grown with this session's own runs — 190 spines / 75 accepted
+plans / 260 steps today against the 186 / 71 / 255 the read was taken over. The per-tier rows
+are unchanged.)
+
+Measured effect, `u-mshsikhr` (with haiku selectable) against `u-mshx0zsn` (sonnet only), the
+only library difference between them being this commit:
+
+| | with haiku | sonnet only |
+|---|---|---|
+| worker rounds | 120 | 87 (54 step + 33 fix) |
+| wall | 21.8 min | 25.43 min |
+| **seconds per round** | **10.9** | **17.5** |
+| reached the outer close? | never | yes |
+| ended | struck out at 2 errors, $0.85 and ~3 min unspent | wall-halt at 1 error, $1.44 unspent |
+
+The failure CLASS changed — give-up-with-money-left became still-converging-when-time-ran-out —
+and the binding constraint moved from the ladder to the clock, because better rounds are slower
+rounds. **This is an intervention, not a controlled contrast**: one run on each side, a
+probabilistic drafter, different plans. It is recorded as context and no causal claim is made.
+
+### What is NOT proven
+
+- **The green is a RESUME green at a raised 45-minute wall, not a cold green inside the $4 / 25
+  min screen envelope.** So bareagent-u is **winnable**, not **screen-passed** — exactly the
+  status `u-msf70nei` holds. Nothing here admits it to any frozen screen.
+- **The tightened-goal question is n=0.** Commit `a219e05` rewrote the goal using the shapes
+  from the close's own `SUPPRESSIONS` table (including the `unknown` carve-out, quoted from the
+  close's own advice line) so goal and grader name the same things. Whether that changes what
+  the planner or the worker does is **unmeasured**. `maxWallMs` was deliberately left at 45 min
+  so the cap does not bind and the run measures the job's real duration.
+- **The single-check-slot half is untested as a cause.** We have never run a step carrying the
+  `no-suppressions` check in-run, because it is inexpressible. That a worker holding that check
+  would avoid suppressions is a hypothesis, not a result.
+- **One genre, two patients.** Every row here is a `tsc --strict` typing migration graded by the
+  same close shape. Whether a suppression-equivalent genre exists under other closes (a test
+  suite silenced by skips, a lint gate disabled) is unmeasured.
+- **No claim that a clearer goal is what fixes this.** What caught every suppressed tree was the
+  close, and the close did not change.
+
+### `u-msi0w2i5` — the tightened-goal cold run: MONEY cap-halt, no verdict, inconclusive
+
+Fired cold on the rewritten goal (hash `e2f40abd44…`), $4 / **45 min** — the wall deliberately
+raised so it could not bind and the run would measure the job's real duration.
+
+**Outcome: `cap-halt`. $4.0048 of $4, 19.2 of 45 minutes, 96 rounds, 29 allowed writes over 2
+distinct files, no replan.** The MONEY ran out at nineteen minutes with twenty-six minutes of
+wall unused. `spendComplete: true`; the halt is decision-ready and the kept verdict is
+`needs_revision` at `changed-from-seed`, trend **converging** (`typecheck 30 → 31 → 21`).
+
+**What the tightened goal changed, and it is not nothing:** the drafter produced bareagent-u's
+**first two-step plan** — `prep-precise-types` (`tree-changed` only) then `fix-strict-typecheck`
+(`tree-changed` + `check-passes(typecheck)`). Every prior bareagent plan on record, greens
+included, was a single step. Step 1 greened; step 2 escalated.
+
+**What it did NOT change:** the second step still spends its single check slot on `typecheck`
+and still cannot also carry `no-suppressions` — the one-slot ceiling is untouched by wording,
+exactly as predicted above. And the run never reached the outer close at all, so the close never
+judged suppressions on this tree.
+
+**Read, stated as inconclusive rather than negative.** This row does not answer whether the
+tightened goal helps. It answers a different question by accident: the added prep step is
+expensive. Drafting $0.6078, execution $3.3970 — the same $4 that funded a 25-minute run to a
+wall-halt before now buys only 19 minutes, and typecheck rose 30 → 31 before falling to 21 (a
+prep step that adds errors first is a known property of this genre, not a defect). Whether the
+goal wording or the extra step is responsible is unattributed: **two things moved at once**,
+which is the standing rule against reading either.
+
+**The honest comparison at this point is a three-row table with no clean pair in it:**
+
+| run | goal | wall | outcome | spend |
+|---|---|---|---|---|
+| `u-mshx0zsn` | loose | 25 min | wall-halt at 1 error | $2.5574 |
+| `u-mshzvkqw` | loose (resume of the above) | 45 min total | **GREEN**, six stages re-verified | $3.2994 total |
+| `u-msi0w2i5` | tightened | 45 min | cap-halt, money gone at 19 min | $4.0048 |
+
+The green stands on the LOOSE goal. The tightened goal has produced no verdict. Nothing here
+licenses "the goal fix helped" or "the goal fix hurt", and the money ceiling — not the wording —
+is what ended the only run that tested it.
+
+The cold run of bareagent-u under the rewritten goal (hash `e2f40abd…`, $4, 45 min) was still
+executing when this finding was drafted. **Its outcome is deliberately not guessed here.** To be
+filled in by the session with: outcome, spend, wall, whether the plan's step carried a different
+check, the suppression count at the outer close (if any), and whether it greened cold. Until
+that subsection is written, every claim above about the tightened goal is n=0.
+
+### Lesson
+
+**When the agent does the wrong thing, ask first what we told it, and second what we made it
+possible to say.** Both halves were ours: a goal sentence that named two of the six requirements
+the close actually enforces, and a plan schema in which the missing requirement was
+*inexpressible* — one check slot per step, already spent on the check the goal asked for. The
+agent's behaviour was the correct read of a specification we wrote badly, and the first
+explanation ("it wrote a gate it could cheat") survived only until someone asked whether the
+worker could even see the clock it was supposedly racing: 1,074 characters of system prompt, no
+balance, no deadline, no countdown.
+
+The second half is the one to keep. **A loose goal was a cost hazard and never a correctness
+hazard**, because a step's check mints nothing and the operator's close is the only truth. The
+same arbiter separation that let the drift happen is what made it cost money instead of a false
+green — and the fix therefore belongs on the *visibility* side (surface the close's stages to
+whoever writes the goal, at preflight, where the runner already knows them), never on the
+coupling side.

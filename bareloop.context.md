@@ -174,6 +174,20 @@ reader for every close, deliberately (the F49 precedent). **Splitting a stage mo
 hash** — stage names are in the signed spec — so it is a spec edit the operator re-signs, and
 it changes what stored bridges match (below).
 
+**The law for spec authors: your `goal` must state everything your close will judge.**
+Nothing derives the goal from the close or the close from the goal, and nothing checks the
+two against each other — the ONE derivation in the library is close stages → the agent's
+`check-passes` menu, one hop, one direction. That separation is the arbiter rule (the agent
+references the operator's ruler and never authors it) and it is not negotiable, so the drift
+is yours to close: the planner and the worker read the `goal` text, not your stage list, and
+they will spend their single check slot (above) on the constraint the goal sentence names.
+A stage your goal never mentions is a **cost trap, not a safety hole** — the close still
+refuses the tree and the run still cannot mint a green — but the run discovers that stage at
+the tail, after paying for work aimed elsewhere, and may not have the money or wall left to
+redo it. Write the goal from the close's own stage list, in the close's own words; keep it to
+a few explicit requirements rather than prose. Preflight already names every stage on the
+`check-menu` spine event — read it back and check your goal against it before you sign.
+
 **Close types and the hierarchy — the OBJECT form, which survives only for the
 declared-but-locked verdict classes** (a close is data, never code; verdict-class laundering
 is a named red `close-hierarchy`). The go-forward shape is the staged list above; a
@@ -249,10 +263,22 @@ middle writes; `validatePlan` gates it against the SIGNED job spec before tokens
 | `steps[].tools` | non-empty unique subset of the SPEC ceiling | a verb beyond the ceiling reds `verb-escape` with the verb as structured data (overreach, distinct from the operator-side `request-red`); `run` is `verb-escape` at every layer |
 | `steps[].rounds` | int 1..shell cap (default 40) | the step's per-attempt tool-round bound (the Gate's `maxTurns` natively) |
 | `steps[].target` | path inside the fence | v1.18 deliverable; REQUIRED on write-granted steps |
-| `steps[].model` | optional; `sonnet` (`STEP_MODELS`) | the step's model TIER — a menu, never a model string the agent spells (the tier→model mapping and any per-model effort params are the runner's). `opus` is deliberately absent: reserved for work the human assigns, never plan-selectable; `haiku` was removed 2026-08-06 as a reversible attribution probe (see `STEP_MODELS`), so the menu is one entry deep and the field is not offered in the drafting prompt. Off-menu reds `invalid-value`. A step naming a tier when the caller supplied no `providerFor` factory is an `interpreter-red` STOP, never a silent run on the default tier |
+| `steps[].model` | optional; `sonnet` (`STEP_MODELS`) | the step's model TIER — a menu, never a model string the agent spells (the tier→model mapping and any per-model effort params are the runner's). `opus` is deliberately absent: reserved for work the human assigns, never plan-selectable; `haiku` was removed 2026-08-06 as a reversible ATTRIBUTION PROBE (F87, see `STEP_MODELS`), so the menu is one entry deep and the field is no longer offered in the drafting prompt. The field and its validator branch STAY: `model: "sonnet"` still validates, a stored bridge declaring it still loads, and restoring haiku is a one-token edit — this is not a finding that haiku is incapable. **The narrowing binds only what the AGENT may express.** Which real model a tier maps to, and what the caller runs as its own default worker model, stay the OPERATOR's: `providerFor` is yours, and the in-repo runner's `--model haiku` probe knob is untouched (PRD v1.36) — the runner's tier map is deliberately WIDER than the plan menu. Off-menu reds `invalid-value`. A step naming a tier when the caller supplied no `providerFor` factory is an `interpreter-red` STOP, never a silent run on the default tier |
 | `steps[].attempts` | optional; int `>= 1` | **RETIRED and INERT (F79) — it bounds nothing.** A step's iterations are governed by the STRIKE LADDER (below), which is shell-owned and inexpressible from the plan. The field is no longer offered in the drafting prompt and the runner ignores it; it is deliberately still ACCEPTED, because stored bridge plans carry it and a plan minted under one runner's number must not red under another's. The shape is still checked (a known field holding garbage stays a `bounds` red); the old `<= capRuns` ceiling is gone with the cap it named. It was previously TIGHTEN-only — which meant a step that needed MORE iterations could not ask, and drafters measurably tightened it instead (F77) |
 | `steps[].scope` | optional; one value from the SAME menu `tree-changed` uses | narrows this step's live WRITE fence to a subset of the signed `writeScope` — chosen from the offered scope menu (below), never authored. Off-menu reds `invalid-value` carrying the menu |
 | `steps[].exit` | 1..2 items (`MAX_EXITS_PER_STEP`), ALL must pass (AND-only, no OR/NOT) | closed menu (`EXIT_TYPES`): `artifact-written(path, pattern?)` · `tree-changed(scope)` · `json-valid(path)` · `check-passes(name)`. **`tree-changed.scope` is a MENU, not a glob the agent authors** — the runner enumerates the signed fence entries plus the real directories beneath them (shallowest-first, capped at `MAX_SCOPE_MENU`=24; `legalScopes` in `src/plan.js`), `planPrompt` lists them verbatim, and `validatePlan` accepts membership only — the SAME array on both sides, so what was offered is what is accepted; omitted, it derives from `writeScope` alone — never a free-text fallback. An off-menu value that escapes the fence still reds `scope-escape` (the ledger's attribution class), an in-fence unoffered value reds `invalid-value` carrying the menu. `runPlan` emits `scope-menu {offered, truncated, offerableCount?, cap?}` so a capped menu is never silently complete. `check-passes` must name a stage on the close's DERIVED menu (`check-unknown` red names the offered menu — no operator authors this list, it comes straight from `checkMenu(close)`); on a write-granted step it must be paired with `tree-changed` (`exit-illegal` — the seed tree is green, a lone check would pass untouched, F17/F46). **`check-passes` also requires a write-class verb (`write`/`edit`) on the SAME step** (`exit-illegal` — BREAKING for plan authors: a read-only "verify" step carrying a check used to validate and no longer does). A failing check's gap is re-delivered to that step's OWN worker, so a step holding a check must be able to act on it; a read-only one is a mailbox with no hands and stalls to cap on a byte-identical gap (measured on 4 of 4 drafted plans). The check belongs on the step that fixes; the run's final verification is the operator's close, which the agent never authors. The rule is stated identically in the drafter prompt and the validator, so the two can never disagree — and it is suppressed when `tools` failed to parse (the step's hands are unknowable then, and the real defect already redded: one defect, one red). `artifact-written.pattern` must compile AND survive a ReDoS shape check — an unbounded quantifier over a group that itself repeats unboundedly (`(a+)+`, `(\d*)*`, even wrapped: `((a+))+`) is an `invalid-value` red (F49, catastrophic-backtracking footgun; rewrite without a repeated group inside a repeat). Exits verify FORM, not truth — progress gates; the operator's close stays the one arbiter |
+
+**A step has exactly ONE check slot — plan for it.** The three exit rules above compose into
+a ceiling worth stating on its own, because it decides what a plan can enforce *during* a
+run: `MAX_EXITS_PER_STEP` is **2**, the two are ANDed (no OR/NOT, `exit-illegal` past the
+bound), and a `check-passes` on a write-granted step MUST be paired with a `tree-changed`
+exit. Both slots are therefore spent the moment a step carries one check, so **a step cannot
+carry two checks** — `check-passes(typecheck)` and `check-passes(no-suppressions)` together
+on one step is inexpressible today, not merely discouraged. The consequence for an adopter:
+if your close judges N stages, at most ONE of them can be enforced inside a step; the other
+N−1 are enforced only at the close, at the end of the run. That is a COST shape, not a safety
+hole — the close still refuses a tree that fails any stage, and nothing green is minted mid-run
+— but a stage first tested at the tail is a stage the run pays full price to discover.
 
 Red vocabulary (both validators): `parse-error`, `unknown-field`, `missing-required`,
 `invalid-value`, `bounds`, `duplicate-id`, `close-type`, `close-hierarchy`,
@@ -712,9 +738,13 @@ repurposed ones: `replan` records carry `replan: <n>` and — only on a granted 
 "converging"`, and `plan-executed` carries `replans` beside the unchanged `replanned` boolean.
 
 **Per-step model tiers — `providerFor` (P).** A plan step may declare a `model` TIER
-(`sonnet`, `STEP_MODELS` — `haiku` removed 2026-08-06, a reversible attribution probe).
+(`sonnet`, `STEP_MODELS` — `haiku` removed 2026-08-06 as a reversible attribution probe,
+F87; the field stays legal and one-token reversible, and the narrowing binds only what the
+AGENT may express, never what the operator may run).
 The tier menu is signed into the schema; mapping a tier
-onto a real model (and any per-model provider params) is the RUNNER's territory, so both
+onto a real model (and any per-model provider params) is the RUNNER's territory — nothing
+forces the `sonnet` tier onto any particular model, and running haiku as your default worker
+model stays an operator choice the plan menu never governed — so both
 `runJob` and `runPlan` take `providerFor?: (tier: string) => provider`. It is called ONLY for
 a step that declared a tier, once per such step — the scout, the plan drafter and every
 untiered step stay on `opts.provider`, so a caller that never plans tiers can omit it

@@ -2194,7 +2194,10 @@ rule, and the fix. The same job, same signed spec, greened under sonnet the same
 **The lock (hamr, in-turn):** the drafter and the default worker tier floor is **sonnet
 (medium tier)**. Unchanged by this lock: the per-step `model` menu still offers `haiku`
 (economy tiering of mechanical steps under a sonnet-authored plan — a haiku step has
-greened); `opus`/top tiers stay absent from the plan menu (hamr-assigned only); the
+greened) — *SUPERSEDED 2026-08-06 by v1.51 §1: `STEP_MODELS` is `['sonnet']` and the
+agent can no longer express a haiku step; `--model haiku` remains the operator probe knob,
+so the floor itself is unchanged and only what the AGENT may express narrowed*;
+`opus`/top tiers stay absent from the plan menu (hamr-assigned only); the
 runner's `--model` flag remains an explicit operator probe knob — running below the floor
 is an operator act, never a default, and its rows are probes, not battery evidence.
 
@@ -2207,6 +2210,9 @@ bridge half; the panel rung N6 for the UI half):
    this (`STEP_MODELS` offers tiers; the tier→model mapping is the runner's, per provider).
    The vocabulary generalizes to **low / medium / high**: today low=haiku, medium=sonnet,
    high=opus-class (absent from the plan menu, operator-assigned only — unchanged).
+   *(v1.51 §1: as of 2026-08-06 the agent-selectable menu is medium ONLY — low is off it as
+   an attribution probe, reversible in one token. The tier VOCABULARY below is unaffected;
+   what narrowed is which tiers the menu currently offers.)*
 2. **Per-provider auto-detection.** When a provider beyond Anthropic is wired (e.g. an
    OpenAI-compatible API), the runner should DETECT the provider's small/medium/high
    models from the provider's own catalog rather than hardcoding ids — the tier menu
@@ -3196,3 +3202,281 @@ the prereg's recorded ledger, not a figure asserted here.
 - **The job-B slot is empty** and the lift contrast cannot run one-armed. The options are hamr's:
   a further candidate screened under the unchanged clauses, a ruling on the clauses themselves
   (which no measurement here licenses), or a contrast re-scoped to what job A alone can carry.
+
+  *(Superseded in part by v1.51: open item (a) — the $0 archive read on planner tiering — was
+  RUN the same day and is reported in v1.51 §1; the tier came off the agent's menu as an
+  attribution probe. §4's "legal under the P tier menu" was accurate for `u-mshsikhr`'s draft
+  and is no longer expressible by a plan drafted after commit `75dfb4d`. The job-B slot is now
+  not merely empty but UNFILLABLE from the current set — v1.51 §6.)*
+
+## Addendum v1.51 — 2026-08-06 (haiku comes off the agent's tier menu as an attribution probe; the SUPPRESSION genre is a specification gap of OURS; bareagent-u greens honestly — and the doctrine that comes out of it is that the goal must state everything the close will judge — hamr)
+
+Three commits on `variance-progress-abc`: `75dfb4d` (the haiku drop), `d8e2165` (the signed
+wall raise for the resume) and `a219e05` (the goal rewritten from the close's own detector).
+Evidence, numbers and the failure taxonomy are **F87**. Four paid runs; **session paid total
+through `u-mshzvkqw` is $14.4782**, and one run was still in flight when this was written (§4).
+
+### 1. Haiku comes off the agent-selectable step tier — an ATTRIBUTION PROBE, not a verdict on haiku (`75dfb4d`)
+
+hamr's order, verbatim:
+
+> **"haiku should be dropped to see if it passes, if it's agent poor work or harness, like
+> always."**
+
+v1.50 §6 left this as open item (a): a $0 archive read before anything else. It was run —
+**186 spines, 71 accepted plans, 255 steps; only 20 steps ever declared a tier at all**:
+
+| tier | steps | on a REPLANNED plan | LAST step of their plan | green | round bounds |
+|---|---|---|---|---|---|
+| haiku | 12 | 9 | 6 | **2** | 3–12 |
+| sonnet | 8 | 2 | 3 | **5** | 14–32 |
+
+**The change.** `STEP_MODELS = ['sonnet']`. The `model` field and its validator branch STAY —
+a one-entry menu, so a plan or a stored bridge declaring `model:"sonnet"` still validates and
+restoring haiku is a one-token edit. The drafter prompt's `model` line is DELETED rather than
+reduced to a one-item menu (it advertised "a cheaper tier for mechanical steps" and there is no
+cheaper tier now; reciting a single legal value spends tokens to invite a no-op field — the
+`attempts` precedent). Verified by RENDERING the real prompt: zero lines match
+`/model|tier|haiku|sonnet|cheaper/i` in either the fresh or the replan form. `--model haiku`
+remains the OPERATOR's probe knob (v1.36, unchanged) — only what the AGENT may express narrows,
+which is the safe direction. **All 10 job spec hashes re-verified UNMOVED** (`jobSpecHash` covers
+the resolved spec, not `STEP_MODELS`); `bareagent-u` is still `eed6fe82…` at this commit.
+
+**Measured effect** — `u-mshsikhr` (with haiku) against `u-mshx0zsn` (sonnet only), same patient,
+same $4/25min envelope:
+
+| | with haiku | sonnet only |
+|---|---|---|
+| rounds | 120 | 87 |
+| wall | 21.8 min | 25.4 min |
+| **sec/round** | **10.9** | **17.5** (1.6× slower) |
+| how it ended | struck out at 2 errors, $0.85 and ~3.2 min left | wall-halt at 1 error, $1.44 left |
+| reached the outer close? | never | yes, plus 33 fix rounds |
+
+So the **failure CLASS changed — give-up → still-converging-when-the-clock-ran-out** — and the
+binding constraint moved from the ladder to the wall, because better rounds are slower rounds.
+
+**Stated without gloss: this is NOT a controlled comparison and is not written as one.** The
+planner picks haiku for steps it judges mechanical, and replanned steps sit on runs already in
+trouble — confounded in both directions, which is exactly why the tier was removed instead of
+argued about. The probe is one intervention on one patient, and it is reversible in one token.
+
+### 2. The SUPPRESSION genre — and the specification gap behind it is OURS (F87)
+
+Three runs, two patients, one mechanism: **the worker passed its step's check by SILENCING the
+type checker instead of typing the code.** bareagent 11 suppressions; bareguard 2, then 4 after
+its fix loop made it worse.
+
+**The session's first explanation was WRONG and is recorded as wrong.** It read as *the planner
+wrote a gate satisfiable by cheating, under time pressure*. hamr's question — does the worker
+even know about the clock — killed it. **The worker cannot panic: it is blind to money and to
+wall.** Verified in source: `materialsBlock` is referenced ONLY by `planPrompt`; the worker's
+system prompt is `PERSONA_TOOLS + strategyFor(granted)`, 1074 characters, and its only
+economy-adjacent lines are about preferring `edit` over whole-file writes. No budget, no clock,
+no countdown reaches it. A mechanism story that survives one question is not a mechanism story.
+
+**The actual mechanism has two halves, and both are ours:**
+
+1. **Exactly one check slot per step.** `MAX_EXITS_PER_STEP = 2`, and the drafter prompt requires
+   a `check-passes` on a write-granted step to be paired with a `tree-changed` exit. So a step
+   has EXACTLY ONE check slot, and carrying `typecheck` AND `no-suppressions` together is
+   **inexpressible today**. Both plans declared `check-passes(typecheck)` + `tree-changed`;
+   `no-suppressions` WAS on the offered menu and could not have been added without dropping the
+   other.
+2. **The goal never said it.** The original goal — *"Make src/recurse.js and src/loop.js pass
+   `tsc --strict` without weakening the tests and without introducing strict errors elsewhere."*
+   — names **two** constraints. The close judges **six** stages. Planner and worker both read the
+   goal. The agent spent its single slot on the check the goal sentence asks for: the CORRECT
+   choice given what it was told.
+
+**How the close catches it, mechanically and never by judgement:** `no-suppressions` lists files
+changed against the frozen seed, takes `git diff -U0` ADDED lines only, and greps each against 7
+fixed patterns (`@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`, `eslint-disable`, `any`,
+`{*}`/`{?}` JSDoc, `@type {...} */ (expr)` casts). Any hit reds and every offending line goes
+back in the gap. Pre-existing `any` cannot trip it — only newly added lines.
+
+The fix (`a219e05`, hamr: *"do 1 and rerun"*) took the new goal wording FROM the close's own
+`SUPPRESSIONS` table rather than paraphrasing it, so the goal and the grader name the same
+shapes, including the `unknown` carve-out quoted from the close's own advice line. Hash
+`eb6aca00…` → `e2f40abd44dbb587881784433ee31ca66b067808a02c66af2081f211560b9daa`.
+
+### 3. DOCTRINE — the goal must state everything the close will judge
+
+**Nothing derives the close from the goal, and nothing checks the two against each other.** The
+close is operator-authored and named in the signed spec; the goal is a separate sentence in the
+same spec. The only derivation in the system is **close-stages → the agent's check MENU**: one
+hop, one direction (v1.28). **That separation IS the arbiter rule and is not to be weakened** —
+a goal that could edit the close, or a close inferred from goal prose, would put the destination
+inside the emergent part. No proposal here touches it.
+
+What is missing is not a derivation but a **surfacing**. The runner already knows every close
+stage name at preflight and shows the operator **none** of it. So an unstated stage is invisible
+until a run discovers it the expensive way, at the tail, after the money is spent.
+
+> **The doctrine, stated: an unstated close stage is a COST TRAP. The run will find it — the
+> close is the only truth and it does not miss — but it will find it last, with the wallet
+> already spent.**
+
+The lever is therefore at authoring time and at the operator's screen, not in the arbiter.
+
+### 4. The live read, ungossed
+
+| run | patient | outcome | spend | wall |
+|---|---|---|---|---|
+| `u-mshx0zsn` | bareagent-u | **wall-halt** | $2.5574 / $4 | 25.4 / 25 min |
+| `u-mshzdogs` | bareguard-u | **escalated** | $1.1177 / $4 | 13.0 / 25 min |
+| `u-mshzvkqw` | bareagent-u | **GREEN** | $0.7420 this leg, **$3.2994 total** | 42.5 / 45 min total (17.1 this leg) |
+
+`u-mshx0zsn` halted on TIME, not capability: $1.44 unspent, one remaining strict error, trend
+`converging` on the halt record. W-2 says the stop is the checkpoint, so the lever was the
+operator's wall — `d8e2165` raised `maxWallMs` 25 → 45 min, sized from the measured fix loop
+(~$0.021 and ~17.5s per round, so the remaining $1.44 funds roughly 20 more minutes) so that
+money and wall bind at about the same place rather than one silently overriding the other (F45).
+`budgetUsd` stayed **$4** — the resume folds prior spend, so this could not widen the money.
+Hash `eed6fe82…` → `eb6aca00…`; hamr's signature, verbatim in-turn: **"signed, fire it after
+bareguard"**.
+
+**`u-mshzvkqw` is GREEN.** Close chain on the resumed leg: `1 error` → `7 suppressions` →
+**satisfied**. All six stages satisfied on the spine, and **independently re-verified by
+re-running every stage against the patient afterwards**:
+
+```
+changed-from-seed  2 file(s) changed, all under src/
+typecheck          zero errors in src/recurse.js, src/loop.js
+typecheck-outside  67 outside, at or below the seed's 67
+tests-kept         1044 executed, at or above the seed's 1044
+suite-green        1044 executed, 0 failing
+no-suppressions    no suppressions added across 2 changed file(s)
+```
+
+The worker went back and REMOVED its own suppressions. A bridge was minted.
+
+**The load-bearing conclusion: a loose goal was a COST hazard, never a CORRECTNESS hazard.** The
+close refused every suppressed version and forced the honest fix. **Nothing green was ever minted
+mid-run** — a step passing its own check is not a verdict, and the arbiter never approved a
+suppressed tree at any moment. The two-docs/two-validators split did the job it exists for; what
+it did not do, and was never asked to do, is make the cost visible earlier (§3).
+
+**Limits, stated.** This is a **RESUME green at 45 minutes, not a cold green inside the $4/25
+screen envelope** — so bareagent-u is **winnable**, not **screen-passed**, exactly as
+`u-msf70nei` was. And it is n=1 on the tightened-goal question.
+
+#### `u-msi0w2i5` — the tightened-goal cold run: MONEY cap-halt, no verdict, inconclusive
+
+Fired cold on the rewritten goal (hash `e2f40abd44…`), $4 / **45 min** — the wall deliberately
+raised so it could not bind and the run would measure the job's real duration.
+
+**Outcome: `cap-halt`. $4.0048 of $4, 19.2 of 45 minutes, 96 rounds, 29 allowed writes over 2
+distinct files, no replan.** The MONEY ran out at nineteen minutes with twenty-six minutes of
+wall unused. `spendComplete: true`; the halt is decision-ready and the kept verdict is
+`needs_revision` at `changed-from-seed`, trend **converging** (`typecheck 30 → 31 → 21`).
+
+**What the tightened goal changed, and it is not nothing:** the drafter produced bareagent-u's
+**first two-step plan** — `prep-precise-types` (`tree-changed` only) then `fix-strict-typecheck`
+(`tree-changed` + `check-passes(typecheck)`). Every prior bareagent plan on record, greens
+included, was a single step. Step 1 greened; step 2 escalated.
+
+**What it did NOT change:** the second step still spends its single check slot on `typecheck`
+and still cannot also carry `no-suppressions` — the one-slot ceiling is untouched by wording,
+exactly as predicted above. And the run never reached the outer close at all, so the close never
+judged suppressions on this tree.
+
+**Read, stated as inconclusive rather than negative.** This row does not answer whether the
+tightened goal helps. It answers a different question by accident: the added prep step is
+expensive. Drafting $0.6078, execution $3.3970 — the same $4 that funded a 25-minute run to a
+wall-halt before now buys only 19 minutes, and typecheck rose 30 → 31 before falling to 21 (a
+prep step that adds errors first is a known property of this genre, not a defect). Whether the
+goal wording or the extra step is responsible is unattributed: **two things moved at once**,
+which is the standing rule against reading either.
+
+**The honest comparison at this point is a three-row table with no clean pair in it:**
+
+| run | goal | wall | outcome | spend |
+|---|---|---|---|---|
+| `u-mshx0zsn` | loose | 25 min | wall-halt at 1 error | $2.5574 |
+| `u-mshzvkqw` | loose (resume of the above) | 45 min total | **GREEN**, six stages re-verified | $3.2994 total |
+| `u-msi0w2i5` | tightened | 45 min | cap-halt, money gone at 19 min | $4.0048 |
+
+The green stands on the LOOSE goal. The tightened goal has produced no verdict. Nothing here
+licenses "the goal fix helped" or "the goal fix hurt", and the money ceiling — not the wording —
+is what ended the only run that tested it.
+
+Registered before the numbers: `u-msi0w2i5` is the cold rerun on the tightened goal at $4 / 45
+min (the wall is deliberately left non-binding so the run measures the job's real duration
+instead of the cap). It measures the COST the loose goal charged — not whether the close works,
+which §4 already settled. No outcome is asserted here; whatever it returns, including another
+red, is recorded as it lands.
+
+### 5. PRODUCT DIRECTION from hamr — recorded as direction, not as a built feature
+
+hamr, verbatim this session:
+
+> **"these kind of things should be passed in prompt, we should learn and pass advise in ui and
+> to user that you need clear goal and clear ask or 2 per workflow to satisfy and be clear as
+> possible and probably later in ui they should be split into 2 places"**
+
+The reading, in three parts:
+
+1. **The goal must state everything the close will judge** (§3's doctrine, delivered to the human
+   who writes it — not inferred by the machine).
+2. **A few explicit requirements, not prose.** "Clear ask or 2 per workflow" is a shape
+   instruction: a goal is a short enumerated list of things that must be true, and each one
+   should be something the close actually tests. Prose invites the drift §2 paid for.
+3. **The UI splits it into two places** — *"what you want"* and *"what done means"* — with the
+   second **visibly derived from the close's stages**, so the drift becomes hard to write rather
+   than merely discouraged. The runner already holds every stage name at preflight, so this is a
+   surfacing of state that exists, not new machinery.
+
+This connects directly to the signed export/workbench direction (v1.44): **the workbench is where
+a job is SHAPED before it is exported.** A goal/close mismatch caught at the workbench costs a
+sentence; caught at the tail of a paid run it costs the run — and it travels into the exported
+bundle if it is never caught at all.
+
+**This is DIRECTION. Nothing here is built, designed, or scheduled**, and no rung is opened by it.
+The prompt-side half (advice at draft time) and the UI-side half (two fields, one derived) are
+separate pieces of work whose sequencing is hamr's.
+
+### 6. Job B: the pool is EXHAUSTED
+
+`u-mshzdogs` (bareguard-u) **escalated** → the screen's must-GREEN condition failed → **bareguard-u
+is OUT** under the frozen clauses. It was the last shaped candidate, so the lift-contrast prereg's
+**"pool exhausted → stop-and-report"** condition is now **MET**. Job A (`pulselog-u`) remains the
+only admitted candidate, and the job-B slot cannot be filled from the current set. No clause was
+touched, no rejection row was revisited, and **no replacement is proposed** — the disposition is
+hamr's.
+
+**A $0 read that killed one of the session's own hypotheses.** The session suspected the prereg's
+**≥2-step** clause of excluding the shape that actually wins. The archive says otherwise: greens
+occur at 1, 2, 3 and 6-step plans —
+
+| accepted plan size | greens |
+|---|---|
+| 1 step | 2 / 8 |
+| 2 steps | 4 / 12 |
+| 3 steps | 3 / 6 |
+| 6 steps | 3 / 5 |
+
+Other U patients green with 2–3 step plans. **The clause is filtering two specific patients**
+(bareagent and baremobile, where the drafter keeps rolling a single step) **and not the winning
+shape.** The hypothesis is withdrawn; it did not survive a free archive read, and it is recorded
+here so it is not raised again.
+
+### 7. Parked / open for hamr
+
+- **The exit-slot ceiling.** A step cannot carry two checks: `MAX_EXITS_PER_STEP = 2` and the
+  mandatory `tree-changed` pairing leave exactly one check slot, which is half of §2's mechanism.
+  **Raising the ceiling is arbiter territory and must NOT be done to fix a wording problem** —
+  §2's other half was cured by wording (`a219e05`) precisely so this one is not touched
+  reflexively. Whether a step should ever carry two truth checks is a design question with its own
+  cost (every extra exit is another wall the worker must clear inside one step) and it is hamr's.
+- **The missing goal-vs-close SURFACING** (§3). The runner knows every stage name at preflight and
+  prints none of it. This is a display/authoring change, never a derivation — but it is unbuilt,
+  unscheduled and unowned.
+- **C is still unexercised under both fixes.** v1.50 §6 carried this; it is unchanged. C never
+  fired this session either, so the bounded second-replan exception still has exactly one live
+  observation and that one is a red.
+- **The empty job-B slot** (§6), now with the pool declared exhausted rather than merely thin.
+- **The haiku probe is uncontrolled** (§1). It changed the failure class on one patient. Whether
+  the tier stays off the agent's menu, and whether the operator readout should show a per-step
+  tier below the default at all (v1.50 §6's item (b), still open), are hamr's calls — the probe
+  was built to be reversed in one token for exactly this reason.

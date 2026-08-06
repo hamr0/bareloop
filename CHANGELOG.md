@@ -60,6 +60,45 @@ feature lands, **patch** = docs, fixes, scaffolding.
   turned the suite red. Every number now derives from the spec it reads, proven by passing at a third
   budget value. Suite: **1023 tests** (1027 minus the 4 deleted with the `never wrote` feature below);
   typecheck and `build:types` exit 0.
+- **The per-step model tier menu narrows to `['sonnet']`** (`STEP_MODELS`, `src/plan.js` — a PUBLIC
+  surface: a plan declaring `model: "haiku"` is now REDDED by `validatePlan` with `invalid-value` at
+  `steps.N.model`, carrying the menu). hamr's order, verbatim: *"haiku should be dropped to see if it
+  passes, if it's agent poor work or harness, like always."* **This is a reversible ATTRIBUTION PROBE,
+  not a finding that haiku is incapable** — what the $0 archive read behind it shows is a CONFOUND, in
+  both directions. Over 186 spines / 71 accepted plans / 255 steps, only **20 steps ever declared a tier
+  at all**: haiku **12** — 9 of them on a REPLANNED plan, 6 the LAST step of their plan, round bounds
+  3–12, **2 ever green** — against explicitly-declared sonnet **8**, 2 on a replan, 3 last, bounds 14–32,
+  **5 green**. The planner reaches for haiku on steps it judges mechanical, and a replanned step sits on
+  a run already in trouble, so neither column is a controlled read; and all three bareagent-u runs of
+  2026-08-06 tiered their replanned step down (haiku/6, haiku/8, haiku/12) and all three failed. That
+  confound sat directly on top of the programme's most recent capability read (F86's tail). Removing the
+  tier is how it gets attributed: with one tier expressible, a still-failing replan is agent or harness,
+  never the tier.
+  - **The `model` field and its validator branch STAY.** A one-entry menu means a plan — or a stored
+    bridge — declaring `model: "sonnet"` still validates, and restoring haiku is a one-token edit. No
+    stored bridge declares haiku (verified).
+  - **The drafter prompt's `model` line is DELETED** rather than reduced to a one-item menu: it
+    advertised *"a cheaper tier for mechanical steps"* and there is no cheaper tier now, and reciting a
+    single legal value spends tokens to invite a no-op field (`attempts` is the existing
+    legal-but-not-offered precedent). Verified by RENDERING the real prompt — 0 lines match
+    `/model|tier|haiku|sonnet|cheaper/i` in either the fresh or the replan form.
+  - **Only what the AGENT may express narrows**, which is the safe direction. `--model haiku` remains
+    the OPERATOR's probe knob (PRD v1.36), untouched in `scripts/run-u.mjs`; two comments there called
+    the runner's tier map *"the same closed menu the planner uses"* and now say plainly that it is
+    deliberately wider.
+  - **No spec hash moved.** `jobSpecHash` covers the resolved spec, not `STEP_MODELS`; all 10 job specs
+    were re-hashed and none moved — bareagent-u and bareguard-u are still the hashes hamr signed.
+  - Measured on the first sonnet-only run against the last haiku-era one, same patient: **10.9 → 17.5
+    seconds per round** (1.6× slower), 120 → 87 rounds, and the failure CLASS changed — struck out at 2
+    remaining errors with money and clock left, versus still converging at 1 error when the wall
+    expired. Better rounds are slower rounds, and the binding constraint moved from the strike ladder to
+    the clock. That sonnet-only run was also the first to reach the outer close, where it was redded for
+    **silencing the type checker instead of typing the code** (F87's suppression genre) — the close
+    refused it, and the eventual green removed the suppressions.
+- **`bareloop.context.md` named `sonnet | haiku` in two places and is corrected** — the shipped adopter
+  contract carried the old menu in the `steps[].model` schema row and in the `providerFor` (P) section,
+  so an integrating agent reading it would have drafted a plan that reds. Both now name the one-entry
+  menu and say why it is one entry.
 
 ### Added
 - **A SECOND variance stop can earn ONE more replan — granted by the ARBITER, on a mechanical

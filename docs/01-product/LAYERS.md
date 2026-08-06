@@ -80,10 +80,13 @@ non-negotiable, at every scale.
 Granted **per job by the signed spec** — the agent never widens its own menu. If a locked
 verb blocks the work, the worker files a *request-red* and a human decides.
 
-> **Model tiers (v1.36, 2026-07-30):** the PLAN is authored at the medium tier (sonnet)
-> or above — a small-tier drafter died at the validation gate twice on the same rejection
-> (measured). Steps may be tiered DOWN to the economy tier by the planner (`model` field);
-> running a whole job below the floor is an explicit operator probe, never a default.
+> **Model tiers (v1.36, 2026-07-30; narrowed 2026-08-06):** the PLAN is authored at the
+> medium tier (sonnet) or above — a small-tier drafter died at the validation gate twice on
+> the same rejection (measured). Steps could once be tiered DOWN to the economy tier by the
+> planner (`model` field); since 2026-08-06 the agent-selectable menu is **`sonnet` only**
+> *(F87 — a reversible attribution probe, not a verdict on the small tier; see the Layer 2
+> inventory below)*. Running a whole job below the floor remains an explicit OPERATOR probe
+> (`--model haiku`), never a default and never the agent's to choose.
 
 | verb | what it does |
 |---|---|
@@ -231,7 +234,7 @@ self-raise.
 
 ---
 
-## What lives where now (2026-08-06 flow update)
+## What lives where now (2026-08-06 flow update — second pass)
 
 The layers above are the map; this is the current inventory — every mechanic that has
 landed (or is in build) and which box it belongs to. Details and evidence live in the PRD
@@ -287,6 +290,13 @@ stage change.
   FINAL write step (check-placement, Rule A-v2); a replan may not shed a predecessor's
   check (check-shed, Rule B); nested-quantifier exit patterns are rejected statically.
   Each law is also STATED in the drafting prompt from the same facts the validator judges.
+- **The exit-slot ceiling (a property of the gate, load-bearing and easy to miss):** a step
+  may carry at most **2** exits (`MAX_EXITS_PER_STEP`), ANDed, and a `check-passes` on a
+  write-granted step must be paired with a `tree-changed` exit — so **a step has exactly ONE
+  check slot and cannot carry two checks**. Stated plainly: a job whose close judges N stages
+  can have at most ONE of them enforced *during* a step; the other N−1 are enforced only at
+  the close, at the end of the run. That is a cost shape, not a hole — the close still refuses
+  a tree that fails any stage — but the run pays full price before it learns.
 - **Prompt laws:** a step carrying a check is free to edit every file that check can
   report on (exit-freedom).
 - **The step ladder:** fixed attempt counts are gone — 2 strikes of no progress (per-stage
@@ -315,6 +325,15 @@ stage change.
 - **Materials:** money and time handed to the planner as balances; the scout is
   load-bearing (measured, not assumed); the staged close derives the check menu; the
   drafting floor is the medium tier.
+- **The per-step tier menu, narrowed to `sonnet` only** *(F87)* — the agent can no longer
+  tier a step down, and the `model` line is gone from the drafting prompt. A REVERSIBLE
+  ATTRIBUTION PROBE, not a verdict on the tier: the archive's tier column is confounded both
+  ways (the planner picks the cheap tier for steps it judges mechanical, and those steps sit
+  on runs already in trouble), so the tier comes off and the next failure attributes to agent
+  or harness instead. The field and its validator branch STAY — a one-entry menu still
+  validates `model: "sonnet"`, stored bridges still load, restoring the tier is one token.
+  **Only what the AGENT may express narrowed:** `--model haiku` is still the OPERATOR's probe
+  knob (PRD v1.36) and the runner's tier map is deliberately wider than the plan's menu.
 
 **Layer 3 — the recipe box (machinery built, acceptance pending):**
 - A green run graduates its road (bridge) to CANDIDATE; demotion only on escalation —
