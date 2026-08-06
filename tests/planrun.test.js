@@ -12,8 +12,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runPlan, planPrompt, gapFilesNeverWritten } from '../src/planrun.js';
-import { ralph } from '../src/ralph.js';
+import { runPlan, planPrompt, closeGapBlock } from '../src/planrun.js';
+import { ralph, GAP_KEEP_TRIM_MARKER } from '../src/ralph.js';
 import { validateJob } from '../src/job.js';
 import { StallError, MAX_STALLS } from '../src/stall.js';
 import { scriptedProvider, scriptedNativeFactory } from './helpers.js';
@@ -3108,58 +3108,10 @@ test('LADDER: with NO wall set the brief reports the time left as unbounded — 
 // and a mechanical line in the replan brief naming the gap-files the step never
 // wrote (gap paths vs the F32 write audit — the F38 mechanical genre).
 
-test('gapFilesNeverWritten: names the gap files the write audit never touched, suffix-matched against absolute audit paths', () => {
-  const gap = 'check "typecheck" red:\nBAREAGENT red: tsc --strict reports 19 error(s) in src/recurse.js\nBAREAGENT | src/recurse.js(12,3): error TS7006\nBAREAGENT | src/loop.js(9,1): error TS18046';
-  const writes = ['/abs/patient/src/loop.js'];
-  assert.deepEqual(gapFilesNeverWritten(gap, writes), ['src/recurse.js'],
-    'recurse.js was red and never written; loop.js was written; tokens are deduped');
-});
-
-test('gapFilesNeverWritten: empty when every named file was written, when the gap is empty, and when no path-like token exists', () => {
-  assert.deepEqual(gapFilesNeverWritten('FAILED src/a.js', ['/p/src/a.js']), []);
-  assert.deepEqual(gapFilesNeverWritten('', ['/p/src/a.js']), []);
-  assert.deepEqual(gapFilesNeverWritten(undefined, []), []);
-  assert.deepEqual(gapFilesNeverWritten('3 error(s) remain', []), [],
-    'a gap with no path tokens yields no line — never a guess');
-  assert.deepEqual(gapFilesNeverWritten('exit 1 at step/two', []), [],
-    'a slash token without a file extension is not a file claim');
-});
-
 test('planPrompt states the exit-freedom law: a step must be free to edit every file its check can report — forbidding files the exit judges is the u-msdpuaej death', () => {
   const p = planPrompt(JOB('/tmp/x'), 'scout notes', null, 40, null, undefined, { balanceUsd: 1.5 });
   assert.match(p, /free to edit every file the check can report/i);
   assert.match(p, /never\s+write an action that forbids/i);
-});
-
-test('REPLAN NOTE: the brief names file(s) the last gap reported that the step never wrote', async (t) => {
-  const wd = makeMismatchPatient(t, 'src/other.js');
-  const provider = scriptedProvider([
-    { text: 'scout notes' },
-    { text: LADDER_PLAN(wd) },
-    ...iterWrites(wd, ['TODO TODO\n', 'TODO TODO\n', 'TODO TODO\n']),
-    { text: LADDER_PLAN(wd, { id: 'second-go' }) },
-    { text: 'nothing' },
-  ]);
-  await go(wd, provider, { capRuns: 4 });
-  const replanPrompt = provider.calls.find((c) => c.includes('What happened when the previous plan ran'));
-  assert.ok(replanPrompt, 'the replan drafted');
-  assert.match(replanPrompt, /never wrote: src\/other\.js/,
-    'the mechanical mismatch fact rides in the brief — the fact the replanner kept failing to infer');
-});
-
-test('REPLAN NOTE control: when every gap-named file WAS written the line is absent — no invented mismatch', async (t) => {
-  const wd = makeMismatchPatient(t, 'tests/test_x.mjs');
-  const provider = scriptedProvider([
-    { text: 'scout notes' },
-    { text: LADDER_PLAN(wd) },
-    ...iterWrites(wd, ['TODO TODO\n', 'TODO TODO\n', 'TODO TODO\n']),
-    { text: LADDER_PLAN(wd, { id: 'second-go' }) },
-    { text: 'nothing' },
-  ]);
-  await go(wd, provider, { capRuns: 4 });
-  const replanPrompt = provider.calls.find((c) => c.includes('What happened when the previous plan ran'));
-  assert.ok(replanPrompt, 'the replan drafted');
-  assert.doesNotMatch(replanPrompt, /never wrote/);
 });
 
 test('LADDER (e) WALL beats progress: an expired clock ends a CONVERGING ladder — the governance stops keep every bit of their authority', async (t) => {
@@ -3482,4 +3434,216 @@ test('§2 CONTROL: a run that never runs out of money emits NO money-halt record
   const { outcome, events } = await go(wd, provider);
   assert.equal(outcome, 'green');
   assert.equal(events.filter((e) => e.type === 'money-halt').length, 0);
+});
+
+// ── F77: the REPLANNER is handed the close's own last output ───────────────────
+//
+// u-mshcpdg4 is the whole reason this section exists. The run reached ONE
+// remaining strict error and died anyway. The close said exactly where it was:
+//
+//   BAREAGENT red: tsc --strict reports 1 error(s) in src/recurse.js, src/loop.js
+//   BAREAGENT | src/recurse.js(978,115): error TS2322: …
+//
+// The worker saw that every attempt. The REPLANNER — the thing that chooses
+// which files the next plan targets — was told only "close trend so far: still
+// progressing — typecheck 30 → 15 → 15 → 1". Converging, and silent about WHERE.
+// It re-targeted src/loop.js, which was already at zero errors; that step wrote
+// nothing, struck out twice, and the run ended with $1.10 and 82 seconds unspent.
+//
+// The fix hands the gap over as TEXT and nothing else. NOT a parsed file list:
+// line 1 of that very gap names every file in SCOPE, only line 2 names the
+// culprit, and no regex can tell a summary line from a detail line — the shapes
+// differ per close anyway (tsc file:line, pytest test ids, a count close naming
+// no file at all). A model reading the artifact can. That is the whole design.
+
+/**
+ * A counting patient whose close renders the SHIPPED two-line shape: a summary
+ * line naming every file in scope, plus an optional detail line naming the one
+ * location actually failing. `makeCountingPatient`'s close emits one line and one
+ * file, so it cannot reproduce the summary-vs-detail split that killed u-mshcpdg4.
+ * F71: `process.exitCode`, never `process.exit()`.
+ * @param {any} t @param {{seed?: number, summary: string, detail?: string|null}} shape
+ */
+function makeGapShapePatient(t, { seed = 30, summary, detail = null }) {
+  const wd = mkdtempSync(join(tmpdir(), 'planrun-gapshape-'));
+  t.after(() => rmSync(wd, { recursive: true, force: true }));
+  mkdirSync(join(wd, 'src'));
+  writeFileSync(join(wd, 'src', 'recurse.js'), todos(seed));
+  // the SECOND in-scope file, clean from the start — the one u-mshcpdg4's
+  // replanner re-targeted. Its presence is what makes the summary line honest.
+  writeFileSync(join(wd, 'src', 'loop.js'), 'export const y = 2;\n');
+  writeFileSync(join(wd, 'count.mjs'), `import { readFileSync } from 'node:fs';
+const n = (readFileSync(new URL('./src/recurse.js', import.meta.url), 'utf8').match(/TODO/g) ?? []).length;
+if (n === 0) { console.log('clean'); } else {
+  console.log(${JSON.stringify(summary)}.replace('{n}', String(n)));
+  ${detail ? `console.log(${JSON.stringify(detail)});` : ''}
+  process.exitCode = 1;
+}
+`);
+  return wd;
+}
+
+/** the real u-mshcpdg4 detail line, verbatim */
+const MSHCPDG4_DETAIL = "| src/recurse.js(978,115): error TS2322: Type 'string | null | undefined' is not assignable to type 'string | null'.";
+
+const GAP_JOB = (wd, over = {}) => ({
+  schema: 'job-v1',
+  job: 'gap-shape-patient',
+  description: 'the u-mshcpdg4 close shape: a summary line over a detail line',
+  provider: 'anthropic-api',
+  cadence: { unit: 'day', every: 1 },
+  budgetUsd: 1.5,
+  writeScope: ['src/**'],
+  goal: 'Make src/recurse.js and src/loop.js pass the typecheck stage.',
+  verdictType: 'green',
+  // both lines survive the gap bound (F28) — a keep pattern that dropped the
+  // detail line would hide the very fact this section is about
+  close: [{ name: 'typecheck', cmd: 'node count.mjs', expect: 0, gapKeep: '^(red|\\|)' }],
+  tools: ['read', 'write', 'edit'],
+  escalation: { mode: 'decision-ready' },
+  ...over,
+});
+
+const GAP_PLAN = (steps) => JSON.stringify({
+  schema: 'plan-v1',
+  steps: steps ?? [{
+    id: 'shrink-errors', action: 'Remove TODO markers from src/recurse.js.',
+    tools: ['write'], rounds: 6, target: 'src/recurse.js',
+    exit: [{ type: 'tree-changed', scope: 'src/**' }, { type: 'check-passes', name: 'typecheck' }],
+  }],
+});
+
+/** one worker attempt against the gap-shape patient */
+const gapAttempt = (wd, id, body) => [
+  { text: `attempt ${id}`, toolCalls: [tcall(id, 'shell_write', { path: join(wd, 'src', 'recurse.js'), content: body })] },
+  { text: `attempt ${id} done` },
+];
+
+test('F77 unit: closeGapBlock carries the gap VERBATIM, labelled as the close\'s own output', () => {
+  const gap = 'check "typecheck" red: close stage "typecheck" failed:\nBAREAGENT red: tsc --strict reports 1 error(s) in src/recurse.js, src/loop.js\nBAREAGENT ' + MSHCPDG4_DETAIL + '\nBAREAGENT judged=1\n';
+  const block = closeGapBlock(gap);
+  assert.ok(block.includes(gap.trim()), 'every byte of the gap reaches the planner — not a summary, not a parse');
+  assert.match(block, /verification/i, 'and it is labelled as the verification\'s own output, not as the run\'s narration');
+  // the same carry for a close that names no file at all — a count close is not a
+  // second format to handle, it is the same artifact handed over unchanged
+  assert.ok(closeGapBlock('red: unit=0 tests executed, below the seed\'s 12').includes('unit=0 tests executed'),
+    'a count close\'s own words survive too — nothing here is tsc-shaped');
+});
+
+test('F77 unit CONTROL: no gap → the empty string, so the brief is byte-identical to the pre-F77 one', () => {
+  assert.equal(closeGapBlock(undefined), '');
+  assert.equal(closeGapBlock(null), '');
+  assert.equal(closeGapBlock(''), '');
+  assert.equal(closeGapBlock('   \n  '), '', 'whitespace is not an output — an empty block invents a section that says nothing');
+});
+
+// Strictly a NEGATIVE control: it passes before this change (there was no block)
+// and after it (the block is the gap, and the gap named nothing). That is the
+// point — it is the assertion that would catch a parsed file list being
+// manufactured, which is the trap this whole design avoids.
+test('F77 unit CONTROL: a gap that names NO file invents nothing — no path, no file list, no guess', () => {
+  const block = closeGapBlock('red: unit=0 tests executed, below the seed\'s 12');
+  assert.doesNotMatch(block, /[\w.-]+\/[\w.-]+/, 'nothing path-shaped is manufactured out of a gap that named no file');
+});
+
+test('F77 unit: an over-long gap is CAPPED and every trim is ANNOUNCED (F28: silent truncation is the disease)', () => {
+  // 120 red lines of 200 chars: past boundGap's envelope AND past the keep
+  // block's 50-line cap, so BOTH announcements must appear.
+  const gap = Array.from({ length: 120 }, (_, i) => `red: error ${i} ${'x'.repeat(190)}`).join('\n');
+  const block = closeGapBlock(gap);
+  assert.ok(block.length < gap.length, `capped: ${block.length} < ${gap.length}`);
+  assert.match(block, /chars truncated/, 'the elision announces itself');
+  assert.match(block, new RegExp(GAP_KEEP_TRIM_MARKER), 'and so does the keep-block cap — a cure that truncates silently is the disease');
+  assert.match(block, /red: error 0 /, 'the RED lines survive the truncation (gapKeep), which is the point of reusing the bound');
+});
+
+test('F77 unit: a secret-shaped string is masked BEFORE the prompt — one inventory, not a second spelling', () => {
+  const secret = `sk-${'a'.repeat(30)}`;
+  const block = closeGapBlock(`red: auth failed with ${secret} in src/mod.mjs`);
+  assert.ok(!block.includes(secret), 'the literal never reaches the prompt');
+  assert.deepEqual(scanSecrets(block), [], 'and the ONE inventory agrees it is clean');
+});
+
+test('F77: the replan brief carries the close\'s own last output — the u-mshcpdg4 regression', async (t) => {
+  const wd = makeGapShapePatient(t, {
+    seed: 30,
+    summary: 'red: tsc --strict reports {n} error(s) in src/recurse.js, src/loop.js',
+    detail: MSHCPDG4_DETAIL,
+  });
+  const job = GAP_JOB(wd);
+  const { events, provider } = await countRun(wd, [
+    { text: 'scout' }, { text: GAP_PLAN() },
+    ...gapAttempt(wd, '1', todos(15)),
+    ...gapAttempt(wd, '2', todos(1)),
+    { text: GAP_PLAN([{ id: 'finish', action: 'Remove the rest.', tools: ['write'], rounds: 4, target: 'src/recurse.js', exit: [{ type: 'tree-changed', scope: 'src/**' }, { type: 'check-passes', name: 'typecheck' }] }]) },
+    ...gapAttempt(wd, '3', todos(0)),
+  ], { 2: 0.5 }, { job });
+
+  assert.ok(events.find((e) => e.type === 'replan'), `the meter must route to a replan — events: ${events.map((e) => e.type).join(' ')}`);
+  const brief = provider.calls.find((c) => c.includes('did not reach its exits'));
+  assert.ok(brief, 'the replan drafter was handed a failure brief');
+  // THE regression: the ONE remaining error's location reaches the planner.
+  assert.match(brief, /src\/recurse\.js\(978,115\)/,
+    'the replanner is told WHERE the remaining work is — u-mshcpdg4 was told only that it was converging, and re-targeted the clean file');
+  assert.match(brief, /reports 1 error\(s\) in src\/recurse\.js, src\/loop\.js/,
+    'and the summary line rides along verbatim — the planner reads the artifact, the runner does not pre-digest it');
+  // …and NOTHING sits beside it telling the planner which file to pick. On this
+  // exact gap the deleted never-wrote line resolved to `src/loop.js` — the file
+  // that was already CLEAN — because loop.js appears only in the SUMMARY line and
+  // the worker had been writing recurse.js. Two readers of one question, the
+  // parsed one wrong and phrased as a directive, next to the artifact that says
+  // the opposite. Deleted (hamr, 2026-08-05); this assertion is what keeps any
+  // future digest from being reintroduced beside the verbatim block.
+  assert.doesNotMatch(brief, /never wrote/,
+    'the runner hands over the close\'s words and no parsed file claim of its own — a regex cannot tell a summary line from a detail line');
+});
+
+test('F77 CONTROL: a gap that names no file leaves the brief naming no file — before and after', async (t) => {
+  const wd = makeGapShapePatient(t, { seed: 30, summary: 'red: {n} fault(s) remain, unit=0' });
+  const job = GAP_JOB(wd, { close: [{ name: 'typecheck', cmd: 'node count.mjs', expect: 0, gapKeep: '^red' }] });
+  const { provider } = await countRun(wd, [
+    { text: 'scout' }, { text: GAP_PLAN() },
+    ...gapAttempt(wd, '1', todos(15)),
+    ...gapAttempt(wd, '2', todos(1)),
+    { text: GAP_PLAN([{ id: 'finish', action: 'Remove the rest.', tools: ['write'], rounds: 4, target: 'src/recurse.js', exit: [{ type: 'tree-changed', scope: 'src/**' }, { type: 'check-passes', name: 'typecheck' }] }]) },
+    ...gapAttempt(wd, '3', todos(0)),
+  ], { 2: 0.5 }, { job });
+
+  const brief = provider.calls.find((c) => c.includes('did not reach its exits'));
+  assert.ok(brief, 'the replan drafter was handed a failure brief');
+  // Strictly NEGATIVE, so it holds before this change and after it: the brief may
+  // name the plan's own declared target (the step action and target are the
+  // planner's own words), and nothing else file-shaped may appear.
+  const carried = brief.slice(brief.indexOf('did not reach its exits')).replace(/src\/recurse\.js/g, '');
+  assert.doesNotMatch(carried, /The last exit output names file\(s\)/,
+    'the mechanical never-wrote line stays silent when the gap named nothing');
+  assert.doesNotMatch(carried, /[\w.-]+\.[a-z]{2,4}\b(?![\w.])/,
+    'nothing file-shaped is invented out of a gap that named no file');
+});
+
+test('F77 CONTROL: a stall never judged its exits, so the brief carries NO close output — nothing is invented', async (t) => {
+  const wd = makePatient(t);
+  const base = scriptedProvider([
+    { text: 'scout notes' },
+    { text: PLAN(wd) },
+    { text: 'unreachable — the step call stalls' },
+    { text: PLAN(wd, [{ id: 'second-go', action: 'Write it properly.', tools: ['write'], rounds: 4, target: 'tests/test_x.mjs', exit: [{ type: 'artifact-written', path: 'tests/test_x.mjs', pattern: 'ok' }] }]) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'done' },
+  ]);
+  const prompts = [];
+  let n = 0;
+  const provider = {
+    calls: base.calls,
+    async generate(messages, tools) {
+      prompts.push(String(messages.at(-1)?.content ?? ''));
+      if (n++ === 2) throw new StallError('no round completed for 300s, 3 times in this step — not reissuing again', MAX_STALLS);
+      return base.generate(messages, tools);
+    },
+  };
+  await go(wd, provider);
+  const brief = prompts.find((p) => p.includes('did not reach its exits'));
+  assert.ok(brief, 'the replan drafter was handed a failure brief');
+  assert.doesNotMatch(brief, /What the verification/i,
+    'a stall produced no close output — a labelled empty section would be a section that says nothing');
 });

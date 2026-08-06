@@ -19,7 +19,7 @@ import { createHash } from 'node:crypto';
 import { join, resolve, relative } from 'node:path';
 import { Gate } from 'bareguard';
 import { LiteCtx } from 'litectx';
-import { runClose, runStages, ralph, CLOSE_FAULTS } from './ralph.js';
+import { runClose, runStages, ralph, CLOSE_FAULTS, boundGap } from './ralph.js';
 import { validatePlan, legalScopes, stageClose } from './plan.js';
 import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, STEP_MODELS } from './plan.js';
 import { snapshotScope, evalExits } from './exits.js';
@@ -157,40 +157,64 @@ required above, and nothing else.
 ${JSON.stringify(plan, null, 2)}`;
 }
 
+/** The red-set for the replan brief's copy of a step's exit gap: every non-blank
+ * line. It is `\S` and not the close stage's own `gapKeep` for the reason Layer R
+ * already pays at the step seam (see `createRoot` below) — a shipped `gapKeep` is
+ * `^`-anchored (`^BAREAGENT `, `^red`, `^FAILED`) and the exit evaluator wraps the
+ * stage's output in `check "x" red: …`, so the anchor no longer sits where the
+ * pattern expects it. A gap that reaches here is ALREADY a red-set: `judge` builds
+ * it out of the failing exits only, so every line in it is a red line and keeping
+ * all of them is the correct instrument, not a widened one. */
+const REPLAN_GAP_KEEP = '\\S';
+
 /**
- * Files named in an exit gap that the step's worker never wrote — the mechanical
- * fact behind the prose-prohibition trap (u-msdpuaej, 2026-08-03): a drafter wrote
- * "do not modify any file outside X" into a step whose exit check judges the whole
- * goal, the worker obeyed, and the replanner — handed the gap AND the stall note —
- * rebuilt the same shape, because inferring "the exit reds on files this step never
- * touched" is exactly the semantic leap that fails (F38: mechanical gaps convert,
- * semantic ones stall; 3/3 across the mailbox class). This computes that fact from
- * the two books that already exist: path-like tokens in the gap text (extension
- * required — a bare `step/two` is not a file claim) suffix-matched against the F32
- * write audit's absolute paths. Advisory-only and fail-safe: extraction that finds
- * nothing yields no line, never a guess.
+ * The close's own last output, rendered for the REPLAN brief.
  *
- * @param {string | undefined} gap the step's last exit gap text
- * @param {string[] | undefined} writes the step's cumulative write-audit paths
- * @returns {string[]} gap-named files with no matching write, in gap order
+ * u-mshcpdg4: a run one strict error from done, killed with $1.10 and 82 seconds
+ * unspent. The close named the remaining work exactly — `src/recurse.js(978,115)`
+ * — and the worker read that every attempt. The REPLANNER, which is the component
+ * that chooses which files the next plan targets, was handed only the trend line
+ * (`still progressing — typecheck 30 → 15 → 15 → 1`): converging, and silent about
+ * WHERE. It re-targeted `src/loop.js`, already at zero errors; that step wrote
+ * nothing and struck out. F76 gave the brief the trajectory; this gives it the
+ * artifact the trajectory is a summary OF.
+ *
+ * Handed over as TEXT, never as a parsed file list, and the trap is worth naming
+ * because the parse is the obvious-looking fix: line 1 of that very gap reads
+ * `reports 1 error(s) in src/recurse.js, src/loop.js` — every file in SCOPE — and
+ * only line 2 names the culprit. The `never wrote` advisory that used to sit here
+ * did exactly that parse, and on this gap it resolved to `src/loop.js` — the file
+ * already CLEAN — then said so as a directive beside the artifact that said the
+ * opposite. It was deleted with this change (hamr, 2026-08-05): two readers of one
+ * question, the parsed one wrong, is the same failure the variance meter just had.
+ * Nothing generic can tell a summary line from a detail line, and the
+ * shapes differ per close anyway (tsc file:line, pytest test ids, a count close
+ * that names no file at all). A model reading the artifact can make that
+ * distinction; a regex reproduces the bug. So: no extraction, no digest, no
+ * inference — the artifact, bounded and scrubbed.
+ *
+ * Two boundaries, both reused rather than respelled:
+ *   - SCRUB. A prompt is an egress point and this repo has ONE secret inventory
+ *     (`SECRET_PATTERNS` via `redactSecrets`). The gap arrives already scrubbed
+ *     from `judge`, which makes this defense in depth rather than the only guard —
+ *     and defense in depth at the egress is exactly where it belongs, because the
+ *     next caller of this helper will not remember the upstream one.
+ *   - BOUND. `boundGap` (src/ralph.js), the SAME envelope the close path uses, so
+ *     the red lines survive the elision and every trim announces itself (F28). A
+ *     private slice here would be a second truncation scheme that silently drops
+ *     the one detail line this whole helper exists to carry.
+ *
+ * No gap → the empty string, so the brief renders byte-identically to the pre-F77
+ * one. A labelled empty section would be an invitation to explain an absence the
+ * run never observed (a stall never judged its exits at all).
+ *
+ * @param {string | null | undefined} gap the step's last exit gap text
+ * @returns {string} the labelled block, or '' when there is nothing to show
  */
-export function gapFilesNeverWritten(gap, writes) {
-  if (typeof gap !== 'string' || gap === '') return [];
-  const tokens = gap.match(/[\w.-]+(?:\/[\w.-]+)+/g) ?? [];
-  const seen = new Set();
-  const out = [];
-  for (const raw of tokens) {
-    const p = raw.replace(/^\.\//, '');
-    if (!/\.[A-Za-z0-9]+$/.test(p.split('/').at(-1) ?? '')) continue;
-    if (seen.has(p)) continue;
-    seen.add(p);
-    const written = (writes ?? []).some((w) => {
-      const ws = String(w);
-      return ws === p || ws.endsWith(`/${p}`) || p.endsWith(`/${ws}`);
-    });
-    if (!written) out.push(p);
-  }
-  return out;
+export function closeGapBlock(gap) {
+  if (typeof gap !== 'string' || gap.trim() === '') return '';
+  return '\nWhat the verification itself reported on this step\'s last attempt (its own output, verbatim):\n'
+    + boundGap(redactSecrets(gap), REPLAN_GAP_KEEP);
 }
 
 /**
@@ -1931,18 +1955,19 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         : cat === 'step-stalled'
           ? 'It stalled: the model stopped producing rounds and reissuing the call did not recover it, so its exits were never judged.'
           : `${res.ladder.brief()} ${leftOver}`;
-      // The prose-prohibition trap's mechanical fact (u-msdpuaej): gap-named files
-      // the step never wrote. Computed from the step's own books; capped with the
-      // trim announced (the F32 gap convention). Empty extraction = no line.
-      const missed = gapFilesNeverWritten(res?.gap, res?.writes);
-      const missedLine = missed.length
-        ? `The last exit output names file(s) this step never wrote: ${missed.slice(0, 8).join(', ')}${missed.length > 8 ? ` (+${missed.length - 8} more)` : ''}.\n`
-        : '';
+      // F77 — the close's OWN last output, verbatim (u-mshcpdg4). Everything above
+      // this line is the run's narration of the stop: the meter's share sentence,
+      // the trend's direction, the never-wrote fact, the escalation detail. None of
+      // them says WHERE the remaining work is, because none of them is the close.
+      // This is, and it goes over as text — see `closeGapBlock` for why a parsed
+      // file list would reproduce the exact bug it is fixing. Empty gap → empty
+      // string → the brief is byte-identical to the pre-F77 one.
+      const gapBlock = closeGapBlock(res?.gap);
       const failure = `Step "${step.id}" (${step.action}) did not reach its exits. `
         + `${why}\n`
-        + missedLine
         + `Last exit state:\n${lastEscalation?.detail ?? '(none)'}\n`
-        + `Steps completed so far: ${artifacts.map((a) => a.id).join(', ') || 'none'}.`;
+        + `Steps completed so far: ${artifacts.map((a) => a.id).join(', ') || 'none'}.`
+        + gapBlock;
       // The progress line IS the adaptation channel (addendum 2): the balance rides
       // in via obtainPlan's live read, and this says where the run got to. Both are
       // the planner re-allocating what remains across what is left — never a rate.
