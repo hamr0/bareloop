@@ -1794,8 +1794,14 @@ test('cycle leg 1: the wallet drains INSIDE the fix loop and the run PAUSES deci
   assert.equal(mh.stage, 'verdict', 'and the stage that rendered it is named');
 
   // the trend — the whole reason the readout is "accurate" rather than a shrug
-  assert.equal(mh.trend, 'converging', 'the close went 2 → 1 on its own stage: this run was still getting somewhere');
-  assert.match(mh.reading, /verdict 2 → 1/, 'the series it judged is shown, so a human can check the instrument');
+  assert.equal(mh.trend, 'converging', 'the close fell on its own stage: this run was still getting somewhere');
+  // F76: the series opens at the stage's real SEED (3). The precheck is first-red-wins
+  // and stops at an earlier stage, so before this the `verdict` stage's baseline was
+  // simply missing from the run's own trend — the reader was under-fed, and a run
+  // stopped after one grade of a stage read `unknown` about work that had a direction.
+  assert.notEqual(events.find((e) => e.type === 'close-precheck').stage, 'verdict',
+    'the precheck never reached `verdict`, which is why its seed comes from the check preflight');
+  assert.match(mh.reading, /verdict 3 → 2 → 1/, 'the series it judged is shown, from the seed on, so a human can check the instrument');
   assert.match(mh.lever, /top up/i, 'converging work is what a top-up finishes');
 
   // the ceiling and what is left of it, honestly

@@ -26,6 +26,21 @@ import { jobSpecHash } from '../src/job.js';
 const RUNNER = new URL('../scripts/run-u.mjs', import.meta.url).pathname;
 const SPEC = JSON.parse(readFileSync(new URL('../jobs/bareagent-u-types.json', import.meta.url), 'utf8'));
 
+// These tests spawn the REAL runner, which loads the REAL job spec — so `budgetUsd` and
+// `maxWallMs` are LIVE operator numbers, re-signed whenever hamr changes the allowance
+// (they were 8/45min on 2026-08-04, 4/25min after). A test that hardcodes today's value
+// is not testing the runner, it is pinning an operator decision it has no business
+// pinning: the scenarios below are "overspent by exactly $0.13" and "burnt past the
+// wall", at ANY allowance. Every expected number is therefore DERIVED from SPEC, and
+// every fixture is sized as a fraction of it, so a spec edit moves both together.
+const BUDGET = SPEC.budgetUsd;
+/** minutes, spelled the way the runner spells them (`${WALL_MS / 60000}min`) */
+const WALL_MIN = SPEC.maxWallMs / 60_000;
+/** SPEC-derived numbers land inside RegExps, where `$` and `.` are not literals */
+const rx = (/** @type {string|number} */ s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** the runner prints dollars through `toFixed(4)`; expectations must be built the same way */
+const usd = (/** @type {number} */ v) => rx(v.toFixed(4));
+
 const base = mkdtempSync(join(tmpdir(), 'resume-u-'));
 process.on('exit', () => rmSync(base, { recursive: true, force: true }));
 let n = 0;
@@ -37,9 +52,14 @@ function spineFile(events) {
   return f;
 }
 
+const sum = (/** @type {number[]} */ xs) => xs.reduce((a, b) => a + b, 0);
+
 /** the shape a real halted U run leaves: job-start, a plan, a finished step, rounds,
- * and the terminal it stopped on. Only the fields the reader reads are spelled. */
-const haltedSpine = ({ outcome = 'cap-halt', job = SPEC.job, rounds = [0.9, 1.1], steps = ['fix-types'] } = {}) => [
+ * and the terminal it stopped on. Only the fields the reader reads are spelled.
+ * The default rounds are a FRACTION of the signed budget (a quarter of it), not a
+ * dollar figure: the stock fixture must stay "a halt with allowance left" whatever
+ * the operator has signed. */
+const haltedSpine = ({ outcome = 'cap-halt', job = SPEC.job, rounds = [BUDGET * 0.15, BUDGET * 0.10], steps = ['fix-types'] } = {}) => [
   { type: 'job-start', job, specHash: 'old-hash-0000', budgetUsd: SPEC.budgetUsd, shape: 'plan', goal: SPEC.goal, ts: '2026-08-04T10:00:00.000Z', seq: 1 },
   { type: 'plan-accepted', plan: { schema: 'plan-v1', steps: steps.map((id) => ({ id })) }, ts: '2026-08-04T10:02:00.000Z', seq: 2 },
   ...rounds.map((c, i) => ({ type: 'worker-round', kind: 'turn', costUsd: c, ts: '2026-08-04T10:05:00.000Z', seq: 3 + i })),
@@ -74,12 +94,14 @@ const preview = (args) => {
 };
 
 test('§3 the resume PREVIEW states what is inherited: the fold, the remainder, and where it picks up', () => {
-  const f = spineFile(haltedSpine());
+  const rounds = [BUDGET * 0.15, BUDGET * 0.10];
+  const spent = sum(rounds);
+  const f = spineFile(haltedSpine({ rounds }));
   const { code, out } = preview(['--resume', f]);
   assert.equal(code, 0, 'a preview with no --approve is a readout, not a refusal');
   assert.match(out, /RESUME/, 'it says plainly that this is a continuation, not a fresh run');
-  assert.match(out, /\$2\.0000 and .* before the halt — FOLDED IN/, 'the halted run\'s own priced rounds, summed');
-  assert.match(out, /left     \$6\.0000 of \$8/, 'so what it may still spend is the REMAINDER of the signed budget');
+  assert.match(out, new RegExp(`\\$${usd(spent)} and .* before the halt — FOLDED IN`), 'the halted run\'s own priced rounds, summed');
+  assert.match(out, new RegExp(`left {5}\\$${usd(BUDGET - spent)} of \\$${rx(BUDGET)}`), 'so what it may still spend is the REMAINDER of the signed budget');
   assert.match(out, /at       the close and its fix loop/, 'every step finished, so it re-enters at the close');
   assert.match(out, /no re-scout, no re-draft/);
   assert.match(out, /NOT reset to the seed/, 'the patient keeps the work the halted run paid for');
@@ -212,12 +234,17 @@ test('§3 a resume whose allowance is ALREADY SPENT says so plainly — the comm
   // The shape read off the real halted run (u-msew1uy5, which overspent its budget by
   // $0.13): the remainder is NEGATIVE by construction. A minus sign in a number column
   // is not a warning, and signing the hash unchanged buys an immediate re-halt for a
-  // close precheck's worth of nothing. (Rounds track the SIGNED budget — $8 since the
-  // 2026-08-04 "go 8/45" top-up — overspent by the same $0.13.)
-  const { code, out } = preview(['--resume', spineFile(haltedSpine({ rounds: [5.0, 3.13] }))]);
+  // close precheck's worth of nothing. The overspend is the scenario, so it is what the
+  // fixture pins — two rounds that eat the SIGNED budget (whatever it is today; it was
+  // $8 under the 2026-08-04 "go 8/45" top-up) and tip $0.13 past it.
+  const OVER = 0.13;
+  const rounds = [BUDGET * 0.625, BUDGET * 0.375 + OVER];
+  const overBy = sum(rounds) - BUDGET;
+  assert.equal(overBy.toFixed(4), '0.1300', 'the fixture really is the u-msew1uy5 shape: over by $0.13, at whatever budget is signed');
+  const { code, out } = preview(['--resume', spineFile(haltedSpine({ rounds }))]);
   assert.equal(code, 0);
   assert.match(out, /NOTHING LEFT/);
-  assert.match(out, /budgetUsd \$8 is already spent \(over by \$0\.1300\)/);
+  assert.match(out, new RegExp(`budgetUsd \\$${rx(BUDGET)} is already spent \\(over by \\$${usd(overBy)}\\)`));
   assert.match(out, /RAISE the number\(s\)/);
   assert.match(out, /that is a spec edit, so the hash below changes and you sign the new one/);
 });
@@ -230,24 +257,31 @@ test('§3 a resume whose allowance is ALREADY SPENT says so plainly — the comm
 // nothing new starts, and the stop is decision-ready with the lever named.
 
 /** a halted spine whose OWN clock spans `minutes` — the fold `readResume` computes is
- * death-minus-start, so this is the only way to drive the wall arm */
+ * death-minus-start, so this is the only way to drive the wall arm.
+ * Its one round costs an eighth of the SIGNED budget: the wall arm has to fire with the
+ * money arm silent, and "cheap" is only cheap relative to the allowance in force. */
 const longSpine = (minutes) => {
   const t = (/** @type {number} */ m) => new Date(Date.parse('2026-08-04T10:00:00.000Z') + m * 60_000).toISOString();
+  const cost = BUDGET / 8;
   return [
     { type: 'job-start', job: SPEC.job, specHash: 'old-hash-0000', budgetUsd: SPEC.budgetUsd, shape: 'plan', goal: SPEC.goal, ts: t(0), seq: 1 },
     { type: 'plan-accepted', plan: { schema: 'plan-v1', steps: [{ id: 'fix-types' }] }, ts: t(1), seq: 2 },
-    { type: 'worker-round', kind: 'turn', costUsd: 0.5, ts: t(2), seq: 3 },
+    { type: 'worker-round', kind: 'turn', costUsd: cost, ts: t(2), seq: 3 },
     { type: 'step-end', step: 'fix-types', outcome: 'green', ts: t(minutes - 1), seq: 20 },
-    { type: 'job-end', outcome: 'wall-halt', spentUsd: 0.5, spendComplete: true, ts: t(minutes), seq: 41 },
+    { type: 'job-end', outcome: 'wall-halt', spentUsd: cost, spendComplete: true, ts: t(minutes), seq: 41 },
   ];
 };
+/** past the signed wall by a clear margin / comfortably inside it — both derived, so the
+ * two arms stay on opposite sides of whatever clock the operator has signed */
+const BURNT_MIN = WALL_MIN + 5;
+const SOME_LEFT_MIN = WALL_MIN * 0.45;
 
 test('§3 the WALL arm of the exhausted-allowance warning fires on its own, on the time axis', () => {
-  const { code, out } = preview(['--resume', spineFile(longSpine(50))]);
+  const { code, out } = preview(['--resume', spineFile(longSpine(BURNT_MIN))]);
   assert.equal(code, 0);
   assert.match(out, /NOTHING LEFT/);
-  assert.match(out, /maxWallMs 45min is already burnt/, 'the TIME lever, named on its own — the money is untouched here');
-  assert.doesNotMatch(out, /budgetUsd .* is already spent/, 'and the money arm does not fire: $0.50 of $8 is not the problem');
+  assert.match(out, new RegExp(`maxWallMs ${rx(WALL_MIN)}min is already burnt`), 'the TIME lever, named on its own — the money is untouched here');
+  assert.doesNotMatch(out, /budgetUsd .* is already spent/, 'and the money arm does not fire: an eighth of the signed budget is not the problem');
 });
 
 test('§3 a resume with NO WALL LEFT is REFUSED at launch, before the key and before the patient', () => {
@@ -257,7 +291,7 @@ test('§3 a resume with NO WALL LEFT is REFUSED at launch, before the key and be
   // in this environment, so a runner that did NOT refuse would fall through to the
   // API-key check — a different exit-2 with a different message, which is exactly what
   // the second assertion separates.
-  const { code, out } = preview(['--resume', spineFile(longSpine(50)), '--approve', jobSpecHash(SPEC)]);
+  const { code, out } = preview(['--resume', spineFile(longSpine(BURNT_MIN)), '--approve', jobSpecHash(SPEC)]);
   assert.equal(code, 2, 'an operator-owned stop, on this file\'s convention (0 preview / 2 operator error)');
   assert.match(out, /WALL ALREADY EXHAUSTED/);
   assert.doesNotMatch(out, /ANTHROPIC_API_KEY not set/, 'it stops ABOVE the key read — nothing about this needs a secret');
@@ -265,19 +299,23 @@ test('§3 a resume with NO WALL LEFT is REFUSED at launch, before the key and be
 });
 
 test('§3 CONTROL: a resume with wall left is NOT refused — it goes on to the ordinary launch path', () => {
-  // The should-differ half. Same signature, same code path, one changed number: 20
-  // minutes burnt of 45 leaves 25, and the runner must walk straight past the wall
-  // refusal into the key check it always did.
-  const { code, out } = preview(['--resume', spineFile(longSpine(20)), '--approve', jobSpecHash(SPEC)]);
+  // The should-differ half. Same signature, same code path, one changed number: under
+  // half the signed wall is burnt, so the majority of it is still there, and the runner
+  // must walk straight past the wall refusal into the key check it always did.
+  const { code, out } = preview(['--resume', spineFile(longSpine(SOME_LEFT_MIN)), '--approve', jobSpecHash(SPEC)]);
   assert.equal(code, 2);
   assert.doesNotMatch(out, /WALL ALREADY EXHAUSTED/);
   assert.match(out, /ANTHROPIC_API_KEY not set/, 'the next gate down is where a healthy resume lands');
 });
 
 test('§3 CONTROL: a resume with allowance still on the table does NOT cry wolf', () => {
-  const { out } = preview(['--resume', spineFile(haltedSpine({ rounds: [0.5] }))]);
+  // the should-differ half of the warning above: one cheap round against the SIGNED
+  // budget, so seven eighths of it are still there to spend
+  const rounds = [BUDGET / 8];
+  const spent = sum(rounds);
+  const { out } = preview(['--resume', spineFile(haltedSpine({ rounds }))]);
   assert.doesNotMatch(out, /NOTHING LEFT/);
-  assert.match(out, /left     \$7\.5000 of \$8/);
+  assert.match(out, new RegExp(`left {5}\\$${usd(BUDGET - spent)} of \\$${rx(BUDGET)}`));
 });
 
 // ══ F83's small unfixed item: the END banner framed wall and money differently ═

@@ -742,7 +742,25 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   });
   for (const m of menu) {
     const v = await runStages(m.run, scrub, closeOpts);
-    if (v.verdict === 'needs_revision') seedRed.push(m.name);
+    if (v.verdict === 'needs_revision') {
+      seedRed.push(m.name);
+      // …and the preflight grade is a READING, for the same reason the precheck one
+      // above is: it is the seed the run's work is measured against. The precheck
+      // only ever reds at the close's FIRST failing stage (first-red-wins), so on
+      // every shipped close — each of which opens with `changed-from-seed` — the
+      // numeric stages have no baseline at all without it. A step's first grade
+      // would then have nothing to compare against and the whole run would read
+      // `unknown` on exactly the stop the readout exists for.
+      //
+      // ONCE PER STAGE, though. The precheck and this loop grade the SAME unchanged
+      // tree back to back with no work in between, so a stage both reach reports the
+      // same number twice — and a repeated baseline in a series reads as an attempt
+      // that achieved nothing (`verdict 2 → 2 → 1`). That is a phantom flat step
+      // handed to a human and to the replanner, which is the exact class of false
+      // story this change exists to remove. Asked of the reader's own books, so
+      // there is no second record of what has been graded.
+      if (!runTrend.report().stages.some((s) => s.stage === v.stage)) runTrend.record({ gap: v.gap });
+    }
     emit('check-preflight', { name: m.name, verdict: v.verdict, ...(m.run.length > 1 ? { chain: m.run.map((s2) => s2.name) } : {}) });
     const f = Object.hasOwn(CLOSE_FAULTS, v.verdict) ? CLOSE_FAULTS[v.verdict] : undefined;
     if (f) {
@@ -797,7 +815,24 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const v = await runStages(chain, scrub, closeOpts);
     emit('check-run', { name, verdict: v.verdict, ...(v.stage && v.stage !== name ? { stage: v.stage } : {}), ...(v.exitCode !== undefined ? { exitCode: v.exitCode } : {}) });
     if (v.verdict === 'satisfied') return { pass: true };
-    if (v.verdict === 'needs_revision') return { pass: false, gap: v.gap };
+    if (v.verdict === 'needs_revision') {
+      // The run trend is fed by EVERY grade the arbiter renders, and a check IS an
+      // arbiter-rendered close grade: the same `runStages`, the same chain, the same
+      // stage names, so it lands in the same per-stage buckets and the accuracy law
+      // holds unchanged. Without this the reader is blind to everything a STEP ever
+      // achieves — it sees only the precheck and the outer fix loop — which is why
+      // u-msh70zla's meter, firing mid-step, had nothing to report about a step that
+      // had just gone 24 → 15 → 14.
+      //
+      // Folded HERE, on `v.gap`, and the seam is load-bearing: `evalExits` wraps this
+      // gap as `check "<name>" red: …`, and THAT line carries the word "red" with no
+      // number on it, so `readGrade` reads the wrapper instead of the wall and every
+      // step grade donates a null. Measured on u-msh70zla's own archived gaps: raw
+      // reads `typecheck 24 → 15 → 14`, wrapped reads nothing at all. Same seam the
+      // Layer R note below already calls out for a check's `^`-anchored gapKeep.
+      runTrend.record({ gap: v.gap });
+      return { pass: false, gap: v.gap };
+    }
     return { pass: false, fault: v.verdict, gap: v.detail };
   };
 
@@ -1483,7 +1518,15 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   /** @type {{id: string, outcome: string}[]} */
   const stepOutcomes = [];
   let replanned = false;
-  const planExecuted = () => emit('plan-executed', { steps: stepOutcomes, replanned });
+  /** F76 (C): how many replans this run has actually drafted, and whether the
+   * arbiter has already spent its ONE extra grant. Two variables and not one
+   * counter compared against a limit, deliberately — a latch cannot be widened by
+   * arithmetic, and the ceiling is the thing this rung must not move (v1.12). */
+  let replans = 0;
+  let varianceGrantUsed = false;
+  // `replanned` stays the shipped boolean this record has always carried; `replans`
+  // rides BESIDE it (append-only — a field's meaning is never repurposed).
+  const planExecuted = () => emit('plan-executed', { steps: stepOutcomes, replanned, replans });
   /** @type {object|null} W-2 at the STEP site — set when the WALL refused to open a
    * step's attempt. It carries that stop's own record fields, and its presence is what
    * lets the step loop's terminal tell this reading apart from F64's mid-call one
@@ -1558,15 +1601,41 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         const moneyShare = stepStartUsd > 0 ? (stepStartUsd - remainingUsd()) / stepStartUsd : 0;
         const timeShare = clock.bounded && stepStartMs > 0 ? (stepStartMs - clock.remainingMs()) / stepStartMs : 0;
         if (moneyShare >= VARIANCE_THRESHOLD || timeShare >= VARIANCE_THRESHOLD) {
+          // F76 — the meter REPORTS progress; it does not decide on it. The
+          // condition above is the whole trigger and stays the whole trigger: a
+          // converging step that is eating the run is still stopped, because this is
+          // a governance instrument over an operator-owned allowance and a governor
+          // that suppressed itself whenever the work looked promising would be
+          // judging capability with the budget. What was missing was never a term in
+          // the condition — it was the READING. u-msh70zla stopped a step whose close
+          // had gone 24 → 15 → 14 and then told the replanner its exits were
+          // "unmoved", so the replanner threw the progress away and re-targeted a
+          // file that was already clean.
+          //
+          // The reading comes off `runTrend` — the SAME instance the money halt reads
+          // (src/trend.js's ONE PER SERIES). A second reader for one question is how
+          // two readers come to disagree, which is precisely the defect being fixed.
+          // It is per-stage, numbers-and-stage-names only, and `unknown` stays
+          // `unknown` — a close that reports no number donates nothing (F6).
+          const t = runTrend.verdict();
           emit('variance', {
             step: step.id, iteration, threshold: VARIANCE_THRESHOLD,
             moneyShare: Number(moneyShare.toFixed(3)),
             timeShare: clock.bounded ? Number(timeShare.toFixed(3)) : null,
             axis: moneyShare >= VARIANCE_THRESHOLD ? 'money' : 'time',
+            // ADDED fields, never repurposed ones (the spine is append-only forever).
+            // Same four names and same shapes the money halt already emits, so one
+            // reader parses a progress reading wherever it appears.
+            trend: t.trend, motion: t.motion, reading: t.reading, series: t.series,
           });
           const err = /** @type {CategorizedError} */ (new Error(
             `step "${step.id}" consumed ${Math.round(Math.max(moneyShare, timeShare) * 100)}% of the run's remaining `
-            + `${moneyShare >= VARIANCE_THRESHOLD ? 'money' : 'time'} across ${iteration - 1} attempt(s) with its exits still red`));
+            + `${moneyShare >= VARIANCE_THRESHOLD ? 'money' : 'time'} across ${iteration - 1} attempt(s) with its exits still red. `
+            // The escalation `detail` is this message (ralph passes it through), and
+            // the replan brief quotes the detail — so this sentence is what a human
+            // AND the redrafting planner read. It states what the run achieved; it
+            // never states what to do about it, which is the operator's lever list.
+            + `Run progress: ${t.reading}.`));
           err.category = 'step-variance';
           throw err;
         }
@@ -1772,12 +1841,15 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // pricing-red at the step-end guard above, so isUnpriced() is false here.)
     //
     // A (PRD v1.27) adds the SECOND trigger: `step-variance` — the meter stopped a
-    // step that had eaten a declared share of the run with its exits unmoved. That
-    // is the case exhaustion-only could never reach (F56: a replan has fired zero
-    // times in the programme), and it is a genuine re-allocation rather than a stop.
-    // Both triggers still need FUNDS LEFT, and both are still bounded by the ONE
-    // replan ceiling — this changes the trigger, never the ceiling (v1.12).
+    // step that had eaten a declared share of the run. That is the case
+    // exhaustion-only could never reach (F56: a replan has fired zero times in the
+    // programme), and it is a genuine re-allocation rather than a stop. Both
+    // triggers still need FUNDS LEFT, and both are bounded by the replan ceiling.
     const cat = lastEscalation?.category;
+    /** F76 — the run's measured trajectory at the moment of this stop, read ONCE
+     * here off the same instance the meter and the money halt read. Both consumers
+     * below are the replanner's: the trigger sentence and the brief. */
+    const stopTrend = runTrend.verdict();
     // F66 adds the THIRD trigger: `step-stalled` — the stall watchdog reissued the
     // model call MAX_STALLS times and never got a round back. hamr's ruling is that
     // a stall must self-heal rather than end the run ("killing and coming back is
@@ -1785,13 +1857,53 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // demonstrably stopped working does the run adapt instead — by replanning, not
     // by stopping. Same ONE-replan ceiling and same FUNDS-LEFT condition as the
     // other two: this changes the trigger, never the ceiling (v1.12).
+    //
+    // F76 rewrote the variance branch. It used to be the FIXED string "…with its
+    // exits unmoved", printed for every step-variance stop whatever had happened —
+    // and on u-msh70zla it was simply false: the exits had moved 24 → 15 → 14. The
+    // sentence now states the meter's fact (a share of the run) and then the trend
+    // instrument's MEASURED reading, which is the same reading the `variance` record
+    // and the money halt carry. Nothing here asserts a direction the reader did not
+    // report: `unknown` says unknown.
     const replanTrigger = cat === 'cap-halt' ? 'step exhausted its attempts with exits still red'
-      : cat === 'step-variance' ? 'the meter stopped a step that was consuming the run with its exits unmoved'
+      : cat === 'step-variance' ? `the meter stopped a step that was consuming the run — ${stopTrend.reading}`
       : cat === 'step-stalled' ? 'the model stopped producing rounds and reissuing the call did not recover it'
       : null;
-    if (!replanned && replanTrigger && remainingUsd() > MONEY_MIN) {
+    // F76 (C) — the ARBITER's one additional replan. A second `step-variance` after
+    // the ceiling is spent used to be a hard stop, and on a run that was still
+    // converging that stop threw away work the run had already paid for. So the
+    // arbiter may grant ONE more, and every clause of that sentence is a constraint:
+    //
+    //   * ONE. Bounded, and bounded by a latch rather than a comparison, so the
+    //     ceiling cannot creep: unlimited replanning launders thrash as adaptation
+    //     (v1.12). A third variance stop is the stop, however well it is going.
+    //   * the ARBITER. Read mechanically off `runTrend` — the same instance the
+    //     meter and the money halt read. The agent never asks for it, never sees it
+    //     offered, and cannot influence it: no self-adjusted budgets, ever.
+    //   * `converging`, the trend instrument's OWN category. No new number is
+    //     invented here — threshold-setting is the operator's, and a fresh
+    //     comparison would be a second reader of the one question (src/trend.js).
+    //     `flat` and `unknown` are refusals; an unknown is never rounded up into a
+    //     reason to spend (F6).
+    //   * step-variance only. An exhaustion or a stall after the ceiling is
+    //     unchanged — this widens nothing but the case it was measured on.
+    const grantExtraReplan = replanned
+      && cat === 'step-variance'
+      && !varianceGrantUsed
+      && stopTrend.trend === 'converging';
+    if ((!replanned || grantExtraReplan) && replanTrigger && remainingUsd() > MONEY_MIN) {
+      if (grantExtraReplan) varianceGrantUsed = true;
       replanned = true;
-      emit('replan', { step: step.id, reason: replanTrigger, trigger: cat });
+      replans += 1;
+      emit('replan', {
+        step: step.id, reason: replanTrigger, trigger: cat,
+        // ADDED fields (append-only): which replan this is, and — only when the
+        // arbiter granted one past the ordinary ceiling — the reading it granted it
+        // on. Absent on the ordinary replan, so a reader can never mistake the
+        // ceiling for a grant.
+        replan: replans,
+        ...(grantExtraReplan ? { granted: stopTrend.trend } : {}),
+      });
       // The brief names the trigger HONESTLY, one branch per trigger: it is the
       // only channel the redrafting planner adapts to, so a wrong diagnosis here
       // is handed to the one component whose whole job is to respond to it. A
@@ -1809,8 +1921,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       const leftOver = `$${remainingUsd().toFixed(2)} and `
         + `${clock.bounded ? `${Math.round(clock.remainingMs() / 60_000)} minute(s)` : 'time UNBOUNDED'} `
         + 'of the run were still unspent when it stopped.';
+      // F76: the meter's branch states the METER's fact and then the run's measured
+      // one, in that order and as two separate claims — "it was stopped for eating
+      // the run" and "here is what the run achieved" are different things, and the
+      // old sentence quietly fused them into a verdict on the work.
       const why = cat === 'step-variance'
-        ? 'It was stopped by the run\'s meter for consuming too large a share of what was left.'
+        ? 'It was stopped by the run\'s meter for consuming too large a share of what was left. '
+          + `Its work so far, from the close's own numbers: ${stopTrend.reading}. ${leftOver}`
         : cat === 'step-stalled'
           ? 'It stalled: the model stopped producing rounds and reissuing the call did not recover it, so its exits were never judged.'
           : `${res.ladder.brief()} ${leftOver}`;
@@ -1829,8 +1946,16 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // The progress line IS the adaptation channel (addendum 2): the balance rides
       // in via obtainPlan's live read, and this says where the run got to. Both are
       // the planner re-allocating what remains across what is left — never a rate.
+      //
+      // F76 adds the second half. This line used to count STEPS only ("step 1 of 1
+      // did not finish; 0 step(s) completed before it") — structurally true and
+      // silent about outcome, so a replanner reading it could only conclude that
+      // nothing had been achieved. On u-msh70zla it concluded exactly that and threw
+      // three attempts of real convergence away. The structural sentence stays (a
+      // plan's shape is what the planner re-allocates); the measured one joins it.
       const progress = `step ${idx + 1} of ${plan.steps.length} ("${step.id}") did not finish; `
-        + `${artifacts.length} step(s) completed before it`;
+        + `${artifacts.length} step(s) completed before it; `
+        + `close trend so far: ${stopTrend.reading}`;
       let pv;
       try {
         pv = await obtainPlan('replan', failure, progress);
@@ -1886,8 +2011,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       emitMoneyHalt({ phase: `step:${step.id}`, cutMidCall: false, stepsDone: idx, stepsPlanned: plan.steps.length });
       return 'cap-halt';
     }
-    // A second `step-variance` after the one replan is spent is a STOP, and the stop
-    // is the result — but it rides out as `step-red:<id>`, NOT as its own top-level
+    // A `step-variance` that earned no replan above is a STOP, and the stop is the
+    // result. Reached in three ways now: the ordinary ceiling with the run reading
+    // `flat` or `unknown`; the arbiter's one grant already spent (F76's bound); or
+    // the wallet at dust. Each rides out as `step-red:<id>`, NOT as its own top-level
     // outcome. The category is a replan TRIGGER, never a run verdict: leaking it
     // upward would mint an outcome run.js and the ledger's class table do not know,
     // and an unmapped category is counted as a library bug (ledger.js) when this is a
