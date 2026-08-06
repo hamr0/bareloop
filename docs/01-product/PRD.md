@@ -3480,3 +3480,71 @@ here so it is not raised again.
   the tier stays off the agent's menu, and whether the operator readout should show a per-step
   tier below the default at all (v1.50 §6's item (b), still open), are hamr's calls — the probe
   was built to be reversed in one token for exactly this reason.
+
+---
+
+## Addendum v1.52 — 2026-08-07 (Layer 3's lift contrast is RETIRED, not run: the gate rules already deliver its payload cold; the selection/promotion machinery is PARKED; reuse is re-aimed at a TEMPLATE — hamr)
+
+**Basis:** F88, a $0 archive read run before any paid fire, on hamr's challenge that the rung
+carried more scaffolding than moved outcome. Authorised in-turn: *"yes, write the finding and
+park it in the prd"*.
+
+### 1. What the read settled
+
+The only payload a TYPES bridge can transfer is the plan SHAPE. `28ee95f`'s two gate rules
+(Rule A-v2 `check-placement`, Rule B `check-shed`) made the losing shapes inexpressible, and
+the cold drafter now produces the winning shape 10/10 without any bridge. The frozen
+lift-contrast experiment would pay $15–25 to measure a difference that a $0 validation rule
+already erased.
+
+**Retired: the reuse-ON vs forced-cold lift contrast**, in its frozen form. Not "failed" and
+not "deferred" — its premise expired under our own fix, and re-running it would mint a
+predictable flat as if it were a finding. `REUSE-LIFT-CONTRAST-PREREG.md` stays on the record
+unaltered, with this addendum as its terminal entry.
+
+**Moot, consequently: the empty job-B slot** (v1.51 §6) and the `≥2 steps` screen clause
+tension. Neither needs a ruling while the experiment they gate is retired. Both stay written
+down; neither is an open ask.
+
+### 2. What is PARKED (not deleted — nothing is removed on the assistant's say-so)
+
+Parked on branch `layer-3-reuse`, off the critical path:
+
+- the LLM **selection** call (`selectBridge`) and its pin/shortlist/refusal protocol,
+- **promotion** counting (candidate → proven on two distinct patients),
+- the **demotion** table and casualty rows.
+
+All three exist to answer *"which stored plan should this run start from"*, a question that
+only earns its keep when stored plans differ in ways that matter. F88 shows they no longer do
+on this genre. The code is proven working (F73) and stays where it is.
+
+### 3. What is KEPT
+
+Storage plus **pin** — the user names a stored workflow and re-runs it. This is hamr's own
+framing of the honest user need (*"user just wants to run the same workflow regardless"*), it
+needs no selector and no ledger, and both halves already exist.
+
+### 4. What replaces the contrast (SPECIFIED, NOT FIRED — awaits hamr's freeze)
+
+**Template-only reuse.** Today `src/planrun.js:542` hands the drafter `newest.plan` verbatim,
+patient prose included — a `baremobile` bridge carries ~1,400 characters of `WdaTimeout` and
+`CLASS_MAP`. The replacement arm strips the prose and carries only what the gate does NOT
+set: `rounds`, `tools`, `scope`, `attempts`, model tier, and the iterate sentence.
+
+This is the one reuse hypothesis still standing, and it has never been tested. It needs a
+frozen design and hamr's signature before any money moves; no patient, envelope, or clause is
+proposed here.
+
+### 5. Scope of the claim
+
+Genre-bound to TYPES, n=10 post-rule, 6 of those on one patient. This addendum retires an
+EXPERIMENT, never the inheritance hypothesis. Should a later genre carry shape variance the
+validation gate cannot close, reuse returns with a live question and the parked machinery is
+where it was left.
+
+### 6. Sequencing after this
+
+Unchanged from v1.51 except that Layer 3 no longer blocks: **close-authoring** (the close
+becomes something a user declares from a catalog of named stages rather than a script the
+assistant writes per patient) is the next rung, and softgreen + hitl follow it — hitl's close
+IS an operator declaration, so it stands on that surface.

@@ -6184,3 +6184,101 @@ same arbiter separation that let the drift happen is what made it cost money ins
 green — and the fix therefore belongs on the *visibility* side (surface the close's stages to
 whoever writes the goal, at preflight, where the runner already knows them), never on the
 coupling side.
+
+---
+
+## F88 — the reuse payload is now delivered COLD by the gate rules: Layer 3's lift contrast would measure a difference that no longer exists on TYPES — and reuse has always shipped the whole plan, never a template
+
+**Date:** 2026-08-07 · **Cost: $0** (archive read only, no library code changed) ·
+**Trigger:** hamr's question — *"it looks like it has a lot of scaffolding to justify
+investing more time before something moves"* — asked before, not after, any paid fire.
+
+### The reading rule, stated before the numbers
+
+Fixed in-session ahead of the read (the standing pre-registration discipline):
+
+- **Transferable fields** (what a bridge could hand to a different patient): step count,
+  tools grant, scope, rounds, exit composition, and whether the action carries the
+  iterate-until-green shape sentence.
+- **Non-transferable and NOT counted:** file names, symbol names, per-patient prose. That
+  content must not transfer — the N3 memorization audit kills it on sight.
+- **Converged** = cross-patient plans agree on the transferable fields ⇒ the bridge carries
+  nothing the cold drafter lacked. **Diverged** = they differ materially ⇒ a bridge has
+  something to hand over.
+
+### First read, and the confound that invalidated it
+
+Nine cold greens across five patients diverged on every transferable field (step count 1–3,
+rounds 8–36, scope declared in 4 of 9). Read naively that says reuse HAS something to carry.
+It does not, because the sample is nine **greens** — survivor bias — and because it pools two
+different instruments: the plan-validation gate changed underneath it.
+
+`28ee95f` (2026-08-04) shipped Rule A-v2 (`check-placement`) and Rule B (`check-shed`), which
+make the losing plan shapes **inexpressible** rather than merely unlikely (F81). Every run
+before that commit was drafted under a different law than every run after it.
+
+### The split read (24 runs with a captured plan; `provider-red` casualties excluded)
+
+| | pre-rules | post-rules |
+|---|---|---|
+| real check on a non-final step (the losing shape) | **10/14** | **0/10** |
+| single-step RLM shape | **0/14** | **8/10** |
+| green | 6/14 | 3/10 |
+
+**Self-correction, recorded rather than smoothed:** the extraction script bucketed
+`u-msew1uy5` as pre-rules on its timestamp, but F81 records it as the FIRST run drafted under
+the law. Moved to post. The correction strengthens the contrast, which is exactly why it is
+stated — a correction that flatters the result gets more scrutiny, not less.
+
+### What this means for Layer 3
+
+The only thing a TYPES bridge can transfer is the shape. **The gate now hands that shape to
+every cold run for free, 10/10.** The lift contrast — frozen, ~$15–25, awaiting a job-B
+patient — would be paying to measure a difference the gate erased three days earlier. The
+result is predictable, and a predictable result is not worth buying.
+
+This is the CL-BENCH prediction landing on our own machinery: memory loses to plain ICL once
+base capability is subtracted. Here base capability was raised by a $0 validation rule, and
+the memory system's payload went with it.
+
+### NOT claimed
+
+- **Green rate did not improve** (3/10 vs 6/14) and no capability claim is made either
+  direction: 6 of the 10 post-rule runs are `bareagent-u`, the hardest patient in the pool.
+  That population is skewed and the number is unreadable as a capability signal.
+- **TYPES genre only**, n=10 post-rule. The genre-bound qualifier that F51–F55 earned applies
+  here verbatim. If a later genre carries shape variance the gate cannot close, reuse becomes
+  live again — this finding retires an experiment, not a hypothesis.
+- Nothing here says the machinery is broken. F73 proved it works end to end. It says the
+  thing it transmits stopped being scarce.
+
+### The second half: reuse ships the whole plan, never a template
+
+hamr's question — *"you mean the whole time you have been running/reuse the exact everything
+including the plan instead of the template as in steps and primitives?"* — is correct, and
+confirmed at source: `src/planrun.js:542`, `startingDraft = newest.plan`. The entire
+plan-as-executed is handed to the drafter as its starting draft, patient prose included. A
+`baremobile` bridge carries ~1,400 characters naming `WdaTimeout`, `CLASS_MAP`,
+`className.split('.').pop()` and four specific test files. Nothing strips it.
+
+So the built arm transmits a mixture: six structural fields the gate now supplies anyway,
+plus a block of prose written for a patient that is not the one being run.
+
+### The replacement experiment (SPECIFIED, NOT FIRED — hamr's freeze required)
+
+**Template-only reuse.** Strip the action prose; carry only what the gate does NOT set:
+`rounds`, `tools`, `scope`, `attempts`, model tier, and the iterate sentence. That is the one
+reuse hypothesis still standing after this read, and it has never been tested.
+
+Directional hint, **explicitly not evidence** (n=1, and F73's runner does not reset the
+patient between tries, so try 2 ran on try 1's tree): in the execution probe the same-repo
+bridge — maximum prose overlap — cap-halted at $4.7442; the cross-language bridge —
+effectively template-only, since none of its prose could apply — greened at $1.3971.
+
+### Lesson
+
+**A capability built to transmit something can be obsoleted by a cheaper rule that makes the
+thing abundant.** The shape was scarce when Layer 3 was designed (10/14 plans rolled a losing
+shape); a $0 validation rule made it free. The premise-replay discipline (F63) is what caught
+it — the premise behind a frozen, funded, pre-registered experiment was re-read against the
+archive BEFORE the fire, and it had expired under our own fix.
