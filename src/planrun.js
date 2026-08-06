@@ -21,7 +21,7 @@ import { Gate } from 'bareguard';
 import { LiteCtx } from 'litectx';
 import { runClose, runStages, ralph, CLOSE_FAULTS, boundGap } from './ralph.js';
 import { validatePlan, legalScopes, stageClose } from './plan.js';
-import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, STEP_MODELS } from './plan.js';
+import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU } from './plan.js';
 import { snapshotScope, evalExits } from './exits.js';
 import { createRoot } from './root.js';
 import { createStallWatch, STALL_MS, MAX_STALLS } from './stall.js';
@@ -281,7 +281,6 @@ strictly in array order. Each step (no other fields exist):
 - "tools": non-empty unique subset of ${JSON.stringify(ceiling)} (write/edit change the tree; recall/get/impact/related/recent search and navigate the repository index; compress/peek read cheaply; stash/remember/forget park and record notes across steps)
 - "rounds": integer 1..${maxStepRounds} — the step's per-attempt tool-round bound
 - "target": the step's deliverable path (REQUIRED when tools include write/edit), inside ${JSON.stringify(job.writeScope)}
-- "model" (optional): ${STEP_MODELS.join(' | ')} — a cheaper tier for mechanical steps; omit for the default
 - "scope" (optional): narrow this step's WRITE fence — copy one value from the offered scopes below.
   A narrowed "scope" is the ONLY ground this step can write: its "target" must sit
   inside it, and a "tree-changed" exit's scope must not be disjoint from it (one that

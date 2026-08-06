@@ -1689,7 +1689,7 @@ test('P: step.model routes the worker through providerFor(tier); the drafter sta
     schema: 'plan-v1',
     steps: [{
       id: 'write-test', action: 'Write the test.',
-      tools: ['write'], rounds: 6, target: 'tests/test_x.mjs', model: 'haiku',
+      tools: ['write'], rounds: 6, target: 'tests/test_x.mjs', model: 'sonnet',
       exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
     }],
   });
@@ -1697,17 +1697,17 @@ test('P: step.model routes the worker through providerFor(tier); the drafter sta
     { text: 'scout notes' },
     { text: plan },
   ]);
-  const haiku = scriptedProvider([
+  const tiered = scriptedProvider([
     { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
     { text: 'wrote the test' },
   ]);
   /** @type {string[]} */
   const asked = [];
-  const { outcome } = await go(wd, main, { providerFor: (tier) => { asked.push(tier); return haiku; } });
+  const { outcome } = await go(wd, main, { providerFor: (tier) => { asked.push(tier); return tiered; } });
   assert.equal(outcome, 'green');
-  assert.deepEqual(asked, ['haiku'], 'the factory is asked for exactly the planned tier');
+  assert.deepEqual(asked, ['sonnet'], 'the factory is asked for exactly the planned tier');
   assert.equal(main.calls.length, 2, 'scout + plan ran on the default provider');
-  assert.ok(haiku.calls.length >= 1, 'the step worker ran on the tier provider');
+  assert.ok(tiered.calls.length >= 1, 'the step worker ran on the tier provider');
 });
 
 test('P: step.model with NO providerFor is a STOP, never a silent default-tier run', async (t) => {
@@ -1716,7 +1716,7 @@ test('P: step.model with NO providerFor is a STOP, never a silent default-tier r
     schema: 'plan-v1',
     steps: [{
       id: 'write-test', action: 'Write the test.',
-      tools: ['write'], rounds: 6, target: 'tests/test_x.mjs', model: 'haiku',
+      tools: ['write'], rounds: 6, target: 'tests/test_x.mjs', model: 'sonnet',
       exit: [{ type: 'tree-changed', scope: 'tests/**' }],
     }],
   });

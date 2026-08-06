@@ -80,8 +80,10 @@ const STRIKE_LIMIT = 2;
 
 const arg = (/** @type {string} */ n) => { const i = process.argv.indexOf(`--${n}`); return i === -1 ? null : (process.argv[i + 1] ?? ''); };
 // --model picks the DEFAULT worker tier (runner territory — the spec names no model, so
-// the signed hash is unaffected). Tier names, not model ids: the same closed menu the
-// planner's per-step `model` field uses. haiku takes no output_config.effort
+// the signed hash is unaffected). Tier names, not model ids. This map is the OPERATOR's
+// and is deliberately WIDER than the planner's menu: since 2026-08-06 `STEP_MODELS` is
+// sonnet-only (the haiku attribution probe — see src/plan.js), so a PLAN can no longer
+// say haiku while `--model haiku` still can. haiku takes no output_config.effort
 // (provider-gated, battery rule) — nothing to gate yet since neither tier sets effort.
 // PRD v1.36 floor: the drafter/default tier is sonnet MINIMUM — measured, a haiku
 // drafter died plan-red twice on the same rejection (ms7gne7s). `--model haiku` runs
@@ -310,10 +312,11 @@ if (dead) {
 
 const approvals = [{ specHash, signer: process.env.USER ?? 'human', ts: new Date().toISOString() }];
 const provider = new AnthropicProvider({ apiKey, model: MODEL });
-// P: the per-step model-tier factory. The TIER menu is signed in the plan schema
-// (STEP_MODELS); the tier->model mapping is the RUNNER's territory, here. haiku
-// takes no output_config.effort (provider-gated, battery rule) - nothing to gate
-// yet since neither tier sets effort params.
+// P: the per-step model-tier factory. The TIER menu a PLAN may name is signed in the
+// plan schema (STEP_MODELS — sonnet-only since the 2026-08-06 haiku attribution probe);
+// the tier->model mapping is the RUNNER's territory, here, and keeps haiku for the
+// operator's own --model knob. haiku takes no output_config.effort (provider-gated,
+// battery rule) - nothing to gate yet since neither tier sets effort params.
 const TIER_MODELS = DEFAULT_TIER_MODELS;
 /** @type {Record<string, any>} */
 const tierCache = {};

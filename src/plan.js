@@ -102,8 +102,28 @@ const STEP_FIELDS = ['id', 'action', 'tools', 'rounds', 'target', 'exit', 'model
  * construction — the agent picks a tier, never names an arbitrary model string
  * (the tier→model mapping and any effort params are the RUNNER's, per provider).
  * opus is deliberately absent: reserved for fresh builds hamr explicitly assigns,
- * never plan-selectable. */
-export const STEP_MODELS = Object.freeze(['sonnet', 'haiku']);
+ * never plan-selectable.
+ *
+ * 2026-08-06 — haiku dropped, on hamr's order: "haiku should be dropped to see if
+ * it passes, if it's agent poor work or harness, like always." This is a REVERSIBLE
+ * ATTRIBUTION PROBE, not a finding that haiku is incapable. What the $0 archive read
+ * (186 spines / 71 accepted plans / 255 steps) actually shows is a CONFOUND, in both
+ * directions: only 20 steps ever declared a tier at all — haiku 12 (9 of them on a
+ * REPLANNED plan, 6 the LAST step of their plan, bounds 3–12 rounds, 2 ever green)
+ * against explicitly-declared sonnet 8 (bounds 14–32, 5 green). The planner picks
+ * haiku for steps it judges mechanical, and replanned steps sit on runs already in
+ * trouble, so neither column is a controlled read. All three bareagent-u runs of
+ * 2026-08-06 tiered the REPLANNED step down (haiku/6, haiku/8, haiku/12) and all
+ * three failed, against sonnet initial steps at 30–40 rounds — a confound sitting
+ * on the programme's most recent capability read. Removing the tier is how it gets
+ * attributed: with only one tier expressible, a still-failing replan is agent or
+ * harness, not the tier.
+ *
+ * The `model` FIELD and its validator branch stay: a one-entry menu means a plan (or
+ * a stored bridge) declaring `model:"sonnet"` still validates, and restoring haiku is
+ * a one-token edit. This narrows only what the AGENT may express — `--model haiku`
+ * remains the OPERATOR's probe knob (PRD v1.36), untouched in the runner scripts. */
+export const STEP_MODELS = Object.freeze(['sonnet']);
 const EXIT_FIELDS = {
   'artifact-written': ['type', 'path', 'pattern'],
   'tree-changed': ['type', 'scope'],
