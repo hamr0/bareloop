@@ -100,6 +100,20 @@ feature lands, **patch** = docs, fixes, scaffolding.
   so an integrating agent reading it would have drafted a plan that reds. Both now name the one-entry
   menu and say why it is one entry.
 
+### Fixed
+- **A locked-VERDICT `request-red` no longer files as a bare-agent upstream ask** (`src/job.js`,
+  `src/ledger.js`). `classifyIncidents` hardcoded `lib: 'bare-agent'` for every `request-red`, but the
+  code covers two territories: a locked TOOL verb (bare-agent, the original case) and a locked VERDICT
+  type (`soft-green`/`hitl`) — demand against bareloop's OWN `VERDICT_TYPES` menu, live-misfiled for
+  every `LOCKED_VERDICTS` declaration (the BA-2 misattribution class). Per the typed-lib rule the
+  territory is now stamped at the EMIT site (`Red` gains `lib?`; `verdictType` → `bareloop`, `tools` →
+  `bare-agent`) and the ledger reads it, keeping the hardcode only as the pre-field legacy-spine
+  fallback (zero archived rows carry the code, verified). The `suggestedAsk` template renders the
+  stamped target, so a bareloop-catalogue refusal can never seed a bare-agent ask; D13's genre refusals
+  (close-authoring design record) route by stamping their own lib with no ledger change. 5 new
+  failing-first tests; `capability-gap` still hardcodes bare-agent — flagged, structurally unreachable
+  today (a validation red returns before any provider call; the module header says so).
+
 ### Added
 - **A SECOND variance stop can earn ONE more replan — granted by the ARBITER, on a mechanical
   reading** (F85, C). A second `step-variance` after the one-replan ceiling was spent used to be a
