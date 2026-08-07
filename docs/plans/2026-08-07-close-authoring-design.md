@@ -325,62 +325,196 @@ recorded as known-missing rather than discovered later. What changes in the plan
 ## Addendum — 2026-08-07, D11–D13 (the second-pass gaps, closed) + softgreen/hitl forward-compat
 
 Second adversarial pass over this record found three inconsistencies BETWEEN decisions (none
-reversing one). hamr approved all three proposals in-turn ("yes, write d11-d13").
+reversing one). hamr approved all three proposals in-turn (*"yes, write d11-d13"*).
+
+**This addendum was then re-derived against source**, and the first drafting was wrong in three
+places, each corrected below and named where it sits: the seed-verdict read is already a per-run
+step rather than becoming one (D12); the LOCKED_VERDICTS pattern refuses at VALIDATION, not at
+runtime (point 2); and MED-1's resolved-spec rule does **not** make a catalogue widening flip an
+enumerated close's hash — it bites on the opposite shape (point 3).
 
 ### D11 — the scout looks, the author writes, neither acts
 
-Resolves the D3 ↔ Gate-1-Result-5 contradiction (the authoring call is toolless, yet
-repo-derived facts like `MYPYPATH` and pytest flags are load-bearing).
+Resolves the D3 ↔ Gate-1-Result-5 contradiction: D3 says *"the authoring call gets no tools at
+all"*, yet Result 5's facts are load-bearing and none of them is derivable from an interview
+answer — `MYPYPATH` on the spawner close (`u-spawner-close.mjs:119-130`, without which mypy
+resolved sibling imports to a *different checkout* and fixes were graded against unedited
+source), pytest `-ra` and `-p no:cacheprovider` (`:150`), `NO_COLOR`, per-stage timeouts,
+`maxBuffer`.
 
-A separate bounded READ-ONLY scout — the plan scout's pattern, reused — inspects the repo
-first and emits a **facts object** (runner, flags, env needs, counts). The authoring call
-receives that object and stays toolless. One looks, one writes, neither acts. Where no repo
-exists the scout is skipped and the facts object is empty — the interview still completes
-(D1).
+**Resolution.** A separate bounded READ-ONLY scout inspects the repo first and emits a **facts
+object** (runner, flags, env needs, paths, counts). The authoring call receives that object and
+stays toolless. One looks, one writes, neither acts.
+
+**What transfers from the plan scout, by name** (`src/planrun.js:41-62`, `src/job.js:537-541`):
+a hard round bound (`SCOUT_ROUNDS` 8); write-class and store-class verbs filtered out of the
+menu, so the survey is read-only by construction and not by promise; an output cap
+(`SCOUT_BLOB_MAX`); F59's reserved toolless final round (a scout that spends every round on
+tools otherwise returns nothing); and `SCOUT_MIN_BYTES`, below which a survey is treated as
+**ABSENT, not empty**.
+
+**What does NOT transfer, stated rather than assumed.** The plan scout derives its menu from a
+*signed* `tools` ceiling and runs inside a fenced workdir. The authoring scout runs at job
+creation, before any spec exists — there is no signed ceiling and no fence to derive from, so
+its grant is fixed by us and is not spec-authorable. That is the same arbiter line as everywhere
+else, arriving one step earlier than usual.
+
+**F59 restated in the facts-object shape, because this is where it bites hardest.** An empty
+`{}` must read as *"the scout did not complete"*, never as *"no special facts are needed"*. The
+plan scout's version of that mistake cost a survey; this one lands in a SIGNED artefact — a
+missing `MYPYPATH` becomes a close that grades the wrong checkout, signed by a user who could
+not have known. The catch is D9.3: the seed-verdict read runs the authored stages against the
+real patient before the signature, and a close built on absent facts does not survive it.
+
+Where no repo exists the scout is skipped and the facts object is **empty by declaration** — a
+distinct state from empty-by-failure. The interview still completes (D1); what such a job can
+actually close is D13.
 
 ### D12 — the close stores the COUNTING RULE, never the number
 
-Resolves the D8 ↔ repeated-jobs contradiction. bareloop's premise is repeated tasks; HEAD
-moves between runs, so a baseline frozen at signing (`TESTS_MIN 1044`) judges run 5 against
-run 1's tree.
+Resolves the D8 ↔ repeated-jobs contradiction. bareloop's premise is repeated tasks; HEAD moves
+between runs, so a baseline frozen at signing judges run 5 against run 1's tree. The hand-written
+closes are explicit about this: `u-bareagent-close.mjs` hardcodes `SEED_REF` (`:27`),
+`OUTSIDE_MAX 67` (`:30`) and `TESTS_MIN 1044` (`:31`). They are one-experiment closes and that
+shape is what D12 retires.
 
-The close declares *how to measure* ("count executed tests; must not drop from this run's
-seed"), and every run measures fresh at its own seed. What is signed and frozen is the RULE;
-the number is re-derived per run by the same seed-verdict read (D9.3), which becomes a
-per-run step, not a signing-time-only step. F6 holds: a seed measurement that fails is an
-instrument stop, never a defaulted 0.
+**The close declares *how to measure* — "count executed tests; must not drop from this run's
+seed" — and every run measures fresh at its own seed.** What is signed and frozen is the RULE.
 
-The hand-written closes hardcode `SEED_REF` and the numbers because they are one-experiment
-closes; that shape is recorded here as the thing D12 retires.
+**Correction to the first drafting: the seed-verdict read does not "become" a per-run step. It
+already is one.** `runPlan` runs the close precheck (`0a`, `close-precheck`) and then preflights
+every offered stage against the unchanged tree (`0b`, `check-preflight` — *"$0, deterministic"*,
+before any tokens), and Rule A-v2's `seedRed` fact is read from exactly that preflight
+(`src/planrun.js:734-793`, `src/plan.js:281-284`). What D12 changes is the DIRECTION of the
+number: the preflight stops merely reading a verdict against a frozen constant and starts
+**minting the baseline the run is later graded against**.
+
+**One concrete requirement today's preflight does not meet, named here so it is designed rather
+than discovered.** `checkMenu` filters `offer:false` (`src/job.js:412-415`), and the grading
+stage is `offer:false` per spec — so a non-offered stage is never preflighted and would mint no
+baseline. The precheck alone cannot supply the gap: it is first-red-wins and every shipped close
+opens with `changed-from-seed`, which is red at its own seed by construction (the runner says so
+in as many words at `planrun.js:771-777`). So D12's baseline read must cover EVERY stage, offered
+or not — a widening of `0b`, not a reuse of it.
+
+**F6 shape holds unchanged.** A baseline that cannot be measured is an instrument stop — exit 97
+with `judged` deliberately withheld, the contract the hand-written closes already implement
+(`u-bareagent-close.mjs:48-50`) — never a defaulted 0.
+
+D12 does **not** close D8 (§5 item 5 stands, still ASSISTANT-PROPOSED). It removes what made D8
+risky: whatever the seed turns out to be, the numbers are derived from it rather than asserted
+against it.
 
 ### D13 — v1 has ONE genre, confirmed, with honest refusal
 
-Resolves the D5 dependency on undesigned genre detection. v1 supports exactly one genre
-(TYPES). The interview CONFIRMS it ("this looks like a type-fixing job, correct?") — it never
-guesses. Any other answer gets "we can't run this kind yet" and stops: the `request-red`
-admission path, so every refusal is counted demand evidence, never a silent drop. A genre
+Resolves the D5 dependency on undesigned genre detection. v1 supports exactly one genre (TYPES).
+The interview **CONFIRMS** it (*"this looks like a type-fixing job, correct?"*) — it never
+guesses. Any other answer gets *"we can't run this kind yet"* and stops, on the `request-red`
+admission path, so every refusal is counted demand evidence and never a silent drop. A genre
 classifier is designed when a second genre exists to classify.
 
-Also recorded: non-repo jobs (doc, website) cannot run the precheck or the seed-verdict read;
-they are softgreen/hitl territory and OUT of v1 — stated here rather than left implied.
+**One thing the refusal path needs before it is used this way.** `request-red` exists and carries
+a structured `verb` the ledger keys on rather than prose (`src/job.js:126`, `:490`;
+`src/ledger.js:162-165`) — that half is sound. But `classifyIncidents` files every request-red
+under `lib: 'bare-agent'`, and the `ASKS` template renders it as an upstream-ask seed
+(`src/ledger.js:122`). A genre refusal, a locked verdict class, or a locked kind is demand
+against **bareloop's own catalogue**, not a bare-suite gap; filing it against bare-agent is the
+BA-2 misattribution the typed-`lib`-at-the-throw-site rule exists to prevent, and it contradicts
+`UPSTREAM-ASKS.md`'s own opening rule that a locked-but-exists request-red never becomes an entry.
+The defect is already live for `LOCKED_VERDICTS` today. Named here, not fixed here: the
+close-authoring refusal stamps its own `lib` at the emit site.
+
+**Non-repo jobs, stated rather than implied — and sharper than "cannot run the precheck".** D1's
+*"a repo is never a precondition"* holds for the INTERVIEW. It does not hold for D9's validity
+gates, all three of which rest on a runnable patient with a git seed: the precheck spawns commands
+in a workdir, and the changed-set primitive (Result 3.3) is `git diff <seed>` plus untracked
+files. A doc or website job has no seed and no changed set, so nothing deterministic can be
+measured against it — it is softgreen/hitl territory, OUT of v1, refused on the same request-red
+path.
 
 ### Forward-compat for softgreen/hitl (decided now because it is cheap now)
 
-1. **The D4 classifier ships IN v1**, even though v1 admits only green. It must be able to
-   say "this is a softgreen/hitl job" and refuse honestly — misclassifying one as green would
-   author a fake-deterministic close (the laundering the close-hierarchy guard exists for).
+1. **The D4 classifier ships IN v1**, even though v1 admits only green. It must be able to say
+   "this is a softgreen/hitl job" and refuse honestly — misclassifying one as green would author
+   a fake-deterministic close, which is precisely what the two laundering guards already in the
+   tree exist to stop (`CLASS_BY_CLOSE` and `CLASS_BY_VERDICT`, `src/job.js:28`, `:96`,
+   `:506-509`: a rubric can never claim hard). A classifier that resolves a judgment job to a
+   command close defeats those guards from ABOVE, by never letting the illegal pair be formed.
    Refusals ride the `request-red` path and are the admission evidence for building the class.
-2. **`judged-floor` and `human-confirms` enter the catalogue now as declared-but-locked
-   kinds** (the LOCKED_VERDICTS pattern): expressible in the declaration, refused at runtime.
-3. **Widening the kind menu is a re-sign event.** MED-1's resolved-spec rule applies: a new
-   kind changes the resolved menu, flips hashes, and is never a silent widening.
-4. **A hitl stage needs its own casualty split**: a human who has not answered is PENDING,
-   never red — the casualty-vs-evidence rule (F45) extended to people.
-5. **A judged stage's gap must be itemized and mechanical** (named items, counts), never one
-   prose paragraph — F38/F39: mechanical gaps convert, semantic gaps stall. This constrains
-   the judged-floor design before it exists.
 
-Sequencing unchanged from PRD v1.52 §6: close-authoring v1 (green) first. Within the
-follow-on rung, hitl likely lands BEFORE softgreen — hitl has no unsolved design (a human IS
-the verdict) and unblocks the dark litectx-maintainer job, while softgreen still needs the
-RSI judged-floor analog.
+2. **`judged-floor` and `human-confirms` enter the catalogue now as declared-but-locked kinds** —
+   the `LOCKED_VERDICTS` pattern, which refuses at **VALIDATION, before any tokens**
+   (`src/job.js:486-491`), not at runtime. (`close-unsupported` at `src/planrun.js:470-489` is the
+   *other* refusal and belongs to close TYPES; the first drafting conflated the two.) Disclosure ≠
+   admission: the kind is a named menu entry, so declaring it is counted demand rather than an
+   unknown-kind typo.
+
+   **With one structural constraint, or this point costs more than it buys.** Today a non-command
+   stage is inexpressible in `close[]` by SHAPE — `validateStagedClose` runs `predicateBody` over
+   every stage, and the source states the consequence directly: *"a rubric or hitl stage is
+   inexpressible here by construction, which is the hierarchy enforced by shape rather than by a
+   check"* (`src/job.js:442-444`). Admitting the two kinds must not trade that for a named red.
+   So the locked kinds live in the **authoring catalogue** — refused at authoring time, counted as
+   demand — while `close[]` on disk stays predicate-only and shape-enforced. Inexpressibility
+   where it is already free; a named red only where it is not.
+
+3. **Widening the kind menu is a re-sign event only where the close does not enumerate.**
+   Correction to the first drafting, which had this backwards. MED-1 hashes the RESOLVED spec
+   because an *omitted* `tools` means "whatever the menu currently holds", so a menu widening
+   silently grows an unchanged spec's ceiling; hashing the resolved form pins WHICH menu was
+   signed (`src/job.js:573-601`). A spec that named its ceiling explicitly is untouched by a
+   widening — deliberately, because its meaning did not move. The same holds for a close that
+   ENUMERATES its kinds: adding `harness-loop` to the catalogue must not, and does not, invalidate
+   a signature over a close that never referenced it.
+
+   **The rule that does transfer is the inverse, and it bites on D5.** The mandatory guards are
+   exactly the field a declaration is tempted to leave implicit ("the genre's guard set"). That is
+   the omitted-`tools` shape precisely: widening the guard set would then change what runs without
+   changing what was signed. So the authored close stores its guards **enumerated**, and if any
+   field of the declaration is ever omittable-with-a-default, the hash is taken over the RESOLVED
+   form. Re-authoring remains a new hash and a new signature under D6 regardless.
+
+4. **A hitl stage needs its own casualty split**: a human who has not answered is PENDING, never
+   red — F45's casualty-vs-evidence rule extended to people. There is already a home for it:
+   `hitl-close` is a named exclusion in the incident classifier, *"by design: a human is the
+   close"* (`src/ledger.js:80`, `:134`), so a waiting human classifies to nothing rather than to a
+   bareloop bug. PENDING must also be distinct from the run's own outcomes: it is a pause with a
+   checkpoint — the wall-halt shape (PRD v1.40 §2, the stop IS the checkpoint) — never a red and
+   never a casualty.
+
+5. **A judged stage's gap must be itemized and mechanical** (named items, counts), never one prose
+   paragraph — F38/F39: mechanical gaps convert, semantic gaps stall. A judged stage inherits the
+   gap output contract (Result 3.2) like every other kind: `gapKeep`-prefixed lines, trims
+   announced never silent, no culprit named beyond what the instrument itself reports. This
+   constrains the judged-floor design before it exists.
+
+6. **A judged or human stage is not a free command — and two things this record currently assumes
+   rest on the close being free.** *(ARBITER TERRITORY — named here, PARKED for hamr, not
+   decided.)*
+
+   **(a) It breaks the seed-verdict read.** D9's whole validity story works because a stage is a
+   $0 deterministic command run against the unchanged tree — the runner says exactly that at the
+   preflight (`planrun.js:745-747`). A `judged-floor` stage at seed spends tokens and returns a
+   nondeterministic number, so "is this stage red at seed" has no stable answer; a
+   `human-confirms` stage at seed would have to ask a person at signing time. Whatever answers
+   D9.3 for those two kinds is undesigned, and D9.3 is also where Rule A-v2's `seedRed` fact and
+   (under D12) every baseline come from.
+
+   **(b) It breaks the budget identity.** `budgetUsd` meters worker rounds; nothing meters the
+   close, because until now the close cost nothing. Both time rulings are built on that: the wall
+   bounds the work and never the judgement, and hamr's own words when he gave the ruling were
+   *"run tests (free)"* (PRD v1.40 §1-2). F45's rule — a budget must fund the attempt PLUS its
+   close — was written when the close's half of that sum was zero. A judged close spends provider
+   money the wallet does not see, which lands directly on the advertised-equals-enforced line.
+
+   Both halves are budget and close semantics, so neither is settled here. Stating them now is
+   what keeps the softgreen rung from opening on a discovery.
+
+**Sequencing.** Unchanged from PRD v1.52 §6: close-authoring v1 (green) is the next rung and
+softgreen + hitl follow it.
+
+**Within that follow-on rung, hitl lands BEFORE softgreen** *(ASSISTANT-PROPOSED — the PRD orders
+the rungs, not their internals; this ordering is not hamr's ruling)*. hitl has no unsolved design
+question — a human IS the verdict — and it unblocks the `litectx-maintainer` job, dark since
+`507adbb`. softgreen still needs the RSI judged-floor analog (§4, §5 item 2), and now also owes
+answers to point 6.
