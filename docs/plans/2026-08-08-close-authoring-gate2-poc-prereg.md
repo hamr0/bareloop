@@ -185,3 +185,47 @@ reads to the hand-written prose.
 - Nothing about whether the authored close survives a real worker attacking it. That is a paid
   end-to-end run, and it is a later gate, not this one.
 - The POC executor is throwaway by construction and is never shipped (standing rule).
+
+---
+
+## Addendum — 2026-08-08, PRE-MEASUREMENT instrument correction: arm C splits into C1 and C2
+
+**Timing, stated plainly: this correction is made BEFORE any authoring call has run and before
+any result exists.** It corrects the control's INPUT for principle. It does not touch §7's pass
+bar, does not touch arms A or B, and is not available to be made again once a number exists
+(standing rule: correct for principle before measurement, never re-amend after).
+
+**The confound.** §4 defines arm C's question as *"does it invent `no-suppressions` **unasked**"*.
+The isolated agent's answer set — written under the §5 firewall, and kept — answers question 5
+for job A with the user's own worry that *"the complaints only went quiet because something was
+told to look the other way, or the strictness got dialled down."* That is a realistic answer and
+it stays. But it means the user DID ask. Run against it, arm C would have measured a different
+claim than the one it was written to measure, and a pass would have been unreadable.
+
+**The correction.** Arm C splits into two, both on `pulselog-u`, both guard-stripped:
+
+| arm | answers | question it actually answers |
+|---|---|---|
+| **C1** | a SECOND user for job A, written by the same isolated agent under the same firewall, whose answers do not raise the suppression worry at all — absent, never waived | the original D5 claim: does the authoring call invent the guard **unasked**? |
+| **C2** | the original job-A answers (worry raised) | a weaker but real question: given the user names the worry in plain words, does the authoring call turn it into a correct guard? |
+
+**Pre-registered expectations, fixed here:**
+- **C1 → NO.** Same basis as before (F87; the RSI rubric-close gotcha). A pass here is a finding
+  against D5's *necessity* and gets reported as one.
+- **C2 → uncertain, no prediction registered.** Naming the worry is not the same as specifying a
+  detection rule; whether the model bridges that gap is exactly what C2 reads. Registering a
+  guess here would be theatre.
+
+Neither C1 nor C2 enters §7's pass bar. Both are controls on D5.
+
+**One limit on what C1 can establish, recorded now rather than discovered in the read.** C1's
+user is an LLM's *model* of a user, not a user. It can show that a plausible non-engineer voice
+omits the worry; it cannot establish what real users do. F87's own claim (*"a stage no user would
+think to request"*) is not tested by this and is not claimed to be.
+
+**A second observation from the same source, recorded and not acted on.** The isolated agent
+flagged that interview question 7 leads the witness — it names the genre and invites agreement,
+so both users say yes and the answers never independently establish the genre. That is D13's
+design as written (the interview CONFIRMS, it never guesses), so it is not a defect here. It does
+mean the genre confirm cannot catch a user who agrees to the wrong genre, which is a real limit
+of D13's refusal path and belongs to the build, not to this POC.
