@@ -62,7 +62,7 @@
 import { spawn } from 'node:child_process';
 import { readFile, stat, mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, dirname, sep } from 'node:path';
+import { join, sep } from 'node:path';
 import { globToPrefix } from './validate.js';
 import { CLOSE_ENV_DENY } from './ralph.js';
 

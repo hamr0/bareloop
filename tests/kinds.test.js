@@ -640,10 +640,18 @@ test('the stage child never sees the operator\'s credentials (CLOSE_ENV_DENY), a
 });
 
 test('NODE_TEST_CONTEXT never reaches the child — inherited, a `node --test` stage silently no-ops into a fake green', async (t) => {
+  // This assertion is only worth anything while the host runner actually
+  // SETS the variable; if it ever stops, the test must red rather than pass
+  // vacuously (a guard built to prove failure is possible has to be checked
+  // for its own inertness).
+  assert.ok(process.env.NODE_TEST_CONTEXT, 'the host runner no longer sets NODE_TEST_CONTEXT — this test can no longer fail');
   const r = makeRepo(t, { 'a.js': 'a\n' });
+  // the marker is ASSEMBLED at runtime: the gap echoes the command line, so a
+  // literal answer sitting in argv would satisfy the match whatever the child
+  // saw — the whole string `SEEN=none` exists only if the child printed it
   const res = await runStage(
-    { name: 'probe', kind: 'command-exit', params: { cmd: 'node', args: ['-e', "process.stdout.write(String(process.env.NODE_TEST_CONTEXT ?? 'absent'))"], expectExit: 1 } },
+    { name: 'probe', kind: 'command-exit', params: { cmd: 'node', args: ['-e', "process.stdout.write('SEEN=' + String(process.env.NODE_TEST_CONTEXT ?? 'none'))"], expectExit: 1 } },
     ctxFor(r),
   );
-  assert.match(res.gapLines.join('\n'), /absent/);
+  assert.match(res.gapLines.join('\n'), /SEEN=none/);
 });
