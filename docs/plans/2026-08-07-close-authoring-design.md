@@ -319,3 +319,68 @@ recorded as known-missing rather than discovered later. What changes in the plan
 - The one-population law (Result 4) becomes an authoring-time validation rule, in the same
   family as Rule A-v2: mechanically enforced, stated in the authoring prompt from the same
   facts object the validator judges.
+
+---
+
+## Addendum — 2026-08-07, D11–D13 (the second-pass gaps, closed) + softgreen/hitl forward-compat
+
+Second adversarial pass over this record found three inconsistencies BETWEEN decisions (none
+reversing one). hamr approved all three proposals in-turn ("yes, write d11-d13").
+
+### D11 — the scout looks, the author writes, neither acts
+
+Resolves the D3 ↔ Gate-1-Result-5 contradiction (the authoring call is toolless, yet
+repo-derived facts like `MYPYPATH` and pytest flags are load-bearing).
+
+A separate bounded READ-ONLY scout — the plan scout's pattern, reused — inspects the repo
+first and emits a **facts object** (runner, flags, env needs, counts). The authoring call
+receives that object and stays toolless. One looks, one writes, neither acts. Where no repo
+exists the scout is skipped and the facts object is empty — the interview still completes
+(D1).
+
+### D12 — the close stores the COUNTING RULE, never the number
+
+Resolves the D8 ↔ repeated-jobs contradiction. bareloop's premise is repeated tasks; HEAD
+moves between runs, so a baseline frozen at signing (`TESTS_MIN 1044`) judges run 5 against
+run 1's tree.
+
+The close declares *how to measure* ("count executed tests; must not drop from this run's
+seed"), and every run measures fresh at its own seed. What is signed and frozen is the RULE;
+the number is re-derived per run by the same seed-verdict read (D9.3), which becomes a
+per-run step, not a signing-time-only step. F6 holds: a seed measurement that fails is an
+instrument stop, never a defaulted 0.
+
+The hand-written closes hardcode `SEED_REF` and the numbers because they are one-experiment
+closes; that shape is recorded here as the thing D12 retires.
+
+### D13 — v1 has ONE genre, confirmed, with honest refusal
+
+Resolves the D5 dependency on undesigned genre detection. v1 supports exactly one genre
+(TYPES). The interview CONFIRMS it ("this looks like a type-fixing job, correct?") — it never
+guesses. Any other answer gets "we can't run this kind yet" and stops: the `request-red`
+admission path, so every refusal is counted demand evidence, never a silent drop. A genre
+classifier is designed when a second genre exists to classify.
+
+Also recorded: non-repo jobs (doc, website) cannot run the precheck or the seed-verdict read;
+they are softgreen/hitl territory and OUT of v1 — stated here rather than left implied.
+
+### Forward-compat for softgreen/hitl (decided now because it is cheap now)
+
+1. **The D4 classifier ships IN v1**, even though v1 admits only green. It must be able to
+   say "this is a softgreen/hitl job" and refuse honestly — misclassifying one as green would
+   author a fake-deterministic close (the laundering the close-hierarchy guard exists for).
+   Refusals ride the `request-red` path and are the admission evidence for building the class.
+2. **`judged-floor` and `human-confirms` enter the catalogue now as declared-but-locked
+   kinds** (the LOCKED_VERDICTS pattern): expressible in the declaration, refused at runtime.
+3. **Widening the kind menu is a re-sign event.** MED-1's resolved-spec rule applies: a new
+   kind changes the resolved menu, flips hashes, and is never a silent widening.
+4. **A hitl stage needs its own casualty split**: a human who has not answered is PENDING,
+   never red — the casualty-vs-evidence rule (F45) extended to people.
+5. **A judged stage's gap must be itemized and mechanical** (named items, counts), never one
+   prose paragraph — F38/F39: mechanical gaps convert, semantic gaps stall. This constrains
+   the judged-floor design before it exists.
+
+Sequencing unchanged from PRD v1.52 §6: close-authoring v1 (green) first. Within the
+follow-on rung, hitl likely lands BEFORE softgreen — hitl has no unsolved design (a human IS
+the verdict) and unblocks the dark litectx-maintainer job, while softgreen still needs the
+RSI judged-floor analog.
