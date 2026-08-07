@@ -594,7 +594,11 @@ function readGradeSeed(seen) {
  * **The declared fold, not a re-derivation.** A restarted try's own `try-start`
  * carries the fold it inherited (`priorSpentUsd`/`priorWallMs`), so a resume OF a
  * resume adds only its own new rounds. Re-deriving from the whole file would bill an
- * abandoned attempt twice.
+ * abandoned attempt twice. The REPLAN ledger (`priorReplans`/`priorReplanGrantUsed`)
+ * folds on this same mechanism and deliberately not on `readGradeSeed`'s: a grade seed
+ * feeds a readout, so its documented one-leg-per-resume shortening can only under-claim
+ * a direction, while an under-claimed CEILING is a refilled allowance and every kill
+ * would buy one (PRD v1.12 — the replan bound is the RUN's).
  *
  * **KNOWN LIMIT, stated rather than discovered later.** A call that was killed BEFORE it
  * returned left no event at all — no `worker-round`, no `selection-result` — so money it
@@ -688,6 +692,19 @@ export function readResume(events, { deathAt = null, direct = false, resumableOu
     // declaration existed, or a try nobody resumed — both are honestly zero.
     declaredRounds: !('priorRounds' in ev) ? 0
       : (typeof ev.priorRounds === 'number' && Number.isFinite(ev.priorRounds) && ev.priorRounds >= 0 ? ev.priorRounds : null),
+    // the REPLAN ledger this attempt was already carrying, on the same declared-fold
+    // mechanism and with the same `> 0` belt as the money. It has to fold this way
+    // rather than the grade seed's way: `readGradeSeed`'s chain shortens by one leg
+    // per resume, which under-claims — harmless for a readout, and for a CEILING an
+    // under-claim IS a refilled allowance, one per kill (PRD v1.12).
+    declaredReplans: typeof ev.priorReplans === 'number' && Number.isFinite(ev.priorReplans) && ev.priorReplans > 0 ? Math.floor(ev.priorReplans) : 0,
+    // the F85-C latch rides BESIDE the count, never derived from it: a chain can have
+    // spent the ordinary ceiling with the arbiter's one extra still unearned, and
+    // deriving one from the other would collapse those two states into one
+    declaredGrantUsed: ev.priorReplanGrantUsed === true,
+    // this window's OWN replans, counted from the records the runner emits — the same
+    // `replan` event a human reads, so the ledger and the log cannot disagree
+    windowReplans: 0, windowGrantUsed: false,
     roundsUsd: 0, roundsComplete: true, r1Written: false, jobEnd: null,
     /** @type {any[]} the window's own events, so the SAME `readTry` the live loop uses
      * reads a graded-but-unrecorded try — never a second reader spelling it differently */
@@ -745,6 +762,16 @@ export function readResume(events, { deathAt = null, direct = false, resumableOu
       open.jobEnd = ev;
     } else if (ev.type === 'bridge-write') {
       open.r1Written = true;
+    } else if (ev.type === 'replan') {
+      // ONE record per replan the runner drafts, so counting them IS the leg's ledger
+      // — never re-derived from `plan-accepted` (a resumed leg emits one of those for a
+      // plan it RELOADED, which would read as a redraft nobody paid for).
+      open.windowReplans += 1;
+      // the arbiter stamps `granted` only on the extra it granted past the ordinary
+      // ceiling, and stamps nothing on the ordinary one — so PRESENCE is the whole
+      // signal, and reading it by presence keeps this reader honest about a reading it
+      // does not itself make (never re-deciding whether the trend deserved it).
+      if (ev.granted !== undefined) open.windowGrantUsed = true;
     } else if (ev.type === 'try-end') {
       completed.push({ ...ev, seq: undefined, ts: undefined, inherited: true });
       if (open.bridge) tried.push(open.bridge);
@@ -815,6 +842,19 @@ export function readResume(events, { deathAt = null, direct = false, resumableOu
         // restart already re-graded that tree. Counting both would enter the same
         // reading twice and flatten a chain that moved.
         grades: readGradeSeed(open.seen),
+        // the REPLAN ledger, folded like the money one line below and deliberately
+        // NOT like the grades one line above. A grade seed feeds a READOUT and its
+        // documented shortening chain can only under-claim a direction; this feeds a
+        // BOUND, where under-claiming is a refilled allowance and every kill would buy
+        // one (PRD v1.12: unlimited replanning launders thrash as adaptation). So it
+        // reads the declared fold plus THIS window's own records — the same arithmetic
+        // as `priorSpentUsd`, which is what makes a resume of a resume inherit leg 1.
+        //
+        // The abandoned windows are not read, for the money's exact reason: the
+        // restart DECLARED what it inherited, so counting the window it abandoned
+        // would charge the chain twice for one leg's replans.
+        replans: open.declaredReplans + open.windowReplans,
+        replanGrantUsed: open.declaredGrantUsed || open.windowGrantUsed,
         priorSpentUsd: open.declaredSpentUsd + open.roundsUsd,
         // F83 — was that fold EXACT? Three sources, because `runJob` decides the same
         // question from more than this window can see (src/run.js: `!unpriced &&
@@ -1017,7 +1057,7 @@ export async function runReuse(opts) {
   const runid = opts.runid ?? Date.now().toString(36);
   const resume = isObj(opts.resume) ? /** @type {any} */ (opts.resume) : null;
   /** a try that inherits nothing: the ordinary, non-resumed attempt */
-  const NO_PRIOR = { spentUsd: 0, wallMs: 0, spendComplete: true, rounds: /** @type {number|null} */ (0), grades: /** @type {any[]} */ ([]) };
+  const NO_PRIOR = { spentUsd: 0, wallMs: 0, spendComplete: true, rounds: /** @type {number|null} */ (0), grades: /** @type {any[]} */ ([]), replans: 0, replanGrantUsed: false };
 
   /** @type {any[]} */
   const tries = [];
@@ -1113,7 +1153,7 @@ export async function runReuse(opts) {
 
   /** the shared per-try execution: run the job, read the spine, write the box (R1).
    * @param {any|null} bridge @param {number} n
-   * @param {{spentUsd: number, wallMs: number, spendComplete: boolean, rounds: number|null, grades: any[]}} [prior]
+   * @param {{spentUsd: number, wallMs: number, spendComplete: boolean, rounds: number|null, grades: any[], replans: number, replanGrantUsed: boolean}} [prior]
    *   RESUME — what a KILLED attempt of this same try already consumed, and what it
    *   already measured. Money and wall are FOLDED into the attempt (`runJob`'s own ledger
    *   and clock start partly spent) rather than shrinking the caps, so the signed per-try
@@ -1121,7 +1161,10 @@ export async function runReuse(opts) {
    *   way but on the ROW alone (nothing enforces a round bound here), and `null` — an
    *   attempt whose turns could not be counted — is reported, never folded. `grades` are
    *   the close readings that leg recorded, handed on as the run trend's BASELINES: they
-   *   feed the HALT READOUT alone and spend none of this attempt's bounds.
+   *   feed the HALT READOUT alone and spend none of this attempt's bounds. `replans` /
+   *   `replanGrantUsed` are the opposite kind of inheritance and sit here for that
+   *   contrast: they SPEND a bound (the plan flow's replan ceiling), because that ceiling
+   *   is the RUN's by doctrine and a fresh one per kill is the creep v1.12 forbids.
    * @param {any} [seed] RESUME (v2) — WHERE that attempt was killed (`readResume`'s
    *   `restart.seed`): the plan it accepted and the steps it finished. The fold says how
    *   much of the try's allowance is gone; this says how much of its WORK is done, so the
@@ -1142,6 +1185,15 @@ export async function runReuse(opts) {
       // means "a spine older than this field", and a reader that cannot tell that from a
       // predecessor's honest unknown would launder the unknown into a zero (F6).
       ...(resumed ? { priorSpentUsd: prior.spentUsd, priorWallMs: prior.wallMs, priorSpendComplete: prior.spendComplete, priorRounds: prior.rounds, resumedFrom: resume?.fromRunid ?? runid } : {}),
+      // the REPLAN ledger, declared on the same record and for the same reason as the
+      // money: the next reader adds only its own window's `replan` records to this
+      // number, so a chain of resumes folds once instead of restarting the ceiling at
+      // whichever leg it happens to be reading (PRD v1.12 — the bound is the RUN's).
+      // Declared independently of `resumed`, which is a MONEY/WALL test: a leg can
+      // replan without buying a round the fold would notice, and gating the ledger on
+      // the wallet would drop it exactly there. Only when there is one to state — a
+      // decorative zero is indistinguishable from a leg nobody folded.
+      ...(prior.replans > 0 ? { priorReplans: prior.replans, priorReplanGrantUsed: prior.replanGrantUsed } : {}),
       // WHERE it picks up, on the row's own record: a try that restarts at step 3 of 4 is
       // a materially different attempt from one that restarts at its beginning, and a
       // reader must not have to infer which happened from the absence of a scout.
@@ -1173,6 +1225,11 @@ export async function runReuse(opts) {
         // restarted leg would report `flat` on a run that was converging. Only when there
         // ARE grades: an empty array is the cold path, and the cold path stays identical.
         ...(prior.grades.length ? { resumeGrades: prior.grades } : {}),
+        // and the replan LEDGER. Same omission class as the two above, with a sharper
+        // cost: a grade seam that never arrives makes a readout say `flat`, while a
+        // ceiling that never arrives is spent by the dead leg and fresh in this one —
+        // a bound the operator signed, widened by a kill (PRD v1.12).
+        ...(prior.replans > 0 ? { resumeReplans: { count: prior.replans, grantUsed: prior.replanGrantUsed } } : {}),
         ...(seed ? { resumeSeed: seed } : {}),
         bridge,
       });
@@ -1446,6 +1503,12 @@ export async function runReuse(opts) {
         // this run make progress" and "is this loop out of ideas" are two questions,
         // and one instrument answering both is how they come to disagree.
         grades: Array.isArray(rs.grades) ? rs.grades : [],
+        // the replan LEDGER the chain has spent — belted like the money and NOT like
+        // the grades, because this one seeds a BOUND: a garbage or negative figure
+        // that read through as a widening is the ceiling being refilled by a corrupt
+        // spine (PRD v1.12). The latch rides beside the count, never derived from it.
+        replans: typeof rs.replans === 'number' && Number.isFinite(rs.replans) && rs.replans > 0 ? Math.floor(rs.replans) : 0,
+        replanGrantUsed: rs.replanGrantUsed === true,
       }
       : NO_PRIOR;
     const remainingCapUsd = envelope.perTryBudgetUsd - prior.spentUsd;

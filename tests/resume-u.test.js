@@ -140,6 +140,36 @@ test('§3 tripwire: the runner still HANDS the inherited grades to runJob, not j
     'and only when there ARE grades: an empty array is the cold path, and the cold path must stay byte-identical');
 });
 
+test('§3 tripwire: the runner HANDS the replan ledger over too — the ceiling is the RUN\'s, and this is the U path\'s only forwarder', () => {
+  // Same class as the tripwire above, with a sharper cost. An unforwarded grade seam
+  // makes a READOUT wrong; an unforwarded replan ledger makes a BOUND wrong — the leg
+  // opens with a ceiling the chain already spent, and PRD v1.12's "unlimited replanning
+  // launders thrash as adaptation" is refilled once per kill. This script is the U
+  // path's ONLY caller of runJob, so nothing else can catch it.
+  const src = readFileSync(RUNNER, 'utf8');
+  assert.match(src, /resumeReplans:\s*\{\s*count:\s*dead\.restart\.replans/,
+    'the ledger the reader computed must reach runJob — computed-but-undelivered is a ceiling that reads spent and behaves fresh');
+  assert.match(src, /grantUsed:\s*dead\.restart\.replanGrantUsed/,
+    'and the F85-C latch travels with it, or the arbiter\'s ONE extra becomes one per kill');
+});
+
+test('§3 the resume PREVIEW names the replan ceiling it inherits — the operator is signing a leg that may not be allowed to redraw its plan', () => {
+  // The preview is what hamr signs against, and an inherited ceiling changes what the
+  // dollars being authorized can buy: a leg opening with both replans spent cannot
+  // adapt its workflow at all, only exhaust the plan it reloads. Silence there reads
+  // as a fresh allowance, which is exactly the state this whole seam exists to deny.
+  const ev = haltedSpine();
+  const withReplans = ev.flatMap((e) => (e.type !== 'plan-accepted' ? [e] : [
+    e,
+    { type: 'replan', step: 'fix-types', trigger: 'cap-halt', replan: 1, ts: '2026-08-04T10:03:00.000Z', seq: 2.1 },
+    { type: 'replan', step: 'fix-types', trigger: 'step-variance', replan: 2, granted: 'converging', ts: '2026-08-04T10:04:00.000Z', seq: 2.2 },
+  ]));
+  const { code, out } = preview(['--resume', spineFile(withReplans)]);
+  assert.equal(code, 0);
+  assert.match(out, /replans  2 already spent by this run/, 'how many the CHAIN has spent, not how many this leg will get');
+  assert.match(out, /arbiter's one extra is spent too/, 'and that the F85-C grant is gone — the two are different allowances');
+});
+
 test('§3 the preview says so when there is NOTHING to inherit — silence would read as "no seam here"', () => {
   // the stock fixture's outer-close carries no gap at all, so no grade is readable
   const { code, out } = preview(['--resume', spineFile(haltedSpine())]);

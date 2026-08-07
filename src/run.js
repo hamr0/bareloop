@@ -116,6 +116,15 @@ async function primitiveSmoke(workdir) {
  *   chain, not just the leg: without them a leg that re-grades an unchanged tree reports
  *   `flat` — "revise the goal" — on a run that was converging when the money ran out.
  *   Counts and stage names only; no close bytes cross this seam. Absent is the cold path.
+ * @param {{count?: number, grantUsed?: boolean}|null} [opts.resumeReplans] RESUME — the
+ *   replan LEDGER the chain has already spent (`readResume`'s `restart.replans` /
+ *   `restart.replanGrantUsed`), forwarded to the plan flow, which seeds its ceiling with
+ *   it. Its sibling above feeds a READOUT; this one feeds a BOUND, and that is the whole
+ *   difference: `replanned`/`varianceGrantUsed` are locals in `runPlan`, so without this
+ *   every kill hands the next leg a fresh allowance of an allowance PRD v1.12 makes the
+ *   RUN's ("unlimited replanning launders thrash as adaptation"). It also rides onto this
+ *   run's `job-start` as `priorReplans`, the declared-fold precedent `priorSpentUsd`
+ *   already sets, so a resume OF a resume folds once. Absent is the cold path.
  * @param {boolean} [opts.layerRoot=false] Layer R (within-run ratchet) — shell
  *        territory, threaded to the plan flow. Defaults OFF
  *        (decided 2026-07-21): fixation is extinct on every current job (F41), so
@@ -128,7 +137,7 @@ async function primitiveSmoke(workdir) {
  *   'close-red' | 'close-unsupported' | 'recipe-stale' | 'pricing-red' | 'provider-red' |
  *   'interpreter-red' | 'cap-halt' | 'wall-halt' | 'step-stalled' | `step-red:<id>`
  */
-export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, layerRoot = false, bridge = null, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [] }) {
+export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, layerRoot = false, bridge = null, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null }) {
   // 0. the ledger's counters, declared FIRST so that every job-end — including
   // the pre-token reds below — can state a real figure. An omitted `spentUsd` is
   // not a zero: a consumer reads `undefined` and either crashes or launders it
@@ -204,6 +213,16 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
     // it inherited, and it is the only field that can carry it forward.
     ...(spentUsd > 0 || priorFloor ? { priorSpentUsd: spentUsd, priorSpendComplete: !priorFloor } : {}),
     ...(typeof priorWallMs === 'number' && Number.isFinite(priorWallMs) && priorWallMs > 0 ? { priorWallMs } : {}),
+    // the REPLAN ledger, on the same declaration and for the same reason — a chain of
+    // resumes must fold once. This is the DIRECT-spine half of it: `readResume`'s
+    // `direct` mode opens its one implicit window on `job-start` and reads the fold off
+    // these very fields, so a U-path run resumed twice inherits leg 1's replans rather
+    // than restarting the ceiling at leg 2's window (PRD v1.12). Emitted only when there
+    // is one — a decorative `0` is indistinguishable from a run nobody folded, and the
+    // grant latch travels beside the count rather than being derived from it.
+    ...(typeof resumeReplans?.count === 'number' && Number.isFinite(resumeReplans.count) && resumeReplans.count > 0
+      ? { priorReplans: Math.floor(resumeReplans.count), priorReplanGrantUsed: resumeReplans.grantUsed === true }
+      : {}),
   });
 
   // 2. known-answer smoke before tokens (A3: silent degradation throws nothing)
@@ -256,7 +275,7 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // accounts it natively (F12) and the job-end money contract is unchanged.
   {
     const outcome = await runPlan(job, {
-      workdir, provider, nativeProvider, providerFor, emit: meter, capRuns, ...(strikeLimit !== undefined ? { strikeLimit } : {}), closeTimeoutMs, layerRoot, bridge, priorWallMs, resumeSeed, resumeGrades,
+      workdir, provider, nativeProvider, providerFor, emit: meter, capRuns, ...(strikeLimit !== undefined ? { strikeLimit } : {}), closeTimeoutMs, layerRoot, bridge, priorWallMs, resumeSeed, resumeGrades, resumeReplans,
       remainingUsd: () => Math.min(shellCapUsd, job.budgetUsd - spentUsd),
       isUnpriced: () => unpriced, // F6: let the plan flow bail in-flight, not just after it returns
       spendComplete, // …and let its money-halt readout say whether the remaining it quotes is exact

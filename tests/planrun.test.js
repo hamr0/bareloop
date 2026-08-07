@@ -13,11 +13,14 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runPlan, planPrompt, closeGapBlock } from '../src/planrun.js';
-import { ralph, GAP_KEEP_TRIM_MARKER } from '../src/ralph.js';
+import { ralph, boundGap, GAP_KEEP_TRIM_MARKER } from '../src/ralph.js';
 import { validateJob } from '../src/job.js';
 import { StallError, MAX_STALLS } from '../src/stall.js';
 import { scriptedProvider, scriptedNativeFactory } from './helpers.js';
 import { scanSecrets } from '../src/validate.js';
+// the check gap's ONE ceiling — the backstop test below derives both arms from it
+// rather than respelling 12000, so a change to the constant moves the test with it
+import { CHECK_GAP_MAX } from '../src/exits.js';
 
 const tcall = (id, name, args) => ({ id, name, arguments: args });
 
@@ -1154,7 +1157,7 @@ const attempt = (wd, id, body) => [
  * the Nth judged exit the balance drops to `to`. Deterministic, and it cannot
  * silently retarget if the number of wallet reads changes (the F37 class).
  */
-async function countRun(wd, script, drains, { job, start = 1.5 } = {}) {
+async function countRun(wd, script, drains, { job, start = 1.5, over = {} } = {}) {
   job = job ?? COUNT_JOB(wd);
   const provider = scriptedProvider(script);
   const jv = validateJob(job);
@@ -1166,7 +1169,7 @@ async function countRun(wd, script, drains, { job, start = 1.5 } = {}) {
     if (type === 'exit-eval') { judged += 1; if (drains[judged] !== undefined) balance = drains[judged]; }
     return emit(type, data);
   };
-  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit: emit2, capRuns: 3, remainingUsd: () => balance });
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit: emit2, capRuns: 3, remainingUsd: () => balance, ...over });
   return { outcome, events, provider };
 }
 
@@ -1374,6 +1377,100 @@ test('F85-C: a second variance stop on a FLAT run stops exactly as it does today
   assert.equal(variances[1].trend, 'flat', 'the reading the grant is refused on');
   assert.equal(events.filter((e) => e.type === 'replan').length, 1, 'one replan, exactly as before this change');
   assert.equal(outcome, 'step-red:plan-b');
+});
+
+// ── THE REPLAN CEILING IS THE RUN'S, AND A RUN CAN SPAN LEGS ─────────────────
+//
+// `replanned`/`varianceGrantUsed`/`replans` are locals in `runPlan`, so before this
+// they were reborn on every call — and a resume IS another call. Measured on the
+// counting patient: leg 1 spent both replans and step-redded; leg 2, driven with the
+// checkpoint leg 1 left behind, replanned twice MORE. Two replans became four by
+// being killed once, which is the exact creep the latch exists to make impossible
+// ("unlimited replanning launders thrash as adaptation", PRD v1.12).
+//
+// The precedent copied is `resumeGrades` (the trend's baselines), and the reason the
+// two seeds differ is worth stating: src/trend.js deliberately does NOT seed the fix
+// loop's ITERATIONS from history, "because the leg's own bounds must not be spent by
+// history". A leg's attempt allowance is a LEG bound. The replan ceiling is not — it
+// is a RUN bound by doctrine, the same span the halt readout already asks about, so
+// the history is exactly what must be spent.
+const RESUMED_STEP = (id) => JSON.parse(COUNT_PLAN([{
+  id, action: 'Remove TODO markers from src/mod.mjs.', tools: ['write'], rounds: 6, target: 'src/mod.mjs',
+  exit: [{ type: 'tree-changed', scope: 'src/**' }, { type: 'check-passes', name: 'typecheck' }],
+}]));
+/** a resumed leg picking up `id` with nothing yet finished — the shape `readResume`
+ * returns when the kill landed inside the first step of the plan it had accepted */
+const resumedAt = (id) => ({ phase: 'step', plan: RESUMED_STEP(id), completedSteps: [], planSeq: 1 });
+
+test('resume: a leg whose predecessor SPENT the ceiling does not replan — the bound spans the chain (v1.12)', async (t) => {
+  const wd = makeCountingPatient(t, 30);
+  const { outcome, events } = await countRun(wd, [
+    ...attempt(wd, '1', todos(24)),
+    ...attempt(wd, '2', todos(15)),   // the meter fires at the head of attempt 3
+  ], { 2: 0.5 }, { over: { resumeSeed: resumedAt('plan-c'), resumeReplans: { count: 2, grantUsed: true } } });
+
+  // the meter DID fire — the refusal has to be the ceiling's, not a stop that never
+  // reached the decision (a negative for the wrong reason proves nothing)
+  assert.equal(events.filter((e) => e.type === 'variance').length, 1, 'the variance stop happened, so the replan decision really was reached');
+  assert.equal(events.filter((e) => e.type === 'replan').length, 0,
+    'the dead leg already spent both replans — a kill must not buy a fresh allowance');
+  assert.equal(outcome, 'step-red:plan-c', 'the stop rides out as the same step-red a third variance stop produces cold');
+});
+
+test('resume: a leg whose predecessor left the ceiling UNSPENT replans normally — the seed inherits a ledger, it does not disarm the mechanism', async (t) => {
+  const wd = makeCountingPatient(t, 30);
+  const { outcome, events } = await countRun(wd, [
+    ...attempt(wd, '1', todos(24)),
+    ...attempt(wd, '2', todos(15)),   // fire #1 → the ORDINARY replan, untouched by the seed
+    { text: COUNT_PLAN([{ id: 'finish', action: 'Remove the rest.', tools: ['write'], rounds: 4, target: 'src/mod.mjs', exit: [{ type: 'tree-changed', scope: 'src/**' }, { type: 'check-passes', name: 'typecheck' }] }]) },
+    ...attempt(wd, '3', todos(0)),
+  ], { 2: 0.5 }, { over: { resumeSeed: resumedAt('plan-c'), resumeReplans: { count: 0, grantUsed: false } } });
+
+  assert.equal(events.filter((e) => e.type === 'replan').length, 1,
+    'a resumed leg with the ceiling unspent replans exactly as a cold one does — this is the arm that can produce the negative');
+  assert.equal(outcome, 'green');
+});
+
+test('resume: the F85-C grant cannot be RE-EARNED by a resumed leg — the latch travels beside the count', async (t) => {
+  // Both arms inherit the ORDINARY ceiling as spent and hit the SAME converging
+  // variance stop, so they differ in exactly one bit: whether the dead leg had
+  // already been granted its one extra. Without the latch travelling, the two arms
+  // are indistinguishable and the grant is re-earnable once per kill.
+  const arm = async (/** @type {boolean} */ grantUsed) => {
+    const wd = makeCountingPatient(t, 30);
+    return countRun(wd, [
+      ...attempt(wd, '1', todos(24)),
+      ...attempt(wd, '2', todos(15)),   // the meter fires at the head of attempt 3
+    ], { 2: 0.5 }, { over: { resumeSeed: resumedAt('plan-c'), resumeReplans: { count: 1, grantUsed } } });
+  };
+
+  const unused = await arm(false);
+  assert.equal(unused.events.filter((e) => e.type === 'replan').length, 1,
+    'the grant is still there to be earned — the control that proves this test can produce both answers');
+  assert.equal(unused.events.find((e) => e.type === 'replan').granted, 'converging', 'and it is the arbiter\'s grant, not the ordinary ceiling');
+
+  const used = await arm(true);
+  assert.equal(used.events.filter((e) => e.type === 'variance').length, 1, 'the same stop, so the arms differ only in the inherited latch');
+  assert.equal(used.events.filter((e) => e.type === 'replan').length, 0,
+    'a leg cannot re-earn an extra its predecessor already spent — the ONE grant is the RUN\'s');
+  assert.equal(used.outcome, 'step-red:plan-c');
+});
+
+test('resume: plan-executed.replans is the CHAIN total, so a reader can see a ceiling no single leg spent', async (t) => {
+  const wd = makeCountingPatient(t, 30);
+  const { events } = await countRun(wd, [
+    ...attempt(wd, '1', todos(24)),
+    ...attempt(wd, '2', todos(15)),   // fire #1 on this leg → the ARBITER GRANT (the ordinary one is spent)
+    { text: COUNT_PLAN([{ id: 'finish', action: 'Remove the rest.', tools: ['write'], rounds: 4, target: 'src/mod.mjs', exit: [{ type: 'tree-changed', scope: 'src/**' }, { type: 'check-passes', name: 'typecheck' }] }]) },
+    ...attempt(wd, '3', todos(0)),
+  ], { 2: 0.5 }, { over: { resumeSeed: resumedAt('plan-c'), resumeReplans: { count: 1, grantUsed: false } } });
+
+  const replans = events.filter((e) => e.type === 'replan');
+  assert.equal(replans.length, 1, 'this leg drafted one replan — the leg count stays readable as the number of records');
+  assert.equal(replans[0].granted, 'converging', 'and it is the GRANT, because the ordinary ceiling was spent by the leg before it');
+  assert.equal(replans[0].replan, 2, 'the record numbers it within the RUN, not within the leg');
+  assert.equal(events.findLast((e) => e.type === 'plan-executed').replans, 2,
+    'and the chain total is on the record — otherwise every leg reports 1 and the run\'s two are invisible');
 });
 
 // ── F64: the wall clock's own stop must never be filed as a transport casualty.
@@ -3519,11 +3616,16 @@ const gapAttempt = (wd, id, body) => [
   { text: `attempt ${id} done` },
 ];
 
-test('F86 unit: closeGapBlock carries the gap VERBATIM, labelled as the close\'s own output', () => {
+test('F86 unit: closeGapBlock carries the gap VERBATIM, labelled as the step\'s own exit results', () => {
   const gap = 'check "typecheck" red: close stage "typecheck" failed:\nBAREAGENT red: tsc --strict reports 1 error(s) in src/recurse.js, src/loop.js\nBAREAGENT ' + MSHCPDG4_DETAIL + '\nBAREAGENT judged=1\n';
   const block = closeGapBlock(gap);
   assert.ok(block.includes(gap.trim()), 'every byte of the gap reaches the planner — not a summary, not a parse');
-  assert.match(block, /verification/i, 'and it is labelled as the verification\'s own output, not as the run\'s narration');
+  // this assertion used to read `/verification/` and to call the block the close's own
+  // output. That was the accuracy defect, not the fix: the block is the join of every
+  // failing EXIT detail, so on a step that wrote nothing it leads with the evaluator's
+  // own `tree-changed` prose. What must still hold is that it is labelled as the
+  // instruments' output rather than as the run's narration of the stop.
+  assert.match(block, /exits reported/i, 'labelled as the step\'s exit results, not as the run\'s narration');
   // the same carry for a close that names no file at all — a count close is not a
   // second format to handle, it is the same artifact handed over unchanged
   assert.ok(closeGapBlock('red: unit=0 tests executed, below the seed\'s 12').includes('unit=0 tests executed'),
@@ -3546,6 +3648,35 @@ test('F86 unit CONTROL: a gap that names NO file invents nothing — no path, no
   assert.doesNotMatch(block, /[\w.-]+\/[\w.-]+/, 'nothing path-shaped is manufactured out of a gap that named no file');
 });
 
+test('F86 unit: an ALREADY-BOUNDED gap passes through VERBATIM — the second envelope must not re-trim what the first deliberately rescued', () => {
+  // The real shape, not a synthetic one: `runClose` bounds the stage output with the
+  // stage's own `gapKeep` (both shipped closes cap at 120 red lines), and `evalExits`
+  // wraps THAT in `check "<name>" red: …`. So what reaches this helper has already
+  // survived one envelope built to preserve the failing NAMES — the mechanical gap
+  // F46's conversion mechanism feeds the worker. A second 400/1500 envelope over it
+  // deletes exactly those names again (F28 reintroduced), and src/exits.js states the
+  // rule in the same words for the same artifact one seam earlier.
+  const errs = Array.from({ length: 120 }, (_, i) => `FAILED tests/test_x.py::case_${String(i).padStart(3, '0')} - AssertionError`);
+  const raw = ['red: 120 test(s) now fail', ...errs, 'judged=1'].join('\n');
+  const inner = boundGap(raw, '^(FAILED|red)');
+  const rescued = errs.filter((e) => inner.includes(e));
+  assert.ok(rescued.length > 50, `the first envelope really did rescue a block of names (${rescued.length}) — otherwise this test guards nothing`);
+
+  // and the WORST case runClose can hand over still fits under the backstop, or the
+  // shipped path would start being re-bounded again without anything saying so (the
+  // blind-instrument class: a headroom claim nothing measures is a claim that rots the
+  // day boundGap's own caps move)
+  const worst = boundGap(Array.from({ length: 5000 }, (_, i) => `FAILED case_${i} ${'x'.repeat(180)}`).join('\n'), '^FAILED');
+  const treeChanged = '0 files changed under src/** — the tree is byte-identical to the step start (an identical re-write is not a change)';
+  assert.ok(`${treeChanged}\ncheck "suite-green" red: ${worst}`.length < CHECK_GAP_MAX,
+    `the largest gap the close path can produce, joined with its paired exit, still passes VERBATIM: ${worst.length} against a ${CHECK_GAP_MAX} backstop`);
+
+  const block = closeGapBlock(`check "suite-green" red: close stage "suite-green" failed:\n${inner}`);
+  const dropped = rescued.filter((e) => !block.includes(e));
+  assert.deepEqual(dropped, [],
+    'every name the close\'s own bound chose to keep reaches the replanner — a second envelope over a bounded artifact is a fidelity loss with an announcement on it, not a bound');
+});
+
 test('F86 unit: an over-long gap is CAPPED and every trim is ANNOUNCED (F28: silent truncation is the disease)', () => {
   // 120 red lines of 200 chars: past boundGap's envelope AND past the keep
   // block's 50-line cap, so BOTH announcements must appear.
@@ -3555,6 +3686,48 @@ test('F86 unit: an over-long gap is CAPPED and every trim is ANNOUNCED (F28: sil
   assert.match(block, /chars truncated/, 'the elision announces itself');
   assert.match(block, new RegExp(GAP_KEEP_TRIM_MARKER), 'and so does the keep-block cap — a cure that truncates silently is the disease');
   assert.match(block, /red: error 0 /, 'the RED lines survive the truncation (gapKeep), which is the point of reusing the bound');
+});
+
+test('F86 unit: the backstop sits on exits.js\'s OWN ceiling — under it verbatim, over it bounded, and the number is not respelled here', () => {
+  // Both arms are built FROM the shared constant rather than from a literal 12000: a
+  // hardcoded copy is a second answer to "how big may a check gap be", and the two
+  // seams would drift on exactly the property that matters. The pair also pins that
+  // the backstop is neither dead (over the line must still bound) nor an envelope
+  // (under it must not touch a byte).
+  const line = (/** @type {number} */ i) => `FAILED tests/test_x.py::case_${String(i).padStart(4, '0')} - AssertionError`;
+  const build = (/** @type {number} */ target) => {
+    let s = '';
+    for (let i = 0; s.length <= target; i += 1) s += `${line(i)}\n`;
+    return s;
+  };
+  const under = build(CHECK_GAP_MAX - 200).slice(0, CHECK_GAP_MAX - 100);
+  assert.ok(under.length < CHECK_GAP_MAX && under.length > 2000,
+    'the under arm is well past boundGap\'s own 2000-char envelope, or it would pass through for the wrong reason');
+  assert.ok(closeGapBlock(under).includes(under), 'under the ceiling: every byte, untouched');
+
+  const over = build(CHECK_GAP_MAX * 2);
+  const block = closeGapBlock(over);
+  assert.ok(block.length < over.length, `over it the backstop still binds: ${block.length} < ${over.length}`);
+  assert.match(block, /chars truncated/, 'and says so — a backstop that trimmed silently would be F28 wearing a smaller number');
+});
+
+test('F86 unit: the LABEL names the step\'s EXITS, because that is what the block carries — the close\'s output is one of them, not all of it', () => {
+  // `res.gap` is `lastGap`: the join of EVERY failing exit's detail, in exit order.
+  // With MAX_EXITS_PER_STEP=2 and the mandatory `tree-changed` pairing on a write
+  // step, a step that wrote nothing produces exactly this — the evaluator's own
+  // prose first, the close's output second. Captured verbatim from a real replan
+  // prompt. The payload is right (a replanner very much wants "the step wrote
+  // nothing"); it was the LABEL that claimed a single source for it.
+  const treeChanged = '0 files changed under src/** — the tree is byte-identical to the step start (an identical re-write is not a change)';
+  const checkRed = 'check "typecheck" red: close stage "typecheck" failed:\nBAREAGENT red: tsc --strict reports 1 error(s) in src/recurse.js';
+  const block = closeGapBlock([treeChanged, checkRed].join('\n'));
+
+  assert.match(block, /exits?\b/i, 'the label names what is actually under it: this step\'s exit results');
+  assert.doesNotMatch(block.split('\n')[1] ?? '', /its own output/,
+    'and does not attribute the whole block to the verification — the first line under that claim was ours, not the close\'s');
+  assert.match(block, /verbatim/, 'still verbatim: the artifact is handed over as TEXT, and the label must keep saying so (F86)');
+  assert.ok(block.includes(treeChanged) && block.includes(checkRed),
+    'both details survive — this fixes an accuracy claim, never the payload the replanner needs');
 });
 
 test('F86 unit: a secret-shaped string is masked BEFORE the prompt — one inventory, not a second spelling', () => {

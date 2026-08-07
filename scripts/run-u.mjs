@@ -231,6 +231,16 @@ if (arg('approve') !== specHash) {
     }
     if (gs.length) console.log(`  trend    ${gs.length} close grade(s) inherited as baselines (${[...byStage].map(([k, vs]) => `${k} ${vs.join(' → ')}`).join('; ')}) — the halt readout spans BOTH legs`);
     else console.log('  trend    no close grade to inherit — this leg\'s readout is judged on its own evidence');
+    // WHAT IT INHERITS AS A BOUND. The line above is a readout the leg carries; this is
+    // an allowance it does NOT get. A resumed leg that opens with both replans spent
+    // can only exhaust the plan it reloads — it cannot redraw it — and that changes
+    // what the dollars being signed here can buy. Stated only when there is something
+    // to state: a "0 replans spent" line on every cold-ish resume is noise that trains
+    // the eye to skip the line that matters.
+    if (rs.replans > 0) {
+      console.log(`  replans  ${rs.replans} already spent by this run — the ceiling is the RUN's (PRD v1.12), so this leg inherits it rather than a fresh one`
+        + (rs.replanGrantUsed ? '; the arbiter\'s one extra is spent too' : '; the arbiter\'s one extra is still unearned'));
+    }
     console.log('  patient  continued AS THE RUN LEFT IT — NOT reset to the seed');
     // The commonest resume there will ever be is the one straight after a money cut,
     // and on THAT spine the remainder is zero or negative by definition — the run
@@ -423,6 +433,15 @@ try {
       // flat on its own evidence; the RUN — which is what the top-up decision is
       // about — may have been converging when the allowance ran out.
       ...(dead.restart.grades?.length ? { resumeGrades: dead.restart.grades } : {}),
+      // and the REPLAN ledger the chain has spent. The line above feeds a readout; this
+      // one feeds a BOUND — `replanned`/`varianceGrantUsed` are locals in `runPlan`, so
+      // an unforwarded ledger hands this leg a fresh allowance of one PRD v1.12 makes the
+      // RUN's, once per kill. It rides onto this leg's `job-start` as `priorReplans` too,
+      // which is what lets a resume OF a resume fold once instead of restarting the
+      // ceiling at whichever window it happens to read.
+      ...(dead.restart.replans > 0
+        ? { resumeReplans: { count: dead.restart.replans, grantUsed: dead.restart.replanGrantUsed } }
+        : {}),
     } : {}),
   });
 } finally {
