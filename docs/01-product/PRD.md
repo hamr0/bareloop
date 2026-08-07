@@ -3548,3 +3548,42 @@ Unchanged from v1.51 except that Layer 3 no longer blocks: **close-authoring** (
 becomes something a user declares from a catalog of named stages rather than a script the
 assistant writes per patient) is the next rung, and softgreen + hitl follow it — hitl's close
 IS an operator declaration, so it stands on that surface.
+
+---
+
+## Addendum v1.53 — 2026-08-07 (close-authoring design FROZEN: the user declares what done means; nine softgreen/hitl rulings; the next rung — hamr)
+
+The design record `docs/plans/2026-08-07-close-authoring-design.md` is FROZEN (hamr,
+verbatim, in-turn: *"all approved, fix ledger now (assign to opus and validate), close the
+record and review"*). This addendum is the PRD-side pointer, per the v1.27/v1.42 convention;
+the record is the design's home and is not restated here.
+
+What it settles, in one paragraph each:
+
+- **The last authored layer un-authors.** Today every close is a hand-written script
+  (`scripts/u-*-close.mjs`); the record replaces that with a chat interview whose answers an
+  LLM composes into a DECLARATION over operator-owned stage KINDS — never code, no escape
+  hatch (D1–D3). Verdict type (`green`/`soft-green`/`hitl`) is DERIVED from the answers,
+  never picked (D4, superseding the declared radio). Mandatory genre guards are shown and
+  fixed (D5 — the F87 antidote). The user signs the whole hash (D7); nothing LLM-judges the
+  close — validator + precheck + seed-verdict read, then the signature (D9).
+- **Gate 1 ran before any build** ($0 expressiveness replay over all 8 hand-written closes):
+  PASS for TYPES with four kind amendments; FAIL as a general catalogue (`harness-loop` for
+  TESTGEN is known-missing, out of v1); three runtime contracts and the one-population law
+  are design obligations the first draft missed — all recorded.
+- **D11–D13** (re-derived against source by opus): authoring scout emits a facts object, the
+  authoring call stays toolless; the close stores the COUNTING RULE never the number (repeated
+  jobs re-measure at their own seed); v1 is ONE genre, interview-confirmed, honest refusal
+  via `request-red` — whose `lib` territory stamp shipped on this branch so a bareloop-
+  catalogue refusal never files as a bare-agent ask.
+- **The nine softgreen/hitl rulings** close the verdict-class design at the close side: hitl
+  pauses decision-ready with the clock stopped, full evidence, signer-only, the human's
+  reason IS the gap, never usable mid-run; the softgreen judge is metered from the same
+  wallet, gated by a frozen calibration set before it may gate anything, skips the seed read,
+  and its passes are QUARANTINED from learning credit until the floor is proven. Two
+  canonical examples (flight = softgreen with a hitl gate on the irreversible payment;
+  resume = hitl) and the mechanical-first composition law (deterministic stages first, judge
+  minimal, human last) are recorded.
+- **Sequencing:** close-authoring v1 (green) is the next build rung; hitl before softgreen
+  inside the follow-on rung (assistant-proposed, in the record); Layer 3 stays parked per
+  v1.52 with template-only reuse frozen for later.
