@@ -96,7 +96,7 @@ the step plan at run time (gated by `validatePlan`); the human signs only:
 | field | shape | notes |
 |---|---|---|
 | `goal` | non-empty text | what the agent plans against |
-| `verdictType` | `green` \| `soft-green` \| `hitl` | declared radio, never inferred (`VERDICT_TYPES`, frozen). v1 ADMITS only `green`; declaring `soft-green`/`hitl` reds `request-red` with the type as a structured `verb` field (declared-but-locked — the tool-menu pattern) |
+| `verdictType` | `green` \| `soft-green` \| `hitl` | declared radio, never inferred (`VERDICT_TYPES`, frozen). v1 ADMITS only `green`; declaring `soft-green`/`hitl` reds `request-red` with the type as a structured `verb` field (declared-but-locked — the tool-menu pattern). Every `request-red` also carries `lib` — the territory the demand lands against, stamped at the emit site (`verdictType` → `bareloop`, a locked tool verb → `bare-agent`): the ledger keys and its `suggestedAsk` seed on it, so a bareloop-catalogue refusal never files as an upstream ask |
 | `close` | **an ORDERED LIST of named stages** `[{ name, cmd, expect, judged?, gapKeep?, offer?, needs? }, ...]` (PRD v1.28), or a close object (table below) **only** for the declared-but-locked verdict classes | the destination, the only thing hand-authored; the check menu DERIVES from it (below). The plan flow executes a staged close directly and adapts a bare `predicate` object into a one-stage list; a `gold`/`rubric`/`hitl` object close validates (the declared-but-locked verdict classes still parse) but the plan flow refuses it at runtime as `close-unsupported` — it names no command to run |
 | `checks` | **RETIRED** (PRD v1.28/v1.32) | hand-authored checks are gone, not merely discouraged: declaring `checks` reds `checks-derived` by name. The check menu is DERIVED from the close's own stages instead — see **Staged close** below. The hazard this removes is measured, not theoretical: job #5's three hand-written checks were re-implementations of three stages the close already ran, and a hand-carved copy can drift LENIENT (the worker passes the operator's ruler and fails the real inspection) |
 | `tools` | optional unique subset of `TOOL_MENU` (14 verbs, below) | the CEILING every plan step's grant must fit inside (omitting it means the full menu — and the hash is taken over that RESOLVED form, so a `TOOL_MENU` widening flips an omitted-`tools` spec's hash and forces a re-sign; see `jobSpecHash`, MED-1); `run` is `LOCKED_TOOLS` and reds `request-red` — locked-but-listed, and the red IS the admission evidence the ledger tallies (a typo stays `invalid-value`). A ceiling of write-class and store-class verbs ONLY reds `invalid-value`: the scout surveys read-only, so it would be handed an empty menu and survey blind |
@@ -174,6 +174,20 @@ reader for every close, deliberately (the F49 precedent). **Splitting a stage mo
 hash** — stage names are in the signed spec — so it is a spec edit the operator re-signs, and
 it changes what stored bridges match (below).
 
+**The law for spec authors: your `goal` must state everything your close will judge.**
+Nothing derives the goal from the close or the close from the goal, and nothing checks the
+two against each other — the ONE derivation in the library is close stages → the agent's
+`check-passes` menu, one hop, one direction. That separation is the arbiter rule (the agent
+references the operator's ruler and never authors it) and it is not negotiable, so the drift
+is yours to close: the planner and the worker read the `goal` text, not your stage list, and
+they will spend their single check slot (above) on the constraint the goal sentence names.
+A stage your goal never mentions is a **cost trap, not a safety hole** — the close still
+refuses the tree and the run still cannot mint a green — but the run discovers that stage at
+the tail, after paying for work aimed elsewhere, and may not have the money or wall left to
+redo it. Write the goal from the close's own stage list, in the close's own words; keep it to
+a few explicit requirements rather than prose. Preflight already names every stage on the
+`check-menu` spine event — read it back and check your goal against it before you sign.
+
 **Close types and the hierarchy — the OBJECT form, which survives only for the
 declared-but-locked verdict classes** (a close is data, never code; verdict-class laundering
 is a named red `close-hierarchy`). The go-forward shape is the staged list above; a
@@ -233,6 +247,19 @@ first) so a pathological close cannot rebuild the very bloat the bound exists to
 when the cap trims matches it **says so** with an explicit marker (silent truncation is the
 disease this cures, never a cure that truncates silently). Validated like `judged.pattern`:
 a non-empty string that must **compile as a RegExp**, else a spec red before any tokens.
+
+**Both operator patterns must also survive the ReDoS shape check** (`invalid-value`, F49 —
+the same reject the agent's `artifact-written.pattern` gets): an unbounded quantifier over a
+group that itself repeats unboundedly (`(a+)+`, `(\d*)*`, even wrapped: `((a+))+`) is
+rejected at the gate. **This is stricter than an "it compiles" contract, and deliberately
+so.** `judged.pattern` is exec'd by `runClose` over the close's whole stdout+stderr and
+`gapKeep` is run by `boundGap` **once per line** — both untimed, both in bareloop's own
+process. Measured: `boundGap(stream, "(a+)+$")` on a 40-character line does not finish in
+20 seconds. Because the hang blocks the main event loop, the in-process stall fuse cannot
+fire, the run dies to the outside watchdog, and **a bad regex in a signed spec presents as a
+provider problem** — so this reds at signing time rather than being diagnosed later. All 92
+operator regexes across the 10 in-repo specs pass unchanged. Known limit, parked: the scan
+does not catch the alternation-overlap class (`(a|aa)+$`) — see PRD v1.55.
 Omitting it is exactly today's bound. Like `judged`, it is **arbiter territory** — the
 drafted workflow config cannot express it (unknown-field red). The gap path also combines
 **both** streams (stdout + stderr), so a failure printed to stdout survives stderr noise
@@ -249,10 +276,22 @@ middle writes; `validatePlan` gates it against the SIGNED job spec before tokens
 | `steps[].tools` | non-empty unique subset of the SPEC ceiling | a verb beyond the ceiling reds `verb-escape` with the verb as structured data (overreach, distinct from the operator-side `request-red`); `run` is `verb-escape` at every layer |
 | `steps[].rounds` | int 1..shell cap (default 40) | the step's per-attempt tool-round bound (the Gate's `maxTurns` natively) |
 | `steps[].target` | path inside the fence | v1.18 deliverable; REQUIRED on write-granted steps |
-| `steps[].model` | optional; `sonnet` \| `haiku` (`STEP_MODELS`) | the step's model TIER — a menu, never a model string the agent spells (the tier→model mapping and any per-model effort params are the runner's). `opus` is deliberately absent: reserved for work the human assigns, never plan-selectable. Off-menu reds `invalid-value`. A step naming a tier when the caller supplied no `providerFor` factory is an `interpreter-red` STOP, never a silent run on the default tier |
+| `steps[].model` | optional; `sonnet` (`STEP_MODELS`) | the step's model TIER — a menu, never a model string the agent spells (the tier→model mapping and any per-model effort params are the runner's). `opus` is deliberately absent: reserved for work the human assigns, never plan-selectable; `haiku` was removed 2026-08-06 as a reversible ATTRIBUTION PROBE (F87, see `STEP_MODELS`), so the menu is one entry deep and the field is no longer offered in the drafting prompt. The field and its validator branch STAY: `model: "sonnet"` still validates, a stored bridge declaring it still loads, and restoring haiku is a one-token edit — this is not a finding that haiku is incapable. **The narrowing binds only what the AGENT may express.** Which real model a tier maps to, and what the caller runs as its own default worker model, stay the OPERATOR's: `providerFor` is yours, and the in-repo runner's `--model haiku` probe knob is untouched (PRD v1.36) — the runner's tier map is deliberately WIDER than the plan menu. Off-menu reds `invalid-value`. A step naming a tier when the caller supplied no `providerFor` factory is an `interpreter-red` STOP, never a silent run on the default tier |
 | `steps[].attempts` | optional; int `>= 1` | **RETIRED and INERT (F79) — it bounds nothing.** A step's iterations are governed by the STRIKE LADDER (below), which is shell-owned and inexpressible from the plan. The field is no longer offered in the drafting prompt and the runner ignores it; it is deliberately still ACCEPTED, because stored bridge plans carry it and a plan minted under one runner's number must not red under another's. The shape is still checked (a known field holding garbage stays a `bounds` red); the old `<= capRuns` ceiling is gone with the cap it named. It was previously TIGHTEN-only — which meant a step that needed MORE iterations could not ask, and drafters measurably tightened it instead (F77) |
 | `steps[].scope` | optional; one value from the SAME menu `tree-changed` uses | narrows this step's live WRITE fence to a subset of the signed `writeScope` — chosen from the offered scope menu (below), never authored. Off-menu reds `invalid-value` carrying the menu |
 | `steps[].exit` | 1..2 items (`MAX_EXITS_PER_STEP`), ALL must pass (AND-only, no OR/NOT) | closed menu (`EXIT_TYPES`): `artifact-written(path, pattern?)` · `tree-changed(scope)` · `json-valid(path)` · `check-passes(name)`. **`tree-changed.scope` is a MENU, not a glob the agent authors** — the runner enumerates the signed fence entries plus the real directories beneath them (shallowest-first, capped at `MAX_SCOPE_MENU`=24; `legalScopes` in `src/plan.js`), `planPrompt` lists them verbatim, and `validatePlan` accepts membership only — the SAME array on both sides, so what was offered is what is accepted; omitted, it derives from `writeScope` alone — never a free-text fallback. An off-menu value that escapes the fence still reds `scope-escape` (the ledger's attribution class), an in-fence unoffered value reds `invalid-value` carrying the menu. `runPlan` emits `scope-menu {offered, truncated, offerableCount?, cap?}` so a capped menu is never silently complete. `check-passes` must name a stage on the close's DERIVED menu (`check-unknown` red names the offered menu — no operator authors this list, it comes straight from `checkMenu(close)`); on a write-granted step it must be paired with `tree-changed` (`exit-illegal` — the seed tree is green, a lone check would pass untouched, F17/F46). **`check-passes` also requires a write-class verb (`write`/`edit`) on the SAME step** (`exit-illegal` — BREAKING for plan authors: a read-only "verify" step carrying a check used to validate and no longer does). A failing check's gap is re-delivered to that step's OWN worker, so a step holding a check must be able to act on it; a read-only one is a mailbox with no hands and stalls to cap on a byte-identical gap (measured on 4 of 4 drafted plans). The check belongs on the step that fixes; the run's final verification is the operator's close, which the agent never authors. The rule is stated identically in the drafter prompt and the validator, so the two can never disagree — and it is suppressed when `tools` failed to parse (the step's hands are unknowable then, and the real defect already redded: one defect, one red). `artifact-written.pattern` must compile AND survive a ReDoS shape check — an unbounded quantifier over a group that itself repeats unboundedly (`(a+)+`, `(\d*)*`, even wrapped: `((a+))+`) is an `invalid-value` red (F49, catastrophic-backtracking footgun; rewrite without a repeated group inside a repeat). Exits verify FORM, not truth — progress gates; the operator's close stays the one arbiter |
+
+**A step has exactly ONE check slot — plan for it.** The three exit rules above compose into
+a ceiling worth stating on its own, because it decides what a plan can enforce *during* a
+run: `MAX_EXITS_PER_STEP` is **2**, the two are ANDed (no OR/NOT, `exit-illegal` past the
+bound), and a `check-passes` on a write-granted step MUST be paired with a `tree-changed`
+exit. Both slots are therefore spent the moment a step carries one check, so **a step cannot
+carry two checks** — `check-passes(typecheck)` and `check-passes(no-suppressions)` together
+on one step is inexpressible today, not merely discouraged. The consequence for an adopter:
+if your close judges N stages, at most ONE of them can be enforced inside a step; the other
+N−1 are enforced only at the close, at the end of the run. That is a COST shape, not a safety
+hole — the close still refuses a tree that fails any stage, and nothing green is minted mid-run
+— but a stage first tested at the tail is a stage the run pays full price to discover.
 
 Red vocabulary (both validators): `parse-error`, `unknown-field`, `missing-required`,
 `invalid-value`, `bounds`, `duplicate-id`, `close-type`, `close-hierarchy`,
@@ -431,6 +470,17 @@ ONE inventory) at the emission boundary, before anything rides the append-only s
 module itself does not scrub: a direct `evalExits` caller wiring results into its own log
 must apply its own redaction.
 
+A `check-passes` detail is sliced at `CHECK_GAP_MAX` (12,000 chars) — a defensive backstop
+above the close path's own `boundGap` envelope, not a second trim of it: a normally-bounded
+gap passes through intact and only a seam that returned something unbounded is ever cut. The
+constant is now `export`ed from `src/exits.js` so the replan brief's own backstop imports it
+rather than respelling it (two spellings would drift on the one property that matters —
+whether the `not ok`/`FAILED` names survive). **It is NOT part of the adopter surface:** the
+package `exports` map admits only `"."`, and `src/index.js` re-exports `snapshotScope` and
+`evalExits` from this module and nothing else, so `CHECK_GAP_MAX` and `boundGap` are internal
+by construction and a deep import cannot reach them. They are named here to explain the
+behaviour you WILL see in a detail string, not as API to call.
+
 ### `jobSpecHash(job)` / `checkApproval(job, approvals)` — `src/job.js`
 
 The pure half of **human-signs-always**: an agent may draft a job spec, but no job runs
@@ -454,10 +504,12 @@ Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
 `coordination-red` — a failure between units (scope contention, step order, store
 races), never to be folded into worker/interpreter reds.
 
-### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, layerRoot?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, layerRoot?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans? })` → outcome — `src/run.js`
 
-The last four are the RESUME fold and are documented under *Resuming a killed run* below;
-they default to `0` / `true` / `0` / `null`, so a fresh run passes none of them.
+The last six are the RESUME fold and are documented under *Resuming a killed run* below; they
+default to `0` / `true` / `0` / `null` / `[]` / `null`, so a fresh run passes none of them.
+Three of them are folds of a bound the operator SIGNED (money, wall, replans) and one is a
+readout seed (grades) — the distinction matters and is spelled out there.
 
 The runner — the shell's top layer, and the ONE entry. It composes everything below it and
 interprets nothing itself. Sequence: **approval gate** (human-signs-always — refuses an
@@ -524,8 +576,9 @@ fed back, then `plan-red`) → **EXECUTE** (strictly sequential micro-loops: `ra
 the exit-evaluator judge, each step under its own STRIKE LADDER — below; tree snapshots at
 step start; the gap names every failing
 wall — mechanical genre, F46's measured mechanism; artifacts feed forward labeled by
-step id) → **ONE replan**, triggered by exhaustion OR variance (an instrument stop never
-replans) → **the operator's close**, a red feeding ONE bounded fix loop judged by the
+step id) → **ONE replan**, triggered by exhaustion OR variance OR a stall (an instrument stop
+never replans) — plus at most ONE arbiter-granted extra on a second variance stop that reads
+`converging`, below → **the operator's close**, a red feeding ONE bounded fix loop judged by the
 REAL close and governed by the close TREND rule below (`capRuns`, default 3, survives only as
 its blind fallback). `plan-executed` (the plan-as-executed record, design law #2) lands on the
 spine on every path that executed steps. Additional outcomes: `already-green |
@@ -557,8 +610,26 @@ escalation and wall-stop records carry `strikes`/`strikeLimit`/`distinctGaps` be
 iteration count rather than a cap the step no longer has. **The replan brief
 names the mechanism**: which shape ended the step (converging-cut / stalled-no-write /
 repeated-gap, with the iteration numbers as evidence), the gap trajectory, and how much money
-and wall the stop left unspent (time reported UNBOUNDED when no wall was set, never `0`). It
-names no culprit file — F28 applies to the replan channel too.
+and wall the stop left unspent (time reported UNBOUNDED when no wall was set, never `0`).
+**It also carries that step's own last EXIT output, verbatim** (F86) — masked through the repo's
+one secret inventory, and labelled as *the exits'* words rather than the close's, because the
+payload is `lastGap`: the join of EVERY failing exit's detail in exit order. The close stage's
+output is one of those details, never reliably all of them, so a step that wrote nothing opens
+the block with the exit evaluator's own `0 files changed under …` prose. That line is kept (it is
+exactly what a replanner should be told); only the label was wrong. The bound over it is a
+**backstop, not a second envelope** — what arrives has already been bounded by `runClose` under
+the stage's own `gapKeep`, which deliberately rescues the `not ok`/`FAILED` names out of the
+elided middle, and re-enveloping that deletes them a second time (F28 reintroduced; measured, a
+second 400/1500 pass dropped 12 of the 78 names the first had rescued). Under `CHECK_GAP_MAX` —
+`src/exits.js`'s own ceiling, imported rather than respelled so the two seams cannot drift — the
+gap passes through VERBATIM, with ~1.8KB of measured headroom over the largest thing the close
+envelope can produce; the backstop fires only on a gap nothing upstream ever bounded. No gap, no
+block, and the brief is byte-identical to one drafted before this existed.
+Handed over as TEXT: the runner makes **no parsed file claim of its own** in this channel —
+a close's summary line ("N error(s) in a.js, b.js" — every file in scope) and its detail line
+(the one location actually failing) are indistinguishable to a regex, and the shapes differ per
+close anyway. What the planner is told about WHERE the work is comes from the close's own
+bytes, never from the runner's reading of them.
 
 **The close TREND rule — how the CLOSE-FIX LOOP ends (PRD v1.46 §4).** `capRuns` retired as
 that loop's governor once its own $0 replay over every archived fix loop came back clean (0
@@ -608,7 +679,9 @@ on money (the step loop, the close-fix loop, and the scout/draft relay), exactly
 close rendered no number (F6). **The library only ever REPORTS**: `budgetUsd` is in the spec
 hash, so a top-up is a spec edit a human signs — nothing in a run may widen its own budget.
 
-**ONE progress instrument, read by both halts.** The wall halt used to run its own: byte
+**ONE progress instrument, read by both halts — and REPORTED by the variance meter.** The
+`variance` record and its escalation carry the same four fields off the same instance (below);
+the meter is the one consumer that never decides on the reading. The wall halt used to run its own: byte
 equality of the last two close gaps, reading `stalled` / `moving` / `unknown` beside the money
 halt's `flat` / `converging` / `unknown` on the same run. Both now read `runTrend`, the run's
 own `src/trend.js` reader. Where a stage reported a comparable NUMBER it decides; where none
@@ -671,14 +744,57 @@ The planner (never the worker) receives a **materials** block at draft and at re
 spread on verification-gap duration, so a per-round constant describes almost no real round
 and a rate framing creates a rush-or-fake incentive. The replan trigger gains a second axis
 (`step-variance`): a step consuming ≥ `VARIANCE_THRESHOLD` (0.5) of the run's REMAINING money
-or time with its exits unmoved is pre-empted at the head of its next attempt so the planner
+or time — either axis — is pre-empted at the head of its next attempt so the planner
 re-allocates instead. **Known and recorded (F63): that trigger fired 0 times across 18
 archived spines / 54 steps** (near misses 0.35–0.45) — the threshold is arbiter territory,
-deliberately not fitted to those points. The ONE-replan ceiling is unchanged.
+deliberately not fitted to those points. It is no longer inert: it fires on real runs (F85).
+
+**The meter REPORTS progress; it never decides on it (F85).** The firing condition above is
+the whole trigger — a progress term inside it would let a governance instrument over an
+operator-owned allowance judge capability, and a converging step that is eating the run is
+still stopped. What the meter says about the work is a MEASURED reading, not an assertion: the
+`variance` spine record gains `trend` (`converging | flat | unknown`), `motion`, `reading` and
+`series` beside its unchanged `step`/`iteration`/`threshold`/`moneyShare`/`timeShare`/`axis`,
+and the escalation `detail` (which the replan brief quotes) ends with that same `reading` as a
+second, separate claim — "it was stopped for eating the run" and "here is what it achieved" are
+different statements. All of it is read off the SAME `src/trend.js` instance the money and wall
+halts read — one reader, so the meter and the halts can never disagree, and `unknown` stays
+`unknown` when the close reported no number (F6). This
+replaces a fixed sentence ("with its exits unmoved") that used to print on every variance stop
+whatever had happened; a consumer parsing that string will not find it.
+
+**The replan ceiling is no longer flatly ONE.** A SECOND `step-variance` stop earns exactly one
+more replan when the run's own reading is mechanically `converging`; it is granted by the
+ARBITER off that same reader, bounded by a latch rather than a counter compared against a
+limit, so it cannot creep — a third variance stop is the stop however well the run is going.
+`flat` and `unknown` stop exactly as before, and an exhaustion or stall stop past the ceiling
+is unchanged. The agent has no channel to it: it never asks, is never offered it, and cannot
+influence it (no self-adjusted budgets, ever). Observable on the spine as ADDED fields, never
+repurposed ones: `replan` records carry `replan: <n>` and — only on a granted one — `granted:
+"converging"`, and `plan-executed` carries `replans` beside the unchanged `replanned` boolean.
+
+**Both of those count the RUN, not the leg — the ceiling spans a resume chain.** `replanned`
+and `replans` were locals in `runPlan`, and a resume is another `runPlan` call, so a kill used
+to hand the next leg a fresh allowance of an allowance that is the RUN's by doctrine (measured:
+leg 1 replanned and stopped, leg 2 replanned twice more — a run total of 2 with every record
+showing 1). **`plan-executed.replans` therefore now means the CHAIN total**; if you parse spines,
+re-read that field. Each leg DECLARES what it inherited on its own `job-start` — new fields
+`priorReplans` and `priorReplanGrantUsed`, present only when there is a fold — and the next
+reader adds only its own window's `replan` records, exactly the way `priorSpentUsd` folds money.
+The grant latch travels beside the count rather than being derived from it (`1` + `false` is a
+real state: an ordinary ceiling spent, the arbiter's extra still unearned). The leg's own number
+is not lost — a leg emits one `replan` record per replan it drafts, so `chain −
+records-in-this-window` is the fold it inherited. You seed it with `resumeReplans` (below);
+omitted is the cold path and byte-identical to a run nobody resumed.
 
 **Per-step model tiers — `providerFor` (P).** A plan step may declare a `model` TIER
-(`sonnet` \| `haiku`, `STEP_MODELS`). The tier menu is signed into the schema; mapping a tier
-onto a real model (and any per-model provider params) is the RUNNER's territory, so both
+(`sonnet`, `STEP_MODELS` — `haiku` removed 2026-08-06 as a reversible attribution probe,
+F87; the field stays legal and one-token reversible, and the narrowing binds only what the
+AGENT may express, never what the operator may run).
+The tier menu is signed into the schema; mapping a tier
+onto a real model (and any per-model provider params) is the RUNNER's territory — nothing
+forces the `sonnet` tier onto any particular model, and running haiku as your default worker
+model stays an operator choice the plan menu never governed — so both
 `runJob` and `runPlan` take `providerFor?: (tier: string) => provider`. It is called ONLY for
 a step that declared a tier, once per such step — the scout, the plan drafter and every
 untiered step stay on `opts.provider`, so a caller that never plans tiers can omit it
@@ -792,7 +908,7 @@ their next green, not repaired.
 door**: before the clock, before the close precheck, before any token. On a pass, the
 **newest** version's plan rides into the FIRST drafting prompt as a starting draft
 (`bridge-loaded {name, versions, runid}` on the spine) and everything after it is the
-ordinary shipped path — same validator, same redraft-on-reds, same ONE-replan ceiling, and a
+ordinary shipped path — same validator, same redraft-on-reds, the same replan ceiling, and a
 **replan never re-injects the bridge** (it drafts from the run's own state). On a fail the
 run returns the distinct terminal **`recipe-stale`** with `bridge-gate {outcome, name, reds}`
 and a decision-ready escalation, having spent nothing. **Falling back to cold is the
@@ -950,7 +1066,8 @@ semantics are byte-unchanged (PRD v1.46 §3):
   implicit try opened at `job-start`, through the same window machinery rather than a second
   reader. Without it such a spine is honestly refused (`started: false`), which is what a
   reuse runner needs. `job-start` carries the DECLARED fold (`priorSpentUsd` with its
-  `priorSpendComplete`, and `priorWallMs`, each present only when there is one) exactly as
+  `priorSpendComplete`, `priorWallMs`, and `priorReplans` with its `priorReplanGrantUsed`, each
+  present only when there is one) exactly as
   `try-start` does, so a chain of resumes adds only each attempt's own new rounds instead of
   re-deriving and double-billing. **An inherited FLOOR is one** even when the money it qualifies
   is `$0`: a leg whose every round came back unpriced folds nothing countable and is still not
@@ -1018,6 +1135,23 @@ and is re-signed.
   that re-grades an unchanged tree is flat on its own evidence while the RUN — what the
   top-up decision is actually about — may have been converging when the money ran out. See
   the trend section above for what the seed does and, deliberately, does not touch.
+- **Its REPLAN LEDGER comes with it too — and this one is a BOUND, not a readout.**
+  `restart.replans` / `restart.replanGrantUsed` ride into `runJob`/`runPlan` as **`resumeReplans`**
+  (`{count, grantUsed} | null`), seeding the replan ceiling instead of leaving it reborn per call.
+  Without it a kill refilled an allowance PRD v1.12 makes the RUN's — measured, a leg that spent
+  both replans and step-redded handed its checkpoint to a second leg that replanned twice more.
+  **It deliberately does NOT use `resumeGrades`' mechanism.** The grade seed reads ONE spine, so a
+  resume of a resume inherits the previous leg's grades and not the whole chain; that shortening is
+  fail-safe for a READOUT (it can only under-claim a direction) and is the DANGEROUS direction for
+  a ceiling, where an under-claimed ledger is a refilled allowance and every kill buys one. So this
+  seed follows the MONEY fold: each leg declares `priorReplans`/`priorReplanGrantUsed` on its own
+  spine and the next reader adds only its own window, so leg 3 inherits the whole chain. It is also
+  not the same class as the trend's ITERATIONS, which `src/trend.js` refuses to seed on purpose: an
+  attempt allowance is a LEG bound bought with the leg's own money, while a replan ceiling bounds
+  how many times the WORKFLOW may be redrawn, which is the run's span. Belted like every declared
+  fold — a garbage, non-finite or negative `count` reads as `0` rather than widening the ceiling.
+  Null/omitted is the cold path. The disarm control is pinned: a resumed leg with an UNSPENT
+  ceiling still replans, so the bound is bounded, not switched off.
 - **Under the REMAINDER, never a fresh allotment.** The killed attempt's spend and wall
   FOLD IN (`runJob`'s `priorSpentUsd`/`priorSpendComplete`/`priorWallMs`, `createClock`'s
   `priorElapsedMs`), so
@@ -1080,9 +1214,13 @@ the same corpus), and `seq` continues monotonically across appends. Keys are
 across runs dedupes and distinct bugs in one verb don't merge. Classes, worst-first
 (`LEDGER_CLASSES`, frozen): `silent-degradation` (a failed `primitive-smoke` — the class
 failures can't derive), `runtime-red`, `provider-red`, `pricing-red` (F6), possibly-dormant
-`capability-gap` (cap-halt + request-red in one spine), `broken-close` (consumer-attributed),
+`capability-gap` (cap-halt + request-red in one spine — one row per `(verb, lib)`, never per
+verb, so two territories asking for one verb string stay two rows rather than collapsing onto
+whichever territory was seen first), `broken-close` (consumer-attributed),
 `request-red` (admission demand for a locked verb — keyed on the red's structured
-`verb` field, prose-quoted verb as legacy fallback), `retention-red`, `config-red`
+`verb` field, prose-quoted verb as legacy fallback; both classes take their `lib` from the
+red's own stamp, so neither seeds an upstream ask for a bareloop-catalogue refusal),
+`retention-red`, `config-red`
 (drafting friction — attributed to bareloop's own schema/prompt). Deliberate exclusions
 (`EXCLUDED_ESCALATIONS`, a runtime set — anything outside classified ∪ excluded is
 counted as unmapped, never dropped): `cap-halt`/`wall-halt` (budget stories, money and

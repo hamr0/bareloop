@@ -681,7 +681,8 @@ Signed job spec (goal, budget, final close, tool ceiling — **all human, unchan
    `withContext` shape) — this is the F21 wire: the channel from step to step that config-v1
    never had.
 6. **ONE replan per run** — mirrors the one-revision rule (v1.9 / M5). Unlimited replanning
-   would launder thrash as adaptation.
+   would launder thrash as adaptation. The ceiling now admits exactly one **bounded
+   exception**, granted by the arbiter and inexpressible to the agent — see v1.50 §2.
 7. **The human-signed outer close is the only truth.** plan-AS-EXECUTED + a per-step ledger are
    written to the spine; a **GREEN run's plan is minted for inheritance** (verdict-gated,
    doctrine untouched — law #2/#3), a red run's is not. **N3's kill-switch now has a real
@@ -728,7 +729,8 @@ OPERATOR signs the job spec:
      the next step's prompt opens with "Working context (read-only):"
      + goal + repo root + close output + all prior steps' artifacts,
      labeled by step id. No step starts blind. (The F21 wire.)
-   · a step that exhausts its bound → ONE replan per run
+   · a step that exhausts its bound → replan (ONE per run; the
+     one bounded exception to that ceiling is v1.50 §2)
      (Planner again, {info: scoutBlob + artifacts + what failed});
      still red after the replanned steps → escalate. The stop is a result.
         │
@@ -1584,9 +1586,18 @@ budget it was given)? That question is unanswerable today because the variable d
 **A — replan becomes TIME-relative, not exhaustion-only.** Today replan fires only when a
 step exhausts its attempts, and an instrument stop is not exhaustion — so a replan has fired
 **zero times in this programme** (F56). Retrigger it on time evidence: a step consuming a
-declared share of the run's REMAINING time with its exits unmoved. The hard cap on replan
-count stays (unlimited replanning launders thrash as adaptation, v1.12) — this changes the
-trigger, never the ceiling.
+declared share of the run's REMAINING time (money share carries the same threshold). The hard
+cap on replan count stays (unlimited replanning launders thrash as adaptation, v1.12) — this
+changes the trigger, never the ceiling.
+
+**Two clauses of this paragraph have since been corrected on evidence and are recorded here so
+the original does not read as still-current doctrine.** *"with its exits unmoved"* was written
+as a description of the firing condition and shipped as a hardcoded sentence the meter printed
+on every stop, whatever had happened — it stopped converging steps and said they had moved
+nothing. The trigger never read progress and still does not; the false clause is deleted and
+the stop now carries the measured reading (**v1.50 §1**, F85). And *"never the ceiling"* now
+carries one bounded, arbiter-granted exception (**v1.50 §2**). The F56 premise quoted above was
+itself later refuted — 8 replans had already fired when it was written (F63).
 
 **P — the primitive palette returns to what was agreed.** The build offers the agent
 **write · select · compress · isolate**, each with its own verb list, and the agent chooses
@@ -2183,7 +2194,10 @@ rule, and the fix. The same job, same signed spec, greened under sonnet the same
 **The lock (hamr, in-turn):** the drafter and the default worker tier floor is **sonnet
 (medium tier)**. Unchanged by this lock: the per-step `model` menu still offers `haiku`
 (economy tiering of mechanical steps under a sonnet-authored plan — a haiku step has
-greened); `opus`/top tiers stay absent from the plan menu (hamr-assigned only); the
+greened) — *SUPERSEDED 2026-08-06 by v1.51 §1: `STEP_MODELS` is `['sonnet']` and the
+agent can no longer express a haiku step; `--model haiku` remains the operator probe knob,
+so the floor itself is unchanged and only what the AGENT may express narrowed*;
+`opus`/top tiers stay absent from the plan menu (hamr-assigned only); the
 runner's `--model` flag remains an explicit operator probe knob — running below the floor
 is an operator act, never a default, and its rows are probes, not battery evidence.
 
@@ -2196,6 +2210,9 @@ bridge half; the panel rung N6 for the UI half):
    this (`STEP_MODELS` offers tiers; the tier→model mapping is the runner's, per provider).
    The vocabulary generalizes to **low / medium / high**: today low=haiku, medium=sonnet,
    high=opus-class (absent from the plan menu, operator-assigned only — unchanged).
+   *(v1.51 §1: as of 2026-08-06 the agent-selectable menu is medium ONLY — low is off it as
+   an attribution probe, reversible in one token. The tier VOCABULARY below is unaffected;
+   what narrowed is which tiers the menu currently offers.)*
 2. **Per-provider auto-detection.** When a provider beyond Anthropic is wired (e.g. an
    OpenAI-compatible API), the runner should DETECT the provider's small/medium/high
    models from the provider's own catalog rather than hardcoding ids — the tier menu
@@ -2981,3 +2998,758 @@ Measured, not assumed — an approval field on the spec reds as an unknown field
 over a document containing that hash is self-invalidating. The approvals array is the runner's
 input and hamr's in-turn words are the signature; this record is where the chain between two
 hashes stays legible.
+
+## Addendum v1.50 — 2026-08-06 (the variance meter REPORTS progress and still never decides on it, the replan ceiling gains one bounded exception, the replanner is handed the close's own output — and the rerun that tested all three is a RED, stated as one — hamr)
+
+Two commits on `variance-progress-abc`: `3d91b0e` (the meter's A/B/C, F85) and `5d17f88`
+(the replan brief carries the close gap, F86). Both opus builds, session orchestrating and
+validating. No spec hash moved — the fixes are library code, so `bareagent-u-types.json`'s
+resolved hash `eed6fe82…` is the same one already signed. Evidence and numbers are **F85** and
+**F86**; the live read is `u-mshsikhr` and it is **not a green**.
+
+### 1. The variance meter REPORTS progress — and decides nothing with it (A/B, F85)
+
+The meter stopped a step that was converging and then told the replanner the step's *"exits
+unmoved"* — a hardcoded string printed on every `step-variance` stop whatever had happened. On
+`u-msh70zla` the ladder recorded `distinctGaps` 1 → 2 → 3 with zero strikes while the brief said
+nothing had moved; the replanner, told it had achieved nothing, rebuilt a file already at zero
+errors, wrote nothing twice, and the run died with money and minutes unspent. Two instruments
+on one run and only one of them was right.
+
+hamr's ruling, verbatim:
+
+> **"meter is right but missing a piece ... it should give heads up on money/time + progress
+> for llm to judge."**
+
+**The doctrine, stated cleanly: the meter REPORTS, it never decides on progress.** The firing
+condition is byte-identical to what it always was — `moneyShare`/`timeShare >= 0.5`, both axes,
+the same threshold — because a progress term in the TRIGGER would make a governance instrument
+over an operator-owned allowance into a judge of capability. That is the arbiter line, not a
+tuning preference: the allowance is the operator's, and what the model can still achieve with it
+is not the allowance's question. What changed is only what the stop SAYS: the `variance` spine
+record and the escalation now carry `trend` / `motion` / `reading` / `series`, and the false
+sentence is deleted in favour of the measured reading (the materials `progress` line keeps its
+structural sentence and gains the close trend).
+
+**One reader, and that is the whole point.** The reading comes from `src/trend.js` — the same
+reader the money halt and the wall halt already use under v1.49 §1's unification. There is no
+second reader, because two instruments answering one question is precisely the defect being
+fixed here, and minting a private one would have re-committed it in the act of curing it.
+
+A prerequisite was found and fixed en route: `runTrend` was blind to step-level progress (it was
+fed only the close precheck and the outer fix loop) and read the WRAPPED gap, whose
+`check "x" red:` line carries no number. Both folds are corrected, plus a preflight seed so the
+counter has a baseline.
+
+### 2. The replan ceiling gains a BOUNDED exception (C) — still arbiter territory, in both directions
+
+A SECOND `step-variance` stop earns **exactly one more replan**, granted by the arbiter off a
+mechanical `converging` reading. `flat` and `unknown` stop exactly as before. A third variance
+stop is the stop.
+
+**The bound is a LATCH, not a comparison.** The grant is spent once and cannot be re-earned;
+nothing counts, compares or accumulates, so the ceiling cannot creep by arithmetic — which is the
+failure mode the standing law (*unlimited replanning launders thrash as adaptation*, v1.12,
+plan-v1 law #6) exists to forbid. The exception narrows that law by one, deliberately, rather
+than converting it into a budget the run can talk its way into.
+
+**The agent has no channel to it.** It never asks for it, is never offered it, and cannot
+influence whether it is granted — the reading is computed from the close's own graded numbers,
+not from anything the plan says about itself. That is *no self-adjusted budgets — ever* applied
+to the one bound that most looks like a mere retry count: a replan is a purchase of another
+plan's worth of the signed wallet, and the thing being replanned does not get to authorize it.
+
+**C has fired live exactly once, and it bought nothing measurable.** On `u-mshcpdg4` the arbiter
+granted the second replan on `converging` (`replan:2, granted:"converging"` on the spine) — and
+that replan is the one §3 is about: it aimed at an already-clean file, wrote nothing twice, and
+the run still step-redded. So the grant is *reachable and correctly gated*, not *shown to pay*.
+It did **not** fire on the rerun below, which took only one variance stop, so it has never yet
+run under both fixes. n=1, and the one observation is a red.
+
+### 3. The replanner is handed the CLOSE's own output (F86)
+
+`u-mshcpdg4` reached ONE remaining strict error and still died. The close gap named the work
+exactly — `src/recurse.js(978,115)` — and the REPLANNER, which is the component that chooses
+which files the next plan targets, never saw it. It received `still progressing — typecheck
+30 → 15 → 15 → 1`: a number with no address. It aimed the last plan at `src/loop.js`, already at
+zero errors, wrote nothing twice and took two strikes. **The balances at the moment that replan
+was granted were $1.10 and 82 seconds** — which is what it had to spend and threw away; the run
+itself ended with $0.8174 and ~6 seconds unspent (24.90 of 25 minutes). The two figures are
+different measurements and the commit message that minted this finding quoted only the first.
+
+**This is a design statement, not a patch.** The worker had the gap all along; the component that
+picks targets did not. §1 gave the replanner a trajectory, which is a direction; it still had no
+location. `closeGapBlock()` puts the last close gap into the replan brief, scrubbed through the
+one secret inventory (`redactSecrets`) and bounded by ralph's own `boundGap` — exported for it,
+so there is no second truncation scheme. Nothing lands on the spine: `src/trend.js`'s rule is
+that no record carries a close byte. An empty gap yields an empty string and a brief
+byte-identical to before.
+
+**It is handed over as TEXT and never as a parsed file list, and the reason is doctrine.** Line 1
+of that same gap reads `reports 1 error(s) in src/recurse.js, src/loop.js` — every file in
+SCOPE — and only line 2 names the culprit. A model tells a summary line from a detail line; a
+regex cannot. Close output shapes differ per close anyway (tsc `file:line`, pytest ids, a count
+close naming no file at all), so a parser here would be one reader per close, which is how one
+reader stops being one reader (the F49 precedent, restated in v1.49 §4).
+
+**The `never wrote` advisory is DELETED**, on hamr's order, verbatim:
+
+> **"delete it and rerun bareagent"**
+
+Measured on that very gap, `gapFilesNeverWritten` returned `["src/loop.js"]` — the already-clean
+file — for exactly the summary-vs-detail reason above, and said so as a **DIRECTIVE** beside an
+artifact that said the opposite. This worker follows directive prose (the positive-scope
+confinement genre). The general rule it violated is the one §1 is also about: **two readers of
+one question, with the parsed one wrong, delivered as an instruction rather than as evidence.**
+It also had no record of ever converting anything — it fired by construction on `u-msdsmkid` and
+that run still step-redded. The helper went with it (sole caller, no speculative code).
+
+### 4. The live read — `u-mshsikhr` is a RED
+
+Cold rerun, same patient, same signed hash, $4 / 25 min, sonnet; the first run under BOTH fixes.
+
+**Outcome: `step-red` on `strict-fix-recurse-remaining-errors`. $3.1545 of $4, 21.8 of 25
+minutes, 120 rounds, one replan.** It died on the step ladder's second strike at **two remaining
+strict errors**, with **$0.85 and ~3.2 minutes unspent**. `spendComplete: true`.
+
+**What the fixes DID buy, measured.** The one variance stop fired at iteration 3
+(`moneyShare 0.508` / `timeShare 0.642` / `axis money`) and reported `trend:"converging"`,
+`reading:"still progressing — typecheck 30 → 28 → 6"` — a genuinely converging step, stopped and
+correctly described, where the old instrument would have printed "exits unmoved". The replan then
+targeted the REMAINING ERRORS rather than a clean file, and the step wrote:
+
+| | `u-mshcpdg4` (pre-F86) | `u-mshsikhr` (post-F86) |
+|---|---|---|
+| what the replan targeted | `src/loop.js`, already clean | the remaining errors in `src/recurse.js` |
+| post-replan ladder | 2 iterations, `wrote:false` both | 4 iterations, `wrote:true` on 3 of 4 |
+| post-replan trajectory | none — nothing was written | `6 → 4 → 2 → 2` |
+
+**What they did NOT buy: a green.** The strike that ended it was correct and mechanical —
+iterations 3 and 4 produced a byte-identical gap, so the seen-set fired `repeatOf:3` (iteration 4
+struck WITH `wrote:true`; the write-delta rule does not rescue a repeated gap, which is F78/F79
+working as designed). Both surviving errors sit on ONE line of the patient:
+
+```
+src/recurse.js(975,21): error TS7006: Parameter 'result' implicitly has an 'any' type.
+src/recurse.js(975,29): error TS7006: Parameter 'c' implicitly has an 'any' type.
+```
+
+an un-annotated arrow function. **The tail failure is a WORKER conversion failure, not instrument
+blindness.** The gap named file, line, COLUMN and the exact error text — the mechanical genre by
+F38's definition — the worker held that address for three consecutive iterations, wrote on the
+fourth, and the two errors did not move. That is a different class from the one F86 fixed.
+
+**And it carries a CONFOUND that must travel with every sentence about it: the tail step ran on
+HAIKU — and so did every other replanned step this session.** The replanned step declared
+`model: "haiku"` and `rounds: 12` while the initial step ran the default sonnet at 30 rounds;
+legal under the P tier menu (v1.36's floor binds the drafter/default tier, not a step the planner
+tiers down), chosen by the planner, recorded on the spine. Across all three bareagent runs the
+planner made the **same** choice — `narrow-loop-catches` haiku/6, `finish-strict-typecheck`
+haiku/8, `strict-fix-recurse-remaining-errors` haiku/12 — and **all three failed**, against
+sonnet initial steps at 30–40 rounds every time.
+
+So "the worker could not convert a mechanical gap" is measured on the *below-floor* tier, at the
+step that carries the run's last mile, every time. This run does not isolate a sonnet capability
+limit at all; it isolates *a haiku step failing a mechanical gap under a tight round bound*,
+which is a much weaker and much less surprising claim. It also raises a design question the
+programme has not asked: the planner is spending its cheapest tier and its shortest bound on the
+step that finishes the job.
+
+**Stated without gloss: one run is one run.** F86 is validated as *the replanner now aims at the
+work* — nothing more. It is not validated as a green, as a conversion rate, or as a fix to the
+tail. Drafting $0.4217 / execution $2.7328 → 6.48×.
+
+### 5. Consequence for the lift-contrast programme — the job-B slot is empty
+
+- **bareagent-u is a RED re-screen.** Under the prereg's own frozen reading rule the candidate
+  stays **OUT** and the earlier rejection rows stand. Nothing is loosened and nothing is
+  retroactively admitted.
+- **baremobile-u greened cold** (`u-msgmyv27`, **$0.8137 / 10.6 min**, 36 rounds, 8 writes across
+  5 distinct files, no replan; a bridge was minted) — which answers the question the prereg's
+  2026-08-06 addendum registered, *is the patient winnable cold on current code*: **yes**. It
+  still **FAILS the unloosened §3 clauses**: the accepted plan is **1 step** against the frozen
+  **≥2 steps**, and drafting $0.2905 / execution $0.5232 = **1.80×** against the frozen **5×**
+  floor (hamr's 2026-08-03 ruling). It is **OUT**.
+- **Therefore: job A (`pulselog-u`) is the only admitted candidate, the job-B slot is EMPTY, and
+  `bareguard-u` remains parked on hamr's signature** (v1.49 §5 — re-sign at launch against the
+  post-split hash).
+
+No threshold change is proposed and nothing is loosened here; the state is named and the decision
+is hamr's. **This session's paid total is $10.0611 across four runs** ($0.8137 + $2.9103 +
+$3.1826 + $3.1545, every row `spendComplete:true`). What that leaves against hamr's $28–50 authorization band is his own accounting from
+the prereg's recorded ledger, not a figure asserted here.
+
+### 6. Parked / open for hamr
+
+- **C has one live observation and it is a red.** The grant fired on `u-mshcpdg4`, correctly gated
+  on `converging` — and the plan it bought aimed at an already-clean file and wrote nothing. The
+  rerun took one variance stop and never reached it, so C has never run under both fixes, which is
+  the only condition under which its purchase could have been aimed. Whether the exception earns
+  its narrowing of law #6 is unread at n=1.
+- **The tail conversion failure is OPEN — and it is NOT yet a counter-example to F38.** A gap
+  carrying file, line, column and error text did not convert across three iterations, which reads
+  at first like the sharpest challenge the programme has to a load-bearing finding. It is not, and
+  the reason is §4's confound: the step that failed was a **haiku** step under a 12-round bound,
+  below the sonnet floor every F38-era baseline was measured on. Nothing here licenses a claim
+  about the mechanical genre in general. The open questions, in the order the cheap-instrument
+  rule puts them: (a) **a $0 archive read** — this session is 3-for-3 on *planner tiers the
+  replanned step down to haiku with a short bound, and that step fails*; the archive says whether
+  that is a habit and whether such steps ever convert. (b) whether a per-step tier below the
+  default should be visible in the operator readout rather than only on the spine — a run whose
+  last mile silently runs on the cheapest tier is the F50 class one flag over. Neither is a paid
+  probe, and neither is a threshold change: if the pattern holds, the lever is a draft-gate law
+  or a prompt law, which is hamr's to call.
+- **The job-B slot is empty** and the lift contrast cannot run one-armed. The options are hamr's:
+  a further candidate screened under the unchanged clauses, a ruling on the clauses themselves
+  (which no measurement here licenses), or a contrast re-scoped to what job A alone can carry.
+
+  *(Superseded in part by v1.51: open item (a) — the $0 archive read on planner tiering — was
+  RUN the same day and is reported in v1.51 §1; the tier came off the agent's menu as an
+  attribution probe. §4's "legal under the P tier menu" was accurate for `u-mshsikhr`'s draft
+  and is no longer expressible by a plan drafted after commit `75dfb4d`. The job-B slot is now
+  not merely empty but UNFILLABLE from the current set — v1.51 §6.)*
+
+## Addendum v1.51 — 2026-08-06 (haiku comes off the agent's tier menu as an attribution probe; the SUPPRESSION genre is a specification gap of OURS; bareagent-u greens honestly — and the doctrine that comes out of it is that the goal must state everything the close will judge — hamr)
+
+Three commits on `variance-progress-abc`: `75dfb4d` (the haiku drop), `d8e2165` (the signed
+wall raise for the resume) and `a219e05` (the goal rewritten from the close's own detector).
+Evidence, numbers and the failure taxonomy are **F87**. Four paid runs; **session paid total
+through `u-mshzvkqw` is $14.4782**, and one run was still in flight when this was written (§4).
+
+### 1. Haiku comes off the agent-selectable step tier — an ATTRIBUTION PROBE, not a verdict on haiku (`75dfb4d`)
+
+hamr's order, verbatim:
+
+> **"haiku should be dropped to see if it passes, if it's agent poor work or harness, like
+> always."**
+
+v1.50 §6 left this as open item (a): a $0 archive read before anything else. It was run —
+**186 spines, 71 accepted plans, 255 steps; only 20 steps ever declared a tier at all**:
+
+| tier | steps | on a REPLANNED plan | LAST step of their plan | green | round bounds |
+|---|---|---|---|---|---|
+| haiku | 12 | 9 | 6 | **2** | 3–12 |
+| sonnet | 8 | 2 | 3 | **5** | 14–32 |
+
+**The change.** `STEP_MODELS = ['sonnet']`. The `model` field and its validator branch STAY —
+a one-entry menu, so a plan or a stored bridge declaring `model:"sonnet"` still validates and
+restoring haiku is a one-token edit. The drafter prompt's `model` line is DELETED rather than
+reduced to a one-item menu (it advertised "a cheaper tier for mechanical steps" and there is no
+cheaper tier now; reciting a single legal value spends tokens to invite a no-op field — the
+`attempts` precedent). Verified by RENDERING the real prompt: zero lines match
+`/model|tier|haiku|sonnet|cheaper/i` in either the fresh or the replan form. `--model haiku`
+remains the OPERATOR's probe knob (v1.36, unchanged) — only what the AGENT may express narrows,
+which is the safe direction. **All 10 job spec hashes re-verified UNMOVED** (`jobSpecHash` covers
+the resolved spec, not `STEP_MODELS`); `bareagent-u` is still `eed6fe82…` at this commit.
+
+**Measured effect** — `u-mshsikhr` (with haiku) against `u-mshx0zsn` (sonnet only), same patient,
+same $4/25min envelope:
+
+| | with haiku | sonnet only |
+|---|---|---|
+| rounds | 120 | 87 |
+| wall | 21.8 min | 25.4 min |
+| **sec/round** | **10.9** | **17.5** (1.6× slower) |
+| how it ended | struck out at 2 errors, $0.85 and ~3.2 min left | wall-halt at 1 error, $1.44 left |
+| reached the outer close? | never | yes, plus 33 fix rounds |
+
+So the **failure CLASS changed — give-up → still-converging-when-the-clock-ran-out** — and the
+binding constraint moved from the ladder to the wall, because better rounds are slower rounds.
+
+**Stated without gloss: this is NOT a controlled comparison and is not written as one.** The
+planner picks haiku for steps it judges mechanical, and replanned steps sit on runs already in
+trouble — confounded in both directions, which is exactly why the tier was removed instead of
+argued about. The probe is one intervention on one patient, and it is reversible in one token.
+
+### 2. The SUPPRESSION genre — and the specification gap behind it is OURS (F87)
+
+Three runs, two patients, one mechanism: **the worker passed its step's check by SILENCING the
+type checker instead of typing the code.** bareagent 11 suppressions; bareguard 2, then 4 after
+its fix loop made it worse.
+
+**The session's first explanation was WRONG and is recorded as wrong.** It read as *the planner
+wrote a gate satisfiable by cheating, under time pressure*. hamr's question — does the worker
+even know about the clock — killed it. **The worker cannot panic: it is blind to money and to
+wall.** Verified in source: `materialsBlock` is referenced ONLY by `planPrompt`; the worker's
+system prompt is `PERSONA_TOOLS + strategyFor(granted)`, 1074 characters, and its only
+economy-adjacent lines are about preferring `edit` over whole-file writes. No budget, no clock,
+no countdown reaches it. A mechanism story that survives one question is not a mechanism story.
+
+**The actual mechanism has two halves, and both are ours:**
+
+1. **Exactly one check slot per step.** `MAX_EXITS_PER_STEP = 2`, and the drafter prompt requires
+   a `check-passes` on a write-granted step to be paired with a `tree-changed` exit. So a step
+   has EXACTLY ONE check slot, and carrying `typecheck` AND `no-suppressions` together is
+   **inexpressible today**. Both plans declared `check-passes(typecheck)` + `tree-changed`;
+   `no-suppressions` WAS on the offered menu and could not have been added without dropping the
+   other.
+2. **The goal never said it.** The original goal — *"Make src/recurse.js and src/loop.js pass
+   `tsc --strict` without weakening the tests and without introducing strict errors elsewhere."*
+   — names **two** constraints. The close judges **six** stages. Planner and worker both read the
+   goal. The agent spent its single slot on the check the goal sentence asks for: the CORRECT
+   choice given what it was told.
+
+**How the close catches it, mechanically and never by judgement:** `no-suppressions` lists files
+changed against the frozen seed, takes `git diff -U0` ADDED lines only, and greps each against 7
+fixed patterns (`@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`, `eslint-disable`, `any`,
+`{*}`/`{?}` JSDoc, `@type {...} */ (expr)` casts). Any hit reds and every offending line goes
+back in the gap. Pre-existing `any` cannot trip it — only newly added lines.
+
+The fix (`a219e05`, hamr: *"do 1 and rerun"*) took the new goal wording FROM the close's own
+`SUPPRESSIONS` table rather than paraphrasing it, so the goal and the grader name the same
+shapes, including the `unknown` carve-out quoted from the close's own advice line. Hash
+`eb6aca00…` → `e2f40abd44dbb587881784433ee31ca66b067808a02c66af2081f211560b9daa`.
+
+### 3. DOCTRINE — the goal must state everything the close will judge
+
+**Nothing derives the close from the goal, and nothing checks the two against each other.** The
+close is operator-authored and named in the signed spec; the goal is a separate sentence in the
+same spec. The only derivation in the system is **close-stages → the agent's check MENU**: one
+hop, one direction (v1.28). **That separation IS the arbiter rule and is not to be weakened** —
+a goal that could edit the close, or a close inferred from goal prose, would put the destination
+inside the emergent part. No proposal here touches it.
+
+What is missing is not a derivation but a **surfacing**. The runner already knows every close
+stage name at preflight and shows the operator **none** of it. So an unstated stage is invisible
+until a run discovers it the expensive way, at the tail, after the money is spent.
+
+> **The doctrine, stated: an unstated close stage is a COST TRAP. The run will find it — the
+> close is the only truth and it does not miss — but it will find it last, with the wallet
+> already spent.**
+
+The lever is therefore at authoring time and at the operator's screen, not in the arbiter.
+
+### 4. The live read, ungossed
+
+| run | patient | outcome | spend | wall |
+|---|---|---|---|---|
+| `u-mshx0zsn` | bareagent-u | **wall-halt** | $2.5574 / $4 | 25.4 / 25 min |
+| `u-mshzdogs` | bareguard-u | **escalated** | $1.1177 / $4 | 13.0 / 25 min |
+| `u-mshzvkqw` | bareagent-u | **GREEN** | $0.7420 this leg, **$3.2994 total** | 42.5 / 45 min total (17.1 this leg) |
+
+`u-mshx0zsn` halted on TIME, not capability: $1.44 unspent, one remaining strict error, trend
+`converging` on the halt record. W-2 says the stop is the checkpoint, so the lever was the
+operator's wall — `d8e2165` raised `maxWallMs` 25 → 45 min, sized from the measured fix loop
+(~$0.021 and ~17.5s per round, so the remaining $1.44 funds roughly 20 more minutes) so that
+money and wall bind at about the same place rather than one silently overriding the other (F45).
+`budgetUsd` stayed **$4** — the resume folds prior spend, so this could not widen the money.
+Hash `eed6fe82…` → `eb6aca00…`; hamr's signature, verbatim in-turn: **"signed, fire it after
+bareguard"**.
+
+**`u-mshzvkqw` is GREEN.** Close chain on the resumed leg: `1 error` → `7 suppressions` →
+**satisfied**. All six stages satisfied on the spine, and **independently re-verified by
+re-running every stage against the patient afterwards**:
+
+```
+changed-from-seed  2 file(s) changed, all under src/
+typecheck          zero errors in src/recurse.js, src/loop.js
+typecheck-outside  67 outside, at or below the seed's 67
+tests-kept         1044 executed, at or above the seed's 1044
+suite-green        1044 executed, 0 failing
+no-suppressions    no suppressions added across 2 changed file(s)
+```
+
+The worker went back and REMOVED its own suppressions. A bridge was minted.
+
+**The load-bearing conclusion: a loose goal was a COST hazard, never a CORRECTNESS hazard.** The
+close refused every suppressed version and forced the honest fix. **Nothing green was ever minted
+mid-run** — a step passing its own check is not a verdict, and the arbiter never approved a
+suppressed tree at any moment. The two-docs/two-validators split did the job it exists for; what
+it did not do, and was never asked to do, is make the cost visible earlier (§3).
+
+**Limits, stated.** This is a **RESUME green at 45 minutes, not a cold green inside the $4/25
+screen envelope** — so bareagent-u is **winnable**, not **screen-passed**, exactly as
+`u-msf70nei` was. And it is n=1 on the tightened-goal question.
+
+#### `u-msi0w2i5` — the tightened-goal cold run: MONEY cap-halt, no verdict, inconclusive
+
+Fired cold on the rewritten goal (hash `e2f40abd44…`), $4 / **45 min** — the wall deliberately
+raised so it could not bind and the run would measure the job's real duration.
+
+**Outcome: `cap-halt`. $4.0048 of $4, 19.2 of 45 minutes, 96 rounds, 29 allowed writes over 2
+distinct files, no replan.** The MONEY ran out at nineteen minutes with twenty-six minutes of
+wall unused. `spendComplete: true`; the halt is decision-ready and the kept verdict is
+`needs_revision` at `changed-from-seed`, trend **converging** (`typecheck 30 → 31 → 21`).
+
+**What the tightened goal changed, and it is not nothing:** the drafter produced bareagent-u's
+**first two-step plan** — `prep-precise-types` (`tree-changed` only) then `fix-strict-typecheck`
+(`tree-changed` + `check-passes(typecheck)`). Every prior bareagent plan on record, greens
+included, was a single step. Step 1 greened; step 2 escalated.
+
+**What it did NOT change:** the second step still spends its single check slot on `typecheck`
+and still cannot also carry `no-suppressions` — the one-slot ceiling is untouched by wording,
+exactly as predicted above. And the run never reached the outer close at all, so the close never
+judged suppressions on this tree.
+
+**Read, stated as inconclusive rather than negative.** This row does not answer whether the
+tightened goal helps. It answers a different question by accident: the added prep step is
+expensive. Drafting $0.6078, execution $3.3970 — the same $4 that funded a 25-minute run to a
+wall-halt before now buys only 19 minutes, and typecheck rose 30 → 31 before falling to 21 (a
+prep step that adds errors first is a known property of this genre, not a defect). Whether the
+goal wording or the extra step is responsible is unattributed: **two things moved at once**,
+which is the standing rule against reading either.
+
+**The honest comparison at this point is a three-row table with no clean pair in it:**
+
+| run | goal | wall | outcome | spend |
+|---|---|---|---|---|
+| `u-mshx0zsn` | loose | 25 min | wall-halt at 1 error | $2.5574 |
+| `u-mshzvkqw` | loose (resume of the above) | 45 min total | **GREEN**, six stages re-verified | $3.2994 total |
+| `u-msi0w2i5` | tightened | 45 min | cap-halt, money gone at 19 min | $4.0048 |
+
+The green stands on the LOOSE goal. The tightened goal has produced no verdict. Nothing here
+licenses "the goal fix helped" or "the goal fix hurt", and the money ceiling — not the wording —
+is what ended the only run that tested it.
+
+Registered before the numbers: `u-msi0w2i5` is the cold rerun on the tightened goal at $4 / 45
+min (the wall is deliberately left non-binding so the run measures the job's real duration
+instead of the cap). It measures the COST the loose goal charged — not whether the close works,
+which §4 already settled. No outcome is asserted here; whatever it returns, including another
+red, is recorded as it lands.
+
+### 5. PRODUCT DIRECTION from hamr — recorded as direction, not as a built feature
+
+hamr, verbatim this session:
+
+> **"these kind of things should be passed in prompt, we should learn and pass advise in ui and
+> to user that you need clear goal and clear ask or 2 per workflow to satisfy and be clear as
+> possible and probably later in ui they should be split into 2 places"**
+
+The reading, in three parts:
+
+1. **The goal must state everything the close will judge** (§3's doctrine, delivered to the human
+   who writes it — not inferred by the machine).
+2. **A few explicit requirements, not prose.** "Clear ask or 2 per workflow" is a shape
+   instruction: a goal is a short enumerated list of things that must be true, and each one
+   should be something the close actually tests. Prose invites the drift §2 paid for.
+3. **The UI splits it into two places** — *"what you want"* and *"what done means"* — with the
+   second **visibly derived from the close's stages**, so the drift becomes hard to write rather
+   than merely discouraged. The runner already holds every stage name at preflight, so this is a
+   surfacing of state that exists, not new machinery.
+
+This connects directly to the signed export/workbench direction (v1.44): **the workbench is where
+a job is SHAPED before it is exported.** A goal/close mismatch caught at the workbench costs a
+sentence; caught at the tail of a paid run it costs the run — and it travels into the exported
+bundle if it is never caught at all.
+
+**This is DIRECTION. Nothing here is built, designed, or scheduled**, and no rung is opened by it.
+The prompt-side half (advice at draft time) and the UI-side half (two fields, one derived) are
+separate pieces of work whose sequencing is hamr's.
+
+### 6. Job B: the pool is EXHAUSTED
+
+`u-mshzdogs` (bareguard-u) **escalated** → the screen's must-GREEN condition failed → **bareguard-u
+is OUT** under the frozen clauses. It was the last shaped candidate, so the lift-contrast prereg's
+**"pool exhausted → stop-and-report"** condition is now **MET**. Job A (`pulselog-u`) remains the
+only admitted candidate, and the job-B slot cannot be filled from the current set. No clause was
+touched, no rejection row was revisited, and **no replacement is proposed** — the disposition is
+hamr's.
+
+**A $0 read that killed one of the session's own hypotheses.** The session suspected the prereg's
+**≥2-step** clause of excluding the shape that actually wins. The archive says otherwise: greens
+occur at 1, 2, 3 and 6-step plans —
+
+| accepted plan size | greens |
+|---|---|
+| 1 step | 2 / 8 |
+| 2 steps | 4 / 12 |
+| 3 steps | 3 / 6 |
+| 6 steps | 3 / 5 |
+
+Other U patients green with 2–3 step plans. **The clause is filtering two specific patients**
+(bareagent and baremobile, where the drafter keeps rolling a single step) **and not the winning
+shape.** The hypothesis is withdrawn; it did not survive a free archive read, and it is recorded
+here so it is not raised again.
+
+### 7. Parked / open for hamr
+
+- **The exit-slot ceiling.** A step cannot carry two checks: `MAX_EXITS_PER_STEP = 2` and the
+  mandatory `tree-changed` pairing leave exactly one check slot, which is half of §2's mechanism.
+  **Raising the ceiling is arbiter territory and must NOT be done to fix a wording problem** —
+  §2's other half was cured by wording (`a219e05`) precisely so this one is not touched
+  reflexively. Whether a step should ever carry two truth checks is a design question with its own
+  cost (every extra exit is another wall the worker must clear inside one step) and it is hamr's.
+- **The missing goal-vs-close SURFACING** (§3). The runner knows every stage name at preflight and
+  prints none of it. This is a display/authoring change, never a derivation — but it is unbuilt,
+  unscheduled and unowned.
+- **C is still unexercised under both fixes.** v1.50 §6 carried this; it is unchanged. C never
+  fired this session either, so the bounded second-replan exception still has exactly one live
+  observation and that one is a red.
+- **The empty job-B slot** (§6), now with the pool declared exhausted rather than merely thin.
+- **The haiku probe is uncontrolled** (§1). It changed the failure class on one patient. Whether
+  the tier stays off the agent's menu, and whether the operator readout should show a per-step
+  tier below the default at all (v1.50 §6's item (b), still open), are hamr's calls — the probe
+  was built to be reversed in one token for exactly this reason.
+
+---
+
+## Addendum v1.52 — 2026-08-07 (Layer 3's lift contrast is RETIRED, not run: the gate rules already deliver its payload cold; the selection/promotion machinery is PARKED; reuse is re-aimed at a TEMPLATE — hamr)
+
+**Basis:** F88, a $0 archive read run before any paid fire, on hamr's challenge that the rung
+carried more scaffolding than moved outcome. Authorised in-turn: *"yes, write the finding and
+park it in the prd"*.
+
+### 1. What the read settled
+
+The only payload a TYPES bridge can transfer is the plan SHAPE. `28ee95f`'s two gate rules
+(Rule A-v2 `check-placement`, Rule B `check-shed`) made the losing shapes inexpressible, and
+the cold drafter now produces the winning shape 10/10 without any bridge. The frozen
+lift-contrast experiment would pay $15–25 to measure a difference that a $0 validation rule
+already erased.
+
+**Retired: the reuse-ON vs forced-cold lift contrast**, in its frozen form. Not "failed" and
+not "deferred" — its premise expired under our own fix, and re-running it would mint a
+predictable flat as if it were a finding. `REUSE-LIFT-CONTRAST-PREREG.md` stays on the record
+unaltered, with this addendum as its terminal entry.
+
+**Moot, consequently: the empty job-B slot** (v1.51 §6) and the `≥2 steps` screen clause
+tension. Neither needs a ruling while the experiment they gate is retired. Both stay written
+down; neither is an open ask.
+
+### 2. What is PARKED (not deleted — nothing is removed on the assistant's say-so)
+
+Parked on branch `layer-3-reuse`, off the critical path:
+
+- the LLM **selection** call (`selectBridge`) and its pin/shortlist/refusal protocol,
+- **promotion** counting (candidate → proven on two distinct patients),
+- the **demotion** table and casualty rows.
+
+All three exist to answer *"which stored plan should this run start from"*, a question that
+only earns its keep when stored plans differ in ways that matter. F88 shows they no longer do
+on this genre. The code is proven working (F73) and stays where it is.
+
+### 3. What is KEPT
+
+Storage plus **pin** — the user names a stored workflow and re-runs it. This is hamr's own
+framing of the honest user need (*"user just wants to run the same workflow regardless"*), it
+needs no selector and no ledger, and both halves already exist.
+
+### 4. What replaces the contrast (SPECIFIED, NOT FIRED — awaits hamr's freeze)
+
+**Template-only reuse.** Today `src/planrun.js:542` hands the drafter `newest.plan` verbatim,
+patient prose included — a `baremobile` bridge carries ~1,400 characters of `WdaTimeout` and
+`CLASS_MAP`. The replacement arm strips the prose and carries only what the gate does NOT
+set: `rounds`, `tools`, `scope`, `attempts`, model tier, and the iterate sentence.
+
+This is the one reuse hypothesis still standing, and it has never been tested. It needs a
+frozen design and hamr's signature before any money moves; no patient, envelope, or clause is
+proposed here.
+
+### 5. Scope of the claim
+
+Genre-bound to TYPES, n=10 post-rule, 6 of those on one patient. This addendum retires an
+EXPERIMENT, never the inheritance hypothesis. Should a later genre carry shape variance the
+validation gate cannot close, reuse returns with a live question and the parked machinery is
+where it was left.
+
+### 6. Sequencing after this
+
+Unchanged from v1.51 except that Layer 3 no longer blocks: **close-authoring** (the close
+becomes something a user declares from a catalog of named stages rather than a script the
+assistant writes per patient) is the next rung, and softgreen + hitl follow it — hitl's close
+IS an operator declaration, so it stands on that surface.
+
+---
+
+## Addendum v1.53 — 2026-08-07 (close-authoring design FROZEN: the user declares what done means; nine softgreen/hitl rulings; the next rung — hamr)
+
+The design record `docs/plans/2026-08-07-close-authoring-design.md` is FROZEN (hamr,
+verbatim, in-turn: *"all approved, fix ledger now (assign to opus and validate), close the
+record and review"*). This addendum is the PRD-side pointer, per the v1.27/v1.42 convention;
+the record is the design's home and is not restated here.
+
+What it settles, in one paragraph each:
+
+- **The last authored layer un-authors.** Today every close is a hand-written script
+  (`scripts/u-*-close.mjs`); the record replaces that with a chat interview whose answers an
+  LLM composes into a DECLARATION over operator-owned stage KINDS — never code, no escape
+  hatch (D1–D3). Verdict type (`green`/`soft-green`/`hitl`) is DERIVED from the answers,
+  never picked (D4, superseding the declared radio). Mandatory genre guards are shown and
+  fixed (D5 — the F87 antidote). The user signs the whole hash (D7); nothing LLM-judges the
+  close — validator + precheck + seed-verdict read, then the signature (D9).
+- **Gate 1 ran before any build** ($0 expressiveness replay over all 8 hand-written closes):
+  PASS for TYPES with four kind amendments; FAIL as a general catalogue (`harness-loop` for
+  TESTGEN is known-missing, out of v1); three runtime contracts and the one-population law
+  are design obligations the first draft missed — all recorded.
+- **D11–D13** (re-derived against source by opus): authoring scout emits a facts object, the
+  authoring call stays toolless; the close stores the COUNTING RULE never the number (repeated
+  jobs re-measure at their own seed); v1 is ONE genre, interview-confirmed, honest refusal
+  via `request-red` — whose `lib` territory stamp shipped on this branch so a bareloop-
+  catalogue refusal never files as a bare-agent ask.
+- **The nine softgreen/hitl rulings** close the verdict-class design at the close side: hitl
+  pauses decision-ready with the clock stopped, full evidence, signer-only, the human's
+  reason IS the gap, never usable mid-run; the softgreen judge is metered from the same
+  wallet, gated by a frozen calibration set before it may gate anything, skips the seed read,
+  and its passes are QUARANTINED from learning credit until the floor is proven. Two
+  canonical examples (flight = softgreen with a hitl gate on the irreversible payment;
+  resume = hitl) and the mechanical-first composition law (deterministic stages first, judge
+  minimal, human last) are recorded.
+- **Sequencing:** close-authoring v1 (green) is the next build rung; hitl before softgreen
+  inside the follow-on rung (assistant-proposed, in the record); Layer 3 stays parked per
+  v1.52 with template-only reuse frozen for later.
+
+---
+
+## Addendum v1.54 — 2026-08-07 (the replan ceiling is a RUN bound and spans the resume chain: a kill was refilling a signed allowance, and the fix records WHY a readout's precedent must not be reused for a bound — commit `091d356`)
+
+**Basis:** a review round on `variance-progress-abc`, confirmed BY EXECUTION before any remedy
+and re-validated on an independent instrument afterwards. No new grant is made here and no
+number moves; this addendum states a boundary that v1.12 already drew and that the code had
+quietly stopped honouring.
+
+### 1. The ruling
+
+**A replan ceiling bounds the RUN, and a resume chain is one run.** It bounds how many times
+the WORKFLOW may be redrawn before redrawing it is thrash — v1.12's *"unlimited replanning
+launders thrash as adaptation"* — and that question spans exactly the chain the halt readout
+already spans, not the leg that happens to be executing.
+
+Measured before the fix: `replanned`/`varianceGrantUsed` were locals in `runPlan`, and a resume
+IS another `runPlan` call. Leg 1 replanned and stopped; leg 2, driven with a `resumeSeed`,
+replanned again. Two replans on a run whose ceiling is one, with **every record on the spine
+showing 1** — the readout was as wrong as the bound. Two would have become four by being killed
+once.
+
+**This landed rather than parking as arbiter territory, and the reason is the direction.** The
+standing rule is that arbiter changes — verdict routing, budgets, close semantics — are named,
+scoped and parked for hamr's explicit go. This fix does not change an arbiter number; it stops a
+signed one from being refilled by an external kill. Restoring a bound to what the signature
+already said is the one direction that needs no new signature, and it is the direction a park
+would leave broken. Nothing here widens anything: the disarm control is pinned in the suite — a
+resumed leg with an UNSPENT ceiling still replans, so the bound is bounded rather than switched
+off.
+
+### 2. Why this seed spends the leg's bound where the trend's seed refuses to
+
+`src/trend.js`'s THE SEED deliberately refuses to seed the close-fix loop's ITERATIONS from
+history, on the stated ground that *the leg's own bounds must not be spent by history*. That is
+right and stays right, and it is not in tension with §1 — the two bounds answer different
+questions:
+
+- an **attempt allowance is a LEG bound**: a restarted leg buys its own attempts with its own
+  money, so history spending them would charge a leg for work it did not do;
+- a **replan ceiling is a RUN bound**: it governs how many distinct workflows one run is allowed
+  to author, and a run does not become a second run by being killed.
+
+Both seeds now document the split at their own site. This is the general form: **before seeding
+anything across a resume, ask whether the thing being seeded is bought with the leg's money or
+declared by the run's signature.** They fold in opposite directions and no single precedent
+covers both.
+
+### 3. The mechanism, and the precedent deliberately NOT copied
+
+`readGradeSeed`'s documented known limit is that it reads ONE spine, so a resume of a resume
+inherits the previous leg's grades and not the whole chain — the chain shortens by a leg per
+kill. That limit is **fail-safe for a READOUT** (a shortened chain can only under-claim a
+direction) and it is **the dangerous direction for a CEILING**, where an under-claimed ledger is
+a refilled allowance and every kill buys one.
+
+So the replan seed follows the MONEY fold instead (`priorSpentUsd`, `try-start`/`job-start`):
+each leg DECLARES the ledger it inherited on its own spine, and the next reader adds only that
+leg's own `replan` records to the declared number. Leg 3 inherits the whole chain, not leg 2's
+slice. Spine surface, ADDED never repurposed: `job-start` gains `priorReplans` and
+`priorReplanGrantUsed` (emitted only when there is a fold — a decorative `0` is
+indistinguishable from a run nobody folded), and the grant latch travels beside the count rather
+than being derived from it, because `1` + `false` is a real state the derivation would erase.
+
+`plan-executed.replans` consequently **changes meaning from the leg to the chain**. The change
+was made rather than shadowed by a second field for one reason and it does not generalise: the
+field shipped only on this unreleased branch, so no archived spine carries the leg reading. The
+leg's own number stays derivable (`chain − records-in-this-window`), which is the arithmetic the
+resume reader already runs, and a second field stating a derivable number would be a second
+reader of one question.
+
+### 4. Scope, and the sweep that found no second instance
+
+The audit question this raises is general — *what else that bounds the RUN is a local reborn on
+every leg?* — so it was run at $0 over `runPlan`'s own declarations rather than left as a
+worry. Money, wall and tries were already declared folds; the replan count and its variance
+latch were the only two that were not; `fixIterationsUsed` and the step strike ladder are LEG
+bounds by §2's test and correctly stay leg-local. One class, two sites, both closed.
+
+Not claimed: nothing here says the ceiling is the right NUMBER. Threshold-setting stays hamr's,
+as it has since A's replan trigger, and this addendum only makes the number that was signed the
+number that is enforced.
+
+---
+
+## Addendum v1.55 — 2026-08-07 (the ReDoS reject reaches the OPERATOR's two regex fields; its alternation-overlap blind spot is PARKED to the close-authoring rung — hamr: *"add it to next phase with close dev"*)
+
+**Basis:** a $0 measurement round on `variance-progress-abc`, run against the real evaluators
+rather than the detector's unit fixtures. No paid run.
+
+### 1. What landed: the reject was wired at one of three sites, not three
+
+F49 shipped `hasNestedQuantifier` as a validation-gate reject and wired it at exactly ONE
+site — the AGENT's `artifact-written.pattern`. Two OPERATOR-authored regex fields reach an
+equally untimed evaluator and were never covered: `judged.pattern` (exec'd by `runClose`
+against the close's whole stdout+stderr) and `gapKeep` (compiled by `boundGap` and run once
+per line of close output).
+
+**Measured, not argued:** `boundGap(stream, '(a+)+$')` against a 40-character line does not
+finish in 20 seconds (`timeout` exit 124).
+
+**The severity is higher than an operator self-DoS, and F67 is why.** On the agent side F49's
+own scope note is right — the agent authors both the pattern and the artifact, so a hang burns
+only its own wall-clock and compromises no arbiter. The operator's two patterns run in
+**bareloop's own process**, so the hang blocks the MAIN EVENT LOOP — and the in-process stall
+fuse is a timer in that same loop, so it cannot fire. This is F67's lesson landing on a second
+mechanism: *a guard living inside the process it guards shares that process's fate.* The run
+dies to the OUTSIDE watchdog and reads as a model stall. **A bad regex in a SIGNED spec
+presents as a provider problem** — which is the expensive part, because that is a
+misdiagnosis, not merely a stop.
+
+Wiring it required moving the scan from `plan.js` to `validate.js`: `plan.js` imports
+`job.js`, so `job.js` cannot import `plan.js`, and a second copy would be exactly the drift
+class `SECRET_PATTERNS` exists to prevent — a shape one document rejects and the other admits.
+ONE inventory, imported by both; `plan.js` re-exports the name (the `WRITE_VERBS` precedent)
+so the F49 site is byte-identical in behaviour.
+
+**Admissibility sweep, run before the change and re-run after:** all 92 operator regexes
+across all 10 signed specs in `jobs/` — **zero** newly red. No spec breaks and no spec-hash
+churn, because no spec file is touched.
+
+### 2. What is PARKED: the alternation-overlap class
+
+**Measured miss.** `hasNestedQuantifier` does NOT catch `(a|aa)+$` or `(x|xy)*$`. There is no
+inner QUANTIFIER for a shape scan to find: the catastrophic behaviour comes from **overlapping
+alternation BRANCHES** under a repeat. This is a genuine limit of the detector's approach, not
+a defect in its implementation — F49's own scope note names the `(a|ab)+` class as
+out-of-scope by decision, and this addendum confirms the miss by measurement rather than
+leaving it as a reasoned expectation.
+
+**Recorded so a later reader does not re-chase it: `([^])*$` is NOT caught, and that is
+CORRECT.** `[^]` is JS's any-single-character idiom, so `([^])*` is linear — not a hazard, and
+flagging it would be a false positive. The v0.7.0 `[^]` work was about the SCANNER parsing
+empty character classes without losing the class's boundaries, and it works: `([^]*)*$` — the
+genuinely nested one — IS caught. The two cases differ by one `*` and it is the difference
+between a true negative and a real catch.
+
+**Why parked rather than fixed:**
+
+- Expanding the detector changes **which signed specs are ADMISSIBLE**. That is
+  arbiter-adjacent territory, and reshaping a detector that gates every spec is not a
+  release-branch change.
+- The repo's own precedent is to **STATE a known detector limit rather than chase it** —
+  exactly how F49's false-POSITIVE class (anchor-disambiguated repeated-record patterns) was
+  handled. The standing rule that detector fixes must be MONOTONIC does not license
+  free-handed widening here: the safe direction bars chasing false positives, and closing this
+  false NEGATIVE means adding rejections whose blast radius is the whole signed fleet.
+
+**Where it is docked, and why that is the natural home.** hamr's instruction, verbatim: *"add
+it to next phase with close dev"* — the close-authoring rung (v1.53, design record
+`docs/plans/2026-08-07-close-authoring-design.md`, FROZEN). That rung is where the close stops
+being hand-written per patient and becomes a DECLARATION over operator-owned stage kinds. If a
+declared close composes its own patterns from kinds, **hand-authored operator regexes may
+cease to exist as a surface at all** — which would retire this question rather than answer it.
+Sharpening a detector for a field that is scheduled to stop being hand-authored is work aimed
+at a surface that may not survive the rung.
+
+### 3. Not claimed
+
+- Nothing here says the detector is wrong. It says its scope, which F49 named, is now
+  measured — and that the scope is acceptable *until* the close-authoring rung decides whether
+  the field it guards still exists.
+- No claim that the alternation class is reachable in practice today: all 92 shipped operator
+  regexes are simple anchored literals, and none is near this shape. The park is a known gap
+  held open deliberately, not a live exposure being tolerated.

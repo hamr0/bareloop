@@ -117,9 +117,15 @@ const ASKS = /** @type {Record<string, (o: {lib: string, verb: string, detail: s
   'runtime-red': (o) => `${o.lib}: \`${o.verb}\` threw at runtime — ${o.detail}`,
   'provider-red': (o) => `bare-agent: the provider path failed — ${o.detail}`,
   'pricing-red': (o) => `bare-agent: a provider result carried no priced cost (unpriced is never free, F6) — ${o.detail}`,
-  'capability-gap': (o) => `bare-agent: locked \`${o.verb}\` was requested and the run cap-halted — admission candidate`,
+  // same rule as request-red below (capability-gap is its cap-halted form): the
+  // ask is seeded at the STAMPED target, so a bareloop-catalogue refusal cannot
+  // render as "bare-agent: …" — fixing the occurrence's lib alone would leave the
+  // misattribution intact in the one field a human actually files from
+  'capability-gap': (o) => `${o.lib}: locked \`${o.verb}\` was requested and the run cap-halted — admission candidate`,
   'broken-close': (o) => `job owner: the close itself cannot run — ${o.detail}`,
-  'request-red': (o) => `admission: locked \`${o.verb}\` requested by a job spec — demand evidence, never a grant`,
+  // the target is the STAMPED lib, never a hardcoded package: a bareloop-catalogue
+  // refusal (a locked verdict type) must not seed an ask that reads "bare-agent: …"
+  'request-red': (o) => `${o.lib}: admission — locked \`${o.verb}\` requested by a job spec — demand evidence, never a grant`,
   'retention-red': (o) => `litectx: on-green retention failed — ${o.detail}`,
   'config-red': (o) => `bareloop: drafting friction at ${o.verb} — ${o.detail}`,
 });
@@ -160,9 +166,20 @@ export function classifyIncidents(events, { spine = 'spine' } = {}) {
       // a repeated signature indicts the drafting prompt/schema, i.e. bareloop
       add(ev, 'config-red', 'bareloop', String(ev.path ?? 'config').split('.')[0] || 'config', `${ev.code} at ${ev.path}: ${ev.detail ?? ''}`);
     } else if (ev.type === 'job-red' && ev.code === 'request-red') {
-      // the structured field wins; the prose-quoted verb stays as the fallback
-      // for spines written before the field existed
-      add(ev, 'request-red', 'bare-agent', ev.verb ?? (String(ev.detail ?? '').match(QUOTED_VERB_RE) ?? [])[1] ?? 'unknown', ev.detail);
+      // the structured fields win; the prose-quoted verb stays as the fallback
+      // for spines written before the field existed, and the hardcoded
+      // 'bare-agent' lib stays as the fallback for the same reason — it was the
+      // only territory `request-red` had when the field did not exist.
+      //
+      // One code, TWO territories: a locked TOOL verb is demand against the
+      // worker-surface package; a locked VERDICT type (and, when D13 lands, a
+      // genre refusal) is demand against bareloop's OWN catalogue and must never
+      // seed an upstream ask. The lib is stamped at the emit site (src/job.js)
+      // per the typed-lib rule — deriving it here from the code or the path is
+      // exactly the BA-2 misattribution class. A new bareloop-territory
+      // request-red therefore routes correctly by stamping its own lib, with no
+      // change to this branch.
+      add(ev, 'request-red', ev.lib ?? 'bare-agent', ev.verb ?? (String(ev.detail ?? '').match(QUOTED_VERB_RE) ?? [])[1] ?? 'unknown', ev.detail);
     } else if (ev.type === 'escalation') {
       if (ev.category === 'broken-close') {
         add(ev, 'broken-close', 'consumer', 'close', ev.detail);
@@ -211,10 +228,41 @@ export function classifyIncidents(events, { spine = 'spine' } = {}) {
 
   if (capHalted) {
     // capability-gap: the run hit its cap in a spine that also asked for a
-    // locked verb — the strongest admission evidence there is (design table)
-    for (const verb of new Set(occs.filter((o) => o.class === 'request-red').map((o) => o.verb))) {
-      const halt = events.find((e) => e.type === 'cap-halt');
-      add(halt, 'capability-gap', 'bare-agent', verb, `locked "${verb}" requested and the run cap-halted`);
+    // locked verb — the strongest admission evidence there is (design table).
+    // STILL DORMANT, exactly as the module header says: a request-red is a
+    // job-validation red, validateJob returns not-ok on any red and run.js
+    // returns on a validation red, so a request-red and a cap-halt cannot share
+    // one spine today. What follows is a latent-consistency fix at a documented
+    // dormant seam, not a live bug fix.
+    //
+    // The territory comes from the OCCURRENCE, never from a hardcoded package.
+    // capability-gap inherits request-red's two territories: a locked TOOL verb
+    // is demand against the worker-surface package, a locked VERDICT type is
+    // demand against bareloop's OWN catalogue. The request-red rows above
+    // already carry the lib stamped at their emit site (src/job.js), so reading
+    // it here is the typed-lib rule; re-hardcoding 'bare-agent' would seed an
+    // upstream ask for our own refusal — the BA-2 misattribution class. The
+    // sibling request-red site was fixed on this branch and this one was missed;
+    // a fix landing at one of two identical sites is the class already paid for
+    // once here (the ripgrep install that landed in ci.yml but not publish.yml).
+    //
+    // The dedup key is (verb, lib), not verb alone. The ledger's own occurrence
+    // key already carries lib, so folding on the verb would merge two
+    // territories into one row and attribute it to whichever lib the Set
+    // happened to hold first — an arbitrary target, which IS the defect. One
+    // gap per (territory, verb) costs nothing and each carries an honest one.
+    // The key is JSON, not a joined string: a delimiter that can appear in
+    // either half makes ("a-b","c") and ("a","b-c") the same key, and picking
+    // an "impossible" delimiter is a guess about names neither of these two
+    // vocabularies has promised to keep.
+    const halt = events.find((e) => e.type === 'cap-halt');
+    const seen = new Set();
+    // .filter() snapshots before add() appends, so the loop cannot feed itself
+    for (const o of occs.filter((x) => x.class === 'request-red')) {
+      const dedup = JSON.stringify([o.lib, o.verb]);
+      if (seen.has(dedup)) continue;
+      seen.add(dedup);
+      add(halt, 'capability-gap', o.lib, o.verb, `locked "${o.verb}" requested and the run cap-halted`);
     }
   }
   return occs;

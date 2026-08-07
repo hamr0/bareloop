@@ -353,7 +353,7 @@ const recordingRuns = (script) => {
   const fn = async (/** @type {any} */ spec, /** @type {any} */ opts) => {
     const s = script[Math.min(i, script.length - 1)];
     i += 1;
-    calls.push({ spec, bridge: opts.bridge, priorSpentUsd: opts.priorSpentUsd, priorWallMs: opts.priorWallMs, shellCapUsd: opts.shellCapUsd, resumeGrades: opts.resumeGrades });
+    calls.push({ spec, bridge: opts.bridge, priorSpentUsd: opts.priorSpentUsd, priorWallMs: opts.priorWallMs, shellCapUsd: opts.shellCapUsd, resumeGrades: opts.resumeGrades, resumeReplans: opts.resumeReplans });
     for (const c of s.rounds ?? [0.25]) opts.emit('worker-round', { kind: 'turn', costUsd: c });
     if (s.plan !== undefined) opts.emit('plan-accepted', { plan: s.plan });
     if (s.closeStage !== undefined) opts.emit('outer-close', { verdict: s.outcome === 'green' ? 'satisfied' : 'red', stage: s.closeStage });
@@ -489,6 +489,54 @@ test('resume: the restart is HANDED the dead leg\'s close grades, so the halt re
   assert.equal(rec.restart.gradesInherited, 2, 'the record says HOW MANY baselines crossed the seam');
   assert.doesNotMatch(JSON.stringify(rec), /suppression|FAILED|gap/i,
     'counts and stage names only — a close byte that crosses onto an append-only spine crosses for good');
+});
+
+test('resume: the restart is HANDED the replan ledger, and DECLARES it — the ceiling spans the chain the way the money does', async () => {
+  // The forwarding half of the same class the grade seam had (F50): a ledger the
+  // reader computes and nobody delivers is a ceiling that refills on every kill. The
+  // declaration on `try-start` is the other half — without it the NEXT reader starts
+  // the ledger at this leg's own window and hands leg 3 an allowance leg 1 spent.
+  const dir = seed(BRIDGE('alpha'));
+  const replanned = async (/** @type {any} */ spec, /** @type {any} */ opts) => {
+    opts.emit('worker-round', { kind: 'turn', costUsd: 0.5 });
+    opts.emit('plan-accepted', { plan: PLAN('first') });
+    opts.emit('replan', { step: 's1', trigger: 'cap-halt', replan: 1 });
+    opts.emit('plan-accepted', { plan: PLAN('redrawn') });
+    opts.emit('replan', { step: 's1', trigger: 'step-variance', replan: 2, granted: 'converging' });
+    opts.emit('job-end', { outcome: 'escalated', spentUsd: 0.5, spendComplete: true });
+    return 'escalated';
+  };
+  const { file, events } = await spineOf({
+    registryDir: dir, selectionProvider: picker({ choice: 'alpha', reason: 'a' }), runJob: replanned,
+  });
+  truncateTo(file, killedAfter(events, (e) => e.type === 'replan' && e.granted === 'converging'));
+
+  const runs = recordingRuns([{ outcome: 'green', plan: PLAN('restarted'), closeStage: 'typecheck', spentUsd: 1 }]);
+  const { dead, events: after } = await resumeOnto(file, { registryDir: dir, selectionProvider: picker(), runJob: runs });
+
+  assert.equal(dead.restart.replans, 2, 'the reader found both — the control that this half is not what fails below');
+  assert.deepEqual(runs.calls[0].resumeReplans, { count: 2, grantUsed: true },
+    'and the restart RECEIVES the ledger: computed-but-undelivered is a ceiling that reads spent and behaves fresh');
+  const ts = after.filter((e) => e.type === 'try-start').at(-1);
+  assert.equal(ts.priorReplans, 2, 'the restart DECLARES what it inherited, so a third leg folds once instead of re-deriving');
+  assert.equal(ts.priorReplanGrantUsed, true, 'and the arbiter\'s one extra travels with the count, never re-earnable per kill');
+});
+
+test('CONTROL: a restart with NO replan to inherit hands over nothing and declares nothing — an unspent ceiling stays byte-identical to a cold one', async () => {
+  const dir = seed(BRIDGE('alpha'));
+  const { file, events } = await spineOf({
+    registryDir: dir,
+    selectionProvider: picker({ choice: 'alpha', reason: 'a' }),
+    runJob: scriptedRuns([{ outcome: 'escalated', closeStage: 'typecheck', rounds: [0.8, 0.8], spentUsd: 2 }]),
+  });
+  truncateTo(file, killedAfter(events, (e) => e.type === 'worker-round' && e.costUsd === 0.8));
+
+  const runs = recordingRuns([{ outcome: 'green', plan: PLAN('restarted'), closeStage: 'typecheck', spentUsd: 3 }]);
+  const { events: after } = await resumeOnto(file, { registryDir: dir, selectionProvider: picker(), runJob: runs });
+
+  assert.equal(runs.calls[0].resumeReplans, undefined, 'nothing spent, nothing handed over — the cold path is the one that must not move');
+  const ts = after.filter((e) => e.type === 'try-start').at(-1);
+  assert.equal('priorReplans' in ts, false, 'and a decorative zero on the spine would be indistinguishable from a leg nobody folded');
 });
 
 test('CONTROL: a restart with NO grade to inherit hands over nothing and declares nothing — an absent baseline is absent, never a decorative zero', async () => {
@@ -1794,8 +1842,14 @@ test('cycle leg 1: the wallet drains INSIDE the fix loop and the run PAUSES deci
   assert.equal(mh.stage, 'verdict', 'and the stage that rendered it is named');
 
   // the trend — the whole reason the readout is "accurate" rather than a shrug
-  assert.equal(mh.trend, 'converging', 'the close went 2 → 1 on its own stage: this run was still getting somewhere');
-  assert.match(mh.reading, /verdict 2 → 1/, 'the series it judged is shown, so a human can check the instrument');
+  assert.equal(mh.trend, 'converging', 'the close fell on its own stage: this run was still getting somewhere');
+  // F85: the series opens at the stage's real SEED (3). The precheck is first-red-wins
+  // and stops at an earlier stage, so before this the `verdict` stage's baseline was
+  // simply missing from the run's own trend — the reader was under-fed, and a run
+  // stopped after one grade of a stage read `unknown` about work that had a direction.
+  assert.notEqual(events.find((e) => e.type === 'close-precheck').stage, 'verdict',
+    'the precheck never reached `verdict`, which is why its seed comes from the check preflight');
+  assert.match(mh.reading, /verdict 3 → 2 → 1/, 'the series it judged is shown, from the seed on, so a human can check the instrument');
   assert.match(mh.lever, /top up/i, 'converging work is what a top-up finishes');
 
   // the ceiling and what is left of it, honestly
@@ -1941,6 +1995,96 @@ test('§3 grades: a run killed before any close reported a number seeds NOTHING 
   assert.ok(r.restart, 'killed mid-flight, so there is still a leg to restart');
   assert.deepEqual(r.restart.grades, [],
     'the precheck reded on a numberless line — an unreadable grade donates nothing, exactly as it does inside the instrument (F6)');
+});
+
+// ── THE REPLAN CEILING FOLDS LIKE THE MONEY, NOT LIKE THE GRADES ────────────
+//
+// `replanned`/`varianceGrantUsed`/`replans` were locals in `runPlan`, reborn on every
+// call — and a resume IS another call, so every kill refilled an allowance PRD v1.12
+// says is the run's ("unlimited replanning launders thrash as adaptation"). The seed
+// that fixes it needs a reader, and the reader has a choice of two mechanisms already
+// in this file:
+//
+//   - the GRADE seed reads one spine and re-emits nothing, so its own documented
+//     KNOWN LIMIT is that a chain shortens by one leg per resume. Fail-safe for a
+//     READOUT (a short chain under-claims a direction) and the wrong direction
+//     entirely for a CEILING, where an under-claimed ledger IS a refilled allowance.
+//   - the MONEY fold declares what it inherited on the new spine (`priorSpentUsd` on
+//     `try-start`/`job-start`) and the next reader adds only that window's own rounds.
+//     Leg 3 therefore inherits the whole chain.
+//
+// The ceiling follows the money. These tests pin both halves: the count read off a
+// leg's own `replan` records, and the declared fold that makes a third leg inherit
+// the first leg's replans rather than restarting the ledger at leg 2's.
+
+/** The plan whose step can never satisfy its own check: `clean-run` greens only on an
+ * `ok` assertion, and every attempt writes a file without one. Real cap-halts, so the
+ * `replan` records below are the runner's own — never hand-authored. */
+const REPLAN_CYCLE_PLAN = (id) => JSON.stringify({
+  schema: 'plan-v1',
+  steps: [{
+    id, action: 'Write tests/test_x.mjs.', tools: ['write'], rounds: 6,
+    target: 'tests/test_x.mjs',
+    exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+  }],
+});
+
+/** LEG 1 with a REAL replan: the step exhausts its attempts with money still on the
+ * table (the one trigger that replans without a wallet or a meter in the picture),
+ * the ceiling's ONE redraft is spent, and the second plan exhausts too.
+ * @param {string} wd @param {object} [over] extra runJob opts (the fold, for a chain) */
+async function replanLeg1(wd, over = {}) {
+  const job = CYCLEJOB();
+  const miss = (tag, body) => [cwrite(wd, tag, body, 0.01), { text: `attempt ${tag}`, costUsd: 0.01 }];
+  const provider = scriptedProvider([
+    { text: 'tests/ is empty.', costUsd: 0.01 },              // scout
+    { text: REPLAN_CYCLE_PLAN('write-test'), costUsd: 0.01 }, // draft
+    ...miss('a1', 'nope 1\n'), ...miss('a2', 'nope 2\n'), ...miss('a3', 'nope 3\n'),
+    { text: REPLAN_CYCLE_PLAN('write-test-2'), costUsd: 0.01 },  // the ONE replan
+    ...miss('b1', 'nope 4\n'), ...miss('b2', 'nope 5\n'), ...miss('b3', 'nope 6\n'),
+  ]);
+  const file = join(wd, 'spine-replan.jsonl');
+  const outcome = await runJob(job, {
+    approvals: approveJob(job), workdir: wd, provider, emit: makeSpine(file), ...over,
+  });
+  return { job, outcome, file, provider, events: readSpine(file) };
+}
+
+test('§3 replans: the ceiling a leg SPENT is read back off its own replan records — a kill must not refill it', async () => {
+  const wd = cyclePatient();
+  const leg1 = await replanLeg1(wd);
+  const replans = leg1.events.filter((e) => e.type === 'replan');
+  assert.equal(replans.length, 1, 'the fixture really did exhaust and redraft once — otherwise this test guards nothing');
+  assert.equal(replans[0].trigger, 'cap-halt', 'and it is the ordinary ceiling, not the F85-C grant');
+
+  const r = readPause(killedAfter(leg1.events, (e) => e.type === 'step-start' && e.step === 'write-test-2'));
+  assert.equal(r.restart.replans, 1, 'the resumed leg opens with the ceiling already spent');
+  assert.equal(r.restart.replanGrantUsed, false,
+    'and the F85-C grant UNSPENT — an exhaustion replan is not a grant, and collapsing the two would cost the run an extra it never used');
+});
+
+test('§3 replans: the fold is DECLARED, so a resume of a resume inherits the whole chain and not just the leg before it', async () => {
+  // The grade seed's known limit is a shortening chain, which is safe for a readout
+  // and unsafe for a ceiling. This is the money fold's mechanism instead: the restart
+  // states what it inherited on its own `try-start` (the same shape and the same
+  // reader as `priorSpentUsd` — see the abandoned-attempt test above), and the next
+  // reader adds only this window's own records to it.
+  const wd = cyclePatient();
+  const leg1 = await replanLeg1(wd);
+  const dead = killedAfter(leg1.events, (e) => e.type === 'step-start' && e.step === 'write-test-2');
+  const first = readResume(dead, { direct: true, resumableOutcomes: ['cap-halt', 'wall-halt'] });
+  assert.equal(first.restart.replans, 1);
+
+  // leg 2: a try-start DECLARING the ledger it inherited, one replan of its own, dead again
+  const resumed = [
+    ...dead,
+    { type: 'try-start', n: 1, mode: 'direct', bridge: null, priorSpentUsd: 0.5, priorReplans: 1, priorReplanGrantUsed: false, ts: dead.at(-1).ts, seq: 900 },
+    { type: 'replan', step: 'write-test-2', trigger: 'step-variance', replan: 2, granted: 'converging', ts: dead.at(-1).ts, seq: 901 },
+  ];
+  const second = readResume(resumed, { resumableOutcomes: ['cap-halt', 'wall-halt'] });
+  assert.equal(second.restart.replans, 2,
+    'leg 1\'s replan plus leg 2\'s own — a reader that started at leg 2\'s window would hand leg 3 a ceiling with one spare');
+  assert.equal(second.restart.replanGrantUsed, true, 'and the grant leg 2 was given cannot be earned a second time by leg 3');
 });
 
 test('cycle leg 2: the top-up resumes AT THE CHECKPOINT and greens — the finished prefix is skipped, the fold is declared once, and the total is both legs', async () => {

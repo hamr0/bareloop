@@ -8,11 +8,11 @@
     "every": 1
   },
   "budgetUsd": 4,
-  "maxWallMs": 1500000,
+  "maxWallMs": 2700000,
   "writeScope": [
     "src/**"
   ],
-  "goal": "Make src/recurse.js and src/loop.js pass `tsc --strict` without weakening the tests and without introducing strict errors elsewhere.",
+  "goal": "Make src/recurse.js and src/loop.js pass `tsc --strict` by giving the code REAL types, not by silencing the checker: no added `any`, no `@ts-ignore` or `@ts-expect-error`, no `@type {...} */ (expr)` casts and no `{*}`/`{?}` JSDoc types (`unknown` is fine \u2014 it forces narrowing). Do not weaken the tests, and do not introduce strict errors elsewhere.",
   "verdictType": "green",
   "close": [
     {

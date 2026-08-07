@@ -19,10 +19,10 @@ import { createHash } from 'node:crypto';
 import { join, resolve, relative } from 'node:path';
 import { Gate } from 'bareguard';
 import { LiteCtx } from 'litectx';
-import { runClose, runStages, ralph, CLOSE_FAULTS } from './ralph.js';
+import { runClose, runStages, ralph, CLOSE_FAULTS, boundGap } from './ralph.js';
 import { validatePlan, legalScopes, stageClose } from './plan.js';
-import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, STEP_MODELS } from './plan.js';
-import { snapshotScope, evalExits } from './exits.js';
+import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU } from './plan.js';
+import { snapshotScope, evalExits, CHECK_GAP_MAX } from './exits.js';
 import { createRoot } from './root.js';
 import { createStallWatch, STALL_MS, MAX_STALLS } from './stall.js';
 import { createLadder, STRIKE_LIMIT } from './ladder.js';
@@ -157,40 +157,104 @@ required above, and nothing else.
 ${JSON.stringify(plan, null, 2)}`;
 }
 
+/** The red-set for the replan brief's copy of a step's exit gap: every non-blank
+ * line. It is `\S` and not the close stage's own `gapKeep` for the reason Layer R
+ * already pays at the step seam (see `createRoot` below) — a shipped `gapKeep` is
+ * `^`-anchored (`^BAREAGENT `, `^red`, `^FAILED`) and the exit evaluator wraps the
+ * stage's output in `check "x" red: …`, so the anchor no longer sits where the
+ * pattern expects it. A gap that reaches here is ALREADY a red-set: `judge` builds
+ * it out of the failing exits only, so every line in it is a red line and keeping
+ * all of them is the correct instrument, not a widened one. */
+const REPLAN_GAP_KEEP = '\\S';
+
 /**
- * Files named in an exit gap that the step's worker never wrote — the mechanical
- * fact behind the prose-prohibition trap (u-msdpuaej, 2026-08-03): a drafter wrote
- * "do not modify any file outside X" into a step whose exit check judges the whole
- * goal, the worker obeyed, and the replanner — handed the gap AND the stall note —
- * rebuilt the same shape, because inferring "the exit reds on files this step never
- * touched" is exactly the semantic leap that fails (F38: mechanical gaps convert,
- * semantic ones stall; 3/3 across the mailbox class). This computes that fact from
- * the two books that already exist: path-like tokens in the gap text (extension
- * required — a bare `step/two` is not a file claim) suffix-matched against the F32
- * write audit's absolute paths. Advisory-only and fail-safe: extraction that finds
- * nothing yields no line, never a guess.
+ * This step's own last EXIT results, rendered for the REPLAN brief.
  *
- * @param {string | undefined} gap the step's last exit gap text
- * @param {string[] | undefined} writes the step's cumulative write-audit paths
- * @returns {string[]} gap-named files with no matching write, in gap order
+ * The label says exits and not "the close", and the distinction is the whole of one
+ * fix: `res.gap` is `lastGap`, the join of EVERY failing exit's detail in exit order.
+ * With `MAX_EXITS_PER_STEP` at 2 and the mandatory `tree-changed` pairing on a write
+ * step, a step that wrote nothing leads the block with the EVALUATOR's own prose
+ * (`0 files changed under src/** …`) — captured verbatim from a real replan prompt,
+ * under a label reading "the verification's own output". The close stage's output is
+ * one of the details here, never reliably all of them. The payload is left alone: "the
+ * step wrote nothing" is exactly what a replanner should be told, and stripping it to
+ * make an old label true would trade a real fact for a tidy sentence.
+ *
+ * u-mshcpdg4: a run one strict error from done, killed with $1.10 and 82 seconds
+ * unspent. The close named the remaining work exactly — `src/recurse.js(978,115)`
+ * — and the worker read that every attempt. The REPLANNER, which is the component
+ * that chooses which files the next plan targets, was handed only the trend line
+ * (`still progressing — typecheck 30 → 15 → 15 → 1`): converging, and silent about
+ * WHERE. It re-targeted `src/loop.js`, already at zero errors; that step wrote
+ * nothing and struck out. F85 gave the brief the trajectory; this gives it the
+ * artifact the trajectory is a summary OF.
+ *
+ * Handed over as TEXT, never as a parsed file list, and the trap is worth naming
+ * because the parse is the obvious-looking fix: line 1 of that very gap reads
+ * `reports 1 error(s) in src/recurse.js, src/loop.js` — every file in SCOPE — and
+ * only line 2 names the culprit. The `never wrote` advisory that used to sit here
+ * did exactly that parse, and on this gap it resolved to `src/loop.js` — the file
+ * already CLEAN — then said so as a directive beside the artifact that said the
+ * opposite. It was deleted with this change (hamr, 2026-08-05): two readers of one
+ * question, the parsed one wrong, is the same failure the variance meter just had.
+ * Nothing generic can tell a summary line from a detail line, and the
+ * shapes differ per close anyway (tsc file:line, pytest test ids, a count close
+ * that names no file at all). A model reading the artifact can make that
+ * distinction; a regex reproduces the bug. So: no extraction, no digest, no
+ * inference — the artifact, bounded and scrubbed.
+ *
+ * Two boundaries, both reused rather than respelled:
+ *   - SCRUB. A prompt is an egress point and this repo has ONE secret inventory
+ *     (`SECRET_PATTERNS` via `redactSecrets`). The gap arrives already scrubbed
+ *     from `judge`, which makes this defense in depth rather than the only guard —
+ *     and defense in depth at the egress is exactly where it belongs, because the
+ *     next caller of this helper will not remember the upstream one.
+ *   - BOUND, and it is a BACKSTOP rather than an envelope. What arrives here has
+ *     ALREADY been bounded: `runClose` ran `boundGap` with the stage's own `gapKeep`,
+ *     which deliberately rescues the `not ok`/`FAILED` names out of the elided middle
+ *     — the mechanical gap F46's conversion mechanism feeds the worker. Re-bounding
+ *     that with a fresh 400/1500 envelope deletes exactly those names a second time,
+ *     which is F28 reintroduced; measured on a 120-red-line close output, the first
+ *     bound rescued 78 names and this one dropped 12 of them. src/exits.js states the
+ *     same rule for the same artifact one seam earlier, and this now uses ITS number:
+ *     `CHECK_GAP_MAX`, imported rather than respelled, so the two seams cannot drift
+ *     on how big a check gap may be. Under it the gap passes through VERBATIM.
+ *
+ *     A backstop is still needed, and the headroom is why the ceiling is not smaller.
+ *     `res.gap` is `lastGap`, the JOIN of up to `MAX_EXITS_PER_STEP` failing exit
+ *     details, and the check-passes branch slices EACH at `CHECK_GAP_MAX` — so what
+ *     arrives is bounded per detail, never in total. Measured, the real maximum is
+ *     comfortably under: `runClose`'s own envelope tops out at ~10.1KB (400 head +
+ *     8192 keep + 1500 tail + labels), and joined with a `tree-changed` line that is
+ *     ~10.2KB, so the shipped path passes through untouched with ~1.8KB to spare. The
+ *     backstop therefore fires only where src/exits.js says it should: a seam that
+ *     returned something never bounded at all.
+ *
+ *     Over the line `boundGap` runs with `REPLAN_GAP_KEEP`, the same envelope the
+ *     close path uses, and every trim announces itself (F28). Note what that keep-set
+ *     cannot do: `\S` matches every non-blank line, so the keep block degenerates into
+ *     "the first 50 lines" and re-surfaces nothing from the middle. That is the honest
+ *     limit of a red-set that cannot know the stage's own pattern (see
+ *     `REPLAN_GAP_KEEP`), and it is affordable precisely because it now applies only
+ *     to a gap nothing upstream ever bounded — on that gap ANY envelope loses names,
+ *     and the choice is a bounded prompt over an unbounded one.
+ *
+ * No gap → the empty string, so the brief renders byte-identically to the pre-F86
+ * one. A labelled empty section would be an invitation to explain an absence the
+ * run never observed (a stall never judged its exits at all).
+ *
+ * @param {string | null | undefined} gap the step's last exit gap text
+ * @returns {string} the labelled block, or '' when there is nothing to show
  */
-export function gapFilesNeverWritten(gap, writes) {
-  if (typeof gap !== 'string' || gap === '') return [];
-  const tokens = gap.match(/[\w.-]+(?:\/[\w.-]+)+/g) ?? [];
-  const seen = new Set();
-  const out = [];
-  for (const raw of tokens) {
-    const p = raw.replace(/^\.\//, '');
-    if (!/\.[A-Za-z0-9]+$/.test(p.split('/').at(-1) ?? '')) continue;
-    if (seen.has(p)) continue;
-    seen.add(p);
-    const written = (writes ?? []).some((w) => {
-      const ws = String(w);
-      return ws === p || ws.endsWith(`/${p}`) || p.endsWith(`/${ws}`);
-    });
-    if (!written) out.push(p);
-  }
-  return out;
+export function closeGapBlock(gap) {
+  if (typeof gap !== 'string' || gap.trim() === '') return '';
+  const scrubbed = redactSecrets(gap);
+  // BACKSTOP, not an envelope: over the line only. Scrubbing can only grow a string
+  // (a mask is wider than most literals it replaces), so the length is measured
+  // AFTER it — bounding on the raw length would let a gap cross the ceiling on its
+  // way through the one transformation that runs unconditionally.
+  return '\nWhat this step\'s exits reported on its last attempt (their own output, verbatim):\n'
+    + (scrubbed.length > CHECK_GAP_MAX ? boundGap(scrubbed, REPLAN_GAP_KEEP) : scrubbed);
 }
 
 /**
@@ -257,7 +321,6 @@ strictly in array order. Each step (no other fields exist):
 - "tools": non-empty unique subset of ${JSON.stringify(ceiling)} (write/edit change the tree; recall/get/impact/related/recent search and navigate the repository index; compress/peek read cheaply; stash/remember/forget park and record notes across steps)
 - "rounds": integer 1..${maxStepRounds} — the step's per-attempt tool-round bound
 - "target": the step's deliverable path (REQUIRED when tools include write/edit), inside ${JSON.stringify(job.writeScope)}
-- "model" (optional): ${STEP_MODELS.join(' | ')} — a cheaper tier for mechanical steps; omit for the default
 - "scope" (optional): narrow this step's WRITE fence — copy one value from the offered scopes below.
   A narrowed "scope" is the ONLY ground this step can write: its "target" must sit
   inside it, and a "tree-changed" exit's scope must not be disjoint from it (one that
@@ -403,6 +466,40 @@ ${scoutBlob || '(no scout notes)'}`;
  *   `flat` — "revise the goal" — on a run that was converging when its allowance ran
  *   out. Baselines only (src/trend.js's THE SEED): it spends none of this leg's own
  *   bounds and mints none of its strikes. Empty/omitted is the cold path.
+ * @param {{count?: number, grantUsed?: boolean}|null} [opts.resumeReplans] RESUME — the
+ *   replan LEDGER the chain has already spent (`readResume`'s `restart.replans` /
+ *   `restart.replanGrantUsed`), seeding the ceiling below. `resumeGrades`' sibling and
+ *   deliberately NOT its twin: a grade seed feeds a READOUT, this one feeds a BOUND.
+ *
+ *   Without it the ceiling is reborn on every call, and a resume is another call:
+ *   measured, a leg that spent both replans and step-redded handed its checkpoint to a
+ *   second leg that replanned twice more. Two became four by being killed once, which is
+ *   the creep the latch exists to make impossible ("unlimited replanning launders thrash
+ *   as adaptation", PRD v1.12).
+ *
+ *   WHY THIS SEED SPENDS THE LEG'S BOUND WHERE `resumeGrades` DOES NOT. src/trend.js's
+ *   THE SEED refuses to seed the fix loop's ITERATIONS from history "because the leg's
+ *   own bounds must not be spent by history" — and that is right, because an attempt
+ *   allowance is a LEG bound: a restarted leg buys its own attempts with its own money.
+ *   The replan ceiling is a RUN bound by doctrine. It bounds how many times the WORKFLOW
+ *   may be redrawn before redrawing it is thrash, and that question spans exactly the
+ *   chain the halt readout already spans. The two seeds therefore disagree on purpose;
+ *   they are not the same rule applied inconsistently.
+ *
+ *   CHAIN SEMANTICS, and the one place this differs from the grade seed's mechanism.
+ *   `readGradeSeed`'s documented KNOWN LIMIT is that it reads ONE spine, so a resume of a
+ *   resume inherits leg 2's grades and not leg 1's — the chain shortens by one leg per
+ *   resume, which is fail-safe for a READOUT (a shorter chain can only under-claim a
+ *   direction). It is the DANGEROUS direction for a ceiling: an under-claimed ledger is a
+ *   refilled allowance, and every kill would buy one. So this seed does NOT reuse that
+ *   mechanism. It follows the MONEY fold instead (`priorSpentUsd`, `try-start`/
+ *   `job-start`): each leg DECLARES the ledger it inherited on its own spine, and the
+ *   next reader adds only that leg's own `replan` records to the declared number. Leg 3
+ *   therefore inherits the whole chain, not leg 2's slice.
+ *
+ *   `count` seeds `replans` (and, above zero, latches `replanned`); `grantUsed` seeds the
+ *   F85-C variance latch, so a killed leg cannot re-earn an extra the arbiter has already
+ *   granted. Null/omitted is the cold path and is byte-identical to a run nobody resumed.
  * @param {() => boolean} [opts.spendComplete] is the run's spend EXACT, or a floor? The
  *   ledger one level up owns the answer (unpriced rounds, a self-healed stall, a mid-call
  *   cut, an inherited resume floor); the money-halt readout states it beside the remaining
@@ -417,7 +514,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   'cap-halt' | 'wall-halt' | 'provider-red' | 'interpreter-red' | 'step-stalled' |
  *   `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [] }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null }) {
   workdir = resolve(workdir);
   // ONE spelling of the redaction, housed next to the inventory it reads
   // (src/validate.js) — the same helper the isolate verbs scrub the litectx store
@@ -742,7 +839,25 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   });
   for (const m of menu) {
     const v = await runStages(m.run, scrub, closeOpts);
-    if (v.verdict === 'needs_revision') seedRed.push(m.name);
+    if (v.verdict === 'needs_revision') {
+      seedRed.push(m.name);
+      // …and the preflight grade is a READING, for the same reason the precheck one
+      // above is: it is the seed the run's work is measured against. The precheck
+      // only ever reds at the close's FIRST failing stage (first-red-wins), so on
+      // every shipped close — each of which opens with `changed-from-seed` — the
+      // numeric stages have no baseline at all without it. A step's first grade
+      // would then have nothing to compare against and the whole run would read
+      // `unknown` on exactly the stop the readout exists for.
+      //
+      // ONCE PER STAGE, though. The precheck and this loop grade the SAME unchanged
+      // tree back to back with no work in between, so a stage both reach reports the
+      // same number twice — and a repeated baseline in a series reads as an attempt
+      // that achieved nothing (`verdict 2 → 2 → 1`). That is a phantom flat step
+      // handed to a human and to the replanner, which is the exact class of false
+      // story this change exists to remove. Asked of the reader's own books, so
+      // there is no second record of what has been graded.
+      if (!runTrend.report().stages.some((s) => s.stage === v.stage)) runTrend.record({ gap: v.gap });
+    }
     emit('check-preflight', { name: m.name, verdict: v.verdict, ...(m.run.length > 1 ? { chain: m.run.map((s2) => s2.name) } : {}) });
     const f = Object.hasOwn(CLOSE_FAULTS, v.verdict) ? CLOSE_FAULTS[v.verdict] : undefined;
     if (f) {
@@ -797,7 +912,24 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const v = await runStages(chain, scrub, closeOpts);
     emit('check-run', { name, verdict: v.verdict, ...(v.stage && v.stage !== name ? { stage: v.stage } : {}), ...(v.exitCode !== undefined ? { exitCode: v.exitCode } : {}) });
     if (v.verdict === 'satisfied') return { pass: true };
-    if (v.verdict === 'needs_revision') return { pass: false, gap: v.gap };
+    if (v.verdict === 'needs_revision') {
+      // The run trend is fed by EVERY grade the arbiter renders, and a check IS an
+      // arbiter-rendered close grade: the same `runStages`, the same chain, the same
+      // stage names, so it lands in the same per-stage buckets and the accuracy law
+      // holds unchanged. Without this the reader is blind to everything a STEP ever
+      // achieves — it sees only the precheck and the outer fix loop — which is why
+      // u-msh70zla's meter, firing mid-step, had nothing to report about a step that
+      // had just gone 24 → 15 → 14.
+      //
+      // Folded HERE, on `v.gap`, and the seam is load-bearing: `evalExits` wraps this
+      // gap as `check "<name>" red: …`, and THAT line carries the word "red" with no
+      // number on it, so `readGrade` reads the wrapper instead of the wall and every
+      // step grade donates a null. Measured on u-msh70zla's own archived gaps: raw
+      // reads `typecheck 24 → 15 → 14`, wrapped reads nothing at all. Same seam the
+      // Layer R note below already calls out for a check's `^`-anchored gapKeep.
+      runTrend.record({ gap: v.gap });
+      return { pass: false, gap: v.gap };
+    }
     return { pass: false, fault: v.verdict, gap: v.detail };
   };
 
@@ -1482,8 +1614,39 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   const artifacts = [];
   /** @type {{id: string, outcome: string}[]} */
   const stepOutcomes = [];
-  let replanned = false;
-  const planExecuted = () => emit('plan-executed', { steps: stepOutcomes, replanned });
+  /** RESUME — the replan ledger the CHAIN has already spent, belted the way every
+   * other declared fold entering the arbiter's arithmetic is (`priorSpentUsd`,
+   * `priorWallMs`, `declaredRounds`): a garbage or negative seed reads as 0 rather
+   * than as a NaN that would poison every later comparison, and a negative one must
+   * never cancel a real replan and widen the ceiling (reuse's `> 0` belt, F-4). */
+  const seededReplans = typeof resumeReplans?.count === 'number' && Number.isFinite(resumeReplans.count) && resumeReplans.count > 0
+    ? Math.floor(resumeReplans.count) : 0;
+  // Seeded, not reset. These three were locals reborn on every `runPlan` call — and a
+  // resume IS another call, so the ceiling was refilled by every kill (see the
+  // `resumeReplans` param doc for the measurement and for why this bound spans the
+  // chain while the trend's iteration bound deliberately does not).
+  let replanned = seededReplans > 0;
+  /** F85 (C): how many replans this run has actually drafted, and whether the
+   * arbiter has already spent its ONE extra grant. Two variables and not one
+   * counter compared against a limit, deliberately — a latch cannot be widened by
+   * arithmetic, and the ceiling is the thing this rung must not move (v1.12). */
+  let replans = seededReplans;
+  // the F85-C latch travels BESIDE the count and is not derived from it: a leg can
+  // inherit a spent ordinary ceiling with the grant still unearned (count 1, false),
+  // and deriving one from the other would collapse those two states into one.
+  let varianceGrantUsed = resumeReplans?.grantUsed === true;
+  // `replanned` stays the shipped boolean this record has always carried; `replans`
+  // rides BESIDE it (append-only — a field's meaning is never repurposed).
+  //
+  // Both now count the CHAIN rather than the leg, and that IS a meaning change — made
+  // rather than shadowed by a second field because `replans` shipped only on this
+  // unreleased branch, so no archived spine carries the leg reading for a reader to
+  // be confused by. The leg's own number is not lost by it: a leg emits one `replan`
+  // record per replan it drafts, so `chain − records-in-this-window` is the fold it
+  // inherited, and that is exactly the arithmetic `readResume` runs to rebuild the
+  // ledger for the next leg. A second field stating a number already derivable from
+  // the window would be a second reader of one question (F6's structural cousin).
+  const planExecuted = () => emit('plan-executed', { steps: stepOutcomes, replanned, replans });
   /** @type {object|null} W-2 at the STEP site — set when the WALL refused to open a
    * step's attempt. It carries that stop's own record fields, and its presence is what
    * lets the step loop's terminal tell this reading apart from F64's mid-call one
@@ -1558,15 +1721,41 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         const moneyShare = stepStartUsd > 0 ? (stepStartUsd - remainingUsd()) / stepStartUsd : 0;
         const timeShare = clock.bounded && stepStartMs > 0 ? (stepStartMs - clock.remainingMs()) / stepStartMs : 0;
         if (moneyShare >= VARIANCE_THRESHOLD || timeShare >= VARIANCE_THRESHOLD) {
+          // F85 — the meter REPORTS progress; it does not decide on it. The
+          // condition above is the whole trigger and stays the whole trigger: a
+          // converging step that is eating the run is still stopped, because this is
+          // a governance instrument over an operator-owned allowance and a governor
+          // that suppressed itself whenever the work looked promising would be
+          // judging capability with the budget. What was missing was never a term in
+          // the condition — it was the READING. u-msh70zla stopped a step whose close
+          // had gone 24 → 15 → 14 and then told the replanner its exits were
+          // "unmoved", so the replanner threw the progress away and re-targeted a
+          // file that was already clean.
+          //
+          // The reading comes off `runTrend` — the SAME instance the money halt reads
+          // (src/trend.js's ONE PER SERIES). A second reader for one question is how
+          // two readers come to disagree, which is precisely the defect being fixed.
+          // It is per-stage, numbers-and-stage-names only, and `unknown` stays
+          // `unknown` — a close that reports no number donates nothing (F6).
+          const t = runTrend.verdict();
           emit('variance', {
             step: step.id, iteration, threshold: VARIANCE_THRESHOLD,
             moneyShare: Number(moneyShare.toFixed(3)),
             timeShare: clock.bounded ? Number(timeShare.toFixed(3)) : null,
             axis: moneyShare >= VARIANCE_THRESHOLD ? 'money' : 'time',
+            // ADDED fields, never repurposed ones (the spine is append-only forever).
+            // Same four names and same shapes the money halt already emits, so one
+            // reader parses a progress reading wherever it appears.
+            trend: t.trend, motion: t.motion, reading: t.reading, series: t.series,
           });
           const err = /** @type {CategorizedError} */ (new Error(
             `step "${step.id}" consumed ${Math.round(Math.max(moneyShare, timeShare) * 100)}% of the run's remaining `
-            + `${moneyShare >= VARIANCE_THRESHOLD ? 'money' : 'time'} across ${iteration - 1} attempt(s) with its exits still red`));
+            + `${moneyShare >= VARIANCE_THRESHOLD ? 'money' : 'time'} across ${iteration - 1} attempt(s) with its exits still red. `
+            // The escalation `detail` is this message (ralph passes it through), and
+            // the replan brief quotes the detail — so this sentence is what a human
+            // AND the redrafting planner read. It states what the run achieved; it
+            // never states what to do about it, which is the operator's lever list.
+            + `Run progress: ${t.reading}.`));
           err.category = 'step-variance';
           throw err;
         }
@@ -1772,12 +1961,15 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // pricing-red at the step-end guard above, so isUnpriced() is false here.)
     //
     // A (PRD v1.27) adds the SECOND trigger: `step-variance` — the meter stopped a
-    // step that had eaten a declared share of the run with its exits unmoved. That
-    // is the case exhaustion-only could never reach (F56: a replan has fired zero
-    // times in the programme), and it is a genuine re-allocation rather than a stop.
-    // Both triggers still need FUNDS LEFT, and both are still bounded by the ONE
-    // replan ceiling — this changes the trigger, never the ceiling (v1.12).
+    // step that had eaten a declared share of the run. That is the case
+    // exhaustion-only could never reach (F56: a replan has fired zero times in the
+    // programme), and it is a genuine re-allocation rather than a stop. Both
+    // triggers still need FUNDS LEFT, and both are bounded by the replan ceiling.
     const cat = lastEscalation?.category;
+    /** F85 — the run's measured trajectory at the moment of this stop, read ONCE
+     * here off the same instance the meter and the money halt read. Both consumers
+     * below are the replanner's: the trigger sentence and the brief. */
+    const stopTrend = runTrend.verdict();
     // F66 adds the THIRD trigger: `step-stalled` — the stall watchdog reissued the
     // model call MAX_STALLS times and never got a round back. hamr's ruling is that
     // a stall must self-heal rather than end the run ("killing and coming back is
@@ -1785,13 +1977,58 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // demonstrably stopped working does the run adapt instead — by replanning, not
     // by stopping. Same ONE-replan ceiling and same FUNDS-LEFT condition as the
     // other two: this changes the trigger, never the ceiling (v1.12).
+    //
+    // F85 rewrote the variance branch. It used to be the FIXED string "…with its
+    // exits unmoved", printed for every step-variance stop whatever had happened —
+    // and on u-msh70zla it was simply false: the exits had moved 24 → 15 → 14. The
+    // sentence now states the meter's fact (a share of the run) and then the trend
+    // instrument's MEASURED reading, which is the same reading the `variance` record
+    // and the money halt carry. Nothing here asserts a direction the reader did not
+    // report: `unknown` says unknown.
     const replanTrigger = cat === 'cap-halt' ? 'step exhausted its attempts with exits still red'
-      : cat === 'step-variance' ? 'the meter stopped a step that was consuming the run with its exits unmoved'
+      : cat === 'step-variance' ? `the meter stopped a step that was consuming the run — ${stopTrend.reading}`
       : cat === 'step-stalled' ? 'the model stopped producing rounds and reissuing the call did not recover it'
       : null;
-    if (!replanned && replanTrigger && remainingUsd() > MONEY_MIN) {
+    // F85 (C) — the ARBITER's one additional replan. A second `step-variance` after
+    // the ceiling is spent used to be a hard stop, and on a run that was still
+    // converging that stop threw away work the run had already paid for. So the
+    // arbiter may grant ONE more, and every clause of that sentence is a constraint:
+    //
+    //   * ONE. Bounded, and bounded by a latch rather than a comparison, so the
+    //     ceiling cannot creep: unlimited replanning launders thrash as adaptation
+    //     (v1.12). A third variance stop is the stop, however well it is going.
+    //   * the ARBITER. Read mechanically off `runTrend` — the same instance the
+    //     meter and the money halt read. The agent never asks for it, never sees it
+    //     offered, and cannot influence it: no self-adjusted budgets, ever.
+    //   * `converging`, the trend instrument's OWN category. No new number is
+    //     invented here — threshold-setting is the operator's, and a fresh
+    //     comparison would be a second reader of the one question (src/trend.js).
+    //     `flat` and `unknown` are refusals; an unknown is never rounded up into a
+    //     reason to spend (F6).
+    //   * step-variance only. An exhaustion or a stall after the ceiling is
+    //     unchanged — this widens nothing but the case it was measured on.
+    const grantExtraReplan = replanned
+      && cat === 'step-variance'
+      && !varianceGrantUsed
+      && stopTrend.trend === 'converging';
+    if ((!replanned || grantExtraReplan) && replanTrigger && remainingUsd() > MONEY_MIN) {
+      if (grantExtraReplan) varianceGrantUsed = true;
       replanned = true;
-      emit('replan', { step: step.id, reason: replanTrigger, trigger: cat });
+      replans += 1;
+      emit('replan', {
+        step: step.id, reason: replanTrigger, trigger: cat,
+        // ADDED fields (append-only): which replan this is, and — only when the
+        // arbiter granted one past the ordinary ceiling — the reading it granted it
+        // on. Absent on the ordinary replan, so a reader can never mistake the
+        // ceiling for a grant.
+        //
+        // The index is the RUN's, so on a resumed leg it opens above 1 — the ceiling
+        // it is counted against spans the chain, and an index that restarted at 1 on
+        // every leg would read as a fresh allowance on the one record that could have
+        // shown it was not.
+        replan: replans,
+        ...(grantExtraReplan ? { granted: stopTrend.trend } : {}),
+      });
       // The brief names the trigger HONESTLY, one branch per trigger: it is the
       // only channel the redrafting planner adapts to, so a wrong diagnosis here
       // is handed to the one component whose whole job is to respond to it. A
@@ -1809,28 +2046,45 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       const leftOver = `$${remainingUsd().toFixed(2)} and `
         + `${clock.bounded ? `${Math.round(clock.remainingMs() / 60_000)} minute(s)` : 'time UNBOUNDED'} `
         + 'of the run were still unspent when it stopped.';
+      // F85: the meter's branch states the METER's fact and then the run's measured
+      // one, in that order and as two separate claims — "it was stopped for eating
+      // the run" and "here is what the run achieved" are different things, and the
+      // old sentence quietly fused them into a verdict on the work.
       const why = cat === 'step-variance'
-        ? 'It was stopped by the run\'s meter for consuming too large a share of what was left.'
+        ? 'It was stopped by the run\'s meter for consuming too large a share of what was left. '
+          + `Its work so far, from the close's own numbers: ${stopTrend.reading}. ${leftOver}`
         : cat === 'step-stalled'
           ? 'It stalled: the model stopped producing rounds and reissuing the call did not recover it, so its exits were never judged.'
           : `${res.ladder.brief()} ${leftOver}`;
-      // The prose-prohibition trap's mechanical fact (u-msdpuaej): gap-named files
-      // the step never wrote. Computed from the step's own books; capped with the
-      // trim announced (the F32 gap convention). Empty extraction = no line.
-      const missed = gapFilesNeverWritten(res?.gap, res?.writes);
-      const missedLine = missed.length
-        ? `The last exit output names file(s) this step never wrote: ${missed.slice(0, 8).join(', ')}${missed.length > 8 ? ` (+${missed.length - 8} more)` : ''}.\n`
-        : '';
+      // F86 — this step's OWN last exit results, verbatim (u-mshcpdg4). Everything
+      // above this line is the run's narration of the stop: the meter's share
+      // sentence, the trend's direction, the never-wrote fact, the escalation detail.
+      // None of them says WHERE the remaining work is, because none of them is the
+      // close. The close's output is in HERE — as one of the failing exits' details,
+      // beside the evaluator's own (a step that wrote nothing leads with
+      // `tree-changed`), which is why the block is labelled by its exits rather than
+      // by the close. It goes over as text — see `closeGapBlock` for why a parsed
+      // file list would reproduce the exact bug it is fixing. Empty gap → empty
+      // string → the brief is byte-identical to the pre-F86 one.
+      const gapBlock = closeGapBlock(res?.gap);
       const failure = `Step "${step.id}" (${step.action}) did not reach its exits. `
         + `${why}\n`
-        + missedLine
         + `Last exit state:\n${lastEscalation?.detail ?? '(none)'}\n`
-        + `Steps completed so far: ${artifacts.map((a) => a.id).join(', ') || 'none'}.`;
+        + `Steps completed so far: ${artifacts.map((a) => a.id).join(', ') || 'none'}.`
+        + gapBlock;
       // The progress line IS the adaptation channel (addendum 2): the balance rides
       // in via obtainPlan's live read, and this says where the run got to. Both are
       // the planner re-allocating what remains across what is left — never a rate.
+      //
+      // F85 adds the second half. This line used to count STEPS only ("step 1 of 1
+      // did not finish; 0 step(s) completed before it") — structurally true and
+      // silent about outcome, so a replanner reading it could only conclude that
+      // nothing had been achieved. On u-msh70zla it concluded exactly that and threw
+      // three attempts of real convergence away. The structural sentence stays (a
+      // plan's shape is what the planner re-allocates); the measured one joins it.
       const progress = `step ${idx + 1} of ${plan.steps.length} ("${step.id}") did not finish; `
-        + `${artifacts.length} step(s) completed before it`;
+        + `${artifacts.length} step(s) completed before it; `
+        + `close trend so far: ${stopTrend.reading}`;
       let pv;
       try {
         pv = await obtainPlan('replan', failure, progress);
@@ -1886,8 +2140,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       emitMoneyHalt({ phase: `step:${step.id}`, cutMidCall: false, stepsDone: idx, stepsPlanned: plan.steps.length });
       return 'cap-halt';
     }
-    // A second `step-variance` after the one replan is spent is a STOP, and the stop
-    // is the result — but it rides out as `step-red:<id>`, NOT as its own top-level
+    // A `step-variance` that earned no replan above is a STOP, and the stop is the
+    // result. Reached in three ways now: the ordinary ceiling with the run reading
+    // `flat` or `unknown`; the arbiter's one grant already spent (F85's bound); or
+    // the wallet at dust. Each rides out as `step-red:<id>`, NOT as its own top-level
     // outcome. The category is a replan TRIGGER, never a run verdict: leaking it
     // upward would mint an outcome run.js and the ledger's class table do not know,
     // and an unmapped category is counted as a library bug (ledger.js) when this is a

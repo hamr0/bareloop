@@ -33,8 +33,14 @@ import { globToPrefix } from './validate.js';
  * `not ok`/`FAILED` names — the mechanical gap the F46 conversion mechanism
  * feeds the worker (F28 reintroduced). This cap is a defensive backstop above
  * boundGap's own envelope: a normal bounded gap passes through intact, and only
- * a pathological seam that returned an unbounded gap would ever be trimmed. */
-const CHECK_GAP_MAX = 12000;
+ * a pathological seam that returned an unbounded gap would ever be trimmed.
+ *
+ * Exported for the ONE reason `boundGap`/`GAP_KEEP_TRIM_MARKER` are (src/ralph.js):
+ * the replan brief re-bounds this same artifact one seam later (`closeGapBlock`), and
+ * a second hand-spelled ceiling there would be a second answer to "how big may a
+ * check gap be" — the two would drift on exactly the property that matters, whether
+ * the `not ok`/`FAILED` names survive. */
+export const CHECK_GAP_MAX = 12000;
 
 /** @typedef {{ type: string, pass: boolean, detail?: string, fault?: string }} ExitResult
  * `fault` present means the INSTRUMENT could not judge (unwired snapshot/seam,

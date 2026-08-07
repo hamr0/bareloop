@@ -5,6 +5,289 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.8.0] — 2026-08-07
+
+### Changed
+- **The variance meter REPORTS progress — and still decides nothing on it** (F85, A+B;
+  `src/planrun.js`). The meter stopped a step that was CONVERGING and then told the redrafting
+  planner that step's exits were *"unmoved"*. Two instruments over one run, and only one of them
+  right. Live on `u-msh70zla`: the close gaps went 30 → 24 → 15 → 14 with the ladder recording
+  `distinctGaps 3` / `strikes 0`, while the replan brief said nothing had moved and the materials
+  said *"0 step(s) completed"* — so the replanner, told it had achieved nothing, rebuilt a file
+  that was already at zero errors, wrote nothing twice, and the run died with $1.09 and 7 minutes
+  unspent. hamr's ruling, verbatim: *"meter is right but missing a piece … it should give heads up
+  on money/time + progress for llm to judge."*
+  - **The firing condition is byte-identical** — `moneyShare`/`timeShare >= 0.5`, both axes, the
+    same threshold, the same throw. A progress term in the TRIGGER would make a governance
+    instrument over an operator-owned allowance judge capability, so a converging step that is
+    eating the run is still stopped. What was missing was never a term in the condition; it was
+    the READING.
+  - **The reading is read off `src/trend.js` — the SAME instance the money halt reads.** Nothing
+    new is computed at the meter: no second reader, because two instruments answering one question
+    is the exact defect being fixed. Per-stage, stage names and numbers only, and `unknown` stays
+    `unknown` — a close that reports no number donates nothing (F6).
+  - **The hardcoded `with its exits unmoved` string is DELETED.** It printed on every step-variance
+    stop whatever had happened, and on `u-msh70zla` it was simply false. The escalation detail —
+    which a human reads and which the replan brief quotes — now states the meter's fact (*a share of
+    the run was consumed*) and then the trend instrument's measured reading, as two separate claims
+    rather than one fused verdict on the work. The materials `progress` line keeps its structural
+    sentence (*"step N of M did not finish; K step(s) completed before it"* — a plan's shape is what
+    the planner re-allocates) and gains the close trend beside it.
+  - **Spine change:** the `variance` record gains `trend` / `motion` / `reading` / `series` — the
+    same four names and the same shapes the money halt already emits, so one reader parses a
+    progress reading wherever it appears. ADDED fields, never repurposed ones (the spine is
+    append-only forever). Measured post-fix on `u-mshcpdg4`, iteration 3 on `finish-strict-typecheck`:
+    `moneyShare 0.497`, `timeShare 0.769`, `axis time`, `trend "converging"`,
+    `reading "still progressing — typecheck 30 → 15 → 15 → 1"`,
+    `series [{stage:"typecheck",values:[30,15,15,1]}]` — against `u-msh70zla`'s pre-fix record, which
+    carried the shares and nothing else.
+- **`runTrend` was blind to everything a STEP achieves** (F85, the prerequisite found en route). The
+  run's trend reader was fed only the close PRECHECK and the outer fix loop, so a meter firing
+  mid-step had nothing to report about a step that had just gone 24 → 15 → 14. Two folds corrected:
+  a step's failing check is an arbiter-rendered close grade (same `runStages`, same chain, same stage
+  names) and is now recorded like one; and it is recorded on the RAW gap, because `evalExits` wraps
+  stage output as `check "<name>" red: …` and that wrapper line carries the word "red" with no number
+  on it — so every step grade used to donate a null. Measured on `u-msh70zla`'s own archived gaps:
+  raw reads `typecheck 24 → 15 → 14`, wrapped reads nothing at all. Plus a **preflight seed** so the
+  counter has a baseline: the precheck reds at the close's FIRST failing stage (first-red-wins) and
+  every shipped close opens with `changed-from-seed`, so the numeric stages had no baseline at all and
+  a run would read `unknown` on exactly the stop the readout exists for. Seeded ONCE PER STAGE, off the
+  reader's own books — the precheck and the preflight menu grade the same unchanged tree back to back,
+  and a repeated baseline in a series reads as an attempt that achieved nothing, which is the phantom
+  flat step this change exists to remove.
+- **`tests/resume-u.test.js` is decoupled from the live job spec.** It read
+  `jobs/bareagent-u-types.json` while hardcoding $8 / 45min, so an operator budget edit on a live spec
+  turned the suite red. Every number now derives from the spec it reads, proven by passing at a third
+  budget value. Suite: **1023 tests** (1027 minus the 4 deleted with the `never wrote` feature below);
+  typecheck and `build:types` exit 0.
+- **The per-step model tier menu narrows to `['sonnet']`** (`STEP_MODELS`, `src/plan.js` — a PUBLIC
+  surface: a plan declaring `model: "haiku"` is now REDDED by `validatePlan` with `invalid-value` at
+  `steps.N.model`, carrying the menu). hamr's order, verbatim: *"haiku should be dropped to see if it
+  passes, if it's agent poor work or harness, like always."* **This is a reversible ATTRIBUTION PROBE,
+  not a finding that haiku is incapable** — what the $0 archive read behind it shows is a CONFOUND, in
+  both directions. Over 186 spines / 71 accepted plans / 255 steps, only **20 steps ever declared a tier
+  at all**: haiku **12** — 9 of them on a REPLANNED plan, 6 the LAST step of their plan, round bounds
+  3–12, **2 ever green** — against explicitly-declared sonnet **8**, 2 on a replan, 3 last, bounds 14–32,
+  **5 green**. The planner reaches for haiku on steps it judges mechanical, and a replanned step sits on
+  a run already in trouble, so neither column is a controlled read; and all three bareagent-u runs of
+  2026-08-06 tiered their replanned step down (haiku/6, haiku/8, haiku/12) and all three failed. That
+  confound sat directly on top of the programme's most recent capability read (F86's tail). Removing the
+  tier is how it gets attributed: with one tier expressible, a still-failing replan is agent or harness,
+  never the tier.
+  - **The `model` field and its validator branch STAY.** A one-entry menu means a plan — or a stored
+    bridge — declaring `model: "sonnet"` still validates, and restoring haiku is a one-token edit. No
+    stored bridge declares haiku (verified).
+  - **The drafter prompt's `model` line is DELETED** rather than reduced to a one-item menu: it
+    advertised *"a cheaper tier for mechanical steps"* and there is no cheaper tier now, and reciting a
+    single legal value spends tokens to invite a no-op field (`attempts` is the existing
+    legal-but-not-offered precedent). Verified by RENDERING the real prompt — 0 lines match
+    `/model|tier|haiku|sonnet|cheaper/i` in either the fresh or the replan form.
+  - **Only what the AGENT may express narrows**, which is the safe direction. `--model haiku` remains
+    the OPERATOR's probe knob (PRD v1.36), untouched in `scripts/run-u.mjs`; two comments there called
+    the runner's tier map *"the same closed menu the planner uses"* and now say plainly that it is
+    deliberately wider.
+  - **No spec hash moved.** `jobSpecHash` covers the resolved spec, not `STEP_MODELS`; all 10 job specs
+    were re-hashed and none moved — bareagent-u and bareguard-u are still the hashes hamr signed.
+  - Measured on the first sonnet-only run against the last haiku-era one, same patient: **10.9 → 17.5
+    seconds per round** (1.6× slower), 120 → 87 rounds, and the failure CLASS changed — struck out at 2
+    remaining errors with money and clock left, versus still converging at 1 error when the wall
+    expired. Better rounds are slower rounds, and the binding constraint moved from the strike ladder to
+    the clock. That sonnet-only run was also the first to reach the outer close, where it was redded for
+    **silencing the type checker instead of typing the code** (F87's suppression genre) — the close
+    refused it, and the eventual green removed the suppressions.
+- **`bareloop.context.md` named `sonnet | haiku` in two places and is corrected** — the shipped adopter
+  contract carried the old menu in the `steps[].model` schema row and in the `providerFor` (P) section,
+  so an integrating agent reading it would have drafted a plan that reds. Both now name the one-entry
+  menu and say why it is one entry.
+
+### Fixed
+- **A locked-VERDICT `request-red` no longer files as a bare-agent upstream ask** (`src/job.js`,
+  `src/ledger.js`). `classifyIncidents` hardcoded `lib: 'bare-agent'` for every `request-red`, but the
+  code covers two territories: a locked TOOL verb (bare-agent, the original case) and a locked VERDICT
+  type (`soft-green`/`hitl`) — demand against bareloop's OWN `VERDICT_TYPES` menu, live-misfiled for
+  every `LOCKED_VERDICTS` declaration (the BA-2 misattribution class). Per the typed-lib rule the
+  territory is now stamped at the EMIT site (`Red` gains `lib?`; `verdictType` → `bareloop`, `tools` →
+  `bare-agent`) and the ledger reads it, keeping the hardcode only as the pre-field legacy-spine
+  fallback (zero archived rows carry the code, verified). The `suggestedAsk` template renders the
+  stamped target, so a bareloop-catalogue refusal can never seed a bare-agent ask; D13's genre refusals
+  (close-authoring design record) route by stamping their own lib with no ledger change. 5 new
+  failing-first tests; `capability-gap` still hardcodes bare-agent — flagged, structurally unreachable
+  today (a validation red returns before any provider call; the module header says so).
+- **…and `capability-gap` no longer hardcodes it either — the flag above is CLOSED** (`src/ledger.js`).
+  `capability-gap` is `request-red`'s cap-halted form and inherits both of its territories, but the fix
+  landed at one of the two sites and not the other: the synthesis loop still wrote `'bare-agent'`
+  literally, and so did its `suggestedAsk` template — the one field a human actually files from, where
+  fixing only the occurrence's `lib` would have left the misattribution fully intact. The territory now
+  comes from the OCCURRENCE (the `request-red` rows already carry the lib stamped at their emit site),
+  and the **dedup key becomes `(verb, lib)` rather than the verb alone**: the ledger's own occurrence
+  key carries `lib`, so a `Set` over verbs would merge two territories into one row and attribute it to
+  whichever the set happened to hold first — an arbitrary target, which is the defect itself. One gap
+  per (territory, verb) costs nothing and each carries an honest one. **Reachability is unchanged and
+  still DORMANT** — `validateJob` returns not-ok on any red and `run.js` returns on a validation red, so
+  a `request-red` and a `cap-halt` cannot share one spine today; this is a latent-consistency fix at a
+  seam the module header documents as dormant, and it claims no live bug. 3 new failing-first tests,
+  each labelled in-file as a FUNCTION-CONTRACT fixture (`classifyIncidents` is pure) so a later reader
+  cannot mistake the synthetic stream for something a run can produce. Closed now rather than left
+  flagged because a fix that lands at one of two identical sites is the class this repo has already
+  paid for once — the ripgrep install that went into `ci.yml` and not `publish.yml`, which then failed
+  on the identical cause.
+- **The replan ceiling reset on EVERY resume leg — a kill refilled a bound the operator signed**
+  (`src/planrun.js`, `src/run.js`, `src/reuse.js`, `scripts/run-u.mjs`). `replanned`/`varianceGrantUsed`
+  were locals in `runPlan`, and a resume is another `runPlan` call. Confirmed by execution before any
+  remedy: leg 1 replanned and stopped; leg 2, driven with a `resumeSeed`, replanned again — a run total
+  of 2 with every record showing 1. Two became four by being killed once, which is precisely the creep
+  the latch exists to make impossible (*"unlimited replanning launders thrash as adaptation"*, PRD
+  v1.12).
+  - **Fixed on the MONEY-FOLD precedent, not the grade-seed one, and the choice is the fix.**
+    `readGradeSeed`'s documented known limit is that it reads ONE spine, so a resume of a resume
+    inherits leg 2's grades and not leg 1's — the chain shortens by a leg per kill. That is fail-safe
+    for a READOUT (a short chain can only under-claim a direction) and it is the DANGEROUS direction
+    for a CEILING, where an under-claimed ledger is a refilled allowance. So each leg DECLARES the
+    ledger it inherited on its own spine (`priorSpentUsd`'s mechanism) and the next reader adds only
+    its own window's `replan` records. Leg 3 inherits the whole chain, not leg 2's slice.
+  - **The counter-argument was answered, not stepped over.** `src/trend.js` deliberately refuses to
+    seed the fix loop's ITERATIONS from history, and that stays right: an attempt allowance is a LEG
+    bound, and a restarted leg buys its own attempts with its own money. A replan ceiling bounds how
+    many times the WORKFLOW may be redrawn, which is the run's span — the same span the halt readout
+    already covers. The two seeds disagree on purpose and both now say so in-source.
+  - **SPINE FIELDS — `job-start` gains `priorReplans` / `priorReplanGrantUsed`.** Emitted only when
+    there is a fold (a decorative `0` is indistinguishable from a run nobody folded), on the same
+    declaration `priorSpentUsd`/`priorWallMs` already ride. The grant latch travels BESIDE the count
+    rather than being derived from it: a leg can inherit a spent ordinary ceiling with the arbiter's
+    extra still unearned (`1`, `false`), and deriving one from the other would collapse two real states
+    into one. `readResume`'s `direct` mode reads the fold off these very fields, so a U-path run
+    resumed twice inherits leg 1.
+  - **SPINE MEANING CHANGE — `plan-executed.replans` counts the CHAIN, not the leg** (and `replanned`
+    with it). **An adopter parsing spines must re-read this field.** The change was made rather than
+    shadowed by a second field precisely because `replans` shipped only on this unreleased branch, so
+    no archived spine carries the leg reading for a reader to be confused by. The leg's own number is
+    not lost: a leg emits one `replan` record per replan it drafts, so `chain − records-in-this-window`
+    is the fold it inherited — the same arithmetic `readResume` runs — and a second field stating a
+    derivable number would be a second reader of one question.
+  - **New option: `runJob(spec, { resumeReplans })`** (and `runPlan`'s identically-named option),
+    `{count, grantUsed} | null`, defaulting to `null` = the cold path, byte-identical to a run nobody
+    resumed. Belted like every declared fold entering the arbiter's arithmetic: a garbage, negative or
+    non-finite seed reads as `0` rather than poisoning later comparisons as `NaN`, and a negative one
+    can never cancel a real replan and widen the ceiling. `scripts/run-u.mjs --resume` and `runReuse`
+    both pass it. **The disarm control holds** — a resumed leg with an UNSPENT ceiling still replans, so
+    the bound is bounded and not switched off.
+- **The replan brief's `closeGapBlock` re-bounded an ALREADY-bounded gap and deleted the red names the
+  first envelope had rescued** (`src/planrun.js`, `src/exits.js`). `src/exits.js` states the rule for
+  this same artifact one seam earlier: the check gap arrives already enveloped by `runClose`'s
+  `boundGap` under the stage's own `gapKeep`, which deliberately rescues the `not ok`/`FAILED` names
+  out of the elided middle — the mechanical gap F46's conversion mechanism feeds the worker. A second
+  400/1500 envelope deleted exactly those a second time, which is F28 reintroduced; measured on a
+  120-red-line close output, the first bound rescued **78** names and the second dropped **12** of
+  them. `CHECK_GAP_MAX` (12,000) is now **exported** from `src/exits.js` and imported here rather than
+  respelled, so the two seams cannot drift on how big a check gap may be, and it is applied as a
+  **backstop, not an envelope**: under it the gap passes through VERBATIM. The headroom is measured,
+  which is why the ceiling is not smaller — `runClose`'s own envelope tops out at ~10.1KB (400 head +
+  8192 keep + 1500 tail + labels), and joined with a `tree-changed` detail that is ~10.2KB, leaving
+  ~1.8KB to spare, so the shipped path is untouched and the backstop fires only where `src/exits.js`
+  says it should: a seam that returned something never bounded at all. Length is measured AFTER the
+  secret scrub, because a mask is wider than most literals it replaces and bounding the raw string
+  would let a gap cross the ceiling on its way through the one transformation that always runs.
+- **The replan brief's block was LABELLED as the close's own output but could lead with ours**
+  (`src/planrun.js`). `res.gap` is `lastGap` — the join of EVERY failing exit's detail in exit order —
+  and with `MAX_EXITS_PER_STEP` at 2 plus the mandatory `tree-changed` pairing on a write step, a step
+  that wrote nothing opens the block with the EVALUATOR's own prose (`0 files changed under src/** …`)
+  under a label reading *"the verification's own output"*. Captured verbatim from a real replan prompt.
+  The **label** is corrected to *"What this step's exits reported on its last attempt (their own
+  output, verbatim)"*; the **payload is deliberately kept** — "the step wrote nothing" is exactly what
+  a replanner should be told, and stripping it to make an old label true would trade a real fact for a
+  tidy sentence. F86's thesis (the artifact travels as TEXT, never parsed) is restated, not weakened.
+- **F49's ReDoS reject now covers the OPERATOR's two regex fields, not just the agent's**
+  (`src/job.js`, `src/validate.js`, `src/plan.js`). `hasNestedQuantifier` shipped wired at exactly ONE
+  site — the agent-authored `artifact-written.pattern`. Two operator-authored patterns reach an
+  equally untimed evaluator and were uncovered: `judged.pattern`, exec'd by `runClose` against the
+  close's whole stdout+stderr, and `gapKeep`, compiled by `boundGap` and run **once per line** of
+  close output. Both now red `invalid-value` at the validation gate, before any tokens burn.
+  - **Measured, not argued:** `boundGap(stream, '(a+)+$')` against a 40-character line does not finish
+    in 20 seconds (`timeout` exit 124).
+  - **Why this is worse than an operator self-DoS, and F67 is the reason.** On the agent side F49's
+    own scope note holds — the agent authors both the pattern and the artifact, so a hang burns only
+    its own wall-clock and compromises no arbiter. These two run in **bareloop's own process**, so the
+    hang blocks the MAIN EVENT LOOP — and the in-process stall fuse is a timer in that same loop, so
+    it cannot fire (*a guard living inside the process it guards shares that process's fate*). The run
+    then dies to the OUTSIDE watchdog and reads as a model stall: **a bad regex in a SIGNED spec
+    presents as a provider problem.** The cost is a misdiagnosis, not just a stop.
+  - **The detector MOVED to `src/validate.js` — one inventory, never a second copy.** `plan.js`
+    imports `job.js`, so `job.js` cannot import `plan.js`; housing the scan with the other shared
+    primitives is what lets both documents reject through the same function. `plan.js` re-exports the
+    name (the `WRITE_VERBS` precedent), so the F49 site is byte-identical in behaviour. A second copy
+    would be precisely the drift class `SECRET_PATTERNS` exists to prevent — a shape one validator
+    rejects and the other admits. `hasNestedQuantifier` is not exported from `src/index.js`, so the
+    move is internal and breaks no adopter.
+  - **Admissibility swept before the change and re-run after:** all **92** operator regexes across all
+    **10** signed specs in `jobs/` — **zero** newly red. No spec breaks, no spec-hash churn (no spec
+    file is touched). The shipped shapes are pinned in the suite as the control that can produce the
+    negative: if the reject ever reds one of them, it has broken the live fleet.
+  - **Known limit, PARKED not chased:** the scan misses the alternation-overlap class (`(a|aa)+$`,
+    `(x|xy)*$` — no inner quantifier exists to find; the blowup comes from overlapping branches under
+    a repeat). Widening it changes which SIGNED specs are admissible, which is arbiter-adjacent.
+    Docked to the close-authoring rung, where hand-authored operator regexes may cease to be a surface
+    at all — see **PRD v1.55**. Recorded there too, so it is not re-chased: `([^])*$` is NOT caught and
+    that is CORRECT (`[^]` is the any-char idiom, so the pattern is linear); the genuinely nested
+    `([^]*)*$` IS caught.
+
+### Added
+- **A SECOND variance stop can earn ONE more replan — granted by the ARBITER, on a mechanical
+  reading** (F85, C). A second `step-variance` after the one-replan ceiling was spent used to be a
+  hard stop, and on a run that was still converging that stop threw away work already paid for. Every
+  clause of the grant is a constraint: **ONE**, bounded by a LATCH rather than a comparison so the
+  ceiling cannot creep by arithmetic (unlimited replanning launders thrash as adaptation, v1.12) — a
+  third variance stop is the stop, however well it is going; **the arbiter's**, read mechanically off
+  the same `runTrend` instance the meter and the money halt read, with the agent given no channel to
+  it — it never asks, is never offered it, and cannot influence it (no self-adjusted budgets, ever);
+  **`converging` only**, the trend instrument's own category with no fresh number invented here
+  (threshold-setting is the operator's), so `flat` and `unknown` stop exactly as before and an unknown
+  is never rounded up into a reason to spend (F6); and **`step-variance` only** — an exhaustion or a
+  stall after the ceiling is unchanged. `remainingUsd() > MONEY_MIN` still gates it, as it gates the
+  ordinary replan. **Spine change:** `replan` gains `replan` (which replan this is) and — only when the
+  arbiter granted one past the ordinary ceiling — `granted` with the reading it was granted on, so a
+  reader can never mistake the ceiling for a grant; `plan-executed` gains a `replans` count riding
+  BESIDE the shipped `replanned` boolean, never repurposing it. Live on `u-mshcpdg4`: three
+  `plan-accepted` records — the initial draft and two replans, the second granted on `converging`.
+- **`closeGapBlock(gap)` — the replan brief carries the close's OWN output** (F86; `src/planrun.js`).
+  `u-mshcpdg4` reached ONE remaining strict error and still died. The close gap named the work exactly
+  — `src/recurse.js(978,115)` — and the worker read it every attempt; the REPLANNER, which is the
+  component that chooses which files the next plan targets, saw only
+  *"still progressing — typecheck 30 → 15 → 15 → 1"*: a number with no address. It aimed the last plan
+  at `src/loop.js`, already at zero errors, wrote nothing twice, and took two strikes — with $1.10 and
+  82 seconds still on the clock at the moment that replan was granted (the run itself ended $0.8174 and
+  ~6 seconds short of its caps). F85 gave the brief the trajectory; this gives it the artifact the trajectory
+  is a summary OF. Handed over as **TEXT**, with both boundaries reused rather than respelled: scrubbed
+  through the one secret inventory (`redactSecrets`/`SECRET_PATTERNS`) because a prompt is an egress
+  point and the next caller will not remember the upstream scrub, and bounded by ralph's own `boundGap`
+  — now **exported** from `src/ralph.js` for it, since a private slice would be a second truncation
+  scheme that drifts on exactly the property that matters (whether the red lines survive, and whether
+  the trim announces itself, F28); the close path still calls it with the stage's own `gapKeep`,
+  byte-identically. The red-set is `REPLAN_GAP_KEEP = '\S'` — every non-blank line — because a shipped
+  `gapKeep` is `^`-anchored (`^BAREAGENT `, `^red`, `^FAILED`) and the exit evaluator wraps stage output
+  in `check "x" red: …`, so the anchor no longer sits where the pattern expects it; a gap that reaches
+  here is ALREADY a red-set (`judge` builds it out of the failing exits only), so keeping every line is
+  the correct instrument, not a widened one. **No spine field** — `src/trend.js`'s rule is that no
+  record carries a close byte. An empty gap yields the empty string, so the brief renders
+  byte-identically to the pre-F86 one (a labelled empty section would invite the planner to explain an
+  absence the run never observed). Verified by execution, not by reading: sabotaging the wiring
+  (`gapBlock = ''`) turns the `u-mshcpdg4` regression test red (`not ok 121`); restored byte-clean.
+
+### Removed
+- **`gapFilesNeverWritten()` and the `never wrote` replan advisory** (F86) — an EXPORT of
+  `src/planrun.js` is gone (it was never re-exported through the package entry, whose `exports` map
+  admits only `.`, so no adopter import breaks). hamr's order, verbatim: *"delete it and rerun
+  bareagent"*. The measured reason, on `u-mshcpdg4`'s own gap: the advisory resolved to
+  `src/loop.js` — the file already at zero errors — and said so as a DIRECTIVE, beside the artifact
+  that said the opposite; this worker follows directive prose (positive-scope confinement). It also had
+  no evidence of ever converting anything: it fired by construction on `u-msdsmkid`, and that run still
+  step-redded. The general rule it broke is why `closeGapBlock` hands over text instead: **a parsed
+  file list cannot tell a summary line from a detail line**. Line 1 of that very gap reads
+  `reports 1 error(s) in src/recurse.js, src/loop.js` — every file in SCOPE — and only line 2 names the
+  culprit; and the shapes differ per close anyway (tsc `file:line`, pytest test ids, a count close that
+  names no file at all). A model reading the artifact can make that distinction; a regex reproduces the
+  bug. Two readers of one question with the parsed one wrong is the same failure the variance meter just
+  had. Its 4 tests went with it, and its sole caller was the brief — no speculative code left behind.
+
 ## [0.7.0] — 2026-08-05
 
 ### Changed

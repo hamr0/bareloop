@@ -602,3 +602,153 @@ Not treated as disqualifying — A-v2 forces the RLM shape that greens 7/7 in th
 the expected direction is help, not harm. But job A's 7.67× ratio and its must-GREEN were
 measured on a plan the gate now rejects, and that caveat travels with any sentence citing
 them.
+
+---
+
+## Addendum — 2026-08-06, RE-SCREEN RESULTS: `baremobile-u` GREEN and still OUT; `bareagent-u` RED and still OUT; the job-B slot stays EMPTY
+
+Reported against the clauses the addendum above registered **before** either number existed.
+Nothing is loosened, nothing is re-graded, no clause is re-frozen: §3 governs as written
+(must-GREEN inside the envelope · accepted plan ≥2 steps · execution ≥ 5× drafting per
+hamr's 2026-08-03 ruling · attempt-1-trivial discards), and the registered reading rule
+governs the reds. Both runs were cold at $4 / 25 min on the signed hashes, sonnet, per
+hamr's verbatim in-turn order *"re-screen bareagent-u and baremobile-u cold at 4/25"*.
+
+Every figure below is re-derived from the run's own spine with the prereg's own definitions
+(**drafting = scout + plan spend; execution = the rest of worker spend**), not carried over
+from any working note. Spines: `bareloop-patients/baremobile-u-bareloop/u-msgmyv27.jsonl`
+and `bareloop-patients/bareagent-u-bareloop/u-mshsikhr.jsonl`; write counts from the
+matching `*-gate-audit.jsonl` (allow-decision, `write` **and** `edit` actions, F32 rule).
+
+### Job-B candidate 1 — `baremobile-u-types` (u-msgmyv27): **GREEN, and DISCARDED**
+
+`$0.8137 of $4 · 10.6 min of 25 · 36 worker rounds · 8 allowed writes over 5 distinct files
+(src/aria.js ×4, errors.js, ios.js, prune.js, xml.js) · 2 close iterations, green on the
+second · no replan · spendComplete true · bridge saved.`
+
+| §3 clause (as frozen) | measured | verdict |
+|---|---|---|
+| must GREEN inside $4 / 25 min | green, $0.8137 / 10.6 min | **PASS** |
+| accepted plan ≥2 steps | **1 step** (`fix-strict-typecheck`) | **FAIL** |
+| execution ≥ 5× drafting | drafting $0.2905 (scout $0.2674 + plan $0.0232) vs execution $0.5232 → **1.80×** | **FAIL** |
+| not attempt-1-trivial | 2 iterations, a real gap fed back at iteration 1 | PASS on the iteration limb; the 5× limb of the same clause is the FAIL above |
+
+**Per the frozen rule the candidate is OUT.** Two clauses failed and neither was touched.
+
+What the re-screen *did* settle — this is the question the 2026-08-06 addendum registered,
+and it was answered: **`baremobile-u` is winnable cold inside $4 / 25 min on current code.**
+Its original 2026-08-03 rejection was a must-GREEN failure on the old instrument; that
+failure does not reproduce. The patient is fine. It fails the **smallness guard** instead,
+and that is the guard doing exactly the job it was frozen to do: at 1.80× there is almost
+no execution for a carried bridge to help with, so the leg could not read lift in either
+direction. A green that cannot host the effect is not an admission.
+
+The green minted a bridge (`bridge-baremobile-u-types-msgmyv27.json`, spec hash
+`226930ff…`). It is **excluded from the ON arm by §2's construction** — the frozen registry
+snapshot predates this programme and bridges minted during it never enter selection. No
+action taken on it.
+
+### Job-B candidate 2 — `bareagent-u-types` (u-mshsikhr): **RED**
+
+`step-red:strict-fix-recurse-remaining-errors · $3.1545 of $4 · 21.8 min of 25 · 120 worker
+rounds · 27 allowed writes over 2 distinct files (src/recurse.js ×16, src/loop.js ×11) ·
+6 close iterations across two 1-step plans · one replan (trigger step-variance) ·
+spendComplete true.` It ended on the step ladder's **second strike at two remaining strict
+errors**, with **$0.85 and ~3.2 minutes unspent**.
+
+Applying the addendum's own registered reading rule, verbatim —
+
+> A re-screen RED leaves the candidate OUT and the earlier rejections stand.
+
+— **`bareagent-u-types` is OUT**, and the four instrument-era rows (u-msd916dh,
+u-msdonzxl, u-msdpuaej, u-msdsmkid) stand on the record unchanged and un-re-graded.
+
+**Ratio, for the record only** (the clause is moot on a red row — must-GREEN already
+decided it — but every screened run in this document carries its split): drafting $0.4217
+(scout $0.3365 + plan $0.0852) vs execution $2.7328 → **6.48×**, above the 5× floor.
+
+#### Why this RED is a capability read and does NOT re-open the pool a second time
+
+This was the **first run under BOTH** the A/B/C variance-meter fix (F85) and the close-gap
+replan brief (F86), and the spine shows both fixes doing what they were built to do:
+
+| fix | what it did on this run, from the spine |
+|---|---|
+| **F85** (meter reports progress) | the one variance stop, at plan-1 iteration 3 (`moneyShare 0.508 / timeShare 0.642 / axis money`), carried `trend:"converging"`, `reading:"still progressing — typecheck 30 → 28 → 6"`, `series:[{stage:"typecheck",values:[30,28,6]}]`. It stopped a genuinely converging step **and said so**, instead of the old hardcoded "exits unmoved". (C — the second-stop grant — did not fire on this run: there was only one variance stop. It has fired live exactly once, on `u-mshcpdg4`, and that run still redded, so it has never yet run under both fixes.) |
+| **F86** (replan brief carries the close's own output) | the replanner targeted **the remaining errors in `src/recurse.js`** rather than an already-clean file. Post-replan the step **wrote on 3 of 4 iterations**, trajectory **6 → 4 → 2**. Contrast `u-mshcpdg4` (pre-F86), whose replan aimed at `src/loop.js` — already at zero errors — and wrote nothing twice. |
+
+It still did not green. Both surviving errors sit on **one line** of the patient,
+`src/recurse.js(975,21)` and `(975,29)` — TS7006 on `const evaluate = (result, c) => …`,
+an un-annotated arrow function. The gap named file, line, **column** and the exact error
+text (the mechanical genre, F38); the worker held that address for three consecutive
+iterations, wrote on iteration 4, and the two errors did not move. Iterations 3 and 4
+produced a byte-identical gap, so the seen-set struck `repeatOf:3` and the ladder halted —
+mechanically correct, with money and wall still on the table.
+
+So the failure is **worker conversion at the tail**, not instrument blindness: a different
+failure from the one that re-opened the pool. **The 2026-08-06 argument for re-opening — "the
+rejections were measured on an instrument that no longer exists" — is spent here and is not
+available again on this row.**
+
+**Recorded against that sentence, because it limits it:** the tail step ran `model: haiku` at
+12 rounds (the initial step ran the default sonnet at 30), and the planner made the same
+choice on both earlier bareagent runs — haiku/6 and haiku/8 on their replanned steps, all
+three failed. The screen verdict is unaffected (must-GREEN decided it, and the tier was the
+planner's own choice inside a signed spec, which is the run being screened). But this row is
+**not** clean evidence of a sonnet-tier capability wall, and it must not be cited as one.
+
+Two earlier bareagent launches on the same signed hash preceded the rerun (u-msh70zla
+step-red $2.9103; u-mshcpdg4 step-red $3.1826) and each exposed one of the two defects
+above, which is why hamr ordered the rerun verbatim: *"delete it and rerun bareagent"*.
+How those two are classed changes nothing: **all three re-screen launches redded**, so the
+registered reading rule returns the same verdict either way.
+
+### Paid spend
+
+Re-screen runs fired under this addendum's authorization (*"hashes approvd and money
+28-50"*, executed at its **lower bound — $28 additional is the working ceiling**):
+
+| run | patient | outcome | spend |
+|---|---|---|---|
+| u-msgmyv27 | baremobile-u | green | $0.8137 |
+| u-msh70zla | bareagent-u | step-red `narrow-loop-catches` (exposed F85) | $2.9103 |
+| u-mshcpdg4 | bareagent-u | step-red `finish-strict-typecheck` (exposed F86) | $3.1826 |
+| u-mshsikhr | bareagent-u | step-red `strict-fix-recurse-remaining-errors` | $3.1545 |
+| | | **total** | **$10.0611** |
+
+All four carry `spendComplete: true`. **$10.0611 of the $28 working ceiling consumed;
+~$17.94 remains** and crossing $28 still requires hamr's word. Per the standing
+validation-run rule, restated in the addendum above: **re-screen rows are screen evidence
+only, never contrast rows** — none of the four is a leg of any arm.
+
+### Pool state after this addendum
+
+| slot | candidate | state |
+|---|---|---|
+| Job A | `pulselog-u-types` | **ADMITTED** — the only admitted candidate, carrying its standing Rule A-v2 caveat from the addendum above |
+| Job B | — | **EMPTY**. `baremobile-u-types` OUT (green, ≥2-step and 5× both failed); `bareagent-u-types` OUT (re-screen red; four earlier reds stand) |
+| last shaped candidate | `bareguard-u-types` | staged and validated at $0, hash `2b8dbdaf68e4c0dac9023d3c1c3816e387c617b91819fd714f67069f72ec387a` — **PARKED on hamr's explicit signature against that hash**; nothing paid fires without it |
+
+No threshold change, no new candidate, and no loosening is proposed here. The frozen
+clauses stand and the disposition is hamr's.
+
+### Reported observation: the two frozen constraints, measured again (for ruling, not resolved)
+
+The 2026-08-03 addendum reported the [10,30] error band and the execution/drafting floor as
+jointly near-unsatisfiable, from an estimate. Two fresh cold runs now measure it directly,
+and they show the tension is **conditional on per-error hardness — an axis the $0 static
+screen cannot see**, because that screen counts errors and nothing else:
+
+| run | in-scope errors at seed | execution | execution per error | drafting | measured ratio | errors the 5× floor would need at that rate |
+|---|---|---|---|---|---|---|
+| u-msgmyv27 `baremobile-u` (green) | 29 | $0.5232 | **$0.0180** | $0.2905 | 1.80× | **~81** — far outside [10,30] |
+| u-mshsikhr `bareagent-u` (red) | 30 | $2.7328 | **$0.0911** | $0.4217 | 6.48× | **~23** — inside [10,30] |
+
+Per-error execution cost differs **5.1×** between two patients that sit one error apart in
+the band. Drafting overhead has also grown since the 2026-08-03 estimate ($0.15): both runs
+paid $0.29–0.42, driven by the scout ($0.2674 / $0.3365), which raises the error count the
+5× floor demands. The practical consequence is that a candidate can clear the count band and
+fail the ratio purely by being **easy** — which is what the smallness guard is for, but it
+also means the band cannot predict admission, so screening candidates by error count alone
+will keep producing this outcome. Reported with the numbers behind it and left for hamr's
+ruling, exactly as the 2026-08-03 tension was.

@@ -80,10 +80,13 @@ non-negotiable, at every scale.
 Granted **per job by the signed spec** — the agent never widens its own menu. If a locked
 verb blocks the work, the worker files a *request-red* and a human decides.
 
-> **Model tiers (v1.36, 2026-07-30):** the PLAN is authored at the medium tier (sonnet)
-> or above — a small-tier drafter died at the validation gate twice on the same rejection
-> (measured). Steps may be tiered DOWN to the economy tier by the planner (`model` field);
-> running a whole job below the floor is an explicit operator probe, never a default.
+> **Model tiers (v1.36, 2026-07-30; narrowed 2026-08-06):** the PLAN is authored at the
+> medium tier (sonnet) or above — a small-tier drafter died at the validation gate twice on
+> the same rejection (measured). Steps could once be tiered DOWN to the economy tier by the
+> planner (`model` field); since 2026-08-06 the agent-selectable menu is **`sonnet` only**
+> *(F87 — a reversible attribution probe, not a verdict on the small tier; see the Layer 2
+> inventory below)*. Running a whole job below the floor remains an explicit OPERATOR probe
+> (`--model haiku`), never a default and never the agent's to choose.
 
 | verb | what it does |
 |---|---|
@@ -206,7 +209,8 @@ reject at the validation gate, widened monotonically in v0.5.1.
 
 **The road is FINISHED (2026-07-30, PRD v1.35).** T·A·P·U landed on top of the accepted
 core: a wall clock and materials the planner is told as a balance (T), the variance replan
-axis (A, built-and-inert at 0.5), the 14-verb palette and the step vocabulary (P), and
+axis (A, at 0.5 — inert across the archive, live since 2026-08-06), the 14-verb palette and
+the step vocabulary (P), and
 user-mode e2e as routine — both U jobs green end to end with bridges minted (F68, F69).
 The P read's load-bearing find became a validation law: a `check-passes` step must hold a
 write-class verb, so the mailbox-with-no-hands plan shape is now inexpressible. **Closed out
@@ -230,11 +234,11 @@ self-raise.
 
 ---
 
-## What lives where now (2026-08-04 flow update)
+## What lives where now (2026-08-06 flow update — second pass)
 
 The layers above are the map; this is the current inventory — every mechanic that has
 landed (or is in build) and which box it belongs to. Details and evidence live in the PRD
-addenda (v1.36–v1.49); this list is deliberately one line each.
+addenda (v1.36–v1.50); this list is deliberately one line each.
 
 **The shell (judge + gap + cap — not a layer; governance lands here):**
 - **Money:** hard cap per run, metered per round. A money cap-halt is what W-2 made of a
@@ -252,6 +256,16 @@ addenda (v1.36–v1.49); this list is deliberately one line each.
   the close is never bounded and never counts against the wall); the outside watchdog
   whose kill requires deadline passed AND a flat spine (W-3 — never a silent kill); the
   in-run stall fuse.
+- **The variance meter (A):** a step that has eaten ≥ 0.5 of the run's REMAINING money or
+  time — either axis — is pre-empted at the head of its next attempt so the planner
+  re-allocates. That share is the WHOLE trigger and stays it: the meter **reports**
+  progress and decides nothing on it *(F85)* — a progress term in the condition would let
+  a governance instrument over an operator-owned allowance judge capability. What it
+  reports is the same reading the two halts carry (`trend`/`motion`/`reading`/`series`),
+  read off the SAME `src/trend.js` instance they read, on the `variance` spine record and
+  in the escalation detail the replan brief quotes. **No longer inert:** it fires on real
+  runs, and its old fixed sentence — "with its exits unmoved", printed on every variance
+  stop whatever had happened — is DELETED; it was false the first time it was read.
 - **Resume:** step-level, "the stop is the checkpoint" — kill-resume exists, and money/wall
   cap-halt resume on the user path is *built and LIVE-VALIDATED* (F83: a signed top-up
   resumed bareagent-u's cap-halt at the close checkpoint and greened for $1.21/12.8min)
@@ -276,12 +290,34 @@ stage change.
   FINAL write step (check-placement, Rule A-v2); a replan may not shed a predecessor's
   check (check-shed, Rule B); nested-quantifier exit patterns are rejected statically.
   Each law is also STATED in the drafting prompt from the same facts the validator judges.
+- **The exit-slot ceiling (a property of the gate, load-bearing and easy to miss):** a step
+  may carry at most **2** exits (`MAX_EXITS_PER_STEP`), ANDed, and a `check-passes` on a
+  write-granted step must be paired with a `tree-changed` exit — so **a step has exactly ONE
+  check slot and cannot carry two checks**. Stated plainly: a job whose close judges N stages
+  can have at most ONE of them enforced *during* a step; the other N−1 are enforced only at
+  the close, at the end of the run. That is a cost shape, not a hole — the close still refuses
+  a tree that fails any stage — but the run pays full price before it learns.
 - **Prompt laws:** a step carrying a check is free to edit every file that check can
-  report on (exit-freedom); the replan brief carries the mechanical never-wrote line.
+  report on (exit-freedom).
 - **The step ladder:** fixed attempt counts are gone — 2 strikes of no progress (per-stage
   series, write-delta aware) force the replan, and the mechanism note goes to the
-  REPLANNER, the channel that converts; at most one replan, plus the variance trigger
-  (built, inert at 0.5).
+  REPLANNER, the channel that converts.
+- **The replan ceiling:** one replan per run, on any of the three triggers (exhaustion,
+  variance, stall) — **plus exactly ONE more** when a SECOND `step-variance` stop finds the
+  run mechanically `converging` *(F85)*. The arbiter grants it off the same trend reader,
+  bounded by a latch and not by a counter compared against a limit, so the ceiling cannot
+  creep; `flat` and `unknown` stop as before, a third variance stop is the stop however
+  well it is going, and exhaustion or stall past the ceiling is unchanged. The agent never
+  asks for it, is never offered it, and has no channel to it.
+- **The replan brief (the only channel the redrafting planner adapts to):** the mechanism
+  that ended the step, the measured trend reading, what the stop left unspent — and the
+  **close's own last output, verbatim** *(F86)*, scrubbed through the one secret inventory
+  and bounded by the close path's own envelope, never a second truncation scheme. Handed
+  over as TEXT and never as a parsed file list: a summary line naming every file in scope
+  and a detail line naming the culprit are indistinguishable to a regex, and the parsed
+  `never wrote` advisory that used to sit beside it resolved to the already-clean file on
+  the run that killed it — deleted, sole caller and all. No gap → no block, byte-identical
+  to the brief before it.
 - **The close-fix loop:** its fixed iteration count retired for the SAME 2-strike
   no-progress rule *(built, v1.46/v1.47)* — a run should die when it is out of ideas, not
   out of money mid-convergence; the count survives only as the bound for a close that
@@ -289,13 +325,30 @@ stage change.
 - **Materials:** money and time handed to the planner as balances; the scout is
   load-bearing (measured, not assumed); the staged close derives the check menu; the
   drafting floor is the medium tier.
+- **The per-step tier menu, narrowed to `sonnet` only** *(F87)* — the agent can no longer
+  tier a step down, and the `model` line is gone from the drafting prompt. A REVERSIBLE
+  ATTRIBUTION PROBE, not a verdict on the tier: the archive's tier column is confounded both
+  ways (the planner picks the cheap tier for steps it judges mechanical, and those steps sit
+  on runs already in trouble), so the tier comes off and the next failure attributes to agent
+  or harness instead. The field and its validator branch STAY — a one-entry menu still
+  validates `model: "sonnet"`, stored bridges still load, restoring the tier is one token.
+  **Only what the AGENT may express narrowed:** `--model haiku` is still the OPERATOR's probe
+  knob (PRD v1.36) and the runner's tier map is deliberately wider than the plan's menu.
 
-**Layer 3 — the recipe box (machinery built, acceptance pending):**
+**Layer 3 — the recipe box (machinery built; the lift contrast RETIRED, the rung PARKED — F88 / PRD v1.52):**
 - A green run graduates its road (bridge) to CANDIDATE; demotion only on escalation —
   a red never demotes, a casualty NEVER demotes; re-promotion is strict.
 - "Same job" means same SHAPE, never same instance (else the box is a lookup table).
-- One reuse green proves safe-and-legal, never beneficial — the acceptance read is the
-  frozen ON-vs-cold lift contrast (admission floor 5×), still ahead.
+- One reuse green proves safe-and-legal, never beneficial — and the frozen ON-vs-cold lift
+  contrast was RETIRED unrun (F88): the shape-lottery gate rules (`28ee95f`) now hand every
+  cold run the winning plan shape for free (losing shape 10/14 → 0/10 across the archive),
+  so the contrast would have paid $15–25 to measure a difference a $0 validation rule
+  already erased. Selection/promotion/demotion are PARKED on `layer-3-reuse`; kept in the
+  critical path: storage + pin (the user re-runs a stored workflow by name).
+- The one reuse hypothesis still standing is TEMPLATE-ONLY reuse (strip the patient prose,
+  carry rounds/tools/scope/attempts/tier and the iterate sentence) — specified in v1.52 §4,
+  frozen, awaiting hamr. Next rung instead: close-authoring (the frozen 2026-08-07 design
+  record), then softgreen + hitl on that surface.
 - A tightened reuse envelope changes the resolved hash → re-sign.
 
 ---
@@ -513,14 +566,35 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
      budget, does the agent RUSH or build a bridge that carries it? — is **still unmade: no
      real run has executed under a clock.** (Auto-sizing from complexity is later; v1 is
      operator-set.) Time is handed over as a BALANCE, never a rate (PRD v1.29).
-   - **A — replan on TIME, not exhaustion only. ⚠ BUILT AND INERT.** A step burning a declared
-     share of remaining money or time with exits unmoved triggers the replan. The count
-     ceiling stays — trigger changes, ceiling never does. **F63 replayed it across 18 spines /
-     54 steps: it would have fired 0 times at hamr's 0.5** (near misses 0.35 · 0.35 · 0.40 ·
-     0.45). Not lowered to fit those four points. **DECIDED 2026-07-26 (hamr, *"keep 0.5"*,
-     PRD v1.31) with the inertness on the table** — so A is a guard set above the observed
-     population, and the programme's eight real adaptation observations come from the
-     exhaustion trigger, not from this one.
+   - **A — replan on TIME, not exhaustion only. ✅ BUILT; LIVE since 2026-08-06.** A step
+     burning a declared share of remaining money or time triggers the replan. **F63 replayed
+     it across 18 spines / 54 steps: it would have fired 0 times at hamr's 0.5** (near misses
+     0.35 · 0.35 · 0.40 · 0.45). Not lowered to fit those four points. **DECIDED 2026-07-26
+     (hamr, *"keep 0.5"*, PRD v1.31) with the inertness on the table** — a guard set above the
+     observed population.
+     **2026-08-06 — it fired, and the meter's NOTES were the defect (F85).** The threshold
+     was right: it stopped a step that was eating the run. What it then told the replanner
+     was a hardcoded *"with its exits unmoved"*, printed on every variance stop whatever had
+     happened — and on its first real firing it was flatly false (the close had gone
+     30 → 24 → 15 → 14 with the ladder recording zero strikes). Two instruments on one run
+     and only one of them right; the replanner, told it had achieved nothing, threw the
+     convergence away and re-targeted a file that was already clean. hamr's ruling, verbatim:
+     *"meter is right but missing a piece … it should give heads up on money/time + progress
+     for llm to judge."* Landed as three parts:
+     **(A) the meter REPORTS, it does not decide** — the firing condition is byte-identical
+     (`moneyShare`/`timeShare` ≥ 0.5, both axes, same threshold), because a progress term in
+     the TRIGGER would make a governance instrument over an operator's allowance judge
+     capability. The `variance` record and the escalation gain `trend`/`motion`/`reading`/
+     `series`, read off the SAME `src/trend.js` instance the money and wall halts read — no
+     second reader, since two readers of one question is the defect being fixed.
+     **(B) the false sentence is DELETED** and replaced by that measured reading; the
+     materials `progress` line keeps its structural half (steps done) and gains the close
+     trend. **(C) a SECOND variance stop earns ONE more replan** — see the ceiling entry in
+     the inventory above.
+     Prerequisite found en route: the trend reader was blind to step-level progress (fed only
+     the close precheck and the outer fix loop) and read the WRAPPED gap, whose
+     `check "x" red:` line carries no number — both folds corrected, plus a preflight seed so
+     the counter has a baseline.
    - **P — restore the palette** (write · select · compress · isolate, per-step and
      agent-selected, not shell hooks) and widen the step vocabulary past six fields
      (model tier / effort, attempt cap, scope narrowing). The arbiter stays inexpressible.
@@ -546,7 +620,8 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
      to compare across a stage change rather than risk a false fire; and the grading stage is
      kept off the derived menu in all four shipped specs (`offer:false`, a per-spec convention
      guarded by a test, not a schema rule). **Status 2026-07-30: T·A·P·U is COMPLETE (PRD v1.35).** T built and live in
-     every U run; A built-and-inert at 0.5 (the paying replans fire on exhaustion); the
+     every U run; A built-and-inert at 0.5 (the paying replans fire on exhaustion — *superseded
+     2026-08-06: A now fires, see the A bullet above*); the
      staged close has run real-model many times over; U is routine (litectx-u and aurora-u
      both green end-to-end, bridges minted, casualties routed per doctrine); P built and
      read under signed hashes (F69: the widened palette went unselected on both TYPES jobs

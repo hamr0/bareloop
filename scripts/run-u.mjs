@@ -80,8 +80,10 @@ const STRIKE_LIMIT = 2;
 
 const arg = (/** @type {string} */ n) => { const i = process.argv.indexOf(`--${n}`); return i === -1 ? null : (process.argv[i + 1] ?? ''); };
 // --model picks the DEFAULT worker tier (runner territory — the spec names no model, so
-// the signed hash is unaffected). Tier names, not model ids: the same closed menu the
-// planner's per-step `model` field uses. haiku takes no output_config.effort
+// the signed hash is unaffected). Tier names, not model ids. This map is the OPERATOR's
+// and is deliberately WIDER than the planner's menu: since 2026-08-06 `STEP_MODELS` is
+// sonnet-only (the haiku attribution probe — see src/plan.js), so a PLAN can no longer
+// say haiku while `--model haiku` still can. haiku takes no output_config.effort
 // (provider-gated, battery rule) — nothing to gate yet since neither tier sets effort.
 // PRD v1.36 floor: the drafter/default tier is sonnet MINIMUM — measured, a haiku
 // drafter died plan-red twice on the same rejection (ms7gne7s). `--model haiku` runs
@@ -229,6 +231,16 @@ if (arg('approve') !== specHash) {
     }
     if (gs.length) console.log(`  trend    ${gs.length} close grade(s) inherited as baselines (${[...byStage].map(([k, vs]) => `${k} ${vs.join(' → ')}`).join('; ')}) — the halt readout spans BOTH legs`);
     else console.log('  trend    no close grade to inherit — this leg\'s readout is judged on its own evidence');
+    // WHAT IT INHERITS AS A BOUND. The line above is a readout the leg carries; this is
+    // an allowance it does NOT get. A resumed leg that opens with both replans spent
+    // can only exhaust the plan it reloads — it cannot redraw it — and that changes
+    // what the dollars being signed here can buy. Stated only when there is something
+    // to state: a "0 replans spent" line on every cold-ish resume is noise that trains
+    // the eye to skip the line that matters.
+    if (rs.replans > 0) {
+      console.log(`  replans  ${rs.replans} already spent by this run — the ceiling is the RUN's (PRD v1.12), so this leg inherits it rather than a fresh one`
+        + (rs.replanGrantUsed ? '; the arbiter\'s one extra is spent too' : '; the arbiter\'s one extra is still unearned'));
+    }
     console.log('  patient  continued AS THE RUN LEFT IT — NOT reset to the seed');
     // The commonest resume there will ever be is the one straight after a money cut,
     // and on THAT spine the remainder is zero or negative by definition — the run
@@ -310,10 +322,11 @@ if (dead) {
 
 const approvals = [{ specHash, signer: process.env.USER ?? 'human', ts: new Date().toISOString() }];
 const provider = new AnthropicProvider({ apiKey, model: MODEL });
-// P: the per-step model-tier factory. The TIER menu is signed in the plan schema
-// (STEP_MODELS); the tier->model mapping is the RUNNER's territory, here. haiku
-// takes no output_config.effort (provider-gated, battery rule) - nothing to gate
-// yet since neither tier sets effort params.
+// P: the per-step model-tier factory. The TIER menu a PLAN may name is signed in the
+// plan schema (STEP_MODELS — sonnet-only since the 2026-08-06 haiku attribution probe);
+// the tier->model mapping is the RUNNER's territory, here, and keeps haiku for the
+// operator's own --model knob. haiku takes no output_config.effort (provider-gated,
+// battery rule) - nothing to gate yet since neither tier sets effort params.
 const TIER_MODELS = DEFAULT_TIER_MODELS;
 /** @type {Record<string, any>} */
 const tierCache = {};
@@ -420,6 +433,15 @@ try {
       // flat on its own evidence; the RUN — which is what the top-up decision is
       // about — may have been converging when the allowance ran out.
       ...(dead.restart.grades?.length ? { resumeGrades: dead.restart.grades } : {}),
+      // and the REPLAN ledger the chain has spent. The line above feeds a readout; this
+      // one feeds a BOUND — `replanned`/`varianceGrantUsed` are locals in `runPlan`, so
+      // an unforwarded ledger hands this leg a fresh allowance of one PRD v1.12 makes the
+      // RUN's, once per kill. It rides onto this leg's `job-start` as `priorReplans` too,
+      // which is what lets a resume OF a resume fold once instead of restarting the
+      // ceiling at whichever window it happens to read.
+      ...(dead.restart.replans > 0
+        ? { resumeReplans: { count: dead.restart.replans, grantUsed: dead.restart.replanGrantUsed } }
+        : {}),
     } : {}),
   });
 } finally {

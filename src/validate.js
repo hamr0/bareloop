@@ -155,3 +155,124 @@ export function sweepSecretLiterals(root, red) {
     }
   })(root, '');
 }
+
+// ── the catastrophic-backtracking reject (F49) ────────────────────────────────
+// Housed here, with the other primitives BOTH validators share, because THREE
+// regex fields reach an untimed evaluator and they are split across the two
+// documents: the agent's `artifact-written.pattern` (plan.js) and the
+// operator's `judged.pattern` + `gapKeep` (job.js). plan.js already imports
+// job.js, so job.js cannot import plan.js — and a second copy here would be the
+// drift class SECRET_PATTERNS exists to prevent: a shape one side rejects and
+// the other admits. ONE inventory, imported by both.
+
+/** Length of an UNBOUNDED quantifier token at `src[i]` (`*`, `+`, or `{n,}`,
+ * plus an optional trailing lazy `?`), or 0. Bounded forms (`?`, `{n}`,
+ * `{n,m}`) return 0: they cannot drive exponential backtracking (a bounded
+ * outer repeat is polynomial at worst, and the body is self-authored — F49).
+ * @param {string} src @param {number} i */
+function unboundedQuantLen(src, i) {
+  let len = src[i] === '*' || src[i] === '+' ? 1 : 0;
+  if (!len && src[i] === '{') { const m = /^\{\d+,\}/.exec(src.slice(i)); if (m) len = m[0].length; }
+  if (len && src[i + len] === '?') len++; // the lazy modifier is part of the same token
+  return len;
+}
+
+/**
+ * F49 — a heuristic reject for the catastrophic-backtracking footgun: an
+ * unbounded quantifier applied to a group whose body itself repeats unboundedly
+ * (`(a+)+`, `(\d*)*`, `([a-z]+){1,}`) — including through a redundant wrapping
+ * group (`((a+))+`, `(?:(a+))*`), which is the SAME exponential class as `(a+)+`
+ * and is caught by propagating the inner repeat up through the wrapper. Such a
+ * pattern can hang `RegExp.test` for seconds on a short crafted body, and THREE
+ * fields feed it to an evaluator with NO timeout — one per document:
+ *   - the AGENT's `artifact-written.pattern`, run by `evalExits` (F49, the
+ *     original site). Self-DoS only: the agent authors both the pattern and
+ *     (via the worker) the artifact, so a hang burns only its own run's
+ *     wall-clock, and there is no arbiter compromise — it cannot escape the
+ *     fence, forge a green, or leak a secret.
+ *   - the OPERATOR's `judged.pattern` (`runClose`) and `gapKeep` (`boundGap`),
+ *     compiled and run against close output in BARELOOP'S OWN PROCESS. These
+ *     are worse than an operator self-DoS, and the reason is F67's lesson: the
+ *     regex blocks the MAIN EVENT LOOP, so the in-process stall fuse — a timer
+ *     in that same loop — cannot fire. The run dies to the OUTSIDE watchdog and
+ *     is read as a model stall, so a bad regex in a SIGNED spec presents as a
+ *     provider problem. MEASURED: `boundGap(stream, '(a+)+$')` on a 40-char
+ *     body does not finish in 20s.
+ * So the reject targets the dominant exponential class and fails it as a
+ * mechanical gap at the validation gate, before any tokens burn. A full ReDoS
+ * analyzer needs a real regex engine (an external native dep we do not take for
+ * a LOW issue); exotic overlapping-alternation blowup is out of scope by
+ * decision (PARKED to the close-authoring rung — PRD v1.55).
+ *
+ * SCOPE IS ASYMMETRIC, both directions named on purpose:
+ *   - false NEGATIVE: overlapping-alternation blowup (`(a|ab)+`-class) is not
+ *     detected — there is no inner QUANTIFIER to find, so the shape scan cannot
+ *     see it; the blowup comes from overlapping alternation BRANCHES under a
+ *     repeat. A genuine limit of the approach, not a bug in it. Widening the
+ *     detector changes which SIGNED specs are admissible, which is
+ *     arbiter-adjacent — parked, not chased (PRD v1.55).
+ *   - false POSITIVE: a group whose repetitions are disambiguated by a literal
+ *     anchor/delimiter (`(?:^- .+$\n?)+`, `(?:CHANGELOG:.+\n)+`) is FLAGGED even
+ *     though a real engine runs it linearly — the scan sees the nested-quantifier
+ *     SHAPE, not the disambiguation. Rejecting it is the FAIL-SAFE direction (it
+ *     never admits an unsafe pattern), and the cost is bounded: the plan drafter
+ *     gets a mechanical gap and rewrites (drop the outer `+`, or match once).
+ *     Detecting "safe because anchored" needs the same real engine we declined,
+ *     and guessing it wrong would ADMIT an exponential pattern — so the shape
+ *     reject stands, and the over-rejection is a named, accepted limitation.
+ *
+ * The input is guaranteed to compile as a RegExp (checked first by the caller),
+ * so this scan assumes valid, balanced JS regex syntax.
+ * @param {string} src a compiled regex source string
+ * @returns {boolean} true iff a nested unbounded quantifier is present
+ */
+export function hasNestedQuantifier(src) {
+  /** @type {{ quant: boolean }[]} */
+  const stack = [];
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (c === '\\') { i++; continue; }          // escaped atom — the next char is a literal
+    if (c === '[') {                            // character class: quantifier chars inside are literals
+      i++;
+      if (src[i] === '^') i++;
+      // NO POSIX leading-`]`-is-a-literal rule: JS is not POSIX here. `[]` is the
+      // EMPTY class (matches nothing) and `[^]` the any-char idiom — both close at
+      // that first `]`. Skipping it ran the scan past the class's real end and
+      // swallowed every quantifier after it, so `x[^](a+)+$` read as safe while
+      // RegExp.test on it does not finish in 15s on a 31-char body. A false
+      // NEGATIVE is the dangerous direction (F49), so the scan follows JS.
+      //
+      // Honest limit on the monotonicity claim: this is a PARSE correction, not
+      // the "add rejections only" tightening F49's rule contemplates, and it is
+      // not strictly rejection-monotonic. Measured over 14,862 compilable
+      // generated patterns (2,369 previously rejected): 2 rejections disappear,
+      // both pathological `[]`-bearing shapes whose old `true` came from the very
+      // misparse being fixed, and both verified to finish RegExp.test in ~0ms.
+      // Every entry of the checked-in REDOS_BAD/GOOD/OVERREJECTED corpus is
+      // unchanged. So no real hazard was un-rejected — but the claim is
+      // "measured, no hazard lost", never "monotonic by construction".
+      while (i < src.length && src[i] !== ']') { if (src[i] === '\\') i++; i++; }
+      continue;
+    }
+    if (c === '(') { stack.push({ quant: false }); continue; }
+    if (c === ')') {
+      const g = stack.pop();
+      const qlen = unboundedQuantLen(src, i + 1);
+      if (g && g.quant && qlen) return true;    // group repeats unboundedly AND its body did too
+      // The group is an unbounded-repeated atom of its parent when it is directly
+      // re-quantified (qlen) OR its own body already repeats unboundedly (g.quant):
+      // a redundant wrapper — ((a+))+ , (?:(a+))* , (((\d*)))+ — is the SAME
+      // exponential class as (a+)+, so an inner repeat must propagate THROUGH the
+      // enclosing group or the outer quantifier's close never sees it. Propagation
+      // is MONOTONIC (it only ever SETS quant=true → only ever adds rejections): it
+      // can widen over-rejection — the named FAIL-SAFE direction — but can never
+      // introduce a false negative, which is the dangerous one (F49).
+      if ((qlen || (g && g.quant)) && stack.length) stack[stack.length - 1].quant = true;
+      i += qlen;
+      continue;
+    }
+    const qlen = unboundedQuantLen(src, i);     // a quantifier applying to the preceding atom, inside the current group
+    if (qlen) { if (stack.length) stack[stack.length - 1].quant = true; i += qlen - 1; }
+  }
+  return false;
+}

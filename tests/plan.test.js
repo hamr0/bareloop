@@ -629,12 +629,18 @@ test('maxWallMs is ARBITER territory: smuggled into a plan or a step it reds unk
 
 // ---- P: the widened step vocabulary (design record 2026-07-28) — all tighten-only ----
 
-test('P: model from the closed tier menu is accepted; an off-menu value is inexpressible', () => {
-  assert.deepEqual(validatePlan(mut((p) => { p.steps[0].model = 'haiku'; }), OPTS).reds, []);
+test('P: model from the closed tier menu is accepted; an off-menu value is inexpressible — haiku is OFF the menu (2026-08-06 attribution probe)', () => {
   assert.deepEqual(validatePlan(mut((p) => { p.steps[0].model = 'sonnet'; }), OPTS).reds, []);
-  const r = validatePlan(mut((p) => { p.steps[0].model = 'opus'; }), OPTS);
-  assert.equal(r.reds.length, 1);
-  assert.match(r.reds[0].detail ?? '', /sonnet\|haiku/, 'the menu is handed over, not described');
+  // haiku sits beside opus now: the tier is dropped from the AGENT-selectable menu
+  // while the archive read is attributed (src/plan.js STEP_MODELS). `--model haiku`
+  // stays the operator's own probe knob — this menu governs only what a PLAN may say.
+  for (const off of ['haiku', 'opus']) {
+    const r = validatePlan(mut((p) => { p.steps[0].model = off; }), OPTS);
+    assert.equal(r.reds.length, 1, `"${off}" is off-menu — got ${JSON.stringify(r.reds)}`);
+    assert.equal(r.reds[0].code, 'invalid-value');
+    assert.equal(r.reds[0].path, 'steps.0.model');
+    assert.match(r.reds[0].detail ?? '', /menu: sonnet(?![|\w])/, 'the menu is handed over, not described');
+  }
 });
 
 test('P: attempts is TOLERATED-INERT — any positive integer validates (stored bridge plans carry it), garbage still reds', () => {

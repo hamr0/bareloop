@@ -359,10 +359,17 @@ export const GAP_KEEP_TRIM_MARKER = 'more elided by the';
  * `keepPattern` is set (F28), lines of the WHOLE stream matching it are also
  * carried in a clearly-delimited block between head and tail — capped — so the
  * failing-test names buried in the middle still reach the worker.
+ * Exported for the ONE reason `GAP_KEEP_TRIM_MARKER` above is: a second consumer
+ * that needs a gap bounded must reuse THIS envelope, not spell its own. A private
+ * copy would be a second truncation scheme, and the two would drift on exactly the
+ * property that matters — whether the red lines survive, and whether the trim
+ * announces itself (F28: silent truncation is the disease this function cures).
+ * The close path is unchanged: `runClose` still calls it with the stage's own
+ * `gapKeep`, byte-identically.
  * @param {string} s the (redacted) close output
  * @param {string} [keepPattern] regex source; matching lines survive the elision
  */
-function boundGap(s, keepPattern) {
+export function boundGap(s, keepPattern) {
   if (s.length <= GAP_HEAD + GAP_TAIL + 100) return s;
   const head = s.slice(0, GAP_HEAD);
   const tail = s.slice(-GAP_TAIL);
