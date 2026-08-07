@@ -49,8 +49,10 @@ it and never disappears.
 > kill-switch question). As of 0.7.0 N3's machinery **ships** — the bridge registry, the
 > operator-signed reuse envelope, the selection call and step-level resume are all in the
 > public API — but shipping is not acceptance: one execution green proves reuse safe and
-> legal, never *beneficial*. The lift claim waits on the ON-vs-forced-cold contrast, which
-> has not fired. Until it does, treat reuse as available and unproven.
+> legal, never *beneficial*. The contrast that was to prove the lift is now retired (F88): a
+> validation rule hands every cold run the plan shape a bridge was carrying, so the gap it
+> would have measured is gone. Treat reuse as available and unproven — what a bridge should
+> carry instead is open.
 
 ## Quick start
 

@@ -3587,3 +3587,169 @@ What it settles, in one paragraph each:
 - **Sequencing:** close-authoring v1 (green) is the next build rung; hitl before softgreen
   inside the follow-on rung (assistant-proposed, in the record); Layer 3 stays parked per
   v1.52 with template-only reuse frozen for later.
+
+---
+
+## Addendum v1.54 — 2026-08-07 (the replan ceiling is a RUN bound and spans the resume chain: a kill was refilling a signed allowance, and the fix records WHY a readout's precedent must not be reused for a bound — commit `091d356`)
+
+**Basis:** a review round on `variance-progress-abc`, confirmed BY EXECUTION before any remedy
+and re-validated on an independent instrument afterwards. No new grant is made here and no
+number moves; this addendum states a boundary that v1.12 already drew and that the code had
+quietly stopped honouring.
+
+### 1. The ruling
+
+**A replan ceiling bounds the RUN, and a resume chain is one run.** It bounds how many times
+the WORKFLOW may be redrawn before redrawing it is thrash — v1.12's *"unlimited replanning
+launders thrash as adaptation"* — and that question spans exactly the chain the halt readout
+already spans, not the leg that happens to be executing.
+
+Measured before the fix: `replanned`/`varianceGrantUsed` were locals in `runPlan`, and a resume
+IS another `runPlan` call. Leg 1 replanned and stopped; leg 2, driven with a `resumeSeed`,
+replanned again. Two replans on a run whose ceiling is one, with **every record on the spine
+showing 1** — the readout was as wrong as the bound. Two would have become four by being killed
+once.
+
+**This landed rather than parking as arbiter territory, and the reason is the direction.** The
+standing rule is that arbiter changes — verdict routing, budgets, close semantics — are named,
+scoped and parked for hamr's explicit go. This fix does not change an arbiter number; it stops a
+signed one from being refilled by an external kill. Restoring a bound to what the signature
+already said is the one direction that needs no new signature, and it is the direction a park
+would leave broken. Nothing here widens anything: the disarm control is pinned in the suite — a
+resumed leg with an UNSPENT ceiling still replans, so the bound is bounded rather than switched
+off.
+
+### 2. Why this seed spends the leg's bound where the trend's seed refuses to
+
+`src/trend.js`'s THE SEED deliberately refuses to seed the close-fix loop's ITERATIONS from
+history, on the stated ground that *the leg's own bounds must not be spent by history*. That is
+right and stays right, and it is not in tension with §1 — the two bounds answer different
+questions:
+
+- an **attempt allowance is a LEG bound**: a restarted leg buys its own attempts with its own
+  money, so history spending them would charge a leg for work it did not do;
+- a **replan ceiling is a RUN bound**: it governs how many distinct workflows one run is allowed
+  to author, and a run does not become a second run by being killed.
+
+Both seeds now document the split at their own site. This is the general form: **before seeding
+anything across a resume, ask whether the thing being seeded is bought with the leg's money or
+declared by the run's signature.** They fold in opposite directions and no single precedent
+covers both.
+
+### 3. The mechanism, and the precedent deliberately NOT copied
+
+`readGradeSeed`'s documented known limit is that it reads ONE spine, so a resume of a resume
+inherits the previous leg's grades and not the whole chain — the chain shortens by a leg per
+kill. That limit is **fail-safe for a READOUT** (a shortened chain can only under-claim a
+direction) and it is **the dangerous direction for a CEILING**, where an under-claimed ledger is
+a refilled allowance and every kill buys one.
+
+So the replan seed follows the MONEY fold instead (`priorSpentUsd`, `try-start`/`job-start`):
+each leg DECLARES the ledger it inherited on its own spine, and the next reader adds only that
+leg's own `replan` records to the declared number. Leg 3 inherits the whole chain, not leg 2's
+slice. Spine surface, ADDED never repurposed: `job-start` gains `priorReplans` and
+`priorReplanGrantUsed` (emitted only when there is a fold — a decorative `0` is
+indistinguishable from a run nobody folded), and the grant latch travels beside the count rather
+than being derived from it, because `1` + `false` is a real state the derivation would erase.
+
+`plan-executed.replans` consequently **changes meaning from the leg to the chain**. The change
+was made rather than shadowed by a second field for one reason and it does not generalise: the
+field shipped only on this unreleased branch, so no archived spine carries the leg reading. The
+leg's own number stays derivable (`chain − records-in-this-window`), which is the arithmetic the
+resume reader already runs, and a second field stating a derivable number would be a second
+reader of one question.
+
+### 4. Scope, and the sweep that found no second instance
+
+The audit question this raises is general — *what else that bounds the RUN is a local reborn on
+every leg?* — so it was run at $0 over `runPlan`'s own declarations rather than left as a
+worry. Money, wall and tries were already declared folds; the replan count and its variance
+latch were the only two that were not; `fixIterationsUsed` and the step strike ladder are LEG
+bounds by §2's test and correctly stay leg-local. One class, two sites, both closed.
+
+Not claimed: nothing here says the ceiling is the right NUMBER. Threshold-setting stays hamr's,
+as it has since A's replan trigger, and this addendum only makes the number that was signed the
+number that is enforced.
+
+---
+
+## Addendum v1.55 — 2026-08-07 (the ReDoS reject reaches the OPERATOR's two regex fields; its alternation-overlap blind spot is PARKED to the close-authoring rung — hamr: *"add it to next phase with close dev"*)
+
+**Basis:** a $0 measurement round on `variance-progress-abc`, run against the real evaluators
+rather than the detector's unit fixtures. No paid run.
+
+### 1. What landed: the reject was wired at one of three sites, not three
+
+F49 shipped `hasNestedQuantifier` as a validation-gate reject and wired it at exactly ONE
+site — the AGENT's `artifact-written.pattern`. Two OPERATOR-authored regex fields reach an
+equally untimed evaluator and were never covered: `judged.pattern` (exec'd by `runClose`
+against the close's whole stdout+stderr) and `gapKeep` (compiled by `boundGap` and run once
+per line of close output).
+
+**Measured, not argued:** `boundGap(stream, '(a+)+$')` against a 40-character line does not
+finish in 20 seconds (`timeout` exit 124).
+
+**The severity is higher than an operator self-DoS, and F67 is why.** On the agent side F49's
+own scope note is right — the agent authors both the pattern and the artifact, so a hang burns
+only its own wall-clock and compromises no arbiter. The operator's two patterns run in
+**bareloop's own process**, so the hang blocks the MAIN EVENT LOOP — and the in-process stall
+fuse is a timer in that same loop, so it cannot fire. This is F67's lesson landing on a second
+mechanism: *a guard living inside the process it guards shares that process's fate.* The run
+dies to the OUTSIDE watchdog and reads as a model stall. **A bad regex in a SIGNED spec
+presents as a provider problem** — which is the expensive part, because that is a
+misdiagnosis, not merely a stop.
+
+Wiring it required moving the scan from `plan.js` to `validate.js`: `plan.js` imports
+`job.js`, so `job.js` cannot import `plan.js`, and a second copy would be exactly the drift
+class `SECRET_PATTERNS` exists to prevent — a shape one document rejects and the other admits.
+ONE inventory, imported by both; `plan.js` re-exports the name (the `WRITE_VERBS` precedent)
+so the F49 site is byte-identical in behaviour.
+
+**Admissibility sweep, run before the change and re-run after:** all 92 operator regexes
+across all 10 signed specs in `jobs/` — **zero** newly red. No spec breaks and no spec-hash
+churn, because no spec file is touched.
+
+### 2. What is PARKED: the alternation-overlap class
+
+**Measured miss.** `hasNestedQuantifier` does NOT catch `(a|aa)+$` or `(x|xy)*$`. There is no
+inner QUANTIFIER for a shape scan to find: the catastrophic behaviour comes from **overlapping
+alternation BRANCHES** under a repeat. This is a genuine limit of the detector's approach, not
+a defect in its implementation — F49's own scope note names the `(a|ab)+` class as
+out-of-scope by decision, and this addendum confirms the miss by measurement rather than
+leaving it as a reasoned expectation.
+
+**Recorded so a later reader does not re-chase it: `([^])*$` is NOT caught, and that is
+CORRECT.** `[^]` is JS's any-single-character idiom, so `([^])*` is linear — not a hazard, and
+flagging it would be a false positive. The v0.7.0 `[^]` work was about the SCANNER parsing
+empty character classes without losing the class's boundaries, and it works: `([^]*)*$` — the
+genuinely nested one — IS caught. The two cases differ by one `*` and it is the difference
+between a true negative and a real catch.
+
+**Why parked rather than fixed:**
+
+- Expanding the detector changes **which signed specs are ADMISSIBLE**. That is
+  arbiter-adjacent territory, and reshaping a detector that gates every spec is not a
+  release-branch change.
+- The repo's own precedent is to **STATE a known detector limit rather than chase it** —
+  exactly how F49's false-POSITIVE class (anchor-disambiguated repeated-record patterns) was
+  handled. The standing rule that detector fixes must be MONOTONIC does not license
+  free-handed widening here: the safe direction bars chasing false positives, and closing this
+  false NEGATIVE means adding rejections whose blast radius is the whole signed fleet.
+
+**Where it is docked, and why that is the natural home.** hamr's instruction, verbatim: *"add
+it to next phase with close dev"* — the close-authoring rung (v1.53, design record
+`docs/plans/2026-08-07-close-authoring-design.md`, FROZEN). That rung is where the close stops
+being hand-written per patient and becomes a DECLARATION over operator-owned stage kinds. If a
+declared close composes its own patterns from kinds, **hand-authored operator regexes may
+cease to exist as a surface at all** — which would retire this question rather than answer it.
+Sharpening a detector for a field that is scheduled to stop being hand-authored is work aimed
+at a surface that may not survive the rung.
+
+### 3. Not claimed
+
+- Nothing here says the detector is wrong. It says its scope, which F49 named, is now
+  measured — and that the scope is acceptable *until* the close-authoring rung decides whether
+  the field it guards still exists.
+- No claim that the alternation class is reachable in practice today: all 92 shipped operator
+  regexes are simple anchored literals, and none is near this shape. The park is a known gap
+  held open deliberately, not a live exposure being tolerated.

@@ -378,6 +378,67 @@ test('gapKeep is inexpressible on a hitl close — a human close renders no stre
   assert.ok(r.reds.some((x) => x.code === 'unknown-field' && x.path === 'close.gapKeep'));
 });
 
+// ── F49's reject, extended to the OPERATOR's two regex fields ──────────────
+// Both `gapKeep` and `judged.pattern` are compiled and run IN BARELOOP'S OWN
+// PROCESS against close output (ralph.js `boundGap` and `runClose`), with no
+// timeout — the same untimed-evaluator hazard F49 rejected on the agent side.
+// MEASURED: `boundGap(stream, '(a+)+$')` on a 40-char body does not finish in
+// 20s (timeout exit 124). The severity is HIGHER than an operator self-DoS,
+// because the hang blocks the MAIN EVENT LOOP: the in-process stall fuse is a
+// timer in that loop and cannot fire (F67 — a guard sharing the fate of the
+// process it guards), so the run dies to the OUTSIDE watchdog and reads as a
+// model stall. A bad regex in a signed spec looks like a provider problem.
+test('a nested-quantifier gapKeep reds — the untimed gap bound runs it in-process (F49/F67)', () => {
+  const j = mut((s) => { s.close[0].gapKeep = '(a+)+$'; });
+  const r = validateJob(j);
+  assert.equal(r.ok, false);
+  assert.ok(r.reds.some((x) => x.code === 'invalid-value' && x.path === 'close.0.gapKeep' && /quantifier/i.test(x.detail)),
+    `expected invalid-value@close.0.gapKeep naming the quantifier, got ${JSON.stringify(r.reds)}`);
+});
+
+test('a nested-quantifier judged.pattern reds — runClose execs it against the close stream, untimed', () => {
+  // ONE capture group on purpose (single-defect isolation): a multi-group
+  // spelling reds on the group-count rule instead and never exercises this axis.
+  const j = mut((s) => { s.close[0].judged = { pattern: '^tests ((?:\\d+)+)+$', min: 3 }; });
+  const r = validateJob(j);
+  assert.equal(r.ok, false);
+  assert.ok(r.reds.some((x) => x.code === 'invalid-value' && x.path === 'close.0.judged.pattern' && /quantifier/i.test(x.detail)),
+    `expected invalid-value@close.0.judged.pattern naming the quantifier, got ${JSON.stringify(r.reds)}`);
+});
+
+test('the operator ReDoS red names the footgun and the finding — the operator must rewrite, not guess', () => {
+  const r = validateJob(mut((s) => { s.close[0].gapKeep = '(a+)+$'; }));
+  const d = r.reds.find((x) => x.path === 'close.0.gapKeep')?.detail ?? '';
+  assert.match(d, /F49/);
+  assert.match(d, /\(a\+\)\+/);
+});
+
+// THE CONTROL — this is the test that can produce the negative. Every regex
+// SHIPPED in a signed spec under jobs/ must still validate: a reject that reds
+// a live spec breaks it and churns its hash. Swept at build time over all 10
+// signed specs (92 operator regexes, 0 newly red); these are the distinct
+// shapes that sweep found, pinned so a future detector change cannot silently
+// invalidate the fleet.
+const SHIPPED_OPERATOR_PATTERNS = ['^BAREAGENT ', '^TESTGEN ', '^red', '^FAILED', 'BAREAGENT judged=(\\d+)', '^(FAILED|red)'];
+for (const src of SHIPPED_OPERATOR_PATTERNS) {
+  test(`a SHIPPED operator pattern still validates on both fields: ${src}`, () => {
+    const gk = validateJob(mut((s) => { s.close[0].gapKeep = src; }));
+    assert.deepEqual(gk.reds, [], `${src} must not red as gapKeep — it is live in a signed spec`);
+    // judged needs exactly one capture group, so only test the field for a
+    // pattern that has one; the ReDoS axis is what is under test here.
+    if ((new RegExp(`${src}|`).exec('')?.length ?? 1) - 1 === 1) {
+      const jp = validateJob(mut((s) => { s.close[0].judged = { pattern: src, min: 1 }; }));
+      assert.deepEqual(jp.reds, [], `${src} must not red as judged.pattern — it is live in a signed spec`);
+    }
+  });
+}
+
+test('the detector is ONE inventory — job.js and plan.js reject through the same function (SECRET_PATTERNS precedent)', async () => {
+  const fromPlan = (await import('../src/plan.js')).hasNestedQuantifier;
+  const fromValidate = (await import('../src/validate.js')).hasNestedQuantifier;
+  assert.equal(fromPlan, fromValidate, 'a second copy lets one side drift and the other stay blind');
+});
+
 // A second real plan-shape spec (job #4, TESTGEN): the base fixture above is a
 // one-check job, this one carries two checks and the full tool ceiling.
 const JOB4 = {

@@ -14,7 +14,7 @@
 // judgment call. Minting policy is product doctrine, not job-authorable.
 
 import { createHash } from 'node:crypto';
-import { globToPrefix, scopeContained, isObj, isNonEmptyString, sweepSecretLiterals } from './validate.js';
+import { globToPrefix, scopeContained, isObj, isNonEmptyString, sweepSecretLiterals, hasNestedQuantifier } from './validate.js';
 
 // The menus below ARE the close-authoring hierarchy (PRD §7) and ship frozen:
 // they are read at call time, so a mutable export would let adopter code
@@ -284,6 +284,21 @@ function validateClose(close, at, red) {
 }
 
 /**
+ * The F49 reject's OPERATOR-side detail. ONE spelling for both regex fields —
+ * they differ only in which untimed evaluator the pattern reaches — so the two
+ * reds can never drift into saying different things about the same hazard.
+ *
+ * The second sentence is the part an operator cannot derive: on the agent side
+ * F49 is self-DoS, but these two patterns are compiled and run in BARELOOP'S OWN
+ * PROCESS, where the hang blocks the event loop the in-process stall fuse lives
+ * on (F67 — a guard sharing the fate of the process it guards). The run then
+ * dies to the outside watchdog and reads as a model stall, so without this red a
+ * bad regex in a SIGNED spec is diagnosed as a provider problem.
+ * @param {string} evaluator the consumer that would run it, named concretely
+ */
+const redosDetail = (evaluator) => `nested unbounded quantifier (e.g. (a+)+ , (\\d*)* , (x+){1,}) — a catastrophic-backtracking footgun that can hang ${evaluator}, untimed (F49). It runs in bareloop's own process, so the hang blocks the event loop the stall fuse lives on (F67) and the run dies to the outside watchdog looking like a model stall; rewrite without a repeated group inside a repeat`;
+
+/**
  * The predicate BODY contract — cmd/expect/judged/gapKeep. Shared verbatim by
  * the predicate close and the Layer 2 named checks (decision 1: a check runs
  * under the same runClose machinery, so it validates under the same rules).
@@ -335,6 +350,13 @@ function predicateBody(o, at, red) {
         // the fake green this floor exists to catch). Alternation stays
         // fully expressible with non-capturing branches: `(?:a|b) (\d+)`.
         else if (groups > 1) red('invalid-value', `${at}.judged.pattern`, `${groups} capture groups — the count is read from group 1 only; use exactly one capture group and non-capturing (?:…) branches`);
+        // F49, operator side: `runClose` execs this against the close's whole
+        // stdout+stderr with no timeout. Gated on `groups >= 0` — that is the
+        // COMPILED flag in disguise (the catch sets -1), and the scan documents
+        // that it assumes syntactically valid input.
+        if (groups >= 0 && hasNestedQuantifier(j.pattern)) {
+          red('invalid-value', `${at}.judged.pattern`, redosDetail('the close reader (runClose)'));
+        }
       }
       if (!Number.isInteger(j.min) || j.min < 1) {
         red('invalid-value', `${at}.judged.min`, 'integer >= 1 — a floor of 0 is satisfied by judging nothing, which is the check it is meant to make');
@@ -353,8 +375,15 @@ function predicateBody(o, at, red) {
   if (o.gapKeep !== undefined) {
     if (!isNonEmptyString(o.gapKeep)) red('invalid-value', `${at}.gapKeep`, 'regex source string — lines matching it survive the gap bound (F28)');
     else {
-      try { new RegExp(o.gapKeep, 'm'); }
+      let compiled = false;
+      try { new RegExp(o.gapKeep, 'm'); compiled = true; }
       catch { red('invalid-value', `${at}.gapKeep`, 'must compile as a RegExp'); }
+      // F49, operator side and the measured one: `boundGap` runs this per LINE
+      // over the whole close stream, untimed. Measured: `(a+)+$` against a
+      // 40-char line does not finish in 20s.
+      if (compiled && hasNestedQuantifier(o.gapKeep)) {
+        red('invalid-value', `${at}.gapKeep`, redosDetail('the gap bound (boundGap), once per line of close output'));
+      }
     }
   }
 }

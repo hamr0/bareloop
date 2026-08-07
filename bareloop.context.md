@@ -247,6 +247,19 @@ first) so a pathological close cannot rebuild the very bloat the bound exists to
 when the cap trims matches it **says so** with an explicit marker (silent truncation is the
 disease this cures, never a cure that truncates silently). Validated like `judged.pattern`:
 a non-empty string that must **compile as a RegExp**, else a spec red before any tokens.
+
+**Both operator patterns must also survive the ReDoS shape check** (`invalid-value`, F49 —
+the same reject the agent's `artifact-written.pattern` gets): an unbounded quantifier over a
+group that itself repeats unboundedly (`(a+)+`, `(\d*)*`, even wrapped: `((a+))+`) is
+rejected at the gate. **This is stricter than an "it compiles" contract, and deliberately
+so.** `judged.pattern` is exec'd by `runClose` over the close's whole stdout+stderr and
+`gapKeep` is run by `boundGap` **once per line** — both untimed, both in bareloop's own
+process. Measured: `boundGap(stream, "(a+)+$")` on a 40-character line does not finish in
+20 seconds. Because the hang blocks the main event loop, the in-process stall fuse cannot
+fire, the run dies to the outside watchdog, and **a bad regex in a signed spec presents as a
+provider problem** — so this reds at signing time rather than being diagnosed later. All 92
+operator regexes across the 10 in-repo specs pass unchanged. Known limit, parked: the scan
+does not catch the alternation-overlap class (`(a|aa)+$`) — see PRD v1.55.
 Omitting it is exactly today's bound. Like `judged`, it is **arbiter territory** — the
 drafted workflow config cannot express it (unknown-field red). The gap path also combines
 **both** streams (stdout + stderr), so a failure printed to stdout survives stderr noise
@@ -457,6 +470,17 @@ ONE inventory) at the emission boundary, before anything rides the append-only s
 module itself does not scrub: a direct `evalExits` caller wiring results into its own log
 must apply its own redaction.
 
+A `check-passes` detail is sliced at `CHECK_GAP_MAX` (12,000 chars) — a defensive backstop
+above the close path's own `boundGap` envelope, not a second trim of it: a normally-bounded
+gap passes through intact and only a seam that returned something unbounded is ever cut. The
+constant is now `export`ed from `src/exits.js` so the replan brief's own backstop imports it
+rather than respelling it (two spellings would drift on the one property that matters —
+whether the `not ok`/`FAILED` names survive). **It is NOT part of the adopter surface:** the
+package `exports` map admits only `"."`, and `src/index.js` re-exports `snapshotScope` and
+`evalExits` from this module and nothing else, so `CHECK_GAP_MAX` and `boundGap` are internal
+by construction and a deep import cannot reach them. They are named here to explain the
+behaviour you WILL see in a detail string, not as API to call.
+
 ### `jobSpecHash(job)` / `checkApproval(job, approvals)` — `src/job.js`
 
 The pure half of **human-signs-always**: an agent may draft a job spec, but no job runs
@@ -480,10 +504,12 @@ Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
 `coordination-red` — a failure between units (scope contention, step order, store
 races), never to be folded into worker/interpreter reds.
 
-### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, layerRoot?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, layerRoot?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans? })` → outcome — `src/run.js`
 
-The last four are the RESUME fold and are documented under *Resuming a killed run* below;
-they default to `0` / `true` / `0` / `null`, so a fresh run passes none of them.
+The last six are the RESUME fold and are documented under *Resuming a killed run* below; they
+default to `0` / `true` / `0` / `null` / `[]` / `null`, so a fresh run passes none of them.
+Three of them are folds of a bound the operator SIGNED (money, wall, replans) and one is a
+readout seed (grades) — the distinction matters and is spelled out there.
 
 The runner — the shell's top layer, and the ONE entry. It composes everything below it and
 interprets nothing itself. Sequence: **approval gate** (human-signs-always — refuses an
@@ -585,10 +611,20 @@ iteration count rather than a cap the step no longer has. **The replan brief
 names the mechanism**: which shape ended the step (converging-cut / stalled-no-write /
 repeated-gap, with the iteration numbers as evidence), the gap trajectory, and how much money
 and wall the stop left unspent (time reported UNBOUNDED when no wall was set, never `0`).
-**It also carries the close's OWN last output for that step, verbatim** (F86) — labelled as the
-verification's own words, masked through the repo's one secret inventory and bounded by the
-same envelope the close path uses (so the red lines survive and every trim announces itself,
-F28); no gap, no block, and the brief is byte-identical to one drafted before this existed.
+**It also carries that step's own last EXIT output, verbatim** (F86) — masked through the repo's
+one secret inventory, and labelled as *the exits'* words rather than the close's, because the
+payload is `lastGap`: the join of EVERY failing exit's detail in exit order. The close stage's
+output is one of those details, never reliably all of them, so a step that wrote nothing opens
+the block with the exit evaluator's own `0 files changed under …` prose. That line is kept (it is
+exactly what a replanner should be told); only the label was wrong. The bound over it is a
+**backstop, not a second envelope** — what arrives has already been bounded by `runClose` under
+the stage's own `gapKeep`, which deliberately rescues the `not ok`/`FAILED` names out of the
+elided middle, and re-enveloping that deletes them a second time (F28 reintroduced; measured, a
+second 400/1500 pass dropped 12 of the 78 names the first had rescued). Under `CHECK_GAP_MAX` —
+`src/exits.js`'s own ceiling, imported rather than respelled so the two seams cannot drift — the
+gap passes through VERBATIM, with ~1.8KB of measured headroom over the largest thing the close
+envelope can produce; the backstop fires only on a gap nothing upstream ever bounded. No gap, no
+block, and the brief is byte-identical to one drafted before this existed.
 Handed over as TEXT: the runner makes **no parsed file claim of its own** in this channel —
 a close's summary line ("N error(s) in a.js, b.js" — every file in scope) and its detail line
 (the one location actually failing) are indistinguishable to a regex, and the shapes differ per
@@ -736,6 +772,20 @@ is unchanged. The agent has no channel to it: it never asks, is never offered it
 influence it (no self-adjusted budgets, ever). Observable on the spine as ADDED fields, never
 repurposed ones: `replan` records carry `replan: <n>` and — only on a granted one — `granted:
 "converging"`, and `plan-executed` carries `replans` beside the unchanged `replanned` boolean.
+
+**Both of those count the RUN, not the leg — the ceiling spans a resume chain.** `replanned`
+and `replans` were locals in `runPlan`, and a resume is another `runPlan` call, so a kill used
+to hand the next leg a fresh allowance of an allowance that is the RUN's by doctrine (measured:
+leg 1 replanned and stopped, leg 2 replanned twice more — a run total of 2 with every record
+showing 1). **`plan-executed.replans` therefore now means the CHAIN total**; if you parse spines,
+re-read that field. Each leg DECLARES what it inherited on its own `job-start` — new fields
+`priorReplans` and `priorReplanGrantUsed`, present only when there is a fold — and the next
+reader adds only its own window's `replan` records, exactly the way `priorSpentUsd` folds money.
+The grant latch travels beside the count rather than being derived from it (`1` + `false` is a
+real state: an ordinary ceiling spent, the arbiter's extra still unearned). The leg's own number
+is not lost — a leg emits one `replan` record per replan it drafts, so `chain −
+records-in-this-window` is the fold it inherited. You seed it with `resumeReplans` (below);
+omitted is the cold path and byte-identical to a run nobody resumed.
 
 **Per-step model tiers — `providerFor` (P).** A plan step may declare a `model` TIER
 (`sonnet`, `STEP_MODELS` — `haiku` removed 2026-08-06 as a reversible attribution probe,
@@ -1016,7 +1066,8 @@ semantics are byte-unchanged (PRD v1.46 §3):
   implicit try opened at `job-start`, through the same window machinery rather than a second
   reader. Without it such a spine is honestly refused (`started: false`), which is what a
   reuse runner needs. `job-start` carries the DECLARED fold (`priorSpentUsd` with its
-  `priorSpendComplete`, and `priorWallMs`, each present only when there is one) exactly as
+  `priorSpendComplete`, `priorWallMs`, and `priorReplans` with its `priorReplanGrantUsed`, each
+  present only when there is one) exactly as
   `try-start` does, so a chain of resumes adds only each attempt's own new rounds instead of
   re-deriving and double-billing. **An inherited FLOOR is one** even when the money it qualifies
   is `$0`: a leg whose every round came back unpriced folds nothing countable and is still not
@@ -1084,6 +1135,23 @@ and is re-signed.
   that re-grades an unchanged tree is flat on its own evidence while the RUN — what the
   top-up decision is actually about — may have been converging when the money ran out. See
   the trend section above for what the seed does and, deliberately, does not touch.
+- **Its REPLAN LEDGER comes with it too — and this one is a BOUND, not a readout.**
+  `restart.replans` / `restart.replanGrantUsed` ride into `runJob`/`runPlan` as **`resumeReplans`**
+  (`{count, grantUsed} | null`), seeding the replan ceiling instead of leaving it reborn per call.
+  Without it a kill refilled an allowance PRD v1.12 makes the RUN's — measured, a leg that spent
+  both replans and step-redded handed its checkpoint to a second leg that replanned twice more.
+  **It deliberately does NOT use `resumeGrades`' mechanism.** The grade seed reads ONE spine, so a
+  resume of a resume inherits the previous leg's grades and not the whole chain; that shortening is
+  fail-safe for a READOUT (it can only under-claim a direction) and is the DANGEROUS direction for
+  a ceiling, where an under-claimed ledger is a refilled allowance and every kill buys one. So this
+  seed follows the MONEY fold: each leg declares `priorReplans`/`priorReplanGrantUsed` on its own
+  spine and the next reader adds only its own window, so leg 3 inherits the whole chain. It is also
+  not the same class as the trend's ITERATIONS, which `src/trend.js` refuses to seed on purpose: an
+  attempt allowance is a LEG bound bought with the leg's own money, while a replan ceiling bounds
+  how many times the WORKFLOW may be redrawn, which is the run's span. Belted like every declared
+  fold — a garbage, non-finite or negative `count` reads as `0` rather than widening the ceiling.
+  Null/omitted is the cold path. The disarm control is pinned: a resumed leg with an UNSPENT
+  ceiling still replans, so the bound is bounded, not switched off.
 - **Under the REMAINDER, never a fresh allotment.** The killed attempt's spend and wall
   FOLD IN (`runJob`'s `priorSpentUsd`/`priorSpendComplete`/`priorWallMs`, `createClock`'s
   `priorElapsedMs`), so
@@ -1146,9 +1214,13 @@ the same corpus), and `seq` continues monotonically across appends. Keys are
 across runs dedupes and distinct bugs in one verb don't merge. Classes, worst-first
 (`LEDGER_CLASSES`, frozen): `silent-degradation` (a failed `primitive-smoke` — the class
 failures can't derive), `runtime-red`, `provider-red`, `pricing-red` (F6), possibly-dormant
-`capability-gap` (cap-halt + request-red in one spine), `broken-close` (consumer-attributed),
+`capability-gap` (cap-halt + request-red in one spine — one row per `(verb, lib)`, never per
+verb, so two territories asking for one verb string stay two rows rather than collapsing onto
+whichever territory was seen first), `broken-close` (consumer-attributed),
 `request-red` (admission demand for a locked verb — keyed on the red's structured
-`verb` field, prose-quoted verb as legacy fallback), `retention-red`, `config-red`
+`verb` field, prose-quoted verb as legacy fallback; both classes take their `lib` from the
+red's own stamp, so neither seeds an upstream ask for a bareloop-catalogue refusal),
+`retention-red`, `config-red`
 (drafting friction — attributed to bareloop's own schema/prompt). Deliberate exclusions
 (`EXCLUDED_ESCALATIONS`, a runtime set — anything outside classified ∪ excluded is
 counted as unmapped, never dropped): `cap-halt`/`wall-halt` (budget stories, money and

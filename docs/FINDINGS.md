@@ -6282,3 +6282,92 @@ thing abundant.** The shape was scarce when Layer 3 was designed (10/14 plans ro
 shape); a $0 validation rule made it free. The premise-replay discipline (F63) is what caught
 it — the premise behind a frozen, funded, pre-registered experiment was re-read against the
 archive BEFORE the fire, and it had expired under our own fix.
+
+---
+
+## F89 — the replan ceiling was refilled by every kill: a RUN bound implemented as a leg-local, and the audit lens is that a readout's fail-safe precedent is a ceiling's dangerous one
+
+**Date:** 2026-08-07 · **Cost: $0** (review round + $0 source/archive audit; no paid run) ·
+**Found by:** review, not by a run — which is half of why it is written down.
+
+### The defect, confirmed by execution before any remedy
+
+`replanned` and `varianceGrantUsed` were locals in `runPlan`. A resume is another `runPlan`
+call. So the ceiling PRD v1.12 makes the RUN's — *"unlimited replanning launders thrash as
+adaptation"* — was reborn full on every leg, and a run that got killed bought another one.
+
+Driven, not reasoned about: leg 1 replanned and stopped; leg 2, entered with that leg's
+`resumeSeed`, replanned again. **Run total 2 against a ceiling of 1, with every record on the
+spine reading 1.** The bound was wrong and the instrument that would have shown it was wrong in
+the same direction, which is why nothing ever surfaced it: a spine reader auditing the archive
+for over-replanning would have found nothing to see. Two replans become four with one more
+kill; the arithmetic is per-kill, not per-run.
+
+### Why the programme's own instruments missed it for multiple releases
+
+Every guard that exists here guards the *leg*. The strike ladder, the wallet, the wall, the
+stall fuse and the variance meter all fire inside one `runPlan` call and all of them were
+working. Resume was built (F75/F76/F83) with money and wall folded across the seam explicitly
+and correctly — `priorSpentUsd`, `priorSpendComplete`, `priorWallMs` — and the replan ceiling
+was simply not on the list of things anyone had asked "does this cross a resume?" about. It
+was not a broken mechanism; it was a mechanism nobody had aimed at the seam.
+
+The general form, which is the transferable half: **a resume seam turns every local that
+bounds the RUN into an allowance the operator refills by being killed.** The test is not "is
+this variable correct" — each one was — but "who bought this bound, the leg or the signature?"
+
+### The lens this mints: fail-safe for a READOUT is fail-DANGEROUS for a BOUND
+
+The obvious fix was to copy the seed mechanism already sitting next to it. `resumeGrades` /
+`readGradeSeed` carries the dead leg's close grades across the same seam, and it has a
+DOCUMENTED known limit: it reads ONE spine, so a resume of a resume inherits the previous leg's
+grades and not the whole chain — the chain shortens by a leg per kill.
+
+That limit is fine where it lives. A shortened chain can only under-claim a direction, and a
+readout that under-claims produces a conservative "revise the goal" rather than a false
+"keep going". Reused for a ceiling it inverts: **an under-claimed ledger is a refilled
+allowance, and every kill buys one.** The precedent that is safe next door is the exact bug
+one seam over.
+
+So the fix followed the MONEY fold instead: each leg DECLARES what it inherited on its own
+`job-start` (`priorReplans`, `priorReplanGrantUsed`) and the next reader adds only its own
+window's `replan` records — leg 3 inherits the whole chain. Same seam, same shape of problem,
+opposite correct mechanism, chosen by asking what the failure direction costs rather than by
+which neighbour looked most similar.
+
+### The sweep, because "landed at one site" is a class this repo has already paid for
+
+The audit question generalises, so it was run rather than left as a worry — $0, over
+`runPlan`'s own declarations. Money, wall and tries were already declared folds. The replan
+count and its variance latch were the only two that were not. `fixIterationsUsed` and the step
+strike ladder are LEG bounds by the test above — a restarted leg buys its own attempts with its
+own money, which is exactly why `src/trend.js` refuses to seed ITERATIONS from history — and
+correctly stay leg-local. **One class, two sites, both closed, no third.**
+
+The same session closed a live instance of the sibling class in `src/ledger.js`:
+`request-red`'s territory stamp had been fixed at one of its two synthesis sites and not at
+`capability-gap`, its cap-halted form, which still hardcoded `bare-agent` in both the
+occurrence and the `suggestedAsk` a human files from. Dormant today by construction and fixed
+anyway, because the repo has already paid once for a fix that landed in `ci.yml` and not
+`publish.yml` and then failed on the identical cause.
+
+### NOT claimed
+
+- **No run was ever measured over-replanning in production.** The defect is proven on a driven
+  two-leg reproduction, not read off an archived run — and it could not have been read off one,
+  since the records under-reported in the same direction. This is a proven-live defect with an
+  unquantified field incidence, and the two are different claims.
+- **Nothing here says the ceiling is the right NUMBER.** Threshold-setting is hamr's. The fix
+  makes the signed number the enforced number and moves no number.
+- **No capability or cost claim.** Zero paid runs; the reproduction was driven, and the only
+  measurement is a count of replans.
+
+### Lesson
+
+**A bound is not a variable, it is a promise about a span — and the code must say which span.**
+Every guard in this system was correct about the leg it lived in, and the one bound whose span
+is the RUN was written the same way as the ones whose span is the leg, so a resume refilled it.
+The complement is the reason it is worth a finding number rather than a changelog line: when a
+seam already carries a working precedent, check what its failure direction COSTS before reusing
+it, because the mechanism that is deliberately fail-safe for a readout is deliberately wrong
+for a ceiling.

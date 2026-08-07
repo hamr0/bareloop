@@ -398,3 +398,64 @@ test('request-red suggestedAsk seeds the ask against the STAMPED target, not a h
   assert.ok(!/bare-agent/.test(verdictRow.suggestedAsk), 'a bareloop refusal must not seed an ask at bare-agent');
   assert.ok(toolRow.suggestedAsk.startsWith('bare-agent:'), toolRow.suggestedAsk);
 });
+
+// ---- capability-gap inherits the SAME two territories ----
+// The three fixtures below are FUNCTION-CONTRACT tests, not reachable scenarios:
+// a `request-red` and a `cap-halt` cannot share one real spine today, because
+// `validateJob` returns not-ok on any red and `run.js` returns immediately on a
+// validation red, so the job never reaches a provider call (the dormancy the
+// src/ledger.js header states). `classifyIncidents` is PURE, so its contract is
+// still testable by feeding it the event stream directly — but a later reader
+// must not mistake these streams for something a run can produce. The seam is
+// fixed because the sibling `request-red` site was fixed on this same branch and
+// this one was missed; a fix that lands at one of two identical sites is the
+// class this repo has already been burned by (ci.yml/publish.yml).
+
+test('capability-gap carries the request-red\'s STAMPED territory, not a hardcoded bare-agent', () => {
+  reset();
+  // synthetic stream — see the block comment: unreachable in a real run today
+  const occs = classifyIncidents([
+    ev('job-red', { code: 'request-red', path: 'verdictType', verb: 'hitl', lib: 'bareloop', detail: '"hitl" is declared-but-locked' }),
+    ev('cap-halt', { category: 'cap-halt', meaning: 'not under cap — not "can\'t"', capRuns: 3 }),
+  ]);
+  const gap = occs.filter((o) => o.class === 'capability-gap');
+  assert.equal(gap.length, 1);
+  assert.equal(gap[0].verb, 'hitl');
+  assert.equal(gap[0].lib, 'bareloop', 'a bareloop-catalogue refusal must never be billed to bare-agent');
+  assert.ok(gap[0].key.startsWith('bareloop:hitl:capability-gap:'), gap[0].key);
+});
+
+test('capability-gap dedupes on (verb, lib): one verb string from two territories stays two rows', () => {
+  reset();
+  // synthetic stream — see the block comment: unreachable in a real run today.
+  // The verbs deliberately COLLIDE: dedup on the verb alone would collapse these
+  // to one row and attribute it to whichever lib the Set happened to hold first.
+  const occs = classifyIncidents([
+    ev('job-red', { code: 'request-red', path: 'verdictType', verb: 'audit', lib: 'bareloop', detail: '"audit" is declared-but-locked' }),
+    ev('job-red', { code: 'request-red', path: 'tools', verb: 'audit', lib: 'bare-agent', detail: '"audit" is locked-but-listed' }),
+    ev('cap-halt', { category: 'cap-halt', capRuns: 3 }),
+  ]);
+  const gap = occs.filter((o) => o.class === 'capability-gap');
+  assert.equal(gap.length, 2, 'two territories, two admission-evidence rows');
+  assert.deepEqual(gap.map((o) => o.lib).sort(), ['bare-agent', 'bareloop']);
+  // and a repeat of the SAME (verb, lib) still folds to one row
+  reset();
+  const dup = classifyIncidents([
+    ev('job-red', { code: 'request-red', path: 'verdictType', verb: 'hitl', lib: 'bareloop', detail: '"hitl" is declared-but-locked' }),
+    ev('job-red', { code: 'request-red', path: 'verdictType', verb: 'hitl', lib: 'bareloop', detail: '"hitl" is declared-but-locked, again' }),
+    ev('cap-halt', { category: 'cap-halt', capRuns: 3 }),
+  ]);
+  assert.equal(dup.filter((o) => o.class === 'capability-gap').length, 1, 'same territory + same verb is one gap');
+});
+
+test('capability-gap suggestedAsk seeds the ask against the STAMPED target', () => {
+  reset();
+  // synthetic stream — see the block comment: unreachable in a real run today
+  const occs = classifyIncidents([
+    ev('job-red', { code: 'request-red', path: 'verdictType', verb: 'hitl', lib: 'bareloop', detail: '"hitl" is declared-but-locked' }),
+    ev('cap-halt', { category: 'cap-halt', capRuns: 3 }),
+  ]);
+  const row = ledgerDeltas({}, occs).find((r) => r.class === 'capability-gap');
+  assert.ok(row.suggestedAsk.startsWith('bareloop:'), row.suggestedAsk);
+  assert.ok(!/bare-agent/.test(row.suggestedAsk), 'a bareloop refusal must not seed an ask at bare-agent');
+});
