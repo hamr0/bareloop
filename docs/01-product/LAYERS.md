@@ -335,12 +335,20 @@ stage change.
   **Only what the AGENT may express narrowed:** `--model haiku` is still the OPERATOR's probe
   knob (PRD v1.36) and the runner's tier map is deliberately wider than the plan's menu.
 
-**Layer 3 — the recipe box (machinery built, acceptance pending):**
+**Layer 3 — the recipe box (machinery built; the lift contrast RETIRED, the rung PARKED — F88 / PRD v1.52):**
 - A green run graduates its road (bridge) to CANDIDATE; demotion only on escalation —
   a red never demotes, a casualty NEVER demotes; re-promotion is strict.
 - "Same job" means same SHAPE, never same instance (else the box is a lookup table).
-- One reuse green proves safe-and-legal, never beneficial — the acceptance read is the
-  frozen ON-vs-cold lift contrast (admission floor 5×), still ahead.
+- One reuse green proves safe-and-legal, never beneficial — and the frozen ON-vs-cold lift
+  contrast was RETIRED unrun (F88): the shape-lottery gate rules (`28ee95f`) now hand every
+  cold run the winning plan shape for free (losing shape 10/14 → 0/10 across the archive),
+  so the contrast would have paid $15–25 to measure a difference a $0 validation rule
+  already erased. Selection/promotion/demotion are PARKED on `layer-3-reuse`; kept in the
+  critical path: storage + pin (the user re-runs a stored workflow by name).
+- The one reuse hypothesis still standing is TEMPLATE-ONLY reuse (strip the patient prose,
+  carry rounds/tools/scope/attempts/tier and the iterate sentence) — specified in v1.52 §4,
+  frozen, awaiting hamr. Next rung instead: close-authoring (the frozen 2026-08-07 design
+  record), then softgreen + hitl on that surface.
 - A tightened reuse envelope changes the resolved hash → re-sign.
 
 ---
