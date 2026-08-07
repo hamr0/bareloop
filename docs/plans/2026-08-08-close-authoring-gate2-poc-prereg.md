@@ -389,3 +389,69 @@ answered; with guards fully injected a guard-stripped arm is moot). Budget: the 
 ceiling, now $0.43 consumed.
 
 **No outcome prediction is registered for round 2.** Round 1's surprise (C1) is exactly why.
+
+---
+
+## Addendum 4 — 2026-08-08, ROUND 2 RESULT: arm A meets the bar, arm B fails clause 3 — ROUND 2 = FAIL as a whole, and the failure names the build's missing piece
+
+Spend: A $0.080, B $0.106; POC cumulative $0.62 of $5.
+
+### Arm A — BAR MET under the frozen rules, with one named PARTIAL
+
+7 stages, all kinds right, zero MISS: the F84 split authored correctly (in-scope baseline 0 /
+outside ceiling at seed), `npx tsc --noEmit --strict` (both round-1 traps cured by template
+rules 1–2), suite split into exit + zero-failures (the gate-1-sanctioned two-stage form —
+harmless EXTRA), executed floor present. Seed verdicts pattern-equivalent to the key.
+
+**The named PARTIAL, reported not hidden:** the scope filter names `src/alertEmail.js` — a file
+that does not exist; the real file is `src/email.js`. The model derived a filename from the
+user's prose ("the alert email one") instead of from the tree. Consequence at seed: in-scope
+reads 12 (backup.js only) instead of 27, and email.js's 15 errors are silently reclassified
+into the outside series — a real run would grade email.js fixes in the wrong population. The
+frozen bar scores this PARTIAL (right kind, right population, wrong verdict-relevant param) and
+PARTIAL passes clause 1; the bar is NOT retightened post-hoc — the defect is named instead.
+Root cause is an input gap as much as a model gap: `facts-A.json` carries `sourcePaths:
+["src/"]` and no file listing, so the author had nothing to check the guess against.
+
+### Arm B — FAIL on clause 3 (seed-verdict equivalence), mechanism verified by execution
+
+The authored typecheck (`python -m mypy --strict packages`, `MYPYPATH=src`) reads GREEN at seed
+with value 0. The truth is RED with 16. Reproduced directly: mypy dies on
+`packages/testing/fixtures/sample_python_files/broken.py:24` — a DELIBERATELY broken test
+fixture elsewhere in the monorepo — with "errors prevented further checking", never reaching
+the spawner; the scope filter then drops that one syntax error as out-of-scope; 0 in-scope
+errors = green. An instrument scanning nothing reads clean — the F6 shape at the close-authoring
+layer. `MYPYPATH=src` is also wrong (the law was stated by template rule 5; the VALUE had to be
+found, and wasn't — Result 5's paid fact exactly).
+
+**The design's own gate catches this close.** At seed, no work stage is red — a close with
+nothing red at seed has nothing to do (D9.3), so the seed-verdict read refuses it BEFORE any
+signature. Round 2 is the first live demonstration of D9.3 earning its keep against a
+genuinely-wrong authored close.
+
+Secondary observation, fail-safe direction: B's executed floor counts per-test `PASSED`/`FAILED`
+lines under `-v` instead of `collected − skipped − deselected` — a different counting rule that
+does exclude skips (the law held) and read 209 correctly, but counts ERROR-state tests as
+not-executed (reds a suite that errors in setup — fail-safe) and is exposed to incidental
+`PASSED` strings in whole-output region. Scored PARTIAL.
+
+### Round 2 verdict and the read across both rounds
+
+**Round 2 = FAIL** (§7 requires both arms). The two rounds decompose the problem cleanly:
+
+- **Round 1:** without the genre shape, the model authors neither the shape nor the paid
+  knowledge. Structure was the binding gap.
+- **Round 2:** given the shape, structure is essentially solved (14 of 14 stages, right kinds,
+  right splits, right baselines and directions, both arms) — and every remaining defect is the
+  SAME class: repo-specific instrument facts (a real filename; the exact mypy target, config
+  and env). This is Result 5 / D11's territory: the round-2 scout reports the repo's
+  SELF-description; nothing VERIFIES a proposed instrument against the tree before signing.
+
+**Direction this points for the build (not a new round; hamr reconvene):** the authoring loop
+needs the seed-verdict read INSIDE it — author → run stages at seed → feed measured
+reality back → revise — plus a facts object that carries the scoped file listing. Both are
+existing design pieces (D9.3, D11); what the POC adds is evidence they must be wired as a LOOP
+at authoring time, not as a one-shot gate after it.
+
+Per the frozen firewall, no arm is re-fired under a revised prompt in this POC; round 2's
+numbers stand.
