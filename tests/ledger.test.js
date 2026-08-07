@@ -347,3 +347,54 @@ test('request-red verb: the structured field wins over prose; quoted-detail stay
   const legacy = classifyIncidents([ev('job-red', { code: 'request-red', path: 'steps.1.tools', detail: '"run" is locked-but-listed' })]);
   assert.equal(legacy[0].verb, 'run');
 });
+
+// ---- request-red LIB: one code, two territories (the BA-2 misattribution class) ----
+// `request-red` is admission demand, and demand lands against whoever owns the
+// catalogue that refused it: a locked TOOL verb is bare-agent's, a locked VERDICT
+// type is bareloop's OWN. Filing the second upstream is exactly the misfile the
+// typed-lib rule exists to prevent, so the lib is stamped at the emit site
+// (src/job.js) and read here — never inferred from the code.
+
+test('request-red lib: a locked VERDICT type is bareloop\'s own catalogue, never an upstream bare-agent ask', () => {
+  reset();
+  const occs = classifyIncidents([ev('job-red', {
+    code: 'request-red', path: 'verdictType', verb: 'hitl', lib: 'bareloop',
+    detail: '"hitl" is declared-but-locked — not at this rung (v1 admits green only); this red IS the admission evidence, never a grant',
+  })]);
+  assert.equal(occs.length, 1);
+  assert.equal(occs[0].class, 'request-red');
+  assert.equal(occs[0].lib, 'bareloop', 'a bareloop-catalogue refusal must never be billed to bare-agent');
+  assert.equal(occs[0].verb, 'hitl');
+  assert.ok(occs[0].key.startsWith('bareloop:hitl:request-red:'), occs[0].key);
+});
+
+test('request-red lib: a locked TOOL verb still files against bare-agent (both directions)', () => {
+  reset();
+  const occs = classifyIncidents([ev('job-red', {
+    code: 'request-red', path: 'tools', verb: 'run', lib: 'bare-agent',
+    detail: '"run" is locked-but-listed — this red IS the admission evidence, never a grant',
+  })]);
+  assert.equal(occs.length, 1);
+  assert.equal(occs[0].lib, 'bare-agent');
+  assert.equal(occs[0].verb, 'run');
+});
+
+test('request-red lib: a spine written before the field falls back to bare-agent (the original case)', () => {
+  reset();
+  const occs = classifyIncidents([ev('job-red', { code: 'request-red', path: 'steps.1.tools', detail: '"run" is locked-but-listed' })]);
+  assert.equal(occs[0].lib, 'bare-agent', 'the hardcoded lib survives ONLY as the legacy-spine fallback');
+});
+
+test('request-red suggestedAsk seeds the ask against the STAMPED target, not a hardcoded package', () => {
+  reset();
+  const occs = classifyIncidents([
+    ev('job-red', { code: 'request-red', path: 'verdictType', verb: 'hitl', lib: 'bareloop', detail: '"hitl" is declared-but-locked' }),
+    ev('job-red', { code: 'request-red', path: 'tools', verb: 'run', lib: 'bare-agent', detail: '"run" is locked-but-listed' }),
+  ]);
+  const rows = ledgerDeltas({}, occs);
+  const verdictRow = rows.find((r) => r.verb === 'hitl');
+  const toolRow = rows.find((r) => r.verb === 'run');
+  assert.ok(verdictRow.suggestedAsk.startsWith('bareloop:'), verdictRow.suggestedAsk);
+  assert.ok(!/bare-agent/.test(verdictRow.suggestedAsk), 'a bareloop refusal must not seed an ask at bare-agent');
+  assert.ok(toolRow.suggestedAsk.startsWith('bare-agent:'), toolRow.suggestedAsk);
+});

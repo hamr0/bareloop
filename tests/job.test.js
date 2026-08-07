@@ -434,6 +434,24 @@ test('a locked verdictType is a request-red with the type as a STRUCTURED verb f
   }
 });
 
+test('request-red carries the LIB stamped at the emit site: a locked verdict is bareloop territory, a locked tool is bare-agent\'s', () => {
+  // one code, two catalogues. The ledger keys attribution on this field, so
+  // getting it wrong files a bareloop-catalogue refusal as an upstream bug
+  // against bare-agent (the BA-2 misattribution class).
+  for (const vt of LOCKED_VERDICTS) {
+    const close = vt === 'hitl'
+      ? { type: 'hitl', prompt: 'review the draft?' }
+      : { type: 'rubric', criteria: 'summary reads well' };
+    const r = validateJob(mut4((j) => { j.verdictType = vt; j.close = close; }));
+    const red = r.reds.find((x) => x.code === 'request-red' && x.path === 'verdictType');
+    assert.equal(red.lib, 'bareloop', `${vt} is OUR catalogue refusing, never an upstream gap`);
+  }
+  const t = validateJob(mut4((j) => { j.tools = ['read', ...LOCKED_TOOLS]; }));
+  const toolRed = t.reds.find((x) => x.code === 'request-red' && x.path === 'tools');
+  assert.equal(toolRed.verb, LOCKED_TOOLS[0]);
+  assert.equal(toolRed.lib, 'bare-agent', 'a locked TOOL verb is demand against the worker-surface package');
+});
+
 test('plan-shape spec edits change the hash (a check edit is a new spec version)', () => {
   assert.notEqual(jobSpecHash(JOB4), jobSpecHash(mut4((j) => { j.close[0].cmd = 'python -m pytest -q'; })));
 });

@@ -123,7 +123,12 @@ const CLOSE_FIELDS = {
 };
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
 
-/** @typedef {{code: string, path: string, detail?: string, verb?: string}} Red — `verb` rides request-reds as structured data (the ledger keys on it, never on prose) */
+/** @typedef {{code: string, path: string, detail?: string, verb?: string, lib?: string}} Red — `verb` and `lib` ride request-reds as structured data (the ledger keys on them, never on prose).
+ * `lib` is the TERRITORY the demand lands against, stamped HERE at the emit site
+ * (the typed-lib rule): one code, two catalogues — a locked TOOL verb is demand
+ * against the worker-surface package, a locked VERDICT type is demand against
+ * bareloop's OWN menu. Inferring it downstream is how a bareloop refusal gets
+ * filed as an upstream bug (the BA-2 misattribution class). */
 
 /**
  * Validate an operator-owned job spec (`schema: "job-v1"`). Never throws on
@@ -486,8 +491,9 @@ function validatePlanShape(spec, red, reds) {
   else if (LOCKED_VERDICTS.includes(spec.verdictType)) {
     // declared-but-locked (disclosure ≠ admission, the tool-menu pattern):
     // the type rides as a structured field — the ledger keys admission demand
-    // on it, never on prose
-    reds.push({ code: 'request-red', path: 'verdictType', verb: spec.verdictType, detail: `"${spec.verdictType}" is declared-but-locked — not at this rung (v1 admits green only); this red IS the admission evidence, never a grant` });
+    // on it, never on prose. `lib: 'bareloop'`: the refused catalogue is OURS
+    // (VERDICT_TYPES), so this demand is never an upstream ask.
+    reds.push({ code: 'request-red', path: 'verdictType', verb: spec.verdictType, lib: 'bareloop', detail: `"${spec.verdictType}" is declared-but-locked — not at this rung (v1 admits green only); this red IS the admission evidence, never a grant` });
     demanded = CLASS_BY_VERDICT[spec.verdictType];
   } else if (!VERDICT_TYPES.includes(spec.verdictType)) {
     red('invalid-value', 'verdictType', `menu: ${VERDICT_TYPES.join('|')} — an unknown type is a typo, never a request`);
@@ -529,7 +535,9 @@ function validatePlanShape(spec, red, reds) {
       red('invalid-value', 'tools', `non-empty unique subset of ${TOOL_MENU.join('|')}`);
     } else {
       for (const t of spec.tools.filter((/** @type {string} */ t) => LOCKED_TOOLS.includes(t))) {
-        reds.push({ code: 'request-red', path: 'tools', verb: t, detail: `"${t}" is locked-but-listed — this red IS the admission evidence, never a grant; granted menu: ${TOOL_MENU.join('|')}` });
+        // `lib: 'bare-agent'`: a locked TOOL verb is demand against the
+        // worker-surface package that would have to expose it (the original case)
+        reds.push({ code: 'request-red', path: 'tools', verb: t, lib: 'bare-agent', detail: `"${t}" is locked-but-listed — this red IS the admission evidence, never a grant; granted menu: ${TOOL_MENU.join('|')}` });
       }
       const unknown = spec.tools.filter((/** @type {string} */ t) => !TOOL_MENU.includes(t) && !LOCKED_TOOLS.includes(t));
       if (unknown.length) red('invalid-value', 'tools', `unknown tool(s) ${unknown.join(', ')} — menu: ${TOOL_MENU.join('|')}`);

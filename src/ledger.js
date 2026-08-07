@@ -119,7 +119,9 @@ const ASKS = /** @type {Record<string, (o: {lib: string, verb: string, detail: s
   'pricing-red': (o) => `bare-agent: a provider result carried no priced cost (unpriced is never free, F6) — ${o.detail}`,
   'capability-gap': (o) => `bare-agent: locked \`${o.verb}\` was requested and the run cap-halted — admission candidate`,
   'broken-close': (o) => `job owner: the close itself cannot run — ${o.detail}`,
-  'request-red': (o) => `admission: locked \`${o.verb}\` requested by a job spec — demand evidence, never a grant`,
+  // the target is the STAMPED lib, never a hardcoded package: a bareloop-catalogue
+  // refusal (a locked verdict type) must not seed an ask that reads "bare-agent: …"
+  'request-red': (o) => `${o.lib}: admission — locked \`${o.verb}\` requested by a job spec — demand evidence, never a grant`,
   'retention-red': (o) => `litectx: on-green retention failed — ${o.detail}`,
   'config-red': (o) => `bareloop: drafting friction at ${o.verb} — ${o.detail}`,
 });
@@ -160,9 +162,20 @@ export function classifyIncidents(events, { spine = 'spine' } = {}) {
       // a repeated signature indicts the drafting prompt/schema, i.e. bareloop
       add(ev, 'config-red', 'bareloop', String(ev.path ?? 'config').split('.')[0] || 'config', `${ev.code} at ${ev.path}: ${ev.detail ?? ''}`);
     } else if (ev.type === 'job-red' && ev.code === 'request-red') {
-      // the structured field wins; the prose-quoted verb stays as the fallback
-      // for spines written before the field existed
-      add(ev, 'request-red', 'bare-agent', ev.verb ?? (String(ev.detail ?? '').match(QUOTED_VERB_RE) ?? [])[1] ?? 'unknown', ev.detail);
+      // the structured fields win; the prose-quoted verb stays as the fallback
+      // for spines written before the field existed, and the hardcoded
+      // 'bare-agent' lib stays as the fallback for the same reason — it was the
+      // only territory `request-red` had when the field did not exist.
+      //
+      // One code, TWO territories: a locked TOOL verb is demand against the
+      // worker-surface package; a locked VERDICT type (and, when D13 lands, a
+      // genre refusal) is demand against bareloop's OWN catalogue and must never
+      // seed an upstream ask. The lib is stamped at the emit site (src/job.js)
+      // per the typed-lib rule — deriving it here from the code or the path is
+      // exactly the BA-2 misattribution class. A new bareloop-territory
+      // request-red therefore routes correctly by stamping its own lib, with no
+      // change to this branch.
+      add(ev, 'request-red', ev.lib ?? 'bare-agent', ev.verb ?? (String(ev.detail ?? '').match(QUOTED_VERB_RE) ?? [])[1] ?? 'unknown', ev.detail);
     } else if (ev.type === 'escalation') {
       if (ev.category === 'broken-close') {
         add(ev, 'broken-close', 'consumer', 'close', ev.detail);
