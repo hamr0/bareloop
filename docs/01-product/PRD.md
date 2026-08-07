@@ -3753,3 +3753,46 @@ at a surface that may not survive the rung.
 - No claim that the alternation class is reachable in practice today: all 92 shipped operator
   regexes are simple anchored literals, and none is near this shape. The park is a known gap
   held open deliberately, not a live exposure being tolerated.
+
+## Addendum v1.56 — 2026-08-08 (Synthetic — flat-rate open-model provider — PARKED until the product ships, to keep the baseline; hamr: *"park it to try when all shipped and that we didn't to keep the baseline"*)
+
+### 1. What it is
+
+Synthetic (synthetic.new): a flat-rate subscription inference provider ($30/mo, 500 req/5h,
+1 concurrent) serving open-source models (Kimi K3, GLM, Qwen, GPT-OSS families) over an
+OpenAI-compatible API. Raised by hamr 2026-08-08 during the close-authoring gate-2 POC prep.
+
+### 2. What was verified before parking (source-read, not assumed)
+
+- **No wire limitation exists.** bare-agent already ships an `OpenAIProvider` with a custom
+  `baseUrl` option (`provider-openai.js:50`), alongside Anthropic/Gemini/Ollama/clipipe
+  providers; bareloop is provider-agnostic — `runJob` takes the provider as a shell-owned
+  injected binding. Synthetic plugs in with configuration, not a build.
+- An earlier in-session claim that an adapter build was needed was WRONG and is corrected
+  here (the source read settled it).
+
+### 3. Why parked rather than adopted now — the baseline rule
+
+Every behavioral baseline the programme owns (F39, F46, F47, the batteries, all close-dev
+gate reads) lives on claude-sonnet via `anthropic-api`. A different model on any evidential
+run makes the result non-transferable — the F48 lesson (a cheaper surface is never conflated
+with a more capable one) plus the standing rule that behavioral/premise experiments run on
+the surface where the baselines live. **The gate-2 POC and everything after it up to ship
+therefore stays on the baseline provider, and this park RECORDS that the exclusion was
+deliberate** — so a future reader knows Synthetic's absence from close-dev evidence is a
+controlled variable, not an oversight.
+
+### 4. The two conditions attached to the future trial (decided now, cheap now)
+
+1. **Its own provider condition.** Like `clipipe-subscription`: a distinct named condition in
+   job-v1's menu; notional cost never pools with `anthropic-api`; budgets do not transfer.
+2. **A pricing rule before any governed run.** Flat-rate models return no per-token dollar;
+   bareloop halts unpriced rounds (`pricing-red`, F6 — unpriced is never free). A notional
+   $/round or $/token rule under the "cost is cost" ruling must be set BEFORE the first
+   governed run, never during one.
+
+### 5. When it unparks
+
+After the product ships (hamr's word above). First use is non-evidential by construction:
+throwaway/volume probing or a cross-model curiosity read, explicitly quarantined from
+findings until hamr rules otherwise.
