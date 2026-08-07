@@ -518,3 +518,75 @@ the rungs, not their internals; this ordering is not hamr's ruling)*. hitl has n
 question — a human IS the verdict — and it unblocks the `litectx-maintainer` job, dark since
 `507adbb`. softgreen still needs the RSI judged-floor analog (§4, §5 item 2), and now also owes
 answers to point 6.
+
+---
+
+## Addendum — 2026-08-07, the record CLOSES: nine softgreen/hitl rulings, two canonical examples, the mechanical-first composition law
+
+**Status change: FROZEN. hamr, verbatim, in-turn: "all approved, fix ledger now (assign to
+opus and validate), close the record and review".** The nine questions were put as plain
+decisions with proposals; all nine proposals are now rulings. D8 (automatic seed) stands as
+proposed and unobjected, with D12 defining its direction. The ledger `request-red`
+misattribution fix was ordered in the same turn and lands as code on this branch, not in this
+record.
+
+### The nine rulings (proposal = ruling for all nine)
+
+**hitl:**
+1. **Ask shape** — the run pauses decision-ready (the wall-halt shape: checkpoint, evidence,
+   wait at the terminal). The clock does not run while a human is deciding — W-2's "the close
+   never counts against the wall" extended to people.
+2. **Evidence package** — the human sees the before/after changes plus every mechanical
+   stage's result. A bare "approve?" is never presented.
+3. **A human red** — the human's stated reason becomes the gap the worker converts (the human
+   is the gap author, said out loud); the run continues under remaining budget.
+4. **Who answers** — the spec signer only. One signer, one judge.
+5. **Never mid-run** — judged and human stages are `offer:false` by law: the agent can never
+   use a person (or a paid judge) as an in-run check ruler.
+
+**softgreen:**
+6. **The judge is metered** — judge spend comes from the same wallet; the close stops being
+   assumed free and `budgetUsd` meters it (F45's "fund the attempt plus its close" now has a
+   non-zero second term; advertised = enforced holds).
+7. **The judged floor** — a judge must first correctly grade a frozen calibration set of
+   known-good and known-bad examples, fixed at signing time, before it may gate anything.
+   A judged red always carries an itemized list (named items, counts), never one paragraph
+   (F38/F39).
+8. **No seed baseline for judged/human stages** — they skip the seed-verdict read (a judged
+   number at seed is unstable; a human at seed is an interview, not a measurement). Their bar
+   comes from ruling 7's calibration, not from the seed.
+9. **Quarantine** — a softgreen pass mints NO learning credit: no bridges, no inheritance,
+   until the ruling-7 floor is proven against real runs. A wobbly ruler must not mint
+   permanent credit.
+
+### Two canonical examples (hamr's, confirmed with one sharpening each)
+
+- **softgreen — "book a flight from London to SFO under $400".** Correct genre, with the
+  composition made explicit: most of this close is MECHANICAL — a confirmation artifact
+  exists and parses, price ≤ 400, route and dates match the ask. The judged stage covers only
+  what cannot be mechanized ("is this artifact a genuine booking confirmation"). And the
+  irreversible step — paying — carries a hitl gate regardless of genre: an outward,
+  hard-to-reverse action confirms first. A softgreen job may therefore contain a hitl stage;
+  the verdict class is the CEILING of its stages' classes, which is exactly `CLASS_BY_CLOSE`'s
+  existing hierarchy read top-down.
+- **hitl — "improve my resume".** Correct genre: "improved" has no floor a machine can hold;
+  the owner's taste IS the verdict. Judged stages may pre-screen (typos, length, itemized
+  rubric counts) so the human is never the first filter — but the human is the only door.
+
+### The mechanical-first composition law (hamr: bareguard-inspired validations)
+
+For every softgreen/hitl close: **deterministic stages first, judge minimal, human last.**
+Every stage that CAN be a command IS a command (the bareguard pattern — fences and validators
+that red mechanically before anything expensive runs); the judged stage covers only the
+residue no command can hold; the human, where present, is the final stage only. First-red-wins
+ordering makes the cheap stages shield the expensive ones — a form-red never reaches the
+judge, a judge-red never reaches the human. The per-genre TYPE (which mechanical validations a
+genre carries) is agreed at that genre's admission, per D13's one-genre-at-a-time law.
+
+### What remains open after this freeze (complete list, nothing else)
+
+1. `harness-loop` kind (TESTGEN genre) — out of v1, recorded at gate 1.
+2. The D12 baseline widening for non-offered stages — a BUILD item (gate 4), not a design gap.
+3. The exit-slot ceiling (`MAX_EXITS_PER_STEP` = 2) — PARKED, arbiter territory, hamr's call.
+4. Preflight surfacing of the close's stage list to the operator (F87's UI direction, PRD
+   v1.51 §5) — lands with the close-authoring interview UI, not before.
