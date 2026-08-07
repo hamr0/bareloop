@@ -455,3 +455,50 @@ at authoring time, not as a one-shot gate after it.
 
 Per the frozen firewall, no arm is re-fired under a revised prompt in this POC; round 2's
 numbers stand.
+
+---
+
+## Addendum 5 — 2026-08-08, ROUND 3 SPEC (frozen before firing): the seed-grounded revise loop, plus the file listing
+
+hamr's go, verbatim: **"go"** (after: *"aren't you going to move one inside the other and
+retest?"* — his framing of the fix is the round's design).
+
+### The two levers, and why landing both in one round is attributable
+
+Round 2 left two defects of disjoint mechanism, and each lever below targets exactly one:
+
+| lever | targets | defect it must cure |
+|---|---|---|
+| **L1 — facts object gains the scoped FILE LISTING** (mechanical `git ls-files` under the scout's sourcePaths/testPaths — deterministic, $0, the scout itself is NOT re-run and its round-1 output is unchanged) | invented paths | arm A's `src/alertEmail.js` |
+| **L2 — the authoring call becomes a GROUNDED LOOP**: author → validate → execute every stage at seed → feed the measured per-stage results back (verdict, value, baseline, instrument stops, capped gap lines) → revise; max 2 revisions, early-stop when the model returns its declaration unchanged | closes that grade nothing | arm B's dead mypy instrument (0-at-seed vs 16 truth) |
+
+The standing one-lever-per-read rule is satisfied per-defect, not per-round: A's cure
+attributes to L1, B's to L2. The grounding feedback is EXECUTION OUTPUT, never an LLM review of
+its own declaration — a model grading its own homework is the self-consistency trap the design
+already bans (D9); machine-measured seed reality is the opposite of that.
+
+### Pre-registered expectations (with the C1 humility noted)
+
+- Arm A's invented-filename class does not survive L1.
+- Arm B's dead-instrument class does not survive L2 — the revise input shows its typecheck
+  green-at-seed while the interview says the checker complains; if the model cannot convert
+  that contradiction with the real mypy output in hand, that is a strong negative finding
+  about the loop shape itself.
+- A defect that survives BOTH levers is the round's headline finding, whichever direction it
+  cuts.
+
+### Unchanged, verbatim from rounds 1–2
+
+The §6 reading rules and §7 bar (scored on the FINAL post-revision declaration, both arms);
+the answer key; the interview answers; the firewall; the executor and validator (no third
+lever hides in the harness); arms A and B only; the $5 ceiling ($0.62 consumed). Round-2
+artifacts are never overwritten; round 3 writes `-r3` files.
+
+### Gate 3 rides along, $0, after round 3 is scored
+
+The F87 guard test: against a THROWAWAY COPY of the pulselog patient (the patient itself is
+never dirtied), plant a fake fix that silences rather than types — at minimum `@ts-expect-error`
+and a JSDoc `@type` cast, the two live channels C1 missed — and run the signed guard battery's
+`no-suppressions` stage. Expected: RED naming the pattern ids. A guard that misses either
+channel fails gate 3. Also run it against a genuine typed fix shape (no suppressions added):
+expected GREEN — the guard must be able to pass as well as fail.
