@@ -297,3 +297,95 @@ trusted, and `harness-loop` (TESTGEN) remains out of v1 and unamended.
 - `maxBuffer` is executor-owned but verdict-relevant on arm B (a large pytest output truncated
   mid-summary reads as a broken instrument). It belongs to the runtime contracts, not to any
   kind's parameters.
+
+---
+
+## Addendum 3 — 2026-08-08, ROUND 1 RESULT (FAIL, stands unamended) and ROUND 2 SPEC
+
+### Round 1 result, recorded before round 2 is designed
+
+**FAIL on the frozen §7 bar, both arms.** Spend $0.43 of the $5 ceiling (2 provider probes +
+4 arms: A $0.117, B $0.186, C1 $0.034, C2 $0.075).
+
+- **Arm A:** 3 MISS (`typecheck` authored as whole-repo `command-exit` with no `--strict` — the
+  repo's own script omits it and the scout faithfully reported the repo's self-description;
+  `typecheck-outside` absent; `tests-kept` absent), 2 PARTIAL (`suite-green` exit-only;
+  `no-suppressions` filled with 3 of 7 patterns). The authored typecheck also instrument-stopped
+  at seed (bare `tsc`, not resolved through the package runner) — bar clause 3 unmet.
+- **Arm B:** 2 MISS (`typecheck` as `command-exit` `mypy -p aurora_spawner`, no `MYPYPATH`, no
+  config file; `tests-kept` absent), 2 PARTIAL (same classes as A).
+- **Both answer-key traps fired as predicted:** the wrong-instrument trap (repo scripts point at
+  non-strict) and the invocation trap (bare binary). The scout was FAITHFUL — the failure
+  decomposes to the authoring layer plus a structural knowledge deficit, not to a broken scout.
+- **Zero harmful EXTRA in any arm.** C2's unrequested `test-count-not-dropped` (count-not-worse,
+  seed-green) was a harmless-and-useful EXTRA, traceable to its user naming the dropped-test
+  worry.
+- **Arm C1 REFUTED the registered expectation.** The guard-stripped, worry-absent arm authored
+  BOTH guards unasked (scope confinement + a 4-pattern suppression guard). Registered prediction
+  was NO; the result is YES, and it is reported as a finding against the *necessity* half of
+  D5's rationale. The *sufficiency* half survives on the same data: 2 of C1's 4 patterns are
+  dead letters in a JSDoc codebase (`as any` / `: any` are TS syntax, impossible in `.js`), and
+  it missed `@ts-expect-error` and the JSDoc cast/star forms — the live suppression channels of
+  this patient. The model authors a guard-SHAPED stage, not the paid-for battery.
+- **Arm C2:** given the worry in plain words, the model produced the guard AND the test floor —
+  stage EXISTENCE tracks what the answers mention.
+- **The one-line diagnosis, carried into round 2:** what the answers name, the model builds;
+  what paying taught (the strict instrument, the F84 split, the executed floor, the outside
+  ceiling, the full pattern battery, import-resolution env), nothing in the round-1 pipeline
+  supplies. The knowledge deficit is structural, not a prompt-wording accident.
+
+Round 1 stands. Nothing above is re-scored under round 2.
+
+### Round 2 — the ONE change: the authoring prompt carries the TYPES GENRE TEMPLATE
+
+hamr's go, verbatim: **"round 2 then we reconvene."**
+
+This tests the fix DIRECTION the diagnosis points at — D5's unit of injection widened from two
+guard stages to the genre's close SHAPE — before any design amendment is written. It is the
+design record's own hook ("the per-genre TYPE... is agreed at that genre's admission") made
+concrete.
+
+**The frozen TYPES genre template (policy text, handed to the authoring call verbatim):**
+
+1. The graded instrument is the STRICT form of the language's type checker, regardless of what
+   the repo's own scripts run. If the repo's script omits strictness, the close adds it.
+2. Tools are invoked so their binaries actually resolve — through the project's own package
+   runner or language module runner, never a bare binary name.
+3. The stage skeleton, in first-red-wins order: changed-from-seed (guard) → typecheck (error
+   count IN the target scope, baseline 0, lower-is-better) → typecheck-outside (error count
+   OUTSIDE the target scope, baseline measured at seed, a ceiling — required whenever the job
+   scopes to a subset of the tree; omitted only for whole-tree jobs) → tests-kept (a floor on
+   tests that actually EXECUTED, baseline at seed, higher-is-better; a skipped or deselected
+   test did not run and must not count) → suite-green (the suite exits clean AND reports zero
+   failing tests — two assertions) → no-suppressions (guard).
+4. One population per stage — two structurally different counts never share a stage.
+5. The checker must judge the PATIENT's own tree: if imports could resolve to an installed or
+   editable copy elsewhere, the environment is set so they resolve inside the patient.
+6. A number the tool did not report is unknown, never zero.
+
+**Guards are injected FULLY parameterised** (per-language pattern battery and extensions are
+genre property, owned by us — this is D5 as the design actually intends it; round 1's
+model-filled guard params were a POC artifact). The model fills only the patient-specific scope
+prefixes.
+
+**What the template deliberately does NOT contain (the remaining room to fail, named):** the
+exact commands, args, config flags and env values for THIS repo (`npx tsc --noEmit --strict`;
+`python3 -m mypy --config-file mypy.ini ...`; `MYPYPATH=...` — rule 5 states the law, the model
+must find the value); the scope prefix lists; every parser (the error-line regexes, the region
+anchors, and arm B's multi-term executed-count arithmetic — rule 3 states the law, the model
+must express it in parser terms); timeouts. Round 1 failed on parameterisation as well as on
+existence, so these axes are live, not decorative.
+
+**What round 2 CANNOT claim, stated now:** with the skeleton handed over, stage EXISTENCE is no
+longer evidence of anything. Every round-2 claim carries "given the genre template". The
+question round 2 actually answers: *given the genre's shape, can the authoring call
+parameterise it correctly for a real repo, to seed-verdict equivalence?*
+
+**Unchanged:** the §6 reading rules, the §7 bar (zero MISS, zero harmful EXTRA, seed-verdict
+equivalence — MISS by wrong-kind or merged-population is still expressible), the answer key,
+the interview answers (same files, not re-drafted), the firewall, the scout and its facts
+objects (reused as-is — one variable changes, not two), arms A and B only (the C question is
+answered; with guards fully injected a guard-stripped arm is moot). Budget: the same $5
+ceiling, now $0.43 consumed.
+
+**No outcome prediction is registered for round 2.** Round 1's surprise (C1) is exactly why.
