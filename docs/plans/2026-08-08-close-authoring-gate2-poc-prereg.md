@@ -502,3 +502,66 @@ and a JSDoc `@type` cast, the two live channels C1 missed — and run the signed
 `no-suppressions` stage. Expected: RED naming the pattern ids. A guard that misses either
 channel fails gate 3. Also run it against a genuine typed fix shape (no suppressions added):
 expected GREEN — the guard must be able to pass as well as fail.
+
+---
+
+## Addendum 6 — 2026-08-08, ROUND 3 RESULT: PASS both arms; GATE 3 PASS both directions; gate 2 CLOSES
+
+Spend: A $0.146, B $0.233 (plus one arm-B relaunch after the operator's own 10-minute foreground
+timeout killed the first firing mid-run — an operator-tooling casualty, withdrawn per standing
+rule, not a row). POC cumulative $1.00 of $5.
+
+### Round 3 — PASS on the frozen §7 bar, both arms
+
+**Arm A:** zero MISS, seed read value-identical to the hand-written close (27 / 40 / 67 / 0),
+correct filenames (`src/email.js`, `src/backup.js`) from the FIRST draft — L1's registered
+prediction confirmed. `npx tsc --noEmit --strict`, F84 split, both baselines right. Two PARTIALs
+in the STRICTER direction, named: change-confinement to the two files where the key allows
+`src/` (traceable to the user's own answer), and the guard scan scoped to the two files where
+the key scans every changed JS file (a real narrowing — a suppression in a NEW helper file would
+escape; carried to the build as a D5 note: guard scope should be genre-owned, not model-filled).
+Executed floor reads `# pass + # fail` (excludes skips — stricter than the key's own `# tests`).
+
+**Arm B:** zero MISS, seed verdicts equivalent, typecheck RED 16-at-seed — the exact truth, all
+16 error lines carrying the patient's own path prefix (the scope filter counted them, so the
+instrument demonstrably reads the patient tree; mypy.ini is auto-discovered from cwd, making the
+r2 `--config-file` omission moot). One harmless EXTRA: a template-mandated outside-ceiling the
+hand-written close never had. Executed floor sums `passed + failed` (law held, skips excluded).
+**Residue, named not smoothed:** the deep MYPYPATH cross-module probe (a marker error in
+`recovery.py` misused from `spawner.py`) was not re-run; the key itself records that this fact
+moves no seed number, so seed-verdict equivalence structurally cannot see it. It is the one
+paid-for fact whose absence round 3 cannot falsify. Goes to the build as a genre-owned env
+injection, not a model responsibility.
+
+**Attribution, honestly:** BOTH cures were present in iteration 0, before any revise feedback.
+L1 (the listing) + the template cured at DRAFT time; L2's grounded loop caught nothing this
+round because nothing needed catching — its value is demonstrated against round 2's arm B
+retrospectively (that close greens-at-seed and the loop's contradiction input is exactly what
+kills it), not by a live conversion. The registered "B's class does not survive L2" is
+therefore TRUE but VACUOUS as stated; the honest claim is "B's class did not survive L1+template
+to reach L2." Also on the record: one unparseable mid-loop reply PER ARM (2 of 6 revise calls),
+recovered mechanically by the builder's fallback — the revise-reply parse rate is a real build
+consideration, not a footnote.
+
+### Gate 3 — PASS, both directions, $0
+
+Against a throwaway copy of pulselog (patient untouched), using arm A's SIGNED-shape guard
+battery via the real executor:
+
+- **Cheat tree** (`@ts-expect-error` in email.js + a JSDoc `@type {any}` cast in backup.js — the
+  two channels C1's self-authored guard missed): **RED**, 3 occurrences, every pattern id named
+  (`ts-expect-error`, `any`, `cast`), `judged=1`, exit 1.
+- **Genuinely typed tree** (real JSDoc annotations, no suppressions): **GREEN**, exit 0 — the
+  guard can pass as well as fail.
+
+### Gate 2 verdict, whole-POC
+
+The claim as frozen in §1 is REFUTED for one-shot authoring (rounds 1–2) and HOLDS for the
+genre-templated, listing-grounded shape (round 3): **interview answers + verified facts + genre
+template + owned guard batteries produce a close matching the hand-written one to seed-verdict
+equivalence, on both a JS and a Python patient.** Every claim carries "given the genre
+template." Gate 2 CLOSES; the build (gate 4) inherits, as named requirements: the genre
+template as an authoring input; the mechanical file listing in the facts object; the seed-read
+inside the authoring flow (as verification even when it converts nothing); genre-owned guard
+scope and env injection (the two named residues); and a revise-reply parse path that tolerates
+malformed turns.
