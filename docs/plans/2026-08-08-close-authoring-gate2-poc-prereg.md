@@ -229,3 +229,71 @@ so both users say yes and the answers never independently establish the genre. T
 design as written (the interview CONFIRMS, it never guesses), so it is not a defect here. It does
 mean the genre confirm cannot catch a user who agrees to the wrong genre, which is a real limit
 of D13's refusal path and belongs to the build, not to this POC.
+
+---
+
+## Addendum 2 — 2026-08-08, GATE-1 AMENDMENT #5: `count-not-worse`'s parser is widened
+
+**Timing, again stated plainly: before any authoring call, before any result exists.** This
+amends the CATALOGUE (the vocabulary), not §7's pass bar and not the arms.
+
+**Gate 1's own stated method limit fired exactly as it predicted.** Gate 1 recorded itself as
+*"an analysis, not a measurement"* whose failure mode is *"the assistant's own optimism about
+what a kind could express."* The answer-key extraction — a line-by-line read of the two closes,
+by an agent with no sight of the interview answers or the authoring prompt — found a fifth
+amendment gate 1 missed. Four amendments became five. That is gate 1 working, not gate 1 failing.
+
+**The gap.** `count-not-worse`'s parser was `{lineMatch, capture?}` — single regex, single
+capture, first match, whole output. Arm A's numbers fit it. Arm B's two suite stages do not, and
+need three things it cannot say:
+
+1. **Arithmetic between separately-parsed numbers.** `executed = collected − skipped − deselected`.
+   Subtracting the not-run is what makes it an EXECUTED floor rather than a collected one —
+   without it, `@pytest.mark.skip` on a failing test clears the floor as cheaply as deleting it.
+2. **Summing every match, not taking the first.** `2 failed, …, 2 errors` is FOUR red tests. A
+   first-match read reports two. This was a real bug in an earlier revision of that close.
+3. **Restricting a tally to a located region.** The failure tally is taken over the summary line
+   only, found by its own anchor — a traceback body can contain arbitrary digits. The collection
+   count, by contrast, is read from the whole output. So the region is PER TERM, not global.
+
+**The widened parameter, kept deliberately general** — signed arithmetic over parsed counts, with
+nothing runner-specific in it:
+
+```
+parser: {
+  terms: [
+    { lineMatch: <regex>, capture?: <int>, sign: +1 | -1,
+      aggregate: "first" | "sum",
+      region: "whole-output" | { anchor: <regex>, capture: <int> } }
+  ]
+}
+value = Σ  sign × (first | sum of captures found within region)
+```
+
+**Backwards compatible by construction:** one term, `sign +1`, `aggregate "first"`,
+`region "whole-output"` is exactly the old `{lineMatch, capture}`. Arm A's declarations do not
+change meaning. The validator accepts the short form and resolves it to this one.
+
+**Why this is not fitting the catalogue to the answer.** D2 states the rule directly: *if the
+catalogue cannot express a job's close, we add a kind.* Gate 1's entire method is to replay the
+hand-written closes against the catalogue and amend where they do not fit. Widening what the
+vocabulary can SAY is not supplying what the model must CHOOSE — the model still has to know
+that not-run tests are subtracted, that the failure tally sums and is region-bound, and which
+anchors locate what. Those are the load-bearing facts and none of them is handed over. The bar
+in §7 is untouched; if anything this makes authoring harder, because there are now more ways to
+parameterise the stage wrongly.
+
+**What it DOES mean, stated so it is not discovered later.** The catalogue is now shaped by
+knowledge of these two closes. That is legitimate for TYPES, whose closes we have paid for and
+replayed. It is not transferable: a second genre gets its own gate-1 replay before its kinds are
+trusted, and `harness-loop` (TESTGEN) remains out of v1 and unamended.
+
+**Two secondary items from the same extraction, recorded as observations, not gaps:**
+- `baseline: "seed"` stores no frozen number, by design (D12 — the close stores the counting
+  rule, never the number). The executor therefore MUST measure the baseline by running the stage
+  against the seed tree. Consequence for this POC: the seed-verdict read runs **every** stage,
+  never first-red-wins, or a non-offered or post-first-red stage mints no baseline. That is D12's
+  own named build item ("the baseline widening for non-offered stages") arriving in the POC.
+- `maxBuffer` is executor-owned but verdict-relevant on arm B (a large pytest output truncated
+  mid-summary reads as a broken instrument). It belongs to the runtime contracts, not to any
+  kind's parameters.
