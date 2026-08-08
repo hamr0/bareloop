@@ -3796,3 +3796,189 @@ controlled variable, not an oversight.
 After the product ships (hamr's word above). First use is non-evidential by construction:
 throwaway/volume probing or a cross-model curiosity read, explicitly quarantined from
 findings until hamr rules otherwise.
+
+## Addendum v1.57 — 2026-08-08 (the close-authoring rung takes five rulings: the verdict class is the USER's answer again, the interview AND the guard battery re-key from genre to CLASS, declared commands get a deny-floor under a mandatory work branch, and the close is never time-bounded — a STUCK close is caught by life signs — hamr)
+
+**Basis:** hamr's rulings this session, given while close-authoring M1–M4 sat built,
+live-validated once, and under whole-branch review. No experiment is read here and no number
+moves; five decisions, one proposal still awaiting his word (§1), and one sequencing call are
+recorded in the register before the rework starts. The rung's own record is
+`docs/plans/2026-08-07-close-authoring-design.md` (FROZEN, amended by addendum); the rung
+narrative is `docs/01-product/LAYERS.md`.
+
+### 1. `verdictType` returns to a USER CHOICE — D4 is superseded
+
+**The green / soft-green / hitl radio of the 2026-07-21 Layer 2 locked design is restored.**
+The user picks the verdict class as part of the job, and that choice **drives** the close
+authoring rather than falling out of it.
+
+This supersedes the close-authoring record's **D4** (*"verdictType is DERIVED from the answers,
+never picked"*), and with it the v1.53 bullet that carried D4 into this register. The reason is
+whose knowledge it is: the user is the one who knows whether their *done* is machine-checkable,
+needs judgment, or needs a person. A derivation infers that from answers given before the user
+has been asked the question the answer belongs to.
+
+**v1 still admits only `green`.** A soft-green or hitl selection returns the honest counted
+refusal on the `request-red` admission path — the D13 mechanism, unchanged, now also carrying
+demand for a verdict class rather than only demand for a genre. Nothing about the class the
+user picks widens what v1 can run; it is recorded, counted, and refused where unbuilt.
+
+**RULED (2026-08-08, hamr: "yes to both, go"). The picked class is a PROMISE the composer must
+keep.** Once the user's choice DRIVES authoring rather than falling out of it, the pick and the
+composition can disagree, and the register says in advance what happens when they do:
+
+- **Composition may only use kinds at or below the picked class.** Every kind carries the class
+  of verdict it can honestly render; a `green` pick admits only mechanical kinds.
+- **A declaration whose computed ceiling EXCEEDS the pick is an honest red** — the composer
+  refuses and says which kind raised the ceiling. Never a silent UPGRADE (a judgment ruler
+  running under a green promise, which is exactly the fake-hard verdict `CLASS_BY_CLOSE` and
+  `CLASS_BY_VERDICT` exist to stop, defeated from above), and never a silent DOWNGRADE (quietly
+  weakening what the user asked for so a composition can succeed).
+- **Inert in v1 by construction, which is why it is cheap now.** Every live catalogue kind is
+  mechanical, so the ceiling can never exceed a `green` pick today. Writing the rule before the
+  second class exists is what keeps the first soft-green kind from being the thing that
+  discovers the question.
+
+**Ruled in-turn with the fix-batch go; the signature is the quoted word above.**
+
+### 2. The interview re-keys from GENRE to VERDICT CLASS
+
+**Three frozen question sets — green / soft-green / hitl — cover every job**, replacing one
+question set per genre.
+
+hamr's rationale: genres are a **fat long tail that cannot be enumerated**. TYPES was the first
+specimen, not the pattern. An interview keyed on genre therefore has no terminating shape,
+while an interview keyed on verdict class has exactly three. Genre understanding does not
+disappear — it **moves into the LLM's composition** over the kind catalogue, fed the plain
+statement that *the user has this problem and declared it green/deterministic*. That is the
+layer already built to hold it: the authoring call composes owned kinds and cannot emit
+anything else (D2/D3), so a genre it has never seen is a composition problem, not a catalogue
+problem.
+
+**RULED — the guard battery keys to the JOB TYPE, which is the verdict class the user picked.**
+The mandatory guard battery (D5 — the F87 antidote, the load-bearing decision of the record) is
+**genre-keyed data today** (`src/authoring.js`, guards enumerated per genre and per language,
+injected by the flow). Under class-keyed interviews it has no genre to hang from, and hamr's
+ruling gives it the same home the interview just took: **the battery attaches to the verdict
+class — green / soft-green / hitl — not to a problem-genre label, and not per catalogue KIND.**
+The earlier "likely home is per KIND" paragraph was a guess and is superseded by this ruling.
+
+The reason it lands on the class: what a battery is FOR is the class of dishonesty the class of
+verdict admits. A green job is a job whose *done* is claimed to be machine-checkable, so a green
+job carries the green battery whatever genre it came from — that is the anti-suppression
+obligation the F87 genre earned, and it must not travel with a label the interview no longer
+asks for.
+
+**Implementation detail left to the rework, and it is a detail rather than a second home.**
+Tool-specific guard FILLS — *which* suppression patterns, *which* language spellings, *which*
+checker's escape hatch — still resolve at **composition time**, because a pattern belongs to the
+tool the declaration actually names and nothing before composition knows that tool. So: the
+battery's **attachment point and un-removability key off the class the user picked**; the
+battery's **contents fill in when the kinds are composed**. D5's surviving property is unchanged
+either way — guards are shown, un-removable, and stored resolved in the signed spec.
+
+### 3. A safety floor under declared commands
+
+A declaration names commands. **A deny-floor of dangerous commands (the `rm -rf` class) is
+required: a straight block or a human gate, never silently allowed.**
+
+- **The fence is the natural home.** bareguard already owns action-level denial for every verb
+  the worker holds; close-stage commands **bypass it entirely today**, which is the gap this
+  ruling closes. **If bareguard has no seam for it, that is an UPSTREAM ASK, never a local
+  shim** — the standing two-red routing rule, applied to a fence gap rather than a tool gap.
+- **Direction noted alongside (not a ruling):** the `cmd` blank should move from free text
+  toward a **menu harvested by the scout** — the repo's own runners, enumerated from what is
+  actually there. That is the standing *enumerable fields become menus* law (`check-passes(name)`
+  is the model), and it applies here because a runner names something that ALREADY EXISTS at
+  draft time. `args` is not enumerable by the same test and is not proposed for a menu.
+- **The agent creates a NEW BRANCH before it touches any code — a HARD RULE, no exceptions.**
+  Not a default, not a preference: no job edits the branch it was handed, and none edits `main`.
+  Blast radius is bounded by where the work lands, not only by what the fence allows.
+  **Named with a meaningful slug** — tool and problem, human-readable, of the form
+  `bareloop-typecheck-fix`. A human scanning `git branch` must be able to tell what the run was
+  for without opening the spec, which a run-id slug does not give them.
+
+**KNOWN LIMITATIONS — written down here, because a floor described as more than it is becomes
+the next false green.** The branch and the deny-floor are real, general protections and they are
+claimed as such. What they do NOT do is change v1.41's threat model, which stands intact:
+**bareloop is not a sandbox.**
+
+- **Network and OS-user permissions are untouched.** Close and worker children run as the
+  operator's OS user with network egress; outside the repo they can read anything that user can
+  read and reach anything that user can reach. The branch bounds what lands in the *tree*, not
+  what a command can *do*.
+- **Env exposure is bounded only by the strip list.** `CLOSE_ENV_DENY` (v1.41, extended
+  2026-07-31) removes known and shape-matched credential VARIABLES from the child. A credential
+  spelled outside the list, or read from a file on disk (`~/.aws`, `~/.netrc`, a `pass` store,
+  the shell profile that exports the stripped variable), is not covered by anything.
+- **Resource use is bounded by LIVENESS checks, not by quotas.** The stall fuse, the alive-check
+  and the out-of-process watchdog catch a run that is *dead or silent*; nothing caps CPU,
+  memory, disk or file descriptors. A live, noisy, expensive command is not bounded by any of
+  them.
+
+**The floor narrows blast radius; it does not promise containment.** Real containment — a
+container, a user namespace, a network-denied cgroup — is a different mechanism, unbuilt, and is
+claimed nowhere. This list is maintained in the register rather than left to be re-derived.
+
+### 4. The timer rule — the money rule applied to time, and a STUCK close is caught by LIFE SIGNS, not by a clock
+
+**W-2 stands, restated because a declared close is a new way to get it wrong: the close is
+never bounded in TIME.** No wall and no hard timer chops a running close. A close already in
+flight when the deadline trips runs to completion, and the run keeps the grade it mints
+(v1.40 §1–§2 — the F45 money rule generalized to time: a judgement cut short leaves the run
+unreadable after the money is already spent). Nothing in this addendum puts a duration ceiling
+on the close as a whole, and no declared field may introduce one.
+
+**What a timer is FOR is a STUCK close — and stuckness is measured by SIGNS OF LIFE.** The W-3
+pattern, applied to the close: fire only when the deadline has passed **AND** there is no
+activity — bytes, output, the markers that distinguish progress from silence — never on elapsed
+duration alone. A close that is slow but still writing is alive, and a slow close is exactly
+what a real patient suite looks like.
+
+**So the per-stage `timeoutMs` reframes: it is the operator-owned STUCK-BACKSTOP, not a budget
+of time the close is allowed to consume.** Its ownership is unchanged: **the operator's ceiling
+always wins, and a model-declared `timeoutMs` may only TIGHTEN it, never widen it** — exactly as
+the agent may only tighten `budgetUsd` (advertised = enforced, v1.12). A declared close is
+authored by a model; a bound authored by the thing being bounded is not a bound.
+
+**And a measuring command that CRASHES must fail LOUDLY, as could-not-run — never as a zero.**
+This is F6's honest-null in the shape that matters most: on a `count-not-worse` ruler a zero
+reads as *better than baseline*, i.e. green. An unrun ruler is not a passing one. The same
+rule that forbids `?? 0` on an unknown cost forbids `?? 0` on an unknown count.
+
+### 5. Sequencing (agreed)
+
+1. **The whole-branch review's fixes land FIRST** — 3 serious findings (declared `cmd`/`args`
+   with no command floor; the python genre-env re-validation rejecting the arbiter's OWN
+   injection; a worktree-cleanup throw able to discard an already-minted verdict) plus 2 medium
+   (unscrubbed subprocess output reaching the authoring model; the crashed counter reading as
+   zero — §4's second half).
+2. **Then the interview rework** — the radio (§1) and the three class-keyed question sets (§2),
+   including re-homing the guard battery onto the verdict class as §2 rules, with the
+   tool-specific fills resolved at composition.
+3. **Then the rung ships.** Nothing ships with the serious findings open.
+
+### 6. What v1.57 supersedes — and what it deliberately does NOT
+
+Written out so a later reader does not have to reconstruct it from five sections.
+
+**SUPERSEDED by this addendum:**
+
+| what | by | reading |
+|---|---|---|
+| **D4** of the close-authoring record (*"verdictType is DERIVED from the answers, never picked"*) — and the **v1.53 bullet** that carried D4 into this register | §1 | the class is a USER CHOICE again; the radio drives authoring instead of falling out of it |
+| **D13's genre-confirm interview slot** (*"this looks like a type-fixing job, correct?"*) | §2 | the interview no longer asks about genre at all. The REFUSAL does not disappear — it MOVES to the composer: a job the catalogue cannot measure refuses there, on the same `request-red` path, still counted as demand evidence. D13's one-genre-at-a-time law and its refusal mechanics survive; only the slot that asked the user to confirm a genre is gone |
+| **§2's own earlier guess** that the D5 guard battery's likely home was per catalogue KIND | §2 | ruled: it keys off the verdict class (the fills still resolve at composition) |
+| **v1.51 §5, PARTIALLY** | §1 | the UI's *"what done means"* is no longer wholly derived: the CLASS is direct user input. The rest of v1.51 §5 stands — the stage list under it still derives from the close's own stages, and the goal must still state everything the close will judge |
+
+**NOT superseded — named because they are the two most likely to be read as changed:**
+
+- **W-2 / v1.40 §1–§2 — the close is never bounded in time, and the wall PAUSES rather than
+  cuts.** §4 restates it rather than trimming it; the stuck-close instrument is an ALIVE CHECK,
+  and `timeoutMs` is a stuck-backstop, not a duration ceiling on the close.
+- **v1.41's local-trust model — bareloop is not a sandbox.** §3's deny-floor and mandatory work
+  branch ADD protection on top of it; they replace nothing, and the limitations they leave open
+  are written out in §3 rather than implied.
+- **D5's surviving property, D13's refusal path, and the `CLASS_BY_CLOSE`/`CLASS_BY_VERDICT`
+  laundering guards.** Guards stay shown, un-removable and stored resolved in the signed spec;
+  refusals stay counted; a soft verdict still cannot ride a hard close.

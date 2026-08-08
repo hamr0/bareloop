@@ -30,9 +30,10 @@ import { fileURLToPath } from 'node:url';
 import { TOOL_MENU, WRITE_VERBS, STORE_VERBS } from '../src/job.js';
 import {
   AUTHOR_SCOUT_VERBS, AUTHOR_SCOUT_ROUNDS, AUTHOR_SCOUT_MIN_BYTES, AUTHOR_SCOUT_BLOB_MAX,
-  SCOUT_RECOVERY_PROMPT, scoutPrompt, classifySurvey, runAuthorScout,
+  SCOUT_RECOVERY_PROMPT, scoutPrompt, classifySurvey, runAuthorScout, defaultSurveyor,
   seedFileList, buildSeedListing, LIST_CAP, LISTING_BYTE_CAP, cleanEntry,
 } from '../src/authorscout.js';
+import { TOOL_BY_VERB } from '../src/tools.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -251,6 +252,44 @@ test('runAuthorScout: the recovery round only replaces a SMALLER survey', async 
   assert.equal(r.state, 'PRESENT');
 });
 
+test('runAuthorScout: when the RECOVERY round itself dies, ABSENT names the recovery\'s own error', async () => {
+  // The F59 recovery is the call that produced the survey being classified, so
+  // its failure is the one that describes what came back. Reading the FIRST
+  // call's error instead gives the operator a reason belonging to a call the
+  // recovery was there to replace — and when the first call had no error at all,
+  // a dead recovery reported no error at all.
+  const { factory, created } = scriptLoops([
+    { text: '', turns: AUTHOR_SCOUT_ROUNDS + 2 },
+    { text: '', turns: 1, error: 'truncated:max_tokens' },
+  ]);
+  const { createSurveyor } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor });
+  assert.equal(created.length, 2, 'the recovery round must have fired');
+  assert.equal(r.meta.error, 'truncated:max_tokens');
+  assert.equal(r.state, 'ABSENT');
+  assert.match(r.reason, /truncated:max_tokens/, 'the ABSENT reason must not point at the wrong call');
+});
+
+test('runAuthorScout: a SURVIVING recovery does not erase the first call\'s error', async () => {
+  const { factory, created } = scriptLoops([
+    { text: '', turns: AUTHOR_SCOUT_ROUNDS + 2, error: 'ENETUNREACH' },
+    { text: factsBlob(), turns: 1 },
+  ]);
+  const { createSurveyor } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor });
+  assert.equal(created.length, 2);
+  assert.equal(r.meta.error, 'ENETUNREACH', 'classification semantics are otherwise unchanged');
+  assert.equal(r.state, 'ABSENT');
+});
+
+test('runAuthorScout: with NO recovery round the first call\'s error is still the one reported', async () => {
+  const { factory, created } = scriptLoops([{ text: factsBlob(), turns: 1, error: 'boom' }]);
+  const { createSurveyor } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor });
+  assert.equal(created.length, 1);
+  assert.equal(r.meta.error, 'boom');
+});
+
 test('runAuthorScout: the survey blob is capped and secrets are scrubbed', async () => {
   const secret = 'sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
   const huge = `${secret} ${'y'.repeat(AUTHOR_SCOUT_BLOB_MAX * 2)}`;
@@ -416,6 +455,51 @@ test('cleanEntry strips the surveyor\'s prose annotations off a path', () => {
   assert.equal(cleanEntry('src/aurora_cli (symlink)'), 'src/aurora_cli');
   assert.equal(cleanEntry('src/'), 'src');
   assert.equal(cleanEntry('  src  '), 'src');
+});
+
+// ── the REAL surveyor: the fence, not the promise ────────────────────────────
+//
+// `defaultSurveyor` is the seam that builds the actual gate, and it needs NO
+// model to prove what it is for: the grant is read-only by menu construction,
+// and the arbiter's own books are denied outright. `wireGate`'s policy answers
+// `true` for allow and a deny STRING otherwise, so a fence can be interrogated
+// directly. `ctx: false` keeps it deterministic and free — no index is built.
+
+test('defaultSurveyor: the arbiter\'s own books are DENIED, and nothing anywhere is writable', async (t) => {
+  const { dir } = makeRepo(t, { 'src/a.js': 'a\n', '.smoke': 'x\n' });
+  const s = await defaultSurveyor({ workdir: dir, granted: AUTHOR_SCOUT_VERBS, ctx: false });
+  t.after(() => s.cleanup());
+  const ask = (/** @type {string} */ tool, /** @type {any} */ args) => s.policy(tool, args, {});
+
+  // a normal source read inside the repository is the CONTROL — without it a
+  // deny-everything fence would pass every assertion below and prove nothing
+  assert.equal(await ask('shell_read', { path: join(dir, 'src/a.js') }), true);
+
+  for (const book of ['gate-audit.jsonl', '.smoke', '.litectx']) {
+    const d = await ask('shell_read', { path: join(dir, book) });
+    assert.notEqual(d, true, `${book} is the arbiter's own book — the worker must never read it`);
+  }
+  // and the deny reaches the litectx STORE through the same door, not just its root
+  assert.notEqual(await ask('shell_read', { path: join(dir, '.litectx', 'store.json') }), true);
+  // outside the repository entirely
+  assert.notEqual(await ask('shell_read', { path: join(dir, '..', 'elsewhere.txt') }), true);
+
+  // writeScope is EMPTY: every write-class action is refused, including inside
+  // the very directory the survey may read
+  assert.notEqual(await ask('shell_write', { path: join(dir, 'src/a.js'), content: 'x' }), true);
+  assert.notEqual(await ask('shell_write', { path: join(dir, 'brand-new.js'), content: 'x' }), true);
+  assert.notEqual(await ask('shell_edit', { path: join(dir, 'src/a.js'), newText: 'x' }), true);
+});
+
+test('defaultSurveyor: the tool objects handed over carry no write-class or store-class verb at all', async (t) => {
+  const { dir } = makeRepo(t, { 'src/a.js': 'a\n' });
+  const s = await defaultSurveyor({ workdir: dir, granted: AUTHOR_SCOUT_VERBS, ctx: false });
+  t.after(() => s.cleanup());
+  const names = s.tools.map((/** @type {{name: string}} */ x) => x.name);
+  assert.ok(names.length > 0, 'a surveyor with no tools would pass every negative below while surveying nothing');
+  for (const verb of [...WRITE_VERBS, ...STORE_VERBS]) {
+    assert.ok(!names.includes(TOOL_BY_VERB[verb]), `${verb} must have no tool object to refuse in the first place`);
+  }
 });
 
 test('the scout bounds are PINNED to the plan scout\'s own numbers', () => {

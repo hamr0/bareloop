@@ -425,6 +425,76 @@ test('WHOLE PIPELINE: seven answers in, a validateJob-green spec with a hash out
   assert.ok(!JSON.stringify(ANSWERS).includes('command-exit'));
 });
 
+/** the PYTHON close as it exists AFTER M3 injected the genre's own MYPYPATH */
+const PY_STAGES = (env = { MYPYPATH: 'src' }) => {
+  const g = genreGuards('python');
+  return [
+    { name: g[0].name, kind: g[0].kind, params: { ...g[0].params, allowPrefixes: ['src/'] } },
+    {
+      name: 'typecheck',
+      kind: 'count-not-worse',
+      params: {
+        cmd: 'python3',
+        args: ['-m', 'mypy', '--strict', 'src'],
+        parser: { terms: [{ lineMatch: ' error: ', capture: null, sign: 1, aggregate: 'sum', region: 'whole-output' }] },
+        scope: { includePrefixes: ['src/'] },
+        direction: 'lower-is-better',
+        baseline: 0,
+        env: { ...env },
+      },
+    },
+    { name: g[1].name, kind: g[1].kind, params: structuredClone(g[1].params) },
+  ];
+};
+
+// The whole python genre depended on this and could not run: the flow injects
+// MYPYPATH after the model's form passes, and every RE-validation then saw the
+// genre's own variable sitting in a stage and read it as the model authoring it.
+// The composition is where the injection becomes signable evidence.
+test('the composed closeDecl RECORDS the genre env the flow injected — and the python spec then VALIDATES', async (t) => {
+  const p = makePatient(t);
+  const authorFn = async () => ({
+    ok: true,
+    declaration: { stages: PY_STAGES() },
+    // the shape `authorClose` really returns (M3's own probe + the loop's drops)
+    genreEnv: { applied: { MYPYPATH: 'src' }, owned: ['MYPYPATH'], missing: [], dropped: [] },
+    reds: [], stop: null, cost: { costUsd: 0, knownUsd: 0, spendComplete: true },
+  });
+
+  const r = await authorCloseForJob({
+    answers: ANSWERS, repoPath: p.dir, lang: 'python', seedRef: p.seed, scout: SURVEY(p.dir), authorFn,
+  });
+  assert.equal(r.ok, true, JSON.stringify(r.reds));
+  assert.deepEqual(r.closeDecl.genreEnv, { MYPYPATH: 'src' }, 'what the arbiter injected must ride the signed envelope');
+
+  const spec = assembleSpec(SPEC_DRAFT, r);
+  assert.deepEqual(validateJob(spec).reds, [], 'a python closeDecl must not be bricked by the arbiter\'s own injection');
+  // …and it is COVERED by the signature, so a later edit to the record is a new hash
+  const moved = structuredClone(spec);
+  moved.closeDecl.genreEnv = { MYPYPATH: 'src:vendor' };
+  assert.notEqual(jobSpecHash(moved), jobSpecHash(spec));
+
+  // the negative, at the SAME gate: a value that is not the one the arbiter built
+  const corrupt = structuredClone(spec);
+  corrupt.closeDecl.stages[1].params.env.MYPYPATH = 'elsewhere';
+  assert.ok(validateJob(corrupt).reds.some((x) => x.code === 'genre-owned-env'), 'a wrong value is the model or corruption');
+});
+
+test('a genre that owns NO environment records none — absent is not empty (F59)', async (t) => {
+  const p = makePatient(t);
+  const authorFn = async () => ({
+    ok: true,
+    declaration: { stages: DECL().stages },
+    genreEnv: { applied: {}, owned: [], missing: [], dropped: [] },
+    reds: [], stop: null, cost: null,
+  });
+  const r = await authorCloseForJob({
+    answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed, scout: SURVEY(p.dir), authorFn,
+  });
+  assert.equal(Object.hasOwn(r.closeDecl, 'genreEnv'), false, 'js owns none, so nothing is recorded at all');
+  assert.deepEqual(validateJob(assembleSpec(SPEC_DRAFT, r)).reds, []);
+});
+
 test('the pipeline REFUSES before spending anything when the interview refuses', async () => {
   let called = 0;
   const r = await authorCloseForJob({

@@ -1335,3 +1335,60 @@ Either shape is fine by us — upstream's pick:
    vanish without the same loud signal.
 4. A crashed rg with partial stdout (the existing `e.stdout` salvage branch) keeps today's
    salvage behavior — the new signal fires only when rg produced nothing because it never ran.
+
+---
+
+## CHECKED AND **NOT** FILED (2026-08-08) — bareguard ALREADY has the seam for close-stage commands; the gap is bareloop's wiring, not bareguard's API
+
+**Why this was checked.** PRD v1.57 §3 rules that declared close commands need a deny-floor and
+says where it belongs: *"The fence is the natural home. bareguard already owns action-level
+denial for every verb the worker holds; close-stage commands **bypass it entirely today**…
+**If bareguard has no seam for it, that is an UPSTREAM ASK, never a local shim.**"* The
+condition was checked against bareguard's shipped source (`bareguard@0.12.0`, the version
+`package.json` already depends on) before anything was filed. **The seam exists. No ask.**
+
+**What is genuinely true about the gap.** A declared close spawns straight from
+`src/kinds.js:241` (`spawn(cmd, args, {cwd, env})`); no `Gate` is constructed on that path, so
+the fence never sees a close command. That is bareloop's own wiring — the same finding pointed
+the other way, and it belongs under *OUR SIDE*, not in a suite repo's queue.
+
+**The seams bareguard already ships (read in source, not in the changelog):**
+
+- **`bash` primitive, step-3 action-type deny** (`src/primitives/bash.js:29`). Reads the command
+  from `action.cmd`, `action.args.cmd` **or** `action.args.command` — the flat and `wireGate`
+  nested shapes both compose with no translation layer. `bash.denyPatterns` (RegExp list) and
+  `bash.allow` (prefix allowlist, fails closed on shell metacharacters, rule
+  `bash.allow.shellMeta`) are both configuration, not code.
+- **`tools.denyArgPatterns`, keyed per action type** (`src/primitives/tools.js:32`) — tests
+  RegExps against `JSON.stringify(action)`. This one is **argv-native**: a close stage is
+  `{cmd, args: [...]}`, and the serialized action carries both without a lossy join. A dedicated
+  action type (e.g. `close-stage`) plugs in here with no upstream change at all.
+- **`content.denyPatterns`** — same serialized-action scan, and its
+  `SAFE_DEFAULT_DENY_PATTERNS` already carry the recursive-force-delete and `--force` shapes
+  out of the box (`src/primitives/content.js:39`).
+- **`classifyCommand(command, opts)` is PUBLICLY EXPORTED** (`src/index.js:38`), beside
+  `DESTRUCTIVE_PATTERNS` / `SUPER_DESTRUCTIVE_PATTERNS` / `INTERPRETER_PATTERNS`. It tiers a
+  command `safe` / `destructive` / `super_destructive` and is usable **directly**, without a
+  `Gate` — which matters, because the close is arbiter territory and routing it through the
+  worker's gate would mix two populations of audit rows.
+
+**The one real shape mismatch, stated rather than filed.** `bashCheck` and `classifyCommand`
+read a command **STRING**; a declared stage is an **argv pair**. Joining `[cmd, ...args]` for the
+`bash.*` rules is lossy (quoting, embedded spaces) and would be an adapter decision on our side.
+It is not a missing capability: `tools.denyArgPatterns` and `content.denyPatterns` both take the
+argv shape as-is. **If** a later rework wants `bash.allow`-style prefix allowlisting over an
+argv (the PRD's "cmd menu harvested by the scout" direction), *that* — an argv-aware
+`bash.allow` — would be the ask worth filing, with its own fail-able criteria. It is not filed
+today, because nothing in the ruling needs it.
+
+**What landed instead, and its honest scope.** A local deny-floor at bareloop's own **validation
+gate** (`DENIED_COMMANDS` / `deniedCommandReason`, `src/authoring.js`), which reds a dangerous
+`cmd` **before any token and before any spawn** — earlier than a fence could, since it refuses
+the declaration rather than the action. This is **not** the local shim the two-red routing rule
+forbids: it is not a re-implementation of a missing upstream primitive, it is a validator
+rejecting an artefact bareloop itself owns. The fence wiring the PRD describes remains the
+rework's job, and the floor is documented as a floor, never as containment (PRD v1.57 §3's
+KNOWN LIMITATIONS stand unchanged).
+
+*(Rule reaffirmed once more: **read the library source before filing an upstream ask.** Four
+candidates have now gone in and three come out.)*

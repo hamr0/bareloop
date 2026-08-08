@@ -14,6 +14,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { JUDGED_MARKER } from '../src/kinds.js';
 
 const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/litectx-types';
 const SPINE_DIR = '/home/hamr/PycharmProjects/bareloop-patients/litectx-types-bareloop';
@@ -49,7 +50,7 @@ function emitCapped(/** @type {string[]} */ lines, /** @type {string} */ label) 
 
 const done = (/** @type {number} */ code, /** @type {any} */ data = {}) => {
   try { appendFileSync(LOG, JSON.stringify({ ts: new Date().toISOString(), check: NAME, verbosity: VERBOSITY, pass: code === 0, ...data }) + '\n'); } catch { /* best-effort */ }
-  out('TYPES-CHECK judged=1');
+  out(`TYPES-CHECK ${JUDGED_MARKER}`);
   process.exit(code);
 };
 

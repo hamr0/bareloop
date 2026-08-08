@@ -32,7 +32,7 @@ import { LIVE_KINDS } from '../src/kinds.js';
 import { hasNestedQuantifier } from '../src/validate.js';
 import {
   KIND_CATALOGUE, CATALOGUE_KINDS, LOCKED_KINDS, MAX_STAGES, DIRECTIONS, BASELINES,
-  TYPES_GENRE, TYPES_GENRE_TEMPLATE, GENRE_LANGUAGES,
+  TYPES_GENRE, TYPES_GENRE_TEMPLATE, GENRE_LANGUAGES, DENIED_COMMANDS,
   genreGuards, genreEnv, genreOwnedEnvNames,
   validateDeclaration, normalizeDeclaration,
 } from '../src/authoring.js';
@@ -106,6 +106,22 @@ function goodDeclaration() {
       guardStages()[1],
     ],
   };
+}
+
+/**
+ * `goodDeclaration()` AFTER the flow injected a genre variable — the form every
+ * re-validation actually sees. The env lands on every stage the CATALOGUE says
+ * can carry one, which is exactly the rule `applyGenreEnv` injects by; a fixture
+ * that put it on one stage would be testing a declaration the arbiter never
+ * writes.
+ */
+function injectedDeclaration(env = { MYPYPATH: 'src' }) {
+  const decl = goodDeclaration();
+  for (const s of decl.stages) {
+    const spec = KIND_CATALOGUE[s.kind];
+    if ([...spec.required, ...spec.optional].includes('env')) s.params.env = { ...env };
+  }
+  return decl;
 }
 
 const opts = (over = {}) => ({ listing: LISTING, guards: genreGuards('js'), envOwned: genreOwnedEnvNames('js'), ...over });
@@ -496,6 +512,67 @@ test('one-population: the in-scope/outside split is EXACTLY what must stay legal
   assert.deepEqual(at(res, 'one-population'), []);
 });
 
+/** the genre's own containment guard, by NAME — never a second spelling here */
+const SCOPE_GUARD = genreGuards('js').find((g) => g.kind === 'files-changed').name;
+
+/** a legally-shaped whole-tree containment stage that is NOT the genre guard */
+const decoyStage = () => ({
+  name: 'files-touched',
+  kind: 'files-changed',
+  params: { allowPrefixes: ['.'], requireNonEmpty: true },
+});
+
+test('one-population: the job\'s scope is read off the GENRE GUARD, never the first files-changed stage — a decoy cannot disarm F84', () => {
+  const decl = goodDeclaration();
+  decl.stages.unshift(decoyStage());            // declared BEFORE the real guard
+  delete decl.stages[2].params.scope.includePrefixes;   // the count is now unfiltered
+  const res = run(decl);
+  assert.equal(res.scoped.scoped, true, 'the guard names a proper subset — the job IS scoped');
+  assert.equal(res.scoped.via, `${SCOPE_GUARD}.allowPrefixes`);
+  const red = at(res, 'one-population').find((r) => r.rule === 'unnamed-population');
+  assert.ok(red, 'a whole-tree decoy in front of the guard must not switch the one-population law off');
+});
+
+test('one-population: a whole-tree job read off the GUARD is still genuinely unscoped — the law must not over-red', () => {
+  const decl = goodDeclaration();
+  decl.stages[0].params.allowPrefixes = ['.'];  // the GUARD says whole tree
+  decl.stages.splice(2, 1);                     // no outside ceiling on a whole-tree job
+  delete decl.stages[1].params.scope.includePrefixes;
+  const res = run(decl);
+  assert.equal(res.scoped.scoped, false);
+  assert.deepEqual(at(res, 'one-population'), []);
+});
+
+test('a SECOND files-changed stage is a duplicate-kind red — one containment stage, and an intersection of prefix sets is itself a prefix set', () => {
+  const decl = goodDeclaration();
+  decl.stages.unshift(decoyStage());
+  const red = at(run(decl), 'duplicate-kind')[0];
+  assert.ok(red, 'two containment stages make the job\'s own scope ambiguous');
+  assert.equal(red.kind, 'files-changed');
+  assert.equal(red.twin, 'files-touched', 'the first one declared owns the kind');
+  assert.equal(red.stage, SCOPE_GUARD);
+  // and the law must not fire on the ONE stage every legal declaration carries
+  assert.deepEqual(at(run(goodDeclaration()), 'duplicate-kind'), []);
+});
+
+// ── notes: the loop must red what signing would red (M2/M3 divergence) ───────
+
+test('validator: every note is a non-empty string — the LOOP reds it, not the signing gate', () => {
+  const empty = goodDeclaration();
+  empty.notes = ['a real note', ''];
+  const red = at(run(empty), 'invalid-value').find((r) => r.path === 'notes');
+  assert.ok(red, 'an empty note that passes the loop and reds at signing is a paid loop that succeeded into a refusal');
+
+  const wrongShape = goodDeclaration();
+  wrongShape.notes = 'not an array';
+  assert.ok(at(run(wrongShape), 'invalid-value').some((r) => r.path === 'notes'));
+
+  const good = goodDeclaration();
+  good.notes = ['could not express the per-package timeout'];
+  assert.equal(run(good).ok, true, JSON.stringify(run(good).reds));
+  assert.equal(run(goodDeclaration()).ok, true, 'absent notes stay legal');
+});
+
 // ── listing selection (hamr's rule) ──────────────────────────────────────────
 
 test('listing: an invented path is a DISTINCT red, in every path-bearing param', () => {
@@ -666,6 +743,138 @@ test('env: a model-authored genre-owned var is a red — the flow injects it, th
   const other = goodDeclaration();
   other.stages[1].params.env = { PYTHONDONTWRITEBYTECODE: '1' };
   assert.deepEqual(at(validateDeclaration(other, opts({ envOwned: ['MYPYPATH'] })), 'genre-owned-env'), []);
+});
+
+// The check above catches the MODEL. Every RE-validation after the flow injected
+// the genre's own variable sees the SAME key in the same place — and a check that
+// can only flag PRESENCE cannot tell the arbiter's injection from the model's
+// guess, so it reds the arbiter's own artefact and no python close can ever be
+// signed, validated or run. The split is by VALUE, exactly as `checkGuards`
+// splits a genre guard from a weakened copy.
+test('env: the ARBITER\'s own injection is accepted BY VALUE, and a wrong value in the same key still reds', () => {
+  const injected = { MYPYPATH: 'src' };
+  const post = (/** @type {any} */ decl) => validateDeclaration(decl, opts({ envOwned: ['MYPYPATH'], envInjected: injected }));
+
+  // the POST-injection form is what `applyGenreEnv` really leaves behind: the
+  // variable on EVERY env-capable stage, not just the one under test
+  const ours = injectedDeclaration(injected);
+  assert.deepEqual(at(post(ours), 'genre-owned-env'), [], 'the arbiter must not red its own injection');
+  assert.equal(post(ours).ok, true);
+
+  // the round-2 arm-B failure, and plain corruption, are the SAME shape: a value
+  // that is not the one the arbiter builds
+  const wrong = injectedDeclaration(injected);
+  wrong.stages[1].params.env = { MYPYPATH: 'src:lib' };
+  const red = at(post(wrong), 'genre-owned-env')[0];
+  assert.ok(red, 'a wrong value in an owned key is the model or corruption, never ours');
+  assert.equal(red.name, 'MYPYPATH');
+  assert.equal(red.expected, 'src');
+  assert.equal(red.declared, 'src:lib');
+
+  // PRE-injection (the authoring loop passes no injection) the model's copy still
+  // reds, on every stage carrying it — the loop's gate is not what moved
+  const envStages = ours.stages.filter((/** @type {any} */ s) => Object.hasOwn(s.params, 'env')).length;
+  assert.ok(envStages >= 2);
+  assert.equal(at(validateDeclaration(ours, opts({ envOwned: ['MYPYPATH'] })), 'genre-owned-env').length, envStages);
+});
+
+// The value check catches a CHANGED variable. Nothing caught a DELETED one: drop
+// the key from a stage (or drop `env` outright) and the by-value rule has nothing
+// to compare, so a hand-edited spec validates clean and mypy silently resolves
+// through an editable install to a different checkout — the Result-5 hazard, back
+// through the one door the fix left open. Ownership is only real if it is
+// complete: what the arbiter injected must be PRESENT everywhere it injects.
+test('env completeness: a recorded injection DELETED from an env-capable stage reds — the Result-5 hazard both ways', () => {
+  const injected = { MYPYPATH: 'src' };
+  const post = (/** @type {any} */ decl) => validateDeclaration(decl, opts({ envOwned: ['MYPYPATH'], envInjected: injected }));
+
+  const full = injectedDeclaration(injected);
+  assert.deepEqual(at(post(full), 'genre-env-missing'), [], 'the arbiter\'s own complete artefact must pass');
+  assert.equal(post(full).ok, true);
+  // the fixture has to carry MORE than one env-capable stage or "every stage" is
+  // untested by construction
+  const capable = full.stages.filter((/** @type {any} */ s) => Object.hasOwn(s.params, 'env'));
+  assert.ok(capable.length >= 2, `only ${capable.length} env-capable stages — the rule would be vacuous`);
+
+  // one key deleted, the rest of the artefact untouched
+  const gone = structuredClone(full);
+  delete gone.stages[1].params.env.MYPYPATH;
+  const red = at(post(gone), 'genre-env-missing')[0];
+  assert.ok(red, 'a stage the arbiter injected into may not come back without it');
+  assert.equal(red.path, 'stages[1].params.env.MYPYPATH');
+  assert.equal(red.name, 'MYPYPATH');
+  assert.equal(post(gone).ok, false);
+
+  // the whole env object deleted is the same hazard wearing a different shape
+  const noEnv = structuredClone(full);
+  delete noEnv.stages[3].params.env;
+  assert.equal(at(post(noEnv), 'genre-env-missing')[0]?.path, 'stages[3].params.env.MYPYPATH');
+
+  // a stage that CANNOT carry an environment is never asked for one — the rule
+  // mirrors the catalogue the injector reads, so it can never demand what
+  // `applyGenreEnv` would not inject
+  const guardsOnly = at(post(full), 'genre-env-missing').filter((/** @type {any} */ r) => /stages\[(0|4)\]/.test(r.path));
+  assert.deepEqual(guardsOnly, [], 'files-changed and pattern-absent-in-diff carry no env');
+
+  // PRE-injection (the authoring loop records nothing) NOTHING is required: the
+  // model is not asked to supply the variable it is forbidden to author
+  const bare = goodDeclaration();
+  assert.deepEqual(at(validateDeclaration(bare, opts({ envOwned: ['MYPYPATH'] })), 'genre-env-missing'), []);
+  assert.deepEqual(run(bare).reds, []);
+});
+
+// ── the deny floor under a declared command (PRD v1.57 §3) ───────────────────
+
+test('deny floor: every name in the exported constant is refused at the gate — the list and the gate cannot drift', () => {
+  assert.ok(DENIED_COMMANDS.length > 0);
+  for (const cmd of DENIED_COMMANDS) {
+    const decl = goodDeclaration();
+    decl.stages[1] = countStage({ cmd });
+    const red = at(run(decl), 'cmd-denied')[0];
+    assert.ok(red, `${cmd} must be refused by the floor`);
+    assert.ok(red.path.endsWith('.params.cmd'), red.path);
+    assert.equal(red.cmd, cmd);
+  }
+});
+
+test('deny floor: the mkfs FAMILY, and the OTHER command-bearing kind, are covered by the one helper', () => {
+  const fs = goodDeclaration();
+  fs.stages[1] = countStage({ cmd: 'mkfs.ext4' });
+  assert.equal(at(run(fs), 'cmd-denied').length, 1, 'mkfs.* is a family, not one name');
+
+  const exit = goodDeclaration();
+  exit.stages[3].params.cmd = 'rm'; // the command-exit stage
+  const red = at(run(exit), 'cmd-denied')[0];
+  assert.ok(red && red.path.startsWith('stages[3]'), JSON.stringify(red));
+});
+
+test('deny floor: NORMALISED first — a directory, a case change and a traversal never dodge the basename', () => {
+  for (const cmd of ['/usr/bin/rm', '/bin/sh', './bin/RM', 'BASH', '../../bin/rm']) {
+    const decl = goodDeclaration();
+    decl.stages[1] = countStage({ cmd });
+    assert.ok(at(run(decl), 'cmd-denied').length > 0, `${cmd} must not dodge the floor`);
+  }
+});
+
+test('deny floor: a program named OUTSIDE the repository is refused even when its basename is innocent', () => {
+  for (const cmd of ['/opt/toolchain/bin/tsc', '../elsewhere/bin/build', '/usr/local/bin/mypy']) {
+    const decl = goodDeclaration();
+    decl.stages[1] = countStage({ cmd });
+    const red = at(run(decl), 'cmd-denied')[0];
+    assert.ok(red, `${cmd} names a program outside the repository`);
+  }
+});
+
+test('deny floor: every legitimate runner still validates — a floor that blocks the job is not a floor', () => {
+  const runners = ['node', 'npx', 'npm', 'pnpm', 'yarn', 'python', 'python3', 'pytest', 'mypy',
+    'tsc', 'go', 'cargo', 'make', 'git', 'uv', './node_modules/.bin/tsc'];
+  for (const cmd of runners) {
+    const decl = goodDeclaration();
+    decl.stages[1] = countStage({ cmd });
+    assert.deepEqual(at(run(decl), 'cmd-denied'), [], `${cmd} must keep working`);
+  }
+  // and the shipped genre-shaped declaration is clean end to end
+  assert.deepEqual(run(goodDeclaration()).reds, []);
 });
 
 // ── the resolver ─────────────────────────────────────────────────────────────

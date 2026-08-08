@@ -29,14 +29,14 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { AGGREGATES, SIGNS, MAX_TERMS, EXIT_GREEN, EXIT_RED, EXIT_STOP } from '../src/kinds.js';
 import {
   KIND_CATALOGUE, CATALOGUE_LIVE_KINDS, LOCKED_KINDS, MAX_STAGES,
-  DIRECTIONS, BASELINES, genreGuards, genreOwnedEnvNames,
+  DIRECTIONS, BASELINES, genreGuards, genreOwnedEnvNames, validateDeclaration,
 } from '../src/authoring.js';
 import {
   DECLARATION_TOOL_NAME, MAX_REVISIONS, MAX_STRUCTURE_RETRIES, REVISE_GAP_CAP, REVISE_RED_CAP,
@@ -44,8 +44,9 @@ import {
   PARAM_SCHEMAS, schemaCoverage, declarationSchema, declarationTool,
   catalogueBlock, lawsBlock, authorPrompt,
   renderSeedReadBlock, renderRejectBlock, buildReviseTurn, assertReviseTurn,
-  applyGenreEnv, makeCostBook, authorClose,
+  applyGenreEnv, resolveSourcePrefixes, makeCostBook, authorClose,
 } from '../src/authorflow.js';
+import { scanSecrets } from '../src/validate.js';
 
 // ── fixtures ─────────────────────────────────────────────────────────────────
 
@@ -187,6 +188,12 @@ test('declarationSchema: a LOCKED kind is INEXPRESSIBLE — no branch, no mentio
   const text = JSON.stringify(schema);
   assert.ok(LOCKED_KINDS.length > 0, 'the catalogue must still carry locked entries');
   for (const k of LOCKED_KINDS) assert.ok(!text.includes(k), `${k} must not appear anywhere in the tool schema`);
+});
+
+test('declarationSchema: a note is a NON-EMPTY string — an empty one is inexpressible at the source, not rejected after', () => {
+  const notes = declarationSchema().properties.notes;
+  assert.equal(notes.items.minLength, 1,
+    'the validator reds an empty note; the schema must not let the model write one in the first place');
 });
 
 test('declarationSchema: every enum is the shipped constant, never a second spelling', () => {
@@ -356,6 +363,93 @@ test('applyGenreEnv: a genre variable it CANNOT compute is a red, never a silent
   assert.equal(r.reds[0].code, 'genre-env-unavailable');
 });
 
+// ── 5b. the prefixes the genre variable is BUILT from ───────────────────────
+//
+// The aurora shape, measured: 11 `src/*` entries are symlinks into
+// `packages/*/src`, so an existence-only filter joins BOTH spellings of one tree
+// into MYPYPATH and mypy dies fatally (exit 2, "shadows library module") with no
+// output at all — a stage that reads as a broken instrument on a healthy patient.
+
+/** a temp tree with real directories and real symlinks @param {any} t */
+function symlinkTree(t) {
+  const dir = mkdtempSync(join(tmpdir(), 'bareloop-prefixes-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  for (const pkg of ['alpha', 'beta']) {
+    mkdirSync(join(dir, 'packages', pkg, 'src'), { recursive: true });
+    writeFileSync(join(dir, 'packages', pkg, 'src', 'mod.py'), 'x = 1\n');
+  }
+  mkdirSync(join(dir, 'src'), { recursive: true });
+  symlinkSync(join('..', 'packages', 'alpha', 'src'), join(dir, 'src', 'alpha'));
+  symlinkSync(join('..', 'packages', 'beta', 'src'), join(dir, 'src', 'beta'));
+  return dir;
+}
+
+/** what `git ls-tree -r` reports for that tree: symlinks are FILE entries */
+const SYMLINK_SEED = Object.freeze([
+  'packages/alpha/src/mod.py', 'packages/beta/src/mod.py', 'src/alpha', 'src/beta',
+]);
+
+test('source prefixes: a symlink and the real directory behind it are ONE prefix, spelled as the REAL path', async (t) => {
+  const dir = symlinkTree(t);
+  const out = resolveSourcePrefixes({
+    workdir: dir,
+    sourcePaths: ['src/alpha (symlink)', 'packages/alpha/src', 'src/beta', 'packages/beta/src'],
+    seedFiles: [...SYMLINK_SEED],
+  });
+  assert.deepEqual(out, ['packages/alpha/src', 'packages/beta/src'],
+    'both spellings of one tree in MYPYPATH is the "shadows library module" fatal');
+  // and every spelling it emits SELECTS from the seed listing — the grounded
+  // validator checks each element against exactly this list
+  for (const p of out) {
+    assert.ok(SYMLINK_SEED.some((f) => f === p || f.startsWith(`${p}/`)), `${p} must be listing-present`);
+  }
+});
+
+test('source prefixes: the EXISTENCE filter survives — a path the seed tree does not contain is dropped', async (t) => {
+  const dir = symlinkTree(t);
+  const out = resolveSourcePrefixes({
+    workdir: dir,
+    sourcePaths: ['packages/alpha/src', 'src/invented', ''],
+    seedFiles: [...SYMLINK_SEED],
+  });
+  assert.deepEqual(out, ['packages/alpha/src']);
+});
+
+test('source prefixes: a tree with no symlinks is passed through unchanged, in order', async (t) => {
+  const dir = symlinkTree(t);
+  const out = resolveSourcePrefixes({
+    workdir: dir,
+    sourcePaths: ['packages/beta/src', 'packages/alpha/src'],
+    seedFiles: [...SYMLINK_SEED],
+  });
+  assert.deepEqual(out, ['packages/beta/src', 'packages/alpha/src'], 'dedupe must not reorder or collapse real siblings');
+});
+
+test('source prefixes: a link OUT of the repository keeps its listing-present spelling, never an outside absolute path', async (t) => {
+  const dir = symlinkTree(t);
+  const outside = mkdtempSync(join(tmpdir(), 'bareloop-outside-'));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  symlinkSync(outside, join(dir, 'src', 'external'));
+  const out = resolveSourcePrefixes({
+    workdir: dir,
+    sourcePaths: ['src/external'],
+    seedFiles: [...SYMLINK_SEED, 'src/external'],
+  });
+  assert.deepEqual(out, ['src/external'],
+    'a value the grounded validator cannot select from the listing is one the arbiter must not build');
+});
+
+test('source prefixes: an unreadable candidate keeps its declared spelling rather than vanishing', async (t) => {
+  const dir = symlinkTree(t);
+  symlinkSync(join(dir, 'nowhere-at-all'), join(dir, 'src', 'dangling'));
+  const out = resolveSourcePrefixes({
+    workdir: dir,
+    sourcePaths: ['src/dangling'],
+    seedFiles: [...SYMLINK_SEED, 'src/dangling'],
+  });
+  assert.deepEqual(out, ['src/dangling']);
+});
+
 // ── 6. the flow ─────────────────────────────────────────────────────────────
 
 test('authorClose: the happy path — author, validate, measure, revise, early-stop unchanged', async () => {
@@ -388,6 +482,87 @@ test('authorClose: the turn the LOOP sends is byte-identical to measured-block +
   const r = await authorClose({ ...baseArgs(), generate, seedReadFn: fn });
   const expected = buildReviseTurn(renderSeedReadBlock(r.iterations[0].seedRead));
   assert.equal(calls[1].messages.at(-1).content, expected);
+});
+
+test('authorClose: subprocess output reaching the model is SCRUBBED by the one shared redactor', async () => {
+  // The seed read's gap lines and instrument stops are raw subprocess output —
+  // env echoes, stack traces, file contents — and that block becomes the next
+  // USER TURN sent to the provider. It is the surface most likely to carry a
+  // real credential, so it crosses the same scrubber every other boundary in
+  // this file uses (the model's own text at `askDeclaration`), from the ONE
+  // inventory in validate.js. Built here from parts so no real-shaped token
+  // literal ever exists in the tree.
+  const fake = ['sk', 'live', 'A1b2C3d4E5f6G7h8I9j0KLMN'].join('-');
+  assert.equal(scanSecrets(fake).length, 1, 'the fixture must be a shape the ONE inventory actually detects');
+  const decl = goodDeclaration();
+  const { generate, calls } = scriptGenerate([{ declaration: decl }, { declaration: decl }]);
+  const { fn } = scriptSeedRead({
+    typecheck: {
+      verdict: 'red',
+      value: 27,
+      baseline: 0,
+      gapLines: [`TEST::   error: ANTHROPIC_API_KEY=${fake} not accepted`],
+      detail: { stop: `INSTRUMENT: "npx" could not be run (token ${fake})` },
+    },
+  });
+  await authorClose({ ...baseArgs(), generate, seedReadFn: fn });
+
+  const turn = calls[1].messages.at(-1).content;
+  assert.deepEqual(scanSecrets(turn), [], 'a secret in subprocess output must never cross the network');
+  assert.ok(turn.includes('[REDACTED:'), 'the mask is the shared redactor, not a silent deletion');
+  // the mechanical detail AROUND the token is what converts — it must survive
+  assert.match(turn, /TEST::   error: ANTHROPIC_API_KEY=/);
+  assert.match(turn, /instrument-stop: INSTRUMENT: "npx" could not be run/);
+});
+
+// The seed-read block was scrubbed; the REJECT block is the other half of the
+// same channel and was not. Validation reds quote what the MODEL DECLARED,
+// verbatim — the genre-env wrong-value branch echoes both the expected and the
+// declared value, the deny floor echoes the whole `cmd`, the listing rule echoes
+// the path — and that block becomes the next USER TURN. A declared value shaped
+// like a credential crossed unmasked. Same fix, same ONE inventory, applied to
+// the whole rendered block so a line added here is scrubbed by construction.
+test('renderRejectBlock: a validation red quoting model-declared text is SCRUBBED before it can become a turn', () => {
+  const fake = ['sk', 'live', 'A1b2C3d4E5f6G7h8I9j0KLMN'].join('-');
+  assert.equal(scanSecrets(fake).length, 1, 'the fixture must be a shape the ONE inventory actually detects');
+
+  // the reds are the REAL validator's, never hand-written: what is being tested
+  // is that the details it produces carry raw model strings
+  const decl = goodDeclaration();
+  decl.stages[1].params.env = { MYPYPATH: fake };
+  const { reds } = validateDeclaration(decl, {
+    listing: [...LISTING], guards: genreGuards('js'), envOwned: ['MYPYPATH'], envInjected: { MYPYPATH: 'src' },
+  });
+  assert.ok(
+    reds.some((r) => scanSecrets(r.detail).length === 1),
+    'the validator must actually echo the declared value — without that this test cannot fail',
+  );
+
+  const block = renderRejectBlock({ kind: 'validation', reds });
+  assert.deepEqual(scanSecrets(block), [], 'a declared secret must never cross the network in a reject block');
+  assert.ok(block.includes('[REDACTED:'), 'the mask is the shared redactor, not a silent deletion');
+  // the mechanical detail AROUND the token is what converts — it must survive
+  assert.match(block, /genre-owned-env at stages\[1\]\.params\.env\.MYPYPATH/);
+});
+
+test('authorClose: a validation red reaching the model is SCRUBBED in the turn actually handed to generate', async () => {
+  const fake = ['sk', 'live', 'A1b2C3d4E5f6G7h8I9j0KLMN'].join('-');
+  assert.equal(scanSecrets(fake).length, 1, 'the fixture must be a shape the ONE inventory actually detects');
+  // reachable inside the loop: the deny floor quotes the declared cmd verbatim,
+  // and a vendored toolchain path is exactly the kind of operator-pasted string
+  // that carries a token
+  const bad = goodDeclaration();
+  bad.stages[1].params.cmd = `/opt/${fake}/bin/tsc`;
+  const good = goodDeclaration();
+  const { generate, calls } = scriptGenerate([{ declaration: bad }, { declaration: good }, { declaration: good }]);
+  const { fn } = scriptSeedRead();
+  await authorClose({ ...baseArgs(), generate, seedReadFn: fn });
+
+  const turn = calls[1].messages.at(-1).content;
+  assert.match(turn, /MEASURED VALIDATION/, 'the reject block is what was fed back');
+  assert.deepEqual(scanSecrets(turn), [], 'a secret in a validation red must never cross the network');
+  assert.ok(turn.includes('[REDACTED:'), 'the mask is the shared redactor, not a silent deletion');
+  assert.match(turn, /cmd-denied at stages\[1\]\.params\.cmd/);
 });
 
 test('authorClose: a validation red is fed back as a measurement and COUNTS as a revision', async () => {

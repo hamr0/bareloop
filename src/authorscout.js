@@ -270,13 +270,17 @@ export async function runAuthorScout({
     meter('author-scout', r);
     let blob = redactSecrets(String(r?.text ?? '')).slice(0, blobMax);
     let recovered = false;
+    /** the recovery call's own result, held in scope so its FAILURE is visible
+     * to the classifier — `null` whenever the recovery never fired */
+    /** @type {any} */
+    let s2 = null;
 
     // F59's reserved TOOLLESS final round. It fires on the ONE population it was
     // sized for — a survey that was CUT OFF and came back short — never on a
     // survey that simply finished with little to say.
     if (bounded && Buffer.byteLength(blob) < minBytes && Array.isArray(r?.msgs) && r.msgs.length) {
       const recovery = createLoop({ system, policy: surveyor.policy, onLlmResult: surveyor.onLlmResult, provider });
-      const s2 = await recovery.run([...r.msgs, { role: 'user', content: SCOUT_RECOVERY_PROMPT }], [],
+      s2 = await recovery.run([...r.msgs, { role: 'user', content: SCOUT_RECOVERY_PROMPT }], [],
         { cacheMessages: true, maxTokens });
       meter('author-scout-recovery', s2);
       const t = redactSecrets(String(s2?.text ?? '')).slice(0, blobMax);
@@ -284,7 +288,13 @@ export async function runAuthorScout({
     }
 
     const bytes = Buffer.byteLength(blob);
-    const survey = classifySurvey(blob, { bytes, rounds: seen, bounded, recovered, error: r?.error ?? null });
+    // The RECOVERY's error first, when it fired. It is the call that produced
+    // (or failed to produce) the blob being classified, so its death is what
+    // describes the survey; the first call's error belongs to the very call the
+    // recovery exists to replace, and a recovery dying of `truncated:max_tokens`
+    // after a clean-but-bounded first round reported no error at all. Falling
+    // back to `r.error` keeps every other classification unchanged.
+    const survey = classifySurvey(blob, { bytes, rounds: seen, bounded, recovered, error: s2?.error ?? r?.error ?? null });
     return { ...survey, raw: blob, calls };
   } finally {
     // a leaked surveyor leaks a gate handle and a litectx index — always, even

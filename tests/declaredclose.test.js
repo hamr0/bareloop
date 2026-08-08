@@ -34,6 +34,7 @@ import { readGrade, createTrend } from '../src/trend.js';
 import { checkMenu, CLASS_BY_CLOSE, CLOSE_TYPES } from '../src/job.js';
 import { closeStagesOf } from '../src/plan.js';
 import { genreGuards } from '../src/authoring.js';
+import { applyGenreEnv } from '../src/authorflow.js';
 import { redactSecrets } from '../src/validate.js';
 
 /** @param {string} dir @param {string[]} args */
@@ -149,6 +150,171 @@ const GOOD_DECL = (allowPrefixes = ['src/']) => ({
   ],
 });
 
+/**
+ * The PYTHON declaration in the form every re-validation actually sees: the flow
+ * (M3's `applyGenreEnv`) has already injected the genre's own `MYPYPATH` into
+ * every env-capable stage, and the envelope RECORDS what it injected. Built here
+ * rather than imported from the flow — a fixture that calls the injector would
+ * pass whatever the injector does, including nothing.
+ */
+const PY_DECL = (injected = { MYPYPATH: 'src' }) => {
+  const g = genreGuards('python');
+  return {
+    genre: 'TYPES',
+    lang: 'python',
+    genreEnv: { ...injected },
+    stages: [
+      { name: g[0].name, kind: g[0].kind, params: { ...g[0].params, allowPrefixes: ['src/'] } },
+      stage('typecheck', 'count-not-worse', {
+        cmd: 'python3',
+        args: ['-m', 'mypy', '--strict', 'src'],
+        parser: { lineMatch: ' error: ' },
+        scope: { includePrefixes: ['src/'] },
+        direction: 'lower-is-better',
+        baseline: 0,
+        env: { ...injected },
+      }),
+      { name: g[1].name, kind: g[1].kind, params: structuredClone(g[1].params) },
+    ],
+  };
+};
+const PY_LISTING = ['mypy.ini', 'src/a.py', 'src/b.py'];
+
+test('the ARBITER\'s own genre-env injection survives re-validation — a python close is not bricked by its own MYPYPATH', () => {
+  const d = PY_DECL();
+  const deferred = validateCloseDecl(d, { deferListing: true });
+  assert.deepEqual(deferred.reds, [], 'the signing gate and the job validator must accept our own injection');
+  assert.equal(deferred.ok, true);
+
+  const grounded = validateCloseDecl(d, { listing: PY_LISTING });
+  assert.deepEqual(grounded.reds, [], 'and so must the runner, grounded against the real seed');
+  assert.equal(grounded.grounded, true);
+  assert.deepEqual(grounded.closeDecl.genreEnv, { MYPYPATH: 'src' }, 'the recorded injection rides the resolved form');
+});
+
+test('genre-owned env: a WRONG value still reds, and an owned key with no recorded injection behind it reds too', () => {
+  const wrong = PY_DECL();
+  wrong.stages[1].params.env = { MYPYPATH: 'the-model-guessed' };
+  const r1 = validateCloseDecl(wrong, { deferListing: true });
+  assert.equal(r1.ok, false);
+  const red = r1.reds.find((x) => x.code === 'genre-owned-env');
+  assert.ok(red, JSON.stringify(r1.reds));
+  assert.equal(red.expected, 'src');
+  assert.equal(red.declared, 'the-model-guessed');
+
+  // nothing recorded → the arbiter cannot claim the key as its own, so the
+  // fail-safe direction holds (round 2's arm B is still refused)
+  const unrecorded = PY_DECL();
+  delete unrecorded.genreEnv;
+  assert.ok(validateCloseDecl(unrecorded, { deferListing: true }).reds.some((r) => r.code === 'genre-owned-env'));
+});
+
+test('the recorded genre env is CONSTRAINED to the names the genre owns — it is never an environment channel', () => {
+  const smuggle = PY_DECL();
+  smuggle.genreEnv = { ...smuggle.genreEnv, LD_PRELOAD: '/tmp/x.so' };
+  assert.ok(validateCloseDecl(smuggle, { deferListing: true }).reds
+    .some((r) => r.path === 'closeDecl.genreEnv.LD_PRELOAD'), 'an unowned name may never be recorded');
+
+  // js owns no environment at all, so ANY recorded name is a red there
+  assert.ok(validateCloseDecl({ ...GOOD_DECL(), genreEnv: { MYPYPATH: 'src' } }, { deferListing: true }).reds
+    .some((r) => r.path === 'closeDecl.genreEnv.MYPYPATH'));
+  // an empty record is legal (a genre that owns none injected none) and a
+  // non-string value is not
+  assert.deepEqual(validateCloseDecl({ ...GOOD_DECL(), genreEnv: {} }, { deferListing: true }).reds, []);
+  const bad = PY_DECL();
+  bad.genreEnv = { MYPYPATH: '' };
+  assert.ok(validateCloseDecl(bad, { deferListing: true }).reds.some((r) => r.path === 'closeDecl.genreEnv'));
+});
+
+// The by-VALUE check proves the two copies of MYPYPATH AGREE — and both copies
+// live in the same hand-editable spec, so agreement is something a forger gets
+// for free. `genreEnv` is only evidence if it is checked against something the
+// forger does NOT own: the real tree at the seed. Every value the arbiter can
+// build is a join of prefixes that were themselves filtered against the seed
+// listing, so grounding accepts exactly what `applyGenreEnv` produces and
+// nothing else.
+test('the recorded genre env is GROUNDED against the seed tree — self-consistency is not provenance', () => {
+  // the direction that must keep working: the value the arbiter really builds
+  assert.deepEqual(validateCloseDecl(PY_DECL(), { listing: PY_LISTING }).reds, [],
+    'the real injected value derives FROM the listing and must ground clean');
+
+  // the forgery: a hand-edited spec whose two copies agree perfectly
+  const forged = PY_DECL({ MYPYPATH: '/tmp/attacker-stubs' });
+  const deferred = validateCloseDecl(forged, { deferListing: true });
+  assert.deepEqual(deferred.reds, [], 'with no tree in hand the deferred gate cannot see it — that is why the '
+    + 'grounded gates exist, and why the runner re-validates');
+  const r = validateCloseDecl(forged, { listing: PY_LISTING });
+  const red = r.reds.find((x) => x.code === 'genre-env-ungrounded');
+  assert.ok(red, `a path outside the seed tree must not be claimable as ours: ${JSON.stringify(r.reds)}`);
+  assert.equal(red.path, 'closeDecl.genreEnv.MYPYPATH');
+  assert.equal(red.name, 'MYPYPATH');
+  assert.equal(red.element, '/tmp/attacker-stubs');
+
+  // the value is a JOINED list, so every element is grounded on its own — one
+  // real prefix must not launder the rest
+  const half = PY_DECL({ MYPYPATH: 'src:/tmp/attacker-stubs' });
+  const reds = validateCloseDecl(half, { listing: PY_LISTING }).reds.filter((x) => x.code === 'genre-env-ungrounded');
+  assert.equal(reds.length, 1, JSON.stringify(reds));
+  assert.equal(reds[0].element, '/tmp/attacker-stubs');
+
+  // a multi-prefix value the arbiter really could have built still grounds
+  const both = PY_DECL({ MYPYPATH: 'src:mypy.ini' });
+  assert.deepEqual(validateCloseDecl(both, { listing: PY_LISTING }).reds, [],
+    'a file and a directory prefix are both things the seed listing selects');
+  // …and neither an invented sibling of a real prefix nor a climb out of the
+  // tree does. `globToPrefix` deliberately leaves ".." VISIBLE rather than
+  // resolving it (F9), which is exactly what lets the listing refuse it.
+  for (const v of ['src_stubs', '../attacker-stubs', 'src/../../attacker-stubs']) {
+    const bad = PY_DECL({ MYPYPATH: v });
+    assert.ok(validateCloseDecl(bad, { listing: PY_LISTING }).reds.some((x) => x.code === 'genre-env-ungrounded'), v);
+  }
+});
+
+// Deletion is the asymmetry the by-value check cannot see, and it reaches the
+// SIGNED spec: strip MYPYPATH off the stage, leave the record in place, and mypy
+// resolves through an editable install to a different checkout while the close
+// reports a number. It reds at the DEFERRED gate too — this needs no tree, so
+// the job validator catches it with no repository in hand.
+test('a recorded genre env DELETED from the stage reds at the spec gate — with or without a tree', () => {
+  const stripped = PY_DECL();
+  delete stripped.stages[1].params.env;
+  for (const o of [{ deferListing: true }, { listing: PY_LISTING }]) {
+    const red = validateCloseDecl(stripped, o).reds.find((x) => x.code === 'genre-env-missing');
+    assert.ok(red, `${JSON.stringify(o)}: a stage that lost the injection may not validate`);
+    assert.equal(red.path, 'closeDecl.stages[1].params.env.MYPYPATH');
+    assert.equal(red.expected, 'src');
+  }
+
+  // the same stage with the key still on it is clean — the rule is about the
+  // key, not about having an `env` object at all
+  const kept = PY_DECL();
+  kept.stages[1].params.env = { MYPYPATH: 'src', PYTHONDONTWRITEBYTECODE: '1' };
+  assert.deepEqual(validateCloseDecl(kept, { deferListing: true }).reds, []);
+});
+
+// The round trip, against the REAL producer rather than a fixture that agrees
+// with my reading of it: whatever `applyGenreEnv` injects must ground clean at
+// the gate. A grounding rule that refuses the arbiter's own output would brick
+// the python genre exactly the way presence-flagging did.
+test('grounding accepts EXACTLY what applyGenreEnv produces — the producer and the gate cannot drift', () => {
+  const listing = ['mypy.ini', 'src/a.py', 'src/pkg/b.py', 'lib/c.py', 'tests/test_a.py'];
+  // the flow's own prefix filter (authorflow: source paths kept only when the
+  // seed tree really contains them)
+  const sourcePrefixes = ['src', 'lib', 'invented_stubs']
+    .filter((p) => listing.some((f) => f === p || f.startsWith(`${p}/`)));
+  assert.deepEqual(sourcePrefixes, ['src', 'lib'], 'the flow drops a prefix the tree does not contain');
+
+  const bare = PY_DECL();
+  delete bare.genreEnv;
+  delete bare.stages[1].params.env;
+  const injected = applyGenreEnv(bare, 'python', { sourcePrefixes });
+  assert.deepEqual(injected.applied, { MYPYPATH: 'src:lib' }, 'the joined form is what the arbiter really writes');
+
+  const signed = { ...injected.declaration, genreEnv: { ...injected.applied } };
+  assert.deepEqual(validateCloseDecl(signed, { listing }).reds, [],
+    'the gate must accept the injector\'s own output, joined value and all');
+});
+
 test('validateCloseDecl accepts a well-formed declaration and hands back the RESOLVED stages', () => {
   const r = validateCloseDecl(GOOD_DECL(), { deferListing: true });
   assert.deepEqual(r.reds, []);
@@ -170,7 +336,7 @@ test('validateCloseDecl reds the envelope: unknown field, wrong genre, unknown l
   // …and every legal field is accepted: a valid declaration carrying all of them
   // reds NOTHING (a negative assertion over an already-empty list proves nothing)
   assert.deepEqual(codes({ ...GOOD_DECL(), notes: ['a note'] }), []);
-  assert.deepEqual([...CLOSE_DECL_FIELDS].sort(), ['genre', 'lang', 'notes', 'stages']);
+  assert.deepEqual([...CLOSE_DECL_FIELDS].sort(), ['genre', 'genreEnv', 'lang', 'notes', 'stages']);
 });
 
 test('validateCloseDecl refuses when a guard was WEAKENED — D5 is not a taste', () => {
@@ -323,18 +489,48 @@ test('SECRETS: a declared stage\'s output is scrubbed at THIS boundary, in gaps 
 test('a TRIMMED declared gap announces itself in a spelling Layer R can see — an unseen trim is a blind detector claiming certainty', async (t) => {
   const r = makeRepo(t, { 'src/a.js': 'a' });
   const many = Array.from({ length: GAP_LINE_CAP + 20 }, (_, i) => `line ${i}`).join('\n');
-  const stages = declaredStages({ stages: [stage('noisy', 'command-exit', { cmd: 'node', args: SAY(many, 1), expectExit: 0 })] });
-  const v = await runDeclaredStages(stages, (s) => s, OPTS(r));
-  assert.equal(v.verdict, 'needs_revision');
-  assert.ok(v.gap.includes(GAP_TRIM_MARKER), `the trim must announce itself: ${v.gap.slice(-200)}`);
+  const noisy = declaredStages({ stages: [stage('noisy', 'command-exit', { cmd: 'node', args: SAY(many, 1), expectExit: 0 })] });
+  const trimmed = await runDeclaredStages(noisy, (s) => s, OPTS(r));
+  assert.equal(trimmed.verdict, 'needs_revision');
+  assert.ok(trimmed.gap.includes(GAP_TRIM_MARKER), `the trim must announce itself: ${trimmed.gap.slice(-200)}`);
 
-  // …and Layer R degrades to UNKNOWN on it rather than comparing a window that
-  // silently dropped failures (F43 finding 5). Two identical trimmed gaps must
-  // NOT read as "reds unchanged".
-  const root = createRoot({ gapKeep: DECLARED_GAP_KEEP, writesInformative: true });
-  root.observe({ iteration: 1, gap: v.gap, writes: ['src/a.js'], redStage: 'noisy', redKeep: DECLARED_GAP_KEEP });
-  const inj = root.observe({ iteration: 2, gap: v.gap, writes: ['src/a.js'], redStage: 'noisy', redKeep: DECLARED_GAP_KEEP });
-  assert.equal(inj, null, 'a trimmed window can never mint a fixation reading');
+  // A SHORT gap from the same executor, under the line cap: no trim marker, so
+  // the kept-set is trustworthy. The two gaps are the contrast that makes this
+  // test able to fail — without it, the assertion below would pass on any gap.
+  const quiet = declaredStages({ stages: [stage('noisy', 'command-exit', { cmd: 'node', args: SAY('one\ntwo', 1), expectExit: 0 })] });
+  const untrimmed = await runDeclaredStages(quiet, (s) => s, OPTS(r));
+  assert.equal(untrimmed.verdict, 'needs_revision');
+  assert.ok(!untrimmed.gap.includes(GAP_TRIM_MARKER));
+
+  // Layer R's Finding 5, on the declared executor's own gap: the detector still
+  // FIRES on write-overlap (the writes are real information), but it degrades to
+  // `writes-only` and makes no "the reds did not change" claim off a window that
+  // silently dropped failures. Writes must genuinely OVERLAP for any of this to
+  // be observable — `observe` compares the DELTA of the cumulative audit set, so
+  // handing it the same list twice yields an empty delta and no reading at all.
+  /** @param {string} gap */
+  const twice = (gap) => {
+    const root = createRoot({ gapKeep: DECLARED_GAP_KEEP, writesInformative: true });
+    root.observe({ iteration: 1, writes: [] });
+    root.noteWrite('src/a.js', 'first try');
+    root.observe({ iteration: 2, gap, writes: ['src/a.js'], redStage: 'noisy', redKeep: DECLARED_GAP_KEEP });
+    root.noteWrite('src/a.js', 'second try');
+    return root.observe({ iteration: 3, gap, writes: ['src/a.js'], redStage: 'noisy', redKeep: DECLARED_GAP_KEEP });
+  };
+
+  const onTrimmed = twice(trimmed.gap);
+  assert.ok(onTrimmed, 'write-overlap still fires — the trim degrades the reading, it does not silence it');
+  assert.equal(onTrimmed.event.mode, 'writes-only', 'a trimmed window is not a trustworthy red-set');
+  assert.equal(onTrimmed.event.redSetSize, null);
+  assert.ok(!/did not change/i.test(onTrimmed.note), 'no "the failing set is unchanged" claim off a trimmed window');
+
+  // the complement, same fixture, one variable moved: an UNtrimmed window keeps
+  // the strong mode and does make the claim
+  const onQuiet = twice(untrimmed.gap);
+  assert.ok(onQuiet);
+  assert.equal(onQuiet.event.mode, 'reds+writes', 'no trim marker → trustworthy red-set → strong mode');
+  assert.ok(onQuiet.event.redSetSize > 0);
+  assert.match(onQuiet.note, /did not change/i);
 });
 
 // ── the trend seam ───────────────────────────────────────────────────────────

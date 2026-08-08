@@ -122,7 +122,10 @@ export const KIND_CATALOGUE = Object.freeze({
     asserts: 'run cmd/args; read a NUMBER out of the output with parser, keep only what scope selects, and '
       + 'require that number to be not-worse than baseline in the stated direction. baseline "seed" is the same '
       + 'number taken from this run\'s own starting point, measured every run; baseline 0 is literally zero. '
-      + 'You never write a number you measured yourself — you write the rule.',
+      + 'You never write a number you measured yourself — you write the rule. '
+      + 'If the tool exits NON-ZERO and its output matches none of your parser\'s terms, the stage stops as a broken '
+      + 'instrument rather than recording zero: a crashed checker reporting nothing is unknown, not clean. Name a '
+      + 'tool that prints its count on a clean run.',
   }),
   'pattern-absent-in-diff': Object.freeze({
     required: Object.freeze(['patterns', 'extensions']),
@@ -156,6 +159,20 @@ export const KIND_CATALOGUE = Object.freeze({
   }),
 });
 
+/**
+ * Which kinds can carry an environment at all, read off the CATALOGUE rather
+ * than a hand-kept list. ONE spelling, because two consumers must agree
+ * EXACTLY: `applyGenreEnv` injects the genre's variable into these stages and
+ * nowhere else, and the validator's completeness rule demands it on these
+ * stages and nowhere else. A second copy that drifted either way is a hole —
+ * stages injected but unchecked, or stages checked for what nothing injects.
+ * @param {string} kind @param {Record<string, KindSpec>} [catalogue]
+ */
+export function envCapableKind(kind, catalogue = KIND_CATALOGUE) {
+  const spec = catalogue[kind];
+  return !!spec && !spec.locked && [...spec.required, ...spec.optional].includes('env');
+}
+
 export const CATALOGUE_KINDS = Object.freeze(Object.keys(KIND_CATALOGUE));
 export const LOCKED_KINDS = Object.freeze(CATALOGUE_KINDS.filter((k) => KIND_CATALOGUE[k].locked));
 /** the catalogue's live half — asserted EQUAL to the executor's own LIVE_KINDS
@@ -173,6 +190,79 @@ export const BASELINES = Object.freeze(['seed', 0]);
 export const MAX_STAGES = 12;
 
 const NAME_RE = /^[a-z][a-z0-9-]{1,48}$/;
+
+/**
+ * THE DENY FLOOR under a declared command (hamr's ruling, PRD v1.57 §3: *"there
+ * should be a floor of all dangerous things… straight out block… no one wants
+ * `rm -rf` allowed either ways"*).
+ *
+ * Four families, and each one is here for a different reason:
+ *   - SHELL INTERPRETERS. A shell runs anything, so admitting one makes every
+ *     other entry decoration — the D3 line ("the danger is in the ACTIONS, not
+ *     the SYNTAX") reappearing at the close's own spawn.
+ *   - DESTRUCTIVE / SYSTEM commands. The `rm -rf` class the ruling names, plus
+ *     the machine-level siblings (`dd`, the `mkfs` FAMILY, shutdown/reboot) and
+ *     privilege escalation.
+ *   - FETCH-AND-RUN vectors (`curl`, `wget`). A close that downloads its own
+ *     instrument is a close nobody signed.
+ *   - INDIRECTION (`env`, `eval`, `exec`, `xargs`). They run a program the
+ *     declaration never names, which defeats every entry above by construction.
+ *
+ * It is a FLOOR, and MONOTONIC: names are only ever ADDED, never removed or
+ * narrowed (the F49 precedent — closing a false negative is the allowed
+ * direction; chasing a false positive is not). A legitimate runner refused here
+ * is fixed by declaring the runner, never by shrinking the floor.
+ *
+ * It is NOT A SANDBOX, and nothing here claims to be one. The local-trust model
+ * of v1.41 stands intact and its limitations are written out in PRD v1.57 §3:
+ * close children keep the operator's OS user, network egress and file access;
+ * `args` are not inspected (`node -e <anything>` is reachable and always was);
+ * resource use is bounded by liveness checks, not quotas. The floor narrows
+ * blast radius; it does not promise containment.
+ */
+export const DENIED_COMMANDS = Object.freeze([
+  // shell interpreters
+  'sh', 'bash', 'zsh', 'dash', 'ksh', 'csh', 'tcsh', 'fish',
+  // destructive / system
+  'rm', 'rmdir', 'dd', 'mkfs', 'shutdown', 'reboot', 'halt', 'poweroff',
+  'sudo', 'su', 'chmod', 'chown', 'kill', 'killall', 'pkill',
+  // fetch-and-run
+  'curl', 'wget',
+  // indirection — a program the declaration never named
+  'env', 'eval', 'exec', 'xargs',
+]);
+
+/**
+ * The floor's decision for one declared `cmd`, as a reason or null.
+ *
+ * NORMALISATION FIRST, because that is where the dodge lives: `/usr/bin/rm`
+ * carries the same program as `rm` and only a basename read taken AFTER
+ * splitting the path can see it. Case is folded for the same reason.
+ *
+ * A cmd naming a program OUTSIDE the repository — an absolute path, or one that
+ * climbs out with `..` — is refused whatever its basename says. Two reasons, and
+ * both are the fail-safe direction: the validator has no repository in hand at
+ * every call site (the job validator judges a signed spec with no tree), so
+ * "outside" cannot be decided per-machine; and a machine-absolute path inside a
+ * SIGNED artefact grades a different machine than the one it was signed on.
+ * @param {string} cmd @returns {string|null}
+ */
+export function deniedCommandReason(cmd) {
+  const raw = String(cmd ?? '').trim();
+  if (raw === '') return null; // shape is the schema walk's business, not the floor's
+  const segments = raw.split(/[\\/]/);
+  if (raw.startsWith('/') || raw.startsWith('\\') || segments.includes('..')) {
+    return `"${raw}" names a program outside the repository — a declared close runs the patient's own tools, `
+      + 'reached relatively or through the project\'s runner, never an absolute path (which grades a different '
+      + 'machine than the one that signed it)';
+  }
+  const base = /** @type {string} */ (segments.at(-1)).toLowerCase();
+  const denied = DENIED_COMMANDS.includes(base) || base.startsWith('mkfs.');
+  if (!denied) return null;
+  return `"${raw}" resolves to "${base}", which is on the deny floor — shells, destructive and system commands, `
+    + 'fetch-and-run vectors and program indirection are blocked outright (PRD v1.57 §3). A close names the '
+    + 'patient\'s own instrument; it never names a program that can undo the patient';
+}
 
 // ── 2. THE TYPES GENRE ───────────────────────────────────────────────────────
 
@@ -326,6 +416,56 @@ export function genreOwnedEnvNames(lang) {
   return language(lang).env.map((/** @type {any} */ e) => e.name);
 }
 
+/**
+ * GROUNDING for a RECORDED genre environment — the provenance half of the
+ * owned-env rule, and the reason the by-value comparison is worth anything.
+ *
+ * The value check proves the envelope's `genreEnv` and the stage's `params.env`
+ * AGREE. Both copies live in the same hand-editable spec, so agreement is
+ * something a forger gets for free: a spec carrying
+ * `MYPYPATH=/tmp/attacker-stubs` in both places is perfectly self-consistent and
+ * would point the checker at a tree nobody signed. Agreement is not provenance.
+ *
+ * What a forger does NOT own is the repository at the seed. Every value the
+ * arbiter can build is `genreEnv`'s join of `sourcePrefixes`, and those prefixes
+ * were already filtered against the seed listing before the join — so each
+ * ELEMENT of a genuine value is a path the listing SELECTS, exactly like hamr's
+ * listing rule for a declared path. Grounding therefore accepts precisely what
+ * `applyGenreEnv` produces and refuses everything else, without needing a second
+ * spelling of what "ours" means.
+ *
+ * Element-wise, never whole-value: a joined list is as strong as its weakest
+ * element, and one real prefix must not launder the rest. A root spelling is
+ * ungrounded here rather than waved through the way `checkPaths` waves it —
+ * `genreEnv` filters those out before joining, so the arbiter can never produce
+ * one, and a validator that admits what its own producer cannot emit is a gap.
+ *
+ * Callers that hold a listing only; the deferred job-spec gate cannot run this
+ * and does not pretend to (see `validateCloseDecl`).
+ * @param {string} lang
+ * @param {Record<string, string>} recorded what the envelope claims the arbiter injected
+ * @param {string[]} listing repo-relative paths at the seed
+ * @returns {{name: string, value: string, element: string, resolved: string}[]} one row per ungrounded element
+ */
+export function ungroundedGenreEnv(lang, recorded, listing) {
+  const idx = indexListing((Array.isArray(listing) ? listing : []).filter(isNonEmptyString));
+  /** @type {{name: string, value: string, element: string, resolved: string}[]} */
+  const out = [];
+  // driven by the GENRE's own specs, not by the recorded keys: the join is genre
+  // knowledge, and a key the genre does not own is the envelope's red, not this
+  // function's business
+  for (const spec of language(lang).env) {
+    const value = recorded?.[spec.name];
+    if (!isNonEmptyString(value)) continue; // shape is the envelope's own check
+    for (const element of String(value).split(spec.join)) {
+      const resolved = normPrefix(element);
+      if (!isRoot(resolved) && (idx.files.has(resolved) || idx.dirs.has(resolved))) continue;
+      out.push({ name: spec.name, value, element, resolved });
+    }
+  }
+  return out;
+}
+
 // ── 3. THE DECLARATION VALIDATOR ─────────────────────────────────────────────
 
 /** one prefix spelling, the SHIPPED one — `globToPrefix`'s collapse order is
@@ -351,30 +491,68 @@ function indexListing(listing) {
 }
 
 /**
- * Is this a SCOPED job? Mechanically, from the declaration's own containment
- * guard against the REAL listing — never from the operator's reading of the
- * interview. A `files-changed` stage whose allowPrefixes leave any real file
- * uncovered names a proper subset of the repository, and the F84 split then
- * applies: two populations exist, so a count must say which one it counts.
+ * Is this a SCOPED job? Mechanically, from the GENRE'S OWN containment guard
+ * against the REAL listing — never from the operator's reading of the interview,
+ * and never from whichever `files-changed` stage happens to come first.
+ *
+ * WHICH STAGE IS READ IS LOAD-BEARING. The candidate set is the genre's guards,
+ * matched BY NAME (the guard battery's own `changed-from-seed`), because that is
+ * the one stage `checkGuards` pins byte-for-byte with `allowPrefixes` as its only
+ * model-filled slot — so its prefixes ARE the job's declared target scope. Read
+ * first-of-kind instead and a declaration carrying a legally-shaped decoy
+ * `files-changed` stage (`allowPrefixes: ['.']`) DECLARED EARLIER reads as
+ * whole-tree, and the F84 one-population law switches itself off silently: the
+ * count stages stop having to say which population they count. Measured, not
+ * imagined — with the decoy the whole declaration validated with zero reds.
+ *
+ * The guard NAMES come from the caller's own `guards` array rather than a literal
+ * here: one spelling, and a genre that renames or adds a containment guard is
+ * covered the day it lands instead of the day someone remembers this function.
+ * No guards in hand means no derivation — `guards-absent` is already a red, and
+ * guessing the job's scope from an unpinned stage is exactly what this fixes.
  *
  * A whole-tree job is genuinely unscoped — there is nothing outside — and the
  * law must not red it (template rule 3 says the outside ceiling is omitted
  * exactly there).
  * @param {any} declaration @param {{files: Set<string>, dirs: Set<string>}} idx
+ * @param {any[]|null} guards the genre's injected guards (`genreGuards`)
  */
-function scopeOfJob(declaration, idx) {
+function scopeOfJob(declaration, idx, guards) {
   const stages = Array.isArray(declaration?.stages) ? declaration.stages : [];
-  for (const s of stages) {
-    if (s?.kind !== 'files-changed') continue;
+  const scopeGuards = (Array.isArray(guards) ? guards : [])
+    .filter((g) => isObj(g) && g.kind === 'files-changed' && isNonEmptyString(g.name));
+  for (const g of scopeGuards) {
+    const s = stages.find((/** @type {any} */ x) => isObj(x) && x.name === g.name && x.kind === 'files-changed');
+    if (!s) continue;
     const pre = s?.params?.allowPrefixes;
     if (!Array.isArray(pre) || pre.length === 0 || !pre.every(isNonEmptyString)) continue;
     const norm = pre.map(normPrefix);
-    if (norm.some(isRoot)) return { scoped: false, via: null };
+    if (norm.some(isRoot)) continue; // this guard covers the whole tree
     const uncovered = [...idx.files].some((f) => !norm.some((p) => f === p || f.startsWith(`${p}/`)));
     if (uncovered) return { scoped: true, via: `${s.name}.allowPrefixes` };
   }
   return { scoped: false, via: null };
 }
+
+/**
+ * Kinds a declaration may carry AT MOST ONCE, as data beside the catalogue.
+ *
+ * `files-changed` is the whole list and the reason is the catalogue's own
+ * semantics, not taste. The kind asserts "every changed file lies inside
+ * allowPrefixes"; two of them assert it twice, and stages are ANDed, so the
+ * effective constraint is the INTERSECTION of the two prefix sets — which is
+ * itself a prefix set, and is therefore already expressible as one stage's
+ * `allowPrefixes`. A second containment stage adds no reach whatsoever, so
+ * refusing it costs the author nothing.
+ *
+ * What it does cost to admit is measurable: a second `files-changed` stage is a
+ * second answer to "what is this job's scope", which is the ambiguity
+ * `scopeOfJob` had to be pinned to the guard to survive. This is the same shape
+ * as `count-not-worse`'s `duplicate-population` rule — one population is one
+ * stage — applied to the one population that decides whether the law fires at
+ * all.
+ */
+const AT_MOST_ONCE_KINDS = Object.freeze(['files-changed']);
 
 /** @param {any} v */
 const strArray = (v) => Array.isArray(v) && v.length > 0 && v.every(isNonEmptyString);
@@ -421,16 +599,20 @@ function readPath(p, dotted) {
  * @param {any} declaration the parsed model output
  * @param {{catalogue?: Record<string, KindSpec>, listing?: string[]|null,
  *   guards?: {name: string, kind: string, params: Record<string, any>, fill: string[]}[]|null,
- *   envOwned?: string[]|null, deferListing?: boolean}} [opts]
+ *   envOwned?: string[]|null, envInjected?: Record<string, string>|null, deferListing?: boolean}} [opts]
  *   `listing` — repo-relative paths at the seed (`git ls-tree -r --name-only`).
  *   `guards` — the genre's injected guards (`genreGuards`).
  *   `envOwned` — env names the genre injects (`genreOwnedEnvNames`), `[]` when it owns none.
+ *   `envInjected` — the env the ARBITER itself injected (`genreEnv`'s output), for a
+ *     POST-injection re-validation. Omitted is the PRE-injection form: every owned name
+ *     is the model's and reds. Supplied, an owned name is accepted only when its value is
+ *     EXACTLY the injected one — a wrong value is the model's guess or corruption.
  *   `deferListing` — literally `true` to run the tree-independent half only.
  * @returns {{ok: boolean, reds: Red[], declaration: any, grounded: boolean,
  *   scoped: {scoped: boolean, via: string|null}}}
  */
 export function validateDeclaration(declaration, opts = {}) {
-  const { catalogue = KIND_CATALOGUE, listing = null, guards = null, envOwned = null } = opts;
+  const { catalogue = KIND_CATALOGUE, listing = null, guards = null, envOwned = null, envInjected = null } = opts;
   const deferListing = opts.deferListing === true;
   /** @type {Red[]} */
   const reds = [];
@@ -466,11 +648,29 @@ export function validateDeclaration(declaration, opts = {}) {
     red('env-ownership-absent', 'envOwned', 'the env names this genre injects (genreOwnedEnvNames) — pass [] for a '
       + 'genre that owns none; omitting it leaves a model-authored MYPYPATH-class variable unexamined');
   }
+  // The arbiter's OWN injection, when this is a POST-injection re-validation.
+  // ABSENT (the default) is the PRE-injection form the authoring loop validates,
+  // where every owned name is the model's and reds — so the loop's gate keeps
+  // exactly the behaviour it had, and only a caller that can state what the
+  // arbiter injected gets to have it accepted.
+  const injected = isObj(envInjected) ? /** @type {Record<string, string>} */ (envInjected) : {};
 
   if (!isObj(declaration)) {
     red('invalid-value', '', 'the declaration is an object carrying an ordered stages array');
     return { ok: false, reds, declaration: null, grounded: haveListing, scoped: { scoped: false, via: null } };
   }
+  // NOTES, checked HERE rather than only at the signing gate. The field is the
+  // model's own ("anything you could not express"), it travels verbatim into the
+  // signed `closeDecl`, and `validateCloseDecl` refuses an empty one — so a rule
+  // that lives only there is a rule the authoring loop cannot feed back: the run
+  // pays for a close, accepts it, and dies at signing on a defect the model was
+  // never shown. One spelling of the rule, at the gate that can still revise it.
+  if (declaration.notes !== undefined
+      && !(Array.isArray(declaration.notes) && declaration.notes.every(isNonEmptyString))) {
+    red('invalid-value', 'notes', 'an array of non-empty strings — what the author could not express, kept with '
+      + 'the artefact it is about');
+  }
+
   const stages = declaration.stages;
   if (!Array.isArray(stages) || stages.length === 0) {
     red('missing-field', 'stages', 'a non-empty ORDERED array of stages — they run in the order you declare them');
@@ -480,11 +680,13 @@ export function validateDeclaration(declaration, opts = {}) {
     red('invalid-value', 'stages', `${stages.length} stages exceeds the ceiling of ${MAX_STAGES}`);
   }
 
-  const scoped = scopeOfJob(declaration, idx);
+  const scoped = scopeOfJob(declaration, idx, guards);
   /** @type {Set<string>} */
   const seen = new Set();
   /** @type {Map<string, string>} population key → the stage that already owns it */
   const populations = new Map();
+  /** @type {Map<string, string>} at-most-once kind → the stage that already owns it */
+  const kindOwners = new Map();
 
   stages.forEach((/** @type {any} */ s, i) => {
     const at = `stages[${i}]`;
@@ -514,6 +716,15 @@ export function validateDeclaration(declaration, opts = {}) {
       red('unknown-kind', `${at}.kind`, `"${s.kind}" is not in the catalogue — kinds: ${kindNames}`, { kind: s.kind });
       return;
     }
+    if (AT_MOST_ONCE_KINDS.includes(s.kind)) {
+      const owner = kindOwners.get(s.kind);
+      if (owner !== undefined) {
+        red('duplicate-kind', `${at}.kind`, `stage "${label}" is a second ${s.kind} stage — "${owner}" already declares `
+          + 'which files this job may change. Stages are ANDed, so two of them mean the intersection of two prefix sets, '
+          + 'which is itself a prefix set and already says the same thing in one stage; what a second one does add is a '
+          + 'second answer to what this job\'s scope IS', { kind: s.kind, stage: label, twin: owner });
+      } else kindOwners.set(s.kind, label);
+    }
 
     const p = s.params;
     if (!isObj(p)) { red('missing-field', `${at}.params`, `an object carrying: ${spec.required.join(', ')}`); return; }
@@ -529,7 +740,8 @@ export function validateDeclaration(declaration, opts = {}) {
       }
     }
 
-    checkKind({ kind: s.kind, params: p, at, red, scoped, label, populations, envOwned: owned ?? [] });
+    checkKind({ kind: s.kind, params: p, at, red, scoped, label, populations, envOwned: owned ?? [], envInjected: injected });
+    checkEnvComplete({ params: p, at, red, kind: s.kind, catalogue, envInjected: injected });
     checkPaths({ spec, params: p, at, red, idx, haveListing });
   });
 
@@ -540,11 +752,51 @@ export function validateDeclaration(declaration, opts = {}) {
 }
 
 /**
+ * COMPLETENESS — the deletion half of the owned-env rule, and the half a
+ * by-VALUE comparison structurally cannot cover.
+ *
+ * `genre-owned-env` catches a CHANGED variable: a value that is not the one the
+ * arbiter builds. Nothing caught a DELETED one. Drop the key from a stage — or
+ * drop `params.env` outright — and there is no value left to compare, so a
+ * hand-edited spec validates clean and mypy resolves through an editable install
+ * to a DIFFERENT checkout while the close reports a number. That is the Result-5
+ * hazard exactly, arriving through the one door the value check leaves open, and
+ * it is silent by construction: the variable moves no number the close can see.
+ *
+ * So an injection is a fact about EVERY stage the injector touches, not about
+ * the stages that happen to still carry it. The set is read from the same
+ * catalogue predicate `applyGenreEnv` injects by (`envCapableKind`), so the rule
+ * can never demand a variable on a stage nothing would inject into, nor let one
+ * off a stage that was injected.
+ *
+ * Runs only on a POST-injection re-validation: with nothing recorded there is
+ * nothing to be complete about, and the authoring loop must not ask the model
+ * for the variable it is forbidden to author.
+ * @param {{params: any, at: string, red: (c: string, p: string, d: string, e?: object) => void,
+ *   kind: string, catalogue: Record<string, KindSpec>, envInjected: Record<string, string>}} o
+ */
+function checkEnvComplete({ params: p, at, red, kind, catalogue, envInjected }) {
+  const names = Object.keys(envInjected);
+  if (names.length === 0 || !envCapableKind(kind, catalogue)) return;
+  // a malformed `env` already has its own shape red; saying it twice in two
+  // vocabularies tells the reader there are two problems
+  if (Object.hasOwn(p, 'env') && !isObj(p.env)) return;
+  for (const name of names) {
+    if (isObj(p.env) && Object.hasOwn(p.env, name)) continue;
+    red('genre-env-missing', `${at}.params.env.${name}`, `${name} is recorded as the genre's own injection and this `
+      + 'stage spawns a process, so it must carry it — the arbiter injects into every env-capable stage, and a stage '
+      + 'that comes back without it grades whatever the ambient environment resolves to, silently and with no number '
+      + 'that moves', { name, expected: envInjected[name] });
+  }
+}
+
+/**
  * The per-kind parameter checks, plus the two halves of the one-population law.
  * @param {{kind: string, params: any, at: string, red: (c: string, p: string, d: string, e?: object) => void,
- *   scoped: {scoped: boolean, via: string|null}, label: string, populations: Map<string, string>, envOwned: string[]}} o
+ *   scoped: {scoped: boolean, via: string|null}, label: string, populations: Map<string, string>,
+ *   envOwned: string[], envInjected: Record<string, string>}} o
  */
-function checkKind({ kind, params: p, at, red, scoped, label, populations, envOwned }) {
+function checkKind({ kind, params: p, at, red, scoped, label, populations, envOwned, envInjected }) {
   /** F49 — the static nested-quantifier reject, at the gate, before the pattern
    * ever runs. MEASURED: `(a+)+$` did not finish on a 33-char body in 120s, so
    * input-bounding is theatre and a static reject is not. The detector itself is
@@ -561,6 +813,12 @@ function checkKind({ kind, params: p, at, red, scoped, label, populations, envOw
   };
   const command = () => {
     if (!isNonEmptyString(p.cmd)) red('invalid-value', `${at}.params.cmd`, 'a non-empty executable name');
+    else {
+      // THE DENY FLOOR (PRD v1.57 §3), at the validation gate, before any token
+      // and before any spawn. A FLOOR, not a sandbox — see DENIED_COMMANDS.
+      const denied = deniedCommandReason(p.cmd);
+      if (denied) red('cmd-denied', `${at}.params.cmd`, denied, { cmd: p.cmd });
+    }
     if (Object.hasOwn(p, 'args') && !(Array.isArray(p.args) && p.args.every((/** @type {any} */ x) => typeof x === 'string'))) {
       red('invalid-value', `${at}.params.args`, 'an array of strings (may be empty)');
     }
@@ -572,13 +830,24 @@ function checkKind({ kind, params: p, at, red, scoped, label, populations, envOw
         red('invalid-value', `${at}.params.env`, 'an object of string values');
       } else {
         for (const name of Object.keys(p.env)) {
-          if (envOwned.includes(name)) {
-            // The two POC residues are OURS to inject. Round 2's arm B authored
-            // MYPYPATH itself and authored it WRONG; the flow sets it from genre
-            // data, so a model-authored copy is either redundant or a conflict.
-            red('genre-owned-env', `${at}.params.env.${name}`, `${name} is set by the genre, not by the declaration — `
-              + 'this is a fact the interview cannot supply and the repository does not state', { name });
-          }
+          if (!envOwned.includes(name)) continue;
+          // The arbiter's OWN injection reaches this check on every re-validation
+          // after the flow applied it (M3's applyGenreEnv), so the split is by
+          // VALUE and never by presence — exactly how `checkGuards` tells a genre
+          // guard from a weakened copy. Presence-flagging here would red the
+          // arbiter's own artefact and no python close could be signed, validated
+          // or run.
+          const injected = Object.hasOwn(envInjected, name);
+          if (injected && p.env[name] === envInjected[name]) continue;
+          // Round 2's arm B authored MYPYPATH itself and authored it WRONG; the
+          // flow sets it from genre data. A value that is not the one the arbiter
+          // builds is the model's guess or a corrupted artefact, either way a red.
+          red('genre-owned-env', `${at}.params.env.${name}`, injected
+            ? `${name} is the genre's own variable and its value is fixed by the genre, not by the declaration: `
+              + `expected ${JSON.stringify(envInjected[name])}, declared ${JSON.stringify(p.env[name])}`
+            : `${name} is set by the genre, not by the declaration — this is a fact the interview cannot supply `
+              + 'and the repository does not state',
+          { name, ...(injected ? { expected: envInjected[name], declared: p.env[name] } : {}) });
         }
       }
     }

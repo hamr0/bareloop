@@ -382,6 +382,17 @@ export async function authorCloseForJob({
     };
   }
 
+  // The genre's ENVIRONMENT, recorded from the flow's own applied map — never
+  // from the model, and never re-derived here. The flow injected it into every
+  // env-capable stage after the model's form passed (M3's `applyGenreEnv`), and
+  // from this point on every re-validation reads that key back: signing, the job
+  // validator, the runner. Without the record they cannot tell our injection from
+  // a model-authored guess, so they must refuse it — which is a python close that
+  // can never be signed, validated or run. Recorded ONLY when something was
+  // injected: absent is a genre that owns no environment (JS), and an empty
+  // object would read as "we looked and found none" for a genre that never looks.
+  const applied = isObj(authored.genreEnv?.applied) ? authored.genreEnv.applied : {};
+
   // D4 again, at the OTHER end: the derivation held at the interview and nothing
   // since has changed it, so the class is stated rather than assumed. The
   // remaining precondition (D9.3 — the close has work to do) is measured by
@@ -390,7 +401,13 @@ export async function authorCloseForJob({
     ok: true,
     refusal: null,
     verdictType: /** @type {string} */ (interview.verdictType),
-    closeDecl: { genre: GENRE, lang, stages: authored.declaration.stages, ...(authored.declaration.notes?.length ? { notes: authored.declaration.notes } : {}) },
+    closeDecl: {
+      genre: GENRE,
+      lang,
+      stages: authored.declaration.stages,
+      ...(Object.keys(applied).length ? { genreEnv: { ...applied } } : {}),
+      ...(authored.declaration.notes?.length ? { notes: authored.declaration.notes } : {}),
+    },
     seedRef: seed,
     authoring: authored,
     reds: authored.reds,

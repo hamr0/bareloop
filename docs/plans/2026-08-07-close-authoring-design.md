@@ -590,3 +590,36 @@ genre carries) is agreed at that genre's admission, per D13's one-genre-at-a-tim
 3. The exit-slot ceiling (`MAX_EXITS_PER_STEP` = 2) — PARKED, arbiter territory, hamr's call.
 4. Preflight surfacing of the close's stage list to the operator (F87's UI direction, PRD
    v1.51 §5) — lands with the close-authoring interview UI, not before.
+
+---
+
+## Addendum — 2026-08-08, D4 is SUPERSEDED: the verdict class is the user's answer again
+
+**hamr's ruling, this session.** `verdictType` is a **USER CHOICE**, not a derivation. The
+green / soft-green / hitl radio of the 2026-07-21 Layer 2 locked design is restored: the user
+picks the verdict class as part of the job, and that choice **drives** the close authoring
+rather than falling out of it. The user is the one who knows whether their *done* is
+machine-checkable, needs judgment, or needs a person; D4 inferred that from answers given
+before the question was asked.
+
+**D4 (§2, *"verdictType is DERIVED from the answers, never picked"*) is superseded in full.**
+The field returns to what `src/job.js` already calls it — a declared radio the preflight
+validates, never inferred. Nothing else in D4's paragraph survives; the rest of the record
+stands unaltered.
+
+**v1 is unchanged: `green` only.** A soft-green or hitl selection returns the honest counted
+refusal on the `request-red` admission path (D13), which now carries demand for a verdict class.
+The nine softgreen/hitl rulings of the closing addendum are untouched — they describe what those
+classes MEAN, not who selects them.
+
+**D13's genre-CONFIRM interview slot goes with it.** The interview no longer asks the user to
+confirm a genre; the refusal MOVES to the composer — a job the catalogue cannot measure refuses
+there, on the same `request-red` path, still counted as demand. D13's one-genre-at-a-time law
+and its refusal mechanics stand; only the question slot is superseded.
+
+**Recorded in the PRD register as Addendum v1.57 — 2026-08-08 §1**, alongside four further
+rulings from the same turn that belong to the rung rather than to this record: the interview
+re-keys from genre to verdict class; the D5 guard battery keys off that same verdict class
+(tool-specific fills still resolve at composition time); declared commands get a deny-floor
+under a mandatory named work branch; and the close is never time-bounded — a declared
+`timeoutMs` is a stuck-backstop the model may only tighten.

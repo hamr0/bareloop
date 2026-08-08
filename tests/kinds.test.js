@@ -22,13 +22,13 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync, readdirSync, existsSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import {
   runStage, seedRead, runDeclaredClose, normalizeParser, regexGroups, parseValue,
-  changedSet, isArbiterBook, makeSeedTrees,
+  changedSet, isArbiterBook, makeSeedTrees, seedAtHead, addedLines,
   EXIT_GREEN, EXIT_RED, EXIT_STOP, GAP_LINE_CAP, MAX_TERMS,
 } from '../src/kinds.js';
 
@@ -217,11 +217,60 @@ test('the scope filter drops out-of-scope lines and ANNOUNCES the dropped count;
   assert.match(r.notes.join('\n'), /named no path.*KEPT/s);
 });
 
+test('a "first" term whose every match was SCOPE-FILTERED says exactly that, and keeps the notes it already computed', () => {
+  const out = [
+    'vendor/b.js:9:1 - total 7',
+    'vendor/c.js:1:1 - total 9',
+  ].join('\n');
+  const terms = norm({ lineMatch: 'total (\\d+)', capture: 1 });
+  const r = parseValue(out, terms, { scope: { includePrefixes: ['src/'] }, workdir: '/nowhere' });
+  assert.ok(r.stop, 'unknown is still not zero');
+  assert.doesNotMatch(r.stop, /matched nothing/,
+    'the lines DID match — saying otherwise sends the reader hunting a parser bug that is not there');
+  assert.match(r.stop, /2/, 'the counts are named, mechanically');
+  assert.match(r.stop, /scope/i);
+  assert.deepEqual(r.notes, ['term 0: 2 matching line(s) dropped by the scope filter'],
+    'the diagnostic the function had already computed must not be thrown away on the way out');
+
+  // and the genuine no-match reading is UNCHANGED — the branch must not eat it
+  const none = parseValue('nothing here at all\n', terms, { scope: { includePrefixes: ['src/'] }, workdir: '/nowhere' });
+  assert.match(none.stop, /matched nothing/);
+  assert.deepEqual(none.notes, []);
+});
+
 test('a capture group that did not participate is a stop, never a zero', () => {
   const terms = norm({ terms: [{ lineMatch: '(?:total (\\d+))|(?:none)', capture: 1, sign: 1, aggregate: 'sum', region: 'whole-output' }] });
   const r = parseValue('none\n', terms);
   assert.ok(r.stop);
   assert.match(r.stop, /did not participate|unknown/i);
+});
+
+// ── the seed itself: D8's HEAD, READ rather than typed ───────────────────────
+
+test('seedAtHead reads HEAD off the real repository and hands back the sha git itself reports', async (t) => {
+  const r = makeRepo(t, { 'src/a.js': 'a\n' });
+  const got = await seedAtHead(r.dir);
+  assert.equal(got.stop, null, 'a readable HEAD is never a stop');
+  assert.equal(got.seedRef, r.seed, 'the seed is git\'s own answer, never a spelling of our own');
+  assert.match(/** @type {string} */ (got.seedRef), /^[0-9a-f]{7,64}$/, 'and it passes the sha-shape guard');
+});
+
+test('seedAtHead: a repository with NO COMMITS is a named stop, never a fallback ref', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'bareloop-kinds-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  git(dir, ['init', '-q', '-b', 'main']);
+  const got = await seedAtHead(dir);
+  assert.equal(got.seedRef, null, 'measuring against the wrong baseline reads as a clean tree — there is no default');
+  assert.match(/** @type {string} */ (got.stop), /^INSTRUMENT: could not read HEAD/);
+  assert.ok(got.stop.includes(dir), 'the stop names the directory it could not read');
+});
+
+test('seedAtHead: a directory that is not a repository at all is the SAME named stop', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'bareloop-kinds-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const got = await seedAtHead(dir);
+  assert.equal(got.seedRef, null);
+  assert.match(/** @type {string} */ (got.stop), /^INSTRUMENT: could not read HEAD/);
 });
 
 // ── contract (c): the changed-set primitive ──────────────────────────────────
@@ -320,6 +369,36 @@ test('command-exit: output past the buffer ceiling is an instrument stop — a t
   assert.match(res.gapLines.join('\n'), /truncated|exceeded/i);
 });
 
+// ── the time ceiling: a declaration may only TIGHTEN it ──────────────────────
+
+test('a declared timeoutMs may only TIGHTEN the operator ceiling, never widen it — on every kind that spawns', async (t) => {
+  const r = makeRepo(t, { 'report.txt': '# tests 1\n' });
+  const CEILING = 400;
+  const SLEEP = ['-e', 'setTimeout(() => {}, 3000)'];
+
+  const exitStage = await runStage(
+    { name: 'suite-green', kind: 'command-exit', params: { cmd: 'node', args: SLEEP, expectExit: 0, timeoutMs: 60_000 } },
+    ctxFor(r, { timeoutMsDefault: CEILING }),
+  );
+  assert.equal(exitStage.verdict, 'instrument-stop', 'the declared 60s must not outrank the operator ceiling');
+  assert.match(exitStage.gapLines.join('\n'), new RegExp(`did not finish inside ${CEILING}ms`));
+
+  const countStage = await runStage(
+    { name: 'typecheck', kind: 'count-not-worse', params: { cmd: 'node', args: SLEEP, parser: { lineMatch: 'total (\\d+)', capture: 1 }, scope: {}, direction: 'lower-is-better', baseline: 0, timeoutMs: 60_000 } },
+    ctxFor(r, { timeoutMsDefault: CEILING }),
+  );
+  assert.equal(countStage.verdict, 'instrument-stop', 'the second spawning site obeys the same ceiling');
+  assert.match(countStage.gapLines.join('\n'), new RegExp(`did not finish inside ${CEILING}ms`));
+
+  // and it still TIGHTENS: below the ceiling, the declaration is the bound that fires
+  const tighter = await runStage(
+    { name: 'suite-green', kind: 'command-exit', params: { cmd: 'node', args: SLEEP, expectExit: 0, timeoutMs: 250 } },
+    ctxFor(r, { timeoutMsDefault: 30_000 }),
+  );
+  assert.equal(tighter.verdict, 'instrument-stop');
+  assert.match(tighter.gapLines.join('\n'), /did not finish inside 250ms/);
+});
+
 // ── count-not-worse ──────────────────────────────────────────────────────────
 
 const COUNT_STAGE = (/** @type {object} */ params) => ({ name: 'typecheck', kind: 'count-not-worse', params: { cmd: 'node', args: CAT('report.txt'), scope: { includePrefixes: ['src/'] }, direction: 'lower-is-better', baseline: 0, ...params } });
@@ -416,6 +495,59 @@ test('count-not-worse: a stop while measuring the SEED baseline names the seed, 
   assert.match(res.gapLines.join('\n'), /seed/i);
 });
 
+test('count-not-worse: a command that CRASHED while matching NOTHING is an instrument stop — a broken ruler never certifies zero', async (t) => {
+  const r = makeRepo(t, { 'src/a.js': 'a\n' });
+  const parser = { terms: [{ lineMatch: 'error TS\\d+', sign: 1, aggregate: 'sum', region: 'whole-output' }] };
+
+  // the shape of a type-checker that died before it ever looked at the tree:
+  // non-zero exit, and nothing the parser can read. `sum` over nothing is a
+  // counted zero ONLY when the tool itself came back clean — 0 against a
+  // baseline of 0 would otherwise read GREEN off a checker that never ran.
+  const crashed = await runStage(COUNT_STAGE({ args: SAY('config error: cannot find tsconfig\n', 2), parser }), ctxFor(r));
+  assert.equal(crashed.verdict, 'instrument-stop');
+  assert.equal(crashed.judged, false);
+  assert.equal(crashed.value, null, 'a crashed ruler reads unknown, never 0');
+  assert.match(crashed.gapLines.join('\n'), /exited 2/);
+
+  // BOTH directions: the same crash under higher-is-better would have minted a
+  // fake RED instead of a fake green, and a casualty is never evidence either
+  // way (F45)
+  const floor = await runStage({
+    name: 'tests-kept', kind: 'count-not-worse',
+    params: { cmd: 'node', args: SAY('config error: cannot find tsconfig\n', 2), parser, scope: {}, direction: 'higher-is-better', baseline: 5 },
+  }, ctxFor(r));
+  assert.equal(floor.verdict, 'instrument-stop');
+  assert.equal(floor.judged, false);
+
+  // the two neighbours that must NOT move
+  const found = await runStage(COUNT_STAGE({ args: SAY('src/a.js:1 - error TS2322: x\n', 2), parser }), ctxFor(r));
+  assert.equal(found.verdict, 'red', 'a non-zero exit WITH findings is a checker doing its job, not a casualty');
+  assert.equal(found.value, 1);
+  const clean = await runStage(COUNT_STAGE({ args: SAY('no errors\n', 0), parser }), ctxFor(r));
+  assert.equal(clean.verdict, 'green', 'zero matches from a tool that exited 0 is a genuine counted zero');
+  assert.equal(clean.value, 0);
+});
+
+test('count-not-worse: a CRASHED seed measurement never mints a baseline of 0 — the bar is unknown, so the run stops', async (t) => {
+  // the seed tree has no report.txt, so the command DIES there: exit 1, and a
+  // `sum` parser matching nothing. Minting 0 from that hands the run a bar
+  // anything clears.
+  const r = makeRepo(t, { 'placeholder.txt': 'x\n' });
+  write(r.dir, { 'report.txt': 'PASS\nPASS\nPASS\n' });
+  const res = await runStage({
+    name: 'tests-kept', kind: 'count-not-worse',
+    params: {
+      cmd: 'node', args: CAT('report.txt'),
+      parser: { terms: [{ lineMatch: 'PASS', sign: 1, aggregate: 'sum', region: 'whole-output' }] },
+      scope: {}, direction: 'higher-is-better', baseline: 'seed',
+    },
+  }, ctxFor(r));
+  assert.equal(res.verdict, 'instrument-stop');
+  assert.equal(res.judged, false);
+  assert.equal(res.baseline, null, 'a baseline read off a crashed tool is unknown, never 0');
+  assert.match(res.gapLines.join('\n'), /seed/i);
+});
+
 // ── pattern-absent-in-diff ───────────────────────────────────────────────────
 
 const GUARD = (/** @type {object} */ params) => ({
@@ -500,6 +632,17 @@ test('files-changed: the arbiter books never count as work, and the decoy src/ga
   write(r.dir, { 'src/gate-audit.jsonl': '{"worker":1}\n' });
   const decoy = await runStage({ name: 'changed-from-seed', kind: 'files-changed', params: { allowPrefixes: ['src/'], requireNonEmpty: true } }, ctxFor(r));
   assert.equal(decoy.verdict, 'green', 'a worker-authored src/gate-audit.jsonl is a real change inside src/');
+});
+
+test('addedLines: an untracked path that cannot be STATTED is ANNOUNCED, never scanned-clean in silence', async (t) => {
+  const r = makeRepo(t, { 'src/a.js': 'a\n' });
+  // a dangling symlink: it exists to git ls-files --others, and stat() throws
+  symlinkSync(join(r.dir, 'nowhere-at-all'), join(r.dir, 'dangling.js'));
+  const got = await addedLines(r.dir, r.seed, 'dangling.js', { untracked: true });
+  assert.equal(got.stop, null, 'a dangling link has no content to hide — the note keeps it honest, a stop would be a lie');
+  assert.deepEqual(got.lines, []);
+  assert.match(/** @type {string} */ (got.note), /^dangling\.js: could not stat \(ENOENT\) — NOT scanned$/,
+    'every other unscannable branch announces itself; this one returned note:null and read as clean');
 });
 
 // ── contract (b): the gap ────────────────────────────────────────────────────
@@ -621,6 +764,89 @@ test('runStage cleans up after itself when no holder is supplied', async (t) => 
   const res = await runStage(TWO_STAGE_DECL.stages[1], ctxFor(r));
   assert.equal(res.baseline, 5);
   assert.equal(git(r.dir, ['worktree', 'list']).trim().split('\n').length, 1);
+});
+
+// ── cleanup runs in a `finally`, so it must NEVER throw ──────────────────────
+//
+// Every call site (runStage, seedRead, runDeclaredClose here; declaredclose.js
+// and authorflow.js outside) removes the holder in a `finally`. A rejection
+// there propagates OUT of the finally and discards an ALREADY-COMPUTED verdict
+// — a paid green vanishing into something that reads like a transport failure
+// downstream. A cleanup hiccup never outranks a paid verdict; the fixtures
+// below make the removal genuinely fail (a chmod-000 directory the remover
+// cannot descend into) and assert the verdict survives and the leak is DATA.
+
+/** the seed-tree roots these fixtures deliberately made unremovable (`tree/locked`) */
+function plantedSeedRoots() {
+  /** @type {string[]} */
+  const found = [];
+  for (const name of readdirSync(tmpdir())) {
+    if (!name.startsWith('bareloop-seed-')) continue;
+    const root = join(tmpdir(), name);
+    if (existsSync(join(root, 'tree', 'locked'))) found.push(root);
+  }
+  return found;
+}
+
+/** give the permissions back so the tmpdir can actually be emptied */
+function unplant() {
+  for (const root of plantedSeedRoots()) {
+    try { chmodSync(join(root, 'tree', 'locked'), 0o700); } catch { /* already gone */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+/** @param {any} t */
+const skipIfRoot = (t) => {
+  // root ignores mode 000, so the removal would succeed and the test could not
+  // fail — a guard built to prove failure is possible must not pass vacuously
+  if (typeof process.getuid === 'function' && process.getuid() === 0) {
+    t.skip('running as root: chmod 000 cannot deny the remover, so this fixture cannot fail');
+    return true;
+  }
+  return false;
+};
+
+test('cleanup() NEVER throws — a tree it cannot remove comes back as DATA (ok:false + the leaked root), never as a rejection', async (t) => {
+  if (skipIfRoot(t)) return;
+  const r = makeRepo(t, { 'report.txt': '# tests 5\n' });
+  t.after(unplant);
+  const seeds = makeSeedTrees();
+  const st = await seeds.ensure(r.dir, r.seed);
+  assert.equal(st.stop, null, 'the fixture needs a real worktree to fail on');
+  const root = dirname(st.dir);
+  mkdirSync(join(st.dir, 'locked'), { recursive: true });
+  writeFileSync(join(st.dir, 'locked', 'x.txt'), 'x');
+  chmodSync(join(st.dir, 'locked'), 0o000);
+
+  const res = await seeds.cleanup();
+  assert.equal(res.ok, false, 'a failed removal is reported, never swallowed into a silent ok');
+  assert.deepEqual(res.leaked, [root], 'the leaked root is NAMED, so a caller that looks can attach a note');
+  assert.match(String(res.detail), /EACCES|permission/i, 'the real error is carried, not erased');
+});
+
+test('a cleanup that cannot remove the seed tree never discards the verdict — the paid green survives the finally', async (t) => {
+  if (skipIfRoot(t)) return;
+  const r = makeRepo(t, { 'report.txt': '# tests 7\n' });
+  t.after(unplant);
+  write(r.dir, { 'report.txt': '# tests 9\n' });  // the tree has moved → the detached-worktree route
+  // the stage's own command plants the unremovable directory, and ONLY inside
+  // the seed worktree (basename "tree") — the measurement itself is untouched,
+  // and the sabotage lands AFTER every number the verdict is made of
+  const SABOTAGE = ['-e', [
+    "const fs=require('fs'),path=require('path');",
+    "if(path.basename(process.cwd())==='tree'){fs.mkdirSync('locked',{recursive:true});fs.writeFileSync('locked/x.txt','x');fs.chmodSync('locked',0);}",
+    "process.stdout.write(fs.readFileSync('report.txt','utf8'));",
+  ].join('')];
+  const res = await runStage({
+    name: 'tests-kept', kind: 'count-not-worse',
+    params: { cmd: 'node', args: SABOTAGE, parser: { lineMatch: '# tests (\\d+)', capture: 1 }, scope: {}, direction: 'higher-is-better', baseline: 'seed' },
+  }, ctxFor(r));
+  assert.equal(res.verdict, 'green', 'the verdict was already computed — a cleanup hiccup must not delete it');
+  assert.equal(res.value, 9);
+  assert.equal(res.baseline, 7);
+  assert.equal(res.judged, true);
+  assert.ok(plantedSeedRoots().length > 0, 'the fixture really did leave a tree the remover could not remove');
 });
 
 // ── the env the close hands worker-authored code ─────────────────────────────

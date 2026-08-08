@@ -70,7 +70,7 @@
 
 import { runStage, makeSeedTrees, STOP_FAULTS, EXIT_RED } from './kinds.js';
 import {
-  validateDeclaration, genreGuards, genreOwnedEnvNames, GENRE_LANGUAGES, TYPES_GENRE,
+  validateDeclaration, genreGuards, genreOwnedEnvNames, ungroundedGenreEnv, GENRE_LANGUAGES, TYPES_GENRE,
 } from './authoring.js';
 import { stageGap } from './ralph.js';
 import { isObj, isNonEmptyString } from './validate.js';
@@ -80,9 +80,25 @@ import { isObj, isNonEmptyString } from './validate.js';
 /** The genres a `closeDecl` may name. v1 admits exactly one (D13) — a genre
  * classifier is designed the day there is a second genre to classify. */
 export const DECLARED_GENRES = Object.freeze([TYPES_GENRE.name]);
-/** the exact field set of a `closeDecl` — anything else is a smuggle channel,
- * the same rule `STAGE_FIELDS` enforces on a command stage */
-export const CLOSE_DECL_FIELDS = Object.freeze(['genre', 'lang', 'stages', 'notes']);
+/**
+ * The exact field set of a `closeDecl` — anything else is a smuggle channel, the
+ * same rule `STAGE_FIELDS` enforces on a command stage.
+ *
+ * `genreEnv` is the ARBITER's own record of what it injected (M3's
+ * `applyGenreEnv`), and it is here because the injection has to survive being
+ * re-read. The flow applies the genre's variable to every env-capable stage
+ * AFTER the model's form passed; from then on every re-validation — signing
+ * (`prepareSigning`), the job validator (`src/job.js`), the runner
+ * (`src/planrun.js`) — sees that key sitting in `params.env` and cannot, from
+ * the stage alone, tell our injection from a model-authored guess. Recording it
+ * once, in the SIGNED envelope, is what makes the comparison an EQUALITY rather
+ * than a presence flag (the same move `checkGuards` makes for guard params), and
+ * it is why the model never gets to author it: `authorCloseForJob` composes this
+ * field from the flow's own applied map, never from model output. Its keys are
+ * constrained to the names the genre OWNS, so it can never become an environment
+ * channel of its own.
+ */
+export const CLOSE_DECL_FIELDS = Object.freeze(['genre', 'lang', 'stages', 'notes', 'genreEnv']);
 
 /**
  * The prefix M1 puts on EVERY gap line of a declared stage (its `ctx.gapKeep`).
@@ -138,6 +154,16 @@ export function declaredStages(closeDecl) {
  * `listing-absent` red, unchanged: a validator handed nothing to check against
  * must refuse, never report a declaration it never examined.
  *
+ * THREE checks now ride on the listing, not two: the path rule, the scoped-job
+ * derivation, and the GROUNDING of a recorded `genreEnv` (a by-value comparison
+ * between two copies inside one hand-editable spec proves they agree, never that
+ * the arbiter wrote them — see `ungroundedGenreEnv`). All three are deferred at
+ * the job-spec gate and all three are re-run GROUNDED by the runner before any
+ * stage executes, so the deferral moves the check rather than dropping it. The
+ * grounded gates are `prepareSigning`'s gate 1b — where the signature is minted,
+ * so a forged env can never be signed in the first place — and `runPlan`'s
+ * pre-flight, which catches a spec edited after signing.
+ *
  * @param {any} closeDecl
  * @param {{at?: string, listing?: string[]|null, deferListing?: boolean,
  *   catalogue?: Record<string, any>}} [opts]
@@ -172,15 +198,66 @@ export function validateCloseDecl(closeDecl, opts = {}) {
     red('invalid-value', `${at}.lang`, `menu: ${GENRE_LANGUAGES.join('|')} — the language selects the genre's guard `
       + 'battery and its environment, both of which are ours and neither of which has a default');
   }
-  if (closeDecl.notes !== undefined
-      && !(Array.isArray(closeDecl.notes) && closeDecl.notes.every(isNonEmptyString))) {
-    red('invalid-value', `${at}.notes`, 'an array of non-empty strings — what the author could not express, kept with '
-      + 'the artefact it is about');
-  }
+  // `notes` is NOT checked here. It is M2's rule now (`validateDeclaration`),
+  // for the reason the divergence caused: this gate runs at SIGNING, and a rule
+  // that lives only at signing cannot be fed back as a revision — the run pays
+  // for a close, the authoring loop accepts it, and the job dies on a defect the
+  // model was never shown. One spelling, at the gate that can still revise, and
+  // the red still arrives here with this gate's own `at` prefix. It rides the
+  // `langOk` bail below like every other declaration-shape red: with no language
+  // there is no declaration to validate at all.
+  //
   // Without a language there is no guard battery and no owned-env list, so M2
   // would be handed nothing to check D5 against — and a validator configured out
   // of its own rule reports a declaration it never examined. Refuse here instead.
   if (!langOk) return bail();
+
+  // The recorded injection (see CLOSE_DECL_FIELDS). Constrained to the names the
+  // genre owns and to non-empty string values: an unowned name here would be an
+  // environment channel wearing the arbiter's coat, and an empty value is not the
+  // same instruction as an unset variable (`genreEnv` never ships one).
+  const owned = genreOwnedEnvNames(closeDecl.lang);
+  /** @type {Record<string, string>} */
+  const envInjected = {};
+  if (closeDecl.genreEnv !== undefined) {
+    if (!isObj(closeDecl.genreEnv)) {
+      red('invalid-value', `${at}.genreEnv`, 'the genre environment this close was authored under, as an object of '
+        + 'non-empty string values — it records what the ARBITER injected, and nothing else belongs in it');
+    } else {
+      for (const [name, value] of Object.entries(closeDecl.genreEnv)) {
+        if (!owned.includes(name)) {
+          red('invalid-value', `${at}.genreEnv.${name}`, `the ${closeDecl.lang} genre does not own ${name} — this field `
+            + `records the genre's own injection only (${owned.length ? owned.join(', ') : 'this genre owns none'}), `
+            + 'never an environment of its own');
+        } else if (!isNonEmptyString(value)) {
+          red('invalid-value', `${at}.genreEnv`, `${name} is recorded with no value — an empty variable is not the same `
+            + 'instruction as an unset one, and the genre never builds one');
+        } else envInjected[name] = value;
+      }
+    }
+  }
+  // GROUNDED, wherever there is a tree to ground against. The by-VALUE check
+  // above proves the envelope and the stage AGREE — and both copies sit in the
+  // same hand-editable spec, so agreement is free to a forger: `genreEnv` and
+  // `params.env` both reading `/tmp/attacker-stubs` is perfectly self-consistent
+  // and grades a checkout nobody signed. The seed tree is the thing the forger
+  // does not own, so every element of a recorded value must SELECT from the
+  // listing — the same trick hamr's path rule already uses, and an exact fit for
+  // what `applyGenreEnv` can produce (see `ungroundedGenreEnv`).
+  //
+  // It runs at both gates that hold a listing (`prepareSigning`'s grounded gate
+  // 1b and the runner's pre-flight re-validation) and cannot run at the deferred
+  // job-spec gate, which has no repository — that gate's deferral is already
+  // stated above, and the runner re-validates GROUNDED before any stage runs, so
+  // this is moved rather than skipped.
+  if (Array.isArray(listing) && listing.length > 0) {
+    for (const u of ungroundedGenreEnv(closeDecl.lang, envInjected, listing)) {
+      red('genre-env-ungrounded', `${at}.genreEnv.${u.name}`, `${u.name} is recorded as the genre's own injection but `
+        + `"${u.element}" matches nothing in the seed tree — the arbiter builds this value by joining source prefixes it `
+        + 'already filtered against the listing, so a path the tree does not contain is not one it can have written',
+      { name: u.name, element: u.element, resolved: u.resolved });
+    }
+  }
 
   const v = validateDeclaration(closeDecl, {
     ...(catalogue ? { catalogue } : {}),
@@ -192,7 +269,11 @@ export function validateCloseDecl(closeDecl, opts = {}) {
     listing,
     ...(deferListing ? { deferListing: true } : {}),
     guards: genreGuards(closeDecl.lang),
-    envOwned: genreOwnedEnvNames(closeDecl.lang),
+    envOwned: owned,
+    // POST-injection: an owned name is accepted only when its value is EXACTLY
+    // the recorded one. `{}` (nothing recorded) keeps the pre-injection rule, so
+    // a declaration that authored the variable itself is still refused.
+    envInjected,
   });
   for (const r of v.reds) reds.push({ ...r, path: r.path ? `${at}.${r.path}` : at });
 

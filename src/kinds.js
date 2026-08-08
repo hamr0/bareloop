@@ -149,7 +149,7 @@ export const LIVE_KINDS = Object.freeze(['command-exit', 'count-not-worse', 'pat
  *   baselineSource: string|null, gapLines: string[], judged: boolean,
  *   stage: string|null, kind: string|null, detail: Record<string, any>}} StageResult
  * @typedef {{ensure: (workdir: string, seedRef: string) => Promise<{stop: string, fault: string}|{stop: null, dir: string}>,
- *   cleanup: () => Promise<void>}} SeedTrees
+ *   cleanup: () => Promise<{ok: boolean, leaked: string[], detail: string|null}>}} SeedTrees
  */
 
 // ── contract (b): the gap ────────────────────────────────────────────────────
@@ -402,7 +402,15 @@ export async function addedLines(workdir, seedRef, rel, { untracked = false } = 
   if (untracked) {
     const abs = join(workdir, rel);
     let st;
-    try { st = await stat(abs); } catch { return { stop: null, lines: [], note: null }; }
+    // NOT a stop: a dangling symlink or a file that vanished between the
+    // changed-set read and this one has no content to hide, so refusing to grade
+    // the run over it would be the wrong direction. But it is not SCANNED either,
+    // and every sibling branch below (the cap, the binary check) says so out
+    // loud — returning note:null here made an unscannable file read as clean.
+    try { st = await stat(abs); } catch (e) {
+      const code = String(/** @type {any} */ (e)?.code ?? /** @type {any} */ (e)?.message ?? e);
+      return { stop: null, lines: [], note: `${rel}: could not stat (${code}) — NOT scanned` };
+    }
     if (!st.isFile()) return { stop: null, lines: [], note: null };
     if (st.size > MAX_SCAN_BYTES) return { stop: null, lines: [], note: `${rel}: ${st.size}B exceeds the ${MAX_SCAN_BYTES}B scan cap — NOT scanned` };
     let buf;
@@ -594,7 +602,7 @@ export function normalizeParser(parser, at = 'parser') {
  * function can observe a spawn failure, a timeout or a signal, so it never
  * claims one.
  * @param {{scope?: any, workdir?: string}} [o]
- * @returns {{stop: string, fault: string}|{stop: null, value: number, breakdown: any[], notes: string[]}}
+ * @returns {{stop: string, fault: string, notes?: string[]}|{stop: null, value: number, breakdown: any[], notes: string[]}}
  */
 export function parseValue(output, terms, { scope = null, workdir = '' } = {}) {
   let value = 0;
@@ -651,7 +659,25 @@ export function parseValue(output, terms, { scope = null, workdir = '' } = {}) {
     let subtotal;
     if (t.aggregate === 'sum') subtotal = values.reduce((a, b) => a + b, 0);
     else {
-      if (!values.length) return { stop: `INSTRUMENT: term ${i} (/${t.lineMatch}/, aggregate "first") matched nothing — the number was never reported, so it is unknown, not zero`, fault: STOP_FAULTS.CRASHED };
+      if (!values.length) {
+        // TWO DIFFERENT FAULTS, and they used to read as one. "Matched nothing"
+        // sends the reader to the parser; lines that matched and were then
+        // EXCLUDED BY SCOPE send them to the scope, which is where the problem
+        // actually is. The counts are named mechanically (F38's genre split:
+        // a wall with a number converts, a description does not), and the notes
+        // this function already computed ride out with the stop instead of being
+        // dropped on the floor — the diagnostic exists either way.
+        // `dropped` alone, never dropped+unattributable: an unattributable line
+        // is KEPT, so it would already be in `values` — claiming it was excluded
+        // would be the message lying about which lane the line went down.
+        return {
+          stop: dropped > 0
+            ? `INSTRUMENT: term ${i} (/${t.lineMatch}/, aggregate "first") matched ${dropped} line(s) and the scope filter excluded every one of them — the number was never reported FOR THIS POPULATION, so it is unknown, not zero`
+            : `INSTRUMENT: term ${i} (/${t.lineMatch}/, aggregate "first") matched nothing — the number was never reported, so it is unknown, not zero`,
+          fault: STOP_FAULTS.CRASHED,
+          notes,
+        };
+      }
       subtotal = values[0];
     }
     breakdown.push({ term: i, lineMatch: t.lineMatch, aggregate: t.aggregate, sign: t.sign, matches: values.length, subtotal, contribution: t.sign * subtotal });
@@ -706,13 +732,41 @@ export function makeSeedTrees() {
       answers.set(key, v);
       return v;
     },
+    /**
+     * Removal — and it NEVER THROWS, which is the load-bearing half.
+     *
+     * EVERY call site runs this inside a `finally` (`runStage`, `seedRead`,
+     * `runDeclaredClose` below; `src/declaredclose.js` and `src/authorflow.js`
+     * outside). A rejection from a `finally` REPLACES whatever the try block
+     * was returning, so an unremovable directory — EACCES, EBUSY, a mount that
+     * went away — would discard an ALREADY-COMPUTED verdict and surface
+     * downstream as something that looks like a transport failure. A paid green
+     * would simply vanish. A cleanup hiccup never outranks a paid verdict.
+     *
+     * It is not swallowed either, which is the other half: the failure comes
+     * back as DATA (`ok:false` plus the leaked roots and the real error) that a
+     * caller who cares can read and attach a note to. Never `undefined`, never a
+     * silent success — and, because it is only a return value, never able to
+     * move a verdict. One unremovable tree also never strands the rest.
+     * @returns {Promise<{ok: boolean, leaked: string[], detail: string|null}>}
+     */
     async cleanup() {
+      /** @type {string[]} */
+      const leaked = [];
+      /** @type {string[]} */
+      const details = [];
       for (const { workdir, root, dir } of made.values()) {
-        await git(workdir, ['worktree', 'remove', '--force', dir]);
-        await rm(root, { recursive: true, force: true });
+        try {
+          await git(workdir, ['worktree', 'remove', '--force', dir]);
+          await rm(root, { recursive: true, force: true });
+        } catch (e) {
+          leaked.push(root);
+          details.push(`${root}: ${String(/** @type {any} */ (e)?.message ?? e)}`);
+        }
       }
       made.clear();
       answers.clear();
+      return { ok: leaked.length === 0, leaked, detail: details.length ? details.join('; ') : null };
     },
   };
 }
@@ -772,13 +826,35 @@ const stopped = (stage, ctx, stop, detail = {}, fault = STOP_FAULTS.FAILED) => r
 
 // ── the four kinds ──────────────────────────────────────────────────────────
 
+/**
+ * The bound a stage ACTUALLY runs under: the tighter of what the declaration
+ * asked for and what the operator allows.
+ *
+ * `timeoutMs` is AUTHORED — it rides in the declaration, on the emergent side
+ * of the line. `ctx.timeoutMsDefault` is the operator's ceiling and is not.
+ * This is the budget rule applied to time: the advertised bound and the
+ * enforced bound must be the same number, and the authored side may only ever
+ * TIGHTEN it (a declaration that could widen its own ceiling is a second,
+ * silent ceiling above the signed one). A declared value that is unusable —
+ * absent, non-finite, zero or negative — falls back to the ceiling rather than
+ * to `sh`'s "no timer at all", which is the same direction: never wider.
+ * @param {any} declared @param {Ctx} ctx
+ * @returns {number}
+ */
+function effectiveTimeoutMs(declared, ctx) {
+  const ceiling = ctx.timeoutMsDefault ?? DEFAULT_TIMEOUT_MS;
+  return typeof declared === 'number' && Number.isFinite(declared) && declared > 0
+    ? Math.min(declared, ceiling)
+    : ceiling;
+}
+
 /** @param {any} stage @param {Ctx} ctx @returns {Promise<StageResult>} */
 async function runCommandExit(stage, ctx) {
   const p = stage.params;
   const r = await sh(p.cmd, p.args ?? [], {
     cwd: ctx.workdir,
     env: p.env ?? {},
-    timeoutMs: p.timeoutMs ?? ctx.timeoutMsDefault ?? DEFAULT_TIMEOUT_MS,
+    timeoutMs: effectiveTimeoutMs(p.timeoutMs, ctx),
     maxBuffer: ctx.maxBuffer ?? MAX_BUFFER,
   });
   if (r.stop !== null) return stopped(stage, ctx, r.stop, {}, r.fault);
@@ -797,7 +873,14 @@ async function runCommandExit(stage, ctx) {
   });
 }
 
-/** @param {any} stage @param {Ctx} ctx @returns {Promise<StageResult>} */
+/**
+ * The counting kind. `measure` below carries the broken-ruler rule and its one
+ * ACCEPTED LIMIT: a tool whose convention is "non-zero exit MEANS zero found"
+ * (`grep -c`, pytest's exit 5) stops here rather than counting zero. That is
+ * deliberate and fail-safe — unreachable on the shipped TYPES genre, a loud
+ * false stop at worst, and never a false green. A genre that needs the other
+ * behaviour declares it; this default is not softened. See `measure`.
+ * @param {any} stage @param {Ctx} ctx @returns {Promise<StageResult>} */
 async function runCountNotWorse(stage, ctx) {
   const p = stage.params;
   const norm = normalizeParser(p.parser, `${stage.name}.parser`);
@@ -812,12 +895,49 @@ async function runCountNotWorse(stage, ctx) {
     const r = await sh(p.cmd, p.args ?? [], {
       cwd,
       env: p.env ?? {},
-      timeoutMs: p.timeoutMs ?? ctx.timeoutMsDefault ?? DEFAULT_TIMEOUT_MS,
+      timeoutMs: effectiveTimeoutMs(p.timeoutMs, ctx),
       maxBuffer: ctx.maxBuffer ?? MAX_BUFFER,
     });
     if (r.stop !== null) return { stop: `${r.stop} (measuring ${where})`, fault: r.fault };
     const v = parseValue(r.out, terms, { scope: p.scope, workdir: cwd });
     if (v.stop !== null) return { stop: `${v.stop} (measuring ${where})`, fault: v.fault };
+    // A BROKEN RULER NEVER CERTIFIES ZERO — the zero-match split (contract (a))
+    // finished. `sum` over nothing is a COUNTED zero because the region was
+    // searched, and that reading is only believable when the tool itself came
+    // back clean: a checker that died before it ever looked at the tree also
+    // matches nothing, and 0 against a baseline of 0 reads GREEN. `first`
+    // already stops on zero matches; `sum` did not, and the exit code the
+    // measurement was already carrying was never consulted.
+    //
+    // So: zero matched AND a non-zero exit is could-not-run — the existing stop
+    // lane, in BOTH directions. A crash that would have flattered the count and
+    // one that would have faked a red are the same casualty, and a casualty is
+    // never evidence either way (F45). Non-zero exit WITH matches stays a normal
+    // reading: that is a checker reporting real findings, which is its job.
+    //
+    // ACCEPTED LIMIT, stated rather than fixed. Some tools spell "I found
+    // nothing" as a NON-ZERO EXIT — `grep -c` exits 1 on no match, pytest exits
+    // 5 when it collects no tests. Declared as a count stage, one of those would
+    // stop here instead of recording a true zero. No such misfire is
+    // CONSTRUCTIBLE on the shipped TYPES genre (mypy and tsc exit 0 on a clean
+    // tree and print the "found 0 errors" line the parser matches), so today the
+    // rule can only produce a false STOP, never a false green — and that is
+    // exactly the direction it is chosen for. A stop is loud, honest and
+    // re-runnable; counting a crashed tool's silence as zero grades a red tree
+    // GREEN. The F49 precedent governs: the fail-safe direction is never traded
+    // away to chase the sharper one, and this default is not softened.
+    //
+    // A genre that genuinely needs exit-N-means-zero DECLARES it — a catalogue
+    // parameter added at that rework, so the exception rides the signed spec and
+    // is visible per stage. Never by loosening the default here, which would
+    // silently re-open the fake-green lane under every close already signed.
+    const matched = v.breakdown.reduce((a, b) => a + b.matches, 0);
+    if (r.code !== 0 && matched === 0) {
+      return {
+        stop: `INSTRUMENT: "${p.cmd}" exited ${r.code} and its output matched none of the parser's terms — a crashed tool reporting nothing is unknown, not zero (measuring ${where})`,
+        fault: STOP_FAULTS.CRASHED,
+      };
+    }
     return { stop: null, value: v.value, breakdown: v.breakdown, notes: v.notes, exit: r.code, dropped: r.dropped, fault: STOP_FAULTS.FAILED };
   };
 

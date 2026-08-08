@@ -73,13 +73,15 @@
 // No spine emission here — M4 wires events.
 
 import { createRequire } from 'node:module';
+import { realpathSync } from 'node:fs';
+import { join, relative, isAbsolute } from 'node:path';
 import { seedRead as runSeedReadStages, makeSeedTrees, AGGREGATES, SIGNS, MAX_TERMS } from './kinds.js';
 import {
   KIND_CATALOGUE, MAX_STAGES, DIRECTIONS, BASELINES,
   GENRE_LANGUAGES, TYPES_GENRE_TEMPLATE, genreGuards, genreEnv, genreOwnedEnvNames,
-  validateDeclaration,
+  validateDeclaration, envCapableKind,
 } from './authoring.js';
-import { buildSeedListing } from './authorscout.js';
+import { buildSeedListing, cleanEntry } from './authorscout.js';
 import { extractArtifact, priceOf } from './text.js';
 import { redactSecrets } from './validate.js';
 
@@ -340,7 +342,11 @@ export function declarationSchema(catalogue = KIND_CATALOGUE) {
       },
       notes: {
         type: 'array',
-        items: { type: 'string' },
+        // minLength 1 for the standing reason: where only a closed set (here,
+        // "a string that says something") can satisfy a field, the illegal value
+        // is made INEXPRESSIBLE rather than rejected after the fact. The
+        // validator reds an empty note either way — this stops it being written.
+        items: { type: 'string', minLength: 1 },
         description: 'anything you could not express, or any fact you needed and did not have',
       },
     },
@@ -520,6 +526,15 @@ const show = (/** @type {any} */ v) => (v === null || v === undefined ? 'unknown
  * The seed read, as the model sees it: mechanical labels, no editorial. Per-stage
  * gap capped with the trim ANNOUNCED (F28 — a bound that eats the failure names
  * deletes exactly the mechanical detail that converts).
+ *
+ * SCRUBBED at the emission boundary. What this block renders is raw subprocess
+ * output (gap lines, an instrument stop carrying a command's stderr) and it
+ * becomes the next USER TURN sent to the provider — the surface most likely to
+ * carry a real credential, crossing the network. It goes through the ONE shared
+ * redactor, the same one `askDeclaration` puts the model's own text through and
+ * the same one `declaredclose`/`authorjob` put these very fields through; never
+ * a second inventory. Applied to the whole rendered block rather than one field,
+ * so a line added here is scrubbed by construction.
  * @param {any[]} rows M1 `StageResult[]`
  * @param {{gapCap?: number}} [o]
  */
@@ -542,12 +557,22 @@ export function renderSeedReadBlock(rows, { gapCap = REVISE_GAP_CAP } = {}) {
       }
     }
   }
-  return lines.join('\n');
+  return redactSecrets(lines.join('\n'));
 }
 
 /**
  * The measured block when the declaration never reached execution. Both cases are
  * machine outputs of the pipeline, never editorial prose about the model's work.
+ *
+ * SCRUBBED at the emission boundary, for the SAME reason `renderSeedReadBlock`
+ * is and through the SAME one redactor. The channel here is different and just
+ * as real: a validation red QUOTES WHAT THE MODEL DECLARED, verbatim — the
+ * genre-env branch echoes the expected and the declared value, the deny floor
+ * echoes the whole `cmd`, the listing rule echoes the path — and this block
+ * becomes the next USER TURN sent to the provider. A declared value shaped like
+ * a credential crossed unmasked before this line existed. Applied to the whole
+ * rendered block rather than one field, so a red added to the validator is
+ * scrubbed by construction rather than by remembering.
  * @param {{kind: 'validation'|'artifact', reds: (Red|string)[], cap?: number}} o
  */
 export function renderRejectBlock({ kind, reds, cap = REVISE_RED_CAP }) {
@@ -559,7 +584,7 @@ export function renderRejectBlock({ kind, reds, cap = REVISE_RED_CAP }) {
   const tail = rendered.length > shown.length
     ? [`  [${rendered.length - shown.length} of ${rendered.length} reds withheld — the cap is ${cap}]`]
     : [];
-  return [head, ...shown.map((r) => `  ${r}`), ...tail].join('\n');
+  return redactSecrets([head, ...shown.map((r) => `  ${r}`), ...tail].join('\n'));
 }
 
 /** A revise turn is EXACTLY the measured block, a blank line, and the instruction. */
@@ -585,11 +610,12 @@ export function assertReviseTurn(turn, measuredBlock) {
 
 // ── 4. THE GENRE'S ENVIRONMENT ───────────────────────────────────────────────
 
-/** which kinds can carry an environment at all — read off the catalogue, never a list */
-const envCapable = (/** @type {string} */ kind, /** @type {Record<string, any>} */ catalogue) => {
-  const spec = catalogue[kind];
-  return !!spec && !spec.locked && [...spec.required, ...spec.optional].includes('env');
-};
+/** Which kinds can carry an environment at all — read off the catalogue, never a
+ * list, and read through M2's OWN predicate rather than a second copy of it.
+ * The validator's completeness rule demands the variable on exactly the stages
+ * this injector puts it on, so the two must be one function: a drift either way
+ * leaves stages injected-but-unchecked or checked-but-never-injected. */
+const envCapable = envCapableKind;
 
 /**
  * Apply the genre's environment to a declaration, mechanically.
@@ -647,6 +673,64 @@ export function applyGenreEnv(declaration, lang, { sourcePrefixes = [], catalogu
     else delete s.params.env;
   }
   return { declaration: out, applied, dropped, missing, reds };
+}
+
+/**
+ * The prefixes `genreEnv` JOINS into the genre's variable, resolved against the
+ * real tree. Two filters, and the second one was paid for on a live patient.
+ *
+ * EXISTENCE (unchanged): a prefix that names nothing at the seed would build a
+ * variable pointing at nothing, and the grounded validator refuses it anyway
+ * (`ungroundedGenreEnv` checks every ELEMENT against the seed listing).
+ *
+ * IDENTITY (new): existence alone reads a SYMLINK and the directory behind it as
+ * two prefixes. On aurora, 11 entries under `src` resolve into the per-package
+ * `packages/<pkg>/src` trees, so the joined `MYPYPATH` named one tree twice
+ * under two spellings and mypy died FATALLY — exit 2, "shadows library module",
+ * zero output — which the close reads as a broken instrument on a perfectly
+ * healthy patient. The realpath-deduped control produced the identical clean
+ * reading as the known-good invocation.
+ *
+ * WHICH SPELLING SURVIVES is not cosmetic. The REAL path wins, because that is
+ * the one the checker itself resolves to; the symlink spelling is kept only when
+ * the real one cannot be used. And a spelling is only ever emitted when it
+ * SELECTS from the seed listing, because the arbiter records this value in a
+ * SIGNED envelope and re-validates it GROUNDED — a value the grounded validator
+ * cannot select is one the arbiter must never build. So a link out of the
+ * repository, or into a path git does not track, keeps its declared spelling
+ * rather than becoming an absolute path nothing can ground.
+ *
+ * An unreadable candidate (a dangling link, a race) is NOT dropped: it passed the
+ * existence filter against the listing, and silently losing a real prefix is the
+ * Result-5 hazard in the other direction.
+ * @param {{workdir: string, sourcePaths: any, seedFiles: string[]}} o
+ * @returns {string[]}
+ */
+export function resolveSourcePrefixes({ workdir, sourcePaths, seedFiles }) {
+  const files = Array.isArray(seedFiles) ? seedFiles : [];
+  const listed = (/** @type {string} */ p) => p !== '' && files.some((f) => f === p || f.startsWith(`${p}/`));
+  const candidates = (Array.isArray(sourcePaths) ? sourcePaths : []).map(cleanEntry).filter(listed);
+
+  // the root's OWN realpath: a workdir reached through a link would otherwise
+  // make every candidate look like it points outside the repository
+  let root;
+  try { root = realpathSync(String(workdir ?? '')); } catch { root = String(workdir ?? ''); }
+
+  /** @type {Map<string, string>} realpath → the spelling that owns it */
+  const byReal = new Map();
+  for (const declared of candidates) {
+    let real = null;
+    try { real = realpathSync(join(root, declared)); } catch { real = null; }
+    let spelling = declared;
+    if (real !== null) {
+      const rel = relative(root, real);
+      // inside the repository, and something git tracks under it
+      if (rel !== '' && !rel.startsWith('..') && !isAbsolute(rel) && listed(rel)) spelling = rel;
+    }
+    const key = real ?? join(root, declared);
+    if (!byReal.has(key)) byReal.set(key, spelling);
+  }
+  return [...byReal.values()];
 }
 
 // ── 5. COST ──────────────────────────────────────────────────────────────────
@@ -865,10 +949,9 @@ export async function authorClose({
   const ownedEnvNames = genreOwnedEnvNames(lang);
   // the source prefixes the genre's environment is built from, filtered against
   // the REAL tree — a prefix that names nothing would build a variable pointing
-  // at nothing
-  const sourcePrefixes = (Array.isArray(facts.sourcePaths) ? facts.sourcePaths : [])
-    .map((/** @type {any} */ p) => String(p ?? '').split(' (')[0].trim().replace(/\/+$/, ''))
-    .filter((/** @type {string} */ p) => p !== '' && seedFiles.some((f) => f === p || f.startsWith(`${p}/`)));
+  // at nothing, and a symlink plus the directory behind it would name ONE tree
+  // twice (see resolveSourcePrefixes: that is a FATAL mypy exit, not a warning)
+  const sourcePrefixes = resolveSourcePrefixes({ workdir, sourcePaths: facts.sourcePaths, seedFiles });
   const envProbe = applyGenreEnv({ stages: [] }, lang, { sourcePrefixes, catalogue });
   base.genreEnv = { applied: envProbe.applied, owned: ownedEnvNames, missing: envProbe.missing, dropped: [] };
   if (envProbe.reds.length) return refuse(envProbe.reds, 'precheck');
