@@ -914,7 +914,11 @@ export async function authorClose({
     return refuse([{
       code: 'scout-absent',
       path: 'scout',
-      detail: `the survey is ${scout?.state ?? 'missing'}${scout?.reason ? ` (${scout.reason})` : ''} — an absent facts `
+      // `scout.reason` is half survey bookkeeping and half the scout's own error
+      // string (its `meta.error`), so provider prose reaches a KEPT red here —
+      // scrubbed at the emission boundary like every other channel that quotes
+      // something this module does not own
+      detail: `the survey is ${scout?.state ?? 'missing'}${scout?.reason ? ` (${redactSecrets(scout.reason)})` : ''} — an absent facts `
         + 'object is never "no special facts are needed", and there is nothing to author from',
     }], 'precheck');
   }
@@ -938,8 +942,12 @@ export async function authorClose({
     return refuse([{
       code: seeds.stop ? 'listing-unreadable' : 'listing-absent',
       path: 'listing',
-      detail: seeds.stop
-        ?? 'the seed listing is empty — without it nothing can tell a real path from an invented one',
+      // `stop` is git's own stderr (kinds.js builds it from the subprocess);
+      // scrubbed HERE, at the emission boundary, because this red LEAVES the flow
+      // and is kept — M1 never scrubs, the caller does
+      detail: seeds.stop != null
+        ? redactSecrets(seeds.stop)
+        : 'the seed listing is empty — without it nothing can tell a real path from an invented one',
     }], 'precheck');
   }
   base.facts = facts;
@@ -996,8 +1004,10 @@ export async function authorClose({
       iterations.push(iter);
 
       if (ask.providerError) {
-        // a transport failure is a casualty, never evidence about the model
-        fatal = [{ code: 'provider-red', path: label, detail: ask.providerError }];
+        // a transport failure is a casualty, never evidence about the model — and
+        // the transport's own prose (a proxy URL, an auth echo) is scrubbed on the
+        // way into a red the caller keeps
+        fatal = [{ code: 'provider-red', path: label, detail: redactSecrets(ask.providerError) }];
         stop = 'provider-red';
         break;
       }

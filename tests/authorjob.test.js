@@ -26,6 +26,7 @@ import {
   GENRE, GENRE_CONFIRM, REFUSAL_LIB, REFUSAL_CATEGORY,
 } from '../src/authorjob.js';
 import { validateJob, jobSpecHash, checkApproval } from '../src/job.js';
+import { scanSecrets } from '../src/validate.js';
 import { genreGuards } from '../src/authoring.js';
 import { classifyIncidents, ledgerDeltas, foldLedger, LEDGER_CLASSES } from '../src/ledger.js';
 import { runPlan } from '../src/planrun.js';
@@ -367,6 +368,193 @@ test('prepareSigning refuses a spec carrying a COMMAND close — those stages ar
   const r = await prepareSigning({ spec, workdir: p.dir, seedRef: p.seed });
   assert.equal(r.ok, false);
   assert.ok(r.reds.some((x) => x.path === 'closeDecl'));
+});
+
+// ── 5b. THE SCRUB AT THE EMISSION BOUNDARY ───────────────────────────────────
+//
+// The git reads in `kinds.js` build their `stop` string out of the subprocess's
+// own stderr (`INSTRUMENT: … : ${String(r.err).trim()}`), and M1 deliberately
+// does NOT scrub — the caller does, at the boundary where the text stops being a
+// return value and becomes something a human reads and a file keeps. Every one of
+// these reds is persisted (signing.json) and re-read, and a log that captures a
+// key captures it forever. The seed-read gap lines were already scrubbed on this
+// path; these two channels were not, which is the same leak this branch shipped
+// twice already (renderSeedReadBlock, then renderRejectBlock).
+//
+// The fixture is assembled from parts so no real-shaped token literal ever exists
+// in the tree, and each test proves the shape is one the ONE inventory actually
+// detects — without that, the test could not fail.
+
+const FAKE_TOKEN = ['sk', 'live', 'A1b2C3d4E5f6G7h8I9j0KLMN'].join('-');
+
+/** what `git` really hands back when it fails inside a stop string */
+const gitStderrWith = (/** @type {string} */ token) => `fatal: unable to access 'https://x@example.invalid/r.git': `
+  + `authorization failed (token ${token})`;
+
+test('prepareSigning: git stderr in a seed-unreadable red is SCRUBBED before it is persisted', async () => {
+  assert.equal(scanSecrets(FAKE_TOKEN).length, 1, 'the fixture must be a shape the ONE inventory actually detects');
+  const stop = `INSTRUMENT: could not read HEAD in /patient: ${gitStderrWith(FAKE_TOKEN)}`;
+  assert.equal(scanSecrets(stop).length, 1, 'and the injected stop must really carry it — else nothing is under test');
+
+  const spec = assembleSpec(SPEC_DRAFT, { closeDecl: DECL(), verdictType: 'green' });
+  const r = await prepareSigning({
+    spec,
+    workdir: '/patient',
+    seedFn: async () => ({ stop, seedRef: null }),
+    listingFn: async () => { throw new Error('the seed read must stop the flow before the listing'); },
+  });
+
+  assert.equal(r.ok, false);
+  assert.equal(r.reds.length, 1);
+  assert.equal(r.reds[0].code, 'seed-unreadable');
+  assert.deepEqual(scanSecrets(r.reds[0].detail), [], 'a credential in git stderr must never reach signing.json');
+  assert.ok(r.reds[0].detail.includes('[REDACTED:'), 'the mask is the shared redactor, not a silent deletion');
+  // the mechanical half — what tells the human WHICH instrument failed — survives
+  assert.match(r.reds[0].detail, /^INSTRUMENT: could not read HEAD in \/patient: fatal: unable to access/);
+  // the gate record is the same string and must be scrubbed with it
+  assert.deepEqual(scanSecrets(JSON.stringify(r.gates.declaration)), []);
+});
+
+test('prepareSigning: git stderr in a listing-unreadable red is SCRUBBED before it is persisted', async () => {
+  const stop = `INSTRUMENT: git ls-tree -r deadbee failed in /patient: ${gitStderrWith(FAKE_TOKEN)}`;
+  assert.equal(scanSecrets(stop).length, 1, 'the injected stop must really carry it — else nothing is under test');
+
+  const spec = assembleSpec(SPEC_DRAFT, { closeDecl: DECL(), verdictType: 'green' });
+  const r = await prepareSigning({
+    spec,
+    workdir: '/patient',
+    seedRef: 'deadbee',
+    listingFn: async () => ({ stop, files: null }),
+  });
+
+  assert.equal(r.ok, false);
+  assert.equal(r.reds.length, 1);
+  assert.equal(r.reds[0].code, 'listing-unreadable');
+  assert.deepEqual(scanSecrets(r.reds[0].detail), [], 'a credential in git stderr must never reach signing.json');
+  assert.ok(r.reds[0].detail.includes('[REDACTED:'), 'the mask is the shared redactor, not a silent deletion');
+  assert.match(r.reds[0].detail, /^INSTRUMENT: git ls-tree -r deadbee failed in \/patient: fatal: unable to access/);
+  assert.deepEqual(scanSecrets(JSON.stringify(r.gates.declaration)), []);
+});
+
+// The OTHER half of the same boundary: the two VALIDATOR gates. Their reds are
+// not git's stderr — they echo the declaration the model wrote and the seed tree
+// the arbiter listed, and both are persisted with the signing evidence exactly
+// like the two above. A validator red that quotes a token back is the divergence
+// the ONE inventory (SECRET_PATTERNS) exists to forbid: `secret-literal` reds the
+// very shape the sibling red hands through unmasked.
+//
+// The scrub is UNIFORM over every string-valued field, not just `detail`, because
+// these reds carry structured echoes too (`cmd`, `declared`, `element`) and a
+// per-field list is a list that goes stale the next time a red learns a field.
+
+/** every string reachable in a red, whatever field it rides — the walk the
+ * per-field allowlist would have missed */
+function strings(node, out = []) {
+  if (typeof node === 'string') out.push(node);
+  else if (Array.isArray(node)) node.forEach((v) => strings(v, out));
+  else if (node && typeof node === 'object') for (const v of Object.values(node)) strings(v, out);
+  return out;
+}
+
+test('prepareSigning gate 1b: a validation red quoting the SEED LISTING is scrubbed before it is persisted', async () => {
+  // The leak channel gate 1a structurally cannot see: `validateJob` sweeps the
+  // SPEC for secret literals, and this token is not in the spec — it is a
+  // filename in the patient's own tree, quoted back by the listing rule's
+  // "what DOES exist beside the invented path" gap. Nothing upstream scans it.
+  const listed = `src/${FAKE_TOKEN}.js`;
+  assert.equal(scanSecrets(listed).length, 1, 'the fixture must be a shape the ONE inventory actually detects');
+
+  const decl = DECL({ allowPrefixes: ['src/nope/'] });
+  const spec = assembleSpec(SPEC_DRAFT, { closeDecl: decl, verdictType: 'green' });
+  assert.deepEqual(scanSecrets(JSON.stringify(spec)), [], 'the spec is clean — so gate 1a passes and gate 1b is what runs');
+
+  const r = await prepareSigning({
+    spec,
+    workdir: '/patient',
+    seedRef: 'deadbee',
+    listingFn: async () => ({ stop: null, files: [listed, 'src/b.js', 'check.mjs'] }),
+    seedReadFn: async () => { throw new Error('the declaration gate must stop the flow before any stage runs'); },
+  });
+
+  assert.equal(r.ok, false);
+  assert.ok('scoped' in r.gates.declaration, 'the grounded gate is the one under test, not the deferred spec gate');
+  assert.equal(r.reds.length, 1);
+  assert.equal(r.reds[0].code, 'path-not-in-listing');
+
+  for (const s of strings(r.reds)) assert.deepEqual(scanSecrets(s), [], `an unmasked token survived: ${s}`);
+  assert.ok(r.reds[0].detail.includes('[REDACTED:'), 'the mask is the shared redactor, not a silent deletion');
+  // the mechanical half survives: which path, and what really is beside it
+  assert.match(r.reds[0].detail, /^"src\/nope\/" matches nothing in the seed tree \(under src the seed tree has: /);
+  assert.ok(r.reds[0].detail.includes('src/b.js'), 'a real neighbour is still named — the scrub masks, it does not delete');
+  // the enumerated/structural fields are byte-identical: redactSecrets leaves a
+  // non-matching string alone, so a uniform map costs them nothing
+  assert.equal(r.reds[0].path, 'closeDecl.stages[0].params.allowPrefixes[0]');
+  assert.equal(r.reds[0].declared, 'src/nope/');
+  assert.equal(r.reds[0].resolved, 'src/nope');
+  assert.equal(r.reds[0].found, null);
+  assert.equal(r.reds[0].wanted, 'directory');
+  // the gate record persists the same reds and must be scrubbed with them
+  assert.deepEqual(scanSecrets(JSON.stringify(r.gates.declaration)), []);
+});
+
+test('prepareSigning gate 1a: a validation red quoting the DECLARATION is scrubbed in every string field, not just detail', async () => {
+  // the model-declared half: an absolute `cmd` is refused by the deny floor, and
+  // the refusal quotes the command back TWICE — once in prose and once as the
+  // structured `cmd` field. A `detail`-only scrub would mask one and ship the other.
+  const cmd = `/opt/${FAKE_TOKEN}/bin/tsc`;
+  assert.equal(scanSecrets(cmd).length, 1, 'the fixture must be a shape the ONE inventory actually detects');
+
+  const decl = {
+    genre: GENRE,
+    lang: 'js',
+    stages: [
+      guards(['src/'])[0],
+      { name: 'verdict', kind: 'command-exit', params: { cmd, args: [], expectExit: 0 } },
+      guards(['src/'])[1],
+    ],
+  };
+  const r = await prepareSigning({
+    spec: assembleSpec(SPEC_DRAFT, { closeDecl: decl, verdictType: 'green' }),
+    workdir: '/patient',
+    seedRef: 'deadbee',
+    listingFn: async () => { throw new Error('the spec gate must stop the flow before the listing'); },
+  });
+
+  assert.equal(r.ok, false);
+  const denied = r.reds.find((x) => x.code === 'cmd-denied');
+  assert.ok(denied, JSON.stringify(r.reds));
+  // the sibling that proves the divergence: the SAME sweep reds this exact shape
+  assert.ok(r.reds.some((x) => x.code === 'secret-literal'), 'the ONE inventory reds it — so no red beside it may pass it');
+
+  for (const s of strings(r.reds)) assert.deepEqual(scanSecrets(s), [], `an unmasked token survived: ${s}`);
+  assert.ok(denied.detail.includes('[REDACTED:'), 'the prose echo is masked');
+  assert.ok(denied.cmd.includes('[REDACTED:'), 'and so is the STRUCTURED echo — a detail-only scrub ships this one');
+  assert.match(denied.detail, /names a program outside the repository/, 'the reason survives the mask');
+  assert.equal(denied.path, 'closeDecl.stages[1].params.cmd', 'the enumerated path is untouched');
+  assert.deepEqual(scanSecrets(JSON.stringify(r.gates.declaration)), []);
+});
+
+test('authorCloseForJob: the SAME git stderr channel is scrubbed one function earlier, before any token is spent', async () => {
+  // the identical leak two functions away: `authorCloseForJob` reads the seed
+  // through the same primitive and carries the same `stop` into the same red
+  // code, on the path that runs BEFORE prepareSigning ever sees the job
+  const stop = `INSTRUMENT: could not read HEAD in /patient: ${gitStderrWith(FAKE_TOKEN)}`;
+  assert.equal(scanSecrets(stop).length, 1, 'the injected stop must really carry it — else nothing is under test');
+
+  const r = await authorCloseForJob({
+    answers: ANSWERS,
+    repoPath: '/patient',
+    lang: 'js',
+    seedFn: async () => ({ stop, seedRef: null }),
+    scoutFn: async () => { throw new Error('the seed read must stop the flow before the scout'); },
+  });
+
+  assert.equal(r.ok, false);
+  assert.equal(r.stop, 'precheck');
+  assert.equal(r.reds[0].code, 'seed-unreadable');
+  assert.deepEqual(scanSecrets(r.reds[0].detail), [], 'a credential in git stderr must never reach the returned red');
+  assert.ok(r.reds[0].detail.includes('[REDACTED:'));
+  assert.match(r.reds[0].detail, /^INSTRUMENT: could not read HEAD in \/patient: fatal: unable to access/);
 });
 
 // ── 6. THE WHOLE PIPELINE: answers → a signable spec ─────────────────────────

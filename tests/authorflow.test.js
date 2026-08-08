@@ -39,12 +39,13 @@ import {
   DIRECTIONS, BASELINES, genreGuards, genreOwnedEnvNames, validateDeclaration,
 } from '../src/authoring.js';
 import {
-  DECLARATION_TOOL_NAME, MAX_REVISIONS, MAX_STRUCTURE_RETRIES, REVISE_GAP_CAP, REVISE_RED_CAP,
+  DECLARATION_TOOL_NAME, DECLARATION_ACK, AUTHOR_MAX_TOKENS,
+  MAX_REVISIONS, MAX_STRUCTURE_RETRIES, REVISE_GAP_CAP, REVISE_RED_CAP,
   REVISE_INSTRUCTION, STRUCTURE_INSTRUCTION_TOOL, TYPES_QUESTIONS,
   PARAM_SCHEMAS, schemaCoverage, declarationSchema, declarationTool,
   catalogueBlock, lawsBlock, authorPrompt,
   renderSeedReadBlock, renderRejectBlock, buildReviseTurn, assertReviseTurn,
-  applyGenreEnv, resolveSourcePrefixes, makeCostBook, authorClose,
+  applyGenreEnv, resolveSourcePrefixes, makeCostBook, makeLoopGenerate, authorClose,
 } from '../src/authorflow.js';
 import { scanSecrets } from '../src/validate.js';
 
@@ -688,6 +689,72 @@ test('authorClose: an unreadable listing is a red before any token, never an emp
   assert.equal(calls.length, 0);
 });
 
+test('authorClose: the git stderr inside an unreadable-listing red is SCRUBBED — the red is kept, not just read', async () => {
+  // the listing's `stop` is built from `git ls-tree`'s own stderr (kinds.js:
+  // `INSTRUMENT: … : ${String(r.err).trim()}`), and M1 deliberately does not
+  // scrub — the caller does, at the boundary. This red leaves the flow and is
+  // carried by `authorCloseForJob` into what the caller persists, exactly like
+  // the two git channels in `prepareSigning`. Same leak class, same one inventory.
+  const fake = ['sk', 'live', 'A1b2C3d4E5f6G7h8I9j0KLMN'].join('-');
+  assert.equal(scanSecrets(fake).length, 1, 'the fixture must be a shape the ONE inventory actually detects');
+  const stop = `INSTRUMENT: git ls-tree -r seedsha failed in /patient: fatal: authorization failed (token ${fake})`;
+
+  const { generate, calls } = scriptGenerate([{ declaration: goodDeclaration() }]);
+  const r = await authorClose({
+    ...baseArgs(), generate, seedReadFn: scriptSeedRead().fn,
+    listing: { files: null, block: null, meta: null, stop },
+  });
+  assert.equal(r.ok, false);
+  assert.equal(r.reds[0].code, 'listing-unreadable');
+  assert.deepEqual(scanSecrets(r.reds[0].detail), [], 'a credential in git stderr must never survive into a kept red');
+  assert.ok(r.reds[0].detail.includes('[REDACTED:'), 'the mask is the shared redactor, not a silent deletion');
+  assert.match(r.reds[0].detail, /^INSTRUMENT: git ls-tree -r seedsha failed in \/patient: fatal: authorization failed/);
+  assert.equal(calls.length, 0, 'and it still refuses before any token');
+});
+
+test('authorClose: the provider error inside a provider-red is SCRUBBED — a transport casualty is still persisted', async () => {
+  // the transport's own message, verbatim: a proxy URL or an auth header echoed
+  // back by the socket layer lands in `ask.providerError` and rides straight into
+  // a kept red. Same boundary, same one inventory as the two git channels above.
+  const fake = ['sk', 'live', 'A1b2C3d4E5f6G7h8I9j0KLMN'].join('-');
+  assert.equal(scanSecrets(fake).length, 1, 'the fixture must be a shape the ONE inventory actually detects');
+  const err = `ENETUNREACH: connect failed via https://proxy.invalid?key=${fake}`;
+  assert.equal(scanSecrets(err).length, 1, 'and the injected error must really carry it — else nothing is under test');
+
+  const { generate } = scriptGenerate([{ error: err, declaration: null }]);
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: scriptSeedRead().fn });
+
+  assert.equal(r.ok, false);
+  assert.equal(r.stop, 'provider-red');
+  assert.equal(r.reds[0].code, 'provider-red');
+  assert.deepEqual(scanSecrets(r.reds[0].detail), [], 'a credential in transport prose must never survive into a kept red');
+  assert.ok(r.reds[0].detail.includes('[REDACTED:'), 'the mask is the shared redactor, not a silent deletion');
+  assert.match(r.reds[0].detail, /^ENETUNREACH: connect failed via /, 'which transport died is still readable');
+});
+
+test('authorClose: the scout reason inside a scout-absent red is SCRUBBED — its meta.error half is provider prose', async () => {
+  // `scout.reason` is half survey bookkeeping and half the scout's own error
+  // string, so the same transport prose reaches this red by a second route — and
+  // this one refuses at $0, before the loop the test above dies inside.
+  const fake = ['sk', 'live', 'A1b2C3d4E5f6G7h8I9j0KLMN'].join('-');
+  assert.equal(scanSecrets(fake).length, 1, 'the fixture must be a shape the ONE inventory actually detects');
+  const reason = `survey 0 bytes — the scout did not complete (401 for key ${fake})`;
+  assert.equal(scanSecrets(reason).length, 1, 'and the injected reason must really carry it — else nothing is under test');
+
+  const { generate, calls } = scriptGenerate([{ declaration: goodDeclaration() }]);
+  const r = await authorClose({
+    ...baseArgs(), generate, seedReadFn: scriptSeedRead().fn,
+    scout: { state: 'ABSENT', facts: null, reason, calls: [] },
+  });
+
+  assert.equal(r.ok, false);
+  assert.equal(r.reds[0].code, 'scout-absent');
+  assert.deepEqual(scanSecrets(r.reds[0].detail), [], 'a credential in the survey reason must never survive into a kept red');
+  assert.ok(r.reds[0].detail.includes('[REDACTED:'), 'the mask is the shared redactor, not a silent deletion');
+  assert.match(r.reds[0].detail, /^the survey is ABSENT \(survey 0 bytes — the scout did not complete/);
+  assert.equal(calls.length, 0, 'and it still refuses before any token');
+});
+
 test('authorClose: an EMPTY listing is a red before any token, and names itself apart from an unreadable one', async () => {
   const { generate, calls } = scriptGenerate([{ declaration: goodDeclaration() }]);
   const r = await authorClose({
@@ -877,6 +944,190 @@ test('authorClose drives the REAL seed read against a REAL repository', async (t
   const suite = r.seedRead.find((/** @type {any} */ s) => s.stage === 'suite-green');
   assert.equal(suite.verdict, 'green', 'every stage runs at seed, including the ones after a red');
   assert.equal(r.listing.files.includes('src/email.js'), true, 'the listing was computed from the real tree');
+});
+
+// ── 9. THE MODEL BOUNDARY — makeLoopGenerate against the REAL Loop ──────────
+//
+// The adapter that wires the authoring call onto bare-agent. Everything above
+// injects `generate`, so this is the ONE place the real Loop runs, and the three
+// things it encodes were each paid for in a live run rather than reasoned out:
+//
+//   - THE TOOL ENDS THE CALL. `declare_close` is an OUTPUT CHANNEL, not a step in
+//     a conversation, so the round that would acknowledge its result has nothing
+//     to say and must never be paid for. MEASURED both arms: stop-wired = 1
+//     provider round, unwired = 2. The observable is the ROUND COUNT, not the
+//     spelling of the wiring.
+//   - CACHING IS ON (F18). Caching was silently OFF once and cost 9.4x per round.
+//   - THE TOKEN CAP IS OURS (F30). The 4096 provider default cannot hold a whole
+//     declaration, and a round cut off at the cap must surface as its OWN outcome
+//     — laundering a truncation into a clean empty success is the BA-6 class.
+//
+// The provider is the seam (a shell-owned binding by design). It records the
+// options object it is handed, which is what a flag drop actually looks like from
+// the outside: the round happens, and the wire says nothing about caching.
+
+/**
+ * A counting provider. One script entry per ROUND (sticks on the last), and every
+ * round's `(messages, tools, options)` is recorded — `options` is what `loop.run`
+ * forwards verbatim (bare-agent loop.js: `provider.generate(toSend, activeTools, options)`).
+ * @param {{text?: string, toolCalls?: any[], stopReason?: string}[]} script
+ */
+function countingProvider(script) {
+  /** @type {{messages: any[], tools: any[], options: any}[]} */
+  const rounds = [];
+  return {
+    name: 'counting',
+    rounds,
+    async generate(/** @type {any[]} */ messages, /** @type {any[]} */ tools, /** @type {any} */ options) {
+      const s = script[Math.min(rounds.length, script.length - 1)] ?? {};
+      rounds.push({ messages, tools, options });
+      const toolCalls = s.toolCalls ?? [];
+      return {
+        text: s.text ?? '',
+        toolCalls,
+        usage: { inputTokens: 10, outputTokens: 10 },
+        costUsd: 0.001,
+        // the NEUTRAL vocabulary the Loop classifies on (BA-6/BA-13)
+        stopReason: s.stopReason ?? (toolCalls.length ? 'tool_use' : 'end_turn'),
+        model: 'counting-model',
+      };
+    },
+  };
+}
+
+/** the declaration as the model would deliver it: one schema-forced tool call */
+const declCall = (/** @type {any} */ declaration, id = 't1') => ([{ id, name: DECLARATION_TOOL_NAME, arguments: declaration }]);
+
+test('makeLoopGenerate: the declaration tool ENDS the call — the acknowledging round is never paid for', async () => {
+  /** @type {any} */
+  const box = { calls: [] };
+  const decl = goodDeclaration();
+  const provider = countingProvider([
+    { toolCalls: declCall(decl) },
+    // the round the wiring exists to prevent: if the loop ever reaches this, the
+    // call paid twice for one declaration
+    { text: 'thanks, noted' },
+  ]);
+
+  const r = await makeLoopGenerate(provider)([{ role: 'user', content: 'author it' }], [declarationTool(box)], {});
+
+  assert.equal(provider.rounds.length, 1, 'ONE provider round per declaration — an unwired tool pays for a second');
+  assert.deepEqual(box.calls, [decl], 'the tool still RAN: the stop lands AFTER the result, never instead of it');
+  assert.equal(r.error, null,
+    'a deliberate stop is not a fault — askDeclaration reads `error` first and would route this as a provider-red');
+});
+
+test('makeLoopGenerate: the tool that ends the call is the one the CALLER passed, with its own result', async () => {
+  // the wiring wraps `execute`; a wrapper that swallowed the caller's return, or
+  // dropped the rest of the tool definition, would break the output channel while
+  // still stopping the loop
+  /** @type {any} */
+  const box = { calls: [] };
+  const original = declarationTool(box);
+  /** @type {any[]} */
+  const wiredSeen = [];
+  const provider = {
+    name: 'inspecting',
+    async generate(/** @type {any[]} */ _m, /** @type {any[]} */ tools) {
+      wiredSeen.push(tools);
+      return { text: '', toolCalls: [], usage: {}, costUsd: 0.001, stopReason: 'end_turn', model: 'm' };
+    },
+  };
+  await makeLoopGenerate(provider)([{ role: 'user', content: 'x' }], [original], {});
+
+  const wired = wiredSeen[0][0];
+  assert.equal(wired.name, DECLARATION_TOOL_NAME, 'the menu the model sees is unchanged');
+  assert.deepEqual(wired.parameters, original.parameters, 'the schema is the tool\'s own — the wrapper is not a second one');
+  assert.equal(await wired.execute({ stages: [] }), DECLARATION_ACK, 'the caller\'s own result comes back through the wrapper');
+  assert.deepEqual(box.calls, [{ stages: [] }], 'and the caller\'s own recorder is the one that filled');
+});
+
+test('makeLoopGenerate: F18 caching and the F30 token cap reach the provider, from the shipped constants', async () => {
+  /** @type {any} */
+  const box = { calls: [] };
+  const provider = countingProvider([{ toolCalls: declCall(goodDeclaration()) }]);
+  await makeLoopGenerate(provider)([{ role: 'user', content: 'author it' }], [declarationTool(box)], {});
+
+  const { options } = provider.rounds[0];
+  assert.equal(options.cacheMessages, true,
+    'F18: caching was silently OFF once and cost 9.4x per round — the flag must reach the wire, not just the docstring');
+  assert.equal(options.maxTokens, AUTHOR_MAX_TOKENS,
+    'F30: the cap is the shipped constant, never a literal that can drift from it');
+  assert.ok(AUTHOR_MAX_TOKENS > 4096,
+    'F30: the 4096 provider default cannot hold a whole declaration — that is what the constant is FOR');
+
+  // and it is genuinely the option that travels, not a coincidence of defaults
+  const other = countingProvider([{ toolCalls: declCall(goodDeclaration()) }]);
+  await makeLoopGenerate(other, { maxTokens: 4096 })([{ role: 'user', content: 'x' }], [declarationTool({ calls: [] })], {});
+  assert.equal(other.rounds[0].options.maxTokens, 4096);
+});
+
+test('makeLoopGenerate: a round CUT OFF at the token cap is its OWN outcome, never a clean empty success', async () => {
+  // BA-6's defect class: a truncated round carries no tool call, and "no tool
+  // calls ⇒ final answer" would return it as a finished turn with error:null. The
+  // authoring flow reads `error` as the sole success signal, so a laundered
+  // truncation would arrive as an empty declaration instead of a casualty.
+  /** @type {any} */
+  const box = { calls: [] };
+  const provider = countingProvider([{ text: '{ "stages": [', stopReason: 'max_tokens' }]);
+  const r = await makeLoopGenerate(provider)([{ role: 'user', content: 'author it' }], [declarationTool(box)], {});
+
+  assert.equal(r.error, 'truncated:max_tokens', 'the cut-off is NAMED on the channel the caller branches on');
+  assert.deepEqual(box.calls, [], 'and nothing was delivered — a half-written declaration is not a declaration');
+});
+
+test('makeLoopGenerate: a HALF-WRITTEN declaration on a truncated round is never executed (BA-4)', async () => {
+  // the dangerous direction: the round was cut off mid-generation, so the tool
+  // call's arguments are missing keys — executing it is how a truncated
+  // `shell_write` emptied a 1789-line file. Here it would mint a declaration the
+  // model never finished writing, and the validator would judge it on its merits.
+  /** @type {any} */
+  const box = { calls: [] };
+  const provider = countingProvider([
+    { toolCalls: declCall({ stages: [{ name: 'changed-from-seed' }] }), stopReason: 'max_tokens' },
+  ]);
+  const r = await makeLoopGenerate(provider)([{ role: 'user', content: 'author it' }], [declarationTool(box)], {});
+
+  assert.deepEqual(box.calls, [], 'a tool call from a cut-off round is refused, not run');
+  assert.equal(r.error, 'truncated:max_tokens');
+});
+
+test('makeLoopGenerate: a truncated authoring round routes as provider-red through the flow, not as a declaration defect', async () => {
+  // where the distinct outcome has to LAND: a casualty is never evidence about
+  // the model (F45), so it must not spend the structure-retry budget that exists
+  // for a malformed emission, and it must not read as an artifact-red.
+  const provider = countingProvider([{ text: '', stopReason: 'max_tokens' }]);
+  const r = await authorClose({ ...baseArgs(), generate: makeLoopGenerate(provider), seedReadFn: scriptSeedRead().fn });
+
+  assert.equal(r.ok, false);
+  assert.equal(r.stop, 'provider-red', 'a cut-off round is a transport casualty, never an artifact-red');
+  assert.equal(r.reds[0].code, 'provider-red');
+  assert.match(r.reds[0].detail, /truncated:max_tokens/);
+  assert.equal(r.iterations[0].attempts, 1, 'and it does not burn the malformed-emission retries on its way out');
+});
+
+test('makeLoopGenerate: the whole authoring flow pays ONE provider round per call, every one of them cached and capped', async () => {
+  // the adapter under the real flow rather than in isolation: two authoring calls
+  // (author, then the revise that returns the declaration unchanged), each one a
+  // fresh Loop, each one a single paid round.
+  const decl = goodDeclaration();
+  const provider = countingProvider([{ toolCalls: declCall(decl) }]);
+  const { fn, seen } = scriptSeedRead({ typecheck: { verdict: 'red', value: 27, baseline: 0 } });
+  const r = await authorClose({ ...baseArgs(), generate: makeLoopGenerate(provider), seedReadFn: fn });
+
+  assert.equal(r.ok, true, JSON.stringify(r.reds));
+  assert.equal(r.stop, 'unchanged');
+  assert.equal(seen.length, 1, 'the declaration really did survive the tool channel and get measured');
+  assert.equal(provider.rounds.length, 2, 'two authoring calls, two provider rounds — the acknowledging rounds are never paid');
+  for (const [i, round] of provider.rounds.entries()) {
+    assert.equal(round.options.cacheMessages, true, `round ${i}: caching must be on for EVERY round, not just the first`);
+    assert.equal(round.options.maxTokens, AUTHOR_MAX_TOKENS, `round ${i}: the cap travels with every round`);
+    assert.deepEqual(round.tools.map((/** @type {any} */ t) => t.name), [DECLARATION_TOOL_NAME],
+      `round ${i}: the authoring call still carries exactly one tool, and it takes no action`);
+  }
+  // the revise round re-sent the transcript — which is precisely the cost F18's
+  // flag exists to bound
+  assert.ok(provider.rounds[1].messages.length > provider.rounds[0].messages.length);
 });
 
 test('makeCostBook: absorbed and added calls both land, and unknown stays unknown', () => {

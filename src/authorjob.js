@@ -356,7 +356,9 @@ export async function authorCloseForJob({
   if (!isNonEmptyString(seed)) {
     const s = await seedFn(workdir);
     if (s.stop !== null) {
-      return { ...base, reds: [{ code: 'seed-unreadable', path: 'seedRef', detail: s.stop }], stop: 'precheck' };
+      // same git-stderr channel as `prepareSigning`'s, scrubbed at the same
+      // boundary — this red is returned to the caller and kept with the run
+      return { ...base, reds: [{ code: 'seed-unreadable', path: 'seedRef', detail: redactSecrets(s.stop) }], stop: 'precheck' };
     }
     seed = s.seedRef;
   }
@@ -441,6 +443,32 @@ export function assembleSpec(specDraft, { closeDecl, verdictType }) {
 // ── 3. D9's THREE GATES, AND THE HASH ────────────────────────────────────────
 
 /**
+ * A validator red, SCRUBBED for persistence. Both declaration gates in
+ * `prepareSigning` hand back reds that quote things this module does not own —
+ * the declaration the model wrote (a `cmd`, an env value, a path) and the seed
+ * listing the arbiter read (the listing rule names what really sits beside an
+ * invented path). Those reds are written into the signing evidence, and a file
+ * that captures a key captures it forever.
+ *
+ * The scrub is at the EMISSION boundary, never inside the validators: they are
+ * shared with the model-facing rendering, which already scrubs on its own way
+ * out (`renderRejectBlock`), and a second scrub buried in the rule would be the
+ * hand-rolled copy the ONE inventory (SECRET_PATTERNS) exists to prevent.
+ *
+ * UNIFORM over every string-valued field, not a named list of them. `detail` is
+ * only the loudest echo: `cmd-denied` quotes the command AGAIN as a structured
+ * `cmd`, `path-not-in-listing` carries `declared`/`resolved`, and the next red
+ * to learn a field would be missed by an allowlist written today. `redactSecrets`
+ * returns a non-matching string byte-identical, so the enumerated and structural
+ * fields (`code`, `path`) pass through unchanged and the uniform map costs them
+ * nothing — the fail-safe direction, by construction.
+ * @param {Red} r @returns {Red}
+ */
+const scrubRed = (r) => /** @type {any} */ (Object.fromEntries(
+  Object.entries(r).map(([k, v]) => [k, typeof v === 'string' ? redactSecrets(v) : v]),
+));
+
+/**
  * D9, in code: *nothing JUDGES the close; three mechanical gates plus a
  * signature.* No LLM validates another LLM's close, here or anywhere.
  *
@@ -483,8 +511,13 @@ export async function prepareSigning({
   // spec is not a close anyone can run.
   const jv = validateJob(spec, ...(shellCapUsd === undefined ? [] : [{ shellCapUsd }]));
   if (!jv.ok) {
-    base.gates.declaration = { ok: false, grounded: false, reds: jv.reds };
-    return { ...base, reds: jv.reds };
+    // scrubbed HERE, at the same boundary as the git channels below: these reds
+    // echo the DECLARATION verbatim, and the `secret-literal` red the same sweep
+    // raises beside them proves the shape is one the ONE inventory detects — a
+    // sibling red that hands it through unmasked is the divergence that rule bans
+    const reds = jv.reds.map(scrubRed);
+    base.gates.declaration = { ok: false, grounded: false, reds };
+    return { ...base, reds };
   }
   if (!isDeclaredClose(spec)) {
     const red = {
@@ -501,7 +534,11 @@ export async function prepareSigning({
   if (!isNonEmptyString(seed)) {
     const s = await seedFn(workdir);
     if (s.stop !== null) {
-      const red = { code: 'seed-unreadable', path: 'seedRef', detail: s.stop };
+      // git's own stderr, scrubbed HERE — the emission boundary, exactly like the
+      // gap lines below (M1 deliberately does not scrub; the caller does). This red
+      // is persisted with the signing evidence, and a file that captures a key
+      // captures it forever.
+      const red = { code: 'seed-unreadable', path: 'seedRef', detail: redactSecrets(s.stop) };
       base.gates.declaration = { ok: false, grounded: false, reds: [red] };
       return { ...base, reds: [red] };
     }
@@ -514,13 +551,22 @@ export async function prepareSigning({
   // signature over a deferred gate signs something nobody checked.
   const listed = await listingFn(workdir, seed);
   if (listed.stop !== null) {
-    const red = { code: 'listing-unreadable', path: 'closeDecl', detail: listed.stop };
+    // the other half of the same channel: `git ls-tree`'s stderr, scrubbed at the
+    // same boundary and for the same reason
+    const red = { code: 'listing-unreadable', path: 'closeDecl', detail: redactSecrets(listed.stop) };
     base.gates.declaration = { ok: false, grounded: false, reds: [red] };
     return { ...base, reds: [red] };
   }
   const dv = validateCloseDecl(spec.closeDecl, { at: 'closeDecl', listing: listed.files });
-  base.gates.declaration = { ok: dv.ok, grounded: dv.grounded, reds: dv.reds, scoped: dv.scoped };
-  if (!dv.ok) return { ...base, reds: dv.reds };
+  // the grounded gate's reds quote BOTH untrusted sources — the declaration, and
+  // the seed listing itself (the listing rule names what really sits beside an
+  // invented path). The listing half is a channel gate 1a structurally cannot
+  // cover: `validateJob` sweeps the SPEC, and a token-shaped FILENAME in the
+  // patient's tree is not in it. Scrubbed on both exits — the gate record and the
+  // returned reds are two copies of the same persisted evidence.
+  const dvReds = dv.reds.map(scrubRed);
+  base.gates.declaration = { ok: dv.ok, grounded: dv.grounded, reds: dvReds, scoped: dv.scoped };
+  if (!dv.ok) return { ...base, reds: dvReds };
 
   // ── gates 2 + 3: one execution of EVERY stage at the seed.
   const seedTrees = makeSeedTrees();

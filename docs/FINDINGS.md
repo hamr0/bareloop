@@ -6436,3 +6436,157 @@ first place so a reading side could not drift from the writing side. That guard 
 was still defeated — not by drift, but by a SECOND writer the reader had never heard of. When a
 detector keys on a string a producer emits, adding a producer is a change to the detector, and the
 seam only survives if every producer's marker is exported and every one is read.
+
+## F91 — fifteen review fixes in three shrinking rounds; the python genre refuses twice, honestly, and the second refusal is the crash-stop preventing a live fake green
+
+**Date:** 2026-08-08 · **Rung:** CLOSE-DEV, whole-branch review + live e2e proofs · **Cost:** ~$2.94 paid (5 live authoring runs across two sessions of the day)
+
+The rung's built modules (M1–M4) went through a whole-branch review cycle and then live
+authoring runs on BOTH genres — the first time the close-authoring path met a real model
+and a real patient rather than the test suite.
+
+### 1. Three shrinking review rounds, and the second leak was found by reviewing the fix for the first
+
+Six-lens whole-branch review (sonnet finders, opus TDD-first fixes), three rounds:
+
+- **Round 1 — 5 confirmed, all fixed:** the python genre-env re-validation could brick the
+  run on the arbiter's OWN injection (fixed via a `closeDecl.genreEnv` envelope + by-value
+  check); the command deny-floor was missing from `checkKind` (added, plus
+  absolute-path/traversal refusal — and the bareguard seam turned out to already EXIST,
+  recorded as checked-not-filed in UPSTREAM-ASKS); `cleanup()` could throw and discard an
+  already-minted verdict (never throws now); the crashed counter (nonzero exit + 0 matched
+  lines) read as a zero instead of an instrument stop (routes to the stop now, seed
+  baselines included); `effectiveTimeoutMs` made tighten-only (the money rule applied to
+  time, v1.57 §4). Plus: the `renderSeedReadBlock` scrub closed a two-headed leak
+  (`gapLines` AND `detail.stop`), and a tautological Layer-R trim test was rewritten so it
+  can fail.
+- **Round 2 — a fix-diff review of round 1's fixes found 4 more,** the first of which is
+  the round's own lesson: `renderRejectBlock` was a SECOND leak channel of the exact class
+  the seed-read scrub had just closed. Also: genre-env is now checked at the GROUNDED gates
+  (a forgery dies where the signature is minted, not at the listing); `envCapableKind`
+  consolidated so the injector and the validator cannot drift; and the crash-stop's known
+  blind spot (the `grep -c` / pytest exit-5 class) documented as an accepted fail-safe
+  limit, never to be softened. All 19 new tests sabotage-proven able to fail.
+- **Round 3 — a validation sweep of every remaining candidate passed 6, all fixed:**
+  guard-name-keyed `scopeOfJob` + `AT_MOST_ONCE_KINDS` (a decoy files-changed stage can no
+  longer defeat the scope); `resolveSourcePrefixes` realpath-dedupe (the mypy symlink fix,
+  measured live on aurora against an identical-16-errors control); `notes` divergence
+  closed (`validateDeclaration` checks it, schema requires `minLength:1`); `parseValue`
+  first-aggregate keeps `notes` + an honest message; scout recovery prefers `s2.error`;
+  `addedLines` stat-throw announces a note instead of swallowing. Mutation tests on the
+  final micro-batch: 5/5 killed.
+
+The keepable rule is the round-2 one, already minted once at N1 and paid for again here:
+**a fix for a containment/leak bug is itself review territory for the same class** — the
+second channel was found only because the fix diff was reviewed as a diff, not trusted as
+a fix.
+
+### 2. The JS genre PREPARED twice; the trial gate is deterministic
+
+Live runs, driver `scripts/run-author.mjs` (stops at `prepareSigning`; never signs, never
+runs the job). Pulselog (JS): $0.25 pre-fix and $0.22 post-fix, both SIGNING PREPARED. The
+trial gate ran 32s and the resolved-spec hash came back BYTE-IDENTICAL across the two cold
+runs — the close behaving as a signed, replayable FIELD is the property the M3/M4 rework
+was bought for, and it held against a real model.
+
+One driver bug found en route, not a product bug: the driver's default `$2 shellCapUsd`
+red-flagged a draft carrying `budgetUsd: 4` — aligned by lowering the draft budget.
+
+### 3. The python genre refused twice — and the second refusal is the fail-safe catching a fake green LIVE
+
+**Run 1 ($0.89): an honest refusal driven by a real mypy fatal** — a symlink-derived
+`MYPYPATH`. The refusal itself live-proved two of §1's fixes at once: the genre-env
+envelope survived validation (previously the run would have bricked on the arbiter's own
+injection), and the crash-stop path fired as an instrument stop instead of laundering the
+fatal into a silent hang. Root cause OURS; fixed by round 3's realpath-dedupe.
+
+**Run 2, post-fix ($0.64 authoring): the model composed a valid declaration (grounded
+gates green) — and the seed gates refused again, on a NEW mechanism.** Both mypy stages
+stopped with *"python exited 1 and its output matched none of the parser's terms."*
+Reproduced by hand: the same command in the same tree emits 16 real `: error:` lines and
+they match the term. Reproduced through the real executor: instrument-stop, deterministic.
+The split: **the aurora layout reaches its packages through tracked symlinks
+(`src/aurora_spawner -> ../packages/spawner/src/aurora_spawner`), mypy under
+`MYPYPATH=src` reports every error in the SYMLINK spelling, and the declaration's scope
+filter held the PHYSICAL spelling** (`packages/spawner/src/aurora_spawner/`). The scope
+matcher compared spellings, not files: 16 real errors → 0 in-scope matches → exit 1 with
+zero matches → crash-stop.
+
+Read the refusal in both directions:
+
+- **The fail-safe did exactly what it was built for, on its first live encounter.**
+  Without round 1's crashed-counter rule, the scoped count would have read a COUNTED ZERO
+  against a baseline of 0 — lower-is-better, GREEN — on a tree carrying 16 real strict
+  errors. A fake green, minted by an instrument that went blind, prevented by the rule
+  that refuses to let a crashed-looking tool certify zero. The stop is loud, honest, and
+  re-runnable; that is the direction the rule was chosen for (the F49 precedent), and it
+  paid out before the rung ever shipped.
+- **But the scope matcher was a blind instrument on symlink layouts** — the same class as
+  run 1's `MYPYPATH` derivation, one seam over: physical-vs-spelling identity. A python
+  monorepo that routes imports through a symlinked source root is a COMMON shape, so this
+  was not an aurora quirk but a genre-wide hole: every scoped count on such a patient
+  reads zero.
+
+**Fixed by physical-identity scope matching** (realpath on the reported path and on the
+prefixes, against the measuring workdir; lexical fallback when the file does not exist in
+the measured tree; a symlink resolving OUTSIDE the scope stays excluded — the fix unifies
+spellings of the same physical file and widens nothing). Regression-tested against the
+REAL mypy output as fixture (expected counts derived from the fixture, never hardcoded),
+watched failing pre-fix, three sabotages killed — one of them (fail-open on an
+unresolvable path) also killed by a pre-existing shipped test, the fail-safe direction
+guarded twice. Two same-assumption sites in the changed-set/allowPrefixes fence were
+found, left deliberately LEXICAL, and parked for a ruling rather than silently widened
+(both sides there read git's own spelling today, so they are consistent — but a
+`pattern-absent-in-diff` scope declared through a symlink spelling would mismatch; the
+fence is arbiter-adjacent and a widening is never a drive-by).
+
+**The $0 re-gate CONVERTED the live failure: SIGNING PREPARED on the SAME declaration.**
+All three gates green, and `typecheck-spawner` now reads value=16 against baseline 0 —
+an honest RED at seed, which is exactly what gate 3 requires of a signable close: the 16
+errors the blind filter dropped are the job's work, now visible. The specHash the re-gate
+minted is BYTE-IDENTICAL to the hash the failed run computed — determinism across the
+fix, on the python genre this time.
+
+The $0 conversion is worth naming as method: the failure lived entirely in the mechanical
+signing gates, and the authored declaration was already on disk — so the fix's live proof
+cost nothing. The cheap-instrument rule, again: the paid surface is for what only the paid
+surface can show.
+
+### 4. The follow-up wave: the untested adapter got its bench, and the leak class turned up a THIRD time
+
+Two agreed items from the review's open list, landed after the commit above:
+
+- **`makeLoopGenerate` bench (7 tests, real Loop, scripted provider):** the adapter that
+  wires the authoring call onto bare-agent had zero tests — it worked only because paid
+  runs worked. The bench pins the three paid-for lessons at the WIRE (the options object
+  the loop forwards to the provider, not the adapter's internals): the declaration tool
+  ENDS the call (one round paid, not two), `cacheMessages: true` (F18 — caching silently
+  OFF was 9.4×/round), `maxTokens = AUTHOR_MAX_TOKENS` with an override arm that kills a
+  hardcoded literal, a cap-truncated round surfacing as `truncated:max_tokens` routed
+  `provider-red` (never laundered into clean empty success), and a HALF-WRITTEN
+  declaration on a truncated round never executed (the BA-4 direction). Six sabotages,
+  every one killed by a named test.
+- **The persisted-red scrub sweep:** the two known unscrubbed channels
+  (`seed-unreadable`/`listing-unreadable` in `prepareSigning`) were joined by two more of
+  the same class found in the sweep (`authorCloseForJob`'s seed red; `authorflow`'s
+  listing red) — four sites fixed, every other red/refusal `detail` in both files listed
+  found-clean by site. Tests build the secret token from parts (no real-shaped literal in
+  the tree), first prove `scanSecrets` sees the fixture, then assert mask-not-deletion.
+
+**And the sweep's real catch — the leak class's THIRD appearance, upgraded twice:**
+`prepareSigning`'s declaration gates returned the validator's reds UNSCRUBBED into both
+the persisted `reds` and `gates.declaration` — model-declared text (`cmd`, env values,
+paths) echoed verbatim, including a structured `cmd` field, with the divergence visible
+in one frame: a `secret-literal` red DETECTING the token beside a validation red CARRYING
+it. The fix agent then CORRECTED the diagnosis while proving it: the cmd echo fires at
+gate 1a (whose spec sweep would catch a token in the DECLARATION) — but gate 1b quotes
+the SEED LISTING through the did-you-mean helper, so a token-shaped FILENAME in the
+patient's tree reaches the persisted red through a channel the spec sweep structurally
+cannot see. Measured pre-fix: spec clean, red leaks. Fixed at BOTH gates with one shared
+`scrubRed` (uniform `redactSecrets` over every string field of the red — a detail-only
+scrub was sabotage-proven insufficient, shipping the structured `cmd` verbatim), plus
+symmetry wraps on the two provider-derived channels. All four regressions watched failing
+with the raw token in the actual. The class ledger for this branch now reads:
+`renderSeedReadBlock` → `renderRejectBlock` → the declaration-gate persistence boundary —
+three appearances, each found by reviewing the PREVIOUS fix's class rather than trusting
+it: the strongest evidence yet that the class review is not optional.
