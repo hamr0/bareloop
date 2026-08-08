@@ -25,6 +25,7 @@
 // plain parsed data; every failure is a named {code, path, detail} red.
 
 import { TOOL_MENU, LOCKED_TOOLS, WRITE_VERBS, checkMenu } from './job.js';
+import { declaredStages } from './declaredclose.js';
 import { globToPrefix, scopeContained, isObj, isNonEmptyString, sweepSecretLiterals, hasNestedQuantifier } from './validate.js';
 
 /** the closed exit menu (PRD v1.12 §3 + decision 1's `check-passes`): the
@@ -170,6 +171,30 @@ export function stageClose(close) {
   return [{ name: 'close', cmd: close.cmd, expect: close.expect, judged: close.judged, gapKeep: close.gapKeep }];
 }
 
+/**
+ * THE ONE STAGING, one level up: a job's close stages, from EITHER of the two
+ * fields a spec may carry.
+ *
+ * `stageClose` reads a command close; `declaredStages` reads an authored
+ * declaration (M4). A spec declares exactly one of them — the job validator reds
+ * `close-duplicated` on both — so this is a selection, never a merge.
+ *
+ * Every consumer calls THIS rather than `stageClose` directly, for the reason
+ * W4 wrote `stageClose` in the first place: the drafting prompt, the plan
+ * validator, the runner, the bridge registry and the reuse envelope must all see
+ * the same stage list, and a consumer that reads only `close` sees a declared
+ * job as having no close at all — an empty check menu offered to a drafter whose
+ * plan the validator would then red for referencing a stage nobody offered.
+ * @param {any} job the job spec, any shape
+ * @returns {any[]|null} the stage list, or null when the job names no close
+ */
+export function closeStagesOf(job) {
+  if (!isObj(job)) return null;
+  const declared = declaredStages(job.closeDecl);
+  if (declared) return declared;
+  return stageClose(job.close);
+}
+
 /** @typedef {{code: string, path: string, detail?: string, verb?: string}} Red */
 
 /**
@@ -235,7 +260,7 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes, seedRed, 
   // (gold/rubric/hitl) stages nothing, so it offers nothing — the runner
   // escalates `close-unsupported` on the same null, and an empty menu is already
   // the honest reading here (every check-passes becomes a check-unknown).
-  const checkNames = checkMenu(stageClose(spec.close) ?? []).map((m) => m.name);
+  const checkNames = checkMenu(closeStagesOf(spec) ?? []).map((m) => m.name);
   // The offered scope menu. A caller-supplied menu must be the same one the
   // prompt enumerated; with none, derive from the signed fence — fail-CLOSED,
   // so omitting the option narrows the agent's choices and never widens them.

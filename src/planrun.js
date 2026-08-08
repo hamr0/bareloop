@@ -20,7 +20,7 @@ import { join, resolve, relative } from 'node:path';
 import { Gate } from 'bareguard';
 import { LiteCtx } from 'litectx';
 import { runClose, runStages, ralph, CLOSE_FAULTS, boundGap } from './ralph.js';
-import { validatePlan, legalScopes, stageClose } from './plan.js';
+import { validatePlan, legalScopes, closeStagesOf } from './plan.js';
 import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU } from './plan.js';
 import { snapshotScope, evalExits, CHECK_GAP_MAX } from './exits.js';
 import { createRoot } from './root.js';
@@ -33,6 +33,8 @@ import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
 import { validateBridge, loadGate } from './bridges.js';
 import { extractArtifact } from './text.js';
 import { createClock, isWallTimeout } from './clock.js';
+import { isDeclaredClose, runDeclaredStages, validateCloseDecl, closeGrade } from './declaredclose.js';
+import { seedAtHead, seedListing } from './kinds.js';
 
 const require = createRequire(import.meta.url);
 const { Loop, wireGate, HaltError } = require('bare-agent');
@@ -306,7 +308,7 @@ export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes,
   // executes and `validatePlan` accepts against. Reading `job.close` raw here left
   // the legacy object form offering nothing while the runner preflighted a stage.
   // (`?? []`: a close naming no command stages nothing, so it offers nothing)
-  const closeStages = stageClose(job.close) ?? [];
+  const closeStages = closeStagesOf(job) ?? [];
   const checkNames = checkMenu(closeStages).map((m) => m.name);
   const doc = `DRAFT-PLAN
 You are planning how to accomplish a goal in a repository, as an ordered list of bounded
@@ -550,14 +552,17 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // A STAGED close (PRD v1.28) is an ordered list of command stages and is the
   // go-forward shape; the object form survives only for the declared-but-locked
   // verdict classes (gold/rubric/hitl), which name no command to run.
-  // W4: the staging itself lives in ONE place (`stageClose`), shared with
+  // W4: the staging itself lives in ONE place (`closeStagesOf`), shared with
   // `planPrompt` and `validatePlan` — a second copy here is exactly how the
-  // runner came to execute a stage neither of the other two could see.
-  const stagedClose = stageClose(job.close);
+  // runner came to execute a stage neither of the other two could see. M4 widened
+  // that one derivation to the AUTHORED close (`closeDecl`) rather than adding a
+  // second: a consumer reading only `close` sees a declared job as closeless.
+  const stagedClose = closeStagesOf(job);
+  const declared = isDeclaredClose(job);
   if (!stagedClose) {
     emit('escalation', {
       category: 'close-unsupported', decisionReady: true,
-      decision: `The job's close is a ${job.close.type} close — the plan flow executes commands whose exit codes are truth (a staged close, or a single predicate).`,
+      decision: `The job's close is a ${job.close?.type ?? 'non-command'} close — the plan flow executes commands whose exit codes are truth (a staged close, a single predicate, or an authored declaration).`,
       options: ['restate the close as a predicate', 'wait for the verdict-classes rung'],
     });
     return 'close-unsupported';
@@ -738,6 +743,22 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   ];
 
   const closeOpts = { timeoutMs: closeTimeoutMs, cwd: workdir };
+  /** D8 — the DECLARED close's seed, filled in below before anything runs.
+   * `null` for a command close, which has no baseline to measure against. */
+  /** @type {{seedRef: string}|null} */
+  let declaredCtx = null;
+  /**
+   * ONE close-execution seam, chosen once by which field the SIGNED spec carries.
+   * Both executors return `runClose`'s verdict shape, so everything downstream —
+   * the precheck, the preflight, the check seam, ralph's judge, `CLOSE_FAULTS`,
+   * the trend reader and Layer R — is the same code for both.
+   *
+   * The command path is byte-identical to what it was: same call, same options.
+   * @param {any[]} stages
+   */
+  const runCloseStages = (stages) => (declared
+    ? runDeclaredStages(stages, scrub, { ...closeOpts, seedRef: /** @type {any} */ (declaredCtx).seedRef })
+    : runStages(stages, scrub, closeOpts));
   /** @type {string|undefined} the stage that rendered the LAST close verdict (Layer R's red-set source) */
   let closeStage;
   /** @type {any} the LAST close verdict itself (W-2). A wall stop KEEPS the grade
@@ -795,15 +816,74 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   };
   /** the close, as ONE verdict: every stage in order, first red wins */
   const judgeClose = async () => {
-    const v = await runStages(stagedClose, scrub, closeOpts);
+    const v = await runCloseStages(stagedClose);
     closeStage = v.stage;
     lastCloseVerdict = v;
     // Only a RED grade is a reading. A `satisfied` ends the run and a close FAULT
     // rendered no judgment at all (CLOSE_FAULTS) — folding either into the series
     // would put a non-number where the instrument expects a graded one.
-    if (v.verdict === 'needs_revision') runTrend.record({ gap: v.gap });
+    // `closeGrade` is the reader's input for EITHER executor: a command close
+    // hands over its gap and `readGrade` scrapes the stage and the count out of
+    // it; a declared close already KNOWS both and says them, rather than
+    // round-tripping a number through prose it would then have to parse back.
+    if (v.verdict === 'needs_revision') runTrend.record(closeGrade(v));
     return v;
   };
+
+  // ── 0*. the DECLARED close's two run-start facts. Both are $0 and both sit
+  // INSIDE the clock (they are the arbiter's own instruments, and time the
+  // operator's instruments too or the budget measures a different run).
+  //
+  //  (1) THE SEED (D8/D12). HEAD at run start, READ and recorded, never typed.
+  //      The close stores the counting RULE and never the number, so every
+  //      `baseline: "seed"` stage is measured against THIS run's own starting
+  //      point — a constant frozen at signing would judge run 5 against run 1's
+  //      tree, which is the one-experiment shape D12 retires.
+  //
+  //  (2) THE GROUNDED RE-VALIDATION (D9 gate 1). The job validator judged the
+  //      declaration with no repository in hand, so hamr's listing rule and the
+  //      scoped-job derivation that arms the F84 one-population law were
+  //      DEFERRED, not skipped. They run here, against the real seed tree,
+  //      before any stage and before any token. A declaration that names a path
+  //      the tree does not have is a broken close, not a red about the worker —
+  //      round 2's arm A invented `src/alertEmail.js` and silently reclassified
+  //      15 real errors into the wrong population.
+  if (declared) {
+    const s = await seedAtHead(workdir);
+    if (s.stop !== null) {
+      emit('escalation', {
+        category: CLOSE_FAULTS.failed.category, decisionReady: true,
+        decision: `The authored close measures against this run's own seed, and the seed could not be read. ${CLOSE_FAULTS.failed.decision}`,
+        options: ['check the repository is a git checkout with at least one commit', ...CLOSE_FAULTS.failed.options],
+        detail: scrub(s.stop),
+      });
+      return 'close-red';
+    }
+    const listed = await seedListing(workdir, s.seedRef);
+    const v = listed.stop === null
+      ? validateCloseDecl(job.closeDecl, { at: 'closeDecl', listing: listed.files })
+      : { ok: false, grounded: false, reds: [{ code: 'listing-unreadable', path: 'closeDecl', detail: listed.stop }] };
+    emit('close-decl', {
+      genre: job.closeDecl.genre,
+      lang: job.closeDecl.lang,
+      seedRef: s.seedRef,
+      stages: stagedClose.map((/** @type {any} */ st) => st.name),
+      grounded: v.grounded,
+      ok: v.ok,
+      ...(v.ok ? {} : { reds: v.reds.map((/** @type {any} */ r) => ({ ...r, detail: scrub(String(r.detail ?? '')) })) }),
+    });
+    if (!v.ok) {
+      emit('escalation', {
+        category: CLOSE_FAULTS.failed.category, decisionReady: true,
+        decision: 'The authored close does not validate against the repository it is about to judge — a path it names, '
+          + 'or a population it counts, does not match the seed tree. Nothing it rendered would be trustworthy.',
+        options: ['re-author the close against this repository (a new declaration is a new spec hash, and needs re-signing)', ...CLOSE_FAULTS.failed.options],
+        detail: v.reds.map((/** @type {any} */ r) => `${r.code}:${r.path}${r.detail ? ` — ${scrub(String(r.detail))}` : ''}`).join('\n'),
+      });
+      return 'close-red';
+    }
+    declaredCtx = { seedRef: s.seedRef };
+  }
 
   // ── 0a. close precheck (close-first, F17): already-green is a DISTINCT
   // record, zero tokens; a forbidden-zone verdict escalates before any spend
@@ -838,7 +918,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       : {}),
   });
   for (const m of menu) {
-    const v = await runStages(m.run, scrub, closeOpts);
+    const v = await runCloseStages(m.run);
     if (v.verdict === 'needs_revision') {
       seedRed.push(m.name);
       // …and the preflight grade is a READING, for the same reason the precheck one
@@ -856,7 +936,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // handed to a human and to the replanner, which is the exact class of false
       // story this change exists to remove. Asked of the reader's own books, so
       // there is no second record of what has been graded.
-      if (!runTrend.report().stages.some((s) => s.stage === v.stage)) runTrend.record({ gap: v.gap });
+      if (!runTrend.report().stages.some((s) => s.stage === v.stage)) runTrend.record(closeGrade(v));
     }
     emit('check-preflight', { name: m.name, verdict: v.verdict, ...(m.run.length > 1 ? { chain: m.run.map((s2) => s2.name) } : {}) });
     const f = Object.hasOwn(CLOSE_FAULTS, v.verdict) ? CLOSE_FAULTS[v.verdict] : undefined;
@@ -909,7 +989,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // derivation, not a live path; the reachable guard is the validator's, and
     // that one is mutation-covered.
     if (!chain) return { pass: false, fault: 'failed', gap: `no offered close stage named "${name}"` };
-    const v = await runStages(chain, scrub, closeOpts);
+    const v = await runCloseStages(chain);
     emit('check-run', { name, verdict: v.verdict, ...(v.stage && v.stage !== name ? { stage: v.stage } : {}), ...(v.exitCode !== undefined ? { exitCode: v.exitCode } : {}) });
     if (v.verdict === 'satisfied') return { pass: true };
     if (v.verdict === 'needs_revision') {
@@ -927,7 +1007,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // step grade donates a null. Measured on u-msh70zla's own archived gaps: raw
       // reads `typecheck 24 → 15 → 14`, wrapped reads nothing at all. Same seam the
       // Layer R note below already calls out for a check's `^`-anchored gapKeep.
-      runTrend.record({ gap: v.gap });
+      runTrend.record(closeGrade(v));
       return { pass: false, gap: v.gap };
     }
     return { pass: false, fault: v.verdict, gap: v.detail };

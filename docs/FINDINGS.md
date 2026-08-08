@@ -6371,3 +6371,68 @@ The complement is the reason it is worth a finding number rather than a changelo
 seam already carries a working precedent, check what its failure direction COSTS before reusing
 it, because the mechanism that is deliberately fail-safe for a readout is deliberately wrong
 for a ceiling.
+
+---
+
+## F90 — close-authoring M4: the design record's one named defect was already fixed, and a second gap renderer silently blinded a trim detector
+
+**Date:** 2026-08-08 · **Rung:** CLOSE-DEV gate 4, module M4 · **Cost:** $0 (no paid runs)
+
+Two items from building the last module of the close-authoring rung. Neither is a capability
+claim; both are the same class — *a fact stated in a document, believed, and then measured*.
+
+### 1. The premise was stale. The ledger misattribution D13 named had been fixed four days earlier
+
+The frozen design record (2026-08-07, D13) states the defect plainly and hands it to this
+module: *"`classifyIncidents` files every request-red under `lib: 'bare-agent'`, and the `ASKS`
+template renders it as an upstream-ask seed… Named here, not fixed here: the close-authoring
+refusal stamps its own `lib` at the emit site."* The build order therefore had "fix the ledger"
+as a task.
+
+Measured against the tree instead of the record: **it was already closed on `main` at `1b4bb77`
+("ledger: request-red carries its territory — lib stamped at the emit site, never inferred
+downstream"), dated 2026-08-04.** `classifyIncidents` reads `ev.lib ?? 'bare-agent'`, the
+`request-red` ASK template renders `${o.lib}`, and `capability-gap` inherits the occurrence's
+own lib. `run.js` spreads the whole red onto the `job-red` event, so the structured field
+survives the spine. The task was already done, and doing it again would have been a no-op
+commit claiming a fix.
+
+**What M4 owed, and what it landed instead:** not the fix but the PROOF that the NEW emit site
+routes through it — a regression test that walks the whole chain (refusal → `refusalEvents` →
+`classifyIncidents` → `ledgerDeltas.suggestedAsk`) and asserts the ask reads `bareloop: …` and
+matches no bare-suite package name. Mutation-checked both halves: re-hardcoding `'bare-agent'`
+on the occurrence and re-hardcoding it in the ASK template are two separate mutants, and both
+are killed. Fixing one and not the other would leave the misattribution intact in the one field
+a human actually files from.
+
+**This is F63's rule, in its cheapest possible form.** F63 minted *"a premise cited to justify a
+build gets REPLAYED AGAINST THE ARCHIVE BEFORE the build, not after"* after F56's "a replan has
+never fired" turned out to be false by eight. The replay here cost one `git log -- src/ledger.js`
+and it moved a task off the list. The generalisation worth keeping: **a FROZEN document is frozen
+against rewriting, not against the world moving underneath it** — a defect it names as open is a
+claim with a date on it, and the date is the point.
+
+### 2. A second gap renderer made Layer R's trim detector blind, in the dangerous direction
+
+Layer R's fixation detector refuses to compare a red-set taken from a TRIMMED gap window
+(F43/finding 5): failures beyond the window can move while the visible lines stay identical, so a
+trimmed window must read UNKNOWN rather than "reds unchanged". It implements that by looking for
+ralph's own trim announcement (`GAP_KEEP_TRIM_MARKER`, `'more elided by the'`).
+
+The declared close is a SECOND gap renderer. Its per-stage line cap announces itself too — F28
+holds, the trim is never silent — but in the kind executor's own words:
+`[gap trimmed: N of M lines withheld — the cap is 40]`. Layer R could not see it. A declared
+close whose gap was trimmed would have handed the detector a truncated window that it treated as
+complete, which is the direction that MANUFACTURES a fixation reading out of an instrument that
+went blind — not the fail-safe direction.
+
+Fixed by exporting the executor's marker (`GAP_TRIM_MARKER`) from its single renderer and having
+`root.js` check both, with a test that runs a real over-cap stage and asserts two identical
+trimmed gaps mint no injection. Caught by asking *"which contracts does the OTHER executor
+inherit, and which of them are implemented by string matching?"* rather than by a failure.
+
+**The lesson is the shared-marker rule, generalised.** `GAP_KEEP_TRIM_MARKER` was exported in the
+first place so a reading side could not drift from the writing side. That guard held perfectly and
+was still defeated — not by drift, but by a SECOND writer the reader had never heard of. When a
+detector keys on a string a producer emits, adding a producer is a change to the detector, and the
+seam only survives if every producer's marker is exported and every one is read.

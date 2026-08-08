@@ -27,7 +27,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import {
-  runStage, seedRead, runClose, normalizeParser, regexGroups, parseValue,
+  runStage, seedRead, runDeclaredClose, normalizeParser, regexGroups, parseValue,
   changedSet, isArbiterBook, makeSeedTrees,
   EXIT_GREEN, EXIT_RED, EXIT_STOP, GAP_LINE_CAP, MAX_TERMS,
 } from '../src/kinds.js';
@@ -559,7 +559,7 @@ test('a stop still explains itself on the gap channel — a silent casualty is u
   assert.ok(res.gapLines.every((l) => l.startsWith(KEEP)));
 });
 
-// ── seedRead vs runClose (D12) ───────────────────────────────────────────────
+// ── seedRead vs runDeclaredClose (D12) ───────────────────────────────────────────────
 
 const TWO_STAGE_DECL = {
   stages: [
@@ -580,9 +580,9 @@ test('seedRead runs EVERY stage regardless of reds — changed-from-seed is red 
   assert.ok(rows.every((x) => x.verdict !== 'not-reached'));
 });
 
-test('runClose is first-red-wins: the deciding stage names the verdict and later stages are NOT REACHED', async (t) => {
+test('runDeclaredClose is first-red-wins: the deciding stage names the verdict and later stages are NOT REACHED', async (t) => {
   const r = makeRepo(t, { 'report.txt': '# tests 11\n', 'src/a.js': 'a\n' });
-  const res = await runClose(TWO_STAGE_DECL, ctxFor(r));
+  const res = await runDeclaredClose(TWO_STAGE_DECL, ctxFor(r));
   assert.equal(res.verdict, 'red');
   assert.equal(res.exitCode, EXIT_RED);
   assert.equal(res.firstRed, 'changed-from-seed');
@@ -590,15 +590,15 @@ test('runClose is first-red-wins: the deciding stage names the verdict and later
   assert.deepEqual(res.stages.map((s) => s.verdict), ['red', 'not-reached', 'not-reached']);
 });
 
-test('runClose greens only when every stage greens, and an instrument stop ends it UNJUDGED', async (t) => {
+test('runDeclaredClose greens only when every stage greens, and an instrument stop ends it UNJUDGED', async (t) => {
   const r = makeRepo(t, { 'report.txt': '# tests 11\n', 'src/a.js': 'a\n' });
   write(r.dir, { 'src/a.js': 'a2\n' });
-  const green = await runClose(TWO_STAGE_DECL, ctxFor(r));
+  const green = await runDeclaredClose(TWO_STAGE_DECL, ctxFor(r));
   assert.equal(green.verdict, 'green');
   assert.equal(green.exitCode, EXIT_GREEN);
   assert.equal(green.judged, true);
 
-  const stopped = await runClose({ stages: [...TWO_STAGE_DECL.stages, { name: 'oops', kind: 'command-exit', params: { cmd: 'no-such-binary-abc', args: [], expectExit: 0 } }] }, ctxFor(r));
+  const stopped = await runDeclaredClose({ stages: [...TWO_STAGE_DECL.stages, { name: 'oops', kind: 'command-exit', params: { cmd: 'no-such-binary-abc', args: [], expectExit: 0 } }] }, ctxFor(r));
   assert.equal(stopped.verdict, 'instrument-stop');
   assert.equal(stopped.exitCode, EXIT_STOP);
   assert.equal(stopped.judged, false);

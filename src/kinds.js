@@ -72,8 +72,8 @@ export const EXIT_GREEN = 0;
 export const EXIT_RED = 1;
 /** contract (a): the instrument-stop exit. `judged` is withheld with it. */
 export const EXIT_STOP = 97;
-/** The judgment-rendered marker a rendered close prints, for `runClose`'s
- * judged floor (src/ralph.js). It rides EVERY real judgment, green or red,
+/** The judgment-rendered marker a rendered close prints, for ralph's
+ * `runClose` judged floor (src/ralph.js). It rides EVERY real judgment, green or red,
  * and NEVER a stop — this module reports the same fact as the boolean
  * `judged`; the marker exists so a renderer and the floor agree on one
  * spelling. */
@@ -81,6 +81,16 @@ export const JUDGED_MARKER = 'judged=1';
 
 /** contract (b): the per-stage gap ceiling. Trims are announced, never silent. */
 export const GAP_LINE_CAP = 40;
+/**
+ * The exact phrase this executor's trim announcement carries. Exported for the
+ * same reason ralph exports `GAP_KEEP_TRIM_MARKER`: Layer R's detector must be
+ * able to see that a gap window was TRIMMED, because failures beyond the window
+ * can move while the visible lines stay identical — and an undetected trim makes
+ * the detector claim "reds unchanged" off an instrument that was blind (F43,
+ * finding 5). A magic string on the reading side would drift the day this
+ * wording changes; the renderer below is its only other use.
+ */
+export const GAP_TRIM_MARKER = 'gap trimmed:';
 /** used when neither the stage nor the ctx names a bound. A stage that could
  * run forever is not a red — it is a stop, and something must decide when. */
 export const DEFAULT_TIMEOUT_MS = 300_000;
@@ -92,6 +102,32 @@ export const MAX_BUFFER = 16 * 1024 * 1024;
 export const MAX_SCAN_BYTES = 2 * 1024 * 1024;
 /** ceiling on a parser's term list — a runaway parser is a red, not a bill */
 export const MAX_TERMS = 8;
+
+/**
+ * WHICH KIND of instrument stop, in the ARBITER's own four-row vocabulary
+ * (`CLOSE_FAULTS`, src/ralph.js). Stamped at the site that OBSERVES the fault —
+ * never sniffed out of the stop's prose downstream (the typed-attribution rule:
+ * a `lib`/fault field is stamped at the throw site, and prose is a fallback for
+ * pre-typed spines only).
+ *
+ * The rows are kept apart for the reason `CLOSE_FAULTS` keeps them apart: they
+ * are DIFFERENT HUMAN DECISIONS. "raise the close timeout", "fix the argv" and
+ * "re-run, it was OOM-killed" are three answers, and a declared close that
+ * pooled all three into `failed` would hand every one of them the same option
+ * list. `failed` is the default because "the close cannot run" is the safe
+ * reading of a fault nothing else claimed.
+ */
+export const STOP_FAULTS = Object.freeze({
+  /** the stage cannot RUN at all: spawn failure, a missing seed commit, git refusing */
+  FAILED: 'failed',
+  /** it ran and never finished judging */
+  TIMED_OUT: 'timed-out',
+  /** it died by signal — no opinion was ever rendered */
+  KILLED: 'killed',
+  /** it ran, came back, and judged nothing: unreadable output, a blown buffer,
+   * a number that was never reported, a parser that does not normalise */
+  CRASHED: 'crashed',
+});
 
 export const AGGREGATES = Object.freeze(['first', 'sum']);
 export const SIGNS = Object.freeze([1, -1]);
@@ -112,7 +148,7 @@ export const LIVE_KINDS = Object.freeze(['command-exit', 'count-not-worse', 'pat
  *   exitCode: number|null, value: number|null, baseline: number|null,
  *   baselineSource: string|null, gapLines: string[], judged: boolean,
  *   stage: string|null, kind: string|null, detail: Record<string, any>}} StageResult
- * @typedef {{ensure: (workdir: string, seedRef: string) => Promise<{stop: string}|{stop: null, dir: string}>,
+ * @typedef {{ensure: (workdir: string, seedRef: string) => Promise<{stop: string, fault: string}|{stop: null, dir: string}>,
  *   cleanup: () => Promise<void>}} SeedTrees
  */
 
@@ -143,7 +179,7 @@ class Gap {
     if (this.lines.length <= this.cap) return this.lines.map(p);
     const kept = this.lines.slice(0, this.cap - 1);
     const withheld = this.lines.length - kept.length;
-    return [...kept.map(p), p(`[gap trimmed: ${withheld} of ${this.lines.length} lines withheld — the cap is ${this.cap}]`)];
+    return [...kept.map(p), p(`[${GAP_TRIM_MARKER} ${withheld} of ${this.lines.length} lines withheld — the cap is ${this.cap}]`)];
   }
 }
 
@@ -194,7 +230,7 @@ function stageEnv(declared = {}) {
  * a throw here would have to be caught and turned back into a stop anyway.
  * @param {string} cmd @param {string[]} args
  * @param {{cwd: string, env?: Record<string,string>, timeoutMs?: number, maxBuffer?: number}} o
- * @returns {Promise<{stop: string}|{stop: null, code: number, out: string, dropped: string[]}>}
+ * @returns {Promise<{stop: string, fault: string}|{stop: null, code: number, out: string, dropped: string[]}>}
  */
 async function sh(cmd, args, { cwd, env: declared = {}, timeoutMs = DEFAULT_TIMEOUT_MS, maxBuffer = MAX_BUFFER }) {
   const { env, dropped } = stageEnv(declared);
@@ -242,12 +278,12 @@ async function sh(cmd, args, { cwd, env: declared = {}, timeoutMs = DEFAULT_TIME
   const argv = `${cmd}${args.length ? ` ${args.join(' ')}` : ''}`;
   if (r.error) {
     const code = /** @type {any} */ (r.error).code;
-    if (code === 'ETIMEDOUT') return { stop: `INSTRUMENT: "${cmd}" did not finish inside ${timeoutMs}ms` };
-    if (code === 'ENOBUFS') return { stop: `INSTRUMENT: "${cmd}" output exceeded the ${maxBuffer}B ceiling — the output is truncated, so any number read from it is unknown, not zero` };
-    return { stop: `INSTRUMENT: "${argv}" could not be run (${code ?? String(r.error.message)})` };
+    if (code === 'ETIMEDOUT') return { stop: `INSTRUMENT: "${cmd}" did not finish inside ${timeoutMs}ms`, fault: STOP_FAULTS.TIMED_OUT };
+    if (code === 'ENOBUFS') return { stop: `INSTRUMENT: "${cmd}" output exceeded the ${maxBuffer}B ceiling — the output is truncated, so any number read from it is unknown, not zero`, fault: STOP_FAULTS.CRASHED };
+    return { stop: `INSTRUMENT: "${argv}" could not be run (${code ?? String(r.error.message)})`, fault: STOP_FAULTS.FAILED };
   }
-  if (r.status === null) return { stop: `INSTRUMENT: "${cmd}" returned a null exit code (killed by ${r.signal ?? 'an unknown signal'})` };
-  if (typeof r.stdout !== 'string' || typeof r.stderr !== 'string') return { stop: `INSTRUMENT: "${cmd}" produced unreadable output` };
+  if (r.status === null) return { stop: `INSTRUMENT: "${cmd}" returned a null exit code (killed by ${r.signal ?? 'an unknown signal'})`, fault: STOP_FAULTS.KILLED };
+  if (typeof r.stdout !== 'string' || typeof r.stderr !== 'string') return { stop: `INSTRUMENT: "${cmd}" produced unreadable output`, fault: STOP_FAULTS.CRASHED };
   return { stop: null, code: r.status, out: `${r.stdout}${r.stderr}`, dropped };
 }
 
@@ -258,8 +294,52 @@ async function sh(cmd, args, { cwd, env: declared = {}, timeoutMs = DEFAULT_TIME
  */
 async function git(cwd, args) {
   const r = await sh('git', args, { cwd, timeoutMs: 120_000 });
-  if (r.stop !== null) return { ok: false, out: '', err: r.stop, code: null };
-  return { ok: r.code === 0, out: r.out, err: r.out, code: r.code };
+  // git refusing IS "the close cannot run": the changed-set primitive is not an
+  // optional enrichment, so a non-zero git carries FAILED rather than inheriting
+  // whatever the spawn layer said about the process itself.
+  if (r.stop !== null) return { ok: false, out: '', err: r.stop, code: null, fault: r.fault };
+  return { ok: r.code === 0, out: r.out, err: r.out, code: r.code, fault: STOP_FAULTS.FAILED };
+}
+
+/**
+ * D8's seed, READ rather than typed: HEAD at run start. A close stores the
+ * counting rule and never the number (D12), so which commit the run is measured
+ * from is a fact about THIS run — recorded and shown, never carried in a signed
+ * spec where it would judge run 5 against run 1's tree.
+ *
+ * A fault is a named `stop`, never a fallback ref: measuring against the wrong
+ * baseline is the failure direction that reads as a clean tree.
+ * @param {string} workdir
+ * @returns {Promise<{stop: string, seedRef: null}|{stop: null, seedRef: string}>}
+ */
+export async function seedAtHead(workdir) {
+  const r = await git(workdir, ['rev-parse', 'HEAD']);
+  if (!r.ok) return { stop: `INSTRUMENT: could not read HEAD in ${workdir}: ${String(r.err).trim()}`, seedRef: null };
+  const sha = r.out.trim().split('\n')[0].trim();
+  if (!/^[0-9a-f]{7,64}$/.test(sha)) {
+    return { stop: `INSTRUMENT: git rev-parse HEAD in ${workdir} did not return a commit sha`, seedRef: null };
+  }
+  return { stop: null, seedRef: sha };
+}
+
+/**
+ * The files that exist AT THE SEED COMMIT. Deliberately not `ls-files`, which
+ * reads the index and the working tree: this listing is what a declared path is
+ * judged against, and it must describe the tree the close measures from rather
+ * than whatever is lying around today.
+ *
+ * ONE spelling, here beside the other git reads (`src/authorscout.js`'s
+ * `seedFileList` delegates to it) — a second listing command is a second
+ * instrument, and the one that grades would be the one nobody validated.
+ * @param {string} workdir @param {string} seedRef
+ * @returns {Promise<{stop: string, files: null}|{stop: null, files: string[]}>}
+ */
+export async function seedListing(workdir, seedRef) {
+  const r = await git(workdir, ['ls-tree', '-r', '--name-only', seedRef]);
+  if (!r.ok) {
+    return { stop: `INSTRUMENT: git ls-tree -r ${seedRef} failed in ${workdir}: ${String(r.err).trim()}`, files: null };
+  }
+  return { stop: null, files: r.out.split('\n').map((s) => s.trim()).filter(Boolean) };
 }
 
 // ── contract (c): the changed-set primitive ──────────────────────────────────
@@ -288,15 +368,15 @@ export function isArbiterBook(rel) {
  * untracked files (an untracked file has no diff — the case a naive
  * `git diff` scan silently misses), minus the arbiter's own books.
  * @param {string} workdir @param {string} seedRef
- * @returns {Promise<{stop: string}|{stop: null, paths: string[], tracked: string[], untracked: string[], excluded: {path: string, book: string}[]}>}
+ * @returns {Promise<{stop: string, fault: string}|{stop: null, paths: string[], tracked: string[], untracked: string[], excluded: {path: string, book: string}[]}>}
  */
 export async function changedSet(workdir, seedRef) {
   const verify = await git(workdir, ['rev-parse', '--verify', `${seedRef}^{commit}`]);
-  if (!verify.ok) return { stop: `INSTRUMENT: the seed commit "${seedRef}" does not exist in ${workdir}` };
+  if (!verify.ok) return { stop: `INSTRUMENT: the seed commit "${seedRef}" does not exist in ${workdir}`, fault: STOP_FAULTS.FAILED };
   const d = await git(workdir, ['diff', '--name-only', seedRef]);
-  if (!d.ok) return { stop: `INSTRUMENT: git diff against "${seedRef}" failed: ${String(d.err).trim()}` };
+  if (!d.ok) return { stop: `INSTRUMENT: git diff against "${seedRef}" failed: ${String(d.err).trim()}`, fault: d.fault };
   const u = await git(workdir, ['ls-files', '--others', '--exclude-standard']);
-  if (!u.ok) return { stop: `INSTRUMENT: git ls-files --others failed: ${String(u.err).trim()}` };
+  if (!u.ok) return { stop: `INSTRUMENT: git ls-files --others failed: ${String(u.err).trim()}`, fault: u.fault };
   const split = (/** @type {string} */ s) => s.split('\n').map((x) => x.trim()).filter(Boolean);
   /** @type {{path: string, book: string}[]} */
   const excluded = [];
@@ -316,7 +396,7 @@ export async function changedSet(workdir, seedRef) {
  * body is added — the half of this primitive a diff-only scan misses.
  * @param {string} workdir @param {string} seedRef @param {string} rel
  * @param {{untracked?: boolean}} [o]
- * @returns {Promise<{stop: string}|{stop: null, lines: {n: number, text: string}[], note: string|null}>}
+ * @returns {Promise<{stop: string, fault: string}|{stop: null, lines: {n: number, text: string}[], note: string|null}>}
  */
 export async function addedLines(workdir, seedRef, rel, { untracked = false } = {}) {
   if (untracked) {
@@ -326,12 +406,12 @@ export async function addedLines(workdir, seedRef, rel, { untracked = false } = 
     if (!st.isFile()) return { stop: null, lines: [], note: null };
     if (st.size > MAX_SCAN_BYTES) return { stop: null, lines: [], note: `${rel}: ${st.size}B exceeds the ${MAX_SCAN_BYTES}B scan cap — NOT scanned` };
     let buf;
-    try { buf = await readFile(abs); } catch (e) { return { stop: `INSTRUMENT: ${rel} could not be read: ${String(/** @type {any} */ (e)?.message ?? e)}` }; }
+    try { buf = await readFile(abs); } catch (e) { return { stop: `INSTRUMENT: ${rel} could not be read: ${String(/** @type {any} */ (e)?.message ?? e)}`, fault: STOP_FAULTS.CRASHED }; }
     if (buf.includes(0)) return { stop: null, lines: [], note: `${rel}: binary — NOT scanned` };
     return { stop: null, lines: buf.toString('utf8').split('\n').map((text, i) => ({ n: i + 1, text })), note: null };
   }
   const d = await git(workdir, ['diff', '-U0', '--no-color', seedRef, '--', rel]);
-  if (!d.ok && d.code !== 0) return { stop: `INSTRUMENT: git diff -U0 for ${rel} failed: ${String(d.err).trim()}` };
+  if (!d.ok && d.code !== 0) return { stop: `INSTRUMENT: git diff -U0 for ${rel} failed: ${String(d.err).trim()}`, fault: d.fault };
   /** @type {{n: number, text: string}[]} */
   const lines = [];
   let n = 0;
@@ -509,8 +589,12 @@ export function normalizeParser(parser, at = 'parser') {
  * path is KEPT (no filter can exclude what it cannot locate) and the notes
  * say so, rather than the number quietly meaning something else.
  * @param {string} output @param {any[]} terms normalised terms
+ * Every stop here is `crashed` in the arbiter's vocabulary — the command RAN,
+ * came back, and the number could not be read out of it. Nothing in this
+ * function can observe a spawn failure, a timeout or a signal, so it never
+ * claims one.
  * @param {{scope?: any, workdir?: string}} [o]
- * @returns {{stop: string}|{stop: null, value: number, breakdown: any[], notes: string[]}}
+ * @returns {{stop: string, fault: string}|{stop: null, value: number, breakdown: any[], notes: string[]}}
  */
 export function parseValue(output, terms, { scope = null, workdir = '' } = {}) {
   let value = 0;
@@ -525,18 +609,18 @@ export function parseValue(output, terms, { scope = null, workdir = '' } = {}) {
     let region = output;
     if (t.region !== 'whole-output') {
       let anchor;
-      try { anchor = new RegExp(t.region.anchor, 'm'); } catch (e) { return { stop: `INSTRUMENT: term ${i} region anchor /${t.region.anchor}/ is not a valid regex: ${String(/** @type {any} */ (e)?.message ?? e)}` }; }
+      try { anchor = new RegExp(t.region.anchor, 'm'); } catch (e) { return { stop: `INSTRUMENT: term ${i} region anchor /${t.region.anchor}/ is not a valid regex: ${String(/** @type {any} */ (e)?.message ?? e)}`, fault: STOP_FAULTS.CRASHED }; }
       const m = anchor.exec(output);
-      if (!m) return { stop: `INSTRUMENT: term ${i} region anchor /${t.region.anchor}/ matched nothing — the region the number lives in could not be located` };
+      if (!m) return { stop: `INSTRUMENT: term ${i} region anchor /${t.region.anchor}/ matched nothing — the region the number lives in could not be located`, fault: STOP_FAULTS.CRASHED };
       const got = m[t.region.capture];
-      if (typeof got !== 'string') return { stop: `INSTRUMENT: term ${i} region anchor matched but capture group ${t.region.capture} did not participate` };
+      if (typeof got !== 'string') return { stop: `INSTRUMENT: term ${i} region anchor matched but capture group ${t.region.capture} did not participate`, fault: STOP_FAULTS.CRASHED };
       region = got;
     }
 
     // 2. collect matches line by line, so the scope filter can read each
     //    line's own path
     let re;
-    try { re = new RegExp(t.lineMatch, 'g'); } catch (e) { return { stop: `INSTRUMENT: term ${i} lineMatch /${t.lineMatch}/ is not a valid regex: ${String(/** @type {any} */ (e)?.message ?? e)}` }; }
+    try { re = new RegExp(t.lineMatch, 'g'); } catch (e) { return { stop: `INSTRUMENT: term ${i} lineMatch /${t.lineMatch}/ is not a valid regex: ${String(/** @type {any} */ (e)?.message ?? e)}`, fault: STOP_FAULTS.CRASHED }; }
     /** @type {number[]} */
     const values = [];
     let dropped = 0;
@@ -552,9 +636,9 @@ export function parseValue(output, terms, { scope = null, workdir = '' } = {}) {
       for (const h of hits) {
         if (t.capture === null) { values.push(1); continue; }
         const rawCapture = h[t.capture];
-        if (typeof rawCapture !== 'string') return { stop: `INSTRUMENT: term ${i} matched but capture group ${t.capture} did not participate — the number is unknown, not zero` };
+        if (typeof rawCapture !== 'string') return { stop: `INSTRUMENT: term ${i} matched but capture group ${t.capture} did not participate — the number is unknown, not zero`, fault: STOP_FAULTS.CRASHED };
         const n = Number.parseInt(rawCapture, 10);
-        if (!Number.isFinite(n)) return { stop: `INSTRUMENT: term ${i} captured "${rawCapture}", which is not an integer` };
+        if (!Number.isFinite(n)) return { stop: `INSTRUMENT: term ${i} captured "${rawCapture}", which is not an integer`, fault: STOP_FAULTS.CRASHED };
         values.push(n);
       }
     }
@@ -567,7 +651,7 @@ export function parseValue(output, terms, { scope = null, workdir = '' } = {}) {
     let subtotal;
     if (t.aggregate === 'sum') subtotal = values.reduce((a, b) => a + b, 0);
     else {
-      if (!values.length) return { stop: `INSTRUMENT: term ${i} (/${t.lineMatch}/, aggregate "first") matched nothing — the number was never reported, so it is unknown, not zero` };
+      if (!values.length) return { stop: `INSTRUMENT: term ${i} (/${t.lineMatch}/, aggregate "first") matched nothing — the number was never reported, so it is unknown, not zero`, fault: STOP_FAULTS.CRASHED };
       subtotal = values[0];
     }
     breakdown.push({ term: i, lineMatch: t.lineMatch, aggregate: t.aggregate, sign: t.sign, matches: values.length, subtotal, contribution: t.sign * subtotal });
@@ -589,7 +673,7 @@ export function parseValue(output, terms, { scope = null, workdir = '' } = {}) {
 export function makeSeedTrees() {
   /** @type {Map<string, {workdir: string, root: string, dir: string}>} */
   const made = new Map();
-  /** @type {Map<string, {stop: string}|{stop: null, dir: string}>} */
+  /** @type {Map<string, {stop: string, fault: string}|{stop: null, dir: string}>} */
   const answers = new Map();
   return {
     async ensure(workdir, seedRef) {
@@ -598,7 +682,7 @@ export function makeSeedTrees() {
       if (cached) return cached;
       const verify = await git(workdir, ['rev-parse', '--verify', `${seedRef}^{commit}`]);
       if (!verify.ok) {
-        const v = { stop: `INSTRUMENT: the seed commit "${seedRef}" does not exist in ${workdir}` };
+        const v = { stop: `INSTRUMENT: the seed commit "${seedRef}" does not exist in ${workdir}`, fault: STOP_FAULTS.FAILED };
         answers.set(key, v);
         return v;
       }
@@ -607,7 +691,7 @@ export function makeSeedTrees() {
       const add = await git(workdir, ['worktree', 'add', '--detach', dir, seedRef]);
       if (!add.ok) {
         await rm(root, { recursive: true, force: true });
-        const v = { stop: `INSTRUMENT: could not create a seed worktree at ${seedRef}: ${String(add.err).trim()}` };
+        const v = { stop: `INSTRUMENT: could not create a seed worktree at ${seedRef}: ${String(add.err).trim()}`, fault: add.fault };
         answers.set(key, v);
         return v;
       }
@@ -641,8 +725,8 @@ export function makeSeedTrees() {
  */
 async function treeIsAtSeed(workdir, seedRef) {
   const cs = await changedSet(workdir, seedRef);
-  if (cs.stop !== null) return { at: false, stop: cs.stop };
-  return { at: cs.paths.length === 0, stop: null };
+  if (cs.stop !== null) return { at: false, stop: cs.stop, fault: cs.fault };
+  return { at: cs.paths.length === 0, stop: null, fault: STOP_FAULTS.FAILED };
 }
 
 // ── results ─────────────────────────────────────────────────────────────────
@@ -669,15 +753,21 @@ const result = (stage, over) => ({
  * Contract (a). The stop's own reason still rides the gap channel — an
  * operator reading the close's output must see WHY nothing was judged — and
  * what it never carries is the judged marker.
+ *
+ * `fault` is the arbiter's four-row vocabulary (`STOP_FAULTS`), stamped by the
+ * site that OBSERVED the fault. It defaults to `failed` — "the close cannot
+ * run" is the safe reading — and it is carried on `detail` so a consumer routes
+ * the stop by a typed field instead of pattern-matching the stop's prose.
  * @param {any} stage @param {Ctx} ctx @param {string} stop @param {Record<string, any>} [detail]
+ * @param {string} [fault]
  * @returns {StageResult}
  */
-const stopped = (stage, ctx, stop, detail = {}) => result(stage, {
+const stopped = (stage, ctx, stop, detail = {}, fault = STOP_FAULTS.FAILED) => result(stage, {
   verdict: 'instrument-stop',
   exitCode: EXIT_STOP,
   judged: false,
   gapLines: new Gap(ctx.gapKeep, ctx.gapCap).push(stop).render(),
-  detail: { ...detail, stop },
+  detail: { ...detail, stop, fault },
 });
 
 // ── the four kinds ──────────────────────────────────────────────────────────
@@ -691,7 +781,7 @@ async function runCommandExit(stage, ctx) {
     timeoutMs: p.timeoutMs ?? ctx.timeoutMsDefault ?? DEFAULT_TIMEOUT_MS,
     maxBuffer: ctx.maxBuffer ?? MAX_BUFFER,
   });
-  if (r.stop !== null) return stopped(stage, ctx, r.stop);
+  if (r.stop !== null) return stopped(stage, ctx, r.stop, {}, r.fault);
   const gap = new Gap(ctx.gapKeep, ctx.gapCap);
   for (const name of r.dropped) gap.push(`${stage.name}: declared env var ${name} was DROPPED — the close never hands worker code a credential`);
   const green = r.code === p.expectExit;
@@ -711,7 +801,10 @@ async function runCommandExit(stage, ctx) {
 async function runCountNotWorse(stage, ctx) {
   const p = stage.params;
   const norm = normalizeParser(p.parser, `${stage.name}.parser`);
-  if (!norm.ok) return stopped(stage, ctx, `INSTRUMENT: ${stage.name}'s parser does not normalise: ${norm.reds.map((r) => `${r.path} — ${r.detail}`).join('; ')}`);
+  if (!norm.ok) {
+    return stopped(stage, ctx, `INSTRUMENT: ${stage.name}'s parser does not normalise: ${norm.reds.map((r) => `${r.path} — ${r.detail}`).join('; ')}`,
+      {}, STOP_FAULTS.CRASHED);
+  }
   const terms = /** @type {any[]} */ (norm.terms);
 
   /** @param {string} cwd @param {string} where */
@@ -722,14 +815,14 @@ async function runCountNotWorse(stage, ctx) {
       timeoutMs: p.timeoutMs ?? ctx.timeoutMsDefault ?? DEFAULT_TIMEOUT_MS,
       maxBuffer: ctx.maxBuffer ?? MAX_BUFFER,
     });
-    if (r.stop !== null) return { stop: `${r.stop} (measuring ${where})` };
+    if (r.stop !== null) return { stop: `${r.stop} (measuring ${where})`, fault: r.fault };
     const v = parseValue(r.out, terms, { scope: p.scope, workdir: cwd });
-    if (v.stop !== null) return { stop: `${v.stop} (measuring ${where})` };
-    return { stop: null, value: v.value, breakdown: v.breakdown, notes: v.notes, exit: r.code, dropped: r.dropped };
+    if (v.stop !== null) return { stop: `${v.stop} (measuring ${where})`, fault: v.fault };
+    return { stop: null, value: v.value, breakdown: v.breakdown, notes: v.notes, exit: r.code, dropped: r.dropped, fault: STOP_FAULTS.FAILED };
   };
 
   const now = await measure(ctx.workdir, 'the current tree');
-  if (now.stop !== null) return stopped(stage, ctx, now.stop);
+  if (now.stop !== null) return stopped(stage, ctx, now.stop, {}, now.fault);
 
   // D12 — the close stores the COUNTING RULE, never the number, so "seed" is
   // MEASURED at this run's own seed. Which route measured it is recorded.
@@ -739,7 +832,7 @@ async function runCountNotWorse(stage, ctx) {
   let baselineDetail = null;
   if (p.baseline === 'seed') {
     const at = await treeIsAtSeed(ctx.workdir, ctx.seedRef);
-    if (at.stop !== null) return stopped(stage, ctx, at.stop);
+    if (at.stop !== null) return stopped(stage, ctx, at.stop, {}, at.fault);
     if ((ctx.baselineMode ?? 'auto') === 'auto' && at.at) {
       baseline = /** @type {number} */ (now.value);
       baselineSource = 'measured IN PLACE — the working tree is verifiably identical to the seed';
@@ -747,9 +840,9 @@ async function runCountNotWorse(stage, ctx) {
     } else {
       const seedTrees = /** @type {SeedTrees} */ (ctx.seedTrees);
       const st = await seedTrees.ensure(ctx.workdir, ctx.seedRef);
-      if (st.stop !== null) return stopped(stage, ctx, st.stop);
+      if (st.stop !== null) return stopped(stage, ctx, st.stop, {}, st.fault);
       const b = await measure(st.dir, `the seed tree at ${ctx.seedRef}`);
-      if (b.stop !== null) return stopped(stage, ctx, b.stop);
+      if (b.stop !== null) return stopped(stage, ctx, b.stop, {}, b.fault);
       baseline = /** @type {number} */ (b.value);
       baselineSource = `measured in a detached worktree at ${ctx.seedRef}`;
       baselineDetail = { breakdown: b.breakdown, notes: b.notes };
@@ -793,7 +886,7 @@ async function runCountNotWorse(stage, ctx) {
 async function runPatternAbsentInDiff(stage, ctx) {
   const p = stage.params;
   const cs = await changedSet(ctx.workdir, ctx.seedRef);
-  if (cs.stop !== null) return stopped(stage, ctx, cs.stop);
+  if (cs.stop !== null) return stopped(stage, ctx, cs.stop, {}, cs.fault);
 
   const untracked = new Set(cs.untracked);
   const exts = p.extensions.map((/** @type {string} */ e) => (String(e).startsWith('.') ? String(e) : `.${e}`));
@@ -802,7 +895,7 @@ async function runPatternAbsentInDiff(stage, ctx) {
   /** @type {RegExp[]} */
   const res = [];
   for (const q of p.patterns) {
-    try { res.push(new RegExp(q.regex)); } catch (e) { return stopped(stage, ctx, `INSTRUMENT: pattern "${q.id}" is not a valid regex: ${String(/** @type {any} */ (e)?.message ?? e)}`); }
+    try { res.push(new RegExp(q.regex)); } catch (e) { return stopped(stage, ctx, `INSTRUMENT: pattern "${q.id}" is not a valid regex: ${String(/** @type {any} */ (e)?.message ?? e)}`, {}, STOP_FAULTS.CRASHED); }
   }
 
   const gap = new Gap(ctx.gapKeep, ctx.gapCap);
@@ -812,7 +905,7 @@ async function runPatternAbsentInDiff(stage, ctx) {
   const notes = [];
   for (const rel of scanned) {
     const a = await addedLines(ctx.workdir, ctx.seedRef, rel, { untracked: untracked.has(rel) });
-    if (a.stop !== null) return stopped(stage, ctx, a.stop);
+    if (a.stop !== null) return stopped(stage, ctx, a.stop, {}, a.fault);
     if (a.note) notes.push(a.note);
     for (const { n, text } of a.lines) {
       p.patterns.forEach((/** @type {any} */ q, /** @type {number} */ i) => {
@@ -840,7 +933,7 @@ async function runPatternAbsentInDiff(stage, ctx) {
 async function runFilesChanged(stage, ctx) {
   const p = stage.params;
   const cs = await changedSet(ctx.workdir, ctx.seedRef);
-  if (cs.stop !== null) return stopped(stage, ctx, cs.stop);
+  if (cs.stop !== null) return stopped(stage, ctx, cs.stop, {}, cs.fault);
   const outside = cs.paths.filter((rel) => !p.allowPrefixes.some((/** @type {string} */ pre) => underPrefix(rel, pre)));
   const empty = p.requireNonEmpty === true && cs.paths.length === 0;
   const gap = new Gap(ctx.gapKeep, ctx.gapCap);
@@ -890,16 +983,17 @@ export async function runStage(stage, ctx) {
 
 /** @param {any} stage @param {Ctx} ctx @returns {Promise<StageResult>} */
 async function runStageIn(stage, ctx) {
-  if (stage === null || typeof stage !== 'object' || Array.isArray(stage)) return stopped(null, ctx, 'INSTRUMENT: a stage must be an object {name, kind, params}');
+  if (stage === null || typeof stage !== 'object' || Array.isArray(stage)) return stopped(null, ctx, 'INSTRUMENT: a stage must be an object {name, kind, params}', {}, STOP_FAULTS.CRASHED);
   const fn = RUNNERS[stage.kind];
   if (!fn) {
-    return stopped(stage, ctx, `INSTRUMENT: stage "${stage.name}" declares kind "${stage.kind}", which this executor does not implement (locked or unknown) — the live kinds are ${LIVE_KINDS.join(', ')}`);
+    return stopped(stage, ctx, `INSTRUMENT: stage "${stage.name}" declares kind "${stage.kind}", which this executor does not implement (locked or unknown) — the live kinds are ${LIVE_KINDS.join(', ')}`,
+      { kind: stage.kind }, STOP_FAULTS.CRASHED);
   }
-  if (stage.params === null || typeof stage.params !== 'object') return stopped(stage, ctx, `INSTRUMENT: stage "${stage.name}" declares no params object`);
+  if (stage.params === null || typeof stage.params !== 'object') return stopped(stage, ctx, `INSTRUMENT: stage "${stage.name}" declares no params object`, {}, STOP_FAULTS.CRASHED);
   try {
     return await fn(stage, ctx);
   } catch (e) {
-    return stopped(stage, ctx, `INSTRUMENT: stage "${stage.name}" threw: ${String(/** @type {any} */ (e)?.stack ?? e)}`);
+    return stopped(stage, ctx, `INSTRUMENT: stage "${stage.name}" threw: ${String(/** @type {any} */ (e)?.stack ?? e)}`, {}, STOP_FAULTS.CRASHED);
   }
 }
 
@@ -938,10 +1032,17 @@ export async function seedRead(declaration, ctx) {
  *
  * An instrument stop ends the close UNJUDGED — the run has no verdict to
  * carry, which is the whole point of keeping a casualty out of the evidence.
+ *
+ * NAMED `runDeclaredClose`, not `runClose` (M4's export-surface decision): the
+ * arbiter's shell already ships a public `runClose(argv, redact, opts)` that
+ * adopters import, and the two take different things and mean different things
+ * — one runs a DECLARATION, the other an argv. Renaming the shipped one to make
+ * room would break a documented adopter contract for nothing; the new name says
+ * exactly what differs. `src/declaredclose.js` is what bridges the two shapes.
  * @param {any} declaration @param {Ctx} ctx
  * @returns {Promise<{verdict: 'green'|'red'|'instrument-stop', exitCode: number, judged: boolean, firstRed: string|null, stages: StageResult[]}>}
  */
-export async function runClose(declaration, ctx) {
+export async function runDeclaredClose(declaration, ctx) {
   const owned = !ctx.seedTrees;
   const seedTrees = ctx.seedTrees ?? makeSeedTrees();
   const inner = { ...ctx, seedTrees };

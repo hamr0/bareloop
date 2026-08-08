@@ -98,6 +98,7 @@ the step plan at run time (gated by `validatePlan`); the human signs only:
 | `goal` | non-empty text | what the agent plans against |
 | `verdictType` | `green` \| `soft-green` \| `hitl` | declared radio, never inferred (`VERDICT_TYPES`, frozen). v1 ADMITS only `green`; declaring `soft-green`/`hitl` reds `request-red` with the type as a structured `verb` field (declared-but-locked — the tool-menu pattern). Every `request-red` also carries `lib` — the territory the demand lands against, stamped at the emit site (`verdictType` → `bareloop`, a locked tool verb → `bare-agent`): the ledger keys and its `suggestedAsk` seed on it, so a bareloop-catalogue refusal never files as an upstream ask |
 | `close` | **an ORDERED LIST of named stages** `[{ name, cmd, expect, judged?, gapKeep?, offer?, needs? }, ...]` (PRD v1.28), or a close object (table below) **only** for the declared-but-locked verdict classes | the destination, the only thing hand-authored; the check menu DERIVES from it (below). The plan flow executes a staged close directly and adapts a bare `predicate` object into a one-stage list; a `gold`/`rubric`/`hitl` object close validates (the declared-but-locked verdict classes still parse) but the plan flow refuses it at runtime as `close-unsupported` — it names no command to run |
+| `closeDecl` | **the AUTHORED close** `{ genre: "TYPES", lang: "js"\|"python", stages: [{ name, kind, params }], notes? }` | the ALTERNATIVE to `close`, and the point of the close-authoring rung: the user answers an interview and an LLM composes a DECLARATION over kinds whose implementations we own — never a script, never a shell fragment, never a new kind. **`close` and `closeDecl` are alternatives**: declaring both reds `close-duplicated` (two closes are two arbiters). It is HARD-class by construction (`CLASS_BY_CLOSE.declared`), so a locked verdict on one reds `close-hierarchy` as well as `request-red`. The declaration is validated by `validateCloseDecl`; the TREE-GROUNDED half of that gate (the path rule, and the scoped-job derivation that arms the F84 one-population law) is DEFERRED at spec-validation time — a job spec is validated with no repository in hand — and the runner re-runs it GROUNDED against the real seed before any stage and before any token. It stores the counting RULE and never a number (D12): there is no seed field, and `baseline: "seed"` is measured at each run's own HEAD |
 | `checks` | **RETIRED** (PRD v1.28/v1.32) | hand-authored checks are gone, not merely discouraged: declaring `checks` reds `checks-derived` by name. The check menu is DERIVED from the close's own stages instead — see **Staged close** below. The hazard this removes is measured, not theoretical: job #5's three hand-written checks were re-implementations of three stages the close already ran, and a hand-carved copy can drift LENIENT (the worker passes the operator's ruler and fails the real inspection) |
 | `tools` | optional unique subset of `TOOL_MENU` (14 verbs, below) | the CEILING every plan step's grant must fit inside (omitting it means the full menu — and the hash is taken over that RESOLVED form, so a `TOOL_MENU` widening flips an omitted-`tools` spec's hash and forces a re-sign; see `jobSpecHash`, MED-1); `run` is `LOCKED_TOOLS` and reds `request-red` — locked-but-listed, and the red IS the admission evidence the ledger tallies (a typo stays `invalid-value`). A ceiling of write-class and store-class verbs ONLY reds `invalid-value`: the scout surveys read-only, so it would be handed an empty menu and survey blind |
 
@@ -306,9 +307,12 @@ on refusals). It binds WRITES, not observations: on the exit side it fires only 
 the narrow one does), and `artifact-written`/`json-valid` paths carry no step-scope red at
 all — the evaluator asks nothing about who wrote the file, so naming a prior step's artifact
 is legal and satisfiable. `job-invalid` — a plan validated against a
-missing or non-plan-shape job fails CLOSED). `stageClose(close)` is the ONE staging
-every check-menu consumer shares (array → itself; legacy object predicate → its
-one-stage list, named `close`; gold/rubric/hitl → null). The `secret-literal` sweep is
+missing or non-plan-shape job fails CLOSED). `closeStagesOf(job)` is the ONE staging
+every check-menu consumer shares — it reads whichever close field the spec carries:
+`closeDecl` → its declared stages (each enriched with the arbiter's own `gapKeep`), else
+`stageClose(close)` (array → itself; legacy object predicate → its one-stage list, named
+`close`; gold/rubric/hitl → null). A consumer reading `close` alone would see a declared
+job as closeless and offer the drafter an empty check menu. The `secret-literal` sweep is
 defense-in-depth against known token shapes — env-only loading remains the law, not the
 sweep.
 
@@ -449,7 +453,86 @@ retired-but-accepted, so a plan carries no iteration bound to check; `scopes` is
 `tree-changed` scope menu — the array of scope strings the drafter prompt listed, which
 `runJob`/`runPlan` build internally from the signed fence plus the real directories beneath
 it (a direct `validatePlan` caller may pass its own array); omitted, it derives from the
-signed `writeScope` alone, never a free-text fallback. Menus exported: `EXIT_TYPES`, `MAX_EXITS_PER_STEP`, `MAX_PLAN_STEPS`, `WRITE_VERBS` — plus `stageClose`.
+signed `writeScope` alone, never a free-text fallback. Menus exported: `EXIT_TYPES`, `MAX_EXITS_PER_STEP`, `MAX_PLAN_STEPS`, `WRITE_VERBS` — plus `stageClose` and `closeStagesOf`.
+
+### Close authoring — the user declares what done means (`src/kinds.js`, `src/authoring.js`, `src/authorscout.js`, `src/authorflow.js`, `src/declaredclose.js`, `src/authorjob.js`)
+
+The one layer where a human still wrote code. A close used to be a hand-written script
+per patient; now the user answers seven questions and an LLM composes a DECLARATION over
+kinds whose implementations bareloop owns. **v1 admits exactly ONE genre** (`TYPES`: a type
+checker stops complaining without breaking the tests) and exactly one verdict class
+(`green`) — everything else refuses honestly, and every refusal is COUNTED.
+
+**The pipeline, in call order.** Each piece is exported so an adopter can drive it, cache
+a step, or test it without a provider.
+
+| step | call | what it is |
+|---|---|---|
+| interview | `runInterview({ answers, repoPath })` → `{ ok, answers, verdictType, refusal, reds }` | PURE — no model, no repo, no clock. Seven frozen questions (`TYPES_QUESTIONS`), answers keyed by number. Answer 7 is a genre CONFIRM and its value is a CLOSED SET (`GENRE_CONFIRM` = `yes`\|`no`), handed over enumerated rather than parsed out of prose; `repoPath` is STRUCTURED input, never read out of answer 6. Answers are scrubbed at INGEST |
+| survey | `runAuthorScout({ workdir, provider })` → `{ state, facts, reason, meta, calls }` | a bounded READ-ONLY LLM survey. Read-only by MENU CONSTRUCTION (`AUTHOR_SCOUT_VERBS` = the full menu minus write-class and store-class verbs), 8 rounds, F59's reserved toolless final round. **`state: 'ABSENT'` means the scout did not complete — never "no special facts are needed"**, and a parsed `{}` is one of its five ABSENT routes |
+| listing | `buildSeedListing({ workdir, seedRef, sourcePaths, testPaths })` | mechanical, `$0`, no model. `files` is the WHOLE tree (what the validator judges paths against); `block` is scoped to the survey's own paths and capped in ANNOUNCED tiers (what the prompt carries). Handing the validator the scoped half would make a job scoped to `src/` read as whole-tree and silently disarm the one-population law |
+| authoring | `authorClose({ workdir, seedRef, lang, answers, scout, listing, generate })` | the grounded loop: author → validate → run EVERY stage at the seed → feed the MEASURED results back → revise, bounded at `MAX_REVISIONS` (2), early-stop on an unchanged declaration. The declaration is emitted through a SCHEMA-FORCED TOOL CALL (`declare_close`), never parsed out of prose; the feedback is EXECUTION OUTPUT only — no model ever reviews another model's close |
+| everything above, composed | `authorCloseForJob({ answers, repoPath, lang, generate, ... })` → `{ ok, closeDecl, verdictType, refusal, cost, ... }` | refuses at the cheapest gate that can refuse: an interview refusal costs **zero** |
+| assembly | `assembleSpec(specDraft, { closeDecl, verdictType })` | folds the authored half into the OPERATOR's half. Budgets, the fence, cadence, escalation and the provider are never authored by anything here. The GOAL is passed through, not generated |
+| the three gates | `prepareSigning({ spec, workdir, seedRef? })` → `{ ok, specHash, gates, work, guards, refusal }` | D9, and it NEVER signs |
+
+**D5 — the mandatory guards are SHOWN and FIXED.** The genre injects `changed-from-seed`
+and `no-suppressions` FULLY PARAMETERISED (`genreGuards(lang)`); the model fills exactly one
+slot (the target prefixes) and cannot change, drop, rename, re-kind or NARROW them —
+`validateDeclaration` reds `guard-weakened` on any of it, including on an added `scope` that
+would shrink what the suppression scan covers. `genreEnv(lang, { sourcePrefixes })` is the
+same idea for environment: `MYPYPATH` on a Python patient is a fact no user can supply and
+no model found, it moves no seed number, and a declaration that authors it itself reds
+`genre-owned-env`.
+
+**The kind catalogue** (`KIND_CATALOGUE`, and it IS the whole vocabulary): `command-exit`,
+`count-not-worse`, `pattern-absent-in-diff`, `files-changed` are live; `judged-floor` and
+`human-confirms` are NAMED BUT LOCKED, so declaring one is a counted `locked-kind` red
+rather than an unknown-kind typo; `harness-loop` (TESTGEN) is ABSENT from v1 entirely. In
+tool mode a locked kind is INEXPRESSIBLE — the schema carries one branch per live kind — so
+that demand arrives through the interview layer instead (`refuseLockedKind(kind)`).
+
+**The three gates, and the signature (D9).** Nothing LLM-judges a close.
+1. `validateCloseDecl` — schema, kinds, params, the F84 one-population law, F49's static
+   nested-quantifier reject, the D5 guard equality, and the listing rule (a declared path
+   SELECTS from the seed tree or it does not exist).
+2. the CLOSE PRECHECK — every stage runs against the real patient. A stage that cannot run
+   is `broken-close`: a CASUALTY, never a red.
+3. the SEED-VERDICT READ — every stage, offered or not, at the seed. Which are RED (that is
+   the work) and which are GREEN (those are the guards) is handed back for the user to read.
+   **A close with no WORK stage red at seed is refused decision-ready** — it grades nothing,
+   and an instrument that scans nothing reads clean exactly like one that measures correctly.
+
+Then the human signs `specHash`, unchanged: the approvals array and the human's word are
+the arbiter relocating to the user, not disappearing. **Re-authoring is a spec edit (D6)** —
+a different declaration is different bytes, a different resolved hash, and a new signature.
+The guards are stored ENUMERATED and every short-form parser is expanded, so no
+omittable-with-a-default field can change what runs without changing what was signed.
+
+**Refusals are COUNTED (D13).** `refusalEvents(refusal)` returns the spine events: a
+`job-red` carrying `{ code: 'request-red', verb, lib: 'bareloop' }` — the `lib` stamped at
+the EMIT SITE, so `classifyIncidents` files it against bareloop's own catalogue and its
+`suggestedAsk` reads `bareloop: …` rather than seeding an upstream ask — plus one
+decision-ready `escalation` under `close-unauthorable`, which is in the ledger's excluded
+set precisely because the demand is already counted once. A refusal that is a STOP rather
+than demand (a broken instrument, a close with nothing to do) emits the escalation ALONE.
+**Known limit, stated:** v1's derivation cannot tell `soft-green` from `hitl` and does not
+try — both refuse under one verb (`non-green-verdict`), because naming which locked class a
+job belongs to would be a guess about prose.
+
+**At run time** the declared close is executed by the kind executor, never compiled down to
+shell (that would turn owned kinds back into authored strings — the exact thing D3 makes
+inexpressible). `runPlan` picks the executor from which field the signed spec carries and
+everything downstream is the same code: first-red-wins, the `CLOSE_FAULTS` forbidden zone
+(routed by a TYPED fault, so a timeout still offers "raise the close timeout"), the same
+`close stage "<name>" failed:` gap header the trend reader parses, the same scrub at the
+emission boundary, and the check menu still derived from stage names one hop. The seed is
+READ at run start (`seedAtHead`) and recorded on a `close-decl` spine event together with
+the grounded re-validation's result. Direct executor access: `runDeclaredStages(stages,
+redact, { cwd, seedRef, timeoutMs })` returns `runClose`'s verdict shape; `runDeclaredClose`
+and `seedRead` are the kind executor's own two entries (`runDeclaredClose` is named apart
+from ralph's shipped `runClose` because one runs a DECLARATION and the other an argv);
+`closeStagesOf(job)` is the ONE staging every close consumer reads, widened to both fields.
 
 ### `snapshotScope(dir, scope)` / `evalExits(exits, { dir, snapshot?, runCheck? })` — `src/exits.js`
 
@@ -713,7 +796,7 @@ is read, so a resume of a resume inherits the previous leg's chain and not the o
 (`createClock`, `src/clock.js`) from the signed `maxWallMs` and emits `wall-clock` with the
 requested AND enforced numbers up front, plus the `closeStages` count that explains the gap
 between them (`enforcedMs = maxWallMs + closeStages × closeTimeoutMs`, one expression — the
-stage count comes from `stageClose`, the same staging the runner executes). Enforcement is a
+stage count comes from `closeStagesOf`, the same staging the runner executes). Enforcement is a
 **between-round deadline** — the only seam that exists, since `loop.stop()` cannot cut an
 in-flight call (F61: fired at 500ms,
 returned at 4,018ms) — so an attempt that crosses the deadline mid-flight emits `wall-bounded`,
@@ -1221,12 +1304,17 @@ whichever territory was seen first), `broken-close` (consumer-attributed),
 `verb` field, prose-quoted verb as legacy fallback; both classes take their `lib` from the
 red's own stamp, so neither seeds an upstream ask for a bareloop-catalogue refusal),
 `retention-red`, `config-red`
-(drafting friction — attributed to bareloop's own schema/prompt). Deliberate exclusions
+(drafting friction — attributed to bareloop's own schema/prompt). Close-authoring
+refusals ride the SAME `request-red` channel with `lib: 'bareloop'` stamped at the emit
+site (`refusalEvents`), so genre/verdict/locked-kind demand is counted without ever
+seeding an upstream ask. Deliberate exclusions
 (`EXCLUDED_ESCALATIONS`, a runtime set — anything outside classified ∪ excluded is
 counted as unmapped, never dropped): `cap-halt`/`wall-halt` (budget stories, money and
 time), `step-stalled` (the stall fuse firing is our governance, not an observed provider
 failure), `step-variance` (a planning story), `gate-red`/`smoke-red` (governance working
-as intended / already counted), `hitl-close`/`close-unsupported` (by design),
+as intended / already counted), `hitl-close`/`close-unsupported`/`close-unauthorable` (by design — and the last one
+is excluded for a SECOND reason: its demand is already counted once as the `request-red`
+the same refusal emits, so counting the escalation too would double every refusal),
 `close-timeout`/`close-killed`/`close-crashed` (the arbiter's own named terminals, F17);
 `close-verdict`/`artifact-red` stay worker stories, `pr-red` operator environment.
 `suggestedAsk` on every row is a template seed for an upstream ask — filing stays human;

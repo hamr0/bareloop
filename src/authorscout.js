@@ -47,10 +47,10 @@
 // — a log that captures a key captures it forever.
 
 import { createRequire } from 'node:module';
-import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { Gate } from 'bareguard';
 import { LiteCtx } from 'litectx';
+import { seedListing } from './kinds.js';
 import { TOOL_MENU, WRITE_VERBS, STORE_VERBS } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, strategyFor } from './tools.js';
 import { redactSecrets, SECRET_PATTERNS } from './validate.js';
@@ -321,43 +321,16 @@ export const cleanEntry = (e) => String(e ?? '').split(' (')[0].trim().replace(/
  * `files` is spelled `null` on the stop branch rather than left off: a caller
  * that destructures the failure and finds `undefined` reads it as falsy, which
  * is the "absent renders as empty" shape this whole module exists to refuse.
+ *
+ * The command itself lives in `src/kinds.js` beside the executor's other git
+ * reads (`seedListing`) — the declared close's runtime gate judges paths against
+ * the SAME listing this scout hands the author, and two spellings of "what
+ * exists at the seed" would be two instruments.
  * @param {string} workdir @param {string} seedRef
  * @returns {Promise<{stop: string, files: null}|{stop: null, files: string[]}>}
  */
 export async function seedFileList(workdir, seedRef) {
-  const r = await run('git', ['ls-tree', '-r', '--name-only', seedRef], workdir);
-  if (r.stop !== null) return { stop: r.stop, files: null };
-  if (r.code !== 0) {
-    return { stop: `INSTRUMENT: git ls-tree -r ${seedRef} failed in ${workdir}: ${r.err.trim() || `exit ${r.code}`}`, files: null };
-  }
-  return { stop: null, files: r.out.split('\n').map((s) => s.trim()).filter(Boolean) };
-}
-
-/**
- * One read-only child process. Async because a synchronous spawn blocks the host
- * event loop for the child's whole duration (F68), which is precisely when a
- * stall fuse's timers cannot fire. Never throws — a fault is a `stop` string.
- * @param {string} cmd @param {string[]} args @param {string} cwd
- * @returns {Promise<{stop: string}|{stop: null, code: number, out: string, err: string}>}
- */
-function run(cmd, args, cwd) {
-  return new Promise((resolve) => {
-    /** @type {import('node:child_process').ChildProcess} */
-    let child;
-    try { child = spawn(cmd, args, { cwd, env: { ...process.env, NO_COLOR: '1' } }); }
-    catch (e) { resolve({ stop: `INSTRUMENT: "${cmd}" could not be run (${String(/** @type {any} */ (e)?.message ?? e)})` }); return; }
-    /** @type {Buffer[]} */ const out = [];
-    /** @type {Buffer[]} */ const err = [];
-    child.stdout?.on('data', (/** @type {Buffer} */ c) => out.push(c));
-    child.stderr?.on('data', (/** @type {Buffer} */ c) => err.push(c));
-    child.on('error', (e) => resolve({ stop: `INSTRUMENT: "${cmd}" could not be run (${e.message})` }));
-    child.on('close', (code) => {
-      if (code === null) { resolve({ stop: `INSTRUMENT: "${cmd}" returned a null exit code` }); return; }
-      resolve({ stop: null, code, out: Buffer.concat(out).toString('utf8'), err: Buffer.concat(err).toString('utf8') });
-    });
-    child.stdin?.on('error', () => {});
-    child.stdin?.end();
-  });
+  return seedListing(workdir, seedRef);
 }
 
 /** `src/*` style entries match by segment; everything else is a path prefix.

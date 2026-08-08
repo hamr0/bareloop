@@ -15,6 +15,7 @@
 
 import { createHash } from 'node:crypto';
 import { globToPrefix, scopeContained, isObj, isNonEmptyString, sweepSecretLiterals, hasNestedQuantifier } from './validate.js';
+import { validateCloseDecl, DECLARED_CLOSE_CLASSES } from './declaredclose.js';
 
 // The menus below ARE the close-authoring hierarchy (PRD §7) and ship frozen:
 // they are read at call time, so a mutable export would let adopter code
@@ -25,7 +26,20 @@ export const CLOSE_TYPES = Object.freeze(['predicate', 'gold', 'rubric', 'hitl']
  * type cannot legally claim (green-on-rubric is laundering). The `CLASSES`
  * vocabulary export went with steps[] (PRD v1.32): a class was a STEP field, and
  * nothing declares one now. */
-export const CLASS_BY_CLOSE = Object.freeze({ predicate: Object.freeze(['hard']), gold: Object.freeze(['hard']), rubric: Object.freeze(['soft']), hitl: Object.freeze(['hitl']) });
+export const CLASS_BY_CLOSE = Object.freeze({
+  predicate: Object.freeze(['hard']),
+  gold: Object.freeze(['hard']),
+  rubric: Object.freeze(['soft']),
+  hitl: Object.freeze(['hitl']),
+  // The AUTHORED close (M4, `closeDecl`) is not a `close.type` — it is the other
+  // field a plan-shape spec may carry — but it claims a verdict class exactly
+  // like one, so it belongs in the SAME table rather than in a second constant
+  // beside it. Hard by construction: every live kind is a mechanical command
+  // whose measurement is the truth, and the two judgment kinds are locked out at
+  // the catalogue and absent from the executor. The suite pins the key set
+  // against CLOSE_TYPES so the two can never drift apart silently.
+  declared: DECLARED_CLOSE_CLASSES,
+});
 export const GOLD_COMPARE = Object.freeze(['exact', 'json-equal']);
 /** the tool grant menu (2b interview #1): read/grep/write, plus the two litectx
  * RETRIEVAL verbs (F19) — `run` stays locked-but-listed; a spec requesting it
@@ -108,11 +122,11 @@ export const CONDITION_KEYS = Object.freeze(['providerPath', 'closeVerbosity', '
 // `steps` stays in the field list ONLY so a retired spec reds by name
 // (`shape-retired`) instead of falling through to a generic unknown-field —
 // the operator gets told what happened, not just that something is wrong.
-const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'conditions', 'cadence', 'budgetUsd', 'maxWallMs', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'checks', 'tools'];
+const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'conditions', 'cadence', 'budgetUsd', 'maxWallMs', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'closeDecl', 'checks', 'tools'];
 /** the four-field plan shape's core (decision 5) — presence of any of these
  * declares the shape; `tools` (the ceiling) rides the shape but alone does not
  * declare it, so a legacy spec carrying it gets a pointed red, not a conflict */
-const PLAN_CORE_FIELDS = ['goal', 'verdictType', 'close', 'checks'];
+const PLAN_CORE_FIELDS = ['goal', 'verdictType', 'close', 'closeDecl', 'checks'];
 /** exact field set per close type — anything else is an unknown-field red
  * (freeform code, script bodies, and minting claims all land there) */
 const CLOSE_FIELDS = {
@@ -530,7 +544,33 @@ function validatePlanShape(spec, red, reds) {
     demanded = CLASS_BY_VERDICT[spec.verdictType];
   }
 
-  if (spec.close === undefined) red('missing-required', 'close', 'declared green with nothing to run it — preflight validates the declaration, never infers');
+  // THE TWO CLOSE FIELDS, and they are ALTERNATIVES (M4). `close` is the
+  // operator's own command stages; `closeDecl` is the AUTHORED declaration over
+  // owned kinds — the whole point of the close-authoring rung, and the field a
+  // user who is not an engineer ends up with. Both at once is refused rather
+  // than merged or precedence-ordered: a spec carrying two closes has two
+  // arbiters, and picking one silently is how the signed artefact stops meaning
+  // what the signer read.
+  if (spec.close !== undefined && spec.closeDecl !== undefined) {
+    red('close-duplicated', 'closeDecl', 'a job declares EITHER a command close (close) OR an authored declaration '
+      + '(closeDecl) — never both. Two closes are two arbiters, and the close is the only truth');
+  } else if (spec.closeDecl !== undefined) {
+    // The DECLARED close. The tree-grounded half of the gate (hamr's listing
+    // rule, and the scoped-job derivation that arms the F84 one-population law)
+    // is DEFERRED here and re-run by the runner against the real seed before any
+    // stage executes — a job spec is validated with no repository in hand, and a
+    // validator that quietly skipped those two rules would report a declaration
+    // it never examined. `grounded: false` is what the runner keys on.
+    const cd = validateCloseDecl(spec.closeDecl, { at: 'closeDecl', deferListing: true });
+    for (const r of cd.reds) reds.push(r);
+    if (demanded !== undefined && !CLASS_BY_CLOSE.declared.includes(demanded)) {
+      // the same laundering guard as the close-type hierarchy, one level up: a
+      // declared close is HARD, so a soft/hitl verdict can never ride one
+      red('close-hierarchy', 'verdictType', `verdictType ${spec.verdictType} demands a ${demanded}-class close; an `
+        + `authored declaration admits ${CLASS_BY_CLOSE.declared.join('|')} only — every live kind is a mechanical `
+        + 'measurement, and the two judgment kinds are locked out of the catalogue (PRD §7)');
+    }
+  } else if (spec.close === undefined) red('missing-required', 'close', 'declared green with nothing to run it — preflight validates the declaration, never infers');
   // The staged close (PRD v1.28): an ordered list of named command stages, from
   // which the check menu derives. The object form remains ONLY for the
   // declared-but-locked verdict classes (gold/rubric/hitl), which name no

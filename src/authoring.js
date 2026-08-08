@@ -408,17 +408,30 @@ function readPath(p, dotted) {
  * is allowed to throw, because failing loudly beats a validator that quietly
  * stops enforcing a rule it was configured out of.
  *
+ * `deferListing: true` is the ONE way to run without a listing, and it must be
+ * spelled literally. It exists for exactly one caller — the job-spec validator,
+ * which judges a signed `closeDecl` with no repository in hand — and it does NOT
+ * make the listing optional: it moves that half of the gate to the runner, which
+ * re-validates GROUNDED against the real seed before any stage runs. Two checks
+ * ride on the listing and both are named here rather than discovered later: the
+ * path rule (a path SELECTS or it does not exist), and the SCOPED-job derivation
+ * that arms the F84 one-population law. With the listing deferred, neither
+ * fires, and `grounded: false` on the result is how a caller knows.
+ *
  * @param {any} declaration the parsed model output
  * @param {{catalogue?: Record<string, KindSpec>, listing?: string[]|null,
  *   guards?: {name: string, kind: string, params: Record<string, any>, fill: string[]}[]|null,
- *   envOwned?: string[]|null}} [opts]
+ *   envOwned?: string[]|null, deferListing?: boolean}} [opts]
  *   `listing` — repo-relative paths at the seed (`git ls-tree -r --name-only`).
  *   `guards` — the genre's injected guards (`genreGuards`).
  *   `envOwned` — env names the genre injects (`genreOwnedEnvNames`), `[]` when it owns none.
- * @returns {{ok: boolean, reds: Red[], declaration: any, scoped: {scoped: boolean, via: string|null}}}
+ *   `deferListing` — literally `true` to run the tree-independent half only.
+ * @returns {{ok: boolean, reds: Red[], declaration: any, grounded: boolean,
+ *   scoped: {scoped: boolean, via: string|null}}}
  */
 export function validateDeclaration(declaration, opts = {}) {
   const { catalogue = KIND_CATALOGUE, listing = null, guards = null, envOwned = null } = opts;
+  const deferListing = opts.deferListing === true;
   /** @type {Red[]} */
   const reds = [];
   /** @type {(code: string, path: string, detail: string, extra?: object) => void} */
@@ -428,10 +441,14 @@ export function validateDeclaration(declaration, opts = {}) {
   const kindNames = Object.keys(catalogue).join(' | ');
 
   const haveListing = Array.isArray(listing) && listing.length > 0 && listing.every(isNonEmptyString);
-  if (!haveListing) {
+  if (!haveListing && !deferListing) {
     red('listing-absent', 'listing', 'a non-empty seed file listing (git ls-tree -r --name-only <seed>) — '
       + 'without it nothing can tell a real path from an invented one, and a validator that skips that check '
       + 'reports a declaration it never examined');
+  }
+  if (haveListing && deferListing) {
+    red('listing-conflict', 'listing', 'deferListing was declared AND a listing was supplied — a caller that both '
+      + 'defers the tree-grounded half and hands over a tree does not know which gate it is running');
   }
   const idx = indexListing(haveListing ? /** @type {string[]} */ (listing) : []);
 
@@ -452,12 +469,12 @@ export function validateDeclaration(declaration, opts = {}) {
 
   if (!isObj(declaration)) {
     red('invalid-value', '', 'the declaration is an object carrying an ordered stages array');
-    return { ok: false, reds, declaration: null, scoped: { scoped: false, via: null } };
+    return { ok: false, reds, declaration: null, grounded: haveListing, scoped: { scoped: false, via: null } };
   }
   const stages = declaration.stages;
   if (!Array.isArray(stages) || stages.length === 0) {
     red('missing-field', 'stages', 'a non-empty ORDERED array of stages — they run in the order you declare them');
-    return { ok: false, reds, declaration: null, scoped: { scoped: false, via: null } };
+    return { ok: false, reds, declaration: null, grounded: haveListing, scoped: { scoped: false, via: null } };
   }
   if (stages.length > MAX_STAGES) {
     red('invalid-value', 'stages', `${stages.length} stages exceeds the ceiling of ${MAX_STAGES}`);
@@ -519,7 +536,7 @@ export function validateDeclaration(declaration, opts = {}) {
   if (haveGuards) checkGuards({ declaration, guards: /** @type {any[]} */ (guards), red });
 
   const ok = reds.length === 0;
-  return { ok, reds, declaration: ok ? normalizeDeclaration(declaration) : null, scoped };
+  return { ok, reds, declaration: ok ? normalizeDeclaration(declaration) : null, grounded: haveListing, scoped };
 }
 
 /**

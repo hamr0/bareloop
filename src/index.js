@@ -62,3 +62,52 @@ export { renderListing, selectionPrompt } from './selection.js';
 // `runReuse`'s own entry.
 export { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED, readResume, resumeTreeGate } from './reuse.js';
 export { classifyIncidents, foldLedger, ledgerDeltas, updateLedger, LEDGER_CLASSES } from './ledger.js';
+// ── CLOSE AUTHORING v1 (gate 4) — the user declares what done means ──────────
+// The public surface is settled ONCE, here, at M4 (M2's header flagged the
+// naming collision and deferred it rather than exporting piecemeal).
+//
+// THE COLLISION, resolved: the kind executor's grading entry is exported as
+// `runDeclaredClose`, and ralph's shipped `runClose(argv, redact, opts)` keeps
+// its name. Two reasons, in order. (1) `runClose` is a DOCUMENTED adopter
+// contract — it is in bareloop.context.md and in the exports map — and renaming
+// a shipped function to make room for a new one is a breaking change bought for
+// nothing. (2) The new name says what actually differs: one runs a DECLARATION,
+// the other an argv. `runDeclaredClose` / `runDeclaredStages` / `runStages` read
+// as a family, which is what they are.
+//
+// M1 — the kind executor. A runner needs `runStage`/`seedRead` to build its own
+// gate (that is what `prepareSigning` does with them), and `seedAtHead` because
+// D8's seed is READ at run start rather than typed into a spec.
+export {
+  runDeclaredClose, runStage, seedRead, seedAtHead, seedListing, changedSet, makeSeedTrees,
+  LIVE_KINDS, STOP_FAULTS, JUDGED_MARKER, EXIT_GREEN, EXIT_RED, EXIT_STOP,
+} from './kinds.js';
+// M2 — what a declaration may SAY, and whether one said it legally. The
+// catalogue and the genre are DATA an integrating UI renders (the kind menu, the
+// guard batteries it must show the user under D5 and cannot let them remove).
+export {
+  validateDeclaration, normalizeDeclaration, KIND_CATALOGUE, CATALOGUE_KINDS, CATALOGUE_LIVE_KINDS,
+  LOCKED_KINDS, TYPES_GENRE, TYPES_GENRE_TEMPLATE, GENRE_LANGUAGES, genreGuards, genreEnv, genreOwnedEnvNames,
+  DIRECTIONS, BASELINES, MAX_STAGES,
+} from './authoring.js';
+// M3 — the looking half and the writing half. `authorClose` is the grounded
+// loop; `runAuthorScout`/`buildSeedListing` are exported because a caller that
+// already paid for a survey passes it back in rather than buying a second one.
+export { runAuthorScout, buildSeedListing, seedFileList, classifySurvey, AUTHOR_SCOUT_VERBS } from './authorscout.js';
+export { authorClose, authorPrompt, declarationSchema, makeLoopGenerate, TYPES_QUESTIONS, MAX_REVISIONS } from './authorflow.js';
+// M4a — the runtime bridge. `validateCloseDecl` is the spec-level gate (the job
+// validator's own branch calls it); `runDeclaredStages` is the executor seam a
+// runner other than `runPlan` would need; `closeStagesOf` is the ONE staging
+// every close consumer reads, widened to both fields.
+export {
+  validateCloseDecl, runDeclaredStages, declaredStages, isDeclaredClose, guardNames, closeGrade,
+  DECLARED_GENRES, DECLARED_GAP_PREFIX, DECLARED_GAP_KEEP, DECLARED_CLOSE_CLASSES, CLOSE_DECL_FIELDS,
+} from './declaredclose.js';
+export { closeStagesOf } from './plan.js';
+// M4b — the interview, the refusal, the composition, and D9's three gates.
+// `prepareSigning` returns the resolved spec's HASH and the seed evidence; it
+// never signs — the approvals array and the human's word are unchanged.
+export {
+  runInterview, authorCloseForJob, assembleSpec, prepareSigning, refusalEvents, refuseLockedKind,
+  GENRE, GENRE_CONFIRM, REQUIRED_ANSWERS, REFUSAL_LIB, REFUSAL_CATEGORY,
+} from './authorjob.js';

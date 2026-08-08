@@ -48,7 +48,7 @@ import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { loadRegistry, saveBridge, appendGreen, appendRed, mintBridge, registryExists } from './bridges.js';
 import { renderListing, selectionPrompt } from './selection.js';
-import { stageClose } from './plan.js';
+import { closeStagesOf } from './plan.js';
 import { MIN_WALL_MS, jobSpecHash } from './job.js';
 import { isObj, isNonEmptyString } from './validate.js';
 import { readGrade } from './trend.js';
@@ -1290,7 +1290,7 @@ export async function runReuse(opts) {
         name: name ?? job.job,
         goal: job.goal,
         specHash: trySpecHash,
-        closeStageNames: (stageClose(job.close) ?? []).map((/** @type {any} */ s) => s.name),
+        closeStageNames: (closeStagesOf(job) ?? []).map((/** @type {any} */ s) => s.name),
         toolsUsed: [...new Set((read.plan.steps ?? []).flatMap((/** @type {any} */ s) => s.tools ?? []))],
       };
       row.bridgeWrite = writeGreen(bridge, meta, { ...record, plan: read.plan });

@@ -286,6 +286,21 @@ export async function runClose(close, redact = (s) => s, { timeoutMs = 120_000, 
 }
 
 /**
+ * The staged gap's header — WHICH wall the close stopped at, in front of that
+ * wall's own output. A worker handed three stages' worth of output cannot tell
+ * which one it must satisfy, and `src/trend.js` parses this exact line to bucket
+ * a grade per stage (its `STAGE_HEADER`).
+ *
+ * Exported for the one reason `GAP_KEEP_TRIM_MARKER` is: a SECOND executor now
+ * renders staged gaps (`src/declaredclose.js`, the declared close), and two
+ * spellings of this line would be two instruments — the reader would silently
+ * stop bucketing whichever one drifted. Behaviour here is unchanged; this is the
+ * same template, named.
+ * @param {string} name @param {string} gap
+ */
+export const stageGap = (name, gap) => `close stage "${name}" failed:\n${gap}`;
+
+/**
  * Run a STAGED close (PRD v1.28) — an ordered list of named command stages, run
  * in order until one renders a verdict that is not `satisfied`. The return is
  * runClose's own shape, so every consumer (the precheck, ralph's judge, the
@@ -310,7 +325,7 @@ export async function runClose(close, redact = (s) => s, { timeoutMs = 120_000, 
  * @param {{timeoutMs?: number, cwd?: string}} [opts]
  * @returns {Promise<any>} runClose's verdict shape, plus `stage` and `stages`
  */
-export async function runStages(stages, redact = (s) => s, { timeoutMs, cwd } = {}) {
+export async function runStages(stages, redact = (s) => s, /** @type {{timeoutMs?: number, cwd?: string}} */ { timeoutMs, cwd } = {}) {
   const ran = [];
   let last;
   for (const st of stages) {
@@ -326,9 +341,9 @@ export async function runStages(stages, redact = (s) => s, { timeoutMs, cwd } = 
         ...r,
         stage: st.name,
         stages: ran,
-        // The gap says WHICH wall, then the wall's own output. A worker handed
-        // three stages' worth of output cannot tell which one it must satisfy.
-        ...(r.gap ? { gap: `close stage "${st.name}" failed:\n${r.gap}` } : {}),
+        // The gap says WHICH wall, then the wall's own output (`stageGap`, the
+        // one spelling — the declared executor renders the same header).
+        ...(r.gap ? { gap: stageGap(st.name, r.gap) } : {}),
       };
     }
   }

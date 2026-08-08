@@ -30,6 +30,7 @@
 // UNRELIABLE red-set for comparison. Imported (never re-spelled) so the detector
 // keys off the exact string the shell emits — a magic string here would drift.
 import { GAP_KEEP_TRIM_MARKER } from './ralph.js';
+import { GAP_TRIM_MARKER } from './kinds.js';
 
 /**
  * Strip a trailing duration stamp from a kept-failure line. Real `node --test`
@@ -107,7 +108,13 @@ export function createRoot({ gapKeep, redact = (s) => s, writesInformative = tru
    */
   const keptSet = (gap, pattern) => {
     const re = pattern ? new RegExp(pattern, 'm') : keepRe;
-    if (!re || gap.includes(GAP_KEEP_TRIM_MARKER)) return null;
+    // BOTH trim announcements, because there are now two gap renderers: ralph's
+    // keep-block cap on a command close, and the kind executor's per-stage line
+    // cap on a DECLARED one. A trim the detector cannot see is worse than a
+    // missing detector — it makes the strong "reds unchanged" claim off a window
+    // that silently dropped failures (finding 5), which is the direction that
+    // manufactures a fixation reading out of an instrument that went blind.
+    if (!re || gap.includes(GAP_KEEP_TRIM_MARKER) || gap.includes(GAP_TRIM_MARKER)) return null;
     const lines = [...new Set(gap.split('\n').filter((l) => re.test(l)).map(normalizeRedLine))].sort();
     return lines.length ? lines : null;
   };
