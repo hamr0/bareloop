@@ -238,6 +238,98 @@ test('a "first" term whose every match was SCOPE-FILTERED says exactly that, and
   assert.deepEqual(none.notes, []);
 });
 
+// ── the scope filter reads PHYSICAL identity, not path SPELLING ──────────────
+//
+// A live aurora run proved the lexical matcher blind: the patient's layout is
+// `src/aurora_spawner -> ../packages/spawner/src/aurora_spawner` (a tracked
+// symlink, the common python monorepo shape). mypy under MYPYPATH=src reports
+// every error as `src/aurora_spawner/...`; the declared scope was
+// `packages/spawner/src/aurora_spawner/`; all 16 REAL error lines were dropped
+// and the count read 0. Two spellings of the SAME physical file must not read
+// as two different populations. The fixture below is a verbatim slice of that
+// run's own mypy output — expected counts are derived from it, never written in.
+
+/** verbatim lines from the real run (scratchpad/mypy-out.txt), symlink spelling */
+const MYPY_REAL = [
+  'src/aurora_spawner/timeout_policy.py:89: error: Statement is unreachable  [unreachable]',
+  'src/aurora_spawner/circuit_breaker.py:324: error: Statement is unreachable  [unreachable]',
+  'src/aurora_spawner/recovery.py:353: error: Need type annotation for "by_state" (hint: "by_state: dict[<type>, <type>] = ...")  [var-annotated]',
+  'src/aurora_spawner/spawner.py:156: error: Function is missing a return type annotation  [no-untyped-def]',
+  'src/aurora_spawner/spawner.py:156: note: Use "-> None" if function does not return a value',
+  'src/aurora_spawner/spawner.py:161: error: Item "None" of "StreamReader | None" has no attribute "read"  [union-attr]',
+].join('\n');
+/** the count the parser must reach, read off the fixture rather than asserted */
+const MYPY_ERRORS = MYPY_REAL.split('\n').filter((l) => l.includes(': error:')).length;
+/** the SAME errors as the tool would spell them walking the physical tree */
+const MYPY_PHYSICAL = MYPY_REAL.replaceAll('src/aurora_spawner/', 'packages/spawner/src/aurora_spawner/');
+
+const PHYS_PREFIX = 'packages/spawner/src/aurora_spawner/';
+const LINK_PREFIX = 'src/aurora_spawner/';
+/** count every `: error:` line, so the value IS the population size */
+const COUNT_ERRORS = () => norm({ terms: [{ lineMatch: ': error:', sign: 1, aggregate: 'sum', region: 'whole-output' }] });
+
+/** the real patient's shape: a physical package dir + a tracked symlink to it */
+function makeSymlinkedTree(/** @type {any} */ t) {
+  const dir = mkdtempSync(join(tmpdir(), 'bareloop-kinds-link-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const pkg = join(dir, 'packages/spawner/src/aurora_spawner');
+  mkdirSync(pkg, { recursive: true });
+  for (const f of ['timeout_policy.py', 'circuit_breaker.py', 'recovery.py', 'spawner.py']) writeFileSync(join(pkg, f), '');
+  mkdirSync(join(dir, 'src'), { recursive: true });
+  symlinkSync('../packages/spawner/src/aurora_spawner', join(dir, 'src/aurora_spawner'));
+  return dir;
+}
+
+test('scope: the tool reports the SYMLINK spelling and the scope declares the PHYSICAL one — the same physical files still count', (t) => {
+  const dir = makeSymlinkedTree(t);
+  const r = parseValue(MYPY_REAL, COUNT_ERRORS(), { scope: { includePrefixes: [PHYS_PREFIX] }, workdir: dir });
+  assert.equal(r.stop, null, 'every real error line was dropped — the count would read 0 against a 0 baseline');
+  assert.equal(r.value, MYPY_ERRORS, 'the population is the file set, not the spelling the tool happened to print');
+  assert.deepEqual(r.notes, [], 'nothing was dropped, so nothing is announced as dropped');
+});
+
+test('scope: the reverse spelling — scope declared through the SYMLINK, tool reporting the PHYSICAL path', (t) => {
+  const dir = makeSymlinkedTree(t);
+  const r = parseValue(MYPY_PHYSICAL, COUNT_ERRORS(), { scope: { includePrefixes: [LINK_PREFIX] }, workdir: dir });
+  assert.equal(r.stop, null);
+  assert.equal(r.value, MYPY_ERRORS);
+});
+
+test('scope: the plain physical/physical reading (the tsc genre) is UNCHANGED by physical resolution', (t) => {
+  const dir = makeSymlinkedTree(t);
+  const r = parseValue(MYPY_PHYSICAL, COUNT_ERRORS(), { scope: { includePrefixes: [PHYS_PREFIX] }, workdir: dir });
+  assert.equal(r.stop, null);
+  assert.equal(r.value, MYPY_ERRORS);
+});
+
+test('scope: a symlink pointing OUT of every prefix stays EXCLUDED — spellings are unified, scope is never widened', (t) => {
+  const dir = makeSymlinkedTree(t);
+  mkdirSync(join(dir, 'outside'), { recursive: true });
+  writeFileSync(join(dir, 'outside/leaked.py'), '');
+  symlinkSync('../outside/leaked.py', join(dir, 'src/rogue.py'));
+  const out = [
+    'src/aurora_spawner/spawner.py:161: error: Item "None" of "StreamReader | None" has no attribute "read"  [union-attr]',
+    'src/rogue.py:1: error: Statement is unreachable  [unreachable]',
+  ].join('\n');
+  const r = parseValue(out, COUNT_ERRORS(), { scope: { includePrefixes: [PHYS_PREFIX] }, workdir: dir });
+  assert.equal(r.stop, null);
+  assert.equal(r.value, 1, 'the escaping symlink must not be counted into this population');
+  assert.match(r.notes.join('\n'), /1 matching line\(s\) dropped by the scope filter/);
+});
+
+test('scope: a reported path that is not on disk falls back to the LEXICAL comparison, both directions', (t) => {
+  const dir = makeSymlinkedTree(t);
+  const ghostUnder = 'src/aurora_spawner/ghost.py:1: error: Statement is unreachable  [unreachable]';
+  const dropped = parseValue(ghostUnder, COUNT_ERRORS(), { scope: { includePrefixes: [PHYS_PREFIX] }, workdir: dir });
+  assert.equal(dropped.stop, null, 'a counted sum over zero in-scope lines is a legitimate 0');
+  assert.equal(dropped.value, 0, 'a file that does not exist cannot gain scope membership it did not have lexically');
+  assert.match(dropped.notes.join('\n'), /1 matching line\(s\) dropped by the scope filter/);
+
+  const kept = parseValue(ghostUnder, COUNT_ERRORS(), { scope: { includePrefixes: [LINK_PREFIX] }, workdir: dir });
+  assert.equal(kept.stop, null);
+  assert.equal(kept.value, 1, 'the lexical reading still stands when the path cannot be resolved');
+});
+
 test('a capture group that did not participate is a stop, never a zero', () => {
   const terms = norm({ terms: [{ lineMatch: '(?:total (\\d+))|(?:none)', capture: 1, sign: 1, aggregate: 'sum', region: 'whole-output' }] });
   const r = parseValue('none\n', terms);

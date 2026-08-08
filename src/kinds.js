@@ -60,6 +60,7 @@
 // two instruments.
 
 import { spawn } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 import { readFile, stat, mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
@@ -446,13 +447,83 @@ function underPrefix(rel, prefix) {
   return rel === pre.replace(/\/$/, '') || rel.startsWith(p);
 }
 
-/** @param {string} rel @param {any} scope */
-function inScope(rel, scope) {
+/**
+ * Physical identity, for when two SPELLINGS name one file. A live aurora run
+ * measured the cost of not having this: the patient's layout carries a tracked
+ * `src/aurora_spawner -> ../packages/spawner/src/aurora_spawner` symlink (the
+ * ordinary python monorepo shape), mypy printed every error as
+ * `src/aurora_spawner/...`, the declared scope said
+ * `packages/spawner/src/aurora_spawner/`, and a lexical matcher dropped all 16
+ * REAL error lines — 0 against a baseline of 0 is a fake green, and only the
+ * crash-stop caught it.
+ *
+ * `fs.realpathSync` and nothing else: lexical `..` resolution (and
+ * `path.posix.normalize`, which does it silently) HIDES escapes, which is why
+ * `globToPrefix` refuses to do it. The kernel's answer cannot be spoofed.
+ * Resolution failure is not an answer — the caller falls back to the lexical
+ * reading, so a path that is not in the measured tree can never GAIN scope
+ * membership it did not already have.
+ * @param {string} workdir
+ * @returns {{real: (rel: string) => string|null}|null} null when the measuring
+ *   directory itself cannot be resolved — then there is no physical reading at all
+ */
+function physicalIn(workdir) {
+  if (!workdir) return null;
+  /** one realpath per distinct path per parseValue call — a tool names the same
+   * file on many lines, and the scope filter reads every one of them */
+  const cache = new Map();
+  const real = (/** @type {string} */ abs) => {
+    if (cache.has(abs)) return /** @type {string|null} */ (cache.get(abs));
+    /** @type {string|null} */
+    let r = null;
+    try { r = realpathSync(abs); } catch { r = null; }
+    cache.set(abs, r);
+    return r;
+  };
+  const root = real(workdir);
+  if (root === null) return null;
+  return { real: (/** @type {string} */ rel) => real(join(root, rel)) };
+}
+
+/**
+ * Is `rel` the same PHYSICAL file as something under `prefix`? Both sides are
+ * resolved, so a symlinked report matches a physical prefix AND a physical
+ * report matches a symlinked prefix. Containment is checked on two realpaths,
+ * where a segment-prefix test means what it says — no symlink can sit inside
+ * either spelling any more, so this cannot widen scope to an escape: a file
+ * only matches when the prefix PHYSICALLY contains it.
+ * @param {string} rel @param {string} prefix
+ * @param {{real: (rel: string) => string|null}} phys
+ */
+function underPrefixPhysically(rel, prefix, phys) {
+  const pre = normPrefix(prefix).replace(/\/+$/, '');
+  // '' / '.' / '/' already answered TRUE lexically, and an absolute prefix
+  // matches nothing lexically (linePath never returns one) — resolving either
+  // against the workdir would invent a membership the declaration never made
+  if (pre === '' || pre === '.' || pre.startsWith('/')) return false;
+  const preAbs = phys.real(pre);
+  if (preAbs === null) return false;
+  const fileAbs = phys.real(rel);
+  if (fileAbs === null) return false;
+  return fileAbs === preAbs || fileAbs.startsWith(preAbs.endsWith(sep) ? preAbs : `${preAbs}${sep}`);
+}
+
+/** @param {string} rel @param {any} scope
+ * @param {{real: (rel: string) => string|null}|null} [phys] physical resolver;
+ *   absent (the changed-set callers, whose paths are git's own spelling on both
+ *   sides) leaves the comparison purely lexical */
+function inScope(rel, scope, phys = null) {
   if (!scope || typeof scope !== 'object') return true;
   const inc = Array.isArray(scope.includePrefixes) ? scope.includePrefixes : null;
   const exc = Array.isArray(scope.excludePrefixes) ? scope.excludePrefixes : null;
-  if (inc && !inc.some((/** @type {string} */ p) => underPrefix(rel, p))) return false;
-  if (exc && exc.some((/** @type {string} */ p) => underPrefix(rel, p))) return false;
+  // the physical reading runs only on a lexical MISS, so every spelling that
+  // matched before still matches — this only ever unifies two names for one file
+  const under = (/** @type {string} */ p) => underPrefix(rel, p)
+    || (phys !== null && underPrefixPhysically(rel, p, phys));
+  if (inc && !inc.some(under)) return false;
+  // exclusion resolves too: a symlink spelling must not smuggle a file past an
+  // exclude the physical spelling would have caught
+  if (exc && exc.some(under)) return false;
   return true;
 }
 
@@ -611,6 +682,9 @@ export function parseValue(output, terms, { scope = null, workdir = '' } = {}) {
   /** @type {string[]} */
   const notes = [];
   const filtering = !!scope && (Array.isArray(scope.includePrefixes) || Array.isArray(scope.excludePrefixes));
+  // one resolver (and one realpath cache) per call, built only when a filter
+  // will actually read it
+  const phys = filtering ? physicalIn(workdir) : null;
 
   for (const [i, t] of terms.entries()) {
     // 1. locate the region
@@ -639,7 +713,7 @@ export function parseValue(output, terms, { scope = null, workdir = '' } = {}) {
       if (filtering) {
         const p = linePath(line, workdir);
         if (p === null) unattributable += 1;
-        else if (!inScope(p, scope)) { dropped += 1; continue; }
+        else if (!inScope(p, scope, phys)) { dropped += 1; continue; }
       }
       for (const h of hits) {
         if (t.capture === null) { values.push(1); continue; }
