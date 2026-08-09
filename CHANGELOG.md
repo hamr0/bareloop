@@ -5,6 +5,18 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Changed
+- **README rewritten value-first** (hamr's framing, straight to `main`). The pitch now leads
+  with the trust-but-verify lineage (the ralph loop, code machine MCP, and RLMs converged on
+  the same principle), the three kinds of done (green / softgreen / hitl, one everyday
+  example each), why the agent authors the workflow (forty-plus primitives — counted 51+
+  across the suite's real surfaces — and no one recipe picked), and "build it once, keep it"
+  (localhost UI, whole-workflow export with its self-healing harness). One `[WIP]` badge is
+  the only status marker; all mechanics, layer tables, findings numbers and rung history
+  moved out of the pitch — `bareloop.context.md` stays the contract, the README the pitch.
+
 ## [0.9.0] — 2026-08-09
 
 The **close-authoring rung**. The close stops being a hand-written script and becomes a

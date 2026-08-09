@@ -13,144 +13,126 @@
 <p align="center">
   <img src="https://img.shields.io/github/package-json/v/hamr0/bareloop?label=version&color=2a4f8c" alt="version (auto from package.json)">
   <img src="https://img.shields.io/badge/license-Apache%202.0-2a4f8c" alt="license: Apache 2.0">
-  <img src="https://img.shields.io/badge/status-Layer%202%20%C2%B7%20accepted-2a6d3a" alt="status: Layer 2, accepted">
+  <img src="https://img.shields.io/badge/status-WIP-orange" alt="status: WIP">
 </p>
 
-**"Automate this job — I don't know the best workflow."** For tasks that are **repeated,
-long, and verifiable**: an agent authors the workflow scaffolding (a constrained,
-validated config — never freeform code); runs execute under an un-gameable outer gate;
-and the scaffolding *improves across runs* through verdict-gated, run-as-executed
-inheritance with ledger-counted attribution.
+**"Automate this job — I don't know the best workflow."**
 
-The pitch in one line: **workflows that earn their own design, with receipts** — every
-inherited rule carries the green that minted it and the contrast that attributed it.
+For work that is repeated, long, and verifiable: an agent authors the workflow scaffolding
+itself, as a constrained and validated config rather than freeform code. Every run executes
+under an outer gate the agent cannot reach or argue with. And the workflow gets better across
+runs, because what actually worked is kept with receipts and carried into the next run.
 
-**What you keep is the workflow, not the session.** An agent figures your recurring,
-verifiable job out once; what survives is a verified, self-healing workflow you can run
-again — with bounded spend under an envelope *you* sign, deterministic verification you
-don't author, and cost and time reported honestly (an unknown is reported unknown, never
-rounded to zero). *Direction, not yet shipped:* a local workbench where you experiment with
-a job, graduate a workflow once it greens, and **export** it — signed spec, workflow, close
-scripts and a thin runner that depends on bareloop, so the whole self-healing library
-(bare-agent · bareguard · litectx) comes along as npm dependencies. That bundle runs
-headless as an enclosed CLI and asks you the same signing questions at the prompt that the
-workbench would. It is a dependency, never generated standalone code: the gate travels with
-it and never disappears.
+Agents got good at doing the work. The open problem is knowing when the work is actually
+done. Three of the strongest results in long-running agent work landed on the same answer
+independently: the ralph loop, code machine MCP, and recursive language models all trust the
+agent to do the work and verify it with something the agent cannot reach. Trust, but verify.
 
-> **Status: Layer 2 — accepted.** The agent now authors its own workflow: `runJob()`
-> takes a signed job spec, surveys the repo, **drafts a validated plan of bounded steps**
-> (each with an operator-signed self-check it may reference but never author), and runs it
-> under an un-gameable outer close and one budget it can only tighten. On the real-model
-> acceptance battery (F47) the emergent flow converted a job the same worker failed 4/4
-> before — 3/3 runs, clearing the owned bar every time, composing its own check exits. The
-> within-run ratchet (Layer R) ships armed-and-inert by measurement (F41). **Then N3 —
-> executed inheritance**, where a workflow that greened is kept, offered to the next
-> similar job, and improved as executed instead of drafted from scratch (the ladder's
-> kill-switch question). As of 0.7.0 N3's machinery **ships** — the bridge registry, the
-> operator-signed reuse envelope, the selection call and step-level resume are all in the
-> public API — but shipping is not acceptance: one execution green proves reuse safe and
-> legal, never *beneficial*. The contrast that was to prove the lift is now retired (F88): a
-> validation rule hands every cold run the plan shape a bridge was carrying, so the gap it
-> would have measured is gone. Treat reuse as available and unproven — what a bridge should
-> carry instead is open. **The rung in flight is close authoring** — the last layer where a
-> human still wrote code. You answer a short interview about what *done* means; an LLM then
-> composes a close **declaration** over a catalogue of stage kinds bareloop implements — never
-> code, never prose parsed back — which is validated, run once against your untouched repo so
-> every ruler is seen measuring something real, and gated before you sign its hash. It is
-> proven live on both a JavaScript and a Python patient, and its designed failure mode is an
-> honest refusal: a close that would grade nothing, or a stage whose population does not exist
-> in your tree, comes back decision-ready instead of green.
+bareloop takes that principle and makes it the product. You describe a repeated, verifiable
+job and what *done* means for it. The agent handles the rest, under verification it never
+gets to touch.
 
-## Quick start
+## Three kinds of done
+
+Jobs differ by who or what decides the result is good. That difference is the product's
+spine, so you choose it when you create the job.
+
+**green** — a predicate decides. Tests pass, the build exits clean, the type checker is
+quiet.
+> *"Fix the failing suite."* · *"Migrate this package to strict types."*
+
+**softgreen** — an assessment decides against a rubric.
+> *"Reserve a ticket from SF to LA under $400."*
+
+**hitl** — a human makes the final call.
+> *"Improve my resume."*
+
+## Why the agent authors the workflow
+
+The bare suite gave us forty-plus primitives, and there are at least as many opinions about
+how context engineering should be broken into steps. Instead of picking one opinion and
+shipping it as the recipe, bareloop makes the agent the author. It chooses its own path
+through the primitives and then has to survive verification it cannot edit, widen, or
+disable.
+
+The lessons from ralph, RLMs, and code machine MCP are in here, applied to the small parts
+rather than adopted whole. None of them is the workflow; each one is available to the agent
+building it.
+
+## Install
 
 ```bash
 npm install bareloop
 ```
 
-**Give your AI assistant the integration guide**
+## Usage
+
+A signed job spec goes in. A verdict comes out.
+
+```js
+import { runJob, jobSpecHash, makeSpine } from 'bareloop';
+import { AnthropicProvider } from 'bare-agent';
+
+const spec = {
+  schema: 'job-v1',
+  job: 'my-maintainer',
+  description: 'fix src until the suite greens',
+  goal: 'Fix any failure in src/ so the suite passes.',
+  verdictType: 'green',
+  close: [{ name: 'suite-green', cmd: 'npm test', expect: 0 }],
+  provider: 'anthropic-api',
+  cadence: { unit: 'day', every: 1 },
+  budgetUsd: 1.5,
+  writeScope: ['src/**'],
+  tools: ['read', 'grep', 'write', 'edit'],
+  escalation: { mode: 'decision-ready' },
+};
+
+// you sign the spec; an edited spec is unsigned by construction
+const approvals = [
+  { specHash: jobSpecHash(spec), signer: 'you', ts: new Date().toISOString() },
+];
+
+const outcome = await runJob(spec, {
+  approvals,
+  workdir: '/path/to/checkout',
+  provider: new AnthropicProvider({ model: 'claude-sonnet-5' }), // key from env
+  emit: makeSpine('/path/to/checkout/run.jsonl'),
+});
+// 'green' means your close passed. Anything else is a named, decision-ready stop.
+```
+
+You do not have to hand-write that `close` yourself. bareloop can author it with you from a
+short interview about what done means for the job, then hand you the result to sign.
+
+**Integrating an agent?** Point it at the contract, not this file:
 
 ```
 Read bareloop.context.md from node_modules/bareloop/bareloop.context.md
 ```
 
-That single file is the complete adopter contract — the boundary, the architecture, the
-refusals, the constraints — and it grows API sections as rungs land. (Suite-wide pattern:
-every bare package ships its `*.context.md`.)
+That single file is the complete adopter contract: the API, the boundary, the refusals, the
+constraints. The README is the pitch. (Suite-wide pattern: every bare package ships its
+`*.context.md`.)
 
----
+## Build it once, keep it
 
-## How it works
+A simple localhost UI lets you build a job by talking about it and watch it run. When it
+works, **export the whole workflow** — with its self-healing harness — and run it again
+anywhere. The point is to stop trial-and-erroring your way to the workflow that fits a job.
+Find it once, keep it, reuse it. It is a seed of something bigger over time.
 
-Three layers; nothing inside negotiates with the layer above it.
+## Running it
 
-| Layer | What it is | Emergent? |
-|---|---|---|
-| **Outer shell** | Per-run budget cap (bareguard), retry cap, verdict collection, escalation routing. Stateless across runs | never — permanent, dumb, un-gameable |
-| **Emergent middle** | The authored plan: bounded steps, each with its granted verbs, its own round cap, its write scope and its form-checkable exits — schema-validated, red before tokens burn. A step keeps iterating while it is making progress; when it stops, the shell ends it and the planner re-allocates | yes — authored and improved by the agent |
-| **Floor** | Append-only JSONL spine (single source for every UI), litectx store per job, per-run ledger | never — the record |
-
-Every job declares a **verdict class**, and the class decides what the run's learning is
-worth. Today exactly one is built:
-
-| Verdict | Truth source | Mints inheritance? | Status |
-|---|---|---|---|
-| **Hard green** | predicate / exit-code (tests, build, lint) | automatically | **built** |
-| **Soft green** | rubric / assessment | only with HITL confirm or N consistent repeats | declared, not built (rung N4) |
-| **HITL green** | a human is the close (PR merge, "publish") | yes — and merge stays human, forever | declared, not built (rung N4) |
-
-The full bare-suite surface is *disclosed* to the authoring agent; only *admitted* verbs
-are callable per job. A request against a locked primitive is a structured red — real
-diagnostic signal, and the admission path when it's justified.
-
-## Security posture — honest about the boundary
-
-bareloop runs **locally**, as you. Secrets load from the environment and never enter the
-tree, the spine, the configs or the ledger — and the close child, which executes the code
-the worker just wrote, gets its environment **stripped of credential-shaped variables**
-(provider keys, `AWS_*`, anything named `*_TOKEN`/`*_SECRET`/`*_PASSWORD`/`*_API_KEY`):
-nothing that judges a tree needs them. That is exposure reduction, **not a sandbox** — the
-worker's code still runs with your OS permissions and network access, so treat a bareloop
-run as inside your trust boundary and give it a repo you'd let an agent touch.
-
-## The science behind it
-
-bareloop is the productization of **[adaptlearn](https://github.com/hamr0/adaptlearn)**
-(archived at v0.11.1) — a closed experimental record, findings F1–F23. What it settled,
-bareloop consumes without re-proving:
-
-| Mechanism | Evidence |
-|---|---|
-| Agents author valid harness configs at hand-written parity | M4 (F10) |
-| Mid-run revision recovers stuck runs | M5 (F11: 3/3 vs 1/3) |
-| Verdict-gated inheritance beats ungated on pass/fail | F19: gated late 1.00 vs ungated 0.13 |
-| Run-as-executed inheritance transmits in-run learning | F20: 6/6 lineages, ~½ cost |
-| Which-knob attribution is countable from the ledger | V2: contrast bit 16/16 gens |
-| Where memory pays: regularities outside the worker's prior | F17/F18: ~8× under acquisition cost |
-
-Full PRD with design laws and open questions: [`docs/01-product/PRD.md`](docs/01-product/PRD.md).
-
-## Roadmap — the build ladder
-
-Each rung POCs its riskiest assumption; a rung that cannot meet its exit stops the
-ladder, and the stop is a result.
-
-| Rung | What lands |
-|---|---|
-| **N0** ✅ | Port + outer shell + spine (token-free) — v0.1.0 |
-| **N1** ✅ | Job/close schema + validator — v0.2.0 |
-| **N2** ✅ | Single-job headless loop — job #1 minimal (review→fix→PR, hard greens only) — v0.3.0 |
-| **Layer R** ✅ | Within-run ratchet: shell-side fixation detector (intent) + rejected-edit feedback (outcome), **shipped OFF by default** (F41: fixation in remission, so ON has never won its A/B; F43 split the two axes; field read + default decision defer to Layer 2) — v0.4.0 |
-| **Layer 2** ✅ | plan-v1 micro-wheels — the road: bounded steps with in-run verifiable exits (the F39-measured semantic converter), accepted on the real-model battery (F47) — v0.5.0, then finished by T·A·P·U (a wall clock, variance-triggered replan, the 14-verb palette, user-mode e2e) |
-| **N3** | Executed inheritance + contrast-bit extractor — **kill-switch: rules must transmit across non-identical runs** |
-| **N4** | Verdict classes complete (soft/HITL minting) |
-| **N5** | Scheduler + budget ops |
-| **N6** | The panel ([spec](docs/01-product/PRD.md#appendix-a--panel-spec-provisional): left chat + command bar, right progress over results, context-graph reserved) |
+bareloop runs locally, as you. Secrets load from the environment and never enter the tree or
+the run's records. It reduces exposure but it is not a sandbox: the code your job writes runs
+with your permissions, so give bareloop a repo you would let an agent touch.
 
 ## The bare ecosystem
 
-Local-first, composable agent infrastructure. Same API patterns throughout —
-mix and match, each module works standalone. bareloop is the suite's flagship consumer:
-it exercises every package and gaps get fixed upstream, never shimmed.
+Local-first, composable agent infrastructure. Same API patterns throughout. Mix and match,
+each module works standalone. bareloop is the suite's flagship consumer: it exercises every
+package, and gaps get fixed upstream rather than shimmed.
 
 **Core** — the brain, the gate, the memory.
 
@@ -164,10 +146,12 @@ it exercises every package and gaps get fixed upstream, never shimmed.
 - **[baremobile](https://npmjs.com/package/baremobile)** — Android + iOS device control. *Screen in → pruned snapshot out.* Replaces Appium, Espresso, XCUITest.
 - **[beeperbox](https://github.com/hamr0/beeperbox)** — 50+ messaging networks via one MCP server. *Chat in → unified message stream out.* Replaces Twilio, per-platform bot APIs.
 
-**Why this exists:** most automation stacks make you design the workflow before you know
-what works. bareloop's bet — proven in adaptlearn — is that for repeated, verifiable
-jobs, selection under an honest gate designs a better workflow than you would, and shows
-its receipts.
+## Background
+
+bareloop is the productization of **[adaptlearn](https://github.com/hamr0/adaptlearn)**, a
+closed experimental record on whether agent-authored workflows improve under an honest gate.
+The design laws it inherited, and the open questions it has not answered yet, are in
+[`docs/01-product/PRD.md`](docs/01-product/PRD.md).
 
 ## License
 
