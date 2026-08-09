@@ -34,7 +34,7 @@ import { FIX_STRIKE_LIMIT, readGrade } from '../src/trend.js';
 import { validateJob, jobSpecHash } from '../src/job.js';
 import { makeRegistry, saveBridge, loadBridge } from '../src/bridges.js';
 import { makeSpine } from '../src/spine.js';
-import { readSpine, scriptedProvider } from './helpers.js';
+import { readSpine, scriptedProvider, initPatientRepo } from './helpers.js';
 
 const base = mkdtempSync(join(tmpdir(), 'resume-test-'));
 let n = 0;
@@ -315,6 +315,44 @@ test('reconstruction: an ABANDONED attempt of the same try is not counted twice 
   assert.equal(second.restart.priorSpentUsd, 1.25, '0.75 already folded + 0.5 of new rounds — never 0.75 counted twice');
   assert.ok(second.restart.priorWallMs >= 60_000, 'and the wall fold accumulates the same way');
   assert.equal(second.completed.length, 1, 'the abandoned window is not a completed try');
+});
+
+test('reconstruction: the WORK BRANCH is READ off the dead spine, never re-derived (v1.57 §3)', async () => {
+  const dir = seed(BRIDGE('alpha'));
+  const { events } = await spineOf({
+    registryDir: dir,
+    selectionProvider: picker({ choice: 'alpha', reason: 'a' }),
+    runJob: scriptedRuns([{ outcome: 'escalated', closeStage: 'typecheck', spentUsd: 1 }]),
+  });
+  const cut = killedAfter(events, (e) => e.type === 'try-start' && e.n === 1);
+  const ts = cut.at(-1).ts;
+
+  // no record yet — a leg killed before it ever branched has no work to strand, and
+  // null is what sends the resume down the cold path (which creates one). Never a
+  // guessed name: re-deriving it is exactly the bug this field exists to prevent.
+  assert.equal(readResume(cut).restart.branch, null);
+
+  const branched = [...cut, { type: 'work-branch', branch: 'bareloop-litectx-u-types', created: true, from: 'main', ts, seq: 900 }];
+  assert.equal(readResume(branched).restart.branch, 'bareloop-litectx-u-types');
+});
+
+test('reconstruction: a resume OF a resume inherits the FIRST leg\'s branch through the abandoned window', async () => {
+  const dir = seed(BRIDGE('alpha'));
+  const { events } = await spineOf({
+    registryDir: dir,
+    selectionProvider: picker({ choice: 'alpha', reason: 'a' }),
+    runJob: scriptedRuns([{ outcome: 'escalated', closeStage: 'typecheck', spentUsd: 1 }]),
+  });
+  const cut = killedAfter(events, (e) => e.type === 'try-start' && e.n === 1);
+  const ts = cut.at(-1).ts;
+  // leg 1 branched, then died. Leg 2 restarted the SAME try and died before its own
+  // 0c ever ran — the branch is a fact about the TREE, and the tree survived.
+  const chain = [
+    ...cut,
+    { type: 'work-branch', branch: 'bareloop-litectx-u-types', created: true, from: 'main', ts, seq: 900 },
+    { type: 'try-start', n: 1, mode: 'bridge', bridge: 'alpha', priorSpentUsd: 1, ts, seq: 901 },
+  ];
+  assert.equal(readResume(chain).restart.branch, 'bareloop-litectx-u-types');
 });
 
 test('reconstruction: the wall the dead attempt consumed is measured from the spine\'s own timestamps, and a later kill record moves it', async () => {
@@ -1143,6 +1181,8 @@ function patientDir(needs) {
   const wd = join(base, `patient-${n += 1}`);
   mkdirSync(join(wd, 'src'), { recursive: true });
   mkdirSync(join(wd, 'tests'), { recursive: true });
+  // the WORK BRANCH hard rule (PRD v1.57 §3) makes a git checkout a precondition
+  initPatientRepo(wd);
   writeFileSync(join(wd, 'close.mjs'), `import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1742,6 +1782,7 @@ function cyclePatient() {
   const wd = join(base, `cycle-${n += 1}`);
   mkdirSync(join(wd, 'tests'), { recursive: true });
   mkdirSync(join(wd, 'src'), { recursive: true });
+  initPatientRepo(wd);
   writeFileSync(join(wd, 'src', 'mod.mjs'), 'export const x = 1;\n');
   writeFileSync(join(wd, 'check.mjs'), `import { existsSync, readFileSync } from 'node:fs';
 const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;

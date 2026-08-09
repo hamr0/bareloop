@@ -608,10 +608,10 @@ Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
 `coordination-red` — a failure between units (scope contention, step order, store
 races), never to be folded into worker/interpreter reds.
 
-### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, layerRoot?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, layerRoot?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch? })` → outcome — `src/run.js`
 
-The last six are the RESUME fold and are documented under *Resuming a killed run* below; they
-default to `0` / `true` / `0` / `null` / `[]` / `null`, so a fresh run passes none of them.
+The last seven are the RESUME fold and are documented under *Resuming a killed run* below; they
+default to `0` / `true` / `0` / `null` / `[]` / `null` / `null`, so a fresh run passes none of them.
 Three of them are folds of a bound the operator SIGNED (money, wall, replans) and one is a
 readout seed (grades) — the distinction matters and is spelled out there.
 
@@ -623,8 +623,11 @@ known-answer round-trip before tokens: `smoke-red` — a silent degradation thro
 `min(job budget − spent, shell cap)`.
 
 Outcomes: `green | already-green | escalated | unapproved-spec | job-red | smoke-red |
-plan-red | check-red | close-red | close-unsupported | recipe-stale | pricing-red |
-provider-red | interpreter-red | cap-halt | wall-halt | step-stalled | step-red:<id>`. `provider-red` is a
+plan-red | check-red | close-red | close-unsupported | recipe-stale | branch-red | pricing-red |
+provider-red | interpreter-red | cap-halt | wall-halt | step-stalled | step-red:<id>`.
+`branch-red` is the WORK BRANCH refusing (below): the patient is not a git checkout, its
+branch namespace has no free name, or a resume's recorded branch is gone. Zero tokens, and
+never a fallback to working on the branch the run was handed. `provider-red` is a
 transport throw or a worker round the API cut off mid-generation (`truncated:max_tokens`,
 BA-6 — before which it laundered into a clean finish, F25): no verdict exists and the failed
 round's spend is only partly known (F6). `cap-halt` is the wallet; `wall-halt` is the clock
@@ -672,7 +675,8 @@ their own ledger): **close precheck** (`already-green` is a
 DISTINCT zero-token outcome; a forbidden-zone verdict escalates before spend) → **check-menu
 preflight** (`check-menu` names the derived menu, then every OFFERED stage's chain runs once
 at $0 — an unrunnable stage is a `check-red` stop before tokens, not a fault mid-plan) →
-**SCOUT** (read-only by construction: neither the
+**THE WORK BRANCH** (below — created before the first paid call, `branch-red` if it cannot
+be) → **SCOUT** (read-only by construction: neither the
 write-class nor the store-class verbs are in its menu; hard-bounded rounds) → **PLAN** (the decompose call —
 the planner never sees the repo, only the scout blob; drafted against a schema
 description with check NAMES only; `validatePlan` gates it, one redraft with the reds
@@ -689,6 +693,45 @@ spine on every path that executed steps. Additional outcomes: `already-green |
 plan-red | check-red | close-red | wall-halt`. Worker prompts hold the v1.12 §5 contract
 (mutation-proven): the absolute repo root, the step's action/target, prior artifacts,
 the gap — NEVER the budget, the close command, a check's command, or the arbiter's books.
+
+**THE WORK BRANCH — a hard rule, and a REQUIREMENT on the patient (PRD v1.57 §3).** hamr's
+ruling, verbatim: *"The agent creates a NEW BRANCH before it touches any code — a HARD RULE,
+no exceptions. Not a default, not a preference: no job edits the branch it was handed, and
+none edits `main`."* So **the patient must be a git repository with at least one commit** —
+that is new, and it is the honest consequence of the rule rather than an option. And the
+patient itself is **ALWAYS a separate COPY of the repo being treated, never the original**
+(hamr, 2026-08-09): the branch bounds where writes land, but workers and close stages
+still mutate the patient tree (branches per try, caches, worktrees) — the copy is the
+blast radius; the original never carries it. What the run does, before its first paid
+call:
+
+- **The name is DERIVED from the SIGNED spec**, never model-authored (a branch name is
+  arbiter bookkeeping): `bareloop-` + the spec's own `job` slug — `bareloop-typecheck-fix`.
+  `workBranchName(spec)` is exported so a runner can show it at its approval gate. The goal
+  prose is deliberately NOT an input: it is edited between runs without changing what the
+  job is, and the branch name would move with it.
+- **A name already taken is SUFFIXED** `-2`, `-3`… — a second run of the same spec is a
+  second blast radius and never reuses the first one's branch.
+- **A RESUME returns to ITS OWN branch.** Pass `resumeBranch` (read off the dead spine by
+  `readResume` as `restart.branch`); without it the deterministic name would collide with the
+  killed leg's own branch and mint a `-2` beside the work the resume exists to keep. A
+  recorded branch that no longer exists is a `branch-red` STOP, never a fresh start.
+- **`work-branch { branch, created, resumed, from, base, repo, collided? }`** lands on the
+  spine at creation — the run's books say where its work went.
+- **Every failure is `branch-red`**, escalated decision-ready with zero spend. There is no
+  fallback to the handed branch anywhere; and `mkWorker`, the ONE seam that grants
+  write-class verbs, refuses to build a write-capable worker with no branch prepared, so the
+  ordering is a convenience and the guard is the rule.
+- **An `already-green` tree leaves no branch behind** — the precheck returns above this
+  step, and a run with no work has no blast radius to bound.
+
+**What it does NOT do.** bareloop never commits, so the branch bounds where work LANDS: the
+tree stands on a branch nobody handed the run, and the handed ref is never moved or written
+through. It is not containment — v1.41's local-trust model is unchanged, and worker/close
+children still run as the operator's OS user with network egress. A workdir that is a
+SUBDIRECTORY of a repository gets its branch in the enclosing repository (git resolves
+upwards, exactly as every other git read in the flow does); the `work-branch` record's `repo`
+field names which repository that was, rather than leaving it to be discovered.
 
 **The strike ladder — how a STEP ends (F77–F79).** A plan step is **not** bounded by a
 number of iterations. It runs until it stops making PROGRESS: a *strike* is a red iteration
@@ -1158,8 +1201,8 @@ the secrets scan.
 A reuse run is up to `tries + 1` full jobs long, so a kill mid-run is a real event and it
 must not cost the whole envelope. **`readResume(events, {deathAt?, direct?, resumableOutcomes?})`**
 reads the dead run's own spine back into the state a resume continues from: `{ started,
-approvalHash, completed[], tried[], restart (with its step-level `seed` and its close
-`grades`), r1Missing, spentUsd,
+approvalHash, completed[], tried[], restart (with its step-level `seed`, its close
+`grades`, and its work `branch`), r1Missing, spentUsd,
 spendComplete, carrySpentUsd, carrySpendComplete, ended, greened, … }`. Hand that object to
 **`runReuse({…, resume})`** and the run picks up where it stopped.
 
@@ -1183,10 +1226,17 @@ semantics are byte-unchanged (PRD v1.46 §3):
   work on disk and the plan on the spine. A green or any red stays non-resumable under every
   setting — a verdict already rendered is never re-bought.
 
+`restart.branch` is the WORK BRANCH the dead leg was working on, READ off its `work-branch`
+record and never re-derived: the name is deterministic from the signed spec, so a restart that
+recomputed it would collide with its own predecessor and be handed a fresh `-2` beside the work
+it came back for (the declared-fold precedent, `priorSpentUsd`'s exactly). Pass it on as
+`resumeBranch`; `runReuse` does it for you. `null` — a leg killed before it ever branched — is
+the cold path, and correct, because a leg that never branched has no work to strand.
+
 `scripts/run-u.mjs --resume <runid|path>` is the operator-side consumer: it skips the patient
 reset (`resumeTreeGate` instead — a dirty tree is what a resume expects; only a moved HEAD
-stops it), folds the halted run's money and wall in, re-enters at the checkpoint, and arms the
-outside watchdog on the REMAINING wall. The top-up itself stays a spec edit the human signs.
+stops it), folds the halted run's money and wall in, returns to the dead leg's own work branch,
+re-enters at the checkpoint, and arms the outside watchdog on the REMAINING wall. The top-up itself stays a spec edit the human signs.
 **A zero wall remainder REFUSES the launch** (exit 2, before the key and before the patient):
 W-2 says a run out of time keeps the grade it has and stops, so a resume with no time to start
 anything in is a decision, not an unbounded launch — and launching it used to hand the outside

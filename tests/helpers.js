@@ -9,6 +9,7 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 
 /**
@@ -138,4 +139,44 @@ export function scriptedNativeFactory(sessions) {
 
 /** ONE spine reader: parsed events in seq order. @param {string} file */
 export const readSpine = (file) => readFileSync(file, 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+
+/**
+ * ONE patient-repository maker. The WORK BRANCH hard rule (PRD v1.57 §3) makes a
+ * git checkout a PRECONDITION of running a job at all — the run creates its own
+ * branch before any write-capable worker can exist, and a patient with no
+ * repository is an honest `branch-red` before a token is bought. So every
+ * fixture patient that a runner is pointed at is a real repo with one commit,
+ * exactly like the real ones.
+ *
+ * Global/system git config is neutralised so a developer's own `init.defaultBranch`,
+ * hooks or templates cannot change what the fixture is — the handed branch is
+ * always `main`, in CI and on every machine.
+ * @param {string} dir an existing directory (its current contents become the seed commit)
+ * @returns {string} the seed commit sha
+ */
+export function initPatientRepo(dir) {
+  const env = {
+    ...process.env,
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_CONFIG_SYSTEM: '/dev/null',
+    GIT_AUTHOR_NAME: 'bareloop-test', GIT_AUTHOR_EMAIL: 'test@bareloop',
+    GIT_COMMITTER_NAME: 'bareloop-test', GIT_COMMITTER_EMAIL: 'test@bareloop',
+  };
+  const git = (/** @type {string[]} */ args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', env });
+  git(['init', '-q', '-b', 'main']);
+  // an EMPTY tree still needs a commit: `git checkout -b` works on an unborn head,
+  // but the declared close's seed (`git rev-parse HEAD`) does not, and a fixture
+  // that only half-resembles a patient is the fixture that hides the next defect.
+  writeFileSync(join(dir, '.gitkeep'), '');
+  git(['add', '-A']);
+  git(['commit', '-q', '-m', 'seed']);
+  return git(['rev-parse', 'HEAD']).trim();
+}
+
+/** which branch a patient is standing on right now. @param {string} dir */
+export const currentBranch = (dir) => execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim();
+
+/** every local branch in a patient, sorted. @param {string} dir */
+export const localBranches = (dir) => execFileSync('git', ['for-each-ref', '--format=%(refname:short)', 'refs/heads'], { cwd: dir, encoding: 'utf8' })
+  .split('\n').map((s) => s.trim()).filter(Boolean).sort();
 

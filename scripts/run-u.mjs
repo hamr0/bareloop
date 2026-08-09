@@ -442,6 +442,11 @@ try {
       ...(dead.restart.replans > 0
         ? { resumeReplans: { count: dead.restart.replans, grantUsed: dead.restart.replanGrantUsed } }
         : {}),
+      // and WHERE the dead leg's work is sitting (PRD v1.57 §3). The branch name is
+      // derived from the SIGNED spec, so it is identical on every leg: without this the
+      // restart collides with its own predecessor's branch and the collision walk hands
+      // it a fresh `-2` standing beside the work it came back to continue.
+      ...(dead.restart.branch ? { resumeBranch: dead.restart.branch } : {}),
     } : {}),
   });
 } finally {

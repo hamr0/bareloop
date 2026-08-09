@@ -35,6 +35,7 @@ import { extractArtifact } from './text.js';
 import { createClock, isWallTimeout } from './clock.js';
 import { isDeclaredClose, runDeclaredStages, validateCloseDecl, closeGrade } from './declaredclose.js';
 import { seedAtHead, seedListing } from './kinds.js';
+import { workBranchName, prepareWorkBranch } from './workbranch.js';
 
 const require = createRequire(import.meta.url);
 const { Loop, wireGate, HaltError } = require('bare-agent');
@@ -511,12 +512,18 @@ ${scoutBlob || '(no scout notes)'}`;
  *   default; a caller supplies this to drive time deterministically (the same seam `createClock`
  *   already exposes — a run's terminal cannot otherwise be exercised without waiting out a cap
  *   whose floor is one close timeout).
+ * @param {string|null} [opts.resumeBranch] RESUME — the WORK BRANCH the killed leg
+ *   recorded on its own spine (`readResume`'s `restart.branch`, off the `work-branch`
+ *   event). With it the resume returns to the branch its own work is sitting on; without
+ *   it the deterministic name would collide with that very branch and the collision walk
+ *   would mint a `-2` beside the progress the resume exists to keep. Absent is the cold
+ *   path. A recorded branch that no longer exists is a STOP, never a fresh start.
  * @returns {Promise<string>} 'green' | 'already-green' | 'escalated' | 'plan-red' |
  *   'check-red' | 'close-red' | 'close-unsupported' | 'recipe-stale' | 'pricing-red' |
- *   'cap-halt' | 'wall-halt' | 'provider-red' | 'interpreter-red' | 'step-stalled' |
- *   `step-red:<id>`
+ *   'branch-red' | 'cap-halt' | 'wall-halt' | 'provider-red' | 'interpreter-red' |
+ *   'step-stalled' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null }) {
   workdir = resolve(workdir);
   // ONE spelling of the redaction, housed next to the inventory it reads
   // (src/validate.js) — the same helper the isolate verbs scrub the litectx store
@@ -946,6 +953,73 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     }
   }
 
+  // ── 0c. THE WORK BRANCH — the HARD RULE (PRD Addendum v1.57 §3, hamr):
+  // *"The agent creates a NEW BRANCH before it touches any code — a HARD RULE, no
+  // exceptions. Not a default, not a preference: no job edits the branch it was
+  // handed, and none edits `main`."*
+  //
+  // WHERE IT SITS, and both halves of the placement are ruled rather than
+  // convenient:
+  //
+  //  * BEFORE the scout, which is the run's first PAID call. A patient that is not
+  //    a git checkout, a namespace with no free name, a resume whose branch a human
+  //    deleted — each of those is an instrument stop that must cost zero tokens, and
+  //    a branch created after the scout would already have bought one.
+  //  * AFTER the precheck and the preflight, which are $0 and deterministic. An
+  //    ALREADY-GREEN tree returns above this line and leaves no branch behind: a run
+  //    with no work to do has no blast radius to bound, and minting a branch for it
+  //    would litter every patient with the record of a run that did nothing.
+  //
+  // The scout itself needs no branch and is not what this gates: its menu simply
+  // has no write-class verb in it (the menu IS the grant), so it cannot touch code
+  // wherever it stands. What the branch gates is the WRITE-CAPABLE phase, and that
+  // gate is enforced structurally rather than by this ordering — `mkWorker` refuses
+  // to build a `writable` worker while `workBranch` is null (below). Ordering says
+  // where the honest stop happens; the guard says the rule cannot be bypassed.
+  //
+  // Creating a branch at HEAD moves no commit and changes nothing the close can
+  // measure: the declared seed is HEAD either way, and the tree — dirty or clean —
+  // is carried across untouched.
+  /** @type {string|null} the branch this run's work lands on, once it exists */
+  let workBranch = null;
+  {
+    const wb = await prepareWorkBranch(workdir, { name: workBranchName(job), resume: resumeBranch ?? null });
+    if (wb.stop !== null) {
+      // Never a fallback to the handed branch. That fallback IS the thing the rule
+      // forbids, and a run that silently took it would report a green whose blast
+      // radius nobody bounded — so this is a named terminal of its own rather than
+      // a wiring fault (`interpreter-red` aims an upstream ask at a library; a
+      // patient that is not a git checkout is the operator's own state speaking).
+      emit('escalation', {
+        category: 'branch-red', decisionReady: true,
+        decision: 'The run could not create its own work branch, and no job runs on the branch it was handed (PRD v1.57 §3). Nothing was spent.',
+        options: [
+          'make the patient a git checkout with at least one commit',
+          'free the work-branch name (delete or rename the stale branches this run collided with)',
+          'abandon the run',
+        ],
+        detail: scrub(wb.stop),
+      });
+      return 'branch-red';
+    }
+    workBranch = wb.branch;
+    // The run's own books say where its work went. A human reading a spine — or a
+    // resume reading it back (`readResume`'s `restart.branch`) — must not have to
+    // re-derive the name from the spec and guess how many collisions there were.
+    emit('work-branch', {
+      branch: wb.branch,
+      created: wb.created,
+      resumed: wb.resumed,
+      from: wb.from,
+      base: wb.base,
+      repo: wb.repo,
+      ...(wb.collided > 0 ? { collided: wb.collided } : {}),
+      meaning: wb.resumed
+        ? 'returned to the branch this run was killed on — its work is on this branch, and a fresh one would strand it'
+        : 'the HARD RULE (PRD v1.57 §3): the run works here, never on the branch it was handed and never on main',
+    });
+  }
+
   const lc = new LiteCtx({ root: workdir });
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
   const fencePrefixes = job.writeScope.map((/** @type {string} */ g) => resolve(workdir, globToPrefix(g)));
@@ -1035,6 +1109,27 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    *   the turn-allowance note below.
    */
   async function mkWorker({ granted, phase, attemptRounds, attempts, writable, root = null, fence = null, workerProvider = null }) {
+    // THE HARD RULE, ENFORCED STRUCTURALLY (PRD v1.57 §3). This is the ONE seam
+    // that grants write-class verbs — `writeScope` is empty for every other
+    // worker, so a read-only phase cannot reach a file whatever it intends — and
+    // a branch is therefore a PRECONDITION of it, not a courtesy the ordering
+    // above happens to provide. "No exceptions" has to mean the rule survives a
+    // future caller who adds a third writable worker and forgets the ordering.
+    //
+    // Unreachable through `runPlan` as it stands (0c runs before the scout and
+    // returns `branch-red` on any fault), which is exactly what a backstop should
+    // be. Categorised so it lands as the wiring fault it is: the step site and
+    // `relay` both return `interpreter-red` verbatim, so the escalation a human
+    // reads and the outcome the spine records name the same thing.
+    if (writable && workBranch === null) {
+      const err = /** @type {any} */ (new Error(
+        `HARD RULE (PRD v1.57 §3): a write-capable worker was requested for phase "${phase}" with no work branch prepared — `
+        + 'no job edits the branch it was handed. The run is refused rather than allowed to write where it stands.',
+      ));
+      err.category = 'interpreter-red';
+      err.lib = 'bareloop';
+      throw err;
+    }
     /**
      * The gate's LLM-turn allowance THROUGH iteration `i` — the old expression
      * `attemptRounds * (attempts + 1)` with the iteration count made explicit
@@ -1468,6 +1563,14 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // and those are different diagnoses with different remedies (F45/F48: a
       // casualty is never evidence, and a governance stop is never a casualty).
       'step-stalled': [`The model stopped producing rounds during ${phase} and reissuing the call did not recover it.`, ['retry the run', 'check provider status', 'abandon the run']],
+      // A WIRING/INVARIANT fault is not a transport casualty, and the default
+      // below would file it as one. The step loop already restores this category
+      // verbatim at its own setup site ("the RECORDED outcome must match the
+      // escalation the human reads", review #6/F11); the fix loop reached `relay`
+      // instead and every such fault came back `provider-red` — a broken runner
+      // reported as the provider's fault, and an upstream ask aimed at a library
+      // for our own missing wiring (the step-stalled lesson).
+      'interpreter-red': [`The ${phase} phase could not be set up — the runner or a primitive it was handed is not correctly bound.`, ['fix the wiring the detail names', 'retry the run', 'abandon the run']],
     };
     const [decision, options] = (Object.hasOwn(DECIDE, category) ? DECIDE[category] : undefined)
       ?? [`The ${phase} call failed (${category}) — no result exists.`, ['retry the run', 'fix the provider binding', 'abandon the run']];
@@ -1478,7 +1581,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // `step-stalled` rides out as ITSELF, not as provider-red. Naming the
     // escalation while returning a casualty label would launder a governance stop
     // into transport noise at exactly the layer the readout reads.
-    return category === 'cap-halt' || category === 'wall-halt' || category === 'step-stalled' ? category : 'provider-red';
+    return category === 'cap-halt' || category === 'wall-halt' || category === 'step-stalled' || category === 'interpreter-red'
+      ? category : 'provider-red';
   };
 
   // ── 1. SCOUT — read-only by construction: the write-class verbs are simply

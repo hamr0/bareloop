@@ -62,6 +62,14 @@ export { renderListing, selectionPrompt } from './selection.js';
 // `runReuse`'s own entry.
 export { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED, readResume, resumeTreeGate } from './reuse.js';
 export { classifyIncidents, foldLedger, ledgerDeltas, updateLedger, LEDGER_CLASSES } from './ledger.js';
+// THE WORK BRANCH (PRD v1.57 §3). `workBranchName` is exported so an operator runner can
+// SHOW, before the approval gate, which branch the run will work on — the same reason the
+// resolved per-try hash is printed there: a bound the human is agreeing to should not be
+// discovered from the spine afterwards. `prepareWorkBranch` rides with it because a
+// runner that resumes reads the branch off the dead spine and may want to verify it is
+// still there before spending anything. The runner applies the rule itself either way —
+// neither export is a way to opt out of it.
+export { workBranchName, prepareWorkBranch, WORK_BRANCH_PREFIX, WORK_BRANCH_RE } from './workbranch.js';
 // ── CLOSE AUTHORING v1 (gate 4) — the user declares what done means ──────────
 // The public surface is settled ONCE, here, at M4 (M2's header flagged the
 // naming collision and deferred it rather than exporting piecemeal).

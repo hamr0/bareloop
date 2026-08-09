@@ -499,6 +499,30 @@ function readStepCheckpoint(seen) {
 }
 
 /**
+ * The WORK BRANCH the dead leg created (PRD v1.57 §3), read off its own `work-branch`
+ * record — the one place the runner writes it down.
+ *
+ * It is read rather than re-derived, and that is the whole point. `workBranchName` is
+ * deterministic from the signed spec, so a restart computing it fresh would get the very
+ * name its predecessor already took and the collision walk would hand it
+ * `<name>-2` — a brand-new branch standing beside the work the resume exists to
+ * continue. The declared-fold precedent (`priorSpentUsd`, `priorReplans`): what the
+ * chain already did is DECLARED on the spine and inherited, never recomputed.
+ *
+ * The LAST record wins. A leg emits exactly one, but a window can reach back through an
+ * abandoned attempt of the same try, and the newest is the branch the work is actually
+ * sitting on.
+ * @param {any[]} seen the window's own events, in file order
+ * @returns {string|null} null on a spine older than the record, or a kill before 0c
+ */
+function readWorkBranch(seen) {
+  for (let i = seen.length - 1; i >= 0; i -= 1) {
+    if (seen[i].type === 'work-branch' && isNonEmptyString(seen[i].branch)) return String(seen[i].branch);
+  }
+  return null;
+}
+
+/**
  * The dead leg's CLOSE GRADES, in order — the trend baselines a resumed leg
  * inherits (PRD v1.46 §3, and hamr's approved #2: *a resumed run's trend judges the
  * whole tree*).
@@ -842,6 +866,17 @@ export function readResume(events, { deathAt = null, direct = false, resumableOu
         // restart already re-graded that tree. Counting both would enter the same
         // reading twice and flatten a chain that moved.
         grades: readGradeSeed(open.seen),
+        // the WORK BRANCH this leg's uncommitted work is sitting on (v1.57 §3). Read
+        // from THIS window first and then from the newest abandoned window of the same
+        // try, on the checkpoint's own rule and for the checkpoint's own reason: the
+        // branch — like the plan — is a fact about the TREE, and the tree survives an
+        // attempt that died before recording anything of its own. Null is the honest
+        // answer for a leg killed before 0c (or a spine older than the record); the
+        // resume then takes the cold path and creates one, which is correct, because a
+        // leg that never branched has no work to strand.
+        branch: readWorkBranch(open.seen)
+          ?? abandoned.filter((w) => w.n === open.n).map((w) => readWorkBranch(w.seen)).filter(Boolean).at(-1)
+          ?? null,
         // the REPLAN ledger, folded like the money one line below and deliberately
         // NOT like the grades one line above. A grade seed feeds a READOUT and its
         // documented shortening chain can only under-claim a direction; this feeds a
@@ -1170,8 +1205,14 @@ export async function runReuse(opts) {
    *   much of the try's allowance is gone; this says how much of its WORK is done, so the
    *   restart re-pays for neither the scout, the draft, nor a finished step. Null is the
    *   scout/draft death, where nothing paid is re-payable and the try simply restarts.
+   * @param {string|null} [branch] RESUME (v1.57 §3) — the WORK BRANCH that attempt's work
+   *   is sitting on (`readResume`'s `restart.branch`). The name is derived from the SIGNED
+   *   spec and is therefore the same on every leg, so a restart that recomputed it would
+   *   collide with its own predecessor and be handed a fresh `-2` beside the work it came
+   *   back for. Declared and inherited, exactly like the money and the replan ledger. Null
+   *   is the cold path, and also the leg killed before it ever branched.
    * @returns {Promise<any>} the try row */
-  const runTry = async (bridge, n, prior = NO_PRIOR, seed = null) => {
+  const runTry = async (bridge, n, prior = NO_PRIOR, seed = null, branch = null) => {
     const mode = bridge ? 'bridge' : 'cold';
     const name = bridge ? bridge.name : null;
     const resumed = prior.spentUsd > 0 || prior.wallMs > 0;
@@ -1231,6 +1272,10 @@ export async function runReuse(opts) {
         // a bound the operator signed, widened by a kill (PRD v1.12).
         ...(prior.replans > 0 ? { resumeReplans: { count: prior.replans, grantUsed: prior.replanGrantUsed } } : {}),
         ...(seed ? { resumeSeed: seed } : {}),
+        // …and WHERE its work is. Same omission class as the three folds above, with its
+        // own cost: a branch that never arrives is not a wrong number but a SECOND branch,
+        // and the leg would carry on beside the tree it was resumed to continue.
+        ...(branch ? { resumeBranch: branch } : {}),
         bridge,
       });
     } catch (e) {
@@ -1423,6 +1468,19 @@ export async function runReuse(opts) {
         decision: 'The plan flow cannot execute this job\'s close — it runs commands whose exit codes are truth. Nothing was judged, and no workflow can be graded by a close that will not run, so the next try and the cold leg would refuse identically for $0 apiece.',
         options: ['restate the close as a staged (or single predicate) close — a spec edit, whose new hash needs re-approval', 'wait for the verdict-classes rung'],
       },
+      'branch-red': {
+        // NOT re-filed, for `interpreter-red`'s reason plus one of its own: the runner
+        // already escalated it at the fault's own site, and the fault is the OPERATOR's
+        // state (a patient that is not a git checkout, a crowded branch namespace),
+        // never a library failing — the ledger excludes it for exactly that.
+        refile: false,
+        decision: 'The run could not create its own work branch, and no job runs on the branch it was handed (PRD v1.57 §3). That is a property of the PATIENT, not of any stored workflow: every further try and the cold leg would refuse identically, for $0 apiece.',
+        options: [
+          'make the patient a git checkout with at least one commit',
+          'free the work-branch name (delete or rename the stale branches this run collided with)',
+          'abandon the run',
+        ],
+      },
       'interpreter-red': {
         // NOT re-filed as an escalation. `interpreter-red` is one of the categories the
         // ledger CLASSIFIES — it aims a runtime-red at a library — and runJob already
@@ -1522,7 +1580,10 @@ export async function runReuse(opts) {
       // `gradesInherited` is a COUNT, and only when there is one to state: the seam
       // carries stage names and numbers, never a close byte — the spine is append-only,
       // so a gap that crosses here crosses for good.
-      restart: rs ? { n: rs.n, mode: rs.mode, bridge: rs.bridge ?? null, priorSpentUsd: prior.spentUsd, priorWallMs: prior.wallMs, priorSpendComplete: prior.spendComplete, remainingCapUsd, remainingWallMs, resumedAt: rs.seed ? { phase: rs.seed.phase, stepsDone: rs.seed.completedSteps.length, stepsPlanned: rs.seed.plan?.steps?.length ?? null } : null, ...(prior.grades.length ? { gradesInherited: prior.grades.length } : {}) } : null,
+      restart: rs ? { n: rs.n, mode: rs.mode, bridge: rs.bridge ?? null, priorSpentUsd: prior.spentUsd, priorWallMs: prior.wallMs, priorSpendComplete: prior.spendComplete, remainingCapUsd, remainingWallMs, resumedAt: rs.seed ? { phase: rs.seed.phase, stepsDone: rs.seed.completedSteps.length, stepsPlanned: rs.seed.plan?.steps?.length ?? null } : null, ...(prior.grades.length ? { gradesInherited: prior.grades.length } : {}),
+        // WHERE it comes back to (v1.57 §3), stated before anything is spent rather than
+        // discovered from the restarted leg's own `work-branch` record afterwards
+        ...(rs.branch ? { branch: rs.branch } : {}) } : null,
       nextTry: rs ? null : startN,
     });
 
@@ -1560,7 +1621,7 @@ export async function runReuse(opts) {
       if (rs.mode === 'cold') {
         // every bridge try was already spent before the cold leg started: the loop below
         // has nothing left to authorize, and the restart IS the cold attempt
-        coldRestart = { n: typeof rs.n === 'number' ? rs.n : tries.length + 1, prior, seed: rs.seed ?? null };
+        coldRestart = { n: typeof rs.n === 'number' ? rs.n : tries.length + 1, prior, seed: rs.seed ?? null, branch: rs.branch ?? null };
         startN = resolved.bridgeTries + 1;
       } else {
         const entry = loadRegistry(registryDir).bridges.find((/** @type {any} */ b) => b.name === rs.bridge);
@@ -1576,7 +1637,7 @@ export async function runReuse(opts) {
           });
         }
         tried.add(entry.name);
-        const stop = afterTry(await runTry(entry, rs.n, prior, rs.seed ?? null));
+        const stop = afterTry(await runTry(entry, rs.n, prior, rs.seed ?? null, rs.branch ?? null));
         if (stop) return stop;
         startN = rs.n + 1;
       }
@@ -1644,7 +1705,7 @@ export async function runReuse(opts) {
   // the verdict that attempt actually earned.
   const inheritedCold = coldRestart ? null : tries.find((t) => t.mode === 'cold' && t.inherited) ?? null;
   const cold = coldRestart
-    ? await runTry(null, coldRestart.n, coldRestart.prior, coldRestart.seed)
+    ? await runTry(null, coldRestart.n, coldRestart.prior, coldRestart.seed, coldRestart.branch)
     : inheritedCold ?? await runTry(null, tries.length + 1);
   const coldStop = afterTry(cold);
   if (coldStop) return coldStop;

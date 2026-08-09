@@ -107,6 +107,11 @@ const EXCLUDED_ESCALATIONS = new Set([
   // in the registry. Both are the operator's own state speaking (a stale signature, an
   // edited registry), and both stop having run nothing.
   'resume-red',
+  // v1.57 §3 — the work branch could not be created: the patient is not a git checkout,
+  // or its branch namespace is too crowded to find a free name. The operator's own state
+  // speaking, exactly like `registry-red` below, and the run stopped having spent nothing.
+  // Filing it upstream would aim a bug report at a library for a patient nobody prepared.
+  'branch-red',
   'registry-red',       // the operator-supplied registry path does not exist — a typo, not a bug
   'envelope-red',       // the envelope does not compose with the signed spec — operator input
   // the reuse runner also STOPS on the three answers no further try could change, and
