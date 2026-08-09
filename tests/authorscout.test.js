@@ -32,7 +32,10 @@ import {
   AUTHOR_SCOUT_VERBS, AUTHOR_SCOUT_ROUNDS, AUTHOR_SCOUT_MIN_BYTES, AUTHOR_SCOUT_BLOB_MAX,
   SCOUT_RECOVERY_PROMPT, scoutPrompt, classifySurvey, runAuthorScout, defaultSurveyor,
   seedFileList, buildSeedListing, LIST_CAP, LISTING_BYTE_CAP, cleanEntry,
+  SCOUT_ATTEMPTS, SCOUT_RETRY_CAUSES, SURVEY_CAUSES,
 } from '../src/authorscout.js';
+import { scrubRaw, RAW_PERSIST_MAX, RAW_TRIM_MARKER } from '../src/text.js';
+import { scanSecrets } from '../src/validate.js';
 import { TOOL_BY_VERB } from '../src/tools.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -295,7 +298,9 @@ test('runAuthorScout: the survey blob is capped and secrets are scrubbed', async
   const huge = `${secret} ${'y'.repeat(AUTHOR_SCOUT_BLOB_MAX * 2)}`;
   const { factory } = scriptLoops([{ text: huge, turns: 1 }]);
   const { createSurveyor } = stubSurveyor();
-  const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor });
+  // ONE attempt: this test is about the capture boundary, not the retry ladder.
+  // The cap is tighten-only, so asking for one is the operator's to do.
+  const r = await runAuthorScout({ workdir: '/w', attempts: 1, createLoop: factory, createSurveyor });
   assert.ok(r.meta.bytes <= AUTHOR_SCOUT_BLOB_MAX, `blob ${r.meta.bytes} must not exceed ${AUTHOR_SCOUT_BLOB_MAX}`);
   assert.ok(!r.raw.includes(secret), 'a captured key is captured forever — the survey is scrubbed at capture');
 });
@@ -518,4 +523,204 @@ test('the scout bounds are PINNED to the plan scout\'s own numbers', () => {
 test('the recovery prompt is a fixed constant, not composed per call', () => {
   assert.equal(typeof SCOUT_RECOVERY_PROMPT, 'string');
   assert.match(SCOUT_RECOVERY_PROMPT, /out of exploration turns/);
+});
+
+// ── 5. THE MALFORMED-CLASS RETRY, AND THE RAW AS THE AUDIT ARTIFACT ─────────
+//
+// Run mslhn707, live: a survey that broke JSON at position 1339 was a
+// FIRST-STRIKE KILL — `scout-absent`, the run over, $0.053 spent, and the raw
+// text that would have said WHY thrown away with the process. Two changes, and
+// the second is what makes the first decidable later:
+//
+//   - three attempts, HARDCODED, fired only on the TYPED malformed class. A
+//     provider error, a truncation and a VALID-JSON survey with vacuous content
+//     never retry: reacting to content is a designed loop, not a retry (F38/F39
+//     — retrying a semantic failure pays for the same distribution twice);
+//   - every attempt's raw text PERSISTS on the run's own audit trail, scrubbed
+//     through the one helper, so the malformation can be read rather than
+//     remembered. That record is the evidence the tool-mode escalation waits on.
+
+/** a survey body that is UNPARSEABLE and long enough to clear the ABSENT floor */
+const badBlob = (/** @type {string} */ tag = 'a') => `\`\`\`json\n{"language": "javascript", "runner": "${tag}",\n\`\`\`\n${'x'.repeat(AUTHOR_SCOUT_MIN_BYTES + 50)}`;
+/** VALID JSON whose content is vacuous — the semantic class, which never retries */
+const vacuousBlob = () => `\`\`\`json\n{}\n\`\`\`\n${'x'.repeat(AUTHOR_SCOUT_MIN_BYTES + 50)}`;
+
+test('SCOUT_ATTEMPTS is a hardcoded 3, and the retryable causes are the MALFORMED class only', () => {
+  assert.equal(SCOUT_ATTEMPTS, 3);
+  // typed at the detection site: the gate cannot silently widen to "any ABSENT"
+  assert.deepEqual([...SCOUT_RETRY_CAUSES].sort(), ['empty', 'unparseable']);
+  for (const semantic of [SURVEY_CAUSES.EMPTY_OBJECT, SURVEY_CAUSES.NON_OBJECT, SURVEY_CAUSES.CALL_FAILED, SURVEY_CAUSES.SHORT]) {
+    assert.ok(!SCOUT_RETRY_CAUSES.includes(semantic), `${semantic} must never retry`);
+  }
+});
+
+test('classifySurvey types its cause — every ABSENT route names one, PRESENT names none', () => {
+  const meta = (/** @type {string} */ blob, /** @type {any} */ over = {}) => ({
+    bytes: Buffer.byteLength(blob), rounds: 3, bounded: false, recovered: false, error: null, ...over,
+  });
+  const at = (/** @type {string} */ b, /** @type {any} */ o = {}) => classifySurvey(b, meta(b, o));
+  assert.equal(at(factsBlob()).cause, null);
+  assert.equal(at(factsBlob(), { error: 'ENETUNREACH' }).cause, SURVEY_CAUSES.CALL_FAILED);
+  assert.equal(at(factsBlob(), { error: 'truncated:max_tokens' }).cause, SURVEY_CAUSES.CALL_FAILED);
+  assert.equal(at('   \n  ').cause, SURVEY_CAUSES.EMPTY);
+  assert.equal(at('tiny').cause, SURVEY_CAUSES.SHORT);
+  assert.equal(at(badBlob()).cause, SURVEY_CAUSES.UNPARSEABLE);
+  assert.equal(at(`\`\`\`json\n[1,2]\n\`\`\`\n${'x'.repeat(300)}`).cause, SURVEY_CAUSES.NON_OBJECT);
+  assert.equal(at(vacuousBlob()).cause, SURVEY_CAUSES.EMPTY_OBJECT);
+});
+
+test('runAuthorScout: a MALFORMED survey is re-asked, and the second attempt converts', async () => {
+  const { factory, created } = scriptLoops([{ text: badBlob(), turns: 2 }, { text: factsBlob(), turns: 1 }]);
+  const { createSurveyor } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor });
+  assert.equal(r.state, 'PRESENT', 'the run that used to die at strike one now converts');
+  assert.equal(r.facts.runner, 'node --test');
+  assert.equal(r.meta.attempts, 2);
+  assert.equal(created.length, 2, 'exactly one re-ask');
+  assert.deepEqual(created[1].runs[0].tools, [], 'the re-ask is TOOLLESS — the facts were already read, only the form failed');
+  // the re-prompt names what failed MECHANICALLY (the converting gap genre)
+  const turn = created[1].runs[0].messages.at(-1).content;
+  assert.match(turn, /did not parse as JSON/);
+  assert.match(turn, /position/, 'the parse position is the mechanical detail');
+  // every retry is a paid call, metered into the same book under its own label
+  assert.deepEqual(r.calls.map((c) => c.label), ['author-scout', 'author-scout#2']);
+});
+
+test('runAuthorScout: the attempts EXHAUST at SCOUT_ATTEMPTS and the red says after how many', async () => {
+  const { factory, created } = scriptLoops([{ text: badBlob('a'), turns: 1 }, { text: badBlob('b'), turns: 1 }, { text: badBlob('c'), turns: 1 }, { text: factsBlob(), turns: 1 }]);
+  const { createSurveyor } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor });
+  assert.equal(r.state, 'ABSENT');
+  assert.equal(created.length, SCOUT_ATTEMPTS, 'a fourth attempt is never made, however malformed the third was');
+  assert.equal(r.meta.attempts, SCOUT_ATTEMPTS);
+  assert.match(r.reason, /did not parse as JSON/, 'the honest reason survives the retry');
+  assert.match(r.reason, new RegExp(`after ${SCOUT_ATTEMPTS} attempts`));
+  assert.equal(r.calls.length, SCOUT_ATTEMPTS, 'each attempt is metered — a retry is never a free call');
+});
+
+test('runAuthorScout: a SEMANTIC failure never retries — valid JSON with vacuous content is not malformed', async () => {
+  for (const [what, text] of [['an empty object', vacuousBlob()], ['a non-object', `\`\`\`json\n[1,2]\n\`\`\`\n${'x'.repeat(300)}`]]) {
+    const { factory, created } = scriptLoops([{ text, turns: 1 }, { text: factsBlob(), turns: 1 }]);
+    const { createSurveyor } = stubSurveyor();
+    const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor });
+    assert.equal(r.state, 'ABSENT', what);
+    assert.equal(created.length, 1, `${what} must NOT be retried — reacting to content is a designed loop, not a retry`);
+    assert.equal(r.calls.length, 1);
+  }
+});
+
+test('runAuthorScout: a TRUNCATED or dead call never retries — that stays provider-red routed', async () => {
+  for (const err of ['truncated:max_tokens', 'ENETUNREACH']) {
+    const { factory, created } = scriptLoops([{ text: badBlob(), turns: 1, error: err }, { text: factsBlob(), turns: 1 }]);
+    const { createSurveyor } = stubSurveyor();
+    const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor });
+    assert.equal(r.state, 'ABSENT');
+    assert.equal(r.cause, SURVEY_CAUSES.CALL_FAILED);
+    assert.equal(created.length, 1, `${err} is a casualty, and a redraft on it pays for the same failure again`);
+  }
+});
+
+test('runAuthorScout: the attempt cap is TIGHTEN-ONLY — an operator may lower it, never widen it', async () => {
+  const script = [{ text: badBlob('a'), turns: 1 }, { text: badBlob('b'), turns: 1 }, { text: badBlob('c'), turns: 1 },
+    { text: badBlob('d'), turns: 1 }, { text: badBlob('e'), turns: 1 }, { text: factsBlob(), turns: 1 }];
+  for (const widened of [4, 99, Infinity]) {
+    const { factory, created } = scriptLoops(script);
+    const { createSurveyor } = stubSurveyor();
+    const r = await runAuthorScout({ workdir: '/w', attempts: widened, createLoop: factory, createSurveyor });
+    assert.equal(created.length, SCOUT_ATTEMPTS, `attempts:${widened} must clamp to the hardcoded ${SCOUT_ATTEMPTS}`);
+    assert.equal(r.meta.attemptsAllowed, SCOUT_ATTEMPTS);
+  }
+  // and LOWER is honoured, because tightening is the operator's to do
+  const { factory, created } = scriptLoops(script);
+  const { createSurveyor } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', attempts: 1, createLoop: factory, createSurveyor });
+  assert.equal(created.length, 1);
+  assert.equal(r.meta.attemptsAllowed, 1);
+  assert.match(r.reason, /did not parse as JSON/);
+  assert.ok(!/after \d+ attempts/.test(r.reason), 'one attempt is the un-retried case and says nothing about retries');
+});
+
+test('runAuthorScout: EVERY attempt persists its raw, labelled and indexed, with the parse error beside it', async () => {
+  const { factory } = scriptLoops([{ text: badBlob('one'), turns: 1 }, { text: badBlob('two'), turns: 1 }, { text: factsBlob(), turns: 1 }]);
+  const { createSurveyor } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor });
+  assert.equal(r.state, 'PRESENT');
+  assert.equal(r.raws.length, 3, 'the raw is the autopsy artifact — a discarded attempt is exactly the one worth reading');
+  assert.deepEqual(r.raws.map((x) => x.label), ['author-scout', 'author-scout#2', 'author-scout#3']);
+  assert.deepEqual(r.raws.map((x) => x.attempt), [1, 2, 3]);
+  assert.match(r.raws[0].text, /"runner": "one"/, 'the raw is what the model actually said, verbatim');
+  assert.match(r.raws[1].text, /"runner": "two"/);
+  assert.equal(r.raws[0].cause, SURVEY_CAUSES.UNPARSEABLE, 'the typed cause rides with the raw it describes');
+  assert.match(r.raws[0].reason, /did not parse as JSON/);
+  assert.equal(r.raws[2].cause, null, 'the attempt that succeeded carries no failure');
+  // the pairing invariant: every metered call has a raw, and vice versa
+  assert.deepEqual(r.raws.map((x) => x.label), r.calls.map((c) => c.label));
+});
+
+test('runAuthorScout: the F59 recovery round persists its OWN raw beside the survey it replaced', async () => {
+  const { factory } = scriptLoops([{ text: '', turns: AUTHOR_SCOUT_ROUNDS + 2 }, { text: factsBlob(), turns: 1 }]);
+  const { createSurveyor } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor });
+  assert.deepEqual(r.raws.map((x) => x.label), ['author-scout', 'author-scout-recovery']);
+  assert.deepEqual(r.raws.map((x) => x.label), r.calls.map((c) => c.label), 'one raw per metered call, always');
+});
+
+test('runAuthorScout: a persisted raw is SCRUBBED — masked, never deleted, and never a second inventory', async () => {
+  const secret = ['sk', 'live', 'A1b2C3d4E5f6G7h8I9j0KLMN'].join('-');
+  assert.equal(scanSecrets(secret).length, 1, 'the fixture must be a shape the ONE inventory actually detects');
+  const body = `${badBlob()} export ANTHROPIC_API_KEY=${secret} and the survey ends here`;
+  const { factory } = scriptLoops([{ text: body, turns: 1 }, { text: factsBlob(), turns: 1 }]);
+  const { createSurveyor } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor });
+  assert.deepEqual(scanSecrets(JSON.stringify(r.raws)), [], 'a persisted raw that captures a key captures it forever');
+  assert.ok(r.raws[0].text.includes('[REDACTED:'), 'the mask is the shared redactor, not a silent deletion');
+  assert.match(r.raws[0].text, /and the survey ends here/, 'everything around the token survives — the raw is the autopsy');
+});
+
+test('runAuthorScout: an oversized raw is TRIMMED and the trim ANNOUNCES itself (F28)', async () => {
+  const huge = `${badBlob()}${'z'.repeat(RAW_PERSIST_MAX * 3)}`;
+  const { factory } = scriptLoops([{ text: huge, turns: 1 }, { text: factsBlob(), turns: 1 }]);
+  const { createSurveyor } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', blobMax: RAW_PERSIST_MAX * 4, createLoop: factory, createSurveyor });
+  const raw = r.raws[0];
+  assert.equal(raw.trimmed, true);
+  assert.ok(Buffer.byteLength(raw.text) <= RAW_PERSIST_MAX + 200, `the persisted raw is bounded: ${Buffer.byteLength(raw.text)}`);
+  assert.ok(raw.text.includes(RAW_TRIM_MARKER), 'a trim is never silent');
+  assert.match(raw.text, new RegExp(`${RAW_PERSIST_MAX}`), 'the cap itself is named');
+  assert.ok(raw.bytes > RAW_PERSIST_MAX, 'the FULL size is still reported — a bound eats detail, never evidence');
+});
+
+test('scrubRaw is the ONE persist boundary: it scrubs, bounds, and announces, for any writer', () => {
+  const secret = ['sk', 'live', 'B1b2C3d4E5f6G7h8I9j0KLMN'].join('-');
+  const plain = scrubRaw({ label: 'x', attempt: 1, text: `head ${secret} tail` });
+  assert.deepEqual(scanSecrets(JSON.stringify(plain)), []);
+  assert.match(plain.text, /head .* tail/);
+  assert.equal(plain.trimmed, false);
+  assert.equal(plain.cause, null);
+  // absent input is absent, never an empty string pretending to be an answer
+  const none = scrubRaw({ label: 'x', attempt: 2, text: null });
+  assert.equal(none.text, '');
+  assert.equal(none.bytes, 0);
+  // multi-byte content must not be cut into a broken sequence
+  const wide = scrubRaw({ label: 'x', attempt: 3, text: 'é'.repeat(RAW_PERSIST_MAX) });
+  assert.equal(wide.trimmed, true);
+  assert.ok(!wide.text.split(RAW_TRIM_MARKER)[0].includes('�'), 'a byte-wise cut would split a multi-byte character');
+});
+
+test('runAuthorScout: the verdict is stamped on the raw it DESCRIBES, not on whichever call came last', async () => {
+  // a recovery that comes back SMALLER is discarded, so the blob being
+  // classified is the FIRST call's — stamping the cause on the recovery's raw
+  // would attribute a reading to an emission nobody judged
+  const { factory, created } = scriptLoops([
+    { text: 'a'.repeat(120), turns: AUTHOR_SCOUT_ROUNDS + 2 },
+    { text: 'b', turns: 1 },
+  ]);
+  const { createSurveyor } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor });
+  assert.equal(created.length, 2, 'the recovery must have fired for this test to mean anything');
+  assert.equal(r.meta.recovered, false, 'and it must have been discarded');
+  assert.deepEqual(r.raws.map((x) => x.label), ['author-scout', 'author-scout-recovery']);
+  assert.equal(r.raws[0].cause, SURVEY_CAUSES.SHORT, 'the surviving blob is the one that was judged');
+  assert.equal(r.raws[1].cause, null, 'the discarded emission is kept, and no verdict is invented for it');
+  assert.equal(r.raws[1].text, 'b', 'kept verbatim — a discarded attempt is exactly the one worth reading');
 });

@@ -48,6 +48,7 @@ import {
   renderSeedReadBlock, renderRejectBlock, buildReviseTurn, assertReviseTurn,
   applyGenreEnv, resolveSourcePrefixes, makeCostBook, makeLoopGenerate, authorClose,
 } from '../src/authorflow.js';
+import { scrubRaw } from '../src/text.js';
 import { scanSecrets } from '../src/validate.js';
 
 // ── fixtures ─────────────────────────────────────────────────────────────────
@@ -1208,4 +1209,77 @@ test('makeCostBook: absorbed and added calls both land, and unknown stays unknow
   assert.equal(r.costUsd, null, 'an unpriced round makes the TOTAL unknown');
   assert.equal(r.unpricedRounds, 2);
   assert.equal(r.spendComplete, false);
+});
+
+// ── 9. THE RAW MODEL OUTPUT IS PART OF THE RUN'S AUDIT ──────────────────────
+//
+// Run mslhn707 wrote an `authored.json` that recorded a $0.053 scout call, a
+// `scout-absent` red naming a parse position — and NOT ONE BYTE of what the
+// model actually said. `iterations` was `[]` (the flow refuses at $0 preflight,
+// before any iteration exists) and it carries no raws even when it does run, so
+// the malformation could not be read, only remembered. Raws now ride the
+// returned result on EVERY path, through the one scrubbed-persist helper.
+
+test('authorClose: the scout\'s raws survive the $0 preflight refusal — the autopsy outlives the run', async () => {
+  const raws = [
+    scrubRaw({ label: 'author-scout', attempt: 1, text: '{"language": "javascript",', cause: 'unparseable', reason: 'the survey did not parse as JSON: Expected \',\' at position 26' }),
+    scrubRaw({ label: 'author-scout#2', attempt: 2, text: 'still broken', cause: 'unparseable', reason: 'the survey did not parse as JSON' }),
+  ];
+  const absent = { state: 'ABSENT', facts: null, reason: 'the survey did not parse as JSON — after 2 attempts', calls: [{ label: 'author-scout', costUsd: 0.05, unpricedRounds: 0 }, { label: 'author-scout#2', costUsd: 0.01, unpricedRounds: 0 }], raws };
+  const { generate, calls } = scriptGenerate([{ declaration: goodDeclaration() }]);
+  const r = await authorClose({ ...baseArgs(), scout: absent, generate, seedReadFn: scriptSeedRead().fn });
+
+  assert.equal(r.ok, false);
+  assert.equal(r.stop, 'precheck');
+  assert.equal(calls.length, 0, 'the refusal is still $0 — persistence buys evidence, not tokens');
+  assert.equal(r.reds[0].code, 'scout-absent');
+  assert.deepEqual(r.raws.map((x) => x.label), ['author-scout', 'author-scout#2'], 'what the model said is on the trail, not in the void');
+  assert.match(r.raws[0].text, /"language": "javascript",/);
+  assert.match(r.raws[0].reason, /position 26/);
+});
+
+test('authorClose: every model call on the declaration path persists its raw, paired with the cost book', async () => {
+  const bad = goodDeclaration();
+  bad.stages[1].params.scope = {}; // a validation red → one revise
+  const good = goodDeclaration();
+  const { generate } = scriptGenerate([
+    { text: 'prose only, no tool call' },
+    { declaration: bad, text: 'here is my close' },
+    { declaration: good, text: 'corrected' },
+  ]);
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: scriptSeedRead().fn });
+  assert.equal(r.ok, true);
+  // one raw per metered call, in call order, labels identical — the audit trail
+  // and the cost book are two readings of ONE list of calls
+  assert.deepEqual(r.raws.map((x) => x.label), r.cost.calls.map((c) => c.label));
+  assert.deepEqual(r.raws.map((x) => x.label), ['author', 'author#2', 'revise-1', 'revise-2']);
+  assert.match(r.raws[0].text, /prose only, no tool call/, 'the malformed emission is exactly the one worth keeping');
+  assert.deepEqual(r.raws.map((x) => x.attempt), [1, 2, 1, 1]);
+});
+
+test('authorClose: the scout\'s raws and the declaration\'s raws are ONE trail, in call order', async () => {
+  const scoutRaws = [scrubRaw({ label: 'author-scout', attempt: 1, text: 'survey text' })];
+  const scout = { ...SCOUT_OK, calls: [{ label: 'author-scout', costUsd: 0.05, unpricedRounds: 0 }], raws: scoutRaws };
+  const { generate } = scriptGenerate([{ declaration: goodDeclaration(), text: 'the close' }]);
+  const r = await authorClose({ ...baseArgs(), scout, generate, seedReadFn: scriptSeedRead().fn, maxRevisions: 0 });
+  assert.deepEqual(r.raws.map((x) => x.label), ['author-scout', 'author']);
+  assert.deepEqual(r.raws.map((x) => x.label), r.cost.calls.map((c) => c.label), 'no second trail, and no unpaired call');
+});
+
+test('authorClose: a persisted declaration raw is SCRUBBED — masked, never deleted', async () => {
+  const fake = ['sk', 'live', 'C1b2C3d4E5f6G7h8I9j0KLMN'].join('-');
+  assert.equal(scanSecrets(fake).length, 1, 'the fixture must be a shape the ONE inventory actually detects');
+  const { generate } = scriptGenerate([{ declaration: goodDeclaration(), text: `I read ANTHROPIC_API_KEY=${fake} in the env file` }]);
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: scriptSeedRead().fn, maxRevisions: 0 });
+  assert.deepEqual(scanSecrets(JSON.stringify(r.raws)), [], 'a record that captures a key captures it forever');
+  assert.ok(r.raws.at(-1).text.includes('[REDACTED:'), 'the mask is the shared redactor, not a silent deletion');
+  assert.match(r.raws.at(-1).text, /in the env file/, 'the surrounding text survives — the raw is the autopsy');
+});
+
+test('authorClose: a provider casualty still leaves its raw on the trail', async () => {
+  const { generate } = scriptGenerate([{ error: 'ENETUNREACH', text: 'partial answer before the socket died' }]);
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: scriptSeedRead().fn });
+  assert.equal(r.stop, 'provider-red');
+  assert.deepEqual(r.raws.map((x) => x.label), r.cost.calls.map((c) => c.label));
+  assert.match(r.raws[0].text, /partial answer before the socket died/);
 });

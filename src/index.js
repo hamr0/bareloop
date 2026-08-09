@@ -104,7 +104,16 @@ export {
 // M3 — the looking half and the writing half. `authorClose` is the grounded
 // loop; `runAuthorScout`/`buildSeedListing` are exported because a caller that
 // already paid for a survey passes it back in rather than buying a second one.
-export { runAuthorScout, buildSeedListing, seedFileList, classifySurvey, AUTHOR_SCOUT_VERBS } from './authorscout.js';
+export {
+  runAuthorScout, buildSeedListing, seedFileList, classifySurvey, AUTHOR_SCOUT_VERBS,
+  // the malformed-class retry ladder: the hardcoded ceiling, the typed causes it
+  // reads, and the closed set of causes that may fire it (2026-08-09, PRD v1.58)
+  SCOUT_ATTEMPTS, SURVEY_CAUSES, SCOUT_RETRY_CAUSES,
+} from './authorscout.js';
+/** the ONE scrubbed-persist boundary for a model's raw output, and its announced
+ * bound — exported because every future writer of a raw must reach for this one
+ * rather than spell a second scrub (PRD v1.58) */
+export { scrubRaw, RAW_PERSIST_MAX, RAW_TRIM_MARKER } from './text.js';
 export {
   authorClose, authorPrompt, declarationSchema, makeLoopGenerate, MAX_REVISIONS,
   QUESTION_SETS, GREEN_QUESTIONS, CLASS_STATEMENTS, questionsFor, requiredAnswersFor,

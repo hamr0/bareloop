@@ -3982,3 +3982,92 @@ Written out so a later reader does not have to reconstruct it from five sections
 - **D5's surviving property, D13's refusal path, and the `CLASS_BY_CLOSE`/`CLASS_BY_VERDICT`
   laundering guards.** Guards stay shown, un-removable and stored resolved in the signed spec;
   refusals stay counted; a soft verdict still cannot ride a hard close.
+
+## Addendum v1.58 — 2026-08-09 (the scout gets three attempts on the MALFORMED class only, and every raw model emission becomes part of the run's audit — hamr)
+
+Run `mslhn707`, live on the pulselog patient: the scout's survey broke JSON at position
+1339, `authorClose` refused at its $0 preflight with `scout-absent`, and the run was over
+— one attempt, $0.053 spent, and **not one byte of what the model actually said kept
+anywhere**. Both halves of that are fixed here, and the second is what makes the first
+decidable later.
+
+**hamr's rulings, verbatim:**
+
+> "retry on scout too, tighten-only same as revisions. there should be retry baked in and
+> written to desk as part of overall audit same with runs, it's part of the run, why is it
+> not saved?"
+
+> "depending on causes, we can hardcode 3 attempts, but if reasons are beyond malformed
+> then we may verge into self-healing but i don't think we should"
+
+> "the goal of json is to limit issues … we need to narrow possible reasons of failure
+> before designing something we don't need"
+
+> "for audit, it should come on top of existing audit trails and i think we should have
+> scrub for common things in general"
+
+### 1. `SCOUT_ATTEMPTS = 3`, hardcoded, fired on the TYPED malformed class only
+
+`classifySurvey` now types its cause at the detection site (`SURVEY_CAUSES`), and the retry
+gate reads that enum and nothing else — the standing rule that a closed set is handed over
+enumerated rather than as a rule about prose, applied to our own control flow. Widening the
+gate means editing the enum, which is the moment somebody decides.
+
+| cause | retries? | why |
+|---|---|---|
+| `unparseable` | **yes** | there IS a body and it is not JSON — `mslhn707`'s own death |
+| `empty` | **yes** | the model returned nothing and nothing failed to explain it |
+| `call-failed` | no | provider errors and `truncated:max_tokens` stay provider-red routed, no redraft (standing doctrine) |
+| `short` | no | F59's cut-off population, which already has its instrument: the reserved TOOLLESS recovery round, inside the attempt |
+| `non-object`, `empty-object` | no | **valid JSON, wrong or vacuous content — a SEMANTIC failure.** F38/F39 measured what re-asking one buys: the same distribution, sampled twice |
+
+**The self-healing line is deliberately NOT crossed.** Reacting to a survey's *content* is a
+designed loop; re-asking for a readable *form* is a retry. Only the second is built.
+
+Mechanics: the cap is **tighten-only** — an operator may pass a lower number, a wider one
+clamps to 3. A re-ask is TOOLLESS over the survey's own conversation (the model has already
+read the repository; only its emission was unreadable), it names what failed mechanically —
+the parse error and its position, the converting gap genre — and it says the findings are
+not in question. Every attempt is a paid call metered under its own label
+(`author-scout#2`), so a retry is never a free call. Exhaustion returns the same honest
+`scout-absent`, now carrying *"after 3 attempts"*.
+
+**NO JSON-REPAIR HEURISTICS, EVER.** A repairer decides what the model *meant* to say and
+writes it down as though the model had said it — a dishonest instrument in the one artefact
+whose whole job is to be honest about what a repository contains.
+
+### 2. The raw model output is part of the run's audit, on the EXISTING trail
+
+Every model emission — the scout's per attempt, the declaration call's per attempt — rides
+the returned result as `raws`, so the driver's `authored.json` carries it with no new file
+and no second trail. It is present on **every** path, including the $0 preflight refusals,
+because the path that spends nothing more is exactly the one whose evidence used to vanish
+with the process. `authoring.iterations` records what each turn *meant* (declaration,
+validation, seed read) and never held a raw; this records what it *said*, and a
+malformation is only visible in the second.
+
+**One scrubbed-persist helper** (`scrubRaw`, beside the other two ONE-spelling helpers in
+`src/text.js`) is the only way a raw becomes a record: it redacts through the one
+`SECRET_PATTERNS` inventory, bounds at `RAW_PERSIST_MAX`, and **announces** the trim with
+the full size (F28). A new marker spelling (`raw trimmed:`) rather than a reuse of
+`GAP_TRIM_MARKER`, which `src/root.js` already reads to mean *this gap was cut, do not
+compare it* — a second producer of a reader's marker is the F90 hazard. Cost entry and raw
+are written together by one recorder, so a metered call can never leave no output behind.
+
+### 3. The escalation this evidence gates
+
+If the persisted raws show malformation RECURRING, the scout moves to the
+structure-enforced tool call — the declaration's own M3 pattern, which removes the class
+instead of handling it. That is an evidence-gated move, not a scheduled one: the raws are
+the instrument that decides it, and until they say so the cheap retry stands.
+
+### 4. Parked, named rather than silently skipped
+
+- **No funding gate on a retry.** The ruling says a retry that cannot be funded must stop
+  with the cap red; nothing today passes a budget into the authoring pipeline at all
+  (`run-author.mjs` sets none — spend is *reported*, never capped). Adding a money ceiling
+  here is arbiter territory and waits on hamr's word. The bound that exists is the attempt
+  ceiling itself: three calls, the re-asks toolless.
+- **`maxRevisions` is NOT tighten-only today** — it plumbs as a plain option with no clamp.
+  `SCOUT_ATTEMPTS` implements the ruling's direction; making the revision cap match is a
+  separate one-line change, deliberately not folded in.

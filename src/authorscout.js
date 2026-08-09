@@ -54,7 +54,7 @@ import { seedListing } from './kinds.js';
 import { TOOL_MENU, WRITE_VERBS, STORE_VERBS } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, strategyFor } from './tools.js';
 import { redactSecrets, SECRET_PATTERNS } from './validate.js';
-import { extractArtifact, priceOf } from './text.js';
+import { extractArtifact, priceOf, scrubRaw } from './text.js';
 
 const require = createRequire(import.meta.url);
 const { Loop, wireGate } = require('bare-agent');
@@ -74,6 +74,84 @@ export const AUTHOR_SCOUT_BLOB_MAX = 8000;
 export const AUTHOR_SCOUT_MIN_BYTES = 200;
 /** F30 — the 4096 provider default cannot hold a whole survey. */
 export const AUTHOR_SCOUT_MAX_TOKENS = 32000;
+
+/**
+ * TOTAL survey attempts, HARDCODED (hamr, 2026-08-09: *"depending on causes, we
+ * can hardcode 3 attempts, but if reasons are beyond malformed then we may verge
+ * into self-healing but i don't think we should"*).
+ *
+ * It is a ceiling, not a target: an operator may pass a LOWER cap and never a
+ * higher one, exactly the direction the standing budget rule runs in (*the agent
+ * may only TIGHTEN*). A widened value CLAMPS here rather than throwing, because
+ * the number is not a signed artefact — nothing downstream depends on a caller
+ * having asked for the right one, and refusing a run over a too-generous cap
+ * costs a paid scout for no safety.
+ *
+ * Sited beside `MAX_REVISIONS`/`MAX_STRUCTURE_RETRIES` in spirit: the same
+ * bounded-retry family, one axis each. This one is the SURVEY's axis.
+ */
+export const SCOUT_ATTEMPTS = 3;
+
+/**
+ * THE TYPED CAUSE, at the detection site.
+ *
+ * The retry gate reads this enum and nothing else. Typing it here is what stops
+ * the gate quietly widening to "any ABSENT" the next time someone edits the
+ * classifier: a new route to ABSENT has to be named, and naming it is the moment
+ * somebody decides whether it retries.
+ */
+export const SURVEY_CAUSES = Object.freeze({
+  /** the call itself died — provider error, transport, `truncated:max_tokens` */
+  CALL_FAILED: 'call-failed',
+  /** the model returned nothing at all, and nothing went wrong to explain it */
+  EMPTY: 'empty',
+  /** short of the ABSENT floor but not empty — F59's cut-off population */
+  SHORT: 'short',
+  /** nothing extractable in the reply */
+  NO_ARTIFACT: 'no-artifact',
+  /** there IS a body and it is not JSON — run mslhn707's own death */
+  UNPARSEABLE: 'unparseable',
+  /** valid JSON, wrong shape */
+  NON_OBJECT: 'non-object',
+  /** valid JSON, no content — F59's whole point, and a SEMANTIC failure */
+  EMPTY_OBJECT: 'empty-object',
+});
+
+/**
+ * THE MALFORMED CLASS — the only causes a retry fires on.
+ *
+ * What is deliberately NOT here, and why:
+ *   - `call-failed` covers `truncated:max_tokens` and every transport death.
+ *     Standing doctrine routes both as provider-red with NO redraft; a retry
+ *     here would pay for the same failure again under a different name.
+ *   - `short` is F59's cut-off population, and it already has an instrument: the
+ *     reserved TOOLLESS recovery round, which fires inside the attempt.
+ *   - `non-object` and `empty-object` are VALID JSON with wrong or vacuous
+ *     content. That is a SEMANTIC failure, and F38/F39 measured what re-asking
+ *     one buys: the same distribution, sampled twice. Reacting to content is a
+ *     designed loop; this is a retry. The line between them is the self-healing
+ *     line, and it is not crossed here.
+ */
+/** @type {readonly string[]} */
+export const SCOUT_RETRY_CAUSES = Object.freeze([SURVEY_CAUSES.EMPTY, SURVEY_CAUSES.UNPARSEABLE]);
+
+/**
+ * The re-ask, when the survey came back MALFORMED. It names what failed
+ * MECHANICALLY — the parse error and its position — which is the gap genre that
+ * converts (F38/F39), and it says explicitly that the FINDINGS are not in
+ * question, only their form.
+ *
+ * There is NO JSON repair anywhere behind this and there never will be: a
+ * repairer decides what the model meant to say and writes it down as though the
+ * model had said it. That is a dishonest instrument in the one artefact whose
+ * entire job is to be honest about what the repository contains.
+ * @param {string} reason the classifier's own mechanical reason
+ */
+export function scoutReaskTurn(reason) {
+  return `MEASURED PARSE — your survey could not be read:\n  ${redactSecrets(String(reason ?? ''))}\n\n`
+    + 'The facts you found are not in question — only the form was unreadable. Do not go looking again and do not '
+    + 'change what you reported. Reply with ONLY the JSON object, in a single fenced block, and nothing else.';
+}
 
 /**
  * THE GRANT: the full menu MINUS every write-class and store-class verb.
@@ -144,37 +222,51 @@ Reply with ONLY the JSON object, in a single fenced block. No commentary before 
 }
 
 /**
- * @typedef {{bytes: number, rounds: number, bounded: boolean, recovered: boolean, error: string|null}} SurveyMeta
- * @typedef {{state: 'PRESENT'|'ABSENT', facts: any, reason: string|null, meta: SurveyMeta}} Survey
+ * @typedef {{bytes: number, rounds: number, bounded: boolean, recovered: boolean, error: string|null,
+ *   attempts?: number, attemptsAllowed?: number}} SurveyMeta
+ * @typedef {{state: 'PRESENT'|'ABSENT', facts: any, reason: string|null, cause: string|null, meta: SurveyMeta}} Survey
  */
 
 /**
- * THE F59 CONTRACT, IN CODE. Five routes to ABSENT, one route to PRESENT — and
- * the LAST of the five is the whole point of the finding: a parsed `{}` is the
+ * THE F59 CONTRACT, IN CODE. Six routes to ABSENT, one route to PRESENT — and
+ * the LAST of them is the whole point of the finding: a parsed `{}` is the
  * scout FAILING, never "no special facts are needed".
+ *
+ * Every ABSENT route also carries a TYPED `cause` beside its prose reason. The
+ * prose is for the operator; the type is what the retry gate reads, so widening
+ * that gate requires editing the enum rather than a regular expression over a
+ * sentence (the standing rule: hand over the enumerated set, never a rule about
+ * prose). `empty` is split OUT of the byte floor for exactly that reason — "the
+ * model said nothing" and "the model was cut off mid-sentence" are two findings
+ * that used to render as one number.
  * @param {string} blob the scrubbed, capped survey text
  * @param {SurveyMeta} meta
  * @returns {Survey}
  */
 export function classifySurvey(blob, meta) {
-  const absent = (/** @type {string} */ reason) => ({ state: /** @type {'ABSENT'} */ ('ABSENT'), facts: null, reason, meta });
-  if (meta.error) return absent(`the survey call failed: ${meta.error}`);
+  const absent = (/** @type {string} */ reason, /** @type {string} */ cause) => ({
+    state: /** @type {'ABSENT'} */ ('ABSENT'), facts: null, reason, cause, meta,
+  });
+  if (meta.error) return absent(`the survey call failed: ${meta.error}`, SURVEY_CAUSES.CALL_FAILED);
+  if (String(blob ?? '').trim() === '') {
+    return absent('the survey came back EMPTY and nothing failed to explain it — the scout did not complete', SURVEY_CAUSES.EMPTY);
+  }
   if (meta.bytes < AUTHOR_SCOUT_MIN_BYTES) {
-    return absent(`survey ${meta.bytes} bytes < ${AUTHOR_SCOUT_MIN_BYTES} — the scout did not complete`);
+    return absent(`survey ${meta.bytes} bytes < ${AUTHOR_SCOUT_MIN_BYTES} — the scout did not complete`, SURVEY_CAUSES.SHORT);
   }
   const { code, red } = extractArtifact(blob);
-  if (!code) return absent(`no artifact in the survey: ${red}`);
+  if (!code) return absent(`no artifact in the survey: ${red}`, SURVEY_CAUSES.NO_ARTIFACT);
   let parsed;
   try { parsed = JSON.parse(code); } catch (e) {
-    return absent(`the survey did not parse as JSON: ${String(/** @type {any} */ (e)?.message ?? e)}`);
+    return absent(`the survey did not parse as JSON: ${String(/** @type {any} */ (e)?.message ?? e)}`, SURVEY_CAUSES.UNPARSEABLE);
   }
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return absent('the survey parsed to a non-object');
+    return absent('the survey parsed to a non-object', SURVEY_CAUSES.NON_OBJECT);
   }
   if (Object.keys(parsed).length === 0) {
-    return absent('the survey parsed to an EMPTY object — that is the scout not completing, never "no special facts are needed"');
+    return absent('the survey parsed to an EMPTY object — that is the scout not completing, never "no special facts are needed"', SURVEY_CAUSES.EMPTY_OBJECT);
   }
-  return { state: 'PRESENT', facts: parsed, reason: null, meta };
+  return { state: 'PRESENT', facts: parsed, reason: null, cause: null, meta };
 }
 
 /**
@@ -225,11 +317,22 @@ const defaultLoop = (/** @type {any} */ { system, policy, onLlmResult, provider 
  * classification all live HERE rather than behind a seam, because those are the
  * behaviours the finding is about.
  *
+ * THE ATTEMPT LADDER (hamr, 2026-08-09) sits OUTSIDE all of that, and it fires
+ * on the typed malformed class only — see `SCOUT_RETRY_CAUSES` for what is
+ * deliberately excluded and why. Attempt 1 is the full survey; a re-ask is
+ * TOOLLESS over the conversation the survey already produced, because the model
+ * has already READ the repository and only its final emission was unreadable —
+ * re-paying the exploration would buy the same facts twice. Every attempt is a
+ * paid call, metered under its own label, and every attempt's raw text is
+ * persisted so the malformation can be READ later rather than remembered.
+ *
  * @param {{workdir: string, provider?: any,
  *   rounds?: number, minBytes?: number, blobMax?: number, maxTokens?: number, ctx?: boolean,
+ *   attempts?: number,
  *   createLoop?: (o: {system: string, policy: any, onLlmResult: any, provider: any}) => any,
  *   createSurveyor?: (o: {workdir: string, granted: readonly string[], ctx: boolean}) => Promise<any>}} o
- * @returns {Promise<Survey & {raw: string, calls: {label: string, costUsd: number|null, unpricedRounds: number}[]}>}
+ * @returns {Promise<Survey & {raw: string, raws: ReturnType<typeof scrubRaw>[],
+ *   calls: {label: string, costUsd: number|null, unpricedRounds: number}[]}>}
  */
 export async function runAuthorScout({
   workdir, provider = null,
@@ -238,6 +341,7 @@ export async function runAuthorScout({
   blobMax = AUTHOR_SCOUT_BLOB_MAX,
   maxTokens = AUTHOR_SCOUT_MAX_TOKENS,
   ctx = true,
+  attempts = SCOUT_ATTEMPTS,
   createLoop = defaultLoop,
   createSurveyor = defaultSurveyor,
 }) {
@@ -246,56 +350,134 @@ export async function runAuthorScout({
   const surveyor = await createSurveyor({ workdir, granted, ctx });
   /** @type {{label: string, costUsd: number|null, unpricedRounds: number}[]} */
   const calls = [];
-  const meter = (/** @type {string} */ label, /** @type {any} */ r) => { calls.push({ label, ...priceOf(r) }); };
+  /** @type {ReturnType<typeof scrubRaw>[]} */
+  const raws = [];
+  /**
+   * ONE recorder for a model call: the cost entry and the persisted raw are
+   * written together, so a call can never be metered without leaving its output
+   * on the trail (or leave output nobody paid for). The pairing is the audit's
+   * own invariant, and the suite pins it.
+   * Returns the raw's INDEX, so the caller can attach the verdict to the
+   * emission it actually describes — see `verdictAt` below.
+   * @param {string} label @param {number} attempt @param {any} r @returns {number}
+   */
+  const record = (label, attempt, r) => {
+    calls.push({ label, ...priceOf(r) });
+    return raws.push(scrubRaw({ label, attempt, text: r?.text })) - 1;
+  };
+  // TIGHTEN-ONLY: an operator may lower the ceiling, never raise it. A garbage
+  // value floors at one attempt rather than at zero — a scout that never ran is
+  // an ABSENT nobody can act on.
+  const allowed = Math.max(1, Math.min(Math.trunc(Number(attempts)) || 1, SCOUT_ATTEMPTS));
 
   try {
-    // The round bound is the plan scout's own mechanism: `loop.stop()` read at
-    // the round boundary. It cannot cut an in-flight call (F61) — it bounds the
-    // NEXT round, which is exactly why F59's reserved round exists at all.
-    let seen = 0;
-    let bounded = false;
-    /** @type {any} */
-    let loop = null;
-    const metered = async (/** @type {any} */ arg) => {
-      if ((arg?.kind ?? 'turn') === 'turn') {
-        seen += 1;
-        if (seen >= rounds) { bounded = true; loop.stop(); }
+    /** @type {Survey|null} */
+    let survey = null;
+    let blob = '';
+    /** the conversation the last call left behind — what a re-ask re-asks OVER */
+    /** @type {any[]|null} */
+    let lastMsgs = null;
+    let attempt = 0;
+    /** which persisted raw the current verdict actually describes. NOT simply
+     * "the last one": a recovery round that came back SMALLER is DISCARDED, and
+     * the blob being classified is then the first call's — stamping the verdict
+     * on the recovery's raw would attribute a failure to an emission nobody
+     * judged. An instrument that misaddresses its own reading is the blind
+     * -instrument class, one field wide. */
+    let verdictAt = -1;
+
+    while (attempt < allowed) {
+      attempt += 1;
+      const label = attempt === 1 ? 'author-scout' : `author-scout#${attempt}`;
+
+      if (attempt === 1 || !lastMsgs?.length) {
+        // The round bound is the plan scout's own mechanism: `loop.stop()` read
+        // at the round boundary. It cannot cut an in-flight call (F61) — it
+        // bounds the NEXT round, which is exactly why F59's reserved round
+        // exists at all.
+        let seen = 0;
+        let bounded = false;
+        /** @type {any} */
+        let loop = null;
+        const metered = async (/** @type {any} */ arg) => {
+          if ((arg?.kind ?? 'turn') === 'turn') {
+            seen += 1;
+            if (seen >= rounds) { bounded = true; loop.stop(); }
+          }
+          return surveyor.onLlmResult ? surveyor.onLlmResult(arg) : undefined;
+        };
+        loop = createLoop({ system, policy: surveyor.policy, onLlmResult: metered, provider });
+
+        const r = await loop.run([{ role: 'user', content: scoutPrompt(workdir) }], surveyor.tools,
+          { cacheMessages: true, maxTokens });
+        verdictAt = record(label, attempt, r);
+        blob = redactSecrets(String(r?.text ?? '')).slice(0, blobMax);
+        lastMsgs = Array.isArray(r?.msgs) && r.msgs.length ? r.msgs : null;
+        let recovered = false;
+        /** the recovery call's own result, held in scope so its FAILURE is visible
+         * to the classifier — `null` whenever the recovery never fired */
+        /** @type {any} */
+        let s2 = null;
+
+        // F59's reserved TOOLLESS final round. It fires on the ONE population it
+        // was sized for — a survey that was CUT OFF and came back short — never
+        // on a survey that simply finished with little to say.
+        if (bounded && Buffer.byteLength(blob) < minBytes && Array.isArray(r?.msgs) && r.msgs.length) {
+          const recovery = createLoop({ system, policy: surveyor.policy, onLlmResult: surveyor.onLlmResult, provider });
+          s2 = await recovery.run([...r.msgs, { role: 'user', content: SCOUT_RECOVERY_PROMPT }], [],
+            { cacheMessages: true, maxTokens });
+          const recoveryAt = record('author-scout-recovery', attempt, s2);
+          const t = redactSecrets(String(s2?.text ?? '')).slice(0, blobMax);
+          // the verdict follows the blob that WON, never the call that came last
+          if (Buffer.byteLength(t) > Buffer.byteLength(blob)) { blob = t; recovered = true; verdictAt = recoveryAt; }
+          if (Array.isArray(s2?.msgs) && s2.msgs.length) lastMsgs = s2.msgs;
+        }
+
+        // The RECOVERY's error first, when it fired. It is the call that produced
+        // (or failed to produce) the blob being classified, so its death is what
+        // describes the survey; the first call's error belongs to the very call
+        // the recovery exists to replace, and a recovery dying of
+        // `truncated:max_tokens` after a clean-but-bounded first round reported
+        // no error at all. Falling back to `r.error` keeps every other
+        // classification unchanged.
+        survey = classifySurvey(blob, {
+          bytes: Buffer.byteLength(blob), rounds: seen, bounded, recovered,
+          error: s2?.error ?? r?.error ?? null,
+          attempts: attempt, attemptsAllowed: allowed,
+        });
+      } else {
+        // THE RE-ASK. Toolless by construction, over the survey's own
+        // conversation, naming only what failed mechanically.
+        const reask = createLoop({ system, policy: surveyor.policy, onLlmResult: surveyor.onLlmResult, provider });
+        const rr = await reask.run(
+          [...lastMsgs, { role: 'user', content: scoutReaskTurn(/** @type {Survey} */ (survey).reason ?? '') }], [],
+          { cacheMessages: true, maxTokens },
+        );
+        verdictAt = record(label, attempt, rr);
+        blob = redactSecrets(String(rr?.text ?? '')).slice(0, blobMax);
+        if (Array.isArray(rr?.msgs) && rr.msgs.length) lastMsgs = rr.msgs;
+        survey = classifySurvey(blob, {
+          bytes: Buffer.byteLength(blob), rounds: 1, bounded: false, recovered: false,
+          error: rr?.error ?? null, attempts: attempt, attemptsAllowed: allowed,
+        });
       }
-      return surveyor.onLlmResult ? surveyor.onLlmResult(arg) : undefined;
-    };
-    loop = createLoop({ system, policy: surveyor.policy, onLlmResult: metered, provider });
 
-    const r = await loop.run([{ role: 'user', content: scoutPrompt(workdir) }], surveyor.tools,
-      { cacheMessages: true, maxTokens });
-    meter('author-scout', r);
-    let blob = redactSecrets(String(r?.text ?? '')).slice(0, blobMax);
-    let recovered = false;
-    /** the recovery call's own result, held in scope so its FAILURE is visible
-     * to the classifier — `null` whenever the recovery never fired */
-    /** @type {any} */
-    let s2 = null;
+      // the raw that describes THIS attempt carries the attempt's own verdict —
+      // the raw is the autopsy artifact, and an autopsy without a cause of death
+      // is a body
+      const mine = raws[verdictAt];
+      if (mine) { mine.cause = survey.cause; mine.reason = survey.reason; }
 
-    // F59's reserved TOOLLESS final round. It fires on the ONE population it was
-    // sized for — a survey that was CUT OFF and came back short — never on a
-    // survey that simply finished with little to say.
-    if (bounded && Buffer.byteLength(blob) < minBytes && Array.isArray(r?.msgs) && r.msgs.length) {
-      const recovery = createLoop({ system, policy: surveyor.policy, onLlmResult: surveyor.onLlmResult, provider });
-      s2 = await recovery.run([...r.msgs, { role: 'user', content: SCOUT_RECOVERY_PROMPT }], [],
-        { cacheMessages: true, maxTokens });
-      meter('author-scout-recovery', s2);
-      const t = redactSecrets(String(s2?.text ?? '')).slice(0, blobMax);
-      if (Buffer.byteLength(t) > Buffer.byteLength(blob)) { blob = t; recovered = true; }
+      if (survey.state === 'PRESENT') break;
+      if (!SCOUT_RETRY_CAUSES.includes(/** @type {string} */ (survey.cause))) break;
     }
 
-    const bytes = Buffer.byteLength(blob);
-    // The RECOVERY's error first, when it fired. It is the call that produced
-    // (or failed to produce) the blob being classified, so its death is what
-    // describes the survey; the first call's error belongs to the very call the
-    // recovery exists to replace, and a recovery dying of `truncated:max_tokens`
-    // after a clean-but-bounded first round reported no error at all. Falling
-    // back to `r.error` keeps every other classification unchanged.
-    const survey = classifySurvey(blob, { bytes, rounds: seen, bounded, recovered, error: s2?.error ?? r?.error ?? null });
-    return { ...survey, raw: blob, calls };
+    const final = /** @type {Survey} */ (survey);
+    // Exhaustion is still the same honest ABSENT — it now says how many times we
+    // paid to find out. One attempt says nothing about retries, because there
+    // were none.
+    const reason = final.reason !== null && attempt > 1 ? `${final.reason} — after ${attempt} attempts` : final.reason;
+    return { ...final, reason, raw: blob, raws, calls };
   } finally {
     // a leaked surveyor leaks a gate handle and a litectx index — always, even
     // when the loop threw

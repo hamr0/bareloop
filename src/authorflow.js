@@ -82,7 +82,7 @@ import {
   validateDeclaration, envCapableKind, VERDICT_CLASSES, LIVE_CLASSES,
 } from './authoring.js';
 import { buildSeedListing, cleanEntry } from './authorscout.js';
-import { extractArtifact, priceOf } from './text.js';
+import { extractArtifact, priceOf, scrubRaw } from './text.js';
 import { redactSecrets } from './validate.js';
 
 const require = createRequire(import.meta.url);
@@ -826,15 +826,33 @@ export function resolveSourcePrefixes({ workdir, sourcePaths, seedFiles }) {
  * F6's shape: an unpriced call or round makes the TOTAL unknown, and unknown is
  * reported as null — never as the sum of the priced half wearing a complete coat.
  * `knownUsd` carries the priced half explicitly so nothing is hidden either way.
+ *
+ * IT IS ALSO THE RUN'S AUDIT OF WHAT WAS SAID, not only of what was spent. Every
+ * `add` records the call's RAW output beside its price, through the one
+ * scrubbed-persist helper — one list of calls, read two ways. That pairing is
+ * structural rather than remembered: run mslhn707 metered a $0.053 scout call
+ * and kept not one byte of what it returned, so the malformation that killed the
+ * run could not be read afterwards. A cost entry with no raw beside it is that
+ * run again.
  */
 export function makeCostBook() {
   /** @type {{label: string, costUsd: number|null, unpricedRounds: number}[]} */
   const entries = [];
+  /** @type {ReturnType<typeof scrubRaw>[]} */
+  const raws = [];
   return {
-    /** @param {string} label @param {any} r a bare-agent run result */
-    add(label, r) { entries.push({ label, ...priceOf(r) }); return entries.at(-1); },
-    /** @param {{label: string, costUsd: number|null, unpricedRounds: number}[]} calls */
-    absorb(calls) { for (const c of calls ?? []) entries.push({ ...c }); },
+    /** @param {string} label @param {any} r a bare-agent run result @param {number} [attempt] */
+    add(label, r, attempt = 1) {
+      entries.push({ label, ...priceOf(r) });
+      raws.push(scrubRaw({ label, attempt, text: r?.text, reason: r?.error ? String(r.error) : null }));
+      return entries.at(-1);
+    },
+    /** @param {{label: string, costUsd: number|null, unpricedRounds: number}[]} calls
+     * @param {ReturnType<typeof scrubRaw>[]} [callRaws] */
+    absorb(calls, callRaws) { for (const c of calls ?? []) entries.push({ ...c }); for (const w of callRaws ?? []) raws.push({ ...w }); },
+    /** the persisted raws, in call order — the same order and the same labels as
+     * `report().calls`, because both are readings of one list */
+    raws() { return raws.map((w) => ({ ...w })); },
     report() {
       const known = entries.reduce((a, e) => a + (typeof e.costUsd === 'number' ? e.costUsd : 0), 0);
       const nullCostCalls = entries.filter((e) => e.costUsd === null).length;
@@ -908,7 +926,7 @@ async function askDeclaration({ messages, generate, mode, retries, label, book, 
     const tools = mode === 'tool' ? [declarationTool(box, { catalogue })] : [];
     const r = await generate(convo, tools, {});
     attempts += 1;
-    book.add(attempt === 0 ? label : `${label}#${attempt + 1}`, r);
+    book.add(attempt === 0 ? label : `${label}#${attempt + 1}`, r, attempts);
     const raw = redactSecrets(String(r?.text ?? ''));
 
     if (r?.error) {
@@ -962,13 +980,19 @@ async function askDeclaration({ messages, generate, mode, retries, label, book, 
  *     `reds` means the final revision was rejected and the previous close stands:
  *     the rejection is reported, never hidden, and never silently shipped either;
  *   - `iterations` carries every intermediate declaration, validation, seed read
- *     and attempt count, because M4 emits them and a human signs against them.
+ *     and attempt count, because M4 emits them and a human signs against them;
+ *   - `raws` carries what every model call actually SAID — the scout's attempts
+ *     and the declaration's, scrubbed and bounded through the one persist
+ *     helper, in the cost book's own order and under its own labels. It is
+ *     present on EVERY path including the $0 preflight refusals, because the
+ *     path that spends nothing more is exactly the one whose evidence used to
+ *     vanish with the process.
  *
  * No spine emission here (M4 wires events).
  *
  * @param {{workdir: string, seedRef: string, lang: string, verdictType: string,
  *   answers: Record<string|number, string>, questions?: Record<string|number, string>,
- *   scout: {state: string, facts: any, reason?: string|null, calls?: any[]},
+ *   scout: {state: string, facts: any, reason?: string|null, calls?: any[], raws?: any[]},
  *   listing?: {stop: string|null, files: string[]|null, block: string|null, meta: any}|null,
  *   generate: Function, seedReadFn?: Function, closeCtx?: any,
  *   maxRevisions?: number, structureRetries?: number,
@@ -985,13 +1009,17 @@ export async function authorClose({
   catalogue = KIND_CATALOGUE,
 }) {
   const book = makeCostBook();
-  book.absorb(scout?.calls ?? []);
+  // The scout's calls AND its raws, together. The raws matter most on the path
+  // that spends nothing more: run mslhn707 refused at the $0 preflight below,
+  // and the survey text that would have said WHY died with the process.
+  book.absorb(scout?.calls ?? [], scout?.raws ?? []);
   /** @type {any} */
   const base = {
     ok: false, declaration: null, seedRead: null, iterations: [], reds: [], cost: book.report(),
+    raws: book.raws(),
     facts: null, listing: null, genreEnv: null, finalFrom: null, stop: null, revisions: 0,
   };
-  const refuse = (/** @type {Red[]} */ reds, /** @type {string} */ stop) => ({ ...base, reds, stop, cost: book.report() });
+  const refuse = (/** @type {Red[]} */ reds, /** @type {string} */ stop) => ({ ...base, reds, stop, cost: book.report(), raws: book.raws() });
 
   // ── $0 preflight ──────────────────────────────────────────────────────────
   // F59, in the shape that bites: `{}` is the scout not completing, never "no
@@ -1195,6 +1223,12 @@ export async function authorClose({
     iterations,
     reds,
     cost: book.report(),
+    // WHAT THE MODEL ACTUALLY SAID, every call of it, on the run's own audit
+    // trail — the scout's attempts and the declaration's, in call order, under
+    // the same labels the cost book meters. `iterations` records what each turn
+    // MEANT (declaration, validation, seed read); this records what it SAID, and
+    // a malformation is only ever visible in the second.
+    raws: book.raws(),
     facts,
     listing: seeds,
     genreEnv: { ...base.genreEnv, dropped: droppedEnv },
