@@ -132,5 +132,5 @@ export { closeStagesOf } from './plan.js';
 // never signs — the approvals array and the human's word are unchanged.
 export {
   runInterview, authorCloseForJob, assembleSpec, prepareSigning, refusalEvents, refuseLockedKind,
-  GENRE, REFUSAL_LIB, REFUSAL_CATEGORY,
+  GENRE, REFUSAL_LIB, REFUSAL_CATEGORY, AUTHORED_SPEC_FIELDS,
 } from './authorjob.js';

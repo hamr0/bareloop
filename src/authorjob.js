@@ -506,6 +506,11 @@ export async function authorCloseForJob({
   };
 }
 
+/** The fields `assembleSpec` writes, and therefore the fields a DRAFT must not
+ * carry. Named as data so the refusal and the fold can never disagree about
+ * which half of the spec is which. */
+export const AUTHORED_SPEC_FIELDS = Object.freeze(['close', 'closeDecl', 'verdictType']);
+
 /**
  * Fold an authored close into the OPERATOR's own half of the spec.
  *
@@ -519,12 +524,31 @@ export async function authorCloseForJob({
  * structural once the goal RENDERS from the same answers — that rendering is UI
  * work (PRD v1.51 §5, "lands with the close-authoring interview UI") and is
  * deliberately not invented here.
- * @param {any} specDraft the operator's half (everything except close/verdictType)
+ *
+ * A draft that ALREADY carries the authored half is REFUSED, not merged and not
+ * overwritten. `src/job.js` states the rule for the close in its own words — two
+ * closes are two arbiters, and "picking one silently is how the signed artefact
+ * stops meaning what the signer read" — and the same holds one step earlier and
+ * for the class: this fold used to drop a draft's `close` on the floor and stamp
+ * its own `verdictType` over the operator's, so a person who typed either would
+ * read back a signed spec that never contained what they wrote. Refusing by name
+ * costs the legitimate path nothing (a draft is the operator's half BY
+ * DEFINITION, and nothing in the pipeline builds one carrying these) and it is
+ * the same direction every other gate here takes: a mismatch a human cannot see
+ * is worse than a stop a human can read.
+ * @param {any} specDraft the operator's half (everything except close/closeDecl/verdictType)
  * @param {{closeDecl: any, verdictType: string}} authored
+ * @throws {Error} when the draft already carries close, closeDecl or verdictType
  */
 export function assembleSpec(specDraft, { closeDecl, verdictType }) {
-  const { close: _dropped, ...rest } = isObj(specDraft) ? specDraft : {};
-  return { ...rest, verdictType, closeDecl };
+  const draft = isObj(specDraft) ? specDraft : {};
+  const carried = AUTHORED_SPEC_FIELDS.filter((f) => draft[f] !== undefined);
+  if (carried.length) {
+    throw new Error(`the spec draft already carries ${carried.join(', ')} — that is the AUTHORED half of the spec, and `
+      + 'this fold writes it. Merging would drop or overwrite what the draft says, and a signed spec that does not '
+      + 'contain what its author typed is the one failure nobody can see. Remove the field(s) from the draft');
+  }
+  return { ...draft, verdictType, closeDecl };
 }
 
 // ── 3. D9's THREE GATES, AND THE HASH ────────────────────────────────────────

@@ -32,10 +32,10 @@ import {
   AUTHOR_SCOUT_VERBS, AUTHOR_SCOUT_ROUNDS, AUTHOR_SCOUT_MIN_BYTES, AUTHOR_SCOUT_BLOB_MAX,
   SCOUT_RECOVERY_PROMPT, scoutPrompt, classifySurvey, runAuthorScout, defaultSurveyor,
   seedFileList, buildSeedListing, LIST_CAP, LISTING_BYTE_CAP, cleanEntry,
-  SCOUT_ATTEMPTS, SCOUT_RETRY_CAUSES, SURVEY_CAUSES,
+  SCOUT_ATTEMPTS, SCOUT_RETRY_CAUSES, SURVEY_CAUSES, scoutReaskTurn,
 } from '../src/authorscout.js';
 import { scrubRaw, RAW_PERSIST_MAX, RAW_TRIM_MARKER } from '../src/text.js';
-import { scanSecrets } from '../src/validate.js';
+import { scanSecrets, redactSecrets } from '../src/validate.js';
 import { TOOL_BY_VERB } from '../src/tools.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -71,7 +71,12 @@ function makeRepo(t, files) {
 /**
  * A scripted loop factory. One entry per Loop the scout creates, in order —
  * the SURVEY loop first, the F59 recovery loop (if any) second.
- * @param {{text?: string, turns?: number, error?: string|null, costUsd?: number|null, unpricedRounds?: number}[]} scripts
+ * `msgs` overrides the transcript a run hands back — the ONE thing the re-ask
+ * re-asks OVER. Omitted it is a one-turn transcript (what a real Loop always
+ * returns, since `msgs` starts from the caller's own messages); `msgs: []` is the
+ * degenerate case the ladder's fallback exists for.
+ * @param {{text?: string, turns?: number, error?: string|null, costUsd?: number|null,
+ *   unpricedRounds?: number, msgs?: any[]}[]} scripts
  */
 function scriptLoops(scripts) {
   /** @type {any[]} */
@@ -90,7 +95,7 @@ function scriptLoops(scripts) {
         return {
           text: spec.text ?? '',
           error: spec.error ?? null,
-          msgs: [{ role: 'assistant', content: spec.text ?? '' }],
+          msgs: spec.msgs ?? [{ role: 'assistant', content: spec.text ?? '' }],
           metrics: {
             costUsd: 'costUsd' in spec ? spec.costUsd : 0.01,
             unpricedRounds: spec.unpricedRounds ?? 0,
@@ -525,6 +530,19 @@ test('the recovery prompt is a fixed constant, not composed per call', () => {
   assert.match(SCOUT_RECOVERY_PROMPT, /out of exploration turns/);
 });
 
+test('the re-ask turn carries the MECHANICAL reason, scrubbed, and asks for nothing but the form', () => {
+  const KEY = `sk-ant-api03-${'A'.repeat(95)}`;
+  assert.notEqual(redactSecrets(KEY), KEY, 'the fixture must be a shape the ONE inventory actually knows');
+  const turn = scoutReaskTurn(`the survey did not parse as JSON: Unexpected token at position 1339 near token=${KEY}`);
+  assert.match(turn, /MEASURED PARSE/, 'the header says the reason was measured, not judged');
+  assert.match(turn, /position 1339/, 'the mechanical detail is the gap genre that converts (F38/F39)');
+  assert.ok(!turn.includes(KEY), 'the classifier quotes the model\'s own text — it rides the ONE redactor on the way back out');
+  assert.match(turn, /not in question/, 'the FINDINGS are not re-litigated; only the form failed');
+  assert.match(turn, /ONLY the JSON object/);
+  // an absent reason renders a turn, never the string "null"
+  assert.ok(!/null|undefined/.test(scoutReaskTurn(/** @type {any} */ (null))));
+});
+
 // ── 5. THE MALFORMED-CLASS RETRY, AND THE RAW AS THE AUDIT ARTIFACT ─────────
 //
 // Run mslhn707, live: a survey that broke JSON at position 1339 was a
@@ -584,6 +602,33 @@ test('runAuthorScout: a MALFORMED survey is re-asked, and the second attempt con
   assert.match(turn, /position/, 'the parse position is the mechanical detail');
   // every retry is a paid call, metered into the same book under its own label
   assert.deepEqual(r.calls.map((c) => c.label), ['author-scout', 'author-scout#2']);
+});
+
+test('runAuthorScout: a retry with NO conversation to re-ask over re-runs the full survey, tools and all', async () => {
+  // The fallback the ladder's `attempt === 1 || !lastMsgs?.length` arm exists for.
+  // A re-ask is toolless BECAUSE the model already read the repository and only
+  // the form failed — with no transcript that premise is gone, and a toolless
+  // re-ask over nothing would be a bare "say it again" to a model that was never
+  // shown the tree. So the fallback re-surveys. Unreachable through the shipped
+  // Loop (its `msgs` starts from the caller's own messages and is never empty)
+  // and reachable through the `createLoop` seam, which is what this exercises.
+  const { factory, created } = scriptLoops([
+    { text: badBlob(), turns: 2, msgs: [] },
+    { text: factsBlob(), turns: 2 },
+  ]);
+  const { createSurveyor } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor });
+  assert.equal(r.state, 'PRESENT');
+  assert.equal(r.meta.attempts, 2);
+  assert.equal(created.length, 2);
+  assert.ok(created[1].runs[0].tools.length > 0, 'with no conversation to re-ask over, the retry is a full TOOLABLE survey');
+  assert.equal(created[1].runs[0].messages.at(-1).content, created[0].runs[0].messages.at(-1).content,
+    'and it is the survey prompt again, never the re-ask turn');
+  // the CONTRAST that makes the assertions above able to fail: the same
+  // malformation WITH a transcript takes the toolless re-ask arm
+  const withMsgs = scriptLoops([{ text: badBlob(), turns: 2 }, { text: factsBlob(), turns: 1 }]);
+  await runAuthorScout({ workdir: '/w', createLoop: withMsgs.factory, createSurveyor: stubSurveyor().createSurveyor });
+  assert.deepEqual(withMsgs.created[1].runs[0].tools, []);
 });
 
 test('runAuthorScout: the attempts EXHAUST at SCOUT_ATTEMPTS and the red says after how many', async () => {

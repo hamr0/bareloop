@@ -274,6 +274,33 @@ test('validateJob accepts a declared close and refuses BOTH fields at once — t
   assert.ok(neither.reds.some((r) => r.code === 'missing-required' && r.path === 'close'));
 });
 
+test('assembleSpec REFUSES a draft that already carries the authored half — never a silent clobber', () => {
+  // The two halves never mix, and job.js states the rule for the close in its own
+  // words: two closes are two arbiters, and "picking one silently is how the
+  // signed artefact stops meaning what the signer read." A draft arriving with a
+  // `close`, a `closeDecl` or a `verdictType` is that exact case one step
+  // earlier — the old fold dropped `close` on the floor and overwrote
+  // `verdictType` with the pipeline's own answer, so a person who typed one
+  // would read a signed spec that never contained it.
+  for (const [field, value] of /** @type {[string, any][]} */ ([
+    ['close', [{ name: 'c', cmd: 'true', expect: 0 }]],
+    ['closeDecl', DECL()],
+    ['verdictType', 'hitl'],
+  ])) {
+    assert.throws(
+      () => assembleSpec({ ...SPEC_DRAFT, [field]: value }, { closeDecl: DECL(), verdictType: 'green' }),
+      (/** @type {Error} */ e) => e.message.includes(field),
+      `a draft carrying ${field} must refuse by name`,
+    );
+  }
+  // …and a draft that carries NEITHER is untouched — the legitimate path, and the
+  // contrast that makes the assertions above able to fail
+  const spec = assembleSpec(SPEC_DRAFT, { closeDecl: DECL(), verdictType: 'green' });
+  assert.equal(spec.verdictType, 'green');
+  assert.equal(spec.close, undefined);
+  assert.deepEqual(validateJob(spec).reds, []);
+});
+
 test('the laundering guard holds from the declared side: a LOCKED verdict on a declared close reds twice, never launders', () => {
   const r = validateJob(assembleSpec(SPEC_DRAFT, { closeDecl: DECL(), verdictType: 'soft-green' }));
   assert.equal(r.ok, false);

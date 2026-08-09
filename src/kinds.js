@@ -420,7 +420,9 @@ export async function addedLines(workdir, seedRef, rel, { untracked = false } = 
     return { stop: null, lines: buf.toString('utf8').split('\n').map((text, i) => ({ n: i + 1, text })), note: null };
   }
   const d = await git(workdir, ['diff', '-U0', '--no-color', seedRef, '--', rel]);
-  if (!d.ok && d.code !== 0) return { stop: `INSTRUMENT: git diff -U0 for ${rel} failed: ${String(d.err).trim()}`, fault: d.fault };
+  // `ok` IS `code === 0` (see `git`), and a spawn fault comes back `code: null`,
+  // so a second `code !== 0` clause was a tautology reading as a live guard.
+  if (!d.ok) return { stop: `INSTRUMENT: git diff -U0 for ${rel} failed: ${String(d.err).trim()}`, fault: d.fault };
   /** @type {{n: number, text: string}[]} */
   const lines = [];
   let n = 0;

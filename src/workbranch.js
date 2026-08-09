@@ -235,6 +235,14 @@ export async function prepareWorkBranch(workdir, { name, resume = null }) {
   // The collision walk. `-2` is the first suffix rather than `-1`, so the branch a
   // human reads without a number is the first run and the numbers count runs the
   // way a person does.
+  //
+  // CHECK-THEN-ACT, named rather than fixed: another process can create the
+  // candidate between the `branchExists` read and the `checkout -b` below. It is
+  // documented instead of closed because git already fails CLOSED on it — `git
+  // checkout -b` REFUSES an existing branch, so the race ends in the named stop
+  // right beneath this loop, never in two runs sharing one blast radius. Closing
+  // it properly means atomic ref creation, which is a wider change than the
+  // failure it would prevent.
   let collided = 0;
   let candidate = wanted;
   while (await branchExists(workdir, candidate)) {

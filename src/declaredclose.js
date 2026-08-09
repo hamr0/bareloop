@@ -343,12 +343,33 @@ export function guardNames(closeDecl, verdictType) {
 
 /**
  * One declared stage's result, in the ARBITER's verdict vocabulary.
+ *
+ * `notes` is the DIAGNOSTIC channel, and it exists because M1's kinds announce
+ * some things whichever way a stage lands: a declared env var that was dropped,
+ * the scope filter's own arithmetic. A red carries those out inside its gap; a
+ * green and an instrument stop had nowhere to put them and this function used to
+ * compute the text and discard it. A green measured over a filtered population
+ * is still a filtered number, and the operator reads why — checking the GREENS
+ * is doctrine, and an audit trail that only survives a red cannot do it.
+ *
+ * It is `notes` and NOT `.gap`, deliberately. Every consumer downstream guards
+ * with `if (gap)`, so a green carrying one would read as revision-worthy and a
+ * stop carrying one would look like a verdict it never rendered. Nothing routes
+ * on this field, nothing bounds on it, and no verdict moves because of it; it
+ * rides the spine records that already spread the whole verdict
+ * (`close-precheck`, `outer-close`, ralph's `close-verdict`).
  * @param {any} r an M1 `StageResult`
  * @param {(s: string) => string} redact
+ * @returns {{verdict: string, notes?: string, gap?: string, detail?: string,
+ *   exitCode?: number, judgedCount?: number}} `notes` is absent, never empty —
+ *   a field that is always there says nothing; a RED carries its diagnostics
+ *   inside `gap` and so has none of its own.
  */
 function translate(r, redact) {
   const gapText = redact((r.gapLines ?? []).join('\n'));
-  if (r.verdict === 'green') return { verdict: 'satisfied', judgedCount: 1 };
+  /** absent rather than empty: a field that is always there says nothing */
+  const notes = gapText ? { notes: gapText } : {};
+  if (r.verdict === 'green') return { verdict: 'satisfied', judgedCount: 1, ...notes };
   if (r.verdict === 'red') {
     return {
       verdict: 'needs_revision',
@@ -361,10 +382,15 @@ function translate(r, redact) {
     };
   }
   // instrument-stop — NOT a verdict. The fault is a typed field stamped where the
-  // fault was observed, never sniffed out of the stop's prose.
+  // fault was observed, never sniffed out of the stop's prose. `detail` is the
+  // stop's own sentence; `notes` is the whole rendered output around it, which is
+  // where a measurement's already-computed arithmetic lives (`stopped`'s own
+  // `notes` argument) — the difference between hunting a parser bug and reading
+  // the scope.
   return {
     verdict: r.detail?.fault ?? STOP_FAULTS.FAILED,
     detail: redact(String(r.detail?.stop ?? `stage "${r.stage}" rendered no judgment`)),
+    ...notes,
   };
 }
 
@@ -426,6 +452,10 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
         ...(t.exitCode !== undefined ? { exitCode: t.exitCode } : {}),
         ...(r.value !== null && r.value !== undefined ? { value: r.value } : {}),
         ...(r.baseline !== null && r.baseline !== undefined ? { baseline: r.baseline } : {}),
+        // PER STAGE, because the summary below carries only the LAST translation:
+        // an earlier green's announcement would otherwise be lost behind the
+        // stage that decided.
+        ...(t.notes !== undefined ? { notes: t.notes } : {}),
       });
       last = t;
       if (t.verdict !== 'satisfied') {

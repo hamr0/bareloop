@@ -36,7 +36,7 @@ import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import {
   authorCloseForJob, assembleSpec, prepareSigning, refusalEvents,
-  VERDICT_CLASSES, questionsFor,
+  VERDICT_CLASSES, questionsFor, AUTHORED_SPEC_FIELDS,
 } from '../src/authorjob.js';
 import { makeLoopGenerate } from '../src/authorflow.js';
 import { validateJob, jobSpecHash } from '../src/job.js';
@@ -88,6 +88,17 @@ const readJson = (label, file) => {
 };
 const answers = readJson('answers', /** @type {string} */ (answersArg));
 const draft = readJson('draft', /** @type {string} */ (draftArg));
+// The draft is the OPERATOR half, and `assembleSpec` refuses one that already
+// carries the authored half rather than merging over it. Asked HERE — before the
+// scout, before any paid call — so a draft that cannot compose costs nothing to
+// find out about; without this the same refusal arrives after the model has been
+// paid, which is a true answer at the wrong price.
+const carried = AUTHORED_SPEC_FIELDS.filter((f) => draft?.[f] !== undefined);
+if (carried.length) {
+  die(`--draft ${draftArg} carries ${carried.join(', ')} — the draft is the operator's half only. `
+    + 'The close is what this pipeline authors and the class comes from --verdict; a draft that names either would be '
+    + 'silently overwritten, and a signed spec that does not contain what its author typed is the failure nobody sees.');
+}
 
 // Secrets load from the environment; they never enter argv (a command line is
 // world-readable on /proc) and they are never printed.

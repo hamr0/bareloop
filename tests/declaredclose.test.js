@@ -28,7 +28,7 @@ import {
   DECLARED_GAP_PREFIX, DECLARED_GAP_KEEP, DECLARED_CLOSE_CLASSES, CLOSE_DECL_FIELDS,
 } from '../src/declaredclose.js';
 import { CLOSE_FAULTS, runStages, stageGap } from '../src/ralph.js';
-import { GAP_LINE_CAP, GAP_TRIM_MARKER } from '../src/kinds.js';
+import { GAP_LINE_CAP, GAP_TRIM_MARKER, runDeclaredClose } from '../src/kinds.js';
 import { createRoot } from '../src/root.js';
 import { readGrade, createTrend } from '../src/trend.js';
 import { checkMenu, CLASS_BY_CLOSE, CLOSE_TYPES } from '../src/job.js';
@@ -495,6 +495,115 @@ test('THE FORBIDDEN ZONE: an instrument stop routes by its TYPED fault, not by i
 
   // every fault this bridge can produce is a row the arbiter already knows
   for (const v of [cannotRun, timedOut, crashed]) assert.ok(Object.hasOwn(CLOSE_FAULTS, v.verdict));
+});
+
+// ── the TWO first-red-wins loops must agree ──────────────────────────────────
+//
+// The rule is implemented twice on purpose: `runDeclaredClose` (src/kinds.js)
+// runs a whole declaration in M1's own vocabulary and marks the unreached stages
+// `not-reached`; `runDeclaredStages` (here) runs the same stages and returns
+// `runClose`'s verdict shape. Two loops, one rule — and nothing pinned them
+// together, so a change to either could silently move which stage decides while
+// every existing test on each side stayed green.
+
+test('the two first-red-wins loops decide the SAME stage, in both vocabularies', async (t) => {
+  const r = makeRepo(t, { 'src/a.js': 'a' });
+  const ctx = { workdir: r.dir, seedRef: r.seed, gapKeep: DECLARED_GAP_PREFIX, timeoutMsDefault: 30_000 };
+  const ok = (/** @type {string} */ n) => stage(n, 'command-exit', { cmd: 'node', args: SAY(`${n} fine`, 0), expectExit: 0 });
+
+  /** @type {{what: string, stages: any[], m1: string, bridge: string, deciding: string|null}[]} */
+  const cases = [
+    { what: 'every stage greens', stages: [ok('one'), ok('two')], m1: 'green', bridge: 'satisfied', deciding: null },
+    {
+      what: 'a middle stage reds',
+      stages: [ok('one'), stage('the-wall', 'command-exit', { cmd: 'node', args: SAY('boom', 3), expectExit: 0 }), ok('three')],
+      m1: 'red',
+      bridge: 'needs_revision',
+      deciding: 'the-wall',
+    },
+    {
+      what: 'a stage cannot run at all',
+      stages: [ok('one'), stage('broken', 'command-exit', { cmd: 'no-such-binary-xyz', args: [], expectExit: 0 }), ok('three')],
+      m1: 'instrument-stop',
+      bridge: 'failed',
+      deciding: 'broken',
+    },
+  ];
+
+  for (const c of cases) {
+    const m1 = await runDeclaredClose({ stages: c.stages }, ctx);
+    const bridge = await runDeclaredStages(declaredStages({ stages: c.stages }), (s) => s, OPTS(r));
+    assert.equal(m1.verdict, c.m1, c.what);
+    assert.equal(bridge.verdict, c.bridge, c.what);
+    assert.equal(m1.firstRed, c.deciding, `${c.what}: M1 names the deciding stage`);
+    assert.equal(bridge.stage ?? null, c.deciding, `${c.what}: the bridge names the SAME one`);
+    // and the same stages RAN: M1 keeps the unreached ones as `not-reached` rows,
+    // the bridge simply stops appending — so the ran-set is M1's non-not-reached
+    // prefix, every time
+    assert.deepEqual(
+      bridge.stages.map((/** @type {any} */ s) => s.name),
+      m1.stages.filter((s) => s.verdict !== 'not-reached').map((s) => s.stage),
+      `${c.what}: both loops stopped at the same place`,
+    );
+  }
+});
+
+// ── the DIAGNOSTIC channel: what a stage announced but no verdict carried ────
+//
+// M1's kinds announce some things WHICHEVER WAY THE STAGE LANDS — a declared env
+// var that was dropped, the scope filter's own arithmetic — and they say so in
+// `gapLines` because that is the only channel a StageResult has. A red carries
+// those out in its gap; a GREEN and an INSTRUMENT STOP had nowhere to put them
+// and the bridge dropped them on the floor. That is the check-both-greens
+// doctrine failing at the audit trail: a close that greened over a filtered
+// population is still a filtered number, and the operator reads why.
+//
+// `notes` is OBSERVABILITY ONLY, and the name is the point: it is not `.gap`,
+// because every consumer guards with `if (gap)` and a green carrying one would
+// read as revision-worthy. Nothing routes on it and no verdict moves.
+
+test('a GREEN stage\'s announcement survives the bridge — as notes, never as a gap', async (t) => {
+  const r = makeRepo(t, { 'src/a.js': 'a' });
+  const stages = declaredStages({
+    stages: [stage('suite-green', 'command-exit', {
+      cmd: 'node', args: SAY('all good', 0), expectExit: 0, env: { ANTHROPIC_API_KEY: 'x' },
+    })],
+  });
+  const v = await runDeclaredStages(stages, (s) => s, OPTS(r));
+  assert.equal(v.verdict, 'satisfied', 'the drop is announced, never a red');
+  assert.equal(v.judgedCount, 1);
+  assert.equal(v.gap, undefined, 'a green NEVER carries a gap — the field itself would read as revision-worthy');
+  assert.match(v.notes, /ANTHROPIC_API_KEY was DROPPED/, 'the announcement the kind computed must not be discarded');
+  assert.match(v.stages[0].notes, /ANTHROPIC_API_KEY was DROPPED/, 'per stage, so an EARLIER green is not lost behind a later one');
+
+  // and a green with nothing to announce carries NO field at all — the contrast
+  // that makes the assertion above able to fail
+  const quiet = await runDeclaredStages(
+    declaredStages({ stages: [stage('suite-green', 'command-exit', { cmd: 'node', args: SAY('all good', 0), expectExit: 0 })] }),
+    (s) => s, OPTS(r),
+  );
+  assert.equal(quiet.verdict, 'satisfied');
+  assert.equal(quiet.notes, undefined);
+  assert.equal(quiet.stages[0].notes, undefined);
+});
+
+test('an INSTRUMENT STOP carries the diagnostics the measurement had already computed', async (t) => {
+  const r = makeRepo(t, { 'src/a.js': 'a' });
+  // a `first` term whose every match the scope filter excluded: the number is
+  // unknown (never zero), and the filter's own arithmetic is what tells a reader
+  // whether to hunt a parser bug or read the scope
+  const stages = declaredStages({
+    stages: [stage('typecheck', 'count-not-worse', {
+      cmd: 'node', args: SAY('vendor/b.js:9:1 - total 7\nvendor/c.js:1:1 - total 9\n', 0),
+      parser: { lineMatch: 'total (\\d+)', capture: 1 },
+      scope: { includePrefixes: ['src/'] }, direction: 'lower-is-better', baseline: 0,
+    })],
+  });
+  const v = await runDeclaredStages(stages, (s) => s, OPTS(r));
+  assert.ok(Object.hasOwn(CLOSE_FAULTS, v.verdict), v.verdict);
+  assert.equal(v.gap, undefined, 'a stop is still NOT a verdict — it feeds no gap back');
+  assert.match(v.detail, /scope/i);
+  assert.match(v.notes, /dropped by the scope filter/, 'the notes rode out with the stop, not onto the floor');
 });
 
 test('a declared close with no seed REFUSES rather than guessing a baseline', async () => {

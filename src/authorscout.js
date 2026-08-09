@@ -326,6 +326,16 @@ const defaultLoop = (/** @type {any} */ { system, policy, onLlmResult, provider 
  * paid call, metered under its own label, and every attempt's raw text is
  * persisted so the malformation can be READ later rather than remembered.
  *
+ * ONE FALLBACK, stated because the code has it: a retry with NO conversation to
+ * re-ask over re-runs the FULL toolable survey instead. The toolless form rests
+ * entirely on "the model already read the tree", and an empty transcript is that
+ * premise gone — re-asking over nothing would be a bare "say it again" to a model
+ * that was never shown the repository. Re-surveying costs the exploration twice;
+ * the alternative buys a second sample of noise. It is not reachable through the
+ * shipped Loop (whose `msgs` starts from the caller's own messages and is never
+ * empty) and it is reachable through the `createLoop` seam, so it is a fail-safe
+ * with a test rather than a promise with a comment.
+ *
  * @param {{workdir: string, provider?: any,
  *   rounds?: number, minBytes?: number, blobMax?: number, maxTokens?: number, ctx?: boolean,
  *   attempts?: number,
@@ -650,14 +660,20 @@ export async function buildSeedListing({ workdir, seedRef, sourcePaths, testPath
 
   // Deterministic degradation, each tier ANNOUNCED: full → tight → counts-only.
   // Counts stay complete at every tier; only names give way.
+  //
+  // "full" is rendered ONCE, here, and TIERS holds only the degradations — the
+  // loop's job is to fall back, never to re-render the tier it was handed.
+  // (`render` walks the whole seed listing per scoped entry, so rendering full
+  // twice was the listing's own cost paid twice on every run that never needed
+  // to degrade at all — which is every ordinary run.)
   /** @type {[string, number, boolean][]} */
-  const TIERS = [['full', listCap, false], ['tight', 12, false], ['counts-only', 0, true]];
+  const TIERS = [['tight', 12, false], ['counts-only', 0, true]];
   let tier = 'full';
   let out = render(listCap, false);
   for (const [name, cap, countsOnly] of TIERS) {
+    if (Buffer.byteLength(out.text) <= byteCap) break;
     tier = name;
     out = render(cap, countsOnly);
-    if (Buffer.byteLength(out.text) <= byteCap) break;
   }
   let block = out.text;
   let note = tier === 'full' ? ''
