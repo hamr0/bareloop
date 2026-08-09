@@ -244,18 +244,21 @@ that decides green was the last place a human wrote code. This rung makes the cl
 **declared**. Design record `docs/plans/2026-08-07-close-authoring-design.md` (FROZEN
 2026-08-07).
 
-**Status: M1–M4 BUILT and live-validated on one real run (2026-08-08, $0.25, a JS patient) —
-"SIGNING PREPARED, NOT SIGNED". Under whole-branch review; NOT shipped.**
+**Status: M1–M4 BUILT; the whole-branch review CLOSED (three shrinking rounds, 15 findings,
+all fixed — F91); the reworked interview and the fence/work-branch rules PAID-PROOFED live
+(2026-08-09, F92). "SIGNING PREPARED, NOT SIGNED" on the JS patient — twice, with a
+byte-identical hash across cold runs — and both of the python patient's refusals were honest
+ones. NOT shipped.**
 
 The flow, end to end:
 
 ```
-7 plain interview questions (no code, no paths typed by hand)
+6 plain interview questions, keyed to the verdict CLASS (no code, no paths typed by hand)
  → a bounded READ-ONLY scout lists what is really in the repo (runner, flags, env, paths)
  → a model fills a TYPED FORM: a declaration over a fixed catalogue of stage KINDS whose
    implementations bareloop owns — the schema is DERIVED from the catalogue and emitted as a
    tool call, prose is never parsed, and a locked kind is INEXPRESSIBLE, not rejected late
- → validator + the genre's GUARD BATTERY (mandatory, un-removable — the stages no user would
+ → validator + the CLASS's GUARD BATTERY (mandatory, un-removable — the stages no user would
    think to ask for: "I'm also checking you didn't silence the type checker")
  → every declared stage runs ONCE against the untouched seed, proving each ruler measures
    something real before anyone trusts it
@@ -266,12 +269,21 @@ Everything from the signature onward is untouched — **mom still signs, and mom
 the pen.** The agent that later drafts the plan never sees the close; it sees stage NAMES,
 through the derived check menu, one hop, one direction.
 
-> **⚠ UNDER WHOLE-BRANCH REVIEW (2026-08-08).** Six review lenses returned **3 serious
-> findings** — model-declared `cmd`/`args` have no command floor; the python genre-env
-> re-validation rejects the arbiter's OWN injection; a worktree-cleanup throw can discard an
-> already-minted verdict — plus mediums (unscrubbed subprocess output reaching the authoring
-> model; a crashed counter reading as zero, i.e. green). Fixes pending. **Nothing ships until
-> they land.**
+> **⚠ REVIEW CLOSED — AND THE PAID PROOF NAMES WHAT IS LEFT (2026-08-09).** The six lenses'
+> **3 serious findings** all landed: model-declared `cmd`/`args` now sit on a command floor,
+> the python genre-env re-validation no longer rejects the arbiter's OWN injection, and a
+> worktree-cleanup throw can no longer discard an already-minted verdict — with the mediums
+> beside them (subprocess output scrubbed before it reaches the authoring model; a crashed
+> counter routed as an instrument stop instead of reading as zero, i.e. green), 15 findings
+> across three shrinking rounds (F91). Then ONE paid run proved the reworked surface live and
+> named the remaining miss (F92, $0.40): **the composition shape lottery**. Close COMPOSITION
+> rolls shapes exactly the way plan DRAFTING does — a declaration can be perfectly legal and
+> VACUOUS against a particular repo, and this one scoped an outside-the-target stage to a
+> population that repo does not have. The gates CAUGHT it, fail-safe and decision-ready, and
+> nothing green was minted; what is missing is the conversion, because the gate's own output
+> IS the mechanical gap and nothing feeds it back for a re-compose — the run simply ends.
+> **One bounded re-compose is PARKED as a named next build; hamr ruled it does not gate the
+> ship.**
 
 **verdictType is a USER CHOICE again (2026-08-08, hamr).** ~~D4 — derived from the answers,
 never picked~~ is **SUPERSEDED**. The green / soft-green / hitl radio of the 2026-07-21 Layer 2
@@ -284,21 +296,33 @@ of it.
 sets — green / soft-green / hitl — cover every job, instead of one set per genre. Genres are a
 fat long tail that cannot be enumerated (TYPES was the first specimen, not the pattern), so
 genre understanding moves into the LLM's COMPOSITION over the catalogue, where it already
-belongs. **Open design question, recorded rather than smoothed:** the mandatory guard battery
-is genre-keyed data today and needs a new home under class-keyed interviews — most likely per
-catalogue KIND, so a guard rides the ruler it belongs to.
+belongs. **That open design question is now ANSWERED and BUILT:** the mandatory guard battery
+re-homes to the verdict CLASS, which holds the structure, the un-removability and which slot
+is the model's, while the tool-specific contents — which suppression patterns, which
+extensions — resolve at COMPOSITION from the language the declaration names. The pick is also
+a PROMISE: a declaration may not demand a HIGHER class than the one the user chose, so nothing
+silently upgrades or downgrades a verdict; exceeding the pick is an honest red naming the kind
+that raised it.
 
 **A safety floor under declared commands (2026-08-08, hamr's ruling).** A declaration names
 commands, so a deny-floor of dangerous commands (the `rm -rf` class) is required: a straight
-block or a human gate, **never silently allowed**. The fence is the natural home — today
-close-stage commands bypass it entirely. If the fence has no seam for it, that is an UPSTREAM
-ASK, never a local shim. Alongside it: a job edits on a **work branch by default, never main**.
+block or a human gate, **never silently allowed**. Alongside it: a job edits on a **work
+branch by default, never main**. **Both are BUILT.** The floor is a MONOTONIC list of denied
+program names — shell interpreters (admit one and every other entry is decoration), the
+`rm -rf` and machine-level family, fetch-and-run, and the indirection verbs that would run a
+program the declaration never named — read off the BASENAME after the path is normalised, so
+`/usr/bin/rm` cannot dodge it, and widened only by ADDING names. The work branch is enforced
+STRUCTURALLY rather than by convention: the one seam that grants write verbs throws without a
+prepared branch, and `main`/`master` are inexpressible as the work branch. Neither is a
+sandbox and neither claims to be — the local-trust model stands, with its limits written out.
 
 **The timer rule (2026-08-08, hamr's ruling) — the money rule applied to time.** The operator's
 stage-timeout ceiling always wins; a model-declared `timeoutMs` may only TIGHTEN it, never
 widen it, exactly as the agent may only tighten `budgetUsd`. And a measuring command that
 CRASHES must fail **loudly, as could-not-run** — never as a zero, because a zero reads as green
-(F6's honest-null in the shape that matters most: an unrun ruler is not a passing one).
+(F6's honest-null in the shape that matters most: an unrun ruler is not a passing one). **Both
+halves are BUILT** — the declared timeout clamps tighten-only against the operator's ceiling,
+and a crashed counter routes as an instrument stop rather than a number.
 
 ---
 
@@ -343,13 +367,17 @@ addenda (v1.36–v1.50); this list is deliberately one line each.
   budgets, and reuse envelopes fold into the hash — any widening forces a re-sign.
 - **Close hygiene:** env-strip on the close's environment; the close runs async; the
   arbiter's own books are never read by the worker and never red the close.
-- **Close AUTHORING** *(in build, under review — 2026-08-08; see the rung section above)*: the
-  close stops being hand-written JavaScript and becomes a DECLARATION over owned stage kinds —
-  7 interview questions + a read-only scout + a typed form, through the genre's mandatory guard
-  battery, every stage seed-verified, signed by the user as a resolved hash. Governance is
-  unchanged by construction (the signature and everything after it is untouched). Two gaps it
-  opens and owes: declared commands need a deny-floor (**they bypass the fence today**), and a
-  declared `timeoutMs` may only TIGHTEN the operator's ceiling.
+- **Close AUTHORING** *(BUILT; review closed and paid-proofed live — 2026-08-09; see the rung
+  section above)*: the close stops being hand-written JavaScript and becomes a DECLARATION over
+  owned stage kinds — 6 interview questions keyed to the verdict CLASS + a read-only scout (up
+  to 3 attempts, retried only when the emission itself was unreadable) + a typed form, through
+  that class's mandatory guard battery, every stage seed-verified, signed by the user as a
+  resolved hash. Governance is unchanged by construction (the signature and everything after it
+  is untouched). The two gaps it opened are CLOSED: declared commands sit on a monotonic deny
+  floor, and a declared `timeoutMs` may only TIGHTEN the operator's ceiling. What is left is one
+  layer up — a legal declaration can be VACUOUS against a particular repo, the gates refuse it
+  honestly and decision-ready, and the bounded re-compose that would convert that refusal is
+  PARKED (F92).
 
 **Layer 1 — the wheel (the atom): unchanged.** attempt → judge → gap → retry; crash-by-cause
 routing (a crash after real writes feeds back, an instrument crash escalates); provider
