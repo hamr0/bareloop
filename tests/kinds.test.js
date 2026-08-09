@@ -620,6 +620,54 @@ test('count-not-worse: a command that CRASHED while matching NOTHING is an instr
   assert.equal(clean.value, 0);
 });
 
+// The broken-ruler guard reads LIVENESS, and liveness is a PRE-SCOPE fact. Run
+// mslsnnzk died here twice: `npm run typecheck -- --strict` exited 2 and printed
+// 67 real `error TS\d+:` lines, every one of them under `src/`, against a stage
+// whose scope was `excludePrefixes:["src/"]`. Post-scope the count was 0, so a
+// live tool reporting real findings was indistinguishable from a checker that
+// died before it looked at the tree — and the close was refused. Two faults
+// reading as one, the same class the `first` aggregate already fixed above.
+test('count-not-worse: a non-zero exit whose every finding was SCOPE-DROPPED is a counted zero, never a crashed tool', async (t) => {
+  const r = makeRepo(t, { 'src/a.js': 'a\n', 'src/b.js': 'b\n' });
+  const findings = ['src/a.js(3,1): error TS2322: bad', 'src/b.js(9,1): error TS2345: worse'];
+  const parser = { terms: [{ lineMatch: 'error TS\\d+', sign: 1, aggregate: 'sum', region: 'whole-output' }] };
+  const res = await runStage({
+    name: 'typecheck', kind: 'count-not-worse',
+    params: {
+      cmd: 'node', args: SAY(`${findings.join('\n')}\n`, 2), parser,
+      scope: { excludePrefixes: ['src/'] }, direction: 'lower-is-better', baseline: 0,
+    },
+  }, ctxFor(r));
+  assert.equal(res.verdict, 'green', 'the tool provably RAN — it printed parseable findings; they simply were not this population');
+  assert.equal(res.judged, true, 'a live tool over an empty population is a reading, not a casualty');
+  assert.equal(res.value, 0, 'sum over a searched region that held nothing IN SCOPE is a counted zero');
+  assert.match(res.gapLines.join('\n'), new RegExp(`${findings.length} matching line\\(s\\) dropped by the scope filter`),
+    'and the operator reads WHY the number is 0 — the drop is announced, never silent');
+});
+
+test('count-not-worse: a parseValue stop carries the notes it already computed OUT to the stage gap', async (t) => {
+  // `first` over lines that all matched and were all scope-excluded: unknown,
+  // not zero (the stop the parser already renders) — and the dropped count is
+  // the diagnostic that sends the reader to the SCOPE rather than the parser.
+  // Reachability, stated: the broken-ruler guard's own stop can never carry
+  // scope notes, because `dropped` is a subset of the pre-scope matches the
+  // guard requires to be ZERO before it fires. This lane is what IS reachable.
+  const r = makeRepo(t, { 'src/a.js': 'a\n' });
+  const res = await runStage({
+    name: 'typecheck', kind: 'count-not-worse',
+    params: {
+      cmd: 'node', args: SAY('src/a.js: total 7\nsrc/a.js: total 9\n', 0),
+      parser: { lineMatch: 'total (\\d+)', capture: 1 },
+      scope: { excludePrefixes: ['src/'] }, direction: 'lower-is-better', baseline: 0,
+    },
+  }, ctxFor(r));
+  assert.equal(res.verdict, 'instrument-stop');
+  assert.equal(res.judged, false);
+  assert.match(res.gapLines.join('\n'), /2 matching line\(s\) dropped by the scope filter/,
+    'the diagnostic parseValue already computed must not die at the executor boundary');
+  assert.ok(res.gapLines.every((l) => l.startsWith(KEEP)), 'and it rides the spec\'s gapKeep like every other gap line');
+});
+
 test('count-not-worse: a CRASHED seed measurement never mints a baseline of 0 — the bar is unknown, so the run stops', async (t) => {
   // the seed tree has no report.txt, so the command DIES there: exit 1, and a
   // `sum` parser matching nothing. Minting 0 from that hands the run a bar

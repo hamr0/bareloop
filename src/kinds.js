@@ -684,16 +684,24 @@ export function normalizeParser(parser, at = 'parser') {
  * drop count and its unattributable count are ANNOUNCED: a line naming no
  * path is KEPT (no filter can exclude what it cannot locate) and the notes
  * say so, rather than the number quietly meaning something else.
+ *
+ * `preScopeMatches` is reported alongside the reading because a POST-scope
+ * count cannot answer "did the tool run at all". It tallies (term, line) pairs
+ * that matched BEFORE the filter judged them — kept, unattributable and dropped
+ * alike — and it is the only evidence of liveness a caller has once the scope
+ * has removed the whole population. It is never the number being read.
  * @param {string} output @param {any[]} terms normalised terms
  * Every stop here is `crashed` in the arbiter's vocabulary — the command RAN,
  * came back, and the number could not be read out of it. Nothing in this
  * function can observe a spawn failure, a timeout or a signal, so it never
  * claims one.
  * @param {{scope?: any, workdir?: string}} [o]
- * @returns {{stop: string, fault: string, notes?: string[]}|{stop: null, value: number, breakdown: any[], notes: string[]}}
+ * @returns {{stop: string, fault: string, notes?: string[]}|{stop: null, value: number, breakdown: any[], notes: string[], preScopeMatches: number}}
  */
 export function parseValue(output, terms, { scope = null, workdir = '' } = {}) {
   let value = 0;
+  // liveness, tallied before the filter has an opinion — see the note above
+  let preScopeMatches = 0;
   /** @type {any[]} */
   const breakdown = [];
   /** @type {string[]} */
@@ -727,6 +735,7 @@ export function parseValue(output, terms, { scope = null, workdir = '' } = {}) {
     for (const line of region.split('\n')) {
       const hits = [...line.matchAll(re)];
       if (!hits.length) continue;
+      preScopeMatches += 1;
       if (filtering) {
         const p = linePath(line, workdir);
         if (p === null) unattributable += 1;
@@ -774,7 +783,7 @@ export function parseValue(output, terms, { scope = null, workdir = '' } = {}) {
     breakdown.push({ term: i, lineMatch: t.lineMatch, aggregate: t.aggregate, sign: t.sign, matches: values.length, subtotal, contribution: t.sign * subtotal });
     value += t.sign * subtotal;
   }
-  return { stop: null, value, breakdown, notes };
+  return { stop: null, value, breakdown, notes, preScopeMatches };
 }
 
 // ── D12: the baseline is MEASURED at this run's own seed, every run ──────────
@@ -903,17 +912,27 @@ const result = (stage, over) => ({
  * site that OBSERVED the fault. It defaults to `failed` — "the close cannot
  * run" is the safe reading — and it is carried on `detail` so a consumer routes
  * the stop by a typed field instead of pattern-matching the stop's prose.
+ * `notes` are diagnostics a measurement had ALREADY COMPUTED when it stopped —
+ * the scope filter's own arithmetic, chiefly. They ride out on the same gap
+ * channel as the stop rather than being dropped on the floor: the stop says the
+ * number could not be read, and the notes say which lane the lines went down,
+ * which is usually the difference between hunting a parser bug and reading the
+ * scope. Default empty, so every other stop site is unchanged.
  * @param {any} stage @param {Ctx} ctx @param {string} stop @param {Record<string, any>} [detail]
- * @param {string} [fault]
+ * @param {string} [fault] @param {string[]} [notes]
  * @returns {StageResult}
  */
-const stopped = (stage, ctx, stop, detail = {}, fault = STOP_FAULTS.FAILED) => result(stage, {
-  verdict: 'instrument-stop',
-  exitCode: EXIT_STOP,
-  judged: false,
-  gapLines: new Gap(ctx.gapKeep, ctx.gapCap).push(stop).render(),
-  detail: { ...detail, stop, fault },
-});
+const stopped = (stage, ctx, stop, detail = {}, fault = STOP_FAULTS.FAILED, notes = []) => {
+  const gap = new Gap(ctx.gapKeep, ctx.gapCap).push(stop);
+  for (const n of notes) gap.push(`  ${n}`);
+  return result(stage, {
+    verdict: 'instrument-stop',
+    exitCode: EXIT_STOP,
+    judged: false,
+    gapLines: gap.render(),
+    detail: { ...detail, stop, fault },
+  });
+};
 
 // ── the four kinds ──────────────────────────────────────────────────────────
 
@@ -991,7 +1010,7 @@ async function runCountNotWorse(stage, ctx) {
     });
     if (r.stop !== null) return { stop: `${r.stop} (measuring ${where})`, fault: r.fault };
     const v = parseValue(r.out, terms, { scope: p.scope, workdir: cwd });
-    if (v.stop !== null) return { stop: `${v.stop} (measuring ${where})`, fault: v.fault };
+    if (v.stop !== null) return { stop: `${v.stop} (measuring ${where})`, fault: v.fault, notes: v.notes ?? [] };
     // A BROKEN RULER NEVER CERTIFIES ZERO — the zero-match split (contract (a))
     // finished. `sum` over nothing is a COUNTED zero because the region was
     // searched, and that reading is only believable when the tool itself came
@@ -1005,6 +1024,20 @@ async function runCountNotWorse(stage, ctx) {
     // one that would have faked a red are the same casualty, and a casualty is
     // never evidence either way (F45). Non-zero exit WITH matches stays a normal
     // reading: that is a checker reporting real findings, which is its job.
+    //
+    // "Matched" here is `preScopeMatches`, and the distinction is the whole
+    // guard. A POST-scope count cannot tell a dead tool from a live one whose
+    // every finding belonged to another population — they are TWO DIFFERENT
+    // FAULTS and they read as one, the same class the `first` aggregate's own
+    // stop already split above. Run mslsnnzk paid for it twice: tsc exited 2
+    // and printed 67 real error lines, all under `src/`, against a stage scoped
+    // `excludePrefixes:["src/"]`; post-scope the count was 0 and a good close
+    // was refused as a crashed instrument. So liveness is read where liveness
+    // lives — BEFORE the filter — and a live tool over an empty population is a
+    // counted zero carrying the filter's own dropped-line note, which is what
+    // the paragraph above always claimed and the code did not do. The fail-safe
+    // is untouched in the direction that matters: a genuinely silent non-zero
+    // exit still matched nothing pre-scope, and still stops.
     //
     // ACCEPTED LIMIT, stated rather than fixed. Some tools spell "I found
     // nothing" as a NON-ZERO EXIT — `grep -c` exits 1 on no match, pytest exits
@@ -1022,18 +1055,20 @@ async function runCountNotWorse(stage, ctx) {
     // parameter added at that rework, so the exception rides the signed spec and
     // is visible per stage. Never by loosening the default here, which would
     // silently re-open the fake-green lane under every close already signed.
-    const matched = v.breakdown.reduce((a, b) => a + b.matches, 0);
-    if (r.code !== 0 && matched === 0) {
+    if (r.code !== 0 && v.preScopeMatches === 0) {
       return {
         stop: `INSTRUMENT: "${p.cmd}" exited ${r.code} and its output matched none of the parser's terms — a crashed tool reporting nothing is unknown, not zero (measuring ${where})`,
         fault: STOP_FAULTS.CRASHED,
+        // empty BY CONSTRUCTION, not by oversight: every scope note requires a
+        // matching line, and this branch requires that there were none
+        notes: [],
       };
     }
     return { stop: null, value: v.value, breakdown: v.breakdown, notes: v.notes, exit: r.code, dropped: r.dropped, fault: STOP_FAULTS.FAILED };
   };
 
   const now = await measure(ctx.workdir, 'the current tree');
-  if (now.stop !== null) return stopped(stage, ctx, now.stop, {}, now.fault);
+  if (now.stop !== null) return stopped(stage, ctx, now.stop, {}, now.fault, now.notes);
 
   // D12 — the close stores the COUNTING RULE, never the number, so "seed" is
   // MEASURED at this run's own seed. Which route measured it is recorded.
@@ -1053,7 +1088,7 @@ async function runCountNotWorse(stage, ctx) {
       const st = await seedTrees.ensure(ctx.workdir, ctx.seedRef);
       if (st.stop !== null) return stopped(stage, ctx, st.stop, {}, st.fault);
       const b = await measure(st.dir, `the seed tree at ${ctx.seedRef}`);
-      if (b.stop !== null) return stopped(stage, ctx, b.stop, {}, b.fault);
+      if (b.stop !== null) return stopped(stage, ctx, b.stop, {}, b.fault, b.notes);
       baseline = /** @type {number} */ (b.value);
       baselineSource = `measured in a detached worktree at ${ctx.seedRef}`;
       baselineDetail = { breakdown: b.breakdown, notes: b.notes };
