@@ -837,6 +837,103 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     return v;
   };
 
+  // ── 0c. THE WORK BRANCH — the HARD RULE (PRD Addendum v1.57 §3, hamr):
+  // *"The agent creates a NEW BRANCH before it touches any code — a HARD RULE, no
+  // exceptions. Not a default, not a preference: no job edits the branch it was
+  // handed, and none edits `main`."*
+  //
+  // ONE SEAM, TWO PLACEMENTS. The split is COLD vs RESUME, and every half of it is
+  // ruled rather than convenient:
+  //
+  //  * BEFORE the scout on BOTH paths, the scout being the run's first PAID call. A
+  //    patient that is not a git checkout, a namespace with no free name, a resume
+  //    whose branch a human deleted — each is an instrument stop that must cost zero
+  //    tokens, and a branch prepared after the scout would already have bought one.
+  //  * COLD: AFTER the precheck and the preflight, which are $0 and deterministic.
+  //    An ALREADY-GREEN tree returns below without ever reaching the seam and leaves
+  //    no branch behind: a run with no work to do has no blast radius to bound, and
+  //    minting a branch for it would litter every patient with the record of a run
+  //    that did nothing.
+  //  * RESUME: BEFORE them — here, above 0*. There is nothing to mint on a resume
+  //    (the recorded branch exists, `created:false`, and the arm below refuses
+  //    rather than creating), so the leave-no-branch-behind clause has nothing to
+  //    say; what IS at stake is WHICH TREE the $0 instruments measure. The recorded
+  //    branch holds the work the operator already paid for and IS the run being
+  //    continued, while the ref the operator handed back can be anything at all. Run
+  //    from where the run happens to stand, the precheck could read `already-green`
+  //    off a tree that is not this run's and every `baseline: "seed"` stage would
+  //    baseline against it — an instrument measuring the wrong subject, reading
+  //    honestly and saying nothing true. Moving the seam up is also strictly cheaper
+  //    for the failure case: a resume whose branch is gone or foreign now stops
+  //    before the arbiter grades anything at all.
+  //
+  // The scout itself needs no branch and is not what this gates: its menu simply
+  // has no write-class verb in it (the menu IS the grant), so it cannot touch code
+  // wherever it stands. What the branch gates is the WRITE-CAPABLE phase, and that
+  // gate is enforced structurally rather than by this ordering — `mkWorker` refuses
+  // to build a `writable` worker while `workBranch` is null (below). Ordering says
+  // where the honest stop happens; the guard says the rule cannot be bypassed.
+  //
+  // Creating a branch at HEAD moves no commit and changes nothing the close can
+  // measure: the declared seed is HEAD either way, and the tree — dirty or clean —
+  // is carried across untouched.
+  /** @type {string|null} the branch this run's work lands on, once it exists */
+  let workBranch = null;
+  /** is this leg continuing work that already exists? Spelled EXACTLY as
+   * `prepareWorkBranch`'s own resume test, so the two cannot disagree about which
+   * arm a given input takes. */
+  const resuming = resumeBranch !== null && resumeBranch !== undefined;
+  /**
+   * 0c itself — ONE definition for both placements. The refusal below is written
+   * once on purpose: two call sites emitting their own branch-red would be two
+   * messages free to drift apart, and this one is what a human reads when a run
+   * stops having spent nothing.
+   * @returns {Promise<'branch-red'|null>} the terminal to return, or `null` once the
+   *   run is standing on a branch nobody handed it
+   */
+  const prepareBranch = async () => {
+    const wb = await prepareWorkBranch(workdir, { name: workBranchName(job), resume: resumeBranch ?? null });
+    if (wb.stop !== null) {
+      // Never a fallback to the handed branch. That fallback IS the thing the rule
+      // forbids, and a run that silently took it would report a green whose blast
+      // radius nobody bounded — so this is a named terminal of its own rather than
+      // a wiring fault (`interpreter-red` aims an upstream ask at a library; a
+      // patient that is not a git checkout is the operator's own state speaking).
+      emit('escalation', {
+        category: 'branch-red', decisionReady: true,
+        decision: 'The run could not create its own work branch, and no job runs on the branch it was handed (PRD v1.57 §3). Nothing was spent.',
+        options: [
+          'make the patient a git checkout with at least one commit',
+          'free the work-branch name (delete or rename the stale branches this run collided with)',
+          'abandon the run',
+        ],
+        detail: scrub(wb.stop),
+      });
+      return 'branch-red';
+    }
+    workBranch = wb.branch;
+    // The run's own books say where its work went. A human reading a spine — or a
+    // resume reading it back (`readResume`'s `restart.branch`) — must not have to
+    // re-derive the name from the spec and guess how many collisions there were.
+    emit('work-branch', {
+      branch: wb.branch,
+      created: wb.created,
+      resumed: wb.resumed,
+      from: wb.from,
+      base: wb.base,
+      repo: wb.repo,
+      ...(wb.collided > 0 ? { collided: wb.collided } : {}),
+      meaning: wb.resumed
+        ? 'returned to the branch this run was killed on — its work is on this branch, and a fresh one would strand it'
+        : 'the HARD RULE (PRD v1.57 §3): the run works here, never on the branch it was handed and never on main',
+    });
+    return null;
+  };
+  if (resuming) {
+    const stop = await prepareBranch();
+    if (stop !== null) return stop;
+  }
+
   // ── 0*. the DECLARED close's two run-start facts. Both are $0 and both sit
   // INSIDE the clock (they are the arbiter's own instruments, and time the
   // operator's instruments too or the budget measures a different run).
@@ -953,71 +1050,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     }
   }
 
-  // ── 0c. THE WORK BRANCH — the HARD RULE (PRD Addendum v1.57 §3, hamr):
-  // *"The agent creates a NEW BRANCH before it touches any code — a HARD RULE, no
-  // exceptions. Not a default, not a preference: no job edits the branch it was
-  // handed, and none edits `main`."*
-  //
-  // WHERE IT SITS, and both halves of the placement are ruled rather than
-  // convenient:
-  //
-  //  * BEFORE the scout, which is the run's first PAID call. A patient that is not
-  //    a git checkout, a namespace with no free name, a resume whose branch a human
-  //    deleted — each of those is an instrument stop that must cost zero tokens, and
-  //    a branch created after the scout would already have bought one.
-  //  * AFTER the precheck and the preflight, which are $0 and deterministic. An
-  //    ALREADY-GREEN tree returns above this line and leaves no branch behind: a run
-  //    with no work to do has no blast radius to bound, and minting a branch for it
-  //    would litter every patient with the record of a run that did nothing.
-  //
-  // The scout itself needs no branch and is not what this gates: its menu simply
-  // has no write-class verb in it (the menu IS the grant), so it cannot touch code
-  // wherever it stands. What the branch gates is the WRITE-CAPABLE phase, and that
-  // gate is enforced structurally rather than by this ordering — `mkWorker` refuses
-  // to build a `writable` worker while `workBranch` is null (below). Ordering says
-  // where the honest stop happens; the guard says the rule cannot be bypassed.
-  //
-  // Creating a branch at HEAD moves no commit and changes nothing the close can
-  // measure: the declared seed is HEAD either way, and the tree — dirty or clean —
-  // is carried across untouched.
-  /** @type {string|null} the branch this run's work lands on, once it exists */
-  let workBranch = null;
-  {
-    const wb = await prepareWorkBranch(workdir, { name: workBranchName(job), resume: resumeBranch ?? null });
-    if (wb.stop !== null) {
-      // Never a fallback to the handed branch. That fallback IS the thing the rule
-      // forbids, and a run that silently took it would report a green whose blast
-      // radius nobody bounded — so this is a named terminal of its own rather than
-      // a wiring fault (`interpreter-red` aims an upstream ask at a library; a
-      // patient that is not a git checkout is the operator's own state speaking).
-      emit('escalation', {
-        category: 'branch-red', decisionReady: true,
-        decision: 'The run could not create its own work branch, and no job runs on the branch it was handed (PRD v1.57 §3). Nothing was spent.',
-        options: [
-          'make the patient a git checkout with at least one commit',
-          'free the work-branch name (delete or rename the stale branches this run collided with)',
-          'abandon the run',
-        ],
-        detail: scrub(wb.stop),
-      });
-      return 'branch-red';
-    }
-    workBranch = wb.branch;
-    // The run's own books say where its work went. A human reading a spine — or a
-    // resume reading it back (`readResume`'s `restart.branch`) — must not have to
-    // re-derive the name from the spec and guess how many collisions there were.
-    emit('work-branch', {
-      branch: wb.branch,
-      created: wb.created,
-      resumed: wb.resumed,
-      from: wb.from,
-      base: wb.base,
-      repo: wb.repo,
-      ...(wb.collided > 0 ? { collided: wb.collided } : {}),
-      meaning: wb.resumed
-        ? 'returned to the branch this run was killed on — its work is on this branch, and a fresh one would strand it'
-        : 'the HARD RULE (PRD v1.57 §3): the run works here, never on the branch it was handed and never on main',
-    });
+  // ── 0c, COLD. The seam and both halves of its placement ruling are stated
+  // above, where a RESUME reaches it; this is where a run that is NOT resuming
+  // does — after the $0 precheck and preflight, so an already-green tree has
+  // already returned and left no branch behind.
+  if (!resuming) {
+    const stop = await prepareBranch();
+    if (stop !== null) return stop;
   }
 
   const lc = new LiteCtx({ root: workdir });

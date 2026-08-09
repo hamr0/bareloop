@@ -3839,6 +3839,21 @@ test('F86 CONTROL: a stall never judged its exits, so the brief carries NO close
 // Every patient below is a real git repository handed to the run on `main`, and
 // every assertion is git's own answer, never a spine field standing in for one.
 
+/** git in a patient, carrying the identity `initPatientRepo` uses. A COMMIT needs
+ * one, and whatever global config the test machine happens to hold is not a
+ * fixture — the same reason the helper pins it there.
+ * @param {string} wd @param {string[]} args */
+const patientGit = (wd, args) => execFileSync('git', args, {
+  cwd: wd,
+  encoding: 'utf8',
+  env: {
+    ...process.env,
+    GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
+    GIT_AUTHOR_NAME: 'bareloop-test', GIT_AUTHOR_EMAIL: 'test@bareloop',
+    GIT_COMMITTER_NAME: 'bareloop-test', GIT_COMMITTER_EMAIL: 'test@bareloop',
+  },
+});
+
 test('the WORK BRANCH exists before the run\'s first PAID call, and every write lands on it', async (t) => {
   const wd = makePatient(t);
   const handedAt = execFileSync('git', ['rev-parse', 'main'], { cwd: wd, encoding: 'utf8' }).trim();
@@ -3934,6 +3949,39 @@ test('a RESUME returns to the branch its own work is sitting on — no -2 beside
   assert.deepEqual(localBranches(wd), [own, 'main'], 'the collision walk did not fire on the run\'s own branch');
 });
 
+test('a RESUME grades the WORK branch, never the ref the operator happened to hand back', async (t) => {
+  const wd = makePatient(t);
+  // The killed leg's work, on its own branch and COMMITTED there — the two trees
+  // have to differ in a way the close can actually SEE, or this test cannot fail.
+  patientGit(wd, ['checkout', '-q', '-b', 'bareloop-plan-patient']);
+  writeFileSync(join(wd, 'tests', 'test_x.mjs'), 'ok — the killed leg already wrote this\n');
+  patientGit(wd, ['add', 'tests/test_x.mjs']);
+  patientGit(wd, ['commit', '-q', '-m', 'the work a resume exists to keep']);
+  // …and the operator wandered back to the handed branch, where the close is RED
+  patientGit(wd, ['checkout', '-q', 'main']);
+  assert.ok(!existsSync(join(wd, 'tests', 'test_x.mjs')),
+    'the handed branch reds the close — the precondition that makes the two readings distinguishable');
+
+  const provider = scriptedProvider([{ text: 'never reached' }]);
+  const { outcome, events } = await go(wd, provider, { resumeBranch: 'bareloop-plan-patient' });
+
+  // the run's OWN reading, off its own books: the $0 instruments measured the work
+  // branch, because that is the tree this run is continuing
+  assert.equal(events.find((e) => e.type === 'close-precheck')?.verdict, 'satisfied');
+  assert.equal(outcome, 'already-green');
+  assert.equal(provider.calls.length, 0, 'nothing was bought to discover work that was already done');
+  // and it read it by STANDING there, not around a corner
+  assert.equal(currentBranch(wd), 'bareloop-plan-patient');
+  // an already-green read on a RESUME mints nothing and unwinds nothing: the
+  // leave-no-branch-behind clause is about minting, never about a branch that
+  // already holds work the operator paid for
+  assert.deepEqual(localBranches(wd), ['bareloop-plan-patient', 'main']);
+  assert.equal(readFileSync(join(wd, 'tests', 'test_x.mjs'), 'utf8').trim(), 'ok — the killed leg already wrote this');
+  const wb = events.find((e) => e.type === 'work-branch');
+  assert.equal(wb.resumed, true);
+  assert.equal(wb.created, false);
+});
+
 test('a resume whose recorded branch is GONE stops rather than starting a new one beside the work', async (t) => {
   const wd = makePatient(t);
   const provider = scriptedProvider([{ text: 'scout notes' }, { text: PLAN(wd) }]);
@@ -3944,6 +3992,12 @@ test('a resume whose recorded branch is GONE stops rather than starting a new on
   assert.match(detail, /bareloop-deleted-by-a-human/);
   assert.match(detail, /no longer exists/, 'the arbiter\'s own refusal, not git\'s incidental one');
   assert.deepEqual(localBranches(wd), ['main'], 'nothing was minted in its place');
+  // …and it stopped BEFORE the arbiter measured anything. A resume that cannot
+  // reach its own branch has no tree to grade, so a precheck reading here could
+  // only ever be a reading of the wrong subject.
+  assert.equal(events.find((e) => e.type === 'close-precheck'), undefined,
+    'nothing was graded before the branch this resume owns was in hand');
+  assert.equal(events.find((e) => e.type === 'check-preflight'), undefined);
 });
 
 test('an ALREADY-GREEN tree leaves no branch behind — no work, no blast radius to bound', async (t) => {

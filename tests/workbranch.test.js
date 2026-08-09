@@ -164,6 +164,34 @@ test('a resume returns to the branch the killed leg recorded, minting nothing', 
   assert.deepEqual(branches(dir).sort(), ['bareloop-resume-me', 'main'], 'no -2 was minted');
 });
 
+test('a resume can only ever land on the RECORDED branch — the derived name is not consulted', async (t) => {
+  const { dir } = makeRepo(t);
+  const first = await prepareWorkBranch(dir, { name: 'bareloop-recorded' });
+  git(dir, ['checkout', '-q', 'main']);
+  // the derived name is FREE here: a resume that consulted `name` at all would
+  // mint it and strand the work on `bareloop-recorded`. hamr's caveat, pinned —
+  // "make sure resume is to resume on same branch".
+  const again = await prepareWorkBranch(dir, { name: 'bareloop-derived-elsewhere', resume: first.branch });
+  assert.equal(again.stop, null);
+  assert.equal(again.branch, 'bareloop-recorded', 'the RECORDED branch, never the derived one');
+  assert.equal(again.created, false, 'a resume never creates');
+  assert.equal(again.resumed, true);
+  assert.equal(again.collided, 0, 'and never walks the collision suffixes');
+  assert.equal(current(dir), 'bareloop-recorded');
+  assert.deepEqual(branches(dir).sort(), ['bareloop-recorded', 'main'], 'the derived name was never minted');
+});
+
+test('a resume whose recorded branch is missing STOPS — it never falls back to the derived name', async (t) => {
+  const { dir } = makeRepo(t);
+  const r = await prepareWorkBranch(dir, { name: 'bareloop-free-and-available', resume: 'bareloop-recorded-but-gone' });
+  assert.notEqual(r.stop, null);
+  assert.equal(r.branch, null);
+  assert.match(String(r.stop), /bareloop-recorded-but-gone/);
+  assert.doesNotMatch(String(r.stop), /bareloop-free-and-available/, 'the derived name is not even offered as a consolation');
+  assert.deepEqual(branches(dir), ['main'], 'no fresh branch beside work the resume cannot see');
+  assert.equal(current(dir), 'main');
+});
+
 test('a resume already standing on its own branch is a no-op, not a checkout', async (t) => {
   const { dir } = makeRepo(t);
   const first = await prepareWorkBranch(dir, { name: 'bareloop-still-here' });

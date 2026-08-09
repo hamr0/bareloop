@@ -676,7 +676,8 @@ DISTINCT zero-token outcome; a forbidden-zone verdict escalates before spend) �
 preflight** (`check-menu` names the derived menu, then every OFFERED stage's chain runs once
 at $0 — an unrunnable stage is a `check-red` stop before tokens, not a fault mid-plan) →
 **THE WORK BRANCH** (below — created before the first paid call, `branch-red` if it cannot
-be) → **SCOUT** (read-only by construction: neither the
+be; on a RESUME it runs FIRST, ahead of the precheck and the preflight, because the recorded
+branch IS the tree those instruments must measure) → **SCOUT** (read-only by construction: neither the
 write-class nor the store-class verbs are in its menu; hard-bounded rounds) → **PLAN** (the decompose call —
 the planner never sees the repo, only the scout blob; drafted against a schema
 description with check NAMES only; `validatePlan` gates it, one redraft with the reds
@@ -714,16 +715,27 @@ call:
   second blast radius and never reuses the first one's branch.
 - **A RESUME returns to ITS OWN branch.** Pass `resumeBranch` (read off the dead spine by
   `readResume` as `restart.branch`); without it the deterministic name would collide with the
-  killed leg's own branch and mint a `-2` beside the work the resume exists to keep. A
-  recorded branch that no longer exists is a `branch-red` STOP, never a fresh start.
+  killed leg's own branch and mint a `-2` beside the work the resume exists to keep. The
+  recorded branch is the ONLY branch a resume can land on — it is validated and checked out,
+  never re-derived from the spec and never suffixed. A recorded branch that no longer exists
+  is a `branch-red` STOP, never a fresh start.
+- **On a RESUME this step runs FIRST**, ahead of the close precheck and the check preflight
+  (cold, it runs after them — see the already-green bullet). Both are $0 readings OF A TREE,
+  and on a resume the tree they must read is the recorded branch's: standing on whatever ref
+  the operator handed back, the precheck could read `already-green` off a tree that is not
+  this run's and every `baseline: "seed"` stage would baseline against it. Nothing is minted
+  by moving it — the resume arm creates nothing — and a resume whose branch is gone or foreign
+  now stops `branch-red` before the arbiter grades anything at all.
 - **`work-branch { branch, created, resumed, from, base, repo, collided? }`** lands on the
   spine at creation — the run's books say where its work went.
 - **Every failure is `branch-red`**, escalated decision-ready with zero spend. There is no
   fallback to the handed branch anywhere; and `mkWorker`, the ONE seam that grants
   write-class verbs, refuses to build a write-capable worker with no branch prepared, so the
   ordering is a convenience and the guard is the rule.
-- **An `already-green` tree leaves no branch behind** — the precheck returns above this
-  step, and a run with no work has no blast radius to bound.
+- **A COLD run's `already-green` tree leaves no branch behind** — the precheck returns above
+  this step, and a run with no work has no blast radius to bound. The clause is about
+  MINTING: a RESUME that reads `already-green` off its own branch (which it is standing on by
+  then) leaves that branch and the paid work on it exactly where they were.
 
 **What it does NOT do.** bareloop never commits, so the branch bounds where work LANDS: the
 tree stands on a branch nobody handed the run, and the handed ref is never moved or written
