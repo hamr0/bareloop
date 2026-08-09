@@ -25,13 +25,13 @@ it · the fix (upstream commit/PR) · the version bareloop consumed.**
 > the clipipe cross-surface battery (F48). Full entry at the end of the queue. The
 > 2026-07-15 snapshot below stands for everything prior.
 
-> **2026-08-09 update: the queue reopens on a NEW package and a NEW prefix — BJ-1 (barejudge),
-> OPEN.** bareloop's N4 (soft-green) rung needs a productized *decisive judge*; the design is
-> measured and the code is a POC in bareguard's research corpus, owned by no shippable package.
-> It is emphatically **not** a bareguard-core ask (bareguard's own locked design forbids it
-> calling an LLM), so it opens `BJ-*` for a new suite package rather than misfiling against an
-> existing one — the BA-2 lesson, applied before filing rather than after. Full entry at the
-> end of the queue.
+> **2026-08-09 update: the queue reopens on BA-20 (bare-agent), OPEN.** bareloop's N4
+> (soft-green) rung needs a productized *decisive judge*; the design is measured and the code is
+> a POC in bareguard's research corpus, owned by no shippable package — it lands in **bare-agent**,
+> where every LLM call in the suite already lives (bareguard's own locked design forbids it
+> calling one). *Recorded, not rewritten: this was first filed the same day as `BJ-1`,
+> recommending a new `barejudge` package, and re-aimed at bare-agent the same day on hamr's
+> ruling.* Full entry at the end of the queue.
 
 > **2026-07-31 update:** **LC-5 (litectx) DELIVERED in `litectx@0.32.0`, same day** —
 > option (a) of the ask: `impact()` now throws a named `RipgrepMissingError`
@@ -1403,17 +1403,23 @@ candidates have now gone in and three come out.)*
 
 ---
 
-## BJ-1 — the decisive judge exists only as a POC in bareguard's research corpus: bareloop's N4 (soft-green) rung needs it PRODUCTIZED, in a package of its own (2026-08-09, N4 opening / the RSI judged-floor doctrine)
+## BA-20 — the decisive judge exists only as a POC in bareguard's research corpus: bareloop's N4 (soft-green) rung needs it PRODUCTIZED, in bare-agent (2026-08-09, N4 opening / the RSI judged-floor doctrine)
 
-**New prefix, stated up front and justified.** This file's IDs key to the owning package —
-`BA-*` bare-agent, `LC-*` litectx, `BG-*` bareguard. This ask targets a package that **does not
-exist yet** (working name **barejudge**), so it opens **`BJ-*`**. It is admitted under this
-file's own rule (only upstream-gap reds land here) as the *missing primitive* case at its
-extreme: the primitive has no owning repo at all. The resolution is still upstream — a new
-suite package, consumed here by version bump, **never a local shim in bareloop**. **hamr's
-call: it gets built SEPARATELY, as its own deliverable, not folded into a rung.**
+**Re-aimed the same day it was filed, stated up front.** This file's IDs key to the owning
+package — `BA-*` bare-agent, `LC-*` litectx, `BG-*` bareguard. This ask went in first as
+**`BJ-1`, recommending a NEW suite package** (working name *barejudge*) on a new `BJ-*` prefix.
+**hamr rejected that framing, verbatim:** *"no new lib barejudge for one primitive, if bg rule
+not to call llm then it completes its part and bareagent does the call."* So there is **no new
+prefix and no new package**: bareguard completes its part with the measured E6i design plus the
+already-shipped `gate.annotate` fact envelope, and **bare-agent makes the call** — it is the
+suite package that already owns every LLM call and all transport. Renumbered **BA-20**
+accordingly. It is admitted under this file's own rule (only upstream-gap reds land here) as
+the *missing primitive* case: the primitive is measured but owned by no shipping package. The
+resolution is upstream — a new bare-agent primitive, consumed here by version bump, **never a
+local shim in bareloop**. **hamr's call stands that it gets built SEPARATELY, as its own
+deliverable, not folded into a rung.**
 
-### Why this is NOT a bareguard-core ask (the BA-2 lesson, applied *before* filing)
+### Where it lands and why (the BA-2 lesson, applied *before* filing — and again on re-aim)
 
 Read in bareguard's own PRD and corpus, 2026-08-09, before anything was written here:
 
@@ -1427,11 +1433,21 @@ Read in bareguard's own PRD and corpus, 2026-08-09, before anything was written 
   **bareguard's locked design says bareguard never calls an LLM: the judge is caller-side by
   law** (PRD ~:1930, ~:2320).
 
-Filing this against bareguard core would therefore ask bareguard to break its own arbiter-shaped
-law. The right shape is a **new small package depending on bare-agent for transport**, consuming
-`gate.annotate`'s envelope as input and leaving the detector exactly where it is. (BA-2 was
-withdrawn for aiming a real gap at the wrong package; this entry names the target package as
-part of the ask precisely so that does not repeat.)
+**bareguard's part is COMPLETE — nothing is asked of it.** Its two contributions are already
+delivered: the **measured E6i design is the spec** (cited verbatim from its own PRD in the next
+section — this ask does not redesign it), and the **shipped `gate.annotate` fact envelope is the
+input contract**, which stays exactly as released in 0.7.0. **No bareguard change is requested,
+and none would be legal:** filing the judge against bareguard core would ask it to break its own
+arbiter-shaped law that it never calls an LLM.
+
+**The runnable half lands in bare-agent, as a new primitive/module.** That half is the judge
+*call* — prompt shape, the model call itself, output parsing, cost reporting — plus the
+calibration harness that admits a tier. bare-agent is where every model call in the suite already
+lives, so the judge needs no new package, no new transport layer, and no new dependency; it
+consumes `gate.annotate`'s envelope as input and leaves bareguard's detector exactly where it is.
+(BA-2 was withdrawn for aiming a real gap at the wrong package. This entry's first filing named a
+package that did not exist yet and was re-aimed on hamr's ruling the same day — the same lesson,
+recorded here rather than erased.)
 
 ### The design of record — already measured, not to be redesigned (bareguard PRD §9.2, ~:2347-2477; model `haiku-4.5`)
 
@@ -1479,7 +1495,8 @@ missed **1/3**; judging **the single structured egress artifact** hit **6/6**. T
 
 **1. The judge primitive.** `judge({ request, artifact, … }) → { verdict, where, costUsd, … }`
 with the E6i semantics above: verbatim request in, ONE structured artifact in, binary verdict out,
-mechanical `where` out. bare-agent for transport; no new production dependency beyond it.
+mechanical `where` out. Ships **inside bare-agent**, on the transport it already owns — no new
+package, no new production dependency.
 
 **2. The CALIBRATION HARNESS, shipped with it — not an afterthought.** A **frozen labeled case
 set** built the E6e/E6i way (verifiable / opinion / ambiguous / **injection** cases), a
@@ -1533,20 +1550,21 @@ judged-floor analog, and **the judge is the ceiling** — verifier hardening nev
 
 - **The deterministic calculator carve-out (E6h)** — measured to work, deliberately out of scope.
 - **Confidence scales and `kind` classification** — measured *worse* (E6f/E6g, E6e). Do not add.
-- **Any bareguard change.** `gate.annotate`'s fact envelope is the detector and stays as shipped;
-  barejudge consumes it and never re-implements it.
+- **Any bareguard change.** **bareguard's part is complete by design** — the measured E6i spec
+  and the shipped `gate.annotate` fact envelope. That envelope is the detector and stays exactly
+  as shipped; the bare-agent judge consumes it and never re-implements it.
 - **A judge that DECIDES.** Out by law from both sides: bareguard's Axis B annotates and never
-  decides, and in bareloop **the close is the only truth**. barejudge returns a verdict to a
+  decides, and in bareloop **the close is the only truth**. The judge returns a verdict to a
   caller; it never merges, publishes, or touches a budget.
 
 ### bareloop's own side (consumption plan, recorded now)
 
 N4's soft-green verdict class is blocked on exactly this: **softgreen passes are quarantined from
-learning credit until the judged floor is proven**. On delivery, barejudge becomes a **`judged`
-close stage** — `offer:false` **by law** (never lendable to the agent's check menu), metered from
-the **same wallet** as everything else, and **skipping the seed-verdict read** because its bar
-comes from calibration instead. Consumed by version bump like every other suite package; the one
-production dependency it adds is bare-agent, which bareloop already depends on.
+learning credit until the judged floor is proven**. On delivery, bare-agent's judge becomes a
+**`judged` close stage** — `offer:false` **by law** (never lendable to the agent's check menu),
+metered from the **same wallet** as everything else, and **skipping the seed-verdict read**
+because its bar comes from calibration instead. Consumed by version bump like every other suite
+package; it adds **no new production dependency at all** — bareloop already depends on bare-agent.
 
 **Priority: a hard blocker for N4, and for nothing shipping today.** Nothing in the current green
 path calls a judge, so this stops no rung already on the ladder — it gates the next one.
