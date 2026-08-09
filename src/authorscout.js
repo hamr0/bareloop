@@ -54,7 +54,7 @@ import { seedListing } from './kinds.js';
 import { TOOL_MENU, WRITE_VERBS, STORE_VERBS } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, strategyFor } from './tools.js';
 import { redactSecrets, SECRET_PATTERNS } from './validate.js';
-import { extractArtifact, priceOf, scrubRaw } from './text.js';
+import { extractArtifact, priceOf, scrubRaw, stampRaw } from './text.js';
 
 const require = createRequire(import.meta.url);
 const { Loop, wireGate } = require('bare-agent');
@@ -464,9 +464,11 @@ export async function runAuthorScout({
 
       // the raw that describes THIS attempt carries the attempt's own verdict —
       // the raw is the autopsy artifact, and an autopsy without a cause of death
-      // is a body
+      // is a body. STAMPED rather than assigned: `reason` quotes the transport's
+      // own error prose (`classifySurvey`'s CALL_FAILED route) and this record is
+      // persisted, so it rides the same one boundary the raw's text already did.
       const mine = raws[verdictAt];
-      if (mine) { mine.cause = survey.cause; mine.reason = survey.reason; }
+      if (mine) stampRaw(mine, { cause: survey.cause, reason: survey.reason });
 
       if (survey.state === 'PRESENT') break;
       if (!SCOUT_RETRY_CAUSES.includes(/** @type {string} */ (survey.cause))) break;

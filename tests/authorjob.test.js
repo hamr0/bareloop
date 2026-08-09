@@ -647,6 +647,34 @@ test('WHOLE PIPELINE: seven answers in, a validateJob-green spec with a hash out
   assert.ok(!JSON.stringify(ANSWERS).includes('command-exit'));
 });
 
+// `notes` is the ONE free-text field a model writes straight into the SIGNED
+// closeDecl. Every sibling string on this boundary rides `redactSecrets` (the
+// declaration reds, the seed/listing stops); a field that skips it is the same
+// hole one key over, and the spec it lands in outlives the run.
+test('the closeDecl carries model-authored notes SCRUBBED — the signed spec is a record that outlives the run', async (t) => {
+  const p = makePatient(t);
+  const secret = ['sk', 'live', 'D1b2C3d4E5f6G7h8I9j0KLMN'].join('-');
+  assert.equal(scanSecrets(secret).length, 1, 'the fixture must be a shape the ONE inventory actually detects');
+  const authored = await authorCloseForJob({
+    verdictType: 'green',
+    answers: ANSWERS,
+    repoPath: p.dir,
+    lang: 'js',
+    seedRef: p.seed,
+    scout: SURVEY(p.dir),
+    generate: scriptedDeclarer([{
+      stages: DECL().stages,
+      notes: [`the runner needed ANTHROPIC_API_KEY=${secret} to run, so I noted it here`],
+    }]),
+  });
+
+  assert.equal(authored.ok, true, JSON.stringify(authored.reds));
+  assert.deepEqual(scanSecrets(JSON.stringify(authored.closeDecl)), [],
+    'a signed close that captures a key captures it forever');
+  assert.ok(authored.closeDecl.notes[0].includes('[REDACTED:'), 'the mask is the shared redactor, not a silent deletion');
+  assert.match(authored.closeDecl.notes[0], /so I noted it here/, 'everything around the token survives');
+});
+
 /** the PYTHON close as it exists AFTER M3 injected the genre's own MYPYPATH */
 const PY_STAGES = (env = { MYPYPATH: 'src' }) => {
   const g = greenGuards('python');

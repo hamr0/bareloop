@@ -138,7 +138,10 @@ export function scrubRaw({ label, attempt, text, cause = null, reason = null, ca
   let end = cap;
   while (trimmed && end > 0 && (buf[end] & 0xC0) === 0x80) end -= 1;
   const kept = trimmed ? buf.subarray(0, end).toString('utf8') : scrubbed;
-  return {
+  // the two diagnosis fields are rendered by `stampRaw` below, never here: the
+  // writer that stamps them LATER must go through the same one place, or the
+  // scrub becomes a property of when you knew the verdict
+  return stampRaw({
     label,
     attempt,
     // the FULL size, always — the number a trim is measured against
@@ -151,7 +154,33 @@ export function scrubRaw({ label, attempt, text, cause = null, reason = null, ca
     text: trimmed
       ? `${kept}\n[${RAW_TRIM_MARKER} ${buf.length - end} of ${buf.length} bytes withheld — the cap is ${cap} per raw]`
       : kept,
-    cause: cause ?? null,
-    reason: reason === null || reason === undefined ? null : redactSecrets(reason),
-  };
+    cause: null,
+    reason: null,
+  }, { cause, reason });
+}
+
+/**
+ * Stamp a persisted raw with the verdict that DESCRIBES it — through the same
+ * boundary the raw's own text rode.
+ *
+ * It exists because the verdict is not known when the raw is created: a writer
+ * records the emission the moment the call returns (so a metered call can never
+ * be missing its output), and only classifies it afterwards. The obvious
+ * shape — assigning `cause`/`reason` onto the stored object at that later
+ * point — writes an UNSCRUBBED string into a record that is already past the
+ * one redactor, and `reason` is the worst field to do it to: it quotes the
+ * transport's own error prose, which nobody in this repo wrote and nobody
+ * bounds. So the stamp is a function, not an assignment, and `scrubRaw` renders
+ * its own two fields through it: ONE place decides how a diagnosis becomes
+ * persistable, exactly as ONE place decides it for the text.
+ *
+ * `cause` is enumerated (`SURVEY_CAUSES`) and passes through untouched; a mask
+ * over a closed set would only hide a bug in the set.
+ * @template {{cause: string|null, reason: string|null}} T
+ * @param {T} raw @param {{cause?: string|null, reason?: string|null}} o @returns {T}
+ */
+export function stampRaw(raw, { cause = null, reason = null }) {
+  raw.cause = cause ?? null;
+  raw.reason = reason === null || reason === undefined ? null : redactSecrets(reason);
+  return raw;
 }

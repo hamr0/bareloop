@@ -677,6 +677,28 @@ test('runAuthorScout: a persisted raw is SCRUBBED — masked, never deleted, and
   assert.match(r.raws[0].text, /and the survey ends here/, 'everything around the token survives — the raw is the autopsy');
 });
 
+// The raw's TEXT is scrubbed at creation; the verdict is STAMPED on afterwards,
+// and a stamp that skips the boundary the text rode is the same hole one field
+// over. `classifySurvey` quotes the transport's own error prose verbatim into
+// `reason` (`the survey call failed: <meta.error>`), and provider prose is the
+// one string in this module nobody wrote and nobody bounds.
+test('runAuthorScout: the STAMPED verdict rides the same scrub boundary as the raw it describes', async () => {
+  const secret = ['sk', 'live', 'C1b2C3d4E5f6G7h8I9j0KLMN'].join('-');
+  assert.equal(scanSecrets(secret).length, 1, 'the fixture must be a shape the ONE inventory actually detects');
+  const { factory } = scriptLoops([
+    { text: badBlob(), turns: 1, error: `ENETUNREACH POSTing with ANTHROPIC_API_KEY=${secret} to the provider` },
+    { text: factsBlob(), turns: 1 },
+  ]);
+  const { createSurveyor } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor });
+  assert.equal(r.cause, SURVEY_CAUSES.CALL_FAILED);
+  assert.deepEqual(scanSecrets(JSON.stringify(r.raws)), [],
+    'the stamped reason is PERSISTED — a record that captures a key captures it forever');
+  assert.ok(r.raws[0].reason.includes('[REDACTED:'), 'the mask is the shared redactor, not a silent deletion');
+  assert.match(r.raws[0].reason, /the survey call failed/, 'everything around the token survives — the raw is the autopsy');
+  assert.equal(r.raws[0].cause, SURVEY_CAUSES.CALL_FAILED, 'the typed cause is enumerated and passes through untouched');
+});
+
 test('runAuthorScout: an oversized raw is TRIMMED and the trim ANNOUNCES itself (F28)', async () => {
   const huge = `${badBlob()}${'z'.repeat(RAW_PERSIST_MAX * 3)}`;
   const { factory } = scriptLoops([{ text: huge, turns: 1 }, { text: factsBlob(), turns: 1 }]);

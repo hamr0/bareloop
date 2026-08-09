@@ -485,7 +485,17 @@ export async function authorCloseForJob({
       lang,
       stages: authored.declaration.stages,
       ...(Object.keys(applied).length ? { genreEnv: { ...applied } } : {}),
-      ...(authored.declaration.notes?.length ? { notes: authored.declaration.notes } : {}),
+      // `notes` is the one FREE-TEXT field the model writes straight into the
+      // signed spec, and this is that field's persist boundary. Scrubbed here
+      // for the same reason `scrubRed` scrubs uniformly a few lines down: every
+      // other model-authored string that survives this call rides the ONE
+      // redactor, and a signed spec outlives the run that produced it.
+      // `redactSecrets` returns a non-matching string byte-identical, so a note
+      // carrying nothing hashes exactly as it did — the mask costs the honest
+      // case nothing, which is the fail-safe direction.
+      ...(authored.declaration.notes?.length
+        ? { notes: authored.declaration.notes.map((/** @type {any} */ n) => (typeof n === 'string' ? redactSecrets(n) : n)) }
+        : {}),
     },
     seedRef: seed,
     authoring: authored,
