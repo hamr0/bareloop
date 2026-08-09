@@ -726,6 +726,138 @@ test('files-changed: the arbiter books never count as work, and the decoy src/ga
   assert.equal(decoy.verdict, 'green', 'a worker-authored src/gate-audit.jsonl is a real change inside src/');
 });
 
+// ── the changed-set fences read PHYSICAL identity too ───────────────────────
+//
+// de61e87 unified spellings inside `parseValue`'s scope filter and left the two
+// CHANGED-SET fences lexical, parked on the reasoning that both of their sides
+// come from git. Only one side does. git spells the tree it walks; the
+// DECLARATION spells the job's own target — on the aurora shape
+// (`src/pkg -> ../packages/x/src/pkg`, the ordinary python monorepo layout) the
+// goal says `src/pkg/` and git says `packages/x/src/pkg/...`, and the same
+// physical file reads as two populations again: `files-changed` calls a real
+// in-target edit a STRAY (a false red), and `pattern-absent-in-diff` drops it
+// out of the scanned set entirely (a suppression guard reading GREEN over a
+// file it never opened — the fake-green direction).
+//
+// Same treatment, same fail-safe rules: the physical reading runs only on a
+// LEXICAL MISS, so nothing that matched before stops matching; both sides are
+// resolved, so containment still means containment and a spelling that lands
+// outside the prefixes stays outside; and an unresolvable path (a DELETION —
+// realpath answers for the tree as it is now) falls back to lexical rather
+// than conjuring membership it never had.
+
+/**
+ * The aurora shape in a REAL repo: a physical package, a TRACKED symlink
+ * standing in for it, an in-`src/` file that is nobody's link, and a directory
+ * outside every prefix to escape into.
+ */
+function makeLinkedRepo(/** @type {any} */ t) {
+  const dir = mkdtempSync(join(tmpdir(), 'bareloop-kinds-cs-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  git(dir, ['init', '-q', '-b', 'main']);
+  write(dir, {
+    'packages/x/src/pkg/mod.js': 'const a = 1;\n',
+    'outside/leak.js': 'const b = 2;\n',
+    'src/keep.js': 'const c = 3;\n',
+  });
+  symlinkSync('../packages/x/src/pkg', join(dir, 'src/pkg'));
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '-q', '-m', 'seed']);
+  return { dir, seed: git(dir, ['rev-parse', 'HEAD']).trim() };
+}
+
+/** the physical file, and the two spellings of the package that holds it */
+const LINKED_FILE = 'packages/x/src/pkg/mod.js';
+const LINKED_VIA = 'src/pkg/';
+const LINKED_PHYS = 'packages/x/';
+
+/** @param {string[]} allowPrefixes */
+const FC = (allowPrefixes) => ({ name: 'changed-from-seed', kind: 'files-changed', params: { allowPrefixes, requireNonEmpty: true } });
+
+test('files-changed: a file git spells PHYSICALLY, under a prefix declared through the SYMLINK, is INSIDE — not a stray', async (t) => {
+  const r = makeLinkedRepo(t);
+  write(r.dir, { [LINKED_FILE]: 'const a = 2;\n' });
+  const cs = await changedSet(r.dir, r.seed);
+  assert.deepEqual(cs.paths, [LINKED_FILE], 'git reports its own spelling; the declaration holds the other one');
+
+  const res = await runStage(FC([LINKED_VIA]), ctxFor(r));
+  assert.deepEqual(res.detail.outside, [], res.gapLines.join('\n'));
+  assert.equal(res.verdict, 'green', 'the run edited exactly the package the close named — two spellings, one file');
+});
+
+test('files-changed: a changed path that IS the symlink counts by where it PHYSICALLY lives', async (t) => {
+  const r = makeLinkedRepo(t);
+  symlinkSync('../packages/x/src/pkg', join(r.dir, 'src/pkg2'));
+  const cs = await changedSet(r.dir, r.seed);
+  assert.deepEqual(cs.paths, ['src/pkg2'], 'git lists the link itself and never walks through it');
+
+  const res = await runStage(FC([LINKED_PHYS]), ctxFor(r));
+  assert.deepEqual(res.detail.outside, [], res.gapLines.join('\n'));
+  assert.equal(res.verdict, 'green');
+});
+
+test('files-changed: a spelling that PHYSICALLY lands outside every allowed prefix stays OUTSIDE — the fence never widens', async (t) => {
+  const r = makeLinkedRepo(t);
+  const away = mkdtempSync(join(tmpdir(), 'bareloop-kinds-away-'));
+  t.after(() => rmSync(away, { recursive: true, force: true }));
+  writeFileSync(join(away, 'elsewhere.js'), 'const d = 4;\n');
+  // both wear a spelling that sits right next to the allowed prefix and neither
+  // is the file it names: one escapes to a sibling directory, one leaves the
+  // repository altogether
+  symlinkSync('../outside/leak.js', join(r.dir, 'src/pkg2.js'));
+  symlinkSync(join(away, 'elsewhere.js'), join(r.dir, 'src/pkg3.js'));
+  write(r.dir, { [LINKED_FILE]: 'const a = 2;\n' });
+
+  const res = await runStage(FC([LINKED_VIA]), ctxFor(r));
+  assert.deepEqual(res.detail.outside, ['src/pkg2.js', 'src/pkg3.js'],
+    'resolution unifies two names for one file — it never lets a third file in');
+  assert.equal(res.verdict, 'red');
+  const gap = res.gapLines.join('\n');
+  assert.match(gap, /src\/pkg2\.js/);
+  assert.match(gap, /src\/pkg3\.js/);
+});
+
+test('files-changed: a DELETED file has no realpath and keeps its LEXICAL membership, neither gaining nor losing', async (t) => {
+  const r = makeLinkedRepo(t);
+  rmSync(join(r.dir, 'src/keep.js'));
+  assert.equal(existsSync(join(r.dir, 'src/keep.js')), false, 'realpath answers for the tree as it is NOW');
+  const kept = await runStage(FC(['src/']), ctxFor(r));
+  assert.deepEqual(kept.detail.changed, ['src/keep.js']);
+  assert.deepEqual(kept.detail.outside, [], kept.gapLines.join('\n'));
+  assert.equal(kept.verdict, 'green', 'a deleted in-scope file still counts as changed by its own spelling');
+
+  // the other direction, and the one that must stay shut: a deletion inside the
+  // symlinked package cannot be resolved either, so the fallback is lexical and
+  // it stays outside a prefix declared through the link. An accepted limit,
+  // stated rather than fixed — inventing membership for a file that is not on
+  // disk is the fail-open direction, and it is never the one taken.
+  const r2 = makeLinkedRepo(t);
+  rmSync(join(r2.dir, LINKED_FILE));
+  const gone = await runStage(FC([LINKED_VIA]), ctxFor(r2));
+  assert.deepEqual(gone.detail.outside, [LINKED_FILE]);
+  assert.equal(gone.verdict, 'red');
+});
+
+test('pattern-absent-in-diff: a suppression added through the symlinked package is SCANNED, not silently out of scope', async (t) => {
+  const r = makeLinkedRepo(t);
+  write(r.dir, { [LINKED_FILE]: 'const a = 1;\n// @ts-ignore\n' });
+  const res = await runStage(GUARD({ scope: { includePrefixes: [LINKED_VIA] } }), ctxFor(r));
+  assert.deepEqual(res.detail.scannedFiles, [LINKED_FILE],
+    'the lexical filter scanned NOTHING and the guard read green over a file it never opened');
+  assert.equal(res.verdict, 'red');
+  assert.match(res.gapLines.join('\n'), new RegExp(`\\[ts-ignore\\] ${LINKED_FILE.replaceAll('/', '\\/').replaceAll('.', '\\.')}:2`));
+});
+
+test('pattern-absent-in-diff: a spelling resolving OUTSIDE the declared scope is never scanned INTO it', async (t) => {
+  const r = makeLinkedRepo(t);
+  write(r.dir, { 'outside/leak.js': 'const b = 2;\n// @ts-ignore\n', [LINKED_FILE]: 'const a = 2;\n' });
+  symlinkSync('../outside/leak.js', join(r.dir, 'src/pkg2.js'));
+  const res = await runStage(GUARD({ scope: { includePrefixes: [LINKED_VIA] } }), ctxFor(r));
+  assert.deepEqual(res.detail.scannedFiles, [LINKED_FILE],
+    'the escaping spelling carries a real suppression — it must not be pulled into this population');
+  assert.equal(res.verdict, 'green');
+});
+
 test('addedLines: an untracked path that cannot be STATTED is ANNOUNCED, never scanned-clean in silence', async (t) => {
   const r = makeRepo(t, { 'src/a.js': 'a\n' });
   // a dangling symlink: it exists to git ls-files --others, and stat() throws

@@ -469,7 +469,7 @@ function underPrefix(rel, prefix) {
  */
 function physicalIn(workdir) {
   if (!workdir) return null;
-  /** one realpath per distinct path per parseValue call — a tool names the same
+  /** one realpath per distinct path per stage/parse call — a tool names the same
    * file on many lines, and the scope filter reads every one of them */
   const cache = new Map();
   const real = (/** @type {string} */ abs) => {
@@ -508,24 +508,41 @@ function underPrefixPhysically(rel, prefix, phys) {
   return fileAbs === preAbs || fileAbs.startsWith(preAbs.endsWith(sep) ? preAbs : `${preAbs}${sep}`);
 }
 
+/**
+ * The fence's ONE containment reading, shared by every site that has one.
+ * Lexical FIRST and physical only on a miss: every spelling that matched
+ * before still matches, so resolution can only ever unify two names for one
+ * file — it never takes membership away, and it never reaches past a prefix
+ * that does not physically contain the file.
+ *
+ * Without a resolver (`phys === null`) this IS the old lexical fence, byte for
+ * byte.
+ * @param {string} rel @param {string} prefix
+ * @param {{real: (rel: string) => string|null}|null} phys
+ */
+function underPrefixEither(rel, prefix, phys) {
+  return underPrefix(rel, prefix) || (phys !== null && underPrefixPhysically(rel, prefix, phys));
+}
+
 /** @param {string} rel @param {any} scope
  * @param {{real: (rel: string) => string|null}|null} [phys] physical resolver;
- *   absent (the changed-set callers, whose paths are git's own spelling on both
- *   sides) leaves the comparison purely lexical */
+ *   absent leaves the comparison purely lexical */
 function inScope(rel, scope, phys = null) {
   if (!scope || typeof scope !== 'object') return true;
   const inc = Array.isArray(scope.includePrefixes) ? scope.includePrefixes : null;
   const exc = Array.isArray(scope.excludePrefixes) ? scope.excludePrefixes : null;
-  // the physical reading runs only on a lexical MISS, so every spelling that
-  // matched before still matches — this only ever unifies two names for one file
-  const under = (/** @type {string} */ p) => underPrefix(rel, p)
-    || (phys !== null && underPrefixPhysically(rel, p, phys));
+  const under = (/** @type {string} */ p) => underPrefixEither(rel, p, phys);
   if (inc && !inc.some(under)) return false;
   // exclusion resolves too: a symlink spelling must not smuggle a file past an
   // exclude the physical spelling would have caught
   if (exc && exc.some(under)) return false;
   return true;
 }
+
+/** does this declared scope actually filter anything? — one spelling of the
+ * question, so no caller can decide it differently from another
+ * @param {any} scope */
+const scopeFilters = (scope) => !!scope && (Array.isArray(scope.includePrefixes) || Array.isArray(scope.excludePrefixes));
 
 /**
  * The first repository-relative path a tool named on a line, or null. At
@@ -681,7 +698,7 @@ export function parseValue(output, terms, { scope = null, workdir = '' } = {}) {
   const breakdown = [];
   /** @type {string[]} */
   const notes = [];
-  const filtering = !!scope && (Array.isArray(scope.includePrefixes) || Array.isArray(scope.excludePrefixes));
+  const filtering = scopeFilters(scope);
   // one resolver (and one realpath cache) per call, built only when a filter
   // will actually read it
   const phys = filtering ? physicalIn(workdir) : null;
@@ -1084,7 +1101,12 @@ async function runPatternAbsentInDiff(stage, ctx) {
 
   const untracked = new Set(cs.untracked);
   const exts = p.extensions.map((/** @type {string} */ e) => (String(e).startsWith('.') ? String(e) : `.${e}`));
-  const scanned = cs.paths.filter((rel) => exts.some((e) => rel.endsWith(e)) && inScope(rel, p.scope));
+  // git spells the tree it walked; the declared scope spells the job's own
+  // target, and on a symlinked package those are two names for one file. The
+  // lexical-only reading dropped the real file out of the scanned set and read
+  // GREEN over a suppression it never opened — a guard's fake-green direction.
+  const phys = scopeFilters(p.scope) ? physicalIn(ctx.workdir) : null;
+  const scanned = cs.paths.filter((rel) => exts.some((e) => rel.endsWith(e)) && inScope(rel, p.scope, phys));
 
   /** @type {RegExp[]} */
   const res = [];
@@ -1128,7 +1150,17 @@ async function runFilesChanged(stage, ctx) {
   const p = stage.params;
   const cs = await changedSet(ctx.workdir, ctx.seedRef);
   if (cs.stop !== null) return stopped(stage, ctx, cs.stop, {}, cs.fault);
-  const outside = cs.paths.filter((rel) => !p.allowPrefixes.some((/** @type {string} */ pre) => underPrefix(rel, pre)));
+  // the containment fence resolves too. Only ONE of its two sides is git's
+  // spelling — `allowPrefixes` is the job's own target, and on the aurora shape
+  // (`src/pkg -> ../packages/x/src/pkg`) the declaration says `src/pkg/` while
+  // git says `packages/x/src/pkg/...`: a real in-target edit read as a stray.
+  // Physical only on a lexical miss, both sides resolved, so a spelling that
+  // lands outside every prefix is still outside. ACCEPTED, stated rather than
+  // fixed: a link that LIVES outside a prefix and POINTS inside it now counts
+  // as inside — the same reading the scope filter has shipped since de61e87,
+  // and the mild direction; the escaping one stays shut.
+  const phys = physicalIn(ctx.workdir);
+  const outside = cs.paths.filter((rel) => !p.allowPrefixes.some((/** @type {string} */ pre) => underPrefixEither(rel, pre, phys)));
   const empty = p.requireNonEmpty === true && cs.paths.length === 0;
   const gap = new Gap(ctx.gapKeep, ctx.gapCap);
   if (empty) gap.push(`${stage.name}: nothing changed against the seed — the changed set is empty`);
