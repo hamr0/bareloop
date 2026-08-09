@@ -5,6 +5,427 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.9.0] — 2026-08-09
+
+The **close-authoring rung**. The close stops being a hand-written script and becomes a
+DECLARATION over kinds bareloop owns: a user answers a six-question interview, an LLM
+composes the declaration by calling a schema-derived tool, three mechanical gates run it
+against the real repository, and a human signs the hash. Nothing here judges a close —
+no LLM validates another LLM's close, at any point (D9). Design record (D1–D13, FROZEN):
+`docs/plans/2026-08-07-close-authoring-design.md`; PRD v1.51–v1.58.
+
+### Added
+
+- **M1 — `src/kinds.js`, the kind executor: four kinds under three inherited runtime
+  contracts.** The four kinds (`command-exit`, `count-not-worse`, `pattern-absent-in-diff`,
+  `files-changed`) are the small part; the CONTRACTS every kind inherits are the
+  load-bearing part, and they live in the executor where no declaration can weaken them.
+  **Instrument-stop** (exit 97, `judged` withheld — a broken instrument is a CASUALTY, never
+  a red; and `first`-over-nothing is *unknown* where `sum`-over-nothing is a counted 0).
+  **The gap** (`gapKeep` on every line, trims announced and counted). **The changed set**
+  (diff plus untracked, minus `.litectx/` by PREFIX and `gate-audit.jsonl` by EXACT path —
+  so a worker-authored `src/gate-audit.jsonl` still counts). Graduated from the gate-2 POC
+  executor as a REWRITE: async spawn (`spawnSync` freezes the host loop the stall fuse lives
+  in, F68), caller-scoped seed worktrees under the OS temp dir rather than a module-global
+  cache inside the package, and the arbiter's own `CLOSE_ENV_DENY` imported rather than
+  re-spelled. **D12 rides on top: the close stores the COUNTING RULE and never a number** —
+  every run measures its own seed, with the route that measured it recorded. 49 integration
+  tests over real temp git repos and real child processes.
+- **M2 — the catalogue, the TYPES genre, and the declaration validator: a path is SELECTED
+  from the tree, never derived from prose.** One module, because the catalogue, the genre
+  and the validator are one contract read from three sides, and a second spelling of any of
+  them is the drift class the parser normaliser already exists to prevent.
+  - **`KIND_CATALOGUE` IS the whole vocabulary.** The four live kinds are keyed to the
+    executor's own `LIVE_KINDS` and asserted equal in BOTH directions. `judged-floor` and
+    `human-confirms` are LOCKED menu entries — a distinct `locked-kind` red at validation,
+    before any tokens, carrying `verb` + `lib: 'bareloop'` so the demand is counted on
+    structured fields and never filed against a bare-suite package (the BA-2 class).
+    `harness-loop` (TESTGEN) is **ABSENT** — no entry at all, so declaring it is an
+    unknown-kind typo, which is the honest reading of a kind that is out of v1.
+  - **The genre template is FROZEN TEXT.** The suite reads addendum 3 out of the prereg and
+    compares BYTES, so a paraphrase in source fails the build rather than quietly changing
+    what every future close is authored against. The JS 7-pattern and Python 5-pattern
+    suppression batteries come from the hand-written closes' own `SUPPRESSIONS` tables —
+    operator-owned genre knowledge now. Two residues land as genre DATA, ours to inject and
+    never model-filled: guard **SCOPE** (`no-suppressions` ships with NO scope and nothing
+    left to fill — the POC's arm A narrowed it to the two target files, which reads stricter
+    and is not, because a suppression in a new helper walks straight through; narrowing an
+    injected guard is a red, not a taste) and genre **ENV** (`MYPYPATH` is expressed here and
+    applied by the flow — it moves no seed number, so no seed-verdict read can ever catch its
+    absence, and a declaration that authors it itself reds `genre-owned-env`).
+  - **The validator**: schema, kinds, params, F49's static nested-quantifier reject over
+    every model-authored regex (the detector itself untouched — monotonic-only), the parser
+    through M1's normaliser verbatim, and the **F84 one-population law in both halves** (a
+    count over a scoped job must NAME its population; the same cmd+parser+scope declared
+    twice is one number wearing two stage names — with the in-scope/outside split, the thing
+    the law exists to protect, asserted to stay legal). Plus **hamr's listing rule**: every
+    path-like param must SELECT from the seed listing. The POC's arm A derived
+    `src/alertEmail.js` from the user's prose and silently reclassified 15 real errors into
+    the wrong population; no READING of a declaration catches that, and a prefix match
+    against `git ls-tree` does. The red hands back what DOES exist beside the invented path —
+    named items, counted, capped (F38/F39), never a paragraph.
+  - Three preconditions fail CLOSED, all guarding one failure — *a validator handed nothing
+    to check against reports a declaration it never examined*: `listing` and `guards` absent
+    are reds, and `envOwned` splits ABSENT from EMPTY (`[]` is a genre that owns no
+    variables; `undefined` is a caller that never asked — F59's distinction in the shape it
+    bites here). One disagreement the tests caught and the code won: a bare `**` is **NOT a
+    root** — `globToPrefix` collapses only the `/**` SUFFIX, so admitting it would put the
+    validator and the grader on two spellings of one scope (the F9 red class): green at the
+    gate, and a containment guard that reds every file at runtime. It reds. 46 tests TDD,
+    watched failing first; 54-mutant battery, ZERO survivors (six holes closed on the first
+    pass).
+- **M3 — the declaration is CALLED, not written** (`src/authorscout.js` LOOKS,
+  `src/authorflow.js` WRITES; neither ACTS — D11's split). The load-bearing change against
+  the gate-2 POC is hamr's schema-forcing ruling: the model answers by calling
+  **`declare_close`**, whose input schema IS the declaration shape and is DERIVED from the
+  catalogue — kind list, locked-ness, parameter names and every enum read from M1/M2, with
+  `schemaCoverage` failing the build loudly if the catalogue ever grows a parameter the
+  schema cannot express. A malformed emission is an artifact-red on its own bounded axis; the
+  tolerant text parse survives only as a marked fallback for a provider with no tool mode.
+  - Two consequences named rather than smoothed: **a locked kind now has no schema branch, so
+    declaring one is INEXPRESSIBLE** — which means M2's `locked-kind` demand counter is
+    reachable only from the interview layer or the text fallback, and the header says so
+    instead of pretending the channel is intact. And the tool is an OUTPUT CHANNEL that takes
+    no action, so D3's "no tools at all" is untouched: **hamr's law is about actions, not
+    syntax.**
+  - **Measured, both arms against the real `Loop`:** stopping the loop inside the tool costs
+    1 provider round and $0.001; unwired costs 2 and $0.002 — tool mode does not cost double
+    what text mode did.
+  - Three defects found by the tests before a run found them: a FLAT directory beat every
+    listing tier (200 names render as 200 names at "counts-only"), so the prompt ingredient
+    was unbounded — names now give way, counts never do, with a backstop bounding the block
+    that beats every tier; an unreadable listing returned no `files` key at all, which
+    destructures to `undefined` and reads as falsy-empty (the exact absent-renders-as-empty
+    shape this module exists to refuse); and the genre-env injection rewrote stages it had no
+    reason to touch, making the signed form differ from what the model wrote for no stated
+    reason. **F59 is enforced five ways and refuses at $0** — an ABSENT survey, an EMPTY facts
+    object, an unreadable listing, an empty tree and an unbuildable genre variable each stop
+    the flow before a token is spent. 1222/1222; 40 of 41 mutants killed.
+- **M4 — the close is a SIGNED FIELD, not a compiled script** (`closeDecl`,
+  `src/declaredclose.js`, `src/authorjob.js`). **The integration decision is made in the open
+  and named in the source:** a declared close is carried by a new spec field and executed by
+  M1's own kind executor. The cheaper alternative — render each declared stage as a shell
+  one-liner and let the existing `close[]` path run it — is REJECTED, and the rejection is the
+  point: it would turn owned kinds back into authored shell strings, which is exactly what D3
+  makes inexpressible. A declaration whose meaning is a generated `sh -c` is a script with
+  extra steps, and the arbiter would be judging text nobody validated.
+  - **Two executors, ONE contract.** Every behaviour the command path already had is pinned
+    by a test on the declared path: first-red-wins with the deciding stage naming itself; the
+    forbidden zone routed by a TYPED fault (`STOP_FAULTS`, stamped in M1 at the site that
+    OBSERVED it) so a timeout still offers *"raise the close timeout"* and a spawn failure
+    still offers *"fix the close"*; the gap header from ONE template (`stageGap`, now exported
+    — `src/trend.js` parses that exact line); the scrub at the emission boundary; and the
+    check menu still derived from stage names, one hop, one direction.
+  - **`close` and `closeDecl` are ALTERNATIVES, refused rather than merged**
+    (`close-duplicated`): a spec with two closes has two arbiters, and *picking one silently
+    is how a signed artefact stops meaning what the signer read*. The declared close is
+    HARD-class in the SAME table the close types use (`CLASS_BY_CLOSE.declared`), so a locked
+    verdict on one reds twice — as counted demand AND as `close-hierarchy`.
+  - **The gate is SPLIT honestly, not skipped.** A job spec is validated with no repository
+    in hand, so the listing rule and the scoped-job derivation that arms the F84 law are
+    DEFERRED there — `deferListing: true`, spelled literally, with `grounded: false` on the
+    result — and the RUNNER re-runs them against the real seed before any stage and before any
+    token. Proven both ways: the invented path `src/alertEmail.js` passes the spec gate and
+    dies at the runner, with **zero provider calls**.
+  - **D8/D12 ride together.** The seed is HEAD at run start, READ and recorded on a
+    `close-decl` spine event, never typed and structurally absent from the signed spec —
+    `seedRef` is an unknown-field red on `closeDecl`, because a baseline frozen at signing
+    judges run 5 against run 1's tree. `baseline: "seed"` is measured at each run's own start,
+    every run.
+  - **Two things the bridge adds**, because the declared executor knows more than an exit code
+    does: a `gapKeep` derived from one prefix constant, so Layer R's red-set has an instrument
+    on this path too; and a TREND VALUE donated **only** for `lower-is-better` — the omission
+    is the load-bearing half, since `trend.js` reads improvement as `value < best`, so donating
+    a higher-is-better test-count floor would read a DROPPING count as convergence and
+    recommend a top-up on a dying run. Null is the honest answer (F6); the stage position still
+    travels.
+  - **F90, two findings, neither found by a failure.** The design record's one named defect
+    (D13's ledger request-red misattribution) was ALREADY FIXED on `main` four days before the
+    record was written, so what M4 owed was the PROOF the new emit site routes through it — a
+    regression test walking refusal → `refusalEvents` → `classifyIncidents` → `suggestedAsk`,
+    asserting the ask reads "bareloop:" and names no bare-suite package, with both halves
+    killed as separate mutants (*a frozen document is frozen against rewriting, not against the
+    world moving underneath it* — F63 in its cheapest form). And a SECOND gap renderer silently
+    blinded Layer R's trim detector: it refuses to compare a red-set from a trimmed window by
+    looking for ralph's own marker, and the kind executor announces its trims in different
+    words — the direction that MANUFACTURES a fixation reading out of a blind instrument. Fixed
+    by exporting the executor's marker and reading both. *The shared-marker guard held
+    perfectly and was still defeated, not by drift but by a producer the reader had never heard
+    of.*
+  - 46 new tests over real temp git patients, real child processes and real `runPlan` (the
+    runner seam is the highest-risk part of the module and nothing there is mocked). 1268/1268;
+    mutation battery 22/22 after one honest survivor — a test asserting `reds.every(…)` over an
+    array the mutant left EMPTY, the conditional-over-a-never-true-fixture trap in its
+    `.every([])` form.
+- **The interview re-keys from GENRE to VERDICT CLASS, and the pick is a PROMISE** (PRD v1.57
+  §1–§2 — **this SUPERSEDES D4**). `verdictType` is a USER-facing RADIO (`green` | `soft-green`
+  | `hitl` — the spelling already shipped in `job.js`; the design brief's `softgreen` would have
+  flipped every signed hash). **v1 admits only `green`**; a locked pick returns the counted
+  `request-red` refusal BEFORE its questions run.
+  - `QUESTION_SETS` replaces `TYPES_QUESTIONS`. The green set is TYPES' **six** questions
+    byte-for-byte — they were already genre-neutral, so generalising meant DELETING the D13
+    genre-confirm slot, not rewording. Locked sets carry `questions: null`, never `{}` (absent
+    is never empty, F59), and `questionsFor` THROWS on them: reaching questions means admission
+    failed to refuse. Genre understanding moves into `CLASS_STATEMENTS` fed to the composer, and
+    the genre refusal moves to the composer on the same counted path.
+  - **The guard battery re-homes to the class** (hamr: *"battery ties with job type"*).
+    `CLASS_BATTERIES` keys attachment — which guards, and their un-removability — off the class;
+    the tool-specific contents fill at COMPOSITION from the language the declaration names. **An
+    empty battery is IMPOSSIBLE, enforced not asserted**: unknown class, locked class, unknown
+    language, empty fill and zero guards all THROW.
+  - **Class-vs-ceiling, ruled *"yes to both, go"*:** every catalogue kind carries its
+    `verdictClass`, and a declaration whose ceiling EXCEEDS the pick is an honest
+    `class-ceiling` red naming the kind — never a silent upgrade or downgrade. Inert in v1 by
+    construction, and proven FIRING against an injected soft-green kind.
+  - Driver: **`--verdict` is REQUIRED** — a defaulted radio would answer the user's question for
+    them; `answers.json` drops key 7. Live smoke: `--verdict hitl` refuses at $0
+    decision-ready, `--verdict green` runs to the provider boundary. 14/14 mutants killed; the
+    saved PREPARED python spec still validates post-rework. 1354/1354.
+- **The scout gets 3 typed attempts, and every raw lands in the books** (PRD v1.58). hamr's
+  rulings in the register, verbatim: *"retry on scout too, tighten-only same as revisions"*;
+  *"depending on causes, we can hardcode 3 attempts, but if reasons are beyond malformed then we
+  may verge into self-healing … i don't think we should"*; *"for audit, it should come on top of
+  existing audit trails … scrub for common things in general"*.
+  - `SCOUT_ATTEMPTS = 3`, hardcoded; the `attempts` parameter is TIGHTEN-ONLY and CLAMPS rather
+    than throws (floor **1** — a scout that never ran is an ABSENT nobody can act on). The gate
+    reads TYPED causes stamped at the detection site and **only the malformed class retries**
+    (`empty` | `unparseable`). What is excluded is excluded for a reason: `call-failed` covers
+    transport and `truncated:max_tokens` (provider-red, no redraft), `short` is F59's cut-off
+    population and already has its own instrument INSIDE the attempt, and `non-object` /
+    `empty-object` are valid JSON with vacuous content — a SEMANTIC failure, which F38/F39
+    measured as the same distribution sampled twice. **That is the self-healing line, and it is
+    not crossed.** The re-ask is TOOLLESS over the survey's own conversation, naming the
+    mechanical parse error and position and nothing else — the repository was already read, only
+    the emission was unreadable. **There is no JSON repair behind it and there never will be**: a
+    repairer decides what the model MEANT and writes it down as though the model had said it, in
+    the one artefact whose whole job is to be honest about what a repository contains.
+  - **`raws` — what every model call actually SAID**, the scout's attempts absorbed alongside the
+    declaration's, in the cost book's own order and under the same labels it meters. `scrubRaw` /
+    `RAW_PERSIST_MAX` (8000) / `RAW_TRIM_MARKER` join `src/text.js` as the third one-spelling
+    model-output helper — a NEW trim spelling deliberately, because `GAP_TRIM_MARKER` has a
+    reader with a different meaning (F90). One recorder writes the cost entry and the raw
+    together (labels pinned pairwise by test), the cut is walked back off a continuation byte so
+    a multi-byte character is never split, and **raws are present on the `$0` preflight refusal
+    paths too** — the path that spends nothing more is exactly the one whose evidence used to die
+    with the process. `iterations` records what a turn MEANT; `raws` records what it SAID, and a
+    malformation is only ever visible in the second. Attribution fix found mid-build: the
+    classified blob is tracked BY INDEX, not `raws.at(-1)` — an F59 recovery discard had
+    mis-stamped the verdict. E2E replay of `mslhn707`'s real failure shape: 3 labelled calls,
+    raws carrying causes and attempt indexes, reason *"— after 3 attempts"*, and a planted
+    key-shaped secret scrubbed to 0 across the serialized artifact. 1405/1405.
+- **The WORK BRANCH is a hard rule, enforced STRUCTURALLY** (PRD v1.57 §3; `src/workbranch.js`).
+  hamr's ruling, built as ruled: *"The agent creates a NEW BRANCH before it touches any code — a
+  HARD RULE, no exceptions… Named with a meaningful slug."*
+  - **Structure over ordering:** `mkWorker` — the single seam that grants write-class verbs —
+    THROWS a categorised interpreter-red if asked for a writable worker with no branch prepared.
+    That covers both write sites and any future third, which an ordering rule cannot. The seam
+    sits at planrun step 0c: after the $0 precheck/preflight (an already-green tree leaves no
+    branch behind), before the scout (every branch fault is an instrument stop costing zero
+    tokens).
+  - The slug is `bareloop-` + the SIGNED spec's `job` field, kebab-validated and INSIDE the spec
+    hash, so the name cannot drift from what was signed (goal prose was rejected as a source, and
+    the rejection is documented). `WORK_BRANCH_RE`'s alphabet makes `..`, `@{`, `.lock`, a leading
+    `-`, and **`main`/`master` inexpressible**; `prepareWorkBranch` re-validates even a
+    hand-passed name. Collisions take `-2`/`-3` suffixes (one blast radius per try). **Resume
+    returns to ITS OWN recorded branch** (a `work-branch` spine record; `readResume`'s
+    `restart.branch`), and a recorded branch that is GONE is a STOP, never a fresh start — the
+    surviving mutant taught the assertion to demand the arbiter's own wording. **`branch-red` is
+    a distinct terminal, excluded from ledger classification** (an interpreter-red would aim an
+    upstream ask at a library for a patient nobody prepared). Adjacent fix: `relay` now passes
+    the category through instead of filing wiring faults as transport casualties.
+  - **Consequences recorded in `bareloop.context.md`, hamr-agreed:** the patient must be a git
+    repository with at least one commit, AND is always a separate COPY of the treated repo, never
+    the original — *"keep patients copies separate from original, always"*; the copy is the blast
+    radius. A detached HEAD attaches (`from: null`); a subdirectory workdir branches in the
+    enclosing repo (pre-existing semantics, now on the record). 18 new tests against real tmp git
+    repos plus guard/resume coverage across `planrun`/`run`/`reuse`, watched failing first; 2
+    sabotages and a mutation pass. 1387/1387.
+- **`scripts/run-author.mjs` — the authoring driver, now tracked**, and the paid proofs it
+  bought. **pulselog (JS) reached SIGNING PREPARED twice** ($0.25 / $0.22), with the trial gate at
+  32s and a **byte-identical spec hash across cold runs**. **aurora (python) refused honestly
+  twice**, and both refusals were the product working: run 1 a real uncrafted `mypy` fatal
+  (symlink `MYPYPATH`), run 2 the scope filter dropping error lines reported through a symlink
+  spelling — where the crash-stop correctly refused a 0-count instead of minting a fake green on a
+  tree carrying 16 strict errors. The fix then converted that refusal **for $0 on the same saved
+  declaration**: SIGNING PREPARED, all three gates green, `typecheck-spawner` honest RED at seed
+  (16 vs 0), `specHash` byte-identical to the failed run's own hash. Second sitting, $0.59 (F93):
+  `mslsnnzk` $0.345 diagnosing, `mslwbkz7` $0.245 validating the fix live — same composed shape,
+  GREEN `value=0` with the dropped-count note, three gates PASS, SIGNING PREPARED on the reworked
+  code. F91 / F92 / F93.
+
+### Changed
+
+- **`maxRevisions` joins every other cap as TIGHTEN-ONLY.** The bound predated the law:
+  `maxRevisions: 50` bought fifty revise rounds, and unlimited revising is exactly the
+  thrash-as-adaptation the prereg forbids. The clamp lives at the ONE seam inside `authorClose`,
+  so it is not a rule any caller can be trusted to keep — the loop reads a DERIVED cap and the
+  parameter never reaches it. The floor is **0** (author once, no revise round — already a legal
+  loop shape) rather than the scout's floor of 1, and a non-finite or negative value lands on the
+  floor instead of a bound the loop never enters.
+- **`structureRetries` becomes tighten-only** under the constant that already claimed to be its
+  ceiling, and **`effectiveTimeoutMs` with it** — the same direction every cap in this system runs
+  in.
+- **Absolute paths join the command deny-floor, rejection-only.** `checkKind` gained a command
+  deny-floor plus an absolute-path/traversal refusal during the review rounds; drive-absolute
+  spellings (`C:\…`) were the gap left in it. Monotonic: the floor only ever adds rejections.
+- **The ten hand-written close scripts import `JUDGED_MARKER` from `src/kinds.js`** instead of
+  respelling `judged=1` as a literal (hamr-approved wiring). Output proven byte-identical by
+  EXECUTION on all ten; no signed spec hash flips (`jobSpecHash` covers the resolved spec object,
+  not script bytes). **Known new coupling, recorded not hidden:** close scripts now import the
+  `src/` graph, which matters if they ever ship standalone.
+- **A GREEN declared close now reports what its stages announced** (`notes`). `translate()`
+  computed a stage's gap text and threw it away on GREEN and on INSTRUMENT-STOP — but M1's kinds
+  announce some things whichever way a stage lands (a declared env var that was dropped, the scope
+  filter's own arithmetic), so the bridge was dropping the **check-both-greens** audit trail on
+  the floor. Surfaced as `notes`, absent when empty, per stage as well as on the summary — and
+  deliberately NOT `.gap`, because every consumer downstream guards with `if (gap)`, so a green
+  carrying one would read as revision-worthy and a stop carrying one would look like a verdict it
+  never rendered. Verified inert: every spine reader keys on `verdict`/`gap`/`stage`, nothing
+  routes or bounds on this field, and **no verdict moves.**
+- **`assembleSpec` REFUSES a draft that already carries the authored half** instead of clobbering
+  it. It used to drop a draft's `close` on the floor and stamp its own `verdictType` over the
+  operator's, silently — the case `src/job.js` already rules on in its own words (*"picking one
+  silently is how the signed artefact stops meaning what the signer read"*), one step earlier. Now
+  a named refusal over `AUTHORED_SPEC_FIELDS` (`close`, `closeDecl`, `verdictType` — the fields
+  the fold WRITES, named as data so the refusal and the fold can never disagree about which half
+  of the spec is which), and `run-author` asks the same question at **$0 BEFORE the scout**, so
+  the answer never arrives after the model has been paid.
+- **`closeStagesOf(job)` is the ONE staging every close consumer reads**, widened to both fields
+  — a consumer reading `close` alone sees a declared job as CLOSELESS and offers the drafter an
+  empty check menu. `scripts/consolidate-bridges.mjs` was still calling `stageClose(spec.close)`
+  and refusing declared-close specs for the one reason untrue of them; migrated (a spec with
+  neither field still dies honestly).
+
+### Fixed
+
+- **F93 — the broken-ruler guard read match counts AFTER the scope filter, so a LIVE tool over an
+  empty population read as a DEAD one** (`src/kinds.js`). `count-not-worse`'s crash guard summed
+  `breakdown[].matches`, which `parseValue` tallies after the scope filter has already dropped the
+  out-of-population lines. **Two entirely different worlds collapsed into that one number**: a
+  tool that crashed before it looked at the tree, and a tool that RAN and printed parseable
+  findings which all fell outside this stage's scope. Run `mslsnnzk` paid for it: `npm run
+  typecheck -- --strict` exited 2 and printed **67 real `error TS\d+:` lines**, every one under
+  `src/`, against a stage scoped `excludePrefixes: ["src/"]` — post-scope the count was 0, the
+  stage stopped as a crashed instrument, and **a good close was refused at gate 2**.
+  - The same two-faults-read-as-one class the `first` aggregate's own stop had already SPLIT in
+    its own comment; the `sum` path carried the unfixed twin. `parseValue` now reports
+    `preScopeMatches`, tallied where LIVENESS lives — before the filter has an opinion, kept +
+    unattributable + dropped alike — and the guard consults that. A genuinely silent non-zero exit
+    still matched nothing pre-scope and still stops: **the fail-safe is untouched in the direction
+    it was chosen for**, and the accepted limit for `grep -c` / pytest-5 stands unchanged. One
+    `parseValue` call site (`measure`) serves both the current tree and the seed worktree, so the
+    baseline-side measurement gets the same reading by CONSTRUCTION; `command-exit` and
+    `pattern-absent-in-diff` never touch it.
+  - The stop lane also stops throwing away its own diagnostics: `stopped()` takes the notes a
+    measurement had already computed and renders them under the stop, so a `first` term whose every
+    match was scope-excluded sends the reader to the SCOPE instead of hunting a parser bug.
+  - **Validated live, not asserted:** `mslwbkz7` composed the same shape on the post-fix code and
+    walked to SIGNING PREPARED — GREEN `value=0` with the dropped-count note, three gates PASS.
+    F92's shape-lottery framing is **refuted in part**: the model composed the same correct
+    inside/outside split 3/3 (systematic, not a roll); what varied was the AGGREGATE, and only one
+    of the two resulting stops was a defect. The attribution was corrected the same night off the
+    artifacts — the crash guard fired **once**, on `mslsnnzk`; `mslhpw2v`'s stop was the
+    `first`-path fail-safe working as designed. **The parked re-compose-on-refusal lever survives
+    as a build and loses this run as its justification:** a retry loop cannot heal a mislabeled
+    instrument.
+- **The scope filter and the FENCE compare FILES, not spellings.** The live python rerun refused at
+  the seed gates because `mypy` under `MYPYPATH=src` reports every error through aurora's tracked
+  symlink spelling (`src/aurora_spawner/…`) while the declared scope held the physical spelling
+  (`packages/spawner/src/…`) — the lexical filter dropped all 16 real error lines, and 0 matches +
+  exit 1 tripped the crash-stop. **The fail-safe did its job on first live contact:** without it, a
+  COUNTED ZERO against baseline 0 would have minted a fake green on a tree carrying 16 strict
+  errors. Fixed by resolving BOTH sides to physical identity via `realpathSync` **on a lexical miss
+  only**, per-call cache; unresolvable paths fall back to lexical (fail-open killed by sabotage AND
+  by a pre-existing shipped test), and a symlink resolving OUTSIDE every prefix stays excluded.
+  - Then hamr: *"fence fix approved, wire both."* The two remaining lexical sites get the same
+    mechanism through one shared `underPrefixEither` (lexical first, physical only on a miss; a
+    null physical resolution is the old fence byte for byte): `runFilesChanged`'s `allowPrefixes`
+    containment and `runPatternAbsentInDiff`'s scope. **The gap was REAL, not hygiene** — a
+    watched-failing test proved the `no-suppressions` guard (the F87 antidote) scanned NOTHING and
+    read GREEN over a real `@ts-ignore` when the scope was declared through a symlink spelling. A
+    fake-green lane, now shut; the widening direction (spelled inside, physically OUTSIDE) stays
+    shut, killed by sabotage plus three shipped tests. `globToPrefix`, the `..`-prohibition and the
+    crash-stop are untouched. **Accepted limit documented in-code:** a DELETED file inside a
+    symlinked package has no realpath and falls back to lexical — a possible false red on
+    aurora-style deletions, which is the fail-safe direction, left until a live run trips it.
+- **On a RESUME the work branch is prepared BEFORE the $0 instruments** (`src/planrun.js`). Steps
+  0a (close precheck) and 0b (check preflight) are readings OF A TREE, and on a resume the tree
+  that matters is the recorded work branch — it holds the work already paid for and IS the run being
+  continued — but the seam that puts the run on it sat at 0c, below both. Standing on the handed
+  ref, the precheck could read `already-green` off a tree that is not this run's, and every
+  `baseline: "seed"` stage would baseline against it: **an instrument reading the wrong subject,
+  reading honestly and saying nothing true.** One ordering split, one seam — `prepareBranch` is
+  defined ONCE (the branch-red refusal is written once, so two call sites cannot drift into two
+  messages) and called before 0* on a resume, at 0c otherwise. The cold ruling is untouched: an
+  already-green COLD tree still returns above 0c and leaves no branch behind, because that clause
+  is about MINTING and the resume arm creates nothing (`created: false`). A resume whose branch is
+  gone or foreign now stops `branch-red` before the arbiter grades anything at all — earlier, free,
+  deterministic. (Reported by `/code-review` and deliberately NOT fixed there: the ordering is ruled
+  territory, parked for hamr's word and landed on it.)
+- **The persisted-copy scrub class closes its 3rd, 4th and 5th instances** — a string reaching a
+  record that OUTLIVES the run by a path the single redaction boundary does not cover.
+  - **3rd, both declaration gates:** validator reds were persisted VERBATIM — and gate 1b quotes
+    the SEED LISTING via the did-you-mean helper, so a secret-shaped FILENAME in the patient tree
+    reaches the persisted red through a channel the spec sweep structurally cannot see (measured:
+    spec clean, red leaks). Fixed at both gates with one shared `scrubRed` over every string field
+    — a detail-only fix was sabotage-proven INSUFFICIENT, because the structured `cmd` field ships
+    verbatim — plus symmetry wraps on the provider-derived channels.
+  - **4th, `src/authorscout.js`:** `record()` scrubs a raw at CREATION, when the verdict is not yet
+    known, and the verdict was ASSIGNED onto the stored object afterwards. `reason` is the worst
+    field to do that to — `classifySurvey`'s `CALL_FAILED` route quotes the transport's own error
+    prose verbatim, a string nobody here wrote and nobody bounds — and the raws land in
+    `authored.json` and on the spine. **The scrub had become a property of WHEN you knew the
+    verdict.** Fixed by making the stamp a FUNCTION rather than an assignment (`stampRaw` in
+    `src/text.js`, which `scrubRaw` renders its own two fields through): one place decides how a
+    diagnosis becomes persistable, exactly as one place already decided it for the text. `cause` is
+    enumerated and passes through untouched — masking a closed set would only hide a bug in the set.
+  - **5th, `src/authorjob.js`:** `notes` is the one FREE-TEXT field a model writes straight into
+    the SIGNED `closeDecl`, and it was the only string on that boundary not riding `redactSecrets`
+    while every sibling does. No live leak today (inputs are pre-scrubbed upstream and
+    `sweepSecretLiterals` reds a secret-shaped note on the way to signing), so this is the
+    defense-in-depth half of the class. Hashes are untouched: `redactSecrets` returns a
+    non-matching string byte-identical, and no fixture or signed spec carries a secret-shaped note.
+  - Every regression watched failing first with the RAW TOKEN in the actual, then watched passing,
+    then each fix sabotaged in turn and its test watched red again; assertions demand
+    `scanSecrets(JSON.stringify(…)) === []` **plus the mask and the surviving prose around it** —
+    masked, never deleted.
+- **The whole-branch review's fifteen, in three shrinking rounds** (F91). Round 1: the genre-env
+  envelope survives re-validation; the command deny-floor lands in `checkKind`; `cleanup()` never
+  throws; the crashed counter (nonzero exit + 0 matched lines) routes to an instrument stop with
+  seed baselines included; `effectiveTimeoutMs` becomes tighten-only; plus a `renderSeedReadBlock`
+  scrub (a two-headed leak) and a tautological Layer-R trim test rewritten to be ABLE to fail.
+  Round 2, a fix-diff review OF round 1: `renderRejectBlock`'s scrub (a second leak channel of the
+  same class, found by reviewing the first fix's diff), genre-env checked at the GROUNDED gates,
+  `envCapableKind` consolidated so injector and validator cannot drift, and the crash-stop's
+  `grep -c` / pytest exit-5 blind spot documented as an accepted fail-safe limit. Round 3, a
+  validation sweep: guard-name-keyed `scopeOfJob` + `AT_MOST_ONCE_KINDS`, `resolveSourcePrefixes`
+  realpath-dedupe (measured live on aurora), the notes divergence closed, `parseValue`'s first
+  aggregate keeping its notes, scout recovery preferring `s2.error`, and `addedLines`' stat-throw
+  announcing a note. 19 new tests sabotage-proven; mutation micro-batch 5/5 killed.
+- **`/code-review medium`'s five.** Validation reds are scrubbed WHERE THEY ENTER THE RECORDS — the
+  model-facing copy was masked and the persisted copy was not. The diff scanner's header skip is
+  scoped to the PREAMBLE, so an added `++` line can no longer hide a suppression from the guard.
+  Worktree cleanup READS git's result instead of assuming it. Plus the two caps above. Each fix
+  carries a regression test proven failing against the pre-fix code; the suite was independently
+  re-run rather than taken from the reviewer's own gate.
+- **`/diff-review`'s ten land as nine fixed and one DROPPED with its reason.** Beyond the four in
+  *Changed* above: the dead `d.code !== 0` clause (git's `ok` IS `code === 0`; a spawn fault carries
+  `code: null`); one test running the same declaration through BOTH first-red-wins loops, since the
+  deliberate duplication had nothing pinning it; the collision walk's check-then-act NAMED rather
+  than closed, because `git checkout -b` already refuses an existing branch (measured, exit 128) so
+  the race ends in the stop below it; `scoutReaskTurn`'s rendered text; and `buildSeedListing`
+  rendering the `full` tier TWICE on every run that never needed to degrade. One finding **REFUTED
+  as a bug and kept as a fail-safe**: the retry ladder's re-survey arm is right — a toolless re-ask
+  rests entirely on *"the model already read the tree"*, and an empty transcript is that premise
+  gone — the HEADER was the thing that lied, so the header tells the truth and the branch gets the
+  test its always-non-empty helper had prevented. **DROPPED (S3):** every `process.exit(2)` in
+  `run-author` fires in the argument-parsing preamble, before the script's first stdout write, so
+  there is no queued output for F71 to discard — and `die` is used in expression position
+  (`return die(…)`), where `exitCode`+return would let a fatal unreadable-JSON CONTINUE into the
+  run; the post-output paths already use `process.exitCode`.
+
+Suite **1422/1422** on a single clean run; `typecheck` and `build:types` exit 0.
+
 ## [0.8.0] — 2026-08-07
 
 ### Changed
