@@ -6590,3 +6590,52 @@ with the raw token in the actual. The class ledger for this branch now reads:
 `renderSeedReadBlock` → `renderRejectBlock` → the declaration-gate persistence boundary —
 three appearances, each found by reviewing the PREVIOUS fix's class rather than trusting
 it: the strongest evidence yet that the class review is not optional.
+
+## F92 — the first paid proof of the reworked interview: the machinery holds, and the miss is the shape lottery one layer up
+
+**Date:** 2026-08-09 · **Rung:** CLOSE-DEV, post-rework live proof · **Cost:** $0.40 (2 attempts) + $0 cross-checks
+
+hamr ordered one paid authoring run under the reworked interview (pulselog, `--verdict
+green`, run from a clean worktree at `31c2036` so the proof binds to committed code).
+
+### The read
+
+- **Attempt 1 ($0.05): a scout casualty.** The survey came back as malformed JSON and the
+  flow killed the run at first strike — an honest refusal exposing two gaps at once: no
+  retry on the one genre of failure that converts on retry (mechanical), and no persisted
+  raw to autopsy. Both became hamr rulings the same day (PRD v1.58, shipped `c2f3d35`):
+  3 typed attempts (malformed-only — semantic failures never retry, the self-healing line
+  deliberately not crossed) and raw persistence behind the one scrub inventory.
+- **Attempt 2 ($0.35): the rework works live.** New 6-question interview, the radio, the
+  class battery, composition, gate 1 PASS grounded+scoped. It died at gate 2, and the
+  death is the finding: the model composed `typecheck-outside-scope` with
+  `excludePrefixes: ["src/"]` — on a repo where ALL code and all 67 strict errors live
+  under `src/`. The outside population is structurally empty, the all-excluded rule reads
+  unknown-not-zero (fail-safe, correct), and the gate refused decision-ready with
+  "re-author the close against this repository."
+- **$0 cross-check:** the known-good aurora declaration re-gated through the POST-rework
+  gates → SIGNING PREPARED, specHash `4c1d0dae…` byte-identical for the third time —
+  deterministic across the symlink fix AND the interview rework. And aurora's own
+  properly-aimed outside stage (includePrefixes naming the other packages) reads an
+  honest green — the shape works when rolled right.
+
+### What this is
+
+**The shape lottery, one layer up.** F-series doctrine already established that plan
+DRAFTING rolls shapes and some shapes cannot green (the 2026-08-04 sweep). Close
+COMPOSITION has the same property: a legal declaration can be vacuous against a
+particular repo, and the gates catch it — but nothing feeds the refusal back for a
+re-compose; the run just ends, decision-ready. The refusal is honest and the money is
+small, but the conversion lever is known from F38: the gate's own output IS the
+mechanical gap ("your outside population matched 0 of 67 error lines on this tree"), and
+a single bounded re-compose fed that gap is the same move as the one replan. **PARKED as
+a named next build (hamr: not gating the ship).**
+
+### Kept
+
+- The all-excluded fail-safe fired correctly on its second live encounter (first: the
+  aurora symlink blindness, F91 — a real disease; here: a vacuous population, a true
+  refusal). Same rule, both directions of usefulness, zero fake greens either time.
+- A paid proof that binds to a COMMIT (worktree at the exact SHA) reads cleanly even when
+  the working tree is mid-build — the two builders were editing the tree while the proof
+  ran, and it could not contaminate them or be contaminated.
