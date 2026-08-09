@@ -702,9 +702,19 @@ test('scrubRaw is the ONE persist boundary: it scrubs, bounds, and announces, fo
   assert.equal(none.text, '');
   assert.equal(none.bytes, 0);
   // multi-byte content must not be cut into a broken sequence
-  const wide = scrubRaw({ label: 'x', attempt: 3, text: 'é'.repeat(RAW_PERSIST_MAX) });
+  // a THREE-byte character, deliberately: at the 8000-byte cap a two-byte one
+  // divides evenly and the walk-back never fires, so the fixture could not show
+  // the negative. `€` puts a continuation byte exactly on the cut.
+  const wide = scrubRaw({ label: 'x', attempt: 3, text: '€'.repeat(RAW_PERSIST_MAX) });
   assert.equal(wide.trimmed, true);
   assert.ok(!wide.text.split(RAW_TRIM_MARKER)[0].includes('�'), 'a byte-wise cut would split a multi-byte character');
+  // …and the ANNOUNCEMENT counts what was actually withheld. The multi-byte
+  // walk-back can cut short of the cap, so a number derived from the cap
+  // under-reports the withheld bytes — an announced bound that misstates its own
+  // arithmetic is the announcement failing at its one job.
+  const keptBytes = Buffer.byteLength(wide.text.split(`\n[${RAW_TRIM_MARKER}`)[0], 'utf8');
+  const announced = Number(new RegExp(`${RAW_TRIM_MARKER} (\\d+) of`).exec(wide.text)?.[1]);
+  assert.equal(announced, wide.bytes - keptBytes, 'withheld = full size − what was actually kept');
 });
 
 test('runAuthorScout: the verdict is stamped on the raw it DESCRIBES, not on whichever call came last', async () => {

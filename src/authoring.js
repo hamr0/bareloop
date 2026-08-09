@@ -337,7 +337,13 @@ export function deniedCommandReason(cmd) {
   const raw = String(cmd ?? '').trim();
   if (raw === '') return null; // shape is the schema walk's business, not the floor's
   const segments = raw.split(/[\\/]/);
-  if (raw.startsWith('/') || raw.startsWith('\\') || segments.includes('..')) {
+  // `/^[a-zA-Z]:/` is the DRIVE-ABSOLUTE spelling, and it is here because
+  // `scopeContained` (src/validate.js) already counts it as an escape: two
+  // path-escape readings in one codebase that disagree are two instruments, and
+  // this was the one that let `C:\Windows\System32\evil.bat` through to the
+  // basename floor, which had never heard of it. MONOTONIC — this only ever adds
+  // a rejection, which is the direction F49's precedent licenses.
+  if (raw.startsWith('/') || raw.startsWith('\\') || /^[a-zA-Z]:/.test(raw) || segments.includes('..')) {
     return `"${raw}" names a program outside the repository — a declared close runs the patient's own tools, `
       + 'reached relatively or through the project\'s runner, never an absolute path (which grades a different '
       + 'machine than the one that signed it)';

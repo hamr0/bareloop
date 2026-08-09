@@ -144,8 +144,12 @@ export function scrubRaw({ label, attempt, text, cause = null, reason = null, ca
     // the FULL size, always — the number a trim is measured against
     bytes: buf.length,
     trimmed,
+    // WITHHELD is measured off `end`, not off `cap`: the multi-byte walk-back above
+    // can cut up to three bytes short of the cap, and announcing `length - cap` would
+    // under-report the withheld bytes by exactly that much. An announced bound that
+    // states a number it did not withhold is the announcement failing at its one job.
     text: trimmed
-      ? `${kept}\n[${RAW_TRIM_MARKER} ${buf.length - cap} of ${buf.length} bytes withheld — the cap is ${cap} per raw]`
+      ? `${kept}\n[${RAW_TRIM_MARKER} ${buf.length - end} of ${buf.length} bytes withheld — the cap is ${cap} per raw]`
       : kept,
     cause: cause ?? null,
     reason: reason === null || reason === undefined ? null : redactSecrets(reason),

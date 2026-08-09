@@ -424,10 +424,17 @@ export async function addedLines(workdir, seedRef, rel, { untracked = false } = 
   /** @type {{n: number, text: string}[]} */
   const lines = [];
   let n = 0;
+  // The `+++`/`---` skip is scoped to the PREAMBLE, and the scope is the fix for a
+  // real fake-green: git renders an ADDED line whose own text begins with `++` as
+  // `+++i;`, so a header test applied inside a hunk swallowed it and the guard read
+  // GREEN over a line it never opened. File headers only ever appear before the
+  // first `@@`, so `inHunk` says exactly where a header can legally be — the guard's
+  // dangerous direction, closed by construction rather than by a sharper pattern.
+  let inHunk = false;
   for (const raw of d.out.split('\n')) {
     const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(raw);
-    if (hunk) { n = Number(hunk[1]); continue; }
-    if (raw.startsWith('+++') || raw.startsWith('---')) continue;
+    if (hunk) { n = Number(hunk[1]); inHunk = true; continue; }
+    if (!inHunk && (raw.startsWith('+++') || raw.startsWith('---'))) continue;
     if (raw.startsWith('+')) { lines.push({ n, text: raw.slice(1) }); n += 1; }
   }
   return { stop: null, lines, note: null };
@@ -857,8 +864,19 @@ export function makeSeedTrees() {
       const details = [];
       for (const { workdir, root, dir } of made.values()) {
         try {
-          await git(workdir, ['worktree', 'remove', '--force', dir]);
+          // git's own refusal is a LEAK the instrument must be able to see. `git`
+          // never throws — it hands failure back as `ok:false` — so a bare call
+          // here left `git worktree remove` failing invisibly: the directory went
+          // away under `rm` and a stale admin entry stayed behind in
+          // `.git/worktrees/`, while this reported `ok:true, leaked:[]`. That is
+          // the blind-instrument class on the one report that exists to name a
+          // leak, so the answer is READ rather than discarded.
+          const wr = await git(workdir, ['worktree', 'remove', '--force', dir]);
           await rm(root, { recursive: true, force: true });
+          if (!wr.ok) {
+            leaked.push(root);
+            details.push(`${root}: git worktree remove refused (${String(wr.err).trim()}) — the checkout is gone but its admin entry survives; \`git worktree prune\` in ${workdir} clears it`);
+          }
         } catch (e) {
           leaked.push(root);
           details.push(`${root}: ${String(/** @type {any} */ (e)?.message ?? e)}`);

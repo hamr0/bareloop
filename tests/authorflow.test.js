@@ -626,13 +626,24 @@ test('authorClose: a validation red reaching the model is SCRUBBED in the turn a
   const good = goodDeclaration();
   const { generate, calls } = scriptGenerate([{ declaration: bad }, { declaration: good }, { declaration: good }]);
   const { fn } = scriptSeedRead();
-  await authorClose({ ...baseArgs(), generate, seedReadFn: fn });
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: fn });
 
   const turn = calls[1].messages.at(-1).content;
   assert.match(turn, /MEASURED VALIDATION/, 'the reject block is what was fed back');
   assert.deepEqual(scanSecrets(turn), [], 'a secret in a validation red must never cross the network');
   assert.ok(turn.includes('[REDACTED:'), 'the mask is the shared redactor, not a silent deletion');
   assert.match(turn, /cmd-denied at stages\[1\]\.params\.cmd/);
+
+  // …and the PERSISTED twin, which is the copy that outlives the run. These reds
+  // ride `iterations[].validation` and this function's returned `reds` into
+  // authored.json and into the append-only spine, where a captured key is captured
+  // forever. The rendered block was masked and this copy was not — one channel
+  // scrubbed, one not, out of the same `v.reds`.
+  assert.deepEqual(scanSecrets(JSON.stringify(r.iterations[0].validation)), [],
+    'the recorded validation is a persisted record, scrubbed at the same boundary as the rendered one');
+  const denied = r.iterations[0].validation.reds.find((/** @type {any} */ x) => x.code === 'cmd-denied');
+  assert.ok(denied, 'the deny-floor red is the one that quotes the declared cmd verbatim');
+  assert.ok(denied.cmd.includes('[REDACTED:'), 'the structured cmd field is masked too, not only detail');
 });
 
 test('authorClose: a validation red is fed back as a measurement and COUNTS as a revision', async () => {

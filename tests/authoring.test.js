@@ -1033,6 +1033,19 @@ test('deny floor: NORMALISED first — a directory, a case change and a traversa
   }
 });
 
+test('deny floor: a DRIVE-ABSOLUTE spelling is outside the repository too — the two path-escape readings agree', () => {
+  // `scopeContained` (src/validate.js) already counts `C:\` as an escape. This
+  // check did not, so a drive-absolute path fell past the outside-repo branch to
+  // the basename floor, which has never heard of `evil.bat` — no red at all.
+  for (const cmd of ['C:\\Windows\\System32\\evil.bat', 'c:/tools/bin/build', 'D:\\ci\\run']) {
+    const decl = goodDeclaration();
+    decl.stages[1] = countStage({ cmd });
+    const red = at(run(decl), 'cmd-denied')[0];
+    assert.ok(red, `${cmd} names a program off this machine's repository and must be refused`);
+    assert.match(red.detail, /outside the repository/);
+  }
+});
+
 test('deny floor: a program named OUTSIDE the repository is refused even when its basename is innocent', () => {
   for (const cmd of ['/opt/toolchain/bin/tsc', '../elsewhere/bin/build', '/usr/local/bin/mypy']) {
     const decl = goodDeclaration();

@@ -906,6 +906,26 @@ test('pattern-absent-in-diff: a spelling resolving OUTSIDE the declared scope is
   assert.equal(res.verdict, 'green');
 });
 
+test('addedLines: an ADDED line beginning with ++ is scanned — git renders it as +++, which is NOT a file header inside a hunk', async (t) => {
+  // The fake-green this closes: git spells an added `++i;` as `+++i;` in the
+  // unified diff, so a `startsWith('+++')` test applied to every line dropped the
+  // line out of the scanned set entirely. A suppression riding such a line read
+  // GREEN over content the guard never opened — the guard's dangerous direction.
+  const r = makeRepo(t, { 'src/a.js': 'let i = 0;\n' });
+  write(r.dir, { 'src/a.js': 'let i = 0;\n++i; // @ts-ignore\n--i;\n' });
+
+  const got = await addedLines(r.dir, r.seed, 'src/a.js');
+  assert.equal(got.stop, null);
+  assert.deepEqual(got.lines.map((l) => l.text), ['++i; // @ts-ignore', '--i;'],
+    'both added lines belong to the scan; neither is a diff file header');
+  assert.deepEqual(got.lines.map((l) => l.n), [2, 3], 'the line numbers still walk the hunk');
+
+  // …and the guard that reads it now sees the suppression it used to miss
+  const res = await runStage(GUARD({}), ctxFor(r));
+  assert.equal(res.verdict, 'red', 'a suppression on a ++-leading line is a real hit, not an invisible one');
+  assert.deepEqual(res.detail.hits.map((/** @type {any} */ h) => [h.id, h.path, h.line]), [['ts-ignore', 'src/a.js', 2]]);
+});
+
 test('addedLines: an untracked path that cannot be STATTED is ANNOUNCED, never scanned-clean in silence', async (t) => {
   const r = makeRepo(t, { 'src/a.js': 'a\n' });
   // a dangling symlink: it exists to git ls-files --others, and stat() throws

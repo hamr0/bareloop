@@ -110,6 +110,24 @@ export const AUTHOR_MAX_TOKENS = 32000;
 export const FILL_MARKER = '<FILL IN>';
 
 /**
+ * ONE red, scrubbed — the same spelling `prepareSigning` uses (src/authorjob.js),
+ * and for the same reason: a validation red QUOTES what the model declared, and
+ * these copies are persisted (`iterations[].validation`, this module's returned
+ * `reds`) rather than only rendered.
+ *
+ * UNIFORM over every string-valued field, never a named list of them. `detail` is
+ * only the loudest echo — `cmd-denied` quotes the command again as a structured
+ * `cmd`, `path-not-in-listing` carries `declared`/`resolved`, and the next red to
+ * learn a field would be missed by an allowlist written today. `redactSecrets`
+ * returns a non-matching string byte-identical, so `code`/`path` pass through
+ * unchanged and the uniform map costs them nothing.
+ * @param {Red} r @returns {Red}
+ */
+const scrubRed = (r) => /** @type {any} */ (Object.fromEntries(
+  Object.entries(r).map(([k, v]) => [k, typeof v === 'string' ? redactSecrets(v) : v]),
+));
+
+/**
  * THE FROZEN REVISE INSTRUCTION — gate-2 round 3's own text, byte for byte
  * (`scratch-gate2/author.mjs:63`, the turn that PASSED both arms). It is the only
  * prose a revise turn may carry, this constant is its only source, and the suite
@@ -1013,6 +1031,14 @@ export async function authorClose({
   // authoring call with no revise round is a legal ask, and a garbage value is
   // the floor rather than a negative bound the loop never enters.
   const revisionCap = Math.max(0, Math.min(Math.trunc(Number(maxRevisions)) || 0, MAX_REVISIONS));
+  // TIGHTEN-ONLY on the OTHER axis too, for the identical reason. `structureRetries`
+  // buys provider calls exactly as `maxRevisions` does, and it rode straight through
+  // to `askDeclaration` unclamped — a caller handing 50 got 50 paid malformed-emission
+  // retries above a ceiling this module declares and the suite pins. No new number:
+  // the bound is `MAX_STRUCTURE_RETRIES`, the constant already documented as the
+  // ceiling. Floor 0, exactly as above: `askDeclaration` loops `attempt <= retries`,
+  // so 0 is still ONE attempt with no retry — a legal tighter ask, not an absent one.
+  const retryCap = Math.max(0, Math.min(Math.trunc(Number(structureRetries)) || 0, MAX_STRUCTURE_RETRIES));
   const book = makeCostBook();
   // The scout's calls AND its raws, together. The raws matter most on the path
   // that spends nothing more: run mslhn707 refused at the $0 preflight below,
@@ -1136,7 +1162,7 @@ export async function authorClose({
   try {
     for (let i = 0; i <= revisionCap; i += 1) {
       const label = i === 0 ? 'author' : `revise-${i}`;
-      const ask = await askDeclaration({ messages, generate, mode: structuredMode, retries: structureRetries, label, book, catalogue });
+      const ask = await askDeclaration({ messages, generate, mode: structuredMode, retries: retryCap, label, book, catalogue });
       messages = ask.convo;
       /** @type {any} */
       const iter = {
@@ -1172,15 +1198,25 @@ export async function authorClose({
       previous = ask.declaration;
 
       const v = validateDeclaration(ask.declaration, { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType });
-      iter.validation = { ok: v.ok, reds: v.reds, scoped: v.scoped };
-      lastValidation = { ok: v.ok, reds: v.reds };
+      // SCRUBBED HERE, once, where the reds enter this module's records — the same
+      // boundary rule `renderRejectBlock` already states, applied to the OTHER
+      // channel they travel down. A validation red quotes what the model declared
+      // verbatim (`cmd-denied` carries the whole `cmd`, the genre-env branch carries
+      // the declared value, the listing rule carries the path), and these copies are
+      // PERSISTED: they ride `iterations[].validation` and this function's returned
+      // `reds` into `authored.json` and into the spine (`emit('job-red', …)`), which
+      // is append-only — a record that captures a key captures it forever. The
+      // model-facing render was masked and the persisted twin was not.
+      const vReds = v.reds.map(scrubRed);
+      iter.validation = { ok: v.ok, reds: vReds, scoped: v.scoped };
+      lastValidation = { ok: v.ok, reds: vReds };
 
       /** @type {string} */
       let measured;
       if (!v.ok) {
         // a validation red IS a measurement of the declaration, so it rides the
         // same channel and counts as a revision (addendum 5)
-        measured = renderRejectBlock({ kind: 'validation', reds: v.reds });
+        measured = renderRejectBlock({ kind: 'validation', reds: vReds });
       } else {
         // what gets MEASURED is what will RUN: the resolved declaration with the
         // genre's environment already injected
