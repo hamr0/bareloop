@@ -458,26 +458,44 @@ signed `writeScope` alone, never a free-text fallback. Menus exported: `EXIT_TYP
 ### Close authoring — the user declares what done means (`src/kinds.js`, `src/authoring.js`, `src/authorscout.js`, `src/authorflow.js`, `src/declaredclose.js`, `src/authorjob.js`)
 
 The one layer where a human still wrote code. A close used to be a hand-written script
-per patient; now the user answers seven questions and an LLM composes a DECLARATION over
-kinds whose implementations bareloop owns. **v1 admits exactly ONE genre** (`TYPES`: a type
-checker stops complaining without breaking the tests) and exactly one verdict class
-(`green`) — everything else refuses honestly, and every refusal is COUNTED.
+per patient; now the user PICKS A VERDICT CLASS, answers that class's questions, and an LLM
+composes a DECLARATION over kinds whose implementations bareloop owns. **v1 admits exactly
+ONE genre** (`TYPES`: a type checker stops complaining without breaking the tests) and
+exactly one verdict class (`green`) — everything else refuses honestly, and every refusal
+is COUNTED.
+
+**The verdict class is the USER's answer (PRD v1.57 §1), and it DRIVES the authoring.**
+`verdictType` is a declared radio the preflight validates, never inferred:
+`VERDICT_CLASSES` = `green` | `soft-green` | `hitl`, with `LOCKED_CLASSES` =
+`soft-green` | `hitl` declared-but-locked. Picking a locked one returns a counted
+`request-red` refusal at ADMISSION — before that class's questions are ever asked. The
+pick is also a PROMISE: every catalogue kind carries the `verdictClass` it can honestly
+render, `closeCeiling(declaration)` reports the highest class a declaration demands, and a
+declaration ABOVE the pick is a `class-ceiling` red naming the kind that raised it (inert
+in v1 by construction — every live kind is mechanical).
 
 **The pipeline, in call order.** Each piece is exported so an adopter can drive it, cache
 a step, or test it without a provider.
 
 | step | call | what it is |
 |---|---|---|
-| interview | `runInterview({ answers, repoPath })` → `{ ok, answers, verdictType, refusal, reds }` | PURE — no model, no repo, no clock. Seven frozen questions (`TYPES_QUESTIONS`), answers keyed by number. Answer 7 is a genre CONFIRM and its value is a CLOSED SET (`GENRE_CONFIRM` = `yes`\|`no`), handed over enumerated rather than parsed out of prose; `repoPath` is STRUCTURED input, never read out of answer 6. Answers are scrubbed at INGEST |
+| interview | `runInterview({ verdictType, answers, repoPath })` → `{ ok, answers, verdictType, refusal, reds }` | PURE — no model, no repo, no clock. THREE frozen question sets keyed by verdict class (`QUESTION_SETS`; `questionsFor(cls)` / `requiredAnswersFor(cls)`), and the interview asks NOTHING about a genre. The green set is six questions, answers keyed by number; the soft-green and hitl sets are named but LOCKED (`questions: null`, absent rather than empty) and their selection refuses before they run. `verdictType` and `repoPath` are STRUCTURED input, never parsed out of prose. Answers are scrubbed at INGEST |
 | survey | `runAuthorScout({ workdir, provider })` → `{ state, facts, reason, meta, calls }` | a bounded READ-ONLY LLM survey. Read-only by MENU CONSTRUCTION (`AUTHOR_SCOUT_VERBS` = the full menu minus write-class and store-class verbs), 8 rounds, F59's reserved toolless final round. **`state: 'ABSENT'` means the scout did not complete — never "no special facts are needed"**, and a parsed `{}` is one of its five ABSENT routes |
 | listing | `buildSeedListing({ workdir, seedRef, sourcePaths, testPaths })` | mechanical, `$0`, no model. `files` is the WHOLE tree (what the validator judges paths against); `block` is scoped to the survey's own paths and capped in ANNOUNCED tiers (what the prompt carries). Handing the validator the scoped half would make a job scoped to `src/` read as whole-tree and silently disarm the one-population law |
-| authoring | `authorClose({ workdir, seedRef, lang, answers, scout, listing, generate })` | the grounded loop: author → validate → run EVERY stage at the seed → feed the MEASURED results back → revise, bounded at `MAX_REVISIONS` (2), early-stop on an unchanged declaration. The declaration is emitted through a SCHEMA-FORCED TOOL CALL (`declare_close`), never parsed out of prose; the feedback is EXECUTION OUTPUT only — no model ever reviews another model's close |
-| everything above, composed | `authorCloseForJob({ answers, repoPath, lang, generate, ... })` → `{ ok, closeDecl, verdictType, refusal, cost, ... }` | refuses at the cheapest gate that can refuse: an interview refusal costs **zero** |
+| authoring | `authorClose({ workdir, seedRef, lang, verdictType, answers, scout, listing, generate })` | the grounded loop: author → validate → run EVERY stage at the seed → feed the MEASURED results back → revise, bounded at `MAX_REVISIONS` (2), early-stop on an unchanged declaration. The declaration is emitted through a SCHEMA-FORCED TOOL CALL (`declare_close`), never parsed out of prose; the feedback is EXECUTION OUTPUT only — no model ever reviews another model's close |
+| everything above, composed | `authorCloseForJob({ verdictType, answers, repoPath, lang, generate, ... })` → `{ ok, closeDecl, verdictType, refusal, cost, ... }` | refuses at the cheapest gate that can refuse: an interview refusal costs **zero**. THE GENRE REFUSAL LIVES HERE (not in the interview): a language the catalogue owns no data for, and a LOCKED KIND the model reached for, both come back as counted `request-red` demand |
 | assembly | `assembleSpec(specDraft, { closeDecl, verdictType })` | folds the authored half into the OPERATOR's half. Budgets, the fence, cadence, escalation and the provider are never authored by anything here. The GOAL is passed through, not generated |
 | the three gates | `prepareSigning({ spec, workdir, seedRef? })` → `{ ok, specHash, gates, work, guards, refusal }` | D9, and it NEVER signs |
 
-**D5 — the mandatory guards are SHOWN and FIXED.** The genre injects `changed-from-seed`
-and `no-suppressions` FULLY PARAMETERISED (`genreGuards(lang)`); the model fills exactly one
+**D5 — the mandatory guards are SHOWN and FIXED, and the battery keys off the VERDICT
+CLASS** (PRD v1.57 §2 — what a battery is FOR is the class of dishonesty that class of
+verdict admits). `CLASS_BATTERIES` is the attachment point (structure, un-removability,
+which slot is the model's); the tool-specific CONTENTS — which suppression patterns, which
+extensions — resolve at COMPOSITION from the language the declaration names. The green
+battery injects `changed-from-seed`
+and `no-suppressions` FULLY PARAMETERISED (`classGuards({ verdictType, lang })`, which
+THROWS rather than ever hand back an empty battery for a known class and language); the
+model fills exactly one
 slot (the target prefixes) and cannot change, drop, rename, re-kind or NARROW them —
 `validateDeclaration` reds `guard-weakened` on any of it, including on an added `scope` that
 would shrink what the suppression scan covers. `genreEnv(lang, { sourcePrefixes })` is the
@@ -487,15 +505,18 @@ no model found, it moves no seed number, and a declaration that authors it itsel
 
 **The kind catalogue** (`KIND_CATALOGUE`, and it IS the whole vocabulary): `command-exit`,
 `count-not-worse`, `pattern-absent-in-diff`, `files-changed` are live; `judged-floor` and
-`human-confirms` are NAMED BUT LOCKED, so declaring one is a counted `locked-kind` red
-rather than an unknown-kind typo; `harness-loop` (TESTGEN) is ABSENT from v1 entirely. In
+`human-confirms` are NAMED BUT LOCKED (and carry `verdictClass` `soft-green`/`hitl`), so
+declaring one is a counted `locked-kind` red rather than an unknown-kind typo; `harness-loop` (TESTGEN) is ABSENT from v1 entirely. In
 tool mode a locked kind is INEXPRESSIBLE — the schema carries one branch per live kind — so
 that demand arrives through the interview layer instead (`refuseLockedKind(kind)`).
 
 **The three gates, and the signature (D9).** Nothing LLM-judges a close.
-1. `validateCloseDecl` — schema, kinds, params, the F84 one-population law, F49's static
-   nested-quantifier reject, the D5 guard equality, and the listing rule (a declared path
-   SELECTS from the seed tree or it does not exist).
+1. `validateCloseDecl(closeDecl, { verdictType, ... })` — schema, kinds, params, the F84
+   one-population law, F49's static nested-quantifier reject, the D5 guard equality, the
+   class ceiling, and the listing rule (a declared path SELECTS from the seed tree or it
+   does not exist). `verdictType` is REQUIRED and has no default: the guard battery hangs
+   off it, and a validator with no class in hand reds `class-absent` rather than reporting
+   a declaration it never checked D5 against.
 2. the CLOSE PRECHECK — every stage runs against the real patient. A stage that cannot run
    is `broken-close`: a CASUALTY, never a red.
 3. the SEED-VERDICT READ — every stage, offered or not, at the seed. Which are RED (that is

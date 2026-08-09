@@ -29,13 +29,20 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { LIVE_KINDS } from '../src/kinds.js';
+import { VERDICT_TYPES, LOCKED_VERDICTS } from '../src/job.js';
 import { hasNestedQuantifier } from '../src/validate.js';
 import {
-  KIND_CATALOGUE, CATALOGUE_KINDS, LOCKED_KINDS, MAX_STAGES, DIRECTIONS, BASELINES,
+  KIND_CATALOGUE, CATALOGUE_KINDS, CATALOGUE_LIVE_KINDS, LOCKED_KINDS, MAX_STAGES, DIRECTIONS, BASELINES,
   TYPES_GENRE, TYPES_GENRE_TEMPLATE, GENRE_LANGUAGES, DENIED_COMMANDS,
-  genreGuards, genreEnv, genreOwnedEnvNames,
+  VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES, CLASS_BATTERIES,
+  classGuards, closeCeiling, genreEnv, genreOwnedEnvNames,
   validateDeclaration, normalizeDeclaration,
 } from '../src/authoring.js';
+
+/** The battery for the one class v1 admits. The attachment point is the CLASS
+ * (PRD v1.57 §2) and every fixture in this file is a green job, so the class is
+ * stated once here rather than at thirty call sites. */
+const greenGuards = (lang) => classGuards({ verdictType: 'green', lang });
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
@@ -58,7 +65,7 @@ const TARGETS = ['src/email.js', 'src/backup.js'];
 
 /** the two injected JS guards, with the one model-filled slot filled */
 function guardStages(allowPrefixes = TARGETS) {
-  return genreGuards('js').map((g) => (g.kind === 'files-changed'
+  return greenGuards('js').map((g) => (g.kind === 'files-changed'
     ? { name: g.name, kind: g.kind, params: { ...g.params, allowPrefixes: [...allowPrefixes] } }
     : { name: g.name, kind: g.kind, params: structuredClone(g.params) }));
 }
@@ -124,7 +131,9 @@ function injectedDeclaration(env = { MYPYPATH: 'src' }) {
   return decl;
 }
 
-const opts = (over = {}) => ({ listing: LISTING, guards: genreGuards('js'), envOwned: genreOwnedEnvNames('js'), ...over });
+const opts = (over = {}) => ({
+  listing: LISTING, guards: greenGuards('js'), envOwned: genreOwnedEnvNames('js'), verdictType: 'green', ...over,
+});
 const run = (decl, over = {}) => validateDeclaration(decl, opts(over));
 const codes = (res) => res.reds.map((r) => r.code);
 /** @param {any} res @param {string} code */
@@ -212,7 +221,7 @@ test('genre batteries: every shipped pattern compiles and survives our OWN F49 r
 });
 
 test('genre guards: fully enumerated, and the suppression scan carries NO scope (addendum 6)', () => {
-  const guards = genreGuards('js');
+  const guards = greenGuards('js');
   assert.deepEqual(guards.map((g) => g.name), ['changed-from-seed', 'no-suppressions']);
   const changed = guards.find((g) => g.name === 'changed-from-seed');
   const supp = guards.find((g) => g.name === 'no-suppressions');
@@ -229,18 +238,186 @@ test('genre guards: fully enumerated, and the suppression scan carries NO scope 
 });
 
 test('genre guards: each call hands back its OWN copy — a caller cannot edit the battery', () => {
-  const a = genreGuards('js');
+  const a = greenGuards('js');
   a[1].params.patterns.length = 1;
   a[1].params.patterns[0].regex = 'x';
-  const b = genreGuards('js');
+  const b = greenGuards('js');
   assert.equal(b[1].params.patterns.length, TYPES_GENRE.languages.js.suppressions.length);
   assert.equal(b[1].params.patterns[0].regex, TYPES_GENRE.languages.js.suppressions[0].regex);
 });
 
 test('genre guards: an unknown language THROWS — never an empty battery', () => {
-  assert.throws(() => genreGuards('rust'), /rust/);
+  assert.throws(() => greenGuards('rust'), /rust/);
   assert.throws(() => genreEnv('rust', { sourcePrefixes: ['src'] }), /rust/);
   assert.throws(() => genreOwnedEnvNames('rust'), /rust/);
+});
+
+// ── the battery's HOME is the verdict class (PRD v1.57 §2) ───────────────────
+//
+// What a battery is FOR is the class of dishonesty the class of VERDICT admits,
+// so a green job carries the green battery whatever problem it came from. The
+// attachment point is the class; the tool-specific CONTENTS resolve at
+// composition, because a suppression pattern belongs to the tool the declaration
+// names and nothing before composition knows that tool.
+
+test('classes: the two copies of the menu are IDENTICAL — the spec radio and the authoring surface', () => {
+  // `src/job.js` owns the same menu as the spec's declared radio and imports this
+  // module transitively, so importing it back would close a cycle. Two copies,
+  // pinned HERE — the same treatment CATALOGUE_LIVE_KINDS and LIVE_KINDS get.
+  assert.deepEqual([...VERDICT_CLASSES], [...VERDICT_TYPES], 'the radio and the battery must key on ONE vocabulary');
+  assert.deepEqual([...LOCKED_CLASSES], [...LOCKED_VERDICTS]);
+});
+
+test('classes: the class menu is exactly three, and v1 builds exactly one of them', () => {
+  assert.deepEqual([...VERDICT_CLASSES], ['green', 'soft-green', 'hitl']);
+  assert.deepEqual([...LOCKED_CLASSES], ['soft-green', 'hitl']);
+  assert.deepEqual([...LIVE_CLASSES], ['green']);
+  // the batteries cover the menu and nothing else — a class with no entry would
+  // be a class whose guards nothing can supply
+  assert.deepEqual(Object.keys(CLASS_BATTERIES).sort(), [...VERDICT_CLASSES].sort());
+  for (const c of LOCKED_CLASSES) {
+    assert.equal(CLASS_BATTERIES[c].locked, true, `${c} must be a named but LOCKED set`);
+    assert.equal(CLASS_BATTERIES[c].guards, null, `${c}'s battery is ABSENT (null), never an empty array`);
+  }
+});
+
+test('battery: an EMPTY battery is IMPOSSIBLE for a known class and a known language', () => {
+  for (const verdictType of LIVE_CLASSES) {
+    for (const lang of GENRE_LANGUAGES) {
+      const guards = classGuards({ verdictType, lang });
+      assert.ok(guards.length > 0, `${verdictType}/${lang} handed back an EMPTY battery`);
+      for (const g of guards) {
+        assert.ok(g.name && g.kind, `${verdictType}/${lang} guard is malformed`);
+        // every composed param resolved to something the tool actually needs —
+        // an empty pattern list is a suppression scan that scans for nothing,
+        // which reads clean exactly like one that scanned correctly (F6/F59)
+        for (const p of g.compose ?? []) {
+          assert.ok(Array.isArray(g.params[p]) && g.params[p].length > 0,
+            `${verdictType}/${lang}: composed param "${p}" of "${g.name}" resolved EMPTY`);
+        }
+      }
+    }
+  }
+});
+
+test('battery: an unknown class, and a LOCKED class, THROW rather than hand back nothing', () => {
+  assert.throws(() => classGuards({ verdictType: 'chartreuse', lang: 'js' }), /chartreuse/);
+  for (const c of LOCKED_CLASSES) {
+    assert.throws(() => classGuards({ verdictType: c, lang: 'js' }), new RegExp(c),
+      `a locked class must never resolve a battery — admission refuses it first`);
+  }
+  // and the language check survives the re-home (F59: absent is never "none needed")
+  assert.throws(() => classGuards({ verdictType: 'green', lang: 'rust' }), /rust/);
+});
+
+test('battery: the CONTENTS come from the tool the declaration names, not from the class', () => {
+  const js = classGuards({ verdictType: 'green', lang: 'js' });
+  const py = classGuards({ verdictType: 'green', lang: 'python' });
+  // same attachment point, same guard names, same kinds…
+  assert.deepEqual(js.map((g) => g.name), py.map((g) => g.name));
+  assert.deepEqual(js.map((g) => g.kind), py.map((g) => g.kind));
+  // …and DIFFERENT fills, resolved from the language data at composition
+  const suppOf = (/** @type {any[]} */ gs) => gs.find((g) => g.kind === 'pattern-absent-in-diff');
+  assert.deepEqual(suppOf(js).params.extensions, [...TYPES_GENRE.languages.js.extensions]);
+  assert.deepEqual(suppOf(py).params.extensions, [...TYPES_GENRE.languages.python.extensions]);
+  assert.notDeepEqual(suppOf(js).params.patterns, suppOf(py).params.patterns);
+});
+
+// ── the CEILING rule: the picked class is a PROMISE (PRD v1.57 §1) ───────────
+//
+// Inert in v1 by construction — every LIVE kind is mechanical, so the ceiling can
+// never exceed a green pick today. It is built now so the first soft-green kind
+// is not the thing that discovers the question, and it is TESTED against an
+// injected catalogue carrying a live non-green kind, because that is the only way
+// the rule can be watched firing without unlocking anything.
+
+/** a catalogue exactly like the shipped one, plus ONE LIVE soft-green kind */
+const withLiveSoftKind = () => ({
+  ...KIND_CATALOGUE,
+  'judged-floor': {
+    ...KIND_CATALOGUE['judged-floor'],
+    locked: false,
+    required: [], optional: [], pathParams: [],
+    verdictClass: 'soft-green',
+  },
+});
+
+test('ceiling: every catalogue kind carries the verdict class it can honestly render', () => {
+  for (const [name, spec] of Object.entries(KIND_CATALOGUE)) {
+    assert.ok(VERDICT_CLASSES.includes(spec.verdictClass), `${name}.verdictClass is ${String(spec.verdictClass)}`);
+  }
+  // every LIVE kind is mechanical, which is exactly why the rule is inert in v1
+  for (const k of CATALOGUE_LIVE_KINDS) assert.equal(KIND_CATALOGUE[k].verdictClass, 'green', k);
+  assert.equal(KIND_CATALOGUE['judged-floor'].verdictClass, 'soft-green');
+  assert.equal(KIND_CATALOGUE['human-confirms'].verdictClass, 'hitl');
+});
+
+test('ceiling: closeCeiling reports the HIGHEST class any stage demands, and which kind raised it', () => {
+  const green = closeCeiling(goodDeclaration());
+  assert.equal(green.class, 'green');
+  const mixed = closeCeiling({
+    stages: [...goodDeclaration().stages, { name: 'taste', kind: 'human-confirms', params: {} }],
+  });
+  assert.equal(mixed.class, 'hitl');
+  assert.equal(mixed.kind, 'human-confirms');
+  assert.equal(mixed.stage, 'taste');
+  // nothing the catalogue knows: no ceiling to report, and never a defaulted one
+  assert.equal(closeCeiling({ stages: [{ name: 'x', kind: 'harness-loop', params: {} }] }), null);
+  assert.equal(closeCeiling(null), null);
+});
+
+test('ceiling: a catalogue kind that states NO class THROWS — a kind whose honesty nobody stated is never weighed', () => {
+  const mute = { ...KIND_CATALOGUE, 'files-changed': { ...KIND_CATALOGUE['files-changed'], verdictClass: undefined } };
+  assert.throws(() => closeCeiling(goodDeclaration(), /** @type {any} */ (mute)), /files-changed/);
+  // and a kind the catalogue does not know contributes nothing rather than a
+  // guessed class — it already carries an unknown-kind red of its own
+  assert.equal(closeCeiling({ stages: [{ name: 'x', kind: 'harness-loop', params: {} }] }, /** @type {any} */ (mute)), null);
+});
+
+test('ceiling: a declaration ABOVE the picked class is an honest red naming the kind that raised it', () => {
+  const catalogue = withLiveSoftKind();
+  const decl = goodDeclaration();
+  decl.stages.splice(3, 0, { name: 'reads-well', kind: 'judged-floor', params: {} });
+
+  const res = validateDeclaration(decl, opts({ catalogue, verdictType: 'green' }));
+  const red = at(res, 'class-ceiling')[0];
+  assert.ok(red, `expected a class-ceiling red, got ${JSON.stringify(codes(res))}`);
+  assert.equal(res.ok, false);
+  assert.equal(red.kind, 'judged-floor', 'the red NAMES the kind that raised the ceiling');
+  assert.equal(red.stage, 'reads-well');
+  assert.equal(red.kindClass, 'soft-green');
+  assert.equal(red.picked, 'green');
+  assert.equal(res.ceiling.class, 'soft-green');
+});
+
+test('ceiling: the SAME declaration under a matching pick is not a ceiling red — no silent downgrade either', () => {
+  const catalogue = withLiveSoftKind();
+  const decl = goodDeclaration();
+  decl.stages.splice(3, 0, { name: 'reads-well', kind: 'judged-floor', params: {} });
+  // the battery is the picked class's, so a soft-green pick is validated against
+  // a soft-green battery — the guards below are the green ones purely so this
+  // test moves ONE axis (the pick) and nothing else
+  const res = validateDeclaration(decl, opts({ catalogue, verdictType: 'soft-green' }));
+  assert.deepEqual(at(res, 'class-ceiling'), [], 'a kind AT the picked class is legal');
+  assert.equal(res.ceiling.class, 'soft-green');
+});
+
+test('ceiling: a LOCKED kind is refused as unavailable and never ALSO redded for its class — one problem, one red', () => {
+  const decl = goodDeclaration();
+  decl.stages.splice(3, 0, { name: 'reads-well', kind: 'judged-floor', params: {} });
+  const res = run(decl);
+  assert.equal(at(res, 'locked-kind').length, 1);
+  assert.deepEqual(at(res, 'class-ceiling'), []);
+});
+
+test('ceiling: the PICK is required — a validator with no pick cannot check the promise', () => {
+  const res = validateDeclaration(goodDeclaration(), { listing: LISTING, guards: greenGuards('js'), envOwned: [] });
+  assert.ok(at(res, 'class-absent').length > 0, JSON.stringify(codes(res)));
+  assert.equal(res.ok, false);
+  // an unknown pick is the same refusal, and it names the enumerated menu
+  const bad = validateDeclaration(goodDeclaration(), opts({ verdictType: 'greenish' }));
+  const red = at(bad, 'class-absent')[0];
+  assert.ok(red && VERDICT_CLASSES.every((c) => String(red.detail).includes(c)), JSON.stringify(bad.reds));
 });
 
 // ── genre env injection (the second addendum-6 residue) ──────────────────────
@@ -513,7 +690,7 @@ test('one-population: the in-scope/outside split is EXACTLY what must stay legal
 });
 
 /** the genre's own containment guard, by NAME — never a second spelling here */
-const SCOPE_GUARD = genreGuards('js').find((g) => g.kind === 'files-changed').name;
+const SCOPE_GUARD = greenGuards('js').find((g) => g.kind === 'files-changed').name;
 
 /** a legally-shaped whole-tree containment stage that is NOT the genre guard */
 const decoyStage = () => ({
@@ -696,18 +873,18 @@ test('guards: ABSENT guards are a red — D5 is never validated away by omission
 });
 
 test('env ownership: ABSENT is a red; declared-EMPTY is a genre that owns none', () => {
-  const absent = validateDeclaration(goodDeclaration(), { listing: LISTING, guards: genreGuards('js') });
+  const absent = validateDeclaration(goodDeclaration(), { listing: LISTING, guards: greenGuards('js'), verdictType: 'green' });
   assert.ok(at(absent, 'env-ownership-absent').length > 0);
   assert.equal(absent.ok, false);
   // `[]` is JS's real answer and must pass — absent and empty are different states
-  const empty = validateDeclaration(goodDeclaration(), { listing: LISTING, guards: genreGuards('js'), envOwned: [] });
+  const empty = validateDeclaration(goodDeclaration(), { listing: LISTING, guards: greenGuards('js'), envOwned: [], verdictType: 'green' });
   assert.deepEqual(at(empty, 'env-ownership-absent'), []);
   assert.equal(empty.ok, true);
 });
 
 test('guards: the shipped Python battery validates against its own genre', () => {
   const pyListing = ['mypy.ini', 'packages/spawner/src/aurora_spawner/spawner.py', 'packages/spawner/tests/test_spawner.py'];
-  const guards = genreGuards('python');
+  const guards = greenGuards('python');
   const decl = {
     stages: [
       { name: 'changed-from-seed', kind: 'files-changed', params: { ...guards[0].params, allowPrefixes: ['packages/spawner/src'] } },
@@ -726,7 +903,7 @@ test('guards: the shipped Python battery validates against its own genre', () =>
       { name: 'no-suppressions', kind: 'pattern-absent-in-diff', params: structuredClone(guards[1].params) },
     ],
   };
-  const res = validateDeclaration(decl, { listing: pyListing, guards, envOwned: genreOwnedEnvNames('python') });
+  const res = validateDeclaration(decl, { listing: pyListing, guards, envOwned: genreOwnedEnvNames('python'), verdictType: 'green' });
   assert.deepEqual(res.reds, []);
 });
 

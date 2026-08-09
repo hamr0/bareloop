@@ -23,11 +23,15 @@ import { join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import {
   runInterview, authorCloseForJob, assembleSpec, prepareSigning, refusalEvents, refuseLockedKind,
-  GENRE, GENRE_CONFIRM, REFUSAL_LIB, REFUSAL_CATEGORY,
+  GENRE, REFUSAL_LIB, REFUSAL_CATEGORY, VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES,
 } from '../src/authorjob.js';
 import { validateJob, jobSpecHash, checkApproval } from '../src/job.js';
+import { questionsFor } from '../src/authorflow.js';
 import { scanSecrets } from '../src/validate.js';
-import { genreGuards } from '../src/authoring.js';
+import { classGuards } from '../src/authoring.js';
+
+/** every job in this file is a GREEN job — the guard battery keys off the class */
+const greenGuards = (/** @type {string} */ lang) => classGuards({ verdictType: 'green', lang });
 import { classifyIncidents, ledgerDeltas, foldLedger, LEDGER_CLASSES } from '../src/ledger.js';
 import { runPlan } from '../src/planrun.js';
 import { scriptedProvider } from './helpers.js';
@@ -74,7 +78,7 @@ console.log('FAILED src/fix.js — missing or has no ok marker'); process.exit(1
 }
 
 /** the genre's guards, with the model's ONE fill slot filled */
-const guards = (allowPrefixes) => genreGuards('js').map((g) => ({
+const guards = (allowPrefixes) => greenGuards('js').map((g) => ({
   name: g.name,
   kind: g.kind,
   params: { ...g.params, ...(g.fill.includes('allowPrefixes') ? { allowPrefixes } : {}) },
@@ -111,7 +115,6 @@ const ANSWERS = {
   4: 'I run the checker by hand and read the list of complaints.',
   5: 'If the complaints only went quiet because something was told to look the other way.',
   6: 'Yes, the repo is on this machine.',
-  7: 'yes',
 };
 
 const collector = () => {
@@ -121,44 +124,73 @@ const collector = () => {
 
 // ── 1. THE INTERVIEW, and D4's derivation ────────────────────────────────────
 
-test('a complete interview derives verdictType green — DERIVED from two mechanical facts, never picked', () => {
-  const r = runInterview({ answers: ANSWERS, repoPath: '/tmp/whatever' });
+test('the interview ECHOES the class the user picked — the radio drives authoring, it never falls out of it', () => {
+  const r = runInterview({ verdictType: 'green', answers: ANSWERS, repoPath: '/tmp/whatever' });
   assert.equal(r.ok, true);
   assert.equal(r.verdictType, 'green');
-  assert.equal(r.genre, GENRE);
   assert.equal(r.refusal, null);
   assert.deepEqual(r.reds, []);
-  // there is no verdict INPUT anywhere: nothing the caller passed said "green"
-  assert.ok(!JSON.stringify(ANSWERS).includes('green'));
+  // and nothing in the ANSWERS decides it: the class is structured input, never
+  // read out of prose (D4 is superseded — this is the check that it stays dead)
+  assert.ok(!JSON.stringify(ANSWERS).toLowerCase().includes('green'));
+  assert.equal(runInterview({ answers: ANSWERS, repoPath: '/tmp/x' }).verdictType, null,
+    'with no pick there is no class — nothing defaults it to green');
+});
+
+test('the RADIO is a closed set: an unset or unknown class is a red, never demand', () => {
+  for (const [verdictType, code] of [[undefined, 'missing-field'], [null, 'missing-field'], ['greenish', 'invalid-value'], ['', 'invalid-value']]) {
+    const r = runInterview({ verdictType, answers: ANSWERS, repoPath: '/tmp/x' });
+    assert.equal(r.ok, false, String(verdictType));
+    assert.equal(r.refusal, null, 'a typo is never a user asking for a capability');
+    const red = r.reds.find((x) => x.path === 'verdictType');
+    assert.ok(red, JSON.stringify(r.reds));
+    assert.equal(red.code, code, String(verdictType));
+    // the legal values are HANDED OVER enumerated, not described
+    for (const c of VERDICT_CLASSES) assert.ok(red.detail.includes(c), c);
+  }
+});
+
+test('a LOCKED class refuses at ADMISSION, BEFORE its questions run — counted demand for the CLASS', () => {
+  for (const verdictType of LOCKED_CLASSES) {
+    // no answers at all: the refusal must not wait for an interview that cannot
+    // be run, because that class's question set is named but locked
+    const r = runInterview({ verdictType, answers: {}, repoPath: null });
+    assert.equal(r.ok, false);
+    assert.deepEqual(r.reds, [], 'an unbuilt question set must not also produce missing-answer reds');
+    assert.equal(r.verdictType, null, 'it never returns a class it cannot honour');
+    assert.equal(r.refusal.kind, 'request-red');
+    assert.equal(r.refusal.verb, verdictType, 'the demand names the CLASS the user asked for');
+    assert.equal(r.refusal.red.lib, REFUSAL_LIB);
+    assert.equal(r.refusal.red.code, 'request-red');
+    assert.ok(r.refusal.detail.includes(verdictType));
+  }
+  assert.deepEqual([...LIVE_CLASSES], ['green'], 'v1 admits exactly one class');
+});
+
+test('the interview asks NOTHING about a genre — D13\'s confirm slot is gone, and answer 7 is not a slot', () => {
+  const { 6: _six, ...five } = ANSWERS;
+  assert.ok(runInterview({ verdictType: 'green', answers: five, repoPath: '/tmp/x' })
+    .reds.some((x) => x.path === 'answers.6'), 'six answers are required');
+  // a seventh answer is not read by anything: the confirm is not a slot any more,
+  // and "no" to a question nobody asked cannot refuse a job
+  const r = runInterview({ verdictType: 'green', answers: { ...ANSWERS, 7: 'no' }, repoPath: '/tmp/x' });
+  assert.equal(r.ok, true, JSON.stringify(r.reds));
+  assert.equal(r.refusal, null);
+  assert.equal(Object.hasOwn(r.answers, '7'), false, 'an unasked answer never enters the record');
+  const asked = Object.values(questionsFor('green')).join(' ');
+  assert.ok(!/type[- ]?fix|type checker/i.test(asked), asked);
 });
 
 test('an unfinished interview is REDS, never demand — an incomplete form is not a user asking for a capability', () => {
   const { 4: _dropped, ...partial } = ANSWERS;
-  const r = runInterview({ answers: partial, repoPath: '/tmp/x' });
+  const r = runInterview({ verdictType: 'green', answers: partial, repoPath: '/tmp/x' });
   assert.equal(r.ok, false);
   assert.equal(r.refusal, null, 'a missing answer must not inflate the admission evidence');
   assert.ok(r.reds.some((x) => x.path === 'answers.4'));
 });
 
-test('the genre confirm is a CLOSED SET handed over enumerated — prose is an input red, not a refusal', () => {
-  const r = runInterview({ answers: { ...ANSWERS, 7: 'I suppose so, more or less' }, repoPath: '/tmp/x' });
-  assert.equal(r.refusal, null);
-  assert.ok(r.reds.some((x) => x.path === 'answers.7' && x.code === 'invalid-value'));
-  for (const v of GENRE_CONFIRM) assert.equal(runInterview({ answers: { ...ANSWERS, 7: v }, repoPath: '/tmp/x' }).reds.length, 0);
-});
-
-test('D13: a genre NON-CONFIRM refuses honestly and is COUNTED demand against bareloop\'s own catalogue', () => {
-  const r = runInterview({ answers: { ...ANSWERS, 7: 'no' }, repoPath: '/tmp/x' });
-  assert.equal(r.ok, false);
-  assert.equal(r.verdictType, null, 'it NEVER silently authors green for a job it cannot close');
-  assert.equal(r.refusal.kind, 'request-red');
-  assert.equal(r.refusal.verb, 'genre-other');
-  assert.equal(r.refusal.red.lib, REFUSAL_LIB);
-  assert.equal(r.refusal.red.code, 'request-red');
-});
-
 test('D13: a job with NO repository is refused — all three validity gates rest on a git seed', () => {
-  const r = runInterview({ answers: ANSWERS, repoPath: null });
+  const r = runInterview({ verdictType: 'green', answers: ANSWERS, repoPath: null });
   assert.equal(r.ok, false);
   assert.equal(r.verdictType, null);
   assert.equal(r.refusal.verb, 'non-green-verdict');
@@ -167,7 +199,7 @@ test('D13: a job with NO repository is refused — all three validity gates rest
 
 test('interview answers are scrubbed at INGEST — an answer becomes a prompt, a record and a signed artefact at once', () => {
   const KEY = `sk-ant-api03-${'B'.repeat(95)}`;
-  const r = runInterview({ answers: { ...ANSWERS, 1: `use my key ${KEY} to check` }, repoPath: '/tmp/x' });
+  const r = runInterview({ verdictType: 'green', answers: { ...ANSWERS, 1: `use my key ${KEY} to check` }, repoPath: '/tmp/x' });
   assert.equal(r.ok, true);
   assert.ok(!JSON.stringify(r.answers).includes(KEY));
 });
@@ -175,14 +207,14 @@ test('interview answers are scrubbed at INGEST — an answer becomes a prompt, a
 // ── 2. THE LEDGER ATTRIBUTION, end to end ────────────────────────────────────
 
 test('D13 REGRESSION: a close-authoring refusal files under bareloop, and its suggestedAsk is never an upstream ask', () => {
-  const refusal = runInterview({ answers: { ...ANSWERS, 7: 'no' }, repoPath: '/tmp/x' }).refusal;
+  const refusal = runInterview({ verdictType: 'hitl', answers: ANSWERS, repoPath: '/tmp/x' }).refusal;
   const events = refusalEvents(refusal).map((e, i) => ({ ...e, seq: i + 1 }));
 
   const occs = classifyIncidents(events, { spine: 'authoring' });
   const req = occs.filter((o) => o.class === 'request-red');
   assert.equal(req.length, 1, 'the demand is counted exactly once');
   assert.equal(req[0].lib, REFUSAL_LIB, 'the lib is the STAMPED one — inferring it here is the BA-2 misattribution class');
-  assert.equal(req[0].verb, 'genre-other');
+  assert.equal(req[0].verb, 'hitl', 'the demand names the verdict class, which is what the rung waits on');
 
   // …and the template a human actually FILES from must aim at the same target.
   // Fixing the occurrence alone would leave the misattribution in the one field
@@ -542,6 +574,7 @@ test('authorCloseForJob: the SAME git stderr channel is scrubbed one function ea
   assert.equal(scanSecrets(stop).length, 1, 'the injected stop must really carry it — else nothing is under test');
 
   const r = await authorCloseForJob({
+    verdictType: 'green',
     answers: ANSWERS,
     repoPath: '/patient',
     lang: 'js',
@@ -587,6 +620,7 @@ const SURVEY = (dir) => ({
 test('WHOLE PIPELINE: seven answers in, a validateJob-green spec with a hash out', async (t) => {
   const p = makePatient(t);
   const authored = await authorCloseForJob({
+    verdictType: 'green',
     answers: ANSWERS,
     repoPath: p.dir,
     lang: 'js',
@@ -615,7 +649,7 @@ test('WHOLE PIPELINE: seven answers in, a validateJob-green spec with a hash out
 
 /** the PYTHON close as it exists AFTER M3 injected the genre's own MYPYPATH */
 const PY_STAGES = (env = { MYPYPATH: 'src' }) => {
-  const g = genreGuards('python');
+  const g = greenGuards('python');
   return [
     { name: g[0].name, kind: g[0].kind, params: { ...g[0].params, allowPrefixes: ['src/'] } },
     {
@@ -650,7 +684,8 @@ test('the composed closeDecl RECORDS the genre env the flow injected — and the
   });
 
   const r = await authorCloseForJob({
-    answers: ANSWERS, repoPath: p.dir, lang: 'python', seedRef: p.seed, scout: SURVEY(p.dir), authorFn,
+    verdictType: 'green',
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'python', seedRef: p.seed, scout: SURVEY(p.dir), authorFn,
   });
   assert.equal(r.ok, true, JSON.stringify(r.reds));
   assert.deepEqual(r.closeDecl.genreEnv, { MYPYPATH: 'src' }, 'what the arbiter injected must ride the signed envelope');
@@ -677,31 +712,85 @@ test('a genre that owns NO environment records none — absent is not empty (F59
     reds: [], stop: null, cost: null,
   });
   const r = await authorCloseForJob({
-    answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed, scout: SURVEY(p.dir), authorFn,
+    verdictType: 'green',
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed, scout: SURVEY(p.dir), authorFn,
   });
   assert.equal(Object.hasOwn(r.closeDecl, 'genreEnv'), false, 'js owns none, so nothing is recorded at all');
   assert.deepEqual(validateJob(assembleSpec(SPEC_DRAFT, r)).reds, []);
 });
 
-test('the pipeline REFUSES before spending anything when the interview refuses', async () => {
+test('the pipeline REFUSES before spending anything when the interview refuses the CLASS', async () => {
+  for (const verdictType of LOCKED_CLASSES) {
+    let called = 0;
+    const r = await authorCloseForJob({
+      verdictType,
+      answers: ANSWERS,
+      repoPath: '/tmp/x',
+      lang: 'js',
+      scoutFn: async () => { called += 1; return SURVEY('/tmp/x'); },
+      generate: async () => { called += 1; return { text: '' }; },
+    });
+    assert.equal(r.ok, false);
+    assert.equal(r.stop, 'refused');
+    assert.equal(r.refusal.verb, verdictType);
+    assert.equal(called, 0, 'a refusal costs zero — the interview is the cheapest gate there is');
+  }
+});
+
+test('THE GENRE REFUSAL MOVED TO THE COMPOSER: a language the catalogue cannot measure is COUNTED demand, not a wiring red', async () => {
   let called = 0;
   const r = await authorCloseForJob({
-    answers: { ...ANSWERS, 7: 'no' },
+    verdictType: 'green',
+    answers: ANSWERS,
     repoPath: '/tmp/x',
-    lang: 'js',
+    lang: 'rust',
+    seedFn: async () => { called += 1; return { stop: null, seedRef: 'deadbeef' }; },
     scoutFn: async () => { called += 1; return SURVEY('/tmp/x'); },
     generate: async () => { called += 1; return { text: '' }; },
   });
   assert.equal(r.ok, false);
   assert.equal(r.stop, 'refused');
+  assert.equal(r.refusal.kind, 'request-red', 'D13\'s refusal survives the slot deletion — it just moved');
   assert.equal(r.refusal.verb, 'genre-other');
-  assert.equal(called, 0, 'a refusal costs zero — the interview is the cheapest gate there is');
+  assert.equal(r.refusal.red.lib, REFUSAL_LIB);
+  assert.equal(called, 0, 'and it still costs nothing');
+
+  // …and it is COUNTED, end to end, exactly like the slot it replaced
+  const occs = classifyIncidents(refusalEvents(r.refusal).map((e, i) => ({ ...e, seq: i + 1 })), { spine: 'authoring' });
+  assert.deepEqual(occs.map((o) => [o.class, o.lib, o.verb]), [['request-red', REFUSAL_LIB, 'genre-other']]);
+});
+
+test('THE COMPOSER carries a LOCKED KIND up as counted demand — the reds array is not where a refusal hides', async (t) => {
+  const p = makePatient(t);
+  const authorFn = async () => ({
+    ok: false,
+    declaration: null,
+    reds: [{ code: 'locked-kind', path: 'stages[1].kind', detail: 'locked', kind: 'judged-floor', verb: 'judged-floor', lib: 'bareloop' }],
+    stop: 'max-revisions',
+    cost: null,
+  });
+  const r = await authorCloseForJob({
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed, scout: SURVEY(p.dir), authorFn,
+  });
+  assert.equal(r.ok, false);
+  assert.equal(r.refusal.kind, 'request-red');
+  assert.equal(r.refusal.verb, 'judged-floor');
+  assert.equal(r.refusal.red.lib, REFUSAL_LIB);
+
+  // a NON-demand authoring red is never dressed up as demand — that would inflate
+  // the very number the admission path exists to measure
+  const casualty = async () => ({ ok: false, declaration: null, reds: [{ code: 'provider-red', path: 'author', detail: 'ENETUNREACH' }], stop: 'provider-red', cost: null });
+  const c = await authorCloseForJob({
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed, scout: SURVEY(p.dir), authorFn: casualty,
+  });
+  assert.equal(c.refusal, null);
 });
 
 test('the pipeline surfaces an ABSENT survey as a refusal to author, never as "no facts needed" (F59)', async (t) => {
   const p = makePatient(t);
   const r = await authorCloseForJob({
-    answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
+    verdictType: 'green',
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
     scout: { state: 'ABSENT', facts: null, reason: 'survey 0 bytes', calls: [] },
     generate: scriptedDeclarer([{ stages: DECL().stages }]),
   });

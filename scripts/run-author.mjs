@@ -17,16 +17,27 @@
 //
 //   node scripts/run-author.mjs \
 //     --patient /path/to/repo --answers answers.json --draft specdraft.json \
-//     --out /path/to/outdir [--lang js] [--timeout 300000]
+//     --verdict green --out /path/to/outdir [--lang js] [--timeout 300000]
 //
-//   answers.json   {"1": "...", ..., "7": "yes"}   the seven frozen questions
+//   --verdict      THE RADIO (PRD v1.57 §1): green | soft-green | hitl. It is the
+//                  USER's answer, so it is asked rather than defaulted — a
+//                  defaulted class would be this script answering a question the
+//                  person was asked. v1 admits `green`; the other two return the
+//                  honest counted refusal.
+//   answers.json   {"1": "...", ..., "6": "..."}  the picked class's own frozen
+//                  questions (green: six; the seventh slot was D13's genre
+//                  confirm and is DELETED — the interview never asks about a
+//                  genre, and that refusal moved to the composer).
 //   specdraft.json the OPERATOR half of a job-v1 spec — budgets, fence, cadence,
-//                  goal, tools, escalation. NO close, NO verdictType: those two
-//                  are what this pipeline authors and derives.
+//                  goal, tools, escalation. NO close, NO verdictType: the close is
+//                  what this pipeline authors, and the class comes from --verdict.
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
-import { authorCloseForJob, assembleSpec, prepareSigning, refusalEvents, TYPES_QUESTIONS } from '../src/authorjob.js';
+import {
+  authorCloseForJob, assembleSpec, prepareSigning, refusalEvents,
+  VERDICT_CLASSES, questionsFor,
+} from '../src/authorjob.js';
 import { makeLoopGenerate } from '../src/authorflow.js';
 import { validateJob, jobSpecHash } from '../src/job.js';
 import { scanSecrets } from '../src/validate.js';
@@ -49,13 +60,20 @@ const patientArg = arg('patient');
 const answersArg = arg('answers');
 const draftArg = arg('draft');
 const outArg = arg('out');
+const verdictArg = arg('verdict');
 const LANG = arg('lang') ?? 'js';
 const timeoutArg = arg('timeout');
 const TIMEOUT_MS = timeoutArg === null ? DEFAULT_TIMEOUT_MS : Number(timeoutArg);
 
-if (!patientArg || !answersArg || !draftArg || !outArg) {
-  die('usage: node scripts/run-author.mjs --patient <repoPath> --answers <answers.json> --draft <specdraft.json> --out <outdir> [--lang js] [--timeout <ms>]');
+if (!patientArg || !answersArg || !draftArg || !outArg || verdictArg === null) {
+  die('usage: node scripts/run-author.mjs --patient <repoPath> --answers <answers.json> --draft <specdraft.json> '
+    + `--verdict <${VERDICT_CLASSES.join('|')}> --out <outdir> [--lang js] [--timeout <ms>]`);
 }
+// the menu is handed over enumerated; an unknown value is a typo, and the
+// interview refuses it as one (a LOCKED class is a different answer — it reaches
+// the pipeline and comes back as counted demand)
+const VERDICT = /** @type {string} */ (verdictArg);
+if (!VERDICT_CLASSES.includes(VERDICT)) die(`--verdict ${VERDICT} is not a verdict class — one of ${VERDICT_CLASSES.join(' | ')}`);
 if (!Number.isFinite(TIMEOUT_MS) || TIMEOUT_MS <= 0) die(`--timeout ${timeoutArg} is not a positive number of milliseconds`);
 
 const PATIENT = resolve(/** @type {string} */ (patientArg));
@@ -111,6 +129,7 @@ const costLine = (cost) => {
 
 console.log(`== close-authoring, run ${runid} ==  ${MODEL}`);
 console.log(`  patient  ${PATIENT}`);
+console.log(`  verdict  ${VERDICT}  (the USER's pick — this run authors a close that promises to stay at or below it)`);
 console.log(`  lang     ${LANG}`);
 console.log(`  draft    ${resolve(/** @type {string} */ (draftArg))} (job "${draft?.job ?? '?'}")`);
 console.log(`  out      ${OUT}`);
@@ -118,16 +137,19 @@ console.log(`  timeout  ${TIMEOUT_MS}ms per close stage`);
 console.log('  stops at prepareSigning — this script NEVER signs and NEVER runs the job\n');
 
 const provider = new AnthropicProvider({ apiKey, model: MODEL });
-emit('author-start', { runid, patient: PATIENT, lang: LANG, model: MODEL, job: draft?.job ?? null, timeoutMs: TIMEOUT_MS });
+emit('author-start', { runid, patient: PATIENT, lang: LANG, verdictType: VERDICT, model: MODEL, job: draft?.job ?? null, timeoutMs: TIMEOUT_MS });
 
 // ── 1. answers → scout → the model fills the form → a close DECLARATION ──────
 // `provider` drives the scout; `generate` is the declaration model boundary (one
 // bare-agent Loop per call, the tool wired to end the call it is used in).
 const authored = await authorCloseForJob({
   answers,
+  verdictType: VERDICT,
   repoPath: PATIENT,
   lang: LANG,
-  questions: TYPES_QUESTIONS,
+  // the picked class's own frozen set — LOCKED classes never reach here, they
+  // refuse at admission before their questions are ever asked
+  questions: VERDICT === 'green' ? questionsFor(VERDICT) : null,
   provider,
   generate: makeLoopGenerate(provider),
 });
@@ -162,7 +184,7 @@ if (!authored.ok) {
   // ── 2. the operator's half + the authored half → one spec ──────────────────
   const spec = assembleSpec(draft, authored);
   const specFile = writeOut('resolved-spec.json', spec);
-  console.log(`\nverdictType ${authored.verdictType} (DERIVED from the interview, never picked)`);
+  console.log(`\nverdictType ${authored.verdictType} (the person's own pick, validated — never inferred)`);
   console.log('declaration');
   for (const s of authored.closeDecl.stages ?? []) {
     console.log(`  ${s.name}  [${s.kind}]${s.offer === false ? '  (not lendable)' : ''}${(s.needs ?? []).length ? `  needs: ${s.needs.join(', ')}` : ''}`);

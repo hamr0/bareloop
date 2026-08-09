@@ -861,7 +861,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     }
     const listed = await seedListing(workdir, s.seedRef);
     const v = listed.stop === null
-      ? validateCloseDecl(job.closeDecl, { at: 'closeDecl', listing: listed.files })
+      ? validateCloseDecl(job.closeDecl, { at: 'closeDecl', listing: listed.files, verdictType: job.verdictType })
       : { ok: false, grounded: false, reds: [{ code: 'listing-unreadable', path: 'closeDecl', detail: listed.stop }] };
     emit('close-decl', {
       genre: job.closeDecl.genre,

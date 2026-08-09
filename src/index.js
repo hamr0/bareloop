@@ -87,14 +87,20 @@ export {
 // guard batteries it must show the user under D5 and cannot let them remove).
 export {
   validateDeclaration, normalizeDeclaration, KIND_CATALOGUE, CATALOGUE_KINDS, CATALOGUE_LIVE_KINDS,
-  LOCKED_KINDS, TYPES_GENRE, TYPES_GENRE_TEMPLATE, GENRE_LANGUAGES, genreGuards, genreEnv, genreOwnedEnvNames,
+  LOCKED_KINDS, TYPES_GENRE, TYPES_GENRE_TEMPLATE, GENRE_LANGUAGES, genreEnv, genreOwnedEnvNames,
   DIRECTIONS, BASELINES, MAX_STAGES,
+  // the verdict-class surface (PRD v1.57 §1–§2): the radio's own menu, the guard
+  // battery keyed off it, and the ceiling that makes the pick a promise
+  VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES, CLASS_BATTERIES, classGuards, closeCeiling,
 } from './authoring.js';
 // M3 — the looking half and the writing half. `authorClose` is the grounded
 // loop; `runAuthorScout`/`buildSeedListing` are exported because a caller that
 // already paid for a survey passes it back in rather than buying a second one.
 export { runAuthorScout, buildSeedListing, seedFileList, classifySurvey, AUTHOR_SCOUT_VERBS } from './authorscout.js';
-export { authorClose, authorPrompt, declarationSchema, makeLoopGenerate, TYPES_QUESTIONS, MAX_REVISIONS } from './authorflow.js';
+export {
+  authorClose, authorPrompt, declarationSchema, makeLoopGenerate, MAX_REVISIONS,
+  QUESTION_SETS, GREEN_QUESTIONS, CLASS_STATEMENTS, questionsFor, requiredAnswersFor,
+} from './authorflow.js';
 // M4a — the runtime bridge. `validateCloseDecl` is the spec-level gate (the job
 // validator's own branch calls it); `runDeclaredStages` is the executor seam a
 // runner other than `runPlan` would need; `closeStagesOf` is the ONE staging
@@ -109,5 +115,5 @@ export { closeStagesOf } from './plan.js';
 // never signs — the approvals array and the human's word are unchanged.
 export {
   runInterview, authorCloseForJob, assembleSpec, prepareSigning, refusalEvents, refuseLockedKind,
-  GENRE, GENRE_CONFIRM, REQUIRED_ANSWERS, REFUSAL_LIB, REFUSAL_CATEGORY,
+  GENRE, REFUSAL_LIB, REFUSAL_CATEGORY,
 } from './authorjob.js';

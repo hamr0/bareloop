@@ -70,7 +70,8 @@
 
 import { runStage, makeSeedTrees, STOP_FAULTS, EXIT_RED } from './kinds.js';
 import {
-  validateDeclaration, genreGuards, genreOwnedEnvNames, ungroundedGenreEnv, GENRE_LANGUAGES, TYPES_GENRE,
+  validateDeclaration, classGuards, genreOwnedEnvNames, ungroundedGenreEnv, GENRE_LANGUAGES, TYPES_GENRE,
+  VERDICT_CLASSES, LIVE_CLASSES,
 } from './authoring.js';
 import { stageGap } from './ralph.js';
 import { isObj, isNonEmptyString } from './validate.js';
@@ -164,20 +165,51 @@ export function declaredStages(closeDecl) {
  * so a forged env can never be signed in the first place — and `runPlan`'s
  * pre-flight, which catches a spec edited after signing.
  *
+ * `verdictType` is the class the USER picked, and it is REQUIRED here because
+ * the guard battery keys off it (PRD v1.57 §2): with no class in hand there is
+ * no battery, and M2 would be handed nothing to check D5 against. It arrives
+ * from the spec's sibling `verdictType` field on every caller — the job
+ * validator, the signing gate and the runner all hold the whole spec.
+ *
  * @param {any} closeDecl
  * @param {{at?: string, listing?: string[]|null, deferListing?: boolean,
- *   catalogue?: Record<string, any>}} [opts]
+ *   catalogue?: Record<string, any>, verdictType?: string|null}} [opts]
  * @returns {{ok: boolean, reds: Red[], closeDecl: any, grounded: boolean,
- *   scoped: {scoped: boolean, via: string|null}}}
+ *   scoped: {scoped: boolean, via: string|null},
+ *   ceiling: {class: string, kind: string, stage: string|null, locked: boolean}|null}}
  */
 export function validateCloseDecl(closeDecl, opts = {}) {
-  const { at = 'closeDecl', listing = null, catalogue } = opts;
+  const { at = 'closeDecl', listing = null, catalogue, verdictType = null } = opts;
   const deferListing = opts.deferListing === true;
   /** @type {Red[]} */
   const reds = [];
   /** @type {(code: string, path: string, detail: string, extra?: object) => void} */
   const red = (code, path, detail, extra = {}) => { reds.push({ code, path, detail, ...extra }); };
-  const bail = () => ({ ok: false, reds, closeDecl: null, grounded: false, scoped: { scoped: false, via: null } });
+  const bail = () => ({ ok: false, reds, closeDecl: null, grounded: false, scoped: { scoped: false, via: null }, ceiling: null });
+
+  // THE PICKED CLASS, before anything else, because the battery hangs off it.
+  // The path is the SPEC's own `verdictType` rather than a `closeDecl` child:
+  // the class is the user's separate answer and this red must point at the field
+  // they actually set, not at the artefact it invalidates.
+  //
+  // A locked class reds here as well as on job.js's counted `request-red`, and
+  // that is two axes rather than one problem twice: one COUNTS the demand for
+  // the class, this one says the close cannot be validated because the class it
+  // was picked under has no battery. It is the same split `langOk` already
+  // makes, and both bail for the same reason — a validator configured out of its
+  // own rule reports a declaration it never examined.
+  const picked = String(verdictType);
+  if (!VERDICT_CLASSES.includes(picked)) {
+    red('class-absent', 'verdictType', `the verdict class the user picked — one of ${VERDICT_CLASSES.join(' | ')}. `
+      + 'It selects this close\'s mandatory guard battery, which has no default and is never inferred');
+    return bail();
+  }
+  if (!LIVE_CLASSES.includes(picked)) {
+    red('class-battery-locked', 'verdictType', `"${picked}" is declared-but-locked: v1 builds a guard battery for `
+      + `${LIVE_CLASSES.join(', ')} only, and a close cannot be validated against a battery that does not exist — `
+      + 'validating it against another class\'s guards would sign a close nobody checked');
+    return bail();
+  }
 
   if (!isObj(closeDecl)) {
     red('invalid-value', at, 'an authored close DECLARATION: { genre, lang, stages: [...] }');
@@ -268,7 +300,8 @@ export function validateCloseDecl(closeDecl, opts = {}) {
     // nobody performed.
     listing,
     ...(deferListing ? { deferListing: true } : {}),
-    guards: genreGuards(closeDecl.lang),
+    guards: classGuards({ verdictType: picked, lang: closeDecl.lang }),
+    verdictType: picked,
     envOwned: owned,
     // POST-injection: an owned name is accepted only when its value is EXACTLY
     // the recorded one. `{}` (nothing recorded) keeps the pre-injection rule, so
@@ -284,6 +317,7 @@ export function validateCloseDecl(closeDecl, opts = {}) {
     closeDecl: ok ? { ...closeDecl, stages: v.declaration.stages } : null,
     grounded: v.grounded,
     scoped: v.scoped,
+    ceiling: v.ceiling,
   };
 }
 
@@ -295,11 +329,16 @@ export function validateCloseDecl(closeDecl, opts = {}) {
  * exactly this split: `changed-from-seed` is RED at its own seed by
  * construction, so counting it as work would let a close with nothing to do
  * pass the "something must be red at seed" gate.
- * @param {any} closeDecl @returns {string[]}
+ * The battery keys off the CLASS the user picked (PRD v1.57 §2), so the class
+ * comes in beside the declaration. A class or a language with no battery hands
+ * back `[]` — this reads a split, it does not enforce one, and every caller
+ * reaches it only after `validateCloseDecl` has already refused both cases.
+ * @param {any} closeDecl @param {string} verdictType @returns {string[]}
  */
-export function guardNames(closeDecl) {
+export function guardNames(closeDecl, verdictType) {
   if (!isObj(closeDecl) || !GENRE_LANGUAGES.includes(closeDecl.lang)) return [];
-  return genreGuards(closeDecl.lang).map((g) => g.name);
+  if (!LIVE_CLASSES.includes(String(verdictType))) return [];
+  return classGuards({ verdictType: String(verdictType), lang: closeDecl.lang }).map((g) => g.name);
 }
 
 /**

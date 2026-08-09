@@ -33,7 +33,10 @@ import { createRoot } from '../src/root.js';
 import { readGrade, createTrend } from '../src/trend.js';
 import { checkMenu, CLASS_BY_CLOSE, CLOSE_TYPES } from '../src/job.js';
 import { closeStagesOf } from '../src/plan.js';
-import { genreGuards } from '../src/authoring.js';
+import { classGuards, LOCKED_CLASSES, VERDICT_CLASSES } from '../src/authoring.js';
+
+/** every declaration in this file is a GREEN job — the battery keys off the class */
+const greenGuards = (/** @type {string} */ lang) => classGuards({ verdictType: 'green', lang });
 import { applyGenreEnv } from '../src/authorflow.js';
 import { redactSecrets } from '../src/validate.js';
 
@@ -120,15 +123,55 @@ test('the check menu derives from a DECLARED close exactly as from a command one
 
 test('guardNames names the genre\'s guards and nothing else — the work/guard split D9.3 keys on', () => {
   const decl = { genre: 'TYPES', lang: 'js', stages: [] };
-  assert.deepEqual(guardNames(decl).sort(), genreGuards('js').map((g) => g.name).sort());
-  assert.deepEqual(guardNames({ genre: 'TYPES', lang: 'nope', stages: [] }), []);
+  assert.deepEqual(guardNames(decl, 'green').sort(), greenGuards('js').map((g) => g.name).sort());
+  assert.deepEqual(guardNames({ genre: 'TYPES', lang: 'nope', stages: [] }, 'green'), []);
+  // the battery keys off the CLASS, so a class with no battery names no guards
+  for (const c of LOCKED_CLASSES) assert.deepEqual(guardNames(decl, c), [], c);
+  assert.deepEqual(guardNames(decl, undefined), []);
   assert.equal(isDeclaredClose({ closeDecl: decl }), true);
   assert.equal(isDeclaredClose({ close: [] }), false);
 });
 
 // ── validateCloseDecl: the spec-level gate, both directions ──────────────────
 
-const JS_GUARDS = () => genreGuards('js');
+/** Every declaration in this file is a GREEN job. The guard battery keys off the
+ * verdict class the user picked (PRD v1.57 §2), so the gate needs the class in
+ * hand — stated once here rather than at two dozen call sites. The class GATE
+ * itself is tested against the real export, below. */
+const vcd = (/** @type {any} */ decl, /** @type {any} */ over = {}) => validateCloseDecl(decl, { verdictType: 'green', ...over });
+
+test('validateCloseDecl needs the PICKED CLASS — the battery hangs off it and has no default', () => {
+  for (const missing of [{}, { verdictType: null }, { verdictType: 'greenish' }]) {
+    const r = validateCloseDecl(GOOD_DECL(), { deferListing: true, ...missing });
+    assert.equal(r.ok, false, JSON.stringify(missing));
+    const red = r.reds.find((x) => x.code === 'class-absent');
+    assert.ok(red, `${JSON.stringify(missing)} → ${JSON.stringify(r.reds.map((x) => x.code))}`);
+    assert.equal(red.path, 'verdictType', 'the red points at the field the USER set, not at the artefact it invalidates');
+    assert.ok(VERDICT_CLASSES.every((c) => String(red.detail).includes(c)), 'the closed set is handed over enumerated');
+    // and nothing was validated behind it: a validator with no battery must not
+    // report a declaration it never checked D5 against
+    assert.equal(r.reds.length, 1, JSON.stringify(r.reds));
+  }
+});
+
+test('validateCloseDecl refuses a LOCKED class outright — there is no battery to validate against', () => {
+  for (const verdictType of LOCKED_CLASSES) {
+    const r = validateCloseDecl(GOOD_DECL(), { deferListing: true, verdictType });
+    assert.equal(r.ok, false);
+    const red = r.reds.find((x) => x.code === 'class-battery-locked');
+    assert.ok(red, JSON.stringify(r.reds));
+    assert.equal(red.path, 'verdictType');
+    assert.equal(r.reds.length, 1, 'one axis, one red — the counted demand for the class is job.js\'s, not this gate\'s');
+  }
+});
+
+test('validateCloseDecl reports the composition\'s CEILING, so a class disagreement is never silent', () => {
+  const r = vcd(GOOD_DECL(), { deferListing: true });
+  assert.equal(r.ok, true);
+  assert.equal(r.ceiling.class, 'green', 'every live kind is mechanical — the rule is inert in v1 by construction');
+});
+
+const JS_GUARDS = () => greenGuards('js');
 const guardStages = (allowPrefixes) => JS_GUARDS().map((g) => ({
   name: g.name,
   kind: g.kind,
@@ -158,7 +201,7 @@ const GOOD_DECL = (allowPrefixes = ['src/']) => ({
  * pass whatever the injector does, including nothing.
  */
 const PY_DECL = (injected = { MYPYPATH: 'src' }) => {
-  const g = genreGuards('python');
+  const g = greenGuards('python');
   return {
     genre: 'TYPES',
     lang: 'python',
@@ -182,11 +225,11 @@ const PY_LISTING = ['mypy.ini', 'src/a.py', 'src/b.py'];
 
 test('the ARBITER\'s own genre-env injection survives re-validation — a python close is not bricked by its own MYPYPATH', () => {
   const d = PY_DECL();
-  const deferred = validateCloseDecl(d, { deferListing: true });
+  const deferred = vcd(d, { deferListing: true });
   assert.deepEqual(deferred.reds, [], 'the signing gate and the job validator must accept our own injection');
   assert.equal(deferred.ok, true);
 
-  const grounded = validateCloseDecl(d, { listing: PY_LISTING });
+  const grounded = vcd(d, { listing: PY_LISTING });
   assert.deepEqual(grounded.reds, [], 'and so must the runner, grounded against the real seed');
   assert.equal(grounded.grounded, true);
   assert.deepEqual(grounded.closeDecl.genreEnv, { MYPYPATH: 'src' }, 'the recorded injection rides the resolved form');
@@ -195,7 +238,7 @@ test('the ARBITER\'s own genre-env injection survives re-validation — a python
 test('genre-owned env: a WRONG value still reds, and an owned key with no recorded injection behind it reds too', () => {
   const wrong = PY_DECL();
   wrong.stages[1].params.env = { MYPYPATH: 'the-model-guessed' };
-  const r1 = validateCloseDecl(wrong, { deferListing: true });
+  const r1 = vcd(wrong, { deferListing: true });
   assert.equal(r1.ok, false);
   const red = r1.reds.find((x) => x.code === 'genre-owned-env');
   assert.ok(red, JSON.stringify(r1.reds));
@@ -206,24 +249,24 @@ test('genre-owned env: a WRONG value still reds, and an owned key with no record
   // fail-safe direction holds (round 2's arm B is still refused)
   const unrecorded = PY_DECL();
   delete unrecorded.genreEnv;
-  assert.ok(validateCloseDecl(unrecorded, { deferListing: true }).reds.some((r) => r.code === 'genre-owned-env'));
+  assert.ok(vcd(unrecorded, { deferListing: true }).reds.some((r) => r.code === 'genre-owned-env'));
 });
 
 test('the recorded genre env is CONSTRAINED to the names the genre owns — it is never an environment channel', () => {
   const smuggle = PY_DECL();
   smuggle.genreEnv = { ...smuggle.genreEnv, LD_PRELOAD: '/tmp/x.so' };
-  assert.ok(validateCloseDecl(smuggle, { deferListing: true }).reds
+  assert.ok(vcd(smuggle, { deferListing: true }).reds
     .some((r) => r.path === 'closeDecl.genreEnv.LD_PRELOAD'), 'an unowned name may never be recorded');
 
   // js owns no environment at all, so ANY recorded name is a red there
-  assert.ok(validateCloseDecl({ ...GOOD_DECL(), genreEnv: { MYPYPATH: 'src' } }, { deferListing: true }).reds
+  assert.ok(vcd({ ...GOOD_DECL(), genreEnv: { MYPYPATH: 'src' } }, { deferListing: true }).reds
     .some((r) => r.path === 'closeDecl.genreEnv.MYPYPATH'));
   // an empty record is legal (a genre that owns none injected none) and a
   // non-string value is not
-  assert.deepEqual(validateCloseDecl({ ...GOOD_DECL(), genreEnv: {} }, { deferListing: true }).reds, []);
+  assert.deepEqual(vcd({ ...GOOD_DECL(), genreEnv: {} }, { deferListing: true }).reds, []);
   const bad = PY_DECL();
   bad.genreEnv = { MYPYPATH: '' };
-  assert.ok(validateCloseDecl(bad, { deferListing: true }).reds.some((r) => r.path === 'closeDecl.genreEnv'));
+  assert.ok(vcd(bad, { deferListing: true }).reds.some((r) => r.path === 'closeDecl.genreEnv'));
 });
 
 // The by-VALUE check proves the two copies of MYPYPATH AGREE — and both copies
@@ -235,15 +278,15 @@ test('the recorded genre env is CONSTRAINED to the names the genre owns — it i
 // nothing else.
 test('the recorded genre env is GROUNDED against the seed tree — self-consistency is not provenance', () => {
   // the direction that must keep working: the value the arbiter really builds
-  assert.deepEqual(validateCloseDecl(PY_DECL(), { listing: PY_LISTING }).reds, [],
+  assert.deepEqual(vcd(PY_DECL(), { listing: PY_LISTING }).reds, [],
     'the real injected value derives FROM the listing and must ground clean');
 
   // the forgery: a hand-edited spec whose two copies agree perfectly
   const forged = PY_DECL({ MYPYPATH: '/tmp/attacker-stubs' });
-  const deferred = validateCloseDecl(forged, { deferListing: true });
+  const deferred = vcd(forged, { deferListing: true });
   assert.deepEqual(deferred.reds, [], 'with no tree in hand the deferred gate cannot see it — that is why the '
     + 'grounded gates exist, and why the runner re-validates');
-  const r = validateCloseDecl(forged, { listing: PY_LISTING });
+  const r = vcd(forged, { listing: PY_LISTING });
   const red = r.reds.find((x) => x.code === 'genre-env-ungrounded');
   assert.ok(red, `a path outside the seed tree must not be claimable as ours: ${JSON.stringify(r.reds)}`);
   assert.equal(red.path, 'closeDecl.genreEnv.MYPYPATH');
@@ -253,20 +296,20 @@ test('the recorded genre env is GROUNDED against the seed tree — self-consiste
   // the value is a JOINED list, so every element is grounded on its own — one
   // real prefix must not launder the rest
   const half = PY_DECL({ MYPYPATH: 'src:/tmp/attacker-stubs' });
-  const reds = validateCloseDecl(half, { listing: PY_LISTING }).reds.filter((x) => x.code === 'genre-env-ungrounded');
+  const reds = vcd(half, { listing: PY_LISTING }).reds.filter((x) => x.code === 'genre-env-ungrounded');
   assert.equal(reds.length, 1, JSON.stringify(reds));
   assert.equal(reds[0].element, '/tmp/attacker-stubs');
 
   // a multi-prefix value the arbiter really could have built still grounds
   const both = PY_DECL({ MYPYPATH: 'src:mypy.ini' });
-  assert.deepEqual(validateCloseDecl(both, { listing: PY_LISTING }).reds, [],
+  assert.deepEqual(vcd(both, { listing: PY_LISTING }).reds, [],
     'a file and a directory prefix are both things the seed listing selects');
   // …and neither an invented sibling of a real prefix nor a climb out of the
   // tree does. `globToPrefix` deliberately leaves ".." VISIBLE rather than
   // resolving it (F9), which is exactly what lets the listing refuse it.
   for (const v of ['src_stubs', '../attacker-stubs', 'src/../../attacker-stubs']) {
     const bad = PY_DECL({ MYPYPATH: v });
-    assert.ok(validateCloseDecl(bad, { listing: PY_LISTING }).reds.some((x) => x.code === 'genre-env-ungrounded'), v);
+    assert.ok(vcd(bad, { listing: PY_LISTING }).reds.some((x) => x.code === 'genre-env-ungrounded'), v);
   }
 });
 
@@ -279,7 +322,7 @@ test('a recorded genre env DELETED from the stage reds at the spec gate — with
   const stripped = PY_DECL();
   delete stripped.stages[1].params.env;
   for (const o of [{ deferListing: true }, { listing: PY_LISTING }]) {
-    const red = validateCloseDecl(stripped, o).reds.find((x) => x.code === 'genre-env-missing');
+    const red = vcd(stripped, o).reds.find((x) => x.code === 'genre-env-missing');
     assert.ok(red, `${JSON.stringify(o)}: a stage that lost the injection may not validate`);
     assert.equal(red.path, 'closeDecl.stages[1].params.env.MYPYPATH');
     assert.equal(red.expected, 'src');
@@ -289,7 +332,7 @@ test('a recorded genre env DELETED from the stage reds at the spec gate — with
   // key, not about having an `env` object at all
   const kept = PY_DECL();
   kept.stages[1].params.env = { MYPYPATH: 'src', PYTHONDONTWRITEBYTECODE: '1' };
-  assert.deepEqual(validateCloseDecl(kept, { deferListing: true }).reds, []);
+  assert.deepEqual(vcd(kept, { deferListing: true }).reds, []);
 });
 
 // The round trip, against the REAL producer rather than a fixture that agrees
@@ -311,12 +354,12 @@ test('grounding accepts EXACTLY what applyGenreEnv produces — the producer and
   assert.deepEqual(injected.applied, { MYPYPATH: 'src:lib' }, 'the joined form is what the arbiter really writes');
 
   const signed = { ...injected.declaration, genreEnv: { ...injected.applied } };
-  assert.deepEqual(validateCloseDecl(signed, { listing }).reds, [],
+  assert.deepEqual(vcd(signed, { listing }).reds, [],
     'the gate must accept the injector\'s own output, joined value and all');
 });
 
 test('validateCloseDecl accepts a well-formed declaration and hands back the RESOLVED stages', () => {
-  const r = validateCloseDecl(GOOD_DECL(), { deferListing: true });
+  const r = vcd(GOOD_DECL(), { deferListing: true });
   assert.deepEqual(r.reds, []);
   assert.equal(r.ok, true);
   assert.equal(r.grounded, false, 'a deferred listing is REPORTED, never passed off as grounded');
@@ -326,7 +369,7 @@ test('validateCloseDecl accepts a well-formed declaration and hands back the RES
 });
 
 test('validateCloseDecl reds the envelope: unknown field, wrong genre, unknown language, bad notes', () => {
-  const codes = (d) => validateCloseDecl(d, { deferListing: true }).reds.map((x) => `${x.code}:${x.path}`);
+  const codes = (d) => vcd(d, { deferListing: true }).reds.map((x) => `${x.code}:${x.path}`);
   assert.ok(codes({ ...GOOD_DECL(), seedRef: 'abc' }).includes('unknown-field:closeDecl.seedRef'),
     'a frozen seed in the SIGNED artefact is exactly what D12 retires — it must be inexpressible');
   assert.ok(codes({ ...GOOD_DECL(), genre: 'TESTGEN' }).some((c) => c.startsWith('invalid-value:closeDecl.genre')));
@@ -342,30 +385,30 @@ test('validateCloseDecl reds the envelope: unknown field, wrong genre, unknown l
 test('validateCloseDecl refuses when a guard was WEAKENED — D5 is not a taste', () => {
   const d = GOOD_DECL();
   d.stages[2].params.patterns = d.stages[2].params.patterns.slice(0, 2);
-  const reds = validateCloseDecl(d, { deferListing: true }).reds;
+  const reds = vcd(d, { deferListing: true }).reds;
   assert.ok(reds.some((r) => r.code === 'guard-weakened'), JSON.stringify(reds));
 });
 
 test('validateCloseDecl with NEITHER a listing nor deferListing refuses — a validator handed nothing to check reports nothing', () => {
-  const reds = validateCloseDecl(GOOD_DECL(), {}).reds;
+  const reds = vcd(GOOD_DECL(), {}).reds;
   assert.ok(reds.some((r) => r.code === 'listing-absent'));
 });
 
 test('validateCloseDecl refuses a caller that BOTH defers and supplies a listing — it does not know which gate it ran', () => {
-  const reds = validateCloseDecl(GOOD_DECL(), { deferListing: true, listing: ['src/a.js'] }).reds;
+  const reds = vcd(GOOD_DECL(), { deferListing: true, listing: ['src/a.js'] }).reds;
   assert.ok(reds.some((r) => r.code === 'listing-conflict'), JSON.stringify(reds));
 });
 
 test('GROUNDED, the listing rule fires: an invented path is a named red, and the same declaration passes deferred', async (t) => {
   const { dir } = makeRepo(t, { 'src/email.js': 'x', 'src/backup.js': 'y' });
   const d = GOOD_DECL(['src/alertEmail.js']);
-  const grounded = validateCloseDecl(d, { listing: ['src/email.js', 'src/backup.js'] });
+  const grounded = vcd(d, { listing: ['src/email.js', 'src/backup.js'] });
   assert.equal(grounded.ok, false);
   assert.ok(grounded.reds.some((r) => r.code === 'path-not-in-listing'), JSON.stringify(grounded.reds));
   assert.equal(grounded.grounded, true);
   // the SAME declaration is accepted with the tree-grounded half deferred — which
   // is exactly why the runner re-runs it grounded before any stage
-  assert.equal(validateCloseDecl(d, { deferListing: true }).ok, true);
+  assert.equal(vcd(d, { deferListing: true }).ok, true);
   assert.ok(dir);
 });
 

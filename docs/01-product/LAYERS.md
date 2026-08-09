@@ -116,8 +116,8 @@ verb blocks the work, the worker files a *request-red* and a human decides.
 | verdict | meaning |
 |---|---|
 | **green** | hard proof — the judge's exit code says pass; the only thing that mints learning |
-| **soft-green** | a rubric judged it acceptable — weaker credit, kept distinct |
-| **hitl** | a human rendered the verdict |
+| **soft-green** | a rubric judged it acceptable — weaker credit, kept distinct. *Today: a user-pickable radio value, DECLARED-BUT-LOCKED (v1.57 §1) — picking it returns the counted request-red refusal; it goes live on the close-authoring surface, after this rung (needs the RSI judged-floor analog first)* |
+| **hitl** | a human rendered the verdict. *Today: declared-but-locked exactly like soft-green — the pick is counted demand, refused until the hitl declaration surface exists (a hitl close IS a declaration)* |
 | **red** | failed; the gap feeds the next attempt |
 | **already-green** | was green before any work happened — mints **nothing** (credit for work not done poisons inheritance) |
 
@@ -126,7 +126,7 @@ verb blocks the work, the worker files a *request-red* and a human decides.
 ## The layers
 
 ```
-Layer 3   INHERITANCE    the road survives runs, with receipts; self-heals    (not built — N3, the NEXT rung)
+Layer 3   INHERITANCE    the road survives runs, with receipts; self-heals    (machinery built; rung PARKED — F88)
 Layer 2   MICRO-WHEELS   the road itself: locate → understand → write → verify (built + ACCEPTED — F47, v0.5.0;
                                                                                 road finished by T·A·P·U, v1.35)
 Layer R   THE ROOT       memory that survives attempts inside one run          (built — armed-and-inert, F41)
@@ -729,7 +729,10 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
    **(c) bound-pressure ledger fold** — "step X capped M of N runs" for the trust
    surface; acceptance = it can surface the F37/16g rounds-vs-money bind from archived
    spines.
-   **This is the NEXT rung (2026-07-30).** Layer 2's road is finished, hardened and
+   ~~**This is the NEXT rung (2026-07-30).**~~ *(Superseded — the rung was PARKED 2026-08-05,
+   F88 / PRD v1.52: the shape-lottery gate rules erased the difference the lift contrast
+   would have paid to measure; see the Layer 3 section above. Close-authoring took its
+   place in the critical path.)* Layer 2's road is finished, hardened and
    reviewed; the branch is release-ready. Layer 3 is the REUSE rung — the bridges the
    U runs have already minted get reused instead of redrawn, which makes the paired
    control fall out of normal operation (reuse = the ON arm, from-scratch = the OFF arm)
@@ -753,11 +756,18 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
    `litectx-maintainer` job, dark since `507adbb`. Gate 1 (the $0 expressiveness replay over
    the six hand-written closes) read **PASS for the TYPES genre with four kind amendments,
    FAIL as a general catalogue** — `harness-loop` (TESTGEN) recorded as known-missing rather
-   than discovered later; gate 2's POC closed 2026-08-08. **Status: built, live-validated once
-   ($0.25, "signing prepared, not signed"), UNDER WHOLE-BRANCH REVIEW with 3 serious findings
-   open — see the rung section above for those, and for the four 2026-08-08 rulings (verdict
-   class back to a user choice, verdict-class-keyed interviews, the command deny-floor +
-   work-branch default, the tighten-only timer).**
+   than discovered later; gate 2's POC closed 2026-08-08. **Status 2026-08-09: the review is
+   CLOSED (15 findings across three shrinking rounds, all fixed — F91) and the surface is
+   live-proven on BOTH genres:** the JS genre PREPARED twice with a byte-identical trial-gate
+   hash across cold runs; the python genre refused twice honestly — the second refusal was the
+   crash-stop preventing a live fake green (a symlink-blinded scope count reading 0 where 16
+   errors exist), fixed by physical-identity scope matching and converted to SIGNING PREPARED
+   for $0 on the same declaration. **The interview rework of the four 2026-08-08 rulings is
+   BUILT** (the `green | soft-green | hitl` radio with locked classes refusing as counted
+   demand; class-keyed question sets with the genre-confirm slot deleted and genre moved into
+   composition; the guard battery re-homed to the verdict class with fills at composition; the
+   class-vs-ceiling promise rule, inert in v1 by construction, mutation-proven). Remaining
+   before ship: the command deny-floor's work-branch mechanics and the ship gate itself.
 
 ---
 

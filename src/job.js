@@ -561,7 +561,11 @@ function validatePlanShape(spec, red, reds) {
     // stage executes — a job spec is validated with no repository in hand, and a
     // validator that quietly skipped those two rules would report a declaration
     // it never examined. `grounded: false` is what the runner keys on.
-    const cd = validateCloseDecl(spec.closeDecl, { at: 'closeDecl', deferListing: true });
+    // the class rides along: the mandatory guard battery keys off the verdict
+    // class the user picked (PRD v1.57 §2), so the gate cannot check D5 without
+    // it. An unknown or locked class is refused there, on its own axis, beside
+    // the counted `request-red` above.
+    const cd = validateCloseDecl(spec.closeDecl, { at: 'closeDecl', deferListing: true, verdictType: spec.verdictType });
     for (const r of cd.reds) reds.push(r);
     if (demanded !== undefined && !CLASS_BY_CLOSE.declared.includes(demanded)) {
       // the same laundering guard as the close-type hierarchy, one level up: a

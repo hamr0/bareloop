@@ -78,8 +78,8 @@ import { join, relative, isAbsolute } from 'node:path';
 import { seedRead as runSeedReadStages, makeSeedTrees, AGGREGATES, SIGNS, MAX_TERMS } from './kinds.js';
 import {
   KIND_CATALOGUE, MAX_STAGES, DIRECTIONS, BASELINES,
-  GENRE_LANGUAGES, TYPES_GENRE_TEMPLATE, genreGuards, genreEnv, genreOwnedEnvNames,
-  validateDeclaration, envCapableKind,
+  GENRE_LANGUAGES, TYPES_GENRE_TEMPLATE, classGuards, genreEnv, genreOwnedEnvNames,
+  validateDeclaration, envCapableKind, VERDICT_CLASSES, LIVE_CLASSES,
 } from './authoring.js';
 import { buildSeedListing, cleanEntry } from './authorscout.js';
 import { extractArtifact, priceOf } from './text.js';
@@ -133,17 +133,91 @@ export const STRUCTURE_INSTRUCTION_TOOL = `Your reply did not deliver exactly on
 export const STRUCTURE_INSTRUCTION_TEXT = 'Your reply could not be read as one JSON declaration. '
   + 'Reply with ONLY the JSON object, in a single fenced block, and nothing else.';
 
-/** The frozen TYPES interview set (prereg §5). The interview layer owns asking
- * them; the authoring prompt only renders the answers beside their questions. */
-export const TYPES_QUESTIONS = Object.freeze({
+/**
+ * THE INTERVIEW, KEYED BY VERDICT CLASS (hamr's ruling, PRD v1.57 §2).
+ *
+ * One question set per GENRE has no terminating shape — genres are a fat long
+ * tail that cannot be enumerated, and TYPES was the first specimen rather than
+ * the pattern. One set per verdict CLASS has exactly three. Genre understanding
+ * does not disappear: it moves into the COMPOSITION over the kind catalogue
+ * (`CLASS_STATEMENTS` below, rendered into the authoring prompt), which is the
+ * layer already built to hold it — the authoring call composes owned kinds and
+ * cannot emit anything else (D2/D3), so a genre it has never seen is a
+ * composition problem, not a catalogue problem.
+ *
+ * The GREEN set is questions 1–6 of the frozen TYPES set (prereg §5) BYTE FOR
+ * BYTE. What is gone is the seventh slot — D13's genre CONFIRM ("this looks like
+ * a type-fixing job, correct?") — superseded in full: the interview never asks
+ * about a genre again. The refusal it carried did not disappear; it MOVED to the
+ * composer, on the same counted `request-red` path (see `authorCloseForJob`).
+ * The remaining six are already genre-neutral, which is why generalising them
+ * required deleting a slot rather than rewording one.
+ */
+export const GREEN_QUESTIONS = Object.freeze({
   1: 'What do you want done?',
   2: 'Which files or folders should change?',
   3: 'Is there anything that must not change?',
   4: 'How do you check today whether it\'s working?',
   5: 'What would make you say this came back worse than before?',
   6: 'Is there a code repo I can look at? Where?',
-  7: 'This looks like a type-fixing job — you want a type checker to stop complaining, without breaking the tests. Correct?',
 });
+
+/**
+ * The three sets. `questions: null` on a locked class is ABSENT, never `{}`:
+ * an empty set would read as "this class needs no questions", which is a
+ * different and false statement (F59's distinction, at the interview layer).
+ * Nothing ever reads them — a locked class refuses at ADMISSION, before its
+ * questions run — and the two readers below throw rather than hand back nothing.
+ * @type {Record<string, {locked: boolean, questions: Record<string|number, string>|null, required: readonly number[]|null}>}
+ */
+export const QUESTION_SETS = Object.freeze({
+  green: Object.freeze({
+    locked: false,
+    questions: GREEN_QUESTIONS,
+    required: Object.freeze(Object.keys(GREEN_QUESTIONS).map(Number).sort((a, b) => a - b)),
+  }),
+  'soft-green': Object.freeze({ locked: true, questions: null, required: null }),
+  hitl: Object.freeze({ locked: true, questions: null, required: null }),
+});
+
+/**
+ * WHERE GENRE UNDERSTANDING NOW LIVES: the plain statement the composer is fed —
+ * *the user has this problem and declared it green/deterministic*. It is the
+ * user's own answer travelling into the composition call, and the composer is
+ * what turns it into stages over owned kinds.
+ *
+ * A locked class states NOTHING rather than something bland: a sentence here
+ * would be a class this build can compose for, and it cannot.
+ * @type {Record<string, string|null>}
+ */
+export const CLASS_STATEMENTS = Object.freeze({
+  green: 'The person declared this job GREEN: their definition of done is MACHINE-CHECKABLE. A command has to be able '
+    + 'to decide it — no judgement, no score, and no person in the loop. Every stage you compose is a mechanical '
+    + 'measurement of this repository. If part of what they asked for cannot be measured that way, leave it out and '
+    + 'say so in your notes rather than approximating it with a stage that means something else.',
+  'soft-green': null,
+  hitl: null,
+});
+
+/** @param {string} verdictType @returns {{locked: boolean, questions: any, required: any}} */
+function questionSet(verdictType) {
+  const set = Object.hasOwn(QUESTION_SETS, String(verdictType)) ? QUESTION_SETS[String(verdictType)] : null;
+  if (!set) throw new Error(`no interview set for verdict class "${verdictType}" — one of ${VERDICT_CLASSES.join(', ')}`);
+  if (set.locked || set.questions === null) {
+    throw new Error(`the "${verdictType}" interview set is LOCKED — that class is declared-but-locked in v1 and `
+      + 'admission refuses it before its questions are ever asked');
+  }
+  return set;
+}
+
+/** The frozen question set for a picked class. Throws on a locked or unknown
+ * one: reaching here with either means admission did not refuse, which is a
+ * bareloop bug, and failing loudly beats interviewing for a class we cannot run.
+ * @param {string} verdictType */
+export function questionsFor(verdictType) { return questionSet(verdictType).questions; }
+/** The question numbers whose answer must be present for that class's interview
+ * to be finished. @param {string} verdictType @returns {number[]} */
+export function requiredAnswersFor(verdictType) { return [...questionSet(verdictType).required]; }
 
 export const AUTHOR_SYSTEM = 'You compose the DEFINITION OF DONE for an automated job: a declaration over a fixed '
   + 'catalogue of stage kinds whose implementations already exist. You never write code, a script, a shell fragment, '
@@ -437,12 +511,21 @@ export function lawsBlock() {
  * facts. The prompt says so, because round 1 measured what happens when a model
  * treats a lay answer as a specification.
  *
+ * `verdictType` is REQUIRED and has no default. It is the user's own answer and
+ * the one thing that tells the composer what DONE is allowed to mean here; a
+ * defaulted class would be the prompt answering a question the user was asked.
+ *
  * @param {{answers: Record<string|number, string>, questions?: Record<string|number, string>,
- *   facts: any, listingBlock: string, lang: string,
+ *   facts: any, listingBlock: string, lang: string, verdictType: string,
  *   guards: {name: string, kind: string, params: Record<string, any>, fill: string[]}[],
  *   ownedEnvNames?: string[], mode?: 'tool'|'text', catalogue?: Record<string, any>}} o
  */
-export function authorPrompt({ answers, questions = TYPES_QUESTIONS, facts, listingBlock, lang, guards, ownedEnvNames = [], mode = 'tool', catalogue = KIND_CATALOGUE }) {
+export function authorPrompt({ answers, questions = GREEN_QUESTIONS, facts, listingBlock, lang, verdictType, guards, ownedEnvNames = [], mode = 'tool', catalogue = KIND_CATALOGUE }) {
+  const statement = CLASS_STATEMENTS[String(verdictType)] ?? null;
+  if (statement === null) {
+    throw new Error(`[authorflow] the authoring prompt needs the verdict class the user picked, and "${verdictType}" `
+      + `composes nothing here — v1 composes ${Object.entries(CLASS_STATEMENTS).filter(([, v]) => v).map(([k]) => k).join(', ')} only`);
+  }
   const interview = Object.entries(questions)
     .map(([n, q]) => `Q${n}. ${q}\nA${n}. ${answers?.[n] ?? '(no answer given)'}`)
     .join('\n\n');
@@ -497,6 +580,10 @@ measure anything.`;
 
   return [
     role,
+    // WHERE GENRE UNDERSTANDING LIVES NOW (PRD v1.57 §2). The interview no longer
+    // asks what KIND of job this is; the person answered what DONE means, and the
+    // composer reads that plus the catalogue and works the rest out.
+    `WHAT THE PERSON DECLARED "DONE" TO MEAN — their answer, not yours\n\n${statement}`,
     `THE INTERVIEW — the person's own words\n\n${interview}`,
     `THE FACTS OBJECT — from a read-only survey of the repository\n\n${JSON.stringify(facts, null, 2)}`
       + (listingBlock ? `\n\n${listingBlock}` : ''),
@@ -879,7 +966,7 @@ async function askDeclaration({ messages, generate, mode, retries, label, book, 
  *
  * No spine emission here (M4 wires events).
  *
- * @param {{workdir: string, seedRef: string, lang: string,
+ * @param {{workdir: string, seedRef: string, lang: string, verdictType: string,
  *   answers: Record<string|number, string>, questions?: Record<string|number, string>,
  *   scout: {state: string, facts: any, reason?: string|null, calls?: any[]},
  *   listing?: {stop: string|null, files: string[]|null, block: string|null, meta: any}|null,
@@ -888,8 +975,8 @@ async function askDeclaration({ messages, generate, mode, retries, label, book, 
  *   structuredMode?: 'tool'|'text', catalogue?: Record<string, any>}} o
  */
 export async function authorClose({
-  workdir, seedRef, lang,
-  answers, questions = TYPES_QUESTIONS,
+  workdir, seedRef, lang, verdictType,
+  answers, questions = GREEN_QUESTIONS,
   scout, listing = null,
   generate, seedReadFn = runSeedReadStages, closeCtx = {},
   maxRevisions = MAX_REVISIONS,
@@ -925,10 +1012,33 @@ export async function authorClose({
   const facts = scout.facts;
   base.facts = facts;
 
+  // THE PICKED CLASS, checked at $0 before the language: the battery attaches to
+  // the CLASS (PRD v1.57 §2), so a class v1 does not build has no battery to
+  // attach — and a close authored without the guards it cannot supply is exactly
+  // what D5 exists to make impossible. `verb` rides as a structured field so the
+  // caller can carry this to the counted admission path rather than re-deriving
+  // the demand from prose.
+  if (!LIVE_CLASSES.includes(String(verdictType))) {
+    const known = VERDICT_CLASSES.includes(String(verdictType));
+    return refuse([{
+      code: 'class-unsupported',
+      path: 'verdictType',
+      verb: String(verdictType),
+      lib: 'bareloop',
+      detail: known
+        ? `"${verdictType}" is a named but LOCKED verdict class — v1 admits ${LIVE_CLASSES.join(', ')} only, and a `
+          + 'class with no guard battery must refuse rather than author a close without the guards it cannot supply'
+        : `"${verdictType}" is not a verdict class — the menu is ${VERDICT_CLASSES.join(' | ')}, and nothing derives `
+          + 'a class from the answers',
+    }], 'precheck');
+  }
+
   if (!GENRE_LANGUAGES.includes(lang)) {
     return refuse([{
       code: 'genre-unsupported',
       path: 'lang',
+      verb: 'genre-other',
+      lib: 'bareloop',
       detail: `no TYPES genre data for language "${lang}" — one of ${GENRE_LANGUAGES.join(', ')}. A genre with no `
         + 'guard battery must refuse, never author a close without the guards it cannot supply',
     }], 'precheck');
@@ -953,7 +1063,7 @@ export async function authorClose({
   base.facts = facts;
   base.listing = seeds;
 
-  const guards = genreGuards(lang);
+  const guards = classGuards({ verdictType, lang });
   const ownedEnvNames = genreOwnedEnvNames(lang);
   // the source prefixes the genre's environment is built from, filtered against
   // the REAL tree — a prefix that names nothing would build a variable pointing
@@ -967,7 +1077,7 @@ export async function authorClose({
   // ── the grounded loop ─────────────────────────────────────────────────────
   const prompt = authorPrompt({
     answers, questions, facts, listingBlock: /** @type {string} */ (seeds.block),
-    lang, guards, ownedEnvNames, mode: structuredMode, catalogue,
+    lang, verdictType, guards, ownedEnvNames, mode: structuredMode, catalogue,
   });
   /** @type {any[]} */
   let messages = [{ role: 'user', content: prompt }];
@@ -1028,7 +1138,7 @@ export async function authorClose({
       }
       previous = ask.declaration;
 
-      const v = validateDeclaration(ask.declaration, { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames });
+      const v = validateDeclaration(ask.declaration, { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType });
       iter.validation = { ok: v.ok, reds: v.reds, scoped: v.scoped };
       lastValidation = { ok: v.ok, reds: v.reds };
 

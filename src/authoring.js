@@ -76,7 +76,81 @@ import { normalizeParser } from './kinds.js';
 import { isObj, isNonEmptyString, hasNestedQuantifier, globToPrefix } from './validate.js';
 
 /** @typedef {{code: string, path: string, detail: string, [k: string]: any}} Red */
-/** @typedef {{required: readonly string[], optional: readonly string[], pathParams: readonly string[], locked?: true, shape: string, asserts: string}} KindSpec */
+/** @typedef {{required: readonly string[], optional: readonly string[], pathParams: readonly string[], locked?: true, verdictClass: string, shape: string, asserts: string}} KindSpec */
+
+// ── 0. THE VERDICT CLASSES ───────────────────────────────────────────────────
+//
+// The user's own answer (PRD v1.57 §1, restoring the 2026-07-21 radio and
+// superseding D4): is your *done* machine-checkable, does it need judgment, or
+// does it need a person. It is a CLOSED SET handed over enumerated, never a
+// prose rule about what a legal answer would look like.
+//
+// TWO COPIES, PINNED BY THE SUITE RATHER THAN IMPORTED. `src/job.js` owns the
+// same menu as the spec's radio (`VERDICT_TYPES`) and imports this module
+// transitively (job → declaredclose → authoring), so importing it back would
+// close a cycle and hand this module a TDZ-undefined constant at load. The suite
+// asserts the two lists are identical, which is the same treatment
+// `CATALOGUE_LIVE_KINDS` and the executor's `LIVE_KINDS` already get.
+
+/** the whole menu, in ascending order of what it takes to render the verdict */
+export const VERDICT_CLASSES = Object.freeze(['green', 'soft-green', 'hitl']);
+/** declared-but-locked: selecting one is COUNTED demand, never an admission */
+export const LOCKED_CLASSES = Object.freeze(['soft-green', 'hitl']);
+/** the classes v1 actually builds — exactly one */
+export const LIVE_CLASSES = Object.freeze(VERDICT_CLASSES.filter((c) => !LOCKED_CLASSES.includes(c)));
+
+/** the hierarchy as a comparable number. `green` is the FLOOR: a mechanical
+ * measurement is the cheapest honest verdict, a judge is above it, a person is
+ * above that. Read by the ceiling rule and by nothing else. */
+const CLASS_RANK = Object.freeze({ green: 0, 'soft-green': 1, hitl: 2 });
+
+/**
+ * THE CEILING (hamr, 2026-08-08, *"yes to both, go"*): the picked class is a
+ * PROMISE, and this is what the composition actually demands.
+ *
+ * Every kind carries the class of verdict it can honestly render, so a
+ * declaration's ceiling is the HIGHEST class any of its stages needs. A pick
+ * below that ceiling is a silent UPGRADE — a judgment ruler running under a
+ * green promise, which is exactly the fake-hard verdict `CLASS_BY_CLOSE` and
+ * `CLASS_BY_VERDICT` exist to stop, defeated from ABOVE by never letting the
+ * illegal pair be formed.
+ *
+ * INERT IN v1 BY CONSTRUCTION, which is why it is cheap now: every LIVE kind is
+ * mechanical, so no declaration a v1 catalogue can express reaches above green.
+ * It is written before the second class exists so the first soft-green kind is
+ * not the thing that discovers the question.
+ *
+ * A kind the catalogue does not know contributes NOTHING — it already carries an
+ * `unknown-kind` red, and guessing a class for it would be deriving the promise
+ * from a typo. A catalogue entry with no class at all THROWS: the catalogue is
+ * OURS, and failing loudly beats weighing a kind whose honesty nobody stated.
+ * @param {any} declaration
+ * @param {Record<string, KindSpec>} [catalogue]
+ * @returns {{class: string, kind: string, stage: string|null, locked: boolean}|null}
+ */
+export function closeCeiling(declaration, catalogue = KIND_CATALOGUE) {
+  const stages = Array.isArray(declaration?.stages) ? declaration.stages : [];
+  /** @type {{class: string, kind: string, stage: string|null, locked: boolean}|null} */
+  let top = null;
+  for (const s of stages) {
+    if (!isObj(s) || !isNonEmptyString(s.kind)) continue;
+    const spec = catalogue[s.kind];
+    if (!spec) continue;
+    if (!Object.hasOwn(CLASS_RANK, spec.verdictClass)) {
+      throw new Error(`[authoring] catalogue kind "${s.kind}" declares no verdict class — every kind states the class `
+        + `of verdict it can honestly render (one of ${VERDICT_CLASSES.join(', ')})`);
+    }
+    if (top === null || CLASS_RANK[spec.verdictClass] > CLASS_RANK[top.class]) {
+      top = {
+        class: spec.verdictClass,
+        kind: s.kind,
+        stage: isNonEmptyString(s.name) ? s.name : null,
+        locked: spec.locked === true,
+      };
+    }
+  }
+  return top;
+}
 
 // ── 1. THE KIND CATALOGUE ────────────────────────────────────────────────────
 
@@ -91,6 +165,12 @@ import { isObj, isNonEmptyString, hasNestedQuantifier, globToPrefix } from './va
  * path-bearing param the day one is added, instead of the day someone
  * remembers to widen a condition.
  *
+ * `verdictClass` is the class of verdict this kind can HONESTLY render, and it
+ * is what makes the user's pick a promise the composer must keep (PRD v1.57 §1).
+ * Every live kind is `green` — a command's measurement is the truth — so the
+ * ceiling rule is inert in v1 by construction; the two locked kinds carry the
+ * classes they belong to so the rule is already correct the day one goes live.
+ *
  * Optionality is read off the prereg §5 table, with ONE deliberate divergence
  * from the gate-2 POC validator, named because it reverses a POC behaviour:
  * `pattern-absent-in-diff.scope` is OPTIONAL here and the guard ships without
@@ -103,6 +183,7 @@ import { isObj, isNonEmptyString, hasNestedQuantifier, globToPrefix } from './va
  */
 export const KIND_CATALOGUE = Object.freeze({
   'command-exit': Object.freeze({
+    verdictClass: 'green',
     required: Object.freeze(['cmd', 'args', 'expectExit']),
     optional: Object.freeze(['timeoutMs', 'env']),
     pathParams: Object.freeze([]),
@@ -110,6 +191,7 @@ export const KIND_CATALOGUE = Object.freeze({
     asserts: 'run cmd/args in the repository; the exit code must equal expectExit.',
   }),
   'count-not-worse': Object.freeze({
+    verdictClass: 'green',
     required: Object.freeze(['cmd', 'args', 'parser', 'scope', 'direction', 'baseline']),
     optional: Object.freeze(['timeoutMs', 'env']),
     pathParams: Object.freeze(['scope.includePrefixes', 'scope.excludePrefixes']),
@@ -128,6 +210,7 @@ export const KIND_CATALOGUE = Object.freeze({
       + 'tool that prints its count on a clean run.',
   }),
   'pattern-absent-in-diff': Object.freeze({
+    verdictClass: 'green',
     required: Object.freeze(['patterns', 'extensions']),
     optional: Object.freeze(['scope']),
     pathParams: Object.freeze(['scope.includePrefixes', 'scope.excludePrefixes']),
@@ -137,6 +220,7 @@ export const KIND_CATALOGUE = Object.freeze({
       + 'with one of the named extensions.',
   }),
   'files-changed': Object.freeze({
+    verdictClass: 'green',
     required: Object.freeze(['allowPrefixes', 'requireNonEmpty']),
     optional: Object.freeze([]),
     pathParams: Object.freeze(['allowPrefixes']),
@@ -148,11 +232,13 @@ export const KIND_CATALOGUE = Object.freeze({
   // not run in v1, and `close[]` on disk stays predicate-only and shape-enforced
   // (src/job.js:442), so the inexpressibility that is already free stays free.
   'judged-floor': Object.freeze({
+    verdictClass: 'soft-green',
     required: Object.freeze([]), optional: Object.freeze([]), pathParams: Object.freeze([]), locked: true,
     shape: 'LOCKED — not available in v1',
     asserts: 'a judged score must clear a floor. Declaring it is recorded as demand; it will not run.',
   }),
   'human-confirms': Object.freeze({
+    verdictClass: 'hitl',
     required: Object.freeze([]), optional: Object.freeze([]), pathParams: Object.freeze([]), locked: true,
     shape: 'LOCKED — not available in v1',
     asserts: 'a person renders the verdict. Declaring it is recorded as demand; it will not run.',
@@ -360,33 +446,124 @@ function language(lang) {
 }
 
 /**
- * The genre's mandatory guards, FULLY ENUMERATED (D13 forward-compat point 3:
- * an omittable-with-a-default field is the omitted-`tools` shape, where widening
- * changes what runs without changing what was signed — so the guards are stored
- * spelled out, and the hash is taken over the resolved form).
+ * THE GUARD BATTERY, KEYED BY VERDICT CLASS (hamr's ruling, PRD v1.57 §2).
+ *
+ * D5's battery was genre-keyed data. Under class-keyed interviews it has no
+ * genre to hang from, and the ruling gives it the same home the interview took:
+ * **the battery attaches to the verdict class the user picked** — not to a
+ * problem-genre label, and not per catalogue KIND.
+ *
+ * WHY THE CLASS. What a battery is FOR is the class of dishonesty the class of
+ * VERDICT admits. A green job is a job whose *done* is claimed to be
+ * machine-checkable, so it carries the green battery whatever problem it came
+ * from — that is the anti-suppression obligation the F87 genre earned, and it
+ * must not travel with a label the interview no longer asks for.
+ *
+ * ATTACHMENT POINT vs CONTENTS, and the split is the whole implementation:
+ *   - the battery's STRUCTURE and its un-removability key off the CLASS. That
+ *     is this table: which guards exist, what they assert, which slot is the
+ *     model's (`fill`), and which params are ours.
+ *   - the battery's CONTENTS fill in at COMPOSITION (`compose`), because a
+ *     suppression pattern, a file extension and a checker's escape hatch belong
+ *     to the TOOL the declaration names, and nothing before composition knows
+ *     that tool. `classGuards` resolves them from the language data below.
+ *
+ * A LOCKED class carries `guards: null`, not `[]`. Absent is never empty (F59):
+ * `[]` would read as "this class needs no guards", which is exactly the sentence
+ * D5 exists to make unsayable. Nothing ever reaches it — admission refuses a
+ * locked class before its battery is asked for — and `classGuards` throws rather
+ * than hand back nothing if anything ever does.
+ * @type {Record<string, {locked: boolean, guards: readonly any[]|null}>}
+ */
+export const CLASS_BATTERIES = Object.freeze({
+  green: Object.freeze({
+    locked: false,
+    guards: Object.freeze([
+      Object.freeze({
+        name: 'changed-from-seed',
+        kind: 'files-changed',
+        params: Object.freeze({ requireNonEmpty: true }),
+        compose: Object.freeze([]),
+        fill: Object.freeze(['allowPrefixes']),
+      }),
+      Object.freeze({
+        name: 'no-suppressions',
+        kind: 'pattern-absent-in-diff',
+        // NO scope: the scan covers every changed file of these extensions. A
+        // narrowing here is the round-3 arm A defect and is a red, not a taste.
+        params: Object.freeze({}),
+        compose: Object.freeze(['patterns', 'extensions']),
+        fill: Object.freeze([]),
+      }),
+    ]),
+  }),
+  'soft-green': Object.freeze({ locked: true, guards: null }),
+  hitl: Object.freeze({ locked: true, guards: null }),
+});
+
+/**
+ * How each COMPOSED param resolves from the tool the declaration names. One
+ * entry per composable param name, so a battery that grows a slot fails loudly
+ * here rather than shipping an unresolved one.
+ * @type {Record<string, (l: any) => any>}
+ */
+const COMPOSE_FROM_TOOL = Object.freeze({
+  patterns: (/** @type {any} */ l) => l.suppressions.map((/** @type {any} */ p) => ({ ...p })),
+  extensions: (/** @type {any} */ l) => [...l.extensions],
+});
+
+/**
+ * The picked class's mandatory guards, FULLY ENUMERATED (D13 forward-compat
+ * point 3: an omittable-with-a-default field is the omitted-`tools` shape, where
+ * widening changes what runs without changing what was signed — so the guards
+ * are stored spelled out, and the hash is taken over the resolved form).
  *
  * `fill` names the ONLY slot the model supplies. `changed-from-seed`'s
- * allowPrefixes is the job's own target scope and cannot be genre knowledge;
- * everything else here — including `no-suppressions`' absent scope — is ours.
+ * allowPrefixes is the job's own target scope and cannot be ours; everything
+ * else — including `no-suppressions`' absent scope — is.
+ *
+ * AN EMPTY BATTERY IS IMPOSSIBLE for a known class and a known language, and
+ * that is enforced rather than asserted: an unknown class, a locked class, an
+ * unknown language, a battery that resolved to nothing, and a composed param
+ * that resolved to nothing all THROW. F59's shape at the load-bearing decision
+ * of the design — a suppression scan with no patterns reads clean exactly like
+ * one that scanned correctly, and it lands in a SIGNED artefact.
  *
  * Returns a fresh deep copy each call: a frozen constant handed to a caller that
  * edits it is one shared battery away from a silently weakened guard.
- * @param {string} lang
- * @returns {{name: string, kind: string, params: Record<string, any>, fill: string[]}[]}
+ * @param {{verdictType: string, lang: string}} o
+ * @returns {{name: string, kind: string, params: Record<string, any>, compose: string[], fill: string[]}[]}
  */
-export function genreGuards(lang) {
+export function classGuards({ verdictType, lang }) {
+  const battery = Object.hasOwn(CLASS_BATTERIES, String(verdictType)) ? CLASS_BATTERIES[String(verdictType)] : null;
+  if (!battery) {
+    throw new Error(`no guard battery for verdict class "${verdictType}" — one of ${VERDICT_CLASSES.join(', ')}`);
+  }
+  if (battery.locked || battery.guards === null) {
+    throw new Error(`the "${verdictType}" guard battery is LOCKED — that class is declared-but-locked in v1 and `
+      + 'admission refuses it before any battery is built; a locked class must never resolve to an empty one');
+  }
   const l = language(lang);
-  return [
-    { name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true }, fill: ['allowPrefixes'] },
-    {
-      name: 'no-suppressions',
-      kind: 'pattern-absent-in-diff',
-      // NO scope: the scan covers every changed file of these extensions. A
-      // narrowing here is the round-3 arm A defect and is a red, not a taste.
-      params: { patterns: l.suppressions.map((p) => ({ ...p })), extensions: [...l.extensions] },
-      fill: [],
-    },
-  ];
+  const guards = battery.guards.map((g) => {
+    /** @type {Record<string, any>} */
+    const params = structuredClone(g.params);
+    for (const p of g.compose) {
+      const resolve = COMPOSE_FROM_TOOL[p];
+      if (!resolve) throw new Error(`the "${g.name}" guard composes "${p}", which nothing knows how to resolve from a tool`);
+      const value = resolve(l);
+      if (!Array.isArray(value) || value.length === 0) {
+        throw new Error(`the "${g.name}" guard's "${p}" resolved EMPTY for language "${lang}" — a guard that checks `
+          + 'nothing reads clean exactly like one that checked correctly, and this one is about to be signed');
+      }
+      params[p] = value;
+    }
+    return { name: g.name, kind: g.kind, params, compose: [...g.compose], fill: [...g.fill] };
+  });
+  if (guards.length === 0) {
+    throw new Error(`the "${verdictType}" battery resolved to NO guards — D5 is the load-bearing decision of this `
+      + 'design and an empty battery is never a legal answer');
+  }
+  return guards;
 }
 
 /**
@@ -515,7 +692,7 @@ function indexListing(listing) {
  * law must not red it (template rule 3 says the outside ceiling is omitted
  * exactly there).
  * @param {any} declaration @param {{files: Set<string>, dirs: Set<string>}} idx
- * @param {any[]|null} guards the genre's injected guards (`genreGuards`)
+ * @param {any[]|null} guards the picked class's injected guards (`classGuards`)
  */
 function scopeOfJob(declaration, idx, guards) {
   const stages = Array.isArray(declaration?.stages) ? declaration.stages : [];
@@ -596,12 +773,18 @@ function readPath(p, dotted) {
  * that arms the F84 one-population law. With the listing deferred, neither
  * fires, and `grounded: false` on the result is how a caller knows.
  *
+ * `verdictType` is REQUIRED for the same reason: it is the PROMISE the ceiling
+ * rule checks the composition against, and a validator with no pick in hand
+ * cannot check it. Absent or unknown is `class-absent`, naming the closed set.
+ *
  * @param {any} declaration the parsed model output
  * @param {{catalogue?: Record<string, KindSpec>, listing?: string[]|null,
  *   guards?: {name: string, kind: string, params: Record<string, any>, fill: string[]}[]|null,
- *   envOwned?: string[]|null, envInjected?: Record<string, string>|null, deferListing?: boolean}} [opts]
+ *   envOwned?: string[]|null, envInjected?: Record<string, string>|null, deferListing?: boolean,
+ *   verdictType?: string|null}} [opts]
  *   `listing` — repo-relative paths at the seed (`git ls-tree -r --name-only`).
- *   `guards` — the genre's injected guards (`genreGuards`).
+ *   `guards` — the picked class's injected guards (`classGuards`).
+ *   `verdictType` — the class the USER picked (`VERDICT_CLASSES`).
  *   `envOwned` — env names the genre injects (`genreOwnedEnvNames`), `[]` when it owns none.
  *   `envInjected` — the env the ARBITER itself injected (`genreEnv`'s output), for a
  *     POST-injection re-validation. Omitted is the PRE-injection form: every owned name
@@ -609,10 +792,14 @@ function readPath(p, dotted) {
  *     EXACTLY the injected one — a wrong value is the model's guess or corruption.
  *   `deferListing` — literally `true` to run the tree-independent half only.
  * @returns {{ok: boolean, reds: Red[], declaration: any, grounded: boolean,
- *   scoped: {scoped: boolean, via: string|null}}}
+ *   scoped: {scoped: boolean, via: string|null},
+ *   ceiling: {class: string, kind: string, stage: string|null, locked: boolean}|null}}
  */
 export function validateDeclaration(declaration, opts = {}) {
-  const { catalogue = KIND_CATALOGUE, listing = null, guards = null, envOwned = null, envInjected = null } = opts;
+  const {
+    catalogue = KIND_CATALOGUE, listing = null, guards = null, envOwned = null, envInjected = null,
+    verdictType = null,
+  } = opts;
   const deferListing = opts.deferListing === true;
   /** @type {Red[]} */
   const reds = [];
@@ -636,8 +823,18 @@ export function validateDeclaration(declaration, opts = {}) {
 
   const haveGuards = Array.isArray(guards) && guards.length > 0;
   if (!haveGuards) {
-    red('guards-absent', 'guards', 'the genre\'s mandatory guards (genreGuards) — D5 is the load-bearing decision '
-      + 'of this design and it cannot be validated away by handing the validator nothing to check against');
+    red('guards-absent', 'guards', 'the picked class\'s mandatory guards (classGuards) — D5 is the load-bearing '
+      + 'decision of this design and it cannot be validated away by handing the validator nothing to check against');
+  }
+
+  // THE PICK, and it is required for the same reason the guards are: it is the
+  // promise the ceiling rule measures the composition against, and a validator
+  // handed no pick reports a promise it never checked. A closed set, handed over
+  // enumerated — never a prose rule about what a legal class would look like.
+  const picked = VERDICT_CLASSES.includes(String(verdictType)) ? String(verdictType) : null;
+  if (picked === null) {
+    red('class-absent', 'verdictType', `the verdict class the user picked — one of ${VERDICT_CLASSES.join(' | ')}. `
+      + 'It is what a composition promises to stay at or below, and nothing derives it from the declaration');
   }
 
   // absent is not empty: `[]` is a genre that owns no environment (JS), and a
@@ -657,7 +854,7 @@ export function validateDeclaration(declaration, opts = {}) {
 
   if (!isObj(declaration)) {
     red('invalid-value', '', 'the declaration is an object carrying an ordered stages array');
-    return { ok: false, reds, declaration: null, grounded: haveListing, scoped: { scoped: false, via: null } };
+    return { ok: false, reds, declaration: null, grounded: haveListing, scoped: { scoped: false, via: null }, ceiling: null };
   }
   // NOTES, checked HERE rather than only at the signing gate. The field is the
   // model's own ("anything you could not express"), it travels verbatim into the
@@ -674,13 +871,18 @@ export function validateDeclaration(declaration, opts = {}) {
   const stages = declaration.stages;
   if (!Array.isArray(stages) || stages.length === 0) {
     red('missing-field', 'stages', 'a non-empty ORDERED array of stages — they run in the order you declare them');
-    return { ok: false, reds, declaration: null, grounded: haveListing, scoped: { scoped: false, via: null } };
+    return { ok: false, reds, declaration: null, grounded: haveListing, scoped: { scoped: false, via: null }, ceiling: null };
   }
   if (stages.length > MAX_STAGES) {
     red('invalid-value', 'stages', `${stages.length} stages exceeds the ceiling of ${MAX_STAGES}`);
   }
 
   const scoped = scopeOfJob(declaration, idx, guards);
+  // Computed over the WHOLE declaration and REPORTED whatever it says, so a
+  // composition that sits BELOW the pick is visible rather than silent — the
+  // other half of the ruling ("never a silent downgrade"). Only EXCEEDING it is
+  // a red, and that red is raised per offending stage inside the loop.
+  const ceiling = closeCeiling(declaration, catalogue);
   /** @type {Set<string>} */
   const seen = new Set();
   /** @type {Map<string, string>} population key → the stage that already owns it */
@@ -716,6 +918,17 @@ export function validateDeclaration(declaration, opts = {}) {
       red('unknown-kind', `${at}.kind`, `"${s.kind}" is not in the catalogue — kinds: ${kindNames}`, { kind: s.kind });
       return;
     }
+    // THE CEILING (PRD v1.57 §1): composition may only use kinds AT OR BELOW the
+    // picked class. A LOCKED kind never reaches here — it already carries its own
+    // counted-demand red and returned — so a kind refused as unavailable is never
+    // ALSO redded for its class: one problem, one red, in one vocabulary.
+    if (picked !== null && CLASS_RANK[spec.verdictClass] > CLASS_RANK[picked]) {
+      red('class-ceiling', `${at}.kind`, `stage "${label}" uses "${s.kind}", which can only render a `
+        + `${spec.verdictClass} verdict, and this job is declared ${picked}. The class the user picked is a PROMISE: a `
+        + 'composition may use kinds at or below it and never above it, because a judgment ruler running under a '
+        + 'machine-checkable promise is a fake-hard verdict — refused here rather than upgraded silently',
+      { kind: s.kind, stage: label, kindClass: spec.verdictClass, picked });
+    }
     if (AT_MOST_ONCE_KINDS.includes(s.kind)) {
       const owner = kindOwners.get(s.kind);
       if (owner !== undefined) {
@@ -748,7 +961,7 @@ export function validateDeclaration(declaration, opts = {}) {
   if (haveGuards) checkGuards({ declaration, guards: /** @type {any[]} */ (guards), red });
 
   const ok = reds.length === 0;
-  return { ok, reds, declaration: ok ? normalizeDeclaration(declaration) : null, grounded: haveListing, scoped };
+  return { ok, reds, declaration: ok ? normalizeDeclaration(declaration) : null, grounded: haveListing, scoped, ceiling };
 }
 
 /**

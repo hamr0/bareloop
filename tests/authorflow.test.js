@@ -35,13 +35,14 @@ import { join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { AGGREGATES, SIGNS, MAX_TERMS, EXIT_GREEN, EXIT_RED, EXIT_STOP } from '../src/kinds.js';
 import {
-  KIND_CATALOGUE, CATALOGUE_LIVE_KINDS, LOCKED_KINDS, MAX_STAGES,
-  DIRECTIONS, BASELINES, genreGuards, genreOwnedEnvNames, validateDeclaration,
+  KIND_CATALOGUE, CATALOGUE_LIVE_KINDS, LOCKED_KINDS, MAX_STAGES, VERDICT_CLASSES, LOCKED_CLASSES,
+  DIRECTIONS, BASELINES, classGuards, genreOwnedEnvNames, validateDeclaration,
 } from '../src/authoring.js';
 import {
   DECLARATION_TOOL_NAME, DECLARATION_ACK, AUTHOR_MAX_TOKENS,
   MAX_REVISIONS, MAX_STRUCTURE_RETRIES, REVISE_GAP_CAP, REVISE_RED_CAP,
-  REVISE_INSTRUCTION, STRUCTURE_INSTRUCTION_TOOL, TYPES_QUESTIONS,
+  REVISE_INSTRUCTION, STRUCTURE_INSTRUCTION_TOOL,
+  QUESTION_SETS, GREEN_QUESTIONS, questionsFor, requiredAnswersFor, CLASS_STATEMENTS,
   PARAM_SCHEMAS, schemaCoverage, declarationSchema, declarationTool,
   catalogueBlock, lawsBlock, authorPrompt,
   renderSeedReadBlock, renderRejectBlock, buildReviseTurn, assertReviseTurn,
@@ -50,6 +51,9 @@ import {
 import { scanSecrets } from '../src/validate.js';
 
 // ── fixtures ─────────────────────────────────────────────────────────────────
+
+/** every fixture here is a GREEN job — the battery keys off the class it picked */
+const greenGuards = (lang) => classGuards({ verdictType: 'green', lang });
 
 const LISTING = Object.freeze([
   'package.json', 'README.md',
@@ -66,7 +70,7 @@ const SCOUT_OK = Object.freeze({ state: 'PRESENT', facts: FACTS, reason: null, c
 
 /** the two injected JS guards with their one model-filled slot filled */
 function guardStages(lang = 'js', allowPrefixes = TARGETS) {
-  return genreGuards(lang).map((g) => ({
+  return greenGuards(lang).map((g) => ({
     name: g.name,
     kind: g.kind,
     params: g.fill.includes('allowPrefixes') ? { ...g.params, allowPrefixes } : { ...g.params },
@@ -141,11 +145,74 @@ function scriptSeedRead(byStage = {}) {
 }
 
 const baseArgs = () => ({
-  workdir: '/patient', seedRef: 'seedsha', lang: /** @type {'js'} */ ('js'),
+  workdir: '/patient', seedRef: 'seedsha', lang: /** @type {'js'} */ ('js'), verdictType: 'green',
   answers: { 1: 'stop the type checker complaining', 2: 'src/email.js and src/backup.js' },
   scout: SCOUT_OK,
   listing: { files: [...LISTING], block: 'FILES THAT ACTUALLY EXIST AT THE SEED\n  src/email.js', meta: { tier: 'full', totalSeedFiles: LISTING.length, entries: [] }, stop: null },
   closeCtx: { gapKeep: 'TEST:: ' },
+});
+
+// ── 0. the question sets are keyed by VERDICT CLASS (PRD v1.57 §2) ──────────
+//
+// Genres are a fat tail that cannot be enumerated; classes are exactly three.
+// The green set is fully built; the other two are NAMED LOCKED SETS whose
+// selection refuses at admission before their questions ever run.
+
+test('question sets: exactly three, keyed by class, and only the green one is built', () => {
+  assert.deepEqual(Object.keys(QUESTION_SETS).sort(), [...VERDICT_CLASSES].sort());
+  assert.equal(QUESTION_SETS.green.locked, false);
+  assert.deepEqual(QUESTION_SETS.green.questions, GREEN_QUESTIONS);
+  for (const c of LOCKED_CLASSES) {
+    assert.equal(QUESTION_SETS[c].locked, true, `${c} is a named but LOCKED set`);
+    assert.equal(QUESTION_SETS[c].questions, null, `${c}'s questions are ABSENT (null), never an empty set`);
+    assert.equal(QUESTION_SETS[c].required, null);
+  }
+});
+
+test('question sets: the GREEN set asks nothing about a genre — the confirm slot is gone (D13 slot superseded)', () => {
+  const numbers = Object.keys(GREEN_QUESTIONS).map(Number).sort((a, b) => a - b);
+  assert.deepEqual(numbers, [1, 2, 3, 4, 5, 6], 'the seventh slot was the genre confirm and it is deleted');
+  assert.deepEqual(requiredAnswersFor('green'), numbers);
+  const all = Object.values(GREEN_QUESTIONS).join(' ');
+  assert.ok(!/type[- ]?fix|type checker|TYPES/i.test(all), `a genre-specific slot survives: ${all}`);
+  for (const q of Object.values(GREEN_QUESTIONS)) assert.ok(q.trim().endsWith('?'), q);
+});
+
+test('question sets: a LOCKED class has no questions to run, and asking for them THROWS', () => {
+  assert.deepEqual(questionsFor('green'), GREEN_QUESTIONS);
+  for (const c of LOCKED_CLASSES) {
+    assert.throws(() => questionsFor(c), new RegExp(c), 'admission refuses the class BEFORE its questions run');
+    assert.throws(() => requiredAnswersFor(c), new RegExp(c));
+  }
+  assert.throws(() => questionsFor('chartreuse'), /chartreuse/);
+});
+
+test('the prompt STATES the declared class — this is where genre understanding now lives', () => {
+  const p = authorPrompt({
+    answers: baseArgs().answers, questions: GREEN_QUESTIONS, facts: FACTS,
+    listingBlock: '', lang: 'js', guards: greenGuards('js'), ownedEnvNames: [], verdictType: 'green',
+  });
+  assert.ok(p.includes(CLASS_STATEMENTS.green), 'the composer is told what the user declared DONE to mean');
+  assert.match(p, /green/);
+  // and it is not a decoration the caller can leave off or get wrong
+  const args = {
+    answers: {}, questions: GREEN_QUESTIONS, facts: FACTS, listingBlock: '', lang: 'js',
+    guards: greenGuards('js'), ownedEnvNames: [],
+  };
+  assert.throws(() => authorPrompt({ ...args }), /verdict class/i);
+  for (const c of LOCKED_CLASSES) assert.throws(() => authorPrompt({ ...args, verdictType: c }), new RegExp(c));
+});
+
+test('authorClose: a LOCKED or unknown class refuses at $0, before any token', async () => {
+  for (const verdictType of [...LOCKED_CLASSES, 'chartreuse']) {
+    const { generate, calls } = scriptGenerate([{ declaration: goodDeclaration() }]);
+    const r = await authorClose({ ...baseArgs(), verdictType, generate, seedReadFn: scriptSeedRead().fn });
+    assert.equal(r.ok, false, verdictType);
+    assert.equal(r.stop, 'precheck');
+    assert.equal(r.reds[0].code, 'class-unsupported', JSON.stringify(r.reds));
+    assert.equal(r.reds[0].verb, verdictType);
+    assert.equal(calls.length, 0, 'a class with no battery must never author a close without the guards it cannot supply');
+  }
 });
 
 // ── 1. the schema is DERIVED from the catalogue ─────────────────────────────
@@ -225,9 +292,9 @@ test('declarationTool: the tool takes NO action — it records and acknowledges'
 
 test('the authoring prompt carries the genre template, the catalogue and the FILLED guards', () => {
   const p = authorPrompt({
-    answers: baseArgs().answers, questions: TYPES_QUESTIONS, facts: FACTS,
-    listingBlock: 'FILES THAT ACTUALLY EXIST', lang: 'js', guards: genreGuards('js'),
-    ownedEnvNames: genreOwnedEnvNames('js'),
+    answers: baseArgs().answers, questions: GREEN_QUESTIONS, facts: FACTS,
+    listingBlock: 'FILES THAT ACTUALLY EXIST', lang: 'js', guards: greenGuards('js'),
+    ownedEnvNames: genreOwnedEnvNames('js'), verdictType: 'green',
   });
   assert.match(p, /The graded instrument is the STRICT form/, 'the frozen TYPES template is law for the declaration');
   for (const k of CATALOGUE_LIVE_KINDS) assert.ok(p.includes(k), `the catalogue must name ${k}`);
@@ -239,8 +306,8 @@ test('the authoring prompt carries the genre template, the catalogue and the FIL
 
 test('the prompt announces the genre-owned environment so the model does not author it', () => {
   const p = authorPrompt({
-    answers: {}, questions: TYPES_QUESTIONS, facts: FACTS, listingBlock: '', lang: 'python',
-    guards: genreGuards('python'), ownedEnvNames: genreOwnedEnvNames('python'),
+    answers: {}, questions: GREEN_QUESTIONS, facts: FACTS, listingBlock: '', lang: 'python',
+    guards: greenGuards('python'), ownedEnvNames: genreOwnedEnvNames('python'), verdictType: 'green',
   });
   assert.match(p, /MYPYPATH/);
 });
@@ -532,7 +599,8 @@ test('renderRejectBlock: a validation red quoting model-declared text is SCRUBBE
   const decl = goodDeclaration();
   decl.stages[1].params.env = { MYPYPATH: fake };
   const { reds } = validateDeclaration(decl, {
-    listing: [...LISTING], guards: genreGuards('js'), envOwned: ['MYPYPATH'], envInjected: { MYPYPATH: 'src' },
+    listing: [...LISTING], guards: greenGuards('js'), envOwned: ['MYPYPATH'], envInjected: { MYPYPATH: 'src' },
+    verdictType: 'green',
   });
   assert.ok(
     reds.some((r) => scanSecrets(r.detail).length === 1),
@@ -929,7 +997,7 @@ test('authorClose drives the REAL seed read against a REAL repository', async (t
   };
   const { generate } = scriptGenerate([{ declaration: decl }, { declaration: decl }]);
   const r = await authorClose({
-    workdir: dir, seedRef: seed, lang: 'js',
+    workdir: dir, seedRef: seed, lang: 'js', verdictType: 'green',
     answers: { 1: 'type it' }, scout: { state: 'PRESENT', facts: { sourcePaths: ['src'] }, reason: null, calls: [] },
     closeCtx: { gapKeep: 'REAL:: ' },
     generate,
