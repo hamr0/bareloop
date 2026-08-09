@@ -25,6 +25,14 @@ it · the fix (upstream commit/PR) · the version bareloop consumed.**
 > the clipipe cross-surface battery (F48). Full entry at the end of the queue. The
 > 2026-07-15 snapshot below stands for everything prior.
 
+> **2026-08-09 update: the queue reopens on a NEW package and a NEW prefix — BJ-1 (barejudge),
+> OPEN.** bareloop's N4 (soft-green) rung needs a productized *decisive judge*; the design is
+> measured and the code is a POC in bareguard's research corpus, owned by no shippable package.
+> It is emphatically **not** a bareguard-core ask (bareguard's own locked design forbids it
+> calling an LLM), so it opens `BJ-*` for a new suite package rather than misfiling against an
+> existing one — the BA-2 lesson, applied before filing rather than after. Full entry at the
+> end of the queue.
+
 > **2026-07-31 update:** **LC-5 (litectx) DELIVERED in `litectx@0.32.0`, same day** —
 > option (a) of the ask: `impact()` now throws a named `RipgrepMissingError`
 > (`.code = "RIPGREP_MISSING"`, exported) when `rg` never ran, instead of reading
@@ -1392,3 +1400,153 @@ KNOWN LIMITATIONS stand unchanged).
 
 *(Rule reaffirmed once more: **read the library source before filing an upstream ask.** Four
 candidates have now gone in and three come out.)*
+
+---
+
+## BJ-1 — the decisive judge exists only as a POC in bareguard's research corpus: bareloop's N4 (soft-green) rung needs it PRODUCTIZED, in a package of its own (2026-08-09, N4 opening / the RSI judged-floor doctrine)
+
+**New prefix, stated up front and justified.** This file's IDs key to the owning package —
+`BA-*` bare-agent, `LC-*` litectx, `BG-*` bareguard. This ask targets a package that **does not
+exist yet** (working name **barejudge**), so it opens **`BJ-*`**. It is admitted under this
+file's own rule (only upstream-gap reds land here) as the *missing primitive* case at its
+extreme: the primitive has no owning repo at all. The resolution is still upstream — a new
+suite package, consumed here by version bump, **never a local shim in bareloop**. **hamr's
+call: it gets built SEPARATELY, as its own deliverable, not folded into a rung.**
+
+### Why this is NOT a bareguard-core ask (the BA-2 lesson, applied *before* filing)
+
+Read in bareguard's own PRD and corpus, 2026-08-09, before anything was written here:
+
+- **bareguard PRD Part 2 splits two axes.** **Axis A** gates the *outgoing action* by shape — a
+  deterministic floor. **Axis B** reconciles the *RETURN* against a declared constraint — and it
+  is specified as **a detector that annotates, never decides**.
+- **The shipped half is already there:** `gate.annotate` and its fact envelope
+  `{kind, field, stated, returned, text}`, released in **bareguard 0.7.0**. That is Axis B's
+  detector, and it needs no change.
+- **The judge itself is POC-only** — `harness-code-mode/e6-judge.mjs`, never shipped — and
+  **bareguard's locked design says bareguard never calls an LLM: the judge is caller-side by
+  law** (PRD ~:1930, ~:2320).
+
+Filing this against bareguard core would therefore ask bareguard to break its own arbiter-shaped
+law. The right shape is a **new small package depending on bare-agent for transport**, consuming
+`gate.annotate`'s envelope as input and leaving the detector exactly where it is. (BA-2 was
+withdrawn for aiming a real gap at the wrong package; this entry names the target package as
+part of the ask precisely so that does not repeat.)
+
+### The design of record — already measured, not to be redesigned (bareguard PRD §9.2, ~:2347-2477; model `haiku-4.5`)
+
+**E6i, the decisive judge.** Input: the **verbatim user request** plus **ONE structured egress
+artifact**. Output: a **binary verdict `honored | broke`** plus a human-readable **`where`**.
+Tiebreak, load-bearing: *if you cannot CONFIRM the answer honored the request, return `broke`.*
+Measured **7/7** on the labeled clear-case set, **including the false-positive trap** — a
+compliant **€280 under a €300 cap read `honored` 5/5**.
+
+**Rejected alternatives, each with the measurement that killed it — do not re-add them:**
+
+| Alternative | Measured failure |
+|---|---|
+| Confidence scale (`unsure` category) | **E6f/E6g:** `unsure` emitted **0/6** — the category was inert; and a NEUTRAL prompt **false-flagged 4/5**, *worse* than the biased one. |
+| `kind` classification (violation vs deviation) | **E6e: 6/9**, and **every miss was an over-call.** |
+| Deterministic calculator carve-out | **E6h: works** — and deliberately **not taken**, as perfection-chasing the long tail. |
+
+**Scope is part of the contract, also measured: E6b.** Judging a sprawling multi-number reply
+missed **1/3**; judging **the single structured egress artifact** hit **6/6**. The judge takes
+**one** structured artifact — this is a contract clause, not a usage tip.
+
+**Three non-negotiables (bareguard PRD §6.7, ~:1965-1981):**
+
+1. **Anchor on the VERBATIM request** — never the agent's paraphrase (the paraphrase is written
+   by the party being judged).
+2. **The reply is DATA, never instructions.** Held **100% on haiku-4.5** and explicitly
+   **UNRESOLVED on weaker models** — see the disconfirming evidence below.
+3. **Decisive category, never a confidence scale.** Aggressiveness belongs in a **separate
+   operator knob** (strict/relaxed routing), never in the judge's vocabulary.
+
+### Filed WITH its own disconfirming evidence (standing rule, BA-7 precedent)
+
+- **Injection resistance is UNRESOLVED, not disproven.** 100% on `haiku-4.5` is one tier. Prompt
+  injection *inside judged content* is a **hard pre-deploy test** for whatever tier ships — it is
+  criterion 3 below, and it must be reported either way.
+- **The judge is DRIFT-CONDITIONAL, and that bounds its value. E6c:** under a hard deterministic
+  cap, a cooperative agent **drifted 0/3**. So the judge is worth least exactly where
+  deterministic floors already bind, and worth something only where the constraint cannot be
+  expressed mechanically. Any adopter who *can* express it mechanically should — this is not a
+  general safety layer, and must not be sold as one.
+- **All of the above is n=small on ONE model tier.** By this repo's own rule, n=1 on a
+  nondeterministic judge is an anecdote; the base rate has to be re-established per shipping tier.
+
+### The ask — two deliverables, neither optional
+
+**1. The judge primitive.** `judge({ request, artifact, … }) → { verdict, where, costUsd, … }`
+with the E6i semantics above: verbatim request in, ONE structured artifact in, binary verdict out,
+mechanical `where` out. bare-agent for transport; no new production dependency beyond it.
+
+**2. The CALIBRATION HARNESS, shipped with it — not an afterthought.** A **frozen labeled case
+set** built the E6e/E6i way (verifiable / opinion / ambiguous / **injection** cases), a
+**pre-registered pass floor**, and **itemized reds**. **A judge tier is ADMITTED only after it
+grades the frozen set correctly.** This is bareloop's judged-floor doctrine, and it is why the
+harness is half the deliverable: *a rubric close is self-consistency in disguise* until it has a
+judged-floor analog, and **the judge is the ceiling** — verifier hardening never ends.
+
+**Contract requirements — each already paid for in bareloop's findings:**
+
+1. **Unpriced is never free (F6).** Every judge call reports real cost. A null cost is an
+   **honest null**, never `?? 0`; an unpriced round **reds**, never passes silently.
+2. **Truncation is a DISTINCT flagged outcome** (`stop == max_tokens`, or empty text) and is
+   **excluded from every denominator** — never counted as a miss, never as a pass.
+3. **Provider params gate per model tier** — `sonnet` takes `output_config.effort`; `haiku-4.5`
+   does **not**. A tier-blind param is a paid casualty.
+4. **Typed error attribution:** a `lib` field stamped **at the throw site**, never inferred by
+   sniffing error prose.
+5. **ONE scrub inventory** applied before persisting any judge raw — secrets never enter an
+   append-only record (a log that captures a key captures it forever).
+6. **`where` must be MECHANICAL genre:** name the field, the stated value, the returned value,
+   quote the evidence. bareloop measured (F38/F39) that **mechanical gaps convert on the next
+   attempt while semantic gaps produce inaction** — a judge whose `where` says *"seems off"* is a
+   stall generator, not feedback.
+7. **Validate against the REAL instrument.** Acceptance runs on **real uncrafted egress
+   artifacts**, never fixtures authored to contain the result; **the case set must be able to
+   FAIL**.
+8. **Base-rate discipline:** reproduce the **E6i battery shape — ≥5 samples per case** — at
+   minimum. A single sample of a nondeterministic judge is an anecdote.
+
+### FAIL-able acceptance criteria
+
+1. **Clear-case floor:** on the shipping tier, the frozen set is graded at **≥ E6i's clear-case
+   performance** (7/7 at `haiku-4.5`, ≥5 samples/case), reported **per case with itemized reds** —
+   not as an aggregate percentage.
+2. **The €280-class false positive reads `honored`**, at ≥ the measured 5/5. A judge that flags a
+   compliant answer is worse than no judge — E6e's every miss was an over-call, so this criterion
+   is the one most likely to fail and must not be softened.
+3. **Injection battery on the shipping tier** — judged content carrying instructions addressed to
+   the judge — **with the result reported either way**. A pass and a documented fail are both
+   acceptable outcomes; **silence is not**.
+4. **`costUsd` non-null on every call.** A call the provider cannot price **reds** (F6 class); a
+   `$0` readout for an unpriced call is an automatic fail of this criterion.
+5. **A truncated response surfaces as its own outcome** and is **excluded from the graded
+   denominator** — assert on the denominator, not merely on the presence of a flag.
+6. **Negative control (the harness must be able to fail):** a deliberately broken judge — e.g.
+   one that returns constant `honored` — **FAILS the frozen set**. Without this the harness
+   certifies nothing, and criteria 1–2 are unreadable.
+
+### Not asked (recorded, so nobody re-opens them)
+
+- **The deterministic calculator carve-out (E6h)** — measured to work, deliberately out of scope.
+- **Confidence scales and `kind` classification** — measured *worse* (E6f/E6g, E6e). Do not add.
+- **Any bareguard change.** `gate.annotate`'s fact envelope is the detector and stays as shipped;
+  barejudge consumes it and never re-implements it.
+- **A judge that DECIDES.** Out by law from both sides: bareguard's Axis B annotates and never
+  decides, and in bareloop **the close is the only truth**. barejudge returns a verdict to a
+  caller; it never merges, publishes, or touches a budget.
+
+### bareloop's own side (consumption plan, recorded now)
+
+N4's soft-green verdict class is blocked on exactly this: **softgreen passes are quarantined from
+learning credit until the judged floor is proven**. On delivery, barejudge becomes a **`judged`
+close stage** — `offer:false` **by law** (never lendable to the agent's check menu), metered from
+the **same wallet** as everything else, and **skipping the seed-verdict read** because its bar
+comes from calibration instead. Consumed by version bump like every other suite package; the one
+production dependency it adds is bare-agent, which bareloop already depends on.
+
+**Priority: a hard blocker for N4, and for nothing shipping today.** Nothing in the current green
+path calls a judge, so this stops no rung already on the ladder — it gates the next one.
