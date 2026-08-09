@@ -6595,21 +6595,30 @@ it: the strongest evidence yet that the class review is not optional.
 
 **Date:** 2026-08-09 · **Rung:** CLOSE-DEV, post-rework live proof · **Cost:** $0.40 (2 attempts) + $0 cross-checks
 
-> **Corrected in part by F93 (2026-08-09, same day, commit `da9e1be`) — recorded forward,
-> the text below stands as written.** Attempt 2's gate-2 death was NOT a composition miss.
-> The inside/outside split it composed — `typecheck` scoped `includePrefixes:["src/"]`
-> beside `typecheck` scoped `excludePrefixes:["src/"]` — is the F84 one-population law
-> applied correctly, and the model composed the SAME shape 3/3 across `mslhpw2v`,
-> `mslsnnzk` and `mslwbkz7`: systematic, not a roll. What refused it was ours.
-> `count-not-worse`'s crash guard summed matches AFTER the scope filter, so a live `tsc`
-> printing 67 real errors — all under `src/`, all dropped by the outside stage's own
-> filter — was indistinguishable from a tool that died before it looked at the tree. The
-> all-excluded fail-safe read above is untouched because it never fired on that stage; the
-> crash stop did, and it was mislabeled. **"The shape lottery, one layer up" and the parked
-> re-compose lever are WITHDRAWN as the reading of this run** — a re-compose loop fed a
-> mislabeled instrument would have re-rolled into the same wall. Everything else stands:
-> the scout casualty and its rulings, the rework working live through gate 1, and the
-> deterministic aurora cross-check.
+> **Corrected in part by F93 (2026-08-09, same day, commit `da9e1be`), and F93's own
+> mechanism attribution corrected the same night — recorded forward, the text below stands
+> as written.** Attempt 2's gate-2 death was NOT a composition-SHAPE miss. The
+> inside/outside split it composed — `typecheck` scoped `includePrefixes:["src/"]` beside
+> `typecheck` scoped `excludePrefixes:["src/"]` — is the F84 one-population law applied
+> correctly, and the model composed the SAME shape 3/3 across `mslhpw2v`, `mslsnnzk` and
+> `mslwbkz7`: systematic, not a roll. What varied across the three was the AGGREGATE, and
+> that is where this run's stop actually came from. `mslhpw2v` declared aggregate
+> **`"first"`** and stopped on the `first`-path's ALL-EXCLUDED message — verbatim:
+> *"term 0 (`/error TS\d+/`, aggregate "first") matched 67 line(s) and the scope filter
+> excluded every one of them — the number was never reported FOR THIS POPULATION, so it is
+> unknown, not zero"*. That is the CORRECTLY-labelled stop: the two-faults split had
+> already been fixed on the `first` path, and this is the by-design unknown-not-zero
+> refusal the read below describes, working. The `sum`-path crash-guard mislabel that F93
+> diagnoses and fixes fired on **`mslsnnzk`** tonight — **once across the record**, never
+> on this run. **"The shape lottery, one layer up" is WITHDRAWN at the composition-shape
+> level, and the parked re-compose lever loses this run as its justification** — a
+> re-compose fed the `sum`-path lie would have re-rolled into the same wall, and fed this
+> run's honest `first`-path refusal it would have been re-rolling against a true reading.
+> But the lottery is real one notch down: a declaration rolling aggregate `"first"` over a
+> structurally empty population still refuses post-fix, by design (the documented
+> fail-safe), so the AGGREGATE choice remains a roll that changes the outcome. Everything
+> else stands: the scout casualty and its rulings, the rework working live through gate 1,
+> and the deterministic aurora cross-check.
 
 hamr ordered one paid authoring run under the reworked interview (pulselog, `--verdict
 green`, run from a clean worktree at `31c2036` so the proof binds to committed code).
@@ -6656,9 +6665,9 @@ a named next build (hamr: not gating the ship).**
   the working tree is mid-build — the two builders were editing the tree while the proof
   ran, and it could not contaminate them or be contaminated.
 
-## F93 — the crash guard counted matches AFTER the scope filter, so a live tool over an empty population read as a dead one: F92's "shape lottery" was our own broken ruler
+## F93 — the crash guard counted matches AFTER the scope filter, so a live tool over an empty population read as a dead one: F92's "shape lottery" was our own broken ruler (at the shape level)
 
-**Date:** 2026-08-09 · **Rung:** CLOSE-DEV, post-rework live proof (second sitting) · **Cost:** $0.59 paid tonight (`mslsnnzk` $0.345 reproducing + `mslwbkz7` $0.245 validating), on top of F92's $0.40 · **Fix:** `da9e1be`
+**Date:** 2026-08-09 · **Rung:** CLOSE-DEV, post-rework live proof (second sitting) · **Cost:** $0.59 paid tonight (`mslsnnzk` $0.345 diagnosing + `mslwbkz7` $0.245 validating), on top of F92's $0.40 · **Fix:** `da9e1be` · **Attribution corrected same night — see §2**
 
 A $0.35 e2e was fired to validate the day's shipped deliverables. It bought a diagnosis
 instead, and the diagnosis refutes half of the finding written eight hours earlier.
@@ -6674,8 +6683,12 @@ It is not. Across **three paid runs** — `mslhpw2v` (F92's attempt 2), and toni
 split every time**: `typecheck` scoped `includePrefixes: ["src/"]` beside `typecheck`
 scoped `excludePrefixes: ["src/"]`. 3/3, systematic, and the shape is **right**: it is the
 F84 one-population law applied — one stage per population, never two populations summed
-into one ruler. The model was doing the correct thing three times and being refused three
-times.
+into one ruler. What did vary is the **aggregate** the stage rolled — `"first"` on
+`mslhpw2v`, `"sum"` on both of tonight's — and the aggregate, not the shape, decided which
+stop each run got: `mslhpw2v` took the `first` path's correctly-labelled all-excluded
+refusal, `mslsnnzk` took the `sum` path's mislabel. The model was doing the correct thing
+three times and being refused twice, for two different reasons, only one of which is a
+defect.
 
 ### 2. The mechanism: TWO faults reading as ONE, and we had already fixed the twin
 
@@ -6703,10 +6716,22 @@ and they used to read as one. 'Matched nothing' sends the reader to the parser; 
 matched and were then EXCLUDED BY SCOPE send them to the scope, which is where the problem
 is."* The `sum` path had the unfixed twin, and nothing connected them.
 
+**Correction, same night (attribution, not mechanism).** This entry as first written said
+the crash guard had killed BOTH paid runs on this repo. It did not. hamr re-read
+`mslhpw2v`'s own artifact: the stop it printed is the `first` path's ALL-EXCLUDED message
+quoted just above — the fixed twin, doing its job, on a stage that declared aggregate
+`"first"`. The defect diagnosed here fired **once**, on `mslsnnzk` (aggregate `"sum"`);
+`mslhpw2v` was the by-design unknown-not-zero refusal over the same composed shape, and
+F92's blockquote is corrected to match. The route to the wrong claim is this file's own
+rule turned on itself: the first extraction of `mslhpw2v`'s stage printed an **empty detail
+field**, and the inference filled it from the stage's name and the mechanism freshly in
+hand. A claim about a prior run is read off the artifact or it is not made — never
+back-filled from the story that just explained a different run.
+
 **The fail-safe held the whole time.** In every direction, the defect could only produce a
-false STOP — never a false green. It killed good closes; it never graded a red tree. That
-is the direction the rule was chosen for (F49's precedent), and it is why three refusals
-cost $1 instead of a signed lie.
+false STOP — never a false green. It killed a good close; it never graded a red tree. That
+is the direction the rule was chosen for (F49's precedent), and it is why its one firing
+cost $0.345 instead of a signed lie.
 
 ### 3. The fix (`da9e1be`, hamr-approved — verdict routing is arbiter territory)
 
@@ -6750,15 +6775,24 @@ measurement is covered by construction — it is the same function.
 ### Lessons
 
 - **A retry loop cannot heal a mislabeled instrument.** F92 parked "re-compose on refusal"
-  as the named conversion lever. It would have re-rolled a correct declaration into the
-  same wall, three more times, for more money — the gap it would have fed the model was
-  itself the lie ("your output matched none of the parser's terms"). Before building a
-  conversion loop around a refusal, **verify the refusal is true**. The park stands as a
-  build, but its F92 justification is gone.
+  as the named conversion lever. On `mslsnnzk` it would have re-rolled a correct
+  declaration into the same wall, for more money — the gap it would have fed the model was
+  itself the lie ("your output matched none of the parser's terms"). On `mslhpw2v` the gap
+  would have been TRUE and the refusal would still have stood, because an empty population
+  under aggregate `"first"` is unknown by design. Before building a conversion loop around
+  a refusal, **verify the refusal is true — and then check what a true one leaves the model
+  to change**. The park stands as a build, but its F92 justification is gone.
 - **When the model does the same "wrong" thing 3/3, suspect the ruler.** A lottery reading
-  requires variance. One run looked like a bad roll; three identical runs is a systematic
+  requires variance. One run looked like a bad roll; three identical shapes is a systematic
   cause, and the systematic cause was ours. Base-rate-before-attribution, at the level of
-  reading a model's behaviour rather than a battery's numbers.
+  reading a model's behaviour rather than a battery's numbers. The residual is honest and
+  smaller than F92 claimed: the SHAPE is systematic, the AGGREGATE still rolls, and an
+  aggregate-`"first"` stage over an empty population refuses post-fix exactly as designed.
+- **A claim about a prior run is read off its artifact, never inferred from a stage name.**
+  This entry's own first draft attributed `mslhpw2v`'s stop to the defect it had just
+  diagnosed, because the extraction printed an empty detail field and the fresh mechanism
+  filled the hole — the blind-instrument class, in prose, inside the finding that names it.
+  hamr's re-read of the primary artifact is what corrected it.
 - **A fixed defect class gets swept for twins in the same file.** The `first` path's split
   was written, commented, and correct; the `sum` path twenty lines away had the identical
   bug. Same class as F91's round-2 rule (*a fix for a leak is review territory for the
