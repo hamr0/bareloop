@@ -6764,7 +6764,12 @@ measurement is covered by construction — it is the same function.
 
 `mslwbkz7`, **$0.245, spend complete**, run against the fixed tree:
 
-- the model rolled **the same shape** (fourth time);
+- the model rolled **the same shape** (third of the three runs this entry enumerates —
+  and a $0 artifact read settles the wider count: BOTH 2026-08-08 pre-rework pulselog runs
+  composed the same inside/outside split too, scoped to two files instead of all of
+  `src/`, making it 5/5 across every authoring run this patient has ever seen; those two
+  PREPARED because their narrower scope left the outside population non-empty — the
+  stop's reachability turns on scope granularity, not on the shape);
 - `typecheck-outside-scope` read **GREEN, value = 0**, with the gap line *"term 0: 67
   matching line(s) dropped by the scope filter"* — the reading the mechanism always
   claimed and the code did not do;
