@@ -662,6 +662,26 @@ test('authorClose: revisions are BOUNDED — the loop stops at MAX_REVISIONS', a
   assert.equal(r.stop, 'max-revisions');
 });
 
+test('authorClose: maxRevisions is TIGHTEN-ONLY — a caller cannot buy more revise rounds than MAX_REVISIONS', async () => {
+  const decls = Array.from({ length: 6 }, (_, n) => { const d = goodDeclaration(); d.notes = [`n${n}`]; return d; });
+  const { generate, calls } = scriptGenerate(decls.map((d) => ({ declaration: d })));
+  const { fn } = scriptSeedRead();
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: fn, maxRevisions: 50 });
+  assert.equal(calls.length, MAX_REVISIONS + 1, 'the raised ceiling is clamped down to the constant');
+  assert.equal(r.revisions, MAX_REVISIONS);
+  assert.equal(r.stop, 'max-revisions');
+});
+
+test('authorClose: a negative maxRevisions floors at zero — one authoring call, no revise round', async () => {
+  const decls = Array.from({ length: 4 }, (_, n) => { const d = goodDeclaration(); d.notes = [`n${n}`]; return d; });
+  const { generate, calls } = scriptGenerate(decls.map((d) => ({ declaration: d })));
+  const { fn } = scriptSeedRead();
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: fn, maxRevisions: -3 });
+  assert.equal(calls.length, 1, 'the floor is one author call, never a negative loop bound');
+  assert.equal(r.revisions, 0);
+  assert.equal(r.stop, 'max-revisions');
+});
+
 test('authorClose: a reply with no tool call is an ARTIFACT-RED with a bounded retry, and writes nothing', async () => {
   const { generate, calls } = scriptGenerate([{ text: 'Here is my close: {...}' }]);
   const { fn, seen } = scriptSeedRead();

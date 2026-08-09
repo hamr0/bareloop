@@ -1008,6 +1008,11 @@ export async function authorClose({
   structuredMode = 'tool',
   catalogue = KIND_CATALOGUE,
 }) {
+  // TIGHTEN-ONLY: a caller may lower the ceiling, never raise it — unlimited
+  // revising launders thrash as adaptation (addendum 5). The floor is zero: one
+  // authoring call with no revise round is a legal ask, and a garbage value is
+  // the floor rather than a negative bound the loop never enters.
+  const revisionCap = Math.max(0, Math.min(Math.trunc(Number(maxRevisions)) || 0, MAX_REVISIONS));
   const book = makeCostBook();
   // The scout's calls AND its raws, together. The raws matter most on the path
   // that spends nothing more: run mslhn707 refused at the $0 preflight below,
@@ -1129,7 +1134,7 @@ export async function authorClose({
 
   const seedTrees = makeSeedTrees();
   try {
-    for (let i = 0; i <= maxRevisions; i += 1) {
+    for (let i = 0; i <= revisionCap; i += 1) {
       const label = i === 0 ? 'author' : `revise-${i}`;
       const ask = await askDeclaration({ messages, generate, mode: structuredMode, retries: structureRetries, label, book, catalogue });
       messages = ask.convo;
@@ -1192,7 +1197,7 @@ export async function authorClose({
         measured = renderSeedReadBlock(rows);
       }
 
-      if (i === maxRevisions) { stop = 'max-revisions'; break; }
+      if (i === revisionCap) { stop = 'max-revisions'; break; }
 
       const turn = buildReviseTurn(measured);
       // A TRIPWIRE, not behaviour: it can only fire once something else is
