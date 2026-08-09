@@ -6595,6 +6595,22 @@ it: the strongest evidence yet that the class review is not optional.
 
 **Date:** 2026-08-09 · **Rung:** CLOSE-DEV, post-rework live proof · **Cost:** $0.40 (2 attempts) + $0 cross-checks
 
+> **Corrected in part by F93 (2026-08-09, same day, commit `da9e1be`) — recorded forward,
+> the text below stands as written.** Attempt 2's gate-2 death was NOT a composition miss.
+> The inside/outside split it composed — `typecheck` scoped `includePrefixes:["src/"]`
+> beside `typecheck` scoped `excludePrefixes:["src/"]` — is the F84 one-population law
+> applied correctly, and the model composed the SAME shape 3/3 across `mslhpw2v`,
+> `mslsnnzk` and `mslwbkz7`: systematic, not a roll. What refused it was ours.
+> `count-not-worse`'s crash guard summed matches AFTER the scope filter, so a live `tsc`
+> printing 67 real errors — all under `src/`, all dropped by the outside stage's own
+> filter — was indistinguishable from a tool that died before it looked at the tree. The
+> all-excluded fail-safe read above is untouched because it never fired on that stage; the
+> crash stop did, and it was mislabeled. **"The shape lottery, one layer up" and the parked
+> re-compose lever are WITHDRAWN as the reading of this run** — a re-compose loop fed a
+> mislabeled instrument would have re-rolled into the same wall. Everything else stands:
+> the scout casualty and its rulings, the rework working live through gate 1, and the
+> deterministic aurora cross-check.
+
 hamr ordered one paid authoring run under the reworked interview (pulselog, `--verdict
 green`, run from a clean worktree at `31c2036` so the proof binds to committed code).
 
@@ -6639,3 +6655,116 @@ a named next build (hamr: not gating the ship).**
 - A paid proof that binds to a COMMIT (worktree at the exact SHA) reads cleanly even when
   the working tree is mid-build — the two builders were editing the tree while the proof
   ran, and it could not contaminate them or be contaminated.
+
+## F93 — the crash guard counted matches AFTER the scope filter, so a live tool over an empty population read as a dead one: F92's "shape lottery" was our own broken ruler
+
+**Date:** 2026-08-09 · **Rung:** CLOSE-DEV, post-rework live proof (second sitting) · **Cost:** $0.59 paid tonight (`mslsnnzk` $0.345 reproducing + `mslwbkz7` $0.245 validating), on top of F92's $0.40 · **Fix:** `da9e1be`
+
+A $0.35 e2e was fired to validate the day's shipped deliverables. It bought a diagnosis
+instead, and the diagnosis refutes half of the finding written eight hours earlier.
+
+### 1. Three runs, one shape — the model was not rolling dice
+
+F92 read attempt 2's gate-2 refusal as **composition shape lottery**: the model happened to
+declare an outside-scope stage that could not measure anything on that repo, and the gate
+correctly refused it. That reading needed the shape to be a roll.
+
+It is not. Across **three paid runs** — `mslhpw2v` (F92's attempt 2), and tonight's
+`mslsnnzk` and `mslwbkz7` — the model composed the **same inside/outside two-population
+split every time**: `typecheck` scoped `includePrefixes: ["src/"]` beside `typecheck`
+scoped `excludePrefixes: ["src/"]`. 3/3, systematic, and the shape is **right**: it is the
+F84 one-population law applied — one stage per population, never two populations summed
+into one ruler. The model was doing the correct thing three times and being refused three
+times.
+
+### 2. The mechanism: TWO faults reading as ONE, and we had already fixed the twin
+
+`count-not-worse`'s crash guard (`src/kinds.js`, formerly ~line 1025) asked *"non-zero exit
+AND zero matches?"* — and it took the match count from `breakdown[].matches`, which
+`parseValue` tallies **after the scope filter has already dropped the out-of-population
+lines**. Two entirely different worlds collapse into that one number:
+
+- **the tool crashed silently** — exited non-zero, printed nothing the parser could read
+  (the fault the guard exists for: unknown is not zero, F6/F45); and
+- **the tool ran perfectly** — `tsc` exited 2 *because it found 67 real errors*, all under
+  `src/`, and the outside-scope stage's own filter dropped all 67 as belonging to another
+  population.
+
+Post-scope both read `matches === 0`, so the second was refused as the first. The stop text
+said *"its output matched none of the parser's terms"* — false in the only sense a reader
+can act on: 67 lines matched the term; SCOPE excluded them. And the refusal's advice —
+*fix the repository so the close's tools resolve* — pointed at a toolchain that was
+healthy. Hand-verified in the patient: `npm run typecheck -- --strict` exits **2** with
+**67** `error TS\d+:` lines, every one under `src/`.
+
+**We had already found and fixed this exact class one aggregate over.** The `first`-path's
+own stop carries the split in its own words (`src/kinds.js` ~754): *"TWO DIFFERENT FAULTS,
+and they used to read as one. 'Matched nothing' sends the reader to the parser; lines that
+matched and were then EXCLUDED BY SCOPE send them to the scope, which is where the problem
+is."* The `sum` path had the unfixed twin, and nothing connected them.
+
+**The fail-safe held the whole time.** In every direction, the defect could only produce a
+false STOP — never a false green. It killed good closes; it never graded a red tree. That
+is the direction the rule was chosen for (F49's precedent), and it is why three refusals
+cost $1 instead of a signed lie.
+
+### 3. The fix (`da9e1be`, hamr-approved — verdict routing is arbiter territory)
+
+`parseValue` now reports **`preScopeMatches`**: lines matching the term *before* the scope
+filter has an opinion — kept plus dropped plus unattributable alike. The guard consults
+that, because **liveness is read where liveness lives**:
+
+- exit ≠ 0 with **zero pre-scope matches** → stops exactly as before (a genuinely silent
+  crash still matched nothing pre-scope; the fail-safe pin passed unmodified before AND
+  after the change);
+- exit ≠ 0 with **all matches scope-dropped** → a **normal counted-0 reading**, carrying
+  the filter's own note out with it: `term 0: 67 matching line(s) dropped by the scope
+  filter`.
+
+The `grep -c` / pytest-exit-5 accepted limit is unchanged and still documented rather than
+softened, and a genre that genuinely needs exit-N-means-zero still has to DECLARE it.
+
+**Bonus catch, found while fixing:** the `first`-path's all-scope-dropped stop was
+computing its notes correctly and then handing them to `measure`'s boundary, which dropped
+them on the floor. The earlier fix was **half-dead one layer up** — the right words
+computed and never rendered. `stopped()` now takes the notes a measurement already
+computed; both layers are wired and tested.
+
+Evidence discipline on the fix: the regression test was **watched failing pre-fix** against
+the exact live shape, **sabotage-proven** (reverting the guard's input to the post-scope
+count reds exactly that test and nothing else), suite **1409/1409**, and the seed-side
+measurement is covered by construction — it is the same function.
+
+### 4. Live validation: same repo, same inputs, final code
+
+`mslwbkz7`, **$0.245, spend complete**, run against the fixed tree:
+
+- the model rolled **the same shape** (fourth time);
+- `typecheck-outside-scope` read **GREEN, value = 0**, with the gap line *"term 0: 67
+  matching line(s) dropped by the scope filter"* — the reading the mechanism always
+  claimed and the code did not do;
+- **all three gates PASS**, gate 3 correctly work-red at seed (`typecheck-target-scope`
+  67 vs 0 — there IS work to do, which is the point of the job);
+- **SIGNING PREPARED, NOT SIGNED** — the first full-road PREPARED on the post-rework code.
+
+### Lessons
+
+- **A retry loop cannot heal a mislabeled instrument.** F92 parked "re-compose on refusal"
+  as the named conversion lever. It would have re-rolled a correct declaration into the
+  same wall, three more times, for more money — the gap it would have fed the model was
+  itself the lie ("your output matched none of the parser's terms"). Before building a
+  conversion loop around a refusal, **verify the refusal is true**. The park stands as a
+  build, but its F92 justification is gone.
+- **When the model does the same "wrong" thing 3/3, suspect the ruler.** A lottery reading
+  requires variance. One run looked like a bad roll; three identical runs is a systematic
+  cause, and the systematic cause was ours. Base-rate-before-attribution, at the level of
+  reading a model's behaviour rather than a battery's numbers.
+- **A fixed defect class gets swept for twins in the same file.** The `first` path's split
+  was written, commented, and correct; the `sum` path twenty lines away had the identical
+  bug. Same class as F91's round-2 rule (*a fix for a leak is review territory for the
+  same class*) — this time the sibling was not a fix diff but a sibling code path, and
+  nothing forced the sweep.
+- **A live run is its own catch class, again.** The $0.35 was spent to validate shipped
+  deliverables and instead found a defect that three review rounds, 1400 tests and a
+  mutation pass had all walked past — because only a real model on a real patient composes
+  the shape that exercises it.
