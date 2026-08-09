@@ -21,6 +21,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, appendFileSync, existsSync, rmSync, readdirSync, realpathSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
+import { JUDGED_MARKER } from '../src/kinds.js';
 
 const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/aurora-soar';
 const SPINE_DIR = '/home/hamr/PycharmProjects/bareloop-patients/aurora-soar-bareloop';
@@ -53,7 +54,7 @@ function finish(/** @type {number} */ code, /** @type {string} */ phase) {
   // green or red — and deliberately NOT on instrument-stops (exit 97), so a
   // grader crash or stop routes as close-crashed/escalation, never as worker
   // feedback. The spec's judged floor is {pattern: 'TESTGEN judged=(\d+)', min: 1}.
-  if (code !== 97) out('TESTGEN judged=1');
+  if (code !== 97) out(`TESTGEN ${JUDGED_MARKER}`);
   appendFileSync(LOG, JSON.stringify(result) + '\n');
   process.exit(code);
 }

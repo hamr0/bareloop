@@ -43,8 +43,8 @@ it and never disappears.
 > under an un-gameable outer close and one budget it can only tighten. On the real-model
 > acceptance battery (F47) the emergent flow converted a job the same worker failed 4/4
 > before — 3/3 runs, clearing the owned bar every time, composing its own check exits. The
-> within-run ratchet (Layer R) ships armed-and-inert by measurement (F41). **In flight:
-> N3 — executed inheritance**, where a workflow that greened is kept, offered to the next
+> within-run ratchet (Layer R) ships armed-and-inert by measurement (F41). **Then N3 —
+> executed inheritance**, where a workflow that greened is kept, offered to the next
 > similar job, and improved as executed instead of drafted from scratch (the ladder's
 > kill-switch question). As of 0.7.0 N3's machinery **ships** — the bridge registry, the
 > operator-signed reuse envelope, the selection call and step-level resume are all in the
@@ -52,7 +52,14 @@ it and never disappears.
 > legal, never *beneficial*. The contrast that was to prove the lift is now retired (F88): a
 > validation rule hands every cold run the plan shape a bridge was carrying, so the gap it
 > would have measured is gone. Treat reuse as available and unproven — what a bridge should
-> carry instead is open.
+> carry instead is open. **The rung in flight is close authoring** — the last layer where a
+> human still wrote code. You answer a short interview about what *done* means; an LLM then
+> composes a close **declaration** over a catalogue of stage kinds bareloop implements — never
+> code, never prose parsed back — which is validated, run once against your untouched repo so
+> every ruler is seen measuring something real, and gated before you sign its hash. It is
+> proven live on both a JavaScript and a Python patient, and its designed failure mode is an
+> honest refusal: a close that would grade nothing, or a stage whose population does not exist
+> in your tree, comes back decision-ready instead of green.
 
 ## Quick start
 

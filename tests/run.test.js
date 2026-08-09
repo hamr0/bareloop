@@ -23,7 +23,7 @@ import { makeSpine } from '../src/spine.js';
 import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
 import { STALL_MS } from '../src/stall.js';
-import { readSpine, scriptedProvider } from './helpers.js';
+import { readSpine, scriptedProvider, initPatientRepo } from './helpers.js';
 
 const base = mkdtempSync(join(tmpdir(), 'run-test-'));
 
@@ -45,6 +45,9 @@ if (existsSync(p) && readFileSync(p, 'utf8').includes('ok')) process.exit(0);
 console.log('FAILED tests/test_x.mjs missing'); process.exit(1);\n`;
   writeFileSync(join(workdir, 'close.mjs'), probe);
   writeFileSync(join(workdir, 'check.mjs'), probe);
+  // a real patient is a git checkout: the WORK BRANCH hard rule (PRD v1.57 §3) makes
+  // one a precondition of running a job at all
+  initPatientRepo(workdir);
   return workdir;
 }
 

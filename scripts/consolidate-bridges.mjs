@@ -29,7 +29,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TOOL_MENU } from '../src/job.js';
-import { stageClose } from '../src/plan.js';
+import { closeStagesOf } from '../src/plan.js';
 import { mintBridge, appendGreen, saveBridge, listingRow, deriveStatus, makeRegistry, registryExists } from '../src/bridges.js';
 
 const REPO = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -121,7 +121,11 @@ for (const [job, greens] of [...groups].sort(([a], [b]) => a.localeCompare(b))) 
   const specFile = join(REPO, 'jobs', `${job}.json`);
   if (!existsSync(specFile)) die(`${specFile} not found — goal and close stages come from the SIGNED spec, never from the stored plan`);
   const spec = JSON.parse(readFileSync(specFile, 'utf8'));
-  const closeStageNames = (stageClose(spec.close) ?? []).map((s) => s?.name);
+  // THE ONE STAGING (`closeStagesOf`), never `stageClose` directly: a spec may
+  // carry a command close OR an authored declaration, and a reader that knows
+  // only `close` sees a declared job as having no close at all — which here would
+  // refuse a perfectly good spec for the one reason that is not true of it.
+  const closeStageNames = (closeStagesOf(spec) ?? []).map((s) => s?.name);
   if (!closeStageNames.length || closeStageNames.some((n) => typeof n !== 'string')) {
     die(`${specFile}: its close stages no name sequence — the load gate compares against them, so an entry without them is unusable`);
   }

@@ -116,8 +116,8 @@ verb blocks the work, the worker files a *request-red* and a human decides.
 | verdict | meaning |
 |---|---|
 | **green** | hard proof — the judge's exit code says pass; the only thing that mints learning |
-| **soft-green** | a rubric judged it acceptable — weaker credit, kept distinct |
-| **hitl** | a human rendered the verdict |
+| **soft-green** | a rubric judged it acceptable — weaker credit, kept distinct. *Today: a user-pickable radio value, DECLARED-BUT-LOCKED (v1.57 §1) — picking it returns the counted request-red refusal; it goes live on the close-authoring surface, after this rung (needs the RSI judged-floor analog first)* |
+| **hitl** | a human rendered the verdict. *Today: declared-but-locked exactly like soft-green — the pick is counted demand, refused until the hitl declaration surface exists (a hitl close IS a declaration)* |
 | **red** | failed; the gap feeds the next attempt |
 | **already-green** | was green before any work happened — mints **nothing** (credit for work not done poisons inheritance) |
 
@@ -126,7 +126,7 @@ verb blocks the work, the worker files a *request-red* and a human decides.
 ## The layers
 
 ```
-Layer 3   INHERITANCE    the road survives runs, with receipts; self-heals    (not built — N3, the NEXT rung)
+Layer 3   INHERITANCE    the road survives runs, with receipts; self-heals    (machinery built; rung PARKED — F88)
 Layer 2   MICRO-WHEELS   the road itself: locate → understand → write → verify (built + ACCEPTED — F47, v0.5.0;
                                                                                 road finished by T·A·P·U, v1.35)
 Layer R   THE ROOT       memory that survives attempts inside one run          (built — armed-and-inert, F41)
@@ -234,6 +234,98 @@ self-raise.
 
 ---
 
+## The close-authoring rung — the close becomes DECLARED, never written
+
+**Not a layer.** It changes who owns the **judge**, not who arranges the wheels. Until now the
+close — the definition of done — was hand-written JavaScript, one script per patient, written
+by the assistant. That is *"there shouldn't be user authoring anywhere"* broken from the one
+side nothing else broke it from: the check menu is derived, the plan is drafted, and the layer
+that decides green was the last place a human wrote code. This rung makes the close
+**declared**. Design record `docs/plans/2026-08-07-close-authoring-design.md` (FROZEN
+2026-08-07).
+
+**Status: M1–M4 BUILT; the whole-branch review CLOSED (three shrinking rounds, 15 findings,
+all fixed — F91); the reworked interview and the fence/work-branch rules PAID-PROOFED live
+(2026-08-09, F92). "SIGNING PREPARED, NOT SIGNED" on the JS patient — twice, with a
+byte-identical hash across cold runs — and both of the python patient's refusals were honest
+ones. NOT shipped.**
+
+The flow, end to end:
+
+```
+6 plain interview questions, keyed to the verdict CLASS (no code, no paths typed by hand)
+ → a bounded READ-ONLY scout lists what is really in the repo (runner, flags, env, paths)
+ → a model fills a TYPED FORM: a declaration over a fixed catalogue of stage KINDS whose
+   implementations bareloop owns — the schema is DERIVED from the catalogue and emitted as a
+   tool call, prose is never parsed, and a locked kind is INEXPRESSIBLE, not rejected late
+ → validator + the CLASS's GUARD BATTERY (mandatory, un-removable — the stages no user would
+   think to ask for: "I'm also checking you didn't silence the type checker")
+ → every declared stage runs ONCE against the untouched seed, proving each ruler measures
+   something real before anyone trusts it
+ → the resolved spec + its hash land on the operator's desk for SIGNATURE.
+```
+
+Everything from the signature onward is untouched — **mom still signs, and mom never gives up
+the pen.** The agent that later drafts the plan never sees the close; it sees stage NAMES,
+through the derived check menu, one hop, one direction.
+
+> **⚠ REVIEW CLOSED — AND THE PAID PROOF NAMES WHAT IS LEFT (2026-08-09).** The six lenses'
+> **3 serious findings** all landed: model-declared `cmd`/`args` now sit on a command floor,
+> the python genre-env re-validation no longer rejects the arbiter's OWN injection, and a
+> worktree-cleanup throw can no longer discard an already-minted verdict — with the mediums
+> beside them (subprocess output scrubbed before it reaches the authoring model; a crashed
+> counter routed as an instrument stop instead of reading as zero, i.e. green), 15 findings
+> across three shrinking rounds (F91). Then ONE paid run proved the reworked surface live and
+> named the remaining miss (F92, $0.40): **the composition shape lottery**. Close COMPOSITION
+> rolls shapes exactly the way plan DRAFTING does — a declaration can be perfectly legal and
+> VACUOUS against a particular repo, and this one scoped an outside-the-target stage to a
+> population that repo does not have. The gates CAUGHT it, fail-safe and decision-ready, and
+> nothing green was minted; what is missing is the conversion, because the gate's own output
+> IS the mechanical gap and nothing feeds it back for a re-compose — the run simply ends.
+> **One bounded re-compose is PARKED as a named next build; hamr ruled it does not gate the
+> ship.**
+
+**verdictType is a USER CHOICE again (2026-08-08, hamr).** ~~D4 — derived from the answers,
+never picked~~ is **SUPERSEDED**. The green / soft-green / hitl radio of the 2026-07-21 Layer 2
+locked design returns as the user's own answer (v1 still admits only `green`). The user is the
+one who knows whether their "done" is machine-checkable (green), needs judgment (soft-green),
+or needs a person (hitl) — and that choice DRIVES the close authoring rather than falling out
+of it.
+
+**The interview re-keys from GENRE to VERDICT CLASS (2026-08-08, hamr).** Three frozen question
+sets — green / soft-green / hitl — cover every job, instead of one set per genre. Genres are a
+fat long tail that cannot be enumerated (TYPES was the first specimen, not the pattern), so
+genre understanding moves into the LLM's COMPOSITION over the catalogue, where it already
+belongs. **That open design question is now ANSWERED and BUILT:** the mandatory guard battery
+re-homes to the verdict CLASS, which holds the structure, the un-removability and which slot
+is the model's, while the tool-specific contents — which suppression patterns, which
+extensions — resolve at COMPOSITION from the language the declaration names. The pick is also
+a PROMISE: a declaration may not demand a HIGHER class than the one the user chose, so nothing
+silently upgrades or downgrades a verdict; exceeding the pick is an honest red naming the kind
+that raised it.
+
+**A safety floor under declared commands (2026-08-08, hamr's ruling).** A declaration names
+commands, so a deny-floor of dangerous commands (the `rm -rf` class) is required: a straight
+block or a human gate, **never silently allowed**. Alongside it: a job edits on a **work
+branch by default, never main**. **Both are BUILT.** The floor is a MONOTONIC list of denied
+program names — shell interpreters (admit one and every other entry is decoration), the
+`rm -rf` and machine-level family, fetch-and-run, and the indirection verbs that would run a
+program the declaration never named — read off the BASENAME after the path is normalised, so
+`/usr/bin/rm` cannot dodge it, and widened only by ADDING names. The work branch is enforced
+STRUCTURALLY rather than by convention: the one seam that grants write verbs throws without a
+prepared branch, and `main`/`master` are inexpressible as the work branch. Neither is a
+sandbox and neither claims to be — the local-trust model stands, with its limits written out.
+
+**The timer rule (2026-08-08, hamr's ruling) — the money rule applied to time.** The operator's
+stage-timeout ceiling always wins; a model-declared `timeoutMs` may only TIGHTEN it, never
+widen it, exactly as the agent may only tighten `budgetUsd`. And a measuring command that
+CRASHES must fail **loudly, as could-not-run** — never as a zero, because a zero reads as green
+(F6's honest-null in the shape that matters most: an unrun ruler is not a passing one). **Both
+halves are BUILT** — the declared timeout clamps tighten-only against the operator's ceiling,
+and a crashed counter routes as an instrument stop rather than a number.
+
+---
+
 ## What lives where now (2026-08-06 flow update — second pass)
 
 The layers above are the map; this is the current inventory — every mechanic that has
@@ -275,6 +367,17 @@ addenda (v1.36–v1.50); this list is deliberately one line each.
   budgets, and reuse envelopes fold into the hash — any widening forces a re-sign.
 - **Close hygiene:** env-strip on the close's environment; the close runs async; the
   arbiter's own books are never read by the worker and never red the close.
+- **Close AUTHORING** *(BUILT; review closed and paid-proofed live — 2026-08-09; see the rung
+  section above)*: the close stops being hand-written JavaScript and becomes a DECLARATION over
+  owned stage kinds — 6 interview questions keyed to the verdict CLASS + a read-only scout (up
+  to 3 attempts, retried only when the emission itself was unreadable) + a typed form, through
+  that class's mandatory guard battery, every stage seed-verified, signed by the user as a
+  resolved hash. Governance is unchanged by construction (the signature and everything after it
+  is untouched). The two gaps it opened are CLOSED: declared commands sit on a monotonic deny
+  floor, and a declared `timeoutMs` may only TIGHTEN the operator's ceiling. What is left is one
+  layer up — a legal declaration can be VACUOUS against a particular repo, the gates refuse it
+  honestly and decision-ready, and the bounded re-compose that would convert that refusal is
+  PARKED (F92).
 
 **Layer 1 — the wheel (the atom): unchanged.** attempt → judge → gap → retry; crash-by-cause
 routing (a crash after real writes feeds back, an instrument crash escalates); provider
@@ -399,6 +502,21 @@ menu is the expected case.
 **And who says what "done" means at all?** The user — that is the ONE thing authored by hand.
 *"I don't know the best workflow"* is not *"I don't know what done looks like."* The user
 points at the far bank; the agent builds every pier.
+
+**The customer, and the front-desk helper (2026-08-08 — the close-authoring rung).** Still
+true that the user says what done means. No longer true that anyone writes it by hand. A new
+character walks in: the **customer** — a grown-up who wants a castle and cannot write mom's
+checklist, because writing checklists was never their job. So a **front-desk helper** asks them
+a short list of plain questions, goes and looks in the real toy box to see which bricks are
+actually in there, and then fills out **mom's pre-printed checklist form** — ticking boxes off
+a fixed menu, never writing instructions in its own handwriting. Some items go on the form
+whether the customer asked for them or not, because they are mom's house rules and a customer
+would not know to ask ("and no gluing the bricks together to make the tower stand"). Then every
+item on the checklist is tried once against the untouched castle, so nobody trusts a ruler
+before seeing it measure something. **Mom still signs the checklist, and nothing gets built
+until she does.** *(The customer also says up front which KIND of done they want — one mom can
+check with a ruler, one that needs someone's judgment, or one only a person can call. v1 builds
+the first; the other two get an honest "we can't do that yet" that is counted, never dropped.)*
 
 Nucleus to the outside — note the layers are numbered by build order, not by position:
 
@@ -639,7 +757,10 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
    **(c) bound-pressure ledger fold** — "step X capped M of N runs" for the trust
    surface; acceptance = it can surface the F37/16g rounds-vs-money bind from archived
    spines.
-   **This is the NEXT rung (2026-07-30).** Layer 2's road is finished, hardened and
+   ~~**This is the NEXT rung (2026-07-30).**~~ *(Superseded — the rung was PARKED 2026-08-05,
+   F88 / PRD v1.52: the shape-lottery gate rules erased the difference the lift contrast
+   would have paid to measure; see the Layer 3 section above. Close-authoring took its
+   place in the critical path.)* Layer 2's road is finished, hardened and
    reviewed; the branch is release-ready. Layer 3 is the REUSE rung — the bridges the
    U runs have already minted get reused instead of redrawn, which makes the paired
    control fall out of normal operation (reuse = the ON arm, from-scratch = the OFF arm)
@@ -656,6 +777,25 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
    inventory; PRD v1.42). **The pre-probe is pre-registered and gates the machinery:**
    `docs/02-experiments/REUSE-PREPROBE-PREREG.md` — draft-only, three arms, $1 hard cap, on
    the cross-patient TYPES pair. Nothing is built before it reads.
+6. **Build CLOSE-AUTHORING — the close becomes declared** (design record 2026-08-07, FROZEN;
+   M1–M4 built 2026-08-08). **This is the rung in flight**, sequenced after Layer 3's park
+   (F88 / PRD v1.52) and BEFORE soft-green + hitl, which stand on it: a hitl close IS a
+   declaration, and there is no declaration surface until this exists. It also unblocks the
+   `litectx-maintainer` job, dark since `507adbb`. Gate 1 (the $0 expressiveness replay over
+   the six hand-written closes) read **PASS for the TYPES genre with four kind amendments,
+   FAIL as a general catalogue** — `harness-loop` (TESTGEN) recorded as known-missing rather
+   than discovered later; gate 2's POC closed 2026-08-08. **Status 2026-08-09: the review is
+   CLOSED (15 findings across three shrinking rounds, all fixed — F91) and the surface is
+   live-proven on BOTH genres:** the JS genre PREPARED twice with a byte-identical trial-gate
+   hash across cold runs; the python genre refused twice honestly — the second refusal was the
+   crash-stop preventing a live fake green (a symlink-blinded scope count reading 0 where 16
+   errors exist), fixed by physical-identity scope matching and converted to SIGNING PREPARED
+   for $0 on the same declaration. **The interview rework of the four 2026-08-08 rulings is
+   BUILT** (the `green | soft-green | hitl` radio with locked classes refusing as counted
+   demand; class-keyed question sets with the genre-confirm slot deleted and genre moved into
+   composition; the guard battery re-homed to the verdict class with fills at composition; the
+   class-vs-ceiling promise rule, inert in v1 by construction, mutation-proven). Remaining
+   before ship: the command deny-floor's work-branch mechanics and the ship gate itself.
 
 ---
 
@@ -667,7 +807,7 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
 | the fence / gate / redaction | `bareguard` |
 | `read` / `grep` / `write` | `bare-agent` shell tools |
 | `recall` / `get` (the index) | `litectx` |
-| the judge (close) | an awaited `spawn` of the spec's argv — plain child process, exit code = truth (async since 2026-07-30, F68: a running close no longer freezes the host loop; every close semantic unchanged) |
+| the judge (close) | an awaited `spawn` of the spec's argv — plain child process, exit code = truth (async since 2026-07-30, F68: a running close no longer freezes the host loop; every close semantic unchanged). **A DECLARED close (close-authoring, in build) spawns the same way but through bareloop's own kind executor instead of a per-patient script — same exit-code truth, and a SECOND gap renderer whose trim marker every reader must know about (F90)** |
 
 Everywhere else in this repo's docs, the product word is used. If a doc says `recall`, it
 means the verb; if it means the package, it says the package name.

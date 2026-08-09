@@ -17,6 +17,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { JUDGED_MARKER } from '../src/kinds.js';
 
 const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/aurora-u';
 const SEED_REF = 'd661e507c5cd0981368d90ed3e3abf6e2bb9ed18'; // the patient as cloned
@@ -42,7 +43,7 @@ const SUPPRESSIONS = [
 const stage = process.argv[2];
 const out = (/** @type {string} */ line) => console.log(`SPAWNER ${line}`);
 /** every real judgment says so; an instrument stop (97) deliberately does not */
-const done = (/** @type {number} */ code) => { if (code !== 97) out('judged=1'); process.exit(code); };
+const done = (/** @type {number} */ code) => { if (code !== 97) out(JUDGED_MARKER); process.exit(code); };
 const stop = (/** @type {string} */ why) => { out(`instrument-stop: ${why}`); process.exit(97); };
 
 const run = (/** @type {string} */ cmd, /** @type {string[]} */ args, timeoutMs = 900_000, /** @type {Record<string,string>} */ extraEnv = {}) => {

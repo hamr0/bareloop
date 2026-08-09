@@ -20,7 +20,7 @@ import { join, resolve, relative } from 'node:path';
 import { Gate } from 'bareguard';
 import { LiteCtx } from 'litectx';
 import { runClose, runStages, ralph, CLOSE_FAULTS, boundGap } from './ralph.js';
-import { validatePlan, legalScopes, stageClose } from './plan.js';
+import { validatePlan, legalScopes, closeStagesOf } from './plan.js';
 import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU } from './plan.js';
 import { snapshotScope, evalExits, CHECK_GAP_MAX } from './exits.js';
 import { createRoot } from './root.js';
@@ -33,6 +33,9 @@ import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
 import { validateBridge, loadGate } from './bridges.js';
 import { extractArtifact } from './text.js';
 import { createClock, isWallTimeout } from './clock.js';
+import { isDeclaredClose, runDeclaredStages, validateCloseDecl, closeGrade } from './declaredclose.js';
+import { seedAtHead, seedListing } from './kinds.js';
+import { workBranchName, prepareWorkBranch } from './workbranch.js';
 
 const require = createRequire(import.meta.url);
 const { Loop, wireGate, HaltError } = require('bare-agent');
@@ -306,7 +309,7 @@ export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes,
   // executes and `validatePlan` accepts against. Reading `job.close` raw here left
   // the legacy object form offering nothing while the runner preflighted a stage.
   // (`?? []`: a close naming no command stages nothing, so it offers nothing)
-  const closeStages = stageClose(job.close) ?? [];
+  const closeStages = closeStagesOf(job) ?? [];
   const checkNames = checkMenu(closeStages).map((m) => m.name);
   const doc = `DRAFT-PLAN
 You are planning how to accomplish a goal in a repository, as an ordered list of bounded
@@ -509,12 +512,18 @@ ${scoutBlob || '(no scout notes)'}`;
  *   default; a caller supplies this to drive time deterministically (the same seam `createClock`
  *   already exposes — a run's terminal cannot otherwise be exercised without waiting out a cap
  *   whose floor is one close timeout).
+ * @param {string|null} [opts.resumeBranch] RESUME — the WORK BRANCH the killed leg
+ *   recorded on its own spine (`readResume`'s `restart.branch`, off the `work-branch`
+ *   event). With it the resume returns to the branch its own work is sitting on; without
+ *   it the deterministic name would collide with that very branch and the collision walk
+ *   would mint a `-2` beside the progress the resume exists to keep. Absent is the cold
+ *   path. A recorded branch that no longer exists is a STOP, never a fresh start.
  * @returns {Promise<string>} 'green' | 'already-green' | 'escalated' | 'plan-red' |
  *   'check-red' | 'close-red' | 'close-unsupported' | 'recipe-stale' | 'pricing-red' |
- *   'cap-halt' | 'wall-halt' | 'provider-red' | 'interpreter-red' | 'step-stalled' |
- *   `step-red:<id>`
+ *   'branch-red' | 'cap-halt' | 'wall-halt' | 'provider-red' | 'interpreter-red' |
+ *   'step-stalled' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null }) {
   workdir = resolve(workdir);
   // ONE spelling of the redaction, housed next to the inventory it reads
   // (src/validate.js) — the same helper the isolate verbs scrub the litectx store
@@ -550,14 +559,17 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // A STAGED close (PRD v1.28) is an ordered list of command stages and is the
   // go-forward shape; the object form survives only for the declared-but-locked
   // verdict classes (gold/rubric/hitl), which name no command to run.
-  // W4: the staging itself lives in ONE place (`stageClose`), shared with
+  // W4: the staging itself lives in ONE place (`closeStagesOf`), shared with
   // `planPrompt` and `validatePlan` — a second copy here is exactly how the
-  // runner came to execute a stage neither of the other two could see.
-  const stagedClose = stageClose(job.close);
+  // runner came to execute a stage neither of the other two could see. M4 widened
+  // that one derivation to the AUTHORED close (`closeDecl`) rather than adding a
+  // second: a consumer reading only `close` sees a declared job as closeless.
+  const stagedClose = closeStagesOf(job);
+  const declared = isDeclaredClose(job);
   if (!stagedClose) {
     emit('escalation', {
       category: 'close-unsupported', decisionReady: true,
-      decision: `The job's close is a ${job.close.type} close — the plan flow executes commands whose exit codes are truth (a staged close, or a single predicate).`,
+      decision: `The job's close is a ${job.close?.type ?? 'non-command'} close — the plan flow executes commands whose exit codes are truth (a staged close, a single predicate, or an authored declaration).`,
       options: ['restate the close as a predicate', 'wait for the verdict-classes rung'],
     });
     return 'close-unsupported';
@@ -738,6 +750,22 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   ];
 
   const closeOpts = { timeoutMs: closeTimeoutMs, cwd: workdir };
+  /** D8 — the DECLARED close's seed, filled in below before anything runs.
+   * `null` for a command close, which has no baseline to measure against. */
+  /** @type {{seedRef: string}|null} */
+  let declaredCtx = null;
+  /**
+   * ONE close-execution seam, chosen once by which field the SIGNED spec carries.
+   * Both executors return `runClose`'s verdict shape, so everything downstream —
+   * the precheck, the preflight, the check seam, ralph's judge, `CLOSE_FAULTS`,
+   * the trend reader and Layer R — is the same code for both.
+   *
+   * The command path is byte-identical to what it was: same call, same options.
+   * @param {any[]} stages
+   */
+  const runCloseStages = (stages) => (declared
+    ? runDeclaredStages(stages, scrub, { ...closeOpts, seedRef: /** @type {any} */ (declaredCtx).seedRef })
+    : runStages(stages, scrub, closeOpts));
   /** @type {string|undefined} the stage that rendered the LAST close verdict (Layer R's red-set source) */
   let closeStage;
   /** @type {any} the LAST close verdict itself (W-2). A wall stop KEEPS the grade
@@ -795,15 +823,171 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   };
   /** the close, as ONE verdict: every stage in order, first red wins */
   const judgeClose = async () => {
-    const v = await runStages(stagedClose, scrub, closeOpts);
+    const v = await runCloseStages(stagedClose);
     closeStage = v.stage;
     lastCloseVerdict = v;
     // Only a RED grade is a reading. A `satisfied` ends the run and a close FAULT
     // rendered no judgment at all (CLOSE_FAULTS) — folding either into the series
     // would put a non-number where the instrument expects a graded one.
-    if (v.verdict === 'needs_revision') runTrend.record({ gap: v.gap });
+    // `closeGrade` is the reader's input for EITHER executor: a command close
+    // hands over its gap and `readGrade` scrapes the stage and the count out of
+    // it; a declared close already KNOWS both and says them, rather than
+    // round-tripping a number through prose it would then have to parse back.
+    if (v.verdict === 'needs_revision') runTrend.record(closeGrade(v));
     return v;
   };
+
+  // ── 0c. THE WORK BRANCH — the HARD RULE (PRD Addendum v1.57 §3, hamr):
+  // *"The agent creates a NEW BRANCH before it touches any code — a HARD RULE, no
+  // exceptions. Not a default, not a preference: no job edits the branch it was
+  // handed, and none edits `main`."*
+  //
+  // ONE SEAM, TWO PLACEMENTS. The split is COLD vs RESUME, and every half of it is
+  // ruled rather than convenient:
+  //
+  //  * BEFORE the scout on BOTH paths, the scout being the run's first PAID call. A
+  //    patient that is not a git checkout, a namespace with no free name, a resume
+  //    whose branch a human deleted — each is an instrument stop that must cost zero
+  //    tokens, and a branch prepared after the scout would already have bought one.
+  //  * COLD: AFTER the precheck and the preflight, which are $0 and deterministic.
+  //    An ALREADY-GREEN tree returns below without ever reaching the seam and leaves
+  //    no branch behind: a run with no work to do has no blast radius to bound, and
+  //    minting a branch for it would litter every patient with the record of a run
+  //    that did nothing.
+  //  * RESUME: BEFORE them — here, above 0*. There is nothing to mint on a resume
+  //    (the recorded branch exists, `created:false`, and the arm below refuses
+  //    rather than creating), so the leave-no-branch-behind clause has nothing to
+  //    say; what IS at stake is WHICH TREE the $0 instruments measure. The recorded
+  //    branch holds the work the operator already paid for and IS the run being
+  //    continued, while the ref the operator handed back can be anything at all. Run
+  //    from where the run happens to stand, the precheck could read `already-green`
+  //    off a tree that is not this run's and every `baseline: "seed"` stage would
+  //    baseline against it — an instrument measuring the wrong subject, reading
+  //    honestly and saying nothing true. Moving the seam up is also strictly cheaper
+  //    for the failure case: a resume whose branch is gone or foreign now stops
+  //    before the arbiter grades anything at all.
+  //
+  // The scout itself needs no branch and is not what this gates: its menu simply
+  // has no write-class verb in it (the menu IS the grant), so it cannot touch code
+  // wherever it stands. What the branch gates is the WRITE-CAPABLE phase, and that
+  // gate is enforced structurally rather than by this ordering — `mkWorker` refuses
+  // to build a `writable` worker while `workBranch` is null (below). Ordering says
+  // where the honest stop happens; the guard says the rule cannot be bypassed.
+  //
+  // Creating a branch at HEAD moves no commit and changes nothing the close can
+  // measure: the declared seed is HEAD either way, and the tree — dirty or clean —
+  // is carried across untouched.
+  /** @type {string|null} the branch this run's work lands on, once it exists */
+  let workBranch = null;
+  /** is this leg continuing work that already exists? Spelled EXACTLY as
+   * `prepareWorkBranch`'s own resume test, so the two cannot disagree about which
+   * arm a given input takes. */
+  const resuming = resumeBranch !== null && resumeBranch !== undefined;
+  /**
+   * 0c itself — ONE definition for both placements. The refusal below is written
+   * once on purpose: two call sites emitting their own branch-red would be two
+   * messages free to drift apart, and this one is what a human reads when a run
+   * stops having spent nothing.
+   * @returns {Promise<'branch-red'|null>} the terminal to return, or `null` once the
+   *   run is standing on a branch nobody handed it
+   */
+  const prepareBranch = async () => {
+    const wb = await prepareWorkBranch(workdir, { name: workBranchName(job), resume: resumeBranch ?? null });
+    if (wb.stop !== null) {
+      // Never a fallback to the handed branch. That fallback IS the thing the rule
+      // forbids, and a run that silently took it would report a green whose blast
+      // radius nobody bounded — so this is a named terminal of its own rather than
+      // a wiring fault (`interpreter-red` aims an upstream ask at a library; a
+      // patient that is not a git checkout is the operator's own state speaking).
+      emit('escalation', {
+        category: 'branch-red', decisionReady: true,
+        decision: 'The run could not create its own work branch, and no job runs on the branch it was handed (PRD v1.57 §3). Nothing was spent.',
+        options: [
+          'make the patient a git checkout with at least one commit',
+          'free the work-branch name (delete or rename the stale branches this run collided with)',
+          'abandon the run',
+        ],
+        detail: scrub(wb.stop),
+      });
+      return 'branch-red';
+    }
+    workBranch = wb.branch;
+    // The run's own books say where its work went. A human reading a spine — or a
+    // resume reading it back (`readResume`'s `restart.branch`) — must not have to
+    // re-derive the name from the spec and guess how many collisions there were.
+    emit('work-branch', {
+      branch: wb.branch,
+      created: wb.created,
+      resumed: wb.resumed,
+      from: wb.from,
+      base: wb.base,
+      repo: wb.repo,
+      ...(wb.collided > 0 ? { collided: wb.collided } : {}),
+      meaning: wb.resumed
+        ? 'returned to the branch this run was killed on — its work is on this branch, and a fresh one would strand it'
+        : 'the HARD RULE (PRD v1.57 §3): the run works here, never on the branch it was handed and never on main',
+    });
+    return null;
+  };
+  if (resuming) {
+    const stop = await prepareBranch();
+    if (stop !== null) return stop;
+  }
+
+  // ── 0*. the DECLARED close's two run-start facts. Both are $0 and both sit
+  // INSIDE the clock (they are the arbiter's own instruments, and time the
+  // operator's instruments too or the budget measures a different run).
+  //
+  //  (1) THE SEED (D8/D12). HEAD at run start, READ and recorded, never typed.
+  //      The close stores the counting RULE and never the number, so every
+  //      `baseline: "seed"` stage is measured against THIS run's own starting
+  //      point — a constant frozen at signing would judge run 5 against run 1's
+  //      tree, which is the one-experiment shape D12 retires.
+  //
+  //  (2) THE GROUNDED RE-VALIDATION (D9 gate 1). The job validator judged the
+  //      declaration with no repository in hand, so hamr's listing rule and the
+  //      scoped-job derivation that arms the F84 one-population law were
+  //      DEFERRED, not skipped. They run here, against the real seed tree,
+  //      before any stage and before any token. A declaration that names a path
+  //      the tree does not have is a broken close, not a red about the worker —
+  //      round 2's arm A invented `src/alertEmail.js` and silently reclassified
+  //      15 real errors into the wrong population.
+  if (declared) {
+    const s = await seedAtHead(workdir);
+    if (s.stop !== null) {
+      emit('escalation', {
+        category: CLOSE_FAULTS.failed.category, decisionReady: true,
+        decision: `The authored close measures against this run's own seed, and the seed could not be read. ${CLOSE_FAULTS.failed.decision}`,
+        options: ['check the repository is a git checkout with at least one commit', ...CLOSE_FAULTS.failed.options],
+        detail: scrub(s.stop),
+      });
+      return 'close-red';
+    }
+    const listed = await seedListing(workdir, s.seedRef);
+    const v = listed.stop === null
+      ? validateCloseDecl(job.closeDecl, { at: 'closeDecl', listing: listed.files, verdictType: job.verdictType })
+      : { ok: false, grounded: false, reds: [{ code: 'listing-unreadable', path: 'closeDecl', detail: listed.stop }] };
+    emit('close-decl', {
+      genre: job.closeDecl.genre,
+      lang: job.closeDecl.lang,
+      seedRef: s.seedRef,
+      stages: stagedClose.map((/** @type {any} */ st) => st.name),
+      grounded: v.grounded,
+      ok: v.ok,
+      ...(v.ok ? {} : { reds: v.reds.map((/** @type {any} */ r) => ({ ...r, detail: scrub(String(r.detail ?? '')) })) }),
+    });
+    if (!v.ok) {
+      emit('escalation', {
+        category: CLOSE_FAULTS.failed.category, decisionReady: true,
+        decision: 'The authored close does not validate against the repository it is about to judge — a path it names, '
+          + 'or a population it counts, does not match the seed tree. Nothing it rendered would be trustworthy.',
+        options: ['re-author the close against this repository (a new declaration is a new spec hash, and needs re-signing)', ...CLOSE_FAULTS.failed.options],
+        detail: v.reds.map((/** @type {any} */ r) => `${r.code}:${r.path}${r.detail ? ` — ${scrub(String(r.detail))}` : ''}`).join('\n'),
+      });
+      return 'close-red';
+    }
+    declaredCtx = { seedRef: s.seedRef };
+  }
 
   // ── 0a. close precheck (close-first, F17): already-green is a DISTINCT
   // record, zero tokens; a forbidden-zone verdict escalates before any spend
@@ -838,7 +1022,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       : {}),
   });
   for (const m of menu) {
-    const v = await runStages(m.run, scrub, closeOpts);
+    const v = await runCloseStages(m.run);
     if (v.verdict === 'needs_revision') {
       seedRed.push(m.name);
       // …and the preflight grade is a READING, for the same reason the precheck one
@@ -856,7 +1040,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // handed to a human and to the replanner, which is the exact class of false
       // story this change exists to remove. Asked of the reader's own books, so
       // there is no second record of what has been graded.
-      if (!runTrend.report().stages.some((s) => s.stage === v.stage)) runTrend.record({ gap: v.gap });
+      if (!runTrend.report().stages.some((s) => s.stage === v.stage)) runTrend.record(closeGrade(v));
     }
     emit('check-preflight', { name: m.name, verdict: v.verdict, ...(m.run.length > 1 ? { chain: m.run.map((s2) => s2.name) } : {}) });
     const f = Object.hasOwn(CLOSE_FAULTS, v.verdict) ? CLOSE_FAULTS[v.verdict] : undefined;
@@ -864,6 +1048,15 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       emit('escalation', { category: f.category, decisionReady: true, decision: `Close stage "${m.name}" rendered no judgment at preflight — every plan referencing it would fault mid-run. ${f.decision}`, options: f.options, detail: `${m.name}: ${v.detail ?? ''}` });
       return 'check-red';
     }
+  }
+
+  // ── 0c, COLD. The seam and both halves of its placement ruling are stated
+  // above, where a RESUME reaches it; this is where a run that is NOT resuming
+  // does — after the $0 precheck and preflight, so an already-green tree has
+  // already returned and left no branch behind.
+  if (!resuming) {
+    const stop = await prepareBranch();
+    if (stop !== null) return stop;
   }
 
   const lc = new LiteCtx({ root: workdir });
@@ -909,7 +1102,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // derivation, not a live path; the reachable guard is the validator's, and
     // that one is mutation-covered.
     if (!chain) return { pass: false, fault: 'failed', gap: `no offered close stage named "${name}"` };
-    const v = await runStages(chain, scrub, closeOpts);
+    const v = await runCloseStages(chain);
     emit('check-run', { name, verdict: v.verdict, ...(v.stage && v.stage !== name ? { stage: v.stage } : {}), ...(v.exitCode !== undefined ? { exitCode: v.exitCode } : {}) });
     if (v.verdict === 'satisfied') return { pass: true };
     if (v.verdict === 'needs_revision') {
@@ -927,7 +1120,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // step grade donates a null. Measured on u-msh70zla's own archived gaps: raw
       // reads `typecheck 24 → 15 → 14`, wrapped reads nothing at all. Same seam the
       // Layer R note below already calls out for a check's `^`-anchored gapKeep.
-      runTrend.record({ gap: v.gap });
+      runTrend.record(closeGrade(v));
       return { pass: false, gap: v.gap };
     }
     return { pass: false, fault: v.verdict, gap: v.detail };
@@ -955,6 +1148,27 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    *   the turn-allowance note below.
    */
   async function mkWorker({ granted, phase, attemptRounds, attempts, writable, root = null, fence = null, workerProvider = null }) {
+    // THE HARD RULE, ENFORCED STRUCTURALLY (PRD v1.57 §3). This is the ONE seam
+    // that grants write-class verbs — `writeScope` is empty for every other
+    // worker, so a read-only phase cannot reach a file whatever it intends — and
+    // a branch is therefore a PRECONDITION of it, not a courtesy the ordering
+    // above happens to provide. "No exceptions" has to mean the rule survives a
+    // future caller who adds a third writable worker and forgets the ordering.
+    //
+    // Unreachable through `runPlan` as it stands (0c runs before the scout and
+    // returns `branch-red` on any fault), which is exactly what a backstop should
+    // be. Categorised so it lands as the wiring fault it is: the step site and
+    // `relay` both return `interpreter-red` verbatim, so the escalation a human
+    // reads and the outcome the spine records name the same thing.
+    if (writable && workBranch === null) {
+      const err = /** @type {any} */ (new Error(
+        `HARD RULE (PRD v1.57 §3): a write-capable worker was requested for phase "${phase}" with no work branch prepared — `
+        + 'no job edits the branch it was handed. The run is refused rather than allowed to write where it stands.',
+      ));
+      err.category = 'interpreter-red';
+      err.lib = 'bareloop';
+      throw err;
+    }
     /**
      * The gate's LLM-turn allowance THROUGH iteration `i` — the old expression
      * `attemptRounds * (attempts + 1)` with the iteration count made explicit
@@ -1388,6 +1602,14 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // and those are different diagnoses with different remedies (F45/F48: a
       // casualty is never evidence, and a governance stop is never a casualty).
       'step-stalled': [`The model stopped producing rounds during ${phase} and reissuing the call did not recover it.`, ['retry the run', 'check provider status', 'abandon the run']],
+      // A WIRING/INVARIANT fault is not a transport casualty, and the default
+      // below would file it as one. The step loop already restores this category
+      // verbatim at its own setup site ("the RECORDED outcome must match the
+      // escalation the human reads", review #6/F11); the fix loop reached `relay`
+      // instead and every such fault came back `provider-red` — a broken runner
+      // reported as the provider's fault, and an upstream ask aimed at a library
+      // for our own missing wiring (the step-stalled lesson).
+      'interpreter-red': [`The ${phase} phase could not be set up — the runner or a primitive it was handed is not correctly bound.`, ['fix the wiring the detail names', 'retry the run', 'abandon the run']],
     };
     const [decision, options] = (Object.hasOwn(DECIDE, category) ? DECIDE[category] : undefined)
       ?? [`The ${phase} call failed (${category}) — no result exists.`, ['retry the run', 'fix the provider binding', 'abandon the run']];
@@ -1398,7 +1620,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // `step-stalled` rides out as ITSELF, not as provider-red. Naming the
     // escalation while returning a casualty label would launder a governance stop
     // into transport noise at exactly the layer the readout reads.
-    return category === 'cap-halt' || category === 'wall-halt' || category === 'step-stalled' ? category : 'provider-red';
+    return category === 'cap-halt' || category === 'wall-halt' || category === 'step-stalled' || category === 'interpreter-red'
+      ? category : 'provider-red';
   };
 
   // ── 1. SCOUT — read-only by construction: the write-class verbs are simply

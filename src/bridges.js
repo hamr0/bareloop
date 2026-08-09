@@ -36,7 +36,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, s
 import { join } from 'node:path';
 import { isObj, isNonEmptyString } from './validate.js';
 import { TOOL_MENU, LOCKED_TOOLS } from './job.js';
-import { stageClose } from './plan.js';
+import { closeStagesOf } from './plan.js';
 
 export const BRIDGE_SCHEMA = 'bridge-v1';
 
@@ -460,7 +460,7 @@ export function loadGate(bridge, job) {
   }
 
   // 2. close-stage kinds (v1: names in order)
-  const stages = (stageClose(j.close) ?? []).map((/** @type {any} */ s) => (isObj(s) ? s.name : null));
+  const stages = (closeStagesOf(j) ?? []).map((/** @type {any} */ s) => (isObj(s) ? s.name : null));
   const stored = Array.isArray(b.closeStageNames) ? b.closeStageNames : null;
   if (!stored || stored.length !== stages.length || !stored.every((/** @type {unknown} */ n, /** @type {number} */ i) => n === stages[i])) {
     red('closeStageNames', `bridge close [${(stored ?? ['<none>']).join(' → ')}] vs this job's close [${(stages.length ? stages : ['<none>']).join(' → ')}] — same names in the same order is v1's definition of the same kinds`);

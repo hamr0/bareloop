@@ -6371,3 +6371,439 @@ The complement is the reason it is worth a finding number rather than a changelo
 seam already carries a working precedent, check what its failure direction COSTS before reusing
 it, because the mechanism that is deliberately fail-safe for a readout is deliberately wrong
 for a ceiling.
+
+---
+
+## F90 — close-authoring M4: the design record's one named defect was already fixed, and a second gap renderer silently blinded a trim detector
+
+**Date:** 2026-08-08 · **Rung:** CLOSE-DEV gate 4, module M4 · **Cost:** $0 (no paid runs)
+
+Two items from building the last module of the close-authoring rung. Neither is a capability
+claim; both are the same class — *a fact stated in a document, believed, and then measured*.
+
+### 1. The premise was stale. The ledger misattribution D13 named had been fixed four days earlier
+
+The frozen design record (2026-08-07, D13) states the defect plainly and hands it to this
+module: *"`classifyIncidents` files every request-red under `lib: 'bare-agent'`, and the `ASKS`
+template renders it as an upstream-ask seed… Named here, not fixed here: the close-authoring
+refusal stamps its own `lib` at the emit site."* The build order therefore had "fix the ledger"
+as a task.
+
+Measured against the tree instead of the record: **it was already closed on `main` at `1b4bb77`
+("ledger: request-red carries its territory — lib stamped at the emit site, never inferred
+downstream"), dated 2026-08-04.** `classifyIncidents` reads `ev.lib ?? 'bare-agent'`, the
+`request-red` ASK template renders `${o.lib}`, and `capability-gap` inherits the occurrence's
+own lib. `run.js` spreads the whole red onto the `job-red` event, so the structured field
+survives the spine. The task was already done, and doing it again would have been a no-op
+commit claiming a fix.
+
+**What M4 owed, and what it landed instead:** not the fix but the PROOF that the NEW emit site
+routes through it — a regression test that walks the whole chain (refusal → `refusalEvents` →
+`classifyIncidents` → `ledgerDeltas.suggestedAsk`) and asserts the ask reads `bareloop: …` and
+matches no bare-suite package name. Mutation-checked both halves: re-hardcoding `'bare-agent'`
+on the occurrence and re-hardcoding it in the ASK template are two separate mutants, and both
+are killed. Fixing one and not the other would leave the misattribution intact in the one field
+a human actually files from.
+
+**This is F63's rule, in its cheapest possible form.** F63 minted *"a premise cited to justify a
+build gets REPLAYED AGAINST THE ARCHIVE BEFORE the build, not after"* after F56's "a replan has
+never fired" turned out to be false by eight. The replay here cost one `git log -- src/ledger.js`
+and it moved a task off the list. The generalisation worth keeping: **a FROZEN document is frozen
+against rewriting, not against the world moving underneath it** — a defect it names as open is a
+claim with a date on it, and the date is the point.
+
+### 2. A second gap renderer made Layer R's trim detector blind, in the dangerous direction
+
+Layer R's fixation detector refuses to compare a red-set taken from a TRIMMED gap window
+(F43/finding 5): failures beyond the window can move while the visible lines stay identical, so a
+trimmed window must read UNKNOWN rather than "reds unchanged". It implements that by looking for
+ralph's own trim announcement (`GAP_KEEP_TRIM_MARKER`, `'more elided by the'`).
+
+The declared close is a SECOND gap renderer. Its per-stage line cap announces itself too — F28
+holds, the trim is never silent — but in the kind executor's own words:
+`[gap trimmed: N of M lines withheld — the cap is 40]`. Layer R could not see it. A declared
+close whose gap was trimmed would have handed the detector a truncated window that it treated as
+complete, which is the direction that MANUFACTURES a fixation reading out of an instrument that
+went blind — not the fail-safe direction.
+
+Fixed by exporting the executor's marker (`GAP_TRIM_MARKER`) from its single renderer and having
+`root.js` check both, with a test that runs a real over-cap stage and asserts two identical
+trimmed gaps mint no injection. Caught by asking *"which contracts does the OTHER executor
+inherit, and which of them are implemented by string matching?"* rather than by a failure.
+
+**The lesson is the shared-marker rule, generalised.** `GAP_KEEP_TRIM_MARKER` was exported in the
+first place so a reading side could not drift from the writing side. That guard held perfectly and
+was still defeated — not by drift, but by a SECOND writer the reader had never heard of. When a
+detector keys on a string a producer emits, adding a producer is a change to the detector, and the
+seam only survives if every producer's marker is exported and every one is read.
+
+## F91 — fifteen review fixes in three shrinking rounds; the python genre refuses twice, honestly, and the second refusal is the crash-stop preventing a live fake green
+
+**Date:** 2026-08-08 · **Rung:** CLOSE-DEV, whole-branch review + live e2e proofs · **Cost:** ~$2.94 paid (5 live authoring runs across two sessions of the day)
+
+The rung's built modules (M1–M4) went through a whole-branch review cycle and then live
+authoring runs on BOTH genres — the first time the close-authoring path met a real model
+and a real patient rather than the test suite.
+
+### 1. Three shrinking review rounds, and the second leak was found by reviewing the fix for the first
+
+Six-lens whole-branch review (sonnet finders, opus TDD-first fixes), three rounds:
+
+- **Round 1 — 5 confirmed, all fixed:** the python genre-env re-validation could brick the
+  run on the arbiter's OWN injection (fixed via a `closeDecl.genreEnv` envelope + by-value
+  check); the command deny-floor was missing from `checkKind` (added, plus
+  absolute-path/traversal refusal — and the bareguard seam turned out to already EXIST,
+  recorded as checked-not-filed in UPSTREAM-ASKS); `cleanup()` could throw and discard an
+  already-minted verdict (never throws now); the crashed counter (nonzero exit + 0 matched
+  lines) read as a zero instead of an instrument stop (routes to the stop now, seed
+  baselines included); `effectiveTimeoutMs` made tighten-only (the money rule applied to
+  time, v1.57 §4). Plus: the `renderSeedReadBlock` scrub closed a two-headed leak
+  (`gapLines` AND `detail.stop`), and a tautological Layer-R trim test was rewritten so it
+  can fail.
+- **Round 2 — a fix-diff review of round 1's fixes found 4 more,** the first of which is
+  the round's own lesson: `renderRejectBlock` was a SECOND leak channel of the exact class
+  the seed-read scrub had just closed. Also: genre-env is now checked at the GROUNDED gates
+  (a forgery dies where the signature is minted, not at the listing); `envCapableKind`
+  consolidated so the injector and the validator cannot drift; and the crash-stop's known
+  blind spot (the `grep -c` / pytest exit-5 class) documented as an accepted fail-safe
+  limit, never to be softened. All 19 new tests sabotage-proven able to fail.
+- **Round 3 — a validation sweep of every remaining candidate passed 6, all fixed:**
+  guard-name-keyed `scopeOfJob` + `AT_MOST_ONCE_KINDS` (a decoy files-changed stage can no
+  longer defeat the scope); `resolveSourcePrefixes` realpath-dedupe (the mypy symlink fix,
+  measured live on aurora against an identical-16-errors control); `notes` divergence
+  closed (`validateDeclaration` checks it, schema requires `minLength:1`); `parseValue`
+  first-aggregate keeps `notes` + an honest message; scout recovery prefers `s2.error`;
+  `addedLines` stat-throw announces a note instead of swallowing. Mutation tests on the
+  final micro-batch: 5/5 killed.
+
+The keepable rule is the round-2 one, already minted once at N1 and paid for again here:
+**a fix for a containment/leak bug is itself review territory for the same class** — the
+second channel was found only because the fix diff was reviewed as a diff, not trusted as
+a fix.
+
+### 2. The JS genre PREPARED twice; the trial gate is deterministic
+
+Live runs, driver `scripts/run-author.mjs` (stops at `prepareSigning`; never signs, never
+runs the job). Pulselog (JS): $0.25 pre-fix and $0.22 post-fix, both SIGNING PREPARED. The
+trial gate ran 32s and the resolved-spec hash came back BYTE-IDENTICAL across the two cold
+runs — the close behaving as a signed, replayable FIELD is the property the M3/M4 rework
+was bought for, and it held against a real model.
+
+One driver bug found en route, not a product bug: the driver's default `$2 shellCapUsd`
+red-flagged a draft carrying `budgetUsd: 4` — aligned by lowering the draft budget.
+
+### 3. The python genre refused twice — and the second refusal is the fail-safe catching a fake green LIVE
+
+**Run 1 ($0.89): an honest refusal driven by a real mypy fatal** — a symlink-derived
+`MYPYPATH`. The refusal itself live-proved two of §1's fixes at once: the genre-env
+envelope survived validation (previously the run would have bricked on the arbiter's own
+injection), and the crash-stop path fired as an instrument stop instead of laundering the
+fatal into a silent hang. Root cause OURS; fixed by round 3's realpath-dedupe.
+
+**Run 2, post-fix ($0.64 authoring): the model composed a valid declaration (grounded
+gates green) — and the seed gates refused again, on a NEW mechanism.** Both mypy stages
+stopped with *"python exited 1 and its output matched none of the parser's terms."*
+Reproduced by hand: the same command in the same tree emits 16 real `: error:` lines and
+they match the term. Reproduced through the real executor: instrument-stop, deterministic.
+The split: **the aurora layout reaches its packages through tracked symlinks
+(`src/aurora_spawner -> ../packages/spawner/src/aurora_spawner`), mypy under
+`MYPYPATH=src` reports every error in the SYMLINK spelling, and the declaration's scope
+filter held the PHYSICAL spelling** (`packages/spawner/src/aurora_spawner/`). The scope
+matcher compared spellings, not files: 16 real errors → 0 in-scope matches → exit 1 with
+zero matches → crash-stop.
+
+Read the refusal in both directions:
+
+- **The fail-safe did exactly what it was built for, on its first live encounter.**
+  Without round 1's crashed-counter rule, the scoped count would have read a COUNTED ZERO
+  against a baseline of 0 — lower-is-better, GREEN — on a tree carrying 16 real strict
+  errors. A fake green, minted by an instrument that went blind, prevented by the rule
+  that refuses to let a crashed-looking tool certify zero. The stop is loud, honest, and
+  re-runnable; that is the direction the rule was chosen for (the F49 precedent), and it
+  paid out before the rung ever shipped.
+- **But the scope matcher was a blind instrument on symlink layouts** — the same class as
+  run 1's `MYPYPATH` derivation, one seam over: physical-vs-spelling identity. A python
+  monorepo that routes imports through a symlinked source root is a COMMON shape, so this
+  was not an aurora quirk but a genre-wide hole: every scoped count on such a patient
+  reads zero.
+
+**Fixed by physical-identity scope matching** (realpath on the reported path and on the
+prefixes, against the measuring workdir; lexical fallback when the file does not exist in
+the measured tree; a symlink resolving OUTSIDE the scope stays excluded — the fix unifies
+spellings of the same physical file and widens nothing). Regression-tested against the
+REAL mypy output as fixture (expected counts derived from the fixture, never hardcoded),
+watched failing pre-fix, three sabotages killed — one of them (fail-open on an
+unresolvable path) also killed by a pre-existing shipped test, the fail-safe direction
+guarded twice. Two same-assumption sites in the changed-set/allowPrefixes fence were
+found, left deliberately LEXICAL, and parked for a ruling rather than silently widened
+(both sides there read git's own spelling today, so they are consistent — but a
+`pattern-absent-in-diff` scope declared through a symlink spelling would mismatch; the
+fence is arbiter-adjacent and a widening is never a drive-by).
+
+**The $0 re-gate CONVERTED the live failure: SIGNING PREPARED on the SAME declaration.**
+All three gates green, and `typecheck-spawner` now reads value=16 against baseline 0 —
+an honest RED at seed, which is exactly what gate 3 requires of a signable close: the 16
+errors the blind filter dropped are the job's work, now visible. The specHash the re-gate
+minted is BYTE-IDENTICAL to the hash the failed run computed — determinism across the
+fix, on the python genre this time.
+
+The $0 conversion is worth naming as method: the failure lived entirely in the mechanical
+signing gates, and the authored declaration was already on disk — so the fix's live proof
+cost nothing. The cheap-instrument rule, again: the paid surface is for what only the paid
+surface can show.
+
+### 4. The follow-up wave: the untested adapter got its bench, and the leak class turned up a THIRD time
+
+Two agreed items from the review's open list, landed after the commit above:
+
+- **`makeLoopGenerate` bench (7 tests, real Loop, scripted provider):** the adapter that
+  wires the authoring call onto bare-agent had zero tests — it worked only because paid
+  runs worked. The bench pins the three paid-for lessons at the WIRE (the options object
+  the loop forwards to the provider, not the adapter's internals): the declaration tool
+  ENDS the call (one round paid, not two), `cacheMessages: true` (F18 — caching silently
+  OFF was 9.4×/round), `maxTokens = AUTHOR_MAX_TOKENS` with an override arm that kills a
+  hardcoded literal, a cap-truncated round surfacing as `truncated:max_tokens` routed
+  `provider-red` (never laundered into clean empty success), and a HALF-WRITTEN
+  declaration on a truncated round never executed (the BA-4 direction). Six sabotages,
+  every one killed by a named test.
+- **The persisted-red scrub sweep:** the two known unscrubbed channels
+  (`seed-unreadable`/`listing-unreadable` in `prepareSigning`) were joined by two more of
+  the same class found in the sweep (`authorCloseForJob`'s seed red; `authorflow`'s
+  listing red) — four sites fixed, every other red/refusal `detail` in both files listed
+  found-clean by site. Tests build the secret token from parts (no real-shaped literal in
+  the tree), first prove `scanSecrets` sees the fixture, then assert mask-not-deletion.
+
+**And the sweep's real catch — the leak class's THIRD appearance, upgraded twice:**
+`prepareSigning`'s declaration gates returned the validator's reds UNSCRUBBED into both
+the persisted `reds` and `gates.declaration` — model-declared text (`cmd`, env values,
+paths) echoed verbatim, including a structured `cmd` field, with the divergence visible
+in one frame: a `secret-literal` red DETECTING the token beside a validation red CARRYING
+it. The fix agent then CORRECTED the diagnosis while proving it: the cmd echo fires at
+gate 1a (whose spec sweep would catch a token in the DECLARATION) — but gate 1b quotes
+the SEED LISTING through the did-you-mean helper, so a token-shaped FILENAME in the
+patient's tree reaches the persisted red through a channel the spec sweep structurally
+cannot see. Measured pre-fix: spec clean, red leaks. Fixed at BOTH gates with one shared
+`scrubRed` (uniform `redactSecrets` over every string field of the red — a detail-only
+scrub was sabotage-proven insufficient, shipping the structured `cmd` verbatim), plus
+symmetry wraps on the two provider-derived channels. All four regressions watched failing
+with the raw token in the actual. The class ledger for this branch now reads:
+`renderSeedReadBlock` → `renderRejectBlock` → the declaration-gate persistence boundary —
+three appearances, each found by reviewing the PREVIOUS fix's class rather than trusting
+it: the strongest evidence yet that the class review is not optional.
+
+## F92 — the first paid proof of the reworked interview: the machinery holds, and the miss is the shape lottery one layer up
+
+**Date:** 2026-08-09 · **Rung:** CLOSE-DEV, post-rework live proof · **Cost:** $0.40 (2 attempts) + $0 cross-checks
+
+> **Corrected in part by F93 (2026-08-09, same day, commit `da9e1be`), and F93's own
+> mechanism attribution corrected the same night — recorded forward, the text below stands
+> as written.** Attempt 2's gate-2 death was NOT a composition-SHAPE miss. The
+> inside/outside split it composed — `typecheck` scoped `includePrefixes:["src/"]` beside
+> `typecheck` scoped `excludePrefixes:["src/"]` — is the F84 one-population law applied
+> correctly, and the model composed the SAME shape 3/3 across `mslhpw2v`, `mslsnnzk` and
+> `mslwbkz7`: systematic, not a roll. What varied across the three was the AGGREGATE, and
+> that is where this run's stop actually came from. `mslhpw2v` declared aggregate
+> **`"first"`** and stopped on the `first`-path's ALL-EXCLUDED message — verbatim:
+> *"term 0 (`/error TS\d+/`, aggregate "first") matched 67 line(s) and the scope filter
+> excluded every one of them — the number was never reported FOR THIS POPULATION, so it is
+> unknown, not zero"*. That is the CORRECTLY-labelled stop: the two-faults split had
+> already been fixed on the `first` path, and this is the by-design unknown-not-zero
+> refusal the read below describes, working. The `sum`-path crash-guard mislabel that F93
+> diagnoses and fixes fired on **`mslsnnzk`** tonight — **once across the record**, never
+> on this run. **"The shape lottery, one layer up" is WITHDRAWN at the composition-shape
+> level, and the parked re-compose lever loses this run as its justification** — a
+> re-compose fed the `sum`-path lie would have re-rolled into the same wall, and fed this
+> run's honest `first`-path refusal it would have been re-rolling against a true reading.
+> But the lottery is real one notch down: a declaration rolling aggregate `"first"` over a
+> structurally empty population still refuses post-fix, by design (the documented
+> fail-safe), so the AGGREGATE choice remains a roll that changes the outcome. Everything
+> else stands: the scout casualty and its rulings, the rework working live through gate 1,
+> and the deterministic aurora cross-check.
+
+hamr ordered one paid authoring run under the reworked interview (pulselog, `--verdict
+green`, run from a clean worktree at `31c2036` so the proof binds to committed code).
+
+### The read
+
+- **Attempt 1 ($0.05): a scout casualty.** The survey came back as malformed JSON and the
+  flow killed the run at first strike — an honest refusal exposing two gaps at once: no
+  retry on the one genre of failure that converts on retry (mechanical), and no persisted
+  raw to autopsy. Both became hamr rulings the same day (PRD v1.58, shipped `c2f3d35`):
+  3 typed attempts (malformed-only — semantic failures never retry, the self-healing line
+  deliberately not crossed) and raw persistence behind the one scrub inventory.
+- **Attempt 2 ($0.35): the rework works live.** New 6-question interview, the radio, the
+  class battery, composition, gate 1 PASS grounded+scoped. It died at gate 2, and the
+  death is the finding: the model composed `typecheck-outside-scope` with
+  `excludePrefixes: ["src/"]` — on a repo where ALL code and all 67 strict errors live
+  under `src/`. The outside population is structurally empty, the all-excluded rule reads
+  unknown-not-zero (fail-safe, correct), and the gate refused decision-ready with
+  "re-author the close against this repository."
+- **$0 cross-check:** the known-good aurora declaration re-gated through the POST-rework
+  gates → SIGNING PREPARED, specHash `4c1d0dae…` byte-identical for the third time —
+  deterministic across the symlink fix AND the interview rework. And aurora's own
+  properly-aimed outside stage (includePrefixes naming the other packages) reads an
+  honest green — the shape works when rolled right.
+
+### What this is
+
+**The shape lottery, one layer up.** F-series doctrine already established that plan
+DRAFTING rolls shapes and some shapes cannot green (the 2026-08-04 sweep). Close
+COMPOSITION has the same property: a legal declaration can be vacuous against a
+particular repo, and the gates catch it — but nothing feeds the refusal back for a
+re-compose; the run just ends, decision-ready. The refusal is honest and the money is
+small, but the conversion lever is known from F38: the gate's own output IS the
+mechanical gap ("your outside population matched 0 of 67 error lines on this tree"), and
+a single bounded re-compose fed that gap is the same move as the one replan. **PARKED as
+a named next build (hamr: not gating the ship).**
+
+### Kept
+
+- The all-excluded fail-safe fired correctly on its second live encounter (first: the
+  aurora symlink blindness, F91 — a real disease; here: a vacuous population, a true
+  refusal). Same rule, both directions of usefulness, zero fake greens either time.
+- A paid proof that binds to a COMMIT (worktree at the exact SHA) reads cleanly even when
+  the working tree is mid-build — the two builders were editing the tree while the proof
+  ran, and it could not contaminate them or be contaminated.
+
+## F93 — the crash guard counted matches AFTER the scope filter, so a live tool over an empty population read as a dead one: F92's "shape lottery" was our own broken ruler (at the shape level)
+
+**Date:** 2026-08-09 · **Rung:** CLOSE-DEV, post-rework live proof (second sitting) · **Cost:** $0.59 paid tonight (`mslsnnzk` $0.345 diagnosing + `mslwbkz7` $0.245 validating), on top of F92's $0.40 · **Fix:** `da9e1be` · **Attribution corrected same night — see §2**
+
+A $0.35 e2e was fired to validate the day's shipped deliverables. It bought a diagnosis
+instead, and the diagnosis refutes half of the finding written eight hours earlier.
+
+### 1. Three runs, one shape — the model was not rolling dice
+
+F92 read attempt 2's gate-2 refusal as **composition shape lottery**: the model happened to
+declare an outside-scope stage that could not measure anything on that repo, and the gate
+correctly refused it. That reading needed the shape to be a roll.
+
+It is not. Across **three paid runs** — `mslhpw2v` (F92's attempt 2), and tonight's
+`mslsnnzk` and `mslwbkz7` — the model composed the **same inside/outside two-population
+split every time**: `typecheck` scoped `includePrefixes: ["src/"]` beside `typecheck`
+scoped `excludePrefixes: ["src/"]`. 3/3, systematic, and the shape is **right**: it is the
+F84 one-population law applied — one stage per population, never two populations summed
+into one ruler. What did vary is the **aggregate** the stage rolled — `"first"` on
+`mslhpw2v`, `"sum"` on both of tonight's — and the aggregate, not the shape, decided which
+stop each run got: `mslhpw2v` took the `first` path's correctly-labelled all-excluded
+refusal, `mslsnnzk` took the `sum` path's mislabel. The model was doing the correct thing
+three times and being refused twice, for two different reasons, only one of which is a
+defect.
+
+### 2. The mechanism: TWO faults reading as ONE, and we had already fixed the twin
+
+`count-not-worse`'s crash guard (`src/kinds.js`, formerly ~line 1025) asked *"non-zero exit
+AND zero matches?"* — and it took the match count from `breakdown[].matches`, which
+`parseValue` tallies **after the scope filter has already dropped the out-of-population
+lines**. Two entirely different worlds collapse into that one number:
+
+- **the tool crashed silently** — exited non-zero, printed nothing the parser could read
+  (the fault the guard exists for: unknown is not zero, F6/F45); and
+- **the tool ran perfectly** — `tsc` exited 2 *because it found 67 real errors*, all under
+  `src/`, and the outside-scope stage's own filter dropped all 67 as belonging to another
+  population.
+
+Post-scope both read `matches === 0`, so the second was refused as the first. The stop text
+said *"its output matched none of the parser's terms"* — false in the only sense a reader
+can act on: 67 lines matched the term; SCOPE excluded them. And the refusal's advice —
+*fix the repository so the close's tools resolve* — pointed at a toolchain that was
+healthy. Hand-verified in the patient: `npm run typecheck -- --strict` exits **2** with
+**67** `error TS\d+:` lines, every one under `src/`.
+
+**We had already found and fixed this exact class one aggregate over.** The `first`-path's
+own stop carries the split in its own words (`src/kinds.js` ~754): *"TWO DIFFERENT FAULTS,
+and they used to read as one. 'Matched nothing' sends the reader to the parser; lines that
+matched and were then EXCLUDED BY SCOPE send them to the scope, which is where the problem
+is."* The `sum` path had the unfixed twin, and nothing connected them.
+
+**Correction, same night (attribution, not mechanism).** This entry as first written said
+the crash guard had killed BOTH paid runs on this repo. It did not. hamr re-read
+`mslhpw2v`'s own artifact: the stop it printed is the `first` path's ALL-EXCLUDED message
+quoted just above — the fixed twin, doing its job, on a stage that declared aggregate
+`"first"`. The defect diagnosed here fired **once**, on `mslsnnzk` (aggregate `"sum"`);
+`mslhpw2v` was the by-design unknown-not-zero refusal over the same composed shape, and
+F92's blockquote is corrected to match. The route to the wrong claim is this file's own
+rule turned on itself: the first extraction of `mslhpw2v`'s stage printed an **empty detail
+field**, and the inference filled it from the stage's name and the mechanism freshly in
+hand. A claim about a prior run is read off the artifact or it is not made — never
+back-filled from the story that just explained a different run.
+
+**The fail-safe held the whole time.** In every direction, the defect could only produce a
+false STOP — never a false green. It killed a good close; it never graded a red tree. That
+is the direction the rule was chosen for (F49's precedent), and it is why its one firing
+cost $0.345 instead of a signed lie.
+
+### 3. The fix (`da9e1be`, hamr-approved — verdict routing is arbiter territory)
+
+`parseValue` now reports **`preScopeMatches`**: lines matching the term *before* the scope
+filter has an opinion — kept plus dropped plus unattributable alike. The guard consults
+that, because **liveness is read where liveness lives**:
+
+- exit ≠ 0 with **zero pre-scope matches** → stops exactly as before (a genuinely silent
+  crash still matched nothing pre-scope; the fail-safe pin passed unmodified before AND
+  after the change);
+- exit ≠ 0 with **all matches scope-dropped** → a **normal counted-0 reading**, carrying
+  the filter's own note out with it: `term 0: 67 matching line(s) dropped by the scope
+  filter`.
+
+The `grep -c` / pytest-exit-5 accepted limit is unchanged and still documented rather than
+softened, and a genre that genuinely needs exit-N-means-zero still has to DECLARE it.
+
+**Bonus catch, found while fixing:** the `first`-path's all-scope-dropped stop was
+computing its notes correctly and then handing them to `measure`'s boundary, which dropped
+them on the floor. The earlier fix was **half-dead one layer up** — the right words
+computed and never rendered. `stopped()` now takes the notes a measurement already
+computed; both layers are wired and tested.
+
+Evidence discipline on the fix: the regression test was **watched failing pre-fix** against
+the exact live shape, **sabotage-proven** (reverting the guard's input to the post-scope
+count reds exactly that test and nothing else), suite **1409/1409**, and the seed-side
+measurement is covered by construction — it is the same function.
+
+### 4. Live validation: same repo, same inputs, final code
+
+`mslwbkz7`, **$0.245, spend complete**, run against the fixed tree:
+
+- the model rolled **the same shape** (third of the three runs this entry enumerates —
+  and a $0 artifact read settles the wider count: BOTH 2026-08-08 pre-rework pulselog runs
+  composed the same inside/outside split too, scoped to two files instead of all of
+  `src/`, making it 5/5 across every authoring run this patient has ever seen; those two
+  PREPARED because their narrower scope left the outside population non-empty — the
+  stop's reachability turns on scope granularity, not on the shape);
+- `typecheck-outside-scope` read **GREEN, value = 0**, with the gap line *"term 0: 67
+  matching line(s) dropped by the scope filter"* — the reading the mechanism always
+  claimed and the code did not do;
+- **all three gates PASS**, gate 3 correctly work-red at seed (`typecheck-target-scope`
+  67 vs 0 — there IS work to do, which is the point of the job);
+- **SIGNING PREPARED, NOT SIGNED** — the first full-road PREPARED on the post-rework code.
+
+### Lessons
+
+- **A retry loop cannot heal a mislabeled instrument.** F92 parked "re-compose on refusal"
+  as the named conversion lever. On `mslsnnzk` it would have re-rolled a correct
+  declaration into the same wall, for more money — the gap it would have fed the model was
+  itself the lie ("your output matched none of the parser's terms"). On `mslhpw2v` the gap
+  would have been TRUE and the refusal would still have stood, because an empty population
+  under aggregate `"first"` is unknown by design. Before building a conversion loop around
+  a refusal, **verify the refusal is true — and then check what a true one leaves the model
+  to change**. The park stands as a build, but its F92 justification is gone.
+- **When the model does the same "wrong" thing 3/3, suspect the ruler.** A lottery reading
+  requires variance. One run looked like a bad roll; three identical shapes is a systematic
+  cause, and the systematic cause was ours. Base-rate-before-attribution, at the level of
+  reading a model's behaviour rather than a battery's numbers. The residual is honest and
+  smaller than F92 claimed: the SHAPE is systematic, the AGGREGATE still rolls, and an
+  aggregate-`"first"` stage over an empty population refuses post-fix exactly as designed.
+- **A claim about a prior run is read off its artifact, never inferred from a stage name.**
+  This entry's own first draft attributed `mslhpw2v`'s stop to the defect it had just
+  diagnosed, because the extraction printed an empty detail field and the fresh mechanism
+  filled the hole — the blind-instrument class, in prose, inside the finding that names it.
+  hamr's re-read of the primary artifact is what corrected it.
+- **A fixed defect class gets swept for twins in the same file.** The `first` path's split
+  was written, commented, and correct; the `sum` path twenty lines away had the identical
+  bug. Same class as F91's round-2 rule (*a fix for a leak is review territory for the
+  same class*) — this time the sibling was not a fix diff but a sibling code path, and
+  nothing forced the sweep.
+- **A live run is its own catch class, again.** The $0.35 was spent to validate shipped
+  deliverables and instead found a defect that three review rounds, 1400 tests and a
+  mutation pass had all walked past — because only a real model on a real patient composes
+  the shape that exercises it.

@@ -79,6 +79,14 @@ const EXCLUDED_ESCALATIONS = new Set([
   'smoke-red',          // already counted via primitive-smoke
   'hitl-close',         // by design: a human is the close
   'close-unsupported',  // honest refusal, by design
+  // Close authoring (M4, D13) — the interview refusing a job we cannot close: a
+  // genre we do not run, a job with no seed to measure against, a locked kind.
+  // Honest refusal, exactly like `close-unsupported` above, and excluded for a
+  // SECOND reason that matters more: the demand is already counted once, as the
+  // `request-red` the same refusal emits with `lib: 'bareloop'` stamped at its
+  // emit site. Counting the escalation too would double every refusal in the one
+  // number the admission path exists to measure.
+  'close-unauthorable',
   // Layer 3 (D2 split): the bridge load gate refused a wrong-KIND recipe at the door.
   // That is the mechanism WORKING — every recipe from a different day is a candidate for
   // refusal, and the run stopped having spent nothing. Filing it upstream would aim a bug
@@ -99,6 +107,11 @@ const EXCLUDED_ESCALATIONS = new Set([
   // in the registry. Both are the operator's own state speaking (a stale signature, an
   // edited registry), and both stop having run nothing.
   'resume-red',
+  // v1.57 §3 — the work branch could not be created: the patient is not a git checkout,
+  // or its branch namespace is too crowded to find a free name. The operator's own state
+  // speaking, exactly like `registry-red` below, and the run stopped having spent nothing.
+  // Filing it upstream would aim a bug report at a library for a patient nobody prepared.
+  'branch-red',
   'registry-red',       // the operator-supplied registry path does not exist — a typo, not a bug
   'envelope-red',       // the envelope does not compose with the signed spec — operator input
   // the reuse runner also STOPS on the three answers no further try could change, and

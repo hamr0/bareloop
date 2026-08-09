@@ -35,7 +35,7 @@ import { makeRegistry, saveBridge, loadRegistry, loadBridge, deriveStatus } from
 import { jobSpecHash, validateJob } from '../src/job.js';
 import { classifyIncidents } from '../src/ledger.js';
 import { runJob } from '../src/run.js';
-import { scriptedProvider } from './helpers.js';
+import { scriptedProvider, initPatientRepo } from './helpers.js';
 
 const base = mkdtempSync(join(tmpdir(), 'reuse-test-'));
 let n = 0;
@@ -992,6 +992,7 @@ test('every escalation this runner emits is a category the ledger can classify �
 test('REAL runJob: a cold green through runReuse mints a bridge the registry can read back', async () => {
   const workdir = join(base, 'real-run');
   mkdirSync(join(workdir, 'src'), { recursive: true });
+  initPatientRepo(workdir); // v1.57 §3: a job runs on its own branch, so the patient is a repo
   writeFileSync(join(workdir, 'src', 'mod.mjs'), 'export const x = 1;\n');
   // the close: green only once the worker has written the file
   writeFileSync(join(workdir, 'close.mjs'), `import { existsSync } from 'node:fs';
@@ -1046,6 +1047,7 @@ console.log('FAILED src/typed.mjs missing'); process.exit(1);\n`);
 test('REAL runJob: an unsigned per-try spec is refused by the approval gate — the envelope cannot forge a signature', async () => {
   const workdir = join(base, 'real-unsigned');
   mkdirSync(workdir, { recursive: true });
+  initPatientRepo(workdir);
   writeFileSync(join(workdir, 'close.mjs'), 'process.exit(1);\n');
   const job = JOB({ job: 'unsigned-types', budgetUsd: 1.5, close: [{ name: 's', cmd: 'node close.mjs', expect: 0, gapKeep: '^F' }] });
   // signed at the SPEC's numbers; the envelope tightens them, so the run is a NEW version

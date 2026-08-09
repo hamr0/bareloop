@@ -12,11 +12,12 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { runPlan, planPrompt, closeGapBlock } from '../src/planrun.js';
 import { ralph, boundGap, GAP_KEEP_TRIM_MARKER } from '../src/ralph.js';
 import { validateJob } from '../src/job.js';
 import { StallError, MAX_STALLS } from '../src/stall.js';
-import { scriptedProvider, scriptedNativeFactory } from './helpers.js';
+import { scriptedProvider, scriptedNativeFactory, initPatientRepo, currentBranch, localBranches } from './helpers.js';
 import { scanSecrets } from '../src/validate.js';
 // the check gap's ONE ceiling — the backstop test below derives both arms from it
 // rather than respelling 12000, so a change to the constant moves the test with it
@@ -29,9 +30,13 @@ const tcall = (id, name, args) => ({ id, name, arguments: args });
  * the clean-run check greens on the same condition (a cheap in-run mirror of
  * the close's wall — the F46 shape). Both are real spawned scripts.
  */
-function makePatient(t, { closeGreen = false } = {}) {
+function makePatient(t, { closeGreen = false, git = true } = {}) {
   const wd = mkdtempSync(join(tmpdir(), 'planrun-'));
   t.after(() => rmSync(wd, { recursive: true, force: true }));
+  // A real repository, because the WORK BRANCH hard rule (PRD v1.57 §3) makes one a
+  // precondition of running a job at all. `git: false` is the arm that proves the
+  // refusal, and it is the ONLY caller that gets a patient without one.
+  if (git) initPatientRepo(wd);
   mkdirSync(join(wd, 'tests'));
   mkdirSync(join(wd, 'src'));
   writeFileSync(join(wd, 'src', 'mod.mjs'), 'export const x = 1;\n');
@@ -83,11 +88,11 @@ const collector = () => {
   return { events, emit: (type, data = {}) => { const e = { type, ...data }; events.push(e); return e; } };
 };
 
-async function go(wd, provider, { job = JOB(wd), capRuns = 3, layerRoot = false, scoutRounds, now, providerFor, bridge, resumeSeed } = {}) {
+async function go(wd, provider, { job = JOB(wd), capRuns = 3, layerRoot = false, scoutRounds, now, providerFor, bridge, resumeSeed, resumeBranch } = {}) {
   const jv = validateJob(job);
   assert.deepEqual(jv.reds, [], 'the test job must be validateJob-green');
   const { events, emit } = collector();
-  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns, layerRoot, remainingUsd: () => 1.5, ...(scoutRounds ? { scoutRounds } : {}), ...(now ? { now } : {}), ...(providerFor ? { providerFor } : {}), ...(bridge ? { bridge } : {}), ...(resumeSeed ? { resumeSeed } : {}) });
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns, layerRoot, remainingUsd: () => 1.5, ...(scoutRounds ? { scoutRounds } : {}), ...(now ? { now } : {}), ...(providerFor ? { providerFor } : {}), ...(bridge ? { bridge } : {}), ...(resumeSeed ? { resumeSeed } : {}), ...(resumeBranch ? { resumeBranch } : {}) });
   return { outcome, events };
 }
 
@@ -1109,6 +1114,7 @@ const todos = (n, pad = '') => `export const x = 1;\n${`// TODO${pad}\n`.repeat(
 function makeCountingPatient(t, seed = 30, pad = '') {
   const wd = mkdtempSync(join(tmpdir(), 'planrun-count-'));
   t.after(() => rmSync(wd, { recursive: true, force: true }));
+  initPatientRepo(wd); // the work branch is a precondition of running a job (v1.57 §3)
   mkdirSync(join(wd, 'src'));
   writeFileSync(join(wd, 'src', 'mod.mjs'), todos(seed, pad));
   writeFileSync(join(wd, 'count.mjs'), `import { readFileSync } from 'node:fs';
@@ -3012,6 +3018,7 @@ test('resume seed: a completed step that does not line up with the reloaded plan
 function makeConvergingPatient(t) {
   const wd = mkdtempSync(join(tmpdir(), 'planrun-ladder-'));
   t.after(() => rmSync(wd, { recursive: true, force: true }));
+  initPatientRepo(wd);
   mkdirSync(join(wd, 'tests'));
   const probe = `import { existsSync, readFileSync } from 'node:fs';
 const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
@@ -3029,6 +3036,7 @@ console.log(\`FAILED: \${n} error(s) remain\`); process.exit(1);\n`;
 function makeMismatchPatient(t, gapPath) {
   const wd = mkdtempSync(join(tmpdir(), 'planrun-mismatch-'));
   t.after(() => rmSync(wd, { recursive: true, force: true }));
+  initPatientRepo(wd);
   mkdirSync(join(wd, 'tests'));
   const probe = `import { existsSync, readFileSync } from 'node:fs';
 const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
@@ -3564,6 +3572,7 @@ test('§2 CONTROL: a run that never runs out of money emits NO money-halt record
 function makeGapShapePatient(t, { seed = 30, summary, detail = null }) {
   const wd = mkdtempSync(join(tmpdir(), 'planrun-gapshape-'));
   t.after(() => rmSync(wd, { recursive: true, force: true }));
+  initPatientRepo(wd);
   mkdirSync(join(wd, 'src'));
   writeFileSync(join(wd, 'src', 'recurse.js'), todos(seed));
   // the SECOND in-scope file, clean from the start — the one u-mshcpdg4's
@@ -3819,4 +3828,208 @@ test('F86 CONTROL: a stall never judged its exits, so the brief carries NO close
   assert.ok(brief, 'the replan drafter was handed a failure brief');
   assert.doesNotMatch(brief, /What the verification/i,
     'a stall produced no close output — a labelled empty section would be a section that says nothing');
+});
+
+// ── THE WORK BRANCH (PRD Addendum v1.57 §3) ──────────────────────────────────
+//
+// hamr's ruling, verbatim: *"The agent creates a NEW BRANCH before it touches any
+// code — a HARD RULE, no exceptions. Not a default, not a preference: no job edits
+// the branch it was handed, and none edits `main`."*
+//
+// Every patient below is a real git repository handed to the run on `main`, and
+// every assertion is git's own answer, never a spine field standing in for one.
+
+/** git in a patient, carrying the identity `initPatientRepo` uses. A COMMIT needs
+ * one, and whatever global config the test machine happens to hold is not a
+ * fixture — the same reason the helper pins it there.
+ * @param {string} wd @param {string[]} args */
+const patientGit = (wd, args) => execFileSync('git', args, {
+  cwd: wd,
+  encoding: 'utf8',
+  env: {
+    ...process.env,
+    GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
+    GIT_AUTHOR_NAME: 'bareloop-test', GIT_AUTHOR_EMAIL: 'test@bareloop',
+    GIT_COMMITTER_NAME: 'bareloop-test', GIT_COMMITTER_EMAIL: 'test@bareloop',
+  },
+});
+
+test('the WORK BRANCH exists before the run\'s first PAID call, and every write lands on it', async (t) => {
+  const wd = makePatient(t);
+  const handedAt = execFileSync('git', ['rev-parse', 'main'], { cwd: wd, encoding: 'utf8' }).trim();
+  const provider = scriptedProvider([
+    { text: 'src/mod.mjs exports x; tests/ is empty.' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok — asserts x\n' })] },
+    { text: 'wrote tests/test_x.mjs' },
+  ]);
+  const { outcome, events } = await go(wd, provider);
+  assert.equal(outcome, 'green');
+
+  const wb = events.find((e) => e.type === 'work-branch');
+  assert.ok(wb, 'the run\'s own books say where its work went');
+  assert.equal(wb.branch, 'bareloop-plan-patient', 'derived from the SIGNED spec\'s job slug, never model-authored');
+  assert.equal(wb.created, true);
+  assert.equal(wb.from, 'main', 'the record names the branch the run was HANDED');
+
+  // BEFORE the first paid call: the scout is the run's first provider round, and
+  // the branch record precedes it on the spine.
+  const at = (/** @type {string} */ type) => events.findIndex((e) => e.type === type);
+  assert.ok(at('work-branch') < at('scout-start'), 'the branch precedes the first paid call');
+  assert.ok(at('work-branch') < at('worker-round'), 'no token is bought before the branch exists');
+  assert.ok(at('work-branch') < at('step-start'), 'and it precedes the write-capable phase by a wide margin');
+
+  // and git agrees: the tree is standing on the work branch, the handed one has not
+  // moved, and the worker's file is not reachable from it
+  assert.equal(currentBranch(wd), 'bareloop-plan-patient');
+  assert.equal(execFileSync('git', ['rev-parse', 'main'], { cwd: wd, encoding: 'utf8' }).trim(), handedAt, 'main NEVER moved');
+  assert.throws(() => execFileSync('git', ['cat-file', '-e', 'main:tests/test_x.mjs'], { cwd: wd, encoding: 'utf8', stdio: 'pipe' }),
+    'the worker\'s write is not reachable from the branch the run was handed');
+});
+
+test('a patient that is not a git repository is a BRANCH-RED instrument stop, before any token', async (t) => {
+  const wd = makePatient(t, { git: false });
+  const provider = scriptedProvider([{ text: 'scout notes' }, { text: PLAN(wd) }]);
+  const { outcome, events } = await go(wd, provider);
+  assert.equal(outcome, 'branch-red');
+  assert.equal(provider.calls.length, 0, 'the stop costs ZERO tokens — it is an instrument stop, not a run');
+  assert.equal(events.filter((e) => e.type === 'worker-round').length, 0);
+  const esc = events.find((e) => e.type === 'escalation');
+  assert.equal(esc.category, 'branch-red');
+  assert.equal(esc.decisionReady, true);
+  assert.match(esc.detail, /git/i);
+  assert.equal(events.find((e) => e.type === 'work-branch'), undefined, 'no branch record for a branch that was never made');
+  // …and NOTHING ran: no fallback to "just work where we stand" exists anywhere
+  assert.equal(events.find((e) => e.type === 'scout-start'), undefined);
+});
+
+test('a SECOND cold run of the same spec gets its OWN branch — another run\'s is never reused', async (t) => {
+  const wd = makePatient(t);
+  const script = () => scriptedProvider([
+    { text: 'scout notes' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'done' },
+  ]);
+  const first = await go(wd, script());
+  assert.equal(first.outcome, 'green');
+  // the second run starts from a tree the first already greened, so it takes the
+  // already-green exit — which is exactly why the branch has to be minted BEFORE
+  // that exit is consulted for this test to say anything. Red it again first.
+  rmSync(join(wd, 'tests', 'test_x.mjs'));
+  const second = await go(wd, script());
+  assert.equal(second.outcome, 'green');
+
+  const branches = [first, second].map((r) => r.events.find((e) => e.type === 'work-branch').branch);
+  assert.deepEqual(branches, ['bareloop-plan-patient', 'bareloop-plan-patient-2']);
+  assert.equal(second.events.find((e) => e.type === 'work-branch').collided, 1);
+  assert.deepEqual(localBranches(wd), ['bareloop-plan-patient', 'bareloop-plan-patient-2', 'main']);
+});
+
+test('a RESUME returns to the branch its own work is sitting on — no -2 beside it', async (t) => {
+  const wd = makePatient(t);
+  const script = () => scriptedProvider([
+    { text: 'scout notes' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'done' },
+  ]);
+  const killed = await go(wd, script());
+  const own = killed.events.find((e) => e.type === 'work-branch').branch;
+  // the operator wandered off it between the kill and the resume
+  execFileSync('git', ['checkout', '-q', 'main'], { cwd: wd, encoding: 'utf8' });
+  rmSync(join(wd, 'tests', 'test_x.mjs'));
+
+  const resumed = await go(wd, script(), { resumeBranch: own });
+  const wb = resumed.events.find((e) => e.type === 'work-branch');
+  assert.equal(wb.branch, own, 'back on its OWN branch');
+  assert.equal(wb.created, false);
+  assert.equal(wb.resumed, true);
+  assert.equal(currentBranch(wd), own);
+  assert.deepEqual(localBranches(wd), [own, 'main'], 'the collision walk did not fire on the run\'s own branch');
+});
+
+test('a RESUME grades the WORK branch, never the ref the operator happened to hand back', async (t) => {
+  const wd = makePatient(t);
+  // The killed leg's work, on its own branch and COMMITTED there — the two trees
+  // have to differ in a way the close can actually SEE, or this test cannot fail.
+  patientGit(wd, ['checkout', '-q', '-b', 'bareloop-plan-patient']);
+  writeFileSync(join(wd, 'tests', 'test_x.mjs'), 'ok — the killed leg already wrote this\n');
+  patientGit(wd, ['add', 'tests/test_x.mjs']);
+  patientGit(wd, ['commit', '-q', '-m', 'the work a resume exists to keep']);
+  // …and the operator wandered back to the handed branch, where the close is RED
+  patientGit(wd, ['checkout', '-q', 'main']);
+  assert.ok(!existsSync(join(wd, 'tests', 'test_x.mjs')),
+    'the handed branch reds the close — the precondition that makes the two readings distinguishable');
+
+  const provider = scriptedProvider([{ text: 'never reached' }]);
+  const { outcome, events } = await go(wd, provider, { resumeBranch: 'bareloop-plan-patient' });
+
+  // the run's OWN reading, off its own books: the $0 instruments measured the work
+  // branch, because that is the tree this run is continuing
+  assert.equal(events.find((e) => e.type === 'close-precheck')?.verdict, 'satisfied');
+  assert.equal(outcome, 'already-green');
+  assert.equal(provider.calls.length, 0, 'nothing was bought to discover work that was already done');
+  // and it read it by STANDING there, not around a corner
+  assert.equal(currentBranch(wd), 'bareloop-plan-patient');
+  // an already-green read on a RESUME mints nothing and unwinds nothing: the
+  // leave-no-branch-behind clause is about minting, never about a branch that
+  // already holds work the operator paid for
+  assert.deepEqual(localBranches(wd), ['bareloop-plan-patient', 'main']);
+  assert.equal(readFileSync(join(wd, 'tests', 'test_x.mjs'), 'utf8').trim(), 'ok — the killed leg already wrote this');
+  const wb = events.find((e) => e.type === 'work-branch');
+  assert.equal(wb.resumed, true);
+  assert.equal(wb.created, false);
+});
+
+test('a resume whose recorded branch is GONE stops rather than starting a new one beside the work', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([{ text: 'scout notes' }, { text: PLAN(wd) }]);
+  const { outcome, events } = await go(wd, provider, { resumeBranch: 'bareloop-deleted-by-a-human' });
+  assert.equal(outcome, 'branch-red');
+  assert.equal(provider.calls.length, 0);
+  const detail = events.find((e) => e.type === 'escalation').detail;
+  assert.match(detail, /bareloop-deleted-by-a-human/);
+  assert.match(detail, /no longer exists/, 'the arbiter\'s own refusal, not git\'s incidental one');
+  assert.deepEqual(localBranches(wd), ['main'], 'nothing was minted in its place');
+  // …and it stopped BEFORE the arbiter measured anything. A resume that cannot
+  // reach its own branch has no tree to grade, so a precheck reading here could
+  // only ever be a reading of the wrong subject.
+  assert.equal(events.find((e) => e.type === 'close-precheck'), undefined,
+    'nothing was graded before the branch this resume owns was in hand');
+  assert.equal(events.find((e) => e.type === 'check-preflight'), undefined);
+});
+
+test('an ALREADY-GREEN tree leaves no branch behind — no work, no blast radius to bound', async (t) => {
+  const wd = makePatient(t, { closeGreen: true });
+  // one stage, and it is the green one — a close is satisfied only when the WHOLE
+  // list is (the F17 test above makes the same move for the same reason)
+  const { outcome, events } = await go(wd, scriptedProvider([{ text: 'never reached' }]),
+    { job: JOB(wd, { close: [{ name: 'verdict', cmd: 'node close.mjs', expect: 0 }] }) });
+  assert.equal(outcome, 'already-green');
+  assert.equal(events.find((e) => e.type === 'work-branch'), undefined);
+  assert.deepEqual(localBranches(wd), ['main']);
+  assert.equal(currentBranch(wd), 'main');
+});
+
+test('the FIX loop is write-capable too, and it works on the same branch the steps did', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout notes' },
+    // the step's exits are form-only, so it greens while the close is still red
+    { text: JSON.stringify({ schema: 'plan-v1', steps: [{
+      id: 'stub', action: 'Create the test file.', tools: ['write'], rounds: 4, target: 'tests/test_x.mjs',
+      exit: [{ type: 'artifact-written', path: 'tests/test_x.mjs' }],
+    }] }) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'nothing useful\n' })] },
+    { text: 'stubbed' },
+    // the fix loop, judged by the REAL close
+    { toolCalls: [tcall('t2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'fixed' },
+  ]);
+  const { outcome, events } = await go(wd, provider);
+  assert.equal(outcome, 'green');
+  assert.ok(events.some((e) => e.type === 'worker-round' && String(e.phase) === 'fix'), 'the fix loop actually ran');
+  assert.equal(currentBranch(wd), 'bareloop-plan-patient');
+  assert.deepEqual(localBranches(wd), ['bareloop-plan-patient', 'main']);
 });

@@ -297,3 +297,271 @@ trusted, and `harness-loop` (TESTGEN) remains out of v1 and unamended.
 - `maxBuffer` is executor-owned but verdict-relevant on arm B (a large pytest output truncated
   mid-summary reads as a broken instrument). It belongs to the runtime contracts, not to any
   kind's parameters.
+
+---
+
+## Addendum 3 — 2026-08-08, ROUND 1 RESULT (FAIL, stands unamended) and ROUND 2 SPEC
+
+### Round 1 result, recorded before round 2 is designed
+
+**FAIL on the frozen §7 bar, both arms.** Spend $0.43 of the $5 ceiling (2 provider probes +
+4 arms: A $0.117, B $0.186, C1 $0.034, C2 $0.075).
+
+- **Arm A:** 3 MISS (`typecheck` authored as whole-repo `command-exit` with no `--strict` — the
+  repo's own script omits it and the scout faithfully reported the repo's self-description;
+  `typecheck-outside` absent; `tests-kept` absent), 2 PARTIAL (`suite-green` exit-only;
+  `no-suppressions` filled with 3 of 7 patterns). The authored typecheck also instrument-stopped
+  at seed (bare `tsc`, not resolved through the package runner) — bar clause 3 unmet.
+- **Arm B:** 2 MISS (`typecheck` as `command-exit` `mypy -p aurora_spawner`, no `MYPYPATH`, no
+  config file; `tests-kept` absent), 2 PARTIAL (same classes as A).
+- **Both answer-key traps fired as predicted:** the wrong-instrument trap (repo scripts point at
+  non-strict) and the invocation trap (bare binary). The scout was FAITHFUL — the failure
+  decomposes to the authoring layer plus a structural knowledge deficit, not to a broken scout.
+- **Zero harmful EXTRA in any arm.** C2's unrequested `test-count-not-dropped` (count-not-worse,
+  seed-green) was a harmless-and-useful EXTRA, traceable to its user naming the dropped-test
+  worry.
+- **Arm C1 REFUTED the registered expectation.** The guard-stripped, worry-absent arm authored
+  BOTH guards unasked (scope confinement + a 4-pattern suppression guard). Registered prediction
+  was NO; the result is YES, and it is reported as a finding against the *necessity* half of
+  D5's rationale. The *sufficiency* half survives on the same data: 2 of C1's 4 patterns are
+  dead letters in a JSDoc codebase (`as any` / `: any` are TS syntax, impossible in `.js`), and
+  it missed `@ts-expect-error` and the JSDoc cast/star forms — the live suppression channels of
+  this patient. The model authors a guard-SHAPED stage, not the paid-for battery.
+- **Arm C2:** given the worry in plain words, the model produced the guard AND the test floor —
+  stage EXISTENCE tracks what the answers mention.
+- **The one-line diagnosis, carried into round 2:** what the answers name, the model builds;
+  what paying taught (the strict instrument, the F84 split, the executed floor, the outside
+  ceiling, the full pattern battery, import-resolution env), nothing in the round-1 pipeline
+  supplies. The knowledge deficit is structural, not a prompt-wording accident.
+
+Round 1 stands. Nothing above is re-scored under round 2.
+
+### Round 2 — the ONE change: the authoring prompt carries the TYPES GENRE TEMPLATE
+
+hamr's go, verbatim: **"round 2 then we reconvene."**
+
+This tests the fix DIRECTION the diagnosis points at — D5's unit of injection widened from two
+guard stages to the genre's close SHAPE — before any design amendment is written. It is the
+design record's own hook ("the per-genre TYPE... is agreed at that genre's admission") made
+concrete.
+
+**The frozen TYPES genre template (policy text, handed to the authoring call verbatim):**
+
+1. The graded instrument is the STRICT form of the language's type checker, regardless of what
+   the repo's own scripts run. If the repo's script omits strictness, the close adds it.
+2. Tools are invoked so their binaries actually resolve — through the project's own package
+   runner or language module runner, never a bare binary name.
+3. The stage skeleton, in first-red-wins order: changed-from-seed (guard) → typecheck (error
+   count IN the target scope, baseline 0, lower-is-better) → typecheck-outside (error count
+   OUTSIDE the target scope, baseline measured at seed, a ceiling — required whenever the job
+   scopes to a subset of the tree; omitted only for whole-tree jobs) → tests-kept (a floor on
+   tests that actually EXECUTED, baseline at seed, higher-is-better; a skipped or deselected
+   test did not run and must not count) → suite-green (the suite exits clean AND reports zero
+   failing tests — two assertions) → no-suppressions (guard).
+4. One population per stage — two structurally different counts never share a stage.
+5. The checker must judge the PATIENT's own tree: if imports could resolve to an installed or
+   editable copy elsewhere, the environment is set so they resolve inside the patient.
+6. A number the tool did not report is unknown, never zero.
+
+**Guards are injected FULLY parameterised** (per-language pattern battery and extensions are
+genre property, owned by us — this is D5 as the design actually intends it; round 1's
+model-filled guard params were a POC artifact). The model fills only the patient-specific scope
+prefixes.
+
+**What the template deliberately does NOT contain (the remaining room to fail, named):** the
+exact commands, args, config flags and env values for THIS repo (`npx tsc --noEmit --strict`;
+`python3 -m mypy --config-file mypy.ini ...`; `MYPYPATH=...` — rule 5 states the law, the model
+must find the value); the scope prefix lists; every parser (the error-line regexes, the region
+anchors, and arm B's multi-term executed-count arithmetic — rule 3 states the law, the model
+must express it in parser terms); timeouts. Round 1 failed on parameterisation as well as on
+existence, so these axes are live, not decorative.
+
+**What round 2 CANNOT claim, stated now:** with the skeleton handed over, stage EXISTENCE is no
+longer evidence of anything. Every round-2 claim carries "given the genre template". The
+question round 2 actually answers: *given the genre's shape, can the authoring call
+parameterise it correctly for a real repo, to seed-verdict equivalence?*
+
+**Unchanged:** the §6 reading rules, the §7 bar (zero MISS, zero harmful EXTRA, seed-verdict
+equivalence — MISS by wrong-kind or merged-population is still expressible), the answer key,
+the interview answers (same files, not re-drafted), the firewall, the scout and its facts
+objects (reused as-is — one variable changes, not two), arms A and B only (the C question is
+answered; with guards fully injected a guard-stripped arm is moot). Budget: the same $5
+ceiling, now $0.43 consumed.
+
+**No outcome prediction is registered for round 2.** Round 1's surprise (C1) is exactly why.
+
+---
+
+## Addendum 4 — 2026-08-08, ROUND 2 RESULT: arm A meets the bar, arm B fails clause 3 — ROUND 2 = FAIL as a whole, and the failure names the build's missing piece
+
+Spend: A $0.080, B $0.106; POC cumulative $0.62 of $5.
+
+### Arm A — BAR MET under the frozen rules, with one named PARTIAL
+
+7 stages, all kinds right, zero MISS: the F84 split authored correctly (in-scope baseline 0 /
+outside ceiling at seed), `npx tsc --noEmit --strict` (both round-1 traps cured by template
+rules 1–2), suite split into exit + zero-failures (the gate-1-sanctioned two-stage form —
+harmless EXTRA), executed floor present. Seed verdicts pattern-equivalent to the key.
+
+**The named PARTIAL, reported not hidden:** the scope filter names `src/alertEmail.js` — a file
+that does not exist; the real file is `src/email.js`. The model derived a filename from the
+user's prose ("the alert email one") instead of from the tree. Consequence at seed: in-scope
+reads 12 (backup.js only) instead of 27, and email.js's 15 errors are silently reclassified
+into the outside series — a real run would grade email.js fixes in the wrong population. The
+frozen bar scores this PARTIAL (right kind, right population, wrong verdict-relevant param) and
+PARTIAL passes clause 1; the bar is NOT retightened post-hoc — the defect is named instead.
+Root cause is an input gap as much as a model gap: `facts-A.json` carries `sourcePaths:
+["src/"]` and no file listing, so the author had nothing to check the guess against.
+
+### Arm B — FAIL on clause 3 (seed-verdict equivalence), mechanism verified by execution
+
+The authored typecheck (`python -m mypy --strict packages`, `MYPYPATH=src`) reads GREEN at seed
+with value 0. The truth is RED with 16. Reproduced directly: mypy dies on
+`packages/testing/fixtures/sample_python_files/broken.py:24` — a DELIBERATELY broken test
+fixture elsewhere in the monorepo — with "errors prevented further checking", never reaching
+the spawner; the scope filter then drops that one syntax error as out-of-scope; 0 in-scope
+errors = green. An instrument scanning nothing reads clean — the F6 shape at the close-authoring
+layer. `MYPYPATH=src` is also wrong (the law was stated by template rule 5; the VALUE had to be
+found, and wasn't — Result 5's paid fact exactly).
+
+**The design's own gate catches this close.** At seed, no work stage is red — a close with
+nothing red at seed has nothing to do (D9.3), so the seed-verdict read refuses it BEFORE any
+signature. Round 2 is the first live demonstration of D9.3 earning its keep against a
+genuinely-wrong authored close.
+
+Secondary observation, fail-safe direction: B's executed floor counts per-test `PASSED`/`FAILED`
+lines under `-v` instead of `collected − skipped − deselected` — a different counting rule that
+does exclude skips (the law held) and read 209 correctly, but counts ERROR-state tests as
+not-executed (reds a suite that errors in setup — fail-safe) and is exposed to incidental
+`PASSED` strings in whole-output region. Scored PARTIAL.
+
+### Round 2 verdict and the read across both rounds
+
+**Round 2 = FAIL** (§7 requires both arms). The two rounds decompose the problem cleanly:
+
+- **Round 1:** without the genre shape, the model authors neither the shape nor the paid
+  knowledge. Structure was the binding gap.
+- **Round 2:** given the shape, structure is essentially solved (14 of 14 stages, right kinds,
+  right splits, right baselines and directions, both arms) — and every remaining defect is the
+  SAME class: repo-specific instrument facts (a real filename; the exact mypy target, config
+  and env). This is Result 5 / D11's territory: the round-2 scout reports the repo's
+  SELF-description; nothing VERIFIES a proposed instrument against the tree before signing.
+
+**Direction this points for the build (not a new round; hamr reconvene):** the authoring loop
+needs the seed-verdict read INSIDE it — author → run stages at seed → feed measured
+reality back → revise — plus a facts object that carries the scoped file listing. Both are
+existing design pieces (D9.3, D11); what the POC adds is evidence they must be wired as a LOOP
+at authoring time, not as a one-shot gate after it.
+
+Per the frozen firewall, no arm is re-fired under a revised prompt in this POC; round 2's
+numbers stand.
+
+---
+
+## Addendum 5 — 2026-08-08, ROUND 3 SPEC (frozen before firing): the seed-grounded revise loop, plus the file listing
+
+hamr's go, verbatim: **"go"** (after: *"aren't you going to move one inside the other and
+retest?"* — his framing of the fix is the round's design).
+
+### The two levers, and why landing both in one round is attributable
+
+Round 2 left two defects of disjoint mechanism, and each lever below targets exactly one:
+
+| lever | targets | defect it must cure |
+|---|---|---|
+| **L1 — facts object gains the scoped FILE LISTING** (mechanical `git ls-files` under the scout's sourcePaths/testPaths — deterministic, $0, the scout itself is NOT re-run and its round-1 output is unchanged) | invented paths | arm A's `src/alertEmail.js` |
+| **L2 — the authoring call becomes a GROUNDED LOOP**: author → validate → execute every stage at seed → feed the measured per-stage results back (verdict, value, baseline, instrument stops, capped gap lines) → revise; max 2 revisions, early-stop when the model returns its declaration unchanged | closes that grade nothing | arm B's dead mypy instrument (0-at-seed vs 16 truth) |
+
+The standing one-lever-per-read rule is satisfied per-defect, not per-round: A's cure
+attributes to L1, B's to L2. The grounding feedback is EXECUTION OUTPUT, never an LLM review of
+its own declaration — a model grading its own homework is the self-consistency trap the design
+already bans (D9); machine-measured seed reality is the opposite of that.
+
+### Pre-registered expectations (with the C1 humility noted)
+
+- Arm A's invented-filename class does not survive L1.
+- Arm B's dead-instrument class does not survive L2 — the revise input shows its typecheck
+  green-at-seed while the interview says the checker complains; if the model cannot convert
+  that contradiction with the real mypy output in hand, that is a strong negative finding
+  about the loop shape itself.
+- A defect that survives BOTH levers is the round's headline finding, whichever direction it
+  cuts.
+
+### Unchanged, verbatim from rounds 1–2
+
+The §6 reading rules and §7 bar (scored on the FINAL post-revision declaration, both arms);
+the answer key; the interview answers; the firewall; the executor and validator (no third
+lever hides in the harness); arms A and B only; the $5 ceiling ($0.62 consumed). Round-2
+artifacts are never overwritten; round 3 writes `-r3` files.
+
+### Gate 3 rides along, $0, after round 3 is scored
+
+The F87 guard test: against a THROWAWAY COPY of the pulselog patient (the patient itself is
+never dirtied), plant a fake fix that silences rather than types — at minimum `@ts-expect-error`
+and a JSDoc `@type` cast, the two live channels C1 missed — and run the signed guard battery's
+`no-suppressions` stage. Expected: RED naming the pattern ids. A guard that misses either
+channel fails gate 3. Also run it against a genuine typed fix shape (no suppressions added):
+expected GREEN — the guard must be able to pass as well as fail.
+
+---
+
+## Addendum 6 — 2026-08-08, ROUND 3 RESULT: PASS both arms; GATE 3 PASS both directions; gate 2 CLOSES
+
+Spend: A $0.146, B $0.233 (plus one arm-B relaunch after the operator's own 10-minute foreground
+timeout killed the first firing mid-run — an operator-tooling casualty, withdrawn per standing
+rule, not a row). POC cumulative $1.00 of $5.
+
+### Round 3 — PASS on the frozen §7 bar, both arms
+
+**Arm A:** zero MISS, seed read value-identical to the hand-written close (27 / 40 / 67 / 0),
+correct filenames (`src/email.js`, `src/backup.js`) from the FIRST draft — L1's registered
+prediction confirmed. `npx tsc --noEmit --strict`, F84 split, both baselines right. Two PARTIALs
+in the STRICTER direction, named: change-confinement to the two files where the key allows
+`src/` (traceable to the user's own answer), and the guard scan scoped to the two files where
+the key scans every changed JS file (a real narrowing — a suppression in a NEW helper file would
+escape; carried to the build as a D5 note: guard scope should be genre-owned, not model-filled).
+Executed floor reads `# pass + # fail` (excludes skips — stricter than the key's own `# tests`).
+
+**Arm B:** zero MISS, seed verdicts equivalent, typecheck RED 16-at-seed — the exact truth, all
+16 error lines carrying the patient's own path prefix (the scope filter counted them, so the
+instrument demonstrably reads the patient tree; mypy.ini is auto-discovered from cwd, making the
+r2 `--config-file` omission moot). One harmless EXTRA: a template-mandated outside-ceiling the
+hand-written close never had. Executed floor sums `passed + failed` (law held, skips excluded).
+**Residue, named not smoothed:** the deep MYPYPATH cross-module probe (a marker error in
+`recovery.py` misused from `spawner.py`) was not re-run; the key itself records that this fact
+moves no seed number, so seed-verdict equivalence structurally cannot see it. It is the one
+paid-for fact whose absence round 3 cannot falsify. Goes to the build as a genre-owned env
+injection, not a model responsibility.
+
+**Attribution, honestly:** BOTH cures were present in iteration 0, before any revise feedback.
+L1 (the listing) + the template cured at DRAFT time; L2's grounded loop caught nothing this
+round because nothing needed catching — its value is demonstrated against round 2's arm B
+retrospectively (that close greens-at-seed and the loop's contradiction input is exactly what
+kills it), not by a live conversion. The registered "B's class does not survive L2" is
+therefore TRUE but VACUOUS as stated; the honest claim is "B's class did not survive L1+template
+to reach L2." Also on the record: one unparseable mid-loop reply PER ARM (2 of 6 revise calls),
+recovered mechanically by the builder's fallback — the revise-reply parse rate is a real build
+consideration, not a footnote.
+
+### Gate 3 — PASS, both directions, $0
+
+Against a throwaway copy of pulselog (patient untouched), using arm A's SIGNED-shape guard
+battery via the real executor:
+
+- **Cheat tree** (`@ts-expect-error` in email.js + a JSDoc `@type {any}` cast in backup.js — the
+  two channels C1's self-authored guard missed): **RED**, 3 occurrences, every pattern id named
+  (`ts-expect-error`, `any`, `cast`), `judged=1`, exit 1.
+- **Genuinely typed tree** (real JSDoc annotations, no suppressions): **GREEN**, exit 0 — the
+  guard can pass as well as fail.
+
+### Gate 2 verdict, whole-POC
+
+The claim as frozen in §1 is REFUTED for one-shot authoring (rounds 1–2) and HOLDS for the
+genre-templated, listing-grounded shape (round 3): **interview answers + verified facts + genre
+template + owned guard batteries produce a close matching the hand-written one to seed-verdict
+equivalence, on both a JS and a Python patient.** Every claim carries "given the genre
+template." Gate 2 CLOSES; the build (gate 4) inherits, as named requirements: the genre
+template as an authoring input; the mechanical file listing in the facts object; the seed-read
+inside the authoring flow (as verification even when it converts nothing); genre-owned guard
+scope and env injection (the two named residues); and a revise-reply parse path that tolerates
+malformed turns.

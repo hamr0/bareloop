@@ -20,6 +20,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, appendFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { JUDGED_MARKER } from '../src/kinds.js';
 
 const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/litectx-types';
 const SPINE_DIR = '/home/hamr/PycharmProjects/bareloop-patients/litectx-types-bareloop';
@@ -53,7 +54,7 @@ const result = {
 
 function finish(/** @type {number} */ code, /** @type {string} */ phase) {
   result.phase = phase;
-  if (code !== 97) out('TYPES judged=1');
+  if (code !== 97) out(`TYPES ${JUDGED_MARKER}`);
   try { appendFileSync(LOG, JSON.stringify(result) + '\n'); } catch { /* log is best-effort */ }
   process.exit(code);
 }

@@ -21,6 +21,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { JUDGED_MARKER } from '../src/kinds.js';
 
 const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/baremobile-u';
 const SEED_REF = 'd9b318fac78036bd3db35f68c4b1eb5ee634244d'; // the patient as seeded
@@ -45,7 +46,7 @@ const SUPPRESSIONS = [
 const stage = process.argv[2];
 const out = (/** @type {string} */ line) => console.log(`BAREMOBILE ${line}`);
 /** every real judgment says so; an instrument stop (97) deliberately does not */
-const done = (/** @type {number} */ code) => { if (code !== 97) out('judged=1'); process.exit(code); };
+const done = (/** @type {number} */ code) => { if (code !== 97) out(JUDGED_MARKER); process.exit(code); };
 const stop = (/** @type {string} */ why) => { out(`instrument-stop: ${why}`); process.exit(97); };
 
 const run = (/** @type {string} */ cmd, /** @type {string[]} */ args, timeoutMs = 900_000) => {
