@@ -13,6 +13,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
+import { closeStagesOf } from '../src/plan.js';
 import { makeSpine } from '../src/spine.js';
 import { scanSecrets } from '../src/validate.js';
 // --resume reads the halted run's own spine back through the SAME reader the reuse
@@ -354,10 +355,19 @@ console.log(`\n== U run ${runid} ==  $${spec.budgetUsd} · ${WALL_LABEL} · ${MO
 // wall+60min — the guard could destroy a live verdict. This is the one number that
 // keeps the outside deadline equal to the deadline the run's own clock enforces
 // (src/clock.js: maxWallMs + closeStages × closeTimeoutMs).
-// A legacy object-form close (the locked verdict classes, job.js) is ONE stage —
-// `spec.close.length` on it is `undefined`, and NaN flags would have disarmed both
-// windows silently.
-const closeStages = Array.isArray(spec.close) ? spec.close.length : 1;
+// THE COUNT COMES FROM `closeStagesOf`, the runner's own derivation (src/plan.js),
+// because the guard and the thing it guards must read the SAME number. Reading
+// `spec.close` alone counted an AUTHORED close (`closeDecl`) as one stage — a
+// six-stage declaration would have armed both windows at a sixth of the silence a
+// legal close may take, and the outside guard would SIGKILL a live verdict
+// mid-close. That is F70's shape exactly: the instrument built to guard a failure
+// mode carrying that failure mode. A legacy object-form close (the locked verdict
+// classes, job.js) is still ONE stage — `stageClose` wraps it — and the floor
+// below is live rather than decorative: this spec is read raw off disk and is not
+// validateJob'd until runJob, so `closeStagesOf` can return null (a spec naming no
+// close at all) or an empty list, and a 0 or NaN here would disarm both windows
+// silently.
+const closeStages = closeStagesOf(spec)?.length || 1;
 const worstCloseSilenceMs = CLOSE_TIMEOUT_MS * closeStages;
 // `fileURLToPath`, not `.pathname`: a URL keeps its path percent-ENCODED, so a repo
 // checked out under a directory with a space (or any of `#?%`) hands spawn a path

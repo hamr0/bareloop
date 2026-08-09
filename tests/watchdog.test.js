@@ -21,6 +21,7 @@ import { spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, appendFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { closeStagesOf } from '../src/plan.js';
 
 const WATCHDOG = new URL('../scripts/u-watchdog.mjs', import.meta.url).pathname;
 const sleep = (/** @type {number} */ ms) => new Promise((r) => setTimeout(r, ms));
@@ -369,7 +370,7 @@ test('run-u sizes the wall grace as stages x close timeout — and passes it', (
   // against the real spec, and the wiring against the real flag.
   const src = readFileSync(new URL('../scripts/run-u.mjs', import.meta.url), 'utf8');
   const spec = JSON.parse(readFileSync(new URL('../jobs/aurora-u-spawner-types.json', import.meta.url), 'utf8'));
-  const stages = Array.isArray(spec.close) ? spec.close.length : 1;
+  const stages = closeStagesOf(spec)?.length || 1;
   // DERIVED from the spec, never pinned to a count: the close's stage list is a
   // signed, editable thing (the F84 split took this spec from 4 stages to 5), and
   // a test that hardcoded the number would red on a legal close edit while saying
@@ -380,11 +381,24 @@ test('run-u sizes the wall grace as stages x close timeout — and passes it', (
   const ONE_STAGE_DEFAULT = 900_000; // the watchdog's own default — the defect's value
   assert.ok(stages * timeout - ONE_STAGE_DEFAULT >= 2_700_000,
     `the grace this spec needs is ${(stages * timeout) / 60_000} minutes — at least the 45 the one-stage default lost, got ${(stages * timeout - ONE_STAGE_DEFAULT) / 60_000}`);
-  // legacy object-form close = ONE stage; `spec.close.length` on it is undefined, and
-  // a NaN flag would have disarmed the window silently rather than loudly
-  assert.match(src, /const closeStages = Array\.isArray\(spec\.close\) \? spec\.close\.length : 1;/);
+  // The count comes from the RUNNER's own derivation, so the guard and the thing it
+  // guards read one number. Reading `spec.close` alone saw an AUTHORED close
+  // (`closeDecl`) as one stage — the arm below is that defect, measured.
+  assert.match(src, /const closeStages = closeStagesOf\(spec\)\?\.length \|\| 1;/);
   assert.match(src, /const worstCloseSilenceMs = CLOSE_TIMEOUT_MS \* closeStages;/);
   assert.match(src, /'--grace-ms', String\(worstCloseSilenceMs\)/, 'and it is actually passed to the guard');
+
+  // AN AUTHORED CLOSE IS THE SAME ARITHMETIC. A `closeDecl` spec carries no
+  // `close` field at all, so the old reading sized a six-stage declaration at ONE
+  // — 15 minutes of legal silence against 90 — and the outside guard would have
+  // SIGKILLed a live verdict mid-close. That is the shape F70 names: the guard
+  // carrying the failure mode it guards.
+  const declared = { closeDecl: { genre: 'TYPES', lang: 'js', stages: spec.close.map((/** @type {any} */ s) => ({ name: s.name })) } };
+  assert.equal(closeStagesOf(declared)?.length, spec.close.length, 'the declared stages are counted, not collapsed to 1');
+  // and the floor is live rather than decorative: run-u reads its spec raw off disk
+  // and does not validateJob it until runJob, so a spec naming NO close reaches here
+  assert.equal(closeStagesOf({ job: 'no-close-named' }), null);
+  assert.equal(closeStagesOf({ job: 'no-close-named' })?.length || 1, 1);
 });
 
 test('neither caller can hand the guard a zero wall: both REFUSE the launch above the spawn', () => {

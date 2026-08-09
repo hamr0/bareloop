@@ -204,7 +204,14 @@ if (!authored.ok) {
   for (const n of authored.closeDecl.notes ?? []) console.log(`  note: ${n}`);
   console.log(`written    ${specFile}`);
 
-  const jv = validateJob(spec);
+  // `shellCapUsd` COUPLES to the spec's own budget, exactly as run-u does it at the
+  // launch site. Left off, both gates below judge against validateJob's default
+  // ceiling of 2 — a silent second ceiling, and the worst-placed one there is: the
+  // draft's `budgetUsd` is the operator's own signed input, so a $4 draft would be
+  // paid for in full (interview, scout, declaration) and only THEN redded on a
+  // number nobody set. The advertised budget and the enforced budget are the same
+  // number; the agent may tighten and never widen, and neither may this script.
+  const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
   emit('job-validate', { ok: jv.ok, reds: jv.reds });
   if (!jv.ok) {
     console.log(`\nSPEC INVALID — ${jv.reds.length} red(s):`);
@@ -216,6 +223,9 @@ if (!authored.ok) {
     // ── 3. D9's three gates. Nothing here judges the close; it measures it. ───
     const signing = await prepareSigning({
       spec, workdir: PATIENT, seedRef: authored.seedRef, timeoutMs: TIMEOUT_MS,
+      // gate 1a re-runs the job validator inside prepareSigning — same coupling, or
+      // the spec that just passed above would fail the gate that signs it
+      shellCapUsd: spec.budgetUsd,
     });
     const signingFile = writeOut('signing.json', signing);
     emit('signing', { ok: signing.ok, specHash: signing.specHash, seedRef: signing.seedRef, gates: signing.gates });
