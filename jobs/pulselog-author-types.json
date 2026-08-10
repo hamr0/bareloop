@@ -1,0 +1,226 @@
+{
+  "schema": "job-v1",
+  "job": "pulselog-author-types",
+  "description": "First sign-and-run of an AUTHORED close: pulselog strict-types migration where the close is a signed closeDecl authored by the pipeline, executed by runJob.",
+  "provider": "anthropic-api",
+  "cadence": {
+    "unit": "day",
+    "every": 1
+  },
+  "budgetUsd": 4,
+  "maxWallMs": 1500000,
+  "writeScope": [
+    "src/**"
+  ],
+  "goal": "Migrate src/ to pass strict TypeScript checking: npx tsc --strict --noEmit reports zero errors. Fix the code itself — no suppression comments (@ts-ignore, @ts-expect-error, @ts-nocheck) anywhere, no edits to test/, tsconfig.json or package.json. The existing test suite (node --test) must still pass, and nothing outside src/ may change.",
+  "tools": [
+    "read",
+    "grep",
+    "write",
+    "edit",
+    "recall",
+    "get",
+    "impact",
+    "related",
+    "recent",
+    "compress",
+    "peek",
+    "stash",
+    "remember",
+    "forget"
+  ],
+  "escalation": {
+    "mode": "decision-ready"
+  },
+  "verdictType": "green",
+  "closeDecl": {
+    "genre": "TYPES",
+    "lang": "js",
+    "stages": [
+      {
+        "name": "changed-from-seed",
+        "kind": "files-changed",
+        "params": {
+          "requireNonEmpty": true,
+          "allowPrefixes": [
+            "src/"
+          ]
+        }
+      },
+      {
+        "name": "typecheck-in-scope",
+        "kind": "count-not-worse",
+        "params": {
+          "cmd": "npx",
+          "args": [
+            "tsc",
+            "--strict",
+            "--noEmit"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "error TS\\d+",
+                "capture": null,
+                "sign": 1,
+                "aggregate": "sum",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "src/"
+            ]
+          },
+          "direction": "lower-is-better",
+          "baseline": 0
+        }
+      },
+      {
+        "name": "typecheck-outside-scope",
+        "kind": "count-not-worse",
+        "params": {
+          "cmd": "npx",
+          "args": [
+            "tsc",
+            "--strict",
+            "--noEmit"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "error TS\\d+",
+                "capture": null,
+                "sign": 1,
+                "aggregate": "sum",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "excludePrefixes": [
+              "src/"
+            ]
+          },
+          "direction": "lower-is-better",
+          "baseline": "seed"
+        }
+      },
+      {
+        "name": "tests-kept",
+        "kind": "count-not-worse",
+        "params": {
+          "cmd": "node",
+          "args": [
+            "--test"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "^# pass (\\d+)$",
+                "capture": 1,
+                "sign": 1,
+                "aggregate": "first",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "test/"
+            ]
+          },
+          "direction": "higher-is-better",
+          "baseline": "seed"
+        }
+      },
+      {
+        "name": "test-suite-exits-clean",
+        "kind": "command-exit",
+        "params": {
+          "cmd": "node",
+          "args": [
+            "--test"
+          ],
+          "expectExit": 0
+        }
+      },
+      {
+        "name": "test-suite-zero-failures",
+        "kind": "count-not-worse",
+        "params": {
+          "cmd": "node",
+          "args": [
+            "--test"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "^# fail (\\d+)$",
+                "capture": 1,
+                "sign": 1,
+                "aggregate": "first",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "test/"
+            ]
+          },
+          "direction": "lower-is-better",
+          "baseline": 0
+        }
+      },
+      {
+        "name": "no-suppressions",
+        "kind": "pattern-absent-in-diff",
+        "params": {
+          "patterns": [
+            {
+              "id": "ts-ignore",
+              "regex": "@ts-ignore"
+            },
+            {
+              "id": "ts-expect-error",
+              "regex": "@ts-expect-error"
+            },
+            {
+              "id": "ts-nocheck",
+              "regex": "@ts-nocheck"
+            },
+            {
+              "id": "eslint-disable",
+              "regex": "eslint-disable"
+            },
+            {
+              "id": "any",
+              "regex": "(?:[{<|(\\[:,]|\\bas)\\s*any\\b|\\bany\\[\\]"
+            },
+            {
+              "id": "any-star",
+              "regex": "@\\w+\\s*\\{\\s*[*?]\\s*\\}"
+            },
+            {
+              "id": "cast",
+              "regex": "@type\\s*\\{.*\\}\\s*\\*\\/\\s*\\("
+            }
+          ],
+          "extensions": [
+            ".js",
+            ".mjs",
+            ".cjs"
+          ]
+        }
+      }
+    ],
+    "notes": [
+      "The interview's own commands are `npx tsc --strict --noEmit` and `node --test`; per genre law the checker is invoked via `npx` so the local devDependency (typescript ^5.9.3) resolves inside the patient rather than any global/editable copy.",
+      "typecheck-outside-scope is included per genre law even though today src/ is the tsconfig rootDir and the facts show no JS/TS source outside src/ that tsc would check — at seed this correctly reads as a counted zero (all 67 tsc-error-line matches fall inside src/ and are excluded by this stage's scope, leaving zero for the outside population), so it is a live ceiling, not a stage graded to always pass.",
+      "tests-kept and test-suite-zero-failures read Node's own `# pass <n>` / `# fail <n>` summary lines (per outputShapes.testSummaryLine); these lines carry no file path, so the scope filter cannot attribute them to test/ specifically and keeps them by design rather than dropping them as out-of-scope — this is expected, not a defect, and was confirmed green at seed.",
+      "Fixed the parser bug from the previous submission: the tsc-error-line term must use aggregate \"sum\" (tally every matching error line), not \"first\" (which only reads the first match's own tally and treats a scope-filtered-to-empty result as an unreported/unknown number rather than a legitimate zero)."
+    ]
+  }
+}

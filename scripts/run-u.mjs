@@ -48,6 +48,15 @@ const JOBS = {
     spine: 'pulselog-u-bareloop',
     seed: '92d71a7c1253f8f2430e2d308ecfef01c826b5c2',
   },
+  // the first AUTHORED close (closeDecl, not a hand-written close script) — the
+  // sign-and-run e2e: same patient/seed as 'pulselog-types', close declared by the
+  // authoring interview (run msmsy579) instead of by hand.
+  'pulselog-author-types': {
+    spec: 'pulselog-author-types.json',
+    workdir: '/home/hamr/PycharmProjects/bareloop-patients/pulselog-author-live',
+    spine: 'pulselog-author-live-bareloop',
+    seed: '92d71a7c1253f8f2430e2d308ecfef01c826b5c2',
+  },
   'baremobile-types': {
     spec: 'baremobile-u-types.json',
     workdir: '/home/hamr/PycharmProjects/bareloop-patients/baremobile-u',
