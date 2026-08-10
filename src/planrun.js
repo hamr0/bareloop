@@ -321,7 +321,7 @@ Shape: { "schema": "plan-v1", "steps": [ ... 1..${MAX_PLAN_STEPS} steps ... ] } 
 strictly in array order. Each step (no other fields exist):
 - "id": kebab-case slug, unique
 - "action": the step's task, precise enough for a worker that sees ONLY this step
-- "tools": non-empty unique subset of ${JSON.stringify(ceiling)} (write/edit change the tree; recall/get/impact/related/recent search and navigate the repository index; compress/peek read cheaply; stash/remember/forget park and record notes across steps)
+- "tools": non-empty unique subset of ${JSON.stringify(ceiling)} (read/grep are the worker's ONLY way to see the tree — there is no shell; write/edit change the tree; recall/get/impact/related/recent search and navigate the repository index; compress/peek read cheaply; stash/remember/forget park and record notes across steps)
 - "rounds": integer 1..${maxStepRounds} — the step's per-attempt tool-round bound
 - "target": the step's deliverable path (REQUIRED when tools include write/edit), inside ${JSON.stringify(job.writeScope)}
 - "scope" (optional): narrow this step's WRITE fence — copy one value from the offered scopes below.
@@ -350,6 +350,15 @@ strictly in array order. Each step (no other fields exist):
   modify any file outside X"): a step ordered to leave a file alone while its
   exit reds on that file can never finish, on any attempt.${seedRedLaw}${priorChecksLaw}
   Reference checks by NAME only; you cannot author or modify one.
+
+The worker has NO SHELL. It cannot run a command, a compiler, a linter, or a test suite,
+and it cannot execute a script it writes: its only verbs are the tools you grant that step
+in "tools". The check named in a "check-passes" exit is the ONLY execution in this run —
+the shell runs it after each attempt and hands the worker its raw output. So write every
+"action" for a worker that locates its work by READING and GREPPING files and by reading
+the check output it is given. Never tell it to run, execute, re-run, or verify by running
+anything (an action that opens with "Run \`<command>\`…" costs the whole step: the worker
+has no way to obey it and spends its rounds hunting by hand).
 
 Offered "scope" values for tree-changed — copy ONE of these exactly, character for
 character. No other value is accepted, and patterns of your own (like "src/*.js")
@@ -2234,7 +2243,26 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       && cat === 'step-variance'
       && !varianceGrantUsed
       && stopTrend.trend === 'converging';
-    if ((!replanned || grantExtraReplan) && replanTrigger && remainingUsd() > MONEY_MIN) {
+    // W-2 at the replan GATE, hamr's ruling: *"past the wall no new fix cycle or step
+    // starts"* — and a replan is the first move of starting a new step. Past the
+    // deadline the whole cycle is doomed by construction and it is not free: the
+    // drafting call is bought (money the operator's time allowance no longer covers),
+    // the redrafted plan's first step is then refused at its own head by the W-2 check
+    // one level down, and the run wall-halts anyway. u-msmt91t3 paid for exactly that
+    // and called the result `step-red`. So the gate declines to FUND it.
+    //
+    // Nothing is routed here and no readout is duplicated: declining simply lets the
+    // stop fall through to the `step-variance` terminal below, which is the one site
+    // that mints the wall-halt package (record + F11-consistent escalation + levers).
+    // One site, one spelling — a second copy here is how two instruments come to
+    // disagree about one event.
+    //
+    // Scoped to the variance trigger, which is the reachable one: a step already
+    // running when the deadline passes reads a time share of exactly 1, so the meter
+    // is what stops it. The latch is NOT consumed — no grant was spent, because no
+    // replan was bought. With time on the clock this is byte-identical to today.
+    const wallStopsReplan = cat === 'step-variance' && clock.expired();
+    if (!wallStopsReplan && (!replanned || grantExtraReplan) && replanTrigger && remainingUsd() > MONEY_MIN) {
       if (grantExtraReplan) varianceGrantUsed = true;
       replanned = true;
       replans += 1;
@@ -2371,8 +2399,44 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // upward would mint an outcome run.js and the ledger's class table do not know,
     // and an unmapped category is counted as a library bug (ledger.js) when this is a
     // planning story. The escalation ralph already emitted carries the real detail.
+    //
+    // W-2 at the meter's own terminal. A `step-variance` stop that lands PAST the
+    // deadline is a TIME stop wearing the meter's name — the clock is what ended the
+    // run, and hamr's ruling names that stop: *"when time is up, keep the grade we
+    // already have and stop"*. Its cap-halt sibling directly above already re-reads its
+    // own governor (the wallet) before minting a terminal; this branch did not, and on
+    // u-msmt91t3 it minted `step-red` 9.9 seconds AFTER the run's own `wall-bounded`
+    // record — a governance stop filed as a capability read, and (the resume gate's
+    // half of the same defect) a checkpoint filed as an answer.
+    //
+    // The clock is read HERE, with nothing in flight, exactly as the three other
+    // terminal sites read it. With time still on the clock this is byte-identical to
+    // what it was: the step-red is the designed stop, and the stop is the result.
     if (cat === 'step-variance') {
       planExecuted();
+      if (clock.expired()) {
+        // the run-level TIME record every wall stop emits, with the same discriminator:
+        // read between attempts, no call in flight (F64's `cutMidCall` split, which
+        // run.js keys the job-end money floor on — this reading is EXACT).
+        // `stepWallStop` is null here by construction: that record is written only by
+        // the head-of-attempt check, and the meter is read BEFORE it, so a step the
+        // meter stopped never reached it.
+        emitWallHalt({ cutMidCall: false, phase: `step:${step.id}`, stepsDone: idx, stepsPlanned: plan.steps.length });
+        // …and the escalation, because ralph's own names `step-variance` (F11: the
+        // outcome and the escalation must name the SAME category, or two instruments
+        // disagree about one event). The meter's sentence is not discarded — it rides
+        // in the detail beside the clock's numbers and the run's measured trend, so the
+        // human reads why the step was stopped AND which lever fits.
+        emit('escalation', {
+          category: 'wall-halt', decisionReady: true, phase: `step:${step.id}`,
+          decision: `The run reached its wall-clock cap while step "${step.id}" was running. Time ran out, not capability — the verdict the run already has stands.`,
+          options: WALL_OPTIONS,
+          detail: `requested ${clock.requestedMs}ms, elapsed ${clock.elapsedMs()}ms. `
+            + `The meter stopped the step first: ${lastEscalation?.detail ?? '(none)'} `
+            + `Progress trend: ${stopTrend.trend} — ${stopTrend.reading}; ${stopTrend.lever}.`,
+        });
+        return 'wall-halt';
+      }
       return `step-red:${step.id}`;
     }
     // Any OTHER terminal escalation category is NOT a capability failure: a

@@ -665,7 +665,7 @@ function readGradeSeed(seen) {
  *   which is later and better evidence than the last event). Defaults to the last
  *   event's own timestamp — the last sign of life there is.
  * @returns {any} `{ started, approvalHash, specHash, patient, job, bridgeTries,
- *   perTryBudgetUsd, perTryWallMs, ended, endOutcome, greened, completed, tried,
+ *   perTryBudgetUsd, perTryWallMs, ended, endOutcome, wallDerivedHalt, greened, completed, tried,
  *   selectionCostUsd, selectionComplete, strayRounds, r1Missing, restart, deathAtKnown,
  *   spentUsd, spendComplete, carrySpentUsd, carrySpendComplete }`
  */
@@ -816,7 +816,50 @@ export function readResume(events, { deathAt = null, direct = false, resumableOu
    * CHECKPOINT and re-entering it is the ruling, not a second payment for an answer
    * already in hand. Empty by default, which is what keeps the reuse loop's own
    * graded-row semantics exactly where they were. */
-  const haltedResumable = open?.jobEnd ? resumableHalt.has(String(open.jobEnd.outcome)) : false;
+  const recordedOutcome = open?.jobEnd ? String(open.jobEnd.outcome) : null;
+  /** D4a — the MISLABELLED wall stop, derived from the run's own primary records.
+   *
+   * `step-red` is a verdict-shaped terminal and stays non-resumable: a red is an
+   * answer. But on u-msmt91t3 the runner minted one 9.9 seconds AFTER its own
+   * `wall-bounded` record — a governance stop wearing a capability label, because the
+   * step-variance terminal did not re-read the clock (fixed at the source, src/planrun.js).
+   * Spines already written under the defect are not re-runnable and cannot be edited (a
+   * spine is append-only forever), so the READER derives the truth the file already
+   * holds: a run whose own record says the wall was crossed BEFORE it ended is a wall
+   * stop, and W-2's ruling applies — it keeps the grades it minted and pauses.
+   *
+   * Three constraints, each of them load-bearing:
+   *   * a DERIVATION, never an override. The evidence is the run's own `wall-bounded`
+   *     event, emitted by the runner at the round seam; no caller can assert this.
+   *   * `step-red` ONLY, and only when `wall-halt` is itself resumable for this caller.
+   *     Every other outcome — green, escalated, provider-red, a step-red with no wall
+   *     record — is untouched, so "a red is an answer" survives intact.
+   *   * it touches NO close verdict. `step-red` here is a GOVERNANCE stop label; the
+   *     grades the close rendered are exactly what they were, and the resume seeds
+   *     from them.
+   * @param {any[]} seen @param {any} jobEnd */
+  const wallCrossedBefore = (seen, jobEnd) => {
+    // strictly BEFORE the terminal: a record written after the run ended could not have
+    // been what stopped it. `indexOf` on the window's own array is the ordering there is
+    // (the reader never re-sorts), and a jobEnd somehow absent from it reads nothing.
+    const end = seen.indexOf(jobEnd);
+    if (end < 0) return false;
+    for (let i = 0; i < end; i += 1) {
+      const e = seen[i];
+      if (!isObj(e) || e.type !== 'wall-bounded' || e.bounded !== true) continue;
+      // the clock's OWN two spellings of "the deadline passed", both off `clock.report`.
+      // Never a re-derivation from timestamps: a second arithmetic for one question is
+      // how two instruments come to disagree.
+      if (e.remainingMs === 0) return true;
+      if (typeof e.elapsedMs === 'number' && typeof e.requestedMs === 'number' && e.elapsedMs >= e.requestedMs) return true;
+    }
+    return false;
+  };
+  const wallDerivedHalt = recordedOutcome === 'step-red'
+    && resumableHalt.has('wall-halt')
+    && wallCrossedBefore(open.seen, open.jobEnd);
+  const haltedResumable = recordedOutcome !== null
+    && (resumableHalt.has(recordedOutcome) || wallDerivedHalt);
   if (open) {
     if (open.jobEnd && !haltedResumable) {
       // GRADED: runJob returned and the close had its say. Not a restart — the row is
@@ -963,7 +1006,14 @@ export function readResume(events, { deathAt = null, direct = false, resumableOu
     perTryBudgetUsd: head?.perTryBudgetUsd ?? directHead?.budgetUsd ?? null,
     perTryWallMs: head?.perTryWallMs ?? null,
     ended: end !== null || (directEnd !== null && !haltedResumable),
+    // the RECORDED terminal, always — the derivation below never rewrites what the run
+    // said about itself, it only says how this reader read it
     endOutcome: end?.outcome ?? directEnd?.outcome ?? null,
+    /** D4a — true when a recorded `step-red` was re-read as a wall-halt off this run's
+     * OWN `wall-bounded` record. Surfaced rather than silent: an operator resuming a
+     * run whose spine says `step-red` must be told which record turned it into a
+     * checkpoint, or the gate looks like it simply stopped refusing. */
+    wallDerivedHalt,
     greened: completed.some((t) => t.verdictClass === 'green'),
     completed,
     tried,
