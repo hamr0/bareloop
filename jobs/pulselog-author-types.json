@@ -8,7 +8,7 @@
     "every": 1
   },
   "budgetUsd": 4,
-  "maxWallMs": 1500000,
+  "maxWallMs": 2700000,
   "writeScope": [
     "src/**"
   ],
