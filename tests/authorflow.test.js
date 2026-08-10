@@ -36,7 +36,7 @@ import { execFileSync } from 'node:child_process';
 import { AGGREGATES, SIGNS, MAX_TERMS, EXIT_GREEN, EXIT_RED, EXIT_STOP } from '../src/kinds.js';
 import {
   KIND_CATALOGUE, CATALOGUE_LIVE_KINDS, LOCKED_KINDS, MAX_STAGES, VERDICT_CLASSES, LOCKED_CLASSES,
-  DIRECTIONS, BASELINES, classGuards, genreOwnedEnvNames, validateDeclaration,
+  DIRECTIONS, BASELINES, classGuards, genreOwnedEnvNames, genreInstruments, validateDeclaration,
 } from '../src/authoring.js';
 import {
   DECLARATION_TOOL_NAME, DECLARATION_ACK, AUTHOR_MAX_TOKENS,
@@ -44,7 +44,7 @@ import {
   REVISE_INSTRUCTION, STRUCTURE_INSTRUCTION_TOOL,
   QUESTION_SETS, GREEN_QUESTIONS, questionsFor, requiredAnswersFor, CLASS_STATEMENTS,
   PARAM_SCHEMAS, schemaCoverage, declarationSchema, declarationTool,
-  catalogueBlock, lawsBlock, authorPrompt,
+  catalogueBlock, lawsBlock, instrumentsBlock, authorPrompt,
   renderSeedReadBlock, renderRejectBlock, buildReviseTurn, assertReviseTurn,
   applyGenreEnv, resolveSourcePrefixes, makeCostBook, makeLoopGenerate, authorClose,
 } from '../src/authorflow.js';
@@ -303,6 +303,59 @@ test('the authoring prompt carries the genre template, the catalogue and the FIL
   assert.match(p, /<FILL IN>/, 'the one model-filled slot is marked');
   assert.match(p, new RegExp(DECLARATION_TOOL_NAME), 'the output contract is the tool, never a fenced block');
   assert.ok(!p.includes('```'), 'nothing asks for a fenced JSON block in tool mode');
+});
+
+// ── the known-instrument block (run msmbpjk6, 2026-08-09) ───────────────────
+//
+// The drafting call composed tsc's TTY-only pretty shape against piped output —
+// 0 matches on 67 real error lines — and a prior run happened to roll the right
+// one. The format of a tool we already own is not a composition choice, so it
+// arrives spelled out. These tests hold the DELIVERY: the term must reach the
+// prompt verbatim, from the genre, with the real line beside it.
+
+test('the prompt hands over the genre-owned tsc pattern VERBATIM, with the real captured line', () => {
+  const p = authorPrompt({
+    answers: baseArgs().answers, questions: GREEN_QUESTIONS, facts: FACTS,
+    listingBlock: '', lang: 'js', guards: greenGuards('js'), ownedEnvNames: [], verdictType: 'green',
+  });
+  const [tsc] = genreInstruments('js');
+  assert.ok(p.includes(`lineMatch: ${tsc.lineMatch}`), 'the pattern the tree grades with must reach the author spelled out');
+  assert.ok(p.includes(tsc.example), 'the real captured line rides with the pattern — the format claim is shown, not asserted');
+  assert.match(p, /PIPE, never a terminal/, 'the MECHANISM is stated, not only the answer — other tools pretty-print too');
+  // and the block is placed where it can be read as law, not as a footnote after
+  // the output contract
+  assert.ok(p.indexOf('KNOWN INSTRUMENTS') > p.indexOf('The graded instrument is the STRICT form'), 'it follows the policy that mandates the typecheck stage');
+  assert.ok(p.indexOf('KNOWN INSTRUMENTS') < p.indexOf('HOW TO ANSWER'), 'it is law, not a trailing note');
+});
+
+test('the known-instrument block is rendered FROM the genre, per language, and never invents a second tool', () => {
+  for (const lang of ['js', 'python']) {
+    const b = instrumentsBlock(lang);
+    const own = genreInstruments(lang);
+    for (const i of own) {
+      assert.ok(b.includes(i.id), `${lang}: ${i.id} missing`);
+      assert.ok(b.includes(`lineMatch: ${i.lineMatch}`), `${lang}: ${i.id}'s pattern is not the genre's own spelling`);
+      assert.ok(b.includes(i.example), `${lang}: ${i.id} ships without its real line`);
+    }
+    // a language's block never carries the OTHER language's instrument
+    for (const other of genreInstruments(lang === 'js' ? 'python' : 'js')) {
+      if (own.some((i) => i.id === other.id)) continue;
+      assert.ok(!b.includes(other.id), `${lang}: renders ${other.id}, which belongs to the other language`);
+    }
+    // the gap is NAMED rather than smoothed: a parser for anything not listed is
+    // still the author's own work
+    assert.match(b, /you still compose the pattern yourself/);
+  }
+  assert.throws(() => instrumentsBlock('rust'), /rust/);
+});
+
+test('the python prompt hands over the mypy pattern, not the JS one', () => {
+  const p = authorPrompt({
+    answers: {}, questions: GREEN_QUESTIONS, facts: FACTS, listingBlock: '', lang: 'python',
+    guards: greenGuards('python'), ownedEnvNames: genreOwnedEnvNames('python'), verdictType: 'green',
+  });
+  assert.ok(p.includes(`lineMatch: ${genreInstruments('python')[0].lineMatch}`));
+  assert.ok(!p.includes('tsc-error-line'), 'a python job is not told how the TypeScript checker prints');
 });
 
 test('the prompt announces the genre-owned environment so the model does not author it', () => {

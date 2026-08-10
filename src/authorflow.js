@@ -78,7 +78,7 @@ import { join, relative, isAbsolute } from 'node:path';
 import { seedRead as runSeedReadStages, makeSeedTrees, AGGREGATES, SIGNS, MAX_TERMS } from './kinds.js';
 import {
   KIND_CATALOGUE, MAX_STAGES, DIRECTIONS, BASELINES,
-  GENRE_LANGUAGES, TYPES_GENRE_TEMPLATE, classGuards, genreEnv, genreOwnedEnvNames,
+  GENRE_LANGUAGES, TYPES_GENRE_TEMPLATE, classGuards, genreEnv, genreOwnedEnvNames, genreInstruments,
   validateDeclaration, envCapableKind, VERDICT_CLASSES, LIVE_CLASSES,
 } from './authoring.js';
 import { buildSeedListing, cleanEntry } from './authorscout.js';
@@ -496,6 +496,45 @@ THE PARSER reads ONE number out of a command's output, as signed arithmetic over
               not actually happen.`;
 }
 
+/**
+ * HOW THE GENRE'S OWN TOOLS PRINT — rendered FROM `genreInstruments`, so the
+ * pattern the author is handed and the pattern the tree already grades with are
+ * one string.
+ *
+ * This block is the fix for run msmbpjk6: a parser for a tool WE OWN THE FACTS
+ * ABOUT was left to the model to compose, and it composed tsc's terminal-only
+ * shape against piped output — 0 matches on 67 real error lines. The delivery is
+ * deliberately the MANDATORY-GUARD delivery, not advice: the pattern arrives
+ * spelled out, marked genre property, with the real captured line beside it, in
+ * the same register as the guard battery that arrives already parameterised.
+ *
+ * It states the MECHANISM (pipe, not a terminal) rather than only the answer,
+ * because the same trap is waiting behind every tool that pretty-prints for a
+ * human, and only some of them are in the table yet.
+ * @param {string} lang
+ */
+export function instrumentsBlock(lang) {
+  const rows = genreInstruments(lang).map((i) => `- ${i.id} — ${i.what}\n`
+    + `    lineMatch: ${i.lineMatch}\n`
+    + `    a REAL captured line: ${i.example}\n`
+    + `    why this spelling: ${i.why}`);
+  return `KNOWN INSTRUMENTS — how this genre's own tools PRINT, fixed by the genre, not yours to decide
+
+A close captures output through a PIPE, never a terminal. Tools that pretty-print for a human
+print something else entirely down a pipe, and the piped shape is the only one a close ever reads.
+The patterns below are MEASURED against real captured output of this genre's tools.
+
+Where a stage of yours counts one of these, use its lineMatch EXACTLY as written — a pattern you
+compose yourself for one of these tools is a pattern for output that never arrives, and a term that
+matches nothing does not report a small number, it reports a broken instrument. None of these has a
+capture group: each TALLIES one per matching line rather than reading a figure the tool printed.
+
+${rows.join('\n\n')}
+
+This covers only the tools listed. For anything else, you still compose the pattern yourself from
+the facts object — and say in your notes when you had to.`;
+}
+
 /** The three laws. Stated to the author; enforced, where checkable, by M2. */
 export function lawsBlock() {
   return `THE LAWS YOUR DECLARATION MUST OBEY
@@ -611,6 +650,11 @@ measure anything.`;
       + 'This job\'s genre carries a fixed close SHAPE. The following policy is law for your declaration. It names\n'
       + 'no command, no path, no environment value and no pattern for this repository — finding those is your work,\n'
       + `from the facts object and the interview:\n\n${TYPES_GENRE_TEMPLATE}`,
+    // The template deliberately names no regex for this repository — but the
+    // shape a KNOWN tool prints is not "for this repository", it is a fact about
+    // an instrument the genre already owns and already grades with. It sits here,
+    // immediately after the policy that mandates the typecheck stage.
+    instrumentsBlock(lang),
     'MANDATORY GUARDS — already placed and already parameterised\n\n'
       + 'This kind of job carries stages the person did not ask for. They are fixed by the job\'s genre and they are\n'
       + 'already in your declaration, with their pattern battery and extensions already filled in — those are genre\n'

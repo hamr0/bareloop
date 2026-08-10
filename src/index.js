@@ -96,6 +96,9 @@ export {
 export {
   validateDeclaration, normalizeDeclaration, KIND_CATALOGUE, CATALOGUE_KINDS, CATALOGUE_LIVE_KINDS,
   LOCKED_KINDS, TYPES_GENRE, TYPES_GENRE_TEMPLATE, GENRE_LANGUAGES, genreEnv, genreOwnedEnvNames,
+  // how the genre's own tools PRINT — genre property for the same reason the
+  // suppression battery is (2026-08-09, run msmbpjk6)
+  genreInstruments,
   DIRECTIONS, BASELINES, MAX_STAGES,
   // the verdict-class surface (PRD v1.57 §1–§2): the radio's own menu, the guard
   // battery keyed off it, and the ceiling that makes the pick a promise

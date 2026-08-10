@@ -417,6 +417,20 @@ export const TYPES_GENRE = Object.freeze({
       /** no import-resolution hazard on this runner — an EMPTY list, declared,
        * never an absent field that would read as "not looked into" (F59) */
       env: Object.freeze([]),
+      instruments: Object.freeze([
+        Object.freeze({
+          id: 'tsc-error-line',
+          what: 'one type error, as the TypeScript checker prints it',
+          lineMatch: 'error TS\\d+',
+          // REAL, from the captured `npm run typecheck -- --strict` of the pulselog
+          // patient (2026-08-09): 67 error lines, every one in this shape.
+          example: 'src/backup.js(21,19): error TS7006: Parameter \'now\' implicitly has an \'any\' type.',
+          why: 'tsc prints a DIFFERENT shape on a terminal (`src/backup.js:21:19 - error TS7006:`) than through a '
+            + 'pipe, and a close only ever reads the piped one. Run msmbpjk6 composed the terminal shape: it matched '
+            + '0 of 67 real error lines while the tool exited 2, so the stage read a crashed instrument. This pattern '
+            + 'is anchored on the CODE, not on the path spelling, so it reads both shapes and cannot lose that flip.',
+        }),
+      ]),
     }),
     python: Object.freeze({
       suppressions: Object.freeze([
@@ -435,6 +449,19 @@ export const TYPES_GENRE = Object.freeze({
           why: 'mypy must name the PATIENT\'s modules: without it a sibling import resolves through an editable '
             + 'install to a different checkout, and a cross-module fix is graded against unedited source (Result 5, '
             + 'found by probe). It moves no seed number, so no seed-verdict read can see its absence.',
+        }),
+      ]),
+      instruments: Object.freeze([
+        Object.freeze({
+          id: 'mypy-error-line',
+          what: 'one type error, as mypy prints it',
+          lineMatch: ' error: ',
+          // REAL, from a live aurora run's own spine
+          // (bareloop-patients/aurora-u-bareloop/u-ms2c0ls7.jsonl).
+          example: 'packages/spawner/src/aurora_spawner/timeout_policy.py:89: error: Statement is unreachable  [unreachable]',
+          why: 'the operator\'s own hand-written close reads mypy this way (scripts/u-spawner-close.mjs:133), minted '
+            + 'by paid live runs. It is anchored on the SEVERITY word, not on the path spelling, so a relative or '
+            + 'absolute path, a package prefix or a config-driven root all read the same.',
         }),
       ]),
     }),
@@ -597,6 +624,50 @@ export function genreEnv(lang, { sourcePrefixes = [] } = {}) {
  * @param {string} lang @returns {string[]} */
 export function genreOwnedEnvNames(lang) {
   return language(lang).env.map((/** @type {any} */ e) => e.name);
+}
+
+/**
+ * HOW THE GENRE'S OWN TOOLS PRINT — genre property, like the suppression battery
+ * and like `MYPYPATH`, and for the same reason: it is a FACT ABOUT AN INSTRUMENT
+ * WE ALREADY OWN, not a composition choice. Seven hand-written closes read tsc
+ * with the identical `/error TS\d+/` (`scripts/u-pulselog-close.mjs:122`,
+ * `u-bareguard-close.mjs:123`, `u-bareagent-close.mjs:123`,
+ * `u-baremobile-close.mjs:122`, `u-litectx-close.mjs:140`, `types-close.mjs:190`,
+ * `types-check.mjs:60`) and one reads mypy with `' error: '`
+ * (`u-spawner-close.mjs:133`) — the same provenance the SUPPRESSIONS table has:
+ * operator knowledge minted by paying for live runs.
+ *
+ * WHY IT BECAME GENRE DATA (run msmbpjk6, 2026-08-09, $0.43). Left to the model,
+ * the parser for a known tool is a DRAFT-TIME LOTTERY on a fact nobody needed to
+ * guess: that run composed tsc's TTY-only pretty shape
+ * (`^\S+\.js:\d+:\d+ - error TS\d+:`), which matched 0 of the 67 real error lines
+ * the piped run actually printed, while the tool exited 2. The gates held — the
+ * stage read as a crashed instrument and signing was refused, correctly — but the
+ * refusal cost a whole authoring run to learn something the tree already knew. An
+ * earlier run (mslwbkz7) happened to roll the right shape. A coin-flip on an
+ * owned fact is not a capability question.
+ *
+ * WHAT THIS IS NOT: it does not close the parser. A stage counting something we
+ * have NOT measured (an executed-test count, a suite's failure line) still writes
+ * its own pattern, and that remains a real gap — named, not smoothed. This table
+ * is where a measured instrument fact lands, one at a time, with its provenance.
+ *
+ * Returns a fresh copy per call, for the reason `classGuards` does: a frozen
+ * constant handed to a caller that edits it is one shared table away from a
+ * silently changed ruler.
+ * @param {string} lang
+ * @returns {{id: string, what: string, lineMatch: string, example: string, why: string}[]}
+ */
+export function genreInstruments(lang) {
+  const instruments = language(lang).instruments ?? [];
+  // F59's shape at a table that feeds a RULER: an empty list would read as "this
+  // language's tools need no stated format", which is exactly the sentence that
+  // put the pretty-format regex into a signed-close candidate.
+  if (!instruments.length) {
+    throw new Error(`no known-instrument formats for language "${lang}" — a language the genre admits states how its `
+      + 'own checker prints, or the model is back to guessing a fact we already own');
+  }
+  return instruments.map((/** @type {any} */ i) => ({ ...i }));
 }
 
 /**

@@ -28,14 +28,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { LIVE_KINDS } from '../src/kinds.js';
+import { LIVE_KINDS, regexGroups } from '../src/kinds.js';
 import { VERDICT_TYPES, LOCKED_VERDICTS } from '../src/job.js';
 import { hasNestedQuantifier } from '../src/validate.js';
 import {
   KIND_CATALOGUE, CATALOGUE_KINDS, CATALOGUE_LIVE_KINDS, LOCKED_KINDS, MAX_STAGES, DIRECTIONS, BASELINES,
   TYPES_GENRE, TYPES_GENRE_TEMPLATE, GENRE_LANGUAGES, DENIED_COMMANDS,
   VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES, CLASS_BATTERIES,
-  classGuards, closeCeiling, genreEnv, genreOwnedEnvNames,
+  classGuards, closeCeiling, genreEnv, genreOwnedEnvNames, genreInstruments,
   validateDeclaration, normalizeDeclaration,
 } from '../src/authoring.js';
 
@@ -250,6 +250,138 @@ test('genre guards: an unknown language THROWS — never an empty battery', () =
   assert.throws(() => greenGuards('rust'), /rust/);
   assert.throws(() => genreEnv('rust', { sourcePrefixes: ['src'] }), /rust/);
   assert.throws(() => genreOwnedEnvNames('rust'), /rust/);
+  assert.throws(() => genreInstruments('rust'), /rust/);
+});
+
+// ── how the genre's own tools PRINT (run msmbpjk6, 2026-08-09) ───────────────
+//
+// REAL, UNCRAFTED EVIDENCE. Every line below is copied verbatim out of
+// `bareloop-patients/pulselog-author-live-bareloop/tsc-real-output.txt`, which is
+// the captured `npm run typecheck -- --strict` of the live patient — 71 lines,
+// 67 of them error lines, tool exit 2. Nothing here was written to match a
+// pattern; the pattern is being judged against what the tool actually printed.
+
+/** 8 of the file's 67 error lines, chosen to span its shapes: the first, a
+ * 3-digit column, both TS codes that appear, the enormous inline-type TS7053
+ * line, and the last. */
+const TSC_REAL_ERROR_LINES = Object.freeze([
+  'src/backup.js(21,19): error TS7006: Parameter \'now\' implicitly has an \'any\' type.',
+  'src/backup.js(42,48): error TS7006: Parameter \'now\' implicitly has an \'any\' type.',
+  'src/backup.js(165,125): error TS18046: \'err\' is of type \'unknown\'.',
+  'src/checks.js(13,15): error TS7006: Parameter \'ms\' implicitly has an \'any\' type.',
+  'src/run.js(33,14): error TS7053: Element implicitly has an \'any\' type because expression of type \'any\' can\'t be used to index type \'{ http: (cfg: any) => Promise<{ ok: boolean; reason: string; detail: { http_status: number; }; }>; tcp: (cfg: any) => Promise<any>; ssl: (cfg: any) => Promise<any>; disk: (cfg: any) => Promise<...>; \'file-age\': (cfg: any) => Promise<...>; service: (cfg: any) => Promise<...>; command: (cfg: any) => Promise<...>; }\'.',
+  'src/run.js(42,58): error TS18046: \'err\' is of type \'unknown\'.',
+  'src/sink.js(30,27): error TS7006: Parameter \'byteLength\' implicitly has an \'any\' type.',
+  'src/sink.js(52,82): error TS18046: \'err\' is of type \'unknown\'.',
+]);
+
+/** ALL 4 of the file's non-error lines — the npm banner pair and the blanks
+ * around it. The `> tsc --noEmit --strict` line is the trap: it names the tool
+ * and must still not count as an error. */
+const TSC_REAL_NON_ERROR_LINES = Object.freeze([
+  '',
+  '> pulselog@0.7.2 typecheck',
+  '> tsc --noEmit --strict',
+  '',
+]);
+
+/** what run msmbpjk6 actually composed: tsc's PRETTY shape, which tsc prints
+ * only to a terminal. Quoted verbatim from that run's declaration. */
+const DRAFTED_PRETTY_FORMAT = '^\\S+\\.js:\\d+:\\d+ - error TS\\d+:';
+
+/** REAL captured mypy lines, from a live aurora run's own spine
+ * (`bareloop-patients/aurora-u-bareloop/u-ms2c0ls7.jsonl`). */
+const MYPY_REAL_ERROR_LINES = Object.freeze([
+  'packages/spawner/src/aurora_spawner/timeout_policy.py:89: error: Statement is unreachable  [unreachable]',
+  'packages/spawner/src/aurora_spawner/circuit_breaker.py:324: error: Statement is unreachable  [unreachable]',
+  'packages/spawner/src/aurora_spawner/recovery.py:353: error: Need type annotation for',
+]);
+
+/** the REAL captured lines this genre may teach FROM, per language. An example is
+ * the TEACHING half of the fix — the pattern alone survives a drifted example
+ * (`error TS\d+` reads the pretty shape too), so a shipped example that is not
+ * one of these would quietly show the author the very format that cost run
+ * msmbpjk6 a whole authoring pass. */
+const REAL_LINES = Object.freeze({ js: TSC_REAL_ERROR_LINES, python: MYPY_REAL_ERROR_LINES });
+
+test('known instruments: the genre-owned tsc term reads every REAL captured error line', () => {
+  const [tsc] = genreInstruments('js');
+  assert.equal(tsc.id, 'tsc-error-line');
+  const re = new RegExp(tsc.lineMatch);
+  const hits = TSC_REAL_ERROR_LINES.filter((l) => re.test(l));
+  assert.equal(hits.length, TSC_REAL_ERROR_LINES.length,
+    `missed ${TSC_REAL_ERROR_LINES.length - hits.length} real error line(s): ${TSC_REAL_ERROR_LINES.filter((l) => !re.test(l)).join(' | ')}`);
+  // and it must not count the tool's own banner — the line NAMING tsc included
+  const falsePositives = TSC_REAL_NON_ERROR_LINES.filter((l) => re.test(l));
+  assert.deepEqual(falsePositives, [], 'a non-error line counted as an error');
+  // no capture group: the term TALLIES one per line rather than reading a figure,
+  // which is exactly what the prompt tells the author it does. Counted with the
+  // executor's OWN counter, never a second one.
+  const groups = regexGroups(tsc.lineMatch);
+  assert.equal(groups.red, null, groups.red ?? '');
+  assert.equal(groups.count, 0, 'the term must carry no capture group, or it reads a figure instead of tallying lines');
+});
+
+test('known instruments: the PRETTY format the drafter composed live matches ZERO real lines — the defect, pinned', () => {
+  const re = new RegExp(DRAFTED_PRETTY_FORMAT);
+  const hits = TSC_REAL_ERROR_LINES.filter((l) => re.test(l));
+  assert.equal(hits.length, 0,
+    'the terminal-only shape must match nothing in captured output — if this ever passes, the evidence file changed');
+  // ... and the genre's own term is not that shape. Stated as a comparison so a
+  // future edit that "tidies" the term into the pretty shape reds here.
+  assert.notEqual(genreInstruments('js')[0].lineMatch, DRAFTED_PRETTY_FORMAT);
+});
+
+test('known instruments: the example shipped to the author is a REAL captured line, not a tidied one', () => {
+  for (const lang of GENRE_LANGUAGES) {
+    for (const i of genreInstruments(lang)) {
+      assert.doesNotThrow(() => new RegExp(i.lineMatch), `${lang}/${i.id} does not compile`);
+      assert.equal(hasNestedQuantifier(i.lineMatch), false, `${lang}/${i.id} would be rejected by the gate that admits it`);
+      assert.match(i.example, new RegExp(i.lineMatch),
+        `${lang}/${i.id}: the pattern handed over does not read the line handed over beside it`);
+      // THE TEACHING HALF. `error TS\d+` reads the pretty shape too, so the
+      // pattern alone survives an example quietly drifted to the format that cost
+      // run msmbpjk6 its authoring pass. The example must SELECT from real
+      // captured output — the same "never invented" rule paths already live under.
+      assert.ok(
+        REAL_LINES[lang].some((real) => real === i.example || i.example.startsWith(real)),
+        `${lang}/${i.id}: the shipped example is not one of the real captured lines — got ${JSON.stringify(i.example)}`,
+      );
+    }
+  }
+  const [mypy] = genreInstruments('python');
+  assert.equal(mypy.id, 'mypy-error-line');
+  // mypy's own tail line reports the total; counting it would double-count
+  assert.doesNotMatch('Found 16 errors in 5 files (checked 23 source files)', new RegExp(mypy.lineMatch));
+});
+
+test('known instruments: ONE spelling — the term is the hand-written closes\' own, not a second ruler', () => {
+  // The provenance claim is mechanical, not a comment: the pattern the genre
+  // hands the author must be byte-identical to the one the operator's paid-for
+  // closes already grade with. Two spellings would be two instruments.
+  const close = readFileSync(join(REPO, 'scripts/u-pulselog-close.mjs'), 'utf8');
+  const m = close.match(/filter\(\(l\) => \/(.+?)\/\.test\(l\)\)/);
+  assert.notEqual(m, null, 'the hand-written close no longer reads tsc with a literal regex — the provenance moved');
+  assert.equal(genreInstruments('js')[0].lineMatch, m[1]);
+
+  const spawner = readFileSync(join(REPO, 'scripts/u-spawner-close.mjs'), 'utf8');
+  const mm = spawner.match(/filter\(\(l\) => l\.includes\('(.+?)'\)\)/);
+  assert.notEqual(mm, null, 'the hand-written mypy close no longer reads a literal substring — the provenance moved');
+  assert.equal(genreInstruments('python')[0].lineMatch, mm[1]);
+});
+
+test('known instruments: each call hands back its OWN copy — a caller never holds the shipped ruler', () => {
+  // IDENTITY, not mutability: the table is frozen, so an edit throws either way
+  // and a mutation test written that way passes for the wrong mechanism. What
+  // this pins is the same convention `classGuards` states — a caller is handed a
+  // fresh object it may edit, and the shipped one is never reachable through it.
+  const a = genreInstruments('js');
+  const b = genreInstruments('js');
+  assert.notEqual(a, b, 'two calls handed the same array');
+  assert.notEqual(a[0], TYPES_GENRE.languages.js.instruments[0], 'the caller was handed the shipped entry itself');
+  assert.deepEqual(a[0], { ...TYPES_GENRE.languages.js.instruments[0] }, 'the copy must carry every field of the original');
+  a[0].lineMatch = 'nonsense';
+  assert.equal(genreInstruments('js')[0].lineMatch, TYPES_GENRE.languages.js.instruments[0].lineMatch);
 });
 
 // ── the battery's HOME is the verdict class (PRD v1.57 §2) ───────────────────
