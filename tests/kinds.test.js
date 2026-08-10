@@ -566,6 +566,64 @@ test('count-not-worse: the scope filter drops out-of-scope lines and the drop is
   assert.ok(res.gapLines.every((l) => l.startsWith(KEEP)));
 });
 
+// Run u-msn227nq paid for this one. The stage counted 8 real `error TS…` lines
+// and rendered `8 match(es)` — the ADDRESSES were counted and then dropped on the
+// floor. Starved of a file to open, the worker went looking for the arbiter's own
+// books (.smoke, .litectx, gate-audit.jsonl), the fence denied it three times, and
+// the deny-spin guard ended a converging run with $1.77 and 21 minutes left. The
+// count is unchanged; only what the executor TELLS the worker changes — and it
+// rides the existing machinery (the stage prefix, the cap, the trim marker), so a
+// count gap now names walls the same mechanical way every other kind's does (F38).
+test('count-not-worse: a red count gap carries the MATCHED LINES themselves — a count with no addresses starves the worker', async (t) => {
+  const errors = ['src/backup.js(56,48): error TS1016: A required parameter cannot follow an optional parameter.', 'src/mod.js(3,1): error TS2322: Type mismatch.'];
+  const r = makeRepo(t, { 'report.txt': `checking...\n${errors.join('\n')}\nDone.\n`, 'src/backup.js': 'a\n', 'src/mod.js': 'b\n' });
+  const res = await runStage(COUNT_STAGE({ parser: { terms: [{ lineMatch: 'error TS\\d+', sign: 1, aggregate: 'sum', region: 'whole-output' }] } }), ctxFor(r));
+
+  assert.equal(res.verdict, 'red');
+  assert.equal(res.value, errors.length, 'the COUNT is untouched — only what the gap says changed');
+  const text = res.gapLines.join('\n');
+  for (const e of errors) assert.ok(text.includes(e), `the gap must carry the matched line verbatim: ${e}\n${text}`);
+  assert.ok(res.gapLines.every((l) => l.startsWith(KEEP)),
+    'every carried line rides the stage prefix — Layer R\'s redKeep is DERIVED from it, so an unprefixed line breaks the detector');
+  assert.ok(text.indexOf(`${errors.length} match(es)`) < text.indexOf(errors[0]),
+    'the summary still leads; the addresses ride AFTER it');
+  // the lines that did NOT match are not smuggled out with them
+  assert.ok(!text.includes('checking...') && !text.includes('Done.'), 'only the lines that CONTRIBUTED to the count ride out');
+});
+
+test('count-not-worse: lines the SCOPE dropped never reach the gap — the gap shows the population that was counted', async (t) => {
+  const kept = 'src/a.js(1,1): error TS1: in scope';
+  const dropped = 'vendor/v.js(1,1): error TS1: out of scope';
+  const r = makeRepo(t, { 'report.txt': `${kept}\n${dropped}\n`, 'src/a.js': 'a\n' });
+  const res = await runStage(COUNT_STAGE({ parser: { terms: [{ lineMatch: 'error TS\\d+', sign: 1, aggregate: 'sum', region: 'whole-output' }] } }), ctxFor(r));
+
+  assert.equal(res.verdict, 'red');
+  assert.equal(res.value, 1);
+  const text = res.gapLines.join('\n');
+  assert.ok(text.includes(kept), 'the counted line rides out');
+  assert.ok(!text.includes(dropped), 'a scope-dropped line was never counted, so pointing the worker at it would aim it outside its own population');
+  assert.match(text, /1 matching line\(s\) dropped by the scope filter/, 'and the drop is still ANNOUNCED as a count');
+});
+
+test('count-not-worse: an over-cap harvest of matched lines trims with the marker, and the withheld count is the gap\'s own (F28)', async (t) => {
+  const errors = Array.from({ length: GAP_LINE_CAP * 2 }, (_, i) => `src/f${i}.js(${i + 1},1): error TS2322: case ${i}`);
+  const r = makeRepo(t, { 'report.txt': `${errors.join('\n')}\n`, 'src/a.js': 'a\n' });
+  const res = await runStage(COUNT_STAGE({ parser: { terms: [{ lineMatch: 'error TS\\d+', sign: 1, aggregate: 'sum', region: 'whole-output' }] } }), ctxFor(r));
+
+  assert.equal(res.verdict, 'red');
+  assert.equal(res.value, errors.length, 'the count sees every line even when the gap cannot carry them all');
+  assert.equal(res.gapLines.length, GAP_LINE_CAP, 'the existing cap holds — the harvest rides it, never around it');
+  const last = res.gapLines.at(-1);
+  assert.ok(last.startsWith(KEEP));
+  assert.match(last, /trimmed/i);
+  assert.match(last, /withheld/i);
+  // the announced denominator is the fixture's own: every matched line plus the
+  // summary lines above them, never a constant
+  const total = Number(/of (\d+) lines/.exec(last)?.[1]);
+  assert.ok(total > errors.length, `the trim counts the matched lines it withheld (announced ${total} against ${errors.length} matches)`);
+  assert.ok(res.gapLines.some((l) => l.includes('error TS2322: case 0')), 'and the lines it COULD carry are still there');
+});
+
 test('count-not-worse: a parser that cannot read its number stops the stage instead of grading it 0', async (t) => {
   const r = makeRepo(t, { 'report.txt': 'the tool crashed before printing a total\n' });
   const res = await runStage(COUNT_STAGE({ parser: { lineMatch: 'total (\\d+)', capture: 1 }, direction: 'lower-is-better', baseline: 0 }), ctxFor(r));

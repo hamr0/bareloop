@@ -699,13 +699,23 @@ export function normalizeParser(parser, at = 'parser') {
  * that matched BEFORE the filter judged them — kept, unattributable and dropped
  * alike — and it is the only evidence of liveness a caller has once the scope
  * has removed the whole population. It is never the number being read.
+ *
+ * `matched` is the KEPT lines themselves, in output order: exactly the lines
+ * that reached aggregation, which is to say the ones the count is made of. Run
+ * u-msn227nq paid for it — the executor counted 8 real `error TS…` lines and
+ * told the worker "8 match(es)", discarding every address, and a worker with a
+ * number and no file to open went looking for the arbiter's own books instead.
+ * A scope-DROPPED line is never in here: it was never counted, so aiming the
+ * worker at it would aim it outside its own population. Duplicates collapse
+ * (two terms over one line name one place), which is a rendering choice only —
+ * the count above is computed from `values`, never from this list.
  * @param {string} output @param {any[]} terms normalised terms
  * Every stop here is `crashed` in the arbiter's vocabulary — the command RAN,
  * came back, and the number could not be read out of it. Nothing in this
  * function can observe a spawn failure, a timeout or a signal, so it never
  * claims one.
  * @param {{scope?: any, workdir?: string}} [o]
- * @returns {{stop: string, fault: string, notes?: string[]}|{stop: null, value: number, breakdown: any[], notes: string[], preScopeMatches: number}}
+ * @returns {{stop: string, fault: string, notes?: string[]}|{stop: null, value: number, breakdown: any[], notes: string[], preScopeMatches: number, matched: string[]}}
  */
 export function parseValue(output, terms, { scope = null, workdir = '' } = {}) {
   let value = 0;
@@ -715,6 +725,10 @@ export function parseValue(output, terms, { scope = null, workdir = '' } = {}) {
   const breakdown = [];
   /** @type {string[]} */
   const notes = [];
+  // the KEPT lines, in output order and deduplicated — see the note above
+  /** @type {string[]} */
+  const matched = [];
+  const seen = new Set();
   const filtering = scopeFilters(scope);
   // one resolver (and one realpath cache) per call, built only when a filter
   // will actually read it
@@ -750,6 +764,10 @@ export function parseValue(output, terms, { scope = null, workdir = '' } = {}) {
         if (p === null) unattributable += 1;
         else if (!inScope(p, scope, phys)) { dropped += 1; continue; }
       }
+      // past the filter, so this line is one the count is MADE of — harvested
+      // here rather than at aggregation because this is the only place the raw
+      // line still exists
+      if (!seen.has(line)) { seen.add(line); matched.push(line); }
       for (const h of hits) {
         if (t.capture === null) { values.push(1); continue; }
         const rawCapture = h[t.capture];
@@ -792,7 +810,7 @@ export function parseValue(output, terms, { scope = null, workdir = '' } = {}) {
     breakdown.push({ term: i, lineMatch: t.lineMatch, aggregate: t.aggregate, sign: t.sign, matches: values.length, subtotal, contribution: t.sign * subtotal });
     value += t.sign * subtotal;
   }
-  return { stop: null, value, breakdown, notes, preScopeMatches };
+  return { stop: null, value, breakdown, notes, preScopeMatches, matched };
 }
 
 // ── D12: the baseline is MEASURED at this run's own seed, every run ──────────
@@ -1084,7 +1102,7 @@ async function runCountNotWorse(stage, ctx) {
         notes: [],
       };
     }
-    return { stop: null, value: v.value, breakdown: v.breakdown, notes: v.notes, exit: r.code, dropped: r.dropped, fault: STOP_FAULTS.FAILED };
+    return { stop: null, value: v.value, breakdown: v.breakdown, notes: v.notes, matched: v.matched, exit: r.code, dropped: r.dropped, fault: STOP_FAULTS.FAILED };
   };
 
   const now = await measure(ctx.workdir, 'the current tree');
@@ -1129,6 +1147,16 @@ async function runCountNotWorse(stage, ctx) {
     for (const b of /** @type {any[]} */ (now.breakdown)) {
       gap.push(`  term ${b.term} /${b.lineMatch}/ ${b.aggregate}: ${b.matches} match(es), subtotal ${b.subtotal}, contributes ${b.contribution >= 0 ? '+' : ''}${b.contribution}`);
     }
+    // …and the lines the count is MADE of, after the summary that frames them.
+    // A count with no addresses is the semantic genre F38 measured as inert: run
+    // u-msn227nq's worker was handed "8 match(es)", had nowhere to open, and
+    // probed the arbiter's books until the deny guard ended the run. The
+    // instrument NAMED these lines — echoing what it named is the same licence
+    // `pattern-absent-in-diff` already runs under, not the barred move of
+    // naming a culprit the instrument never reported. They ride the Gap like
+    // every other line: the stage prefix (Layer R's redKeep derives from it),
+    // the cap, and the trim marker if the harvest overflows it.
+    for (const l of /** @type {string[]} */ (now.matched ?? [])) gap.push(`  ${l}`);
   }
   return result(stage, {
     verdict: worse ? 'red' : 'green',
