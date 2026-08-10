@@ -2257,11 +2257,17 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // One site, one spelling — a second copy here is how two instruments come to
     // disagree about one event.
     //
-    // Scoped to the variance trigger, which is the reachable one: a step already
-    // running when the deadline passes reads a time share of exactly 1, so the meter
-    // is what stops it. The latch is NOT consumed — no grant was spent, because no
-    // replan was bought. With time on the clock this is byte-identical to today.
-    const wallStopsReplan = cat === 'step-variance' && clock.expired();
+    // TRIGGER-AGNOSTIC (hamr: "extend"). It first covered the variance trigger only,
+    // the one measured on u-msmt91t3; the ladder's exhaustion and the stall fuse reach
+    // this gate past the deadline too, and a doomed cycle costs the same money whichever
+    // instrument named the stop. Each trigger then lands on its own honest terminal
+    // below — the wall for the two that would otherwise mint `step-red`, its own name
+    // for the stall (which already rides out as `step-stalled` and must, because run.js
+    // keys the F44 spend FLOOR on that outcome).
+    //
+    // The latch is NOT consumed — no grant was spent, because no replan was bought.
+    // With time on the clock this is byte-identical to today, for every trigger.
+    const wallStopsReplan = clock.expired();
     if (!wallStopsReplan && (!replanned || grantExtraReplan) && replanTrigger && remainingUsd() > MONEY_MIN) {
       if (grantExtraReplan) varianceGrantUsed = true;
       replanned = true;
@@ -2361,6 +2367,38 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       skipCount = 0;
       continue;
     }
+    /**
+     * W-2's STEP-LOOP terminal, and the ONE place it is spelled. Reached whenever a
+     * trigger that would otherwise mint `step-red:<id>` lands with the deadline already
+     * passed: the meter's stop (F85's variance) and the ladder's (attempt exhaustion
+     * with money still on the table). Both are the same event wearing two instruments'
+     * names — the clock is what ended the run — and `step-red` is a CAPABILITY label,
+     * so minting it there files a governance stop as "the work failed". u-msmt91t3 is
+     * the measured instance: `step-red` 9.9 seconds after the run's own `wall-bounded`.
+     *
+     * One site, one spelling, because the record, the F11-consistent escalation and the
+     * lever list must be identical wherever the clock stops a step — a second copy per
+     * trigger is how two instruments come to disagree about one event. The instrument
+     * that named the stop FIRST is not discarded: it rides in the detail, so the human
+     * reads why the step was stopped as well as which lever fits.
+     *
+     * `stepWallStop` is never consulted here by construction: that record is written
+     * only by the head-of-attempt check, and both triggers above are read BEFORE it, so
+     * a step either of them stopped never reached it.
+     * @param {string} stoppedBy the instrument that named the stop first
+     */
+    const wallHaltTerminal = (stoppedBy) => {
+      emitWallHalt({ cutMidCall: false, phase: `step:${step.id}`, stepsDone: idx, stepsPlanned: plan.steps.length });
+      emit('escalation', {
+        category: 'wall-halt', decisionReady: true, phase: `step:${step.id}`,
+        decision: `The run reached its wall-clock cap while step "${step.id}" was running. Time ran out, not capability — the verdict the run already has stands.`,
+        options: WALL_OPTIONS,
+        detail: `requested ${clock.requestedMs}ms, elapsed ${clock.elapsedMs()}ms. `
+          + `${stoppedBy}: ${lastEscalation?.detail ?? '(none)'} `
+          + `Progress trend: ${stopTrend.trend} — ${stopTrend.reading}; ${stopTrend.lever}.`,
+      });
+      return 'wall-halt';
+    };
     // F64 — the wall stopped this attempt from INSIDE a provider call (the derived
     // call timeout is the deadline in the provider's own coin). ralph already
     // emitted the escalation under this category, so the outcome and the record
@@ -2383,7 +2421,19 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // stays a step-red (the stop is a result).
     if (cat === 'cap-halt') {
       planExecuted();
-      if (remainingUsd() > MONEY_MIN) return `step-red:${step.id}`;
+      if (remainingUsd() > MONEY_MIN) {
+        // W-2 EXTENDED to the ladder's stop (hamr: "extend"). This arm is the sibling of
+        // the variance terminal below and carries the identical defect: with money still
+        // on the table it minted `step-red` whatever the clock said, so a step the
+        // deadline ended was filed as a capability failure. The wallet is re-read (it
+        // always was); the clock is re-read too, and it is read FIRST inside this arm
+        // only — a DRAINED wallet keeps its own `cap-halt` terminal below, because money
+        // is the allowance actually blocking that run and its levers are the ones the
+        // human needs (a wall-halt readout there would offer "raise maxWallMs and rerun"
+        // into an immediate money cut).
+        if (clock.expired()) return wallHaltTerminal('The ladder ended the step first');
+        return `step-red:${step.id}`;
+      }
       // v1.46 §2: the money cut is decision-ready HERE too, and for the same reason
       // W-2 gave the wall a record at every site it stops a run — a category that
       // hands the human a readout at one seam and silence at another is the readout
@@ -2414,29 +2464,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // what it was: the step-red is the designed stop, and the stop is the result.
     if (cat === 'step-variance') {
       planExecuted();
-      if (clock.expired()) {
-        // the run-level TIME record every wall stop emits, with the same discriminator:
-        // read between attempts, no call in flight (F64's `cutMidCall` split, which
-        // run.js keys the job-end money floor on — this reading is EXACT).
-        // `stepWallStop` is null here by construction: that record is written only by
-        // the head-of-attempt check, and the meter is read BEFORE it, so a step the
-        // meter stopped never reached it.
-        emitWallHalt({ cutMidCall: false, phase: `step:${step.id}`, stepsDone: idx, stepsPlanned: plan.steps.length });
-        // …and the escalation, because ralph's own names `step-variance` (F11: the
-        // outcome and the escalation must name the SAME category, or two instruments
-        // disagree about one event). The meter's sentence is not discarded — it rides
-        // in the detail beside the clock's numbers and the run's measured trend, so the
-        // human reads why the step was stopped AND which lever fits.
-        emit('escalation', {
-          category: 'wall-halt', decisionReady: true, phase: `step:${step.id}`,
-          decision: `The run reached its wall-clock cap while step "${step.id}" was running. Time ran out, not capability — the verdict the run already has stands.`,
-          options: WALL_OPTIONS,
-          detail: `requested ${clock.requestedMs}ms, elapsed ${clock.elapsedMs()}ms. `
-            + `The meter stopped the step first: ${lastEscalation?.detail ?? '(none)'} `
-            + `Progress trend: ${stopTrend.trend} — ${stopTrend.reading}; ${stopTrend.lever}.`,
-        });
-        return 'wall-halt';
-      }
+      if (clock.expired()) return wallHaltTerminal('The meter stopped the step first');
       return `step-red:${step.id}`;
     }
     // Any OTHER terminal escalation category is NOT a capability failure: a

@@ -216,6 +216,12 @@ if (arg('approve') !== specHash) {
   if (dead) {
     const rs = dead.restart;
     console.log(`  spine    ${deadSpineFile}  → stopped on ${dead.endOutcome ?? 'a halt'}`);
+    // D4a — SAY when the gate opened on a derivation rather than on the recorded name.
+    // The operator is looking at a spine that says `step-red`; without this line the
+    // resume reads as the gate having quietly stopped refusing.
+    if (dead.wallDerivedHalt) {
+      console.log('           recorded step-red RE-READ as wall-halt off this run\'s own wall-bounded record — the wall was crossed before it ended');
+    }
     console.log(`  spent    ${dead.spendComplete ? '' : '≥'}$${rs.priorSpentUsd.toFixed(4)} and ${(rs.priorWallMs / 60000).toFixed(1)}min before the halt — FOLDED IN, so this restarts on the REMAINDER`);
     console.log(`  left     $${(spec.budgetUsd - rs.priorSpentUsd).toFixed(4)} of $${spec.budgetUsd}${WALL_MS === null ? '' : ` and ${(/** @type {number} */ (RESUME_WALL_MS) / 60000).toFixed(1)}min of ${WALL_MS / 60000}min`}`);
     // WHERE it picks up. Without this line "resume" covers two runs that cost very
