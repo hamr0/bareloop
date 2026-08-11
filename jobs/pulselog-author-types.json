@@ -7,7 +7,7 @@
     "unit": "day",
     "every": 1
   },
-  "budgetUsd": 4,
+  "budgetUsd": 5.5,
   "maxWallMs": 2700000,
   "writeScope": [
     "src/**"
