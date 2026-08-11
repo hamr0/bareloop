@@ -4071,3 +4071,148 @@ the instrument that decides it, and until they say so the cheap retry stands.
 - **`maxRevisions` is NOT tighten-only today** — it plumbs as a plain option with no clamp.
   `SCOUT_ATTEMPTS` implements the ruling's direction; making the revision cap match is a
   separate one-line change, deliberately not folded in.
+
+## Addendum v1.59 — 2026-08-11 (a fence denial ends the ATTEMPT and never the RUN, a declared count stage carries the LINES it counted, and W-2 closes over the sibling terminals — hamr)
+
+The first full sign-and-run of an AUTHORED close (`jobs/pulselog-author-types.json`) ran end
+to end this round: five paid legs, $10.35 across the round, ending in the programme's first
+authored-close **green** (`u-msoc6t8v`, $4.06 for the chain). Three of the fixes it paid for
+change doctrine rather than code shape; they are recorded here. Everything else in the round
+is a finding, not a rule (F94–F99).
+
+### 1. `gate-red` is EXTINCT as a mintable terminal — a deny streak bounds the ATTEMPT (`24e7c03`)
+
+**What used to happen.** `u-msn227nq` was converging — the declared close's
+`typecheck-in-scope` stage read **46 → 10 → 8** across three iterations, no strikes. Starved
+of an address (see §2), the worker went looking for where the number came from and read at
+three of the arbiter's own books: `.smoke`, `.litectx`, `gate-audit.jsonl`. **The fence
+denied all three, correctly, on the explicit `fs.deny` inside readScope.** bare-agent's
+BA-11 deny-spin guard then ended the loop on the three-consecutive streak and returned
+`denied:shell_read`, and `planrun` mapped that to a **terminal `gate-red`** — escalate, never
+retry. The run died with **$1.77 and 21.6 wall-minutes unspent**, on a fence that had worked
+perfectly.
+
+**The rule now.** A deny streak joins `max_turns` in the **bounded-attempt lane, on both
+worker surfaces**: the attempt ends, the close judges the partial work, the gap feeds
+forward, the caps are unchanged, and the loop continues. `gate-red` is no longer a terminal
+the plan flow can mint.
+
+**Why this is the F32 routing rule and not a new one.** F32 already split a stop by CAUSE:
+a crash at precheck, with zero worker writes, or on an unreadable audit stays an instrument
+stop; a stop arriving AFTER gate-audited worker writes is the non-terminal `worker-crash`.
+A fence denial is the most benign member of that second class — it is the system working as
+designed, on a run that has already produced audited writes. Routing it as an instrument
+stop was the misclassification.
+
+**What this does NOT license.** The fence is untouched: nothing is widened, no book becomes
+readable, no denial becomes an allow. The gate's decision is exactly what it was; only the
+RUN's reaction to being told "no" three times in a row changed. A genuine scope escape still
+produces the same denials and the same audit rows — it now costs one bounded attempt instead
+of the whole run.
+
+### 2. A declared count stage carries the LINES it counted (`5fe34a3`)
+
+**The rule:** when a `count-not-worse` stage renders a red gap, it carries the matched lines
+themselves, not only how many there were. `"8 match(es)"` with no file, no line and no error
+code is a number with nowhere to open — and it is **F28's rule** (*the close's output format
+is part of the contract; a gap-bound that buries failures defeats the arbiter*) reappearing
+one rung later, inside the authored-close executor, with the gapKeep machinery it needed
+sitting in the same file.
+
+**Scope, deliberately narrow:**
+
+- Only the **KEPT** lines — the ones that survived the scope filter and reached aggregation,
+  which is to say the ones the count is actually made of. A scope-DROPPED line is never
+  included: it was never counted, and naming it would aim the worker outside its own
+  population (the one-population law, F84).
+- The lines ride the **existing** channel and invent none: the declared stage's `gapKeep`
+  PREFIX on every line (Layer R's `redKeep` is DERIVED from that prefix), the existing
+  `GAP_LINE_CAP`, and the `GAP_TRIM_MARKER` announcement on overflow.
+- The value is still computed from `values`, never from the rendered list; duplicates
+  collapse as a rendering choice only.
+
+**The signature is untouched.** The verdict logic, the baselines, the counting, the
+`closeDecl` schema and `detail` are all unchanged — **nothing here can flip a signed spec
+hash**, and the spine record is the same size it was. Only what the executor TELLS the worker
+changed. The licence is the one `pattern-absent-in-diff` already runs under: the instrument
+NAMED these lines, and echoing what it named is not the barred move of naming a culprit it
+never reported.
+
+**Measured, not asserted.** The identical job, same patient, same hash: with the count-only
+gap it stalled at 8 and died (`u-msn227nq`); with the lines it went **67 → 8 → 1 → 0** in
+three iterations and the step greened (`u-msoaovx9`).
+
+### 3. W-2 closes over the sibling terminals — a time-stop is NAMED a time-stop (`4d52768`, `77a8e6c`)
+
+W-2's ruling (*"when time is up, keep the grade we already have and stop"*) was implemented
+on the cap-halt path and not on the variance path. `u-msmt91t3` minted **`step-red` 9.9
+seconds past its own wall**, having recorded the crossing in its own spine 5.6 seconds
+earlier. The terminal's NAME is what gates resume (`RESUMABLE_HALTS` admits `cap-halt` and
+`wall-halt`), so a mislabelled `step-red` silently costs a run its resumability.
+
+Now doctrine, across the class:
+
+- **Every variance and cap-halt terminal re-reads the clock before minting**, through ONE
+  shared `wallHaltTerminal` emission site — one site, one spelling. With time left the
+  behaviour is byte-identical (pinned control).
+- **A stop past the wall never funds a replan draft**, on ANY trigger (hamr: *"it's a replan
+  that is doomed to die"*). W-2's *"no new step starts"* now covers the drafting call itself;
+  a declined grant is not consumed.
+- **`step-stalled` is pinned OUT of the class, by test (E3).** `run.js` keys
+  `spendComplete:false` on that exact outcome name because an abandoned-and-reissued call may
+  already be billed; relabelling it would report a floor as an exact total — F6 in a
+  self-heal coat.
+- **Both allowances exhausted reports the MONEY cut** (`cap-halt` wins over `wall-halt`).
+  hamr: *"understood"*. A one-liner to flip if ever wanted; recorded so the choice stays
+  visible.
+- **A resume may DERIVE `wall-halt` from a recorded `step-red`** iff that run's own spine
+  shows the wall crossed before the terminal — a primary-record derivation that never
+  rewrites the recorded outcome and announces itself with a banner.
+
+**Rejected, on hamr's own challenge: a fundability floor.** Refusing to start a leg that
+cannot afford its close would need a threshold, and any threshold available today would be
+picked from a handful of observed close timings. Threshold-setting is arbiter territory and
+numbers are not picked from small samples. Revisit only if a bound can be MEASURED from the
+runs' own close durations.
+
+### 4. The drafter learns its worker has no shell — a PROMPT REGISTER, never a regex (`4d52768`)
+
+A replan wrote an action opening *"Run `npx tsc --strict --noEmit`…"*. The worker has no
+`run` verb — `run` is locked out of TOOL_MENU permanently — so it obeyed as far as its verbs
+allowed: **25 reads and greps, zero edits**, a whole step spent hunting six errors by hand.
+The plan validated clean; only the English was impossible.
+
+The no-shell law now sits in the **drafter** prompt, unconditionally, beside the
+exit-freedom law, with `read`/`grep` glossed as the worker's only eyes. The scout and worker
+prompts already carried it; the drafter — the one component that WRITES instructions — did
+not.
+
+**The regex was explicitly refused, citing F86 as the anti-precedent.** A pattern over
+action prose would false-red the operator's own signed goal text, which legitimately
+describes the end state as *"npx tsc --strict --noEmit reports zero errors"*. Where the same
+prose can be model-authored or operator-signed, the instrument is a prompt register, not a
+matcher.
+
+### 5. Open / parked — named, not papered
+
+- **The deny-streak reroute (§1) is shipped and test-proven but NOT live-fired.**
+  `u-msoaovx9` probed the arbiter's books four times and the fence denied all four, but the
+  gate audit shows allowed reads interleaved — the longest consecutive run was two, so BA-11
+  never tripped. Its live proof is still owed.
+- **A step carries exactly ONE check** (`MAX_EXITS_PER_STEP = 2` minus the mandatory
+  `tree-changed` pairing), so a write step's in-run check can be satisfiable by the very
+  suppressions the close forbids. `u-msoaovx9` greened its step with 16 casts in the tree;
+  only the close's own `no-suppressions` stage saw them, and the fix loop converted it at the
+  cost of a full extra cycle. Raising the ceiling is arbiter territory and must not be done
+  to fix a wording problem. PARKED for hamr.
+- **No validator red for a wrong-format parser** — needs stage → tool attribution, which
+  `npm run typecheck` defeats mechanically. PARKED (F94).
+- **`isArbiterBook` does not know about `.smoke/`** — masked only incidentally on patients
+  whose `.gitignore` default-denies dot-directories. PARKED.
+- **Replan-ceiling-on-resume semantics remain undecided.** `u-msn0uccv` resumed into a plan
+  it could not replace with the grant already inherited-spent, and spent $0.82 proving it
+  (F97). Whether a resume should ever refill the ceiling is hamr's call; nothing was changed.
+- **D4a's derivation (§3) has no expiry** — it can only match spines from the defect-era
+  shape it was built against, and nothing decides when to remove it. PARKED.
+- **A class sweep is proposed and unfired:** every terminal-minting site and every
+  clock/wallet read as one table, audited class-wide against W-2 and F6. Awaiting hamr's go.
