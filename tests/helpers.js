@@ -107,6 +107,12 @@ export function scriptedNativeFactory(sessions) {
       async generate(_messages, tools = []) {
         const plan = sessions[Math.min(s++, sessions.length - 1)];
         let turns = 0; let toolCalls = 0; let lastText = ''; let error = null;
+        // BA-11 on the NATIVE surface, spelled exactly as provider-clipipe-mcp.js
+        // spells it: a single deny stays ADVISORY so the model can pivot to an
+        // allowed tool; only a STREAK with no allowed call in between ends the
+        // session with the `denied:<tool>` terminal. Any allowed call resets it.
+        let consecutiveDenials = 0;
+        const DENY_CAP = 3;
         const meter = async (/** @type {object} */ arg) => {
           try { await onTurn(arg); } catch (e) {
             if (e && /** @type {any} */ (e).name === 'HaltError') { error = error ?? `halt:${/** @type {any} */ (e).message}`; return false; }
@@ -124,7 +130,13 @@ export function scriptedNativeFactory(sessions) {
             let verdict;
             try { verdict = await policy(step.tool, step.args, undefined); }
             catch (e) { if (e && /** @type {any} */ (e).name === 'HaltError') { error = `halt:${/** @type {any} */ (e).message}`; break; } throw e; }
-            if (verdict !== true) continue; // deny is advisory — the tool never runs (the fence held)
+            if (verdict !== true) {
+              // deny is advisory — the tool never runs (the fence held)
+              consecutiveDenials += 1;
+              if (consecutiveDenials >= DENY_CAP) { error = `denied:${step.tool}`; break; }
+              continue;
+            }
+            consecutiveDenials = 0;
             const tool = tools.find((t) => t.name === step.tool);
             if (tool) await tool.execute(step.args);
           }

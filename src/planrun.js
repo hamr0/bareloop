@@ -1422,19 +1422,19 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         }
         // a maxTurns session is a BOUNDED attempt, not an escalation — the same
         // role loop.stop() plays on the Loop path: judge the partial work and
-        // feed the gap forward (the CLI preserves lastText, BA-5).
-        if (r.error === 'max_turns') {
-          attemptBounded = roundIteration;
-          emit('attempt-bounded', { phase, iteration: roundIteration, cap: attemptRounds, native: true });
-          return r;
-        }
+        // feed the gap forward (the CLI preserves lastText, BA-5). A DENIAL
+        // STREAK is the same shape and takes the same lane (see the Loop path's
+        // note below — one doctrine, both surfaces).
         if (r.error) {
+          if (r.error === 'max_turns' || r.error.startsWith('denied:')) {
+            attemptBounded = roundIteration;
+            emit('attempt-bounded', { phase, iteration: roundIteration, cap: attemptRounds, native: true, reason: r.error });
+            return r;
+          }
           const err = /** @type {CategorizedError} */ (new Error(`native session: ${r.error}`));
-          // halt → cap-halt, denial streak → gate-red; a bridge/session terminal
-          // (bridge-failed, session_timeout, session:*) is provider-owned transport
-          err.category = r.error.startsWith('halt:') ? 'cap-halt'
-            : r.error.startsWith('denied:') ? 'gate-red'
-            : 'provider-red';
+          // halt → cap-halt; a bridge/session terminal (bridge-failed,
+          // session_timeout, session:*) is provider-owned transport
+          err.category = r.error.startsWith('halt:') ? 'cap-halt' : 'provider-red';
           err.lib = 'bare-agent';
           throw err;
         }
@@ -1570,12 +1570,24 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       } catch (e) {
         throw categorize(e).err;
       }
-      // same error-return taxonomy as interpret's ask (one map, same doctrine):
-      // halt → cap-halt, denial streak → gate-red, API truncation → provider-red
+      // BA-11's deny streak is a BOUNDED ATTEMPT, not a terminal. It is the same
+      // shape `loop.stop()` has at the round bound thirty lines up: the attempt
+      // ran, produced real work, and was cut short by a governance bound doing
+      // exactly its job — the fence HELD, which is the opposite of a fault. So it
+      // takes the same lane: judge the partial work, feed the gap forward, the
+      // loop continues under unchanged caps. Routing it as a terminal killed a
+      // converging run with money and wall left (u-msn227nq). The native surface
+      // takes the identical lane above — one doctrine, both surfaces.
+      if (r.error && r.error.startsWith('denied:')) {
+        attemptBounded = roundIteration;
+        emit('attempt-bounded', { phase, iteration: roundIteration, rounds: roundsThisAttempt, cap: attemptRounds, reason: r.error });
+        return r;
+      }
+      // the remaining error-return taxonomy (one map, same doctrine as native's):
+      // halt → cap-halt, API truncation → provider-red, anything else is wiring
       if (r.error) {
         const err = /** @type {CategorizedError} */ (new Error(`worker loop: ${r.error}`));
         err.category = r.error.startsWith('halt:') ? 'cap-halt'
-          : r.error.startsWith('denied:') ? 'gate-red'
           : r.error.startsWith('truncated:') ? 'provider-red'
           : 'interpreter-red';
         err.lib = 'bare-agent';

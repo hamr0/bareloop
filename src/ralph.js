@@ -590,6 +590,11 @@ export async function ralph({ middle, close, judge, capRuns, ladder, emit, redac
       const DECISIONS = {
         'cap-halt': [`Budget gate tripped mid-run (${e && e.message}). Continue with a higher cap, change approach, or stop?`,
           ['raise the cap and rerun', 'change the middle/harness', 'abandon the task']],
+        // No site in this tree mints `gate-red` any more: a BA-11 denial streak is
+        // a bounded attempt now (planrun's two `ask`s), not a terminal, because the
+        // fence HOLDING is governance working, not a fault. The entry stays because
+        // this catch is a dumb passthrough — it files whatever category the thrower
+        // names, so an unlisted one would read out with the generic text.
         'gate-red': ['The gate denied an action mid-run — the harness asked for something outside its scope.',
           ['widen the write scope deliberately', 'change the middle/harness', 'abandon the task']],
         'provider-red': ['The provider path failed mid-run (transport, not logic) — no verdict exists and the spend for the failed call is unknown (F6).',

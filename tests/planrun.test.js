@@ -2056,6 +2056,97 @@ console.log('FAILED close: the test never imports the module'); process.exit(1);
   assert.ok(rounds.every((r) => 'costUsd' in r), 'every surviving round still carries its cost field (F6)');
 });
 
+// ── a DENY STREAK ends the ATTEMPT, never the RUN ───────────────────────────
+//
+// Run u-msn227nq: the count stage told the worker "8 match(es)" and no address,
+// so it went looking for the arbiter's own books — .smoke, .litectx,
+// gate-audit.jsonl. The fence denied all three, exactly as designed. Then
+// bare-agent's BA-11 deny-spin guard returned `denied:shell_read`, this router
+// filed it as terminal `gate-red`, and a converging run died with $1.77 and 21
+// minutes left on the wall.
+//
+// The guard is right and stays: a spinning worker must not burn the wallet. What
+// was wrong is the CATEGORY. A denial streak is the same shape as `max_turns` —
+// the attempt ran, produced real work, and was CUT SHORT by a governance bound.
+// So it routes the same way: bounded attempt, judged, gap forward, loop continues
+// under unchanged caps. The fence held; nothing escalates because governance
+// worked. `halt:` (money) and `truncated:` (transport) are untouched — their own
+// tests above and below pin them.
+//
+// The fixture drives the REAL mechanism end to end: a real Gate with the real
+// deny list, real out-of-scope tool calls, the real Loop's own streak counter.
+// Nothing hands the router a hand-made error string.
+const DENY_PLAN = (wd) => JSON.stringify({
+  schema: 'plan-v1',
+  steps: [{
+    id: 'write-test', action: 'Write tests/test_x.mjs asserting the module exports.',
+    tools: ['read', 'write'], rounds: 6, target: 'tests/test_x.mjs',
+    exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+  }],
+});
+/** the three arbiter books the live worker probed, in the order it probed them */
+const ARBITER_BOOKS = (wd) => ['.smoke', '.litectx', 'gate-audit.jsonl'].map((p) => join(wd, p));
+
+test('DENY STREAK (loop path): a worker the fence stops three times has its ATTEMPT bounded — the run judges the partial work and carries on, it does not die gate-red (u-msn227nq)', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: DENY_PLAN(wd) },
+    // attempt 1: a REAL write that lands (so there is partial work to judge) but
+    // does not satisfy the check, then the three denied probes that trip BA-11
+    {
+      toolCalls: [
+        tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'no assertion yet\n' }),
+        ...ARBITER_BOOKS(wd).map((p, i) => tcall(`d${i}`, 'shell_read', { path: p })),
+      ],
+    },
+    // attempt 2: fed the check's gap, it writes the real thing
+    { toolCalls: [tcall('t2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok — asserts x\n' })] },
+    { text: 'wrote it' },
+  ]);
+  const { outcome, events } = await go(wd, provider);
+
+  assert.equal(outcome, 'green', 'the deny streak cost an attempt, not the run');
+  const bounded = events.filter((e) => e.type === 'attempt-bounded');
+  assert.equal(bounded.length, 1, 'exactly one attempt was bounded');
+  assert.match(bounded[0].reason ?? '', /^denied:/, 'the record names WHICH bound cut the attempt — a deny streak is not a round bound');
+  assert.equal(events.filter((e) => e.type === 'escalation' && e.category === 'gate-red').length, 0,
+    'the fence doing its job is not an escalation: governance worked, so nothing is decision-ready');
+  // the run really did keep going: two graded attempts, not one
+  assert.ok(events.filter((e) => e.type === 'exit-eval').length >= 2,
+    'the bounded attempt was JUDGED and a second attempt followed');
+  assert.equal(existsSync(join(wd, 'tests', 'test_x.mjs')), true);
+
+  // and the denials were REAL — the fence recorded them, the fixture did not fake them
+  const audit = readFileSync(join(wd, 'gate-audit.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const denies = audit.filter((r) => r.decision === 'deny' && r.action?.type === 'read');
+  assert.ok(denies.length >= 3, `the gate really denied the arbiter-book probes (${denies.length} deny records)`);
+});
+
+test('DENY STREAK (native path): the clipipe surface routes its own denial terminal the same way — one bound attempt, run continues', async (t) => {
+  const wd = makePatient(t);
+  const jv = validateJob(JOB(wd, { provider: 'clipipe-subscription' }));
+  const nativeProvider = scriptedNativeFactory([
+    { turns: [{ text: 'scout' }] },
+    { turns: [{ text: DENY_PLAN(wd) }] },
+    {
+      turns: [
+        { tool: 'shell_write', args: { path: join(wd, 'tests', 'test_x.mjs'), content: 'no assertion yet\n' } },
+        ...ARBITER_BOOKS(wd).map((p) => ({ tool: 'shell_read', args: { path: p } })),
+      ],
+    },
+    { turns: [{ tool: 'shell_write', args: { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' } }, { text: 'now wrote it' }] },
+  ]);
+  const { events, emit } = collector();
+  const outcome = await runPlan(jv.job, { workdir: wd, nativeProvider, emit, capRuns: 3, remainingUsd: () => 1.5 });
+
+  assert.equal(outcome, 'green', 'the native deny terminal is a bounded attempt too — one surface, one doctrine');
+  const bounded = events.filter((e) => e.type === 'attempt-bounded' && e.native === true);
+  assert.equal(bounded.length, 1);
+  assert.match(bounded[0].reason ?? '', /^denied:/);
+  assert.equal(events.filter((e) => e.type === 'escalation' && e.category === 'gate-red').length, 0);
+});
+
 /** the fix-loop fixture: a close STRICTER than the check, so every step greens on
  * its own exits and the outer close still reds — the one shape that opens the
  * close-fix loop. @param {string} wd */
