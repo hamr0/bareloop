@@ -1429,11 +1429,20 @@ Read in bareguard's own PRD and corpus, 2026-08-09, before anything was written 
 - **The shipped half is already there:** `gate.annotate` and its fact envelope
   `{ surface, verdict, where, meta }`, released in **bareguard 0.7.0** (their `gate.js:600-619`,
   PRD §8.2). Field semantics, exactly as shipped: **`surface` (bool) is the ONLY load-bearing
-  field** — it alone is what makes an audit row read BROKE; **`verdict`** is an optional string;
-  **`where`** is an optional string **capped at 300 chars** (the field is `where`, *not* `text`);
-  **`meta`** is an optional bag, and it is where `{field, stated, returned}` ride. **`kind` DOES
+  field** — it alone is what makes an audit row read BROKE; **`verdict`** is an optional string
+  (capped at 80 chars — immaterial for `honored`/`broke`); **`where`** is an optional string
+  **capped at 300 chars** (the field is `where`, *not* `text`); **`meta`** is an optional bag
+  **capped at 1000 bytes**, and it is where `{field, stated, returned}` ride. **`kind` DOES
   NOT EXIST** — bareguard's own **E6e** killed it, and it sits in this ask's own
   rejected-alternatives table below. That envelope is Axis B's detector, and it needs no change.
+- **The two caps truncate DIFFERENTLY, and the maintainer measured it against the shipped gate
+  (2026-08-12).** `where` truncates **SILENTLY**: their probe put F98's own exemplar — the 8 `tsc`
+  error lines — through `where` and it came out cut mid-token at `src/backup.js(59,4`, **six of
+  eight addresses gone, no marker**. `meta` truncates **VISIBLY** (`{_truncated: true, bytes: N}`),
+  and their 751-char evidence string **survived intact** under it. **The caps themselves are
+  load-bearing and are NOT to be raised** — they keep an audit-line append atomic under `PIPE_BUF`,
+  with headroom for post-redaction expansion. This asymmetry is a contract clause of this ask; it
+  is stated in requirement 6 below.
 - **The judge itself is POC-only** — `harness-code-mode/e6-judge.mjs`, never shipped — and
   **bareguard's locked design says bareguard never calls an LLM: the judge is caller-side by
   law** (PRD ~:1930, ~:2320).
@@ -1536,6 +1545,20 @@ judged-floor analog, and **the judge is the ceiling** — verifier hardening nev
    rule was paid for. When the lines were carried instead of the count, the identical job went
    **67 → 8 → 1 → 0** and greened. A judge's `where` is that same field: it either carries the
    address or it manufactures the genre that stalls.
+
+   **Where the mechanical content RIDES — a contract clause, not a style note.** `where` is a
+   **ONE-LINE ADDRESS**, ≤300 chars: *"price: stated €280, invoice shows €400"*, or a single
+   `file(line)` locus. **BULK evidence rides `meta`** — the F98 exemplar is **`meta` content**, all
+   8 lines, with `where` carrying the one-line locus that points at them. **The reason is the
+   measured truncation asymmetry** (field semantics, above): `meta` clips **visibly**
+   (`{_truncated: true, bytes: N}`) at 1000 bytes and a 751-char evidence string rode it intact,
+   while `where` clips **silently** at 300 — the maintainer's probe put those same 8 lines through
+   `where` and got `src/backup.js(59,4`, **six of eight addresses gone with no marker**. A judge
+   that stuffs its evidence into `where` therefore emits a **silently clipped row** — and that row
+   is exactly what the human reads at the HITL, where a missing address cannot be recovered and
+   nothing announces that it went missing. **This narrows the CHANNEL, never the demand:** the
+   mechanical genre is still mandatory in both fields — a one-line `where` that says *"seems off"*
+   fails this requirement exactly as it did before.
 7. **Validate against the REAL instrument.** Acceptance runs on **real uncrafted egress
    artifacts**, never fixtures authored to contain the result; **the case set must be able to
    FAIL**.
@@ -1546,7 +1569,9 @@ judged-floor analog, and **the judge is the ceiling** — verifier hardening nev
 
 1. **Clear-case floor:** on the shipping tier, the frozen set is graded at **≥ E6i's clear-case
    performance** (7/7 at `haiku-4.5`, ≥5 samples/case), reported **per case with itemized reds** —
-   not as an aggregate percentage.
+   not as an aggregate percentage. **Graded against the fixture's CONTENT HASH** (note (c) below):
+   the acceptance report **names the hash it graded**, so *"≥ E6i 7/7 on the same frozen cases"* is
+   checkable against frozen bytes rather than against a remembered set.
 2. **The €280-class false positive reads `honored`**, at ≥ the measured 5/5. A judge that flags a
    compliant answer is worse than no judge — E6e's every miss was an over-call, so this criterion
    is the one most likely to fail and must not be softened.
@@ -1573,7 +1598,7 @@ judged-floor analog, and **the judge is the ceiling** — verifier hardening nev
    until someone audits the rows. This criterion exists because that exact path was found in
    validation (see the 2026-08-12 note below); a harness that cannot fail it certifies nothing.
 
-### 2026-08-12 — envelope citation CORRECTED, and bareguard's frozen case set ACCEPTED as the calibration seed
+### 2026-08-12 — envelope citation CORRECTED (with its root cause), field budgets MEASURED, and bareguard's frozen case set ACCEPTED as a hashed portable fixture
 
 **(a) The correction, and its source.** bareguard's maintainer session validated this ask against
 their **shipped source** (`gate.js:600-619`, PRD §8.2) and found our envelope citation **wrong**.
@@ -1590,6 +1615,26 @@ would have **failed open in silence** — which is now criterion 7's negative co
 else in BA-20 — every measurement and every E6-series citation — was checked in the same pass and
 **stands unchanged**.
 
+**The ROOT CAUSE, both halves, neither softened.** The maintainer's session then found *where* the
+sketch came from: **bareguard's own PRD prints the retired shape in seven places**, including the
+**dataflow authority at §6.7 (~:1954), which spells `text: where`** — a field **the shipped API
+ignores**. So our citation copied a **wrong authority doc**, not a careless paraphrase: the
+document this ask cites as the design of record was itself stale at the exact line the contract
+was read from. **AND our own rule still applies undiminished:** *read the library SOURCE before
+filing an upstream ask.* `gate.js` was the truth, it was one file away, and **we did not read it**
+— a stale doc explains the error; it does not excuse skipping the source, which is the whole point
+of the rule BA-2's withdrawal paid for. **Their PRD fix is queued on their side** — their
+operator's call, not ours, and this ask does not wait on it: the shipped source is the citation of
+record here.
+
+**Field budgets, measured on the shipped gate.** The same probe measured what the caps actually do
+— `where` 300 chars **silent**, `meta` 1000 bytes **visible**, the 8-line F98 exemplar clipped to
+`src/backup.js(59,4` under `where` and intact at 751 chars under `meta`. Folded in **twice**: into
+the field-semantics citation above, and as the routing clause in **contract requirement 6**
+(one-line address in `where`, bulk evidence in `meta`). **The caps are not to be raised** — they
+are what keeps an audit-line append atomic under `PIPE_BUF`, with headroom for post-redaction
+expansion.
+
 **(b) The frozen case set — bareguard's offer ACCEPTED.** bareguard offered its **frozen labeled
 case set** — the E6 harness corpus, including **the €280 false-positive trap** and **the forged
 injection case** — as the seed of the calibration set deliverable 2 demands. **bareloop accepts**,
@@ -1599,6 +1644,24 @@ same frozen cases**, rather than a floor re-derived from a set rebuilt later —
 the "case set authored to contain the result" failure that contract requirement 7 forbids.
 Widening the set is expected; **replacing** the seed cases is not, since the 7/7 and the 5/5 lose
 their meaning the moment the cases move.
+
+**(c) The FORM of that case set — bareloop's answer: YES, a portable frozen fixture with a content
+hash.** bareguard asked what shape to hand the cases over in. The answer is **not** "point
+bare-agent at the POC": the cases must come **OUT of `run-e6i.mjs`** and into a **standalone frozen
+fixture**, one row per case, fields **`{label, verbatim request, artifact, expected verdict, sample
+count}`** — **consumable by bare-agent with no POC scaffolding**, no harness import, nothing to
+re-run to read it. The E6i semantics demand exactly these fields and nothing more: the **verbatim**
+request (non-negotiable 1 — never the paraphrase), **ONE** structured artifact (the E6b contract
+clause), the binary expected verdict, and the sample count that makes criterion 1's ≥5-samples/case
+base-rate rule checkable per row rather than per battery.
+
+**The fixture file carries a CONTENT HASH, and acceptance criterion 1 cites it.** That is what
+makes *"≥ E6i 7/7 on the same frozen cases"* **literally checkable against frozen bytes** instead
+of against a set someone believes is the same one — the same discipline as bareloop's own
+**signed-spec hashes**, where the hash is what makes the signature mean anything. **Frozen means
+frozen:** a post-hash edit — widening, relabelling, a corrected artifact — **is a NEW hash**, and
+the acceptance report **names which hash it was graded against**. A grade whose hash is not named
+is not a comparison; it is a memory.
 
 ### Not asked (recorded, so nobody re-opens them)
 
