@@ -394,3 +394,105 @@ test('§3 banner: the runner prints the folded line through THIS function — a 
   assert.match(src, /wall {6}\$\{wallLine\(/, 'the banner calls the shared helper');
   assert.doesNotMatch(src, /\$\{elapsedMin\}min of/, 'and the old leg-only spelling is gone, not merely shadowed');
 });
+
+// ── F97 — the DOOMED RESUME banner ──────────────────────────────────────────
+//
+// u-msn0uccv spent $0.82 re-entering the exact plan that WAS the diagnosed defect,
+// with `priorReplans: 2` and `priorReplanGrantUsed: true` on its own `job-start` —
+// the one channel that could have replaced the impossible action was spent before
+// the leg opened. Nothing in the library was at fault; the DECISION to fire was, and
+// the read that would have refused it is $0 and sits in the spine the preview gate
+// already parses.
+//
+// So the predicate lives here, beside `wallLine`, for `wallLine`'s reason: the script
+// runs on import, and a banner nothing can drive is a banner nothing can prove fires.
+// It is a WARNING only — it never blocks and never changes what the run does.
+import { doomedResume } from '../scripts/u-readout.mjs';
+
+/** the restart fold as `readResume` hands it to the banner, F97's own numbers */
+const F97 = { seed: { phase: 'steps' }, replans: 2, replanGrantUsed: true };
+
+test('§F97 predicate: re-entering the reloaded PLAN with the replan ceiling spent is the doomed shape', () => {
+  assert.equal(doomedResume(F97), true,
+    'phase "steps" reloads the accepted plan verbatim (scout-skipped {reason:"resumed"}), and with both the ceiling and the arbiter\'s extra spent nothing can redraw it');
+  assert.equal(doomedResume({ ...F97, replans: 1 }), true,
+    'the ceiling is ONE replan plus the arbiter\'s one extra — at 1 + grantUsed the ledger is just as empty as at 2');
+});
+
+test('§F97 predicate CONTROL: a checkpoint at the CLOSE is not the doomed shape — every step finished and the fix loop is a different channel', () => {
+  assert.equal(doomedResume({ ...F97, seed: { phase: 'close' } }), false,
+    'nothing is re-entering a failed plan: the plan completed, and the outer close fix loop writes without a replan');
+});
+
+test('§F97 predicate CONTROL: with replan capacity LEFT the leg can redraw the plan, so no banner', () => {
+  assert.equal(doomedResume({ ...F97, replans: 0, replanGrantUsed: false }), false,
+    'a cold-ish resume has its whole ceiling');
+  assert.equal(doomedResume({ ...F97, replans: 2, replanGrantUsed: false }), false,
+    'the arbiter\'s one extra is still unearned — conditional capacity is capacity, and claiming zero here would be the banner crying wolf on the commonest resume there is');
+});
+
+test('§F97 predicate CONTROL: no plan checkpoint at all is the cold path — nothing is being re-entered', () => {
+  assert.equal(doomedResume({ seed: null, replans: 2, replanGrantUsed: true }), false,
+    'it halted before a plan was accepted, so the resume re-drafts and the ceiling is not what bounds it');
+  assert.equal(doomedResume({ replans: 2, replanGrantUsed: true }), false, 'an absent seed reads as no checkpoint');
+  assert.equal(doomedResume(null), false, 'and no restart at all is a cold launch');
+});
+
+test('§F97 predicate: a garbage ledger never SUPPRESSES the warning by reading as unspent — and never invents one either', () => {
+  // the fail-safe direction: this drives a WARNING, so an unreadable ledger must not
+  // silently mint "you have capacity". It also must not fire on a shape with no plan.
+  for (const bad of [NaN, Infinity, null, undefined, '2', -1]) {
+    assert.equal(doomedResume({ seed: { phase: 'steps' }, replans: /** @type {any} */ (bad), replanGrantUsed: true }), false,
+      `an unreadable replan count (${String(bad)}) is not evidence of an EXHAUSTED ceiling — the banner states a fact or stays silent`);
+  }
+  assert.equal(doomedResume({ seed: { phase: /** @type {any} */ (null) }, replans: 2, replanGrantUsed: true }), false,
+    'an unreadable phase is not a claim that a plan is being re-entered');
+});
+
+test('§F97 banner: the runner prints it through THIS predicate, and it WARNS rather than blocks', () => {
+  const src = readFileSync(RUNNER, 'utf8');
+  assert.match(src, /doomedResume\(/, 'the script drives the shared predicate rather than re-deriving the shape');
+  assert.match(src, /import \{ wallLine, doomedResume \}|import \{ doomedResume, wallLine \}/, 'imported from the readout module the tests can reach');
+  // WARNING ONLY: the F97 lesson is an operator pre-flight, not a new gate. A `die(`
+  // or a `process.exit` reached from this predicate would turn a $0 read into a
+  // refusal the operator never signed up for.
+  // scoped to the BANNER BLOCK — not a byte-window, which would sweep in the approval
+  // gate's own (correct, unrelated) `process.exit` two statements later and pass or
+  // fail on how long the prose above it happens to be
+  const at = src.indexOf('if (doomedResume(');
+  assert.ok(at > 0, 'the banner is a guarded block, so there is a block to bound');
+  const end = src.indexOf('\n    }', at);
+  assert.ok(end > at, 'and it closes at its own indent');
+  const block = src.slice(at, end);
+  assert.doesNotMatch(block, /\bdie\(|process\.exit/, 'the banner never blocks the resume');
+  assert.match(block, /console\.log/, 'it only prints');
+});
+
+test('§F97 banner E2E: the REAL preview prints it for F97\'s own spine shape, and stays silent on the control', () => {
+  // Rendered through the script, because a predicate nothing drives is F50's class:
+  // the operator's only sight of this read is the preview, and `doomedResume` returning
+  // true in a unit test proves nothing about what the banner does on a spine.
+  //
+  // F97's shape, spelled in the two records that carry it: `job-start` DECLARES the
+  // inherited replan ledger, and the window stops with the plan accepted and its step
+  // unfinished (no `outer-close`) — which is `phase: 'steps'`, the re-entry that
+  // reloads the plan verbatim.
+  const doomed = haltedSpine().filter((e) => e.type !== 'step-end' && e.type !== 'outer-close')
+    .map((e) => (e.type === 'job-start' ? { ...e, priorReplans: 2, priorReplanGrantUsed: true } : e));
+  const { code, out } = preview(['--resume', spineFile(doomed)]);
+  assert.equal(code, 0, 'a WARNING never changes the exit — the preview is still a readout');
+  assert.match(out, /at       step 1 of 1/, 'the fixture really is the steps re-entry (guard against warning on the wrong shape)');
+  assert.match(out, /⚠ SAME PLAN, NO REPLANS/);
+  assert.match(out, /F97 paid \$0\.82/, 'the lesson is cited so the operator can go read what it bought');
+  assert.doesNotMatch(out, /NOTHING LEFT/, 'and this is the OTHER warning: the allowance is fine, the shape is not');
+
+  // CONTROL: same ledger, same everything — but the checkpoint is at the close, where
+  // no failed plan is being re-entered. Two should-differ conditions, and the only
+  // difference between them is the phase.
+  const atClose = haltedSpine().map((e) => (e.type === 'job-start' ? { ...e, priorReplans: 2, priorReplanGrantUsed: true } : e));
+  const ctl = preview(['--resume', spineFile(atClose)]);
+  assert.equal(ctl.code, 0);
+  assert.match(ctl.out, /at       the close and its fix loop/);
+  assert.match(ctl.out, /replans  2 already spent/, 'the ledger line still prints — that one is not the warning');
+  assert.doesNotMatch(ctl.out, /SAME PLAN, NO REPLANS/, 'no banner: the plan finished, and the close fix loop writes without a replan');
+});

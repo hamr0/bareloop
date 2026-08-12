@@ -21,7 +21,7 @@ import { scanSecrets } from '../src/validate.js';
 import { readResume, resumeTreeGate } from '../src/reuse.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
-import { wallLine } from './u-readout.mjs';
+import { wallLine, doomedResume } from './u-readout.mjs';
 
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
@@ -280,6 +280,19 @@ if (arg('approve') !== specHash) {
       if (moneyLeft <= 0) console.log(`            budgetUsd $${spec.budgetUsd} is already spent (${moneyLeft < 0 ? `over by $${(-moneyLeft).toFixed(4)}` : 'exactly'})`);
       if (timeLeft !== null && timeLeft <= 0) console.log(`            maxWallMs ${/** @type {number} */ (WALL_MS) / 60000}min is already burnt`);
       console.log(`            RAISE the number(s) in jobs/${target.spec} first — that is a spec edit, so the hash below changes and you sign the new one. Resuming as-is re-halts immediately for a close precheck's worth of nothing.`);
+    }
+    // F97 — the DOOMED SHAPE, which is the warning the line above cannot give. That
+    // one fires when the ALLOWANCE is gone; this one fires when the allowance is fine
+    // and the leg still cannot get anywhere: `u-msn0uccv` re-entered the exact plan
+    // whose action was the diagnosed defect, with the replan ledger already spent, and
+    // step-redded for $0.82 with $0.60 and 9.8 minutes still on the clock. WARNING
+    // ONLY — a mechanical gap (a named wall, a count) converts on re-entry every time,
+    // and only the operator can tell which kind of gap this is.
+    if (doomedResume(rs)) {
+      console.log('  ⚠ SAME PLAN, NO REPLANS — this resume re-enters the plan that already failed, and cannot redraw it:');
+      console.log('            a resume does not re-draft (the spine says scout-skipped {reason:"resumed"}); the plan reloads byte-for-byte,');
+      console.log('            and the replan ceiling shown above is spent, so the one channel that could replace it is gone.');
+      console.log('            Fine if the gap is MECHANICAL (a named wall, a count) — doomed by construction if the PLAN is the defect: F97 paid $0.82 to find that out.');
     }
     if (dead.specHash && dead.specHash !== specHash) {
       console.log(`  NOTE     the halted run was signed under ${dead.specHash.slice(0, 12)}… and this spec hashes to ${specHash.slice(0, 12)}…`);
