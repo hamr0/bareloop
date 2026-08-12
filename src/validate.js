@@ -276,3 +276,50 @@ export function hasNestedQuantifier(src) {
   }
   return false;
 }
+
+/**
+ * The catastrophic-backtracking reject, applied to a WHOLE signed document by
+ * tree walk — `sweepSecretLiterals`'s twin, and for its reason: some signed
+ * documents carry their regexes at a depth no per-field check enumerates.
+ *
+ * WHY IT EXISTS (PRD v1.60 §1, an OPEN GAP now closed). v1.55 took F49's reject
+ * to the operator's own regex fields, and the admissibility sweep that backed it
+ * walked `jobs/*.json`. That is not the population of signed specs: a REGISTRY
+ * BRIDGE is signed the same way, ships its plans VERBATIM (reuse stores the
+ * whole plan, never a template), and lives outside `jobs/`, so a pathological
+ * pattern arriving through a bridge was never swept. Nothing had decided
+ * bridge-borne patterns were safe — the sweep was written against the directory
+ * that held every spec at the time and was never re-aimed.
+ *
+ * WHAT is rejected is UNCHANGED: `hasNestedQuantifier`, one inventory, shared
+ * with job.js and plan.js. Only WHERE it looks is wider. Widening the DETECTOR
+ * is arbiter-adjacent and stays parked (F49); widening the POPULATION is this.
+ *
+ * KEY-SCOPED, deliberately. `pattern` and `gapKeep` are the exactly-three regex
+ * fields F49 names (`artifact-written.pattern`, `judged.pattern`, `gapKeep`);
+ * every other string in a signed document is prose, a path or a command, and
+ * running a regex-shape scan over prose would red goals for containing `(a+)+`
+ * in a sentence. A field carrying a regex under a NEW key is not swept until
+ * this list names it — stated so the limit is read rather than rediscovered.
+ *
+ * COMPILE-FIRST, like both per-field callers: the scan's contract is that its
+ * input is valid regex syntax, and a string that does not compile is the OTHER
+ * validator's red. Two reds on one string bury the real one.
+ * @param {any} root
+ * @param {(code: string, path: string, detail?: string) => void} red
+ */
+export function sweepNestedQuantifiers(root, red) {
+  (/** @type {(node: any, at: string, key: string) => void} */
+  function sweep(node, at, key) {
+    if (typeof node === 'string') {
+      if (key !== 'pattern' && key !== 'gapKeep') return;
+      try { new RegExp(node, 'm'); } catch { return; }
+      if (hasNestedQuantifier(node)) {
+        red('invalid-value', at, `catastrophic-backtracking risk: a nested unbounded quantifier (${node}) can hang the untimed evaluator on the MAIN event loop, where the in-process stall fuse cannot fire (F49). Rewrite the pattern — drop the outer repeat, or match once.`);
+      }
+      return;
+    }
+    if (Array.isArray(node)) node.forEach((v, i) => sweep(v, `${at}.${i}`, key));
+    else if (isObj(node)) for (const [k, v] of Object.entries(node)) sweep(v, at ? `${at}.${k}` : k, k);
+  })(root, '', '');
+}

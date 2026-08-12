@@ -34,7 +34,7 @@
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { isObj, isNonEmptyString } from './validate.js';
+import { isObj, isNonEmptyString, sweepNestedQuantifiers } from './validate.js';
 import { TOOL_MENU, LOCKED_TOOLS } from './job.js';
 import { closeStagesOf } from './plan.js';
 
@@ -182,6 +182,19 @@ export function validateBridge(input) {
 
   if (!Array.isArray(e.history)) red('invalid-value', 'history', 'array of per-run rows');
   else e.history.forEach((/** @type {unknown} */ h, /** @type {number} */ i) => validateHistoryRow(h, `history.${i}.`, red));
+
+  // PRD v1.60 §1 — the operator-regex admissibility sweep, whose population was
+  // `jobs/*.json` and is now every signed spec wherever it lives. A bridge ships
+  // its plans VERBATIM, and a stored `artifact-written.pattern` reaches the same
+  // untimed exit evaluator on the same main event loop that F49 measured. The
+  // reject is UNCHANGED (`hasNestedQuantifier`, one inventory) — only the
+  // population is wider, so a clean bridge is byte-identically clean.
+  //
+  // Whole-entry rather than per-field, because a bridge's regexes sit inside a
+  // plan stored as opaque data (`isObj(o.plan)` is all this validator asserts
+  // about it): enumerating a path into a document this one deliberately does not
+  // parse is how a sweep goes blind the next time the plan schema moves.
+  sweepNestedQuantifiers(e, red);
 
   // R1's coherence, checked only once everything it reads is itself valid (a
   // second red on an already-broken field would bury the real defect): every green

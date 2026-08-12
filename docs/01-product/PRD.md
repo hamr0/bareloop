@@ -4241,6 +4241,14 @@ signed spec wherever it lives — a detector-population change, which is arbiter
 therefore hamr's to schedule. Until then the sweep's coverage is `jobs/*.json` only, and that
 sentence belongs anywhere the sweep is described as covering "operator regexes".
 
+**CLOSED 2026-08-12.** The population is now every signed spec wherever it lives:
+`validateBridge` sweeps the whole entry through `sweepNestedQuantifiers`, the same
+`hasNestedQuantifier` inventory `jobs/*.json` rejects through — WHAT is rejected is
+unchanged, only WHERE it looks is wider, so a clean bridge is byte-identically clean (both
+on-disk entries carry no regex at all). Widening the DETECTOR remains parked (F49). The
+sweep is key-scoped to `pattern`/`gapKeep`, the exactly-three regex fields F49 names; a
+regex arriving under a new key is not swept until that list names it.
+
 ### 2. The two-process resume guard is a point-in-time LIVENESS CHECK, not a held lock
 
 The guard that stops a second process resuming a run already in flight reads liveness **at
