@@ -7219,6 +7219,16 @@ system working.
 - **Reuse over invention, twice.** Neither cure added a channel, a schema field, or a spine
   record. Both routed a new case down an existing lane — which is also why neither can flip
   a signed hash.
+- **The next surface obligated to carry this law is N4's JUDGED STAGE.** A judged stage's red
+  is a gap renderer like any other, authored by a model rather than by a kind executor, and it
+  is the exact shape this finding says stalls: a verdict with no address. The obligation is
+  already written down on both sides — the softgreen ruling that *a judged red always carries
+  an itemized list (named items, counts), never one paragraph*, and BA-20's requirement 6 that
+  the judge's `where` be MECHANICAL genre (field, stated value, returned value, quoted
+  evidence). F98 is why neither is optional: this rule has now failed to graduate a hand-off
+  once, from operator-written closes into the authored-close executor, with zero distance
+  between them. Re-assert it against the judged path when N4 builds it — do not assume the
+  machinery being nearby means the machinery is used.
 
 ## F99 — the first authored-close GREEN, and the run that paid for it: the gap's own lines drove 67 → 8 → 1 → 0, an AUTHORED close caught the suppression genre with 17 addresses, and the worker undid them honestly
 

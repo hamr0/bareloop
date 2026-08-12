@@ -623,3 +623,75 @@ re-keys from genre to verdict class; the D5 guard battery keys off that same ver
 (tool-specific fills still resolve at composition time); declared commands get a deny-floor
 under a mandatory named work branch; and the close is never time-bounded — a declared
 `timeoutMs` is a stuck-backstop the model may only tighten.
+
+---
+
+## Addendum — 2026-08-12, N4's hitl SURFACE: three buttons, a 60-day pause, a forward-only unlock, the rubber-stamp rate that sets the default — and the rung's three scope answers
+
+**hamr's interview answers, given 2026-08-10**, when N4 was opened alongside the sign-and-run
+round rather than after it. The nine rulings of the 2026-08-07 closing addendum say what the
+hitl class MEANS; §1–§4 below say how a human actually meets it, and §5 records the three scope
+answers from the same interview. **Nothing in the frozen record is reopened** — ruling 1 (pause
+decision-ready, clock stopped), ruling 2 (evidence package, never a bare "approve?"), ruling 3
+(the human's stated reason IS the gap) and ruling 9 (quarantine) all stand exactly as written;
+what follows is their surface.
+
+### 1. The ask is three buttons, and two of them are red
+
+hitl is an **END-OF-RUN review**. The human is offered exactly three doors:
+
+- **accept** — green.
+- **rerun with editable text** — red. **The edited text itself IS the gap** — the human types
+  into the same channel the worker converts from, so ruling 3's "the human is the gap author"
+  is literal, not a paraphrase step. The run continues under remaining budget.
+- **cancel** — red, and **terminal**. No gap, no continuation.
+
+No fourth door, and no free-text-only variant: a red that is not one of these two is not a
+ruling the run can act on.
+
+### 2. Pause TTL is 60 days; a resume restarts the LAST STEP from its beginning
+
+A hitl pause is a wall-halt-shaped checkpoint with the clock stopped (ruling 1), and it keeps
+that checkpoint for **60 days**. On resume the run **restarts from the beginning of the last
+step** — not mid-step, not from the run's start. This is the step-level resume contract already
+in force (*"why would i want to waste more money on something i already started"*), applied to
+a stop whose cause is a person rather than a cap.
+
+### 3. Quarantine unlock is FORWARD-ONLY
+
+Ruling 9 withholds learning credit from a softgreen pass until the judged floor is proven. The
+unlock, when the floor is proven, is **forward-only and never reversible**: passes minted after
+the unlock may carry credit; quarantined passes minted before it stay quarantined permanently
+and are never retro-credited. Nothing walks the ledger backwards to re-mint what a wobbly ruler
+graded.
+
+### 4. The rubber-stamping datum sets the DEFAULT: lean "rerun", never "accept"
+
+**~40% auto-approve rate observed in the wild** — human reviewers approving without reading, at
+roughly two in five. That number is a design input, not a curiosity: **the hitl UI's default
+must lean toward "rerun", never toward "accept".** A default that costs one extra cycle when
+wrong is cheap; a default that mints a green nobody read is the failure mode the whole class
+exists to prevent. This binds whatever surface ships — per §5.2 that is the terminal prompt
+now, and the panel (N6) when it lands.
+
+### 5. Three scope answers from the same interview
+
+**5.1 — One job at a time, in v1.** N4 runs a single job; concurrent jobs are not a v1 shape.
+This is a scope bound, not a capability claim, and it is the assumption several shipped limits
+are sized against — the resume guard's point-in-time liveness check (PRD v1.60 §2) is accepted
+precisely because one operator drives one run.
+
+**5.2 — Terminal-first; the UI is deferred to N6.** N4 ships the hitl surface at the
+**terminal**, in the wall-halt shape the run already pauses in. The panel is N6's work and does
+not gate N4. Everything in §1–§4 is therefore a description of a terminal prompt first: three
+buttons means three answers the terminal accepts, and §4's "lean rerun" default is a terminal
+default today. When N6 lands, it inherits these rulings rather than re-deciding them.
+
+**5.3 — The verdict class is FIXED per signed spec.** A job's `green` / `soft-green` / `hitl`
+choice is part of the spec the signer signs (v1.57's restored radio), and it is **fixed there**:
+**a class change is a re-signed spec edit, never a runtime switch.** Nothing in a run — not a
+replan, not a resume, not a fix loop, not an operator mid-flight — may move a job between
+classes. This is the same law every other signed field runs under (a changed field flips the
+hash and the runner refuses until re-approved), and it is what makes the picked class an
+honest PROMISE: composition stays at or below the class the signature covers, and exceeding it
+is an honest red rather than a silent upgrade.

@@ -4216,3 +4216,41 @@ matcher.
   shape it was built against, and nothing decides when to remove it. PARKED.
 - **A class sweep is proposed and unfired:** every terminal-minting site and every
   clock/wallet read as one table, audited class-wide against W-2 and F6. Awaiting hamr's go.
+
+---
+
+## Addendum v1.60 — 2026-08-12 (two limits stated plainly rather than left in a session: the operator-regex sweep does not reach registry bridges, and the resume guard is a liveness check, not a lock)
+
+Neither of these is a ruling. Both are **known limits of shipped machinery** that were living
+only in session notes, and a limit that lives in a session is a limit the next builder
+rediscovers by paying for it. They are recorded here so the record carries them.
+
+### 1. The operator-regex admissibility sweep does not reach registry bridges — an OPEN GAP
+
+v1.55 took the ReDoS reject to the operator's own regex fields, and the admissibility sweep
+that backs it walks **`jobs/*.json`**. That is not the complete population of signed specs.
+**A registry bridge carries a close of its own, is signed the same way, and lives outside
+`jobs/`** — so an operator-authored pattern reaching the run through a bridge is never swept.
+
+**This is a gap, not a design choice.** Nothing decided that bridge-borne patterns are safe or
+out of scope; the sweep was written against the directory that held every spec at the time and
+was never re-aimed when bridges started carrying closes. The exposure is the same one v1.55
+closed for `jobs/`: a pathological operator-authored pattern hanging the main loop while
+masquerading as a provider stall. Closing it means widening the sweep's population to every
+signed spec wherever it lives — a detector-population change, which is arbiter-adjacent, and
+therefore hamr's to schedule. Until then the sweep's coverage is `jobs/*.json` only, and that
+sentence belongs anywhere the sweep is described as covering "operator regexes".
+
+### 2. The two-process resume guard is a point-in-time LIVENESS CHECK, not a held lock
+
+The guard that stops a second process resuming a run already in flight reads liveness **at
+resume start** and does not hold anything afterwards. It is therefore raceable: **two
+`--resume` invocations landing inside the same window can both read "not live" and both
+start.**
+
+**Accepted, deliberately, for a single-operator tool.** A real lock (file lease, pid file with
+staleness rules, renewal) buys protection against a concurrency shape that does not exist here
+— one operator, one terminal, one run at a time (N4's own "one job at a time, v1") — at the
+cost of a new stale-lock failure mode, which is exactly the class F70 warns about: a guard that
+carries its own failure mode. The limit is recorded rather than engineered away; it becomes
+worth revisiting only when more than one operator can drive the same registry.

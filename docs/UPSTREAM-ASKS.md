@@ -1520,7 +1520,13 @@ judged-floor analog, and **the judge is the ceiling** — verifier hardening nev
 6. **`where` must be MECHANICAL genre:** name the field, the stated value, the returned value,
    quote the evidence. bareloop measured (F38/F39) that **mechanical gaps convert on the next
    attempt while semantic gaps produce inaction** — a judge whose `where` says *"seems off"* is a
-   stall generator, not feedback.
+   stall generator, not feedback. **F98 is the freshest on-point demonstration, and it is a
+   recurrence, not a repeat:** a close stage held 8 real `src/backup.js(56,48): error TS1016`
+   lines, reported *"8 match(es)"*, and the starved worker went probing infrastructure it had
+   never needed — the same mechanical fact rendered in the semantic genre, one rung after the
+   rule was paid for. When the lines were carried instead of the count, the identical job went
+   **67 → 8 → 1 → 0** and greened. A judge's `where` is that same field: it either carries the
+   address or it manufactures the genre that stalls.
 7. **Validate against the REAL instrument.** Acceptance runs on **real uncrafted egress
    artifacts**, never fixtures authored to contain the result; **the case set must be able to
    FAIL**.
