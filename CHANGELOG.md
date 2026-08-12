@@ -7,7 +7,51 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+
+- **A resume may DERIVE `wall-halt` from a recorded `step-red`.** Only when that run's OWN
+  spine shows the wall crossed BEFORE the terminal was minted — a derivation from the primary
+  record, which never rewrites the recorded outcome and announces itself with a banner. The
+  terminal's NAME is what gates resume (`readResume`'s `resumableOutcomes`, which the operator
+  runner supplies as `cap-halt` / `wall-halt`), so a run mislabelled `step-red` past its own
+  wall silently lost its resumability. Known limit, on the record: the derivation has **no
+  expiry** — it can only match spines from the
+  defect-era shape it was built against, and nothing decides when to remove it (PARKED).
+
 ### Changed
+
+- **A stop past the wall never funds a replan draft, on ANY trigger.** W-2's *"no new step
+  starts"* now covers the drafting call itself (hamr: *"it's a replan that is doomed to
+  die"*), and the guard is trigger-agnostic rather than wired to one path. A declined grant is
+  not consumed. With time left on the clock every one of these paths is byte-identical to
+  before — pinned as a control.
+- **The drafter is told its worker has no shell.** A replan wrote an action opening *"Run
+  `npx tsc --strict --noEmit`…"*; `run` is locked out of `TOOL_MENU` permanently, so the
+  worker obeyed as far as its verbs allowed — 25 reads and greps, zero edits, a whole step
+  spent hunting six errors by hand, on a plan that validated clean. The no-shell law now sits
+  in the DRAFTER prompt unconditionally, beside the exit-freedom law, with `read`/`grep`
+  glossed as the worker's only eyes; the scout and worker prompts already carried it, and the
+  one component that WRITES instructions did not. **A regex over action prose was explicitly
+  refused** (F86's anti-precedent): the same sentence is legitimate in an operator's signed
+  goal, so the instrument is a prompt register, never a matcher. F95.
+- **The worker persona REGISTERS the arbiter's books instead of leaving them to be
+  discovered.** `PERSONA_TOOLS` now names `gate-audit.jsonl`, `.smoke`, `.litectx` and the
+  run's spine as always-denied — records of how the worker is judged, holding nothing about
+  its task — beside the absolute-path law it is the twin of, so it renders for every worker on
+  every grant (a `write`-only grant gets no component strategy paragraph at all and must still
+  be told). **The fence is unchanged**: nothing widened, no book became readable. The only way
+  to learn the rule was previously to spend rounds of a bounded attempt on it. F98.
+- **Both signing surfaces show the GOAL and the judged stages as ONE reading.** F87's law is
+  that the goal must state everything the close judges while NOTHING derives one from the
+  other or checks them against each other — so the sole defence is the signer reading both
+  halves at once, and neither surface offered it: `run-author` printed the declaration and
+  never the goal, `run-u --approve` printed the goal and never the declaration. `run-u`'s gate
+  now names every close stage (name + kind) under the goal; `run-author`'s block moves to
+  **`scripts/author-readout.mjs`** (`declarationLines(spec)`) and gains the goal above it,
+  rendered from the RESOLVED spec — the bytes that get hashed. It moved because the block was
+  otherwise reachable only after a paid scout and a paid model call, and a readout no test can
+  reach is a readout nothing checks. An absent goal renders as ABSENT, never as a bare label.
+  Still a READING and not a validator — comparing the two is the move F87 forbids.
 - **README rewritten value-first** (hamr's framing, straight to `main`). The pitch now leads
   with the trust-but-verify lineage (the ralph loop, code machine MCP, and RLMs converged on
   the same principle), the three kinds of done (green / softgreen / hitl, one everyday
@@ -16,6 +60,50 @@ feature lands, **patch** = docs, fixes, scaffolding.
   (localhost UI, whole-workflow export with its self-healing harness). One `[WIP]` badge is
   the only status marker; all mechanics, layer tables, findings numbers and rung history
   moved out of the pitch — `bareloop.context.md` stays the contract, the README the pitch.
+
+### Fixed
+
+- **A time-stop is NAMED a time-stop — W-2 closes over the sibling terminals.** The ruling
+  (*"when time is up, keep the grade we already have and stop"*) was implemented on the
+  cap-halt path and not on the variance path: one run minted `step-red` **9.9 seconds past its
+  own wall**, having recorded the crossing in its own spine 5.6 seconds earlier. Now **every
+  variance and cap-halt terminal re-reads the clock before minting**, through ONE shared
+  `wallHaltTerminal` emission site — one site, one spelling —
+  and the ladder's cap-halt past the wall is a `wall-halt`. **`step-stalled` is pinned OUT of
+  the class by test:** `run.js` keys `spendComplete:false` on that exact outcome name because
+  an abandoned-and-reissued call may already be billed, and relabelling it would report a
+  floor as an exact total (F6 in a self-heal coat). **With both allowances exhausted the MONEY
+  cut is reported** (`cap-halt` wins over `wall-halt`) — hamr: *"understood"*; recorded so the
+  choice stays visible. F96 / PRD v1.59.
+- **A declared `count-not-worse` red gap carries the LINES it counted, not just how many.**
+  `"8 match(es)"` with no file, no line and no error code is a number with nowhere to open —
+  F28's rule (*the close's output format is part of the contract*) recurring one rung later
+  inside the authored-close executor, with the `gapKeep` machinery it needed sitting in the
+  same file. `parseValue` now returns `matched`: the **KEPT** lines only — those that survived
+  the scope filter and reached aggregation, so a scope-DROPPED line is never named and the
+  worker is never aimed outside its own population (F84). Duplicates collapse; the value is
+  still computed from the parsed values and never from the list. The lines ride the EXISTING
+  channel and invent none: the stage's `gapKeep` prefix on every line (Layer R's `redKeep` is
+  DERIVED from it), the existing `GAP_LINE_CAP`, and the announced trim on overflow.
+  **Nothing here can flip a signed spec hash** — verdict logic, baselines, counting,
+  `closeDecl` schema and `detail` untouched. Measured, not asserted: the identical job, same
+  patient, same hash, went from stalling at 8 and dying to **67 → 8 → 1 → 0** in three
+  iterations. F98.
+- **A fence deny streak ends the ATTEMPT, never the RUN — `gate-red` is extinct as a mintable
+  terminal.** A converging run (close reading 46 → 10 → 8, no strikes) probed three of the
+  arbiter's own books, the fence denied all three CORRECTLY, bare-agent's BA-11 deny-spin
+  guard ended the loop, and the plan flow mapped that to a terminal `gate-red` — escalate,
+  never retry. The run died with **$1.77 and 21.6 wall-minutes unspent, on a fence that had
+  worked perfectly.** BA-11's stop now joins `max_turns` in the **bounded-attempt lane on BOTH
+  worker surfaces**: `attempt-bounded` carries the `reason`, the close judges the partial
+  work, the gap feeds forward, caps unchanged, the loop continues. This is F32's routing rule
+  applied to a new stop cause, not a new one — a stop arriving AFTER gate-audited worker
+  writes is non-terminal by construction, and a denial is its most benign member. **Nothing is
+  widened**: the same actions are denied and the same audit rows written; a genuine scope
+  escape now costs one bounded attempt instead of the whole run. The category stays in
+  `EXCLUDED_ESCALATIONS` and in `ralph`'s passthrough decision table — that set is EXECUTABLE,
+  so dropping the name would re-file any future emission as a counted capability gap rather
+  than delete it. F98.
 
 ## [0.9.0] — 2026-08-09
 

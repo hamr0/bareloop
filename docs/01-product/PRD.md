@@ -4254,3 +4254,65 @@ staleness rules, renewal) buys protection against a concurrency shape that does 
 cost of a new stale-lock failure mode, which is exactly the class F70 warns about: a guard that
 carries its own failure mode. The limit is recorded rather than engineered away; it becomes
 worth revisiting only when more than one operator can drive the same registry.
+
+---
+
+## Addendum v1.61 — 2026-08-12 (two residuals of the round's own findings close: the signer reads BOTH halves at once, and the worker is TOLD the deny list instead of discovering it one refusal at a time)
+
+Both fixes landed after v1.59 wrote the round up and after v1.60's two limits, so neither is
+in either. Neither is a new ruling — each closes a residual of a finding this round already
+paid for, by stating a law where the law was only ever enforced.
+
+### 1. Both signing surfaces show the goal and the judged stages as ONE reading (`465241d`)
+
+**F87's law** is that the goal must state everything the close will judge, and **nothing in
+the system derives one from the other or checks them against each other** — the only
+derivation is close-stages → the agent's check menu, one hop, one direction. That leaves
+exactly one defence: the person signing reads both halves at once. **Neither surface offered
+it.** `run-author` printed the declaration and never the goal; `run-u`'s `--approve` gate
+printed the goal and never the declaration. A half of a reading is not a smaller reading, it
+is a different one — and an unstated stage stayed invisible until the run discovered it at
+its tail, which is F87's measured cost hazard.
+
+- `run-u`'s gate now names **every close stage under the goal** (name + kind), because that
+  gate is about what the dollars below it buy.
+- `run-author`'s block moves to `scripts/author-readout.mjs` and gains the goal above it,
+  rendered from the **RESOLVED** spec — the bytes that get hashed, never the operator's draft
+  and never the authored half alone. It moves because the block is otherwise reachable only
+  after a paid scout and a paid model call, **and a readout no test can reach is a readout
+  nothing checks** (the same reason `u-readout.mjs` exists).
+- An absent goal renders as **absent**. A bare `goal` label with nothing after it is
+  indistinguishable from a goal that says nothing, and this readout exists to make exactly
+  that silence visible.
+
+**Still true, and deliberately unchanged:** nothing checks the goal against the declaration.
+The pairing is a READING for the signer, not a validator — deriving one from the other is the
+move F87 forbids, and a matcher over goal prose is the F86 anti-precedent.
+
+### 2. The arbiter's books are REGISTERED in the worker prompt, not discovered by dying (`fd08435`)
+
+F98's residual. The fence **already** denied them — `planrun`'s Gate carries the explicit
+`fs.deny`, and the spine is written outside the patient entirely — but nothing ever said so.
+The only way a worker learned the rule was by spending rounds of a bounded attempt probing
+files that record how it is being judged and hold nothing about its task, and **the rounds a
+probe costs are rounds the fix does not get** (`u-msn227nq`: three consecutive denials, and
+the run died with $1.77 and 21.6 minutes left).
+
+The line rides on `PERSONA_TOOLS`, beside the absolute-path law it is the twin of — both are
+fence facts a worker cannot infer, and the persona is the one seam every plan-step worker
+renders **on every grant** (a worker granted only `write` gets no strategy paragraph at all
+and must still be told). The test asserts the RENDERED prompt across three grants and pins
+both ends of the fact: that `planrun` still composes its system prompt from `PERSONA_TOOLS` —
+a register in a constant nothing composes is prose, not protection — and that the deny list
+still says what the prose now describes.
+
+**What this does NOT change:** the fence. No book became readable, no denial became an allow,
+no scope widened. A denial is a wall; a stated law is a map — this adds the map.
+
+### 3. Unchanged by both, stated so it is not assumed
+
+v1.59 §5's open list stands entire: the deny-streak reroute is still **not live-fired**, the
+one-check-per-write-step ceiling is still **PARKED for hamr**, the wrong-format-parser
+validator red, `isArbiterBook`'s `.smoke` blind spot, replan-ceiling-on-resume, D4a's
+expiry-less derivation and the proposed class sweep are all still open. Nothing here closed
+any of them.

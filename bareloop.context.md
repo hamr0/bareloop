@@ -510,6 +510,22 @@ declaring one is a counted `locked-kind` red rather than an unknown-kind typo; `
 tool mode a locked kind is INEXPRESSIBLE — the schema carries one branch per live kind — so
 that demand arrives through the interview layer instead (`refuseLockedKind(kind)`).
 
+**A red `count-not-worse` gap carries the LINES it counted, not only how many (F98).** After
+the summary and the per-term breakdown, the stage appends the **KEPT** matched lines — the
+ones that survived the scope filter and reached aggregation, which is to say the ones the
+count is made of. A scope-DROPPED line is never among them (it was never counted, so naming
+it would aim the worker outside its own population, F84's one-population law), duplicates
+collapse, and the value is still computed from the parsed values and never from this list.
+They ride the **existing** gap channel and invent none: the declared stage's `gapKeep` prefix
+on every line (Layer R's `redKeep` is DERIVED from that prefix), the same `GAP_LINE_CAP`, and
+the same announced trim on overflow — so a consumer parsing the gap sees more lines under the
+same shape, never a new one. `parseValue` returns them as `matched` alongside `value`. The
+licence is the one `pattern-absent-in-diff` already runs under: the instrument NAMED these
+lines, and echoing what it named is not the barred move of naming a culprit it never
+reported. **Nothing here can flip a signed spec hash** — the verdict logic, the baselines,
+the counting, the `closeDecl` schema and `detail` are untouched; only what the executor TELLS
+the worker changed.
+
 **The three gates, and the signature (D9).** Nothing LLM-judges a close.
 1. `validateCloseDecl(closeDecl, { verdictType, ... })` — schema, kinds, params, the F84
    one-population law, F49's static nested-quantifier reject, the D5 guard equality, the
@@ -529,6 +545,19 @@ the arbiter relocating to the user, not disappearing. **Re-authoring is a spec e
 a different declaration is different bytes, a different resolved hash, and a new signature.
 The guards are stored ENUMERATED and every short-form parser is expanded, so no
 omittable-with-a-default field can change what runs without changing what was signed.
+
+**A signing surface must show the GOAL and the judged stages as one reading (F87).** The
+goal has to state everything the close will judge, and **nothing derives one from the other
+or checks them against each other** — the only derivation runs close-stages → check menu, one
+hop, one direction. So the sole defence against an unstated stage is that the person signing
+reads both halves at once, and any surface you build around `prepareSigning` inherits that
+obligation. Both reference runners now do it: `scripts/run-u.mjs --approve` names every close
+stage (name + kind) under the goal, and `scripts/run-author.mjs` prints the goal above the
+declaration via `declarationLines(spec)` in `scripts/author-readout.mjs`, rendered from the
+**RESOLVED** spec — the bytes that get hashed, never the draft and never the authored half
+alone. An absent goal renders as absent rather than as a bare label. This is a READING, not a
+validator: nothing compares the goal to the declaration, because deriving one from the other
+is exactly what F87 forbids.
 
 **Refusals are COUNTED (D13).** `refusalEvents(refusal)` returns the spine events: a
 `job-red` carrying `{ code: 'request-red', verb, lib: 'bareloop' }` — the `lib` stamped at
@@ -663,6 +692,22 @@ already have been billed). **The reissue is wall-aware:** past the run's deadlin
 not self-heal — self-heal is what a run does with time left — and it gives up as `wall-halt`,
 not `step-stalled`, since a replan has nothing left to re-allocate. Every one of them is a
 decision-ready escalation with a terminal `job-end`: the spine never dangles.
+
+**`gate-red` is not in that list, and the plan flow no longer mints it (F98).** A fence
+DENIAL STREAK — bare-agent's BA-11 deny-spin guard returning `denied:*` after consecutive
+refusals — is a **BOUNDED ATTEMPT, never a terminal**, on BOTH worker surfaces: the attempt
+ends, `attempt-bounded` is emitted with the `reason`, the close judges the partial work, the
+gap feeds forward, the caps are unchanged and the loop continues. It is the same lane
+`max_turns` and `loop.stop()` take, for the same reason — the attempt ran, produced audited
+work, and was cut short by a governance bound doing its job. **The fence holding is the
+system working, which is the opposite of a fault**; routing it as an instrument stop killed a
+converging run with $1.77 and 21.6 wall-minutes still on it. Nothing about the gate changed:
+the same actions are denied, the same audit rows are written, a genuine scope escape produces
+exactly what it did before — it now costs one bounded attempt instead of the whole run. The
+category survives only as a passthrough (`ralph`'s decision table still answers to it if a
+caller's own middle throws it, and `EXCLUDED_ESCALATIONS` still lists it so a future emission
+is filed as governance rather than re-read as a capability gap), but no site in this library
+raises it.
 
 **Every `job-end` carries the money, on every path**: `{ outcome, spentUsd, spendComplete }`
 (plus `step`/`cause`/`detail` where the outcome has them). `spentUsd` is the accumulated sum
@@ -1022,7 +1067,14 @@ the loop contract (F16 — it is ONE attempt inside `while close-red and under-c
 re-run with the close's verdict; without this a model one-shots and can eat the budget in
 reads before ever writing). It is NOT allowed to read the run's own machinery (F14): the gate
 audit, the smoke store and the litectx store are denied — the agent neither authors the
-arbiter nor reads its books. N2 bounds (honest): `gold`/`rubric` closes refuse
+arbiter nor reads its books. **That denial is now REGISTERED in the persona, not left to be
+discovered (F98):** `PERSONA_TOOLS` names `gate-audit.jsonl`, `.smoke`, `.litectx` and the
+run's spine as always-denied, records of how the worker is being judged and never anything
+about its task, beside the absolute-path law it is the twin of — both are fence facts a worker
+cannot infer. It renders for EVERY worker on every grant (a worker granted only `write` gets
+no component strategy paragraph at all and must still be told). The fence is unchanged; what
+changed is that the rule is stated instead of learned one refusal at a time, which cost a real
+run the rounds of a bounded attempt. N2 bounds (honest): `gold`/`rubric` closes refuse
 `close-unsupported` (execution lands at N4).
 
 ### The reuse registry (Layer 3) — `src/bridges.js`, `src/selection.js`
@@ -1405,7 +1457,9 @@ seeding an upstream ask. Deliberate exclusions
 counted as unmapped, never dropped): `cap-halt`/`wall-halt` (budget stories, money and
 time), `step-stalled` (the stall fuse firing is our governance, not an observed provider
 failure), `step-variance` (a planning story), `gate-red`/`smoke-red` (governance working
-as intended / already counted), `hitl-close`/`close-unsupported`/`close-unauthorable` (by design — and the last one
+as intended / already counted — and `gate-red` is no longer minted anywhere in this library,
+kept listed because this set is EXECUTABLE: dropping a name would not delete the category, it
+would re-file any future emission of it as a counted capability gap), `hitl-close`/`close-unsupported`/`close-unauthorable` (by design — and the last one
 is excluded for a SECOND reason: its demand is already counted once as the `request-red`
 the same refusal emits, so counting the escalation too would double every refusal),
 `close-timeout`/`close-killed`/`close-crashed` (the arbiter's own named terminals, F17);

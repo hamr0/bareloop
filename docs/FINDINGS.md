@@ -7202,6 +7202,20 @@ system working.
   whose `.gitignore` default-denies dot-directories the masking is incidental rather than
   deliberate. PARKED.
 - **Cure (b) is shipped and test-proven but NOT live-fired** — see F99.
+- **The worker was never TOLD the books were denied — CLOSED 2026-08-12 (`fd08435`).** The
+  third cure this finding implies and did not name: the fence denied all three reads
+  correctly, but nothing in the system ever STATED the rule, so the only way a worker could
+  learn it was the way this one did — by spending rounds of a bounded attempt discovering it
+  one refusal at a time. A denial is a wall; a stated law is a map. `PERSONA_TOOLS` now
+  registers the deny list (`gate-audit.jsonl`, `.smoke`, `.litectx`, and the run's spine)
+  beside the absolute-path law it is the twin of — both are fence facts a worker cannot
+  infer, and the persona is the one seam every plan-step worker renders on every grant (a
+  worker granted only `write` gets no strategy paragraph at all and must still be told). The
+  test asserts the RENDERED prompt across three grants and pins BOTH ends: that `planrun`
+  still composes its system prompt from `PERSONA_TOOLS` (a register in a constant nothing
+  composes is prose, not protection), and that the deny list still says what the prose now
+  describes. **Nothing in the fence changed** — no book became readable, no denial became an
+  allow; only the worker's knowledge of a rule that already bound it.
 
 ### Lessons
 

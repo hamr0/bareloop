@@ -248,7 +248,32 @@ that decides green was the last place a human wrote code. This rung makes the cl
 all fixed — F91); the reworked interview and the fence/work-branch rules PAID-PROOFED live
 (2026-08-09, F92). "SIGNING PREPARED, NOT SIGNED" on the JS patient — twice, with a
 byte-identical hash across cold runs — and both of the python patient's refusals were honest
-ones. NOT shipped.**
+ones. SHIPPED in v0.9.0 (2026-08-09).**
+
+**Status 2026-08-11 — the first authored-close GREEN (F99).** `jobs/pulselog-author-types`
+ran the whole chain: interview → scout → declaration → three gates → signature → run.
+`u-msoaovx9` cap-halted at $4.00 with the tree 2 errors and one cast from green; `u-msoc6t8v` resumed
+under a re-signed $5.50 and closed **green** in 2.5 minutes for **$0.06** — $4.06 for the
+chain, all seven stages `satisfied`, and every one of them independently re-verified at $0
+with instruments outside the close. Two things it proved that nothing before it could:
+
+- **A model-authored close caught the suppression genre.** The step passed its OWN in-run
+  check with 16 casts in the tree; only the close's `no-suppressions` stage saw them, listed
+  all 16 with file and line, and the worker undid them — typecheck came straight back to 16
+  errors, which is the arithmetic proof the undo was real. **A step's green is never a
+  verdict**, demonstrated for real money, against a close no operator wrote.
+- **The mechanical genre converts inside the authored executor too.** Every conversion was
+  driven by a gap that named an address: `67 → 8 → 1 → 0` on typecheck, `16 → 17 → 2 → 0` on
+  suppressions. The identical job the day before, with a count-only gap, stalled at 8 and
+  died (F98).
+
+**What it does NOT graduate:** one green, one patient, one genre, one wallet. It moves the
+machinery from *proven* to *has completed a job end to end* — not the bridge, not the genre,
+not the shape. And the structural gap it exposed stays open: a write step carries exactly ONE
+check (`MAX_EXITS_PER_STEP` minus the mandatory `tree-changed` pairing), so the in-run check
+is satisfiable by the very suppressions the close forbids. The close catches it every time;
+what it costs is a full extra fix cycle at the tail. Raising that ceiling is arbiter
+territory — PARKED for hamr, not fixed to make a wording problem go away.
 
 The flow, end to end:
 
@@ -794,8 +819,16 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
    BUILT** (the `green | soft-green | hitl` radio with locked classes refusing as counted
    demand; class-keyed question sets with the genre-confirm slot deleted and genre moved into
    composition; the guard battery re-homed to the verdict class with fills at composition; the
-   class-vs-ceiling promise rule, inert in v1 by construction, mutation-proven). Remaining
-   before ship: the command deny-floor's work-branch mechanics and the ship gate itself.
+   class-vs-ceiling promise rule, inert in v1 by construction, mutation-proven).
+   **Status 2026-08-11: SHIPPED (v0.9.0, 2026-08-09) and the rung has its first authored-close
+   GREEN** — `pulselog-author-types`, $4.06 across a cap-halt and a re-signed resume, seven
+   stages satisfied, independently re-verified at $0 (F99; PRD v1.59). The two fixes that
+   bought it are doctrine now: a declared count stage carries the LINES it counted, and a
+   fence deny streak ends the ATTEMPT, never the run. **This is still the rung in flight** —
+   what remains is the composition shape lottery's bounded re-compose (parked, non-gating),
+   the one-check-per-write-step ceiling (arbiter territory, parked), and the deny-streak
+   reroute's still-owed LIVE firing. **soft-green + hitl come next**, sequenced immediately
+   after: a hitl close IS a declaration, and the declaration surface now exists.
 
 ---
 
