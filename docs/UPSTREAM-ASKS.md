@@ -1427,8 +1427,13 @@ Read in bareguard's own PRD and corpus, 2026-08-09, before anything was written 
   deterministic floor. **Axis B** reconciles the *RETURN* against a declared constraint — and it
   is specified as **a detector that annotates, never decides**.
 - **The shipped half is already there:** `gate.annotate` and its fact envelope
-  `{kind, field, stated, returned, text}`, released in **bareguard 0.7.0**. That is Axis B's
-  detector, and it needs no change.
+  `{ surface, verdict, where, meta }`, released in **bareguard 0.7.0** (their `gate.js:600-619`,
+  PRD §8.2). Field semantics, exactly as shipped: **`surface` (bool) is the ONLY load-bearing
+  field** — it alone is what makes an audit row read BROKE; **`verdict`** is an optional string;
+  **`where`** is an optional string **capped at 300 chars** (the field is `where`, *not* `text`);
+  **`meta`** is an optional bag, and it is where `{field, stated, returned}` ride. **`kind` DOES
+  NOT EXIST** — bareguard's own **E6e** killed it, and it sits in this ask's own
+  rejected-alternatives table below. That envelope is Axis B's detector, and it needs no change.
 - **The judge itself is POC-only** — `harness-code-mode/e6-judge.mjs`, never shipped — and
   **bareguard's locked design says bareguard never calls an LLM: the judge is caller-side by
   law** (PRD ~:1930, ~:2320).
@@ -1443,8 +1448,12 @@ arbiter-shaped law that it never calls an LLM.
 **The runnable half lands in bare-agent, as a new primitive/module.** That half is the judge
 *call* — prompt shape, the model call itself, output parsing, cost reporting — plus the
 calibration harness that admits a tier. bare-agent is where every model call in the suite already
-lives, so the judge needs no new package, no new transport layer, and no new dependency; it
-consumes `gate.annotate`'s envelope as input and leaves bareguard's detector exactly where it is.
+lives, so the judge needs no new package, no new transport layer, and no new dependency. **The
+envelope is the judge's DOWNSTREAM SINK, never its input** — the dataflow runs one way
+(bareguard PRD §6.7): the judge's **input** is `{request, artifact, constraint}`; its **output**
+is `{verdict: honored|broke, where}`; and **the CALLER** maps that output into
+`gate.annotate({ surface: verdict !== 'honored', verdict, where, meta: {field, stated, returned} })`.
+The judge never writes the envelope itself, and bareguard's detector stays exactly where it is.
 (BA-2 was withdrawn for aiming a real gap at the wrong package. This entry's first filing named a
 package that did not exist yet and was re-aimed on hamr's ruling the same day — the same lesson,
 recorded here rather than erased.)
@@ -1551,14 +1560,54 @@ judged-floor analog, and **the judge is the ceiling** — verifier hardening nev
 6. **Negative control (the harness must be able to fail):** a deliberately broken judge — e.g.
    one that returns constant `honored` — **FAILS the frozen set**. Without this the harness
    certifies nothing, and criteria 1–2 are unreadable.
+7. **The mapping lands a BROKE row, and the retired shape cannot silently pass.** A judge verdict
+   of `broke`, carried through the documented mapping —
+   `gate.annotate({ surface: verdict !== 'honored', verdict, where, meta: {field, stated, returned} })`
+   — must produce a **`gate.annotate` audit row that reads BROKE (`surface: true`)**, asserted on
+   the emitted row itself, never on the judge's return value. **Negative control, mandatory:** a
+   judge emitting the **retired pre-E6 sketch shape** — a `kind`-bearing fact object carrying
+   `text` in place of `where` and `field`/`stated`/`returned` at the top level instead of under
+   `meta` — must **FAIL this criterion**, loudly. bareguard's `annotate` **normalizes strictly and never
+   throws**, so an unmapped sketch-shaped fact has **every key silently dropped**, `surface`
+   defaults **false**, and **every judged fact routes as `honored`** — fail-open, and invisible
+   until someone audits the rows. This criterion exists because that exact path was found in
+   validation (see the 2026-08-12 note below); a harness that cannot fail it certifies nothing.
+
+### 2026-08-12 — envelope citation CORRECTED, and bareguard's frozen case set ACCEPTED as the calibration seed
+
+**(a) The correction, and its source.** bareguard's maintainer session validated this ask against
+their **shipped source** (`gate.js:600-619`, PRD §8.2) and found our envelope citation **wrong**.
+This entry had cited a `kind`-bearing fact object with `text` in place of `where` — the **pre-E6
+design sketch**, not the shipped contract — and had the dataflow **backwards**, calling the
+envelope the judge's
+*input* when it is the judge's *downstream sink*. Both are corrected above. Named plainly rather
+than papered over: this is **the read-the-source rule** (the same rule BA-2's withdrawal paid for)
+and **F98's class** — a stale citation carried forward as if it were current fact. The error was
+not cosmetic in two ways: `kind` was killed by bareguard's own **E6e**, which this ask's
+rejected-alternatives table already records, so the entry was banning `kind` and printing it in
+the contract at the same time; and because `annotate` never throws, a judge built to the sketch
+would have **failed open in silence** — which is now criterion 7's negative control. Everything
+else in BA-20 — every measurement and every E6-series citation — was checked in the same pass and
+**stands unchanged**.
+
+**(b) The frozen case set — bareguard's offer ACCEPTED.** bareguard offered its **frozen labeled
+case set** — the E6 harness corpus, including **the €280 false-positive trap** and **the forged
+injection case** — as the seed of the calibration set deliverable 2 demands. **bareloop accepts**,
+and the set is **handed to bare-agent with this ask**. This is not a convenience: it makes
+acceptance criterion 1's *"≥ E6i's clear-case performance (7/7)"* a **real comparison against the
+same frozen cases**, rather than a floor re-derived from a set rebuilt later — which is exactly
+the "case set authored to contain the result" failure that contract requirement 7 forbids.
+Widening the set is expected; **replacing** the seed cases is not, since the 7/7 and the 5/5 lose
+their meaning the moment the cases move.
 
 ### Not asked (recorded, so nobody re-opens them)
 
 - **The deterministic calculator carve-out (E6h)** — measured to work, deliberately out of scope.
 - **Confidence scales and `kind` classification** — measured *worse* (E6f/E6g, E6e). Do not add.
 - **Any bareguard change.** **bareguard's part is complete by design** — the measured E6i spec
-  and the shipped `gate.annotate` fact envelope. That envelope is the detector and stays exactly
-  as shipped; the bare-agent judge consumes it and never re-implements it.
+  and the shipped `gate.annotate({ surface, verdict, where, meta })` envelope. That envelope is
+  the detector and stays exactly as shipped; the bare-agent judge's verdict reaches it **through
+  the caller's mapping**, and the judge never re-implements it — and never re-adds `kind`.
 - **A judge that DECIDES.** Out by law from both sides: bareguard's Axis B annotates and never
   decides, and in bareloop **the close is the only truth**. The judge returns a verdict to a
   caller; it never merges, publishes, or touches a budget.
