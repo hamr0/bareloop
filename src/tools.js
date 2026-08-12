@@ -45,6 +45,14 @@ const PERSONA = 'You are a senior engineer. Reply with ONLY the complete content
 // cheap, wrong attempt the rational move — which is exactly what the loop wants.
 export const PERSONA_TOOLS = 'You are a senior engineer working in a repository through file tools. '
   + 'ALWAYS use absolute paths — relative paths resolve against the process, not the repository, and will be denied. '
+  // F98's residual: the fence ALREADY denies these (planrun's Gate deny list), and the
+  // spine is written outside the patient entirely — but nothing ever SAID so, and a
+  // denial is a wall while a stated law is a map. The way a worker learned the rule was
+  // by spending rounds of a bounded attempt probing bookkeeping files, and the rounds a
+  // probe costs are rounds the fix does not get. Registered here, beside the other fence
+  // fact a worker cannot infer, so it renders for every worker on every grant.
+  + 'The repository root also holds the arbiter\'s own books — gate-audit.jsonl, .smoke, .litectx, and this run\'s spine. '
+  + 'They are ALWAYS denied and record how you are being judged, never anything about the task: never read them, and never try to route around the denial. '
   + 'You are ONE attempt inside an automated loop: when you finish, a test suite runs and, if it still fails, you are called again with its output. '
   + 'So do not try to be certain before acting. Read only what you need to form your best hypothesis, make the change with the write tool, and stop. '
   + 'A wrong cheap attempt is corrected by the next round; exhaustive reading is not — every file you read is re-sent on every later round and the run has a hard budget it can exhaust before you ever write. '

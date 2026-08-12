@@ -6,12 +6,12 @@
 // a caller-sliced body — none of which a mocked litectx would have surfaced.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 
-import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, COMPONENT_STRATEGIES, ISOLATE_MAX_BYTES, RETRIEVAL_STRATEGY, EDIT_STRATEGY, strategyFor } from '../src/tools.js';
+import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, COMPONENT_STRATEGIES, ISOLATE_MAX_BYTES, RETRIEVAL_STRATEGY, EDIT_STRATEGY, strategyFor, PERSONA_TOOLS } from '../src/tools.js';
 import { TOOL_MENU } from '../src/job.js';
 
 const require = createRequire(import.meta.url);
@@ -402,4 +402,38 @@ test('a FULL grant reads exactly as the component strategies do today — the fi
 test('no granted verb, no strategy — an empty grant is steered nowhere', () => {
   assert.equal(strategyFor([]), '');
   assert.equal(strategyFor(['write']), '', 'write alone carries no component strategy (its own line is the persona\'s)');
+});
+
+// ── the arbiter's own books are REGISTERED, not discovered by dying (F98) ────
+//
+// The fence already denies them (planrun's Gate: `deny: [gate-audit.jsonl,
+// .smoke, .litectx]`, and the spine is written outside the patient entirely).
+// What was missing is the REGISTER: nothing told the worker, so the way a worker
+// learned the rule was by spending rounds of a bounded attempt probing files that
+// hold the arbiter's bookkeeping and nothing about its task. A denial is a wall;
+// a stated law is a map. This is the same register as the persona's absolute-path
+// law two sentences above it — both are fence facts the worker cannot infer.
+test('the worker\'s rendered system prompt names the arbiter\'s books and forbids reading them', () => {
+  // the RENDERED prompt, composed the way the runner composes it — not the
+  // constant on its own
+  for (const granted of [['write'], ['read', 'write'], [...TOOL_MENU]]) {
+    const system = PERSONA_TOOLS + strategyFor(granted);
+    for (const book of ['gate-audit.jsonl', '.smoke', '.litectx', 'spine']) {
+      assert.ok(system.includes(book), `${granted.join('+')}: the rendered worker prompt never names ${book}`);
+    }
+    assert.match(system, /never read them/i, `${granted.join('+')}: the books are named without the instruction`);
+  }
+  // it rides on the PERSONA and not on a strategy paragraph: a worker granted only
+  // `write` gets no strategy at all (asserted above), and must still be told.
+  assert.equal(strategyFor(['write']), '');
+  assert.ok(PERSONA_TOOLS.includes('gate-audit.jsonl'));
+
+  // and the seam it rides on is still the one every plan-step worker renders. A
+  // register that lands in a constant nothing composes is prose, not protection.
+  const src = readFileSync(new URL('../src/planrun.js', import.meta.url), 'utf8');
+  assert.match(src, /const system = PERSONA_TOOLS \+ strategyFor\(granted\)/,
+    'the worker system prompt is no longer built from PERSONA_TOOLS — the register is orphaned');
+  // the fence half of the same fact, so the prose and the deny list cannot drift
+  assert.match(src, /deny: \[auditPath, join\(workdir, '\.smoke'\), join\(workdir, '\.litectx'\)\]/,
+    'the deny list moved — the persona now describes a fence that is not there');
 });
