@@ -213,6 +213,17 @@ if (arg('approve') !== specHash) {
   console.log(`  spec     jobs/${target.spec}  $${spec.budgetUsd}  wall ${WALL_LABEL}  strikeLimit=${STRIKE_LIMIT} (step ladder + close-fix progress rule)`);
   console.log(`  patient  ${WORKDIR} @ ${SEED.slice(0, 12)}`);
   console.log(`  goal     "${spec.goal}"`);
+  // F87 — the goal must state everything the close will judge, and nothing derives
+  // one from the other or checks them against each other. So the only defence is
+  // that the person signing reads both halves AT ONCE: this gate printed the goal
+  // and never the stages, and run-author printed the stages and never the goal.
+  // Names and kinds only; the params and notes are the authoring surface's reading
+  // (`scripts/author-readout.mjs`), and this one is about what the dollars below buy.
+  if (spec.closeDecl) {
+    const stages = spec.closeDecl.stages ?? [];
+    console.log(`  judged   ${stages.length} close stage(s) — this run is green only when EVERY one of them is, so the goal above has to name what they measure:`);
+    for (const s of stages) console.log(`           ${s.name}  [${s.kind}]`);
+  }
   if (dead) {
     const rs = dead.restart;
     console.log(`  spine    ${deadSpineFile}  → stopped on ${dead.endOutcome ?? 'a halt'}`);

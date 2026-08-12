@@ -41,6 +41,7 @@ import {
 import { makeLoopGenerate } from '../src/authorflow.js';
 import { validateJob, jobSpecHash } from '../src/job.js';
 import { scanSecrets } from '../src/validate.js';
+import { declarationLines } from './author-readout.mjs';
 
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
@@ -196,12 +197,13 @@ if (!authored.ok) {
   const spec = assembleSpec(draft, authored);
   const specFile = writeOut('resolved-spec.json', spec);
   console.log(`\nverdictType ${authored.verdictType} (the person's own pick, validated — never inferred)`);
-  console.log('declaration');
-  for (const s of authored.closeDecl.stages ?? []) {
-    console.log(`  ${s.name}  [${s.kind}]${s.offer === false ? '  (not lendable)' : ''}${(s.needs ?? []).length ? `  needs: ${s.needs.join(', ')}` : ''}`);
-    console.log(`      params ${JSON.stringify(s.params ?? {})}`);
-  }
-  for (const n of authored.closeDecl.notes ?? []) console.log(`  note: ${n}`);
+  // F87: the goal and the stages that judge it are ONE reading. This surface used to
+  // print the declaration alone, which shows a signer everything the close measures
+  // and nothing about whether the goal ever said so. Rendered from the RESOLVED spec
+  // — the bytes that get hashed — and out of `scripts/author-readout.mjs`, because
+  // this block is otherwise reachable only after a paid scout and a paid model call,
+  // and a readout no test can reach is a readout nothing checks.
+  for (const l of declarationLines(spec)) console.log(l);
   console.log(`written    ${specFile}`);
 
   // `shellCapUsd` COUPLES to the spec's own budget, exactly as run-u does it at the

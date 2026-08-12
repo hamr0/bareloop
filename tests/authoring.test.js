@@ -38,6 +38,7 @@ import {
   classGuards, closeCeiling, genreEnv, genreOwnedEnvNames, genreInstruments,
   validateDeclaration, normalizeDeclaration,
 } from '../src/authoring.js';
+import { declarationLines } from '../scripts/author-readout.mjs';
 
 /** The battery for the one class v1 admits. The attachment point is the CLASS
  * (PRD v1.57 §2) and every fixture in this file is a green job, so the class is
@@ -1215,4 +1216,43 @@ test('normalizeDeclaration: resolves every short-form parser, and copies rather 
   bad.stages[1].params.parser = { lineMatch: 42 };
   assert.deepEqual(normalizeDeclaration(bad).stages[1].params.parser, { lineMatch: 42 });
   assert.deepEqual(normalizeDeclaration(null), null);
+});
+
+// ── the SIGNING readout: goal and judged stages, in one reading (F87) ────────
+//
+// F87's law is that the goal must state everything the close will judge, and
+// NOTHING derives one from the other. So the only defence is the person signing
+// seeing both halves at once — and neither signing surface did: run-author
+// printed the declaration and never the goal, run-u's --approve gate printed
+// the goal and never the declaration. The lines live in a helper because
+// `run-author.mjs` is a script (importing it runs it, and reaching that block
+// costs a real scout and a real model call), exactly as `u-readout.mjs` exists.
+test('signing readout: the goal leads, and every stage that will judge it is named under it', () => {
+  // a REAL signed spec out of this repo's own jobs/ — not a fixture authored to
+  // contain the answer
+  const spec = JSON.parse(readFileSync(join(REPO, 'jobs/pulselog-author-types.json'), 'utf8'));
+  const lines = declarationLines(spec);
+
+  assert.equal(lines[0], `goal       ${JSON.stringify(spec.goal)}`, 'the goal is not the first thing the signer reads');
+  assert.equal(lines[1], 'declaration');
+  // every stage, in declaration order, with the kind that decides how it grades
+  const stages = spec.closeDecl.stages;
+  assert.ok(stages.length > 1, 'this artifact no longer carries a multi-stage close — the reading it pins is gone');
+  const heads = lines.filter((l) => /^ {2}\S/.test(l) && !l.startsWith('  note:'));
+  assert.equal(heads.length, stages.length, 'a stage the close judges is missing from the readout');
+  stages.forEach((s, i) => {
+    assert.ok(heads[i].startsWith(`  ${s.name}  [${s.kind}]`), `stage ${i} renders as ${JSON.stringify(heads[i])}`);
+    assert.ok(lines.includes(`      params ${JSON.stringify(s.params ?? {})}`), `stage ${s.name} lost its params line`);
+  });
+  for (const n of spec.closeDecl.notes ?? []) assert.ok(lines.includes(`  note: ${n}`));
+});
+
+test('signing readout: a missing goal reads as MISSING, never as an empty pair of quotes', () => {
+  // F6 in prose: a blank after `goal` is indistinguishable from a goal that says
+  // nothing, and this readout exists to make an unstated thing visible.
+  const lines = declarationLines({ closeDecl: { stages: [{ name: 'a', kind: 'command-exit', params: {} }] } });
+  assert.match(lines[0], /^goal +\(none/);
+  assert.ok(lines.some((l) => l.startsWith('  a  [command-exit]')));
+  // and a spec with no declaration at all still renders its goal rather than throwing
+  assert.deepEqual(declarationLines({ goal: 'g' }), ['goal       "g"', 'declaration']);
 });
