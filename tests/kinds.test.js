@@ -374,6 +374,27 @@ test('isArbiterBook: `.litectx/` is a PREFIX, `gate-audit.jsonl` an EXACT path �
   assert.equal(isArbiterBook('litectx/x.json'), null);
 });
 
+test('isArbiterBook: `.smoke/` is a book too — F98\'s parked residual, where the exclusion was incidental', () => {
+  // The fence denies `join(workdir, '.smoke')` on every worker (src/planrun.js,
+  // src/authorscout.js) and the persona now states it — but this reader, which
+  // decides what COUNTS AS WORK, never knew the name. On patients whose .gitignore
+  // default-denies dot-directories the store never reached `ls-files --others` and
+  // the gap was masked by the patient's own config; on one that does not, the
+  // arbiter's own store would land in the changed set as the worker's writing.
+  // Incidental masking is not an exclusion.
+  assert.equal(isArbiterBook('.smoke'), '.smoke/', 'the store itself, whether it lands as a dir or a file');
+  assert.equal(isArbiterBook('.smoke/index.json'), '.smoke/');
+  assert.equal(isArbiterBook('.smoke/store/chunks/0001'), '.smoke/', 'everything beneath it, at any depth');
+  // and the same failure direction the `gate-audit.jsonl` comment names: swallowing
+  // a worker's real write is what reads as a clean tree. A prefix, not a basename
+  // and not a substring.
+  assert.equal(isArbiterBook('src/smoke.js'), null, 'a legitimate source file is work');
+  assert.equal(isArbiterBook('tests/smoke.test.js'), null, 'so is a legitimate test');
+  assert.equal(isArbiterBook('src/.smoke/x'), null, 'the book is the one at the repo ROOT — a nested spelling is not it');
+  assert.equal(isArbiterBook('smoke/x'), null, 'nor is the undotted directory');
+  assert.equal(isArbiterBook('.smokescreen/x'), null, 'nor a longer name this one is a prefix of');
+});
+
 test('the changed set is diff PLUS untracked, MINUS the two arbiter books — and the decoy still counts', async (t) => {
   const r = makeRepo(t, { 'src/a.js': 'a\n', 'README.md': 'r\n' });
   write(r.dir, {
@@ -387,6 +408,26 @@ test('the changed set is diff PLUS untracked, MINUS the two arbiter books — an
   assert.equal(cs.stop, null);
   assert.deepEqual(cs.paths, ['src/a.js', 'src/gate-audit.jsonl', 'src/new.js']);
   assert.deepEqual(cs.excluded.map((e) => e.path).sort(), ['.litectx/store.json', 'gate-audit.jsonl']);
+});
+
+test('the changed set excludes `.smoke/` on a patient whose .gitignore does NOT hide dot-directories — the case the mask was hiding', async (t) => {
+  // The REAL instrument, on the real git plumbing, because the F98 residual is not a
+  // predicate bug in the abstract: it only ever shows up as `ls-files --others`
+  // returning the arbiter's own store. No .gitignore here at all, which is precisely
+  // the patient the parked note said was unprotected.
+  const r = makeRepo(t, { 'src/a.js': 'a\n' });
+  write(r.dir, {
+    'src/a.js': 'a changed\n',                // the worker's real write
+    '.smoke/store.json': '{}\n',              // the arbiter's litectx store for this run
+    '.smoke/chunks/0001.json': '{}\n',        // and everything beneath it
+    'src/smoke.js': 'export const x = 1;\n',  // the DECOY — a legitimate source file
+  });
+  const cs = await changedSet(r.dir, r.seed);
+  assert.equal(cs.stop, null);
+  assert.deepEqual(cs.paths, ['src/a.js', 'src/smoke.js'],
+    'the worker\'s two writes, and only those — the store is the arbiter\'s and the decoy is work');
+  assert.deepEqual(cs.excluded.map((e) => e.path).sort(), ['.smoke/chunks/0001.json', '.smoke/store.json']);
+  assert.deepEqual([...new Set(cs.excluded.map((e) => e.book))], ['.smoke/'], 'named as the book it is, so the exclusion is auditable');
 });
 
 test('a seed commit that does not exist is an instrument stop, on every kind that reads the changed set', async (t) => {

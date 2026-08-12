@@ -346,20 +346,31 @@ export async function seedListing(workdir, seedRef) {
 // ── contract (c): the changed-set primitive ──────────────────────────────────
 
 /**
- * The two arbiter books, and the shape of each exclusion is the whole point.
+ * The arbiter books, and the shape of each exclusion is the whole point.
  *
- * `.litectx/` is a PREFIX — everything beneath the store belongs to the
- * arbiter. `gate-audit.jsonl` is an EXACT repo-relative path and never a
- * basename or a pattern: the gate audit is written to
+ * `.litectx/` and `.smoke/` are PREFIXES — everything beneath either store
+ * belongs to the arbiter. `gate-audit.jsonl` is an EXACT repo-relative path and
+ * never a basename or a pattern: the gate audit is written to
  * `join(workdir, 'gate-audit.jsonl')` and nowhere else, so a worker-authored
  * `src/gate-audit.jsonl` is NOT an arbiter book and must still count as work.
  * Matching by basename would swallow it — and swallowing a worker's real
- * write is the failure direction that reads as a clean tree.
+ * write is the failure direction that reads as a clean tree. `src/smoke.js` and
+ * `tests/smoke.test.js` are that same decoy for the store below.
+ *
+ * `.smoke/` — F98's parked residual, closed here. The fence has always denied
+ * `join(workdir, '.smoke')` on every worker (src/planrun.js, src/authorscout.js)
+ * and the persona now states the rule; this reader, which decides what COUNTS AS
+ * WORK, was the one place that never knew the name. On patients whose .gitignore
+ * default-denies dot-directories the store never reaches `ls-files --others` and
+ * the gap is masked — by the PATIENT's config, not by anything here. Incidental
+ * masking is not an exclusion: on a patient without that line the arbiter's own
+ * store would enter the changed set as the worker's writing.
  * @param {string} rel a repo-relative POSIX path
  * @returns {string|null} the book it belongs to, or null
  */
 export function isArbiterBook(rel) {
   if (rel === '.litectx' || rel.startsWith('.litectx/')) return '.litectx/';
+  if (rel === '.smoke' || rel.startsWith('.smoke/')) return '.smoke/';
   if (rel === 'gate-audit.jsonl') return 'gate-audit.jsonl';
   return null;
 }
