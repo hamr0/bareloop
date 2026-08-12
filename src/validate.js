@@ -177,6 +177,69 @@ function unboundedQuantLen(src, i) {
   return len;
 }
 
+/** How many characters of `(`-prologue sit at `src[i]` before the group's BODY:
+ * 1 for a plain or capturing group, 3 for `(?:` `(?=` `(?!`, 4 for `(?<=` `(?<!`,
+ * and past the `>` of a named group `(?<name>`. The body is read back when the
+ * group closes, and a prologue counted as body text would make `(?:a|aa)` split
+ * as `?:a` / `aa` — no prefix relation, and the hazard read as safe.
+ * @param {string} src @param {number} i index of the `(` */
+function groupPrologueLen(src, i) {
+  if (src[i + 1] !== '?') return 1;
+  const c = src[i + 2];
+  if (c === ':' || c === '=' || c === '!') return 3;
+  if (c === '<') {
+    if (src[i + 3] === '=' || src[i + 3] === '!') return 4;   // lookbehind
+    const close = src.indexOf('>', i + 3);                    // named group
+    return close === -1 ? 3 : close - i + 1;
+  }
+  return 1;                                                    // modifier groups etc — read the lot as body (fail-safe)
+}
+
+/**
+ * Do a group body's TOP-LEVEL alternation branches overlap — is one a prefix of
+ * another, equality included? That is the practical detectable core of the
+ * overlapping-alternation blowup (`(a|aa)`, `(a|a)`, `(\d|\d\d)`, `(a|a?)`):
+ * two branches that can consume the same text give the engine two ways to reach
+ * the same position, and an unbounded repeat multiplies them.
+ *
+ * The comparison is over the branches' SOURCE TEXT, which is what makes it
+ * conservative rather than exact — `(ab|abc)+` carries the prefix relation and
+ * did not blow up on the body measured. Exactness needs the real regex engine
+ * F49 declined to take as a dependency, and guessing it wrong would ADMIT an
+ * exponential pattern, so the over-rejection stands as a named limit.
+ *
+ * Splitting respects escapes, character classes and nested groups: a `|` inside
+ * `[a|b]` or inside `(x|y)` is not this group's alternation, and treating it as
+ * one would invent branches nobody wrote.
+ * @param {string} body the text between a group's prologue and its `)`
+ * @returns {boolean}
+ */
+function altBranchesOverlap(body) {
+  /** @type {string[]} */
+  const branches = [];
+  let start = 0;
+  let depth = 0;
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (c === '\\') { i++; continue; }
+    if (c === '[') { i++; if (body[i] === '^') i++; while (i < body.length && body[i] !== ']') { if (body[i] === '\\') i++; i++; } continue; }
+    if (c === '(') { depth++; continue; }
+    if (c === ')') { depth--; continue; }
+    if (c === '|' && depth === 0) { branches.push(body.slice(start, i)); start = i + 1; }
+  }
+  if (branches.length === 0) return false;                    // no top-level alternation at all
+  branches.push(body.slice(start));
+  for (let i = 0; i < branches.length; i++) {
+    for (let j = 0; j < branches.length; j++) {
+      // `startsWith` covers EQUALITY, which is the 2ⁿ case: `(a|a)+$` took 52.3s
+      // on a 27-character body. Skipping i===j is what keeps that from being
+      // every pattern's own reflexive match.
+      if (i !== j && branches[j].startsWith(branches[i])) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * F49 — a heuristic reject for the catastrophic-backtracking footgun: an
  * unbounded quantifier applied to a group whose body itself repeats unboundedly
@@ -201,16 +264,40 @@ function unboundedQuantLen(src, i) {
  * So the reject targets the dominant exponential class and fails it as a
  * mechanical gap at the validation gate, before any tokens burn. A full ReDoS
  * analyzer needs a real regex engine (an external native dep we do not take for
- * a LOW issue); exotic overlapping-alternation blowup is out of scope by
- * decision (PARKED to the close-authoring rung — PRD v1.55).
+ * a LOW issue).
+ *
+ * SECOND CLASS, added 2026-08-12 — OVERLAPPING ALTERNATION under an unbounded
+ * repeat (`(a|aa)+`, `(a|a)+`, `(\d|\d\d)*`). F49 recorded this as a genuine
+ * false NEGATIVE of the shape approach and PARKED the widening, because changing
+ * the detector changes which SIGNED specs are admissible. It is closed here on
+ * measurement, one fresh process per point (a hot RegExp tiers up out of the V8
+ * interpreter, and a single-process sweep read a LONGER body as faster —
+ * backwards for an exponential, and the harness rather than the regex).
+ * `(a|aa)+$` against a run of `a` with one non-matching tail character:
+ *
+ *     27ch 218ms · 31ch 1,879ms · 35ch 12,082ms · 39ch 52,563ms · 41ch 189,420ms
+ *
+ * ~6.8× per 4 characters — the Fibonacci decomposition count, φ⁴. `(a|a)+$` (the
+ * 2ⁿ equal-branch case) took 52,256ms on 27ch, and `((a|aa))+$` — the redundant
+ * wrapper the `((a+))+` entry above exists for — 15,426ms on 35ch, which is why
+ * the overlap propagates up through a wrapper exactly as the inner repeat does.
+ * Input-bounding is theater here for F49's own reason: tens of characters suffice.
+ *
+ * The detected core is the PREFIX RELATION between top-level branches (one branch
+ * a prefix of another, equality included — `(a|a)+` is the 2ⁿ case). Whether a
+ * given prefix overlap can actually be DRIVEN exponentially depends on what
+ * follows the group, and deciding that needs the real engine this file declined
+ * to take as a dependency — so the reject is conservative by construction, which
+ * is the fail-safe direction.
+ *
+ * MONOTONIC, and that is the rule this change lives under: it only ever ADDS
+ * rejections. Nothing above is narrowed, and no previously-rejected shape became
+ * admissible (asserted over the whole corpus in tests/plan.test.js). F49's
+ * "never sharpen the detector" bars chasing false POSITIVES; closing a false
+ * NEGATIVE by adding rejections is the opposite, allowed direction — distinct
+ * rules, not in tension (the `((a+))+` widening set the precedent).
  *
  * SCOPE IS ASYMMETRIC, both directions named on purpose:
- *   - false NEGATIVE: overlapping-alternation blowup (`(a|ab)+`-class) is not
- *     detected — there is no inner QUANTIFIER to find, so the shape scan cannot
- *     see it; the blowup comes from overlapping alternation BRANCHES under a
- *     repeat. A genuine limit of the approach, not a bug in it. Widening the
- *     detector changes which SIGNED specs are admissible, which is
- *     arbiter-adjacent — parked, not chased (PRD v1.55).
  *   - false POSITIVE: a group whose repetitions are disambiguated by a literal
  *     anchor/delimiter (`(?:^- .+$\n?)+`, `(?:CHANGELOG:.+\n)+`) is FLAGGED even
  *     though a real engine runs it linearly — the scan sees the nested-quantifier
@@ -221,13 +308,28 @@ function unboundedQuantLen(src, i) {
  *     and guessing it wrong would ADMIT an exponential pattern — so the shape
  *     reject stands, and the over-rejection is a named, accepted limitation.
  *
+ *     The alternation class has its OWN instance of the same limit, measured and
+ *     locked in `REDOS_OVERREJECTED_ALT`: `(ab|abc)+$`, `(x|xy|xyz)+$` and
+ *     `(x(a|aa))+$` carry the prefix relation and did NOT blow up on the bodies
+ *     measured (0.3–0.4ms at 41–91 characters). "Did not blow up on the body
+ *     measured" is the honest claim — no adversarial search was run for a worse
+ *     input — and rejecting them is again the direction that never admits an
+ *     exponential pattern.
+ *
  * The input is guaranteed to compile as a RegExp (checked first by the caller),
  * so this scan assumes valid, balanced JS regex syntax.
  * @param {string} src a compiled regex source string
- * @returns {boolean} true iff a nested unbounded quantifier is present
+ * @returns {boolean} true iff a nested unbounded quantifier, or an unboundedly
+ *   repeated group with overlapping alternation branches, is present
  */
 export function hasNestedQuantifier(src) {
-  /** @type {{ quant: boolean }[]} */
+  /** `quant`: the body repeats unboundedly. `alt`: the body (or a group beneath
+   * it) carries overlapping alternation branches. `at`: where the body starts,
+   * so the branches can be read back when the group closes. The two hazard flags
+   * are tracked separately and propagate separately — merging them would let a
+   * plain nested repeat be reported as an alternation overlap and vice versa,
+   * and the two are different rewrites for the author. */
+  /** @type {{ quant: boolean, alt: boolean, at: number }[]} */
   const stack = [];
   for (let i = 0; i < src.length; i++) {
     const c = src[i];
@@ -254,11 +356,19 @@ export function hasNestedQuantifier(src) {
       while (i < src.length && src[i] !== ']') { if (src[i] === '\\') i++; i++; }
       continue;
     }
-    if (c === '(') { stack.push({ quant: false }); continue; }
+    if (c === '(') { stack.push({ quant: false, alt: false, at: i + groupPrologueLen(src, i) }); continue; }
     if (c === ')') {
       const g = stack.pop();
       const qlen = unboundedQuantLen(src, i + 1);
       if (g && g.quant && qlen) return true;    // group repeats unboundedly AND its body did too
+      // …and the SECOND class: the body's own top-level branches overlap, so the
+      // engine has more than one way to consume the same text and an unbounded
+      // repeat multiplies those ways (MEASURED: `(a|aa)+$` 12.1s on a 35-char
+      // body). `g.alt` carries an overlap found in a group BENEATH this one, for
+      // the redundant-wrapper reason one comment down.
+      const overlap = !!g && (g.alt || altBranchesOverlap(src.slice(g.at, i)));
+      if (overlap && qlen) return true;
+      if (overlap && stack.length) stack[stack.length - 1].alt = true;
       // The group is an unbounded-repeated atom of its parent when it is directly
       // re-quantified (qlen) OR its own body already repeats unboundedly (g.quant):
       // a redundant wrapper — ((a+))+ , (?:(a+))* , (((\d*)))+ — is the SAME

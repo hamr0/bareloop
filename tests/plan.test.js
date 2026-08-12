@@ -459,6 +459,110 @@ for (const src of REDOS_OVERREJECTED) {
   });
 }
 
+// ── the ALTERNATION-OVERLAP class (F49's named false NEGATIVE, closed) ───────
+//
+// F49 recorded it as a genuine limit of the shape approach: `(a|aa)+` has no inner
+// QUANTIFIER to find — the blowup comes from overlapping alternation BRANCHES under
+// a repeat — and widening the detector changes which SIGNED specs are admissible, so
+// it was parked to the close-authoring rung rather than chased.
+//
+// MEASURED on this engine before the widening, one fresh process per point (a hot
+// RegExp tiers up from the V8 interpreter, and a single-process sweep read 31ch at
+// 1340ms and 35ch at 1157ms — backwards for an exponential, and the harness, not the
+// regex). `(a|aa)+$` against a run of `a` with one non-matching tail char:
+//
+//     27ch 218ms · 31ch 1,879ms · 35ch 12,082ms · 39ch 52,563ms · 41ch 189,420ms
+//
+// ~6.8× per 4 characters — the Fibonacci decomposition count, φ⁴. `(a|a)+$` (equal
+// branches, the 2ⁿ case) took 52,256ms on a 27-char body, and `((a|aa))+$` — the
+// redundant wrapper the `((a+))+` entry above exists for — took 15,426ms on 35ch.
+// Input-bounding is theater here for F49's own reason: tens of characters suffice.
+//
+// The rule is MONOTONIC: rejections are only ever ADDED. Nothing above is narrowed,
+// which is why the whole corpus above this line re-runs unchanged.
+const REDOS_BAD_ALT = [
+  '(a|aa)+', '(a|aa)*', '(a|aa)+$', '(a|aa){1,}',   // one branch a prefix of the other
+  '(a|a)+', '(\\d|\\d\\d)+', '(a|a?)+',              // equal branches, escaped atoms, the optional twin
+  '(?:a|aa)+', '(x|xy|xyz)+',                        // non-capturing, and a three-way overlap
+  '((a|aa))+', '(?:(a|aa))*',                        // through a redundant wrapper — MEASURED 15.4s at 35ch
+  // a nested group BEFORE the alternation: the splitter must come back down to
+  // depth 0 or the real `|` is never seen and the hazard reads as safe.
+  // MEASURED 15,642ms on a 49-character body ('xa'×24 + '!') — the 2ⁿ case.
+  '((?:x)a|(?:x)a)+',
+];
+for (const src of REDOS_BAD_ALT) {
+  test(`hasNestedQuantifier flags the alternation-overlap footgun: ${src}`, () => {
+    assert.equal(hasNestedQuantifier(src), true, `${src} should be flagged`);
+  });
+}
+
+// The floor the widening must not cross: alternations whose branches CANNOT both
+// match at one position are the ordinary spelling and stay admissible. `(FAILED|red)`
+// is the shape of a pattern live in a signed spec today.
+const REDOS_GOOD_ALT = [
+  '(a|b)+', '(abc|xyz)+', '(FAILED|red)+', '(cat|dog|bird)*',
+  '(a|aa)', '(a|aa)?', '(a|aa){2}', '(a|aa){1,3}',   // no UNBOUNDED repeat — no blowup to drive
+  '^(FAILED|red)', 'foo|bar', '(a|b)+(c|d)+',
+  // a `|` inside a CHARACTER CLASS is not this group's alternation. Split naively
+  // this reads as branches `ab` / `c[a` / `ab]d`, and `ab` is a prefix of `ab]d` —
+  // a hazard invented out of punctuation nobody wrote.
+  '(ab|c[a|ab]d)+',
+  // and a `|` inside a NESTED GROUP is that group's alternation, not this one's.
+  // Split depth-blind this reads as `ab` / `c(x` / `ab)d`, and `ab` is a prefix of
+  // `ab)d`. The inner `(x|ab)` has no overlap of its own, so nothing legitimately
+  // flags here — the reject would be pure punctuation.
+  '(ab|c(x|ab)d)+',
+];
+for (const src of REDOS_GOOD_ALT) {
+  test(`hasNestedQuantifier passes the safe alternation: ${src}`, () => {
+    assert.equal(hasNestedQuantifier(src), false, `${src} should NOT be flagged`);
+  });
+}
+
+// NEW named, ACCEPTED over-rejection, the same fail-safe direction as the block
+// above. The rule detects the PREFIX relation between branches, which is the
+// practical core; whether a prefix overlap can actually be driven exponentially
+// depends on what follows the group, and deciding that needs the real engine F49
+// declined to take as a dependency. Each of these is flagged and did NOT blow up on
+// the body measured (fresh process, same harness as above):
+//
+//     (ab|abc)+$    'abc'×30 + '!'  (91ch)  → 0.4ms
+//     (x|xy|xyz)+$  'xy'×20  + '!'  (41ch)  → 0.3ms
+//     (x(a|aa))+$   'xa'×40  + '!'  (81ch)  → 0.4ms
+//
+// "did not blow up on the body measured" is the honest claim — not "provably
+// linear"; no adversarial search was run for a worse input. Rejecting them is the
+// direction that never admits an exponential pattern, and the cost is one mechanical
+// redraft. NEVER sharpen the detector to admit these (F49's standing rule): a false
+// negative is the dangerous direction, and these tests exist so a future "smarter"
+// detector fails loudly here instead of quietly opening the class.
+const REDOS_OVERREJECTED_ALT = ['(ab|abc)+$', '(x|xy|xyz)+$', '(x(a|aa))+$'];
+for (const src of REDOS_OVERREJECTED_ALT) {
+  test(`hasNestedQuantifier over-rejects the alternation shape (accepted, fail-safe): ${src}`, () => {
+    assert.equal(hasNestedQuantifier(src), true, `${src} is flagged by shape — an accepted over-rejection, never a false negative`);
+  });
+}
+
+test('the widening is MONOTONIC — every previously-rejected shape is still rejected, and the detector is still ONE function', () => {
+  // The rule F49 froze runs both ways and the two halves are not in tension: adding
+  // rejections is the allowed direction, removing one is not. This asserts the whole
+  // pre-existing BAD corpus in one place, so a widening that traded a catch for a
+  // catch reds here even if someone edited the loop above.
+  for (const src of [...REDOS_BAD, ...REDOS_OVERREJECTED]) {
+    assert.equal(hasNestedQuantifier(src), true, `${src} was rejected before the alternation widening and must still be`);
+  }
+  for (const src of REDOS_GOOD) {
+    assert.equal(hasNestedQuantifier(src), false, `${src} was admissible before the widening and must still be — the widening must not churn a signed spec`);
+  }
+});
+
+test('the alternation red reaches the REAL gate, on the operator side and the agent side alike', () => {
+  const p = validatePlan(mut((x) => { x.steps[0].exit[0].pattern = '(a|aa)+$'; }), OPTS);
+  assert.equal(p.ok, false);
+  assert.match(p.reds[0].detail ?? '', /F49/);
+  assert.equal(p.reds[0].path, 'steps.0.exit.0.pattern');
+});
+
 test('the ReDoS red detail names the footgun (the gap must let the replan rewrite, not guess)', () => {
   const r = validatePlan(mut((p) => { p.steps[0].exit[0].pattern = '(a+)+$'; }), OPTS);
   assert.match(r.reds[0].detail ?? '', /quantifier/i);
