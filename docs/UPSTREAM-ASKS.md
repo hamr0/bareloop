@@ -1428,30 +1428,52 @@ Read in bareguard's own PRD and corpus, 2026-08-09, before anything was written 
   is specified as **a detector that annotates, never decides**.
 - **The shipped half is already there:** `gate.annotate` and its fact envelope
   `{ surface, verdict, where, meta }`, released in **bareguard 0.7.0** (their `gate.js:600-619`,
-  PRD §8.2). **The citation of record is the shipped `Annotation` typedef** — it now documents all
-  three field bounds *and* `meta`'s all-or-nothing behaviour in the source itself, which makes it
-  the stable citable authority rather than any doc line. Field semantics, exactly as shipped:
+  PRD §8.2). **The citation of record is the shipped `Annotation` typedef** — it now documents
+  **BOTH bounds**, source and audit-sink, *and* `meta`'s all-or-nothing behaviour in the source
+  itself, which makes it the stable citable authority rather than any doc line. Field semantics,
+  exactly as shipped:
   **`surface` (bool) is the ONLY load-bearing field** — it alone is what makes an audit row read
   BROKE; **`verdict`** is an optional string (capped at 80 chars — immaterial for
-  `honored`/`broke`); **`where`** is an optional string **capped at 300 chars** (the field is
-  `where`, *not* `text`); **`meta`** is an optional bag **capped at 1000 bytes** —
+  `honored`/`broke`); **`where`** is an optional string **capped at 300 CHARACTERS** (characters,
+  *not* bytes — see the next bullet; and the field is `where`, *not* `text`); **`meta`** is an
+  optional bag **capped at 1000 bytes** at the source —
   **all-or-nothing, see the next bullet** — and it is where `{field, stated, returned}` ride.
   **`kind` DOES NOT EXIST** — bareguard's own **E6e** killed it, and it sits in this ask's own
   rejected-alternatives table below. That envelope is Axis B's detector, and it needs no change.
-- **The two caps truncate DIFFERENTLY, the maintainer measured it against the shipped gate
-  (2026-08-12) — and then measured the BOUNDARY, which corrected half of the first reading.**
-  `where` truncates **SILENTLY**: their probe put F98's own exemplar — the 8 `tsc` error lines —
-  through `where` and it came out cut mid-token at `src/backup.js(59,4`, **six of eight addresses
-  gone, no marker**. `meta` is **ALL-OR-NOTHING**, and it does **not shorten content**: under 1000
-  bytes the bag rides **whole**; at the cap the **ENTIRE `meta` object is replaced by
-  `{_truncated: true, bytes: N}`** — `field`, `stated` and `returned` are lost **with** the
-  evidence, not preserved beside a clipped quote. Measured **across the boundary**: **4 lines /
-  375 B, 8 lines / 751 B, 10 lines / 939 B ride intact; 12 lines / 1127 B and 20 lines / 1879 B
-  lose everything.** So above roughly **ten `tsc`-scale lines** a judged row degrades to **a count
-  with no addresses** — the exact **F98 semantic-genre stall that requirement 6 exists to
-  prevent**, arriving through the field that was supposed to be the safe one. **The caps
-  themselves are load-bearing and are NOT to be raised** — they keep an audit-line append atomic
-  under `PIPE_BUF`, with headroom for post-redaction expansion. The consequence for the judge is a
+- **There are TWO bounds, not one — and the second one no caller can satisfy by sizing.** The
+  maintainer measured the source caps against the shipped gate (2026-08-12), then measured the
+  BOUNDARY twice; the second boundary pass found a **whole bound this entry had never described**
+  and corrected the silent/visible reading of the first. Both halves are stated here rather than
+  quietly rewritten.
+  **(a) The SOURCE bound — governs the DRAINED fact and the `humanChannel` event.** `verdict`
+  **80**, `where` **300 CHARACTERS**, `meta` **1000 bytes, all-or-nothing**. **Characters, not
+  bytes**: 300 CJK characters is **900 bytes**, so **the source caps never were what preserved
+  append atomicity** — that job belongs entirely to bound (b). `where` truncates here
+  **SILENTLY**: their probe put F98's own exemplar — the 8 `tsc` error lines — through `where` and
+  it came out cut mid-token at `src/backup.js(59,4`, **six of eight addresses gone, no marker**.
+  `meta` is **ALL-OR-NOTHING** and does **not shorten content**: under 1000 bytes the bag rides
+  **whole**; at the cap the **ENTIRE `meta` object is replaced by `{_truncated: true, bytes: N}`**
+  — `field`, `stated` and `returned` are lost **with** the evidence, not preserved beside a
+  clipped quote. Measured across that boundary: **4 lines / 375 B, 8 lines / 751 B, 10 lines /
+  939 B ride intact; 12 lines / 1127 B and 20 lines / 1879 B lose everything.**
+  **(b) The AUDIT-SINK bound — applied AFTER redaction, to the PERSISTED LINE only.** A
+  **~3500-byte** atomic-append cap on the row that reaches disk. **Redaction expands** each match
+  into a longer `[REDACTED:…]` tag, so **a line built entirely from in-budget values can still
+  blow the cap**, and at this bound `meta` is replaced **WHOLESALE even when the source meta was
+  legal**. Their measurement, one number that settles it: a **355-byte** `meta` persisted as
+  **`{"_truncated":true,"bytes":6977}`**. **No caller can satisfy this bound by sizing alone** —
+  the expansion factor belongs to the configured redactor and to the judged text, not to the
+  judge; sizing the source is **necessary and not sufficient**.
+  **CORRECTION to the earlier rounds' silent/visible statement.** The **AUDIT** clip of `where`
+  **DOES** carry a **`[TRUNCATED]`** suffix, and the row a root **`_truncated: true`**. *"Clips
+  silently, no marker"* is true **only of the SOURCE clip — the drained fact**. Stated the right
+  way round: **loss in the persisted row is VISIBLE; loss in the drained fact is NOT.**
+  So above roughly **ten `tsc`-scale lines** a judged row degrades to **a count with no
+  addresses** — the exact **F98 semantic-genre stall that requirement 6 exists to prevent**,
+  arriving through the field that was supposed to be the safe one; and a **redaction-heavy** row
+  can degrade at the sink no matter how small the source was. **Neither bound is to be raised** —
+  the **~3500-byte sink cap** is what keeps an audit-line append atomic under `PIPE_BUF`, and the
+  source caps bound what the drain and the human channel carry. The consequence for the judge is a
   contract clause of this ask; it is stated in requirement 6 below.
 - **The judge itself is POC-only** — `harness-code-mode/e6-judge.mjs`, never shipped — and
   **bareguard's locked design says bareguard never calls an LLM: the judge is caller-side by
@@ -1570,22 +1592,30 @@ judged-floor analog, and **the judge is the ceiling** — verifier hardening nev
    address or it manufactures the genre that stalls.
 
    **Where the mechanical content RIDES — a contract clause, not a style note.** `where` is a
-   **ONE-LINE ADDRESS**, ≤300 chars: *"price: stated €280, invoice shows €400"*, or a single
+   **ONE-LINE ADDRESS**, ≤300 **characters**: *"price: stated €280, invoice shows €400"*, or a single
    `file(line)` locus. **`{field, stated, returned}` ride `meta` — and they must stay SMALL and
    SEPARATE from any bulky quoted evidence.** The reason is the measured field budgets (field
-   semantics, above), and it is **two different failures, not one asymmetry**: `where` clips
-   **silently** at 300 chars — the maintainer's probe put F98's 8 lines through `where` and got
+   semantics, above), and it is **two different failures at the SOURCE bound, plus a third at the
+   AUDIT-SINK bound**: `where` clips **silently at the source** at 300 **characters** — the
+   maintainer's probe put F98's 8 lines through `where` and got
    `src/backup.js(59,4`, **six of eight addresses gone with no marker** — while `meta` is
    **ALL-OR-NOTHING** at 1000 bytes: one byte over and `{field, stated, returned}` vanish
    **together with** the evidence, replaced by `{_truncated: true, bytes: N}`. **There is no
    partial credit at the meta boundary.** So the evidence quote is **BOUNDED BY THE JUDGE'S
    CALLER, before the envelope** — trimmed to a **visibly marked** excerpt sized so the **whole**
    `meta` bag stays under 1000 bytes — and the address trio is never packed in behind a quote long
-   enough to take it down with it. **The caps stay exactly as shipped** (`PIPE_BUF` headroom);
+   enough to take it down with it. **That sizing is necessary and NOT sufficient**, and this
+   requirement says so plainly: the **AUDIT-SINK bound** (~3500 bytes, applied **after redaction**
+   to the persisted line) can replace `meta` **wholesale even when the source meta was legal** —
+   measured, a **355-byte** `meta` persisted as **`{"_truncated":true,"bytes":6977}`**. **No
+   caller can satisfy that bound by sizing alone**, which is why the ruling below makes the
+   **drain**, not the audit line, the authoritative carrier of judged facts. **The caps stay
+   exactly as shipped** (`PIPE_BUF` headroom at the sink);
    nothing here asks bareguard to raise one. A judge that stuffs evidence into `where` emits a
    **silently clipped row**; a judge that stuffs it unbounded into `meta` emits **a count with no
    addresses** — and both are read by a human at the HITL, where a missing address cannot be
-   recovered and nothing announces that it went missing. **This narrows the CHANNEL, never the
+   recovered. The **persisted** row at least says so (`[TRUNCATED]` / `_truncated: true`); the
+   **drained** fact — the one the ratchet reads — says nothing at all. **This narrows the CHANNEL, never the
    demand:** the mechanical genre is still mandatory in both fields — a one-line `where` that says
    *"seems off"* fails this requirement exactly as it did before.
 7. **Validate against the REAL instrument.** Acceptance runs on **real uncrafted egress
@@ -1638,6 +1668,18 @@ judged-floor analog, and **the judge is the ceiling** — verifier hardening nev
    until someone audits the rows. This criterion exists because that exact path was found in
    validation (see the 2026-08-12 note below); a harness that cannot fail it certifies nothing.
 
+   **Two further negative controls, added 2026-08-12 — both fail open the same way, and one of
+   them is the LIKELIER mistake.** (a) **The ARRAY shape:** `gate.annotate([fact])` — a caller
+   handing a *list* of facts to a single-fact API. An array **passes `typeof object`**, so it
+   buffers a **dead fact with `surface: false`** that **routes as `honored`**, identically
+   fail-open and with nothing thrown. It is a likelier slip than the retired sketch (which at
+   least requires knowing the dead shape), so it is now a **required** control, not a note.
+   (b) **Integrity checks must treat `{_unserializable: true}` as LOSS exactly like
+   `_truncated`.** A `meta` carrying a circular reference or a `BigInt` cannot be serialised and
+   comes back flagged that way, **not** truncated — so **a check that reads only `_truncated`
+   reads an unserializable `meta` as INTACT**. Both flags are loss; a harness asserting on one of
+   them certifies half a contract.
+
 ### 2026-08-12 — envelope citation CORRECTED (with its root cause), field budgets MEASURED, and bareguard's frozen case set ACCEPTED as a hashed portable fixture
 
 **(a) The correction, and its source.** bareguard's maintainer session validated this ask against
@@ -1670,7 +1712,9 @@ record here.
 **Field budgets, measured on the shipped gate — and half of that measurement CORRECTED days later,
 stated here rather than quietly rewritten above.** The first probe measured `where` at 300 chars
 **silent** (the 8-line F98 exemplar clipped to `src/backup.js(59,4`) and `meta` at 1000 bytes
-**visible**, with a 751-char evidence string riding intact. **The `where` half stands.** **The
+**visible**, with a 751-char evidence string riding intact. **The `where` half stands** — but only
+at the SOURCE bound, and the *"300 chars"* of it is **300 CHARACTERS, not bytes**: both points were
+corrected by the second boundary pass, see the next subsection. **The
 `meta` half, as committed in bd0d9b8, was wrong in the way that matters:** it read as *"`meta`
 clips visibly, so bulk evidence is safe there"* — but the cap does **not shorten content**. At the
 cap the **whole bag is replaced** by `{_truncated: true, bytes: N}`, taking `field`, `stated` and
@@ -1685,7 +1729,9 @@ boundary could falsify it. The corrected clause is folded in **twice**, in the s
 original was: into the field-semantics citation above, and into **contract requirement 6**, which
 now bounds the evidence quote **at the judge's caller** so the whole bag stays under the cap.
 **The caps are not to be raised** — they are what keeps an audit-line append atomic under
-`PIPE_BUF`, with headroom for post-redaction expansion.
+`PIPE_BUF`, with headroom for post-redaction expansion. **That last sentence is itself corrected in
+the next subsection:** the SOURCE caps never preserved atomicity (`where` is measured in
+characters); the **~3500-byte AUDIT-SINK** cap does.
 
 **(b) The frozen case set — bareguard's offer ACCEPTED.** bareguard offered its **frozen labeled
 case set** — the E6 harness corpus, including **the €280 false-positive trap** and **the forged
@@ -1723,6 +1769,44 @@ UNGRADED**, the ambiguous hotel row, which is exactly why the E6i headline reads
 **bare-agent has vendored the file and pinned the hash with a byte-equivalence test**, so
 criterion 1 cites frozen bytes literally rather than a set anyone has to remember.
 
+### 2026-08-12 — SECOND boundary correction absorbed: a whole SECOND bound, and the silent/visible reading the wrong way round
+
+**bareguard's maintainer issued a second boundary correction, same class as the first**, caught by
+their own high-effort code review and **re-verified by execution** before it was sent. Their commit
+**`b8e934f`** is **docs + tests only — no behaviour change, no export change, 248/248**, and the
+emitted `.d.ts` now carries **both bounds**. So the **`Annotation` typedef remains the stable cited
+authority and there is nothing to re-pin**: the contract did not move, our description of it did.
+
+**What was wrong in the text committed in 3593259, named rather than rewritten out.** Two things.
+**(1) It described ONE bound where there are TWO.** Everything that entry called "the field
+budget" was the **SOURCE** bound — the caps on the fact as stated, which govern the **drained**
+fact and the **`humanChannel`** event. It never mentioned the **AUDIT-SINK** bound: a **~3500-byte**
+cap applied **after redaction** to the **persisted line only**, where `meta` is replaced
+**wholesale even when the source meta was legal**. Their number: a **355-byte** `meta` on disk as
+**`{"_truncated":true,"bytes":6977}`**. **No caller can satisfy that bound by sizing alone** — the
+expansion factor is the configured redactor's, not the judge's. **(2) It had silent/visible the
+wrong way round at the sink.** The **audit** clip of `where` **does** carry a **`[TRUNCATED]`**
+suffix and a root **`_truncated: true`**; *"clips silently, no marker"* was only ever true of the
+**SOURCE** clip. Loss in the persisted row is **visible**; loss in the **drained** fact is not —
+and the drained fact is the one the ratchet reads (ruling below).
+
+**And the entry's own atomicity story was wrong with it.** 3593259 said the caps "keep an
+audit-line append atomic under `PIPE_BUF`, with headroom for post-redaction expansion" — but
+`where`'s 300 is **CHARACTERS, not bytes**, and 300 CJK characters is **900 bytes**. **The source
+caps never were what preserved atomicity.** Bound (b) is; bound (a) bounds what the drain and the
+human channel carry. Both corrected clauses are folded in **twice**, in the same two places the
+originals were: the field-semantics citation and contract requirement 6.
+
+**The recurrence, recorded without gloss.** This is the **second same-class correction absorbed**
+on this ask: both times a claim **verified at a point** was falsified by **measurement across the
+boundary** — first the under-ceiling `meta` probe that could only ever show the intact case, now a
+stage-local reading of caps that a **later stage re-bounded**. Both were caught **before any
+consumer built on them** — the first by the maintainer's boundary run, the second by their own
+review-then-execute pass — which is the exchange working as designed, not a process that needs
+fixing. **bareguard's generalisation of the class is worth carrying verbatim into ours:** *check
+whether a second mechanism downstream re-bounds what you just measured.* A measurement is a claim
+about a stage, and a stage is not a pipeline.
+
 ### 2026-08-12 — bareloop's RULING: judged facts annotate on the ARBITER'S OWN gate, never the worker's
 
 **Recorded as bareloop's ruling** — not bareguard's, not bare-agent's — and it is nothing new: it
@@ -1751,6 +1835,36 @@ are the live channels, and they are what acceptance criterion 7 asserts against.
 genuinely wants a judged fact to ride a human ask must **annotate on the gate instance that raises
 that ask** — a different gate, deliberately chosen. It is not the default, it is not a relaxation
 of this ruling, and nothing shipping today needs it.
+
+**EXTENSION (bareloop's ruling, 2026-08-12): the RATCHET FEED for judged facts reads
+`drainAnnotations()` — sink 2 — and the audit line is never the parser source.** Of the two live
+sinks chosen above, **the DRAIN is the AUTHORITATIVE carrier of the mechanical facts**; **sink 1,
+the audit line, is the durable RECORD and only that**. The interaction, stated plainly: **sink 1
+is the redaction-exposed one.** A configured secrets redactor — and a judge's raw output is
+*exactly* the kind of text one redacts — can **lawfully destroy the persisted `meta`** at the
+audit-sink bound (~3500 bytes, post-redaction, wholesale replacement) **while the drained fact
+survives intact**. So **any consumer that parses judged facts out of the audit trail is on the path
+that silently loses addresses** — the F98 stall arriving by a route nobody sized for, since no
+caller can size for it. Parse the drain; keep the line as the record.
+
+**COMPANION CLAUSE — one designated drainer per gate instance, called once per turn.**
+`drainAnnotations()` **CLEARS the buffer**: it supports **exactly ONE reader**, measured — reader A
+gets 1 fact, reader B immediately after gets **0** — and that is **by design**, to stop stale facts
+riding a later unrelated ask. The moment sink 2 becomes the authoritative carrier, **two drain
+callers on one gate silently split the facts**: first drainer wins, and the second **cannot
+distinguish "no facts" from "already taken"**. Therefore: **one designated drainer per gate
+instance, called once per turn; every other consumer — the agent-feedback path included —
+receives the facts FROM that drainer, never by calling drain itself.** In bareloop's consumption
+plan the **ARBITER** (the ratchet/close path) **is the designated drainer**.
+
+Two measured facts that come with it. **(a) A fact that rides a human ask is NOT consumed by riding
+it** — it is still drainable afterward, so **the ask path and the drain path never contend; only
+two DRAIN callers do.** **(b) An undrained buffer GROWS for the life of the gate instance** —
+bareguard's own known Low from their 0.7.0 security pass (in-memory, per-run, caller-driven), and
+harmless under drain-each-turn discipline. But **"authoritative carrier" promotes drain-each-turn
+from a recommendation to a REQUIREMENT**: the facts now exist nowhere else in recoverable form, so
+a turn that skips the drain is not merely untidy — it is a turn whose mechanical addresses may
+survive only in a row a redactor is entitled to blank.
 
 ### Not asked (recorded, so nobody re-opens them)
 
@@ -1782,7 +1896,10 @@ independent chance to fail open** — a mis-keyed field is dropped in silence, `
 upstream and covered by upstream's own tests, is one place that can be wrong instead of N. bareloop
 then makes the `gate.annotate` call **itself**, on the arbiter's gate (ruling above), and bounds the
 `evidence` quote with a **visible marker** before the envelope so the whole `meta` bag stays under
-1000 bytes (requirement 6).
+1000 bytes at the **source** bound (requirement 6) — **necessary, not sufficient**, since the
+audit-sink bound is post-redaction and no caller can size for it. That is why **the arbiter is the
+designated drainer** and the ratchet reads the **drained** fact, never the persisted row (ruling
+above), and why the drain is called **once per turn** by that one path.
 
 **Priority: a hard blocker for N4, and for nothing shipping today.** Nothing in the current green
 path calls a judge, so this stops no rung already on the ladder — it gates the next one.
