@@ -3711,6 +3711,14 @@ churn, because no spec file is touched.
 
 ### 2. What is PARKED: the alternation-overlap class
 
+*(**CLOSED 2026-08-13 — the park is discharged; the class is now REJECTED** (`1a61d2f`,
+`altBranchesOverlap` at `src/validate.js:369`). It closed on the rung it was docked to, and on
+the terms this section set: measured first — `(a|aa)+$` per fresh process at 27/31/35/39
+chars ran 218ms / 1.9s / 12.1s / 52.6s — and widened MONOTONICALLY, adding rejections only,
+which is the safe direction for a false NEGATIVE. The reasoning below stands as written and
+is the record of why it waited; it is no longer the current state. `([^])*$` staying uncaught
+remains CORRECT and is untouched.)*
+
 **Measured miss.** `hasNestedQuantifier` does NOT catch `(a|aa)+$` or `(x|xy)*$`. There is no
 inner QUANTIFIER for a shape scan to find: the catastrophic behaviour comes from **overlapping
 alternation BRANCHES** under a repeat. This is a genuine limit of the detector's approach, not
@@ -4219,6 +4227,10 @@ matcher.
   slips them. See v1.63 §1.)*
 - **`isArbiterBook` does not know about `.smoke/`** — masked only incidentally on patients
   whose `.gitignore` default-denies dot-directories. PARKED.
+  *(**CLOSED 2026-08-13 — the name was added to the reader** (`66638b5`, `src/kinds.js`):
+  `.smoke` and everything beneath it join `.litectx/` as a PREFIX, so the store no longer
+  reaches the changed set as the worker's writing on a patient whose `.gitignore` does not
+  incidentally mask it. Incidental masking was never an exclusion.)*
 - **Replan-ceiling-on-resume semantics remain undecided.** `u-msn0uccv` resumed into a plan
   it could not replace with the grant already inherited-spent, and spent $0.82 proving it
   (F97). Whether a resume should ever refill the ceiling is hamr's call; nothing was changed.
@@ -4561,9 +4573,22 @@ Three of v1.59 §5's items are untouched by these rulings and remain open:
   still owed.
 - **`isArbiterBook` does not know about `.smoke/`** — masked only incidentally on patients
   whose `.gitignore` default-denies dot-directories. PARKED.
+  *(**CLOSED 2026-08-13 — already closed on this branch when this addendum was written**, so
+  restating it as open is the F90 class: a park the record had already retired. `66638b5`
+  added `.smoke` to `isArbiterBook` as a PREFIX beside `.litectx/` (`src/kinds.js`); the
+  docstring records the close. §4 above is the same shape read correctly — the shipped code
+  already did what the item asked. See the v1.59 §5 bullet, marked in place.)*
 - **The class sweep is proposed and unfired:** every terminal-minting site and every
   clock/wallet read as one table, audited class-wide against W-2 and F6. Awaiting hamr's go.
 
 Also still open, from elsewhere and unaffected here: a pytest EXECUTED-count instrument fact
 (no spelling survives both `-ra` and `-q`, measured), and the ReDoS alternation-overlap class
 parked to this rung by v1.55.
+
+*(**Amendment 2026-08-13 — the second of those two was already closed when this was
+written.** The ReDoS alternation-overlap class was un-parked and wired into the reject by
+`1a61d2f` (`altBranchesOverlap`, `src/validate.js:369`) — the rung it was docked to is this
+one, and it discharged the dock rather than inheriting it. The pytest EXECUTED-count fact
+stands open exactly as stated: `dce91fc` harvested the test-count terms and deliberately left
+that figure OUT, naming why — `collected N items` appears under `-ra` and not under `-q`, so
+no one spelling survives the modes a patient may run. See v1.55 §2, marked in place.)*
