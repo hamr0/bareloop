@@ -337,7 +337,22 @@ test('the known-instrument block is rendered FROM the genre, per language, and n
       assert.ok(b.includes(i.id), `${lang}: ${i.id} missing`);
       assert.ok(b.includes(`lineMatch: ${i.lineMatch}`), `${lang}: ${i.id}'s pattern is not the genre's own spelling`);
       assert.ok(b.includes(i.example), `${lang}: ${i.id} ships without its real line`);
+      // the capture rides WITH the pattern. A count term handed over without it
+      // is handed over without the half that decides its aggregate, and `first`
+      // paired with a tally (or `sum` with a figure) misreads silently — the exact
+      // bug jobs/pulselog-author-types.json records fixing in its own notes.
+      assert.ok(b.includes(`capture: ${i.capture === null ? 'null' : i.capture}`),
+        `${lang}: ${i.id} ships without its capture`);
     }
+    // and the mapping capture → aggregate is STATED, not left to be inferred from
+    // the rows: without it the table teaches a shape and hides the trap.
+    // ... and stated the RIGHT way round. jobs/pulselog-author-types.json records
+    // fixing this exact pairing in its own notes ("must use aggregate sum, not
+    // first"), so an inverted law here is a shipped bug wearing correct-looking
+    // prose — pinned to the aggregate NAMES, not merely to the law's presence.
+    assert.match(b, /capture: null\s+the term TALLIES one per matching line\. Use aggregate "sum"/);
+    assert.match(b, /capture: <n>\s+the term reads the FIGURE[\s\S]{0,120}?Use aggregate\s+"first"/);
+    assert.match(b, /never a zero/);
     // a language's block never carries the OTHER language's instrument
     for (const other of genreInstruments(lang === 'js' ? 'python' : 'js')) {
       if (own.some((i) => i.id === other.id)) continue;

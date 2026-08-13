@@ -510,12 +510,20 @@ THE PARSER reads ONE number out of a command's output, as signed arithmetic over
  *
  * It states the MECHANISM (pipe, not a terminal) rather than only the answer,
  * because the same trap is waiting behind every tool that pretty-prints for a
- * human, and only some of them are in the table yet.
+ * human, and only some of them are in the table yet. That prediction has since
+ * been paid off by measurement: `node --test` prints TAP down a pipe and the
+ * spec reporter on a terminal, the identical flip, on a second tool.
+ *
+ * Each row also carries its `capture`, because a count term and a tally term are
+ * read by DIFFERENT aggregates and the wrong pairing is a silent misreading, not
+ * an error — `first` over a line the tool omits on a good run reports a broken
+ * instrument. The block states that mapping once rather than per row.
  * @param {string} lang
  */
 export function instrumentsBlock(lang) {
   const rows = genreInstruments(lang).map((i) => `- ${i.id} — ${i.what}\n`
     + `    lineMatch: ${i.lineMatch}\n`
+    + `    capture: ${i.capture === null ? 'null' : i.capture}\n`
     + `    a REAL captured line: ${i.example}\n`
     + `    why this spelling: ${i.why}`);
   return `KNOWN INSTRUMENTS — how this genre's own tools PRINT, fixed by the genre, not yours to decide
@@ -526,8 +534,15 @@ The patterns below are MEASURED against real captured output of this genre's too
 
 Where a stage of yours counts one of these, use its lineMatch EXACTLY as written — a pattern you
 compose yourself for one of these tools is a pattern for output that never arrives, and a term that
-matches nothing does not report a small number, it reports a broken instrument. None of these has a
-capture group: each TALLIES one per matching line rather than reading a figure the tool printed.
+matches nothing does not report a small number, it reports a broken instrument.
+
+Each row states its own capture, and that choice decides the aggregate:
+  capture: null   the term TALLIES one per matching line. Use aggregate "sum" — over no matching
+                  lines that is a legitimate counted zero.
+  capture: <n>    the term reads the FIGURE the tool printed, out of that group. Use aggregate
+                  "first" — and note that no match at all then means the tool never reported the
+                  number, which is a broken instrument, never a zero. A count is listed this way
+                  only where the tool prints the line even when the number is zero.
 
 ${rows.join('\n\n')}
 
