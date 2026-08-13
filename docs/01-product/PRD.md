@@ -4063,14 +4063,18 @@ the instrument that decides it, and until they say so the cheap retry stands.
 
 ### 4. Parked, named rather than silently skipped
 
-- **No funding gate on a retry.** The ruling says a retry that cannot be funded must stop
+- **No funding gate on a retry.** ~~The ruling says a retry that cannot be funded must stop
   with the cap red; nothing today passes a budget into the authoring pipeline at all
   (`run-author.mjs` sets none — spend is *reported*, never capped). Adding a money ceiling
-  here is arbiter territory and waits on hamr's word. The bound that exists is the attempt
-  ceiling itself: three calls, the re-asks toolless.
-- **`maxRevisions` is NOT tighten-only today** — it plumbs as a plain option with no clamp.
+  here is arbiter territory and waits on hamr's word.~~ **CLOSED — hamr approved the lever
+  (2026-08-12), see the v1.61 addendum below.** The attempt ceiling (three calls, the
+  re-asks toolless) is no longer the only bound: `--budget` is now an operator-set money
+  ceiling with **no default**, checked between every metered call on both paid seams.
+- ~~**`maxRevisions` is NOT tighten-only today** — it plumbs as a plain option with no clamp.
   `SCOUT_ATTEMPTS` implements the ruling's direction; making the revision cap match is a
-  separate one-line change, deliberately not folded in.
+  separate one-line change, deliberately not folded in.~~ **STALE WHEN WRITTEN — the clamp
+  had already shipped in `40672ae` (2026-08-09) alongside its `structureRetries` sibling.
+  See the v1.61 addendum §2.**
 
 ## Addendum v1.59 — 2026-08-11 (a fence denial ends the ATTEMPT and never the RUN, a declared count stage carries the LINES it counted, and W-2 closes over the sibling terminals — hamr)
 
@@ -4324,3 +4328,73 @@ one-check-per-write-step ceiling is still **PARKED for hamr**, the wrong-format-
 validator red, `isArbiterBook`'s `.smoke` blind spot, replan-ceiling-on-resume, D4a's
 expiry-less derivation and the proposed class sweep are all still open. Nothing here closed
 any of them.
+
+## Addendum v1.61 — 2026-08-12 (the close-AUTHORING pipeline gets a money ceiling — hamr approved: "rec: yes both")
+
+Two levers were parked at v0.9.0 as arbiter territory (v1.58 §4). hamr approved both. This
+addendum records the first; the second is a doc correction and is noted at the end.
+
+### 1. `--budget` — an operator ceiling on the authoring pipeline, with NO DEFAULT
+
+Until now the authoring flow **metered** spend and nothing **bounded** it: `run-author.mjs`
+printed a total and no number anywhere could stop a call. The only bound was the attempt
+ceiling (`SCOUT_ATTEMPTS`, `MAX_REVISIONS`, `MAX_STRUCTURE_RETRIES`) — a bound on *how many
+times we ask*, which says nothing about what those asks cost.
+
+**No default, deliberately.** A defaulted cap is a silent second ceiling, and this repo has
+paid for that twice (`maxWallMs` has no default for exactly this reason; a `shellCapUsd`
+left off judged against a number nobody set). Omitting `--budget` runs **UNBOUNDED**, and
+the runner **prints that** before the provider is even built — an unbounded run is a visible
+operator choice, never a state arrived at by omission. A malformed value (`--budget banana`,
+`0`, `-1`) is an **error**, never a silent fall back to unbounded: that collapse is the exact
+failure the flag exists to prevent, wearing the operator's own typo.
+
+**It binds BETWEEN metered calls.** The check sits immediately before every paid call and
+nowhere else — the survey's attempts *and* its F59 recovery round, and the declaration
+loop's author call, each revise, and each malformed-emission retry. A cap that binds
+mid-call kills the row before it can be graded (F45: 3 of 7 launches lost, $5.82 unreadable).
+The retry axis matters most: it fires exactly when the model is malforming, which is the
+worst moment for a paid loop to be unbounded.
+
+**One ceiling, both paid seams.** The survey and the declaration loop are two populations of
+paid call with two accumulators; the operator sets ONE number and both receive it. The
+advertised ceiling and the enforced ceiling are the same ceiling — the standing hard line, in
+its money form. Spend already incurred **folds in**: the scout's calls are absorbed into the
+declaration loop's cost book before its first call is considered, so re-entering cannot
+silently widen the ceiling.
+
+**F6 is preserved on its own axis.** A null or unpriced cost never counts as $0. If spend
+cannot be *known*, the ceiling cannot be enforced honestly, and that is its own stop
+(`pricing-red`) rather than a silent pass. The ordering between the two stops is
+load-bearing and is stated in code: known spend **at or over** the ceiling is `cap-halt`
+even when the total is unknown, because the breach is *certain* on the priced half alone —
+naming that `pricing-red` would send the operator to fix a meter when the fact is that the
+money is gone.
+
+**The stop is a governance stop, never an error.** It names the cap and the spend (the
+operator's next move is a number), nothing retries, and every partial artifact stays on disk
+exactly where it was written. It mirrors the shipped run-path vocabulary — `cap-halt` with
+`meaning: 'not under cap — not "can\'t"'`, and `pricing-red` for the blind cap — and it is
+DISTINCT from `artifact-red` (the model malformed) and `provider-red` (the transport died).
+A retry ladder cut short by money reports the money, not the artifact red that was in
+flight: only the former is why the loop ended. Resume-to-cap applies unchanged — the stop IS
+the checkpoint.
+
+**A survey the ceiling stopped is named a money stop.** The scout carries its own
+`budgetStop`, and a new typed cause (`not-funded`) joins `SURVEY_CAUSES` for the survey that
+was never asked for. It is deliberately outside `SCOUT_RETRY_CAUSES`: a retry is precisely
+what the cap forbade. Reporting `scout-absent` there would blame a model that never spoke —
+the same rule W-2 settled for the clock, in money.
+
+**The predicate has ONE spelling** (`capStop` in `src/text.js`, beside `priceOf` and for the
+same reason), reading one tally helper (`tallyCalls`) that the cost book now reads too. Two
+hand-spelled answers to "am I over the ceiling?" would be two instruments.
+
+### 2. `maxRevisions` tighten-only — the v1.58 §4 note was STALE
+
+v1.58 §4 recorded `maxRevisions` as "NOT tighten-only today … a separate one-line change,
+deliberately not folded in". **That was already false when it was written**: the clamp
+shipped in `40672ae` (2026-08-09), which added the *sibling* clamp on `structureRetries` and
+described only that half in its message. Both axes have been clamped tighten-only under
+their declared constants since. The note is corrected here rather than left to be re-found —
+a park that no longer describes the code is a build somebody will do twice.

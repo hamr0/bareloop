@@ -815,6 +815,40 @@ test('THE GENRE REFUSAL MOVED TO THE COMPOSER: a language the catalogue cannot m
   assert.deepEqual(occs.map((o) => [o.class, o.lib, o.verb]), [['request-red', REFUSAL_LIB, 'genre-other']]);
 });
 
+test('THE CEILING is ONE operator number and it reaches BOTH paid seams', async (t) => {
+  const p = makePatient(t);
+  /** @type {any} */
+  const seen = { scout: 'never called', author: 'never called' };
+  const r = await authorCloseForJob({
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
+    ceilingUsd: 0.25,
+    scoutFn: async (/** @type {any} */ o) => { seen.scout = o.ceilingUsd; return SURVEY(p.dir); },
+    authorFn: async (/** @type {any} */ o) => {
+      seen.author = o.ceilingUsd;
+      return { ok: false, declaration: null, reds: [{ code: 'cap-halt', path: 'budgetUsd', detail: 'spent' }], stop: 'cap-halt', cost: { costUsd: 0.25, knownUsd: 0.25, spendComplete: true, calls: [] } };
+    },
+  });
+  assert.equal(seen.scout, 0.25, 'the survey is a paid stage and is bounded by the same number');
+  assert.equal(seen.author, 0.25, 'and so is the declaration loop — one ceiling, not two');
+  assert.equal(r.stop, 'cap-halt', 'and the governance stop travels up as itself');
+});
+
+test('NO ceiling travels as an EXPLICIT null — an unbounded run is a stated choice, not an absent field', async (t) => {
+  const p = makePatient(t);
+  /** @type {any} */
+  const seen = { scout: 'never called', author: 'never called' };
+  await authorCloseForJob({
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
+    scoutFn: async (/** @type {any} */ o) => { seen.scout = o.ceilingUsd; return SURVEY(p.dir); },
+    authorFn: async (/** @type {any} */ o) => {
+      seen.author = o.ceilingUsd;
+      return { ok: false, declaration: null, reds: [], stop: 'max-revisions', cost: null };
+    },
+  });
+  assert.equal(seen.scout, null, 'null is "nobody set one", and it is spelled');
+  assert.equal(seen.author, null);
+});
+
 test('THE COMPOSER carries a LOCKED KIND up as counted demand — the reds array is not where a refusal hides', async (t) => {
   const p = makePatient(t);
   const authorFn = async () => ({

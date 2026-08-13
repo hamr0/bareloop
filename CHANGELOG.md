@@ -9,6 +9,26 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
+- **The close-AUTHORING pipeline gets a money ceiling** (`--budget`, `ceilingUsd`) — the lever
+  parked at v0.9.0 as arbiter territory, approved by hamr. Until now the flow **metered** spend
+  and nothing **bounded** it: the runner printed a total and no number anywhere could stop a
+  call. It has **NO DEFAULT** — omitting it runs UNBOUNDED and the runner **prints that** before
+  the provider is built, because a defaulted cap is a silent second ceiling (the `maxWallMs`
+  precedent) and an unbounded run must be a visible operator choice. A malformed value is an
+  error, never a silent fall back to unbounded. The ceiling **binds BETWEEN metered calls** —
+  the survey's attempts and its F59 recovery round, and the declaration loop's author call,
+  each revise, and each malformed-emission retry — because a cap that binds mid-call kills the
+  row before it can be graded (F45). ONE number reaches BOTH paid seams, and spend already
+  incurred folds in, so re-entering cannot silently widen it. **F6 keeps its own axis**: a
+  null/unknown cost never counts as $0, so spend that cannot be *known* stops as `pricing-red`
+  rather than passing silently — while known spend at or over the cap is `cap-halt` even when
+  the total is unknown, since that breach is certain on the priced half alone. The stop is a
+  governance stop, not an error: it names the cap and the spend, nothing retries, partial
+  artifacts stay on disk, and it is DISTINCT from `artifact-red` and `provider-red`. A survey
+  the ceiling stopped is named a money stop (`budgetStop`, typed cause `not-funded`, outside
+  `SCOUT_RETRY_CAUSES`) instead of blaming a model that never spoke. One predicate, one
+  spelling (`capStop`/`tallyCalls` in `src/text.js`, beside `priceOf` and for the same reason).
+
 - **A resume may DERIVE `wall-halt` from a recorded `step-red`.** Only when that run's OWN
   spine shows the wall crossed BEFORE the terminal was minted — a derivation from the primary
   record, which never rewrites the recorded outcome and announces itself with a banner. The

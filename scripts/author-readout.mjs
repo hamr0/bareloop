@@ -33,3 +33,47 @@ export function declarationLines({ goal, closeDecl }) {
   for (const n of closeDecl?.notes ?? []) lines.push(`  note: ${n}`);
   return lines;
 }
+
+/**
+ * THE AUTHORING CEILING, parsed from `--budget`. Housed here for the same reason
+ * the readout above is: the runner is a script, and a rule no test can reach is a
+ * rule nothing checks.
+ *
+ * ABSENT IS UNBOUNDED, and that is the only way to get there. A malformed value
+ * is an ERROR rather than a fallback: `--budget banana` silently collapsing to
+ * "no ceiling" is precisely the failure this flag exists to prevent, wearing the
+ * operator's own typo. Zero and negatives are rejected on the same rule — a
+ * ceiling that can fund nothing is a typo for "unbounded" far more often than it
+ * is a request, and the honest way to ask for nothing is not to ask.
+ *
+ * There is NO DEFAULT anywhere in this function, deliberately: a defaulted cap is
+ * a silent second ceiling (the `maxWallMs` precedent), and the number is the
+ * operator's to set or to decline.
+ * @param {string|null} raw the argv value, or null when the flag was not given
+ * @returns {{ceilingUsd: number|null, error: string|null}}
+ */
+export function parseCeiling(raw) {
+  if (raw === null) return { ceilingUsd: null, error: null };
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    return {
+      ceilingUsd: null,
+      error: `--budget ${raw} is not a positive number of dollars — omit the flag entirely to run UNBOUNDED, which is `
+        + 'stated on stdout; there is no way to ask for a ceiling and get none by accident',
+    };
+  }
+  return { ceilingUsd: n, error: null };
+}
+
+/**
+ * The ceiling's header line. An UNBOUNDED run is ANNOUNCED — printed before the
+ * provider is built, so it reaches stdout ahead of the first paid byte rather
+ * than being inferred from the total afterwards. An unbounded run is legal; it is
+ * never allowed to be an accident.
+ * @param {number|null} ceilingUsd
+ */
+export function ceilingLine(ceilingUsd) {
+  return ceilingUsd === null
+    ? 'budget   UNBOUNDED — no --budget was given, so nothing stops this pipeline spending; spend is reported, never capped'
+    : `budget   $${ceilingUsd} ceiling — the pipeline stops BETWEEN metered calls once the spend reaches it`;
+}

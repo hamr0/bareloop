@@ -38,7 +38,7 @@ import {
   classGuards, closeCeiling, genreEnv, genreOwnedEnvNames, genreInstruments,
   validateDeclaration, normalizeDeclaration,
 } from '../src/authoring.js';
-import { declarationLines } from '../scripts/author-readout.mjs';
+import { declarationLines, parseCeiling, ceilingLine } from '../scripts/author-readout.mjs';
 
 /** The battery for the one class v1 admits. The attachment point is the CLASS
  * (PRD v1.57 §2) and every fixture in this file is a green job, so the class is
@@ -1255,4 +1255,39 @@ test('signing readout: a missing goal reads as MISSING, never as an empty pair o
   assert.ok(lines.some((l) => l.startsWith('  a  [command-exit]')));
   // and a spec with no declaration at all still renders its goal rather than throwing
   assert.deepEqual(declarationLines({ goal: 'g' }), ['goal       "g"', 'declaration']);
+});
+
+// ── the authoring CEILING's parse and its announcement ───────────────────────
+//
+// Same reason as the readout above: `run-author.mjs` is a script, so the rule
+// lives where a test can reach it. The rule itself is the one the run path paid
+// for twice — a cap with a DEFAULT is a silent second ceiling, so the only route
+// to unbounded is asking for nothing, and taking that route is announced.
+
+test('the authoring ceiling has NO DEFAULT: an absent --budget is UNBOUNDED, and nothing else is', () => {
+  assert.deepEqual(parseCeiling(null), { ceilingUsd: null, error: null });
+  assert.deepEqual(parseCeiling('2.5'), { ceilingUsd: 2.5, error: null });
+  assert.deepEqual(parseCeiling('0.05'), { ceilingUsd: 0.05, error: null });
+});
+
+test('a MALFORMED --budget is an error, never a silent fall back to unbounded', () => {
+  // the failure this flag exists to prevent, wearing the operator's own typo: a
+  // value that cannot be read collapsing into "no ceiling" would spend real money
+  // under a cap the person believed they had set
+  for (const bad of ['banana', '', '-1', '0', 'NaN', 'Infinity']) {
+    const r = parseCeiling(bad);
+    assert.equal(r.ceilingUsd, null, `${JSON.stringify(bad)} must not become a ceiling`);
+    assert.match(r.error ?? '', /not a positive number of dollars/, `${JSON.stringify(bad)} must be REFUSED, not defaulted`);
+    assert.match(r.error ?? '', /omit the flag entirely to run UNBOUNDED/, 'and the message names the only legal route to unbounded');
+  }
+});
+
+test('an UNBOUNDED authoring run ANNOUNCES itself — an absent cap is a stated choice, never a silent state', () => {
+  const unbounded = ceilingLine(null);
+  assert.match(unbounded, /UNBOUNDED/);
+  assert.match(unbounded, /reported, never capped/, 'it says what it will and will not do about the money');
+  const bounded = ceilingLine(2.5);
+  assert.match(bounded, /\$2\.5 ceiling/);
+  assert.match(bounded, /BETWEEN metered calls/, 'and a bounded run states the seam it binds at');
+  assert.ok(!/UNBOUNDED/.test(bounded), 'the two readings are never confusable');
 });
