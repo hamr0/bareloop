@@ -13,7 +13,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { runPlan, planPrompt, closeGapBlock } from '../src/planrun.js';
+import { runPlan, planPrompt, closeGapBlock, boundedNote, BOUND_REASON_MAX } from '../src/planrun.js';
 import { ralph, boundGap, GAP_KEEP_TRIM_MARKER } from '../src/ralph.js';
 import { validateJob } from '../src/job.js';
 import { StallError, MAX_STALLS } from '../src/stall.js';
@@ -22,6 +22,9 @@ import { scanSecrets } from '../src/validate.js';
 // the check gap's ONE ceiling — the backstop test below derives both arms from it
 // rather than respelling 12000, so a change to the constant moves the test with it
 import { CHECK_GAP_MAX } from '../src/exits.js';
+// the ONE trim announcement this repo spells (src/kinds.js) — the bounded-attempt
+// note reuses it rather than inventing a second way to say "this text was cut"
+import { GAP_TRIM_MARKER } from '../src/kinds.js';
 
 const tcall = (id, name, args) => ({ id, name, arguments: args });
 
@@ -2145,6 +2148,134 @@ test('DENY STREAK (native path): the clipipe surface routes its own denial termi
   assert.equal(bounded.length, 1);
   assert.match(bounded[0].reason ?? '', /^denied:/);
   assert.equal(events.filter((e) => e.type === 'escalation' && e.category === 'gate-red').length, 0);
+});
+
+// ── the bounded-attempt NOTE names the bound that actually fired ────────────
+//
+// A deny streak and a round-bound cutoff both used to set the same bare
+// `attemptBounded = roundIteration`, so the next attempt's prompt rendered ONE
+// sentence for both: "CUT OFF after N tool rounds. Reading is bounded; writing
+// is not." After a deny streak that is false twice over — wrong cause AND a
+// count that never ran out — and it aims the worker at the READ BUDGET when the
+// thing that stopped it was the FENCE. The reason was recorded on the spine and
+// nowhere the worker could see it.
+//
+// The note is MECHANICAL: it quotes the recorded `denied:<tool>` terminal and
+// says which bound fired. It invents nothing — no streak count (bare-agent's
+// return carries none), no path (same), no advice about scope it cannot verify.
+/** the step prompts, in order — the two the worker actually bought for this step */
+const stepPromptsOf = (calls) => calls.filter((c) => c.includes('asserting the module exports'));
+/** the frozen round-bound sentence, respelled ONCE here so a drift is a red */
+const ROUND_BOUND_NOTE = (n) => `Your previous attempt was CUT OFF after ${n} tool rounds. `
+  + 'Reading is bounded; writing is not. Form a hypothesis EARLY and make the change.';
+
+test('boundedNote unit: a DENY-streak bound quotes the recorded terminal; a ROUND bound keeps the frozen sentence byte-identical', () => {
+  const denied = boundedNote({ iteration: 1, cause: 'denied', reason: 'denied:shell_read' }, 6);
+  assert.match(denied, /denied:shell_read/, 'the worker is told what the gate actually recorded');
+  assert.ok(!denied.includes('CUT OFF after'), 'never the round-bound wording — the rounds did not run out');
+  assert.ok(!denied.includes('Reading is bounded'), 'and never the read-budget aim: the fence stopped it, not the budget');
+
+  assert.equal(boundedNote({ iteration: 1, cause: 'rounds', reason: null }, 6), ROUND_BOUND_NOTE(6),
+    'the round-bound case is unchanged, to the byte');
+  assert.equal(boundedNote({ iteration: 1, cause: 'wall', reason: null }, 6), ROUND_BOUND_NOTE(6),
+    'and so is every other non-denial bound');
+  assert.equal(boundedNote(undefined, 6), null, 'an unbounded attempt renders nothing');
+});
+
+test('boundedNote unit: an over-long recorded reason is TRIMMED and the trim ANNOUNCES itself (the one marker, not a second spelling)', () => {
+  const long = `denied:${'x'.repeat(BOUND_REASON_MAX * 2)}`;
+  const note = boundedNote({ iteration: 1, cause: 'denied', reason: long }, 6);
+  assert.ok(!note.includes(long), 'the raw over-long reason never reaches the prompt whole');
+  assert.ok(note.includes(GAP_TRIM_MARKER), `a silent trim is the blind-instrument class: ${note.slice(-160)}`);
+  assert.match(note, /denied:xxx/, 'what IS shown is the recorded reason, from its front');
+});
+
+test('DENY STREAK (loop path): the NEXT attempt is told the FENCE cut it — the recorded terminal, not a false round-bound count', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: DENY_PLAN(wd) },
+    {
+      toolCalls: [
+        tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'no assertion yet\n' }),
+        ...ARBITER_BOOKS(wd).map((p, i) => tcall(`d${i}`, 'shell_read', { path: p })),
+      ],
+    },
+    { toolCalls: [tcall('t2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok — asserts x\n' })] },
+    { text: 'wrote it' },
+  ]);
+  await go(wd, provider);
+
+  const steps = stepPromptsOf(provider.calls);
+  assert.ok(steps.length >= 2, 'a second attempt was bought — that is the prompt under test');
+  const next = steps[1];
+  assert.match(next, /denied:shell_read/, 'the worker is handed the bound that actually fired');
+  assert.ok(!next.includes('CUT OFF after 6 tool rounds'),
+    'the false round-bound claim is gone: the attempt was cut at the fence with rounds still unspent');
+  assert.ok(!next.includes('Reading is bounded'), 'and it is no longer mis-aimed at the read budget');
+});
+
+test('DENY STREAK (native path): the clipipe surface hands its worker the same recorded terminal — one doctrine, both surfaces', async (t) => {
+  const wd = makePatient(t);
+  const jv = validateJob(JOB(wd, { provider: 'clipipe-subscription' }));
+  /** @type {string[]} */
+  const prompts = [];
+  const inner = scriptedNativeFactory([
+    { turns: [{ text: 'scout' }] },
+    { turns: [{ text: DENY_PLAN(wd) }] },
+    {
+      turns: [
+        { tool: 'shell_write', args: { path: join(wd, 'tests', 'test_x.mjs'), content: 'no assertion yet\n' } },
+        ...ARBITER_BOOKS(wd).map((p) => ({ tool: 'shell_read', args: { path: p } })),
+      ],
+    },
+    { turns: [{ tool: 'shell_write', args: { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' } }, { text: 'now wrote it' }] },
+  ]);
+  const nativeProvider = (opts) => {
+    const p = inner(opts);
+    const gen = p.generate.bind(p);
+    return { ...p, generate: async (messages, tools) => { prompts.push(String(messages?.at?.(-1)?.content ?? '')); return gen(messages, tools); } };
+  };
+  const { emit } = collector();
+  await runPlan(jv.job, { workdir: wd, nativeProvider, emit, capRuns: 3, remainingUsd: () => 1.5 });
+
+  const steps = stepPromptsOf(prompts);
+  assert.ok(steps.length >= 2, 'the native run bought a second attempt');
+  assert.match(steps[1], /denied:shell_read/);
+  assert.ok(!steps[1].includes('CUT OFF after 6 tool rounds'));
+});
+
+test('ROUND BOUND unchanged: an attempt that really did spend its rounds still gets the frozen sentence, to the byte', async (t) => {
+  const wd = makePatient(t);
+  const onePlan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write tests/test_x.mjs asserting the module exports.',
+      tools: ['read', 'write'], rounds: 1, target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    }],
+  });
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: onePlan },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'no assertion yet\n' })] },
+    { toolCalls: [tcall('t2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok — asserts x\n' })] },
+    { text: 'wrote it' },
+  ]);
+  const { events } = await go(wd, provider);
+  assert.ok(events.some((e) => e.type === 'attempt-bounded' && e.reason === undefined),
+    'this attempt was cut by the ROUND bound — no denial reason on the record');
+  const steps = stepPromptsOf(provider.calls);
+  assert.ok(steps.length >= 2, 'a second attempt followed the round-bounded one');
+  // EQUALITY on the block, not `includes`: the prompt is assembled by joining blocks
+  // on a blank line, so the note is one whole block and nothing may be bolted onto
+  // either end of it. A substring test passed a deliberately mutated note (a prefix
+  // slipped straight through), which is a guard that cannot fail — the thing this
+  // test exists to prevent. The `trim` is for the SEPARATOR only: the preceding gap
+  // block ends in its own newline, so the join leaves the note with a leading blank
+  // line. Whitespace at the seam is the renderer's business; the sentence is not.
+  assert.ok(steps[1].split('\n\n').map((b) => b.trim()).includes(ROUND_BOUND_NOTE(1)),
+    `the frozen wording is untouched, whole and unadorned: ${steps[1].slice(-300)}`);
 });
 
 /** the fix-loop fixture: a close STRICTER than the check, so every step greens on

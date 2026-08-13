@@ -34,7 +34,7 @@ import { validateBridge, loadGate } from './bridges.js';
 import { extractArtifact } from './text.js';
 import { createClock, isWallTimeout } from './clock.js';
 import { isDeclaredClose, runDeclaredStages, validateCloseDecl, closeGrade } from './declaredclose.js';
-import { seedAtHead, seedListing } from './kinds.js';
+import { seedAtHead, seedListing, GAP_TRIM_MARKER } from './kinds.js';
 import { workBranchName, prepareWorkBranch } from './workbranch.js';
 
 const require = createRequire(import.meta.url);
@@ -258,6 +258,60 @@ export function closeGapBlock(gap) {
   // way through the one transformation that runs unconditionally.
   return '\nWhat this step\'s exits reported on its last attempt (their own output, verbatim):\n'
     + (scrubbed.length > CHECK_GAP_MAX ? boundGap(scrubbed, REPLAN_GAP_KEEP) : scrubbed);
+}
+
+/**
+ * The recorded bound-reason's ceiling in the WORKER-facing note. The reason is a
+ * provider string (`denied:<tool>` today, ~20 bytes), not a gap, so this is a
+ * backstop against a future terminal that arrives long — never an envelope the
+ * shipped path routinely rides through.
+ */
+export const BOUND_REASON_MAX = 200;
+
+/**
+ * What the NEXT attempt is told about the bound that cut the previous one.
+ *
+ * Two different bounds used to set the same bare `attemptBounded = roundIteration`
+ * and therefore render the same sentence. For a round-bound cutoff that sentence is
+ * true. For BA-11's deny streak it is false twice over — the rounds did NOT run out
+ * (the fence short-circuited the attempt with budget left), and the count it quotes
+ * is the cap, not what was spent — and it aims the worker at the READ BUDGET when the
+ * thing that stopped it was the FENCE. The reason was already recorded on the spine;
+ * nothing carried it to the one reader who could act on it.
+ *
+ * The denial note is MECHANICAL in the strict sense: it quotes the terminal the
+ * provider actually returned and names which bound fired. It invents nothing —
+ * no streak count and no denied path, because bare-agent's return (`error:
+ * 'denied:<tool>'`, loop.js) carries neither, and a number nobody measured is a
+ * bug with a confident voice. Every other cause keeps the frozen wording byte for
+ * byte: a wall-bounded attempt reads as a round bound exactly as it did before
+ * (and is unreachable anyway — the step head refuses to fund an attempt past the
+ * deadline, W-2), so this change can only ever speak where it has something true
+ * to add.
+ *
+ * The reason arrives ALREADY SCRUBBED (the capture seam in `mkWorker` runs it
+ * through the one `SECRET_PATTERNS` inventory), so this renderer only bounds it —
+ * and announces the trim with the repo's ONE marker rather than a second spelling
+ * of "this text was cut" (F90.2).
+ *
+ * @param {{iteration?: number|string|undefined, cause: string, reason: string|null}|null|undefined} bounded
+ *   the previous attempt's bound state, or nullish when it was not bounded
+ * @param {number} rounds the step's round bound, as quoted by the frozen sentence
+ * @returns {string|null} the note, or null when there is nothing to say
+ */
+export function boundedNote(bounded, rounds) {
+  if (!bounded) return null;
+  if (bounded.cause !== 'denied') {
+    return `Your previous attempt was CUT OFF after ${rounds} tool rounds. `
+      + 'Reading is bounded; writing is not. Form a hypothesis EARLY and make the change.';
+  }
+  const raw = String(bounded.reason ?? '');
+  const shown = raw.length > BOUND_REASON_MAX
+    ? `${raw.slice(0, BOUND_REASON_MAX)} [${GAP_TRIM_MARKER} ${raw.length - BOUND_REASON_MAX} of ${raw.length} characters withheld — the cap is ${BOUND_REASON_MAX}]`
+    : raw;
+  return 'Your previous attempt was CUT OFF by the gate: it denied consecutive tool calls '
+    + `until the streak guard ended the attempt. The gate recorded: ${shown}. `
+    + 'The round budget was not what stopped you — repeating a denied call ends this attempt the same way.';
 }
 
 /**
@@ -1321,7 +1375,23 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     /** @type {number|string|undefined} */
     let roundIteration;
     let roundsThisAttempt = 0;
-    /** @type {number|string|undefined} */
+    /**
+     * WHICH bound cut the last attempt, and — when the provider recorded one — its
+     * reason. A bare iteration number was the whole state here, so three different
+     * bounds (round cap, wall, BA-11 deny streak) were indistinguishable to the one
+     * consumer that speaks to the worker, which then told every one of them the
+     * round cap had run out. The cause travels WITH the iteration because they are
+     * read together and can never be allowed to drift apart.
+     *
+     * `reason` is scrubbed at THIS seam — the boundary, once, before any reader —
+     * so no consumer has to remember to do it (the same placement the exit results
+     * get in `judge`). It rides the spine event in the same scrubbed spelling: one
+     * value, one inventory, and an append-only log is forever.
+     * `iteration` mirrors `roundIteration` exactly, undefined included: the bound
+     * cannot know a label the run never set, and inventing one here would be the
+     * only place in this file that claims to.
+     * @type {{iteration: number|string|undefined, cause: 'rounds'|'wall'|'denied', reason: string|null}|undefined}
+     */
     let attemptBounded;
     /**
      * Open an iteration: label the rounds, reset the per-iteration round counter,
@@ -1427,8 +1497,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         // note below — one doctrine, both surfaces).
         if (r.error) {
           if (r.error === 'max_turns' || r.error.startsWith('denied:')) {
-            attemptBounded = roundIteration;
-            emit('attempt-bounded', { phase, iteration: roundIteration, cap: attemptRounds, native: true, reason: r.error });
+            // the CAUSE is kept, not just the fact: `max_turns` really is the round
+            // cap, a `denied:` terminal is the fence, and the next attempt is told
+            // which one it was (`boundedNote`)
+            const denied = r.error.startsWith('denied:');
+            const reason = scrub(r.error);
+            attemptBounded = { iteration: roundIteration, cause: denied ? 'denied' : 'rounds', reason };
+            emit('attempt-bounded', { phase, iteration: roundIteration, cap: attemptRounds, native: true, reason });
             return r;
           }
           const err = /** @type {CategorizedError} */ (new Error(`native session: ${r.error}`));
@@ -1532,11 +1607,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
           // (a step that would BEGIN past the deadline is never funded), and the head of
           // a close-fix iteration (W-2 — the run stops on the verdict already minted).
           if (clock.expired()) {
-            attemptBounded = roundIteration;
+            attemptBounded = { iteration: roundIteration, cause: 'wall', reason: null };
             emit('wall-bounded', { phase, iteration: roundIteration, ...clock.report(closeTimeoutForReport) });
             self.stop();
           } else if (roundsThisAttempt >= attemptRounds) {
-            attemptBounded = roundIteration;
+            attemptBounded = { iteration: roundIteration, cause: 'rounds', reason: null };
             emit('attempt-bounded', { phase, iteration: roundIteration, rounds: roundsThisAttempt, cap: attemptRounds });
             self.stop();
           }
@@ -1579,8 +1654,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // converging run with money and wall left (u-msn227nq). The native surface
       // takes the identical lane above — one doctrine, both surfaces.
       if (r.error && r.error.startsWith('denied:')) {
-        attemptBounded = roundIteration;
-        emit('attempt-bounded', { phase, iteration: roundIteration, rounds: roundsThisAttempt, cap: attemptRounds, reason: r.error });
+        const reason = scrub(r.error);
+        attemptBounded = { iteration: roundIteration, cause: 'denied', reason };
+        emit('attempt-bounded', { phase, iteration: roundIteration, rounds: roundsThisAttempt, cap: attemptRounds, reason });
         return r;
       }
       // the remaining error-return taxonomy (one map, same doctrine as native's):
@@ -2065,14 +2141,19 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // carries counts and paths only — never content (the spine is forever).
       const rootInj = root ? root.observe({ iteration, gap, writes: w.workerWrites() }) : null;
       if (rootInj) emit('root-injected', { step: step.id, ...rootInj.event });
+      // read ONCE: the note and the "was it the attempt just before this one" test
+      // are two questions about the same record, and two reads is how they drift
+      const bound = w.wasBounded();
       const r = await w.ask([
         step.action,
         `Repository root (absolute): ${workdir}\nEvery path you pass to a tool MUST be absolute and inside this root — a relative path resolves against a different directory and will be denied by the gate.`,
         step.target && `Write your deliverable to: ${resolve(workdir, step.target)}`,
         artifacts.length > 0 && `Working context (read-only) — prior steps' results:\n${artifacts.map((a) => `[${a.id}] ${a.text}`).join('\n\n')}`,
         gap && `Previous attempt failed this step's checks:\n${gap}`,
-        w.wasBounded() === iteration - 1
-          && `Your previous attempt was CUT OFF after ${step.rounds} tool rounds. Reading is bounded; writing is not. Form a hypothesis EARLY and make the change.`,
+        // the note names the bound that ACTUALLY fired — a deny streak and a spent
+        // round cap are different diagnoses with different remedies, and telling a
+        // fenced worker to "form a hypothesis early" aims it at the wrong wall
+        bound?.iteration === iteration - 1 && boundedNote(bound, step.rounds),
         rootInj && rootInj.note,
       ].filter(Boolean).join('\n\n'));
       lastText = scrub(r.text ?? '').slice(0, ARTIFACT_MAX);
