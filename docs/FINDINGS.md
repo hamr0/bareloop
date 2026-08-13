@@ -7373,3 +7373,106 @@ it is worth a fix.
 - **Say what did not fire.** The most tempting sentence in this entry was that the deny
   reroute saved the run mid-flight. The gate audit says otherwise, and the difference
   between four scattered denials and three consecutive ones is the whole claim.
+
+## F100 — the guard that ended a half-reading half-read itself: the F87 signing pairing covered 1 of the 11 shipped specs, and the checkpoint doctrine widened to the stall
+
+**Date:** 2026-08-13 · **Rung:** CLOSE-AUTHORING, whole-branch review before v0.10.0 ·
+**Cost: $0** (two review rounds + source/archive reads; no paid run) ·
+**Commits:** `7cc3be6` `2511413` `ae794b1` `3e3f7c8` `9501f83` `28b15c9` `7e92805`
+`9947008` `bfd3b0d`
+
+Two review rounds over the W-2 branch. Ten findings, all fixed; the entry exists for two of
+them, because those two are the only ones that taught something the record did not already
+hold.
+
+### 1. "Both signing surfaces show both halves" was true of the SURFACES and false of the SPECS
+
+`465241d` (2026-08-12) closed F87's gate-side residual: the person signing must read the
+goal and the stages that will judge it **as one reading**, since nothing derives one from
+the other and nothing checks them against each other. Both reference runners were changed,
+and the commit said so.
+
+The stage-printing block in `scripts/run-u.mjs` was gated on `spec.closeDecl`. The repo
+ships **11 specs in `jobs/`; exactly one carries `closeDecl`** (`pulselog-author-types`) —
+the other ten declare a command `close[]`. So the guard built to end a half-reading reached
+**1 of 11** signing gates, and the other ten printed the goal with no stages under it: the
+exact half-reading the fix claimed to have ended, surviving inside the fix.
+
+The cure is `closeStagesOf(spec)` — the ONE staging (`src/plan.js`), already read by the
+watchdog's stage count for the same reason — rendering both spec forms. Command stages print
+`[command]`, **not** the catalogue kind name `command-exit` they do not carry: a command
+close is not a declaration, and labelling it with a catalogue kind would invent a fact at the
+one gate whose whole job is to show the signer what is really there. Spec hashes and exit
+codes are byte-identical (proven live), because a reading is not a validator.
+
+**The genre.** This is F90's class read from the other side. F90 was *the record already
+fixed it, and the doc restated it as open*; this is *the record says fixed, and the code
+covers one branch of the population*. Both are answered by the same question, which neither
+commit asked itself: **which population does this guard actually reach?** A fix that ends a
+class of defect has to state its own coverage, and "both surfaces" was a claim about
+surfaces when the population that matters is specs.
+
+### 2. Two instruments inside one repo disagreed about whether a stall is a checkpoint
+
+`step-stalled`'s own escalation offers the operator *"retry the run"* (`src/planrun.js:1701`).
+`scripts/run-u.mjs` answered *"start a fresh run"* — its `RESUMABLE_HALTS` was
+`['cap-halt', 'wall-halt']`, the two governance halts — and threw away the tree, the plan and
+every finished step's spend. Nothing was wrong with the work on disk; the disagreement was
+between two of our own sentences.
+
+Raised as a review finding and **routed to hamr rather than fixed by the review**, because
+which terminals count as a checkpoint is arbiter territory. Ruling: *"go"*. `step-stalled`
+joins the resumable set, and the **name deliberately stays** — `src/run.js` keys the F44
+spend FLOOR on that outcome, so renaming it to `wall-halt` would report unknown spend as
+exact. The floor rides along: `spendComplete:false` reaches the preview as `≥$x` and
+`runJob` as `priorSpendComplete:false`. A green is still done and a red is still an answer;
+`reuse.js`'s D4a derivation was checked against the widening and is unaffected.
+
+The second shape it rescues is the one that named the fix: a stall that trips with time left
+becomes a replan trigger, the replan gate then refuses to fund a cycle past the deadline
+(W-2), and the run rides out as `step-stalled` rather than `wall-halt` — losing a checkpoint
+a wall stop would have kept, at the exact moment the operator's money is most spent.
+
+### 3. The rest of the round, stated so the count is honest
+
+Round 1 (`review W2-r2`): 36 candidates across eight finder angles → ten verifier verdicts →
+**8 findings** (6 confirmed, 2 plausible-kept), all 8 fixed. The six not covered above were
+each real and each mechanical: a malformed money ceiling read as UNBOUNDED at the library
+seam (v1.62's own sentence unenforced outside the CLI); `budgetStop` latching on every final
+cause, so a 1-turn transport death and a healthy over-ceiling survey both returned
+`cap-halt`; the count-not-worse echo harvesting matched lines globally, so a subtracted
+term's lines were handed to the worker as *"the lines the count is made of"* (latent — the
+schema and the drafter prompt both teach `sign:-1`); a docs-only restatement of two parks
+this branch had already discharged; and the authoring spine event hardcoding
+`type:'cap-halt'` over a `pricing-red` stop — the only site in the repo where an event's type
+contradicted its own category, and type-keyed slicing is exactly how F45's misread happened.
+
+**Two candidates were kept as measured trade-offs, and they are not refutations:** the pytest
+pass-count `lineMatch` stays unanchored (terminal-derived padding makes anchoring
+impossible), and the scout's deny-streak degradation stays (mitigated by F59's toolless
+recovery round).
+
+Round 2 (`review W2-r3`) re-reviewed the whole branch **including round 1's fix tail**:
+**2 findings, both fixed**, and 3 candidates chased and refuted with written reasons (the
+duplicated halt block is load-bearing; the `wallHaltTerminal` spelling is documented
+per-context intent; `validate.js`'s twin walkers are established convention and arbiter
+territory). Round 2's first finding came straight out of round 1's fifth: the concession a
+ceiling-stopped survey makes about what it DID read was gated on `CALL_FAILED`, so a survey
+whose repair round the ceiling refused still printed *"the survey stopped on the authoring
+ceiling, not on anything it read"* while quoting the reply it was denying. Every cause except
+`NOT_FUNDED` — the one case where the ceiling-only wording is true — now concedes.
+
+### Lessons
+
+- **A fix that ends a class of half-reading must name the population it reaches.** "Both
+  surfaces" was true and useless: the surfaces were both changed and ten of eleven specs
+  still half-read. Coverage is a property of the population, never of the file count.
+- **Reviewing the previous round's fix tail is where the third finding lives** — the F91
+  discipline, paying for the third time. Neither round alone finds a concession that a fix
+  from the round before gated too narrowly.
+- **A widening of what counts as a checkpoint goes to hamr, not into a review fix.** The
+  review's job was to notice that two of our own instruments disagreed; deciding which one
+  was right is the arbiter's.
+- **A rename is the wrong shape of fix when another instrument keys on the name.** The honest
+  version widened the read and left the terminal alone, because `step-stalled` is what tells
+  the ledger the spend figure is a floor.

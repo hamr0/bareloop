@@ -272,8 +272,12 @@ machinery from *proven* to *has completed a job end to end* — not the bridge, 
 not the shape. And the structural gap it exposed stays open: a write step carries exactly ONE
 check (`MAX_EXITS_PER_STEP` minus the mandatory `tree-changed` pairing), so the in-run check
 is satisfiable by the very suppressions the close forbids. The close catches it every time;
-what it costs is a full extra fix cycle at the tail. Raising that ceiling is arbiter
-territory — PARKED for hamr, not fixed to make a wording problem go away.
+what it costs is a full extra fix cycle at the tail. ~~Raising that ceiling is arbiter
+territory — PARKED for hamr~~ — **RULED 2026-08-13 (PRD v1.63 §3): the ceiling STAYS at 2,
+and that is the design, not an interim value.** The extra cycle is the price of a step's
+green never being a verdict (F87), and widening the ceiling would move judgement into the
+emergent part. Raised only on a demonstrated starvation case, on the record, with the spine
+to show it — never to fix a wording problem.
 
 The flow, end to end:
 
@@ -387,7 +391,10 @@ addenda (v1.36–v1.50); this list is deliberately one line each.
   cap-halt resume on the user path is *built and LIVE-VALIDATED* (F83: a signed top-up
   resumed bareagent-u's cap-halt at the close checkpoint and greened for $1.21/12.8min)
   (`run-u --resume`: the patient is continued, spend and wall fold in as prior, the ceiling
-  never silently widens; the top-up itself is a spec re-sign).
+  never silently widens; the top-up itself is a spec re-sign). **`step-stalled` joined the
+  resumable set 2026-08-13** (hamr's *"go"*, PRD v1.64 §1) — a stall is a checkpoint, not a
+  verdict; the NAME stays because the F44 spend floor is keyed on it, and the floor rides
+  along as `≥$x`. A green and a red stay non-resumable.
 - **Signing:** the resolved spec hash pins the tool menu that was signed (MED-1); tries,
   budgets, and reuse envelopes fold into the hash — any widening forces a re-sign.
 - **Close hygiene:** env-strip on the close's environment; the close runs async; the
@@ -399,7 +406,12 @@ addenda (v1.36–v1.50); this list is deliberately one line each.
   that class's mandatory guard battery, every stage seed-verified, signed by the user as a
   resolved hash. Governance is unchanged by construction (the signature and everything after it
   is untouched). The two gaps it opened are CLOSED: declared commands sit on a monotonic deny
-  floor, and a declared `timeoutMs` may only TIGHTEN the operator's ceiling. What is left is one
+  floor, and a declared `timeoutMs` may only TIGHTEN the operator's ceiling. **And the pipeline
+  itself now has a money ceiling** *(v0.10.0, PRD v1.62 §1)*: `--budget` / `ceilingUsd`, with
+  **NO DEFAULT** — omitting it runs unbounded and the runner says so out loud, a malformed
+  value is an ERROR at the library seam and never a silent unbounded *(v1.64 §3)*, one number
+  reaches both paid seams, and prior spend folds in so re-entering cannot widen it.
+  What is left is one
   layer up — a legal declaration can be VACUOUS against a particular repo, the gates refuse it
   honestly and decision-ready, and the bounded re-compose that would convert that refusal is
   PARKED (F92).
@@ -825,10 +837,15 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
    stages satisfied, independently re-verified at $0 (F99; PRD v1.59). The two fixes that
    bought it are doctrine now: a declared count stage carries the LINES it counted, and a
    fence deny streak ends the ATTEMPT, never the run. **This is still the rung in flight** —
-   what remains is the composition shape lottery's bounded re-compose (parked, non-gating),
-   the one-check-per-write-step ceiling (arbiter territory, parked), and the deny-streak
-   reroute's still-owed LIVE firing. **soft-green + hitl come next**, sequenced immediately
-   after: a hitl close IS a declaration, and the declaration surface now exists.
+   what remains is the composition shape lottery's bounded re-compose (parked, non-gating)
+   and the deny-streak reroute's still-owed LIVE firing — the one-check-per-write-step
+   ceiling is no longer among them: it was RULED to stay at 2 (PRD v1.63 §3), a decision
+   rather than a park. **Status 2026-08-13: shipped again as v0.10.0** — W-2 time governance
+   closed over every terminal, a money ceiling on the AUTHORING pipeline (`--budget`, no
+   default), the deny-streak bounded-attempt lane, the F87 signing pairing widened to both
+   spec forms, and two review rounds (10 findings, all fixed — F100). **soft-green + hitl
+   come next**, sequenced immediately after: a hitl close IS a declaration, and the
+   declaration surface now exists.
 
 ---
 

@@ -4592,3 +4592,85 @@ one, and it discharged the dock rather than inheriting it. The pytest EXECUTED-c
 stands open exactly as stated: `dce91fc` harvested the test-count terms and deliberately left
 that figure OUT, naming why — `collected N items` appears under `-ra` and not under `-q`, so
 no one spelling survives the modes a patient may run. See v1.55 §2, marked in place.)*
+
+## Addendum v1.64 — 2026-08-13 (the checkpoint doctrine widens to the stall, a bound names its own cause to the worker, a malformed ceiling becomes an error at the seam — and the branch's two review rounds close — hamr)
+
+Written at the v0.10.0 release. Three behaviour rulings and one process record; §§1–3 each
+ship in the branch, and none of them touches the arbiter's shape — what changes is which
+terminals are read as a checkpoint, what the next attempt is told, and where a malformed
+operator number stops.
+
+### 1. `step-stalled` is RESUMABLE — hamr's ruling ("go", 2026-08-13)
+
+**The item.** `run-u`'s `RESUMABLE_HALTS` was `['cap-halt', 'wall-halt']` — the two
+governance halts — so a run that ended `step-stalled` was told *"start a fresh run"* and
+threw away every finished step's spend, the tree, and the plan. Two shapes reach that
+terminal, and resume is the right answer to both: the plain stall (the model stopped
+producing rounds and the reissue did not recover it — nothing about the work on disk is
+wrong), and the edge that named the fix, where a stall trips WITH time left, becomes a
+replan trigger, and the replan gate then declines to fund a cycle past the deadline — the
+run rides out as `step-stalled` rather than `wall-halt` and loses the checkpoint a wall stop
+would have kept.
+
+**The ruling: the resumable set widens; the NAME stays.** This is the checkpoint doctrine
+extended, not a new one: *"why would i want to waste more money on something i already
+started"* is the same sentence that bought step-level resume, and `step-stalled` is the one
+terminal whose own escalation already tells the operator to *"retry the run"*
+(`src/planrun.js`) while the runner answered the opposite. The name is deliberately NOT
+changed to `wall-halt`: `src/run.js` keys the **F44 spend FLOOR** on `step-stalled`, so a
+rename would report unknown spend as exact — the fix is exactly *widen which terminals are
+read as a checkpoint, rename nothing*. The floor rides along honestly: `spendComplete:false`
+reaches the preview's fold as `≥$x` and `runJob` as `priorSpendComplete:false`, so the
+resumed leg's terminal stays a floor rather than healing an unknown by inheriting it.
+
+**What did NOT widen.** A green is done and a red is an answer — both stay non-resumable
+under every setting. `reuse.js`'s D4a derivation (v1.63 §2) was checked against this and is
+unaffected: it re-reads a `step-red` as a wall-halt off the run's own `wall-bounded` record,
+a different mechanism over a different terminal, and neither one admits the other's
+population.
+
+### 2. An attempt bound carries its CAUSE, and the denial reaches the worker
+
+All three attempt bounds (round cutoff, wall, deny streak) wrote the same bare iteration
+number, so a fence deny streak rendered *"CUT OFF after N tool rounds"* — false on cause and
+on count, aiming the worker at the read budget when the thing that stopped it was the FENCE,
+while the real reason reached only the spine. The bound now carries `{iteration, cause,
+reason}` and the denial branch quotes the recorded terminal **verbatim**.
+
+**Nothing is invented, and that is the design constraint, not a limitation to fix later.**
+bare-agent's return is `error: 'denied:<tool>'` — no path, no streak count — so the note
+names the bound that fired and quotes what the gate recorded, and nothing else; a number
+nobody measured is a bug with a confident voice. Every other cause keeps the frozen wording
+byte for byte. The reason is scrubbed once at capture through the one `SECRET_PATTERNS`
+inventory and shared by prompt and spine (an append-only spine that captures a key captures
+it forever), and trimmed under the repo's ONE trim marker (F90.2). This is v1.59 §1's
+bounded-attempt lane finishing its own sentence: the attempt is judged, the gap feeds
+forward, and now the next attempt knows which wall it hit.
+
+### 3. A malformed money ceiling is an ERROR at the LIBRARY seam
+
+v1.62 §1 already said a malformed value is an error and never a silent fall back to
+unbounded — but the only guard was the CLI's `parseCeiling`, so a library caller passing
+`'2.50'`, `NaN`, `Infinity`, `true` or `{}` got no ceiling at all: `makeCostBook` advertised
+the value back while enforcing nothing, which is the advertised-and-enforced-budget rule
+broken from inside. `capStop` now THROWS on a non-null non-finite ceiling, before the first
+paid call, and the throw propagates uncaught rather than being caught into an ABSENT survey.
+`null`/omitted remains the stated operator choice for unbounded; `0` and negatives are finite
+and cap-halt immediately, pinned behaviour left alone. The sentence the PRD already carried
+is now enforced where the money is actually weighed.
+
+### 4. The two review rounds — the record
+
+- **Round 1 (`review W2-r2`):** 36 candidates across eight finder angles → ten verifier
+  verdicts → **8 findings** (6 confirmed, 2 plausible-kept), **all 8 fixed**; §1 above is
+  finding #3, fixed under hamr's explicit ruling rather than by the review's own judgement.
+  Two further candidates were **kept as measured trade-offs, not refuted**: the pytest
+  pass-count `lineMatch` stays unanchored (terminal-derived padding makes anchoring
+  impossible) and the scout's deny-streak degradation stays (mitigated by F59's toolless
+  recovery round).
+- **Round 2 (`review W2-r3`):** a fresh whole-branch pass INCLUDING round 1's fix tail →
+  **2 findings, both fixed**; 3 candidates chased and **refuted with written reasons** (the
+  duplicated halt block is load-bearing; the `wallHaltTerminal` spelling is documented
+  per-context intent; `validate.js`'s twin walkers are established convention and arbiter
+  territory). Reviewing the fixes for the round before it is the F91 discipline, and it paid
+  again: round 2's #1 was a concession the round-1 fix had gated too narrowly.
