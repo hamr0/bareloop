@@ -48,6 +48,7 @@ import {
   renderSeedReadBlock, renderRejectBlock, buildReviseTurn, assertReviseTurn,
   applyGenreEnv, resolveSourcePrefixes, makeCostBook, makeLoopGenerate, authorClose,
 } from '../src/authorflow.js';
+import { SCOUT_ATTEMPTS } from '../src/authorscout.js';
 import { scrubRaw } from '../src/text.js';
 import { scanSecrets } from '../src/validate.js';
 
@@ -744,6 +745,100 @@ test('authorClose: a negative maxRevisions floors at zero — one authoring call
   assert.equal(calls.length, 1, 'the floor is one author call, never a negative loop bound');
   assert.equal(r.revisions, 0);
   assert.equal(r.stop, 'max-revisions');
+});
+
+// TIGHTENING IS THE HALF THAT HAD NO DETECTOR. The two tests above pin the
+// ceiling and the floor; NEITHER can fail if the clamp stops honouring values
+// BETWEEN them — MEASURED by replacing the clamp with `x <= 0 ? 0 : CEILING`,
+// which passed the whole file. A bound that only ever reads as its two extremes
+// is not tighten-only, it is a switch, and the direction the whole rule exists
+// to permit (the operator lowering it) was the untested one.
+
+test('authorClose: a maxRevisions BETWEEN the floor and the ceiling is HONOURED, not rounded to either', async () => {
+  const decls = Array.from({ length: 4 }, (_, n) => { const d = goodDeclaration(); d.notes = [`n${n}`]; return d; });
+  const { generate, calls } = scriptGenerate(decls.map((d) => ({ declaration: d })));
+  const { fn } = scriptSeedRead();
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: fn, maxRevisions: 1 });
+  assert.ok(MAX_REVISIONS > 1, 'the fixture only discriminates while 1 is strictly inside the range');
+  assert.equal(calls.length, 2, 'one author call and exactly ONE revise — the number asked for');
+  assert.equal(r.revisions, 1);
+  assert.equal(r.stop, 'max-revisions');
+});
+
+test('authorClose: structureRetries is TIGHTEN-ONLY under the constant that already claimed to be its ceiling', async () => {
+  // it buys provider calls exactly as `maxRevisions` does, and it rode through to
+  // `askDeclaration` unclamped until 40672ae — a caller handing 50 got 50 paid
+  // malformed-emission retries above a ceiling this module declares
+  const { generate, calls } = scriptGenerate([{ text: 'prose only, no tool call' }]);
+  const { fn } = scriptSeedRead();
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: fn, structureRetries: 50 });
+  assert.equal(calls.length, MAX_STRUCTURE_RETRIES + 1, 'the raised ceiling clamps down to the constant');
+  assert.equal(r.stop, 'artifact-red');
+});
+
+test('authorClose: a structureRetries BETWEEN the floor and the ceiling is HONOURED too', async () => {
+  const { generate, calls } = scriptGenerate([{ text: 'prose only, no tool call' }]);
+  const { fn } = scriptSeedRead();
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: fn, structureRetries: 1 });
+  assert.ok(MAX_STRUCTURE_RETRIES > 1, 'the fixture only discriminates while 1 is strictly inside the range');
+  assert.equal(calls.length, 2, 'one ask and exactly ONE retry');
+  assert.equal(r.stop, 'artifact-red');
+});
+
+test('authorClose: structureRetries floors at zero — ONE ask, no retry, and never a negative loop bound', async () => {
+  const { generate, calls } = scriptGenerate([{ text: 'prose only, no tool call' }]);
+  const { fn } = scriptSeedRead();
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: fn, structureRetries: -5 });
+  // `askDeclaration` loops `attempt <= retries`, so 0 is still ONE attempt — a
+  // legal tighter ask, never an absent one
+  assert.equal(calls.length, 1);
+  assert.equal(r.stop, 'artifact-red');
+});
+
+test('authorClose: a bound that is not a NUMBER floors on both axes — it never throws', async () => {
+  // the SCOUT_ATTEMPTS direction verbatim: a malformed value CLAMPS rather than
+  // throwing, because the number is not a signed artefact — nothing downstream
+  // depends on a caller having asked for the right one, and refusing a run over a
+  // bad cap costs a paid scout for no safety
+  const { fn } = scriptSeedRead();
+  for (const junk of ['banana', NaN, null, {}]) {
+    const a = scriptGenerate([{ declaration: goodDeclaration() }]);
+    const ra = await authorClose({ ...baseArgs(), generate: a.generate, seedReadFn: fn, maxRevisions: /** @type {any} */ (junk) });
+    assert.equal(a.calls.length, 1, `maxRevisions ${String(junk)} must floor, not throw and not run unbounded`);
+    assert.equal(ra.stop, 'max-revisions');
+
+    const b = scriptGenerate([{ text: 'prose only' }]);
+    await authorClose({ ...baseArgs(), generate: b.generate, seedReadFn: fn, structureRetries: /** @type {any} */ (junk) });
+    assert.equal(b.calls.length, 1, `structureRetries ${String(junk)} must floor, not throw and not run unbounded`);
+  }
+});
+
+test('authorClose: Infinity is a WIDENING, not garbage — it clamps to the ceiling, exactly as SCOUT_ATTEMPTS treats it', async () => {
+  // `Math.trunc(Infinity)` is Infinity and survives the `|| 0` guard, so it lands
+  // on the `Math.min` and reads as "as many as you will give me". That is the
+  // ceiling, not the floor — the same reading `runAuthorScout`'s own tighten-only
+  // test pins for `attempts: Infinity`
+  const decls = Array.from({ length: 6 }, (_, n) => { const d = goodDeclaration(); d.notes = [`n${n}`]; return d; });
+  const a = scriptGenerate(decls.map((d) => ({ declaration: d })));
+  const ra = await authorClose({ ...baseArgs(), generate: a.generate, seedReadFn: scriptSeedRead().fn, maxRevisions: Infinity });
+  assert.equal(a.calls.length, MAX_REVISIONS + 1);
+  assert.equal(ra.revisions, MAX_REVISIONS);
+
+  const b = scriptGenerate([{ text: 'prose only, no tool call' }]);
+  await authorClose({ ...baseArgs(), generate: b.generate, seedReadFn: scriptSeedRead().fn, structureRetries: Infinity });
+  assert.equal(b.calls.length, MAX_STRUCTURE_RETRIES + 1);
+});
+
+test('the two revise-loop bounds floor at ZERO while the SURVEY floors at ONE — a deliberate difference', async () => {
+  // the same tighten-only rule, three axes, and the floors differ on purpose: a
+  // scout that never ran is an ABSENT nobody can act on, while one authoring call
+  // with no revise round is a perfectly legal ask. Pinned so a later tidy-up that
+  // "harmonises" the floors has to argue with a test rather than a comment.
+  assert.equal(SCOUT_ATTEMPTS, 3);
+  const { generate, calls } = scriptGenerate([{ declaration: goodDeclaration() }]);
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: scriptSeedRead().fn, maxRevisions: 0, structureRetries: 0 });
+  assert.equal(calls.length, 1, 'zero is a LEGAL bound on both revise-loop axes — one call, and it authored a close');
+  assert.equal(r.ok, true);
 });
 
 test('authorClose: a reply with no tool call is an ARTIFACT-RED with a bounded retry, and writes nothing', async () => {

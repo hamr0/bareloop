@@ -40,6 +40,19 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Changed
 
+- **The two revise-loop tighten-only clamps get a detector.** `maxRevisions` and
+  `structureRetries` have been clamped since `40672ae`, but nothing could *fail* if they
+  stopped clamping: MEASURED, three mutations survived the whole suite — including deleting
+  the `structureRetries` clamp outright, a straight revert of the fix that added it. The two
+  existing tests pinned only the ceiling and the floor, and neither can fail when the clamp
+  stops honouring values *between* them; the direction the rule exists to permit — the
+  operator **lowering** a bound — was the untested one. Seven tests now cover the middle of
+  both ranges, the non-numeric floor, and `Infinity` (a widening, which clamps to the ceiling,
+  matching `runAuthorScout`'s own reading). The three floors are pinned as *deliberately
+  different* (`SCOUT_ATTEMPTS` at 1, both revise axes at 0) so a later "harmonisation" has to
+  argue with a test. No production behaviour changed — this is the detector the rule was
+  missing (F45's class: a frozen rule without a wired detector is prose, not protection).
+
 - **A stop past the wall never funds a replan draft, on ANY trigger.** W-2's *"no new step
   starts"* now covers the drafting call itself (hamr: *"it's a replan that is doomed to
   die"*), and the guard is trigger-agnostic rather than wired to one path. A declined grant is

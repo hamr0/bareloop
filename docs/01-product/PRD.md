@@ -4067,14 +4067,14 @@ the instrument that decides it, and until they say so the cheap retry stands.
   with the cap red; nothing today passes a budget into the authoring pipeline at all
   (`run-author.mjs` sets none — spend is *reported*, never capped). Adding a money ceiling
   here is arbiter territory and waits on hamr's word.~~ **CLOSED — hamr approved the lever
-  (2026-08-12), see the v1.61 addendum below.** The attempt ceiling (three calls, the
+  (2026-08-12), see the v1.62 addendum below.** The attempt ceiling (three calls, the
   re-asks toolless) is no longer the only bound: `--budget` is now an operator-set money
   ceiling with **no default**, checked between every metered call on both paid seams.
 - ~~**`maxRevisions` is NOT tighten-only today** — it plumbs as a plain option with no clamp.
   `SCOUT_ATTEMPTS` implements the ruling's direction; making the revision cap match is a
   separate one-line change, deliberately not folded in.~~ **STALE WHEN WRITTEN — the clamp
   had already shipped in `40672ae` (2026-08-09) alongside its `structureRetries` sibling.
-  See the v1.61 addendum §2.**
+  See the v1.62 addendum §2.**
 
 ## Addendum v1.59 — 2026-08-11 (a fence denial ends the ATTEMPT and never the RUN, a declared count stage carries the LINES it counted, and W-2 closes over the sibling terminals — hamr)
 
@@ -4329,7 +4329,7 @@ validator red, `isArbiterBook`'s `.smoke` blind spot, replan-ceiling-on-resume, 
 expiry-less derivation and the proposed class sweep are all still open. Nothing here closed
 any of them.
 
-## Addendum v1.61 — 2026-08-12 (the close-AUTHORING pipeline gets a money ceiling — hamr approved: "rec: yes both")
+## Addendum v1.62 — 2026-08-13 (the close-AUTHORING pipeline gets a money ceiling, and the revise-loop clamps get a detector — hamr approved: "rec: yes both")
 
 Two levers were parked at v0.9.0 as arbiter territory (v1.58 §4). hamr approved both. This
 addendum records the first; the second is a doc correction and is noted at the end.
@@ -4398,3 +4398,32 @@ shipped in `40672ae` (2026-08-09), which added the *sibling* clamp on `structure
 described only that half in its message. Both axes have been clamped tighten-only under
 their declared constants since. The note is corrected here rather than left to be re-found —
 a park that no longer describes the code is a build somebody will do twice.
+
+**But the clamps were PROSE, not protection — F45's class, in the authoring flow.** Checking
+the record before building (the standing rule) found the code already there; checking whether
+anything could *fail* found it was not. Three mutations were run against the suite as it
+stood, and **all three survived**:
+
+1. deleting the `structureRetries` clamp **entirely** — a straight revert of `40672ae`'s own
+   fix — was invisible;
+2. `maxRevisions` honouring only the floor and the ceiling (`x <= 0 ? 0 : CEILING`) was
+   invisible;
+3. the same mutation on `structureRetries` was invisible.
+
+The two tests that existed pinned the **ceiling** (a widened value clamps down) and the
+**floor** (a negative value floors), and neither can fail when the clamp stops honouring
+values *between* them. A bound that only ever reads as its two extremes is not tighten-only,
+it is a switch — and the direction the rule exists to permit, the operator **lowering** it,
+was the untested one. Seven tests now cover the middle of both ranges, the non-numeric floor,
+and `Infinity` (a *widening*, which clamps to the ceiling — the reading `runAuthorScout`'s own
+tighten-only test already pins for `attempts`). 9 of 10 mutants killed; the survivor is
+equivalent by construction (`MAX_REVISIONS` and `MAX_STRUCTURE_RETRIES` are both **2**, so
+swapping which constant bounds which axis computes identically). That equivalence is a
+**latent hazard, recorded**: the day either constant moves, the swap becomes a live defect
+that no behavioural test can currently catch.
+
+**The floors differ on purpose and are now pinned as differing.** `SCOUT_ATTEMPTS` floors at
+**1** (a survey that never ran is an ABSENT nobody can act on); both revise-loop axes floor at
+**0** (one authoring call with no revise round, and one ask with no retry, are legal tighter
+asks). A later tidy-up that "harmonises" the three floors now has to argue with a test rather
+than with a comment.
