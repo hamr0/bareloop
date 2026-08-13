@@ -737,6 +737,62 @@ test('runAuthorScout: the F59 RECOVERY round is behind the ceiling too — no pa
   assert.equal(r.calls.length, 1);
 });
 
+// …and the OTHER direction, which is what makes the assertion above able to
+// fail: `budgetStop` names the ceiling as WHAT ENDED THE LADDER. A ceiling that
+// was merely breached while the ladder ended on something else has refused
+// nothing, and saying otherwise routes the operator at a number that cannot
+// move the outcome. The refusal itself is unchanged in every case below — the
+// same predicate, the same tally, the same call not made; only the attribution
+// is at issue.
+
+test('runAuthorScout: a breached ceiling with NO recovery pending is not a governance stop', async () => {
+  // a dead socket on a ONE-turn call: `bounded` is false, so no reserved round
+  // was ever due and the cap refused nothing. Reporting `cap-halt` here sends the
+  // operator to raise a budget into a transport failure the money never caused.
+  for (const err of ['ENETUNREACH', 'truncated:max_tokens']) {
+    const { factory, created } = scriptLoops([{ text: '', turns: 1, error: err, costUsd: 0.09 }]);
+    const { createSurveyor } = stubSurveyor();
+    const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor, ceilingUsd: 0.05 });
+    assert.equal(created.length, 1);
+    assert.equal(r.cause, SURVEY_CAUSES.CALL_FAILED, `${err} is what ended this ladder`);
+    assert.equal(r.budgetStop, null, `${err}: the ceiling refused no call, so it is not what stopped the survey`);
+  }
+});
+
+test('runAuthorScout: a PRESENT survey that spent past the ceiling reports NO governance stop', async () => {
+  // the ladder ended on SUCCESS. The wallet is over — and the next call is what a
+  // ceiling refuses, so a survey nobody needed to re-ask has nothing refused.
+  const { factory, created } = scriptLoops([{ text: factsBlob(), turns: 1, costUsd: 0.09 }]);
+  const { createSurveyor } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor, ceilingUsd: 0.05 });
+  assert.equal(created.length, 1);
+  assert.equal(r.state, 'PRESENT');
+  assert.equal(r.budgetStop, null, 'nothing was refused, so nothing stopped on the ceiling');
+});
+
+test('runAuthorScout: an UNPRICEABLE call with no recovery pending is not a pricing-red governance stop', async () => {
+  // the same rule on F6's axis: `pricing-red` says the ceiling could not be
+  // enforced against a call it was about to fund. With no call pending there was
+  // nothing to enforce it against.
+  const { factory } = scriptLoops([{ text: '', turns: 1, error: 'ENETUNREACH', costUsd: null }]);
+  const { createSurveyor } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor, ceilingUsd: 5 });
+  assert.equal(r.cause, SURVEY_CAUSES.CALL_FAILED);
+  assert.equal(r.budgetStop, null);
+});
+
+test('runAuthorScout: a RETRYABLE cause under a breached ceiling still names the cap — via the ladder', async () => {
+  // the discriminator that keeps the fix from being a silent capability loss: the
+  // top-of-loop latch is untouched, so a malformation that WOULD have been re-asked
+  // still reports the ceiling as what refused the re-ask.
+  const { factory, created } = scriptLoops([{ text: badBlob(), turns: 1, costUsd: 0.09 }, { text: factsBlob(), turns: 1 }]);
+  const { createSurveyor } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor, ceilingUsd: 0.05 });
+  assert.equal(created.length, 1, 'the retry is never funded');
+  assert.equal(r.cause, SURVEY_CAUSES.UNPARSEABLE);
+  assert.equal(r.budgetStop, 'cap-halt', 'a retry WAS due, and the ceiling is what refused it');
+});
+
 test('runAuthorScout: EVERY attempt persists its raw, labelled and indexed, with the parse error beside it', async () => {
   const { factory } = scriptLoops([{ text: badBlob('one'), turns: 1 }, { text: badBlob('two'), turns: 1 }, { text: factsBlob(), turns: 1 }]);
   const { createSurveyor } = stubSurveyor();

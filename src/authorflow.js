@@ -81,7 +81,7 @@ import {
   GENRE_LANGUAGES, TYPES_GENRE_TEMPLATE, classGuards, genreEnv, genreOwnedEnvNames, genreInstruments,
   validateDeclaration, envCapableKind, VERDICT_CLASSES, LIVE_CLASSES,
 } from './authoring.js';
-import { buildSeedListing, cleanEntry } from './authorscout.js';
+import { buildSeedListing, cleanEntry, SURVEY_CAUSES } from './authorscout.js';
 import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop } from './text.js';
 import { redactSecrets } from './validate.js';
 
@@ -1080,7 +1080,7 @@ async function askDeclaration({ messages, generate, mode, retries, label, book, 
  *
  * @param {{workdir: string, seedRef: string, lang: string, verdictType: string,
  *   answers: Record<string|number, string>, questions?: Record<string|number, string>,
- *   scout: {state: string, facts: any, reason?: string|null, calls?: any[], raws?: any[],
+ *   scout: {state: string, facts: any, reason?: string|null, cause?: string|null, calls?: any[], raws?: any[],
  *     budgetStop?: 'cap-halt'|'pricing-red'|null},
  *   listing?: {stop: string|null, files: string[]|null, block: string|null, meta: any}|null,
  *   generate: Function, seedReadFn?: Function, closeCtx?: any,
@@ -1142,10 +1142,22 @@ export async function authorClose({
     // is NAMED a time-stop). `scout-absent` sends the operator to the scout; a
     // cap-halt sends them to the number they set, which is the one that moves.
     if (scout?.budgetStop) {
+      // A CONCURRENT CAUSE IS CONCEDED, NEVER DENIED. The ceiling can refuse the
+      // reserved recovery round for a call that ALSO died on transport, and both
+      // are then true at once. "not on anything it read" would deny the very
+      // error the same sentence goes on to quote, and this red carries
+      // `path: budgetUsd` — so the operator is steered to raise a ceiling into a
+      // dead socket, which is the one lever that cannot repair it. The stop
+      // itself does not move: the ceiling did bind, and naming the second cause
+      // is attribution, not routing.
+      const alsoDied = scout?.cause === SURVEY_CAUSES.CALL_FAILED;
       return refuse([{
         code: scout.budgetStop,
         path: 'budgetUsd',
-        detail: `the survey stopped on the authoring ceiling, not on anything it read: ${redactSecrets(String(scout.reason ?? ''))}`,
+        detail: alsoDied
+          ? 'the authoring ceiling bound here AND the survey call itself failed — both are true, and raising the '
+            + `ceiling will not repair the second: ${redactSecrets(String(scout.reason ?? ''))}`
+          : `the survey stopped on the authoring ceiling, not on anything it read: ${redactSecrets(String(scout.reason ?? ''))}`,
       }], scout.budgetStop);
     }
     return refuse([{

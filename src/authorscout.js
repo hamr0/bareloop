@@ -461,9 +461,25 @@ export async function runAuthorScout({
         // the same ceiling. Left outside it, the one call the cap most needs to
         // stop is the one that escapes: the recovery fires exactly when the first
         // call was cut off, which is exactly when the wallet is thinnest.
-        const recoveryHalt = capStop({ ceilingUsd, ...tallyCalls(calls) });
+        //
+        // THE CEILING IS ASKED ABOUT A CALL THAT WOULD ACTUALLY BE MADE, and the
+        // ORDER is what makes that true: the recovery predicate is settled FIRST,
+        // and `capStop` is consulted only when a recovery was genuinely pending.
+        // Asked unconditionally it answers a question nobody put — the wallet is
+        // over, but nothing was refused — and `budgetStop` means the ceiling is
+        // WHAT ENDED THE LADDER, which is then a lie on every other attempt-1
+        // ending: a dead socket on an unbounded first call, or a survey that came
+        // back PRESENT and needed no second call at all. Both then render as
+        // `cap-halt` at `path: budgetUsd`, steering the operator to raise a number
+        // that cannot move the outcome. Nothing about the REFUSAL moves here — the
+        // same predicate, the same tally, the same call not made (the top-of-loop
+        // latch still names the ceiling whenever a retry was due). This is which
+        // ending gets the label, and nothing else.
+        const recoveryWanted = bounded && Buffer.byteLength(blob) < minBytes
+          && Array.isArray(r?.msgs) && r.msgs.length > 0;
+        const recoveryHalt = recoveryWanted ? capStop({ ceilingUsd, ...tallyCalls(calls) }) : null;
         if (recoveryHalt) budgetStop = recoveryHalt;
-        if (!recoveryHalt && bounded && Buffer.byteLength(blob) < minBytes && Array.isArray(r?.msgs) && r.msgs.length) {
+        if (recoveryWanted && !recoveryHalt) {
           const recovery = createLoop({ system, policy: surveyor.policy, onLlmResult: surveyor.onLlmResult, provider });
           s2 = await recovery.run([...r.msgs, { role: 'user', content: SCOUT_RECOVERY_PROMPT }], [],
             { cacheMessages: true, maxTokens });

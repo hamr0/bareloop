@@ -1485,6 +1485,30 @@ test('authorClose: a survey the CEILING stopped is named a MONEY stop, never a s
   assert.equal(calls.length, 0, 'still a $0 refusal — naming it correctly costs nothing');
 });
 
+test('authorClose: a ceiling that stopped a survey the TRANSPORT also killed concedes both causes', async () => {
+  // the ceiling really did refuse the reserved recovery round — and the call it
+  // would have replaced died on a dead socket. Both are true, and a detail that
+  // says "not on anything it read" while quoting a transport error in the same
+  // sentence contradicts itself and routes the operator at `--budget`, which is
+  // the one lever that cannot repair a socket.
+  const both = {
+    state: 'ABSENT', facts: null, cause: 'call-failed',
+    reason: 'the survey call failed: ENETUNREACH',
+    budgetStop: 'cap-halt',
+    calls: [{ label: 'author-scout', costUsd: 0.03, unpricedRounds: 0 }], raws: [],
+  };
+  const { generate, calls } = scriptGenerate([{ declaration: goodDeclaration() }]);
+  const r = await authorClose({ ...baseArgs(), scout: both, generate, seedReadFn: scriptSeedRead().fn, ceilingUsd: 0.02 });
+
+  assert.equal(r.stop, 'cap-halt', 'the decided stop does not move — this is attribution, not routing');
+  assert.equal(r.reds[0].code, 'cap-halt');
+  assert.match(r.reds[0].detail, /ENETUNREACH/, 'the transport error still rides along');
+  assert.ok(!/not on anything it read/.test(r.reds[0].detail),
+    'and the detail must not DENY the cause it is quoting in the same breath');
+  assert.match(r.reds[0].detail, /call itself failed/i, 'the concurrent cause is named, not implied');
+  assert.equal(calls.length, 0, 'still a $0 refusal');
+});
+
 test('authorClose: an ordinarily ABSENT survey is STILL a scout-absent — the money branch is not a catch-all', async () => {
   // the discriminator for the test above: same absence, no budgetStop, and the
   // scout is correctly blamed
