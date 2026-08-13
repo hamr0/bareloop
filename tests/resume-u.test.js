@@ -82,8 +82,8 @@ const haltedSpine = ({ outcome = 'cap-halt', job = SPEC.job, rounds = [BUDGET * 
  * verdict about the runner, and saying so is the same rule the close's own
  * `noExit` guard follows.
  */
-const preview = (args) => {
-  const r = spawnSync(process.execPath, [RUNNER, '--job', 'bareagent-types', ...args], {
+const preview = (args, job = 'bareagent-types') => {
+  const r = spawnSync(process.execPath, [RUNNER, '--job', job, ...args], {
     encoding: 'utf8', timeout: 240_000, env: { ...process.env, ANTHROPIC_API_KEY: '' },
   });
   const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
@@ -206,6 +206,65 @@ test('§3 REFUSED: a WALL halt IS resumable — the W-2 symmetry, not an excepti
   assert.match(out, /RESUME/);
 });
 
+test('§3 a STALL is a CHECKPOINT, not a fresh start — a step-stalled run resumes instead of re-paying for the steps it finished', () => {
+  // hamr's go (2026-08-13). `step-stalled` is the one terminal whose OWN escalation
+  // says *"retry the run"* (src/planrun.js) while this runner answered "Start a fresh
+  // run" — discarding exactly the finished-step spend the step-level resume doctrine
+  // exists to keep. The NAME stays (src/run.js keys the F44 spend floor on that
+  // outcome), so what changes is which terminals read as a checkpoint.
+  //
+  // The floor rides along: a stalled `job-end` carries `spendComplete:false` (an
+  // abandoned call may already have been billed), so the fold must be quoted as a
+  // FLOOR here. An unknown that heals by being inherited is F6 in a resume coat.
+  const rounds = [BUDGET * 0.15, BUDGET * 0.10];
+  const spent = sum(rounds);
+  const stalled = haltedSpine({ outcome: 'step-stalled', rounds })
+    .map((e) => (e.type === 'job-end' ? { ...e, spendComplete: false } : e));
+  const { code, out } = preview(['--resume', spineFile(stalled)]);
+  assert.equal(code, 0, 'a stall leaves the tree, the plan and the finished steps on disk — that is a checkpoint, not a verdict');
+  assert.match(out, /RESUME, continuing a halted run/);
+  assert.match(out, new RegExp(`≥\\$${usd(spent)} and .* before the halt — FOLDED IN`), 'the fold is quoted as the FLOOR the stalled terminal declared');
+  assert.match(out, new RegExp(`left {5}\\$${usd(BUDGET - spent)} of \\$${rx(BUDGET)}`));
+  assert.match(out, /at       the close and its fix loop/, 'and it re-enters at the checkpoint, so none of the finished steps is re-paid');
+});
+
+test('§3 the refusal names the resumable set from the ONE constant, and every terminal it names really resumes', () => {
+  // A terminal admitted in code but missing from the message (or the reverse) leaves
+  // the operator reading a stale list to decide whether their run is recoverable. So
+  // the list is read out of the runner's own constant rather than spelled twice here —
+  // the same rule the money and wall numbers in this file follow.
+  const src = readFileSync(RUNNER, 'utf8');
+  const decl = src.match(/const RESUMABLE_HALTS = \[([^\]]*)\]/);
+  assert.ok(decl, 'the resumable set is still ONE constant');
+  const halts = decl[1].split(',').map((s) => s.trim().replace(/^'|'$/g, '')).filter(Boolean);
+  assert.ok(halts.includes('step-stalled'), 'a stall is a checkpoint (hamr, 2026-08-13)');
+
+  const refused = preview(['--resume', spineFile(haltedSpine({ outcome: 'escalated' }))]);
+  assert.equal(refused.code, 2, 'an escalation is an answer, and answers are not resumable');
+  assert.match(refused.out, new RegExp(rx(halts.join(' / '))), 'the refusal names exactly what the code admits');
+
+  for (const h of halts) {
+    const r = preview(['--resume', spineFile(haltedSpine({ outcome: h }))]);
+    assert.equal(r.code, 0, `"${h}" is advertised as resumable, so it must actually resume — printed-but-refused is the worse half of the same drift`);
+  }
+});
+
+test('§3 the STALL readout OFFERS the resume (source tripwire): the run that can be continued must say so where the operator is looking', () => {
+  // Past the approval gate, so no preview can drive it — the same reason the other
+  // end-of-run readouts in this file are pinned in source. The stall's own escalation
+  // prints one line above it and says "retry the run"; without this block the only
+  // retry on offer is a cold one that re-drafts the plan and re-pays every step.
+  const src = readFileSync(RUNNER, 'utf8');
+  const at = src.indexOf("if (outcome === 'step-stalled') {");
+  assert.ok(at > 0, 'the stall readout exists');
+  const end = src.indexOf('\n}', at);
+  assert.ok(end > at, 'and it closes at its own indent');
+  const block = src.slice(at, end);
+  assert.match(block, /--resume \$\{runid\}/, 'it hands over the actual resume invocation, not the idea of one');
+  assert.match(block, /--approve \$\{specHash\}/, 'with the hash ALREADY signed: no allowance moved, so nothing here needs re-signing');
+  assert.doesNotMatch(block, /\bdie\(|process\.exit/, 'a readout never changes the run\'s own exit');
+});
+
 test('§3 REFUSED: another job\'s spine — a resume continues ONE job, never substitutes a plan across jobs', () => {
   const { code, out } = preview(['--resume', spineFile(haltedSpine({ job: 'some-other-job' }))]);
   assert.equal(code, 2);
@@ -243,6 +302,43 @@ test('§3 CONTROL: without --resume the runner is byte-for-byte the cold launch 
   assert.equal(code, 0);
   assert.doesNotMatch(out, /RESUME/);
   assert.match(out, /user-mode e2e, ONE run/);
+});
+
+test('§F87 the signing preview names the close stages for a COMMAND close too — the goal and the thing that judges it are read at once, or not at all', () => {
+  // The F87 gate exists so the signer reads BOTH halves on one screen. Gated on
+  // `spec.closeDecl` it printed the stages for exactly one of the eleven shipped
+  // specs; every command `close[]` spec — which is all the rest — showed a goal, a
+  // hash, and nothing about what would judge it. That is the F87 half-reading,
+  // reproduced by the block written to end it, so this drives the REAL preview
+  // rather than reading the source: the defect was in what an operator SEES.
+  //
+  // Every expectation is DERIVED from the live spec (same rule as the money and wall
+  // numbers above): a close edit moves the stage list, and this must move with it
+  // instead of pinning a list the operator has since changed.
+  const names = SPEC.close.map((s) => s.name);
+  assert.ok(Array.isArray(SPEC.close) && names.length > 1 && !SPEC.closeDecl,
+    'the fixture spec really is a multi-stage COMMAND close — the form the gate used to skip');
+  const { code, out } = preview([]);
+  assert.equal(code, 0, 'a preview is still a readout, not a refusal');
+  assert.match(out, new RegExp(`judged   ${names.length} close stage\\(s\\)`), 'the COUNT, so a stage that never renders is visible as a gap');
+  for (const n of names) {
+    assert.match(out, new RegExp(`\\n {11}${rx(n)} {2}\\[command\\]`), `the close stage "${n}" is named to the signer`);
+  }
+  assert.doesNotMatch(out, /\[undefined\]/, 'a command stage carries no `kind`, and the readout says `command` rather than printing the absence');
+  // ABOVE the hash, because the hash line is where the eye stops: the block is the
+  // second half of the goal, not a footnote under the signature.
+  assert.ok(out.indexOf('judged   ') < out.indexOf('  hash     '), 'the stages are read before the thing being signed, not after');
+
+  // CONTROL: the DECLARED form still renders its own catalogue kinds, unchanged — the
+  // two spec forms are one readout now, and `command` is not laundered over a real kind.
+  const declSpec = JSON.parse(readFileSync(new URL('../jobs/pulselog-author-types.json', import.meta.url), 'utf8'));
+  const decl = preview([], 'pulselog-author-types');
+  assert.equal(decl.code, 0);
+  assert.match(decl.out, new RegExp(`judged   ${declSpec.closeDecl.stages.length} close stage\\(s\\)`));
+  for (const s of declSpec.closeDecl.stages) {
+    assert.match(decl.out, new RegExp(`\\n {11}${rx(s.name)} {2}\\[${rx(s.kind)}\\]`), `the declared stage "${s.name}" keeps its authored kind`);
+  }
+  assert.doesNotMatch(decl.out, /\[command\]/, 'a declaration never falls back to the command spelling — its stages all carry a kind');
 });
 
 test('§3 ORDERING (source tripwire): the resume read and the approval gate both sit ABOVE the patient reset', () => {

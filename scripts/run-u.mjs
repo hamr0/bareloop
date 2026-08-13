@@ -123,7 +123,7 @@ const specHash = jobSpecHash(spec);
 const WALL_MS = typeof spec.maxWallMs === 'number' && Number.isFinite(spec.maxWallMs) ? spec.maxWallMs : null;
 const WALL_LABEL = WALL_MS === null ? 'UNBOUNDED (spec sets no maxWallMs — deliberate operator choice; no outside deadline)' : `${WALL_MS / 60000}min`;
 
-// ── --resume: continue a run its own MONEY (or TIME) cap stopped ─────────────
+// ── --resume: continue a run its own MONEY (or TIME) cap — or a STALL — stopped ──
 // PRD v1.46 §3, and it closes the third leg of hamr's resume rulings: kill-resume
 // existed on the reuse path and W-2 pauses the wall decision-ready, but the case the
 // original ruling was actually about — "why would i want to waste more money on
@@ -136,10 +136,29 @@ const WALL_LABEL = WALL_MS === null ? 'UNBOUNDED (spec sets no maxWallMs — del
 // declines to throw away what the dead run already bought — the tree, the plan, the
 // steps that finished, and the money, which is folded IN so the ceiling cannot widen.
 const RESUME = arg('resume');
-/** the terminals that are a checkpoint rather than a verdict. Both are governance
- * halts: an operator-owned allowance ran out with the work on disk. Nothing else is
- * resumable — a green is done, and a red is an answer. */
-const RESUMABLE_HALTS = ['cap-halt', 'wall-halt'];
+/** the terminals that are a checkpoint rather than a verdict. Nothing else is
+ * resumable — a green is done, and a red is an answer.
+ *
+ * The first two are governance halts: an operator-owned allowance ran out with the
+ * work on disk.
+ *
+ * `step-stalled` (hamr's go, 2026-08-13) is the third, and it is not an allowance
+ * stop — it is the one terminal whose OWN escalation already tells the operator to
+ * *"retry the run"* (src/planrun.js) while this runner answered "start a fresh run"
+ * and threw away every finished step's spend. Two shapes reach it and resume is the
+ * right answer to both: the plain stall (the model stopped producing rounds and the
+ * reissue did not recover it — nothing about the work on disk is wrong), and the
+ * edge that named this fix, where a stall trips WITH time left, becomes a replan
+ * trigger, and the replan gate declines to fund a cycle past the deadline — the run
+ * then rides out as `step-stalled` rather than `wall-halt` and lost the checkpoint a
+ * wall stop would have kept. The NAME deliberately stays `step-stalled` (src/run.js
+ * keys the F44 spend FLOOR on that outcome), so the fix is exactly this: widen which
+ * terminals are read as a checkpoint, rename nothing.
+ *
+ * The floor rides along honestly — a stalled run's `spendComplete:false` reaches the
+ * preview's fold as `≥$x` and `runJob` as `priorSpendComplete:false`, so the resumed
+ * leg's own terminal stays a floor too rather than healing an unknown by inheriting it. */
+const RESUMABLE_HALTS = ['cap-halt', 'wall-halt', 'step-stalled'];
 const die = (/** @type {string} */ m) => { console.error(m); process.exit(2); };
 /** the patient's tree, and the spine directory beside it — derived ONCE, here, because
  * both the RESUME reader below and the live run further down need them. Two spellings of
@@ -219,10 +238,21 @@ if (arg('approve') !== specHash) {
   // and never the stages, and run-author printed the stages and never the goal.
   // Names and kinds only; the params and notes are the authoring surface's reading
   // (`scripts/author-readout.mjs`), and this one is about what the dollars below buy.
-  if (spec.closeDecl) {
-    const stages = spec.closeDecl.stages ?? [];
+  // Through `closeStagesOf` — THE ONE STAGING (src/plan.js), the same derivation the
+  // watchdog's stage count below already reads for the same reason. Gated on
+  // `spec.closeDecl` this printed the stages for exactly ONE of the eleven shipped
+  // specs: the other ten declare a command `close[]`, so the signer read the goal,
+  // then the hash, and never the stages that judge it — the F87 half-reading this
+  // block exists to end, reproduced by the block itself.
+  // A command stage carries no `kind` (that is the DECLARATION's vocabulary), and it
+  // is not a `command-exit` either — these stages gate on an exit code AND a judged
+  // floor — so it renders as `command` rather than borrowing a kind name it has not
+  // got. The spec here is read raw off disk and is not validateJob'd until runJob,
+  // so a stage is rendered defensively: a malformed entry must not throw the gate.
+  const stages = closeStagesOf(spec) ?? [];
+  if (stages.length) {
     console.log(`  judged   ${stages.length} close stage(s) — this run is green only when EVERY one of them is, so the goal above has to name what they measure:`);
-    for (const s of stages) console.log(`           ${s.name}  [${s.kind}]`);
+    for (const s of stages) console.log(`           ${s?.name ?? '(unnamed)'}  [${s?.kind ?? 'command'}]`);
   }
   if (dead) {
     const rs = dead.restart;
@@ -552,6 +582,17 @@ if (mh) {
   for (const o of mh.options ?? []) console.log(`          · ${o}`);
   console.log(`  resume  node scripts/run-u.mjs --job ${jobKey} --resume ${runid} --approve <the NEW hash after you edit budgetUsd>`);
   console.log('          (the top-up is yours to sign — nothing in the run may widen its own budget)');
+}
+// A STALL is a checkpoint too (hamr's go, 2026-08-13). Its own escalation prints one
+// line above and says *"retry the run"*, and until this line the only retry on offer
+// was a COLD one that re-drafts the plan and re-pays for every step already finished.
+// Unlike the money halt above, nothing here needs re-signing: no allowance moved, so
+// the hash already approved is the hash that resumes.
+if (outcome === 'step-stalled') {
+  console.log('\nSTALL HALT — the model stopped producing rounds and reissuing the call did not recover it. The tree, the plan and the steps already finished STAND.');
+  console.log(`  resume  node scripts/run-u.mjs --job ${jobKey} --resume ${runid} --approve ${specHash}`);
+  console.log('          (no spec edit, so the hash is unchanged — this re-enters at the stalled step and re-pays for none of the ones before it)');
+  console.log('          (if the allowance is what actually ran out underneath the stall, that preview says so and refuses — it is read there, not asserted here)');
 }
 // A leak is the HARD LINE broken, not a note in the margin: an advisory that
 // prints a count and then exits 0 while still writing the bridge is a guard in
