@@ -25,13 +25,20 @@ it · the fix (upstream commit/PR) · the version bareloop consumed.**
 > the clipipe cross-surface battery (F48). Full entry at the end of the queue. The
 > 2026-07-15 snapshot below stands for everything prior.
 
-> **2026-08-09 update: the queue reopens on BA-20 (bare-agent), OPEN.** bareloop's N4
-> (soft-green) rung needs a productized *decisive judge*; the design is measured and the code is
-> a POC in bareguard's research corpus, owned by no shippable package — it lands in **bare-agent**,
-> where every LLM call in the suite already lives (bareguard's own locked design forbids it
-> calling one). *Recorded, not rewritten: this was first filed the same day as `BJ-1`,
-> recommending a new `barejudge` package, and re-aimed at bare-agent the same day on hamr's
-> ruling.* Full entry at the end of the queue.
+> **2026-08-09 update, CLOSED 2026-08-13: BA-20 (bare-agent) DELIVERED in `bare-agent@0.36.0`,
+> consumed here at 0.36.1.** bareloop's N4 (soft-green) rung needs a productized *decisive
+> judge*; the design was measured and the code was a POC in bareguard's research corpus, owned
+> by no shippable package — it landed in **bare-agent**, where every LLM call in the suite
+> already lives (bareguard's own locked design forbids it calling one). The delivery ships
+> `src/judge.js`, `src/judge-calibration.js` and `src/bareguard-adapter.js`, all exported from
+> the package entry — source-verified against the shipped tarball, not taken on a changelog's
+> word. **bareloop's consumption this cycle is the dependency bump ONLY:** the consumer of
+> `judge`/`calibrate`/`judgeToAnnotation` is the N4 rung, which does not exist yet, so wiring
+> the judge into a `judged` close stage and **executing BA-20's acceptance criteria live**
+> (running `calibrate` against the frozen floor, naming the hash it graded) are **deferred to
+> N4's opening** — stated plainly, not papered over. *Recorded, not rewritten: this was first
+> filed the same day as `BJ-1`, recommending a new `barejudge` package, and re-aimed at
+> bare-agent the same day on hamr's ruling.* Full entry at the end of the queue.
 
 > **2026-07-31 update:** **LC-5 (litectx) DELIVERED in `litectx@0.32.0`, same day** —
 > option (a) of the ask: `impact()` now throws a named `RipgrepMissingError`
@@ -49,6 +56,7 @@ changelog's word. Withdrawn/superseded entries stay in the record with their rea
 
 | Ask | Package | Status | Delivered in | Acceptance — how verified |
 |---|---|---|---|---|
+| **BA-20** productized decisive judge + calibration harness | bare-agent | **DELIVERED** | 0.36.0 (consumed 0.36.1) | Three modules source-verified against the shipped tarball 2026-08-13: `src/judge.js` (`judge` — verbatim request + one artifact → `honored`/`broke` with mechanical `where`; `truncated`/`parseError` as DISTINCT flagged outcomes floored to `broke` and excluded from graded denominators; embedded "the user later said…" amendments ignored as untrusted data; composes around a provider, never inside the Loop; optional `onLlmResult` forwards usage/cost to a wired gate as `kind:'judge'`), `src/judge-calibration.js` (`calibrate`, `CALIBRATION_CASES`, `INJECTION_BATTERY` (5 styles), `scoreCase`, `gradeRun`, `constantHonored` — the negative control proving the harness can fail; a tier is admitted only on a pre-registered floor with zero reds AND resistance to every injection style), `src/bareguard-adapter.js` (`judgeToAnnotation` — pure, `surface = v.verdict !== 'honored'`, all three gate caps bounded DEFENSIVELY with a visible `…[clipped]` marker, `opts.limits`; calls no gate — the caller makes the `gate.annotate` call). All exported from the entry (`index.js` lines 10-11, 23, 46-47, 67). **Fixture location, stated precisely:** the tarball ships the clear cases **inlined** in `judge-calibration.js`; the byte-pinned `e6i-cases.frozen.json` + its hash-pin test live in the bare-agent **repo** (tests are excluded from the tarball). Their adopter contract states the clear-case set is byte-equivalent to bareguard's frozen E6i fixture (`sha256(cases)=a840832…`, the hash this ask's "DELIVERED AND PINNED (2026-08-12)" note records) and that **injection resistance is established at `claude-haiku-4-5` only**, re-run required on any tier deviation. **Consumed = pin bump only** (`^0.35.0 → ^0.36.0`); judge wiring and **live execution of the acceptance criteria deferred to the N4 rung**, where the consumer exists. |
 | **BA-13** `shell_edit` anchored edit verb | bare-agent | **DELIVERED** | 0.29.0 | Anchored exact-once replace with BA-4 param guards, atomic temp+rename (mode preserved, 0o600 window), anchor-miss/multi-match as refusal RESULTS naming the count, compact receipt (`tools/shell.js:134-231`). Criteria 2/3/4/6 executed against the shipped tool (all green); C5 pinned by bareloop's own gate test (audit line `{type:'edit'}` denied by writeScope); C7 by the full suite on 0.29.0. C1 (economy) measured live: 229 vs 12,887 output tokens (56.3×), both bounds pass — see the entry. Consumed: `TOOL_MENU`/`TOOL_BY_VERB` gain `edit`, persona carries the strategy (F32 session). |
 | **BA-1** transcript caching | bare-agent | **DELIVERED** | 0.27.0 | `cacheMessages` opt-in rolls `cache_control` onto the last block (`provider-anthropic.js:102-111`). Shipped **opt-in, not default-on as asked** (it changes the wire format); bareloop wires `cacheMessages:true`. Source-verified. |
 | **BA-3** stop() bogus error | bare-agent | **SUPERSEDED by BA-5** | — | Mechanism re-verified at 0.26.2; the fix ships as the BA-5 852 sub-case. |
@@ -1404,6 +1412,53 @@ candidates have now gone in and three come out.)*
 ---
 
 ## BA-20 — the decisive judge exists only as a POC in bareguard's research corpus: bareloop's N4 (soft-green) rung needs it PRODUCTIZED, in bare-agent (2026-08-09, N4 opening / the RSI judged-floor doctrine)
+
+> **DELIVERED in `bare-agent@0.36.0`**, source-verified against the shipped tarball **0.36.1** on
+> **2026-08-13** — `src/judge.js`, `src/judge-calibration.js`, `src/bareguard-adapter.js`, all
+> exported from the package entry (`index.js` lines 10-11, 23, 46-47, 67). The delivery is both
+> halves this ask asked for and neither is optional: the **judge call** (`judge` — verbatim
+> request plus one structured artifact in, `honored`/`broke` with a mechanical `where` out;
+> truncated and unparseable responses are DISTINCT flagged outcomes (`truncated`/`parseError`),
+> floored to `broke` and excluded from graded denominators; embedded *"the user later said…"*
+> amendments inside the artifact are ignored as untrusted data; it composes **around** a
+> provider, never inside the Loop, and an optional `onLlmResult` forwards usage/cost to a wired
+> gate as `kind:'judge'`), and the **calibration harness** (`calibrate`, `CALIBRATION_CASES`,
+> `INJECTION_BATTERY`, `scoreCase`, `gradeRun`, plus `constantHonored` — the negative control
+> that makes criterion 6 real — admitting a tier only on a pre-registered floor with **zero
+> reds** AND resistance to **every** injection style). The **`judgeToAnnotation` mapping** ships
+> too, pure, in `src/bareguard-adapter.js`: `surface = v.verdict !== 'honored'`, all three gate
+> caps bounded **defensively** with a visible `…[clipped]` marker, `opts.limits` for the caps;
+> it calls **no** gate — the caller still makes the `gate.annotate` call itself, exactly as the
+> ruling below requires.
+>
+> **The frozen fixture's location, stated precisely rather than rounded off.** The **tarball**
+> ships the clear cases **inlined inside `judge-calibration.js`**; the byte-pinned
+> `e6i-cases.frozen.json` and the hash-pin test live in the bare-agent **repo** (tests are
+> excluded from the tarball). Their adopter contract states the clear-case set is
+> **byte-equivalent** to bareguard's frozen E6i fixture — `sha256(cases)=a840832…`, the same
+> hash the *DELIVERED AND PINNED (2026-08-12)* note above records — and that **injection
+> resistance is established at `claude-haiku-4-5` ONLY**, with a re-run required on any tier
+> deviation.
+>
+> **bareloop's consumption this cycle is the dependency bump and nothing else.** The pins moved
+> `bare-agent ^0.35.0 → ^0.36.0`; the consumer of `judge`/`calibrate`/`judgeToAnnotation` is the
+> **N4 (soft-green) rung, which does not exist yet**. So the judge is **not wired** into a
+> `judged` close stage today, and **BA-20's acceptance criteria have not been executed live**
+> here — running `calibrate` against the frozen floor, comparing to the ≥7/7 bar, and naming the
+> hash it graded — all of that is **deferred to N4's opening**, where the consumer exists. Said
+> plainly: this entry records a verified DELIVERY, not a verified ACCEPTANCE.
+>
+> **Companion, same cycle: `bareguard@0.13.0`** — the BA-20-session hardening, consumed here by
+> the pin bump `^0.12.0 → ^0.13.0`: `gate.annotate` now **REJECTS** malformed facts (the array
+> fail-open, the retired sketch shape, missing `surface`) into distinct `annotate_malformed`
+> audit rows instead of normalizing them into silently-`honored` ones, no longer throws into the
+> agent loop on a fact that explodes on read, routes `verdict` through the audit **redactor** (a
+> real secret-leak fix — it was written RAW), makes `meta`'s 1000-byte bound a **decoupled copy**
+> (undoable-after-the-fact fixed), and drops `__proto__` keys at every depth while copying.
+> **bareloop's own exposure is zero:** it imports only `Gate` and `redact` and **never calls
+> `gate.annotate`**, so the behaviour and audit-format change costs it nothing today — and
+> bareguard verified at source that 0.36.0's `judgeToAnnotation` always sets an explicit boolean
+> `surface`, so the new rejection rule costs the only shipped consumer nothing either.
 
 **Re-aimed the same day it was filed, stated up front.** This file's IDs key to the owning
 package — `BA-*` bare-agent, `LC-*` litectx, `BG-*` bareguard. This ask went in first as

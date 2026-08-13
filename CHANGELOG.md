@@ -5,6 +5,32 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Changed
+
+- **Both suite pins move up a minor — `bare-agent ^0.35.0 → ^0.36.0`, `bareguard ^0.12.0 →
+  ^0.13.0` — because on 0.x a caret locks the MINOR**, so the old pins admitted neither release
+  and the bump is the only way to consume them. **bare-agent 0.36 delivers BA-20**, the
+  productized decisive judge this queue reopened on: `judge` (verbatim request + one structured
+  artifact → `honored`/`broke` with a mechanical `where`, truncated/unparseable responses as
+  DISTINCT flagged outcomes excluded from graded denominators, composing **around** a provider
+  and never inside the Loop), the calibration harness (`calibrate`, `CALIBRATION_CASES`,
+  `INJECTION_BATTERY`, `constantHonored` — the negative control that lets the harness fail), and
+  the pure `judgeToAnnotation` mapping into bareguard's shipped fact envelope. **bareguard
+  0.13.0** is the companion hardening: `gate.annotate` now REJECTS malformed facts into distinct
+  `annotate_malformed` rows instead of normalizing them into silently-`honored` ones, `verdict`
+  goes through the audit redactor (it was written RAW — a real secret-leak fix), `meta`'s
+  1000-byte bound became a decoupled copy, and `__proto__` keys are dropped at every depth.
+  **That behaviour change is zero-cost to bareloop today**: it imports only `Gate` and `redact`
+  and has **no `gate.annotate` call site** at all. `npm ls` resolves `bare-agent@0.36.1` +
+  `bareguard@0.13.0`, deduped to one shared copy, and **full fresh gates are green against the
+  installed versions** — `npm test` 1569/1569 exit 0, `typecheck` clean, `build:types` clean.
+  **The judge is NOT consumed here**: its consumer is the N4 (soft-green) rung, so wiring it into
+  a `judged` close stage and executing BA-20's acceptance criteria live (running `calibrate`
+  against the frozen floor and naming the hash it graded) are deferred to N4's opening — a
+  verified delivery, not a verified acceptance.
+
 ## [0.10.0] — 2026-08-13
 
 ### Added
