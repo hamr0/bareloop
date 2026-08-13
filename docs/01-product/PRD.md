@@ -4674,3 +4674,26 @@ is now enforced where the money is actually weighed.
   per-context intent; `validate.js`'s twin walkers are established convention and arbiter
   territory). Reviewing the fixes for the round before it is the F91 discipline, and it paid
   again: round 2's #1 was a concession the round-1 fix had gated too narrowly.
+
+## Addendum v1.65 — 2026-08-13 (N4 OPENS: the proving job and the calibration author ruled; BA-20 consumed — hamr)
+
+**Pointer, per the v1.27/v1.42 convention** — the home is the dated addendum on
+`docs/plans/2026-08-07-close-authoring-design.md` and the build plan
+`docs/plans/2026-08-13-n4-verdict-classes-build.md`; neither is restated here.
+
+- **The N4 rung (verdict classes: hitl first, then softgreen) is OPEN.** hamr's two in-turn
+  answers fill the two blanks the frozen record left: **the proving job is
+  `litectx-maintainer`** (dark since `507adbb`; it must be RE-AUTHORED as a plan-v1 spec —
+  the graduation rewrite rule, never a copy), and **softgreen's frozen calibration set is
+  authored on the D5 shown-and-fixed pattern** — the authoring LLM proposes, the signer
+  fixes and signs, stored enumerated inside the spec hash.
+- **The external unblock landed the same day:** BA-20 DELIVERED in `bare-agent@0.36.0`
+  (judge + calibration harness + `judgeToAnnotation`), consumed at 0.36.1 with
+  `bareguard@0.13.0` (`bc6ebd4`) as a pin bump only — live acceptance execution (running
+  `calibrate` against the frozen floor) is N4's work, and injection resistance is
+  established at `claude-haiku-4-5` ONLY (a tier deviation re-runs their harness; operator
+  call, PARKED).
+- **The build plan names three OPENs for hamr** (the hitl guard battery's content; where the
+  60-day TTL lives; whether `accept` re-runs the mechanical stages before minting green) and
+  the judge-tier PARK. Nothing frozen is reopened; the nine rulings and the 2026-08-12 hitl
+  surface stand as written.

@@ -695,3 +695,67 @@ classes. This is the same law every other signed field runs under (a changed fie
 hash and the runner refuses until re-approved), and it is what makes the picked class an
 honest PROMISE: composition stays at or below the class the signature covers, and exceeding it
 is an honest red rather than a silent upgrade.
+
+---
+
+## Addendum — 2026-08-13, N4 OPENS: the proving job and the calibration set's author
+
+**hamr's interview answers, given this session, as the N4 rung opens.** Two blanks the frozen
+record deliberately left — *which job proves hitl* and *who authors softgreen's calibration set*
+— are now filled. **Nothing in the frozen record is reopened**: the nine rulings (2026-08-07),
+the D4 supersession (2026-08-08) and the hitl surface (2026-08-12) all stand exactly as written.
+
+### 1. The proving job for hitl is `litectx-maintainer`
+
+**hitl is proven when `litectx-maintainer` runs end-to-end through the plan flow with the
+three-button terminal review** (2026-08-12 §1) — not by a synthetic job built to exercise a
+pause.
+
+**Why that job.** It is the one the programme already owes a debt to: *"keep litectx green"* ran
+under the legacy `steps[]` path as a predicate suite step followed by a `close.type: 'hitl'`
+draft-PR review, and it went **dark at `507adbb`** when that path was deleted (PRD v1.32). The
+closing addendum's own sequencing note named it as what hitl unblocks, and PRD v1.44 §5 put
+softgreen + hitl ahead of genre-widening and ahead of the UI for exactly that reason. A rung
+that lands with the job it was sequenced to rescue still dark has proven the machinery and not
+the claim.
+
+**What is actually on disk, stated plainly: `jobs/litectx-maintainer.json` DOES NOT EXIST.** It
+was deleted (53 lines) in `507adbb`. Its last version is pure legacy shape — `steps[]`, a
+per-step `close`, a `class` field, no `goal`, no `verdictType` — so **every field the plan flow
+reads is absent**, and the draft-PR machinery its second step named was deleted in the same
+commit. **The job must be RE-AUTHORED as a plan-v1 spec** (`goal` / `verdictType: "hitl"` /
+close) through the close-authoring interview and signed fresh. That is the standing
+graduation rule — a rewrite, never a copy — and the review surface is the terminal evidence
+package (2026-08-12 §5.2), because no draft-PR code survives to inherit.
+
+### 2. Softgreen's calibration set is authored on the D5 shown-and-fixed pattern
+
+Ruling 7 froze *that* the judged floor's calibration set is fixed at signing time and left
+**who writes it** open. Ruled now: **the authoring LLM PROPOSES the known-good and known-bad
+examples during the close-authoring interview; the signer reviews them, fixes them, and SIGNS
+them; they are stored ENUMERATED and fold into the spec hash.**
+
+This is D5's guard battery mechanism applied to a second artifact, and it satisfies both
+standing doctrines at once:
+
+- **No user hand-authoring.** The human edits and signs; he never composes a calibration set
+  from a blank page. *"There shouldn't be user authoring anywhere, that defies the point of
+  bareloop"* (PRD v1.28) holds here exactly as it holds for checks and for guards.
+- **No silent LLM authority.** Nothing LLM-judges the close (D9). The model's proposal is a
+  DRAFT with no force; **the signature is what freezes the set**, which is the same thing that
+  makes a guard un-removable and a close hash meaningful.
+- **Enumerated storage, per D13 forward-compat point 3.** Stored spelled out and hashed
+  resolved, so a later catalogue or harness widening cannot silently change what was signed.
+  Re-authoring a set is a re-signed spec edit, like every other signed field.
+
+### 3. The external unblock: BA-20 is DELIVERED
+
+`bare-agent@0.36.0` ships the productized decisive judge — `judge`, `calibrate`,
+`CALIBRATION_CASES`, `INJECTION_BATTERY`, `constantHonored` (the negative control), and the pure
+`judgeToAnnotation` mapping — consumed here at **0.36.1** today (`bc6ebd4`), alongside
+`bareguard@0.13.0`'s `gate.annotate` hardening. Ruling 7's floor now has a shipped harness
+instead of a research POC. Two things ride with it, unpapered: BA-20's **live acceptance
+execution was explicitly deferred to this rung** (running `calibrate` against the frozen floor
+and naming the hash it graded is N4's work, not a delivery already banked), and **injection
+resistance is established at `claude-haiku-4-5` ONLY** — running the judge on any other tier
+requires re-running their harness first, which is an operator call and money.
