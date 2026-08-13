@@ -4697,3 +4697,9 @@ is now enforced where the money is actually weighed.
   60-day TTL lives; whether `accept` re-runs the mechanical stages before minting green) and
   the judge-tier PARK. Nothing frozen is reopened; the nine rulings and the 2026-08-12 hitl
   surface stand as written.
+
+**Same-session update, in-turn:** all three OPENs and the tier PARK were put to hamr and RULED
+on the recommendations — hitl inherits green's mechanical guard battery; the 60-day TTL lives
+in the LIBRARY; `accept` RE-RUNS the mechanical stages before minting green; the softgreen
+judge's tier is `claude-haiku-4-5` (the only tier with established injection resistance;
+deviation re-runs the upstream harness). Recorded in the build plan at each item.

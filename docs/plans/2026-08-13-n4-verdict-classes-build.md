@@ -42,12 +42,11 @@ yields a spec that passes one gate and reds at the next.
 `scripts/run-author.mjs` already takes `--verdict green|soft-green|hitl`; no change beyond the
 refusal lifting.
 
-**OPEN-1 — what the hitl guard battery IS.** D5 makes the battery mandatory, shown-and-fixed and
-un-removable, and PRD v1.57 §2 keys it to the CLASS. The green battery is `changed-from-seed`
-+ `no-suppressions` (`src/authoring.js:617-637`). Nothing frozen says what hitl's is.
-Recommendation to hamr: hitl inherits the green mechanical guards (the mechanical-first
-composition law makes every hitl close mostly mechanical anyway) and adds nothing a human stage
-cannot see. **Arbiter territory — guards are signed and un-removable; parked for hamr's word.**
+**OPEN-1 — RULED (hamr, in-turn, 2026-08-13): hitl inherits the green mechanical guards**
+(`changed-from-seed` + `no-suppressions`, `src/authoring.js:617-637`) and adds nothing a human
+stage cannot see. D5 makes the battery mandatory, shown-and-fixed and un-removable, and PRD
+v1.57 §2 keys it to the CLASS; the mechanical-first composition law makes every hitl close
+mostly mechanical anyway, so the green battery is the right floor.
 
 ### 1.2 The `human-confirms` kind goes live, `offer:false` BY LAW
 
@@ -145,9 +144,9 @@ literal, as the 2026-08-12 addendum insists, and needs no new channel.
 - **60-day TTL is new.** Nothing expires a checkpoint today; the resume gates
   (`scripts/run-u.mjs:175-224`) check liveness, job identity, terminal, and the tree
   (`resumeTreeGate`, `src/reuse.js:1045`). Add a TTL against the pause record's own timestamp.
-  **OPEN-2: where the TTL lives.** In `run-u.mjs` it is a script, and the product is the
-  exported bundle with bareloop as a dependency (PRD v1.44 §2). Recommendation: the library, so
-  the exported runner inherits it. Parked as a placement call, not a semantics one.
+  **OPEN-2 — RULED (hamr, in-turn, 2026-08-13): the TTL lives in the LIBRARY**, so the
+  exported bundle (headless runner with bareloop as a dependency, PRD v1.44 §2) inherits it
+  rather than every runner re-implementing it. A script-only TTL would vanish on export.
 
 ### 1.7 Metering
 
@@ -175,11 +174,11 @@ terminal with no gap and never demotes a bridge.
 **It must be able to fail.** Negative control: `--decide rerun` with the text dropped — the fix
 worker must NOT receive an empty gap and silently re-run as though nothing had been said.
 
-**OPEN-3 — does `accept` re-run the mechanical stages before minting green?** The tree can
-change while a run is paused for up to 60 days (`resumeTreeGate` exists for exactly that class).
-Re-running them is free and safer; skipping them mints a verdict on evidence the human read
-days ago. **This is what mints a verdict — arbiter territory. Parked for hamr, recommendation:
-re-run.**
+**OPEN-3 — RULED (hamr, in-turn, 2026-08-13): `accept` RE-RUNS the mechanical stages before
+green is minted.** The tree can change while a run is paused for up to 60 days
+(`resumeTreeGate` exists for exactly that class); re-running commands is cheap, and green is
+minted on fresh evidence, never on what the human read days ago. A re-run that reds does not
+mint — it is a new red the run handles under the normal rules.
 
 ---
 
@@ -213,9 +212,10 @@ re-run.**
    inheritance. A flag on the row in `src/bridges.js` / `src/reuse.js`, never a deletion, and the
    unlock is **forward-only** — nothing walks the ledger backwards to re-mint what a wobbly ruler
    graded.
-9. **PARKED FOR HAMR — the judge's TIER.** BA-20 establishes injection resistance at
-   `claude-haiku-4-5` **only**; running the judge on sonnet requires re-running their harness
-   first. That is an operator call and it is money. No tier is picked in this plan.
+9. **The judge's TIER — RULED (hamr, in-turn, 2026-08-13): `claude-haiku-4-5`.** The only
+   tier with established injection resistance upstream (BA-20); $0 extra calibration. The
+   sonnet tier floor (PRD v1.36) governs drafter/worker roles, not the judge. A tier
+   deviation later means re-running bare-agent's harness first — a re-signed operator call.
 
 Composition law is already frozen and already partly enforced — mechanical-first, judge minimal,
 human last, first-red-wins (2026-08-07 record), with the class ceiling computed by `closeCeiling`
