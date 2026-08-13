@@ -34,7 +34,7 @@ import { validateBridge, loadGate } from './bridges.js';
 import { extractArtifact } from './text.js';
 import { createClock, isWallTimeout } from './clock.js';
 import { isDeclaredClose, runDeclaredStages, validateCloseDecl, closeGrade } from './declaredclose.js';
-import { seedAtHead, seedListing, GAP_TRIM_MARKER } from './kinds.js';
+import { seedAtHead, seedListing, GAP_TRIM_MARKER, GATE_AUDIT_FILE, ARBITER_BOOK_STORES } from './kinds.js';
 import { workBranchName, prepareWorkBranch } from './workbranch.js';
 
 const require = createRequire(import.meta.url);
@@ -1125,7 +1125,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   const lc = new LiteCtx({ root: workdir });
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
   const fencePrefixes = job.writeScope.map((/** @type {string} */ g) => resolve(workdir, globToPrefix(g)));
-  const auditPath = join(workdir, 'gate-audit.jsonl');
+  const auditPath = join(workdir, GATE_AUDIT_FILE);
   const chainByName = new Map(menu.map((m) => [m.name, m.run]));
   // Choose-don't-describe (§4): the offered `tree-changed` scopes, enumerated from
   // the signed fence plus the directories that actually exist beneath it. ONE menu
@@ -1261,7 +1261,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         // uses), so this can only tighten, never widen
         writeScope: writable ? (fence ?? fencePrefixes) : [],
         readScope: [workdir],
-        deny: [auditPath, join(workdir, '.smoke'), join(workdir, '.litectx')],
+        deny: [auditPath, ...ARBITER_BOOK_STORES.map((s) => join(workdir, s))],
       },
       budget: { maxCostUsd: Math.max(remainingUsd(), 0.0001) },
       limits: { maxTurns },

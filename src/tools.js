@@ -31,6 +31,7 @@ import { extractArtifact, priceOf } from './text.js';
 // caller can forget to pass, and this leak has to be inexpressible, not optional.
 // Same ONE inventory the spine channel and the close output ride through.
 import { redactSecrets } from './validate.js';
+import { GATE_AUDIT_FILE, ARBITER_BOOK_STORES } from './kinds.js';
 
 /** @typedef {{body?: string|null, text?: string|null}} RecallHit litectx recall hit — body present only with `{body: true}` */
 
@@ -51,7 +52,9 @@ export const PERSONA_TOOLS = 'You are a senior engineer working in a repository 
   // by spending rounds of a bounded attempt probing bookkeeping files, and the rounds a
   // probe costs are rounds the fix does not get. Registered here, beside the other fence
   // fact a worker cannot infer, so it renders for every worker on every grant.
-  + 'The repository root also holds the arbiter\'s own books — gate-audit.jsonl, .smoke, .litectx, and this run\'s spine. '
+  // the names are SPELLED FROM the one home (`ARBITER_BOOK_STORES`) so the stated
+  // law can never drift from the fence that enforces it
+  + `The repository root also holds the arbiter's own books — ${GATE_AUDIT_FILE}, ${ARBITER_BOOK_STORES.join(', ')}, and this run's spine. `
   + 'They are ALWAYS denied and record how you are being judged, never anything about the task: never read them, and never try to route around the denial. '
   + 'You are ONE attempt inside an automated loop: when you finish, a test suite runs and, if it still fails, you are called again with its output. '
   + 'So do not try to be certain before acting. Read only what you need to form your best hypothesis, make the change with the write tool, and stop. '

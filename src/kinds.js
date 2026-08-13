@@ -369,11 +369,31 @@ export async function seedListing(workdir, seedRef) {
  * @returns {string|null} the book it belongs to, or null
  */
 export function isArbiterBook(rel) {
-  if (rel === '.litectx' || rel.startsWith('.litectx/')) return '.litectx/';
-  if (rel === '.smoke' || rel.startsWith('.smoke/')) return '.smoke/';
-  if (rel === 'gate-audit.jsonl') return 'gate-audit.jsonl';
+  for (const store of ARBITER_BOOK_STORES) {
+    if (rel === store || rel.startsWith(`${store}/`)) return `${store}/`;
+  }
+  if (rel === GATE_AUDIT_FILE) return GATE_AUDIT_FILE;
   return null;
 }
+
+/**
+ * The arbiter's book NAMES, one home. F98's mechanism was exactly this list
+ * living as independent literals: the fence deny arrays (src/planrun.js,
+ * src/authorscout.js) knew `.smoke` while `isArbiterBook` — the reader that
+ * decides what COUNTS AS WORK — did not, and the drift was masked by the
+ * patient's own .gitignore. Every consumer (the fence deny lists, this file's
+ * reader, the persona's stated law, run.js's smoke-store root) now spells the
+ * names from here, so adding or renaming a book is one edit that cannot leave
+ * a site behind.
+ *
+ * `ARBITER_BOOK_STORES` are directory PREFIXES; `GATE_AUDIT_FILE` is an EXACT
+ * repo-relative path (see `isArbiterBook`'s docstring for why never a
+ * basename). Order is the fence deny-list order and the persona's prose order.
+ */
+export const SMOKE_STORE = '.smoke';
+export const LITECTX_STORE = '.litectx';
+export const GATE_AUDIT_FILE = 'gate-audit.jsonl';
+export const ARBITER_BOOK_STORES = Object.freeze([SMOKE_STORE, LITECTX_STORE]);
 
 /**
  * Everything this run changed against the seed: the tracked diff PLUS

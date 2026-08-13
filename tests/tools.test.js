@@ -433,7 +433,10 @@ test('the worker\'s rendered system prompt names the arbiter\'s books and forbid
   const src = readFileSync(new URL('../src/planrun.js', import.meta.url), 'utf8');
   assert.match(src, /const system = PERSONA_TOOLS \+ strategyFor\(granted\)/,
     'the worker system prompt is no longer built from PERSONA_TOOLS — the register is orphaned');
-  // the fence half of the same fact, so the prose and the deny list cannot drift
-  assert.match(src, /deny: \[auditPath, join\(workdir, '\.smoke'\), join\(workdir, '\.litectx'\)\]/,
-    'the deny list moved — the persona now describes a fence that is not there');
+  // the fence half of the same fact. The prose and the deny list now both SPELL
+  // FROM one home (`ARBITER_BOOK_STORES`, src/kinds.js) so they cannot drift by
+  // construction — this asserts the fence still consumes that home, because a
+  // deny list rewritten back to literals would quietly re-open the drift channel.
+  assert.match(src, /deny: \[auditPath, \.\.\.ARBITER_BOOK_STORES\.map\(\(s\) => join\(workdir, s\)\)\]/,
+    'the deny list no longer spells from ARBITER_BOOK_STORES — the persona and the fence can drift again');
 });

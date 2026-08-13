@@ -50,7 +50,7 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { Gate } from 'bareguard';
 import { LiteCtx } from 'litectx';
-import { seedListing } from './kinds.js';
+import { seedListing, GATE_AUDIT_FILE, ARBITER_BOOK_STORES } from './kinds.js';
 import { TOOL_MENU, WRITE_VERBS, STORE_VERBS } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, strategyFor } from './tools.js';
 import { redactSecrets, SECRET_PATTERNS } from './validate.js';
@@ -290,9 +290,9 @@ export function classifySurvey(blob, meta) {
  * `runAuthorScout` where they can be proven.
  * @param {{workdir: string, granted: readonly string[], auditPath?: string, ctx?: boolean}} o
  */
-export async function defaultSurveyor({ workdir, granted, auditPath = join(workdir, 'gate-audit.jsonl'), ctx = true }) {
+export async function defaultSurveyor({ workdir, granted, auditPath = join(workdir, GATE_AUDIT_FILE), ctx = true }) {
   const gate = new Gate({
-    fs: { writeScope: [], readScope: [workdir], deny: [auditPath, join(workdir, '.smoke'), join(workdir, '.litectx')] },
+    fs: { writeScope: [], readScope: [workdir], deny: [auditPath, ...ARBITER_BOOK_STORES.map((s) => join(workdir, s))] },
     limits: { maxTurns: AUTHOR_SCOUT_ROUNDS + 2 },
     audit: { path: auditPath },
     secrets: { patterns: SECRET_PATTERNS },
