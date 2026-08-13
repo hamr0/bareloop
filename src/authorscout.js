@@ -50,11 +50,11 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { Gate } from 'bareguard';
 import { LiteCtx } from 'litectx';
-import { seedListing } from './kinds.js';
+import { seedListing, GATE_AUDIT_FILE, ARBITER_BOOK_STORES } from './kinds.js';
 import { TOOL_MENU, WRITE_VERBS, STORE_VERBS } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, strategyFor } from './tools.js';
 import { redactSecrets, SECRET_PATTERNS } from './validate.js';
-import { extractArtifact, priceOf, scrubRaw, stampRaw } from './text.js';
+import { extractArtifact, priceOf, scrubRaw, stampRaw, tallyCalls, capStop } from './text.js';
 
 const require = createRequire(import.meta.url);
 const { Loop, wireGate } = require('bare-agent');
@@ -115,6 +115,16 @@ export const SURVEY_CAUSES = Object.freeze({
   NON_OBJECT: 'non-object',
   /** valid JSON, no content — F59's whole point, and a SEMANTIC failure */
   EMPTY_OBJECT: 'empty-object',
+  /**
+   * THE SURVEY WAS NEVER ASKED FOR: the operator's money ceiling was already
+   * spent when the first attempt came due, so no call was made. Named as its own
+   * cause for the reason this enum exists at all — a new route to ABSENT has to
+   * be named, and naming it is the moment somebody decides whether it retries.
+   * This one does not, and cannot: a retry is precisely what the cap forbade.
+   * It is deliberately ABSENT of the model's own doing, and the prose says so —
+   * "the scout did not complete" would blame a model that never spoke.
+   */
+  NOT_FUNDED: 'not-funded',
 });
 
 /**
@@ -280,9 +290,9 @@ export function classifySurvey(blob, meta) {
  * `runAuthorScout` where they can be proven.
  * @param {{workdir: string, granted: readonly string[], auditPath?: string, ctx?: boolean}} o
  */
-export async function defaultSurveyor({ workdir, granted, auditPath = join(workdir, 'gate-audit.jsonl'), ctx = true }) {
+export async function defaultSurveyor({ workdir, granted, auditPath = join(workdir, GATE_AUDIT_FILE), ctx = true }) {
   const gate = new Gate({
-    fs: { writeScope: [], readScope: [workdir], deny: [auditPath, join(workdir, '.smoke'), join(workdir, '.litectx')] },
+    fs: { writeScope: [], readScope: [workdir], deny: [auditPath, ...ARBITER_BOOK_STORES.map((s) => join(workdir, s))] },
     limits: { maxTurns: AUTHOR_SCOUT_ROUNDS + 2 },
     audit: { path: auditPath },
     secrets: { patterns: SECRET_PATTERNS },
@@ -338,11 +348,12 @@ const defaultLoop = (/** @type {any} */ { system, policy, onLlmResult, provider 
  *
  * @param {{workdir: string, provider?: any,
  *   rounds?: number, minBytes?: number, blobMax?: number, maxTokens?: number, ctx?: boolean,
- *   attempts?: number,
+ *   attempts?: number, ceilingUsd?: number|null,
  *   createLoop?: (o: {system: string, policy: any, onLlmResult: any, provider: any}) => any,
  *   createSurveyor?: (o: {workdir: string, granted: readonly string[], ctx: boolean}) => Promise<any>}} o
  * @returns {Promise<Survey & {raw: string, raws: ReturnType<typeof scrubRaw>[],
- *   calls: {label: string, costUsd: number|null, unpricedRounds: number}[]}>}
+ *   calls: {label: string, costUsd: number|null, unpricedRounds: number}[],
+ *   budgetStop: 'cap-halt'|'pricing-red'|null}>}
  */
 export async function runAuthorScout({
   workdir, provider = null,
@@ -352,6 +363,7 @@ export async function runAuthorScout({
   maxTokens = AUTHOR_SCOUT_MAX_TOKENS,
   ctx = true,
   attempts = SCOUT_ATTEMPTS,
+  ceilingUsd = null,
   createLoop = defaultLoop,
   createSurveyor = defaultSurveyor,
 }) {
@@ -395,8 +407,21 @@ export async function runAuthorScout({
      * judged. An instrument that misaddresses its own reading is the blind
      * -instrument class, one field wide. */
     let verdictAt = -1;
+    /** the operator's money ceiling, when it is what ended the ladder. `null` on
+     * every other path INCLUDING the unbounded one, so a reader never has to
+     * infer a governance stop from an absence.
+     * @type {'cap-halt'|'pricing-red'|null} */
+    let budgetStop = null;
 
     while (attempt < allowed) {
+      // THE CEILING, between attempts. The attempt cap bounds how many times the
+      // survey may ask; it says nothing about what those asks cost, and this is
+      // the pipeline's FIRST paid stage — a ladder that spends the whole wallet
+      // before the declaration is ever authored is the failure this closes.
+      // Checked before the counter moves, so `attempt` stays the number of
+      // attempts that actually happened.
+      const halt = capStop({ ceilingUsd, ...tallyCalls(calls) });
+      if (halt) { budgetStop = halt; break; }
       attempt += 1;
       const label = attempt === 1 ? 'author-scout' : `author-scout#${attempt}`;
 
@@ -432,7 +457,29 @@ export async function runAuthorScout({
         // F59's reserved TOOLLESS final round. It fires on the ONE population it
         // was sized for — a survey that was CUT OFF and came back short — never
         // on a survey that simply finished with little to say.
-        if (bounded && Buffer.byteLength(blob) < minBytes && Array.isArray(r?.msgs) && r.msgs.length) {
+        // …and the reserved round is a PAID CALL like any other, so it sits behind
+        // the same ceiling. Left outside it, the one call the cap most needs to
+        // stop is the one that escapes: the recovery fires exactly when the first
+        // call was cut off, which is exactly when the wallet is thinnest.
+        //
+        // THE CEILING IS ASKED ABOUT A CALL THAT WOULD ACTUALLY BE MADE, and the
+        // ORDER is what makes that true: the recovery predicate is settled FIRST,
+        // and `capStop` is consulted only when a recovery was genuinely pending.
+        // Asked unconditionally it answers a question nobody put — the wallet is
+        // over, but nothing was refused — and `budgetStop` means the ceiling is
+        // WHAT ENDED THE LADDER, which is then a lie on every other attempt-1
+        // ending: a dead socket on an unbounded first call, or a survey that came
+        // back PRESENT and needed no second call at all. Both then render as
+        // `cap-halt` at `path: budgetUsd`, steering the operator to raise a number
+        // that cannot move the outcome. Nothing about the REFUSAL moves here — the
+        // same predicate, the same tally, the same call not made (the top-of-loop
+        // latch still names the ceiling whenever a retry was due). This is which
+        // ending gets the label, and nothing else.
+        const recoveryWanted = bounded && Buffer.byteLength(blob) < minBytes
+          && Array.isArray(r?.msgs) && r.msgs.length > 0;
+        const recoveryHalt = recoveryWanted ? capStop({ ceilingUsd, ...tallyCalls(calls) }) : null;
+        if (recoveryHalt) budgetStop = recoveryHalt;
+        if (recoveryWanted && !recoveryHalt) {
           const recovery = createLoop({ system, policy: surveyor.policy, onLlmResult: surveyor.onLlmResult, provider });
           s2 = await recovery.run([...r.msgs, { role: 'user', content: SCOUT_RECOVERY_PROMPT }], [],
             { cacheMessages: true, maxTokens });
@@ -484,12 +531,26 @@ export async function runAuthorScout({
       if (!SCOUT_RETRY_CAUSES.includes(/** @type {string} */ (survey.cause))) break;
     }
 
-    const final = /** @type {Survey} */ (survey);
+    // THE SURVEY THAT WAS NEVER ASKED FOR. The ceiling was already spent when the
+    // first attempt came due, so no call was made and there is no reply to
+    // classify. It is spelled out rather than run through `classifySurvey`, which
+    // would read the empty blob and report that the model came back EMPTY — a
+    // model that never spoke cannot have said nothing, and blaming it would send
+    // the operator to the scout when the fact is the wallet.
+    const final = /** @type {Survey} */ (survey ?? {
+      state: 'ABSENT',
+      facts: null,
+      cause: SURVEY_CAUSES.NOT_FUNDED,
+      reason: budgetStop === 'pricing-red'
+        ? 'the survey was never asked for: spend could not be priced, so the ceiling could not be enforced (F6)'
+        : `the survey was never asked for: the $${ceilingUsd} ceiling was already spent`,
+      meta: { bytes: 0, rounds: 0, bounded: false, recovered: false, error: null, attempts: 0, attemptsAllowed: allowed },
+    });
     // Exhaustion is still the same honest ABSENT — it now says how many times we
     // paid to find out. One attempt says nothing about retries, because there
     // were none.
     const reason = final.reason !== null && attempt > 1 ? `${final.reason} — after ${attempt} attempts` : final.reason;
-    return { ...final, reason, raw: blob, raws, calls };
+    return { ...final, reason, raw: blob, raws, calls, budgetStop };
   } finally {
     // a leaked surveyor leaks a gate handle and a litectx index — always, even
     // when the loop threw

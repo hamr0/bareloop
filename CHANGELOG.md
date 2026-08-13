@@ -5,9 +5,94 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.10.0] — 2026-08-13
+
+### Added
+
+- **The close-AUTHORING pipeline gets a money ceiling** (`--budget`, `ceilingUsd`) — the lever
+  parked at v0.9.0 as arbiter territory, approved by hamr. Until now the flow **metered** spend
+  and nothing **bounded** it: the runner printed a total and no number anywhere could stop a
+  call. It has **NO DEFAULT** — omitting it runs UNBOUNDED and the runner **prints that** before
+  the provider is built, because a defaulted cap is a silent second ceiling (the `maxWallMs`
+  precedent) and an unbounded run must be a visible operator choice. A malformed value is an
+  error, never a silent fall back to unbounded. The ceiling **binds BETWEEN metered calls** —
+  the survey's attempts and its F59 recovery round, and the declaration loop's author call,
+  each revise, and each malformed-emission retry — because a cap that binds mid-call kills the
+  row before it can be graded (F45). ONE number reaches BOTH paid seams, and spend already
+  incurred folds in, so re-entering cannot silently widen it. **F6 keeps its own axis**: a
+  null/unknown cost never counts as $0, so spend that cannot be *known* stops as `pricing-red`
+  rather than passing silently — while known spend at or over the cap is `cap-halt` even when
+  the total is unknown, since that breach is certain on the priced half alone. The stop is a
+  governance stop, not an error: it names the cap and the spend, nothing retries, partial
+  artifacts stay on disk, and it is DISTINCT from `artifact-red` and `provider-red`. A survey
+  the ceiling stopped is named a money stop (`budgetStop`, typed cause `not-funded`, outside
+  `SCOUT_RETRY_CAUSES`) instead of blaming a model that never spoke. One predicate, one
+  spelling (`capStop`/`tallyCalls` in `src/text.js`, beside `priceOf` and for the same reason).
+
+- **A resume may DERIVE `wall-halt` from a recorded `step-red`.** Only when that run's OWN
+  spine shows the wall crossed BEFORE the terminal was minted — a derivation from the primary
+  record, which never rewrites the recorded outcome and announces itself with a banner. The
+  terminal's NAME is what gates resume (`readResume`'s `resumableOutcomes`, which the operator
+  runner supplies as `cap-halt` / `wall-halt`), so a run mislabelled `step-red` past its own
+  wall silently lost its resumability. **It is a PERMANENT read-side safety net, not a
+  migration shim** (ruled 2026-08-13; the expiry question that was parked here is closed). The
+  defect that minted the shape is fixed at source, but spines are append-only forever, so the
+  population it protects can never shrink; it fires only on the run's own un-forgeable
+  `wall-bounded` record, cannot rescue a `step-red` that has no wall record in front of it, and
+  is a never-taken branch on a healthy spine.
 
 ### Changed
+
+- **The two revise-loop tighten-only clamps get a detector.** `maxRevisions` and
+  `structureRetries` have been clamped since `40672ae`, but nothing could *fail* if they
+  stopped clamping: MEASURED, three mutations survived the whole suite — including deleting
+  the `structureRetries` clamp outright, a straight revert of the fix that added it. The two
+  existing tests pinned only the ceiling and the floor, and neither can fail when the clamp
+  stops honouring values *between* them; the direction the rule exists to permit — the
+  operator **lowering** a bound — was the untested one. Seven tests now cover the middle of
+  both ranges, the non-numeric floor, and `Infinity` (a widening, which clamps to the ceiling,
+  matching `runAuthorScout`'s own reading). The three floors are pinned as *deliberately
+  different* (`SCOUT_ATTEMPTS` at 1, both revise axes at 0) so a later "harmonisation" has to
+  argue with a test. No production behaviour changed — this is the detector the rule was
+  missing (F45's class: a frozen rule without a wired detector is prose, not protection).
+
+- **A stop past the wall never funds a replan draft, on ANY trigger.** W-2's *"no new step
+  starts"* now covers the drafting call itself (hamr: *"it's a replan that is doomed to
+  die"*), and the guard is trigger-agnostic rather than wired to one path. A declined grant is
+  not consumed. With time left on the clock every one of these paths is byte-identical to
+  before — pinned as a control.
+- **The drafter is told its worker has no shell.** A replan wrote an action opening *"Run
+  `npx tsc --strict --noEmit`…"*; `run` is locked out of `TOOL_MENU` permanently, so the
+  worker obeyed as far as its verbs allowed — 25 reads and greps, zero edits, a whole step
+  spent hunting six errors by hand, on a plan that validated clean. The no-shell law now sits
+  in the DRAFTER prompt unconditionally, beside the exit-freedom law, with `read`/`grep`
+  glossed as the worker's only eyes; the scout and worker prompts already carried it, and the
+  one component that WRITES instructions did not. **A regex over action prose was explicitly
+  refused** (F86's anti-precedent): the same sentence is legitimate in an operator's signed
+  goal, so the instrument is a prompt register, never a matcher. F95.
+- **The worker persona REGISTERS the arbiter's books instead of leaving them to be
+  discovered.** `PERSONA_TOOLS` now names `gate-audit.jsonl`, `.smoke`, `.litectx` and the
+  run's spine as always-denied — records of how the worker is judged, holding nothing about
+  its task — beside the absolute-path law it is the twin of, so it renders for every worker on
+  every grant (a `write`-only grant gets no component strategy paragraph at all and must still
+  be told). **The fence is unchanged**: nothing widened, no book became readable. The only way
+  to learn the rule was previously to spend rounds of a bounded attempt on it. F98.
+- **Both signing surfaces show the GOAL and the judged stages as ONE reading.** F87's law is
+  that the goal must state everything the close judges while NOTHING derives one from the
+  other or checks them against each other — so the sole defence is the signer reading both
+  halves at once, and neither surface offered it: `run-author` printed the declaration and
+  never the goal, `run-u --approve` printed the goal and never the declaration. `run-u`'s gate
+  now names every close stage (name + kind) under the goal, **for BOTH spec forms** — the
+  pairing was first gated on `closeDecl`, so 10 of the 11 shipped specs (the command `close[]`
+  form) still met the signer with a goal and none of the stages that judge it, the exact
+  half-reading this entry claimed to end; `closeStagesOf(spec)` now renders either form, and a
+  command stage prints `[command]` rather than the catalogue kind name `command-exit` it does
+  not carry (spec hashes and exit codes byte-identical, proven live). `run-author`'s block moves to
+  **`scripts/author-readout.mjs`** (`declarationLines(spec)`) and gains the goal above it,
+  rendered from the RESOLVED spec — the bytes that get hashed. It moved because the block was
+  otherwise reachable only after a paid scout and a paid model call, and a readout no test can
+  reach is a readout nothing checks. An absent goal renders as ABSENT, never as a bare label.
+  Still a READING and not a validator — comparing the two is the move F87 forbids.
 - **README rewritten value-first** (hamr's framing, straight to `main`). The pitch now leads
   with the trust-but-verify lineage (the ralph loop, code machine MCP, and RLMs converged on
   the same principle), the three kinds of done (green / softgreen / hitl, one everyday
@@ -16,6 +101,113 @@ feature lands, **patch** = docs, fixes, scaffolding.
   (localhost UI, whole-workflow export with its self-healing harness). One `[WIP]` badge is
   the only status marker; all mechanics, layer tables, findings numbers and rung history
   moved out of the pitch — `bareloop.context.md` stays the contract, the README the pitch.
+- **`step-stalled` joins the RESUMABLE halts** (hamr's go, 2026-08-13). A stall that trips with
+  time left and only reaches the replan gate after the wall has expired kept its NAME — `run.js`
+  keys the F44 spend floor on that exact outcome, and renaming it would report unknown spend as
+  an exact total — but the name is also what `readResume` gates on, so keeping it cost the run
+  its checkpoint. A `step-stalled` spine now previews as **RESUME**, folds the spend floor in as
+  `>=$x`, and re-enters at the recorded branch and step. A pure widening of the resumable set:
+  nothing else about the terminal moved, and `reuse.js`'s D4a path was checked unaffected.
+- **The arbiter-book names get ONE home.** `gate-audit.jsonl`, `.smoke` and `.litectx` were
+  spelled independently in `isArbiterBook`, in BOTH fence deny lists, in the `PERSONA_TOOLS`
+  prose and in `run.js`'s smoke root — five sites, the exact drift class F98 had just paid for,
+  with the prose copy unguardable by any test. `kinds.js` now exports
+  `SMOKE_STORE`/`LITECTX_STORE`/`GATE_AUDIT_FILE`/`ARBITER_BOOK_STORES` and all five consume it.
+  Purely mechanical and verified as such: the deny-list joins and the persona prose are
+  **byte-identical** to the strings they replace, so no fence decision and no worker prompt
+  changed, and there is no import cycle (`kinds.js` sits below `tools.js`/`run.js`).
+  `tools.test.js`'s literal-spelling guard now asserts the fence consumes the constant — the
+  drift it guarded is impossible by construction.
+
+### Fixed
+
+- **A time-stop is NAMED a time-stop — W-2 closes over the sibling terminals.** The ruling
+  (*"when time is up, keep the grade we already have and stop"*) was implemented on the
+  cap-halt path and not on the variance path: one run minted `step-red` **9.9 seconds past its
+  own wall**, having recorded the crossing in its own spine 5.6 seconds earlier. Now **every
+  variance and cap-halt terminal re-reads the clock before minting**, through ONE shared
+  `wallHaltTerminal` emission site — one site, one spelling —
+  and the ladder's cap-halt past the wall is a `wall-halt`. **`step-stalled` is pinned OUT of
+  the class by test:** `run.js` keys `spendComplete:false` on that exact outcome name because
+  an abandoned-and-reissued call may already be billed, and relabelling it would report a
+  floor as an exact total (F6 in a self-heal coat). **With both allowances exhausted the MONEY
+  cut is reported** (`cap-halt` wins over `wall-halt`) — hamr: *"understood"*; recorded so the
+  choice stays visible. F96 / PRD v1.59.
+- **A declared `count-not-worse` red gap carries the LINES it counted, not just how many.**
+  `"8 match(es)"` with no file, no line and no error code is a number with nowhere to open —
+  F28's rule (*the close's output format is part of the contract*) recurring one rung later
+  inside the authored-close executor, with the `gapKeep` machinery it needed sitting in the
+  same file. `parseValue` now returns `matched`: the **KEPT** lines only — those that survived
+  the scope filter and reached aggregation, so a scope-DROPPED line is never named and the
+  worker is never aimed outside its own population (F84). The harvest is **per-term**, not
+  global: each term's kept lines nest under that term's own breakdown row — the one place its
+  `+n`/`-n` already prints — a `first` aggregate echoes only the one line it read, and dedup is
+  WITHIN a term, so a line feeding two terms plays both roles and appears under each. Harvested
+  globally, a negative-sign term's lines and a `first` term's never-read lines were echoed flat
+  as *the lines the count is made of*, handing the worker a line to go fix when that term
+  SUBTRACTED; labelling per term rather than dropping negatives keeps the subtracted term
+  visible, because under higher-is-better that is where the news is. The value is
+  still computed from the parsed values and never from the list. The lines ride the EXISTING
+  channel and invent none: the stage's `gapKeep` prefix on every line (Layer R's `redKeep` is
+  DERIVED from it), the existing `GAP_LINE_CAP`, and the announced trim on overflow.
+  **Nothing here can flip a signed spec hash** — verdict logic, baselines, counting,
+  `closeDecl` schema and `detail` untouched. Measured, not asserted: the identical job, same
+  patient, same hash, went from stalling at 8 and dying to **67 → 8 → 1 → 0** in three
+  iterations. F98.
+- **A fence deny streak ends the ATTEMPT, never the RUN — `gate-red` is extinct as a mintable
+  terminal.** A converging run (close reading 46 → 10 → 8, no strikes) probed three of the
+  arbiter's own books, the fence denied all three CORRECTLY, bare-agent's BA-11 deny-spin
+  guard ended the loop, and the plan flow mapped that to a terminal `gate-red` — escalate,
+  never retry. The run died with **$1.77 and 21.6 wall-minutes unspent, on a fence that had
+  worked perfectly.** BA-11's stop now joins `max_turns` in the **bounded-attempt lane on BOTH
+  worker surfaces**: `attempt-bounded` carries the `reason`, the close judges the partial
+  work, the gap feeds forward, caps unchanged, the loop continues. **And the next attempt is
+  told which bound actually fired.** All three attempt bounds wrote the same bare iteration
+  number, so the following prompt rendered *"CUT OFF after N tool rounds"* for a denial streak —
+  false on cause and count, aiming the worker at its read budget instead of at the fence, while
+  `r.error` reached only the spine. The bound now carries `{iteration, cause, reason}`, and the
+  denial branch quotes the recorded `denied:<tool>` terminal verbatim — bare-agent returns the
+  tool name only, so no path and no streak count is invented — trimmed under `GAP_TRIM_MARKER`
+  and scrubbed once at capture, one scrub shared by prompt and spine (an append-only spine that
+  captures a key captures it forever). The round-bound sentence stays **byte-identical**, pinned
+  by block-equality after an `includes` guard survived a sabotage prefix. This is F32's routing rule
+  applied to a new stop cause, not a new one — a stop arriving AFTER gate-audited worker
+  writes is non-terminal by construction, and a denial is its most benign member. **Nothing is
+  widened**: the same actions are denied and the same audit rows written; a genuine scope
+  escape now costs one bounded attempt instead of the whole run. The category stays in
+  `EXCLUDED_ESCALATIONS` and in `ralph`'s passthrough decision table — that set is EXECUTABLE,
+  so dropping the name would re-file any future emission as a counted capability gap rather
+  than delete it. F98.
+- **A malformed money ceiling is an ERROR at the library seam, never a silent UNBOUNDED.**
+  `capStop` read `'2.50'`, `NaN`, `Infinity`, `true` and `{}` as *no ceiling* while
+  `makeCostBook` advertised the same value straight back — the advertised and the enforced
+  budget were different numbers, the one thing a budget may never be — and the only guard
+  (`parseCeiling`) was CLI-side, so every library caller ran unprotected. A non-finite non-null
+  now throws **before the first paid call**: it costs $0 and propagates uncaught, so no catch
+  can launder it into an ABSENT survey. `null`/`undefined` stay the stated operator choice for
+  unbounded; `0` and negatives stay finite and cap-halt immediately, pinned as they were.
+- **`budgetStop` latches only when the ceiling actually ended the ladder.** The recovery-seam
+  latch fired for EVERY final cause: a 1-turn transport death and even a healthy PRESENT survey
+  that spent past the ceiling both came back `budgetStop:'cap-halt'`, on a field whose own
+  docstring says *"the ceiling, when it is what ended the ladder"* (the second instance was not
+  in the finding). The recovery predicate is settled first now, and `capStop` consulted only
+  when a recovery call was actually PENDING. The genuine cap-plus-transport-death case keeps its
+  `cap-halt`, but the refusal detail **concedes the concurrent cause instead of contradicting
+  the `ENETUNREACH` it quotes** — and concedes it for every INCOMPLETE cause, not only transport
+  death: a SHORT/EMPTY/UNPARSEABLE survey whose repair round the ceiling refused was still
+  emitting *"the survey stopped on the authoring ceiling, not on anything it read"* directly
+  above the reply it was quoting. `CALL_FAILED` keeps the transport wording; `NOT_FUNDED` — no
+  call ever made — keeps the ceiling-only wording, the one case where it is true. No budget
+  semantics moved: the PRD already said only the former is why the loop ended, and the code now
+  honours its own sentence.
+- **The authoring spine event rides its own stop.** `scripts/run-author.mjs` hardcoded
+  `type:'cap-halt'` on the governance readout even when the stop was `pricing-red` — the only
+  site in the repo where a spine event's type contradicted its own category, and a `pricing-red`
+  event carrying *"not under cap"* sends the operator off to raise a number when the repair is a
+  priced provider. The old spelling could also arm `ledger.js`'s capability-gap fuse on a run
+  whose wallet was never empty (latent — no script feeds author spines to `updateLedger` today,
+  but type-keyed slicing is exactly how F45's misread happened). The emit now spends
+  `authored.stop` for both fields, so meaning derives from the stop once.
 
 ## [0.9.0] — 2026-08-09
 

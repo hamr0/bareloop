@@ -365,7 +365,7 @@ function composerRefusal(reds) {
  * @param {{answers: Record<string|number, any>, repoPath?: string|null, lang: string,
  *   verdictType?: string|null,
  *   questions?: Record<string|number, string>|null, generate?: Function, provider?: any,
- *   seedRef?: string|null, scout?: any, listing?: any,
+ *   seedRef?: string|null, scout?: any, listing?: any, ceilingUsd?: number|null,
  *   seedFn?: Function, scoutFn?: Function, listingFn?: Function,
  *   authorFn?: Function, authorOpts?: object}} o
  * @returns {Promise<{ok: boolean, refusal: Refusal|null, verdictType: string|null,
@@ -375,6 +375,7 @@ function composerRefusal(reds) {
 export async function authorCloseForJob({
   answers, repoPath = null, lang, verdictType = null, questions = null,
   generate, provider = null, seedRef = null, scout = null, listing = null,
+  ceilingUsd = null,
   seedFn = seedAtHead, scoutFn = runAuthorScout, listingFn = buildSeedListing,
   authorFn = authorClose, authorOpts = {},
 }) {
@@ -437,7 +438,14 @@ export async function authorCloseForJob({
   // D11 — the scout LOOKS, the author WRITES, neither acts. An ABSENT survey is
   // never "no special facts are needed" (F59), and `authorClose` refuses on it at
   // $0, so nothing here has to second-guess the classification.
-  const survey = scout ?? await scoutFn({ workdir, provider });
+  // ONE CEILING, BOTH PAID SEAMS. The survey and the declaration loop are two
+  // populations of paid call with two accumulators, and the operator set ONE
+  // number: handing it to both is what makes the advertised ceiling and the
+  // enforced ceiling the same ceiling (the standing hard line, in its money
+  // form). `null` travels EXPLICITLY rather than being left off — unbounded is a
+  // stated operator choice, and an absent field read as falsy is the same state
+  // arrived at by accident.
+  const survey = scout ?? await scoutFn({ workdir, provider, ceilingUsd });
   const seeds = listing ?? await listingFn({
     workdir, seedRef: seed, sourcePaths: survey?.facts?.sourcePaths, testPaths: survey?.facts?.testPaths,
   });
@@ -445,7 +453,7 @@ export async function authorCloseForJob({
   const authored = await authorFn({
     workdir, seedRef: seed, lang, verdictType: picked,
     answers: interview.answers, questions: questions ?? questionsFor(picked),
-    scout: survey, listing: seeds, generate, ...authorOpts,
+    scout: survey, listing: seeds, generate, ceilingUsd, ...authorOpts,
   });
 
   if (!authored.ok) {

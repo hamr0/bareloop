@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { LiteCtx } from 'litectx';
 import { validateJob, jobSpecHash, checkApproval } from './job.js';
 import { runPlan } from './planrun.js';
+import { SMOKE_STORE } from './kinds.js';
 
 /** @typedef {{code: string, path: string, detail?: string}} Red */
 
@@ -29,7 +30,7 @@ import { runPlan } from './planrun.js';
  */
 async function primitiveSmoke(workdir) {
   try {
-    const lc = new LiteCtx({ root: join(workdir, '.smoke') });
+    const lc = new LiteCtx({ root: join(workdir, SMOKE_STORE) });
     await lc.remember('smoke-known-answer', 'bareloop primitive smoke: the answer is 42', { kind: 'fact' });
     const hits = await lc.recall('bareloop primitive smoke known answer', { kind: 'fact', n: 5, body: true });
     const ok = hits.some((h) => String(h.body ?? '').includes('the answer is 42'));

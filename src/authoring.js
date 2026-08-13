@@ -422,6 +422,7 @@ export const TYPES_GENRE = Object.freeze({
           id: 'tsc-error-line',
           what: 'one type error, as the TypeScript checker prints it',
           lineMatch: 'error TS\\d+',
+          capture: null,
           // REAL, from the captured `npm run typecheck -- --strict` of the pulselog
           // patient (2026-08-09): 67 error lines, every one in this shape.
           example: 'src/backup.js(21,19): error TS7006: Parameter \'now\' implicitly has an \'any\' type.',
@@ -429,6 +430,71 @@ export const TYPES_GENRE = Object.freeze({
             + 'pipe, and a close only ever reads the piped one. Run msmbpjk6 composed the terminal shape: it matched '
             + '0 of 67 real error lines while the tool exited 2, so the stage read a crashed instrument. This pattern '
             + 'is anchored on the CODE, not on the path spelling, so it reads both shapes and cannot lose that flip.',
+        }),
+        // ── node --test, the SAME pipe-vs-terminal trap, MEASURED ──────────────
+        //
+        // PROVENANCE, two independent halves.
+        //
+        // (1) REAL CAPTURED OUTPUT. The mailproof job-#2 battery's own spines carry
+        // whole `npm test` → `node --test` captures inside their `close-precheck`
+        // gap: `bareloop-patients/mailproof-job2-bareloop/battery-P1-mrm7gk25.jsonl`
+        // (`# tests 317` / `# pass 312` / `# fail 5`, five `not ok` lines) and
+        // `battery-P2-mrm7gk25.jsonl` (`# pass 316` / `# fail 1`). Nothing there was
+        // written to match a pattern — it is what the runner printed down the close's
+        // pipe, months before this table existed.
+        //
+        // (2) A SHIPPED, LIVE-FIRED SPELLING. `jobs/pulselog-author-types.json`
+        // already grades `^# pass (\d+)$` and `^# fail (\d+)$` (stages `tests-kept`
+        // and `test-suite-zero-failures`), and run msoc6t8v graded green through it.
+        // The table is not minting a new ruler; it is HANDING OVER the one the tree
+        // already grades with, the way the tsc term does.
+        //
+        // WHY IT IS THE TSC TRAP AGAIN, measured on this machine (node v22.22.2,
+        // one test file, identical args, 2026-08-13): through a PIPE the runner
+        // prints TAP — `TAP version 13`, `# pass 1`, `not ok 2 - b`; on a real pty it
+        // prints the spec reporter — `ℹ pass 1`, no `#`, no TAP at all. A close only
+        // ever reads the piped half, and a pattern composed against the pretty half
+        // matches nothing while the suite runs fine. Exactly what cost run msmbpjk6
+        // its authoring pass on tsc, waiting behind a second tool.
+        Object.freeze({
+          id: 'node-test-total-count',
+          what: 'how many tests the runner EXECUTED, off the TAP summary',
+          lineMatch: '^# tests (\\d+)$',
+          capture: 1,
+          example: '# tests 317',
+          why: 'the EXECUTED count is the honest denominator: a passed-count floor is satisfiable by a suite that '
+            + 'stopped running, so a stage asking "is the suite still whole?" counts this, not passes. Anchored '
+            + 'both ends because the runner prefixes ordinary chatter with the same `# ` (`# Subtest: <name>`), and '
+            + 'an unanchored `# tests` would count test NAMES.',
+        }),
+        Object.freeze({
+          id: 'node-test-pass-count',
+          what: 'how many tests passed, off the TAP summary',
+          lineMatch: '^# pass (\\d+)$',
+          capture: 1,
+          example: '# pass 316',
+          why: 'the spelling `jobs/pulselog-author-types.json` already grades with, green through run msoc6t8v. '
+            + 'The runner prints this line on a green run too, so a zero here is a REPORTED zero.',
+        }),
+        Object.freeze({
+          id: 'node-test-fail-count',
+          what: 'how many tests failed, off the TAP summary',
+          lineMatch: '^# fail (\\d+)$',
+          capture: 1,
+          example: '# fail 1',
+          why: 'this runner prints every counter on every run — a fully green suite still prints `# fail 0` '
+            + '(measured), so reading the figure cannot confuse "no failures" with "never reported". Its pytest '
+            + 'counterpart has no such guarantee, which is why python has no fail-COUNT term.',
+        }),
+        Object.freeze({
+          id: 'node-test-failed-line',
+          what: 'one failing test, as the TAP reporter names it',
+          lineMatch: '^not ok \\d+ ',
+          capture: null,
+          example: 'not ok 7 - edit-renotify: a non-participant edit, and edits on a pending event, ping no one',
+          why: 'one line per failing test, so it TALLIES and no match is a genuine counted zero. The trailing '
+            + 'space and the `^` both carry weight: every passing test prints `ok 7 - …`, and without the anchor '
+            + 'each of those would count as a failure.',
         }),
       ]),
     }),
@@ -456,12 +522,51 @@ export const TYPES_GENRE = Object.freeze({
           id: 'mypy-error-line',
           what: 'one type error, as mypy prints it',
           lineMatch: ' error: ',
+          capture: null,
           // REAL, from a live aurora run's own spine
           // (bareloop-patients/aurora-u-bareloop/u-ms2c0ls7.jsonl).
           example: 'packages/spawner/src/aurora_spawner/timeout_policy.py:89: error: Statement is unreachable  [unreachable]',
           why: 'the operator\'s own hand-written close reads mypy this way (scripts/u-spawner-close.mjs:133), minted '
             + 'by paid live runs. It is anchored on the SEVERITY word, not on the path spelling, so a relative or '
             + 'absolute path, a package prefix or a config-driven root all read the same.',
+        }),
+        // ── pytest, from the aurora battery's own captured runs ────────────────
+        //
+        // PROVENANCE: six `close-precheck` gaps in
+        // `bareloop-patients/aurora-soar-bareloop/battery-A{1..4}-*.jsonl` carry the
+        // whole captured pytest run of the aurora patient (pytest 9.1.1, python
+        // 3.14.6, the patient's own `pytest.ini` addopts, which include `-ra`) —
+        // 2,690-odd tests, the `short test summary info` section and the final counts
+        // line. Real, uncrafted, paid for.
+        //
+        // WHAT IS NOT ANCHORED, and why. Every archived counts line arrives padded
+        // with `=` on both sides, and the padding WIDTH is terminal-derived: the
+        // archived long line gets exactly one `=` per side, a short local run gets
+        // twenty-five (measured, pytest 9.0.2, 2026-08-13). Under `-q` the padding is
+        // absent entirely. So the term anchors on the WORD and its number, never on
+        // the decoration — the same discipline as anchoring tsc on the code rather
+        // than the path.
+        Object.freeze({
+          id: 'pytest-pass-count',
+          what: 'how many tests passed, off pytest\'s final counts line',
+          lineMatch: '(\\d+) passed',
+          capture: 1,
+          example: '= 1 failed, 2690 passed, 3 skipped, 18 deselected, 1775 warnings in 326.12s (0:05:26) =',
+          why: 'the ONE segment of this line pytest prints whether the run was green or red, so it is the only '
+            + 'count on it that can be read as a figure without risking "never reported". The other segments '
+            + '(failed, skipped, deselected) are omitted when their count is zero — a green run prints just '
+            + '`1 passed in 0.04s` (measured) — so a term reading THOSE would go silent exactly when the news is '
+            + 'good, and a silent figure term is a broken instrument, not a zero.',
+        }),
+        Object.freeze({
+          id: 'pytest-failed-line',
+          what: 'one failing test, as pytest\'s short summary names it',
+          lineMatch: '^FAILED ',
+          capture: null,
+          example: 'FAILED packages/soar/tests/test_agent_registry_deprecation.py::TestAgentRegistryDeprecation::test_registry_and_discovery_equivalent_results',
+          why: 'this is how you count pytest FAILURES: exactly one line per failing test (measured under both `-ra` '
+            + 'and `-q`), so it TALLIES and no match at all is a legitimate counted zero rather than an unreported '
+            + 'number. It needs pytest\'s short summary section, which the patient\'s own config must not suppress.',
         }),
       ]),
     }),
@@ -648,15 +753,29 @@ export function genreOwnedEnvNames(lang) {
  * owned fact is not a capability question.
  *
  * WHAT THIS IS NOT: it does not close the parser. A stage counting something we
- * have NOT measured (an executed-test count, a suite's failure line) still writes
- * its own pattern, and that remains a real gap — named, not smoothed. This table
- * is where a measured instrument fact lands, one at a time, with its provenance.
+ * have NOT measured still writes its own pattern, and that remains a real gap —
+ * named, not smoothed. This table is where a measured instrument fact lands, one
+ * at a time, with its provenance.
+ *
+ * THE TEST-COUNT FACTS (2026-08-13) landed under exactly that rule, and closed
+ * two of the three gaps the paragraph above used to name by hand: the executed
+ * count and the failure line, for both runners, are now measured facts rather
+ * than draft-time lotteries. Provenance rides on each entry.
+ *
+ * WHAT STAYED OUT, deliberately, because no evidence covers it:
+ *  - a pytest FAIL-COUNT figure. A green pytest run omits the segment entirely
+ *    (`1 passed in 0.04s`), so a figure term over it reports "never reported" on
+ *    precisely the runs that went well. Failures are counted with the `^FAILED `
+ *    tally instead, where no match IS zero.
+ *  - a pytest EXECUTED count. `collected N items` is printed under `-ra` and NOT
+ *    under `-q` (measured both ways), so no single spelling survives the modes a
+ *    patient may configure; a stage needing it still composes its own and says so.
  *
  * Returns a fresh copy per call, for the reason `classGuards` does: a frozen
  * constant handed to a caller that edits it is one shared table away from a
  * silently changed ruler.
  * @param {string} lang
- * @returns {{id: string, what: string, lineMatch: string, example: string, why: string}[]}
+ * @returns {{id: string, what: string, lineMatch: string, capture: number|null, example: string, why: string}[]}
  */
 export function genreInstruments(lang) {
   const instruments = language(lang).instruments ?? [];

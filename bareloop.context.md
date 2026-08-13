@@ -294,6 +294,14 @@ N−1 are enforced only at the close, at the end of the run. That is a COST shap
 hole — the close still refuses a tree that fails any stage, and nothing green is minted mid-run
 — but a stage first tested at the tail is a stage the run pays full price to discover.
 
+**The ceiling of 2 is RULED, not provisional (2026-08-13, PRD v1.63 §3).** One check per write
+step is the contract: a step passing its own in-run check is never a verdict, only the close is
+truth, and widening the ceiling so a step's own gate could approximate the close would move
+judgement into the part the agent authors. Plan around one check; do not plan for a second one
+arriving. It is raised only on a demonstrated starvation case (a real run where a step provably
+cannot express its progress gate within one check and stalls for it), never for wording comfort,
+and the change is the operator's — arbiter territory.
+
 Red vocabulary (both validators): `parse-error`, `unknown-field`, `missing-required`,
 `invalid-value`, `bounds`, `duplicate-id`, `close-type`, `close-hierarchy`,
 `secret-literal`, `scope-escape`,
@@ -480,10 +488,10 @@ a step, or test it without a provider.
 | step | call | what it is |
 |---|---|---|
 | interview | `runInterview({ verdictType, answers, repoPath })` → `{ ok, answers, verdictType, refusal, reds }` | PURE — no model, no repo, no clock. THREE frozen question sets keyed by verdict class (`QUESTION_SETS`; `questionsFor(cls)` / `requiredAnswersFor(cls)`), and the interview asks NOTHING about a genre. The green set is six questions, answers keyed by number; the soft-green and hitl sets are named but LOCKED (`questions: null`, absent rather than empty) and their selection refuses before they run. `verdictType` and `repoPath` are STRUCTURED input, never parsed out of prose. Answers are scrubbed at INGEST |
-| survey | `runAuthorScout({ workdir, provider, attempts? })` → `{ state, facts, reason, meta, raw, raws, calls }` | a bounded READ-ONLY LLM survey. Read-only by MENU CONSTRUCTION (`AUTHOR_SCOUT_VERBS` = the full menu minus write-class and store-class verbs), 8 rounds, F59's reserved toolless final round. **`state: 'ABSENT'` means the scout did not complete — never "no special facts are needed"**, and a parsed `{}` is one of its five ABSENT routes. Up to `SCOUT_ATTEMPTS` (**3**, hardcoded — PRD v1.58) attempts: `attempts` is TIGHTEN-ONLY and CLAMPS rather than throws (floor **1**, because a scout that never ran is an ABSENT nobody can act on), the direction every cap in this system runs in. **A retry fires on the typed MALFORMED class alone** (`SCOUT_RETRY_CAUSES` = `empty` \| `unparseable`); what is excluded is excluded for a reason — `call-failed` covers transport and `truncated:max_tokens`, both provider-red with NO redraft; `short` is F59's cut-off population and already has its own instrument INSIDE the attempt; `non-object` and `empty-object` are valid JSON with wrong or vacuous content, which is a SEMANTIC failure, and F38/F39 measured what re-asking one buys (the same distribution, sampled twice) — that is the self-healing line, and it is not crossed here. The re-ask is TOOLLESS over the conversation the survey already produced (the repository was already read; only the emission was unreadable) and names the mechanical parse error and nothing else. **There is no JSON repair behind it and there never will be** — a repairer decides what the model MEANT and writes it down as though the model had said it, in the one artefact whose whole job is to be honest about what a repository contains. `meta.attempts` / `meta.attemptsAllowed` record what was paid for; every attempt is metered under its own label (`author-scout`, `author-scout#2`, …) and leaves its raw behind |
+| survey | `runAuthorScout({ workdir, provider, attempts?, ceilingUsd? })` → `{ state, facts, reason, meta, raw, raws, calls, budgetStop }` | a bounded READ-ONLY LLM survey. Read-only by MENU CONSTRUCTION (`AUTHOR_SCOUT_VERBS` = the full menu minus write-class and store-class verbs), 8 rounds, F59's reserved toolless final round. **`state: 'ABSENT'` means the scout did not complete — never "no special facts are needed"**, and a parsed `{}` is one of its five ABSENT routes. Up to `SCOUT_ATTEMPTS` (**3**, hardcoded — PRD v1.58) attempts: `attempts` is TIGHTEN-ONLY and CLAMPS rather than throws (floor **1**, because a scout that never ran is an ABSENT nobody can act on), the direction every cap in this system runs in. **A retry fires on the typed MALFORMED class alone** (`SCOUT_RETRY_CAUSES` = `empty` \| `unparseable`); what is excluded is excluded for a reason — `call-failed` covers transport and `truncated:max_tokens`, both provider-red with NO redraft; `short` is F59's cut-off population and already has its own instrument INSIDE the attempt; `non-object` and `empty-object` are valid JSON with wrong or vacuous content, which is a SEMANTIC failure, and F38/F39 measured what re-asking one buys (the same distribution, sampled twice) — that is the self-healing line, and it is not crossed here. The re-ask is TOOLLESS over the conversation the survey already produced (the repository was already read; only the emission was unreadable) and names the mechanical parse error and nothing else. **There is no JSON repair behind it and there never will be** — a repairer decides what the model MEANT and writes it down as though the model had said it, in the one artefact whose whole job is to be honest about what a repository contains. `meta.attempts` / `meta.attemptsAllowed` record what was paid for; every attempt is metered under its own label (`author-scout`, `author-scout#2`, …) and leaves its raw behind. **`ceilingUsd` is the operator's money ceiling** (PRD v1.62) — checked BETWEEN attempts and before F59's reserved round, so no paid call escapes it; `null`/absent is UNBOUNDED, and a non-null non-finite value THROWS (the shared `capStop` seam — see `authorClose` below). When it ends the ladder, `budgetStop` names which stop (`cap-halt` \| `pricing-red`) and a survey that was never asked for carries the typed cause `not-funded` — deliberately OUTSIDE `SCOUT_RETRY_CAUSES`, because a retry is precisely what the cap forbade |
 | listing | `buildSeedListing({ workdir, seedRef, sourcePaths, testPaths })` | mechanical, `$0`, no model. `files` is the WHOLE tree (what the validator judges paths against); `block` is scoped to the survey's own paths and capped in ANNOUNCED tiers (what the prompt carries). Handing the validator the scoped half would make a job scoped to `src/` read as whole-tree and silently disarm the one-population law |
-| authoring | `authorClose({ workdir, seedRef, lang, verdictType, answers, scout, listing, generate })` | the grounded loop: author → validate → run EVERY stage at the seed → feed the MEASURED results back → revise, bounded at `MAX_REVISIONS` (2) — a passed `maxRevisions` is TIGHTEN-ONLY, so a caller may LOWER that ceiling and never buy more revise rounds than the constant (floor **0**: one authoring call with no revise round is a legal ask, and unlimited revising would launder thrash as adaptation) — early-stop on an unchanged declaration. The declaration is emitted through a SCHEMA-FORCED TOOL CALL (`declare_close`), never parsed out of prose; the feedback is EXECUTION OUTPUT only — no model ever reviews another model's close. The return carries **`raws`**: what every model call actually SAID, the scout's attempts absorbed together with the declaration's, in the cost book's own order and under the same labels it meters. Each is `{ label, attempt, bytes, trimmed, text, cause, reason }` through the ONE persist helper (`scrubRaw` — redacted over the ONE `SECRET_PATTERNS` inventory, since a raw is the record most likely in this system to carry a live credential; bounded at `RAW_PERSIST_MAX` (8000) with the trim ANNOUNCING its own full size, and the cut walked back off a continuation byte so a multi-byte character is never split). `raws` is present on EVERY path **including the `$0` preflight refusals** — the path that spends nothing more is exactly the one whose evidence used to vanish with the process. `iterations` records what each turn MEANT (declaration, validation, seed read); `raws` records what it SAID, and a malformation is only ever visible in the second |
-| everything above, composed | `authorCloseForJob({ verdictType, answers, repoPath, lang, generate, ... })` → `{ ok, closeDecl, verdictType, refusal, cost, ... }` | refuses at the cheapest gate that can refuse: an interview refusal costs **zero**. THE GENRE REFUSAL LIVES HERE (not in the interview): a language the catalogue owns no data for, and a LOCKED KIND the model reached for, both come back as counted `request-red` demand |
+| authoring | `authorClose({ workdir, seedRef, lang, verdictType, answers, scout, listing, generate, ceilingUsd? })` | the grounded loop: author → validate → run EVERY stage at the seed → feed the MEASURED results back → revise, bounded at `MAX_REVISIONS` (2) — a passed `maxRevisions` is TIGHTEN-ONLY, so a caller may LOWER that ceiling and never buy more revise rounds than the constant (floor **0**: one authoring call with no revise round is a legal ask, and unlimited revising would launder thrash as adaptation) — early-stop on an unchanged declaration. The declaration is emitted through a SCHEMA-FORCED TOOL CALL (`declare_close`), never parsed out of prose; the feedback is EXECUTION OUTPUT only — no model ever reviews another model's close. The return carries **`raws`**: what every model call actually SAID, the scout's attempts absorbed together with the declaration's, in the cost book's own order and under the same labels it meters. Each is `{ label, attempt, bytes, trimmed, text, cause, reason }` through the ONE persist helper (`scrubRaw` — redacted over the ONE `SECRET_PATTERNS` inventory, since a raw is the record most likely in this system to carry a live credential; bounded at `RAW_PERSIST_MAX` (8000) with the trim ANNOUNCING its own full size, and the cut walked back off a continuation byte so a multi-byte character is never split). `raws` is present on EVERY path **including the `$0` preflight refusals** — the path that spends nothing more is exactly the one whose evidence used to vanish with the process. `iterations` records what each turn MEANT (declaration, validation, seed read); `raws` records what it SAID, and a malformation is only ever visible in the second. **`ceilingUsd` is the same operator ceiling the survey took** — the scout's spend is ABSORBED into this loop's cost book before its first call is weighed, so spend already incurred folds in and re-entering cannot silently widen it. It is checked immediately before EVERY paid call (the author call, each revise, and each malformed-emission retry). **A MALFORMED ceiling is an ERROR, not a silent unbounded run** (v1.64 §3): the seam every ceiling read goes through (`capStop`, `src/text.js`) THROWS on a non-null non-finite value — `'2.50'`, `NaN`, `Infinity`, `true`, `{}` — before the first paid call, and the throw propagates uncaught rather than being caught into an ABSENT survey, because a caught one would hand you the very silent-unbounded run it exists to prevent. `null`/omitted is the STATED operator choice for unbounded; `0` and negatives are finite, legal, and cap-halt immediately. The advertised ceiling and the enforced ceiling can therefore never be different numbers. A `cap-halt` here can arrive with `ok:true` — a close that was already validated and measured survives the money stop, exactly as a late provider casualty does |
+| everything above, composed | `authorCloseForJob({ verdictType, answers, repoPath, lang, generate, ceilingUsd?, ... })` → `{ ok, closeDecl, verdictType, refusal, cost, ... }` | refuses at the cheapest gate that can refuse: an interview refusal costs **zero**. THE GENRE REFUSAL LIVES HERE (not in the interview): a language the catalogue owns no data for, and a LOCKED KIND the model reached for, both come back as counted `request-red` demand. **`ceilingUsd` is ONE number handed to BOTH paid seams** (the survey's and the declaration loop's) — the advertised ceiling and the enforced ceiling are the same ceiling. It travels as an EXPLICIT `null` when unset, because unbounded is a stated choice and an absent field read as falsy is that state reached by accident — and anything that is neither a finite number nor `null` throws at the seam rather than becoming that state by typo |
 | assembly | `assembleSpec(specDraft, { closeDecl, verdictType })` | folds the authored half into the OPERATOR's half. Budgets, the fence, cadence, escalation and the provider are never authored by anything here. The GOAL is passed through, not generated. **A draft that ALREADY carries the authored half is REFUSED — it THROWS, never merges and never overwrites.** `AUTHORED_SPEC_FIELDS` (`close`, `closeDecl`, `verdictType`) names the fields this fold WRITES, as data, so the refusal and the fold cannot disagree about which half of the spec is which; the rule is `job.js`'s one step earlier (two closes are two arbiters, and picking one silently is how a signed artefact stops meaning what the signer read). `scripts/run-author.mjs` asks the same question at **$0 BEFORE the scout**, so the answer never arrives after the model has been paid |
 | the three gates | `prepareSigning({ spec, workdir, seedRef? })` → `{ ok, specHash, gates, work, guards, refusal }` | D9, and it NEVER signs |
 
@@ -510,6 +518,26 @@ declaring one is a counted `locked-kind` red rather than an unknown-kind typo; `
 tool mode a locked kind is INEXPRESSIBLE — the schema carries one branch per live kind — so
 that demand arrives through the interview layer instead (`refuseLockedKind(kind)`).
 
+**A red `count-not-worse` gap carries the LINES it counted, not only how many (F98).** Each
+term's **KEPT** matched lines nest under that term's own breakdown row — the row that already
+prints its `contributes +n`/`-n`, so a line's arithmetic role travels with it. Kept means the
+lines that survived the scope filter and were actually read by the aggregate (a `first` term
+echoes only the line that produced its value), which is to say the ones the count is made of.
+A scope-DROPPED line is never among them (it was never counted, so naming it would aim the
+worker outside its own population, F84's one-population law), duplicates collapse within a
+term (a line feeding two terms plays two roles and appears under each), and the value is
+still computed from the parsed values and never from this list.
+They ride the **existing** gap channel and invent none: the declared stage's `gapKeep` prefix
+on every line (Layer R's `redKeep` is DERIVED from that prefix), the same `GAP_LINE_CAP`, and
+the same announced trim on overflow — so a consumer parsing the gap sees more lines under the
+same shape, never a new one. `parseValue` returns them as `matched` alongside `value`,
+per-term, index-aligned with the breakdown. The
+licence is the one `pattern-absent-in-diff` already runs under: the instrument NAMED these
+lines, and echoing what it named is not the barred move of naming a culprit it never
+reported. **Nothing here can flip a signed spec hash** — the verdict logic, the baselines,
+the counting, the `closeDecl` schema and `detail` are untouched; only what the executor TELLS
+the worker changed.
+
 **The three gates, and the signature (D9).** Nothing LLM-judges a close.
 1. `validateCloseDecl(closeDecl, { verdictType, ... })` — schema, kinds, params, the F84
    one-population law, F49's static nested-quantifier reject, the D5 guard equality, the
@@ -524,11 +552,43 @@ that demand arrives through the interview layer instead (`refuseLockedKind(kind)
    **A close with no WORK stage red at seed is refused decision-ready** — it grades nothing,
    and an instrument that scans nothing reads clean exactly like one that measures correctly.
 
+**KNOWN LIMIT: gate 1 does not check a parser's FORMAT, and never will (F94, ruled WON'T-BUILD
+2026-08-13, PRD v1.63 §1).** A declaration can name the right stage, over the right population,
+with the right aggregate, and carry a `lineMatch` for a shape the tool never prints. Detecting
+that at draft time needs stage → tool attribution, and `npm run typecheck` defeats it
+mechanically: the declared command names npm, what prints is `tsc`, and the mapping lives in a
+`package.json` the validator does not read. A detector that resolved some spellings and passed
+the rest would read as coverage while being blind exactly where patients differ. **Gates 2 and 3
+are the instrument for this class, and they work** — a term matching nothing over a non-empty
+population reads unknown-not-zero (F6/F45/F93), so the seed-verdict read refuses it at $0 before
+a signature, which is how the real case was caught. Formats are checked by RUNNING the tool,
+never by reading a string. The complementary defence is upstream of the gate: for the tools the
+genre owns facts about, `genreInstruments` hands the author the measured pattern (with its real
+captured line) instead of asking, so fewer declarations reach gate 1 carrying an invented format
+at all. Reopens only if a wrong-format parser ever reaches a SIGNED close.
+
 Then the human signs `specHash`, unchanged: the approvals array and the human's word are
 the arbiter relocating to the user, not disappearing. **Re-authoring is a spec edit (D6)** —
 a different declaration is different bytes, a different resolved hash, and a new signature.
 The guards are stored ENUMERATED and every short-form parser is expanded, so no
 omittable-with-a-default field can change what runs without changing what was signed.
+
+**A signing surface must show the GOAL and the judged stages as one reading (F87).** The
+goal has to state everything the close will judge, and **nothing derives one from the other
+or checks them against each other** — the only derivation runs close-stages → check menu, one
+hop, one direction. So the sole defence against an unstated stage is that the person signing
+reads both halves at once, and any surface you build around `prepareSigning` inherits that
+obligation. Both reference runners now do it: `scripts/run-u.mjs --approve` names every close
+stage (name + kind) under the goal — for **BOTH spec forms**, through `closeStagesOf`, since
+gating that block on `closeDecl` reached exactly one of the eleven shipped specs and left the
+other ten (command `close[]`) showing the goal with no stages under it, which is the same
+half-reading in the guard against it (F100); a command stage prints `[command]` and NOT the
+catalogue kind name it does not carry — and `scripts/run-author.mjs` prints the goal above the
+declaration via `declarationLines(spec)` in `scripts/author-readout.mjs`, rendered from the
+**RESOLVED** spec — the bytes that get hashed, never the draft and never the authored half
+alone. An absent goal renders as absent rather than as a bare label. This is a READING, not a
+validator: nothing compares the goal to the declaration, because deriving one from the other
+is exactly what F87 forbids.
 
 **Refusals are COUNTED (D13).** `refusalEvents(refusal)` returns the spine events: a
 `job-red` carrying `{ code: 'request-red', verb, lib: 'bareloop' }` — the `lib` stamped at
@@ -661,8 +721,36 @@ three times on one call — each stall silently abandons the hung call and reiss
 laundered into `provider-red`, and carries `spendComplete:false` (an abandoned call may
 already have been billed). **The reissue is wall-aware:** past the run's deadline the fuse does
 not self-heal — self-heal is what a run does with time left — and it gives up as `wall-halt`,
-not `step-stalled`, since a replan has nothing left to re-allocate. Every one of them is a
+not `step-stalled`, since a replan has nothing left to re-allocate. **A `step-stalled` run is
+a CHECKPOINT, not a verdict** (hamr's ruling, 2026-08-13 — PRD v1.64 §1): it is resumable on
+the reference runner alongside the two governance halts, the work on disk stands, and its
+`spendComplete:false` carries forward as a floor. Every one of them is a
 decision-ready escalation with a terminal `job-end`: the spine never dangles.
+
+**`gate-red` is not in that list, and the plan flow no longer mints it (F98).** A fence
+DENIAL STREAK — bare-agent's BA-11 deny-spin guard returning `denied:*` after consecutive
+refusals — is a **BOUNDED ATTEMPT, never a terminal**, on BOTH worker surfaces: the attempt
+ends, `attempt-bounded` is emitted with the `reason`, the close judges the partial work, the
+gap feeds forward, the caps are unchanged and the loop continues.
+**The NEXT attempt is told which bound fired** (v1.64 §2): the bound carries
+`{iteration, cause, reason}`, and where the cause is `denied` the note says the GATE cut the
+attempt and quotes what the gate recorded, verbatim — instead of the round-cutoff sentence,
+which was false on cause and on count and aimed the worker at its read budget when the thing
+that stopped it was the fence. **Nothing is invented**: bare-agent returns `denied:<tool>`
+and nothing else — no path, no streak count — so neither is claimed. Every other cause keeps
+the round-bound wording byte for byte. The reason is scrubbed ONCE at capture through the one
+`SECRET_PATTERNS` inventory and shared by prompt and spine, and trimmed under the repo's one
+`GAP_TRIM_MARKER` (F90.2). It is the same lane
+`max_turns` and `loop.stop()` take, for the same reason — the attempt ran, produced audited
+work, and was cut short by a governance bound doing its job. **The fence holding is the
+system working, which is the opposite of a fault**; routing it as an instrument stop killed a
+converging run with $1.77 and 21.6 wall-minutes still on it. Nothing about the gate changed:
+the same actions are denied, the same audit rows are written, a genuine scope escape produces
+exactly what it did before — it now costs one bounded attempt instead of the whole run. The
+category survives only as a passthrough (`ralph`'s decision table still answers to it if a
+caller's own middle throws it, and `EXCLUDED_ESCALATIONS` still lists it so a future emission
+is filed as governance rather than re-read as a capability gap), but no site in this library
+raises it.
 
 **Every `job-end` carries the money, on every path**: `{ outcome, spentUsd, spendComplete }`
 (plus `step`/`cause`/`detail` where the outcome has them). `spentUsd` is the accumulated sum
@@ -1000,7 +1088,9 @@ learning credit and runs no on-green retention. A close that cannot RUN is a `br
 escalation before any provider call. So the resume story is: a `cap-halt` or `wall-halt`
 stop IS the checkpoint (the workdir + the close), the human raises `budgetUsd` or
 `maxWallMs` (a new spec hash — re-sign), and the rerun picks up where the budget died,
-paying zero provider calls for anything already green.
+paying zero provider calls for anything already green. (Those two are the *allowance* stops,
+the ones with a lever to raise. They are not the whole resumable set — `step-stalled` is also
+a checkpoint, with nothing to re-sign; see `resumableOutcomes` under the resume reader.)
 
 **Unpriced is never free (F6/F12):** the ledger meters **per ROUND** (`worker-round`, at
 bare-agent's `onLlmResult` seam) — money is counted as it is spent, never at the end of an
@@ -1022,7 +1112,14 @@ the loop contract (F16 — it is ONE attempt inside `while close-red and under-c
 re-run with the close's verdict; without this a model one-shots and can eat the budget in
 reads before ever writing). It is NOT allowed to read the run's own machinery (F14): the gate
 audit, the smoke store and the litectx store are denied — the agent neither authors the
-arbiter nor reads its books. N2 bounds (honest): `gold`/`rubric` closes refuse
+arbiter nor reads its books. **That denial is now REGISTERED in the persona, not left to be
+discovered (F98):** `PERSONA_TOOLS` names `gate-audit.jsonl`, `.smoke`, `.litectx` and the
+run's spine as always-denied, records of how the worker is being judged and never anything
+about its task, beside the absolute-path law it is the twin of — both are fence facts a worker
+cannot infer. It renders for EVERY worker on every grant (a worker granted only `write` gets
+no component strategy paragraph at all and must still be told). The fence is unchanged; what
+changed is that the rule is stated instead of learned one refusal at a time, which cost a real
+run the rounds of a bounded attempt. N2 bounds (honest): `gold`/`rubric` closes refuse
 `close-unsupported` (execution lands at N4).
 
 ### The reuse registry (Layer 3) — `src/bridges.js`, `src/selection.js`
@@ -1242,11 +1339,33 @@ semantics are byte-unchanged (PRD v1.46 §3):
   is `$0`: a leg whose every round came back unpriced folds nothing countable and is still not
   exact, so the declaration is emitted to carry that unknown forward rather than letting it read
   as an exact zero (F6).
-- **`resumableOutcomes: ['cap-halt', 'wall-halt']`** reclassifies a landed `job-end` whose
-  outcome is a GOVERNANCE HALT as a restart rather than a completed row. "A landed job-end is
-  complete" is true of a VERDICT; a halt means an operator-owned allowance ran out with the
-  work on disk and the plan on the spine. A green or any red stays non-resumable under every
-  setting — a verdict already rendered is never re-bought.
+- **`resumableOutcomes: [...]`** reclassifies a landed `job-end` whose outcome is a
+  CHECKPOINT rather than a verdict as a restart rather than a completed row. "A landed
+  job-end is complete" is true of a VERDICT; a checkpoint means the work is on disk and the
+  plan is on the spine with nothing decided against them. **The set is the CALLER's**, and
+  the reference runner's is `['cap-halt', 'wall-halt', 'step-stalled']` (`run-u`'s
+  `RESUMABLE_HALTS`). The first two are governance halts — an operator-owned allowance ran
+  out. `step-stalled` joined them 2026-08-13 on hamr's ruling (PRD v1.64 §1): it is the one
+  terminal whose OWN escalation already offers *"retry the run"*, nothing about the work on
+  disk is wrong, and the shape that named the fix is a stall that trips with time left and
+  then rides out past the wall — losing a checkpoint a `wall-halt` would have kept. Its NAME
+  deliberately stays `step-stalled` because `runJob` keys the **F44 spend FLOOR** on that
+  outcome; renaming it would report unknown spend as exact. The floor travels: a stalled
+  leg's `spendComplete:false` reaches the preview as `≥$x` and the resumed leg as
+  `priorSpendComplete: false`, so the next terminal stays a floor rather than healing an
+  unknown by inheriting it. A green or any red stays non-resumable under every setting — a
+  verdict already rendered is never re-bought.
+  **One exception, and it is a DERIVATION rather than a widening (D4a, F96).** A recorded
+  `step-red` is re-read as a wall-halt — and becomes resumable — when the run's OWN spine
+  carries a `wall-bounded {bounded: true}` record STRICTLY BEFORE its terminal, and only when
+  `'wall-halt'` is itself in `resumableOutcomes`. It fires on the run's own primary evidence,
+  which no caller can assert; a `step-red` with no wall record in front of it is untouched, so
+  "a red is an answer" survives intact. It touches no close verdict — the grades stand and the
+  resume seeds from them. The readout surfaces `wallDerivedHalt` so an operator resuming a spine
+  that SAYS `step-red` is told which record turned it into a checkpoint. **This is a PERMANENT
+  safety net, not a migration shim (ruled 2026-08-13, PRD v1.63 §2):** the defect that minted
+  the shape is fixed at source, but spines are append-only forever, so the population it protects
+  can never shrink — and on a healthy spine it is a branch that is never taken.
 
 `restart.branch` is the WORK BRANCH the dead leg was working on, READ off its `work-branch`
 record and never re-derived: the name is deterministic from the signed spec, so a restart that
@@ -1328,6 +1447,12 @@ and is re-signed.
   fold — a garbage, non-finite or negative `count` reads as `0` rather than widening the ceiling.
   Null/omitted is the cold path. The disarm control is pinned: a resumed leg with an UNSPENT
   ceiling still replans, so the bound is bounded, not switched off.
+  **NEVER-REFILL is now the RULING, not just the behaviour (2026-08-13, PRD v1.63 §4).** A resume
+  inherits the spent replan ledger, entire; a refill would let every kill buy an allowance, which
+  is unlimited replanning through the side door, and unlimited replanning launders thrash as
+  adaptation. The consequence for an adopter is a real one and is deliberate: a resume whose
+  ledger is already spent re-enters its plan with no channel to replace it. That is not funded —
+  it is SHOWN, by the resume banner, before you sign.
 - **Under the REMAINDER, never a fresh allotment.** The killed attempt's spend and wall
   FOLD IN (`runJob`'s `priorSpentUsd`/`priorSpendComplete`/`priorWallMs`, `createClock`'s
   `priorElapsedMs`), so
@@ -1405,7 +1530,9 @@ seeding an upstream ask. Deliberate exclusions
 counted as unmapped, never dropped): `cap-halt`/`wall-halt` (budget stories, money and
 time), `step-stalled` (the stall fuse firing is our governance, not an observed provider
 failure), `step-variance` (a planning story), `gate-red`/`smoke-red` (governance working
-as intended / already counted), `hitl-close`/`close-unsupported`/`close-unauthorable` (by design — and the last one
+as intended / already counted — and `gate-red` is no longer minted anywhere in this library,
+kept listed because this set is EXECUTABLE: dropping a name would not delete the category, it
+would re-file any future emission of it as a counted capability gap), `hitl-close`/`close-unsupported`/`close-unauthorable` (by design — and the last one
 is excluded for a SECOND reason: its demand is already counted once as the `request-red`
 the same refusal emits, so counting the escalation too would double every refusal),
 `close-timeout`/`close-killed`/`close-crashed` (the arbiter's own named terminals, F17);

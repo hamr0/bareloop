@@ -13,7 +13,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { runPlan, planPrompt, closeGapBlock } from '../src/planrun.js';
+import { runPlan, planPrompt, closeGapBlock, boundedNote, BOUND_REASON_MAX } from '../src/planrun.js';
 import { ralph, boundGap, GAP_KEEP_TRIM_MARKER } from '../src/ralph.js';
 import { validateJob } from '../src/job.js';
 import { StallError, MAX_STALLS } from '../src/stall.js';
@@ -22,6 +22,9 @@ import { scanSecrets } from '../src/validate.js';
 // the check gap's ONE ceiling — the backstop test below derives both arms from it
 // rather than respelling 12000, so a change to the constant moves the test with it
 import { CHECK_GAP_MAX } from '../src/exits.js';
+// the ONE trim announcement this repo spells (src/kinds.js) — the bounded-attempt
+// note reuses it rather than inventing a second way to say "this text was cut"
+import { GAP_TRIM_MARKER } from '../src/kinds.js';
 
 const tcall = (id, name, args) => ({ id, name, arguments: args });
 
@@ -1163,7 +1166,7 @@ const attempt = (wd, id, body) => [
  * the Nth judged exit the balance drops to `to`. Deterministic, and it cannot
  * silently retarget if the number of wallet reads changes (the F37 class).
  */
-async function countRun(wd, script, drains, { job, start = 1.5, over = {} } = {}) {
+async function countRun(wd, script, drains, { job, start = 1.5, over = {}, onJudged } = {}) {
   job = job ?? COUNT_JOB(wd);
   const provider = scriptedProvider(script);
   const jv = validateJob(job);
@@ -1172,7 +1175,12 @@ async function countRun(wd, script, drains, { job, start = 1.5, over = {} } = {}
   let judged = 0;
   let balance = start;
   const emit2 = (/** @type {string} */ type, /** @type {any} */ data) => {
-    if (type === 'exit-eval') { judged += 1; if (drains[judged] !== undefined) balance = drains[judged]; }
+    // `onJudged` is the CLOCK's seam, the wallet's mirror: a test that needs the wall
+    // to pass at a precise point in the run drives it off the same counted event the
+    // drains do (never a provider-call index, which silently retargets the moment the
+    // number of calls changes — the F37 class). Absent by default, so every existing
+    // caller renders byte-identically.
+    if (type === 'exit-eval') { judged += 1; if (drains[judged] !== undefined) balance = drains[judged]; onJudged?.(judged); }
     return emit(type, data);
   };
   const outcome = await runPlan(jv.job, { workdir: wd, provider, emit: emit2, capRuns: 3, remainingUsd: () => balance, ...over });
@@ -1366,6 +1374,88 @@ test('F85-C: the grant is BOUNDED — a THIRD variance stop is the stop, exactly
   assert.equal(events.filter((e) => e.type === 'replan').length, 2, 'two replans and no more, however well the run is converging');
   assert.equal(events.filter((e) => e.type === 'variance').length, 3, 'the third stop was still metered and recorded');
   assert.equal(outcome, 'step-red:plan-c', 'the stop rides out as a step-red, never as a new top-level outcome');
+});
+
+test('W-2: a THIRD variance stop PAST THE WALL is a wall-halt, never a step-red — the terminal re-reads the clock like its cap-halt sibling (u-msmt91t3)', async (t) => {
+  // The sibling test above is this one's control: same three variance stops, same
+  // spent grant, and with time on the clock it rides out `step-red:plan-c`. The only
+  // difference here is that the wall passes before the third stop — and on the real
+  // run u-msmt91t3 that stop was minted as `step-red` 9.9 seconds after the run's own
+  // `wall-bounded` record. hamr's W-2 ruling names it: when time is up, keep the grade
+  // we already have and stop. A `step-red` says the work failed; the clock ran out.
+  const wd = makeCountingPatient(t, 30);
+  const clk = fakeClock();
+  // every number below is DERIVED from the spec the test builds — a hardcoded budget
+  // or wall silently reds this suite the day an operator edits the shipped defaults
+  const job = COUNT_JOB(wd, { maxWallMs: 600_000 });
+  const b = job.budgetUsd;
+  const step = (id) => COUNT_PLAN([{ id, action: 'Remove TODO markers from src/mod.mjs.', tools: ['write'], rounds: 6, target: 'src/mod.mjs', exit: [{ type: 'tree-changed', scope: 'src/**' }, { type: 'check-passes', name: 'typecheck' }] }]);
+  const { outcome, events } = await countRun(wd, [
+    { text: 'scout' }, { text: step('plan-a') },
+    ...attempt(wd, '1', todos(24)),
+    ...attempt(wd, '2', todos(15)),   // fire #1
+    { text: step('plan-b') },
+    ...attempt(wd, '3', todos(10)),   // fire #2 → the arbiter's one grant
+    { text: step('plan-c') },
+    ...attempt(wd, '4', todos(8)),    // fire #3 → the terminal under test
+  ], { 2: b * 0.34, 3: b * 0.11, 4: b * 0.033 }, {
+    job,
+    start: b,
+    over: { now: clk.now },
+    // the wall passes AFTER the fourth judged exit and before the meter reads the head
+    // of plan-c's second attempt: the step was already running when the deadline landed,
+    // which is exactly the case the meter (never the head-of-attempt check) catches
+    onJudged: (n) => { if (n === 4) clk.advance(job.maxWallMs + 100_000); },
+  });
+
+  assert.equal(events.filter((e) => e.type === 'variance').length, 3, 'the third stop was still metered and recorded — the meter is unchanged');
+  assert.equal(events.filter((e) => e.type === 'replan').length, 2, 'and the replan ceiling is still spent, so this really is the terminal branch');
+  assert.equal(outcome, 'wall-halt', 'the clock had passed — a time stop is never filed as a capability read');
+
+  const wh = events.filter((e) => e.type === 'wall-halt').at(-1);
+  assert.ok(wh, 'the run-level TIME record reaches the spine, as it does at every other wall stop');
+  assert.equal(wh.phase, 'step:plan-c');
+  assert.equal(wh.cutMidCall, false, 'read between attempts with no call in flight — the money figure stays EXACT');
+  assert.equal(wh.requestedMs, job.maxWallMs, 'the operator\'s own signed cap, not a re-derived one');
+  assert.ok(wh.elapsedMs >= job.maxWallMs, 'the honest elapsed figure, overshoot included');
+  assert.match(wh.meaning, /not "can't"/, 'a time stop is not a capability read');
+
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'wall-halt', 'the escalation names the same category the outcome does (F11)');
+  assert.equal(esc.decisionReady, true);
+  // Deliberately NOT a fourth literal copy of the lever list: this file already pins
+  // WALL_OPTIONS once, and against ralph's own emission rather than against text (the
+  // two lists drifted to two-vs-three levers the first time precisely because every
+  // pin was literal-vs-literal). What this asserts is that THIS site hands over the
+  // one shared list — the same object every other wall stop in this run would emit.
+  assert.equal(esc.options.length, 3, 'one category, one option list — three levers, not a shorter list at this seam');
+  assert.match(esc.options.join(' | '), /maxWallMs/, 'lever one: more time (a spec edit)');
+  assert.doesNotMatch(esc.options.join(' | '), /budgetUsd/, 'and never the money levers — this run did not run out of money');
+  assert.match(esc.detail, /The meter stopped the step first/, 'the meter\'s own sentence is kept, never discarded by the re-route');
+});
+
+test('W-2 CONTROL: the same third variance stop with TIME LEFT is still `step-red` — the re-read must not launder a real capability stop into a governance one', async (t) => {
+  // The mirror of F64's own control. The wall is SET (so `clock.bounded` is true and
+  // the time axis is live) and simply never passes: nothing about this run changed.
+  const wd = makeCountingPatient(t, 30);
+  const clk = fakeClock();
+  const job = COUNT_JOB(wd, { maxWallMs: 600_000 });
+  const b = job.budgetUsd;
+  const step = (id) => COUNT_PLAN([{ id, action: 'Remove TODO markers from src/mod.mjs.', tools: ['write'], rounds: 6, target: 'src/mod.mjs', exit: [{ type: 'tree-changed', scope: 'src/**' }, { type: 'check-passes', name: 'typecheck' }] }]);
+  const { outcome, events } = await countRun(wd, [
+    { text: 'scout' }, { text: step('plan-a') },
+    ...attempt(wd, '1', todos(24)),
+    ...attempt(wd, '2', todos(15)),
+    { text: step('plan-b') },
+    ...attempt(wd, '3', todos(10)),
+    { text: step('plan-c') },
+    ...attempt(wd, '4', todos(8)),
+  ], { 2: b * 0.34, 3: b * 0.11, 4: b * 0.033 }, { job, start: b, over: { now: clk.now } });
+
+  assert.equal(events.filter((e) => e.type === 'variance').length, 3);
+  assert.equal(outcome, 'step-red:plan-c', 'the stop rides out as a step-red, exactly as it does today');
+  assert.equal(events.filter((e) => e.type === 'wall-halt').length, 0, 'no time record on a run that never ran out of time');
+  assert.equal(events.filter((e) => e.type === 'escalation').at(-1).category, 'step-variance', 'and the meter\'s own escalation is the last word');
 });
 
 test('F85-C: a second variance stop on a FLAT run stops exactly as it does today — the grant is earned, never given', async (t) => {
@@ -1969,6 +2059,225 @@ console.log('FAILED close: the test never imports the module'); process.exit(1);
   assert.ok(rounds.every((r) => 'costUsd' in r), 'every surviving round still carries its cost field (F6)');
 });
 
+// ── a DENY STREAK ends the ATTEMPT, never the RUN ───────────────────────────
+//
+// Run u-msn227nq: the count stage told the worker "8 match(es)" and no address,
+// so it went looking for the arbiter's own books — .smoke, .litectx,
+// gate-audit.jsonl. The fence denied all three, exactly as designed. Then
+// bare-agent's BA-11 deny-spin guard returned `denied:shell_read`, this router
+// filed it as terminal `gate-red`, and a converging run died with $1.77 and 21
+// minutes left on the wall.
+//
+// The guard is right and stays: a spinning worker must not burn the wallet. What
+// was wrong is the CATEGORY. A denial streak is the same shape as `max_turns` —
+// the attempt ran, produced real work, and was CUT SHORT by a governance bound.
+// So it routes the same way: bounded attempt, judged, gap forward, loop continues
+// under unchanged caps. The fence held; nothing escalates because governance
+// worked. `halt:` (money) and `truncated:` (transport) are untouched — their own
+// tests above and below pin them.
+//
+// The fixture drives the REAL mechanism end to end: a real Gate with the real
+// deny list, real out-of-scope tool calls, the real Loop's own streak counter.
+// Nothing hands the router a hand-made error string.
+const DENY_PLAN = (wd) => JSON.stringify({
+  schema: 'plan-v1',
+  steps: [{
+    id: 'write-test', action: 'Write tests/test_x.mjs asserting the module exports.',
+    tools: ['read', 'write'], rounds: 6, target: 'tests/test_x.mjs',
+    exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+  }],
+});
+/** the three arbiter books the live worker probed, in the order it probed them */
+const ARBITER_BOOKS = (wd) => ['.smoke', '.litectx', 'gate-audit.jsonl'].map((p) => join(wd, p));
+
+test('DENY STREAK (loop path): a worker the fence stops three times has its ATTEMPT bounded — the run judges the partial work and carries on, it does not die gate-red (u-msn227nq)', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: DENY_PLAN(wd) },
+    // attempt 1: a REAL write that lands (so there is partial work to judge) but
+    // does not satisfy the check, then the three denied probes that trip BA-11
+    {
+      toolCalls: [
+        tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'no assertion yet\n' }),
+        ...ARBITER_BOOKS(wd).map((p, i) => tcall(`d${i}`, 'shell_read', { path: p })),
+      ],
+    },
+    // attempt 2: fed the check's gap, it writes the real thing
+    { toolCalls: [tcall('t2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok — asserts x\n' })] },
+    { text: 'wrote it' },
+  ]);
+  const { outcome, events } = await go(wd, provider);
+
+  assert.equal(outcome, 'green', 'the deny streak cost an attempt, not the run');
+  const bounded = events.filter((e) => e.type === 'attempt-bounded');
+  assert.equal(bounded.length, 1, 'exactly one attempt was bounded');
+  assert.match(bounded[0].reason ?? '', /^denied:/, 'the record names WHICH bound cut the attempt — a deny streak is not a round bound');
+  assert.equal(events.filter((e) => e.type === 'escalation' && e.category === 'gate-red').length, 0,
+    'the fence doing its job is not an escalation: governance worked, so nothing is decision-ready');
+  // the run really did keep going: two graded attempts, not one
+  assert.ok(events.filter((e) => e.type === 'exit-eval').length >= 2,
+    'the bounded attempt was JUDGED and a second attempt followed');
+  assert.equal(existsSync(join(wd, 'tests', 'test_x.mjs')), true);
+
+  // and the denials were REAL — the fence recorded them, the fixture did not fake them
+  const audit = readFileSync(join(wd, 'gate-audit.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const denies = audit.filter((r) => r.decision === 'deny' && r.action?.type === 'read');
+  assert.ok(denies.length >= 3, `the gate really denied the arbiter-book probes (${denies.length} deny records)`);
+});
+
+test('DENY STREAK (native path): the clipipe surface routes its own denial terminal the same way — one bound attempt, run continues', async (t) => {
+  const wd = makePatient(t);
+  const jv = validateJob(JOB(wd, { provider: 'clipipe-subscription' }));
+  const nativeProvider = scriptedNativeFactory([
+    { turns: [{ text: 'scout' }] },
+    { turns: [{ text: DENY_PLAN(wd) }] },
+    {
+      turns: [
+        { tool: 'shell_write', args: { path: join(wd, 'tests', 'test_x.mjs'), content: 'no assertion yet\n' } },
+        ...ARBITER_BOOKS(wd).map((p) => ({ tool: 'shell_read', args: { path: p } })),
+      ],
+    },
+    { turns: [{ tool: 'shell_write', args: { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' } }, { text: 'now wrote it' }] },
+  ]);
+  const { events, emit } = collector();
+  const outcome = await runPlan(jv.job, { workdir: wd, nativeProvider, emit, capRuns: 3, remainingUsd: () => 1.5 });
+
+  assert.equal(outcome, 'green', 'the native deny terminal is a bounded attempt too — one surface, one doctrine');
+  const bounded = events.filter((e) => e.type === 'attempt-bounded' && e.native === true);
+  assert.equal(bounded.length, 1);
+  assert.match(bounded[0].reason ?? '', /^denied:/);
+  assert.equal(events.filter((e) => e.type === 'escalation' && e.category === 'gate-red').length, 0);
+});
+
+// ── the bounded-attempt NOTE names the bound that actually fired ────────────
+//
+// A deny streak and a round-bound cutoff both used to set the same bare
+// `attemptBounded = roundIteration`, so the next attempt's prompt rendered ONE
+// sentence for both: "CUT OFF after N tool rounds. Reading is bounded; writing
+// is not." After a deny streak that is false twice over — wrong cause AND a
+// count that never ran out — and it aims the worker at the READ BUDGET when the
+// thing that stopped it was the FENCE. The reason was recorded on the spine and
+// nowhere the worker could see it.
+//
+// The note is MECHANICAL: it quotes the recorded `denied:<tool>` terminal and
+// says which bound fired. It invents nothing — no streak count (bare-agent's
+// return carries none), no path (same), no advice about scope it cannot verify.
+/** the step prompts, in order — the two the worker actually bought for this step */
+const stepPromptsOf = (calls) => calls.filter((c) => c.includes('asserting the module exports'));
+/** the frozen round-bound sentence, respelled ONCE here so a drift is a red */
+const ROUND_BOUND_NOTE = (n) => `Your previous attempt was CUT OFF after ${n} tool rounds. `
+  + 'Reading is bounded; writing is not. Form a hypothesis EARLY and make the change.';
+
+test('boundedNote unit: a DENY-streak bound quotes the recorded terminal; a ROUND bound keeps the frozen sentence byte-identical', () => {
+  const denied = boundedNote({ iteration: 1, cause: 'denied', reason: 'denied:shell_read' }, 6);
+  assert.match(denied, /denied:shell_read/, 'the worker is told what the gate actually recorded');
+  assert.ok(!denied.includes('CUT OFF after'), 'never the round-bound wording — the rounds did not run out');
+  assert.ok(!denied.includes('Reading is bounded'), 'and never the read-budget aim: the fence stopped it, not the budget');
+
+  assert.equal(boundedNote({ iteration: 1, cause: 'rounds', reason: null }, 6), ROUND_BOUND_NOTE(6),
+    'the round-bound case is unchanged, to the byte');
+  assert.equal(boundedNote({ iteration: 1, cause: 'wall', reason: null }, 6), ROUND_BOUND_NOTE(6),
+    'and so is every other non-denial bound');
+  assert.equal(boundedNote(undefined, 6), null, 'an unbounded attempt renders nothing');
+});
+
+test('boundedNote unit: an over-long recorded reason is TRIMMED and the trim ANNOUNCES itself (the one marker, not a second spelling)', () => {
+  const long = `denied:${'x'.repeat(BOUND_REASON_MAX * 2)}`;
+  const note = boundedNote({ iteration: 1, cause: 'denied', reason: long }, 6);
+  assert.ok(!note.includes(long), 'the raw over-long reason never reaches the prompt whole');
+  assert.ok(note.includes(GAP_TRIM_MARKER), `a silent trim is the blind-instrument class: ${note.slice(-160)}`);
+  assert.match(note, /denied:xxx/, 'what IS shown is the recorded reason, from its front');
+});
+
+test('DENY STREAK (loop path): the NEXT attempt is told the FENCE cut it — the recorded terminal, not a false round-bound count', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: DENY_PLAN(wd) },
+    {
+      toolCalls: [
+        tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'no assertion yet\n' }),
+        ...ARBITER_BOOKS(wd).map((p, i) => tcall(`d${i}`, 'shell_read', { path: p })),
+      ],
+    },
+    { toolCalls: [tcall('t2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok — asserts x\n' })] },
+    { text: 'wrote it' },
+  ]);
+  await go(wd, provider);
+
+  const steps = stepPromptsOf(provider.calls);
+  assert.ok(steps.length >= 2, 'a second attempt was bought — that is the prompt under test');
+  const next = steps[1];
+  assert.match(next, /denied:shell_read/, 'the worker is handed the bound that actually fired');
+  assert.ok(!next.includes('CUT OFF after 6 tool rounds'),
+    'the false round-bound claim is gone: the attempt was cut at the fence with rounds still unspent');
+  assert.ok(!next.includes('Reading is bounded'), 'and it is no longer mis-aimed at the read budget');
+});
+
+test('DENY STREAK (native path): the clipipe surface hands its worker the same recorded terminal — one doctrine, both surfaces', async (t) => {
+  const wd = makePatient(t);
+  const jv = validateJob(JOB(wd, { provider: 'clipipe-subscription' }));
+  /** @type {string[]} */
+  const prompts = [];
+  const inner = scriptedNativeFactory([
+    { turns: [{ text: 'scout' }] },
+    { turns: [{ text: DENY_PLAN(wd) }] },
+    {
+      turns: [
+        { tool: 'shell_write', args: { path: join(wd, 'tests', 'test_x.mjs'), content: 'no assertion yet\n' } },
+        ...ARBITER_BOOKS(wd).map((p) => ({ tool: 'shell_read', args: { path: p } })),
+      ],
+    },
+    { turns: [{ tool: 'shell_write', args: { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' } }, { text: 'now wrote it' }] },
+  ]);
+  const nativeProvider = (opts) => {
+    const p = inner(opts);
+    const gen = p.generate.bind(p);
+    return { ...p, generate: async (messages, tools) => { prompts.push(String(messages?.at?.(-1)?.content ?? '')); return gen(messages, tools); } };
+  };
+  const { emit } = collector();
+  await runPlan(jv.job, { workdir: wd, nativeProvider, emit, capRuns: 3, remainingUsd: () => 1.5 });
+
+  const steps = stepPromptsOf(prompts);
+  assert.ok(steps.length >= 2, 'the native run bought a second attempt');
+  assert.match(steps[1], /denied:shell_read/);
+  assert.ok(!steps[1].includes('CUT OFF after 6 tool rounds'));
+});
+
+test('ROUND BOUND unchanged: an attempt that really did spend its rounds still gets the frozen sentence, to the byte', async (t) => {
+  const wd = makePatient(t);
+  const onePlan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write tests/test_x.mjs asserting the module exports.',
+      tools: ['read', 'write'], rounds: 1, target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    }],
+  });
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: onePlan },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'no assertion yet\n' })] },
+    { toolCalls: [tcall('t2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok — asserts x\n' })] },
+    { text: 'wrote it' },
+  ]);
+  const { events } = await go(wd, provider);
+  assert.ok(events.some((e) => e.type === 'attempt-bounded' && e.reason === undefined),
+    'this attempt was cut by the ROUND bound — no denial reason on the record');
+  const steps = stepPromptsOf(provider.calls);
+  assert.ok(steps.length >= 2, 'a second attempt followed the round-bounded one');
+  // EQUALITY on the block, not `includes`: the prompt is assembled by joining blocks
+  // on a blank line, so the note is one whole block and nothing may be bolted onto
+  // either end of it. A substring test passed a deliberately mutated note (a prefix
+  // slipped straight through), which is a guard that cannot fail — the thing this
+  // test exists to prevent. The `trim` is for the SEPARATOR only: the preceding gap
+  // block ends in its own newline, so the join leaves the note with a leading blank
+  // line. Whitespace at the seam is the renderer's business; the sentence is not.
+  assert.ok(steps[1].split('\n\n').map((b) => b.trim()).includes(ROUND_BOUND_NOTE(1)),
+    `the frozen wording is untouched, whole and unadorned: ${steps[1].slice(-300)}`);
+});
+
 /** the fix-loop fixture: a close STRICTER than the check, so every step greens on
  * its own exits and the outer close still reds — the one shape that opens the
  * close-fix loop. @param {string} wd */
@@ -2429,9 +2738,11 @@ test('W-2 (step site) CONTROL: a step ALREADY RUNNING when the wall passes keeps
   };
   const { outcome, events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now, capRuns: 3 });
 
-  // scoped to the FIRST step — the step that was already running when the wall
-  // passed. What the run does AFTER the replan is the other test's subject.
-  const stepOne = afterStepStart(events).slice(0, afterStepStart(events).findIndex((e) => e.type === 'replan'));
+  // scoped to the FIRST step — the step that was already running when the wall passed.
+  // The boundary is that step's OWN terminal (`step-end`), which exists whatever the
+  // run does next; it used to be the `replan` event, and keying a window on an event
+  // the run may legitimately never emit is how a slice silently retargets.
+  const stepOne = afterStepStart(events).slice(0, afterStepStart(events).findIndex((e) => e.type === 'step-end'));
   assert.equal(stepOne.filter((e) => e.type === 'middle-done').length, 1,
     'the in-flight attempt ran to completion — the wall never cuts work already under way');
   assert.equal(stepOne.filter((e) => e.type === 'exit-eval').length, 1, 'and its judge ran: grading real work always completes (F45)');
@@ -2443,14 +2754,18 @@ test('W-2 (step site) CONTROL: a step ALREADY RUNNING when the wall passes keeps
   assert.equal(variance.iteration, 2, 'stopped at the HEAD of attempt 2, so attempt 1\'s work is not discarded');
   assert.equal(events.filter((e) => e.type === 'escalation')[0].category, 'step-variance',
     'a running step is stopped by the meter exactly as before — never by the step-site wall check');
-  const replan = events.find((e) => e.type === 'replan');
-  assert.ok(replan, 'and it still routes to the ONE replan rather than to a stop');
-  assert.equal(replan.trigger, 'step-variance');
-
-  // The TAIL is the fix above, not this control: the REPLANNED plan's first step is
-  // the one that would begin past the deadline, and that is the step the run refuses.
+  // The TAIL changed with hamr's ruling *"past the wall no new fix cycle or step
+  // starts"*. It used to route to the ONE replan, buy the redraft, and refuse the
+  // REPLANNED plan's first step at its head — two provider calls and a whole doomed
+  // cycle to reach the same terminal. The meter's stop is now the terminal itself.
+  assert.equal(events.filter((e) => e.type === 'replan').length, 0,
+    'the doomed replan is not funded — the redraft would be paid for and its first step refused at its own head');
+  assert.equal(events.filter((e) => e.type === 'plan-accepted').length, 1, 'the run drafted one plan and ran it');
   assert.equal(outcome, 'wall-halt');
-  assert.equal(events.filter((e) => e.type === 'wall-halt').at(-1).phase, 'step:second-go');
+  assert.equal(events.filter((e) => e.type === 'wall-halt').at(-1).phase, 'step:write-test',
+    'the record names the step the clock actually stopped, not a successor that never began');
+  assert.equal(events.filter((e) => e.type === 'escalation').at(-1).category, 'wall-halt',
+    'and the outcome and the escalation name the same category (F11)');
 });
 
 test('SCOUT casualty: a transport death on the survey call ends the run as provider-red BEFORE a plan is ever drafted', async (t) => {
@@ -3219,49 +3534,288 @@ test('planPrompt states the exit-freedom law: a step must be free to edit every 
   assert.match(p, /never\s+write an action that forbids/i);
 });
 
-test('LADDER (e) WALL beats progress: an expired clock ends a CONVERGING ladder — the governance stops keep every bit of their authority', async (t) => {
+// ---- the no-shell law (u-msmt91t3, 2026-08-10) --------------------------------
+// Two replans in a row drafted actions opening "Run `npx tsc --strict --noEmit`…"
+// against a worker granted read/grep/edit. The scout prompt (src/authorscout.js) and
+// the worker persona (src/tools.js) both state the worker has no shell; the DRAFTER
+// prompt never did, and the drafter is the one writing the instruction. The worker
+// obeyed as best it could and spent 14 rounds hunting the errors by hand, writing
+// nothing. Prompt register only: a text regex over the drafted action would false-red
+// the operator's OWN signed goal, which legitimately names the command as the
+// description of done (the F86 anti-precedent).
+
+test('planPrompt states the NO-SHELL law: the worker cannot run a command, and the named check is the only execution in the run', () => {
+  const p = planPrompt(JOB('/tmp/x'), 'scout notes', null, 40, null, undefined, { balanceUsd: 1.5 });
+  assert.match(p, /NO SHELL/, 'stated in the prompt\'s own voice, not implied by the tool list');
+  assert.match(p, /cannot run a command/i, 'the load-bearing prohibition');
+  assert.match(p, /ONLY execution in this run/i, 'and what DOES execute — the check the shell runs after each attempt');
+  assert.match(p, /Never tell it to run, execute, re-run/i, 'aimed at the drafting act that caused the death');
+  assert.match(p, /READING and GREPPING/i, 'and it says what to write instead — a capability without a strategy is inert (F19)');
+});
+
+test('planPrompt puts the no-shell law AFTER the exit-freedom law — the check laws read as one block, and execution is explained where check-passes is offered', () => {
+  const p = planPrompt(JOB('/tmp/x'), 'scout notes', null, 40, null, undefined, { balanceUsd: 1.5 });
+  const freedom = p.indexOf('free to edit every file the check can report');
+  const noShell = p.indexOf('NO SHELL');
+  assert.ok(freedom > 0 && noShell > 0, 'both laws render');
+  assert.ok(noShell > freedom, `the no-shell law follows the exit-freedom law (freedom@${freedom}, no-shell@${noShell})`);
+});
+
+test('planPrompt: the no-shell law is UNCONDITIONAL — the worker has no shell on any plan, so it renders with or without checkFacts, and on a replan too', () => {
+  // Deliberately not plumbed through the facts object: `tools` never contains a verb
+  // that runs anything (TOOL_MENU has no `run`, and `run` stays locked forever), so
+  // there is no plan shape this law does not apply to. A conditional law is a law the
+  // replan — the draft that actually produced the death — can miss.
+  const args = [JOB('/tmp/x'), 'scout notes', null, 40, null, undefined, { balanceUsd: 1.5 }];
+  assert.match(planPrompt(...args, null, {}), /NO SHELL/, 'cold draft, no facts');
+  assert.match(planPrompt(...args, null, { seedRed: ['clean-run'] }), /NO SHELL/, 'with Rule A-v2 in play');
+  assert.match(planPrompt(...args, null, { priorChecks: ['clean-run'] }), /NO SHELL/, 'and on the replan, which is where u-msmt91t3 lost its rounds');
+  const replan = planPrompt(JOB('/tmp/x'), 'scout notes', null, 40, 'the previous plan did not reach its exits', undefined, { balanceUsd: 1.5 });
+  assert.match(replan, /NO SHELL/, 'the failure appendix never displaces the law');
+});
+
+test('planPrompt: the tools gloss says read/grep are the ONLY way to see the tree — the menu line is where a drafter reads what a step can do', () => {
+  const p = planPrompt(JOB('/tmp/x'), 'scout notes', null, 40, null, undefined, { balanceUsd: 1.5 });
+  const gloss = p.slice(p.indexOf('- "tools"'), p.indexOf('- "rounds"'));
+  assert.match(gloss, /ONLY way to see the tree/i, 'stated on the tools line itself');
+  assert.match(gloss, /there is no shell/i);
+  assert.match(gloss, /write\/edit change the tree/, 'and the pre-existing gloss survives beside it');
+});
+
+/** the converging-ladder run, with the clock driven from the test: after provider call
+ * `advanceAt` it jumps by `advanceBy`. `go` pins the wallet flat ($1.50 throughout), so
+ * the meter here is purely TIME-driven — which is what lets one fixture produce both
+ * arms: past the wall (advanceBy > the cap) and short of it (a share over the threshold
+ * with time still left). Returns the run PLUS every prompt actually bought, because the
+ * drafting call is the thing under test and counting the harness's own invocations is
+ * the only way to observe a call that was never made. */
+async function ladderWallRun(t, { advanceAt, advanceBy }) {
   const wd = makeConvergingPatient(t);
   const clk = fakeClock();
-  let n = 0;
   const script = [
     { text: 'scout' },
     { text: LADDER_PLAN(wd) },
     ...iterWrites(wd, ['TODO TODO TODO\n', 'TODO TODO\n', 'TODO\n', 'clean\n']),
   ];
-  // the replan's draft, once the meter stops the (still converging) first step
+  // the replan's draft, offered at the point the meter stops the (still converging)
+  // first step. OFFERED, not consumed: whether the run buys it is the claim.
   script.splice(6, 0, { text: LADDER_PLAN(wd, { id: 'second-go' }) });
+  /** @type {string[]} every prompt this run actually bought, in order */
+  const bought = [];
   const provider = {
     name: 'wall-mid-convergence',
-    async generate() {
-      n += 1;
-      const s = script[n - 1] ?? { text: 'never bought' };
-      // the clock is spent right after iteration 2's summary round, with the error
+    async generate(/** @type {any[]} */ messages) {
+      const s = script[bought.length] ?? { text: 'never bought' };
+      bought.push(String(messages.at(-1)?.content ?? ''));
+      // the clock jumps right after iteration 2's summary round, with the error
       // count still falling — progress is real and the clock wins anyway
-      if (n === 6) clk.advance(700_000);
+      if (bought.length === advanceAt) clk.advance(advanceBy);
       return { text: s.text ?? '', toolCalls: s.toolCalls ?? [], usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
     },
   };
-  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now, capRuns: 4 });
+  const run = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now, capRuns: 4 });
+  return { ...run, bought };
+}
+
+/** the DRAFTING calls this run bought, counted off the harness's own record of what
+ * reached the provider — never a hardcoded call index, which silently retargets the
+ * moment the number of rounds changes (the F37 class) */
+const draftCalls = (bought) => bought.filter((p) => p.includes('DRAFT-PLAN'));
+
+test('LADDER (e) WALL beats progress: an expired clock ends a CONVERGING ladder at the STOP ITSELF — the doomed replan is never funded (hamr: past the wall no new step starts)', async (t) => {
+  // 700s past a 600s cap: the wall is CROSSED while the step is still converging
+  const { outcome, events, bought } = await ladderWallRun(t, { advanceAt: 6, advanceBy: 700_000 });
 
   assert.equal(outcome, 'wall-halt', 'time ran out — progress does not buy time the operator did not sign');
   const reads = events.filter((e) => e.type === 'ladder');
   assert.deepEqual(reads.map((e) => e.strike), [false, false],
     'the ladder struck NOTHING: every gap moved and every iteration wrote — the clock alone stopped this run');
-  assert.equal(stepIterations(events).length, 3,
-    'iteration 3 opened and was refused at its head — the ladder never got to say whether it should continue');
   assert.equal(events.filter((e) => e.type === 'escalation')[0].category, 'step-variance',
     'a step ALREADY RUNNING when the deadline passes is stopped by the meter, exactly as before');
 
-  // …and the replanned step, which would BEGIN past the deadline, is never funded:
-  // the step-site W-2 check, whose record now carries the ladder's state
+  // THE CLAIM. The replan draft was offered by the script and never bought: past the
+  // deadline the whole cycle is doomed — the redraft is paid for, its first step is
+  // refused at its own head, and the run wall-halts anyway (u-msmt91t3 paid for that).
+  assert.equal(events.filter((e) => e.type === 'replan').length, 0, 'no replan is funded past the wall');
+  assert.equal(events.filter((e) => e.type === 'plan-accepted').length, 1, 'the ONE plan this run drafted is the one it ran');
+  assert.equal(draftCalls(bought).length, 1, `the drafter was called ONCE (the original plan) and never again — bought ${bought.length} call(s)`);
+  assert.ok(!bought.some((p) => p.includes('What happened when the previous plan ran')),
+    'and no replan brief was ever composed, let alone paid for');
+
+  // the wall-halt is minted at the meter's OWN stop now — the same package the D1
+  // terminal builds, at the step that was actually running
   const wh = events.filter((e) => e.type === 'wall-halt').at(-1);
-  assert.equal(wh.phase, 'step:second-go');
-  assert.equal(wh.cutMidCall, false, 'read between attempts with no call in flight');
-  assert.equal(wh.strikes, 0, 'the record carries the state that was actually governing the ladder');
-  assert.equal(wh.strikeLimit, 2);
-  assert.equal(wh.distinctGaps, 0, 'a step refused at its head has judged nothing — zero is the true reading here');
+  assert.equal(wh.phase, 'step:shrink-errors', 'the step the clock actually stopped, not a successor that never began');
+  assert.equal(wh.cutMidCall, false, 'read between attempts with no call in flight — the money figure stays EXACT');
+  assert.equal(wh.stepsDone, 0, 'no step of this plan finished');
   assert.equal(wh.capRuns, undefined, 'never a field name meaning something it no longer measures');
   assert.equal(wh.stepAttemptCap, undefined);
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'wall-halt', 'the escalation names the same category the outcome does (F11)');
+  assert.match(esc.options.join(' | '), /maxWallMs/, 'and the human is handed the wall\'s own levers');
+});
+
+test('LADDER (e) CONTROL: the SAME converging ladder with time on the clock still buys its replan — the gate costs a healthy run nothing', async (t) => {
+  // Identical fixture, and the meter fires at the SAME point for the same reason — the
+  // clock jumps 400s of a 600s cap, so the step's time share clears the threshold with
+  // 200s still on the wall. The one difference is that the deadline is not crossed.
+  // Without this arm the guard could be an unconditional "never replan on variance"
+  // and nothing above would notice.
+  const { outcome, events, bought } = await ladderWallRun(t, { advanceAt: 6, advanceBy: 400_000 });
+
+  const replans = events.filter((e) => e.type === 'replan');
+  assert.equal(replans.length, 1, 'the meter still stops the step and the planner still re-allocates');
+  assert.equal(replans[0].trigger, 'step-variance');
+  assert.equal(draftCalls(bought).length, 2, 'the replan draft IS bought when the run has time to spend it');
+  assert.equal(events.filter((e) => e.type === 'plan-accepted').length, 2, 'draft + replan');
+  assert.equal(events.filter((e) => e.type === 'wall-halt').length, 0, 'and no time record on a run that never ran out of time');
+  assert.equal(outcome, 'green', 'the replanned step ran on the time it had left and the close greened — the doomed-replan guard costs a healthy run nothing');
+});
+
+// ---- W-2 EXTENDED to the LADDER's stop (hamr: "extend", 2026-08-10) ------------
+// The variance terminal was the trigger measured on u-msmt91t3, but the cap-halt
+// trigger — attempt exhaustion with money still on the table — is its exact sibling:
+// it too minted `step-red:<id>` whatever the clock said. Same class (a governance
+// stop wearing a capability label), same fix, same one emission site.
+
+/** an IDLE-worker run: the worker writes nothing, so the ladder strikes twice and
+ * ralph ends the step with the `cap-halt` (exhaustion) trigger — money untouched.
+ * The clock jumps after the provider call named by `advanceAt`, which is iteration 2's
+ * round: the deadline lands INSIDE the final attempt, so the meter's head check never
+ * sees it and the LADDER is what names the stop. */
+async function idleLadderRun(t, { advanceAt, advanceBy }) {
+  const wd = makeConvergingPatient(t);
+  const clk = fakeClock();
+  const script = [
+    { text: 'scout notes' },
+    { text: LADDER_PLAN(wd) },
+    { text: 'thinking about it' },   // iteration 1: text only → strike 1
+    { text: 'still thinking' },      // iteration 2: text only → strike 2, the step ends
+    { text: LADDER_PLAN(wd, { id: 'second-go' }) },  // OFFERED; bought only if a replan is funded
+    { text: 'the replanned step is idle too' },
+  ];
+  /** @type {string[]} */
+  const bought = [];
+  const provider = {
+    name: 'idle-ladder',
+    async generate(/** @type {any[]} */ messages) {
+      const s = script[bought.length] ?? { text: 'never bought' };
+      bought.push(String(messages.at(-1)?.content ?? ''));
+      if (bought.length === advanceAt) clk.advance(advanceBy);
+      return { text: s.text ?? '', toolCalls: s.toolCalls ?? [], usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const run = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now, capRuns: 4 });
+  return { ...run, bought };
+}
+
+test('W-2 EXTENDED (cap-halt trigger): a step the LADDER ends past the wall is a wall-halt, never a step-red — the sibling of the variance terminal, same class and same emission', async (t) => {
+  // the deadline lands during iteration 2, so the ladder — not the meter — names the
+  // stop, and the wallet is untouched (this is the money-left arm, the one that minted
+  // `step-red` whatever the clock said)
+  const { outcome, events, bought } = await idleLadderRun(t, { advanceAt: 4, advanceBy: 700_000 });
+
+  assert.equal(events.filter((e) => e.type === 'variance').length, 0,
+    'the METER never fired — otherwise this exercises the variance path and proves nothing about its sibling');
+  assert.equal(events.filter((e) => e.type === 'escalation')[0].category, 'cap-halt',
+    'ralph named the stop exhaustion (cap-halt), which is the trigger under test');
+  assert.equal(outcome, 'wall-halt', 'money was left on the table — what ended this run was the clock');
+
+  assert.equal(events.filter((e) => e.type === 'replan').length, 0, 'no doomed replan is funded past the wall, whichever trigger asked for it');
+  assert.equal(draftCalls(bought).length, 1, `the drafter was called ONCE and never again — bought ${bought.length} call(s)`);
+
+  const wh = events.filter((e) => e.type === 'wall-halt').at(-1);
+  assert.equal(wh.phase, 'step:shrink-errors');
+  assert.equal(wh.cutMidCall, false, 'read with nothing in flight — the money figure stays EXACT');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'wall-halt', 'the outcome and the escalation name the same category (F11)');
+  assert.match(esc.detail, /The ladder ended the step first/, 'the instrument that named the stop first is kept, not discarded by the re-route');
+  assert.match(esc.options.join(' | '), /maxWallMs/);
+});
+
+test('W-2 EXTENDED CONTROL (cap-halt trigger): the SAME idle ladder with time on the clock still replans and still ends step-red — the extension costs a healthy run nothing', async (t) => {
+  const { outcome, events, bought } = await idleLadderRun(t, { advanceAt: 4, advanceBy: 400_000 });
+
+  assert.equal(events.filter((e) => e.type === 'replan').length, 1, 'exhaustion with funds and time left still buys the one replan');
+  assert.equal(draftCalls(bought).length, 2, 'and the redraft IS bought');
+  assert.match(outcome, /^step-red:/, 'the second exhaustion is a capability stop, and with time on the clock it keeps that name');
+  assert.equal(events.filter((e) => e.type === 'wall-halt').length, 0, 'no time record on a run that never ran out of time');
+});
+
+test('W-2 EXTENDED, the PRECEDENCE: both allowances gone at once reports the MONEY cut — the clock is read inside the money-left arm only', async (t) => {
+  // The deliberate ordering, pinned because it is a decision and not an accident: the
+  // clock re-read lives INSIDE the `remainingUsd() > MONEY_MIN` arm. A drained wallet
+  // keeps its own `cap-halt` terminal even past the deadline, because money is the
+  // allowance actually blocking that run — a wall-halt readout here would hand the
+  // human "raise maxWallMs and rerun" straight into an immediate money cut. Both stops
+  // are governance stops and both are resumable; only the LEVERS differ, and the levers
+  // are the whole point of a decision-ready halt.
+  const wd = makePatient(t);
+  const clk = fakeClock();
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'nope\n' })] },
+    { text: 'attempt' },
+  ]);
+  const { events, emit } = collector();
+  const job = JOB(wd, { maxWallMs: 600_000 });
+  const jv = validateJob(job);
+  const startedAt = clk.now();
+  let calls = 0;
+  // The money-halt fixture, verbatim (ample for scout + drafter construction, drained
+  // from the step worker onward) plus the wall: the deadline passes on the read that
+  // follows the money gate's own trip, so the run reaches the cap-halt terminal with
+  // BOTH allowances gone. Keyed to the wallet's read counter rather than a provider
+  // call because the money gate is what this arm is about.
+  const remainingUsd = () => { calls += 1; if (calls === 6) clk.advance(700_000); return calls <= 2 ? 1.5 : 0.0001; };
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 3, remainingUsd, now: clk.now });
+
+  assert.ok(clk.now() - startedAt >= job.maxWallMs, 'the fixture really did cross the wall, or this pins nothing');
+  assert.equal(outcome, 'cap-halt', 'the drained wallet keeps its own terminal — money is not re-labelled as time');
+  const money = events.filter((e) => e.type === 'money-halt').at(-1);
+  assert.ok(money, 'and the human gets the MONEY readout');
+  assert.match(money.options.join(' | '), /budgetUsd/, 'with the money levers, not the wall\'s');
+  assert.equal(events.filter((e) => e.type === 'replan').length, 0, 'no replan against a drained wallet, past the wall or not');
+});
+
+test('W-2 NOT extended to the STALL trigger: a stall past the wall keeps its OWN name — re-routing it to wall-halt would drop the F44 spend FLOOR run.js keys on that outcome', async (t) => {
+  // The third replan trigger is deliberately NOT in the class. It never minted
+  // `step-red` in the first place (it falls to the tail that returns the category
+  // verbatim), and `step-stalled` is load-bearing one level up: src/run.js keys
+  // `spendComplete: false` on it, because every abandoned-and-reissued call may already
+  // have been billed. Calling it a wall-halt would report an exact-looking total for a
+  // run whose spend is only a floor — F6 in a self-heal coat.
+  const wd = makePatient(t);
+  const clk = fakeClock();
+  const script = [
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    { text: 'unreachable — the step call stalls' },
+    { text: PLAN(wd, [{ id: 'second-go', action: 'Write it properly.', tools: ['write'], rounds: 4, target: 'tests/test_x.mjs', exit: [{ type: 'artifact-written', path: 'tests/test_x.mjs', pattern: 'ok' }] }]) },
+  ];
+  /** @type {string[]} */
+  const bought = [];
+  const provider = {
+    name: 'stall-past-wall',
+    async generate(/** @type {any[]} */ messages) {
+      const s = script[bought.length] ?? { text: 'never bought' };
+      bought.push(String(messages.at(-1)?.content ?? ''));
+      // the wall passes on the call that then stalls: the fuse gives up past the deadline
+      if (bought.length === 3) { clk.advance(700_000); throw Object.assign(new Error('the model stopped producing rounds'), { category: 'step-stalled' }); }
+      return { text: s.text ?? '', toolCalls: s.toolCalls ?? [], usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+    },
+  };
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000 }), now: clk.now, capRuns: 3 });
+
+  assert.equal(outcome, 'step-stalled', 'it rides out under its own name — never step-red, and never re-labelled wall-halt');
+  assert.equal(events.filter((e) => e.type === 'escalation').at(-1).category, 'step-stalled',
+    'the outcome and the escalation still agree (F11)');
+  assert.equal(events.filter((e) => e.type === 'wall-halt').length, 0,
+    'and no wall-halt record is minted for it — the extension stops exactly where the class does');
+  // the doomed replan is still not funded, which is the half of the ruling that DOES apply
+  assert.equal(events.filter((e) => e.type === 'replan').length, 0, 'past the wall no new step starts, whichever trigger asked');
+  assert.equal(draftCalls(bought).length, 1, 'so the redraft was never bought');
 });
 
 

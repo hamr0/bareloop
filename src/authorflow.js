@@ -81,8 +81,8 @@ import {
   GENRE_LANGUAGES, TYPES_GENRE_TEMPLATE, classGuards, genreEnv, genreOwnedEnvNames, genreInstruments,
   validateDeclaration, envCapableKind, VERDICT_CLASSES, LIVE_CLASSES,
 } from './authoring.js';
-import { buildSeedListing, cleanEntry } from './authorscout.js';
-import { extractArtifact, priceOf, scrubRaw } from './text.js';
+import { buildSeedListing, cleanEntry, SURVEY_CAUSES } from './authorscout.js';
+import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop } from './text.js';
 import { redactSecrets } from './validate.js';
 
 const require = createRequire(import.meta.url);
@@ -510,12 +510,20 @@ THE PARSER reads ONE number out of a command's output, as signed arithmetic over
  *
  * It states the MECHANISM (pipe, not a terminal) rather than only the answer,
  * because the same trap is waiting behind every tool that pretty-prints for a
- * human, and only some of them are in the table yet.
+ * human, and only some of them are in the table yet. That prediction has since
+ * been paid off by measurement: `node --test` prints TAP down a pipe and the
+ * spec reporter on a terminal, the identical flip, on a second tool.
+ *
+ * Each row also carries its `capture`, because a count term and a tally term are
+ * read by DIFFERENT aggregates and the wrong pairing is a silent misreading, not
+ * an error — `first` over a line the tool omits on a good run reports a broken
+ * instrument. The block states that mapping once rather than per row.
  * @param {string} lang
  */
 export function instrumentsBlock(lang) {
   const rows = genreInstruments(lang).map((i) => `- ${i.id} — ${i.what}\n`
     + `    lineMatch: ${i.lineMatch}\n`
+    + `    capture: ${i.capture === null ? 'null' : i.capture}\n`
     + `    a REAL captured line: ${i.example}\n`
     + `    why this spelling: ${i.why}`);
   return `KNOWN INSTRUMENTS — how this genre's own tools PRINT, fixed by the genre, not yours to decide
@@ -526,8 +534,15 @@ The patterns below are MEASURED against real captured output of this genre's too
 
 Where a stage of yours counts one of these, use its lineMatch EXACTLY as written — a pattern you
 compose yourself for one of these tools is a pattern for output that never arrives, and a term that
-matches nothing does not report a small number, it reports a broken instrument. None of these has a
-capture group: each TALLIES one per matching line rather than reading a figure the tool printed.
+matches nothing does not report a small number, it reports a broken instrument.
+
+Each row states its own capture, and that choice decides the aggregate:
+  capture: null   the term TALLIES one per matching line. Use aggregate "sum" — over no matching
+                  lines that is a legitimate counted zero.
+  capture: <n>    the term reads the FIGURE the tool printed, out of that group. Use aggregate
+                  "first" — and note that no match at all then means the tool never reported the
+                  number, which is a broken instrument, never a zero. A count is listed this way
+                  only where the tool prints the line even when the number is zero.
 
 ${rows.join('\n\n')}
 
@@ -897,7 +912,8 @@ export function resolveSourcePrefixes({ workdir, sourcePaths, seedFiles }) {
  * run could not be read afterwards. A cost entry with no raw beside it is that
  * run again.
  */
-export function makeCostBook() {
+/** @param {{ceilingUsd?: number|null}} [o] the OPERATOR's ceiling; `null`/absent is UNBOUNDED */
+export function makeCostBook({ ceilingUsd = null } = {}) {
   /** @type {{label: string, costUsd: number|null, unpricedRounds: number}[]} */
   const entries = [];
   /** @type {ReturnType<typeof scrubRaw>[]} */
@@ -916,19 +932,19 @@ export function makeCostBook() {
      * `report().calls`, because both are readings of one list */
     raws() { return raws.map((w) => ({ ...w })); },
     report() {
-      const known = entries.reduce((a, e) => a + (typeof e.costUsd === 'number' ? e.costUsd : 0), 0);
-      const nullCostCalls = entries.filter((e) => e.costUsd === null).length;
-      const unpricedRounds = entries.reduce((a, e) => a + (e.unpricedRounds || 0), 0);
-      const spendComplete = nullCostCalls === 0 && unpricedRounds === 0;
-      return {
-        costUsd: spendComplete ? Number(known.toFixed(6)) : null,
-        knownUsd: Number(known.toFixed(6)),
-        spendComplete,
-        nullCostCalls,
-        unpricedRounds,
-        calls: entries.map((e) => ({ ...e })),
-      };
+      return { ...tallyCalls(entries), calls: entries.map((e) => ({ ...e })) };
     },
+    /**
+     * THE CEILING'S OWN READING, asked between metered calls. The book is the one
+     * place this pipeline's spend accumulates, so it is the one place that can
+     * answer honestly — and it answers through the shared predicate rather than a
+     * second hand-spelled comparison (`src/text.js`, beside `priceOf`).
+     * @returns {'cap-halt'|'pricing-red'|null}
+     */
+    capStop() { return capStop({ ceilingUsd, ...tallyCalls(entries) }); },
+    /** what was set, stated — `null` is "nobody set one", which is UNBOUNDED and
+     * a visible operator choice, never a defaulted number */
+    ceilingUsd,
   };
 }
 
@@ -983,6 +999,16 @@ async function askDeclaration({ messages, generate, mode, retries, label, book, 
   let red = null;
 
   for (let attempt = 0; attempt <= retries; attempt += 1) {
+    // THE CEILING, immediately before the paid call and nowhere else. Sited HERE
+    // rather than in the revise loop because this is where every declaration call
+    // is actually made: the author call, each revise, AND each malformed-emission
+    // retry. The retry axis is the one that matters most — it fires exactly when
+    // the model is malforming, which is the worst moment for a paid loop to be
+    // unbounded. `attempts` is returned as-is so the caller can tell a cap that
+    // tripped before this ask began (0) from one that cut a retry ladder short.
+    const halt = book.capStop();
+    if (halt) return { declaration: null, attempts, convo, raw: '', providerError: null, red: null, budget: halt };
+
     /** @type {{calls: any[]}} */
     const box = { calls: [] };
     const tools = mode === 'tool' ? [declarationTool(box, { catalogue })] : [];
@@ -992,11 +1018,11 @@ async function askDeclaration({ messages, generate, mode, retries, label, book, 
     const raw = redactSecrets(String(r?.text ?? ''));
 
     if (r?.error) {
-      return { declaration: null, attempts, convo, raw, providerError: String(r.error), red: null };
+      return { declaration: null, attempts, convo, raw, providerError: String(r.error), red: null, budget: null };
     }
 
     if (mode === 'tool') {
-      if (box.calls.length === 1) return { declaration: box.calls[0], attempts, convo, raw, providerError: null, red: null };
+      if (box.calls.length === 1) return { declaration: box.calls[0], attempts, convo, raw, providerError: null, red: null, budget: null };
       red = {
         code: 'artifact-red',
         path: DECLARATION_TOOL_NAME,
@@ -1010,7 +1036,7 @@ async function askDeclaration({ messages, generate, mode, retries, label, book, 
       // parser, never a second one.
       const { code, red: extractRed } = extractArtifact(raw);
       if (code) {
-        try { return { declaration: JSON.parse(code), attempts, convo, raw, providerError: null, red: null }; }
+        try { return { declaration: JSON.parse(code), attempts, convo, raw, providerError: null, red: null, budget: null }; }
         catch (e) { red = { code: 'artifact-red', path: 'declaration', detail: `the declaration did not parse as JSON: ${String(/** @type {any} */ (e)?.message ?? e)}`, axis: 'unparseable-json' }; }
       } else {
         red = { code: 'artifact-red', path: 'declaration', detail: `no artifact in the reply: ${extractRed}`, axis: 'no-artifact' };
@@ -1023,7 +1049,7 @@ async function askDeclaration({ messages, generate, mode, retries, label, book, 
       convo.push({ role: 'user', content: `${block}\n\n${mode === 'tool' ? STRUCTURE_INSTRUCTION_TOOL : STRUCTURE_INSTRUCTION_TEXT}` });
     }
   }
-  return { declaration: null, attempts, convo, raw: '', providerError: null, red };
+  return { declaration: null, attempts, convo, raw: '', providerError: null, red, budget: null };
 }
 
 /**
@@ -1054,9 +1080,11 @@ async function askDeclaration({ messages, generate, mode, retries, label, book, 
  *
  * @param {{workdir: string, seedRef: string, lang: string, verdictType: string,
  *   answers: Record<string|number, string>, questions?: Record<string|number, string>,
- *   scout: {state: string, facts: any, reason?: string|null, calls?: any[], raws?: any[]},
+ *   scout: {state: string, facts: any, reason?: string|null, cause?: string|null, calls?: any[], raws?: any[],
+ *     budgetStop?: 'cap-halt'|'pricing-red'|null},
  *   listing?: {stop: string|null, files: string[]|null, block: string|null, meta: any}|null,
  *   generate: Function, seedReadFn?: Function, closeCtx?: any,
+ *   ceilingUsd?: number|null,
  *   maxRevisions?: number, structureRetries?: number,
  *   structuredMode?: 'tool'|'text', catalogue?: Record<string, any>}} o
  */
@@ -1065,6 +1093,7 @@ export async function authorClose({
   answers, questions = GREEN_QUESTIONS,
   scout, listing = null,
   generate, seedReadFn = runSeedReadStages, closeCtx = {},
+  ceilingUsd = null,
   maxRevisions = MAX_REVISIONS,
   structureRetries = MAX_STRUCTURE_RETRIES,
   structuredMode = 'tool',
@@ -1083,7 +1112,13 @@ export async function authorClose({
   // ceiling. Floor 0, exactly as above: `askDeclaration` loops `attempt <= retries`,
   // so 0 is still ONE attempt with no retry — a legal tighter ask, not an absent one.
   const retryCap = Math.max(0, Math.min(Math.trunc(Number(structureRetries)) || 0, MAX_STRUCTURE_RETRIES));
-  const book = makeCostBook();
+  // THE OPERATOR'S CEILING — NO DEFAULT, and none is invented here. `null` means
+  // nobody set one, which is UNBOUNDED: a defaulted cap is a silent second
+  // ceiling, and the run path already paid for that lesson twice (`maxWallMs` has
+  // no default for exactly this reason, and `shellCapUsd` left off judged against
+  // a number nobody chose). An unbounded authoring run is legal; it is just never
+  // an accident, which is why the driver PRINTS it.
+  const book = makeCostBook({ ceilingUsd });
   // The scout's calls AND its raws, together. The raws matter most on the path
   // that spends nothing more: run mslhn707 refused at the $0 preflight below,
   // and the survey text that would have said WHY died with the process.
@@ -1101,6 +1136,40 @@ export async function authorClose({
   // special facts are needed". This one lands in a SIGNED artefact.
   if (scout?.state !== 'PRESENT' || !scout.facts || typeof scout.facts !== 'object'
       || Object.keys(scout.facts).length === 0) {
+    // A SURVEY THE CEILING STOPPED IS NOT A SURVEY THAT FAILED. The scout carries
+    // its own governance stop, and when it is set that is the honest name for why
+    // the facts are missing — the same rule W-2 settled for the clock (a time-stop
+    // is NAMED a time-stop). `scout-absent` sends the operator to the scout; a
+    // cap-halt sends them to the number they set, which is the one that moves.
+    if (scout?.budgetStop) {
+      // A CONCURRENT CAUSE IS CONCEDED, NEVER DENIED. The ceiling can refuse the
+      // reserved recovery round for a call that ALSO died on transport, and both
+      // are then true at once. "not on anything it read" would deny the very
+      // error the same sentence goes on to quote, and this red carries
+      // `path: budgetUsd` — so the operator is steered to raise a ceiling into a
+      // dead socket, which is the one lever that cannot repair it. The stop
+      // itself does not move: the ceiling did bind, and naming the second cause
+      // is attribution, not routing.
+      //
+      // The transport death is not the only second cause. The ceiling also
+      // refuses the recovery round behind a SHORT/EMPTY reply, and the retry
+      // behind an EMPTY/UNPARSEABLE one — every cause except NOT_FUNDED means a
+      // real call produced the reason being quoted, so "not on anything it
+      // read" is honest ONLY when no call was ever made.
+      const alsoDied = scout?.cause === SURVEY_CAUSES.CALL_FAILED;
+      const alsoIncomplete = !alsoDied && scout?.cause != null && scout.cause !== SURVEY_CAUSES.NOT_FUNDED;
+      return refuse([{
+        code: scout.budgetStop,
+        path: 'budgetUsd',
+        detail: alsoDied
+          ? 'the authoring ceiling bound here AND the survey call itself failed — both are true, and raising the '
+            + `ceiling will not repair the second: ${redactSecrets(String(scout.reason ?? ''))}`
+          : alsoIncomplete
+            ? 'the authoring ceiling bound here AND the survey came back incomplete — both are true: the ceiling '
+              + `refused the round that could have repaired it: ${redactSecrets(String(scout.reason ?? ''))}`
+            : `the survey stopped on the authoring ceiling, not on anything it read: ${redactSecrets(String(scout.reason ?? ''))}`,
+      }], scout.budgetStop);
+    }
     return refuse([{
       code: 'scout-absent',
       path: 'scout',
@@ -1202,12 +1271,55 @@ export async function authorClose({
   /** @type {{stage: string, name: string}[]} */
   let droppedEnv = [];
 
+  /**
+   * THE GOVERNANCE STOP'S OWN RED. It names the CAP and the SPEND, because the
+   * operator's next move is a NUMBER — resume-to-cap is the shipped lever (the
+   * stop IS the checkpoint), and a stop that reports neither side of the
+   * comparison cannot be acted on. It is a governance stop, never an error: the
+   * partial artifacts stay exactly where they are, nothing retries, and nothing
+   * about the close itself is being judged here.
+   * @param {'cap-halt'|'pricing-red'} code
+   * @returns {Red}
+   */
+  const capRed = (code) => {
+    const c = book.report();
+    const spent = `$${c.knownUsd.toFixed(6)} across ${c.calls.length} metered call(s)`;
+    return code === 'pricing-red'
+      ? {
+        code,
+        path: 'budgetUsd',
+        detail: `the authoring ceiling cannot be enforced: ${c.nullCostCalls} unpriced call(s) and ${c.unpricedRounds} `
+          + `unpriced round(s) make the total unknown, against a $${ceilingUsd} ceiling (${spent} is the KNOWN half). `
+          + 'Unpriced is never free (F6) — a cap that cannot see the spend cannot govern it, so the run stops rather '
+          + 'than spending against a floor that reads as exact.',
+      }
+      : {
+        code,
+        path: 'budgetUsd',
+        detail: `the authoring ceiling is spent: ${spent} against a $${ceilingUsd} ceiling. The next call was never `
+          + 'made — the cap binds BETWEEN calls, so nothing was cut off mid-flight and everything paid for is on '
+          + 'disk. The stop IS the checkpoint: raise the ceiling and re-run, or read what is here and stop.',
+      };
+  };
+
   const seedTrees = makeSeedTrees();
   try {
     for (let i = 0; i <= revisionCap; i += 1) {
       const label = i === 0 ? 'author' : `revise-${i}`;
       const ask = await askDeclaration({ messages, generate, mode: structuredMode, retries: retryCap, label, book, catalogue });
       messages = ask.convo;
+
+      // The cap tripped BEFORE this ask made any call at all, so there is no
+      // iteration to record: an iteration row for a call that never happened is
+      // the blind-instrument class one field wide (`ralph` already pays for the
+      // sibling of this — a governance stop narrated for a loop it never
+      // entered). A ladder cut SHORT is the other case and falls through: those
+      // calls did happen, so the row stays and the stop is read after it.
+      if (ask.budget && ask.attempts === 0) {
+        fatal = [capRed(ask.budget)];
+        stop = ask.budget;
+        break;
+      }
       /** @type {any} */
       const iter = {
         call: label, attempts: ask.attempts, declaration: ask.declaration ?? null,
@@ -1215,6 +1327,17 @@ export async function authorClose({
         validation: null, seedRead: null, reviseTurn: null,
       };
       iterations.push(iter);
+
+      // A retry ladder cut short by the cap. The money stop OUTRANKS the artifact
+      // red that was in flight: the artifact red says the model malformed, the cap
+      // says we stopped paying to find out — and only the second one is why the
+      // loop ended. Reporting the first would send the operator to the model when
+      // the fact is the wallet.
+      if (ask.budget) {
+        fatal = [capRed(ask.budget)];
+        stop = ask.budget;
+        break;
+      }
 
       if (ask.providerError) {
         // a transport failure is a casualty, never evidence about the model — and

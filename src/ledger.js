@@ -75,7 +75,11 @@ const EXCLUDED_ESCALATIONS = new Set([
   // real upstream ask would be sourced from anyway.
   'step-stalled',
   'step-variance',      // A's replan trigger: a planning story, never a lib bug
-  'gate-red',           // governance working as intended
+  // Governance working as intended — and no longer minted anywhere in this tree
+  // (a denial streak is a bounded attempt, not a terminal). Kept listed because
+  // this set is the EXECUTABLE excluded-set: dropping a name does not delete the
+  // category, it re-files any future emission of it as a counted capability gap.
+  'gate-red',
   'smoke-red',          // already counted via primitive-smoke
   'hitl-close',         // by design: a human is the close
   'close-unsupported',  // honest refusal, by design

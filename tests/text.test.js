@@ -7,7 +7,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractArtifact, priceOf } from '../src/text.js';
+import { extractArtifact, priceOf, tallyCalls, capStop } from '../src/text.js';
 
 const CODE = 'export function sum(a, b) { return a + b; }';
 
@@ -113,4 +113,91 @@ test('priceOf: no metrics → legacy cost, and no cost at all → the honest nul
   assert.deepEqual(priceOf({ cost: 0.3 }), { costUsd: 0.3, unpricedRounds: 0 });
   assert.deepEqual(priceOf({}), { costUsd: null, unpricedRounds: 0 });
   assert.deepEqual(priceOf(null), { costUsd: null, unpricedRounds: 0 });
+});
+
+// ---- tallyCalls + capStop: the ONE money-ceiling predicate ----
+// The authoring pipeline meters two populations of paid call (the survey's and
+// the declaration's) in two different accumulators. One predicate reads both, so
+// "am I over the ceiling?" cannot be answered two ways by two modules — the same
+// reason priceOf above exists at all.
+
+test('tallyCalls: priced calls sum, and ONE unpriced call makes the total unknown (F6)', () => {
+  assert.deepEqual(tallyCalls([
+    { label: 'a', costUsd: 0.03, unpricedRounds: 0 },
+    { label: 'b', costUsd: 0.01, unpricedRounds: 0 },
+  ]), { costUsd: 0.04, knownUsd: 0.04, spendComplete: true, nullCostCalls: 0, unpricedRounds: 0 });
+
+  const blind = tallyCalls([
+    { label: 'a', costUsd: 0.03, unpricedRounds: 0 },
+    { label: 'b', costUsd: null, unpricedRounds: 0 },
+  ]);
+  assert.equal(blind.costUsd, null, 'unknown is reported as unknown, never as the priced half');
+  assert.equal(blind.knownUsd, 0.03, 'and the priced half is still stated, explicitly');
+  assert.equal(blind.spendComplete, false);
+  assert.equal(blind.nullCostCalls, 1);
+
+  const partial = tallyCalls([{ label: 'a', costUsd: 0.03, unpricedRounds: 2 }]);
+  assert.equal(partial.costUsd, null, 'a priced call with unpriced ROUNDS is an under-count, not a total');
+  assert.equal(partial.unpricedRounds, 2);
+});
+
+test('tallyCalls: no calls is a complete $0 — nothing spent is knowable, not unknown', () => {
+  assert.deepEqual(tallyCalls([]), { costUsd: 0, knownUsd: 0, spendComplete: true, nullCostCalls: 0, unpricedRounds: 0 });
+  assert.deepEqual(tallyCalls(null), { costUsd: 0, knownUsd: 0, spendComplete: true, nullCostCalls: 0, unpricedRounds: 0 });
+});
+
+test('capStop: NO ceiling is UNBOUNDED — the predicate never fires, at any spend or any blindness', () => {
+  // an absent ceiling is a visible operator choice (the maxWallMs precedent), so
+  // there is nothing here to enforce and unpriced spend is merely reported
+  assert.equal(capStop({ ceilingUsd: null, knownUsd: 9999, spendComplete: true }), null);
+  assert.equal(capStop({ ceilingUsd: undefined, knownUsd: 9999, spendComplete: false }), null);
+});
+
+test('capStop: under the ceiling with COMPLETE spend is the only way through', () => {
+  assert.equal(capStop({ ceilingUsd: 1, knownUsd: 0, spendComplete: true }), null);
+  assert.equal(capStop({ ceilingUsd: 1, knownUsd: 0.999999, spendComplete: true }), null);
+});
+
+test('capStop: known spend AT or OVER the ceiling is a cap-halt', () => {
+  assert.equal(capStop({ ceilingUsd: 1, knownUsd: 1, spendComplete: true }), 'cap-halt',
+    'at the cap is spent — the next call is the one that breaches it');
+  assert.equal(capStop({ ceilingUsd: 1, knownUsd: 1.5, spendComplete: true }), 'cap-halt');
+  assert.equal(capStop({ ceilingUsd: 0, knownUsd: 0, spendComplete: true }), 'cap-halt',
+    'a zero ceiling funds nothing, and says so rather than funding one call');
+});
+
+test('capStop: spend that cannot be KNOWN stops on its own axis — unpriced is never $0 (F6)', () => {
+  assert.equal(capStop({ ceilingUsd: 1, knownUsd: 0.01, spendComplete: false }), 'pricing-red',
+    'a ceiling that cannot see the spend cannot enforce it honestly');
+});
+
+test('capStop: a MALFORMED ceiling is an error, never a silent UNBOUNDED (PRD v1.62)', () => {
+  // The library seam is the one the CLI's guard cannot cover: `parseCeiling` lives
+  // in scripts/author-readout.mjs and the UNBOUNDED banner is printed by the
+  // runner, so an adopter calling `authorClose({ceilingUsd: '2.50'})` used to buy
+  // a paid pipeline with NOTHING enforcing the ceiling it just set — the advertised
+  // ceiling and the enforced ceiling must be the same ceiling, and here they were
+  // a number and no number. F6's rule in its ceiling form: unknown is never
+  // laundered into "free".
+  for (const bad of ['2.50', '', '$5', NaN, Infinity, -Infinity, true, {}, [2.5]]) {
+    assert.throws(() => capStop({ ceilingUsd: /** @type {any} */ (bad), knownUsd: 9999, spendComplete: true }),
+      /finite number of dollars or null/,
+      `${JSON.stringify(bad) ?? String(bad)} must not read as UNBOUNDED`);
+  }
+});
+
+test('capStop: the guard admits exactly the two legal shapes it always admitted', () => {
+  // the contrast that makes the throw above a guard rather than a wall: an
+  // EXPLICIT absence is still unbounded, and a finite number still governs
+  assert.equal(capStop({ ceilingUsd: null, knownUsd: 9999, spendComplete: true }), null);
+  assert.equal(capStop({ ceilingUsd: undefined, knownUsd: 9999, spendComplete: true }), null);
+  assert.equal(capStop({ ceilingUsd: 2.5, knownUsd: 0, spendComplete: true }), null);
+  assert.equal(capStop({ ceilingUsd: 2.5, knownUsd: 2.5, spendComplete: true }), 'cap-halt');
+});
+
+test('capStop: a breach that is CERTAIN outranks a blindness that is not — cap-halt wins', () => {
+  // known spend alone is already at the ceiling, so the unknown remainder cannot
+  // change the answer; naming this pricing-red would send the operator to price a
+  // call when the actual fact is that the money is gone
+  assert.equal(capStop({ ceilingUsd: 1, knownUsd: 1.2, spendComplete: false }), 'cap-halt');
 });

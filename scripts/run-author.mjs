@@ -17,7 +17,19 @@
 //
 //   node scripts/run-author.mjs \
 //     --patient /path/to/repo --answers answers.json --draft specdraft.json \
-//     --verdict green --out /path/to/outdir [--lang js] [--timeout 300000]
+//     --verdict green --out /path/to/outdir [--lang js] [--timeout 300000] \
+//     [--budget 2.50]
+//
+//   --budget       THE AUTHORING CEILING, in dollars, and it has NO DEFAULT. The
+//                  pipeline pays for a survey (up to three attempts plus a
+//                  reserved round) and a declaration loop (an author call, its
+//                  revises, and each one's malformed-emission retries); with a
+//                  ceiling set, the run stops BETWEEN calls the moment the spend
+//                  reaches it. Left off, the run is UNBOUNDED and says so on
+//                  stdout before it spends anything — a defaulted cap would be a
+//                  silent second ceiling (the `maxWallMs` precedent), and an
+//                  unbounded run must be a VISIBLE operator choice, never a state
+//                  arrived at by omission.
 //
 //   --verdict      THE RADIO (PRD v1.57 §1): green | soft-green | hitl. It is the
 //                  USER's answer, so it is asked rather than defaulted — a
@@ -41,6 +53,7 @@ import {
 import { makeLoopGenerate } from '../src/authorflow.js';
 import { validateJob, jobSpecHash } from '../src/job.js';
 import { scanSecrets } from '../src/validate.js';
+import { declarationLines, parseCeiling, ceilingLine } from './author-readout.mjs';
 
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
@@ -64,11 +77,19 @@ const verdictArg = arg('verdict');
 const LANG = arg('lang') ?? 'js';
 const timeoutArg = arg('timeout');
 const TIMEOUT_MS = timeoutArg === null ? DEFAULT_TIMEOUT_MS : Number(timeoutArg);
+/** NO DEFAULT, deliberately: `null` is "nobody set one" and means UNBOUNDED. It
+ * is never filled in here — the whole point of the flag is that the number is
+ * the operator's, and a script that supplies one on their behalf has set a
+ * ceiling nobody chose. Parsed through `author-readout.mjs` so the rule has a
+ * home a test can reach. */
+const { ceilingUsd: CEILING_USD, error: budgetError } = parseCeiling(arg('budget'));
 
 if (!patientArg || !answersArg || !draftArg || !outArg || verdictArg === null) {
   die('usage: node scripts/run-author.mjs --patient <repoPath> --answers <answers.json> --draft <specdraft.json> '
-    + `--verdict <${VERDICT_CLASSES.join('|')}> --out <outdir> [--lang js] [--timeout <ms>]`);
+    + `--verdict <${VERDICT_CLASSES.join('|')}> --out <outdir> [--lang js] [--timeout <ms>] [--budget <usd>]`);
 }
+// A malformed ceiling dies at the door rather than silently reading as absent.
+if (budgetError) die(budgetError);
 // the menu is handed over enumerated; an unknown value is a typo, and the
 // interview refuses it as one (a LOCKED class is a different answer — it reaches
 // the pipeline and comes back as counted demand)
@@ -145,10 +166,14 @@ console.log(`  lang     ${LANG}`);
 console.log(`  draft    ${resolve(/** @type {string} */ (draftArg))} (job "${draft?.job ?? '?'}")`);
 console.log(`  out      ${OUT}`);
 console.log(`  timeout  ${TIMEOUT_MS}ms per close stage`);
+// THE UNBOUNDED RUN IS ANNOUNCED. Printed before the provider is even built, so
+// it is on stdout ahead of the first paid byte rather than discovered in the
+// total afterwards.
+console.log(`  ${ceilingLine(CEILING_USD)}`);
 console.log('  stops at prepareSigning — this script NEVER signs and NEVER runs the job\n');
 
 const provider = new AnthropicProvider({ apiKey, model: MODEL });
-emit('author-start', { runid, patient: PATIENT, lang: LANG, verdictType: VERDICT, model: MODEL, job: draft?.job ?? null, timeoutMs: TIMEOUT_MS });
+emit('author-start', { runid, patient: PATIENT, lang: LANG, verdictType: VERDICT, model: MODEL, job: draft?.job ?? null, timeoutMs: TIMEOUT_MS, ceilingUsd: CEILING_USD });
 
 // ── 1. answers → scout → the model fills the form → a close DECLARATION ──────
 // `provider` drives the scout; `generate` is the declaration model boundary (one
@@ -163,6 +188,9 @@ const authored = await authorCloseForJob({
   questions: VERDICT === 'green' ? questionsFor(VERDICT) : null,
   provider,
   generate: makeLoopGenerate(provider),
+  // ONE number, both paid seams (the survey's and the declaration loop's) — the
+  // advertised ceiling and the enforced ceiling are the same ceiling
+  ceilingUsd: CEILING_USD,
 });
 const authoredFile = writeOut('authored.json', authored);
 emit('authored', { ok: authored.ok, stop: authored.stop, seedRef: authored.seedRef, cost: authored.cost, reds: authored.reds });
@@ -170,6 +198,54 @@ emit('authored', { ok: authored.ok, stop: authored.stop, seedRef: authored.seedR
 console.log(`authoring  ${authored.ok ? 'OK' : 'NOT OK'}  stop=${authored.stop ?? 'none'}  seed=${authored.seedRef ?? 'unread'}`);
 console.log(`cost       ${costLine(authored.cost)}`);
 console.log(`written    ${authoredFile}`);
+
+// THE GOVERNANCE STOP, read out on BOTH paths. A money stop can land with a
+// signable close already authored and measured (`ok:true` — the cap tripped
+// before a LATER revise), and burying it in that case would let a run that ran
+// out of money read as a run that simply finished. It is not an error and it is
+// not a verdict on the close: nothing retries, nothing is rolled back, and every
+// artifact the run paid for is on disk exactly where it was written.
+if (authored.stop === 'cap-halt' || authored.stop === 'pricing-red') {
+  const c = authored.cost ?? {};
+  // ONE reading of what this stop MEANS, spent on the console AND on the spine.
+  // Two hand-spelled answers is two instruments, and this is exactly the pair
+  // that must not disagree: a `cap-halt` says the money is gone, a `pricing-red`
+  // says the meter went blind (F6), and they send the operator to different
+  // repairs — one raises a number, the other binds a priced provider.
+  const meaning = authored.stop === 'cap-halt'
+    ? 'not under cap — not "can\'t"' // the shipped vocabulary, spelled the way ralph spells it
+    : 'the spend cannot be SEEN, so the ceiling cannot govern it — a blind meter, not a spent wallet (F6)';
+  console.log(`\n${authored.stop.toUpperCase()} — the authoring pipeline stopped on the operator's ceiling, not on anything it read`);
+  console.log(`  ceiling  $${CEILING_USD}`);
+  console.log(`  spent    ${costLine(authored.cost)}`);
+  console.log(`  the cap binds BETWEEN calls, so nothing was cut off mid-flight — everything paid for is in ${OUT}`);
+  console.log(authored.stop === 'cap-halt'
+    ? '  the stop IS the checkpoint: raise --budget and re-run, or read what is here and stop'
+    : '  unpriced is never free (F6) — a ceiling that cannot see the spend cannot enforce it, so the run stopped rather than spend blind');
+  // THE TYPE IS THE STOP. It used to be the literal 'cap-halt' on both arms, so a
+  // `pricing-red` was written down as a cap-halt with its real name demoted to a
+  // payload field. Every OTHER emitter in this tree keys the two apart — ralph and
+  // planrun emit `type:'cap-halt'` only ever with `category:'cap-halt'`, and a
+  // pricing-red rides its own name (run.js's escalation) — so this was the one
+  // site in the repo where the type and the category could disagree, and
+  // type-keyed slicing is precisely how F45 misread a shared log.
+  //
+  // Latent, not live: nothing reads the author spine by type today. The nearest
+  // reader is `classifyIncidents` (src/ledger.js), which sets `capHalted` on
+  // `type === 'cap-halt'` and would therefore have armed the capability-gap fuse
+  // — "the run cap-halted" — on a run whose wallet was never empty. Under its own
+  // name a pricing-red instead falls through every branch and is simply not
+  // counted, which is the FAIL-SAFE direction: uncounted, never miscounted.
+  //
+  // No falsy type can reach here: the `if` above narrows `authored.stop` to
+  // exactly these two strings, so a guard would be speculative code standing over
+  // an unreachable case rather than protection.
+  emit(authored.stop, {
+    category: authored.stop, meaning,
+    ceilingUsd: CEILING_USD, spentUsd: c.costUsd ?? null, knownUsd: c.knownUsd ?? null,
+    spendComplete: c.spendComplete ?? null,
+  });
+}
 
 if (!authored.ok) {
   // Verbatim, and in full. A refusal is COUNTED demand against bareloop's own
@@ -196,12 +272,13 @@ if (!authored.ok) {
   const spec = assembleSpec(draft, authored);
   const specFile = writeOut('resolved-spec.json', spec);
   console.log(`\nverdictType ${authored.verdictType} (the person's own pick, validated — never inferred)`);
-  console.log('declaration');
-  for (const s of authored.closeDecl.stages ?? []) {
-    console.log(`  ${s.name}  [${s.kind}]${s.offer === false ? '  (not lendable)' : ''}${(s.needs ?? []).length ? `  needs: ${s.needs.join(', ')}` : ''}`);
-    console.log(`      params ${JSON.stringify(s.params ?? {})}`);
-  }
-  for (const n of authored.closeDecl.notes ?? []) console.log(`  note: ${n}`);
+  // F87: the goal and the stages that judge it are ONE reading. This surface used to
+  // print the declaration alone, which shows a signer everything the close measures
+  // and nothing about whether the goal ever said so. Rendered from the RESOLVED spec
+  // — the bytes that get hashed — and out of `scripts/author-readout.mjs`, because
+  // this block is otherwise reachable only after a paid scout and a paid model call,
+  // and a readout no test can reach is a readout nothing checks.
+  for (const l of declarationLines(spec)) console.log(l);
   console.log(`written    ${specFile}`);
 
   // `shellCapUsd` COUPLES to the spec's own budget, exactly as run-u does it at the

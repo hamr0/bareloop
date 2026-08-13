@@ -70,6 +70,85 @@ export function priceOf(r) {
   };
 }
 
+/**
+ * The F6 tally over a list of PRICED CALLS — `priceOf`'s per-call read, summed.
+ *
+ * `knownUsd` carries the priced half explicitly and `costUsd` is the honest
+ * total: null the moment anything went unpriced, never the priced half wearing a
+ * complete coat. An EMPTY list is a complete $0 and not an unknown — nothing
+ * spent is a number somebody can act on.
+ * @param {{costUsd: number|null, unpricedRounds?: number}[]|null|undefined} entries
+ * @returns {{costUsd: number|null, knownUsd: number, spendComplete: boolean,
+ *   nullCostCalls: number, unpricedRounds: number}}
+ */
+export function tallyCalls(entries) {
+  const list = Array.isArray(entries) ? entries : [];
+  const known = list.reduce((a, e) => a + (typeof e.costUsd === 'number' ? e.costUsd : 0), 0);
+  const nullCostCalls = list.filter((e) => e.costUsd === null).length;
+  const unpricedRounds = list.reduce((a, e) => a + (e.unpricedRounds || 0), 0);
+  const spendComplete = nullCostCalls === 0 && unpricedRounds === 0;
+  return {
+    costUsd: spendComplete ? Number(known.toFixed(6)) : null,
+    knownUsd: Number(known.toFixed(6)),
+    spendComplete,
+    nullCostCalls,
+    unpricedRounds,
+  };
+}
+
+/**
+ * THE ONE MONEY-CEILING PREDICATE, for the same reason `priceOf` above is one:
+ * the authoring pipeline meters two populations of paid call in two different
+ * accumulators (the survey's `calls[]`, the declaration loop's cost book), and
+ * two hand-spelled answers to "am I over the ceiling?" is two instruments.
+ *
+ * It is asked BETWEEN metered calls and never inside one. A cap that binds
+ * mid-call kills the row before it can be graded — F45 measured that as 3 of 7
+ * launches lost and $5.82 unreadable.
+ *
+ * Three answers, and the order between the last two is load-bearing:
+ *   - NO CEILING → null, always. An absent cap is UNBOUNDED, and unbounded is a
+ *     visible operator choice, never a defaulted number nobody set (the
+ *     `maxWallMs` precedent). There is nothing to enforce, so unpriced spend
+ *     here is merely reported.
+ *   - KNOWN SPEND AT OR OVER THE CEILING → `cap-halt`, even when the total is
+ *     unknown. The breach is CERTAIN on the priced half alone — whatever the
+ *     unpriced remainder turns out to be, it can only be larger — so naming this
+ *     `pricing-red` would send the operator to fix a meter when the fact is that
+ *     the money is gone. At-or-over rather than over: the next call is the one
+ *     that breaches, and it is the one being decided.
+ *   - SPEND THAT CANNOT BE KNOWN → `pricing-red`. `?? 0` launders unknown into
+ *     $0 (F6) and a ceiling enforced against a laundered floor is not enforced
+ *     at all. If the spend cannot be seen the cap cannot govern it, and that is
+ *     its own stop rather than a silent pass.
+ *
+ * A MALFORMED ceiling is the one input it refuses rather than answers: `null` and
+ * an absent field mean UNBOUNDED, and they are the ONLY way to get there. Anything
+ * else that is not a finite number (`'2.50'`, `NaN`, `Infinity`) reading as
+ * unbounded would be F6's laundering in its ceiling form — a caller who set a cap
+ * getting a paid pipeline with nothing enforcing it, which is the exact collapse
+ * the ceiling exists to prevent, wearing the caller's own typo (PRD v1.62). The
+ * CLI's `parseCeiling` guards the FLAG; this guards the LIBRARY, and `authorClose`
+ * / `runAuthorScout` / `authorCloseForJob` are documented adopter seams. It THROWS
+ * rather than clamping, unlike the attempt caps beside it, because those axes have
+ * a safe direction to clamp toward and this one does not: every candidate default
+ * is either a number nobody set or the unbounded run the caller just declined.
+ * @param {{ceilingUsd: number|null|undefined, knownUsd: number, spendComplete: boolean}} o
+ * @returns {'cap-halt'|'pricing-red'|null}
+ * @throws {Error} when the ceiling is neither absent nor a finite number
+ */
+export function capStop({ ceilingUsd, knownUsd, spendComplete }) {
+  if (ceilingUsd === null || ceilingUsd === undefined) return null;
+  if (typeof ceilingUsd !== 'number' || !Number.isFinite(ceilingUsd)) {
+    throw new Error(`capStop: a money ceiling must be a finite number of dollars or null — got ${typeof ceilingUsd} `
+      + `${String(ceilingUsd)}. A malformed ceiling is an ERROR, never a silent fall back to UNBOUNDED: omit it, or `
+      + 'pass an explicit null, to run unbounded — that is a stated operator choice and never a typo arrived at');
+  }
+  if (knownUsd >= ceilingUsd) return 'cap-halt';
+  if (!spendComplete) return 'pricing-red';
+  return null;
+}
+
 // ── THE RAW MODEL OUTPUT, AS A PERSISTED RECORD ─────────────────────────────
 //
 // Run mslhn707 died on a survey that broke JSON at position 1339 and left NO

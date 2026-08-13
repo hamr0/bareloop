@@ -811,3 +811,105 @@ test('loadGate fails CLOSED on malformed inputs and never throws', () => {
   }
   assert.equal(loadGate(BRIDGE, { ...JOB, close: 'npm test' }).ok, false, 'a close that stages nothing cannot match');
 });
+
+// ---------------------------------------------------------------------------
+// PRD v1.60 §1 — the operator-regex admissibility sweep reaches BRIDGES too.
+//
+// v1.55 took F49's reject to the operator's own regex fields and the sweep that
+// backs it walked `jobs/*.json`. That is not the population of signed specs: a
+// bridge is signed the same way, carries its plans VERBATIM (reuse ships the whole
+// plan, never a template), and lives outside `jobs/` — so a pathological pattern
+// arriving through a bridge was never swept. The exposure is the one v1.55 closed
+// for jobs: the regex blocks the MAIN EVENT LOOP, so the in-process stall fuse
+// cannot fire and the run dies to the outside watchdog looking like a provider stall.
+//
+// WHAT the sweep rejects is unchanged — same `hasNestedQuantifier`, one inventory.
+// Only WHERE it looks is wider. Zero live bridges carry a regex today (both on-disk
+// entries expired at the 2026-08-05 close-stage split and neither ever held one), so
+// the population is exercised with fixtures rather than with a shipped file.
+// ---------------------------------------------------------------------------
+
+/** the regex surface a bridge really has: a stored plan's `artifact-written.pattern`.
+ * A bridge has no close of its own — `closeStageNames` are slugs — so this is the
+ * field, and it reaches the exit evaluator untimed exactly like the job's two do. */
+const bridgeWithPattern = (/** @type {string} */ pattern) => mut(BRIDGE, (b) => {
+  b.versions[0].plan.steps[0].exit.push({ type: 'artifact-written', path: 'src/out.txt', pattern });
+});
+
+test('v1.60 §1: a bridge carrying a nested-quantifier pattern is REFUSED — the same reject, a wider population', () => {
+  const r = validateBridge(bridgeWithPattern('(a+)+$'));
+  assert.equal(r.ok, false);
+  assert.equal(r.bridge, null, 'a refused entry returns nothing, like every other bridge red');
+  assert.equal(r.reds.length, 1, 'exactly one red, at the field that carries it');
+  assert.equal(r.reds[0].code, 'invalid-value');
+  assert.equal(r.reds[0].path, 'versions.0.plan.steps.0.exit.1.pattern', 'the path walks to the pattern itself, so the operator can go fix THAT string');
+  assert.match(r.reds[0].detail ?? '', /F49/, 'named by the finding, so the operator rewrites rather than guesses');
+});
+
+test('v1.60 §1: a CLEAN bridge still passes — a population widening that reds a good entry is a break, not a guard', () => {
+  const clean = validateBridge(bridgeWithPattern('^ERROR: (\\d+) fault'));
+  assert.deepEqual(clean.reds, []);
+  assert.equal(clean.ok, true);
+  // and the untouched base, which carries no pattern at all
+  assert.deepEqual(validateBridge(BRIDGE).reds, [], 'the commonest bridge there is carries no regex and must be unaffected');
+});
+
+test('v1.60 §1: the sweep reaches EVERY stored plan, not just the first version or the first step', () => {
+  const deep = mut(BRIDGE, (b) => {
+    b.versions.push(clone(b.versions[0]));
+    b.versions[1].runid = 'ms3wawuc';
+    b.versions[1].plan.steps[1].exit.push({ type: 'artifact-written', path: 'src/b.txt', pattern: '(x*)*$' });
+    b.history.push(greenRow({ runid: 'ms3wawuc', patient: 'litectx-u2' }));
+  });
+  const r = validateBridge(deep);
+  assert.equal(r.ok, false);
+  assert.equal(r.reds.length, 1);
+  assert.equal(r.reds[0].path, 'versions.1.plan.steps.1.exit.1.pattern', 'a second version\'s second step is swept the same as the first');
+});
+
+test('v1.60 §1: an UNCOMPILABLE pattern is not this sweep\'s red — it belongs to the plan validator, and two reds on one string bury the real one', () => {
+  // `(a+)+$[` is BOTH shape-positive and uncompilable (the class never closes), so
+  // it separates "compiles first" from "scans anything": without the belt this reds
+  // here, on a string the scan's own contract says it may not parse.
+  assert.throws(() => new RegExp('(a+)+$['), 'the fixture really is uncompilable, or this test proves nothing');
+  const r = validateBridge(bridgeWithPattern('(a+)+$['));
+  assert.deepEqual(r.reds, [], 'the shape scan assumes valid syntax by contract (validate.js) — it never guesses at a string it cannot parse');
+  assert.deepEqual(validateBridge(bridgeWithPattern('(unclosed')).reds, []);
+});
+
+test('v1.60 §1: the sweep reads the REGEX FIELDS, never prose — a goal or an action that TALKS about a pattern is not a pattern', () => {
+  // The false-positive direction, and the reason the sweep is key-scoped: a signed
+  // bridge is mostly English (`goal`, every step's `action`), and a shape scan over
+  // English reds a job for a sentence. Widening the DETECTOR is parked (F49);
+  // widening it by accident, over strings that never reach a regex engine, is worse.
+  const prose = mut(BRIDGE, (b) => {
+    b.goal = 'Rewrite the log parser so it no longer relies on the (a+)+$ pattern.';
+    b.versions[0].plan.steps[0].action = 'Replace the (\\d+)*$ matcher in src/parse.js with a split.';
+  });
+  assert.deepEqual(validateBridge(prose).reds, [], 'prose is prose — nothing here reaches an evaluator');
+  assert.equal(validateBridge(prose).ok, true);
+});
+
+test('v1.60 §1: loadRegistry — the REAL sweep over a REAL directory refuses the poisoned entry and keeps the clean one', (t) => {
+  const dir = tmp(t, 'bridges-redos-');
+  saveBridge(dir, BRIDGE);
+  // written directly: saveBridge validates, and refusing to write it is itself the
+  // guard working — this fixture is the file already sitting in an operator's
+  // registry, which is the case the sweep exists for.
+  const poisoned = mut(bridgeWithPattern('(a+)+$'), (b) => { b.name = 'aurora-u-spawner-types'; });
+  writeFileSync(join(dir, 'aurora-u-spawner-types.json'), JSON.stringify(poisoned));
+  const r = loadRegistry(dir);
+  assert.equal(r.ok, false, 'the registry read reports it — a bridge nobody swept is a pattern nobody swept');
+  assert.deepEqual(r.bridges.map((b) => b.name), ['litectx-u-types'], 'the clean entry survives; only the poisoned one is dropped');
+  assert.deepEqual(r.reds.map((x) => x.path), [join(dir, 'aurora-u-spawner-types.json')]);
+});
+
+test('v1.60 §1: bridges reject through the SAME inventory as jobs and plans — a second copy is a shape one side admits', async () => {
+  const fromValidate = (await import('../src/validate.js')).hasNestedQuantifier;
+  const fromPlan = (await import('../src/plan.js')).hasNestedQuantifier;
+  assert.equal(fromPlan, fromValidate);
+  // and the bridge sweep is that function's own consumer, not a re-derivation
+  const src = readFileSync(new URL('../src/bridges.js', import.meta.url), 'utf8');
+  assert.match(src, /sweepNestedQuantifiers/, 'bridges.js drives the shared sweep');
+  assert.doesNotMatch(src, /function hasNestedQuantifier/, 'and never declares its own detector');
+});

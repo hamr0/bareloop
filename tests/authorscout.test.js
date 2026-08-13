@@ -685,6 +685,114 @@ test('runAuthorScout: the attempt cap is TIGHTEN-ONLY — an operator may lower 
   assert.ok(!/after \d+ attempts/.test(r.reason), 'one attempt is the un-retried case and says nothing about retries');
 });
 
+// ── the survey's own money ceiling ───────────────────────────────────────────
+//
+// The survey is the pipeline's FIRST paid stage, and its retry ladder buys up to
+// three calls plus a recovery round. The attempt cap bounds how many times it may
+// ask; it says nothing about what those asks cost. The ceiling binds between the
+// calls, so an exhausted wallet stops the ladder instead of finishing it.
+
+test('runAuthorScout: NO ceiling is unbounded — the attempt ladder is bounded by attempts alone', async () => {
+  const { factory, created } = scriptLoops([{ text: badBlob('a'), turns: 1, costUsd: 40 },
+    { text: badBlob('b'), turns: 1, costUsd: 40 }, { text: factsBlob(), turns: 1, costUsd: 40 }]);
+  const { createSurveyor } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor });
+  assert.equal(created.length, 3, 'nothing bounds the money when nobody set a bound');
+  assert.equal(r.state, 'PRESENT');
+  assert.equal(r.budgetStop, null, 'and the field says so, rather than being absent and read as falsy either way');
+});
+
+test('runAuthorScout: the ceiling stops the RETRY LADDER between attempts, and names why it stopped', async () => {
+  const { factory, created } = scriptLoops([{ text: badBlob('a'), turns: 1, costUsd: 0.04 },
+    { text: badBlob('b'), turns: 1, costUsd: 0.04 }, { text: factsBlob(), turns: 1, costUsd: 0.04 }]);
+  const { createSurveyor } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor, ceilingUsd: 0.07 });
+
+  assert.equal(created.length, 2, 'two attempts fit under the ceiling; the third is never paid for');
+  assert.equal(r.budgetStop, 'cap-halt');
+  assert.equal(r.calls.length, 2, 'and the spend that was incurred is on the record');
+  assert.equal(r.state, 'ABSENT', 'the survey is still honestly absent — the halt explains WHY it stayed that way');
+});
+
+test('runAuthorScout: a survey that cannot be PRICED stops the ladder on its own axis (F6)', async () => {
+  const { factory, created } = scriptLoops([{ text: badBlob('a'), turns: 1, costUsd: null },
+    { text: factsBlob(), turns: 1, costUsd: 0.01 }]);
+  const { createSurveyor } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor, ceilingUsd: 5 });
+  assert.equal(created.length, 1, 'the cap went blind, so the retry is never funded');
+  assert.equal(r.budgetStop, 'pricing-red', 'DISTINCT from cap-halt — the money is not gone, the meter is');
+});
+
+test('runAuthorScout: the F59 RECOVERY round is behind the ceiling too — no paid call escapes it', async () => {
+  // a bounded, short first call is exactly the shape that earns the reserved
+  // toolless round; with the wallet already spent it does not get one
+  const { factory, created } = scriptLoops([
+    { text: 'tiny', turns: AUTHOR_SCOUT_ROUNDS + 2, costUsd: 0.09 },
+    { text: factsBlob(), turns: 1, costUsd: 0.01 },
+  ]);
+  const { createSurveyor } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor, ceilingUsd: 0.08 });
+  assert.equal(created.length, 1, 'the recovery loop is never even built');
+  assert.equal(r.budgetStop, 'cap-halt');
+  assert.equal(r.calls.length, 1);
+});
+
+// …and the OTHER direction, which is what makes the assertion above able to
+// fail: `budgetStop` names the ceiling as WHAT ENDED THE LADDER. A ceiling that
+// was merely breached while the ladder ended on something else has refused
+// nothing, and saying otherwise routes the operator at a number that cannot
+// move the outcome. The refusal itself is unchanged in every case below — the
+// same predicate, the same tally, the same call not made; only the attribution
+// is at issue.
+
+test('runAuthorScout: a breached ceiling with NO recovery pending is not a governance stop', async () => {
+  // a dead socket on a ONE-turn call: `bounded` is false, so no reserved round
+  // was ever due and the cap refused nothing. Reporting `cap-halt` here sends the
+  // operator to raise a budget into a transport failure the money never caused.
+  for (const err of ['ENETUNREACH', 'truncated:max_tokens']) {
+    const { factory, created } = scriptLoops([{ text: '', turns: 1, error: err, costUsd: 0.09 }]);
+    const { createSurveyor } = stubSurveyor();
+    const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor, ceilingUsd: 0.05 });
+    assert.equal(created.length, 1);
+    assert.equal(r.cause, SURVEY_CAUSES.CALL_FAILED, `${err} is what ended this ladder`);
+    assert.equal(r.budgetStop, null, `${err}: the ceiling refused no call, so it is not what stopped the survey`);
+  }
+});
+
+test('runAuthorScout: a PRESENT survey that spent past the ceiling reports NO governance stop', async () => {
+  // the ladder ended on SUCCESS. The wallet is over — and the next call is what a
+  // ceiling refuses, so a survey nobody needed to re-ask has nothing refused.
+  const { factory, created } = scriptLoops([{ text: factsBlob(), turns: 1, costUsd: 0.09 }]);
+  const { createSurveyor } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor, ceilingUsd: 0.05 });
+  assert.equal(created.length, 1);
+  assert.equal(r.state, 'PRESENT');
+  assert.equal(r.budgetStop, null, 'nothing was refused, so nothing stopped on the ceiling');
+});
+
+test('runAuthorScout: an UNPRICEABLE call with no recovery pending is not a pricing-red governance stop', async () => {
+  // the same rule on F6's axis: `pricing-red` says the ceiling could not be
+  // enforced against a call it was about to fund. With no call pending there was
+  // nothing to enforce it against.
+  const { factory } = scriptLoops([{ text: '', turns: 1, error: 'ENETUNREACH', costUsd: null }]);
+  const { createSurveyor } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor, ceilingUsd: 5 });
+  assert.equal(r.cause, SURVEY_CAUSES.CALL_FAILED);
+  assert.equal(r.budgetStop, null);
+});
+
+test('runAuthorScout: a RETRYABLE cause under a breached ceiling still names the cap — via the ladder', async () => {
+  // the discriminator that keeps the fix from being a silent capability loss: the
+  // top-of-loop latch is untouched, so a malformation that WOULD have been re-asked
+  // still reports the ceiling as what refused the re-ask.
+  const { factory, created } = scriptLoops([{ text: badBlob(), turns: 1, costUsd: 0.09 }, { text: factsBlob(), turns: 1 }]);
+  const { createSurveyor } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor, ceilingUsd: 0.05 });
+  assert.equal(created.length, 1, 'the retry is never funded');
+  assert.equal(r.cause, SURVEY_CAUSES.UNPARSEABLE);
+  assert.equal(r.budgetStop, 'cap-halt', 'a retry WAS due, and the ceiling is what refused it');
+});
+
 test('runAuthorScout: EVERY attempt persists its raw, labelled and indexed, with the parse error beside it', async () => {
   const { factory } = scriptLoops([{ text: badBlob('one'), turns: 1 }, { text: badBlob('two'), turns: 1 }, { text: factsBlob(), turns: 1 }]);
   const { createSurveyor } = stubSurveyor();

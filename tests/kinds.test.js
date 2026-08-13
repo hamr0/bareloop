@@ -156,6 +156,61 @@ test('sign arithmetic: executed = collected − skipped − deselected, summed a
   assert.equal(r.value, 100 - 3 - 7);
 });
 
+// The harvest is what the executor ECHOES to the worker as "the lines the count
+// is made of". Pooled flat, it makes two false statements the arithmetic above
+// can already produce: a SUBTRACTED term's line reads as a wall to go fix (fixing
+// it moves the count the wrong way), and a `first` term's second and later lines
+// read as counted when the aggregate never looked at them. Both are latent only
+// until one multi-term parser is authored — and `sign` is on the drafter's menu
+// with subtraction spelled out as a technique.
+test('the harvest is grouped PER TERM, so a SUBTRACTED line is never pooled with the lines that added', () => {
+  const out = '# fail 5\n# pass 316\n';
+  const terms = norm({
+    terms: [
+      { lineMatch: '^# fail (\\d+)$', capture: 1, sign: 1, aggregate: 'first', region: 'whole-output' },
+      { lineMatch: '^# pass (\\d+)$', capture: 1, sign: -1, aggregate: 'first', region: 'whole-output' },
+    ],
+  });
+  const r = parseValue(out, terms);
+  assert.equal(r.stop, null);
+  assert.equal(r.value, 5 - 316);
+  assert.deepEqual(r.matched, [['# fail 5'], ['# pass 316']],
+    'each term owns its own lines, index-aligned with the breakdown that states its sign');
+});
+
+test('a "first" term harvests ONLY the line it read — the ones it never looked at are not "what the count is made of"', () => {
+  const out = '# pass 316\n# pass 12\n';
+  const terms = norm({ lineMatch: '^# pass (\\d+)$', capture: 1 });
+  const r = parseValue(out, terms);
+  assert.equal(r.stop, null);
+  assert.equal(r.value, 316, 'first-match, unchanged');
+  assert.deepEqual(r.matched, [['# pass 316']],
+    'the second line matched but contributed nothing — echoing it aims the worker at a number the value never contained');
+
+  // and `sum`, which DOES read every one of them, still harvests every one
+  const summed = parseValue(out, norm({ terms: [{ lineMatch: '^# pass (\\d+)$', capture: 1, sign: 1, aggregate: 'sum', region: 'whole-output' }] }));
+  assert.equal(summed.value, 316 + 12);
+  assert.deepEqual(summed.matched, [['# pass 316', '# pass 12']]);
+});
+
+test('ONE line feeding TWO terms is named under each — dedup is within a term, because the line plays two arithmetic roles', () => {
+  // pytest's counts line, verbatim from the aurora battery's captured runs: the
+  // SAME line supplies the passes and the failures, with opposite signs. Pooled
+  // and deduplicated globally it appears once, under whichever term reached it
+  // first, and the other term's evidence silently vanishes.
+  const out = '= 1 failed, 2690 passed, 3 skipped, 18 deselected, 1775 warnings in 326.12s (0:05:26) =\n';
+  const terms = norm({
+    terms: [
+      { lineMatch: '(\\d+) passed', capture: 1, sign: 1, aggregate: 'first', region: 'whole-output' },
+      { lineMatch: '(\\d+) failed', capture: 1, sign: -1, aggregate: 'first', region: 'whole-output' },
+    ],
+  });
+  const r = parseValue(out, terms);
+  assert.equal(r.value, 2690 - 1);
+  assert.equal(r.matched.length, 2, 'one group per term, always — the alignment with breakdown is what carries the sign');
+  assert.deepEqual(r.matched[0], r.matched[1], 'and it really is the one line, under both');
+});
+
 test('aggregate "sum" adds EVERY match — on one line and across lines (a first-match read of "2 failed, 2 errors" reports half the reds)', () => {
   const out = '= 2 failed, 5 passed, 2 errors =\n= 1 failed =\n';
   const terms = norm({ terms: [{ lineMatch: '(\\d+) (?:failed|errors)', capture: 1, sign: 1, aggregate: 'sum', region: 'whole-output' }] });
@@ -374,6 +429,27 @@ test('isArbiterBook: `.litectx/` is a PREFIX, `gate-audit.jsonl` an EXACT path �
   assert.equal(isArbiterBook('litectx/x.json'), null);
 });
 
+test('isArbiterBook: `.smoke/` is a book too — F98\'s parked residual, where the exclusion was incidental', () => {
+  // The fence denies `join(workdir, '.smoke')` on every worker (src/planrun.js,
+  // src/authorscout.js) and the persona now states it — but this reader, which
+  // decides what COUNTS AS WORK, never knew the name. On patients whose .gitignore
+  // default-denies dot-directories the store never reached `ls-files --others` and
+  // the gap was masked by the patient's own config; on one that does not, the
+  // arbiter's own store would land in the changed set as the worker's writing.
+  // Incidental masking is not an exclusion.
+  assert.equal(isArbiterBook('.smoke'), '.smoke/', 'the store itself, whether it lands as a dir or a file');
+  assert.equal(isArbiterBook('.smoke/index.json'), '.smoke/');
+  assert.equal(isArbiterBook('.smoke/store/chunks/0001'), '.smoke/', 'everything beneath it, at any depth');
+  // and the same failure direction the `gate-audit.jsonl` comment names: swallowing
+  // a worker's real write is what reads as a clean tree. A prefix, not a basename
+  // and not a substring.
+  assert.equal(isArbiterBook('src/smoke.js'), null, 'a legitimate source file is work');
+  assert.equal(isArbiterBook('tests/smoke.test.js'), null, 'so is a legitimate test');
+  assert.equal(isArbiterBook('src/.smoke/x'), null, 'the book is the one at the repo ROOT — a nested spelling is not it');
+  assert.equal(isArbiterBook('smoke/x'), null, 'nor is the undotted directory');
+  assert.equal(isArbiterBook('.smokescreen/x'), null, 'nor a longer name this one is a prefix of');
+});
+
 test('the changed set is diff PLUS untracked, MINUS the two arbiter books — and the decoy still counts', async (t) => {
   const r = makeRepo(t, { 'src/a.js': 'a\n', 'README.md': 'r\n' });
   write(r.dir, {
@@ -387,6 +463,26 @@ test('the changed set is diff PLUS untracked, MINUS the two arbiter books — an
   assert.equal(cs.stop, null);
   assert.deepEqual(cs.paths, ['src/a.js', 'src/gate-audit.jsonl', 'src/new.js']);
   assert.deepEqual(cs.excluded.map((e) => e.path).sort(), ['.litectx/store.json', 'gate-audit.jsonl']);
+});
+
+test('the changed set excludes `.smoke/` on a patient whose .gitignore does NOT hide dot-directories — the case the mask was hiding', async (t) => {
+  // The REAL instrument, on the real git plumbing, because the F98 residual is not a
+  // predicate bug in the abstract: it only ever shows up as `ls-files --others`
+  // returning the arbiter's own store. No .gitignore here at all, which is precisely
+  // the patient the parked note said was unprotected.
+  const r = makeRepo(t, { 'src/a.js': 'a\n' });
+  write(r.dir, {
+    'src/a.js': 'a changed\n',                // the worker's real write
+    '.smoke/store.json': '{}\n',              // the arbiter's litectx store for this run
+    '.smoke/chunks/0001.json': '{}\n',        // and everything beneath it
+    'src/smoke.js': 'export const x = 1;\n',  // the DECOY — a legitimate source file
+  });
+  const cs = await changedSet(r.dir, r.seed);
+  assert.equal(cs.stop, null);
+  assert.deepEqual(cs.paths, ['src/a.js', 'src/smoke.js'],
+    'the worker\'s two writes, and only those — the store is the arbiter\'s and the decoy is work');
+  assert.deepEqual(cs.excluded.map((e) => e.path).sort(), ['.smoke/chunks/0001.json', '.smoke/store.json']);
+  assert.deepEqual([...new Set(cs.excluded.map((e) => e.book))], ['.smoke/'], 'named as the book it is, so the exclusion is auditable');
 });
 
 test('a seed commit that does not exist is an instrument stop, on every kind that reads the changed set', async (t) => {
@@ -564,6 +660,100 @@ test('count-not-worse: the scope filter drops out-of-scope lines and the drop is
   assert.equal(res.value, 1);
   assert.match(res.gapLines.join('\n'), /1 matching line\(s\) dropped by the scope filter/);
   assert.ok(res.gapLines.every((l) => l.startsWith(KEEP)));
+});
+
+// Run u-msn227nq paid for this one. The stage counted 8 real `error TS…` lines
+// and rendered `8 match(es)` — the ADDRESSES were counted and then dropped on the
+// floor. Starved of a file to open, the worker went looking for the arbiter's own
+// books (.smoke, .litectx, gate-audit.jsonl), the fence denied it three times, and
+// the deny-spin guard ended a converging run with $1.77 and 21 minutes left. The
+// count is unchanged; only what the executor TELLS the worker changes — and it
+// rides the existing machinery (the stage prefix, the cap, the trim marker), so a
+// count gap now names walls the same mechanical way every other kind's does (F38).
+test('count-not-worse: a red count gap carries the MATCHED LINES themselves — a count with no addresses starves the worker', async (t) => {
+  const errors = ['src/backup.js(56,48): error TS1016: A required parameter cannot follow an optional parameter.', 'src/mod.js(3,1): error TS2322: Type mismatch.'];
+  const r = makeRepo(t, { 'report.txt': `checking...\n${errors.join('\n')}\nDone.\n`, 'src/backup.js': 'a\n', 'src/mod.js': 'b\n' });
+  const res = await runStage(COUNT_STAGE({ parser: { terms: [{ lineMatch: 'error TS\\d+', sign: 1, aggregate: 'sum', region: 'whole-output' }] } }), ctxFor(r));
+
+  assert.equal(res.verdict, 'red');
+  assert.equal(res.value, errors.length, 'the COUNT is untouched — only what the gap says changed');
+  const text = res.gapLines.join('\n');
+  for (const e of errors) assert.ok(text.includes(e), `the gap must carry the matched line verbatim: ${e}\n${text}`);
+  assert.ok(res.gapLines.every((l) => l.startsWith(KEEP)),
+    'every carried line rides the stage prefix — Layer R\'s redKeep is DERIVED from it, so an unprefixed line breaks the detector');
+  assert.ok(text.indexOf(`${errors.length} match(es)`) < text.indexOf(errors[0]),
+    'the summary still leads; the addresses ride AFTER it');
+  // the lines that did NOT match are not smuggled out with them
+  assert.ok(!text.includes('checking...') && !text.includes('Done.'), 'only the lines that CONTRIBUTED to the count ride out');
+});
+
+test('count-not-worse: lines the SCOPE dropped never reach the gap — the gap shows the population that was counted', async (t) => {
+  const kept = 'src/a.js(1,1): error TS1: in scope';
+  const dropped = 'vendor/v.js(1,1): error TS1: out of scope';
+  const r = makeRepo(t, { 'report.txt': `${kept}\n${dropped}\n`, 'src/a.js': 'a\n' });
+  const res = await runStage(COUNT_STAGE({ parser: { terms: [{ lineMatch: 'error TS\\d+', sign: 1, aggregate: 'sum', region: 'whole-output' }] } }), ctxFor(r));
+
+  assert.equal(res.verdict, 'red');
+  assert.equal(res.value, 1);
+  const text = res.gapLines.join('\n');
+  assert.ok(text.includes(kept), 'the counted line rides out');
+  assert.ok(!text.includes(dropped), 'a scope-dropped line was never counted, so pointing the worker at it would aim it outside its own population');
+  assert.match(text, /1 matching line\(s\) dropped by the scope filter/, 'and the drop is still ANNOUNCED as a count');
+});
+
+// The other half of the same licence. Echoing a line the instrument NAMED is
+// honest; echoing it with no statement of WHAT IT DID to the number is not. A
+// subtracted term's line, rendered flat beside an added one, tells the worker to
+// go fix a figure whose "fix" moves the count the WRONG WAY — and a `first`
+// term's later lines were never read at all. The lines therefore ride UNDER the
+// breakdown row that already states that term's sign and contribution, which is
+// the only place in the gap where their arithmetic role exists.
+test('count-not-worse: each echoed line rides under the TERM that produced it — a subtracted line is never rendered as a bare wall', async (t) => {
+  // fails MINUS skips, lower-is-better: `# skip` SUBTRACTS, and `# fail 1` is a
+  // second match a `first` term never reads.
+  const r = makeRepo(t, { 'report.txt': '# fail 5\n# fail 1\n# skip 2\n', 'src/a.js': 'a\n' });
+  const res = await runStage(COUNT_STAGE({
+    scope: {},
+    parser: {
+      terms: [
+        { lineMatch: '^# fail (\\d+)$', capture: 1, sign: 1, aggregate: 'first', region: 'whole-output' },
+        { lineMatch: '^# skip (\\d+)$', capture: 1, sign: -1, aggregate: 'first', region: 'whole-output' },
+      ],
+    },
+  }), ctxFor(r));
+
+  assert.equal(res.verdict, 'red');
+  assert.equal(res.value, 5 - 2, 'the COUNT is untouched — only what the gap says changed');
+  const at = (/** @type {string} */ needle) => {
+    const i = res.gapLines.findIndex((l) => l.includes(needle));
+    assert.ok(i >= 0, `the gap must carry ${JSON.stringify(needle)}\n${res.gapLines.join('\n')}`);
+    return i;
+  };
+  assert.ok(at('contributes +5') < at('# fail 5'), 'the adding term states itself, then names its line');
+  assert.ok(at('# fail 5') < at('contributes -2'), 'and its line stays on its own side of the next term');
+  assert.ok(at('contributes -2') < at('# skip 2'), 'the subtracted line sits under the row that says it SUBTRACTS');
+  assert.ok(!res.gapLines.some((l) => l.includes('# fail 1')),
+    'a line the "first" aggregate never read is not part of the count and must not be echoed as one');
+  assert.ok(res.gapLines.every((l) => l.startsWith(KEEP)), 'every line still rides the stage prefix');
+});
+
+test('count-not-worse: an over-cap harvest of matched lines trims with the marker, and the withheld count is the gap\'s own (F28)', async (t) => {
+  const errors = Array.from({ length: GAP_LINE_CAP * 2 }, (_, i) => `src/f${i}.js(${i + 1},1): error TS2322: case ${i}`);
+  const r = makeRepo(t, { 'report.txt': `${errors.join('\n')}\n`, 'src/a.js': 'a\n' });
+  const res = await runStage(COUNT_STAGE({ parser: { terms: [{ lineMatch: 'error TS\\d+', sign: 1, aggregate: 'sum', region: 'whole-output' }] } }), ctxFor(r));
+
+  assert.equal(res.verdict, 'red');
+  assert.equal(res.value, errors.length, 'the count sees every line even when the gap cannot carry them all');
+  assert.equal(res.gapLines.length, GAP_LINE_CAP, 'the existing cap holds — the harvest rides it, never around it');
+  const last = res.gapLines.at(-1);
+  assert.ok(last.startsWith(KEEP));
+  assert.match(last, /trimmed/i);
+  assert.match(last, /withheld/i);
+  // the announced denominator is the fixture's own: every matched line plus the
+  // summary lines above them, never a constant
+  const total = Number(/of (\d+) lines/.exec(last)?.[1]);
+  assert.ok(total > errors.length, `the trim counts the matched lines it withheld (announced ${total} against ${errors.length} matches)`);
+  assert.ok(res.gapLines.some((l) => l.includes('error TS2322: case 0')), 'and the lines it COULD carry are still there');
 });
 
 test('count-not-worse: a parser that cannot read its number stops the stage instead of grading it 0', async (t) => {

@@ -82,8 +82,8 @@ const haltedSpine = ({ outcome = 'cap-halt', job = SPEC.job, rounds = [BUDGET * 
  * verdict about the runner, and saying so is the same rule the close's own
  * `noExit` guard follows.
  */
-const preview = (args) => {
-  const r = spawnSync(process.execPath, [RUNNER, '--job', 'bareagent-types', ...args], {
+const preview = (args, job = 'bareagent-types') => {
+  const r = spawnSync(process.execPath, [RUNNER, '--job', job, ...args], {
     encoding: 'utf8', timeout: 240_000, env: { ...process.env, ANTHROPIC_API_KEY: '' },
   });
   const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
@@ -206,6 +206,65 @@ test('§3 REFUSED: a WALL halt IS resumable — the W-2 symmetry, not an excepti
   assert.match(out, /RESUME/);
 });
 
+test('§3 a STALL is a CHECKPOINT, not a fresh start — a step-stalled run resumes instead of re-paying for the steps it finished', () => {
+  // hamr's go (2026-08-13). `step-stalled` is the one terminal whose OWN escalation
+  // says *"retry the run"* (src/planrun.js) while this runner answered "Start a fresh
+  // run" — discarding exactly the finished-step spend the step-level resume doctrine
+  // exists to keep. The NAME stays (src/run.js keys the F44 spend floor on that
+  // outcome), so what changes is which terminals read as a checkpoint.
+  //
+  // The floor rides along: a stalled `job-end` carries `spendComplete:false` (an
+  // abandoned call may already have been billed), so the fold must be quoted as a
+  // FLOOR here. An unknown that heals by being inherited is F6 in a resume coat.
+  const rounds = [BUDGET * 0.15, BUDGET * 0.10];
+  const spent = sum(rounds);
+  const stalled = haltedSpine({ outcome: 'step-stalled', rounds })
+    .map((e) => (e.type === 'job-end' ? { ...e, spendComplete: false } : e));
+  const { code, out } = preview(['--resume', spineFile(stalled)]);
+  assert.equal(code, 0, 'a stall leaves the tree, the plan and the finished steps on disk — that is a checkpoint, not a verdict');
+  assert.match(out, /RESUME, continuing a halted run/);
+  assert.match(out, new RegExp(`≥\\$${usd(spent)} and .* before the halt — FOLDED IN`), 'the fold is quoted as the FLOOR the stalled terminal declared');
+  assert.match(out, new RegExp(`left {5}\\$${usd(BUDGET - spent)} of \\$${rx(BUDGET)}`));
+  assert.match(out, /at       the close and its fix loop/, 'and it re-enters at the checkpoint, so none of the finished steps is re-paid');
+});
+
+test('§3 the refusal names the resumable set from the ONE constant, and every terminal it names really resumes', () => {
+  // A terminal admitted in code but missing from the message (or the reverse) leaves
+  // the operator reading a stale list to decide whether their run is recoverable. So
+  // the list is read out of the runner's own constant rather than spelled twice here —
+  // the same rule the money and wall numbers in this file follow.
+  const src = readFileSync(RUNNER, 'utf8');
+  const decl = src.match(/const RESUMABLE_HALTS = \[([^\]]*)\]/);
+  assert.ok(decl, 'the resumable set is still ONE constant');
+  const halts = decl[1].split(',').map((s) => s.trim().replace(/^'|'$/g, '')).filter(Boolean);
+  assert.ok(halts.includes('step-stalled'), 'a stall is a checkpoint (hamr, 2026-08-13)');
+
+  const refused = preview(['--resume', spineFile(haltedSpine({ outcome: 'escalated' }))]);
+  assert.equal(refused.code, 2, 'an escalation is an answer, and answers are not resumable');
+  assert.match(refused.out, new RegExp(rx(halts.join(' / '))), 'the refusal names exactly what the code admits');
+
+  for (const h of halts) {
+    const r = preview(['--resume', spineFile(haltedSpine({ outcome: h }))]);
+    assert.equal(r.code, 0, `"${h}" is advertised as resumable, so it must actually resume — printed-but-refused is the worse half of the same drift`);
+  }
+});
+
+test('§3 the STALL readout OFFERS the resume (source tripwire): the run that can be continued must say so where the operator is looking', () => {
+  // Past the approval gate, so no preview can drive it — the same reason the other
+  // end-of-run readouts in this file are pinned in source. The stall's own escalation
+  // prints one line above it and says "retry the run"; without this block the only
+  // retry on offer is a cold one that re-drafts the plan and re-pays every step.
+  const src = readFileSync(RUNNER, 'utf8');
+  const at = src.indexOf("if (outcome === 'step-stalled') {");
+  assert.ok(at > 0, 'the stall readout exists');
+  const end = src.indexOf('\n}', at);
+  assert.ok(end > at, 'and it closes at its own indent');
+  const block = src.slice(at, end);
+  assert.match(block, /--resume \$\{runid\}/, 'it hands over the actual resume invocation, not the idea of one');
+  assert.match(block, /--approve \$\{specHash\}/, 'with the hash ALREADY signed: no allowance moved, so nothing here needs re-signing');
+  assert.doesNotMatch(block, /\bdie\(|process\.exit/, 'a readout never changes the run\'s own exit');
+});
+
 test('§3 REFUSED: another job\'s spine — a resume continues ONE job, never substitutes a plan across jobs', () => {
   const { code, out } = preview(['--resume', spineFile(haltedSpine({ job: 'some-other-job' }))]);
   assert.equal(code, 2);
@@ -243,6 +302,43 @@ test('§3 CONTROL: without --resume the runner is byte-for-byte the cold launch 
   assert.equal(code, 0);
   assert.doesNotMatch(out, /RESUME/);
   assert.match(out, /user-mode e2e, ONE run/);
+});
+
+test('§F87 the signing preview names the close stages for a COMMAND close too — the goal and the thing that judges it are read at once, or not at all', () => {
+  // The F87 gate exists so the signer reads BOTH halves on one screen. Gated on
+  // `spec.closeDecl` it printed the stages for exactly one of the eleven shipped
+  // specs; every command `close[]` spec — which is all the rest — showed a goal, a
+  // hash, and nothing about what would judge it. That is the F87 half-reading,
+  // reproduced by the block written to end it, so this drives the REAL preview
+  // rather than reading the source: the defect was in what an operator SEES.
+  //
+  // Every expectation is DERIVED from the live spec (same rule as the money and wall
+  // numbers above): a close edit moves the stage list, and this must move with it
+  // instead of pinning a list the operator has since changed.
+  const names = SPEC.close.map((s) => s.name);
+  assert.ok(Array.isArray(SPEC.close) && names.length > 1 && !SPEC.closeDecl,
+    'the fixture spec really is a multi-stage COMMAND close — the form the gate used to skip');
+  const { code, out } = preview([]);
+  assert.equal(code, 0, 'a preview is still a readout, not a refusal');
+  assert.match(out, new RegExp(`judged   ${names.length} close stage\\(s\\)`), 'the COUNT, so a stage that never renders is visible as a gap');
+  for (const n of names) {
+    assert.match(out, new RegExp(`\\n {11}${rx(n)} {2}\\[command\\]`), `the close stage "${n}" is named to the signer`);
+  }
+  assert.doesNotMatch(out, /\[undefined\]/, 'a command stage carries no `kind`, and the readout says `command` rather than printing the absence');
+  // ABOVE the hash, because the hash line is where the eye stops: the block is the
+  // second half of the goal, not a footnote under the signature.
+  assert.ok(out.indexOf('judged   ') < out.indexOf('  hash     '), 'the stages are read before the thing being signed, not after');
+
+  // CONTROL: the DECLARED form still renders its own catalogue kinds, unchanged — the
+  // two spec forms are one readout now, and `command` is not laundered over a real kind.
+  const declSpec = JSON.parse(readFileSync(new URL('../jobs/pulselog-author-types.json', import.meta.url), 'utf8'));
+  const decl = preview([], 'pulselog-author-types');
+  assert.equal(decl.code, 0);
+  assert.match(decl.out, new RegExp(`judged   ${declSpec.closeDecl.stages.length} close stage\\(s\\)`));
+  for (const s of declSpec.closeDecl.stages) {
+    assert.match(decl.out, new RegExp(`\\n {11}${rx(s.name)} {2}\\[${rx(s.kind)}\\]`), `the declared stage "${s.name}" keeps its authored kind`);
+  }
+  assert.doesNotMatch(decl.out, /\[command\]/, 'a declaration never falls back to the command spelling — its stages all carry a kind');
 });
 
 test('§3 ORDERING (source tripwire): the resume read and the approval gate both sit ABOVE the patient reset', () => {
@@ -393,4 +489,106 @@ test('§3 banner: the runner prints the folded line through THIS function — a 
   const src = readFileSync(RUNNER, 'utf8');
   assert.match(src, /wall {6}\$\{wallLine\(/, 'the banner calls the shared helper');
   assert.doesNotMatch(src, /\$\{elapsedMin\}min of/, 'and the old leg-only spelling is gone, not merely shadowed');
+});
+
+// ── F97 — the DOOMED RESUME banner ──────────────────────────────────────────
+//
+// u-msn0uccv spent $0.82 re-entering the exact plan that WAS the diagnosed defect,
+// with `priorReplans: 2` and `priorReplanGrantUsed: true` on its own `job-start` —
+// the one channel that could have replaced the impossible action was spent before
+// the leg opened. Nothing in the library was at fault; the DECISION to fire was, and
+// the read that would have refused it is $0 and sits in the spine the preview gate
+// already parses.
+//
+// So the predicate lives here, beside `wallLine`, for `wallLine`'s reason: the script
+// runs on import, and a banner nothing can drive is a banner nothing can prove fires.
+// It is a WARNING only — it never blocks and never changes what the run does.
+import { doomedResume } from '../scripts/u-readout.mjs';
+
+/** the restart fold as `readResume` hands it to the banner, F97's own numbers */
+const F97 = { seed: { phase: 'steps' }, replans: 2, replanGrantUsed: true };
+
+test('§F97 predicate: re-entering the reloaded PLAN with the replan ceiling spent is the doomed shape', () => {
+  assert.equal(doomedResume(F97), true,
+    'phase "steps" reloads the accepted plan verbatim (scout-skipped {reason:"resumed"}), and with both the ceiling and the arbiter\'s extra spent nothing can redraw it');
+  assert.equal(doomedResume({ ...F97, replans: 1 }), true,
+    'the ceiling is ONE replan plus the arbiter\'s one extra — at 1 + grantUsed the ledger is just as empty as at 2');
+});
+
+test('§F97 predicate CONTROL: a checkpoint at the CLOSE is not the doomed shape — every step finished and the fix loop is a different channel', () => {
+  assert.equal(doomedResume({ ...F97, seed: { phase: 'close' } }), false,
+    'nothing is re-entering a failed plan: the plan completed, and the outer close fix loop writes without a replan');
+});
+
+test('§F97 predicate CONTROL: with replan capacity LEFT the leg can redraw the plan, so no banner', () => {
+  assert.equal(doomedResume({ ...F97, replans: 0, replanGrantUsed: false }), false,
+    'a cold-ish resume has its whole ceiling');
+  assert.equal(doomedResume({ ...F97, replans: 2, replanGrantUsed: false }), false,
+    'the arbiter\'s one extra is still unearned — conditional capacity is capacity, and claiming zero here would be the banner crying wolf on the commonest resume there is');
+});
+
+test('§F97 predicate CONTROL: no plan checkpoint at all is the cold path — nothing is being re-entered', () => {
+  assert.equal(doomedResume({ seed: null, replans: 2, replanGrantUsed: true }), false,
+    'it halted before a plan was accepted, so the resume re-drafts and the ceiling is not what bounds it');
+  assert.equal(doomedResume({ replans: 2, replanGrantUsed: true }), false, 'an absent seed reads as no checkpoint');
+  assert.equal(doomedResume(null), false, 'and no restart at all is a cold launch');
+});
+
+test('§F97 predicate: a garbage ledger never SUPPRESSES the warning by reading as unspent — and never invents one either', () => {
+  // the fail-safe direction: this drives a WARNING, so an unreadable ledger must not
+  // silently mint "you have capacity". It also must not fire on a shape with no plan.
+  for (const bad of [NaN, Infinity, null, undefined, '2', -1]) {
+    assert.equal(doomedResume({ seed: { phase: 'steps' }, replans: /** @type {any} */ (bad), replanGrantUsed: true }), false,
+      `an unreadable replan count (${String(bad)}) is not evidence of an EXHAUSTED ceiling — the banner states a fact or stays silent`);
+  }
+  assert.equal(doomedResume({ seed: { phase: /** @type {any} */ (null) }, replans: 2, replanGrantUsed: true }), false,
+    'an unreadable phase is not a claim that a plan is being re-entered');
+});
+
+test('§F97 banner: the runner prints it through THIS predicate, and it WARNS rather than blocks', () => {
+  const src = readFileSync(RUNNER, 'utf8');
+  assert.match(src, /doomedResume\(/, 'the script drives the shared predicate rather than re-deriving the shape');
+  assert.match(src, /import \{ wallLine, doomedResume \}|import \{ doomedResume, wallLine \}/, 'imported from the readout module the tests can reach');
+  // WARNING ONLY: the F97 lesson is an operator pre-flight, not a new gate. A `die(`
+  // or a `process.exit` reached from this predicate would turn a $0 read into a
+  // refusal the operator never signed up for.
+  // scoped to the BANNER BLOCK — not a byte-window, which would sweep in the approval
+  // gate's own (correct, unrelated) `process.exit` two statements later and pass or
+  // fail on how long the prose above it happens to be
+  const at = src.indexOf('if (doomedResume(');
+  assert.ok(at > 0, 'the banner is a guarded block, so there is a block to bound');
+  const end = src.indexOf('\n    }', at);
+  assert.ok(end > at, 'and it closes at its own indent');
+  const block = src.slice(at, end);
+  assert.doesNotMatch(block, /\bdie\(|process\.exit/, 'the banner never blocks the resume');
+  assert.match(block, /console\.log/, 'it only prints');
+});
+
+test('§F97 banner E2E: the REAL preview prints it for F97\'s own spine shape, and stays silent on the control', () => {
+  // Rendered through the script, because a predicate nothing drives is F50's class:
+  // the operator's only sight of this read is the preview, and `doomedResume` returning
+  // true in a unit test proves nothing about what the banner does on a spine.
+  //
+  // F97's shape, spelled in the two records that carry it: `job-start` DECLARES the
+  // inherited replan ledger, and the window stops with the plan accepted and its step
+  // unfinished (no `outer-close`) — which is `phase: 'steps'`, the re-entry that
+  // reloads the plan verbatim.
+  const doomed = haltedSpine().filter((e) => e.type !== 'step-end' && e.type !== 'outer-close')
+    .map((e) => (e.type === 'job-start' ? { ...e, priorReplans: 2, priorReplanGrantUsed: true } : e));
+  const { code, out } = preview(['--resume', spineFile(doomed)]);
+  assert.equal(code, 0, 'a WARNING never changes the exit — the preview is still a readout');
+  assert.match(out, /at       step 1 of 1/, 'the fixture really is the steps re-entry (guard against warning on the wrong shape)');
+  assert.match(out, /⚠ SAME PLAN, NO REPLANS/);
+  assert.match(out, /F97 paid \$0\.82/, 'the lesson is cited so the operator can go read what it bought');
+  assert.doesNotMatch(out, /NOTHING LEFT/, 'and this is the OTHER warning: the allowance is fine, the shape is not');
+
+  // CONTROL: same ledger, same everything — but the checkpoint is at the close, where
+  // no failed plan is being re-entered. Two should-differ conditions, and the only
+  // difference between them is the phase.
+  const atClose = haltedSpine().map((e) => (e.type === 'job-start' ? { ...e, priorReplans: 2, priorReplanGrantUsed: true } : e));
+  const ctl = preview(['--resume', spineFile(atClose)]);
+  assert.equal(ctl.code, 0);
+  assert.match(ctl.out, /at       the close and its fix loop/);
+  assert.match(ctl.out, /replans  2 already spent/, 'the ledger line still prints — that one is not the warning');
+  assert.doesNotMatch(ctl.out, /SAME PLAN, NO REPLANS/, 'no banner: the plan finished, and the close fix loop writes without a replan');
 });

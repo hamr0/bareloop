@@ -1208,18 +1208,22 @@ const TWO_STEP = { schema: 'plan-v1', steps: [STEP_A, STEP_B] };
 const wcall = (id, path, content) => ({ toolCalls: [{ id, name: 'shell_write', arguments: { path, content } }] });
 
 /** record a REAL plan flow: real executor, real spawned close, scripted provider */
-async function recordFlow(wd, script, { job = STEPJOB(), capRuns = 3, resumeSeed } = {}) {
+async function recordFlow(wd, script, { job = STEPJOB(), capRuns = 3, resumeSeed, provider, over = {} } = {}) {
   const jv = validateJob(job, { shellCapUsd: job.budgetUsd });
   assert.deepEqual(jv.reds, [], 'the fixture job must be validateJob-green');
   /** @type {any[]} */
   const events = [];
   const outcome = await runPlan(jv.job, {
     workdir: wd,
-    provider: scriptedProvider(script),
+    provider: provider ?? scriptedProvider(script),
     emit: (/** @type {string} */ type, /** @type {any} */ data = {}) => { const e = { type, ...data }; events.push(e); return e; },
     remainingUsd: () => 5,
     capRuns,
     ...(resumeSeed ? { resumeSeed } : {}),
+    // `provider`/`over` exist for ONE fixture: the wall-crossed flow below needs a
+    // clock the test drives (`now`) and a provider that advances it. Both default to
+    // absent, so every other caller records exactly the flow it always did.
+    ...over,
   });
   return { events, outcome };
 }
@@ -1715,6 +1719,156 @@ test('§3 CONTROL: both options are OFF by default — a bare runJob spine still
   const reuse = readResume(killedAfter(events, (e) => e.type === 'job-end'));
   assert.equal(reuse.restart, null, 'the reuse loop grades a cap-halted try and moves on — unchanged');
   assert.equal(reuse.completed.length, 1);
+});
+
+// ══ D4a — THE MISLABELLED WALL STOP (u-msmt91t3, 2026-08-10) ═════════════════
+//
+// The step-variance terminal did not re-read the clock, so a run whose wall had
+// passed minted `step-red` 9.9 seconds after its own `wall-bounded` record. Fixed at
+// the source (src/planrun.js), but the spines already written under the defect cannot
+// be re-run and must never be edited — a spine is append-only forever. So the READER
+// derives what the file already proves: a `step-red` whose own window carries a
+// wall-bounded record showing the wall CROSSED before the terminal is a governance
+// halt, and W-2 applies (keep the grades, pause, resume on a top-up).
+//
+// The fixture is a REAL recorded flow whose clock really expires mid-attempt, so the
+// `wall-bounded` record is the runner's own — only the terminal is authored, exactly
+// as `directSpine` already authors every terminal in this block.
+
+/** a clock the test drives, the same shape the planrun suite's fixtures use */
+const fakeClock = (startMs = 1_000_000) => {
+  const state = { ms: startMs };
+  return { now: () => state.ms, advance: (/** @type {number} */ by) => { state.ms += by; } };
+};
+
+/** record a REAL flow whose wall passes during the worker's first round — the runner
+ * emits its own `wall-bounded` there (src/planrun.js, the round seam) */
+async function wallCrossedFlow() {
+  const wd = patientDir(['src/a.mjs', 'tests/test_x.mjs']);
+  const job = STEPJOB();
+  const clk = fakeClock();
+  const script = twoStepScript(wd);
+  const inner = scriptedProvider(script);
+  let calls = 0;
+  const provider = {
+    name: 'wall-crosser',
+    /** @param {any} m @param {any} tools */
+    async generate(m, tools) {
+      calls += 1;
+      // call 3 is the worker's first tool round: the deadline lands inside the attempt
+      if (calls === 3) clk.advance(job.maxWallMs + 100_000);
+      return inner.generate(m, tools);
+    },
+  };
+  const { events } = await recordFlow(wd, script, { job, provider, over: { now: clk.now } });
+  const wb = events.filter((e) => e.type === 'wall-bounded');
+  assert.equal(wb.length >= 1, true, 'the fixture must really have crossed the wall — otherwise every test below proves nothing');
+  assert.equal(wb[0].bounded, true);
+  assert.equal(wb[0].remainingMs, 0, 'and the runner\'s own record says the deadline passed');
+  return events;
+}
+
+/** the pre-fix pairing: a real wall-crossed flow under an authored `step-red` terminal */
+const preFixSpine = (flow, over = {}) => directSpine(flow, { outcome: 'step-red', ...over });
+const RESUMABLE = { direct: true, resumableOutcomes: ['cap-halt', 'wall-halt'] };
+
+test('D4a: a `step-red` whose own spine shows the wall CROSSED before it ended is re-read as a wall-halt — resumable, with the checkpoint its steps earned', async () => {
+  const flow = await wallCrossedFlow();
+  const r = readResume(preFixSpine(flow), RESUMABLE);
+  assert.equal(r.wallDerivedHalt, true, 'the derivation fired, and it says so rather than opening the gate silently');
+  assert.equal(r.ended, false, 'a governance halt is not a terminal the caller must refuse');
+  assert.ok(r.restart, 'there is work to continue — the tree, the plan and the money are all on the record');
+  assert.equal(r.completed.length, 0, 'a halt is a CHECKPOINT, not a graded row');
+  assert.equal(r.endOutcome, 'step-red', 'the RECORDED terminal is never rewritten — the reader states how it read it, the spine keeps what it said');
+});
+
+test('D4a: a `step-red` with NO wall record stays terminal — "a red is an answer" is untouched', async () => {
+  // the SAME authored terminal over a flow that never ran out of time: the only
+  // difference between this and the test above is the evidence on the run's own spine
+  const wd = patientDir(['src/a.mjs', 'tests/test_x.mjs']);
+  const flow = await recordFlow(wd, twoStepScript(wd));
+  assert.equal(flow.events.filter((e) => e.type === 'wall-bounded').length, 0, 'the control really carries no wall record');
+  const r = readResume(preFixSpine(flow.events), RESUMABLE);
+  assert.equal(r.wallDerivedHalt, false);
+  assert.equal(r.restart, null, 'nothing to continue — the close had its say');
+  assert.equal(r.completed.length, 1, 'it stays a graded row');
+  assert.equal(r.ended, true);
+});
+
+test('D4a: the re-read is `step-red` ONLY — every other outcome with the SAME wall record on its spine is unchanged', async () => {
+  const flow = await wallCrossedFlow();
+  for (const outcome of ['green', 'escalated', 'provider-red', 'close-red']) {
+    const r = readResume(directSpine(flow, { outcome }), RESUMABLE);
+    assert.equal(r.wallDerivedHalt, false, `${outcome} is not a mislabelled wall stop`);
+    assert.equal(r.restart, null, `${outcome} must not become a restart`);
+    assert.equal(r.completed.length, 1, `${outcome} stays a graded row`);
+  }
+});
+
+test('D4a: the derivation needs the CALLER to hold wall-halt resumable — it never invents a resumability the caller did not declare', async () => {
+  const flow = await wallCrossedFlow();
+  const moneyOnly = readResume(preFixSpine(flow), { direct: true, resumableOutcomes: ['cap-halt'] });
+  assert.equal(moneyOnly.wallDerivedHalt, false, 'a caller that resumes money only gets no wall derivation');
+  assert.equal(moneyOnly.restart, null);
+  const off = readResume(preFixSpine(flow), { direct: true });
+  assert.equal(off.wallDerivedHalt, false, 'and with `resumableOutcomes` empty, nothing changes at all');
+  assert.equal(off.restart, null);
+  assert.equal(off.completed.length, 1, 'the landed terminal is a GRADED row, exactly as it is for every other outcome under an empty option');
+});
+
+test('D4a: a wall-bounded record that does NOT show the wall crossed is not evidence — the reader requires the crossing, never the record\'s mere presence', async () => {
+  const flow = await wallCrossedFlow();
+  // the runner's own record with its two numbers moved back before the deadline: the
+  // event exists, the wall was not crossed, and that is the whole difference
+  const notCrossed = flow.map((e) => (e.type === 'wall-bounded'
+    ? { ...e, remainingMs: 5_000, elapsedMs: e.requestedMs - 5_000 }
+    : e));
+  const r = readResume(preFixSpine(notCrossed), RESUMABLE);
+  assert.equal(r.wallDerivedHalt, false);
+  assert.equal(r.restart, null, 'a step-red is still an answer when the clock still had time on it');
+});
+
+test('D4a: `bounded:false` is not evidence — an UNBOUNDED run has no deadline to have crossed', async () => {
+  const flow = await wallCrossedFlow();
+  const unbounded = flow.map((e) => (e.type === 'wall-bounded' ? { ...e, bounded: false } : e));
+  const r = readResume(preFixSpine(unbounded), RESUMABLE);
+  assert.equal(r.wallDerivedHalt, false);
+  assert.equal(r.restart, null);
+});
+
+test('D4a: either of the clock\'s OWN two spellings is sufficient — a spine carrying only one of them still reads honestly', async () => {
+  const flow = await wallCrossedFlow();
+  // `remainingMs: 0` alone
+  const onlyRemaining = flow.map((e) => (e.type === 'wall-bounded'
+    ? (({ elapsedMs, requestedMs, ...rest }) => rest)(e) : e));
+  assert.equal(readResume(preFixSpine(onlyRemaining), RESUMABLE).wallDerivedHalt, true,
+    'the remaining-is-zero spelling on its own');
+  // `elapsedMs >= requestedMs` alone
+  const onlyElapsed = flow.map((e) => (e.type === 'wall-bounded'
+    ? (({ remainingMs, ...rest }) => rest)(e) : e));
+  assert.equal(readResume(preFixSpine(onlyElapsed), RESUMABLE).wallDerivedHalt, true,
+    'the elapsed-past-requested spelling on its own');
+});
+
+test('D4a: the crossing must precede the terminal — a wall record written AFTER the run ended could not have stopped it', async () => {
+  const flow = await wallCrossedFlow();
+  const wb = flow.find((e) => e.type === 'wall-bounded');
+  const moved = [...flow.filter((e) => e.type !== 'wall-bounded')];
+  // authored back onto the spine AFTER the job-end that directSpine appends
+  const spine = [...preFixSpine(moved), { ...wb, seq: 9_999, ts: '2026-08-04T10:30:00.000Z' }];
+  const r = readResume(spine, RESUMABLE);
+  assert.equal(r.wallDerivedHalt, false, 'ordering is the claim: only a crossing BEFORE the terminal explains it');
+  assert.equal(r.restart, null);
+});
+
+test('D4a: a recorded `wall-halt` or `cap-halt` is unchanged and is never reported as derived — the ordinary path stays the ordinary path', async () => {
+  const flow = await wallCrossedFlow();
+  for (const outcome of ['wall-halt', 'cap-halt']) {
+    const r = readResume(directSpine(flow, { outcome }), RESUMABLE);
+    assert.equal(r.wallDerivedHalt, false, `${outcome} is resumable on its own recorded name, not on a derivation`);
+    assert.ok(r.restart, `${outcome} is still a checkpoint`);
+    assert.equal(r.completed.length, 0);
+  }
 });
 
 test('§3 the reuse restart hands runJob whether its fold was EXACT — a floor that stops at the seam is F6 laundered one function call later', async () => {

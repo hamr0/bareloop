@@ -34,7 +34,7 @@ import { validateBridge, loadGate } from './bridges.js';
 import { extractArtifact } from './text.js';
 import { createClock, isWallTimeout } from './clock.js';
 import { isDeclaredClose, runDeclaredStages, validateCloseDecl, closeGrade } from './declaredclose.js';
-import { seedAtHead, seedListing } from './kinds.js';
+import { seedAtHead, seedListing, GAP_TRIM_MARKER, GATE_AUDIT_FILE, ARBITER_BOOK_STORES } from './kinds.js';
 import { workBranchName, prepareWorkBranch } from './workbranch.js';
 
 const require = createRequire(import.meta.url);
@@ -261,6 +261,60 @@ export function closeGapBlock(gap) {
 }
 
 /**
+ * The recorded bound-reason's ceiling in the WORKER-facing note. The reason is a
+ * provider string (`denied:<tool>` today, ~20 bytes), not a gap, so this is a
+ * backstop against a future terminal that arrives long — never an envelope the
+ * shipped path routinely rides through.
+ */
+export const BOUND_REASON_MAX = 200;
+
+/**
+ * What the NEXT attempt is told about the bound that cut the previous one.
+ *
+ * Two different bounds used to set the same bare `attemptBounded = roundIteration`
+ * and therefore render the same sentence. For a round-bound cutoff that sentence is
+ * true. For BA-11's deny streak it is false twice over — the rounds did NOT run out
+ * (the fence short-circuited the attempt with budget left), and the count it quotes
+ * is the cap, not what was spent — and it aims the worker at the READ BUDGET when the
+ * thing that stopped it was the FENCE. The reason was already recorded on the spine;
+ * nothing carried it to the one reader who could act on it.
+ *
+ * The denial note is MECHANICAL in the strict sense: it quotes the terminal the
+ * provider actually returned and names which bound fired. It invents nothing —
+ * no streak count and no denied path, because bare-agent's return (`error:
+ * 'denied:<tool>'`, loop.js) carries neither, and a number nobody measured is a
+ * bug with a confident voice. Every other cause keeps the frozen wording byte for
+ * byte: a wall-bounded attempt reads as a round bound exactly as it did before
+ * (and is unreachable anyway — the step head refuses to fund an attempt past the
+ * deadline, W-2), so this change can only ever speak where it has something true
+ * to add.
+ *
+ * The reason arrives ALREADY SCRUBBED (the capture seam in `mkWorker` runs it
+ * through the one `SECRET_PATTERNS` inventory), so this renderer only bounds it —
+ * and announces the trim with the repo's ONE marker rather than a second spelling
+ * of "this text was cut" (F90.2).
+ *
+ * @param {{iteration?: number|string|undefined, cause: string, reason: string|null}|null|undefined} bounded
+ *   the previous attempt's bound state, or nullish when it was not bounded
+ * @param {number} rounds the step's round bound, as quoted by the frozen sentence
+ * @returns {string|null} the note, or null when there is nothing to say
+ */
+export function boundedNote(bounded, rounds) {
+  if (!bounded) return null;
+  if (bounded.cause !== 'denied') {
+    return `Your previous attempt was CUT OFF after ${rounds} tool rounds. `
+      + 'Reading is bounded; writing is not. Form a hypothesis EARLY and make the change.';
+  }
+  const raw = String(bounded.reason ?? '');
+  const shown = raw.length > BOUND_REASON_MAX
+    ? `${raw.slice(0, BOUND_REASON_MAX)} [${GAP_TRIM_MARKER} ${raw.length - BOUND_REASON_MAX} of ${raw.length} characters withheld — the cap is ${BOUND_REASON_MAX}]`
+    : raw;
+  return 'Your previous attempt was CUT OFF by the gate: it denied consecutive tool calls '
+    + `until the streak guard ended the attempt. The gate recorded: ${shown}. `
+    + 'The round budget was not what stopped you — repeating a denied call ends this attempt the same way.';
+}
+
+/**
  * The plan-drafting prompt: a schema DESCRIPTION built from the live validator
  * menus — never a copyable example (the drafter must author, not echo; the
  * run.js draftPrompt precedent). Check NAMES only: a check's command is
@@ -321,7 +375,7 @@ Shape: { "schema": "plan-v1", "steps": [ ... 1..${MAX_PLAN_STEPS} steps ... ] } 
 strictly in array order. Each step (no other fields exist):
 - "id": kebab-case slug, unique
 - "action": the step's task, precise enough for a worker that sees ONLY this step
-- "tools": non-empty unique subset of ${JSON.stringify(ceiling)} (write/edit change the tree; recall/get/impact/related/recent search and navigate the repository index; compress/peek read cheaply; stash/remember/forget park and record notes across steps)
+- "tools": non-empty unique subset of ${JSON.stringify(ceiling)} (read/grep are the worker's ONLY way to see the tree — there is no shell; write/edit change the tree; recall/get/impact/related/recent search and navigate the repository index; compress/peek read cheaply; stash/remember/forget park and record notes across steps)
 - "rounds": integer 1..${maxStepRounds} — the step's per-attempt tool-round bound
 - "target": the step's deliverable path (REQUIRED when tools include write/edit), inside ${JSON.stringify(job.writeScope)}
 - "scope" (optional): narrow this step's WRITE fence — copy one value from the offered scopes below.
@@ -350,6 +404,15 @@ strictly in array order. Each step (no other fields exist):
   modify any file outside X"): a step ordered to leave a file alone while its
   exit reds on that file can never finish, on any attempt.${seedRedLaw}${priorChecksLaw}
   Reference checks by NAME only; you cannot author or modify one.
+
+The worker has NO SHELL. It cannot run a command, a compiler, a linter, or a test suite,
+and it cannot execute a script it writes: its only verbs are the tools you grant that step
+in "tools". The check named in a "check-passes" exit is the ONLY execution in this run —
+the shell runs it after each attempt and hands the worker its raw output. So write every
+"action" for a worker that locates its work by READING and GREPPING files and by reading
+the check output it is given. Never tell it to run, execute, re-run, or verify by running
+anything (an action that opens with "Run \`<command>\`…" costs the whole step: the worker
+has no way to obey it and spends its rounds hunting by hand).
 
 Offered "scope" values for tree-changed — copy ONE of these exactly, character for
 character. No other value is accepted, and patterns of your own (like "src/*.js")
@@ -1062,7 +1125,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   const lc = new LiteCtx({ root: workdir });
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
   const fencePrefixes = job.writeScope.map((/** @type {string} */ g) => resolve(workdir, globToPrefix(g)));
-  const auditPath = join(workdir, 'gate-audit.jsonl');
+  const auditPath = join(workdir, GATE_AUDIT_FILE);
   const chainByName = new Map(menu.map((m) => [m.name, m.run]));
   // Choose-don't-describe (§4): the offered `tree-changed` scopes, enumerated from
   // the signed fence plus the directories that actually exist beneath it. ONE menu
@@ -1198,7 +1261,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         // uses), so this can only tighten, never widen
         writeScope: writable ? (fence ?? fencePrefixes) : [],
         readScope: [workdir],
-        deny: [auditPath, join(workdir, '.smoke'), join(workdir, '.litectx')],
+        deny: [auditPath, ...ARBITER_BOOK_STORES.map((s) => join(workdir, s))],
       },
       budget: { maxCostUsd: Math.max(remainingUsd(), 0.0001) },
       limits: { maxTurns },
@@ -1312,7 +1375,23 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     /** @type {number|string|undefined} */
     let roundIteration;
     let roundsThisAttempt = 0;
-    /** @type {number|string|undefined} */
+    /**
+     * WHICH bound cut the last attempt, and — when the provider recorded one — its
+     * reason. A bare iteration number was the whole state here, so three different
+     * bounds (round cap, wall, BA-11 deny streak) were indistinguishable to the one
+     * consumer that speaks to the worker, which then told every one of them the
+     * round cap had run out. The cause travels WITH the iteration because they are
+     * read together and can never be allowed to drift apart.
+     *
+     * `reason` is scrubbed at THIS seam — the boundary, once, before any reader —
+     * so no consumer has to remember to do it (the same placement the exit results
+     * get in `judge`). It rides the spine event in the same scrubbed spelling: one
+     * value, one inventory, and an append-only log is forever.
+     * `iteration` mirrors `roundIteration` exactly, undefined included: the bound
+     * cannot know a label the run never set, and inventing one here would be the
+     * only place in this file that claims to.
+     * @type {{iteration: number|string|undefined, cause: 'rounds'|'wall'|'denied', reason: string|null}|undefined}
+     */
     let attemptBounded;
     /**
      * Open an iteration: label the rounds, reset the per-iteration round counter,
@@ -1413,19 +1492,24 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         }
         // a maxTurns session is a BOUNDED attempt, not an escalation — the same
         // role loop.stop() plays on the Loop path: judge the partial work and
-        // feed the gap forward (the CLI preserves lastText, BA-5).
-        if (r.error === 'max_turns') {
-          attemptBounded = roundIteration;
-          emit('attempt-bounded', { phase, iteration: roundIteration, cap: attemptRounds, native: true });
-          return r;
-        }
+        // feed the gap forward (the CLI preserves lastText, BA-5). A DENIAL
+        // STREAK is the same shape and takes the same lane (see the Loop path's
+        // note below — one doctrine, both surfaces).
         if (r.error) {
+          if (r.error === 'max_turns' || r.error.startsWith('denied:')) {
+            // the CAUSE is kept, not just the fact: `max_turns` really is the round
+            // cap, a `denied:` terminal is the fence, and the next attempt is told
+            // which one it was (`boundedNote`)
+            const denied = r.error.startsWith('denied:');
+            const reason = scrub(r.error);
+            attemptBounded = { iteration: roundIteration, cause: denied ? 'denied' : 'rounds', reason };
+            emit('attempt-bounded', { phase, iteration: roundIteration, cap: attemptRounds, native: true, reason });
+            return r;
+          }
           const err = /** @type {CategorizedError} */ (new Error(`native session: ${r.error}`));
-          // halt → cap-halt, denial streak → gate-red; a bridge/session terminal
-          // (bridge-failed, session_timeout, session:*) is provider-owned transport
-          err.category = r.error.startsWith('halt:') ? 'cap-halt'
-            : r.error.startsWith('denied:') ? 'gate-red'
-            : 'provider-red';
+          // halt → cap-halt; a bridge/session terminal (bridge-failed,
+          // session_timeout, session:*) is provider-owned transport
+          err.category = r.error.startsWith('halt:') ? 'cap-halt' : 'provider-red';
           err.lib = 'bare-agent';
           throw err;
         }
@@ -1523,11 +1607,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
           // (a step that would BEGIN past the deadline is never funded), and the head of
           // a close-fix iteration (W-2 — the run stops on the verdict already minted).
           if (clock.expired()) {
-            attemptBounded = roundIteration;
+            attemptBounded = { iteration: roundIteration, cause: 'wall', reason: null };
             emit('wall-bounded', { phase, iteration: roundIteration, ...clock.report(closeTimeoutForReport) });
             self.stop();
           } else if (roundsThisAttempt >= attemptRounds) {
-            attemptBounded = roundIteration;
+            attemptBounded = { iteration: roundIteration, cause: 'rounds', reason: null };
             emit('attempt-bounded', { phase, iteration: roundIteration, rounds: roundsThisAttempt, cap: attemptRounds });
             self.stop();
           }
@@ -1561,12 +1645,25 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       } catch (e) {
         throw categorize(e).err;
       }
-      // same error-return taxonomy as interpret's ask (one map, same doctrine):
-      // halt → cap-halt, denial streak → gate-red, API truncation → provider-red
+      // BA-11's deny streak is a BOUNDED ATTEMPT, not a terminal. It is the same
+      // shape `loop.stop()` has at the round bound thirty lines up: the attempt
+      // ran, produced real work, and was cut short by a governance bound doing
+      // exactly its job — the fence HELD, which is the opposite of a fault. So it
+      // takes the same lane: judge the partial work, feed the gap forward, the
+      // loop continues under unchanged caps. Routing it as a terminal killed a
+      // converging run with money and wall left (u-msn227nq). The native surface
+      // takes the identical lane above — one doctrine, both surfaces.
+      if (r.error && r.error.startsWith('denied:')) {
+        const reason = scrub(r.error);
+        attemptBounded = { iteration: roundIteration, cause: 'denied', reason };
+        emit('attempt-bounded', { phase, iteration: roundIteration, rounds: roundsThisAttempt, cap: attemptRounds, reason });
+        return r;
+      }
+      // the remaining error-return taxonomy (one map, same doctrine as native's):
+      // halt → cap-halt, API truncation → provider-red, anything else is wiring
       if (r.error) {
         const err = /** @type {CategorizedError} */ (new Error(`worker loop: ${r.error}`));
         err.category = r.error.startsWith('halt:') ? 'cap-halt'
-          : r.error.startsWith('denied:') ? 'gate-red'
           : r.error.startsWith('truncated:') ? 'provider-red'
           : 'interpreter-red';
         err.lib = 'bare-agent';
@@ -2044,14 +2141,19 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // carries counts and paths only — never content (the spine is forever).
       const rootInj = root ? root.observe({ iteration, gap, writes: w.workerWrites() }) : null;
       if (rootInj) emit('root-injected', { step: step.id, ...rootInj.event });
+      // read ONCE: the note and the "was it the attempt just before this one" test
+      // are two questions about the same record, and two reads is how they drift
+      const bound = w.wasBounded();
       const r = await w.ask([
         step.action,
         `Repository root (absolute): ${workdir}\nEvery path you pass to a tool MUST be absolute and inside this root — a relative path resolves against a different directory and will be denied by the gate.`,
         step.target && `Write your deliverable to: ${resolve(workdir, step.target)}`,
         artifacts.length > 0 && `Working context (read-only) — prior steps' results:\n${artifacts.map((a) => `[${a.id}] ${a.text}`).join('\n\n')}`,
         gap && `Previous attempt failed this step's checks:\n${gap}`,
-        w.wasBounded() === iteration - 1
-          && `Your previous attempt was CUT OFF after ${step.rounds} tool rounds. Reading is bounded; writing is not. Form a hypothesis EARLY and make the change.`,
+        // the note names the bound that ACTUALLY fired — a deny streak and a spent
+        // round cap are different diagnoses with different remedies, and telling a
+        // fenced worker to "form a hypothesis early" aims it at the wrong wall
+        bound?.iteration === iteration - 1 && boundedNote(bound, step.rounds),
         rootInj && rootInj.note,
       ].filter(Boolean).join('\n\n'));
       lastText = scrub(r.text ?? '').slice(0, ARTIFACT_MAX);
@@ -2234,7 +2336,32 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       && cat === 'step-variance'
       && !varianceGrantUsed
       && stopTrend.trend === 'converging';
-    if ((!replanned || grantExtraReplan) && replanTrigger && remainingUsd() > MONEY_MIN) {
+    // W-2 at the replan GATE, hamr's ruling: *"past the wall no new fix cycle or step
+    // starts"* — and a replan is the first move of starting a new step. Past the
+    // deadline the whole cycle is doomed by construction and it is not free: the
+    // drafting call is bought (money the operator's time allowance no longer covers),
+    // the redrafted plan's first step is then refused at its own head by the W-2 check
+    // one level down, and the run wall-halts anyway. u-msmt91t3 paid for exactly that
+    // and called the result `step-red`. So the gate declines to FUND it.
+    //
+    // Nothing is routed here and no readout is duplicated: declining simply lets the
+    // stop fall through to the `step-variance` terminal below, which is the one site
+    // that mints the wall-halt package (record + F11-consistent escalation + levers).
+    // One site, one spelling — a second copy here is how two instruments come to
+    // disagree about one event.
+    //
+    // TRIGGER-AGNOSTIC (hamr: "extend"). It first covered the variance trigger only,
+    // the one measured on u-msmt91t3; the ladder's exhaustion and the stall fuse reach
+    // this gate past the deadline too, and a doomed cycle costs the same money whichever
+    // instrument named the stop. Each trigger then lands on its own honest terminal
+    // below — the wall for the two that would otherwise mint `step-red`, its own name
+    // for the stall (which already rides out as `step-stalled` and must, because run.js
+    // keys the F44 spend FLOOR on that outcome).
+    //
+    // The latch is NOT consumed — no grant was spent, because no replan was bought.
+    // With time on the clock this is byte-identical to today, for every trigger.
+    const wallStopsReplan = clock.expired();
+    if (!wallStopsReplan && (!replanned || grantExtraReplan) && replanTrigger && remainingUsd() > MONEY_MIN) {
       if (grantExtraReplan) varianceGrantUsed = true;
       replanned = true;
       replans += 1;
@@ -2333,6 +2460,38 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       skipCount = 0;
       continue;
     }
+    /**
+     * W-2's STEP-LOOP terminal, and the ONE place it is spelled. Reached whenever a
+     * trigger that would otherwise mint `step-red:<id>` lands with the deadline already
+     * passed: the meter's stop (F85's variance) and the ladder's (attempt exhaustion
+     * with money still on the table). Both are the same event wearing two instruments'
+     * names — the clock is what ended the run — and `step-red` is a CAPABILITY label,
+     * so minting it there files a governance stop as "the work failed". u-msmt91t3 is
+     * the measured instance: `step-red` 9.9 seconds after the run's own `wall-bounded`.
+     *
+     * One site, one spelling, because the record, the F11-consistent escalation and the
+     * lever list must be identical wherever the clock stops a step — a second copy per
+     * trigger is how two instruments come to disagree about one event. The instrument
+     * that named the stop FIRST is not discarded: it rides in the detail, so the human
+     * reads why the step was stopped as well as which lever fits.
+     *
+     * `stepWallStop` is never consulted here by construction: that record is written
+     * only by the head-of-attempt check, and both triggers above are read BEFORE it, so
+     * a step either of them stopped never reached it.
+     * @param {string} stoppedBy the instrument that named the stop first
+     */
+    const wallHaltTerminal = (stoppedBy) => {
+      emitWallHalt({ cutMidCall: false, phase: `step:${step.id}`, stepsDone: idx, stepsPlanned: plan.steps.length });
+      emit('escalation', {
+        category: 'wall-halt', decisionReady: true, phase: `step:${step.id}`,
+        decision: `The run reached its wall-clock cap while step "${step.id}" was running. Time ran out, not capability — the verdict the run already has stands.`,
+        options: WALL_OPTIONS,
+        detail: `requested ${clock.requestedMs}ms, elapsed ${clock.elapsedMs()}ms. `
+          + `${stoppedBy}: ${lastEscalation?.detail ?? '(none)'} `
+          + `Progress trend: ${stopTrend.trend} — ${stopTrend.reading}; ${stopTrend.lever}.`,
+      });
+      return 'wall-halt';
+    };
     // F64 — the wall stopped this attempt from INSIDE a provider call (the derived
     // call timeout is the deadline in the provider's own coin). ralph already
     // emitted the escalation under this category, so the outcome and the record
@@ -2355,7 +2514,19 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // stays a step-red (the stop is a result).
     if (cat === 'cap-halt') {
       planExecuted();
-      if (remainingUsd() > MONEY_MIN) return `step-red:${step.id}`;
+      if (remainingUsd() > MONEY_MIN) {
+        // W-2 EXTENDED to the ladder's stop (hamr: "extend"). This arm is the sibling of
+        // the variance terminal below and carries the identical defect: with money still
+        // on the table it minted `step-red` whatever the clock said, so a step the
+        // deadline ended was filed as a capability failure. The wallet is re-read (it
+        // always was); the clock is re-read too, and it is read FIRST inside this arm
+        // only — a DRAINED wallet keeps its own `cap-halt` terminal below, because money
+        // is the allowance actually blocking that run and its levers are the ones the
+        // human needs (a wall-halt readout there would offer "raise maxWallMs and rerun"
+        // into an immediate money cut).
+        if (clock.expired()) return wallHaltTerminal('The ladder ended the step first');
+        return `step-red:${step.id}`;
+      }
       // v1.46 §2: the money cut is decision-ready HERE too, and for the same reason
       // W-2 gave the wall a record at every site it stops a run — a category that
       // hands the human a readout at one seam and silence at another is the readout
@@ -2371,8 +2542,22 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // upward would mint an outcome run.js and the ledger's class table do not know,
     // and an unmapped category is counted as a library bug (ledger.js) when this is a
     // planning story. The escalation ralph already emitted carries the real detail.
+    //
+    // W-2 at the meter's own terminal. A `step-variance` stop that lands PAST the
+    // deadline is a TIME stop wearing the meter's name — the clock is what ended the
+    // run, and hamr's ruling names that stop: *"when time is up, keep the grade we
+    // already have and stop"*. Its cap-halt sibling directly above already re-reads its
+    // own governor (the wallet) before minting a terminal; this branch did not, and on
+    // u-msmt91t3 it minted `step-red` 9.9 seconds AFTER the run's own `wall-bounded`
+    // record — a governance stop filed as a capability read, and (the resume gate's
+    // half of the same defect) a checkpoint filed as an answer.
+    //
+    // The clock is read HERE, with nothing in flight, exactly as the three other
+    // terminal sites read it. With time still on the clock this is byte-identical to
+    // what it was: the step-red is the designed stop, and the stop is the result.
     if (cat === 'step-variance') {
       planExecuted();
+      if (clock.expired()) return wallHaltTerminal('The meter stopped the step first');
       return `step-red:${step.id}`;
     }
     // Any OTHER terminal escalation category is NOT a capability failure: a

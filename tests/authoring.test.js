@@ -38,6 +38,7 @@ import {
   classGuards, closeCeiling, genreEnv, genreOwnedEnvNames, genreInstruments,
   validateDeclaration, normalizeDeclaration,
 } from '../src/authoring.js';
+import { declarationLines, parseCeiling, ceilingLine } from '../scripts/author-readout.mjs';
 
 /** The battery for the one class v1 admits. The attachment point is the CLASS
  * (PRD v1.57 §2) and every fixture in this file is a green job, so the class is
@@ -297,12 +298,78 @@ const MYPY_REAL_ERROR_LINES = Object.freeze([
   'packages/spawner/src/aurora_spawner/recovery.py:353: error: Need type annotation for',
 ]);
 
+// ── REAL captured TEST-RUNNER output ────────────────────────────────────────
+//
+// Same rule as the tsc lines above: copied verbatim out of archived spines, never
+// typed to match a pattern.
+
+/** verbatim from the mailproof job-#2 battery's own `close-precheck` gaps —
+ * `bareloop-patients/mailproof-job2-bareloop/battery-P1-mrm7gk25.jsonl` (5 fails)
+ * and `battery-P2-mrm7gk25.jsonl` (1 fail): whole `npm test` → `node --test`
+ * captures, taken down the close's pipe. */
+const NODE_TEST_REAL_LINES = Object.freeze([
+  '# tests 317',
+  '# pass 316',
+  '# fail 1',
+  '# pass 312',
+  '# fail 5',
+  'not ok 7 - edit-renotify: a non-participant edit, and edits on a pending event, ping no one',
+  'not ok 61 - remind+: workflow — initiator triggers reminder to every eligible step (ctx.reminder=true)',
+  'not ok 84 - m7d e2e: every kernel occasion fires through one deliver(), keyed by kind',
+]);
+
+/** lines from the SAME captures that a test-count term must NOT read. `# Subtest:`
+ * is the trap: the runner prefixes ordinary chatter with the same `# `, and one of
+ * these test NAMES literally contains the word "pass". `ok 316 - …` is the other:
+ * without `^`, every PASSING test would count as a failure. */
+const NODE_TEST_REAL_NON_COUNT_LINES = Object.freeze([
+  'TAP version 13',
+  '# Subtest: pickSigner: prefers a pass signature, falls back to any with domain+selector, else null',
+  'ok 316 - resolveUpgrade: below-verified levels upgrade to verified; verified does not',
+  '1..317',
+  '# suites 0',
+  '# duration_ms 18975.857395',
+]);
+
+/** what `node --test` prints on a real pty instead — MEASURED on this machine
+ * (node v22.22.2, one test file, identical args, 2026-08-13). The node analogue of
+ * `DRAFTED_PRETTY_FORMAT`: this is the shape a close NEVER sees, and a term
+ * composed against it matches nothing while the suite runs perfectly. */
+const NODE_TEST_TTY_LINES = Object.freeze([
+  'ℹ tests 2',
+  'ℹ pass 1',
+  'ℹ fail 1',
+  '✔ a (7.666969ms)',
+  '✖ b (1.463505ms)',
+]);
+
+/** verbatim from the aurora battery's `close-precheck` gaps,
+ * `bareloop-patients/aurora-soar-bareloop/battery-A{1,4}-*.jsonl` (pytest 9.1.1,
+ * the patient's own addopts). The padding really is one `=` per side — the line is
+ * wider than the terminal, not truncated. */
+const PYTEST_REAL_LINES = Object.freeze([
+  '= 1 failed, 2690 passed, 3 skipped, 18 deselected, 1775 warnings in 326.12s (0:05:26) =',
+  '= 2 failed, 2689 passed, 3 skipped, 18 deselected, 1775 warnings in 163.35s (0:02:43) =',
+  'FAILED packages/soar/tests/test_agent_registry_deprecation.py::TestAgentRegistryDeprecation::test_registry_and_discovery_equivalent_results',
+  'FAILED packages/cli/tests/unit/test_plan_commands.py::TestShowPlan::test_show_wrong_location_hint',
+]);
+
+/** MEASURED locally (pytest 9.0.2, 2026-08-13), because the archive has no green
+ * pytest row and no `-q` row to quote. `PYTEST_GREEN_LINE` is the whole reason
+ * python carries no fail-COUNT term; `PYTEST_QUIET_LINE` is why nothing anchors on
+ * the `=` padding. */
+const PYTEST_GREEN_LINE = '============================== 1 passed in 0.04s ===============================';
+const PYTEST_QUIET_LINE = '1 failed, 1 passed in 0.03s';
+
 /** the REAL captured lines this genre may teach FROM, per language. An example is
  * the TEACHING half of the fix — the pattern alone survives a drifted example
  * (`error TS\d+` reads the pretty shape too), so a shipped example that is not
  * one of these would quietly show the author the very format that cost run
  * msmbpjk6 a whole authoring pass. */
-const REAL_LINES = Object.freeze({ js: TSC_REAL_ERROR_LINES, python: MYPY_REAL_ERROR_LINES });
+const REAL_LINES = Object.freeze({
+  js: Object.freeze([...TSC_REAL_ERROR_LINES, ...NODE_TEST_REAL_LINES]),
+  python: Object.freeze([...MYPY_REAL_ERROR_LINES, ...PYTEST_REAL_LINES]),
+});
 
 test('known instruments: the genre-owned tsc term reads every REAL captured error line', () => {
   const [tsc] = genreInstruments('js');
@@ -368,6 +435,145 @@ test('known instruments: ONE spelling — the term is the hand-written closes\' 
   const mm = spawner.match(/filter\(\(l\) => l\.includes\('(.+?)'\)\)/);
   assert.notEqual(mm, null, 'the hand-written mypy close no longer reads a literal substring — the provenance moved');
   assert.equal(genreInstruments('python')[0].lineMatch, mm[1]);
+});
+
+// ── the TEST-COUNT facts (2026-08-13) ───────────────────────────────────────
+//
+// Same bar as the tsc term: a printed format enters the ruler only with captured
+// real output behind it. These tests hold the evidence side — every shipped
+// pattern is run against lines the tools actually printed, and against the lines
+// they printed that it must NOT read.
+
+/** every instrument the genre owns, keyed by id, for the language given. */
+const byId = (/** @type {string} */ lang) => Object.fromEntries(genreInstruments(lang).map((i) => [i.id, i]));
+
+test('known instruments: the node --test terms read the REAL captured TAP lines and nothing else in the same capture', () => {
+  const js = byId('js');
+  const cases = [
+    ['node-test-total-count', ['# tests 317'], '317'],
+    ['node-test-pass-count', ['# pass 316', '# pass 312'], null],
+    ['node-test-fail-count', ['# fail 1', '# fail 5'], null],
+  ];
+  for (const [id, lines, firstFigure] of cases) {
+    const i = js[/** @type {string} */ (id)];
+    assert.ok(i, `${id} is not in the table`);
+    const re = new RegExp(/** @type {any} */ (i).lineMatch);
+    for (const l of /** @type {string[]} */ (lines)) {
+      const m = re.exec(l);
+      assert.notEqual(m, null, `${id} missed the real captured line ${JSON.stringify(l)}`);
+      // it must read the FIGURE, not merely match: a term that matches but
+      // captures nothing feeds `first` an undefined and the stage reads unknown.
+      assert.equal(typeof m[1], 'string', `${id} matched ${JSON.stringify(l)} without capturing its number`);
+    }
+    if (firstFigure) assert.equal(re.exec(/** @type {string[]} */ (lines)[0])[1], firstFigure);
+    // and never the runner's own chatter from the same captures
+    const wrong = NODE_TEST_REAL_NON_COUNT_LINES.filter((l) => re.test(l));
+    assert.deepEqual(wrong, [], `${id} counted the runner's own non-summary output`);
+  }
+
+  // the failure TALLY: one per failing test, never a passing one
+  const failed = js['node-test-failed-line'];
+  const fre = new RegExp(failed.lineMatch);
+  const notOk = NODE_TEST_REAL_LINES.filter((l) => l.startsWith('not ok'));
+  assert.equal(notOk.length, 3, 'the evidence set lost its real failing lines');
+  for (const l of notOk) assert.match(l, fre);
+  assert.deepEqual(NODE_TEST_REAL_NON_COUNT_LINES.filter((l) => fre.test(l)), [],
+    'the failure tally read a passing test or the runner\'s chatter — `ok 316 - …` is one anchor away');
+});
+
+test('known instruments: the runner\'s TERMINAL shape matches ZERO piped-format terms — the tsc trap, on a second tool', () => {
+  // MEASURED: node v22.22.2 prints TAP down a pipe and the spec reporter on a pty.
+  // A close only ever reads the piped half. This is the `DRAFTED_PRETTY_FORMAT`
+  // guard, one tool over: if a future edit "tidies" a term toward the pretty
+  // shape, the term stops reading the only output a close can see, and this reds.
+  for (const i of genreInstruments('js')) {
+    const re = new RegExp(i.lineMatch);
+    const hits = NODE_TEST_TTY_LINES.filter((l) => re.test(l));
+    assert.deepEqual(hits, [], `${i.id} is written against the terminal shape, which no close ever captures`);
+  }
+  // and the piped shape it IS written against really is the one in the archive
+  assert.ok(NODE_TEST_REAL_LINES.some((l) => new RegExp(byId('js')['node-test-pass-count'].lineMatch).test(l)));
+});
+
+test('known instruments: the pytest terms read the REAL captured lines, across the padding they never anchor on', () => {
+  const py = byId('python');
+  const pass = py['pytest-pass-count'];
+  const re = new RegExp(pass.lineMatch);
+  for (const l of PYTEST_REAL_LINES.filter((x) => x.includes(' passed'))) {
+    const m = re.exec(l);
+    assert.notEqual(m, null, `pytest-pass-count missed ${JSON.stringify(l)}`);
+    assert.match(m[1], /^\d+$/);
+  }
+  assert.equal(re.exec(PYTEST_REAL_LINES[0])[1], '2690', 'it read a number off the line, but not the passed one');
+  // MEASURED: the `=` padding is terminal-derived and absent under -q. The term
+  // must survive both, and an `=`-anchored spelling must not — stated as the
+  // comparison, so a future "tidy" toward the decoration reds here.
+  assert.match(PYTEST_QUIET_LINE, re, 'the term stops reading pytest the moment a patient configures -q');
+  assert.match(PYTEST_GREEN_LINE, re);
+  const paddingAnchored = /^=+ .*\d+ passed.*=+$/;
+  assert.doesNotMatch(PYTEST_QUIET_LINE, paddingAnchored,
+    'if this ever matches, the padding stopped being optional and the comparison is moot');
+
+  // the failure TALLY: exactly one line per failing test (measured under -ra and -q)
+  const failed = py['pytest-failed-line'];
+  const fre = new RegExp(failed.lineMatch);
+  const fails = PYTEST_REAL_LINES.filter((l) => l.startsWith('FAILED '));
+  assert.equal(fails.length, 2, 'the evidence set lost its real FAILED lines');
+  for (const l of fails) assert.match(l, fre);
+  assert.deepEqual(PYTEST_REAL_LINES.filter((l) => l.includes(' passed') && fre.test(l)), [],
+    'the failure tally also read the counts line — that would double-count every red run');
+});
+
+test('known instruments: python carries NO fail-count figure, because a green pytest run omits the segment', () => {
+  // THE REASON THE TERM DOES NOT EXIST, pinned mechanically rather than as a
+  // comment. `first` over no match reports "never reported" — a broken instrument
+  // — so a fail-COUNT term would go silent on exactly the runs that went well.
+  assert.doesNotMatch(PYTEST_GREEN_LINE, /(\d+) failed/,
+    'a green pytest run now prints a failed segment; the omission this table is built around changed');
+  for (const i of genreInstruments('python')) {
+    if (i.capture === null) continue;
+    assert.doesNotMatch(i.lineMatch, /failed/,
+      `${i.id} reads a figure off a segment pytest omits when it is zero`);
+  }
+  // node's runner is the CONTRAST that proves the rule is about the tool, not
+  // about counting failures: it prints every counter on every run, so its
+  // fail-count term is safe. Measured: a fully green run still prints `# fail 0`.
+  const jsFail = new RegExp(byId('js')['node-test-fail-count'].lineMatch);
+  assert.equal(jsFail.exec('# fail 0')[1], '0', 'node\'s reported zero is what makes a js fail-count term honest');
+});
+
+test('known instruments: every entry declares a capture that matches its own pattern', () => {
+  for (const lang of GENRE_LANGUAGES) {
+    for (const i of genreInstruments(lang)) {
+      assert.ok(i.capture === null || Number.isInteger(i.capture), `${lang}/${i.id}: capture is neither null nor a group index`);
+      const groups = regexGroups(i.lineMatch);
+      assert.equal(groups.red, null, groups.red ?? '');
+      if (i.capture === null) {
+        assert.equal(groups.count, 0,
+          `${lang}/${i.id} says it TALLIES but carries a capture group — the executor would read a figure instead`);
+      } else {
+        assert.ok(groups.count >= i.capture,
+          `${lang}/${i.id} says it reads group ${i.capture}, which its pattern does not have`);
+        assert.equal(typeof new RegExp(i.lineMatch).exec(i.example)?.[i.capture], 'string',
+          `${lang}/${i.id}: group ${i.capture} captures nothing on its own real line`);
+      }
+    }
+  }
+});
+
+test('known instruments: no term in a language reads another term\'s line — one population per stage', () => {
+  // ONE POPULATION PER STAGE is the first law, and two terms that read each
+  // other's lines are the mechanical way to break it while looking fine.
+  for (const lang of GENRE_LANGUAGES) {
+    const all = genreInstruments(lang);
+    for (const i of all) {
+      for (const j of all) {
+        if (i.id === j.id) continue;
+        assert.doesNotMatch(j.example, new RegExp(i.lineMatch),
+          `${lang}: ${i.id} also reads ${j.id}'s real line — two populations, one ruler`);
+      }
+    }
+  }
 });
 
 test('known instruments: each call hands back its OWN copy — a caller never holds the shipped ruler', () => {
@@ -1215,4 +1421,78 @@ test('normalizeDeclaration: resolves every short-form parser, and copies rather 
   bad.stages[1].params.parser = { lineMatch: 42 };
   assert.deepEqual(normalizeDeclaration(bad).stages[1].params.parser, { lineMatch: 42 });
   assert.deepEqual(normalizeDeclaration(null), null);
+});
+
+// ── the SIGNING readout: goal and judged stages, in one reading (F87) ────────
+//
+// F87's law is that the goal must state everything the close will judge, and
+// NOTHING derives one from the other. So the only defence is the person signing
+// seeing both halves at once — and neither signing surface did: run-author
+// printed the declaration and never the goal, run-u's --approve gate printed
+// the goal and never the declaration. The lines live in a helper because
+// `run-author.mjs` is a script (importing it runs it, and reaching that block
+// costs a real scout and a real model call), exactly as `u-readout.mjs` exists.
+test('signing readout: the goal leads, and every stage that will judge it is named under it', () => {
+  // a REAL signed spec out of this repo's own jobs/ — not a fixture authored to
+  // contain the answer
+  const spec = JSON.parse(readFileSync(join(REPO, 'jobs/pulselog-author-types.json'), 'utf8'));
+  const lines = declarationLines(spec);
+
+  assert.equal(lines[0], `goal       ${JSON.stringify(spec.goal)}`, 'the goal is not the first thing the signer reads');
+  assert.equal(lines[1], 'declaration');
+  // every stage, in declaration order, with the kind that decides how it grades
+  const stages = spec.closeDecl.stages;
+  assert.ok(stages.length > 1, 'this artifact no longer carries a multi-stage close — the reading it pins is gone');
+  const heads = lines.filter((l) => /^ {2}\S/.test(l) && !l.startsWith('  note:'));
+  assert.equal(heads.length, stages.length, 'a stage the close judges is missing from the readout');
+  stages.forEach((s, i) => {
+    assert.ok(heads[i].startsWith(`  ${s.name}  [${s.kind}]`), `stage ${i} renders as ${JSON.stringify(heads[i])}`);
+    assert.ok(lines.includes(`      params ${JSON.stringify(s.params ?? {})}`), `stage ${s.name} lost its params line`);
+  });
+  for (const n of spec.closeDecl.notes ?? []) assert.ok(lines.includes(`  note: ${n}`));
+});
+
+test('signing readout: a missing goal reads as MISSING, never as an empty pair of quotes', () => {
+  // F6 in prose: a blank after `goal` is indistinguishable from a goal that says
+  // nothing, and this readout exists to make an unstated thing visible.
+  const lines = declarationLines({ closeDecl: { stages: [{ name: 'a', kind: 'command-exit', params: {} }] } });
+  assert.match(lines[0], /^goal +\(none/);
+  assert.ok(lines.some((l) => l.startsWith('  a  [command-exit]')));
+  // and a spec with no declaration at all still renders its goal rather than throwing
+  assert.deepEqual(declarationLines({ goal: 'g' }), ['goal       "g"', 'declaration']);
+});
+
+// ── the authoring CEILING's parse and its announcement ───────────────────────
+//
+// Same reason as the readout above: `run-author.mjs` is a script, so the rule
+// lives where a test can reach it. The rule itself is the one the run path paid
+// for twice — a cap with a DEFAULT is a silent second ceiling, so the only route
+// to unbounded is asking for nothing, and taking that route is announced.
+
+test('the authoring ceiling has NO DEFAULT: an absent --budget is UNBOUNDED, and nothing else is', () => {
+  assert.deepEqual(parseCeiling(null), { ceilingUsd: null, error: null });
+  assert.deepEqual(parseCeiling('2.5'), { ceilingUsd: 2.5, error: null });
+  assert.deepEqual(parseCeiling('0.05'), { ceilingUsd: 0.05, error: null });
+});
+
+test('a MALFORMED --budget is an error, never a silent fall back to unbounded', () => {
+  // the failure this flag exists to prevent, wearing the operator's own typo: a
+  // value that cannot be read collapsing into "no ceiling" would spend real money
+  // under a cap the person believed they had set
+  for (const bad of ['banana', '', '-1', '0', 'NaN', 'Infinity']) {
+    const r = parseCeiling(bad);
+    assert.equal(r.ceilingUsd, null, `${JSON.stringify(bad)} must not become a ceiling`);
+    assert.match(r.error ?? '', /not a positive number of dollars/, `${JSON.stringify(bad)} must be REFUSED, not defaulted`);
+    assert.match(r.error ?? '', /omit the flag entirely to run UNBOUNDED/, 'and the message names the only legal route to unbounded');
+  }
+});
+
+test('an UNBOUNDED authoring run ANNOUNCES itself — an absent cap is a stated choice, never a silent state', () => {
+  const unbounded = ceilingLine(null);
+  assert.match(unbounded, /UNBOUNDED/);
+  assert.match(unbounded, /reported, never capped/, 'it says what it will and will not do about the money');
+  const bounded = ceilingLine(2.5);
+  assert.match(bounded, /\$2\.5 ceiling/);
+  assert.match(bounded, /BETWEEN metered calls/, 'and a bounded run states the seam it binds at');
+  assert.ok(!/UNBOUNDED/.test(bounded), 'the two readings are never confusable');
 });

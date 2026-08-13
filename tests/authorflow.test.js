@@ -48,6 +48,7 @@ import {
   renderSeedReadBlock, renderRejectBlock, buildReviseTurn, assertReviseTurn,
   applyGenreEnv, resolveSourcePrefixes, makeCostBook, makeLoopGenerate, authorClose,
 } from '../src/authorflow.js';
+import { SCOUT_ATTEMPTS } from '../src/authorscout.js';
 import { scrubRaw } from '../src/text.js';
 import { scanSecrets } from '../src/validate.js';
 
@@ -336,7 +337,22 @@ test('the known-instrument block is rendered FROM the genre, per language, and n
       assert.ok(b.includes(i.id), `${lang}: ${i.id} missing`);
       assert.ok(b.includes(`lineMatch: ${i.lineMatch}`), `${lang}: ${i.id}'s pattern is not the genre's own spelling`);
       assert.ok(b.includes(i.example), `${lang}: ${i.id} ships without its real line`);
+      // the capture rides WITH the pattern. A count term handed over without it
+      // is handed over without the half that decides its aggregate, and `first`
+      // paired with a tally (or `sum` with a figure) misreads silently — the exact
+      // bug jobs/pulselog-author-types.json records fixing in its own notes.
+      assert.ok(b.includes(`capture: ${i.capture === null ? 'null' : i.capture}`),
+        `${lang}: ${i.id} ships without its capture`);
     }
+    // and the mapping capture → aggregate is STATED, not left to be inferred from
+    // the rows: without it the table teaches a shape and hides the trap.
+    // ... and stated the RIGHT way round. jobs/pulselog-author-types.json records
+    // fixing this exact pairing in its own notes ("must use aggregate sum, not
+    // first"), so an inverted law here is a shipped bug wearing correct-looking
+    // prose — pinned to the aggregate NAMES, not merely to the law's presence.
+    assert.match(b, /capture: null\s+the term TALLIES one per matching line\. Use aggregate "sum"/);
+    assert.match(b, /capture: <n>\s+the term reads the FIGURE[\s\S]{0,120}?Use aggregate\s+"first"/);
+    assert.match(b, /never a zero/);
     // a language's block never carries the OTHER language's instrument
     for (const other of genreInstruments(lang === 'js' ? 'python' : 'js')) {
       if (own.some((i) => i.id === other.id)) continue;
@@ -744,6 +760,100 @@ test('authorClose: a negative maxRevisions floors at zero — one authoring call
   assert.equal(calls.length, 1, 'the floor is one author call, never a negative loop bound');
   assert.equal(r.revisions, 0);
   assert.equal(r.stop, 'max-revisions');
+});
+
+// TIGHTENING IS THE HALF THAT HAD NO DETECTOR. The two tests above pin the
+// ceiling and the floor; NEITHER can fail if the clamp stops honouring values
+// BETWEEN them — MEASURED by replacing the clamp with `x <= 0 ? 0 : CEILING`,
+// which passed the whole file. A bound that only ever reads as its two extremes
+// is not tighten-only, it is a switch, and the direction the whole rule exists
+// to permit (the operator lowering it) was the untested one.
+
+test('authorClose: a maxRevisions BETWEEN the floor and the ceiling is HONOURED, not rounded to either', async () => {
+  const decls = Array.from({ length: 4 }, (_, n) => { const d = goodDeclaration(); d.notes = [`n${n}`]; return d; });
+  const { generate, calls } = scriptGenerate(decls.map((d) => ({ declaration: d })));
+  const { fn } = scriptSeedRead();
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: fn, maxRevisions: 1 });
+  assert.ok(MAX_REVISIONS > 1, 'the fixture only discriminates while 1 is strictly inside the range');
+  assert.equal(calls.length, 2, 'one author call and exactly ONE revise — the number asked for');
+  assert.equal(r.revisions, 1);
+  assert.equal(r.stop, 'max-revisions');
+});
+
+test('authorClose: structureRetries is TIGHTEN-ONLY under the constant that already claimed to be its ceiling', async () => {
+  // it buys provider calls exactly as `maxRevisions` does, and it rode through to
+  // `askDeclaration` unclamped until 40672ae — a caller handing 50 got 50 paid
+  // malformed-emission retries above a ceiling this module declares
+  const { generate, calls } = scriptGenerate([{ text: 'prose only, no tool call' }]);
+  const { fn } = scriptSeedRead();
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: fn, structureRetries: 50 });
+  assert.equal(calls.length, MAX_STRUCTURE_RETRIES + 1, 'the raised ceiling clamps down to the constant');
+  assert.equal(r.stop, 'artifact-red');
+});
+
+test('authorClose: a structureRetries BETWEEN the floor and the ceiling is HONOURED too', async () => {
+  const { generate, calls } = scriptGenerate([{ text: 'prose only, no tool call' }]);
+  const { fn } = scriptSeedRead();
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: fn, structureRetries: 1 });
+  assert.ok(MAX_STRUCTURE_RETRIES > 1, 'the fixture only discriminates while 1 is strictly inside the range');
+  assert.equal(calls.length, 2, 'one ask and exactly ONE retry');
+  assert.equal(r.stop, 'artifact-red');
+});
+
+test('authorClose: structureRetries floors at zero — ONE ask, no retry, and never a negative loop bound', async () => {
+  const { generate, calls } = scriptGenerate([{ text: 'prose only, no tool call' }]);
+  const { fn } = scriptSeedRead();
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: fn, structureRetries: -5 });
+  // `askDeclaration` loops `attempt <= retries`, so 0 is still ONE attempt — a
+  // legal tighter ask, never an absent one
+  assert.equal(calls.length, 1);
+  assert.equal(r.stop, 'artifact-red');
+});
+
+test('authorClose: a bound that is not a NUMBER floors on both axes — it never throws', async () => {
+  // the SCOUT_ATTEMPTS direction verbatim: a malformed value CLAMPS rather than
+  // throwing, because the number is not a signed artefact — nothing downstream
+  // depends on a caller having asked for the right one, and refusing a run over a
+  // bad cap costs a paid scout for no safety
+  const { fn } = scriptSeedRead();
+  for (const junk of ['banana', NaN, null, {}]) {
+    const a = scriptGenerate([{ declaration: goodDeclaration() }]);
+    const ra = await authorClose({ ...baseArgs(), generate: a.generate, seedReadFn: fn, maxRevisions: /** @type {any} */ (junk) });
+    assert.equal(a.calls.length, 1, `maxRevisions ${String(junk)} must floor, not throw and not run unbounded`);
+    assert.equal(ra.stop, 'max-revisions');
+
+    const b = scriptGenerate([{ text: 'prose only' }]);
+    await authorClose({ ...baseArgs(), generate: b.generate, seedReadFn: fn, structureRetries: /** @type {any} */ (junk) });
+    assert.equal(b.calls.length, 1, `structureRetries ${String(junk)} must floor, not throw and not run unbounded`);
+  }
+});
+
+test('authorClose: Infinity is a WIDENING, not garbage — it clamps to the ceiling, exactly as SCOUT_ATTEMPTS treats it', async () => {
+  // `Math.trunc(Infinity)` is Infinity and survives the `|| 0` guard, so it lands
+  // on the `Math.min` and reads as "as many as you will give me". That is the
+  // ceiling, not the floor — the same reading `runAuthorScout`'s own tighten-only
+  // test pins for `attempts: Infinity`
+  const decls = Array.from({ length: 6 }, (_, n) => { const d = goodDeclaration(); d.notes = [`n${n}`]; return d; });
+  const a = scriptGenerate(decls.map((d) => ({ declaration: d })));
+  const ra = await authorClose({ ...baseArgs(), generate: a.generate, seedReadFn: scriptSeedRead().fn, maxRevisions: Infinity });
+  assert.equal(a.calls.length, MAX_REVISIONS + 1);
+  assert.equal(ra.revisions, MAX_REVISIONS);
+
+  const b = scriptGenerate([{ text: 'prose only, no tool call' }]);
+  await authorClose({ ...baseArgs(), generate: b.generate, seedReadFn: scriptSeedRead().fn, structureRetries: Infinity });
+  assert.equal(b.calls.length, MAX_STRUCTURE_RETRIES + 1);
+});
+
+test('the two revise-loop bounds floor at ZERO while the SURVEY floors at ONE — a deliberate difference', async () => {
+  // the same tighten-only rule, three axes, and the floors differ on purpose: a
+  // scout that never ran is an ABSENT nobody can act on, while one authoring call
+  // with no revise round is a perfectly legal ask. Pinned so a later tidy-up that
+  // "harmonises" the floors has to argue with a test rather than a comment.
+  assert.equal(SCOUT_ATTEMPTS, 3);
+  const { generate, calls } = scriptGenerate([{ declaration: goodDeclaration() }]);
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: scriptSeedRead().fn, maxRevisions: 0, structureRetries: 0 });
+  assert.equal(calls.length, 1, 'zero is a LEGAL bound on both revise-loop axes — one call, and it authored a close');
+  assert.equal(r.ok, true);
 });
 
 test('authorClose: a reply with no tool call is an ARTIFACT-RED with a bounded retry, and writes nothing', async () => {
@@ -1293,6 +1403,208 @@ test('makeCostBook: absorbed and added calls both land, and unknown stays unknow
   assert.equal(r.costUsd, null, 'an unpriced round makes the TOTAL unknown');
   assert.equal(r.unpricedRounds, 2);
   assert.equal(r.spendComplete, false);
+});
+
+// ── 8b. THE AUTHORING CEILING ────────────────────────────────────────────────
+//
+// The pipeline metered spend and nothing bounded it: `run-author.mjs` REPORTED a
+// total and no number anywhere could stop a call. The ceiling is the operator's
+// own, it has NO DEFAULT (a defaulted cap is a silent second ceiling — the
+// maxWallMs precedent), and it binds BETWEEN metered calls, which is the only
+// seam where stopping is honest: a cap that binds mid-call kills the row before
+// it can be graded (F45).
+
+test('makeCostBook: the ceiling is the BOOK\'s, and it reads the same spend the report does', () => {
+  const book = makeCostBook({ ceilingUsd: 0.05 });
+  assert.equal(book.capStop(), null, 'nothing spent, so nothing is over');
+  book.absorb([{ label: 'author-scout', costUsd: 0.03, unpricedRounds: 0 }]);
+  assert.equal(book.capStop(), null, 'the scout\'s spend folds in and still fits');
+  book.add('author', { metrics: { costUsd: 0.02, unpricedRounds: 0 } });
+  assert.equal(book.capStop(), 'cap-halt', 'and the call that reached the cap closes it');
+});
+
+test('makeCostBook: NO ceiling is unbounded — a book with no cap never halts', () => {
+  const book = makeCostBook();
+  book.absorb([{ label: 'author-scout', costUsd: 500, unpricedRounds: 0 }]);
+  assert.equal(book.capStop(), null);
+  assert.equal(book.ceilingUsd, null, 'and the book says so, rather than carrying a number nobody set');
+});
+
+test('authorClose: the ceiling binds BETWEEN calls — the call that would breach it is never made', async () => {
+  // distinct declarations are on offer at $0.02 each under a $0.03 ceiling:
+  // author (spend 0 → runs, now 0.02), revise-1 (0.02 < 0.03 → runs, now 0.04),
+  // revise-2 (0.04 ≥ 0.03) → never asked for. The ceiling is deliberately set to
+  // bind BEFORE MAX_REVISIONS would, or the test proves the revision bound works
+  // and says nothing at all about the money.
+  const decls = Array.from({ length: 4 }, (_, n) => { const d = goodDeclaration(); d.notes = [`n${n}`]; return d; });
+  const { generate, calls } = scriptGenerate(decls.map((d) => ({ declaration: d, costUsd: 0.02 })));
+  const { fn } = scriptSeedRead();
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: fn, ceilingUsd: 0.03 });
+
+  assert.ok(MAX_REVISIONS + 1 > 2, 'the fixture only means something while the revision bound is the looser one');
+  assert.equal(calls.length, 2, 'two calls fit under the ceiling; the third is refused before it is paid for');
+  assert.equal(r.stop, 'cap-halt', 'and the MONEY is what ended it, not the revision count');
+  assert.equal(r.cost.costUsd, 0.04, 'the spend that WAS incurred is reported, not the ceiling');
+  assert.equal(r.reds[0].code, 'cap-halt');
+  assert.match(r.reds[0].detail, /0\.04/, 'the stop names the spend');
+  assert.match(r.reds[0].detail, /0\.03/, 'and the cap it is measured against');
+  // a governance stop is not a verdict on the close: one was authored and measured
+  assert.equal(r.ok, true, 'a close that was already validated and measured survives the money stop');
+  assert.equal(r.iterations.length, 2, 'and the partial record is complete — every call that happened is on it');
+});
+
+test('authorClose: a ceiling already spent by the SCOUT funds no declaration call at all', async () => {
+  const scout = { ...SCOUT_OK, calls: [{ label: 'author-scout', costUsd: 0.30, unpricedRounds: 0 }] };
+  const { generate, calls } = scriptGenerate([{ declaration: goodDeclaration(), costUsd: 0.02 }]);
+  const { fn } = scriptSeedRead();
+  const r = await authorClose({ ...baseArgs(), scout, generate, seedReadFn: fn, ceilingUsd: 0.10 });
+
+  assert.equal(calls.length, 0, 'spend already incurred folds in — re-entering cannot widen the ceiling');
+  assert.equal(r.stop, 'cap-halt');
+  assert.equal(r.ok, false);
+  assert.equal(r.iterations.length, 0, 'no iteration is recorded for a call that never happened');
+  assert.equal(r.cost.costUsd, 0.30, 'and the scout\'s spend is on the record it was measured against');
+});
+
+test('authorClose: a survey the CEILING stopped is named a MONEY stop, never a scout failure', async () => {
+  // the scout carries its own governance stop, and it is the honest name for why
+  // the facts are missing — `scout-absent` would send the operator to the
+  // instrument when the fact is the number they set (W-2's rule, in money)
+  const halted = {
+    state: 'ABSENT', facts: null, cause: 'not-funded',
+    reason: 'the survey was never asked for: the $0.02 ceiling was already spent',
+    budgetStop: 'cap-halt',
+    calls: [{ label: 'author-scout', costUsd: 0.03, unpricedRounds: 0 }], raws: [],
+  };
+  const { generate, calls } = scriptGenerate([{ declaration: goodDeclaration() }]);
+  const r = await authorClose({ ...baseArgs(), scout: halted, generate, seedReadFn: scriptSeedRead().fn, ceilingUsd: 0.02 });
+
+  assert.equal(r.stop, 'cap-halt');
+  assert.equal(r.reds[0].code, 'cap-halt', 'the money stop outranks the absence it caused');
+  assert.match(r.reds[0].detail, /never asked for/, 'and the survey\'s own reason rides along, rather than being replaced');
+  assert.equal(calls.length, 0, 'still a $0 refusal — naming it correctly costs nothing');
+});
+
+test('authorClose: a ceiling that stopped a survey the TRANSPORT also killed concedes both causes', async () => {
+  // the ceiling really did refuse the reserved recovery round — and the call it
+  // would have replaced died on a dead socket. Both are true, and a detail that
+  // says "not on anything it read" while quoting a transport error in the same
+  // sentence contradicts itself and routes the operator at `--budget`, which is
+  // the one lever that cannot repair a socket.
+  const both = {
+    state: 'ABSENT', facts: null, cause: 'call-failed',
+    reason: 'the survey call failed: ENETUNREACH',
+    budgetStop: 'cap-halt',
+    calls: [{ label: 'author-scout', costUsd: 0.03, unpricedRounds: 0 }], raws: [],
+  };
+  const { generate, calls } = scriptGenerate([{ declaration: goodDeclaration() }]);
+  const r = await authorClose({ ...baseArgs(), scout: both, generate, seedReadFn: scriptSeedRead().fn, ceilingUsd: 0.02 });
+
+  assert.equal(r.stop, 'cap-halt', 'the decided stop does not move — this is attribution, not routing');
+  assert.equal(r.reds[0].code, 'cap-halt');
+  assert.match(r.reds[0].detail, /ENETUNREACH/, 'the transport error still rides along');
+  assert.ok(!/not on anything it read/.test(r.reds[0].detail),
+    'and the detail must not DENY the cause it is quoting in the same breath');
+  assert.match(r.reds[0].detail, /call itself failed/i, 'the concurrent cause is named, not implied');
+  assert.equal(calls.length, 0, 'still a $0 refusal');
+});
+
+test('authorClose: a ceiling that refused the recovery behind a SHORT survey concedes both causes', async () => {
+  // the sibling of the transport case above: the first call came back cut off
+  // (a real reply, too short) and the ceiling refused the reserved recovery
+  // round that exists to repair exactly that. "not on anything it read" would
+  // deny the short reply the same sentence quotes — the SHORT cause rides the
+  // same concession as CALL_FAILED, and only NOT_FUNDED (no call ever made)
+  // keeps the ceiling-only wording.
+  const both = {
+    state: 'ABSENT', facts: null, cause: 'short',
+    reason: 'survey 150 bytes < 200 — the scout did not complete',
+    budgetStop: 'cap-halt',
+    calls: [{ label: 'author-scout', costUsd: 0.03, unpricedRounds: 0 }], raws: [],
+  };
+  const { generate, calls } = scriptGenerate([{ declaration: goodDeclaration() }]);
+  const r = await authorClose({ ...baseArgs(), scout: both, generate, seedReadFn: scriptSeedRead().fn, ceilingUsd: 0.02 });
+
+  assert.equal(r.stop, 'cap-halt', 'the decided stop does not move — this is attribution, not routing');
+  assert.equal(r.reds[0].code, 'cap-halt');
+  assert.match(r.reds[0].detail, /150 bytes/, 'the short reply\'s own reason still rides along');
+  assert.ok(!/not on anything it read/.test(r.reds[0].detail),
+    'and the detail must not DENY the reply it is quoting in the same breath');
+  assert.match(r.reds[0].detail, /came back incomplete/i, 'the concurrent cause is named, not implied');
+  assert.equal(calls.length, 0, 'still a $0 refusal');
+});
+
+test('authorClose: an ordinarily ABSENT survey is STILL a scout-absent — the money branch is not a catch-all', async () => {
+  // the discriminator for the test above: same absence, no budgetStop, and the
+  // scout is correctly blamed
+  const absent = { state: 'ABSENT', facts: null, reason: 'the survey did not parse as JSON', budgetStop: null, calls: [], raws: [] };
+  const r = await authorClose({ ...baseArgs(), scout: absent, generate: scriptGenerate([{}]).generate, seedReadFn: scriptSeedRead().fn, ceilingUsd: 5 });
+  assert.equal(r.stop, 'precheck');
+  assert.equal(r.reds[0].code, 'scout-absent');
+});
+
+test('authorClose: NO ceiling is UNBOUNDED — spend that would dwarf any cap runs to the revision bound', async () => {
+  const decls = Array.from({ length: 6 }, (_, n) => { const d = goodDeclaration(); d.notes = [`n${n}`]; return d; });
+  const { generate, calls } = scriptGenerate(decls.map((d) => ({ declaration: d, costUsd: 25 })));
+  const { fn } = scriptSeedRead();
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: fn });
+
+  assert.equal(calls.length, MAX_REVISIONS + 1, 'nothing bounds the money when nobody set a bound');
+  assert.equal(r.stop, 'max-revisions', 'the revision cap is what ends it — never a cap nobody chose');
+});
+
+test('authorClose: spend that cannot be KNOWN stops on its OWN axis — unpriced is never $0 (F6)', async () => {
+  const decls = [goodDeclaration(), goodDeclaration()];
+  decls[1].notes = ['second'];
+  const { generate, calls } = scriptGenerate([
+    { declaration: decls[0], costUsd: null },
+    { declaration: decls[1], costUsd: 0.01 },
+  ]);
+  const { fn } = scriptSeedRead();
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: fn, ceilingUsd: 5 });
+
+  assert.equal(calls.length, 1, 'the cap went blind on call one, so call two is never funded');
+  assert.equal(r.stop, 'pricing-red', 'DISTINCT from cap-halt: the money is not gone, the instrument is');
+  assert.equal(r.reds[0].code, 'pricing-red');
+  assert.equal(r.cost.costUsd, null, 'and the total stays honestly unknown');
+  assert.match(r.reds[0].detail, /unpriced/i);
+});
+
+test('authorClose: the money stop is DISTINCT from an artifact refusal and from a provider casualty', async () => {
+  const { fn } = scriptSeedRead();
+  // same ceiling, same money — the difference is what the model did
+  const capped = await authorClose({
+    ...baseArgs(), seedReadFn: fn, ceilingUsd: 0.01,
+    scout: { ...SCOUT_OK, calls: [{ label: 'author-scout', costUsd: 0.02, unpricedRounds: 0 }] },
+    generate: scriptGenerate([{ declaration: goodDeclaration() }]).generate,
+  });
+  const refused = await authorClose({
+    ...baseArgs(), seedReadFn: fn, ceilingUsd: 50,
+    generate: scriptGenerate([{ text: 'prose only, no tool call' }]).generate,
+  });
+  const casualty = await authorClose({
+    ...baseArgs(), seedReadFn: fn, ceilingUsd: 50,
+    generate: scriptGenerate([{ error: 'ENETUNREACH' }]).generate,
+  });
+  assert.deepEqual(
+    [capped.stop, refused.stop, casualty.stop],
+    ['cap-halt', 'artifact-red', 'provider-red'],
+    'three stops, three names — a governance stop never wears a model failure\'s coat',
+  );
+});
+
+test('authorClose: the ceiling gates STRUCTURE RETRIES too — every paid call is behind it', async () => {
+  // the retry axis buys provider calls exactly as the revision axis does, and it
+  // is the axis that fires when the model is malforming — the worst time for a
+  // bound to be missing
+  const { generate, calls } = scriptGenerate([{ text: 'prose only, no tool call', costUsd: 0.04 }]);
+  const { fn } = scriptSeedRead();
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: fn, ceilingUsd: 0.07 });
+
+  assert.ok(MAX_STRUCTURE_RETRIES >= 2, 'the fixture is only meaningful while retries exist to cut short');
+  assert.equal(calls.length, 2, 'two retries fit; the third would breach the cap and is never made');
+  assert.equal(r.stop, 'cap-halt', 'the money stop outranks the artifact red that was in flight');
+  assert.equal(r.ok, false);
 });
 
 // ── 9. THE RAW MODEL OUTPUT IS PART OF THE RUN'S AUDIT ──────────────────────
