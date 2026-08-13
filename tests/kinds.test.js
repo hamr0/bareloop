@@ -156,6 +156,61 @@ test('sign arithmetic: executed = collected − skipped − deselected, summed a
   assert.equal(r.value, 100 - 3 - 7);
 });
 
+// The harvest is what the executor ECHOES to the worker as "the lines the count
+// is made of". Pooled flat, it makes two false statements the arithmetic above
+// can already produce: a SUBTRACTED term's line reads as a wall to go fix (fixing
+// it moves the count the wrong way), and a `first` term's second and later lines
+// read as counted when the aggregate never looked at them. Both are latent only
+// until one multi-term parser is authored — and `sign` is on the drafter's menu
+// with subtraction spelled out as a technique.
+test('the harvest is grouped PER TERM, so a SUBTRACTED line is never pooled with the lines that added', () => {
+  const out = '# fail 5\n# pass 316\n';
+  const terms = norm({
+    terms: [
+      { lineMatch: '^# fail (\\d+)$', capture: 1, sign: 1, aggregate: 'first', region: 'whole-output' },
+      { lineMatch: '^# pass (\\d+)$', capture: 1, sign: -1, aggregate: 'first', region: 'whole-output' },
+    ],
+  });
+  const r = parseValue(out, terms);
+  assert.equal(r.stop, null);
+  assert.equal(r.value, 5 - 316);
+  assert.deepEqual(r.matched, [['# fail 5'], ['# pass 316']],
+    'each term owns its own lines, index-aligned with the breakdown that states its sign');
+});
+
+test('a "first" term harvests ONLY the line it read — the ones it never looked at are not "what the count is made of"', () => {
+  const out = '# pass 316\n# pass 12\n';
+  const terms = norm({ lineMatch: '^# pass (\\d+)$', capture: 1 });
+  const r = parseValue(out, terms);
+  assert.equal(r.stop, null);
+  assert.equal(r.value, 316, 'first-match, unchanged');
+  assert.deepEqual(r.matched, [['# pass 316']],
+    'the second line matched but contributed nothing — echoing it aims the worker at a number the value never contained');
+
+  // and `sum`, which DOES read every one of them, still harvests every one
+  const summed = parseValue(out, norm({ terms: [{ lineMatch: '^# pass (\\d+)$', capture: 1, sign: 1, aggregate: 'sum', region: 'whole-output' }] }));
+  assert.equal(summed.value, 316 + 12);
+  assert.deepEqual(summed.matched, [['# pass 316', '# pass 12']]);
+});
+
+test('ONE line feeding TWO terms is named under each — dedup is within a term, because the line plays two arithmetic roles', () => {
+  // pytest's counts line, verbatim from the aurora battery's captured runs: the
+  // SAME line supplies the passes and the failures, with opposite signs. Pooled
+  // and deduplicated globally it appears once, under whichever term reached it
+  // first, and the other term's evidence silently vanishes.
+  const out = '= 1 failed, 2690 passed, 3 skipped, 18 deselected, 1775 warnings in 326.12s (0:05:26) =\n';
+  const terms = norm({
+    terms: [
+      { lineMatch: '(\\d+) passed', capture: 1, sign: 1, aggregate: 'first', region: 'whole-output' },
+      { lineMatch: '(\\d+) failed', capture: 1, sign: -1, aggregate: 'first', region: 'whole-output' },
+    ],
+  });
+  const r = parseValue(out, terms);
+  assert.equal(r.value, 2690 - 1);
+  assert.equal(r.matched.length, 2, 'one group per term, always — the alignment with breakdown is what carries the sign');
+  assert.deepEqual(r.matched[0], r.matched[1], 'and it really is the one line, under both');
+});
+
 test('aggregate "sum" adds EVERY match — on one line and across lines (a first-match read of "2 failed, 2 errors" reports half the reds)', () => {
   const out = '= 2 failed, 5 passed, 2 errors =\n= 1 failed =\n';
   const terms = norm({ terms: [{ lineMatch: '(\\d+) (?:failed|errors)', capture: 1, sign: 1, aggregate: 'sum', region: 'whole-output' }] });
@@ -644,6 +699,42 @@ test('count-not-worse: lines the SCOPE dropped never reach the gap — the gap s
   assert.ok(text.includes(kept), 'the counted line rides out');
   assert.ok(!text.includes(dropped), 'a scope-dropped line was never counted, so pointing the worker at it would aim it outside its own population');
   assert.match(text, /1 matching line\(s\) dropped by the scope filter/, 'and the drop is still ANNOUNCED as a count');
+});
+
+// The other half of the same licence. Echoing a line the instrument NAMED is
+// honest; echoing it with no statement of WHAT IT DID to the number is not. A
+// subtracted term's line, rendered flat beside an added one, tells the worker to
+// go fix a figure whose "fix" moves the count the WRONG WAY — and a `first`
+// term's later lines were never read at all. The lines therefore ride UNDER the
+// breakdown row that already states that term's sign and contribution, which is
+// the only place in the gap where their arithmetic role exists.
+test('count-not-worse: each echoed line rides under the TERM that produced it — a subtracted line is never rendered as a bare wall', async (t) => {
+  // fails MINUS skips, lower-is-better: `# skip` SUBTRACTS, and `# fail 1` is a
+  // second match a `first` term never reads.
+  const r = makeRepo(t, { 'report.txt': '# fail 5\n# fail 1\n# skip 2\n', 'src/a.js': 'a\n' });
+  const res = await runStage(COUNT_STAGE({
+    scope: {},
+    parser: {
+      terms: [
+        { lineMatch: '^# fail (\\d+)$', capture: 1, sign: 1, aggregate: 'first', region: 'whole-output' },
+        { lineMatch: '^# skip (\\d+)$', capture: 1, sign: -1, aggregate: 'first', region: 'whole-output' },
+      ],
+    },
+  }), ctxFor(r));
+
+  assert.equal(res.verdict, 'red');
+  assert.equal(res.value, 5 - 2, 'the COUNT is untouched — only what the gap says changed');
+  const at = (/** @type {string} */ needle) => {
+    const i = res.gapLines.findIndex((l) => l.includes(needle));
+    assert.ok(i >= 0, `the gap must carry ${JSON.stringify(needle)}\n${res.gapLines.join('\n')}`);
+    return i;
+  };
+  assert.ok(at('contributes +5') < at('# fail 5'), 'the adding term states itself, then names its line');
+  assert.ok(at('# fail 5') < at('contributes -2'), 'and its line stays on its own side of the next term');
+  assert.ok(at('contributes -2') < at('# skip 2'), 'the subtracted line sits under the row that says it SUBTRACTS');
+  assert.ok(!res.gapLines.some((l) => l.includes('# fail 1')),
+    'a line the "first" aggregate never read is not part of the count and must not be echoed as one');
+  assert.ok(res.gapLines.every((l) => l.startsWith(KEEP)), 'every line still rides the stage prefix');
 });
 
 test('count-not-worse: an over-cap harvest of matched lines trims with the marker, and the withheld count is the gap\'s own (F28)', async (t) => {

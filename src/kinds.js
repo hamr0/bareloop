@@ -711,22 +711,35 @@ export function normalizeParser(parser, at = 'parser') {
  * alike — and it is the only evidence of liveness a caller has once the scope
  * has removed the whole population. It is never the number being read.
  *
- * `matched` is the KEPT lines themselves, in output order: exactly the lines
- * that reached aggregation, which is to say the ones the count is made of. Run
- * u-msn227nq paid for it — the executor counted 8 real `error TS…` lines and
- * told the worker "8 match(es)", discarding every address, and a worker with a
- * number and no file to open went looking for the arbiter's own books instead.
- * A scope-DROPPED line is never in here: it was never counted, so aiming the
- * worker at it would aim it outside its own population. Duplicates collapse
- * (two terms over one line name one place), which is a rendering choice only —
- * the count above is computed from `values`, never from this list.
+ * `matched` is the KEPT lines themselves, PER TERM and index-aligned with
+ * `breakdown`: entry i holds, in output order, exactly the lines term i's
+ * subtotal was computed FROM. Run u-msn227nq paid for the echo — the executor
+ * counted 8 real `error TS…` lines and told the worker "8 match(es)", discarding
+ * every address, and a worker with a number and no file to open went looking for
+ * the arbiter's own books instead.
+ *
+ * TWO EXCLUSIONS, both of them "this line is not what the count is made of":
+ *  - a scope-DROPPED line is never in here. It was never counted, so aiming the
+ *    worker at it would aim it outside its own population.
+ *  - under `first`, only the line the aggregate actually READ. The later matches
+ *    are real matches (`breakdown[i].matches` still counts them) but the value
+ *    never contained them, and echoing them points the worker at a number that
+ *    is not in the reading.
+ *
+ * And the GROUPING is the third: a term's sign lives in `breakdown[i]`, so lines
+ * pooled flat across terms lose the one fact that says what they DID to the
+ * number. A subtracted term's line rendered beside an added one reads as a wall
+ * to go fix, and fixing it moves the count the wrong way. Deduplication is
+ * therefore within a term only — one line matched by two terms plays two
+ * arithmetic roles and is named under each. The count is computed from `values`,
+ * never from this list.
  * @param {string} output @param {any[]} terms normalised terms
  * Every stop here is `crashed` in the arbiter's vocabulary — the command RAN,
  * came back, and the number could not be read out of it. Nothing in this
  * function can observe a spawn failure, a timeout or a signal, so it never
  * claims one.
  * @param {{scope?: any, workdir?: string}} [o]
- * @returns {{stop: string, fault: string, notes?: string[]}|{stop: null, value: number, breakdown: any[], notes: string[], preScopeMatches: number, matched: string[]}}
+ * @returns {{stop: string, fault: string, notes?: string[]}|{stop: null, value: number, breakdown: any[], notes: string[], preScopeMatches: number, matched: string[][]}}
  */
 export function parseValue(output, terms, { scope = null, workdir = '' } = {}) {
   let value = 0;
@@ -736,10 +749,10 @@ export function parseValue(output, terms, { scope = null, workdir = '' } = {}) {
   const breakdown = [];
   /** @type {string[]} */
   const notes = [];
-  // the KEPT lines, in output order and deduplicated — see the note above
-  /** @type {string[]} */
+  // the KEPT lines PER TERM, in output order and deduplicated within the term —
+  // see the note above
+  /** @type {string[][]} */
   const matched = [];
-  const seen = new Set();
   const filtering = scopeFilters(scope);
   // one resolver (and one realpath cache) per call, built only when a filter
   // will actually read it
@@ -764,6 +777,9 @@ export function parseValue(output, terms, { scope = null, workdir = '' } = {}) {
     try { re = new RegExp(t.lineMatch, 'g'); } catch (e) { return { stop: `INSTRUMENT: term ${i} lineMatch /${t.lineMatch}/ is not a valid regex: ${String(/** @type {any} */ (e)?.message ?? e)}`, fault: STOP_FAULTS.CRASHED }; }
     /** @type {number[]} */
     const values = [];
+    /** @type {string[]} */
+    const kept = [];
+    const seen = new Set();
     let dropped = 0;
     let unattributable = 0;
     for (const line of region.split('\n')) {
@@ -775,10 +791,10 @@ export function parseValue(output, terms, { scope = null, workdir = '' } = {}) {
         if (p === null) unattributable += 1;
         else if (!inScope(p, scope, phys)) { dropped += 1; continue; }
       }
-      // past the filter, so this line is one the count is MADE of — harvested
-      // here rather than at aggregation because this is the only place the raw
-      // line still exists
-      if (!seen.has(line)) { seen.add(line); matched.push(line); }
+      // past the filter, so this line is a CANDIDATE for the harvest — kept here
+      // rather than at aggregation because this is the only place the raw line
+      // still exists, and narrowed to what the aggregate actually read below
+      if (!seen.has(line)) { seen.add(line); kept.push(line); }
       for (const h of hits) {
         if (t.capture === null) { values.push(1); continue; }
         const rawCapture = h[t.capture];
@@ -818,6 +834,10 @@ export function parseValue(output, terms, { scope = null, workdir = '' } = {}) {
       }
       subtotal = values[0];
     }
+    // `first` read ONE line — `kept[0]`, since `values[0]` is the first hit on
+    // the first kept line. The rest matched (and `matches` below still says so)
+    // but are not what this subtotal is made of.
+    matched.push(t.aggregate === 'first' ? kept.slice(0, 1) : kept);
     breakdown.push({ term: i, lineMatch: t.lineMatch, aggregate: t.aggregate, sign: t.sign, matches: values.length, subtotal, contribution: t.sign * subtotal });
     value += t.sign * subtotal;
   }
@@ -1155,19 +1175,31 @@ async function runCountNotWorse(stage, ctx) {
   if (worse) {
     gap.push(`${stage.name}: ${value} against a baseline of ${baseline} (${p.direction}) — worse`);
     gap.push(`  baseline ${baselineSource}`);
-    for (const b of /** @type {any[]} */ (now.breakdown)) {
+    // …each term stating itself, and THEN the lines that term's subtotal is made
+    // of, nested under it. A count with no addresses is the semantic genre F38
+    // measured as inert: run u-msn227nq's worker was handed "8 match(es)", had
+    // nowhere to open, and probed the arbiter's books until the deny guard ended
+    // the run. The instrument NAMED these lines — echoing what it named is the
+    // same licence `pattern-absent-in-diff` already runs under, not the barred
+    // move of naming a culprit the instrument never reported.
+    //
+    // NESTED, not pooled, because a line's arithmetic role is the term's and only
+    // the term's row carries it. `value` is a SIGNED sum: a term declared
+    // `sign: -1` subtracts, so its lines are ones the count went DOWN for, and a
+    // worker handed them flat beside the added ones reads every line as a wall
+    // and "fixes" one that moves the number the wrong way. The row directly above
+    // each block already says `contributes +n` / `-n`; sitting the lines under it
+    // is what makes that statement reach them. Nothing is withheld — under
+    // `higher-is-better` the subtracted term is exactly where the news usually is
+    // — and nothing is relabelled: the lines are still verbatim, one indent in.
+    //
+    // They ride the Gap like every other line: the stage prefix (Layer R's
+    // redKeep derives from it), the cap, and the trim marker on overflow.
+    const perTerm = /** @type {string[][]} */ (now.matched ?? []);
+    for (const [i, b] of /** @type {any[]} */ (now.breakdown).entries()) {
       gap.push(`  term ${b.term} /${b.lineMatch}/ ${b.aggregate}: ${b.matches} match(es), subtotal ${b.subtotal}, contributes ${b.contribution >= 0 ? '+' : ''}${b.contribution}`);
+      for (const l of perTerm[i] ?? []) gap.push(`    ${l}`);
     }
-    // …and the lines the count is MADE of, after the summary that frames them.
-    // A count with no addresses is the semantic genre F38 measured as inert: run
-    // u-msn227nq's worker was handed "8 match(es)", had nowhere to open, and
-    // probed the arbiter's books until the deny guard ended the run. The
-    // instrument NAMED these lines — echoing what it named is the same licence
-    // `pattern-absent-in-diff` already runs under, not the barred move of
-    // naming a culprit the instrument never reported. They ride the Gap like
-    // every other line: the stage prefix (Layer R's redKeep derives from it),
-    // the cap, and the trim marker if the harvest overflows it.
-    for (const l of /** @type {string[]} */ (now.matched ?? [])) gap.push(`  ${l}`);
   }
   return result(stage, {
     verdict: worse ? 'red' : 'green',

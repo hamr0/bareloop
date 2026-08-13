@@ -518,16 +518,20 @@ declaring one is a counted `locked-kind` red rather than an unknown-kind typo; `
 tool mode a locked kind is INEXPRESSIBLE — the schema carries one branch per live kind — so
 that demand arrives through the interview layer instead (`refuseLockedKind(kind)`).
 
-**A red `count-not-worse` gap carries the LINES it counted, not only how many (F98).** After
-the summary and the per-term breakdown, the stage appends the **KEPT** matched lines — the
-ones that survived the scope filter and reached aggregation, which is to say the ones the
-count is made of. A scope-DROPPED line is never among them (it was never counted, so naming
-it would aim the worker outside its own population, F84's one-population law), duplicates
-collapse, and the value is still computed from the parsed values and never from this list.
+**A red `count-not-worse` gap carries the LINES it counted, not only how many (F98).** Each
+term's **KEPT** matched lines nest under that term's own breakdown row — the row that already
+prints its `contributes +n`/`-n`, so a line's arithmetic role travels with it. Kept means the
+lines that survived the scope filter and were actually read by the aggregate (a `first` term
+echoes only the line that produced its value), which is to say the ones the count is made of.
+A scope-DROPPED line is never among them (it was never counted, so naming it would aim the
+worker outside its own population, F84's one-population law), duplicates collapse within a
+term (a line feeding two terms plays two roles and appears under each), and the value is
+still computed from the parsed values and never from this list.
 They ride the **existing** gap channel and invent none: the declared stage's `gapKeep` prefix
 on every line (Layer R's `redKeep` is DERIVED from that prefix), the same `GAP_LINE_CAP`, and
 the same announced trim on overflow — so a consumer parsing the gap sees more lines under the
-same shape, never a new one. `parseValue` returns them as `matched` alongside `value`. The
+same shape, never a new one. `parseValue` returns them as `matched` alongside `value`,
+per-term, index-aligned with the breakdown. The
 licence is the one `pattern-absent-in-diff` already runs under: the instrument NAMED these
 lines, and echoing what it named is not the barred move of naming a culprit it never
 reported. **Nothing here can flip a signed spec hash** — the verdict logic, the baselines,
