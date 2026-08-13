@@ -121,11 +121,29 @@ export function tallyCalls(entries) {
  *     $0 (F6) and a ceiling enforced against a laundered floor is not enforced
  *     at all. If the spend cannot be seen the cap cannot govern it, and that is
  *     its own stop rather than a silent pass.
+ *
+ * A MALFORMED ceiling is the one input it refuses rather than answers: `null` and
+ * an absent field mean UNBOUNDED, and they are the ONLY way to get there. Anything
+ * else that is not a finite number (`'2.50'`, `NaN`, `Infinity`) reading as
+ * unbounded would be F6's laundering in its ceiling form — a caller who set a cap
+ * getting a paid pipeline with nothing enforcing it, which is the exact collapse
+ * the ceiling exists to prevent, wearing the caller's own typo (PRD v1.62). The
+ * CLI's `parseCeiling` guards the FLAG; this guards the LIBRARY, and `authorClose`
+ * / `runAuthorScout` / `authorCloseForJob` are documented adopter seams. It THROWS
+ * rather than clamping, unlike the attempt caps beside it, because those axes have
+ * a safe direction to clamp toward and this one does not: every candidate default
+ * is either a number nobody set or the unbounded run the caller just declined.
  * @param {{ceilingUsd: number|null|undefined, knownUsd: number, spendComplete: boolean}} o
  * @returns {'cap-halt'|'pricing-red'|null}
+ * @throws {Error} when the ceiling is neither absent nor a finite number
  */
 export function capStop({ ceilingUsd, knownUsd, spendComplete }) {
-  if (typeof ceilingUsd !== 'number' || !Number.isFinite(ceilingUsd)) return null;
+  if (ceilingUsd === null || ceilingUsd === undefined) return null;
+  if (typeof ceilingUsd !== 'number' || !Number.isFinite(ceilingUsd)) {
+    throw new Error(`capStop: a money ceiling must be a finite number of dollars or null — got ${typeof ceilingUsd} `
+      + `${String(ceilingUsd)}. A malformed ceiling is an ERROR, never a silent fall back to UNBOUNDED: omit it, or `
+      + 'pass an explicit null, to run unbounded — that is a stated operator choice and never a typo arrived at');
+  }
   if (knownUsd >= ceilingUsd) return 'cap-halt';
   if (!spendComplete) return 'pricing-red';
   return null;

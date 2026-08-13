@@ -171,6 +171,30 @@ test('capStop: spend that cannot be KNOWN stops on its own axis — unpriced is 
     'a ceiling that cannot see the spend cannot enforce it honestly');
 });
 
+test('capStop: a MALFORMED ceiling is an error, never a silent UNBOUNDED (PRD v1.62)', () => {
+  // The library seam is the one the CLI's guard cannot cover: `parseCeiling` lives
+  // in scripts/author-readout.mjs and the UNBOUNDED banner is printed by the
+  // runner, so an adopter calling `authorClose({ceilingUsd: '2.50'})` used to buy
+  // a paid pipeline with NOTHING enforcing the ceiling it just set — the advertised
+  // ceiling and the enforced ceiling must be the same ceiling, and here they were
+  // a number and no number. F6's rule in its ceiling form: unknown is never
+  // laundered into "free".
+  for (const bad of ['2.50', '', '$5', NaN, Infinity, -Infinity, true, {}, [2.5]]) {
+    assert.throws(() => capStop({ ceilingUsd: /** @type {any} */ (bad), knownUsd: 9999, spendComplete: true }),
+      /finite number of dollars or null/,
+      `${JSON.stringify(bad) ?? String(bad)} must not read as UNBOUNDED`);
+  }
+});
+
+test('capStop: the guard admits exactly the two legal shapes it always admitted', () => {
+  // the contrast that makes the throw above a guard rather than a wall: an
+  // EXPLICIT absence is still unbounded, and a finite number still governs
+  assert.equal(capStop({ ceilingUsd: null, knownUsd: 9999, spendComplete: true }), null);
+  assert.equal(capStop({ ceilingUsd: undefined, knownUsd: 9999, spendComplete: true }), null);
+  assert.equal(capStop({ ceilingUsd: 2.5, knownUsd: 0, spendComplete: true }), null);
+  assert.equal(capStop({ ceilingUsd: 2.5, knownUsd: 2.5, spendComplete: true }), 'cap-halt');
+});
+
 test('capStop: a breach that is CERTAIN outranks a blindness that is not — cap-halt wins', () => {
   // known spend alone is already at the ceiling, so the unknown remainder cannot
   // change the answer; naming this pricing-red would send the operator to price a
