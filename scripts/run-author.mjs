@@ -207,6 +207,14 @@ console.log(`written    ${authoredFile}`);
 // artifact the run paid for is on disk exactly where it was written.
 if (authored.stop === 'cap-halt' || authored.stop === 'pricing-red') {
   const c = authored.cost ?? {};
+  // ONE reading of what this stop MEANS, spent on the console AND on the spine.
+  // Two hand-spelled answers is two instruments, and this is exactly the pair
+  // that must not disagree: a `cap-halt` says the money is gone, a `pricing-red`
+  // says the meter went blind (F6), and they send the operator to different
+  // repairs — one raises a number, the other binds a priced provider.
+  const meaning = authored.stop === 'cap-halt'
+    ? 'not under cap — not "can\'t"' // the shipped vocabulary, spelled the way ralph spells it
+    : 'the spend cannot be SEEN, so the ceiling cannot govern it — a blind meter, not a spent wallet (F6)';
   console.log(`\n${authored.stop.toUpperCase()} — the authoring pipeline stopped on the operator's ceiling, not on anything it read`);
   console.log(`  ceiling  $${CEILING_USD}`);
   console.log(`  spent    ${costLine(authored.cost)}`);
@@ -214,10 +222,26 @@ if (authored.stop === 'cap-halt' || authored.stop === 'pricing-red') {
   console.log(authored.stop === 'cap-halt'
     ? '  the stop IS the checkpoint: raise --budget and re-run, or read what is here and stop'
     : '  unpriced is never free (F6) — a ceiling that cannot see the spend cannot enforce it, so the run stopped rather than spend blind');
-  // the shipped vocabulary, spelled the way ralph spells it — a money stop is
-  // "not under cap", never "can't"
-  emit('cap-halt', {
-    category: authored.stop, meaning: 'not under cap — not "can\'t"',
+  // THE TYPE IS THE STOP. It used to be the literal 'cap-halt' on both arms, so a
+  // `pricing-red` was written down as a cap-halt with its real name demoted to a
+  // payload field. Every OTHER emitter in this tree keys the two apart — ralph and
+  // planrun emit `type:'cap-halt'` only ever with `category:'cap-halt'`, and a
+  // pricing-red rides its own name (run.js's escalation) — so this was the one
+  // site in the repo where the type and the category could disagree, and
+  // type-keyed slicing is precisely how F45 misread a shared log.
+  //
+  // Latent, not live: nothing reads the author spine by type today. The nearest
+  // reader is `classifyIncidents` (src/ledger.js), which sets `capHalted` on
+  // `type === 'cap-halt'` and would therefore have armed the capability-gap fuse
+  // — "the run cap-halted" — on a run whose wallet was never empty. Under its own
+  // name a pricing-red instead falls through every branch and is simply not
+  // counted, which is the FAIL-SAFE direction: uncounted, never miscounted.
+  //
+  // No falsy type can reach here: the `if` above narrows `authored.stop` to
+  // exactly these two strings, so a guard would be speculative code standing over
+  // an unreachable case rather than protection.
+  emit(authored.stop, {
+    category: authored.stop, meaning,
     ceilingUsd: CEILING_USD, spentUsd: c.costUsd ?? null, knownUsd: c.knownUsd ?? null,
     spendComplete: c.spendComplete ?? null,
   });
