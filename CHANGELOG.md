@@ -34,9 +34,12 @@ feature lands, **patch** = docs, fixes, scaffolding.
   record, which never rewrites the recorded outcome and announces itself with a banner. The
   terminal's NAME is what gates resume (`readResume`'s `resumableOutcomes`, which the operator
   runner supplies as `cap-halt` / `wall-halt`), so a run mislabelled `step-red` past its own
-  wall silently lost its resumability. Known limit, on the record: the derivation has **no
-  expiry** — it can only match spines from the
-  defect-era shape it was built against, and nothing decides when to remove it (PARKED).
+  wall silently lost its resumability. **It is a PERMANENT read-side safety net, not a
+  migration shim** (ruled 2026-08-13; the expiry question that was parked here is closed). The
+  defect that minted the shape is fixed at source, but spines are append-only forever, so the
+  population it protects can never shrink; it fires only on the run's own un-forgeable
+  `wall-bounded` record, cannot rescue a `step-red` that has no wall record in front of it, and
+  is a never-taken branch on a healthy spine.
 
 ### Changed
 

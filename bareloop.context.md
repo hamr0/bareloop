@@ -294,6 +294,14 @@ N−1 are enforced only at the close, at the end of the run. That is a COST shap
 hole — the close still refuses a tree that fails any stage, and nothing green is minted mid-run
 — but a stage first tested at the tail is a stage the run pays full price to discover.
 
+**The ceiling of 2 is RULED, not provisional (2026-08-13, PRD v1.63 §3).** One check per write
+step is the contract: a step passing its own in-run check is never a verdict, only the close is
+truth, and widening the ceiling so a step's own gate could approximate the close would move
+judgement into the part the agent authors. Plan around one check; do not plan for a second one
+arriving. It is raised only on a demonstrated starvation case (a real run where a step provably
+cannot express its progress gate within one check and stalls for it), never for wording comfort,
+and the change is the operator's — arbiter territory.
+
 Red vocabulary (both validators): `parse-error`, `unknown-field`, `missing-required`,
 `invalid-value`, `bounds`, `duplicate-id`, `close-type`, `close-hierarchy`,
 `secret-literal`, `scope-escape`,
@@ -539,6 +547,21 @@ the worker changed.
    the work) and which are GREEN (those are the guards) is handed back for the user to read.
    **A close with no WORK stage red at seed is refused decision-ready** — it grades nothing,
    and an instrument that scans nothing reads clean exactly like one that measures correctly.
+
+**KNOWN LIMIT: gate 1 does not check a parser's FORMAT, and never will (F94, ruled WON'T-BUILD
+2026-08-13, PRD v1.63 §1).** A declaration can name the right stage, over the right population,
+with the right aggregate, and carry a `lineMatch` for a shape the tool never prints. Detecting
+that at draft time needs stage → tool attribution, and `npm run typecheck` defeats it
+mechanically: the declared command names npm, what prints is `tsc`, and the mapping lives in a
+`package.json` the validator does not read. A detector that resolved some spellings and passed
+the rest would read as coverage while being blind exactly where patients differ. **Gates 2 and 3
+are the instrument for this class, and they work** — a term matching nothing over a non-empty
+population reads unknown-not-zero (F6/F45/F93), so the seed-verdict read refuses it at $0 before
+a signature, which is how the real case was caught. Formats are checked by RUNNING the tool,
+never by reading a string. The complementary defence is upstream of the gate: for the tools the
+genre owns facts about, `genreInstruments` hands the author the measured pattern (with its real
+captured line) instead of asking, so fewer declarations reach gate 1 carrying an invented format
+at all. Reopens only if a wrong-format parser ever reaches a SIGNED close.
 
 Then the human signs `specHash`, unchanged: the approvals array and the human's word are
 the arbiter relocating to the user, not disappearing. **Re-authoring is a spec edit (D6)** —
@@ -1299,6 +1322,17 @@ semantics are byte-unchanged (PRD v1.46 §3):
   complete" is true of a VERDICT; a halt means an operator-owned allowance ran out with the
   work on disk and the plan on the spine. A green or any red stays non-resumable under every
   setting — a verdict already rendered is never re-bought.
+  **One exception, and it is a DERIVATION rather than a widening (D4a, F96).** A recorded
+  `step-red` is re-read as a wall-halt — and becomes resumable — when the run's OWN spine
+  carries a `wall-bounded {bounded: true}` record STRICTLY BEFORE its terminal, and only when
+  `'wall-halt'` is itself in `resumableOutcomes`. It fires on the run's own primary evidence,
+  which no caller can assert; a `step-red` with no wall record in front of it is untouched, so
+  "a red is an answer" survives intact. It touches no close verdict — the grades stand and the
+  resume seeds from them. The readout surfaces `wallDerivedHalt` so an operator resuming a spine
+  that SAYS `step-red` is told which record turned it into a checkpoint. **This is a PERMANENT
+  safety net, not a migration shim (ruled 2026-08-13, PRD v1.63 §2):** the defect that minted
+  the shape is fixed at source, but spines are append-only forever, so the population it protects
+  can never shrink — and on a healthy spine it is a branch that is never taken.
 
 `restart.branch` is the WORK BRANCH the dead leg was working on, READ off its `work-branch`
 record and never re-derived: the name is deterministic from the signed spec, so a restart that
@@ -1380,6 +1414,12 @@ and is re-signed.
   fold — a garbage, non-finite or negative `count` reads as `0` rather than widening the ceiling.
   Null/omitted is the cold path. The disarm control is pinned: a resumed leg with an UNSPENT
   ceiling still replans, so the bound is bounded, not switched off.
+  **NEVER-REFILL is now the RULING, not just the behaviour (2026-08-13, PRD v1.63 §4).** A resume
+  inherits the spent replan ledger, entire; a refill would let every kill buy an allowance, which
+  is unlimited replanning through the side door, and unlimited replanning launders thrash as
+  adaptation. The consequence for an adopter is a real one and is deliberate: a resume whose
+  ledger is already spent re-enters its plan with no channel to replace it. That is not funded —
+  it is SHOWN, by the resume banner, before you sign.
 - **Under the REMAINDER, never a fresh allotment.** The killed attempt's spend and wall
   FOLD IN (`runJob`'s `priorSpentUsd`/`priorSpendComplete`/`priorWallMs`, `createClock`'s
   `priorElapsedMs`), so
