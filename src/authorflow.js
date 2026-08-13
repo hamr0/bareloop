@@ -1150,14 +1150,24 @@ export async function authorClose({
       // dead socket, which is the one lever that cannot repair it. The stop
       // itself does not move: the ceiling did bind, and naming the second cause
       // is attribution, not routing.
+      //
+      // The transport death is not the only second cause. The ceiling also
+      // refuses the recovery round behind a SHORT/EMPTY reply, and the retry
+      // behind an EMPTY/UNPARSEABLE one — every cause except NOT_FUNDED means a
+      // real call produced the reason being quoted, so "not on anything it
+      // read" is honest ONLY when no call was ever made.
       const alsoDied = scout?.cause === SURVEY_CAUSES.CALL_FAILED;
+      const alsoIncomplete = !alsoDied && scout?.cause != null && scout.cause !== SURVEY_CAUSES.NOT_FUNDED;
       return refuse([{
         code: scout.budgetStop,
         path: 'budgetUsd',
         detail: alsoDied
           ? 'the authoring ceiling bound here AND the survey call itself failed — both are true, and raising the '
             + `ceiling will not repair the second: ${redactSecrets(String(scout.reason ?? ''))}`
-          : `the survey stopped on the authoring ceiling, not on anything it read: ${redactSecrets(String(scout.reason ?? ''))}`,
+          : alsoIncomplete
+            ? 'the authoring ceiling bound here AND the survey came back incomplete — both are true: the ceiling '
+              + `refused the round that could have repaired it: ${redactSecrets(String(scout.reason ?? ''))}`
+            : `the survey stopped on the authoring ceiling, not on anything it read: ${redactSecrets(String(scout.reason ?? ''))}`,
       }], scout.budgetStop);
     }
     return refuse([{

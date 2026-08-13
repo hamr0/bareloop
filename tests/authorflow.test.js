@@ -1509,6 +1509,31 @@ test('authorClose: a ceiling that stopped a survey the TRANSPORT also killed con
   assert.equal(calls.length, 0, 'still a $0 refusal');
 });
 
+test('authorClose: a ceiling that refused the recovery behind a SHORT survey concedes both causes', async () => {
+  // the sibling of the transport case above: the first call came back cut off
+  // (a real reply, too short) and the ceiling refused the reserved recovery
+  // round that exists to repair exactly that. "not on anything it read" would
+  // deny the short reply the same sentence quotes — the SHORT cause rides the
+  // same concession as CALL_FAILED, and only NOT_FUNDED (no call ever made)
+  // keeps the ceiling-only wording.
+  const both = {
+    state: 'ABSENT', facts: null, cause: 'short',
+    reason: 'survey 150 bytes < 200 — the scout did not complete',
+    budgetStop: 'cap-halt',
+    calls: [{ label: 'author-scout', costUsd: 0.03, unpricedRounds: 0 }], raws: [],
+  };
+  const { generate, calls } = scriptGenerate([{ declaration: goodDeclaration() }]);
+  const r = await authorClose({ ...baseArgs(), scout: both, generate, seedReadFn: scriptSeedRead().fn, ceilingUsd: 0.02 });
+
+  assert.equal(r.stop, 'cap-halt', 'the decided stop does not move — this is attribution, not routing');
+  assert.equal(r.reds[0].code, 'cap-halt');
+  assert.match(r.reds[0].detail, /150 bytes/, 'the short reply\'s own reason still rides along');
+  assert.ok(!/not on anything it read/.test(r.reds[0].detail),
+    'and the detail must not DENY the reply it is quoting in the same breath');
+  assert.match(r.reds[0].detail, /came back incomplete/i, 'the concurrent cause is named, not implied');
+  assert.equal(calls.length, 0, 'still a $0 refusal');
+});
+
 test('authorClose: an ordinarily ABSENT survey is STILL a scout-absent — the money branch is not a catch-all', async () => {
   // the discriminator for the test above: same absence, no budgetStop, and the
   // scout is correctly blamed
