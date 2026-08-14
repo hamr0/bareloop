@@ -332,6 +332,35 @@ test('§1.5 rerun — a fix that leaves a MECHANICAL stage red keeps converting:
   assert.equal(r.outcome, 'hitl-pause', 'and once the machine is happy again, the person is asked once more');
 });
 
+test('§1.3 — a PAUSE is never GRADED by the fix governor: a non-verdict must not mint a strike that ends the run as a cap-halt', async (t) => {
+  // The hole a surviving mutant found. This close's output carries no comparable
+  // NUMBER, so the governor is blind and its bound is the iteration COUNT — which
+  // makes a pause recorded as a reading one extra tick, on a loop that has
+  // already spent its ticks converting a mechanical red.
+  //
+  // The arithmetic, so the arm is not accidental: the trend opens SEEDED with the
+  // grade the loop started on, and the blind rule strikes at
+  // `uncomparableRun - 1 >= capRuns`. Seed + one red iteration is 2 readings, so
+  // at capRuns 2 the loop is alive (2-1 < 2) to reach the pause — and the pause's
+  // own tick would be the 3rd, which strikes (3-1 >= 2) and reports a cap-halt
+  // for a run that in fact reached the person.
+  const leg = await pauseLeg(t);
+  const p = scriptedProvider([
+    tcall('f1', join(leg.dir, 'src', 'fix.js'), '// nope\n'), { text: 'attempt 1' },
+    tcall('f2', join(leg.dir, 'src', 'fix.js'), '// ok now\n'), { text: 'attempt 2' },
+  ]);
+  const r = await resume(leg, {
+    humanRuling: { decision: 'rerun', text: 'it is not right yet' },
+    provider: p,
+    capRuns: 2,
+  });
+  assert.equal(r.outcome, 'hitl-pause',
+    `the run reached the person; a graded pause would have struck the loop out first: ${JSON.stringify(r.events.filter((e) => e.type === 'escalation').map((e) => e.category))}`);
+  const ladders = r.events.filter((e) => e.type === 'ladder');
+  assert.equal(ladders.at(-1).paused, true, 'the last reading says what it is — waiting on a person, not a grade');
+  assert.equal(ladders.at(-1).strikes, undefined, 'and it mints no strike at all');
+});
+
 test('§1.5 — a rerun with no text never reaches a worker: the run refuses the decision instead', async (t) => {
   const leg = await pauseLeg(t);
   const fp = forbiddenProvider();
