@@ -560,7 +560,9 @@ test('§F97 predicate: a garbage ledger never SUPPRESSES the warning by reading 
 test('§F97 banner: the runner prints it through THIS predicate, and it WARNS rather than blocks', () => {
   const src = readFileSync(RUNNER, 'utf8');
   assert.match(src, /doomedResume\(/, 'the script drives the shared predicate rather than re-deriving the shape');
-  assert.match(src, /import \{ wallLine, doomedResume \}|import \{ doomedResume, wallLine \}/, 'imported from the readout module the tests can reach');
+  // membership, not the exact list: the readout module has grown (N4's `deathAtOf`),
+  // and pinning the spelling of the whole import made an unrelated addition a red
+  assert.match(src, /import \{[^}]*\bdoomedResume\b[^}]*\} from '\.\/u-readout\.mjs'/, 'imported from the readout module the tests can reach');
   // WARNING ONLY: the F97 lesson is an operator pre-flight, not a new gate. A `die(`
   // or a `process.exit` reached from this predicate would turn a $0 read into a
   // refusal the operator never signed up for.

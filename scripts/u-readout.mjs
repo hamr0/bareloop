@@ -38,6 +38,47 @@ export function wallLine({ legMs, priorWallMs = 0, wallLabel }) {
 }
 
 /**
+ * WHEN THE DEAD LEG STOPPED — the input `readResume` folds into `priorWallMs`, and
+ * therefore what the resumed leg's wall remainder is computed from.
+ *
+ * The runner has two candidate witnesses and they answer different questions:
+ *
+ *  - the WATCHDOG's kill record (`<spine>.watchdog.json`), which is written when the
+ *    outside guard reaps a run. For a run that was killed it is later and better
+ *    evidence than the last spine event: the process was alive, silently, right up to
+ *    the signal, and billing only to its last emitted event would under-report the
+ *    wall it really burnt.
+ *  - the SPINE's own landed terminal (`job-end`). A run that wrote one did not die —
+ *    it ENDED ITSELF and dated its own stop.
+ *
+ * So the preference order is not "the later record wins", it is "the run's own record
+ * wins when there is one". N4 §1.6 is where that distinction stopped being academic:
+ * a `hitl-pause` is a clean terminal a person may answer days later, and any record
+ * dated after it bills their deciding time to the run's wall. The POC measured the
+ * shape — a report 45 days after the pause made `RESUME_WALL_MS` exactly 0, dooming
+ * the resumed leg before it opened, on a run that had barely started. W-2 holds by
+ * construction only if this reads the pause.
+ *
+ * Returning `null` is not a failure: it hands `readResume` back its own documented
+ * default (the last event's timestamp), which for a clean terminal IS the terminal.
+ *
+ * @param {{watchdogAt?: unknown, events?: unknown}} o `watchdogAt` as the report
+ *   spells it (an ISO string, or anything at all — the file is read off disk);
+ *   `events` the dead spine, parsed.
+ * @returns {number|null} ms, or null to leave the default in place
+ */
+export function deathAtOf({ watchdogAt, events } = {}) {
+  const list = Array.isArray(events) ? events : [];
+  // a landed terminal is the run dating its own stop — nothing outside it is better
+  // evidence about a run that was never killed
+  if (list.some((e) => e !== null && typeof e === 'object' && /** @type {any} */ (e).type === 'job-end')) return null;
+  const at = typeof watchdogAt === 'string' ? Date.parse(watchdogAt) : NaN;
+  // an unreadable stamp is UNKNOWN, never a NaN handed to a fold (F6): the caller's
+  // own default is the honest fallback
+  return Number.isFinite(at) ? at : null;
+}
+
+/**
  * F97 — the DOOMED RESUME read, the one the operator should make before signing.
  *
  * `u-msn0uccv` spent $0.82 re-entering the exact plan whose action was the diagnosed

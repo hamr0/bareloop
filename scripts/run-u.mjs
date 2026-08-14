@@ -21,7 +21,7 @@ import { scanSecrets } from '../src/validate.js';
 import { readResume, resumeTreeGate, CHECKPOINT_OUTCOMES } from '../src/reuse.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
-import { wallLine, doomedResume } from './u-readout.mjs';
+import { wallLine, doomedResume, deathAtOf } from './u-readout.mjs';
 
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
@@ -224,13 +224,17 @@ if (deadSpineFile !== null) {
       console.error(`--resume: pid ${watchdog.pid} is alive but is NOT this runner (${cmdline.slice(0, 80)}) — the pid was recycled; continuing.`);
     }
   }
-  // the watchdog's kill record is later, better evidence of how long the dead run
-  // really lived than its last spine event
-  const killedAt = Date.parse(String(watchdog?.at ?? ''));
+  // WHEN did the dead leg stop? The watchdog's kill record is later, better evidence
+  // than the last spine event for a run that was KILLED — and worse evidence for one
+  // that ended itself, which is what N4's pause is. The preference order lives in
+  // `deathAtOf` (scripts/u-readout.mjs) so it is reachable by a test; the hazard it
+  // closes was measured, not imagined (a report dated after a pause bills the human's
+  // deciding time to the run's wall and can zero the remainder outright).
+  const deathAt = deathAtOf({ watchdogAt: watchdog?.at, events: deadEvents });
   dead = readResume(deadEvents, {
     direct: true,
     resumableOutcomes: RESUMABLE_HALTS,
-    ...(Number.isFinite(killedAt) ? { deathAt: killedAt } : {}),
+    ...(deathAt === null ? {} : { deathAt }),
   });
   if (!dead.started) die(`--resume: ${deadSpineFile} carries no job-start — that is not a bareloop run's spine`);
   if (dead.job !== spec.job) die(`--resume: that spine is job "${dead.job}", not "${spec.job}" — a resume continues ONE job, and running another job's plan as this one's is a substitution nothing here is allowed to make`);
