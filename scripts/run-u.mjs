@@ -18,7 +18,7 @@ import { makeSpine } from '../src/spine.js';
 import { scanSecrets } from '../src/validate.js';
 // --resume reads the halted run's own spine back through the SAME reader the reuse
 // path uses (never a second one) and keeps its patient the way it left it.
-import { readResume, resumeTreeGate } from '../src/reuse.js';
+import { readResume, resumeTreeGate, CHECKPOINT_OUTCOMES } from '../src/reuse.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
 import { wallLine, doomedResume } from './u-readout.mjs';
@@ -136,8 +136,19 @@ const WALL_LABEL = WALL_MS === null ? 'UNBOUNDED (spec sets no maxWallMs — del
 // declines to throw away what the dead run already bought — the tree, the plan, the
 // steps that finished, and the money, which is folded IN so the ceiling cannot widen.
 const RESUME = arg('resume');
-/** the terminals that are a checkpoint rather than a verdict. Nothing else is
- * resumable — a green is done, and a red is an answer.
+/** the terminals that are a checkpoint rather than a verdict — THE LIBRARY's set
+ * (`CHECKPOINT_OUTCOMES`, src/reuse.js), not this script's own.
+ *
+ * It used to be a literal here, and N4 is what made that untenable: a fourth
+ * checkpoint (`hitl-pause`) had to be added in two places at once, and the
+ * exported bundle (PRD v1.44 §2 — a thin runner with bareloop as a dependency)
+ * would have needed a third copy. `readResume` still takes the list as a
+ * PARAMETER and still defaults to empty — that default is what the reuse loop's
+ * graded-row semantics depend on — so what moved is the canonical ANSWER, not
+ * the seam. Same reasoning that put the pause TTL in the library (OPEN-2, hamr,
+ * 2026-08-13).
+ *
+ * Nothing else is resumable — a green is done, and a red is an answer.
  *
  * The first two are governance halts: an operator-owned allowance ran out with the
  * work on disk.
@@ -157,8 +168,13 @@ const RESUME = arg('resume');
  *
  * The floor rides along honestly — a stalled run's `spendComplete:false` reaches the
  * preview's fold as `≥$x` and `runJob` as `priorSpendComplete:false`, so the resumed
- * leg's own terminal stays a floor too rather than healing an unknown by inheriting it. */
-const RESUMABLE_HALTS = ['cap-halt', 'wall-halt', 'step-stalled'];
+ * leg's own terminal stays a floor too rather than healing an unknown by inheriting it.
+ *
+ * `hitl-pause` (N4 §1.6) is the fourth, and the only one whose missing allowance is a
+ * PERSON: the run reached the one stage a machine cannot render and stopped with its
+ * work, its plan and its money exactly where they were. Answering it needs `--decide`
+ * (below); every other entry here resumes on the hash alone. */
+const RESUMABLE_HALTS = CHECKPOINT_OUTCOMES;
 const die = (/** @type {string} */ m) => { console.error(m); process.exit(2); };
 /** the patient's tree, and the spine directory beside it — derived ONCE, here, because
  * both the RESUME reader below and the live run further down need them. Two spellings of
