@@ -26,6 +26,9 @@ import {
   LIVE_KINDS, SEED_EXEMPT_KINDS, runStage, seedRead, normalizeHumanRuling, runDeclaredClose,
 } from '../src/kinds.js';
 import { CLOSE_FAULTS } from '../src/ralph.js';
+import { classifyIncidents } from '../src/ledger.js';
+import { deriveStatus } from '../src/bridges.js';
+import { REUSE_GRADED_RED, CHECKPOINT_OUTCOMES } from '../src/reuse.js';
 import { QUESTION_SETS, CLASS_STATEMENTS, questionsFor, requiredAnswersFor } from '../src/authorflow.js';
 import { GENRE_LANGUAGES } from '../src/authoring.js';
 
@@ -266,6 +269,47 @@ test('§1.3 — a PAUSE is never graded: neither runDeclaredClose nor the arbite
   assert.equal(Object.hasOwn(CLOSE_FAULTS, v.verdict), false,
     'the forbidden-zone table must not claim it — a pause is a non-verdict, not a broken instrument');
   assert.equal(closeGrade(v).value, null, 'and it donates no number to the trend reader (F6: blind reads unknown)');
+});
+
+// ── §1.4 THE READERS — every reader keyed on an outcome NAME ────────────────
+//
+// The `step-stalled` lesson, applied deliberately: outcome names are keyed on by
+// the ledger's excluded set, the F44 spend floor, the resume reader and the
+// bridge registry. New names are MINTED here rather than borrowed — the legacy
+// `hitl-close` entry in the ledger stays exactly where it is, meaning what it
+// always meant, and nothing is renamed in passing.
+
+test('§1.4 readers — the ledger EXCLUDES the three hitl terminals, and keeps the legacy hitl-close entry untouched', () => {
+  const at = (/** @type {string} */ category) => classifyIncidents([
+    { type: 'escalation', category, decisionReady: true, detail: 'x', seq: 1 },
+  ], { spine: 'run' });
+  for (const category of ['hitl-pause', 'hitl-cancel', 'hitl-decision-red']) {
+    assert.deepEqual(at(category), [], `${category} is a checkpoint or an operator refusal, never a lib bug`);
+  }
+  // the CONTROL: an unmapped category is still COUNTED against the executable
+  // excluded-set, so this test could fail
+  assert.equal(at('some-new-category').length, 1, 'the excluded set is executable, not decorative');
+  assert.deepEqual(at('hitl-close'), [], 'the legacy entry keeps its own meaning (a human IS the close)');
+});
+
+test('§1.4 readers — a pause and a cancel NEVER demote a bridge, and the graded red still does', () => {
+  const proven = [{ outcome: 'green', patient: 'p1' }, { outcome: 'green', patient: 'p2' }];
+  assert.equal(deriveStatus(proven), 'proven');
+  for (const outcome of ['hitl-pause', 'hitl-cancel', 'hitl-decision-red']) {
+    assert.equal(deriveStatus([...proven, { outcome, patient: 'p3' }]), 'proven', outcome);
+  }
+  // the two halves of the rule this rests on: only `escalated` is GRADED as a
+  // red at the registry seam, and only a row written as the literal `red`
+  // demotes. A casualty keeps its own name and therefore cannot reach either.
+  assert.deepEqual([...REUSE_GRADED_RED], ['escalated']);
+  assert.equal(deriveStatus([...proven, { outcome: 'red', patient: 'p3' }]), 'candidate', 'the control');
+});
+
+test('§1.4 readers — the checkpoint list is the LIBRARY\'s, so an exported bundle inherits it rather than re-spelling it', () => {
+  assert.ok(CHECKPOINT_OUTCOMES.includes('hitl-pause'), 'a pause is a checkpoint: there is something left to continue');
+  assert.deepEqual([...CHECKPOINT_OUTCOMES], ['cap-halt', 'wall-halt', 'step-stalled', 'hitl-pause']);
+  assert.equal(CHECKPOINT_OUTCOMES.includes('hitl-cancel'), false, 'cancel is TERMINAL — a verdict already rendered is never re-bought');
+  assert.equal(CHECKPOINT_OUTCOMES.includes('green'), false);
 });
 
 test('§1.5 — the decision GATE refuses an empty rerun: the fix worker must never receive an empty human gap', () => {

@@ -499,9 +499,37 @@ test('an ALREADY-GREEN tree ends the loop but mints NOTHING — no unearned lear
   }));
   assert.equal(runs.calls.length, 1, 'the job is done — there is nothing to try');
   const after = loadBridge(join(dir, 'alpha.json')).bridge;
-  assert.equal(after.versions.length, 1, 'no plan ran, so no plan inherits (R1)');
+  assert.equal(after.versions.length, 1, 'nothing inherits from a green that predates the run');
   assert.equal(r.bridgeWrites[0].action, 'none');
-  assert.equal(r.bridgeWrites[0].reds[0].code, 'no-plan-executed');
+  assert.equal(r.bridgeWrites[0].reds[0].code, 'green-predates-run');
+});
+
+test('…and it mints nothing even with a PLAN on the spine — the guard is the TERMINAL, not the absence of a plan', async () => {
+  // N4's shape, and the reason this needed a wired guard rather than an accident:
+  // a hitl try that PAUSED and then came back with the signer's `accept` lands
+  // `already-green` (the close was satisfied before that leg did anything) with
+  // its predecessor's `plan-accepted` sitting in the very same try window. Read
+  // by the old rule — "green with no plan mints nothing" — that plan WOULD have
+  // minted a version for a green nobody's plan produced.
+  const dir = seed(BRIDGE('alpha'));
+  const runs = scriptedRuns([{ outcome: 'already-green', plan: PLAN('from-the-paused-leg'), closeStage: 'typecheck' }]);
+  const r = await runReuse(runOpts({
+    registryDir: dir,
+    selectionProvider: picker({ choice: 'alpha', reason: 'fits' }),
+    runJob: runs,
+  }));
+  const after = loadBridge(join(dir, 'alpha.json')).bridge;
+  assert.equal(after.versions.length, 1, 'no version minted');
+  assert.equal(r.bridgeWrites[0].action, 'none');
+  assert.equal(r.bridgeWrites[0].reds[0].code, 'green-predates-run');
+  // the CONTROL, byte-identical but for the terminal: a real green DOES mint
+  const dir2 = seed(BRIDGE('alpha'));
+  await runReuse(runOpts({
+    registryDir: dir2,
+    selectionProvider: picker({ choice: 'alpha', reason: 'fits' }),
+    runJob: scriptedRuns([{ outcome: 'green', plan: PLAN('from-the-paused-leg'), closeStage: 'typecheck' }]),
+  }));
+  assert.equal(loadBridge(join(dir2, 'alpha.json')).bridge.versions.length, 2, 'the two arms must differ');
 });
 
 test('try loop: after a red the NEXT try re-runs selection with the failed bridge EXCLUDED', async () => {

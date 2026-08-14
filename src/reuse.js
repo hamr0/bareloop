@@ -85,6 +85,26 @@ const { Loop } = require('bare-agent');
 export const REUSE_GRADED_RED = Object.freeze(['escalated']);
 
 /**
+ * WHICH TERMINALS ARE A CHECKPOINT — the list a runner hands `readResume` as
+ * `resumableOutcomes`, minted HERE rather than in whichever script happens to
+ * launch a run.
+ *
+ * `readResume` deliberately takes it as a parameter and defaults to empty, and
+ * that stays true: the reuse loop's own semantics depend on the empty default.
+ * What did not exist was a canonical ANSWER, so `scripts/run-u.mjs` kept its own
+ * copy — and the exported bundle (PRD v1.44 §2: a thin runner with bareloop as a
+ * dependency) would have had to keep a third. The same reasoning that put the
+ * pause TTL in the library (OPEN-2, hamr, 2026-08-13) puts this here.
+ *
+ * Every entry is a stop that left WORK ON DISK and an allowance unspent — money,
+ * time, a self-healed stall, and now a person who has not answered yet. A verdict
+ * already rendered is never on this list: `hitl-cancel` is the signer's own
+ * terminal and `green`/`escalated` are graded rows, and re-buying any of them
+ * would pay twice for an answer already in hand.
+ */
+export const CHECKPOINT_OUTCOMES = Object.freeze(['cap-halt', 'wall-halt', 'step-stalled', 'hitl-pause']);
+
+/**
  * v1's definition of "the same KIND of recipe" — and it is the LOAD GATE's own: the
  * close-stage names, in the same order (`bridges.loadGate` rule 2). One predicate,
  * shared with the gate rather than spelled a second time here: a cold green appending
@@ -1375,7 +1395,30 @@ export async function runReuse(opts) {
       costUsd: read.spentUsd, spendComplete: read.spendComplete, wallMs, rounds,
       ...(trySpecHash ? { specHash: trySpecHash } : {}),
     };
-    if (verdictClass === 'green' && read.plan === null) {
+    if (outcome === 'already-green') {
+      // A GREEN THAT PREDATES THE RUN mints nothing, and the guard keys on the
+      // TERMINAL rather than on the absence of a plan. `already-green` means the
+      // close was satisfied at the precheck — before this leg wrote a byte — so
+      // whatever plan is on the spine did not produce it, and minting a version
+      // from one would be learning credit for work that did not happen.
+      //
+      // It used to be covered by accident: a cold already-green never drafts, so
+      // `read.plan` was null and the branch below caught it. N4 broke that
+      // accident — a hitl try that PAUSED and came back with the signer's
+      // `accept` lands `already-green` with its predecessor's `plan-accepted`
+      // sitting in the same try window. A rule with no wired detector is prose.
+      bridgeWrites.push({
+        name,
+        action: 'none',
+        file: null,
+        reds: [{
+          code: 'green-predates-run',
+          path: 'outcome',
+          detail: 'the close was already satisfied before this run did anything (already-green) — nothing here earned '
+            + 'a version, and a plan on the spine did not produce this green',
+        }],
+      });
+    } else if (verdictClass === 'green' && read.plan === null) {
       // a green with no plan on the spine cannot mint a version — the artifact that
       // inherits is the one that RAN, and there is nothing here to inherit. Reported,
       // never faked with a placeholder.

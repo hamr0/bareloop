@@ -82,6 +82,21 @@ const EXCLUDED_ESCALATIONS = new Set([
   'gate-red',
   'smoke-red',          // already counted via primitive-smoke
   'hitl-close',         // by design: a human is the close
+  // N4 slice 1 — the hitl class's own three terminals, and each is here for its
+  // own reason rather than by family resemblance. `hitl-pause` is a CHECKPOINT
+  // (the cap-halt story with a person instead of a budget: the run stopped
+  // because it reached the one stage a machine cannot render). `hitl-cancel` is
+  // the signer ending the run — governance working. `hitl-decision-red` is an
+  // honest refusal of the OPERATOR's own input, exactly like `close-unsupported`
+  // below, and the one direction that would be wrong is filing any of the three
+  // as a capability gap against a library that did nothing.
+  //
+  // MINTED, never borrowed: the legacy `hitl-close` above is the deleted path's
+  // close TYPE and keeps its own meaning. Reusing that name would have made two
+  // different facts one number (the `step-stalled` lesson).
+  'hitl-pause',
+  'hitl-cancel',
+  'hitl-decision-red',
   'close-unsupported',  // honest refusal, by design
   // Close authoring (M4, D13) — the interview refusing a job we cannot close: a
   // genre we do not run, a job with no seed to measure against, a locked kind.
