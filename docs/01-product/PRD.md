@@ -2,7 +2,7 @@
 
 > Status: **v1 — LOCKED 2026-07-11** (naming pass + bloat audit applied). Seed written
 > 2026-07-10 in the adaptlearn repo; now lives in bareloop's own repo. Ground truth
-> it consumes: `docs/plans/2026-07-10-agentic-automation-successor-design.md` (validated
+> it consumes: `docs/02-features/2026-07-10-agentic-automation-successor-design.md` (validated
 > interview + all amendments, this repo), adaptlearn FINDINGS F1–F20 and CYBERNETICS.md
 > (closed records, copied to `docs/00-context/`), and — linked, not copied — adaptlearn
 > PRD v1.5.5 plus the evidence archive and analysis lenses (`docs/archive/evidence/`,
@@ -265,7 +265,7 @@ pre-registered, consumed as bareloop F2. The v1.1 §4 open question closes as fo
 ## Addendum v1.5 — 2026-07-11 (the upstream ledger: auto-detected upstream fixes + workflow debugging, hamr)
 
 New feature, spec'd and reference-implemented upstream (adaptlearn, house POC rules:
-`docs/plans/2026-07-11-upstream-ledger-design.md` + `poc/upstream-ledger.mjs`, selftest
+`docs/02-features/2026-07-11-upstream-ledger-design.md` + `poc/upstream-ledger.mjs`, selftest
 8/8 incl. two must-produce-nothing negatives; validated by re-deriving the menu-probe
 session's real incidents — provider crashes ×3 as one row, a distinct timeout kept
 separate, capability-gap: impact ×3, request-red: impact ×15 frequency-ranked, **zero
@@ -472,7 +472,7 @@ Things to try, in nominated order:
    detected by their own assertions, falsifier 8/8 sabotaged vectors miss; run 1's control
    arm caught a real fixture bug (`node --test <dir>` = entry-file red) before anything
    trusted the instrument. Spec carried to
-   `docs/plans/2026-07-13-instrument-bist-spec.md`; the pre-flight rewrite lands with
+   `docs/02-features/2026-07-13-instrument-bist-spec.md`; the pre-flight rewrite lands with
    N-ladder instrument hygiene, timing owned by this repo's session.
 2. **V10 — forbidden-zone audit (per close, lands with N-ladder close work).** Each close
    enumerates outcomes that are neither clean green nor clean red (F5 validate-then-crash
@@ -485,7 +485,7 @@ Things to try, in nominated order:
    broken-close-must-escalate violated in behavior), one collapse (timeout pooled into
    broken-close), one coercion INVISIBLE at the seam (crash-at-load ≡ honest red by exit
    code; no mapping can separate them). Three build rules carried to
-   `docs/plans/2026-07-13-forbidden-zone-audit-spec.md`: `close-killed`, `close-timeout`,
+   `docs/02-features/2026-07-13-forbidden-zone-audit-spec.md`: `close-killed`, `close-timeout`,
    and a judgment-rendered signal (executed-test count / structured verdict) so
    `close-crashed` is auditable at all; they land with the N-ladder close work, timing
    owned by this repo's session.
@@ -506,7 +506,7 @@ Things to try, in nominated order:
    sibling cells at a fixed task) is **barren across the whole archive**: toggle coverage is
    a ledger *design* requirement, not a post-hoc query, and a "toggle" across a re-authoring
    boundary can carry the **wrong sign** (demonstrated live: −episode reading as an
-   improvement). Spec carried to `docs/plans/2026-07-13-toggle-coverage-spec.md`; binds the
+   improvement). Spec carried to `docs/02-features/2026-07-13-toggle-coverage-spec.md`; binds the
    N3/N4 ledger shape. Folded into doctrine in **Addendum v1.11**.
 
 > **All three consumed 2026-07-13 — see Addendum v1.11.** With V9, V10 and V13 answered and
@@ -517,13 +517,13 @@ Things to try, in nominated order:
    lock found toggle-visible), but adaptlearn's ledgers could not support clean attribution:
    the unconfounded tier (sibling cells one knob apart at the same task/gen/arm) was BARREN
    everywhere, and a re-authored pair's "toggle" was caught carrying the WRONG SIGN. Build
-   rules carried to `docs/plans/2026-07-13-toggle-coverage-spec.md`: coverage is a ledger
+   rules carried to `docs/02-features/2026-07-13-toggle-coverage-spec.md`: coverage is a ledger
    **design** requirement (cohorts must emit one-knob sibling cells), never count a toggle
    across a re-authoring boundary (require `knobMutated`), ship the UNWIRED default, keep
    the three proven comparison rules. Lands with the ledger/selection work.
 
 **Boolean-floor track complete (2026-07-13).** All five items resolved: V9 answered GREEN
-(F24), V10 answered GAP (F25), V13 answered (F26) — each with its spec in `docs/plans/`;
+(F24), V10 answered GAP (F25), V13 answered (F26) — each with its spec in `docs/02-features/`;
 V11 (transparent-path lint) and V12 (restoration boundary) stand as registered build rules
 here, firing when the N-ladder builds the seams they constrain. adaptlearn's sandbox is
 closed with nothing structurally hostable left; further probes ride bareloop's own jobs.
@@ -533,7 +533,7 @@ closed with nothing structurally hostable left; further probes ride bareloop's o
 ## Addendum v1.11 — 2026-07-13 (the Boolean floor CONSUMED: three adaptlearn specs land as doctrine — hamr)
 
 The three sandbox probes registered in v1.10 have all read out, and their specs are carried into
-this repo (`docs/plans/2026-07-13-{instrument-bist,forbidden-zone-audit,toggle-coverage}-spec.md`).
+this repo (`docs/02-features/2026-07-13-{instrument-bist,forbidden-zone-audit,toggle-coverage}-spec.md`).
 adaptlearn's sandbox is now **closed**: every Boolean-floor V-item is either answered (V9, V10,
 V13) or transferred here as a registered build rule (V11, V12). This addendum folds what they
 bought into doctrine. Where a rule was *corrected* by contact with real code in this repo, the
@@ -1102,7 +1102,7 @@ here and in LAYERS.md so no one has to remember this conversation.
 ## Addendum v1.19 — 2026-07-19 (Layer R design locked by interview; built same day; acceptance pre-registered)
 
 **Interview decisions (hamr, 2026-07-19; full record + POC results in
-`docs/plans/2026-07-19-layer-r-design.md`):** the root is (1) SHELL-authored — assembled
+`docs/02-features/2026-07-19-layer-r-design.md`):** the root is (1) SHELL-authored — assembled
 mechanically from the arbiter's own books (F32 write audit + kept-failure lines), the
 worker authors nothing and gains no verb; (2) FIXATION-GATED — inert until consecutive
 attempts rewrite the same files without moving the reds (RSI §3.3: cost-neutral when
@@ -2450,7 +2450,7 @@ these assumptions and change as needed"*.**
 **v1.34's inventory is now ANSWERED, decision by decision.** All eight items — storage,
 keying/matching, selection, loading and re-validation, adaptation, demotion, attribution, and
 the scout under reuse — plus the reuse envelope and what gates the build, are ruled in the
-design record: **`docs/plans/2026-08-01-layer-3-reuse-design.md`** (R1, R2, D1–D9). That
+design record: **`docs/02-features/2026-08-01-layer-3-reuse-design.md`** (R1, R2, D1–D9). That
 record holds the decisions and the learning each leans on; this addendum does not duplicate
 them.
 
@@ -2468,7 +2468,7 @@ them.
    a patient. Otherwise the registry is a lookup table the memorization audit kills.
 
 **The pre-probe is pre-registered and GATES the machinery.** Requirement (b)'s gate is frozen
-at **`docs/02-experiments/REUSE-PREPROBE-PREREG.md`** — draft-only, three arms (cold /
+at **`docs/03-logs/experiments/REUSE-PREPROBE-PREREG.md`** — draft-only, three arms (cold /
 readable lineage / mechanical start), n=3 each, sonnet, scout ON, **$1 hard cap**, on the
 cross-patient TYPES pair (aurora bridge → litectx job). **No inheritance machinery is built
 before it reads.** A limited-budget real execution run is the second instrument, fired only if
@@ -3553,7 +3553,7 @@ IS an operator declaration, so it stands on that surface.
 
 ## Addendum v1.53 — 2026-08-07 (close-authoring design FROZEN: the user declares what done means; nine softgreen/hitl rulings; the next rung — hamr)
 
-The design record `docs/plans/2026-08-07-close-authoring-design.md` is FROZEN (hamr,
+The design record `docs/02-features/2026-08-07-close-authoring-design.md` is FROZEN (hamr,
 verbatim, in-turn: *"all approved, fix ledger now (assign to opus and validate), close the
 record and review"*). This addendum is the PRD-side pointer, per the v1.27/v1.42 convention;
 the record is the design's home and is not restated here.
@@ -3746,7 +3746,7 @@ between a true negative and a real catch.
 
 **Where it is docked, and why that is the natural home.** hamr's instruction, verbatim: *"add
 it to next phase with close dev"* — the close-authoring rung (v1.53, design record
-`docs/plans/2026-08-07-close-authoring-design.md`, FROZEN). That rung is where the close stops
+`docs/02-features/2026-08-07-close-authoring-design.md`, FROZEN). That rung is where the close stops
 being hand-written per patient and becomes a DECLARATION over operator-owned stage kinds. If a
 declared close composes its own patterns from kinds, **hand-authored operator regexes may
 cease to exist as a surface at all** — which would retire this question rather than answer it.
@@ -3811,7 +3811,7 @@ findings until hamr rules otherwise.
 live-validated once, and under whole-branch review. No experiment is read here and no number
 moves; five decisions, one proposal still awaiting his word (§1), and one sequencing call are
 recorded in the register before the rework starts. The rung's own record is
-`docs/plans/2026-08-07-close-authoring-design.md` (FROZEN, amended by addendum); the rung
+`docs/02-features/2026-08-07-close-authoring-design.md` (FROZEN, amended by addendum); the rung
 narrative is `docs/01-product/LAYERS.md`.
 
 ### 1. `verdictType` returns to a USER CHOICE — D4 is superseded
@@ -4678,8 +4678,8 @@ is now enforced where the money is actually weighed.
 ## Addendum v1.65 — 2026-08-13 (N4 OPENS: the proving job and the calibration author ruled; BA-20 consumed — hamr)
 
 **Pointer, per the v1.27/v1.42 convention** — the home is the dated addendum on
-`docs/plans/2026-08-07-close-authoring-design.md` and the build plan
-`docs/plans/2026-08-13-n4-verdict-classes-build.md`; neither is restated here.
+`docs/02-features/2026-08-07-close-authoring-design.md` and the build plan
+`docs/02-features/2026-08-13-n4-verdict-classes-build.md`; neither is restated here.
 
 - **The N4 rung (verdict classes: hitl first, then softgreen) is OPEN.** hamr's two in-turn
   answers fill the two blanks the frozen record left: **the proving job is

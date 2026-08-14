@@ -1,5 +1,5 @@
 // Layer 3 — D3's DISPLAY half: the workflow LISTING, and the prompt that asks for a
-// pick (design record docs/plans/2026-08-01-layer-3-reuse-design.md, D3).
+// pick (design record docs/02-features/2026-08-01-layer-3-reuse-design.md, D3).
 //
 // hamr's ruling, verbatim: *"i think there should be a listing for workflows names that
 // user can choose or auto-choose, or do we want llm to always decide (we still need to

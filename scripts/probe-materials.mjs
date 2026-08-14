@@ -1,5 +1,5 @@
 // Probe driver for the materials/metering probe set — T2 · P1 · U0(b).
-// Frozen design: docs/02-experiments/MATERIALS-PREREG.md (commit 2eb9365). Draft-only:
+// Frozen design: docs/03-logs/experiments/MATERIALS-PREREG.md (commit 2eb9365). Draft-only:
 // every arm is ONE plan-drafting call, no execution, no close, no check.
 //
 // FIDELITY (stated, not assumed):
@@ -36,7 +36,7 @@ const MODEL = 'claude-sonnet-5';    // frozen model rule: existing scaffolding r
 const MAX_STEP_ROUNDS = 40;
 const SCOUT_ROUNDS = 8;
 const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/litectx-types';
-const OUT_DIR = '/home/hamr/PycharmProjects/bareloop/docs/02-experiments';
+const OUT_DIR = '/home/hamr/PycharmProjects/bareloop/docs/03-logs/experiments';
 const SCOUT_CACHE = '/tmp/claude-1000/-home-hamr-PycharmProjects-bareloop/768e1b72-ef13-4b1f-ba18-b332792c7608/scratchpad/probe-scout.txt';
 
 const job = JSON.parse(readFileSync(new URL('../jobs/litectx-types-screen-c.json', import.meta.url), 'utf8'));

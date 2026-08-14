@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Consolidate the probe-era bridge files into a bridge-v1 REGISTRY (design record
-// docs/plans/2026-08-01-layer-3-reuse-design.md, D1: "Consolidating today's
+// docs/02-features/2026-08-01-layer-3-reuse-design.md, D1: "Consolidating today's
 // per-patient spine-dir bridge files into the registry is PART OF THE BUILD — they
 // are the registry's seed data, not legacy to abandon").
 //

@@ -180,7 +180,7 @@ test('catalogue: the catalogue option is LOAD-BEARING — a narrowed catalogue r
 // ── the TYPES genre template: FROZEN TEXT ────────────────────────────────────
 
 test('genre template: byte-identical to the prereg\'s frozen policy text', () => {
-  const doc = readFileSync(join(REPO, 'docs/plans/2026-08-08-close-authoring-gate2-poc-prereg.md'), 'utf8');
+  const doc = readFileSync(join(REPO, 'docs/02-features/2026-08-08-close-authoring-gate2-poc-prereg.md'), 'utf8');
   const lines = doc.split('\n');
   const marker = lines.findIndex((l) => l.startsWith('**The frozen TYPES genre template'));
   assert.notEqual(marker, -1, 'the prereg no longer carries the frozen template marker — the source of truth moved');

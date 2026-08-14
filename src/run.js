@@ -3,7 +3,7 @@
 // smoke, the ONE budget ledger (cap-not-estimate; unpriced is never free, F6),
 // and the decision-ready stops. It composes the plan flow below it and
 // interprets nothing itself.
-// Design record: docs/plans/2026-07-12-n2-headless-loop-design.md.
+// Design record: docs/02-features/2026-07-12-n2-headless-loop-design.md.
 //
 // The legacy operator-authored `steps[]` path was DELETED 2026-07-26 (PRD
 // v1.32): the drafting call, config-v1, the per-step interpret loops and the

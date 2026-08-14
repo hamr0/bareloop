@@ -1,6 +1,6 @@
 // TESTGEN semantic-stall probe runner — job #4, TESTGEN-PREREG.md amendments
 // 2026-07-17a/b. n=4 ONE-ATTEMPT rows (capRuns=1) against the frozen
-// operator-authored seed suite (docs/02-experiments/testgen-seed-suite,
+// operator-authored seed suite (docs/03-logs/experiments/testgen-seed-suite,
 // measured baseline 15%): a Wizard-of-Oz Layer R — the spec description
 // hand-carries what the notebook would carry.
 // Frozen row classes: P-INERT · P-ACT-BROKE · P-ACT-FLAT · P-ACT-UP.
@@ -40,7 +40,7 @@ const CAP_RUNS = 1; // ONE attempt — the probe has no gap channel
 const FROZEN_SHA_PREFIX = 'b75a7fe7f71199f8';
 const THRESHOLD = 45;
 const SEED_BASELINE_RATE = 15; // measured 2026-07-17 (amendment 2026-07-17b)
-const SEED_DIR = fileURLToPath(new URL('../docs/02-experiments/testgen-seed-suite', import.meta.url));
+const SEED_DIR = fileURLToPath(new URL('../docs/03-logs/experiments/testgen-seed-suite', import.meta.url));
 const SEED_FILES = ['conftest.py', 'unit/test_orchestrator_helpers.py', 'integration/test_execute_simple_path.py'];
 const SURVIVOR_FUNCS = [
   'execute', '_check_soar_cache_hit', '_configure_health_monitoring', '_phase7_record',

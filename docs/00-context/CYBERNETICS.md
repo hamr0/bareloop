@@ -360,7 +360,7 @@ rule from a minting requirement into an ongoing coverage metric. → V13
   detected by their own assertions, falsifier 8/8 sabotaged vectors miss; run 1's control
   arm caught a real fixture bug (dir-argv close redding everything, VEC-1 passing for the
   wrong reason) before anything trusted the instrument. Spec carried to this repo's
-  `docs/plans/2026-07-13-instrument-bist-spec.md`; rewrite lands with N-ladder instrument
+  `docs/02-features/2026-07-13-instrument-bist-spec.md`; rewrite lands with N-ladder instrument
   hygiene (PRD v1.10 item 1).
 - **V10 (bareloop, per close):** forbidden-zone audit (§B2) — each close enumerates outcomes
   that are neither clean green nor clean red (the F5 validate-then-crash class, unparseable
@@ -370,7 +370,7 @@ rule from a minting requirement into an ongoing coverage metric. → V13
   classifiers flip; one live coercion (signal-killed close → `needs_revision
   exitCode=null`, retried to cap), one collapse (timeout pooled into broken-close), one
   coercion invisible at the seam (crash-at-load ≡ honest red by exit code). Build rules
-  carried to this repo's `docs/plans/2026-07-13-forbidden-zone-audit-spec.md`
+  carried to this repo's `docs/02-features/2026-07-13-forbidden-zone-audit-spec.md`
   (`close-killed`, `close-timeout`, judgment-rendered signal); they land with the
   N-ladder close work (PRD v1.10 item 2).
 - **V11 (any claim instrument):** transparent-path lint (§B3) — the instrument's declared
@@ -390,7 +390,7 @@ rule from a minting requirement into an ongoing coverage metric. → V13
   archive and a re-authoring arm's toggle carried the wrong sign. Correction to the
   registration: coverage is a ledger **design** requirement, not a post-hoc query, and no
   toggle counts across a re-authoring boundary. Spec:
-  `docs/plans/2026-07-13-toggle-coverage-spec.md`.
+  `docs/02-features/2026-07-13-toggle-coverage-spec.md`.
 
 
 ## Orchestration vs self-healing workflows — bareloop registration (2026-07-11)

@@ -133,7 +133,7 @@ readout and kept here as the instrument-fix record.
   load-bearing).
 
 Per the pre-worded GREEN readout: the BIST is viable as a probe pre-flight; the **spec
-(catalog + vectors + arms) ships to bareloop** (copied to its `docs/plans/`); the script
+(catalog + vectors + arms) ships to bareloop** (copied to its `docs/02-features/`); the script
 stays POC and is never shipped. Run-1's control catch (a real fixture bug found by the
 control arm before any probe trusted the instrument) is itself the mechanism working one
 level early. Recorded as FINDINGS **F24**.

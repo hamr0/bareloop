@@ -521,7 +521,7 @@ Budget exhausted before 4 valid rows → report the rows in hand, no top-up with
 Recorded after the seed was built and graded at $0, before any API call.
 
 - **Seed suite** (operator-authored under 17a's frozen band): 39 tests (29 unit / 10
-  integration), frozen at `docs/02-experiments/testgen-seed-suite/` with
+  integration), frozen at `docs/03-logs/experiments/testgen-seed-suite/` with
   `MANIFEST.sha256` (conftest `a1d4c78f…`, unit `a5d06d73…`, integration `619dbf3a…`).
 - **Measured on the frozen close, twice**: clean-green, form unit=29/integ=10,
   kill-rate **15% (killed 6/40)**, 34 survivors across 18 functions — regrade
@@ -630,7 +630,7 @@ strong-direction case 17a pre-registered.
 ## Amendment 2026-07-21a — the Layer 2 POC: in-run clean-run check (frozen BEFORE any number)
 
 hamr's go, verbatim: "go" (2026-07-21), on the design interviewed the same day
-(`docs/plans/2026-07-21-layer-2-plan-v1-design.md`, decision 3). The POC tests the
+(`docs/02-features/2026-07-21-layer-2-plan-v1-design.md`, decision 3). The POC tests the
 thesis's single untested claim (F39): **does an in-run verifiable check convert the
 clean-wall death?** F39's acting rows died 3/3 at the clean wall authoring tests they
 could never execute; Layer 2's premise is that a bounded loop against a cheap

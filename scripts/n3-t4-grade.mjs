@@ -1,5 +1,5 @@
 // T4 failure-lineage grader — applies the FROZEN read only.
-// Prereg: docs/02-experiments/N3-T4-FAILURE-LINEAGE-PREREG.md (frozen 24d4f1e).
+// Prereg: docs/03-logs/experiments/N3-T4-FAILURE-LINEAGE-PREREG.md (frozen 24d4f1e).
 //   PRIMARY   readBeforeWrite (STRUCTURAL — cannot be satisfied by quoting the note)
 //   SECONDARY G1 read-source-for-exact-behavior; G3 tree-must-actually-change
 //   EXCLUDED  G2 environ (confounded by the spec; declared invalid BEFORE any number)
