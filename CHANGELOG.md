@@ -48,8 +48,13 @@ feature lands, **patch** = docs, fixes, scaffolding.
   happened to be on the spine — a hitl try that paused and came back with `accept` has its
   predecessor's plan in the very same try window.
 
-The terminal surface (the three-button prompt, the decision gate wiring and the TTL check in
-`scripts/run-u.mjs`) is not in this entry — it is the runner half of the same slice.
+The runner half of the same slice landed beside it and is deliberately NOT in the tarball
+(`scripts/` never ships): `scripts/run-u.mjs` gains `--decide accept|rerun|cancel` (+ `--text`)
+on the existing `--approve <specHash>` signature, renders the pause's evidence package plus the
+line-level diff, consumes `CHECKPOINT_OUTCOMES` and `checkpointAgeGate` instead of re-spelling
+either, and prefers the run's own terminal over a stale watchdog record when folding the wall —
+so a person's deciding time is never billed to it. What an adopter's own runner has to do is in
+`bareloop.context.md`.
 
 ### Changed
 

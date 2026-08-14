@@ -1388,9 +1388,11 @@ semantics are byte-unchanged (PRD v1.46 §3):
 - **`resumableOutcomes: [...]`** reclassifies a landed `job-end` whose outcome is a
   CHECKPOINT rather than a verdict as a restart rather than a completed row. "A landed
   job-end is complete" is true of a VERDICT; a checkpoint means the work is on disk and the
-  plan is on the spine with nothing decided against them. **The set is the CALLER's**, and
-  the reference runner's is `['cap-halt', 'wall-halt', 'step-stalled']` (`run-u`'s
-  `RESUMABLE_HALTS`). The first two are governance halts — an operator-owned allowance ran
+  plan is on the spine with nothing decided against them. **The set is the CALLER's** — the
+  parameter stays a parameter, and its empty default is what the reuse loop's own graded-row
+  semantics depend on — but the canonical ANSWER is exported as **`CHECKPOINT_OUTCOMES`**
+  (`['cap-halt', 'wall-halt', 'step-stalled', 'hitl-pause']`), and the reference runner
+  CONSUMES it rather than keeping a copy. The first two are governance halts — an operator-owned allowance ran
   out. `step-stalled` joined them 2026-08-13 on hamr's ruling (PRD v1.64 §1): it is the one
   terminal whose OWN escalation already offers *"retry the run"*, nothing about the work on
   disk is wrong, and the shape that named the fix is a stall that trips with time left and
@@ -1430,6 +1432,20 @@ anything in is a decision, not an unbounded launch — and launching it used to 
 watchdog `--wall-ms 0`, which it defaulted to `null` and armed no deadline at all under a banner
 still advertising one. The refusal names the lever: raise `maxWallMs`, which moves the spec hash
 and is re-signed.
+
+**A `hitl-pause` checkpoint is answered on the same command line** (N4, 2026-08-12 §5.2 — the
+terminal is the v1 surface; the panel is N6's). The reference runner takes
+`--decide accept|rerun|cancel` with `--text` for the rerun door, gated on the SAME
+`--approve <specHash>` signature the run itself is signed with (ruling 4: the spec hash is the
+only signer proof this repo has, and no second identity mechanism was invented). The decision
+SEMANTICS are the library's — an adopter's runner should call `normalizeHumanRuling` and print
+its refusal rather than re-spell "three doors, no fourth" or "a rerun needs text", and hand the
+result to `runJob` as `humanRuling`. Two questions belong to the RUNNER because only it can ask
+them: a decision with no run to answer, and a decision aimed at a checkpoint that is not a pause
+(an `accept` there would mint a green over evidence nobody was shown). Before any of it, the
+paused spine goes through `checkpointAgeGate`, and the run is not resumed without an explicit
+decision: the lean-rerun rule (2026-08-12 §4) governs which door a prompt LEADS with, never an
+action taken for the operator.
 
 - **Completed tries are not re-run.** They come back as rows (marked `inherited`) and
   their bridges stay excluded from every later selection. A try whose `job-end` landed —
