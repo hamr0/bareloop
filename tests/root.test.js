@@ -1,5 +1,5 @@
 // Layer R — the root (within-run ratchet). Unit criteria from the design record
-// (docs/plans/2026-07-19-layer-r-design.md): shell-authored, fixation-gated,
+// (docs/02-features/2026-07-19-layer-r-design.md): shell-authored, fixation-gated,
 // escalating summary→verbatim, comparison-only normalization, caps announced.
 // The detector reads the arbiter's own books (write-sets + kept-failure lines);
 // the worker authors nothing and gains no verb.

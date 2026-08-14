@@ -27,7 +27,7 @@ const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/aurora-soar';
 const SPINE_DIR = '/home/hamr/PycharmProjects/bareloop-patients/aurora-soar-bareloop';
 const REAL = join(WORKDIR, 'packages/soar/src/aurora_soar/orchestrator.py');
 const PRISTINE = join(SPINE_DIR, 'testgen-pristine-orchestrator.py');
-const MUTANTS_JSON = new URL('../docs/02-experiments/testgen-mutants.json', import.meta.url);
+const MUTANTS_JSON = new URL('../docs/03-logs/experiments/testgen-mutants.json', import.meta.url);
 const THRESHOLD_FILE = join(SPINE_DIR, 'testgen-threshold.txt'); // calibration amendment writes the frozen N; absent = 101 (unreachable, calibration mode)
 const LOG = join(SPINE_DIR, 'testgen-close-log.jsonl');
 const TESTS_DIR = join(WORKDIR, 'tests/testgen');

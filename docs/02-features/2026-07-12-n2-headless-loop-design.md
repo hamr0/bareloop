@@ -63,7 +63,7 @@ the spines these runs write; nothing here mints rules yet.
   at 2000 chars; the useful error is usually at the tail); **artifact-red** category +
   fence-robust extraction; **primitive-smoke** known-answer checks before tokens (the A3
   silently-degrading-primitive detector, PRD v1.5 §4); the **upstream-ledger reader**
-  (rewrite against `docs/plans/2026-07-11-upstream-ledger-design.md`; the POC stays
+  (rewrite against `docs/02-features/2026-07-11-upstream-ledger-design.md`; the POC stays
   adaptlearn-side); test-helper consolidation (stub providers, spine read-back, fixture
   loaders).
 - **V7 armed:** `coordination-red` gets its first real surfaces here — the pre-registered

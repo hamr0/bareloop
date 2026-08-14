@@ -1,5 +1,5 @@
 // Module 4 exit criteria: the upstream ledger (design record:
-// docs/plans/2026-07-11-upstream-ledger-design.md + 2026-07-13 addendum — the
+// docs/02-features/2026-07-11-upstream-ledger-design.md + 2026-07-13 addendum — the
 // bareloop event mapping). The ledger is DERIVED and reconstructible: spines
 // stay ground truth, classification is a pure fold, and re-running the
 // collector over the same corpus appends nothing (idempotence is the contract).

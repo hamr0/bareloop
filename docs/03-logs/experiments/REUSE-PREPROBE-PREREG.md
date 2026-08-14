@@ -3,7 +3,7 @@
 **Date frozen:** 2026-08-01 · **Rung:** Layer 3 (the REUSE rung), opening gate ·
 **Status:** pre-registered, NOT yet run · **Owner:** hamr sign-off before firing.
 
-**Design record:** `docs/plans/2026-08-01-layer-3-reuse-design.md` (D9 authorises exactly
+**Design record:** `docs/02-features/2026-08-01-layer-3-reuse-design.md` (D9 authorises exactly
 this probe). **Not a continuation of** `N3-PREPROBE-PREREG.md` — that document is the
 F51–F55 TESTGEN lineage programme and is CLOSED; it authorises nothing here, and nothing here
 reopens it.
@@ -127,7 +127,7 @@ Measured on the drafted plan JSON:
 Building the harness (`scripts/reuse-preprobe.mjs`) found **four places the frozen text above
 cannot be implemented literally against the REAL instrument**, plus **one read that is
 degenerate by construction**. Under the design record's amendment discipline
-(`docs/plans/2026-08-01-layer-3-reuse-design.md` §7) this is the allowed direction:
+(`docs/02-features/2026-08-01-layer-3-reuse-design.md` §7) this is the allowed direction:
 **correction for principle BEFORE measurement.** No paid draft has run; no number from this
 probe exists; **nothing here loosens a rule to fit a number.** Every $0 fact recorded below was
 established by construction or by the validator — not by the probe's paid measurement.
@@ -213,7 +213,7 @@ no verdict language** — the read against the discard rules remains the operato
 ## Addendum — 2026-08-01, POST-FIRE READ (the frozen rules applied; verdict per rule, with every qualifier)
 
 Fired 2026-08-01 under the frozen design above (as amended pre-fire, before any number
-existed). Primary artifact: `docs/02-experiments/reuse-preprobe-ms9jpjue.json` — the harness
+existed). Primary artifact: `docs/03-logs/experiments/reuse-preprobe-ms9jpjue.json` — the harness
 prints no verdict language; the read below is the operator's, against §5's frozen rules.
 
 **Fire facts:** **9/9 readable rows** — **0 truncated**, **0 casualties**, so §6 never fired
@@ -385,7 +385,7 @@ direction** — and **every result sentence carries that qualifier**.
 ## Addendum — 2026-08-01, EXECUTION PROBE POST-FIRE READ (GREEN, audited; one baseline attribution corrected)
 
 Fired 2026-08-01 under the frozen prereg above. Primary artifacts:
-`docs/02-experiments/reuse-exec-probe-msacobr7.json` (the green run) and
+`docs/03-logs/experiments/reuse-exec-probe-msacobr7.json` (the green run) and
 `reuse-exec-probe-msac6sre.json` (the provider-red casualty), plus the spines
 `reuse-exec-{ms9lsxjp,ms9lwtuf,msac6sre,msacobr7}.jsonl` beside the patient. The harness
 prints no verdict language; the read below is the operator's.

@@ -209,7 +209,7 @@ retroactively; this records what the run returned and what the design could not 
 ## Result (Stage 1, 39 drafts, $1.31 of the $2 cap, 0 errors, 0 truncations)
 
 Full readout: `docs/FINDINGS.md` F51. Evidence archived at
-`docs/02-experiments/n3-preprobe-data/` (`stage1-raw.jsonl`, `stage1-grade.txt`,
+`docs/03-logs/experiments/n3-preprobe-data/` (`stage1-raw.jsonl`, `stage1-grade.txt`,
 `source-lineage-plan.json`) — moved out of gitignored scratch so it survives.
 
 - **Positive-control gate (§8 rule 1): PASSED.** P moved vs A1 (winShape 3.00 → 4.00), so

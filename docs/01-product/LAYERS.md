@@ -152,7 +152,7 @@ is the shape borrowed from recursive-LM designs: a durable root; cheap, throwawa
 sub-contexts.) Verdict-gated inheritance is untouched: the root is *within-run scratch*, a
 different scope from *across-run memory*, and only a green mints the latter.
 
-**Status: built 2026-07-19 (design record `docs/plans/2026-07-19-layer-r-design.md`),
+**Status: built 2026-07-19 (design record `docs/02-features/2026-07-19-layer-r-design.md`),
 armed-and-inert, default OFF.** The shell detects fixation from its own books (same-file
 rewrites with the kept-failure set unmoved) and injects escalating feedback — a capped
 summary, then the worker's own failed edits verbatim. Detector and note read separate
@@ -241,7 +241,7 @@ close — the definition of done — was hand-written JavaScript, one script per
 by the assistant. That is *"there shouldn't be user authoring anywhere"* broken from the one
 side nothing else broke it from: the check menu is derived, the plan is drafted, and the layer
 that decides green was the last place a human wrote code. This rung makes the close
-**declared**. Design record `docs/plans/2026-08-07-close-authoring-design.md` (FROZEN
+**declared**. Design record `docs/02-features/2026-08-07-close-authoring-design.md` (FROZEN
 2026-08-07).
 
 **Status: M1–M4 BUILT; the whole-branch review CLOSED (three shrinking rounds, 15 findings,
@@ -810,9 +810,9 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
    **Status 2026-08-01: the opening interview is COMPLETE and the design is FROZEN** (hamr,
    2026-07-31 → 2026-08-01, verbatim *"all agreed, lock in and we will validate with pocs
    these assumptions and change as needed"*) — design record
-   `docs/plans/2026-08-01-layer-3-reuse-design.md` (R1/R2/D1–D9, answering PRD v1.34's
+   `docs/02-features/2026-08-01-layer-3-reuse-design.md` (R1/R2/D1–D9, answering PRD v1.34's
    inventory; PRD v1.42). **The pre-probe is pre-registered and gates the machinery:**
-   `docs/02-experiments/REUSE-PREPROBE-PREREG.md` — draft-only, three arms, $1 hard cap, on
+   `docs/03-logs/experiments/REUSE-PREPROBE-PREREG.md` — draft-only, three arms, $1 hard cap, on
    the cross-patient TYPES pair. Nothing is built before it reads.
 6. **Build CLOSE-AUTHORING — the close becomes declared** (design record 2026-08-07, FROZEN;
    M1–M4 built 2026-08-08). **This is the rung in flight**, sequenced after Layer 3's park

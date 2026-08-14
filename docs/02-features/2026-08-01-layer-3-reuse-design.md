@@ -254,7 +254,7 @@ needs it.
 ### D9 — the PRE-PROBE gates the build (v1.21 requirement (b))
 
 Draft-only, three arms, **sub-dollar**, fired **BEFORE any inheritance machinery is built**.
-Full pre-registration: **`docs/02-experiments/REUSE-PREPROBE-PREREG.md`** (frozen the same
+Full pre-registration: **`docs/03-logs/experiments/REUSE-PREPROBE-PREREG.md`** (frozen the same
 day; it does not collide with the F51–F55 `N3-PREPROBE-PREREG.md`, which is CLOSED).
 
 **A limited-budget real EXECUTION run is the SECOND instrument**, fired only if the drafts
@@ -320,7 +320,7 @@ firing the execution probe before the machinery build.
 ### What forced this
 
 The pre-probe's **$0 deterministic** finding (pre-fire addendum §5(a) of
-`docs/02-experiments/REUSE-PREPROBE-PREREG.md`): **a bridge storing instance paths reds
+`docs/03-logs/experiments/REUSE-PREPROBE-PREREG.md`): **a bridge storing instance paths reds
 `validatePlan` against ANY other patient.** On the aurora→litectx pair the count is **6 reds**
 — *invalid-value* on both scope fields, and *scope-escape* on both targets and both
 `tree-changed` exit scopes.
@@ -373,7 +373,7 @@ D9's second instrument — the limited-budget real execution run — was **not a
 record** (§6, owner: hamr, at the point the draft read lands). **hamr's *"agreed to all cont"*
 is that authorization**, and it fires **BEFORE the machinery build** (§5's step 2→3 boundary,
 *"only on hamr's word"* — that word is now on record). Full pre-registration:
-`docs/02-experiments/REUSE-PREPROBE-PREREG.md`, addendum *EXECUTION PROBE PREREG*, frozen
+`docs/03-logs/experiments/REUSE-PREPROBE-PREREG.md`, addendum *EXECUTION PROBE PREREG*, frozen
 before firing.
 
 *Leans on:* the amendment discipline of §7 (dated addendum, never silent rewrite); D4 (the

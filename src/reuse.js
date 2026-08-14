@@ -1,5 +1,5 @@
 // Layer 3 — the D7 ENVELOPE and the REUSE RUNNER (design record
-// docs/plans/2026-08-01-layer-3-reuse-design.md, D3/D5/D6/D7 + R1).
+// docs/02-features/2026-08-01-layer-3-reuse-design.md, D3/D5/D6/D7 + R1).
 //
 // hamr's sentence is the whole specification of this file, verbatim:
 //

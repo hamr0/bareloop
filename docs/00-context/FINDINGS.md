@@ -528,7 +528,7 @@ The world dir records `condition.json`; resume refuses a condition mismatch.
 ### Continuation note (2026-07-10, post-archive — not a finding, a pointer)
 
 The archive stands. A successor product was designed in a validated interview the same day:
-`docs/plans/2026-07-10-agentic-automation-successor-design.md` (verdict classes hard/soft/HITL
+`docs/02-features/2026-07-10-agentic-automation-successor-design.md` (verdict classes hard/soft/HITL
 gated per step; both-ways scaffolding evolution; primitive menu with removal; job #1 =
 litectx auto-maintainer; new repo after SP-1). SP-1 (F16) results and the SP-2 provider-seam
 smoke land here when they conclude; product findings after that belong to the new repo's log.

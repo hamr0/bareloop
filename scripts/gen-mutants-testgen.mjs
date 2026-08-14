@@ -5,7 +5,7 @@
 // trivially killed by everything — no signal — and is resampled from its
 // decile, a rule frozen in the prereg BEFORE generation ran).
 //
-// Token-free, $0. Output: docs/02-experiments/testgen-mutants.json — the
+// Token-free, $0. Output: docs/03-logs/experiments/testgen-mutants.json — the
 // frozen set, committed before any API call. Deterministic: same file, same
 // seed → same set (no Date.now/Math.random anywhere in selection).
 //
@@ -27,7 +27,7 @@ const MIRROR_REL = 'packages/soar/src/aurora_soar/orchestrator.py'; // byte-iden
 const FROZEN_SHA_PREFIX = 'b75a7fe7f71199f8'; // TESTGEN-PREREG §3
 const SEED = 42;
 const K = 40;
-const OUT = new URL('../docs/02-experiments/testgen-mutants.json', import.meta.url);
+const OUT = new URL('../docs/03-logs/experiments/testgen-mutants.json', import.meta.url);
 
 // mulberry32 — tiny deterministic PRNG; Math.random is banned from selection
 function mulberry32(/** @type {number} */ a) {
@@ -216,7 +216,7 @@ for (let d = 0; d < 10; d++) {
 }
 
 const out = {
-  prereg: 'docs/02-experiments/TESTGEN-PREREG.md',
+  prereg: 'docs/03-logs/experiments/TESTGEN-PREREG.md',
   seed: SEED, k: K, file: TARGET_REL, mirror: MIRROR_REL,
   fileSha256: sha, poolSize: pool.length, importRejected: rejected,
   mutants: chosen,
@@ -227,4 +227,4 @@ const outSha = createHash('sha256').update(readFileSync(OUT)).digest('hex');
 console.log(`\npool ${pool.length} sites → K=${K} frozen (${rejected} import-broken resampled)`);
 console.log('\nid   ln    decile cls          func');
 for (const m of chosen) console.log(`${m.id}  ${String(m.line).padEnd(5)} ${m.decile}      ${m.cls.padEnd(12)} ${m.func}`);
-console.log(`\nwritten: docs/02-experiments/testgen-mutants.json  sha256 ${outSha.slice(0, 16)}`);
+console.log(`\nwritten: docs/03-logs/experiments/testgen-mutants.json  sha256 ${outSha.slice(0, 16)}`);

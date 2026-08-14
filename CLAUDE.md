@@ -11,7 +11,7 @@ contrast that attributed it.
 
 - `docs/01-product/PRD.md` — the PRD. §3 design laws are inherited doctrine, each paid for
   in the adaptlearn experiment; do not relitigate them without new evidence.
-- `docs/plans/2026-07-10-agentic-automation-successor-design.md` — the design record
+- `docs/02-features/2026-07-10-agentic-automation-successor-design.md` — the design record
   (validated interview + all amendments). Closed; amend with dated addenda, never rewrite.
 - `docs/00-context/` — adaptlearn's FINDINGS (F1–F23) and CYBERNETICS.md, closed records
   copied for reference. The evidence archive and analysis lenses live in adaptlearn v0.11.1

@@ -1,5 +1,5 @@
 // N3 lineage PRE-PROBE — collection harness (Layer 3 opening gate).
-// Prereg: docs/02-experiments/N3-PREPROBE-PREREG.md (FROZEN 2026-07-24).
+// Prereg: docs/03-logs/experiments/N3-PREPROBE-PREREG.md (FROZEN 2026-07-24).
 //
 // Measures the REAL plan drafter: same AnthropicProvider(model=claude-sonnet-5),
 // same system prompt (PERSONA_TOOLS), same loop.run([user],[],{cacheMessages,maxTokens:32000}),
