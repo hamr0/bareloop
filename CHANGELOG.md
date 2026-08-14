@@ -7,6 +7,50 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+
+- **N4 slice 1 — the `hitl` verdict class is ADMITTED, and the run PAUSES for a person.** A job
+  whose *done* needs someone to say so now runs through the same signed spec, the same
+  agent-authored plan and the same arbiter as a green job. The refusal was never one flag, so
+  every coupled site moved together: `LOCKED_VERDICTS` / `LOCKED_CLASSES` drop it,
+  `DECLARED_CLOSE_CLASSES` widens to `['hard','hitl']`, the class battery is the GREEN mechanical
+  battery inherited verbatim (hamr's OPEN-1 ruling: nothing a human stage cannot see), and the
+  interview gains a hitl question set (the six green questions byte for byte, plus the one thing
+  they cannot supply — the question the signer actually answers). **`soft-green` stays
+  declared-but-locked**: its judged floor is slice 2, and a wobbly ruler must mint nothing.
+- **`human-confirms` goes live as the one kind that measures nothing.** Its whole parameter
+  surface is `ask`; it cannot spawn, is never env-capable, is `offer: false` BY LAW (a
+  declaration that offers one is a validation red, and the arbiter's own bridge stamps the law
+  onto the stage the runner sees, so the agent can never compose `check-passes(<a person>)`), is
+  at-most-once, and must be the LAST stage — first-red-wins would otherwise silently delete every
+  mechanical stage behind it. It also SKIPS the seed-verdict read (ruling 8), and the skip is
+  recorded as a row rather than taken in silence.
+- **Three new terminals, minted rather than borrowed.** `hitl-pause` is a decision-ready
+  CHECKPOINT carrying the evidence package (every mechanical stage's result, the close's own
+  question, and what the run changed) — never a bare "approve?"; `hitl-cancel` is terminal with
+  an explicit `gap: null`, no fix loop and no worker round; `hitl-decision-red` refuses a
+  decision the run cannot act on (a fourth door, a `rerun` with empty text, or a decision handed
+  to a close with no human stage) before anything is spent. All three are excluded from the
+  ledger's escalation counting for their own stated reasons, and none demotes a bridge. The
+  legacy `hitl-close` entry keeps its own meaning; nothing was renamed in passing.
+- **The RETURN needs no new channel.** A resumed leg carrying the signer's `rerun` feeds their
+  words through the same seam `post.gap` uses — same bound, same scrub — and the run continues
+  under the folded wallet on an unbilled clock. The ruling is spent when the fix loop opens, so
+  the next machine-clean tree pauses for a second review instead of converting one sentence
+  forever, while a mechanical red in between is still converted normally.
+- **New public exports**: `HUMAN_DECISIONS`, `SEED_EXEMPT_KINDS`, `normalizeHumanRuling`,
+  `NEVER_OFFERED_KINDS`, `HUMAN_PAUSE`, `CHECKPOINT_OUTCOMES`, `PAUSE_TTL_MS`,
+  `checkpointAgeGate`. The 60-day pause TTL and the canonical checkpoint list live in the
+  LIBRARY (hamr's OPEN-2 ruling) so the exported bundle inherits them rather than every runner
+  re-implementing them.
+- **A registry guard that was only holding by accident**: an `already-green` terminal now mints
+  no bridge version for a NAMED reason (`green-predates-run`) rather than because no plan
+  happened to be on the spine — a hitl try that paused and came back with `accept` has its
+  predecessor's plan in the very same try window.
+
+The terminal surface (the three-button prompt, the decision gate wiring and the TTL check in
+`scripts/run-u.mjs`) is not in this entry — it is the runner half of the same slice.
+
 ### Changed
 
 - **Both suite pins move up a minor — `bare-agent ^0.35.0 → ^0.36.0`, `bareguard ^0.12.0 →
