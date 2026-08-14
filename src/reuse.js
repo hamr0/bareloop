@@ -52,6 +52,11 @@ import { closeStagesOf } from './plan.js';
 import { MIN_WALL_MS, jobSpecHash } from './job.js';
 import { isObj, isNonEmptyString } from './validate.js';
 import { readGrade } from './trend.js';
+
+/** the paused-run TERMINAL and its spine record share one name (`runPlan` returns
+ * it and `runJob` writes it onto `job-end`), spelled once here so the checkpoint
+ * list and the TTL gate below cannot drift from each other */
+const HITL_PAUSE = 'hitl-pause';
 import { extractArtifact, priceOf } from './text.js';
 import { runJob as shippedRunJob } from './run.js';
 
@@ -102,7 +107,7 @@ export const REUSE_GRADED_RED = Object.freeze(['escalated']);
  * terminal and `green`/`escalated` are graded rows, and re-buying any of them
  * would pay twice for an answer already in hand.
  */
-export const CHECKPOINT_OUTCOMES = Object.freeze(['cap-halt', 'wall-halt', 'step-stalled', 'hitl-pause']);
+export const CHECKPOINT_OUTCOMES = Object.freeze(['cap-halt', 'wall-halt', 'step-stalled', HITL_PAUSE]);
 
 /**
  * v1's definition of "the same KIND of recipe" — and it is the LOAD GATE's own: the
@@ -1041,6 +1046,81 @@ export function readResume(events, { deathAt = null, direct = false, resumableOu
     r1Missing, restart, deathAtKnown,
     spentUsd, spendComplete, carrySpentUsd, carrySpendComplete,
   };
+}
+
+/**
+ * THE PAUSE TTL (2026-08-12 §2): a hitl checkpoint is kept for 60 days.
+ *
+ * OPEN-2, RULED (hamr, in-turn, 2026-08-13): **the TTL lives in the LIBRARY**, so
+ * the exported bundle (a headless runner with bareloop as a dependency, PRD v1.44
+ * §2) inherits it instead of every runner re-implementing it. A script-only TTL
+ * would vanish on export — the one place the rule is most needed and least
+ * likely to be re-typed.
+ */
+export const PAUSE_TTL_MS = 60 * 24 * 60 * 60_000;
+
+/**
+ * The AGE gate for a paused checkpoint — the sibling of `resumeTreeGate`, and it
+ * asks the other question a 60-day-old checkpoint raises. The tree gate asks
+ * *is this still the tree the run left?*; this asks *is this still a decision
+ * anyone is waiting on?*
+ *
+ * THREE things it deliberately does NOT do:
+ *
+ *  - it does not widen any other resume rule. The 2026-08-12 ruling is about a
+ *    person deciding, so `applies: false` on every other terminal: a cap-halt
+ *    checkpoint is a different stop under a different allowance, and quietly
+ *    ageing it out would be a governance change nobody ruled.
+ *  - it does not treat an unreadable stamp as young (F6). A checkpoint that
+ *    cannot say WHEN it paused has an unknown age, and unknown is refused rather
+ *    than rounded down to fresh — the direction that fails safe.
+ *  - it does not skip silently. An expired checkpoint comes back as a refusal
+ *    that NAMES the age and the TTL, because the operator's next move (start
+ *    fresh) depends on knowing which of the two it hit.
+ *
+ * The clock is injected for the same reason `runPlan`'s is: a rule measured in
+ * months cannot otherwise be tested at all.
+ *
+ * @param {any[]} events the paused run's own spine, parsed, in file order
+ * @param {{now?: () => number, ttlMs?: number}} [opts]
+ * @returns {{ok: boolean, applies: boolean, ageMs: number|null, ttlMs: number, pausedAt: string|null, detail: string|null}}
+ */
+export function checkpointAgeGate(events, { now = Date.now, ttlMs = PAUSE_TTL_MS } = {}) {
+  const list = Array.isArray(events) ? events.filter(isObj) : [];
+  const end = list.filter((e) => e.type === 'job-end').at(-1) ?? null;
+  const base = { applies: false, ageMs: null, ttlMs, pausedAt: null, detail: null };
+  if (end?.outcome !== HITL_PAUSE) return { ...base, ok: true };
+
+  // the PAUSE RECORD's own timestamp, and its terminal's as the fallback: the
+  // pause is what the human is answering, so its stamp is when the waiting began
+  const pause = list.filter((e) => e.type === HITL_PAUSE).at(-1) ?? end;
+  const pausedAt = typeof pause.ts === 'string' ? pause.ts : null;
+  const atMs = pausedAt === null ? NaN : Date.parse(pausedAt);
+  if (!Number.isFinite(atMs)) {
+    return {
+      ...base,
+      ok: false,
+      applies: true,
+      detail: 'this checkpoint does not record when it paused, so its age is unknown — and an unknown age is not a '
+        + `young one (F6). The TTL is ${Math.round(ttlMs / 86_400_000)} days; start a fresh run rather than resuming a `
+        + 'checkpoint nothing can date.',
+    };
+  }
+  const ageMs = Math.max(0, now() - atMs);
+  const days = (/** @type {number} */ ms) => Math.floor(ms / 86_400_000);
+  if (ageMs > ttlMs) {
+    return {
+      ...base,
+      ok: false,
+      applies: true,
+      ageMs,
+      pausedAt,
+      detail: `this run paused ${days(ageMs)} days ago and the pause TTL is ${days(ttlMs)} days — the tree, the `
+        + 'toolchain and the job itself have had two months to move, so the evidence the signer would be answering '
+        + 'about is no longer the evidence the run produced. Start a fresh run.',
+    };
+  }
+  return { ...base, ok: true, applies: true, ageMs, pausedAt };
 }
 
 /**

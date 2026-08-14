@@ -28,7 +28,7 @@ import {
 import { CLOSE_FAULTS } from '../src/ralph.js';
 import { classifyIncidents } from '../src/ledger.js';
 import { deriveStatus } from '../src/bridges.js';
-import { REUSE_GRADED_RED, CHECKPOINT_OUTCOMES } from '../src/reuse.js';
+import { REUSE_GRADED_RED, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS, checkpointAgeGate } from '../src/reuse.js';
 import { QUESTION_SETS, CLASS_STATEMENTS, questionsFor, requiredAnswersFor } from '../src/authorflow.js';
 import { GENRE_LANGUAGES } from '../src/authoring.js';
 
@@ -310,6 +310,59 @@ test('§1.4 readers — the checkpoint list is the LIBRARY\'s, so an exported bu
   assert.deepEqual([...CHECKPOINT_OUTCOMES], ['cap-halt', 'wall-halt', 'step-stalled', 'hitl-pause']);
   assert.equal(CHECKPOINT_OUTCOMES.includes('hitl-cancel'), false, 'cancel is TERMINAL — a verdict already rendered is never re-bought');
   assert.equal(CHECKPOINT_OUTCOMES.includes('green'), false);
+});
+
+// ── §1.6 THE 60-DAY TTL (OPEN-2, hamr: it lives in the LIBRARY) ─────────────
+
+/** a paused spine, as `readResume` and the age gate actually read one */
+const pausedSpine = (/** @type {string} */ pausedAtIso) => [
+  { type: 'job-start', job: 'x', ts: '2026-08-13T09:00:00.000Z', seq: 1 },
+  { type: 'hitl-pause', stage: 'signer-reviews', ts: pausedAtIso, seq: 2 },
+  { type: 'job-end', outcome: 'hitl-pause', spentUsd: 1, spendComplete: true, ts: pausedAtIso, seq: 3 },
+];
+const DAY = 24 * 60 * 60_000;
+const T0 = Date.parse('2026-08-13T09:05:00.000Z');
+
+test('§1.6 TTL — a pause keeps its checkpoint for 60 days, and the clock is INJECTED', () => {
+  assert.equal(PAUSE_TTL_MS, 60 * DAY, '2026-08-12 §2, as a number');
+  const spine = pausedSpine(new Date(T0).toISOString());
+  const fresh = checkpointAgeGate(spine, { now: () => T0 + 59 * DAY });
+  assert.equal(fresh.ok, true);
+  assert.equal(fresh.applies, true);
+  assert.equal(fresh.ageMs, 59 * DAY);
+  assert.equal(fresh.detail, null);
+  // the boundary is not a judgment call: 60 days exactly is still inside
+  assert.equal(checkpointAgeGate(spine, { now: () => T0 + 60 * DAY }).ok, true);
+});
+
+test('§1.6 TTL — an expired checkpoint is a REFUSAL naming the age and the TTL, never a silent skip', () => {
+  const spine = pausedSpine(new Date(T0).toISOString());
+  const old = checkpointAgeGate(spine, { now: () => T0 + 63 * DAY });
+  assert.equal(old.ok, false);
+  assert.equal(old.ageMs, 63 * DAY);
+  assert.equal(old.ttlMs, PAUSE_TTL_MS);
+  assert.match(old.detail, /63 day/);
+  assert.match(old.detail, /60 day/);
+});
+
+test('§1.6 TTL — it is the PAUSE\'s rule: another checkpoint is not aged out by it, and an unreadable stamp is UNKNOWN, not young', () => {
+  // a cap-halt checkpoint is a different stop under a different allowance; the
+  // 2026-08-12 ruling is about a person deciding, and nothing here quietly
+  // widens a resume rule the record did not widen
+  const capHalt = [
+    { type: 'job-start', job: 'x', ts: '2026-08-13T09:00:00.000Z', seq: 1 },
+    { type: 'job-end', outcome: 'cap-halt', spentUsd: 1, spendComplete: true, ts: new Date(T0).toISOString(), seq: 2 },
+  ];
+  const g = checkpointAgeGate(capHalt, { now: () => T0 + 900 * DAY });
+  assert.equal(g.applies, false, 'the TTL has nothing to say about this stop');
+  assert.equal(g.ok, true);
+
+  // F6 at the gate: a stamp that cannot be read is not a fresh one
+  const broken = pausedSpine('not-a-timestamp');
+  const b = checkpointAgeGate(broken, { now: () => T0 });
+  assert.equal(b.ok, false);
+  assert.equal(b.ageMs, null, 'unknown, never a number it invented');
+  assert.match(b.detail, /when it paused/i);
 });
 
 test('§1.5 — the decision GATE refuses an empty rerun: the fix worker must never receive an empty human gap', () => {

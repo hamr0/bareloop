@@ -60,7 +60,7 @@ export { renderListing, selectionPrompt } from './selection.js';
 // `resumeTreeGate` is the ruling that a resumed patient is continued dirty and never
 // reset. Both are read by a runner BEFORE the approval gate, so neither can live behind
 // `runReuse`'s own entry.
-export { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED, readResume, resumeTreeGate, CHECKPOINT_OUTCOMES } from './reuse.js';
+export { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED, readResume, resumeTreeGate, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS, checkpointAgeGate } from './reuse.js';
 export { classifyIncidents, foldLedger, ledgerDeltas, updateLedger, LEDGER_CLASSES } from './ledger.js';
 // THE WORK BRANCH (PRD v1.57 §3). `workBranchName` is exported so an operator runner can
 // SHOW, before the approval gate, which branch the run will work on — the same reason the
