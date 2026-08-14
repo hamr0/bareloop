@@ -18,7 +18,7 @@ import { makeSpine } from '../src/spine.js';
 import { scanSecrets } from '../src/validate.js';
 // --resume reads the halted run's own spine back through the SAME reader the reuse
 // path uses (never a second one) and keeps its patient the way it left it.
-import { readResume, resumeTreeGate, CHECKPOINT_OUTCOMES } from '../src/reuse.js';
+import { readResume, resumeTreeGate, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../src/reuse.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
 import { wallLine, doomedResume, deathAtOf } from './u-readout.mjs';
@@ -241,6 +241,28 @@ if (deadSpineFile !== null) {
   if (dead.greened) die('--resume: that run already GREENED — there is nothing to resume.');
   if (dead.ended) die(`--resume: that run reached its own terminal (${dead.endOutcome}) — only a governance halt (${RESUMABLE_HALTS.join(' / ')}) leaves work to continue. Start a fresh run.`);
   if (!dead.restart) die(`--resume: ${deadSpineFile} has no attempt to continue — it never opened one.`);
+  // ── THE PAUSE TTL (2026-08-12 §2): a hitl checkpoint is kept for 60 days.
+  //
+  // The rule and the number are the LIBRARY's (`checkpointAgeGate` / `PAUSE_TTL_MS`,
+  // OPEN-2 as hamr ruled it) so the exported bundle inherits them; this reads its
+  // answer and refuses. It sits HERE, with the spine gates, rather than beside
+  // `resumeTreeGate` further down, for two reasons: an expired checkpoint must refuse
+  // BEFORE the operator signs a hash for it, and the age gate needs no git — the
+  // tree gate does, and that is why the tree gate is where it is.
+  //
+  // `applies:false` on every other terminal is the gate's own doing: ageing out a
+  // cap-halt would be a governance change nobody ruled. An UNREADABLE stamp refuses
+  // too (unknown is not young — F6), which is why this branches on `ok` and not on
+  // an age comparison of its own.
+  const age = checkpointAgeGate(deadEvents);
+  if (!age.ok) {
+    console.error(`CHECKPOINT EXPIRED — ${age.detail}`);
+    console.error('The work is still on the run\'s own branch; what has expired is the DECISION, not the tree. The levers are yours:');
+    console.error('  - start a fresh run against the current tree (the same hash, nothing to re-sign);');
+    console.error(`  - or revise the goal/spec in jobs/${target.spec} — a spec edit, so the hash changes and you sign the new one;`);
+    console.error('  - or abandon it and keep the verdict the paused run already minted.');
+    process.exit(2);
+  }
 }
 /** the restart runs on the REMAINDER of the signed wall, never a fresh allotment —
  * "a budget ceiling folds in prior spend so re-invoking cannot silently widen it",

@@ -15,6 +15,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { PAUSE_TTL_MS } from '../src/reuse.js';
 import { deathAtOf } from '../scripts/u-readout.mjs';
 
 const RUNNER = new URL('../scripts/run-u.mjs', import.meta.url).pathname;
@@ -127,4 +128,40 @@ test('§1.6 E2E: a stale watchdog report beside a PAUSED spine does not bill the
   assert.equal(code, 0, 'a stale report is not a refusal');
   assert.match(out, /spent .*20\.0min before the halt/, 'the fold is the paused leg\'s OWN elapsed — 10:00 to 10:20');
   assert.doesNotMatch(out, /NOTHING LEFT/, 'and the wall is not burnt: 45 days of a person reading is not run time');
+});
+
+// ══ §2 THE 60-DAY TTL ══════════════════════════════════════════════════════════
+
+test('§2 TTL: a checkpoint older than the pause TTL is REFUSED, naming the age and the TTL', () => {
+  const old = new Date(Date.now() - (PAUSE_TTL_MS + 3 * DAY)).toISOString();
+  const { code, out } = preview(['--resume', spineFile(pausedSpine({ at: old }))]);
+  assert.equal(code, 2, 'an expired checkpoint is an operator stop, not a readout');
+  assert.match(out, /CHECKPOINT EXPIRED/);
+  assert.match(out, /63 days ago and the pause TTL is 60 days/, 'both numbers, so the operator can see which of the two it hit');
+  assert.match(out, /Start a fresh run/);
+});
+
+test('§2 TTL CONTROL: a checkpoint inside the TTL resumes exactly as it always did', () => {
+  const fresh = new Date(Date.now() - 59 * DAY).toISOString();
+  const { code, out } = preview(['--resume', spineFile(pausedSpine({ at: fresh }))]);
+  assert.equal(code, 0);
+  assert.doesNotMatch(out, /CHECKPOINT EXPIRED/);
+  assert.match(out, /RESUME/);
+});
+
+test('§2 TTL: the gate is the LIBRARY\'s, and it applies to the PAUSE only', () => {
+  // `checkpointAgeGate` returns `applies:false` for every other terminal on purpose:
+  // ageing out a cap-halt would be a governance change nobody ruled. Driven through
+  // the script so the runner cannot have widened it on the way past.
+  const src = readFileSync(RUNNER, 'utf8');
+  assert.match(src, /checkpointAgeGate\(/, 'the runner calls the library gate rather than re-deriving 60 days');
+  assert.doesNotMatch(src, /60 \* 24 \* 60|5184000000/, 'and the number itself is nowhere in the script');
+
+  const ancient = new Date(Date.now() - 900 * DAY).toISOString();
+  const capHalt = pausedSpine({ at: ancient })
+    .filter((e) => e.type !== 'hitl-pause')
+    .map((e) => (e.type === 'job-end' ? { ...e, outcome: 'cap-halt' } : e));
+  const { code, out } = preview(['--resume', spineFile(capHalt)]);
+  assert.equal(code, 0, 'a two-and-a-half-year-old cap-halt is still resumable — the TTL is about a person deciding');
+  assert.doesNotMatch(out, /CHECKPOINT EXPIRED/);
 });
