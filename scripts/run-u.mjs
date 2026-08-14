@@ -348,11 +348,12 @@ const DIFF_LINE_CAP = 200;
 const readDiff = (paths) => {
   const run = (/** @type {string[]} */ a) => execFileSync('git', ['-C', wd, ...a], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
   try {
-    const spec2 = paths.length ? ['--', ...paths] : [];
+    // after `--`, so a path that starts with a dash is a PATH and never a flag
+    const pathspec = paths.length ? ['--', ...paths] : [];
     // secrets are scrubbed through the ONE inventory (src/validate.js), never a
     // second spelling: a token sitting in a patient's diff must not be echoed onto
     // a terminal or into whatever log is capturing it.
-    const raw = redactSecrets(run(['diff', '--unified=1', SEED, ...spec2]));
+    const raw = redactSecrets(run(['diff', '--unified=1', SEED, ...pathspec]));
     const all = raw.split('\n').filter((l, i, a) => !(l === '' && i === a.length - 1));
     const lines = all.slice(0, DIFF_LINE_CAP);
     const others = run(['ls-files', '--others', '--exclude-standard']).split('\n').map((s) => s.trim()).filter(Boolean);
