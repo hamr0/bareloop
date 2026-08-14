@@ -1,7 +1,7 @@
 # N4 slice-1 POC — THE RETURN (evidence note)
 
 **Ran 2026-08-13, branch `n4-verdict-classes`, $0** (no network, no key, no paid provider).
-Spec: `docs/plans/2026-08-13-n4-verdict-classes-build.md` §1.8. Code: `poc/n4-hitl-return.mjs`.
+Spec: `docs/02-features/2026-08-13-n4-verdict-classes-build.md` §1.8. Code: `poc/n4-hitl-return.mjs`.
 Reproduce: `node poc/n4-hitl-return.mjs` (add `--diff` to print the two shims verbatim).
 
 **Result: 67/67 expectations met.** The riskiest assumption HOLDS — a human's end-of-run

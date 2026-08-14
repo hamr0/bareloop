@@ -1,6 +1,6 @@
 // POC — N4 slice 1 (hitl): THE RETURN, not the pause.
 //
-// The riskiest assumption in docs/plans/2026-08-13-n4-verdict-classes-build.md §1.8 is
+// The riskiest assumption in docs/02-features/2026-08-13-n4-verdict-classes-build.md §1.8 is
 // that a human's end-of-run "rerun <text>" routes through the EXISTING close-fix-loop
 // machinery unchanged, and that the run genuinely CONTINUES — under a wallet folded from
 // the paused leg's spend, on a wall that never billed the human's deciding time — rather
