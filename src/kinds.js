@@ -144,6 +144,10 @@ export const LIVE_KINDS = Object.freeze(['command-exit', 'count-not-worse', 'pat
  * than taken in silence (F59: absent is not empty), so `seedRead` still returns
  * one row per declared stage. */
 export const SEED_EXEMPT_KINDS = Object.freeze(['judged-floor', 'human-confirms']);
+/** the one kind a PERSON renders — named once, because the runner keys three
+ * decisions on it (is there a door to answer, which stage paused, whose ruling
+ * this is) and three literals is how they come to disagree */
+export const HUMAN_KIND = 'human-confirms';
 /** the three doors the signer is offered at a hitl pause (2026-08-12 §1). No
  * fourth door, and no free-text-only variant: a red that is not one of these two
  * is not a ruling the run can act on. */
@@ -154,7 +158,7 @@ export const HUMAN_DECISIONS = Object.freeze(['accept', 'rerun', 'cancel']);
  * @typedef {{workdir: string, seedRef: string, gapKeep: string,
  *   timeoutMsDefault?: number, baselineMode?: 'auto'|'worktree',
  *   gapCap?: number, maxBuffer?: number, seedTrees?: SeedTrees,
- *   humanRuling?: {decision: string, text?: string}|null}} Ctx
+ *   humanRuling?: {decision: string, text?: string|null}|null}} Ctx
  *   The arbiter's half of a stage run. Every field here is operator/runner
  *   territory: a declaration parameterises kinds, never the contracts.
  *   `humanRuling` is the SIGNER's answer at a hitl pause, carried in from the

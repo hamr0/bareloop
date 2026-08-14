@@ -629,6 +629,15 @@ export async function ralph({ middle, close, judge, capRuns, ladder, emit, redac
         // interpreter" would aim a human at the one component that did nothing wrong.
         'step-stalled': ['The model stopped producing rounds and reissuing the call did not recover it — a stall, not a fault.',
           ['let the planner re-allocate what is left (replan)', 'retry the run', 'check provider status', 'abandon the task']],
+        // N4 — the close is WAITING ON A PERSON. Nothing failed and nothing is
+        // discarded: every mechanical stage passes and the one stage left is a
+        // question no worker can answer, so the loop stopped rather than buying
+        // an attempt that could not change the answer. The caller renders the
+        // real decision-ready package (`hitl-pause`, with the evidence); this
+        // entry exists so the passthrough never narrates a paused run as a
+        // broken middle.
+        'hitl-pause': ['The close reached its human stage — the run is paused, decision-ready, and the clock is stopped.',
+          ['accept', 'rerun (your words become the gap the worker converts)', 'cancel']],
       };
       // Object.hasOwn, not bare lookup: a category named after an
       // Object.prototype member ("toString") would return the inherited

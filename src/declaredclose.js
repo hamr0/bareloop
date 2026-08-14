@@ -442,11 +442,12 @@ function translate(r, redact) {
  * @param {any[]} stages declared stage descriptors, already validated
  * @param {(s: string) => string} [redact] the scrub, applied at THIS boundary
  * @param {{timeoutMs?: number, cwd?: string, seedRef?: string,
- *   seedTrees?: any, gapCap?: number, maxBuffer?: number, baselineMode?: 'auto'|'worktree'}} [opts]
+ *   seedTrees?: any, gapCap?: number, maxBuffer?: number, baselineMode?: 'auto'|'worktree',
+ *   humanRuling?: {decision: string, text?: string|null}|null}} [opts]
  * @returns {Promise<any>}
  */
 export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
-  const { timeoutMs, cwd, seedRef, seedTrees: shared, gapCap, maxBuffer, baselineMode } = opts;
+  const { timeoutMs, cwd, seedRef, seedTrees: shared, gapCap, maxBuffer, baselineMode, humanRuling = null } = opts;
   if (!isNonEmptyString(cwd) || !isNonEmptyString(seedRef)) {
     // Refuse rather than guess. A declared close measures against a SEED; a
     // missing one is the close unable to run, not a red about the worker.
@@ -470,6 +471,11 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
     ...(gapCap !== undefined ? { gapCap } : {}),
     ...(maxBuffer !== undefined ? { maxBuffer } : {}),
     ...(baselineMode !== undefined ? { baselineMode } : {}),
+    // the SIGNER's answer, when this close has a human stage and a leg is
+    // carrying one. Absent (null) is the ordinary path AND the pause path — the
+    // human stage reads the absence as "nobody has answered yet", which is the
+    // whole of what a pause means.
+    humanRuling,
     seedTrees,
   };
   try {
