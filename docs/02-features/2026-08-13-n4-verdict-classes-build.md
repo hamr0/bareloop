@@ -290,3 +290,14 @@ Recorded because they are decisions the build must make, not paperwork.
    where the `step-stalled` lesson applies: outcome NAMES are keyed on by `src/run.js`'s spend
    floor and by the runner's resumable list, so widen what a name means, or mint a new one
    deliberately — never rename in passing.
+
+---
+
+## Addendum — 2026-08-15, the spent-wall park RULED (hamr, in-turn)
+
+A hitl pause whose wall is already exhausted stays FULLY blocked — no door answers, not
+even the $0 ones, until the operator raises the cap and re-signs (hamr: "if wall spent …
+it should pause and allow raising cap and resign and go"). The alternative (letting
+accept/cancel through on the W-2 close-exemption reading, blocking only rerun) was
+explained and passed on. The shipped refusal that NAMES the spent wall is therefore the
+final behavior, not a placeholder.
