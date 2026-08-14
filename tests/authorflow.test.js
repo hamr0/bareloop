@@ -1135,7 +1135,9 @@ test('authorClose: a last revision that REGRESSES keeps the last accepted close 
 
 test('the text fallback parses a fenced declaration and is the ONLY locked-kind demand channel', async () => {
   const decl = goodDeclaration();
-  decl.stages.push({ name: 'human-check', kind: 'human-confirms', params: {} });
+  // the exemplar is the kind still LOCKED: `human-confirms` went live at N4
+  // slice 1, so the demand channel is now tested with `judged-floor` (slice 2)
+  decl.stages.push({ name: 'judged-check', kind: 'judged-floor', params: {} });
   const generate = async () => ({
     text: `\`\`\`json\n${JSON.stringify(decl)}\n\`\`\``,
     error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 },
@@ -1144,7 +1146,7 @@ test('the text fallback parses a fenced declaration and is the ONLY locked-kind 
   // the demand IS counted here, because text mode can express what the schema cannot
   const locked = r.iterations[0].validation.reds.filter((/** @type {any} */ x) => x.code === 'locked-kind');
   assert.equal(locked.length, 1);
-  assert.equal(locked[0].kind, 'human-confirms');
+  assert.equal(locked[0].kind, 'judged-floor');
   assert.equal(locked[0].lib, 'bareloop');
 });
 

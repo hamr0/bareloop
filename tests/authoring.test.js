@@ -147,8 +147,10 @@ test('catalogue: the live kinds are EXACTLY the executor\'s live kinds, both dir
   assert.deepEqual([...live].sort(), [...LIVE_KINDS].sort());
 });
 
-test('catalogue: judged-floor and human-confirms are LOCKED entries; harness-loop is ABSENT', () => {
-  assert.deepEqual([...LOCKED_KINDS].sort(), ['human-confirms', 'judged-floor']);
+test('catalogue: judged-floor is the one LOCKED entry; harness-loop is ABSENT', () => {
+  // `human-confirms` went LIVE at N4 slice 1; `judged-floor` waits for the
+  // judged floor its class needs (slice 2)
+  assert.deepEqual([...LOCKED_KINDS].sort(), ['judged-floor']);
   for (const k of LOCKED_KINDS) assert.equal(KIND_CATALOGUE[k].locked, true, `${k} must be marked locked`);
   // absent is not the same as locked: declaring harness-loop is an unknown-kind
   // typo, not counted demand — it is out of v1 with no menu entry at all
@@ -684,8 +686,12 @@ test('ceiling: every catalogue kind carries the verdict class it can honestly re
   for (const [name, spec] of Object.entries(KIND_CATALOGUE)) {
     assert.ok(VERDICT_CLASSES.includes(spec.verdictClass), `${name}.verdictClass is ${String(spec.verdictClass)}`);
   }
-  // every LIVE kind is mechanical, which is exactly why the rule is inert in v1
-  for (const k of CATALOGUE_LIVE_KINDS) assert.equal(KIND_CATALOGUE[k].verdictClass, 'green', k);
+  // every live MEASURING kind is mechanical — the ceiling rule was inert in v1
+  // by construction, and `human-confirms` is the first kind to make it bite: a
+  // human stage in a green spec is a class-ceiling red (tests/hitl.test.js)
+  for (const k of CATALOGUE_LIVE_KINDS.filter((x) => x !== 'human-confirms')) {
+    assert.equal(KIND_CATALOGUE[k].verdictClass, 'green', k);
+  }
   assert.equal(KIND_CATALOGUE['judged-floor'].verdictClass, 'soft-green');
   assert.equal(KIND_CATALOGUE['human-confirms'].verdictClass, 'hitl');
 });

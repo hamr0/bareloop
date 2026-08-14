@@ -387,6 +387,12 @@ export const PARAM_SCHEMAS = Object.freeze({
   extensions: { type: 'array', minItems: 1, items: { type: 'string' } },
   allowPrefixes: { type: 'array', minItems: 1, items: { type: 'string' } },
   requireNonEmpty: { const: true },
+  ask: {
+    type: 'string',
+    minLength: 1,
+    description: 'the plain question the person answers while looking at the finished result. They see it verbatim, '
+      + 'so write what they are DECIDING — never a bare "approve?".',
+  },
 });
 
 /**

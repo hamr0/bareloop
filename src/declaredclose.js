@@ -71,7 +71,7 @@
 import { runStage, makeSeedTrees, STOP_FAULTS, EXIT_RED } from './kinds.js';
 import {
   validateDeclaration, classGuards, genreOwnedEnvNames, ungroundedGenreEnv, GENRE_LANGUAGES, TYPES_GENRE,
-  VERDICT_CLASSES, LIVE_CLASSES,
+  VERDICT_CLASSES, LIVE_CLASSES, NEVER_OFFERED_KINDS,
 } from './authoring.js';
 import { stageGap } from './ralph.js';
 import { isObj, isNonEmptyString } from './validate.js';
@@ -112,6 +112,18 @@ export const DECLARED_GAP_PREFIX = 'close: ';
  * whole judged output rather than a hand-picked slice of it. */
 export const DECLARED_GAP_KEEP = `^${DECLARED_GAP_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`;
 
+/**
+ * The close verdict word for a run WAITING on a person (N4 §1.3/§1.4). A
+ * literal, exported, because three readers key on it — the runner's pause
+ * branch, the ledger's excluded set, and the trend reader's blind rule — and
+ * three hand-spelled copies of one terminal is how they come to disagree.
+ *
+ * It is not in `CLOSE_FAULTS` and must never be added: a fault says the close
+ * could not render a verdict, and this says the close is not FINISHED rendering
+ * one. The first escalates; the second is a checkpoint the operator returns to.
+ */
+export const HUMAN_PAUSE = 'human-pause';
+
 /** The verdict classes a DECLARED close may claim. Named as data so the job
  * validator reads one hierarchy table rather than hard-coding a class.
  *
@@ -142,7 +154,15 @@ export function isDeclaredClose(job) {
  */
 export function declaredStages(closeDecl) {
   if (!isObj(closeDecl) || !Array.isArray(closeDecl.stages)) return null;
-  return closeDecl.stages.map((s) => (isObj(s) ? { ...s, gapKeep: DECLARED_GAP_KEEP } : s));
+  return closeDecl.stages.map((s) => (isObj(s)
+    // RULING 5, stamped by the ARBITER rather than trusted from the artefact:
+    // a judged or human stage is `offer: false` BY LAW, so `checkMenu` can never
+    // hand the agent `check-passes(<a person>)`. The validator refuses a
+    // declaration that says anything else (`human-stage-offered`), so this is
+    // never overwriting a signer-visible value — it is filling in a law the
+    // declaration schema deliberately gives the composer no way to state.
+    ? { ...s, gapKeep: DECLARED_GAP_KEEP, ...(NEVER_OFFERED_KINDS.includes(s.kind) ? { offer: false } : {}) }
+    : s));
 }
 
 // ── the spec-level gate ──────────────────────────────────────────────────────
@@ -368,7 +388,7 @@ export function guardNames(closeDecl, verdictType) {
  * @param {any} r an M1 `StageResult`
  * @param {(s: string) => string} redact
  * @returns {{verdict: string, notes?: string, gap?: string, detail?: string,
- *   exitCode?: number, judgedCount?: number}} `notes` is absent, never empty —
+ *   exitCode?: number, judgedCount?: number, ask?: string|null}} `notes` is absent, never empty —
  *   a field that is always there says nothing; a RED carries its diagnostics
  *   inside `gap` and so has none of its own.
  */
@@ -377,6 +397,13 @@ function translate(r, redact) {
   /** absent rather than empty: a field that is always there says nothing */
   const notes = gapText ? { notes: gapText } : {};
   if (r.verdict === 'green') return { verdict: 'satisfied', judgedCount: 1, ...notes };
+  // THE PAUSE (N4 §1.3) — its own verdict word, and deliberately NOT one of the
+  // three below. `satisfied` would mint a green nobody gave; `needs_revision`
+  // would hand the fix worker a gap the person has not written yet; a
+  // `CLOSE_FAULTS` word would file a working arbiter as a broken instrument.
+  // No `gap` and no `judgedCount`: nothing was judged, and every consumer guards
+  // with `if (gap)`.
+  if (r.verdict === 'pause') return { verdict: HUMAN_PAUSE, ask: r.detail?.ask ?? null, ...notes };
   if (r.verdict === 'red') {
     return {
       verdict: 'needs_revision',
