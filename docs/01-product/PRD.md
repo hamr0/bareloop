@@ -4703,3 +4703,93 @@ on the recommendations — hitl inherits green's mechanical guard battery; the 6
 in the LIBRARY; `accept` RE-RUNS the mechanical stages before minting green; the softgreen
 judge's tier is `claude-haiku-4-5` (the only tier with established injection resistance;
 deviation re-runs the upstream harness). Recorded in the build plan at each item.
+
+## Addendum v1.66 — 2026-08-14 (the CLI-subscription lane: a revival EXPERIMENT is named and sequenced NEXT round, after N4 — hamr)
+
+**DOCS ONLY.** Nothing is built, nothing is fired, and no verdict is reversed here. What this
+addendum does is name an experiment, state its premise honestly enough that it can fail, and
+put it in the queue where hamr placed it.
+
+**The trigger was a market read, not a finding.** Scape (scape.work) is a closed-source macOS
+orchestrator that drives the operator's own installed `claude`/`codex`/`opencode` binaries as
+subprocesses — auth delegated wholly to each CLI's own profile directory, the orchestrator
+itself one of the operator's CLI sessions handed three MCP tools. That is the same
+subscription-riding shape bareloop already built and then parked: **driving the OFFICIAL CLI
+binary is the legal and truthful subscription path**, as against the OAuth-replay shape
+Anthropic has blocked in third-party harnesses. hamr, in-turn: *"i like the cli usage as it
+rides your subs and i wanted to do that with bareloop"* — fold it in as an experiment.
+
+### 1. The premise, stated so it can be wrong: F48 is HALF stale
+
+F48 (2026-07-23) demoted clipipe from API peer to babysat $0-marginal fallback on three
+grounds. Replayed against the record as it stands today:
+
+- **Read-blinding — FIXED, same week.** The CLI truncates tool results shown to the model at
+  ~40–50KB regardless of what the bridge sends. `NATIVE_READ_CAP` (24KB slice + a trusted
+  steering notice toward `ctx_get`/`shell_grep`) closed it; writes went **0 → 7** on the
+  patient that had produced none. Not an open ground.
+- **0/2 acting rows graded vs API 3/3 — the STALE HALF.** That failure was the F39 semantic
+  stall, and *every* cure for it landed AFTER F48, on the API surface only: Layer 2's in-run
+  check-loops (F46/F47), the strike ladder, the mailbox rule, the exit-freedom law, and the
+  shape-lottery gate rules A-v2/B. The native lane has never once run with any of them. F48's
+  capability half is therefore a verdict on machinery that **no longer exists**.
+- **No within-run resume, session reliability, ~2.5–5× slower — STILL TRUE.** This is the
+  honest remaining cost, and no fix since touches it. It is a governance and throughput
+  ground, not a capability one, and it survives the experiment either way.
+
+### 2. The experiment — named, gated, NOT fired
+
+**The question:** *the stall that killed the native rows was later cured for everyone — does
+the cure convert there too?* Same job, paired arms (`anthropic-api` vs
+`clipipe-subscription`), small N.
+
+**The gate is the standing no-paid-fire rule, and it binds here first.** A **$0 archive read**
+runs BEFORE any dollar moves: replay every archived native casualty's *actual* recorded cause
+against the since-landed fix list. Any death class no shipped fix touches kills or reshapes
+the experiment at $0 — the same instrument that has already retired two builds outright (F63,
+F88). Notional cost governs exactly like billed cost under hamr's standing *"cost is cost"*
+ruling, and `clipipe-subscription` remains a **distinct provider condition**: budgets never
+pool with `anthropic-api`, and a number signed for one arm authorises nothing in the other.
+
+### 3. Step zero — profile hygiene via `CLAUDE_CONFIG_DIR`
+
+The CLI reads `CLAUDE_CONFIG_DIR` to choose its config/auth/state directory. A dedicated,
+frozen bareloop profile buys four things: **(a)** a clean-room worker with no inherited
+operator hooks, global memory, or settings — the exact confound class behind the LC-2 phantom,
+where a global SessionStart hook version-skew-poisoned repo indexes and manufactured a bug
+report; **(b)** a *pinnable* profile — hashable, and foldable into resolved-spec signing on the
+TOOL_MENU precedent (MED-1), so which profile was signed is not left to the machine it ran on;
+**(c)** parallel workers without shared-state collisions; **(d)** the operator's real
+`~/.claude` stays untouched.
+
+**Its limit, unpapered:** this fixes the CONFIG half only. The binary's own harness — system
+prompt, compaction, turn caps, result truncation, unpriced rounds — is untouched by any env
+var, so **F48's reliability grounds stand regardless of how clean the profile is**. The
+clipipe spawn seam gets its source READ before any upstream ask is drafted (the BA-2 rule: one
+ask has already been withdrawn for asking the wrong package, and one for asking for what
+already existed). **No ask is filed by this addendum.**
+
+### 4. Sequencing: NEXT round, after N4 — hamr-accepted recommendation
+
+Not hamr's verbatim words; a recommendation put to him this session and accepted. Three
+grounds:
+
+1. **One lever at a time.** N4 is mid-flight (v1.65) with a green POC. Two initiatives inside
+   one round make every outcome unattributable to either — the standing rule that cost this
+   programme a rerun already.
+2. **N4 *produces* the ideal test bed.** hitl-class, re-runnable, babysat jobs — the
+   litectx-maintainer shape N4 is opening on — are precisely the genre where a $0-marginal
+   lane pays for its slowness.
+3. **The gate needs no round slot.** The $0 archive read can run in any idle window once N4
+   slice 1 validates, so sequencing costs the experiment nothing but calendar.
+
+### 5. What is NOT decided
+
+- **No revival verdict is pre-judged.** The experiment may re-confirm F48 on current
+  machinery. That is a valid and wanted outcome — a demotion that survives its own strongest
+  retest is worth more than the one that was never retested.
+- **No budget is set.** Funding is arbiter territory; hamr signs a number when it fires, not
+  before.
+- **Scape's own design is context, not adopted.** Its watchdog auto-approvals are an agent
+  authoring its own arbiter, and it carries no close and no learning loop — the mechanism read
+  is what transfers, nothing downstream of it.
