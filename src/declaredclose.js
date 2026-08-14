@@ -112,12 +112,19 @@ export const DECLARED_GAP_PREFIX = 'close: ';
  * whole judged output rather than a hand-picked slice of it. */
 export const DECLARED_GAP_KEEP = `^${DECLARED_GAP_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`;
 
-/** The verdict class a DECLARED close may claim. Hard, and by CONSTRUCTION
- * rather than by assertion: every live kind is a mechanical command whose
- * measurement is the truth, and the two judgment kinds are locked out at the
- * catalogue (M2) and absent from the executor (M1). Named as data so the job
- * validator reads one hierarchy table rather than hard-coding a class. */
-export const DECLARED_CLOSE_CLASSES = Object.freeze(['hard']);
+/** The verdict classes a DECLARED close may claim. Named as data so the job
+ * validator reads one hierarchy table rather than hard-coding a class.
+ *
+ * `hard` is by CONSTRUCTION: every mechanical kind is a command whose measurement
+ * is the truth. `hitl` joined it at N4 slice 1, and only because `human-confirms`
+ * is genuinely LIVE — the widening and the kind go in one commit, or this table
+ * admits a class the executor cannot render. The `soft` class is still absent:
+ * `judged-floor` is locked, so no declaration can reach above hitl.
+ *
+ * The direction that matters is unchanged. This says which class a declaration
+ * MAY claim; `closeCeiling` says which class its stages actually NEED. A pick
+ * below the ceiling is still the silent upgrade `class-ceiling` refuses. */
+export const DECLARED_CLOSE_CLASSES = Object.freeze(['hard', 'hitl']);
 
 /** @param {any} job @returns {boolean} */
 export function isDeclaredClose(job) {

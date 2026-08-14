@@ -103,7 +103,12 @@ export const LOCKED_TOOLS = Object.freeze(['run']);
  * pattern: disclosure ≠ admission), so the ledger counts the demand and the
  * non-code rung later fills a declared slot instead of reshaping the schema. */
 export const VERDICT_TYPES = Object.freeze(['green', 'soft-green', 'hitl']);
-export const LOCKED_VERDICTS = Object.freeze(['soft-green', 'hitl']);
+/** N4 slice 1: `hitl` is ADMITTED — the class whose *done* needs a person runs
+ * through the same signed spec, the same agent-authored plan and the same
+ * arbiter as a green job (the nine rulings, 2026-08-07; the three-button surface,
+ * 2026-08-12). `soft-green` stays declared-but-locked until its judged floor is
+ * built and proven (slice 2): a wobbly ruler must not mint anything. */
+export const LOCKED_VERDICTS = Object.freeze(['soft-green']);
 /** which close CLASS a declared verdictType demands — the close hierarchy one
  * level up: the same laundering guard as CLASS_BY_CLOSE, applied to the plan
  * shape's single close (green on a rubric would be a fake-hard verdict). */

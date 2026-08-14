@@ -181,6 +181,27 @@ export const GREEN_QUESTIONS = Object.freeze({
 });
 
 /**
+ * THE HITL SET (N4 slice 1) — the six green questions BYTE FOR BYTE, plus one.
+ *
+ * The six are unchanged deliberately rather than economically: the
+ * mechanical-first composition law (2026-08-07) says every hitl close is
+ * *deterministic stages first, judge minimal, human last*, so a hitl job needs
+ * exactly the same mechanical facts a green one does — what changes, what must
+ * not, how it is checked today, what "worse" looks like. Rewording them would
+ * fork one interview into two that drift.
+ *
+ * The seventh is the only thing the green set cannot supply, and it is not a
+ * flourish: `human-confirms` requires an `ask` — the question the signer answers
+ * at the end of the run — and nothing else in the interview names it. Without it
+ * the composer would have to invent what a person is deciding, which is the one
+ * thing a human stage must never have done for it.
+ */
+export const HITL_QUESTIONS = Object.freeze({
+  ...GREEN_QUESTIONS,
+  7: 'When you look at the finished result yourself, what are you deciding?',
+});
+
+/**
  * The three sets. `questions: null` on a locked class is ABSENT, never `{}`:
  * an empty set would read as "this class needs no questions", which is a
  * different and false statement (F59's distinction, at the interview layer).
@@ -195,7 +216,11 @@ export const QUESTION_SETS = Object.freeze({
     required: Object.freeze(Object.keys(GREEN_QUESTIONS).map(Number).sort((a, b) => a - b)),
   }),
   'soft-green': Object.freeze({ locked: true, questions: null, required: null }),
-  hitl: Object.freeze({ locked: true, questions: null, required: null }),
+  hitl: Object.freeze({
+    locked: false,
+    questions: HITL_QUESTIONS,
+    required: Object.freeze(Object.keys(HITL_QUESTIONS).map(Number).sort((a, b) => a - b)),
+  }),
 });
 
 /**
@@ -214,7 +239,15 @@ export const CLASS_STATEMENTS = Object.freeze({
     + 'measurement of this repository. If part of what they asked for cannot be measured that way, leave it out and '
     + 'say so in your notes rather than approximating it with a stage that means something else.',
   'soft-green': null,
-  hitl: null,
+  // N4 slice 1. The mechanical-first composition law is stated as an ORDER
+  // because first-red-wins makes the order the mechanism: the cheap stages shield
+  // the expensive one, and the person is never the first filter.
+  hitl: 'The person declared this job HITL: a PERSON renders the final verdict, because their judgement is what '
+    + '"done" means here. Compose the mechanical part first — everything about this repository a command can decide '
+    + 'is still a mechanical stage, exactly as it would be for a green job — and put ONE human-confirms stage LAST, '
+    + 'carrying the question they answer when they look at the result. Never make the person the first filter: a '
+    + 'stage a command can render is never handed to them, and they are asked only once, at the end, about the part '
+    + 'no command can hold.',
 });
 
 /** @param {string} verdictType @returns {{locked: boolean, questions: any, required: any}} */

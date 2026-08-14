@@ -164,7 +164,7 @@ test('a LOCKED class refuses at ADMISSION, BEFORE its questions run — counted 
     assert.equal(r.refusal.red.code, 'request-red');
     assert.ok(r.refusal.detail.includes(verdictType));
   }
-  assert.deepEqual([...LIVE_CLASSES], ['green'], 'v1 admits exactly one class');
+  assert.deepEqual([...LIVE_CLASSES], ['green', 'hitl'], 'N4 slice 1 admits two; soft-green is slice 2');
 });
 
 test('the interview asks NOTHING about a genre — D13\'s confirm slot is gone, and answer 7 is not a slot', () => {
@@ -207,14 +207,16 @@ test('interview answers are scrubbed at INGEST — an answer becomes a prompt, a
 // ── 2. THE LEDGER ATTRIBUTION, end to end ────────────────────────────────────
 
 test('D13 REGRESSION: a close-authoring refusal files under bareloop, and its suggestedAsk is never an upstream ask', () => {
-  const refusal = runInterview({ verdictType: 'hitl', answers: ANSWERS, repoPath: '/tmp/x' }).refusal;
+  // the exemplar is the class still LOCKED (hitl was admitted at N4 slice 1);
+  // what is under test is the attribution of a class refusal, not which class
+  const refusal = runInterview({ verdictType: 'soft-green', answers: ANSWERS, repoPath: '/tmp/x' }).refusal;
   const events = refusalEvents(refusal).map((e, i) => ({ ...e, seq: i + 1 }));
 
   const occs = classifyIncidents(events, { spine: 'authoring' });
   const req = occs.filter((o) => o.class === 'request-red');
   assert.equal(req.length, 1, 'the demand is counted exactly once');
   assert.equal(req[0].lib, REFUSAL_LIB, 'the lib is the STAMPED one — inferring it here is the BA-2 misattribution class');
-  assert.equal(req[0].verb, 'hitl', 'the demand names the verdict class, which is what the rung waits on');
+  assert.equal(req[0].verb, 'soft-green', 'the demand names the verdict class, which is what the rung waits on');
 
   // …and the template a human actually FILES from must aim at the same target.
   // Fixing the occurrence alone would leave the misattribution in the one field

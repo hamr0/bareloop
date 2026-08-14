@@ -606,10 +606,10 @@ test('classes: the two copies of the menu are IDENTICAL — the spec radio and t
   assert.deepEqual([...LOCKED_CLASSES], [...LOCKED_VERDICTS]);
 });
 
-test('classes: the class menu is exactly three, and v1 builds exactly one of them', () => {
+test('classes: the class menu is exactly three, and v1 builds two of them (N4 slice 1)', () => {
   assert.deepEqual([...VERDICT_CLASSES], ['green', 'soft-green', 'hitl']);
-  assert.deepEqual([...LOCKED_CLASSES], ['soft-green', 'hitl']);
-  assert.deepEqual([...LIVE_CLASSES], ['green']);
+  assert.deepEqual([...LOCKED_CLASSES], ['soft-green']);
+  assert.deepEqual([...LIVE_CLASSES], ['green', 'hitl']);
   // the batteries cover the menu and nothing else — a class with no entry would
   // be a class whose guards nothing can supply
   assert.deepEqual(Object.keys(CLASS_BATTERIES).sort(), [...VERDICT_CLASSES].sort());

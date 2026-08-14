@@ -94,9 +94,11 @@ import { isObj, isNonEmptyString, hasNestedQuantifier, globToPrefix } from './va
 
 /** the whole menu, in ascending order of what it takes to render the verdict */
 export const VERDICT_CLASSES = Object.freeze(['green', 'soft-green', 'hitl']);
-/** declared-but-locked: selecting one is COUNTED demand, never an admission */
-export const LOCKED_CLASSES = Object.freeze(['soft-green', 'hitl']);
-/** the classes v1 actually builds — exactly one */
+/** declared-but-locked: selecting one is COUNTED demand, never an admission.
+ * `hitl` LEFT this list at N4 slice 1 (see `src/job.js`'s twin) — the class is
+ * built, and its battery is below. `soft-green` waits for the judged floor. */
+export const LOCKED_CLASSES = Object.freeze(['soft-green']);
+/** the classes v1 actually builds */
 export const LIVE_CLASSES = Object.freeze(VERDICT_CLASSES.filter((c) => !LOCKED_CLASSES.includes(c)));
 
 /** the hierarchy as a comparable number. `green` is the FLOOR: a mechanical
@@ -613,30 +615,40 @@ function language(lang) {
  * than hand back nothing if anything ever does.
  * @type {Record<string, {locked: boolean, guards: readonly any[]|null}>}
  */
-export const CLASS_BATTERIES = Object.freeze({
-  green: Object.freeze({
-    locked: false,
-    guards: Object.freeze([
-      Object.freeze({
-        name: 'changed-from-seed',
-        kind: 'files-changed',
-        params: Object.freeze({ requireNonEmpty: true }),
-        compose: Object.freeze([]),
-        fill: Object.freeze(['allowPrefixes']),
-      }),
-      Object.freeze({
-        name: 'no-suppressions',
-        kind: 'pattern-absent-in-diff',
-        // NO scope: the scan covers every changed file of these extensions. A
-        // narrowing here is the round-3 arm A defect and is a red, not a taste.
-        params: Object.freeze({}),
-        compose: Object.freeze(['patterns', 'extensions']),
-        fill: Object.freeze([]),
-      }),
-    ]),
+/** THE MECHANICAL BATTERY — the two guards a machine can always render, named
+ * once because TWO classes carry exactly them (OPEN-1's ruling below). It is
+ * shared by reference and never mutated: `classGuards` deep-copies before it
+ * hands anything back, so one battery cannot be weakened through another class. */
+const MECHANICAL_GUARDS = Object.freeze([
+  Object.freeze({
+    name: 'changed-from-seed',
+    kind: 'files-changed',
+    params: Object.freeze({ requireNonEmpty: true }),
+    compose: Object.freeze([]),
+    fill: Object.freeze(['allowPrefixes']),
   }),
+  Object.freeze({
+    name: 'no-suppressions',
+    kind: 'pattern-absent-in-diff',
+    // NO scope: the scan covers every changed file of these extensions. A
+    // narrowing here is the round-3 arm A defect and is a red, not a taste.
+    params: Object.freeze({}),
+    compose: Object.freeze(['patterns', 'extensions']),
+    fill: Object.freeze([]),
+  }),
+]);
+
+export const CLASS_BATTERIES = Object.freeze({
+  green: Object.freeze({ locked: false, guards: MECHANICAL_GUARDS }),
   'soft-green': Object.freeze({ locked: true, guards: null }),
-  hitl: Object.freeze({ locked: true, guards: null }),
+  // OPEN-1, RULED (hamr, in-turn, 2026-08-13): **hitl inherits the green
+  // mechanical guards and adds nothing a human stage cannot see.** D5 makes the
+  // battery mandatory, shown-and-fixed and un-removable, and PRD v1.57 §2 keys it
+  // to the CLASS; the mechanical-first composition law makes every hitl close
+  // mostly mechanical anyway, so the green battery is the right FLOOR. A guard a
+  // person cannot verify by looking would be a guard nobody checks — the one
+  // thing D5 exists to make unsayable.
+  hitl: Object.freeze({ locked: false, guards: MECHANICAL_GUARDS }),
 });
 
 /**

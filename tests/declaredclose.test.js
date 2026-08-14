@@ -86,14 +86,16 @@ test('the gap-keep PATTERN is derived from the gap PREFIX, so a declared gap lin
   assert.doesNotMatch(`  indented ${DECLARED_GAP_PREFIX}x`, new RegExp(DECLARED_GAP_KEEP));
 });
 
-test('the verdict-class hierarchy is ONE table: every close type plus `declared`, and declared is hard', () => {
+test('the verdict-class hierarchy is ONE table: every close type plus `declared`', () => {
   assert.deepEqual(
     Object.keys(CLASS_BY_CLOSE).sort(),
     [...CLOSE_TYPES, 'declared'].sort(),
     'CLASS_BY_CLOSE and CLOSE_TYPES must not drift — a class table missing a shape launders that shape',
   );
   assert.deepEqual(CLASS_BY_CLOSE.declared, DECLARED_CLOSE_CLASSES);
-  assert.deepEqual([...DECLARED_CLOSE_CLASSES], ['hard']);
+  // N4 slice 1: `hitl` joined `hard` when `human-confirms` went live. `soft` is
+  // still absent — `judged-floor` is locked, so no declaration reaches above hitl.
+  assert.deepEqual([...DECLARED_CLOSE_CLASSES], ['hard', 'hitl']);
 });
 
 test('closeStagesOf reads EITHER field, and a declared stage carries the arbiter\'s own gapKeep', () => {
