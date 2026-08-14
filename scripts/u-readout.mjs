@@ -38,6 +38,112 @@ export function wallLine({ legMs, priorWallMs = 0, wallLabel }) {
 }
 
 /**
+ * THE EVIDENCE PACKAGE (N4, ruling 2) — what a person is shown before they answer.
+ *
+ * *"Before/after changes plus every mechanical stage's result; never a bare
+ * 'approve?'"*. The LIBRARY assembles the facts and puts them on the `hitl-pause`
+ * spine record — the ask the close itself declared, every stage's own result, and
+ * WHICH files the run changed (`src/planrun.js`'s `emitHitlPause`). This renders
+ * them, and adds the one thing a library cannot state honestly from where it sits:
+ * the LINE-level diff, which needs a screen and a repository in front of it.
+ *
+ * Nothing here derives a verdict, and nothing here decides. It is a readout of a
+ * record that already exists — so an absence is written as prose (F6: an empty
+ * stage list is "the checkpoint carries none", never a blank screen that reads as
+ * "nothing happened") and a trim is announced (F28).
+ *
+ * @param {{pause: any, diff: {lines: string[], truncated?: number, untracked?: string[],
+ *   unavailable?: string|null}|null}} o `pause` the spine record; `diff` what the
+ *   runner read off the patient, or null when it did not look.
+ * @returns {string[]} lines, ready to print
+ */
+export function evidencePackage({ pause, diff }) {
+  const p = pause ?? {};
+  /** @type {string[]} */
+  const out = [];
+  out.push('HUMAN REVIEW — this run reached the one stage a machine cannot render, and it is waiting on you.');
+  out.push(`  ask      ${typeof p.ask === 'string' && p.ask.trim() ? p.ask : '(the close declared no question — review the result as it stands)'}`);
+
+  const stages = Array.isArray(p.stages) ? p.stages : [];
+  if (!stages.length) {
+    out.push('  stages   no stage results on the checkpoint — nothing here can say what the machine judged, so read the diff below and the run\'s own spine');
+  } else {
+    out.push('  stages   what the machine judged before it stopped, in the order it judged it:');
+    const w = Math.max(...stages.map((s) => String(s?.name ?? '?').length));
+    for (const s of stages) {
+      const name = String(s?.name ?? '?').padEnd(w);
+      const verdict = String(s?.verdict ?? 'unknown').padEnd(12);
+      // the MEASUREMENT, where a stage made one: `baseline → value` is the
+      // before/after a number can state, and it is the half of "before/after" a
+      // diff cannot show
+      const measured = typeof s?.value === 'number'
+        ? (typeof s?.baseline === 'number' ? `  ${s.baseline} → ${s.value}` : `  ${s.value}`)
+        : '';
+      // and whatever the stage ANNOUNCED about its own reading (a trim, a scope)
+      const notes = typeof s?.notes === 'string' && s.notes.trim() ? `  (${s.notes.trim()})` : '';
+      const waiting = s?.verdict === 'human-pause' ? '  ← waiting on you' : '';
+      out.push(`           ${name}  ${verdict}${measured}${notes}${waiting}`.trimEnd());
+    }
+  }
+
+  const changed = p.changed ?? {};
+  const paths = Array.isArray(changed.paths) ? changed.paths : [];
+  if (typeof changed.unreadable === 'string' && changed.unreadable.trim()) {
+    // F6 — an unreadable set is UNKNOWN, and it must never render as a clean tree
+    out.push(`  changed  UNKNOWN — the run could not read its own changed set: ${changed.unreadable.trim()}`);
+  } else if (!paths.length) {
+    out.push('  changed  no changed files recorded on the checkpoint');
+  } else {
+    const more = typeof changed.more === 'number' && changed.more > 0 ? `, and ${changed.more} more not listed` : '';
+    out.push(`  changed  ${paths.length} file(s) this run touched${more}:`);
+    for (const f of paths) out.push(`           ${f}`);
+  }
+
+  if (diff) {
+    if (typeof diff.unavailable === 'string' && diff.unavailable) {
+      out.push(`  diff     line-level diff UNAVAILABLE — ${diff.unavailable}`);
+    } else {
+      const lines = Array.isArray(diff.lines) ? diff.lines : [];
+      const untracked = Array.isArray(diff.untracked) ? diff.untracked : [];
+      out.push('  diff     the patient AS IT STANDS NOW, against the seed (it can move while a run is paused — that is why accept re-runs the mechanical stages):');
+      for (const l of lines) out.push(`           ${l}`);
+      if (typeof diff.truncated === 'number' && diff.truncated > 0) {
+        out.push(`           … ${diff.truncated} more diff line(s) not shown — read the patient for the rest`);
+      }
+      if (untracked.length) {
+        out.push(`           NEW file(s), which have no diff at all: ${untracked.join(', ')}`);
+      }
+      if (!lines.length && !untracked.length) out.push('           (the tree matches the seed — nothing to show)');
+    }
+  }
+  return out;
+}
+
+/**
+ * THE THREE DOORS, rendered — and the 2026-08-12 §4 rule is the ORDER.
+ *
+ * ~40% of human reviewers approve without reading. That datum is a design input:
+ * the default must lean toward rerun and never toward accept, because a default
+ * that costs one extra cycle when wrong is cheap and a default that mints a green
+ * nobody read is the failure mode the whole class exists to prevent.
+ *
+ * "Default" here is which door the prompt LEADS with — never an action taken for
+ * the operator. No door happens without its flag, and this says so.
+ *
+ * @param {{rerun: string, accept: string, cancel: string}} invocations the exact
+ *   command each door costs, so nobody has to reconstruct one
+ * @returns {string[]}
+ */
+export function doorLines({ rerun, accept, cancel }) {
+  return [
+    'THREE DOORS — no fourth, and no decision is taken for you: nothing happens without the flag.',
+    `  rerun   your words BECOME the gap the worker fixes from, and the run continues under what is left of the budget:\n            ${rerun}`,
+    `  accept  green — minted on FRESH evidence (the mechanical stages re-run first, since the tree may have moved):\n            ${accept}`,
+    `  cancel  terminal. No gap, no continuation; the work stays on the run's own branch exactly as it is:\n            ${cancel}`,
+  ];
+}
+
+/**
  * WHEN THE DEAD LEG STOPPED — the input `readResume` folds into `priorWallMs`, and
  * therefore what the resumed leg's wall remainder is computed from.
  *

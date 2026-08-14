@@ -15,8 +15,9 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { jobSpecHash } from '../src/job.js';
 import { PAUSE_TTL_MS } from '../src/reuse.js';
-import { deathAtOf } from '../scripts/u-readout.mjs';
+import { deathAtOf, evidencePackage } from '../scripts/u-readout.mjs';
 
 const RUNNER = new URL('../scripts/run-u.mjs', import.meta.url).pathname;
 const SPEC = JSON.parse(readFileSync(new URL('../jobs/bareagent-u-types.json', import.meta.url), 'utf8'));
@@ -164,4 +165,200 @@ test('§2 TTL: the gate is the LIBRARY\'s, and it applies to the PAUSE only', ()
   const { code, out } = preview(['--resume', spineFile(capHalt)]);
   assert.equal(code, 0, 'a two-and-a-half-year-old cap-halt is still resumable — the TTL is about a person deciding');
   assert.doesNotMatch(out, /CHECKPOINT EXPIRED/);
+});
+
+// ══ §1 THE THREE DOORS ═════════════════════════════════════════════════════════
+
+test('§1 no --decide on a paused run: the evidence package and the three doors, led by RERUN', () => {
+  const { code, out } = preview(['--resume', spineFile(pausedSpine())]);
+  assert.equal(code, 0, 'the preview is a readout — it does not decide, and it never decides FOR anyone');
+
+  // ruling 2 — never a bare "approve?"
+  assert.match(out, /HUMAN REVIEW/);
+  assert.match(out, /Does this fix read like something you would ship\?/, 'the close\'s own ask');
+  assert.match(out, /changed-from-seed +satisfied/, 'every mechanical stage\'s own result');
+  assert.match(out, /typecheck-clean +satisfied .*63 → 0/, 'with its measurement, where it made one');
+  assert.match(out, /no-suppressions +satisfied/);
+  assert.match(out, /signer-reviews +human-pause/, 'and the stage that is waiting, named as waiting rather than as a verdict');
+  assert.match(out, /src\/fix\.js/, 'what this run changed');
+
+  // 2026-08-12 §4 — the ~40% rubber-stamp datum: rerun LEADS, accept never defaults
+  const rerunAt = out.indexOf('--decide rerun');
+  const acceptAt = out.indexOf('--decide accept');
+  assert.ok(rerunAt > 0 && acceptAt > 0, 'both doors are offered');
+  assert.ok(rerunAt < acceptAt, 'rerun is the door the prompt leads with (2026-08-12 §4)');
+  assert.match(out, /--decide cancel/);
+  assert.match(out, /no decision is taken for you/i, 'the lean is a FRAMING, never an action');
+});
+
+test('§1 REFUSED: the fourth door does not exist, and the refusal names the three that do', () => {
+  const { code, out } = preview(['--resume', spineFile(pausedSpine()), '--decide', 'maybe']);
+  assert.equal(code, 2);
+  assert.match(out, /not one of the three doors \(accept \| rerun \| cancel\)/, 'the LIBRARY\'s own refusal, surfaced');
+  assert.match(out, /no fourth/);
+});
+
+test('§1 REFUSED: a rerun with no text — the human IS the gap author, and an empty gap says nothing', () => {
+  for (const args of [['--decide', 'rerun'], ['--decide', 'rerun', '--text', '   \n  ']]) {
+    const { code, out } = preview(['--resume', spineFile(pausedSpine()), ...args]);
+    assert.equal(code, 2, JSON.stringify(args));
+    assert.match(out, /needs TEXT/);
+    assert.match(out, /re-runs the worker as though nothing had been said/, 'the reason, in the library\'s words');
+    assert.doesNotMatch(out, /hash/i, 'and it refuses BEFORE offering a signature — nothing is spendable from here');
+  }
+});
+
+test('§1 REFUSED: --text on a door that has no text is not silently dropped', () => {
+  for (const d of ['accept', 'cancel']) {
+    const { code, out } = preview(['--resume', spineFile(pausedSpine()), '--decide', d, '--text', 'but also fix the docs']);
+    assert.equal(code, 2, d);
+    assert.match(out, /only a "rerun" carries text/);
+  }
+});
+
+test('§1 REFUSED: a decision with nothing to answer — no --resume, and a resume that is not a pause', () => {
+  const bare = preview(['--decide', 'accept']);
+  assert.equal(bare.code, 2);
+  assert.match(bare.out, /--decide answers a PAUSED run/);
+
+  const capHalt = pausedSpine().filter((e) => e.type !== 'hitl-pause')
+    .map((e) => (e.type === 'job-end' ? { ...e, outcome: 'cap-halt' } : e));
+  const wrong = preview(['--resume', spineFile(capHalt), '--decide', 'accept']);
+  assert.equal(wrong.code, 2);
+  assert.match(wrong.out, /stopped on cap-halt, not at a human stage/);
+});
+
+test('§1 the chosen door is stated in the preview and rides the SAME --approve gate (ruling 4)', () => {
+  const { code, out } = preview(['--resume', spineFile(pausedSpine()), '--decide', 'rerun', '--text', 'the summary buries the risk section']);
+  assert.equal(code, 0);
+  assert.match(out, /decision rerun/);
+  assert.match(out, /the summary buries the risk section/, 'the words that will BE the gap, shown back before they are signed');
+  assert.match(out, new RegExp(`--decide rerun[\\s\\S]*--approve ${jobSpecHash(SPEC)}`),
+    'the invocation carries both: the only signer proof this repo has is the spec hash, and the decision rides it');
+});
+
+test('§1 REFUSED at launch: a signed paused resume with NO decision does not proceed', () => {
+  // The lean-rerun rule says the DEFAULT is which door the prompt leads with — never an
+  // action taken for the operator. So past the signature, a pause with no `--decide` is
+  // a refusal, not a re-run of the close that would only pause again.
+  const { code, out } = preview(['--resume', spineFile(pausedSpine()), '--approve', jobSpecHash(SPEC)]);
+  assert.equal(code, 2);
+  assert.match(out, /NO DECISION/);
+  assert.match(out, /--decide/);
+  assert.doesNotMatch(out, /ANTHROPIC_API_KEY not set/, 'it stops above the key: nothing about this needs a secret');
+});
+
+test('§1 tripwire: the runner HANDS the ruling to runJob, and builds it through the LIBRARY seam', () => {
+  // The decision SEMANTICS live in src/kinds.js (`normalizeHumanRuling`): three doors,
+  // no fourth, a rerun's text required. A script that re-spelled any of those would be
+  // a second rulebook for the one thing the signer is signing.
+  const src = readFileSync(RUNNER, 'utf8');
+  assert.match(src, /import \{[^}]*\bnormalizeHumanRuling\b/, 'the shape check is the library\'s');
+  assert.match(src, /humanRuling:\s*RULING/, 'and the normalised ruling reaches runJob — refused-but-unwired would pause forever');
+  assert.doesNotMatch(src, /\['accept', 'rerun', 'cancel'\]/, 'the door list is never re-spelled here');
+});
+
+// ══ the evidence package, as a pure rendering ══════════════════════════════════
+
+test('ruling 2: the package renders the ask, every stage, the changed set and the doors', () => {
+  const pause = pausedSpine().find((e) => e.type === 'hitl-pause');
+  const lines = evidencePackage({ pause, diff: null }).join('\n');
+  assert.match(lines, /Does this fix read like something you would ship\?/);
+  assert.match(lines, /changed-from-seed +satisfied/);
+  assert.match(lines, /63 → 0/, 'a measured stage shows its baseline and its value, which is the before/after a number can state');
+  assert.match(lines, /scanned 4 added lines/, 'and a stage that announced something says it (F28 — the announcement is the trim\'s honesty)');
+  assert.match(lines, /src\/fix\.js/);
+});
+
+test('ruling 2: a package with NOTHING to show says so rather than rendering an empty screen', () => {
+  const lines = evidencePackage({ pause: { stage: 'signer-reviews', stages: [], changed: {} }, diff: null }).join('\n');
+  assert.match(lines, /no stage results on the checkpoint/i);
+  assert.match(lines, /no changed files recorded/i);
+  assert.doesNotMatch(lines, /undefined|null/, 'an absence is written as prose, never as a rendered null');
+});
+
+test('F28/F6: the package announces a trimmed change list and reports an unreadable one as UNKNOWN', () => {
+  const trimmed = evidencePackage({
+    pause: { stage: 's', stages: [], changed: { paths: ['a.js', 'b.js'], more: 40 } },
+    diff: null,
+  }).join('\n');
+  assert.match(trimmed, /40 more/, 'the trim is announced, never silent');
+
+  const blind = evidencePackage({
+    pause: { stage: 's', stages: [], changed: { paths: [], unreadable: 'INSTRUMENT: the seed commit does not exist' } },
+    diff: null,
+  }).join('\n');
+  assert.match(blind, /UNKNOWN/);
+  assert.match(blind, /seed commit does not exist/, 'and the reason travels with it');
+  assert.doesNotMatch(blind, /nothing changed/i, 'an unreadable set is never rendered as a clean tree (F6)');
+});
+
+test('ruling 2: the line-level diff is rendered when it is there, and its ABSENCE is named when it is not', () => {
+  const pause = pausedSpine().find((e) => e.type === 'hitl-pause');
+  const withDiff = evidencePackage({
+    pause,
+    diff: { lines: ['diff --git a/src/fix.js b/src/fix.js', '+const x = 1;'], truncated: 12, untracked: ['new.js'], unavailable: null },
+  }).join('\n');
+  assert.match(withDiff, /\+const x = 1;/, 'the actual lines, which is what "never a bare approve?" means');
+  assert.match(withDiff, /12 more diff line/, 'a capped diff announces its cap');
+  assert.match(withDiff, /new\.js/, 'and an untracked file has no diff at all, so it is named separately rather than missed');
+
+  const without = evidencePackage({ pause, diff: { lines: [], truncated: 0, untracked: [], unavailable: 'the patient is not readable from here' } }).join('\n');
+  assert.match(without, /line-level diff UNAVAILABLE/);
+  assert.match(without, /not readable from here/);
+});
+
+// ══ the END-OF-RUN readouts — where a person first meets the pause ══════════════
+//
+// Past the approval gate, past a real patient and a real `runJob`, so no preview can
+// drive them (the same reason the stall and money-halt readouts in tests/resume-u.js
+// are pinned in source). What is pinned is what they must not stop doing.
+
+test('§5.2 the PAUSE readout shows the package and the doors where the person is standing', () => {
+  const src = readFileSync(RUNNER, 'utf8');
+  const at = src.indexOf("if (outcome === 'hitl-pause') {");
+  assert.ok(at > 0, 'the pause readout exists');
+  const end = src.indexOf('\n}', at);
+  assert.ok(end > at);
+  const block = src.slice(at, end);
+  assert.match(block, /evidencePackage\(/, 'the same package the preview renders — never a second assembly of one run\'s facts');
+  assert.match(block, /doorLines\(/, 'and the three doors, in the one order that is a rule');
+  assert.match(block, /--resume \$\{runid\}/, 'with the actual resume invocation, not the idea of one');
+  assert.match(block, /--approve \$\{specHash\}/, 'and the hash ALREADY signed: a decision moves no allowance, so nothing here needs re-signing');
+  assert.doesNotMatch(block, /\bdie\(|process\.exit/, 'a readout never changes the run\'s own exit');
+});
+
+test('§1 the CANCEL readout is terminal — it reports the spend and offers no continuation', () => {
+  const src = readFileSync(RUNNER, 'utf8');
+  const at = src.indexOf("if (outcome === 'hitl-cancel') {");
+  assert.ok(at > 0, 'the cancel readout exists');
+  const end = src.indexOf('\n}', at);
+  const block = src.slice(at, end);
+  assert.match(block, /TERMINAL|terminal/);
+  assert.doesNotMatch(block, /--resume/, 'cancel is a door that closes: offering a resume would re-open a verdict the signer already rendered');
+  assert.doesNotMatch(block, /--decide/, 'and there is nothing left to decide');
+  assert.doesNotMatch(block, /\bdie\(|process\.exit/);
+});
+
+test('§1 a pause writes NO bridge: the artifact is minted by a green, and a pause is not one', () => {
+  const src = readFileSync(RUNNER, 'utf8');
+  assert.match(src, /if \(outcome === 'green' && plan && !leaks\.length\)/,
+    'the bridge gate still reads the GREEN terminal only — a checkpoint that graduated a reusable plan would mint learning credit no close ever rendered');
+});
+
+test('§1/W-2 a paused run whose WALL is gone refuses, and NAMES that the decision is stuck behind it', () => {
+  // The interaction worth stating out loud rather than discovering in a live run: a
+  // pause keeps the clock stopped (ruling 1), but a run that had already burnt its
+  // wall when it paused cannot be answered at all — not even with an `accept`, which
+  // buys no worker round. The wall is governance and the runner does not get to rule
+  // that some decisions are free of it; the lever is a signed spec edit.
+  const wallMin = SPEC.maxWallMs / 60_000;
+  const t = (/** @type {number} */ m) => new Date(Date.parse('2026-08-04T10:00:00.000Z') + m * 60_000).toISOString();
+  const burnt = pausedSpine({ at: t(wallMin + 5) });
+  const { code, out } = preview(['--resume', spineFile(burnt), '--decide', 'accept', '--approve', jobSpecHash(SPEC)]);
+  assert.equal(code, 2);
+  assert.match(out, /WALL ALREADY EXHAUSTED/);
+  assert.match(out, /waiting on a DECISION and its wall is gone/, 'the consequence is named, not left to be discovered');
+  assert.match(out, /RAISE maxWallMs/, 'and the lever is the same signed spec edit every other wall stop names');
+  assert.doesNotMatch(out, /ANTHROPIC_API_KEY not set/, 'still above the key');
 });
