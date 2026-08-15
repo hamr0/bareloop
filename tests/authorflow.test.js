@@ -171,12 +171,18 @@ test('question sets: exactly three, keyed by class, and only the green one is bu
   }
 });
 
-test('question sets: the GREEN set asks nothing about a genre — the confirm slot is gone (D13 slot superseded)', () => {
+test('question sets: the GREEN set asks nothing about a genre and nothing about the repo — both slots are gone', () => {
   const numbers = Object.keys(GREEN_QUESTIONS).map(Number).sort((a, b) => a - b);
-  assert.deepEqual(numbers, [1, 2, 3, 4, 5, 6], 'the seventh slot was the genre confirm and it is deleted');
+  // CONTIGUOUS FROM 1, which is the load-bearing half: the number a person is shown
+  // is the key their answer is filed under, so a deletion renumbers rather than
+  // leaving a hole. Two slots have gone this way — D13's genre confirm, and the
+  // repo question hamr dropped once `--patient` made it a second answer for a fact
+  // the machine already holds.
+  assert.deepEqual(numbers, [1, 2, 3, 4, 5]);
   assert.deepEqual(requiredAnswersFor('green'), numbers);
   const all = Object.values(GREEN_QUESTIONS).join(' ');
   assert.ok(!/type[- ]?fix|type checker|TYPES/i.test(all), `a genre-specific slot survives: ${all}`);
+  assert.ok(!/repo|repository/i.test(all), `the repo arrives as repoPath, never as prose: ${all}`);
   for (const q of Object.values(GREEN_QUESTIONS)) assert.ok(q.trim().endsWith('?'), q);
 });
 

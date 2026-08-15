@@ -4793,3 +4793,153 @@ grounds:
 - **Scape's own design is context, not adopted.** Its watchdog auto-approvals are an agent
   authoring its own arbiter, and it carries no close and no learning loop — the mechanism read
   is what transfers, nothing downstream of it.
+
+---
+
+## Addendum v1.67 — 2026-08-15 (a KNOWN LIMITATION recorded rather than fixed: the outside watchdog measures silence in CALENDAR time, so a long machine suspend can read as a stall — hamr: *"leave it and mark it in prd as possible known limitations"*)
+
+**DOCS ONLY. Nothing is built and nothing is changed by this addendum.** It records an
+accepted limit of the outside watchdog so it is a known cost rather than a surprise the
+next long run discovers. The ruling is hamr's, in-turn, 2026-08-15: leave the code as it
+is and mark it here.
+
+### 1. The limit, stated so it can be recognised in an artifact
+
+`scripts/u-watchdog.mjs` — the separate-process guard F67 built, because a guard inside the
+run shares the run's fate — measures the run's silence with **calendar time**: `Date.now()`
+at every poll, against the spine file's `mtime`/size from one `stat(2)`. Its `stale` trigger
+is the one that fires on **inactivity alone**; it carries no deadline term at all (the
+decision table's first row is `any | cold >= staleMs | KILL 'stale'`).
+
+A machine **suspend** freezes the watchdog exactly as it freezes the run — both live in the
+operator's own `user.slice`, and the separate process is separate from the run, not from the
+kernel. The wall clock, however, keeps running across the sleep. So the FIRST poll after wake
+reads the whole suspended interval as spine silence: `spineColdMs` comes back as the entire
+sleep, which is unconditionally past any `staleMs` window, and the guard kills a run that is
+alive and about to produce its next byte. F72 recorded this happening: a healthy run, 12.2
+minutes in and walking a typecheck gap 61 → 20, was killed on the first post-thaw tick with
+`coldMs 27,108,007` against `staleMs 4,200,000` — the response it was waiting on completed
+**6 ms** later.
+
+**The secondary skew, same cause, different severity.** `startedAt` is also `Date.now()`, so
+`elapsed` includes suspended minutes. Post-suspend the watchdog can therefore consider a run
+**past deadline** while the run's own wall still has time left. This one does NOT kill a
+working run: the `wall-dead` trigger requires the spine flat for `deadMs` **as well as** the
+deadline passed, so an active run survives it and merely gets the LOUD `PAST DEADLINE …
+NOT killing` line every poll. It is a reporting divergence between two clocks, not a stop.
+
+### 2. Why it is LEFT AS-IS
+
+- **The standing mitigation is operational and already in the launch path.** Paid runs hold
+  `systemd-inhibit --what=idle:sleep`, which is what actually prevents the machine from
+  suspending under a run at all. Both `run-u.mjs` and `run-reuse.mjs` now PRINT that
+  invocation at launch, so the protection is in front of the operator rather than in a
+  memory rule.
+- **The half that charges money is already fixed, and monotonically.** The *runner's* own
+  clock (`src/clock.js`) reads `performance.now()` — libuv's `uv_hrtime`, which does not
+  accrue across suspend — since `f154eb2`. Suspended minutes never charge against a signed
+  wall. The remaining exposure is the watchdog's read of *silence*, not the arbiter's read of
+  *time spent*.
+- **The fail-safe direction is right, and the alternative is worse.** A guard that cannot
+  distinguish a frozen event loop from a frozen machine must err toward killing: F67 exists
+  because an 81.5-minute wedge produced no bytes and no guard fired. Teaching this one to
+  discount suspended intervals would widen the exact window F67 was built to close, and it
+  would do so with a second clock source inside a file whose whole design is "no shared code,
+  no shared failure, one `stat(2)` per poll".
+- **A killed run is not a lost one.** The kill is recorded before the signal goes out
+  (`<spine>.watchdog.json`, reason `stale`, with the marker's value and age), and resume is
+  STEP-level — so the cost of this limit firing is a resumable stop with a written cause, not
+  a silent loss.
+
+### 3. Cross-references
+
+- **F72** (`docs/FINDINGS.md`) — the measured instance, including the journal-reconciled
+  timeline and the timezone confound that first produced a false *"the watchdog failed"*
+  reading. It did not fail; it fired exactly as specified, on a premise the sleep had
+  invalidated.
+- **The W-3 ruling** (hamr, 2026-07-30, verbatim): *"the kill from outside should check for
+  activity/bytes or other markers for activity, not a silent kill"* — which is why the
+  `stale` trigger reads bytes at all, and why this limit is a **wrong premise about what
+  silence means**, never a silent clock-only kill.
+
+### 4. Not claimed
+
+No claim is made that the limit is rare, and none that the inhibitor is airtight — a run
+launched without it is exposed, which is precisely why the launch banner prints it. If this
+fires again on a run that WAS inhibited, that is new evidence and belongs in FINDINGS, not
+under this park.
+
+---
+
+## Addendum v1.68 — 2026-08-15 (hamr drives the terminal interview himself and rules on it: the repo question is DROPPED, the scope question is WIDENED, and the prose stops citing findings at the person answering)
+
+**Source: hamr running `scripts/run-interview.mjs` end to end, not a review.** Every change here
+is his wording or his ruling, recorded verbatim where it was a ruling. The interview questions
+are frozen artefacts (prereg §5, PRD v1.57 §2), so a change to them is an amendment, and this
+is it.
+
+### 1. Q6 — *"Is there a code repo I can look at? Where?"* — is DELETED (hamr: *"drop Q6"*)
+
+**The question was asking for something the system already had, in a worse form.** The
+repository reaches `runInterview` as `repoPath` — STRUCTURED, MANDATORY input, taken from
+`--patient`, which both `run-interview.mjs` and `run-author.mjs` refuse to start without
+(*"the close is authored against a repository on this machine, never out of prose"*). Nothing
+downstream ever read the answer: the scout reads `repoPath`.
+
+So the slot could only do two things, both bad. It taxed a non-engineer with a question the
+machine had already answered — the exact SWE tax this product's premise refuses. And it opened
+a second channel for one fact, which is how two answers drift apart. hamr's own answer on the
+live run was *"Yes — the patient itself."*: a true sentence carrying no information, typed by
+the person who had just passed the path on the command line.
+
+**The set RENUMBERS contiguously from 1** rather than leaving a hole at 6. The number a person
+is shown is the key their answer is filed under, and a gap is a hole in a form nobody can
+explain. Consequences, stated because they are silent otherwise:
+
+- the green set is **five** questions; hitl is those five plus the signer's ask, which is now
+  **6**, not 7;
+- **nothing hardcodes a count.** `run-author.mjs`, `run-interview.mjs` and the suite all read
+  `requiredAnswersFor(cls)`. Two slots have now been deleted from this set (D13's genre confirm,
+  then this one) — a literal would have gone stale twice while still passing once;
+- **an `answers.json` written before this change is silently MISREAD.** Its key `6` was the repo
+  answer and now reads as hitl's signer-ask; its key `7` — the real signer-ask — is dropped as
+  unasked, and `runInterview` returns `ok` because the five it requires are all present. The
+  remedy is to re-run the interview, which costs $0 and calls no model. **No compatibility shim
+  was built and none is proposed silently**: a mechanical detector is available if hamr wants one
+  (a live class asks at most six questions, so an answers file carrying a key `7` can only be
+  old-shape and could be refused outright) — it is named here and NOT built, because what
+  `runInterview` accepts is admission territory.
+
+### 2. Q2 is WIDENED — the read-only half of the same decision
+
+Now: *"Which files or folders should change? And which files should the work read or draw from
+(they stay untouched)?"* One decision for the person answering — what the work touches, and what
+it touches only to look at — so it is one answer, not two slots. The composer already had a use
+for the second half and no channel that carried it.
+
+### 3. The interview's own prose: no finding numbers at the person answering
+
+**A finding number in a user-facing prompt is a private reference standing where an instruction
+belongs.** The person answering has not read the findings and never will. Three prompts were
+re-worded to hamr's own wording; the RULES behind them are unchanged in every case:
+
+- **the GOAL prompt** stops printing *"F87, paid for in a live run"* and states the same law as
+  a price the person can act on: say everything you'll check, because *"anything you leave out
+  here still gets checked at the very end, and finding it only then wastes the run's money"*;
+- **the FENCE prompt** says what a fence IS before saying what may not be done to it — the files
+  the worker may WRITE, everything else read-only, patterns relative to the repo root, and
+  absolute paths refused *because the run works on a copy of the repo* (which is also the
+  standing patients-are-copies rule, now said where it bites);
+- **the multi-line hint** spells the keystroke instead of naming the convention: *"press Enter on
+  an empty line, i.e. Enter twice, to finish an answer"*.
+
+**Q6 of the hitl set (the signer's ask) keeps its wording** on hamr's earlier call. A SWEEP of
+the remaining user-facing lines for internal jargon was run and reported to hamr; **nothing else
+was changed**, because user-facing prose needs his sign-off before it lands.
+
+### 4. Not claimed
+
+This addendum changes what is ASKED and how it is worded. It changes nothing about what the
+close judges, what the validator admits, or what any signature covers — no signed spec hash
+moves. The one behavioural risk it creates is the stale-`answers.json` misread in §1, and that
+is stated rather than papered.

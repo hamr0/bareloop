@@ -163,42 +163,63 @@ export const STRUCTURE_INSTRUCTION_TEXT = 'Your reply could not be read as one J
  * cannot emit anything else (D2/D3), so a genre it has never seen is a
  * composition problem, not a catalogue problem.
  *
- * The GREEN set is questions 1–6 of the frozen TYPES set (prereg §5) BYTE FOR
- * BYTE. What is gone is the seventh slot — D13's genre CONFIRM ("this looks like
- * a type-fixing job, correct?") — superseded in full: the interview never asks
- * about a genre again. The refusal it carried did not disappear; it MOVED to the
- * composer, on the same counted `request-red` path (see `authorCloseForJob`).
- * The remaining six are already genre-neutral, which is why generalising them
- * required deleting a slot rather than rewording one.
+ * The GREEN set descends from questions 1–6 of the frozen TYPES set (prereg §5).
+ * TWO slots have been deleted since, both because the interview was ASKING FOR
+ * SOMETHING IT ALREADY HAD or already knew:
+ *
+ *   - D13's genre CONFIRM ("this looks like a type-fixing job, correct?") —
+ *     superseded in full: the interview never asks about a genre again, and the
+ *     refusal it carried MOVED to the composer, on the same counted
+ *     `request-red` path (see `authorCloseForJob`);
+ *   - "Is there a code repo I can look at? Where?" — DROPPED on hamr's ruling
+ *     after he drove the terminal interview himself (2026-08-15, verbatim: *"drop
+ *     Q6"*). The repository is a MANDATORY, STRUCTURED input already —
+ *     `runInterview`'s own `repoPath`, which the runner takes from `--patient` and
+ *     refuses to start without. Asking a person to re-type in prose a path the
+ *     machine is holding in a variable is the SWE tax this product refuses, and
+ *     it invites a second, drifting answer for the same fact (hamr's own answer
+ *     on the live run was *"Yes — the patient itself."*). Nothing downstream lost
+ *     anything: the scout reads `repoPath`, never the answer.
+ *
+ * Question 2 was WIDENED in the same ruling: it now asks for the read-or-draw-from
+ * files as well as the ones that change. The two halves belong in one answer
+ * because they are one decision for the person answering — what the work touches,
+ * and what it touches only to look at.
+ *
+ * The five that remain are genre-neutral, which is why every generalisation so far
+ * has deleted a slot rather than reworded one. They are NUMBERED CONTIGUOUSLY from
+ * 1: the number a person sees is the key their answer is filed under, and a gap
+ * would be a hole in a form nobody can explain.
  */
 export const GREEN_QUESTIONS = Object.freeze({
   1: 'What do you want done?',
-  2: 'Which files or folders should change?',
+  2: 'Which files or folders should change? And which files should the work read or draw from (they stay untouched)?',
   3: 'Is there anything that must not change?',
   4: 'How do you check today whether it\'s working?',
   5: 'What would make you say this came back worse than before?',
-  6: 'Is there a code repo I can look at? Where?',
 });
 
 /**
- * THE HITL SET (N4 slice 1) — the six green questions BYTE FOR BYTE, plus one.
+ * THE HITL SET (N4 slice 1) — the green questions BYTE FOR BYTE, plus one.
  *
- * The six are unchanged deliberately rather than economically: the
+ * The five are unchanged deliberately rather than economically: the
  * mechanical-first composition law (2026-08-07) says every hitl close is
  * *deterministic stages first, judge minimal, human last*, so a hitl job needs
  * exactly the same mechanical facts a green one does — what changes, what must
  * not, how it is checked today, what "worse" looks like. Rewording them would
  * fork one interview into two that drift.
  *
- * The seventh is the only thing the green set cannot supply, and it is not a
+ * The last one is the only thing the green set cannot supply, and it is not a
  * flourish: `human-confirms` requires an `ask` — the question the signer answers
  * at the end of the run — and nothing else in the interview names it. Without it
  * the composer would have to invent what a person is deciding, which is the one
- * thing a human stage must never have done for it.
+ * thing a human stage must never have done for it. It is the SPREAD's next number
+ * rather than a fixed one, so a green-side deletion renumbers it instead of
+ * leaving a gap (it was 7 while the green set held six, and is 6 now it holds five).
  */
 export const HITL_QUESTIONS = Object.freeze({
   ...GREEN_QUESTIONS,
-  7: 'When you look at the finished result yourself, what are you deciding?',
+  6: 'When you look at the finished result yourself, what are you deciding?',
 });
 
 /**

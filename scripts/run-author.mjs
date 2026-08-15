@@ -1,6 +1,6 @@
 // RUN-AUTHOR — the first LIVE end-to-end of the close-authoring pipeline (M1–M4b).
 //
-// Seven interview answers in; a REAL scout over a REAL repository; a REAL model
+// The picked class's interview answers in; a REAL scout over a REAL repository; a REAL model
 // filling the typed declaration form; the operator's own half of the spec folded
 // in; the job validator; and D9's three mechanical gates. What comes out is a
 // resolved spec, its hash, and the evidence to sign against.
@@ -36,10 +36,13 @@
 //                  defaulted class would be this script answering a question the
 //                  person was asked. v1 admits `green`; the other two return the
 //                  honest counted refusal.
-//   answers.json   {"1": "...", ..., "6": "..."}  the picked class's own frozen
-//                  questions (green: six; the seventh slot was D13's genre
-//                  confirm and is DELETED — the interview never asks about a
-//                  genre, and that refusal moved to the composer).
+//   answers.json   {"1": "...", ...}  the picked class's own frozen questions,
+//                  keyed by the LIBRARY's own numbers (`requiredAnswersFor`) —
+//                  green: five, hitl: those five plus the signer's ask. Never a
+//                  count spelled here: two slots have already been deleted (D13's
+//                  genre confirm, then the repo question hamr dropped once the
+//                  mandatory --patient made it redundant), and a hardcoded number
+//                  would have gone stale twice.
 //   specdraft.json the OPERATOR half of a job-v1 spec — budgets, fence, cadence,
 //                  goal, tools, escalation. NO close, NO verdictType: the close is
 //                  what this pipeline authors, and the class comes from --verdict.
@@ -74,7 +77,15 @@ const answersArg = arg('answers');
 const draftArg = arg('draft');
 const outArg = arg('out');
 const verdictArg = arg('verdict');
-const LANG = arg('lang') ?? 'js';
+// Same rule as the interview that hands this script its command line: absent takes
+// the default, present-with-no-value stops LOUD. A silently empty language reaches
+// the genre lookup as "" and dies there anyway, but as a genre-data error rather
+// than as the argv typo it is.
+const langArg = arg('lang');
+if (langArg !== null && langArg.trim() === '') {
+  die('--lang was given with no value — pass a language (e.g. `--lang js`), or omit the flag to take the default');
+}
+const LANG = langArg ?? 'js';
 const timeoutArg = arg('timeout');
 const TIMEOUT_MS = timeoutArg === null ? DEFAULT_TIMEOUT_MS : Number(timeoutArg);
 /** NO DEFAULT, deliberately: `null` is "nobody set one" and means UNBOUNDED. It

@@ -15,7 +15,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
   every coupled site moved together: `LOCKED_VERDICTS` / `LOCKED_CLASSES` drop it,
   `DECLARED_CLOSE_CLASSES` widens to `['hard','hitl']`, the class battery is the GREEN mechanical
   battery inherited verbatim (hamr's OPEN-1 ruling: nothing a human stage cannot see), and the
-  interview gains a hitl question set (the six green questions byte for byte, plus the one thing
+  interview gains a hitl question set (the green questions byte for byte, plus the one thing
   they cannot supply — the question the signer actually answers). **`soft-green` stays
   declared-but-locked**: its judged floor is slice 2, and a wobbly ruler must mint nothing.
 - **`human-confirms` goes live as the one kind that measures nothing.** Its whole parameter
@@ -79,6 +79,35 @@ so a person's deciding time is never billed to it. What an adopter's own runner 
   a `judged` close stage and executing BA-20's acceptance criteria live (running `calibrate`
   against the frozen floor and naming the hash it graded) are deferred to N4's opening — a
   verified delivery, not a verified acceptance.
+
+- **The interview loses its repo question and widens its scope question — hamr drove the terminal
+  himself and ruled on the wording (2026-08-15).** `GREEN_QUESTIONS` drops *"Is there a code repo I
+  can look at? Where?"*: the repository is already MANDATORY STRUCTURED input (`runInterview`'s
+  `repoPath`, taken from `--patient`, without which nothing starts), so asking a person to re-type
+  a path the machine is holding is the SWE tax this product exists to refuse — and it invites a
+  second, drifting answer for one fact (hamr's own live answer was *"Yes — the patient itself."*).
+  Question 2 gains the other half of the same decision — *"…And which files should the work read or
+  draw from (they stay untouched)?"* The sets **renumber contiguously from 1**, so the green set is
+  five questions and hitl's signer-ask is now **6**, not 7. Nothing hardcodes a count: `run-author`,
+  `run-interview` and the suite all read `requiredAnswersFor(cls)`. **Adopter note: an
+  `answers.json` written before this change is SILENTLY MISREAD** — its key `6` was the repo answer
+  and now reads as hitl's signer-ask, and its key `7` is dropped as unasked. Re-run the interview
+  (it is $0 and calls no model) rather than hand-editing.
+- **The interview's own prose stops citing finding numbers and says the mechanics out loud.** The
+  goal prompt no longer prints *"F87"* at a person who has never read the findings — the rule is
+  unchanged and the price is now named as a price. The fence prompt says what a fence IS (writable
+  files, everything else read-only), that patterns are repo-root-relative, and that absolute paths
+  are refused because the run works on a copy. The multi-line hint spells the keystroke: *press
+  Enter on an empty line, i.e. Enter twice*.
+
+### Fixed
+
+- **`--lang` given with no value no longer poisons the command the interview prints.** `arg()`
+  returns the EMPTY STRING for a flag typed with nothing after it and `?? 'js'` passes an empty
+  string straight through, so the printed next-step command collapsed to `--lang  --budget 2.5` —
+  copy-paste it and `run-author` reads the word `--budget` as its language. Both scripts now stop
+  LOUD on a present-but-empty `--lang` (an ABSENT flag still takes the default, the same rule the
+  money ceilings are parsed by).
 
 ## [0.10.0] — 2026-08-13
 

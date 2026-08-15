@@ -70,7 +70,11 @@ test('the class\'s own frozen questions are asked ONE AT A TIME, byte for byte, 
 
   const qs = questionsFor('hitl');
   const nums = requiredAnswersFor('hitl');
-  assert.equal(nums.length, 7, 'the hitl set is the six green questions plus the human stage\'s own ask');
+  // DERIVED, never a literal: the hitl set is the green set plus the human stage's
+  // own ask, and green has now lost two slots (D13's genre confirm, then the repo
+  // question). A hardcoded count here would have gone stale twice.
+  assert.equal(nums.length, requiredAnswersFor('green').length + 1, 'the hitl set is the green questions plus the human stage\'s own ask');
+  assert.deepEqual(nums, nums.map((_, i) => i + 1), 'numbered contiguously from 1 — the number shown is the key the answer is filed under');
   let at = -1;
   nums.forEach((q, i) => {
     const line = `${q}. ${qs[q]}`;
@@ -81,13 +85,21 @@ test('the class\'s own frozen questions are asked ONE AT A TIME, byte for byte, 
   });
 });
 
-test('the GREEN class gets its own six — the set is read from the library, never from a copy here', () => {
+test('the GREEN class gets its own set, one shorter than hitl — read from the library, never from a copy here', () => {
   const out = outDir();
   const r = interview({ verdict: 'green', out, lines: session('green') });
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /── 6 of 6 /);
-  assert.doesNotMatch(r.out, /── 7 of /, 'the seventh slot belongs to hitl: a human stage needs an ask, and a green close has none');
-  assert.doesNotMatch(r.out, new RegExp(questionsFor('hitl')[7].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  // DERIVED from the library on both sides. Green has lost two slots since it was
+  // frozen (D13's genre confirm, then the repo question hamr dropped once
+  // `--patient` made it a second answer for a fact the machine already holds), so a
+  // literal count here would have gone stale twice while still passing once.
+  const greenNums = requiredAnswersFor('green');
+  const hitlNums = requiredAnswersFor('hitl');
+  const last = hitlNums[hitlNums.length - 1];
+  assert.equal(greenNums.length + 1, hitlNums.length, 'the hitl set is green plus the human stage\'s own ask');
+  assert.match(r.out, new RegExp(`── ${greenNums.length} of ${greenNums.length} `));
+  assert.doesNotMatch(r.out, new RegExp(`── ${greenNums.length + 1} of `), 'the extra slot belongs to hitl: a human stage needs an ask, and a green close has none');
+  assert.doesNotMatch(r.out, new RegExp(questionsFor('hitl')[last].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
 
 test('tripwire: the script SPELLS no question of its own', () => {
@@ -109,8 +121,12 @@ test('it writes exactly what run-author.mjs consumes: the answers, and the OPERA
   assert.equal(r.code, 0, r.out);
 
   const answers = JSON.parse(readFileSync(join(out, 'answers.json'), 'utf8'));
-  assert.deepEqual(Object.keys(answers).map(Number), requiredAnswersFor('hitl'), 'keyed by the question numbers, which is how run-author reads them');
-  assert.equal(answers[7], 'answer to question 7');
+  const hitlNums = requiredAnswersFor('hitl');
+  assert.deepEqual(Object.keys(answers).map(Number), hitlNums, 'keyed by the question numbers, which is how run-author reads them');
+  // the LAST answer is the human stage's own ask, and it is the one a green run has
+  // no slot for — named by the library's own last number rather than by a literal
+  const last = hitlNums[hitlNums.length - 1];
+  assert.equal(answers[last], `answer to question ${last}`);
 
   const draft = JSON.parse(readFileSync(join(out, 'specdraft.json'), 'utf8'));
   assert.equal(draft.schema, 'job-v1');

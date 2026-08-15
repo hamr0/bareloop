@@ -48,7 +48,18 @@ const die = (/** @type {string} */ m) => { console.error(m); process.exit(2); };
 const patientArg = arg('patient');
 const outArg = arg('out');
 const verdictArg = arg('verdict');
-const LANG = arg('lang') ?? 'js';
+// An ABSENT `--lang` takes the default; a PRESENT one with no value is an operator
+// error and stops LOUD, on the same rule the ceiling below is parsed by. `?? 'js'`
+// alone would not catch it — `arg` returns the EMPTY STRING for a flag typed with
+// nothing after it, and nullish-coalescing passes an empty string straight through.
+// The consequence was not cosmetic: `--lang` and its value are printed as the NEXT
+// STEP's command, and an empty value collapses them into `--lang  --budget 2.5`, so
+// the copy-pasted command hands run-author the word `--budget` as its language.
+const langArg = arg('lang');
+if (langArg !== null && langArg.trim() === '') {
+  die('--lang was given with no value — pass a language (e.g. `--lang js`), or omit the flag to take the default. It is NOT defaulted here: the flag and its value are printed back as the paid step\'s own command, and an empty one silently eats the flag that follows it.');
+}
+const LANG = langArg ?? 'js';
 /** the AUTHORING ceiling, parsed by the same rule `run-author.mjs` parses it with
  * (`parseCeiling`): absent is UNBOUNDED and announced, a malformed value is an
  * error rather than a silent fallback. It is not stored in anything — it is handed
@@ -181,7 +192,7 @@ say(`  out      ${OUT}`);
 say(`  ${ceilingLine(CEILING_USD)}`);
 say(`  asks     ${REQUIRED.length} frozen question(s) for this class, then the numbers and names the job spec needs`);
 say('  no model is called from here: this collects your answers and hands them to run-author.mjs, which does the paid part under the ceiling above');
-say('  (a blank line ends an answer — several lines are fine)');
+say('  (answers can be several lines — press Enter on an empty line, i.e. Enter twice, to finish an answer)');
 
 // ── 1. the class's own frozen questions, one at a time ───────────────────────
 /** @type {Record<string, string>} */
@@ -208,15 +219,22 @@ say('It names the spec file you sign, the branch the run works on, and the spine
 const jobName = await readAnswer('the job name',
   'the job needs a name — it is what the spec file, the run\'s work branch and its spine are all called. Again:');
 say('');
-say('The GOAL, as the run will be judged on it. F87, paid for in a live run: the goal has to STATE everything the');
-say('close will check — nothing derives one from the other, and an unstated check is a cost the run finds at its tail.');
+// F87 said in plain words, which is the only form it can be said in HERE: the person
+// answering is not reading the findings, and a finding number in a prompt is a private
+// reference standing where an instruction belongs. The RULE is unchanged — the goal
+// must state everything the close will check — and so is its price, now named as a
+// price rather than as a citation.
+say('The GOAL — what the run is judged on at the end. In one or two sentences: what must be true at the end for');
+say('this to count as done? Say everything you\'ll check — anything you leave out here still gets checked at the');
+say('very end, and finding it only then wastes the run\'s money.');
 say('Your own answers, to save you scrolling:');
 for (const n of REQUIRED.slice(0, 3)) say(`  ${n}. ${QUESTIONS[n]}  →  ${answers[n].split('\n').join(' ')}`);
 const goal = await readAnswer('the goal', 'the goal is what the close judges against — there is no run without one. Again:');
 
 say('');
-say('The FENCE: which paths the worker may WRITE, as globs, comma-separated (e.g. `src/**`).');
-say('Operator law — the agent may narrow it and may never widen it.');
+say('The FENCE: which files the worker is allowed to WRITE — everything else is read-only.');
+say('Patterns are relative to the repo root, comma-separated (e.g. `src/**`). The run works on a copy of the');
+say('repo, so absolute paths are refused. The agent may narrow this and may never widen it.');
 const scopeText = await readAnswer('the write scope', 'the fence is not optional: a run with no fence is ungated spend. Again:');
 const writeScope = scopeText.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
 

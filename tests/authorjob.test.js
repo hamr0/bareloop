@@ -114,7 +114,6 @@ const ANSWERS = {
   3: 'Please do not touch the tests.',
   4: 'I run the checker by hand and read the list of complaints.',
   5: 'If the complaints only went quiet because something was told to look the other way.',
-  6: 'Yes, the repo is on this machine.',
 };
 
 const collector = () => {
@@ -167,18 +166,21 @@ test('a LOCKED class refuses at ADMISSION, BEFORE its questions run — counted 
   assert.deepEqual([...LIVE_CLASSES], ['green', 'hitl'], 'N4 slice 1 admits two; soft-green is slice 2');
 });
 
-test('the interview asks NOTHING about a genre — D13\'s confirm slot is gone, and answer 7 is not a slot', () => {
-  const { 6: _six, ...five } = ANSWERS;
-  assert.ok(runInterview({ verdictType: 'green', answers: five, repoPath: '/tmp/x' })
-    .reds.some((x) => x.path === 'answers.6'), 'six answers are required');
-  // a seventh answer is not read by anything: the confirm is not a slot any more,
-  // and "no" to a question nobody asked cannot refuse a job
-  const r = runInterview({ verdictType: 'green', answers: { ...ANSWERS, 7: 'no' }, repoPath: '/tmp/x' });
+test('the interview asks NOTHING about a genre and NOTHING about the repo — an unasked answer is not a slot', () => {
+  const { 5: _five, ...four } = ANSWERS;
+  assert.ok(runInterview({ verdictType: 'green', answers: four, repoPath: '/tmp/x' })
+    .reds.some((x) => x.path === 'answers.5'), 'every question in the set is required');
+  // an answer to a question NOBODY ASKED is not read by anything — the genre confirm
+  // is not a slot any more, and neither is the repo question hamr dropped. "no" to
+  // either cannot refuse a job, and neither can enter the record.
+  const r = runInterview({ verdictType: 'green', answers: { ...ANSWERS, 6: 'no', 7: 'no' }, repoPath: '/tmp/x' });
   assert.equal(r.ok, true, JSON.stringify(r.reds));
   assert.equal(r.refusal, null);
-  assert.equal(Object.hasOwn(r.answers, '7'), false, 'an unasked answer never enters the record');
+  assert.equal(Object.hasOwn(r.answers, '6'), false, 'an unasked answer never enters the record');
+  assert.equal(Object.hasOwn(r.answers, '7'), false);
   const asked = Object.values(questionsFor('green')).join(' ');
   assert.ok(!/type[- ]?fix|type checker/i.test(asked), asked);
+  assert.ok(!/repo|repository/i.test(asked), 'the repository is repoPath — structured input, never a prose answer');
 });
 
 test('an unfinished interview is REDS, never demand — an incomplete form is not a user asking for a capability', () => {
