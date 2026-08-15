@@ -34,7 +34,7 @@ import { FIX_STRIKE_LIMIT, readGrade } from '../src/trend.js';
 import { validateJob, jobSpecHash } from '../src/job.js';
 import { makeRegistry, saveBridge, loadBridge } from '../src/bridges.js';
 import { makeSpine } from '../src/spine.js';
-import { readSpine, scriptedProvider, initPatientRepo } from './helpers.js';
+import { readSpine, scriptedProvider, initPatientRepo, mockWallClock } from './helpers.js';
 
 const base = mkdtempSync(join(tmpdir(), 'resume-test-'));
 let n = 0;
@@ -2512,7 +2512,7 @@ const wallCutProvider = (burnWall) => {
 test('F83: a floor leg 1 MINTED (the wall cut a call mid-flight) reaches the resume seam — the restart fold reads the terminal, not just the rounds it can count', async (t) => {
   const wd = cyclePatient();
   const job = CYCLEJOB({ maxWallMs: 120_000 });
-  t.mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
+  mockWallClock(t);
   const provider = wallCutProvider(() => t.mock.timers.tick(200_000));
   const file = join(wd, 'spine-wallcut.jsonl');
   const outcome = await runJob(job, {

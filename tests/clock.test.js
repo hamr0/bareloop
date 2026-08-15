@@ -29,6 +29,35 @@ function fakeNow(start = 1_000_000) {
   return { now: () => t, at: (ms) => { t = start + ms; } };
 }
 
+// ─── the DEFAULT source: monotonic, so suspended minutes never charge the wall ───
+//
+// hamr's ruling, 2026-08-15: "if computer suspended, time shouldn't count." The
+// mechanism is the clock source, not a correction applied afterwards — on Linux
+// CLOCK_MONOTONIC (what `performance.now()` reads through libuv's `uv_hrtime`)
+// "does not count time that the system is suspended" per clock_gettime(2), while
+// `Date.now()` (CLOCK_REALTIME) does. That difference was not theoretical: an
+// s2idle suspend mid-run charged 45 phantom minutes against a 45-minute wall.
+//
+// A test cannot suspend the machine, and simulating one would prove nothing about
+// the real kernel behaviour. What it CAN prove is the half that is ours: the
+// default clock no longer reads `Date.now`, so nothing a wall-clock jump does
+// (suspend, an NTP step, a manual date change) can reach the deadline at all.
+
+test('the DEFAULT clock is MONOTONIC, never Date.now: a wall-clock jump forward — what a suspend looks like to CLOCK_REALTIME — moves neither elapsed nor the deadline (hamr, 2026-08-15: suspended minutes never charge a signed wall)', () => {
+  const realDateNow = Date.now;
+  try {
+    // a DEFAULT clock: no `now` injected, which is the shape every real run builds
+    const c = createClock({ maxWallMs: 60_000 });
+    const jumpedTo = realDateNow() + 10 * 60_000; // ten minutes of "suspend", against a one-minute cap
+    Date.now = () => jumpedTo;
+    assert.ok(c.elapsedMs() < 1_000, `a Date.now jump must not move elapsed, and it read ${c.elapsedMs()}ms`);
+    assert.equal(c.expired(), false, 'ten minutes of wall-clock jump against a one-minute cap: on Date.now this run is dead, on the monotonic source it never started spending');
+    assert.ok(c.remainingMs() > 59_000, `the remainder is untouched too, and it read ${c.remainingMs()}ms`);
+  } finally {
+    Date.now = realDateNow;
+  }
+});
+
 // ─── unbounded: the honest absence of a cap ───
 
 test('with no maxWallMs the run is UNBOUNDED: remaining is Infinity, it never expires, and the absence is reported as absence (never a defaulted number)', () => {

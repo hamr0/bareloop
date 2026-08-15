@@ -538,6 +538,12 @@ if (arg('approve') !== specHash) {
   // a ruling is shown the ruling back — including the words that will BE the gap —
   // and one invocation to sign.
   const invoke = (/** @type {string} */ tail) => `  ANTHROPIC_API_KEY=... node scripts/run-u.mjs --job ${jobKey}${dead ? ` --resume ${RESUME}` : ''}${tail} --approve ${specHash}`;
+  /** the door the operator has already picked, as flags — hoisted out of the else
+   * below so the inhibitor line at the bottom can print the WHOLE command rather
+   * than a shape the operator has to assemble. Empty on an ordinary run and on the
+   * pause that has not been ruled on yet (there the three doors are the answer). */
+  const decisionTail = RULING === null ? ''
+    : ` --decide ${RULING.decision}${RULING.text === null ? '' : ` --text ${JSON.stringify(RULING.text)}`}`;
   if (PAUSED && RULING === null) {
     console.log('');
     for (const l of doorLines({
@@ -550,10 +556,26 @@ if (arg('approve') !== specHash) {
       console.log(`\n  decision ${RULING.decision}${RULING.decision === 'rerun' ? ' — and these words become the gap the fix worker converts from:' : ''}`);
       if (RULING.text !== null) for (const l of String(RULING.text).split('\n')) console.log(`           ${l}`);
     }
-    const tail = RULING === null ? ''
-      : ` --decide ${RULING.decision}${RULING.text === null ? '' : ` --text ${JSON.stringify(RULING.text)}`}`;
-    console.log(`\nTo approve and run:\n${invoke(tail)}`);
+    console.log(`\nTo approve and run:\n${invoke(decisionTail)}`);
   }
+  // THE INHIBITOR, printed rather than remembered (F72). A suspend freezes
+  // EVERYTHING: the outside watchdog is a poller, so it cannot observe — let alone
+  // kill — a run whose machine is asleep, and since hamr's 2026-08-15 ruling the
+  // run's own wall does not count those minutes either (src/clock.js is monotonic
+  // now). So a suspended run is simply unwatched for as long as it sleeps. This is
+  // the moment the operator can still do something about it, and run-reuse.mjs has
+  // printed the same line here since F72 was minted; the U runner carried it only as
+  // a comment, which is a rule nobody reads at the moment they launch.
+  console.log('\nLaunch under a sleep inhibitor — a suspend freezes every guard, including the outside watchdog (F72):');
+  console.log(PAUSED && RULING === null
+    // a pause with no ruling is choosing between three doors above; prefixing one of
+    // them would quietly recommend it, and the lean this surface was built with runs
+    // the other way (rerun first, never the rubber stamp)
+    ? '  systemd-inhibit --what=idle:sleep --why="bareloop u run" env <the door you picked, above>'
+    // `env` before the assignment on purpose: systemd-inhibit execs a COMMAND, and a
+    // bare `VAR=value` prefix is shell syntax it would try to run as one. The key
+    // still rides an env assignment and never argv (it must never reach a cmdline).
+    : `  systemd-inhibit --what=idle:sleep --why="bareloop u run" env \\\n  ${invoke(decisionTail).trim()}`);
   process.exit(arg('approve') === null ? 0 : 1);
 }
 
