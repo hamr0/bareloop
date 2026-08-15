@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { jobSpecHash } from '../src/job.js';
 import { PAUSE_TTL_MS } from '../src/reuse.js';
-import { deathAtOf, evidencePackage } from '../scripts/u-readout.mjs';
+import { deathAtOf, evidencePackage, resumeAtLines } from '../scripts/u-readout.mjs';
 
 const RUNNER = new URL('../scripts/run-u.mjs', import.meta.url).pathname;
 const SPEC = JSON.parse(readFileSync(new URL('../jobs/bareagent-u-types.json', import.meta.url), 'utf8'));
@@ -306,6 +306,72 @@ test('ruling 2: the line-level diff is rendered when it is there, and its ABSENC
   const without = evidencePackage({ pause, diff: { lines: [], truncated: 0, untracked: [], unavailable: 'the patient is not readable from here' } }).join('\n');
   assert.match(without, /line-level diff UNAVAILABLE/);
   assert.match(without, /not readable from here/);
+});
+
+// ══ WHERE THE RESUME PICKS UP — the phase a pause actually stops in ════════════
+//
+// The preview's "at" line says what the dollars being signed will buy. It knew two
+// phases, `steps` and `close`, and a PAUSE is neither: it happens AFTER the plan's
+// steps, at the close's human stage, so the step arithmetic ran off the end of the
+// plan and printed `at step 2 of 1 "(unknown)"` — a step count that exceeds the plan
+// and a step id nobody drafted. A person reading that cannot tell what they are
+// paying for, which is the one job this line has.
+
+test('#9 the pause is a PHASE, not a step past the end of the plan', () => {
+  const seed = { phase: 'steps', plan: { steps: [{ id: 'fix-types' }] }, completedSteps: [{ id: 'fix-types' }] };
+  const lines = resumeAtLines({ seed, paused: true }).join('\n');
+  assert.match(lines, /the human review/, 'the phase is named in plain words');
+  assert.match(lines, /all 1 step\(s\) finished/, 'and how much of the plan is behind it');
+  assert.doesNotMatch(lines, /step 2 of 1/, 'never a step count that exceeds the plan');
+  assert.doesNotMatch(lines, /\(unknown\)/, 'and never a step id nobody drafted');
+});
+
+test('#9 a pause that never got a plan says THAT, rather than borrowing the cold-start line', () => {
+  // the other pause site (src/planrun.js's close PRECHECK): every mechanical stage
+  // already passed on the untouched tree, so the run asked its person before drafting
+  // anything. "nothing paid is re-payable" is true and "the beginning" is not the phase.
+  const lines = resumeAtLines({ seed: null, paused: true }).join('\n');
+  assert.match(lines, /the human review/);
+  assert.match(lines, /no plan was ever accepted/i);
+  assert.doesNotMatch(lines, /step \d+ of/, 'there is no step to name');
+});
+
+test('#9 CONTROL: the two phases the line already knew are unchanged', () => {
+  const steps = resumeAtLines({
+    seed: { phase: 'steps', plan: { steps: [{ id: 'a' }, { id: 'b' }] }, completedSteps: [{ id: 'a' }] },
+    paused: false,
+  }).join('\n');
+  assert.match(steps, /at {7}step 2 of 2 "b" — 1 already finished and SKIPPED, not re-paid/);
+  assert.match(steps, /the plan is reloaded/);
+
+  const close = resumeAtLines({
+    seed: { phase: 'close', plan: { steps: [{ id: 'a' }] }, completedSteps: [{ id: 'a' }] },
+    paused: false,
+  }).join('\n');
+  assert.match(close, /at {7}the close and its fix loop — all 1 step\(s\) are done and are SKIPPED; the close re-runs for no tokens/);
+
+  const cold = resumeAtLines({ seed: null, paused: false }).join('\n');
+  assert.match(cold, /at {7}the beginning — it halted before a plan was accepted/);
+  assert.doesNotMatch(cold, /the plan is reloaded/, 'there is no plan to reload');
+});
+
+test('#9 a non-paused halt with every step finished does not walk off the end either', () => {
+  // the same arithmetic, one terminal over: a kill between the last step and the close
+  // leaves `phase:'steps'` with the plan exhausted, and the old line read `step 3 of 2`.
+  const lines = resumeAtLines({
+    seed: { phase: 'steps', plan: { steps: [{ id: 'a' }, { id: 'b' }] }, completedSteps: [{ id: 'a' }, { id: 'b' }] },
+    paused: false,
+  }).join('\n');
+  assert.match(lines, /all 2 step\(s\) finished/);
+  assert.doesNotMatch(lines, /step 3 of 2/);
+  assert.doesNotMatch(lines, /\(unknown\)/);
+});
+
+test('#9 E2E: the real preview of a paused checkpoint names the review, not a step past the plan', () => {
+  const { code, out } = preview(['--resume', spineFile(pausedSpine())]);
+  assert.equal(code, 0);
+  assert.doesNotMatch(out, /step 2 of 1/, 'the bug, through the real script');
+  assert.match(out, /at {7}the human review — all 1 step\(s\) finished/);
 });
 
 // ══ the END-OF-RUN readouts — where a person first meets the pause ══════════════

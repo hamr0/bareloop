@@ -23,7 +23,7 @@ import { normalizeHumanRuling } from '../src/kinds.js';
 import { readResume, resumeTreeGate, checkpointAgeGate, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS } from '../src/reuse.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
-import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines } from './u-readout.mjs';
+import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines } from './u-readout.mjs';
 
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
@@ -414,11 +414,12 @@ if (arg('approve') !== specHash) {
     // WHERE it picks up. Without this line "resume" covers two runs that cost very
     // different amounts — one that re-scouts and re-drafts from nothing, and one that
     // re-enters at the close — and the hash being signed authorizes the dollars either way.
-    const sd = rs.seed;
-    if (!sd) console.log('  at       the beginning — it halted before a plan was accepted, so nothing paid is re-payable');
-    else if (sd.phase === 'close') console.log(`  at       the close and its fix loop — all ${sd.plan.steps.length} step(s) are done and are SKIPPED; the close re-runs for no tokens`);
-    else console.log(`  at       step ${sd.completedSteps.length + 1} of ${sd.plan.steps.length} ${JSON.stringify(sd.plan.steps[sd.completedSteps.length]?.id ?? '(unknown)')} — ${sd.completedSteps.length} already finished and SKIPPED, not re-paid`);
-    if (sd) console.log('           the plan is reloaded from that run\'s own spine: no re-scout, no re-draft');
+    // …through `resumeAtLines` (scripts/u-readout.mjs), because a PAUSE is a phase this
+    // line did not have: it stops after the plan's steps, at the close's human stage, and
+    // the step arithmetic used to walk off the end of the plan (`at step 2 of 1
+    // "(unknown)"`). The rule the helper holds is that a step count may never exceed the
+    // plan, and that the phase is said in words.
+    for (const l of resumeAtLines({ seed: rs.seed, paused: dead.endOutcome === 'hitl-pause' })) console.log(l);
     // WHAT IT INHERITS as a trend baseline. Without this line the resumed run's
     // halt readout can name a direction the leg itself never measured, and a reader
     // has no way to tell that the number came from the leg before it.

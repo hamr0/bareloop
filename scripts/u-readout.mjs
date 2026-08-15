@@ -185,6 +185,68 @@ export function deathAtOf({ watchdogAt, events } = {}) {
 }
 
 /**
+ * WHERE A RESUME PICKS UP — the preview's `at` line, which is what says how much of
+ * the signed dollars this leg can still spend.
+ *
+ * `readStepCheckpoint` (src/reuse.js) knows two phases and a null: `steps` (re-enter
+ * the plan at the first unfinished step), `close` (every step landed; the close and
+ * its fix loop are what is left), and no checkpoint at all (the halt landed before a
+ * plan was accepted). The runner rendered those three directly, and a PAUSE fits none
+ * of them cleanly:
+ *
+ *  - a pause happens AFTER the plan's steps, at the close's human stage. On the
+ *    fixture a person actually meets, the checkpoint reads `phase:'steps'` with every
+ *    step green (the pause site emits no `outer-close` of its own), so the step
+ *    arithmetic ran off the end and printed `at step 2 of 1 "(unknown)"` — a step
+ *    count larger than the plan and an id nobody drafted. hamr found it on the first
+ *    resume preview he read;
+ *  - and the same walk-off is reachable one terminal over, with no person involved:
+ *    a kill between the last `step-end` and the `outer-close` leaves exactly that
+ *    shape, and read `step 3 of 2`.
+ *
+ * So the count is never allowed to exceed the plan, and the PHASE is said in words.
+ * Rendering only; it decides nothing and bounds nothing.
+ *
+ * @param {{seed: {phase?: string, plan?: any, completedSteps?: any[]}|null|undefined,
+ *   paused: boolean}} o `seed` is `readResume`'s `restart.seed`; `paused` is the
+ *   recorded terminal being `hitl-pause` — read off the spine, never off a flag.
+ * @returns {string[]} lines, ready to print
+ */
+export function resumeAtLines({ seed, paused }) {
+  const at = (/** @type {string} */ s) => `  at       ${s}`;
+  const reloaded = '           the plan is reloaded from that run\'s own spine: no re-scout, no re-draft';
+  if (!seed) {
+    // the pause has its OWN cold shape (src/planrun.js's close precheck: every
+    // mechanical stage already passed on the untouched tree, so the run asked its
+    // person before drafting anything). "the beginning" is where a resume of it
+    // starts and is not the phase it stopped in — both facts, in that order.
+    if (paused) {
+      return [at('the human review — no plan was ever accepted: this run reached its human stage at the close PRECHECK, '
+        + 'before it drafted anything'),
+      '           an accept re-runs the mechanical stages for no tokens; a rerun starts the plan from the beginning'];
+    }
+    return [at('the beginning — it halted before a plan was accepted, so nothing paid is re-payable')];
+  }
+  const total = Array.isArray(seed.plan?.steps) ? seed.plan.steps.length : 0;
+  const done = Array.isArray(seed.completedSteps) ? seed.completedSteps.length : 0;
+  if (paused) {
+    return [at(`the human review — all ${total} step(s) finished and are SKIPPED; the close reached its human stage, `
+      + 'and it re-runs for no tokens (what your answer costs after that is the door you pick)'), reloaded];
+  }
+  if (seed.phase === 'close') {
+    return [at(`the close and its fix loop — all ${total} step(s) are done and are SKIPPED; the close re-runs for no tokens`), reloaded];
+  }
+  // the plan is EXHAUSTED but no close was recorded: the halt landed between the last
+  // step and the close's first reading. There is no next step to name, and inventing
+  // one is what produced `step 3 of 2 "(unknown)"`.
+  if (done >= total) {
+    return [at(`the close — all ${total} step(s) finished and are SKIPPED, and the run stopped before the close rendered; `
+      + 'it runs next, for no tokens'), reloaded];
+  }
+  return [at(`step ${done + 1} of ${total} ${JSON.stringify(seed.plan.steps[done]?.id ?? '(unknown)')} — ${done} already finished and SKIPPED, not re-paid`), reloaded];
+}
+
+/**
  * F97 — the DOOMED RESUME read, the one the operator should make before signing.
  *
  * `u-msn0uccv` spent $0.82 re-entering the exact plan whose action was the diagnosed
