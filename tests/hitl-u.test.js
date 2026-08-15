@@ -11,7 +11,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -306,6 +306,43 @@ test('ruling 2: the line-level diff is rendered when it is there, and its ABSENC
   const without = evidencePackage({ pause, diff: { lines: [], truncated: 0, untracked: [], unavailable: 'the patient is not readable from here' } }).join('\n');
   assert.match(without, /line-level diff UNAVAILABLE/);
   assert.match(without, /not readable from here/);
+});
+
+// ══ THE PROVING JOB'S ROW — a runner half with no signer half yet ══════════════
+//
+// `litectx-maintainer` is N4's hitl proving job (hamr's ruling, 2026-08-13) and its
+// spec is authored LIVE, through the interview and run-author, and signed by hamr.
+// So the table row exists before the spec does, and the runner has to say which of
+// the two halves is missing rather than dying on a `readFileSync` stack.
+//
+// The assertion below reads the FILESYSTEM to decide which world it is in, and
+// asserts the whole of the behaviour in either: before the spec is authored, a
+// refusal that names it; after, an ordinary preview. What holds in BOTH — and is the
+// thing the fix is actually about — is that no ENOENT ever reaches the operator.
+
+test('the proving job refuses BY NAME while its spec is unauthored, and never crashes either way', () => {
+  const specPath = new URL('../jobs/litectx-maintainer.json', import.meta.url).pathname;
+  const { code, out } = preview([], 'litectx-maintainer');
+  assert.doesNotMatch(out, /ENOENT|no such file or directory/, 'the runner answers; the filesystem does not answer for it');
+  assert.doesNotMatch(out, /^\s+at .*run-u\.mjs/m, 'and it never answers with a stack trace');
+  if (existsSync(specPath)) {
+    assert.equal(code, 0, 'once the spec is authored and on disk, this is an ordinary preview');
+    assert.match(out, /hash {5}[0-9a-f]{64}/, 'with a hash to approve');
+  } else {
+    assert.equal(code, 2, 'an unauthored job is an operator stop, not a run');
+    assert.match(out, /there is no spec at .*litectx-maintainer\.json/);
+    assert.match(out, /run-interview\.mjs and scripts\/run-author\.mjs/, 'and it names where a spec comes from');
+    assert.match(out, /no hash to approve/);
+  }
+});
+
+test('the row carries the runner\'s half only — a patient COPY, its own seed, and its own spine', () => {
+  const src = readFileSync(RUNNER, 'utf8');
+  const row = src.slice(src.indexOf("'litectx-maintainer': {"));
+  assert.match(row.slice(0, 300), /workdir: '\/home\/hamr\/PycharmProjects\/bareloop-patients\/litectx-maintainer'/,
+    'a patient is ALWAYS a separate copy — the copy is the blast radius');
+  assert.match(row.slice(0, 300), /spine: 'litectx-maintainer-bareloop'/);
+  assert.match(row.slice(0, 300), /seed: '[0-9a-f]{40}'/, 'and a real 40-char seed, which is what the cold reset resets to');
 });
 
 // ══ WHERE THE RESUME PICKS UP — the phase a pause actually stops in ════════════

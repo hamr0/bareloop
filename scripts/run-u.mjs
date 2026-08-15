@@ -77,6 +77,22 @@ const JOBS = {
     spine: 'bareguard-u-bareloop',
     seed: '2ae8fcd37041c186524a6eb5e953b9752cd602fa',
   },
+  // N4's hitl PROVING job (build plan §Proving; hamr's ruling, 2026-08-13). The job
+  // has been dark since 507adbb deleted the legacy `steps[]` path its old spec was
+  // written against, and it comes back as a plan-flow job with an AUTHORED close.
+  //
+  // `jobs/litectx-maintainer.json` DOES NOT EXIST, and this row does not create it:
+  // the spec is authored live through scripts/run-interview.mjs → run-author.mjs and
+  // signed by hamr, goal and answers included. Until it lands the runner refuses by
+  // name (see the spec read below) — a row is the runner's half of a job, never the
+  // signer's. The patient is a COPY at the convention this table already uses, and
+  // the seed is that copy's own HEAD (litectx v0.32.0, 115213d).
+  'litectx-maintainer': {
+    spec: 'litectx-maintainer.json',
+    workdir: '/home/hamr/PycharmProjects/bareloop-patients/litectx-maintainer',
+    spine: 'litectx-maintainer-bareloop',
+    seed: '115213dcb4c9f468c1045a212e6802456ed9119e',
+  },
 };
 const CLOSE_TIMEOUT_MS = 900_000; // the slowest close stage is the suite (~23s aurora, ~53s litectx); headroom, not a budget
 // The close-fix loop's RETIRED iteration cap (PRD v1.46 §4). It no longer governs:
@@ -91,6 +107,10 @@ const CAP_RUNS = 4;
 const STRIKE_LIMIT = 2;
 
 const arg = (/** @type {string} */ n) => { const i = process.argv.indexOf(`--${n}`); return i === -1 ? null : (process.argv[i + 1] ?? ''); };
+/** every operator/config stop this script makes, in one exit code. Declared HERE,
+ * above the first thing that can refuse (the job table's own spec file), rather than
+ * beside the resume gates it used to sit with. */
+const die = (/** @type {string} */ m) => { console.error(m); process.exit(2); };
 // --model picks the DEFAULT worker tier (runner territory — the spec names no model, so
 // the signed hash is unaffected). Tier names, not model ids. This map is the OPERATOR's
 // and is deliberately WIDER than the planner's menu: since 2026-08-06 `STEP_MODELS` is
@@ -110,7 +130,23 @@ const target = JOBS[/** @type {keyof typeof JOBS} */ (jobKey)];
 if (!target) { console.error(`unknown --job "${jobKey}" — one of: ${Object.keys(JOBS).join(', ')}`); process.exit(2); }
 const WORKDIR = target.workdir;
 const SEED = target.seed;
-const spec = JSON.parse(readFileSync(new URL(`../jobs/${target.spec}`, import.meta.url), 'utf8'));
+// THE SPEC IS THE OTHER HALF, AND IT MAY NOT BE THERE YET. A row in the table above
+// is the RUNNER's half of a job — the patient, its seed, where the spine goes. The
+// spec is the SIGNER's half: it is authored (scripts/run-interview.mjs →
+// scripts/run-author.mjs) and signed, and nothing here may invent one. A row whose
+// spec has not been authored yet used to die on `readFileSync`'s ENOENT stack, which
+// reads as the runner being broken rather than as the job being unauthored.
+const specPath = fileURLToPath(new URL(`../jobs/${target.spec}`, import.meta.url));
+if (!existsSync(specPath)) {
+  die(`--job ${jobKey}: there is no spec at ${specPath}.\n`
+    + '  The table row is the runner\'s half of a job (patient, seed, spine); the SPEC is yours — authored through\n'
+    + `  scripts/run-interview.mjs and scripts/run-author.mjs, then signed. Nothing here can stand in for it: a job\n`
+    + '  with no spec has no goal, no close, no budget and no hash to approve.');
+}
+let spec;
+try { spec = JSON.parse(readFileSync(specPath, 'utf8')); } catch (e) {
+  die(`--job ${jobKey}: ${specPath} is not readable JSON (${e.message}) — a spec nobody can parse is a spec nobody signed`);
+}
 const specHash = jobSpecHash(spec);
 // `maxWallMs` is OPTIONAL in job-v1 and has NO DEFAULT — a spec without one is
 // time-unbounded by explicit operator choice, and the whole point of the missing
@@ -177,7 +213,6 @@ const RESUME = arg('resume');
  * work, its plan and its money exactly where they were. Answering it needs `--decide`
  * (below); every other entry here resumes on the hash alone. */
 const RESUMABLE_HALTS = CHECKPOINT_OUTCOMES;
-const die = (/** @type {string} */ m) => { console.error(m); process.exit(2); };
 
 // ── THE THREE DOORS (N4, 2026-08-12 §1) — the hitl surface, at the terminal ──
 //
