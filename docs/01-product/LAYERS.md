@@ -491,6 +491,19 @@ stage change.
   record), then softgreen + hitl on that surface.
 - A tightened reuse envelope changes the resolved hash → re-sign.
 
+**2026-08-15 — the industry converges on the ambition; the opening approach does not move.**
+An external fold of Anthropic's agentic-surfaces talk (context doc
+`docs/00-context/HARNESS-TALK-LEARNINGS.md`, PRD v1.69) records **"Dreaming"** — offline batch
+distillation of session logs into agent memory, reported as returning a "measurably smarter"
+agent. That is Layer 3's ambition said out loud by a team building it as product, which is
+worth knowing while the rung sits parked: the recipe box is not an idiosyncratic bet. It is
+also, on its own, worth **nothing as evidence** — no control is named, and CL-BENCH's read is
+still that memory systems LOSE to plain in-context learning once base capability is subtracted.
+So nothing here changes how this rung opens: the sub-dollar **pre-probe** still gates the
+machinery, the **three-arm control** (ON+lineage / ON-mechanical / OFF) still decides, and a
+learning claim still has to beat its own stateless control before it is anything but a
+capability claim in a memory costume.
+
 ---
 
 ## The kid version (start here whenever the map stops making sense)

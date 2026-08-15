@@ -4943,3 +4943,74 @@ This addendum changes what is ASKED and how it is worded. It changes nothing abo
 close judges, what the validator admits, or what any signature covers — no signed spec hash
 moves. The one behavioural risk it creates is the stale-`answers.json` misread in §1, and that
 is stated rather than papered.
+
+---
+
+## Addendum v1.69 — 2026-08-15 (an external fold: ONE practice is ADOPTED — the model-bump dead-weight replay — and two industry convergences are RECORDED with no doctrine moved)
+
+**DOCS ONLY. Nothing is built and nothing is fired here.** The origin is an outside source read
+and accepted this session: **"The evolution of agentic surfaces"**, Gagan Bhat & Isabella Kai He
+(Anthropic Applied AI — Claude Managed Agents), YouTube `K0X9QDRkIdg`. The full fold — what they
+found, and where each item lands on this repo's map — is the context document
+`docs/00-context/HARNESS-TALK-LEARNINGS.md`, written on the RSI-LEARNINGS pattern. As with that
+fold, the context document changes no doctrine by itself; this addendum is where the one adopted
+item enters the record, so it can be assessed when we come to it.
+
+### 1. ADOPTED — the model-bump dead-weight replay
+
+**The practice.** On every **worker-model tier change**, a **$0 archive replay** runs before the
+first paid row, asking one question: *which guards, rules and prompt registers here were built
+for failure modes the new model no longer produces?* Every candidate is named with the finding
+that minted it and the evidence that would retire it, and is then **PARKED for hamr's word**.
+Nothing is deleted on assertion, and nothing is deleted because a model looks stronger.
+
+**Origin, and why it is not just borrowed.** Their case was concrete: reset logic written for
+Sonnet 4.5's "context anxiety" became, on Opus 4.5, pure added latency and a cache-killer —
+scaffolding that encodes what a model *can't* do turns into dead weight the moment the model
+can. That is the general form of **F41**, which this repo paid for from the other end: Layer R's
+fixation detector was extinct on every current job *before it shipped*, and ships OFF by default
+for that reason. F41 found it by accident, in an archive sweep run for another purpose. The
+convergence is what makes it worth a habit: a guard against a real, measured failure quietly
+becomes cost the day the failure stops happening, and **nothing in a healthy system ever
+announces that it stopped**.
+
+**The trigger is the BUMP, not a build.** This is deliberately not a scheduled chore and not a
+rung. The standing worker tier is `claude-sonnet-5`; the next time that pin moves, the replay
+runs first. Its mechanics are the standing **no-paid-fire-before-archive-read** rule's — archived
+spines, gate audits and ladders only, no model called, cost $0. Its bar for actually retiring
+anything is the F40 park's bar: a measurement, or hamr's word, in that order.
+
+**What it is expected to surface**, so its first firing has something to be checked against: the
+fixation detector (already OFF), the strike ladder's threshold (chosen by $0 replay over 110
+archived ladders), the mailbox rule and the exit-freedom law (both minted against specific
+observed model behaviours), and the no-shell drafter register. Naming them here is a prediction,
+not a verdict — a replay that retires none of them is a valid and informative result.
+
+### 2. RECORDED — two convergences, no doctrine changed
+
+Both are corroboration from an independent direction, and neither moves a bar:
+
+- **"Dreaming"** (their offline batch distillation of session logs into agent memory, which
+  "returns measurably smarter") cross-validates **Layer 3's ambition** and the confirmed product
+  goal of the ledger/logs as a cross-workflow trend instrument. It names **no control**, so it
+  is evidence for the ambition and for nothing else. The **kill-switch bar stands unchanged**:
+  paired inheritance-ON vs inheritance-OFF on the same non-identical job set, only the
+  normalized difference counts, plus a memorization audit before any rule inherits — because
+  CL-BENCH's read is still that memory systems LOSE to plain in-context learning once base
+  capability is subtracted.
+- **"Outcomes"** (developer rubric + parallel grader agent + retry-until-pass; outcome-based
+  convergence preferred over step-by-step instruction) cross-validates the **close/gap/retry
+  spine** and the **Aug-4 shape-lottery result** — one step over the whole territory with a real
+  check and iterate greens 7/7 across the archive, while per-file decomposition with an early
+  whole-goal check has 0 honest greens ever. The **judged-floor requirement stands unchanged**:
+  a rubric close is self-consistency in disguise and needs a frozen calibration set graded
+  correctly first; deterministic closes remain first, and the judged/human verdict classes stay
+  declared-but-locked until that floor exists.
+
+### 3. Not claimed
+
+No claim that the talk is evidence for anything — it carries no n and no controls, and nothing
+in it was replicated here. No finding number is minted (`docs/FINDINGS.md` is untouched:
+findings there are grounded in this repo's own runs and logs). No budget, no rung and no
+sequencing changes. The adopted practice is **unfired**; when its trigger first pulls, what the
+replay finds is a finding and belongs in FINDINGS, not in the context document.
