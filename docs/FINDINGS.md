@@ -4361,6 +4361,94 @@ the thing it guards** — event loop, process, session slice, machine, host — 
 at or above that scope takes them together, and the artifacts it leaves will look exactly like
 the failure the guard was built to catch.
 
+> ### Addendum — 2026-08-15: the half that charges MONEY is fixed; the half that reads SILENCE is not
+>
+> **This is an ADDENDUM, not a rewrite.** Everything above stands as minted on 2026-08-01 and
+> is unchanged. What follows records how two of the parked items were resolved fourteen days
+> later — one built, one accepted as a known limitation — so the park does not read as still
+> wholly open.
+>
+> **hamr's ruling, verbatim: *"if computer suspended, time shouldn't count."***
+>
+> #### Built (`f154eb2`) — the wall stops charging for sleep
+>
+> `src/clock.js`'s default clock source moves from `Date.now` (CLOCK_REALTIME, which counts
+> every suspended minute) to **`performance.now`** — libuv's `uv_hrtime`, hence CLOCK_MONOTONIC,
+> which per `clock_gettime(2)` **does not count time that the system is suspended** on Linux
+> (CLOCK_BOOTTIME is the one that would). The default now reads
+> `now = () => performance.now()` at `src/clock.js:160`, with the rule written out as clock
+> fact 4 at `src/clock.js:46-60`.
+>
+> **F72's own timeline is the measured instance.** The `wall-bounded` row at 07:45:56.372 in
+> the table above — `elapsedMs 27,841,506` against `requestedMs 2,700,000` — is a 45-minute
+> wall being charged 45 phantom minutes plus a night's sleep by an s2idle suspend the run had
+> no part in. Nothing here corrects for a suspend after the fact; **the reading simply never
+> includes one.** The same change closes the same exposure to an NTP step or a hand-set date.
+>
+> **Safe by construction, and stated as such rather than assumed.** Every use of `now()` in the
+> module is RELATIVE (`now() - startedAt`), and no value derived from this clock is ever
+> published as a calendar timestamp — `report()` carries durations only, and the `at:`/`ts:`
+> stamps a run writes come from their own `Date.now` seams in `src/reuse.js` (`:1242`, `:1474`),
+> which stay calendar-correct on purpose. `now` remains injectable, which is what every clock
+> test drives.
+>
+> **The failing-first evidence is that the mock went blind.** Three `runJob`-level wall tests
+> mocked `Date`, because `runJob` builds its clock internally and exposes no `now` (only
+> `runPlan` does). Against a monotonic source those mocks moved nothing: the tests ticked their
+> way past the deadline and read **zero elapsed**, redding `provider-red` / `plan-red` instead
+> of `wall-halt`. They now go through one shared helper, `mockWallClock` (`tests/helpers.js:54`),
+> which pins `performance.now` to the mocked `Date.now` and restores it after — a leaked
+> `performance.now` would silently follow a mocked `Date` into every test that ran next.
+>
+> **And the operational mitigation stops being a memory rule.** `scripts/run-u.mjs` now PRINTS
+> the `systemd-inhibit --what=idle:sleep` launch line (`:569-578`) the way `run-reuse.mjs` has
+> since F72 was minted, instead of carrying it as a comment — a rule nobody reads at the moment
+> they launch is not a protection.
+>
+> #### NOT fixed, and accepted — PRD Addendum v1.67 (`docs/01-product/PRD.md:4799`)
+>
+> hamr's ruling: *"leave it and mark it in prd as possible known limitations."*
+>
+> `scripts/u-watchdog.mjs` measures the run's silence in **CALENDAR** time: `Date.now()` at
+> every poll (`:181`, `:275`) against one `stat(2)` of the spine. Its `stale` trigger fires on
+> inactivity alone and carries no deadline term (`:280-282`). A suspend freezes the watchdog
+> exactly as it freezes the run — the separate process is separate from the run, not from the
+> kernel — while the wall clock keeps running, so **the first poll after a wake reads the whole
+> suspended interval as spine silence and can kill a live run.** That is precisely the kill
+> recorded in the table above (`coldMs 27,108,007` against `staleMs 4,200,000`, with the
+> buffered response completing 6 ms later).
+>
+> **State the split cleanly: the half that charges MONEY is fixed; the half that reads SILENCE
+> is not.**
+>
+> v1.67 also records a **secondary skew, same cause, different severity**: `startedAt` is
+> `Date.now()` too (`u-watchdog.mjs:123`), so post-suspend `elapsed` can read PAST DEADLINE
+> while the run's own (now monotonic) wall still has time left. **This one does not kill** —
+> `wall-dead` requires the spine flat for `deadMs` as well as the deadline passed
+> (`:288-295`), so an active run survives and merely gets the LOUD `PAST DEADLINE … NOT killing`
+> line every poll. It is a reporting divergence between two clocks, not a stop.
+>
+> **Why it is left as-is (v1.67's own reason, not a summary of one):** the fail-safe direction
+> is right — a guard that cannot distinguish a frozen event loop from a frozen machine must err
+> toward killing, since F67 exists because an 81.5-minute wedge produced no bytes and no guard
+> fired. Teaching this watchdog to discount suspended intervals **would widen the exact window
+> F67 was built to close**, and would do it with a second clock source inside a file whose whole
+> design is *"no shared code, no shared failure, one `stat(2)` per poll"*. The standing
+> mitigation is the inhibitor, now printed at launch; and a killed run is not a lost one (the
+> kill is recorded before the signal, and resume is STEP-level).
+>
+> **v1.67's own "not claimed", carried here verbatim in substance:** no claim that the limit is
+> rare, and none that the inhibitor is airtight — a run launched without it is exposed, which is
+> why the banner prints it. **If this fires again on a run that WAS inhibited, that is new
+> evidence and belongs in FINDINGS, not under the park.**
+>
+> #### What this addendum does NOT resolve
+>
+> Parked items **A** (a liveness contract), **B** (a kill-checks-before-kill taxonomy, of which
+> a resume marker is the missing check) and **D** (BA-19's `deadlineMs`) are untouched by both
+> commits and remain parked exactly as written above. **C** (resume-after-kill) was answered
+> separately by the step-level resume work, not by anything here.
+
 ## F73 — the first end-to-end REUSE run: the same-repo bridge burned $4.74 without reaching the close, the CROSS-LANGUAGE one greened in 14.7 minutes, and the cost read is confounded by a shared workdir
 
 **Status: minted 2026-08-02 from the first paid run of the whole reuse path (spine
@@ -7476,3 +7564,279 @@ ceiling, not on anything it read"* while quoting the reply it was denying. Every
 - **A rename is the wrong shape of fix when another instrument keys on the name.** The honest
   version widened the read and left the terminal alone, because `step-stalled` is what tells
   the ledger the spend figure is a floor.
+
+## F101 — a crash left one line and no body: the authoring spine recorded `author-start` and stopped, and one line is byte-for-byte what a run still in flight looks like
+
+**Status: minted 2026-08-16 from hamr's first live `run-author.mjs` fire — spine
+`bareloop-patients/litectx-maintainer-author/author-msum52ah.jsonl`, 2026-08-15T16:51:28.627Z,
+patient `litectx-maintainer`, verdict class `hitl`, `ceilingUsd 5`. The file is 271 bytes and
+ONE line. THE ROOT CAUSE WAS NEVER DIAGNOSED, and that is the entire point of the entry: the
+error existed only on the operator's terminal, the terminal scrolled, and it is LOST. Nothing
+below speculates about what threw. Cure shipped in `9ae4844` (2026-08-16). Cost of the
+FINDING: $0 (artifact + source reads). Cost of the RUN: UNRECORDED, and unrecoverable from the
+tree — see §1.**
+
+### 1. The incident, and the whole of the record it left
+
+The spine, complete — one line on disk, wrapped here for width only; this is not an excerpt:
+
+```json
+{"type":"author-start","ts":"2026-08-15T16:51:28.627Z","runid":"msum52ah",
+ "patient":"…/bareloop-patients/litectx-maintainer","lang":"js","verdictType":"hitl",
+ "model":"claude-sonnet-5","job":"litectx-maintainer","timeoutMs":300000,"ceilingUsd":5}
+```
+
+The run died somewhere after `emit('author-start', …)` (`scripts/run-author.mjs:187`) and
+before the next event the pipeline emits, `authored`. What is known about it is exactly the
+contents of that line and nothing else.
+
+**Two consequences, stated separately because they are different sizes.**
+
+- **The diagnosis is gone.** The throw reached `process` as an unhandled rejection and printed
+  to hamr's terminal. Nothing wrote it down. There is no stack, no message, no code, no
+  `name` — no evidence anywhere in the tree of what failed or where.
+- **The spend is not merely unknown, it is unrecorded.** `authored` is the event that carries
+  the `cost` object, and it never fired. Whether a paid byte was ever sent is not answerable
+  from any artifact in this repository. This is not F6's "unknown rendered as zero" — nothing
+  was rendered at all — but it is the same family: the run declared a $5 ceiling on the line
+  it did write, and the tree holds no figure at all for what it actually spent, honest or
+  otherwise. Even "$0" would be a claim this record cannot support.
+
+For scale, a run that reaches its own end leaves five to eight lines. `author-msmsy579.jsonl`
+(2026-08-10, `prepared`) is 5; `author-msmbpjk6.jsonl` (2026-08-09, `gates-failed`) is 8.
+One is not a short record. One is no record.
+
+**"First" is scoped, deliberately.** Two earlier authoring runs exist in the tree
+(`pulselog-author-live-bareloop/author-out{,2}/`, the F91/F92 proofs) and both completed. This
+was the first fire hamr drove himself, the first on the `litectx-maintainer` patient, and the
+first on the `hitl` class — not the first execution of the script.
+
+### 2. The class: an artifact that reads the same for two opposite outcomes
+
+A day later, at `2026-08-16T16:45:12.447Z`, a second authoring run started on the same patient
+under the fixed code. Read at 16:49:46Z, its spine `author-msw1cupd.jsonl` was **271 bytes, one
+line, `author-start`** — differing from the dead run's spine only in `runid` and `ts` — while
+the run was demonstrably alive (`systemd-inhibit --what=idle:sleep … node scripts/run-author.mjs`,
+pid 2240363, 4m45s elapsed). Two files in one directory, identical in shape, in opposite states.
+That is not an argument for the finding; it is the finding, on disk, twice.
+
+**A log that cannot tell a DEATH from a HANG is not a record of either.** The reader is not
+being given a hard question — the reader is being given a file that contains no answer.
+
+| kin | what it shares | what is different here |
+|---|---|---|
+| **F67** — a guard that lives inside the thing it guards shares its fate | the spine's only writer is the process the spine describes, so the one event it can never emit unaided is its own death | F67's answer was a SEPARATE PROCESS. That is the wrong shape for a record: the fix is not to move the writer out, it is to give the process a last thing to say |
+| the **blind-instrument family** (ordinary form: an instrument that cannot see the variable — the ledger blind to cache tiers, the gate audit collapsing every read, `git status` as a write detector, job #1's aim probe) | a governance artifact narrating a state it does not hold | those instruments read a WRONG value. This one reads the SAME value for both truths |
+| **F59** — the UNREAD sub-class (`scout-result {bytes:0}` emitted faithfully 18/18 into the void) | an emitted record with no consumer that fails loudly | F59's instrument was right and unread. This one is read and is not wrong — it is ambiguous |
+| **F96** — "not an instrument that cannot see, but a decision that never looked" | the fact was available at the moment of the stop | F96's run HAD the fact in its own spine. This run had the fact only in a variable that was about to be discarded |
+
+**The asymmetry is what makes it worse than a blind instrument.** A blind instrument reads
+zero where the truth is five, so the tell is that the number is degenerate and the standing
+rule (audit a degenerate number before believing it) can catch it. Here there is no degenerate
+number to audit: `author-start` and silence is the CORRECT and expected artifact of a healthy
+run in flight. No amount of reading harder recovers the difference, because the difference is
+not in the file. An instrument that produces one artifact for two opposite outcomes has to be
+fixed at the WRITER; there is nothing a reader can do.
+
+### 3. The cure, shipped in `9ae4844` — every claim at file:line
+
+| rule | where | why it is that way |
+|---|---|---|
+| the fallible span sits in ONE try/catch | `scripts/run-author.mjs:204` (`try {`) → `:396` (`} catch (err) {`) → `:430` | a real scout, a real model call, a real toolchain per close stage — the span that can throw is the span that must leave a body |
+| NOTHING above it is inside, deliberately | `run-author.mjs:189-203` (the comment carrying the rule), `:73` and `:138` (the `die()`/no-key paths, `process.exit(2)`), spine created at `:142` | the argv/config paths run **before the spine file exists**; a crash record with no spine to land in is a record nobody can read. Those still stop loud on stderr and 2 |
+| the catch RETRIES NOTHING and SWALLOWS NOTHING | `:401-402` — `console.error('CRASHED — …')` then `console.error(err)`, the whole error, verbatim | a catch that re-enters the pipeline spends real money on a failure nobody has read yet |
+| the operator's copy comes FIRST | `:402` precedes `:412` | a diagnosis that reaches the person **only if the disk is writable** is a diagnosis with a dependency nobody asked for. The two writes below it can themselves fail |
+| then `author-crash` + `author-end {outcome:'crashed'}` | `:412`, `:419` | `author-end` is the one record that says a run stopped AT ALL — a crash that omits it leaves a spine that still reads as in-flight, which is the defect |
+| the DETAIL is said ONCE, on the crash record | `:413-418`; `author-end` carries the outcome and nothing else | two hand-spelled copies of one fact are two instruments that can disagree — this file has already paid for that once, in run-author's own `cap-halt`/`pricing-red` pair (F100 §3) |
+| `crashRecord` lives with the runner's other untestable-in-place rules | `scripts/author-readout.mjs:95-139`, beside `declarationLines` and `parseCeiling`; the reason is written at `:17-19` | `run-author.mjs` is a script — importing it runs it, and the span is only reached by paying. **A rule no test can reach is a rule nothing checks** |
+| `name` / `message` / `code` through `redactSecrets` | `author-readout.mjs:93` (`field`), used at `:129-131` | short fields, but `message` is the one most likely to quote a path, a URL or an env value back at us. An ABSENT field stays `null`, never a filled-in guess |
+| the STACK through `scrubRaw` — the ONE persist boundary | `author-readout.mjs:132-137` → `src/text.js:209` | the stack is the evidence (this incident had no idea WHERE the throw came from) and simultaneously the string in this system most likely to quote a credential out of a URL or an env value **into a file that outlives the run**. `scrubRaw` redacts over the same `SECRET_PATTERNS` inventory the validator reds on, and bounds it with the bound announcing its own size (F28: `src/text.js:233-235`, full `bytes` always reported) |
+| a non-Error throw is recorded honestly | `author-readout.mjs:120-122` — `String(err)` into the raw, `name` stays `null` | `throw 'boom'` is legal and happens; coercing it into an Error shape would invent a field |
+| ONE level of `cause`, no recursion | `author-readout.mjs:123-127, 136` | a wrapped throw names its origin in exactly that field. Walking a chain would be **speculative code standing over a shape nothing here has produced** |
+| the spine write is itself guarded, best-effort | `:411`, `:421-424` — `catch (spineErr)`, which says out loud that the spine could not be written and that the printed error is now the only record | **F70**: a crash handler that crashes destroys the report it was built to make |
+| **exit 4** | `:429` | distinct from 1 (a refusal or a failed gate: `:296`, `:325`, `:387`), 2 (operator/config: `:73`, `:138`) and 3 (a leak: `:442`). A crash sharing a code with a refusal files a bug as a result |
+| the leak scan still OVERRIDES 4 | `:434-443`, the scan running after the catch and setting `exitCode = 3` at `:442`, with the reason at `:438-441` | a secret sitting in a written file is the harder line of the two, and the crash keeps both of its own louder channels — the whole error on stderr and its own `author-crash` record |
+| no `process.exit()` anywhere in the handler | pinned by test, and by `run-author.mjs:445-446` | F71 — `exit()` can discard queued stdout and produce a clean-looking short readout of a run that said more than that |
+
+`crashRecord` itself is exercised on real thrown values in `tests/authoring.test.js:1519-1580`:
+a genuine `ENOENT` out of `readFileSync` (name/code/message/real frames, not an Error authored
+to contain the answer), a secret-bearing message checked with `scanSecrets` over the whole
+serialized record, a 400-frame stack proving the trim fires AND announces, a one-level `cause`
+including the bare-string shape, and a non-Error throw.
+
+### 4. The test-side instance of the SAME class, in the same commit
+
+`tests/run-author.test.js` reads the governance block out of the runner's source with a lazy
+regex. Its terminator was `\n}\n`. The moment the flow moved inside a `try {`, that pattern
+stopped closing on the block's own brace and closed on **the catch's** — so `BLOCK` silently
+became most of the file, and every `assert.ok(BLOCK.includes(…))` below it would have kept
+passing while reading a block it was never written against. **The failure mode is not that the
+regex stops matching (that fails loud) — it is that it matches TOO MUCH, and a bigger haystack
+satisfies every assertion.** This is F101's own class on the test side: the instrument's output
+looks identical whether it is guarding the right code or nothing at all.
+
+Fixed at `tests/run-author.test.js:37` — indent-anchored at **both** ends (`\n {2}if (…) {` …
+`\n {2}}\n`) — with `CATCH` added at `:39`, and a **pre-flight test at `:41`** that pins the
+block stays bounded: `BLOCK` exists, contains no `catch (`, and contains no `author-end`. The
+handler's own rules are pinned from source at `:116` (the try opens AFTER `author-start`, and
+the paid call is inside), `:129` (a body is written, each fact once), `:144` (no swallow, no
+`await`, no re-entry into `authorCloseForJob`/`prepareSigning`, no `process.exit(`, a guarded
+spine write, `exitCode = 4`) and `:167` (the runner's exit vocabulary is exactly {1,2,3,4} and
+exactly one site claims 4).
+
+### 5. The readers, verified rather than asserted
+
+Read at source, not from the commit message. `classifyIncidents` (`src/ledger.js:178`) branches
+on `primitive-smoke` (`:190`), `retention-red` (`:192`), `cap-halt` (`:194`), `config-red`
+(`:196`), `job-red`+`request-red` (`:200`) and `escalation` (`:215`). **`author-crash` and
+`author-end` are none of those**, so both fall through every branch and are simply NOT COUNTED
+— uncounted, never miscounted, which is the fail-safe direction. Nothing else in the tree reads
+the author spine today; `classifyIncidents` is the nearest reader and it does not read this
+file. The `EXCLUDED_ESCALATIONS` set (`src/ledger.js:66-…`) is not involved either: these are
+new EVENT TYPES, not new escalation categories, so the executable excluded-set's
+"unclassified category counts against bareloop" rule (`:256`) cannot fire on them.
+
+### 6. What is NOT claimed
+
+- **The original error is unrecovered and the root cause is UNKNOWN.** No hypothesis is offered
+  here, because none can be grounded. The cure makes the NEXT one legible; it diagnoses nothing
+  about this one, and the tree will never hold the answer.
+- **No claim that the crash class is rare.** One observation is one observation. Nothing here
+  measures how often the authoring pipeline throws, and the very defect being fixed is that
+  prior instances would be indistinguishable from runs that were simply still going.
+- **No claim that the fix has been exercised LIVE.** A search of every author spine on disk
+  (`bareloop-patients/*/author-*.jsonl` and `*/*/author-*.jsonl`, four files) returns **zero
+  `author-crash` records**. The handler is proven by source-pinned and unit tests only; its
+  first real firing will be its first live validation, exactly as F67's watchdog wiring was
+  recorded as unfired at mint time.
+- **No claim about the run in flight at write time.** `msw1cupd` (started 2026-08-16T16:45:12Z)
+  is cited here for the SHAPE of its spine at 16:49:46Z and for nothing else. Its outcome was
+  unknown when this was written.
+- **No claim that the spend of `msum52ah` can be reconstructed.** It cannot, from this tree.
+
+### Lessons
+
+- **A crash must leave a body.** A runner whose fallible span has no catch writes no trace of
+  its own death — and the process that dies is the only writer the record has. The last thing
+  a process does is the only chance the record gets.
+- **Ask of every log: what does it look like when the thing that writes it stops?** If the
+  answer is "the same as when it is working", the log is not a record of the run, only of the
+  parts of the run that finished. That question is $0 and belongs in the design of the writer,
+  not in the reading of the artifact.
+- **A blind instrument reads the wrong value; an AMBIGUOUS one reads the same value for two
+  opposite truths, and only the second is unfixable at the reader.** The standing "audit a
+  degenerate number" rule is powerless here — the artifact is not degenerate, it is correct for
+  one of the two states it stands for.
+- **A diagnosis routed only to a terminal is a diagnosis with a timer on it.** stderr reaches
+  the person; the file reaches everyone after. The fix ships both, in that order, and the
+  ordering is itself pinned by test — because the write is the half that can fail.
+- **A regex that reads source is an instrument, and it can go blind by matching MORE.** A
+  lazily-terminated block pattern degrades silently into "the rest of the file" and every
+  assertion over it keeps passing. Bound both ends, and pin the bound.
+
+### Addendum — observed 2026-08-16, later the same day, after the entry above was written
+
+**§2's illustration has an outcome now, and it is the wrong one for the cure's comfort.** The
+run cited there as "in flight" — `msw1cupd`, started `2026-08-16T16:45:12.447Z` — is over, and
+it ended leaving the same one line it started with. §6's "its outcome was unknown when this was
+written" is SUPERSEDED by observation. §2 and §6 are left exactly as they were: this file
+amends, it never rewrites.
+
+**Measured, with the instrument named.** `author-msw1cupd.jsonl` is 271 bytes and one line, and
+its mtime is `2026-08-16T16:45:12.448Z` — equal to its own `author-start`, so nothing was ever
+appended to it. Five polls between `16:56:42Z` and `16:58:16Z` read zero live `run-author.mjs`
+processes and a spine static at 271 bytes at every poll. The liveness read is by
+`ps -eo args | grep -F run-author.mjs`, NOT `pgrep -af run-author.mjs`: the pgrep form matches
+the poller's own command line and reports a hit forever — the standing never-poll-with-pgrep
+rule, re-earned here on the first attempt. The `--out` directory holds `answers.json`,
+`specdraft.json` and the two spine files and nothing else — no `authored.json`, no
+`resolved-spec.json`, no `signing.json` — so the run never reached `writeOut('authored.json', …)`
+at `run-author.mjs:222`. It emitted neither `author-crash` nor `author-end`. The code it ran
+CONTAINS the cure (`git merge-base --is-ancestor 9ae4844 HEAD` = yes; HEAD `8ddb995`).
+
+**So the process ended without the catch running, and the source says why that is possible.**
+`grep -nE 'process\.(on|once)\(|SIGINT|SIGTERM|SIGHUP|uncaughtException|unhandledRejection'`
+over `scripts/run-author.mjs` returns **no matches** — the file installs no signal handler and
+no global handler; its only `process.exit(` sites are `:73` and `:138`, both before the spine
+exists. A `try/catch` catches a THROW. It cannot catch a process terminated by a SIGNAL (a
+SIGINT from an interrupted or closed terminal, a SIGTERM, a SIGKILL), a `process.exit()` inside
+the span, or a hard death (OOM kill, segfault): in each of those the JS never runs, so no body
+is written. Lines `:188-203` are blank and comment only, so every executable statement after
+`author-start` is inside the try — which narrows the set of causes consistent with this artifact
+without selecting one. **This entry does not pick.** A signal is CONSISTENT with the evidence;
+so is more than one other cause; the root cause of `msw1cupd` is not diagnosed here, and a
+reading not traced to source is a reading this programme withdraws.
+
+**An agent-fired $0 PROBE ran the crash path end to end — a death that was made, not met.**
+Provenance first, because it changes how the row is weighed: during this docs-only sweep of this
+file a documentation SUBAGENT started `run-author.mjs` itself, deliberately, with an invalid
+`ANTHROPIC_API_KEY` and `--out` into a scratch sibling directory `…-author-debug/`, for the sole
+purpose of exercising the handler. It was NOT a programme run, not driven by hamr, not part of
+any authored job — and it was outside the brief it was fired under, which was documentation-only
+and forbade starting a process. It is recorded because the artifact exists on disk and an
+undisclosed artifact is worse than a disclosed one. It spent **$0**, and that is a property of
+how it was constructed rather than a permission it held: the key was rejected at authentication
+(HTTP ≥400, thrown at `node_modules/bare-agent/src/provider-anthropic.js:317`) before any tokens
+were generated. The artifact lives OUTSIDE the repository, under `bareloop-patients/`, so nothing
+about it enters a commit.
+
+**What the probe left, re-verified against the file itself.** `msw1oms4`: `author-start` at
+`2026-08-16T16:54:22.046Z`, `author-crash` at `…:22.460Z` (414ms in), `author-end` at `…:22.461Z`
+— three lines, 990 bytes. The throw is a `ProviderError`, `code PROVIDER_ERROR`, message
+`[AnthropicProvider] API key is invalid.`. `crashRecord` populated `name`, `message` and `code`
+off the real Error; the throw carried no `cause`, so `cause` and `reason` persist as `null` and
+nothing was invented to fill them; the raw stack went through `scrubRaw` at 378 bytes with
+`trimmed:false` (the bound is `RAW_PERSIST_MAX` = 8000, so it is genuinely under the cap and the
+announcement is honest); `author-end {outcome:'crashed'}` follows the crash record, in that
+order. The code it ran contains the cure (`git merge-base --is-ancestor 9ae4844 HEAD` = yes,
+HEAD `8ddb995`).
+
+**So §6's "no claim that the fix has been exercised LIVE" is PARTIALLY superseded, and no
+further than partially.** PROVEN by this probe: the catch executes on a real thrown `Error`
+outside the test suite, `crashRecord` fills name/message/code from it, the stack survives the
+persist boundary under its bound, `author-end {outcome:'crashed'}` follows, and the handler's
+ordering holds in a real process — the first end-to-end execution of that path anywhere but the
+suite. NOT proven: that the programme has met this failure in the wild. The death was
+manufactured by the prober, chosen for being easy to cause, so §6's sentence that "its first
+real firing will be its first live validation" is still standing and still unsatisfied. A
+synthetic firing validates the mechanism; it does not observe the event.
+
+**The §6 grep, re-run at the time of this correction.** Exactly ONE author spine on disk carries
+an `author-crash` record, and it is this probe's — so §6's zero is broken by a probe artifact,
+not by a programme one: the file the grep returns is the file the prober manufactured to be
+returned. The COUNT in the first version of this paragraph ("five, not four") is stale and is
+corrected here: `bareloop-patients/*/author-*.jsonl` plus `*/*/author-*.jsonl` now returns SIX
+files, because `litectx-maintainer-author/author-msw1u5kq.jsonl` (271 bytes, one line,
+`author-start` `2026-08-16T16:58:39.685Z`) appeared after the paragraph above was written. It is
+another body-less spine; nothing about it is claimed or diagnosed here. Two deaths nine minutes
+apart under identical code — the throw left a body, the other did not — but the difference is the
+KIND of death, not the code, and only one of the two was encountered rather than caused.
+
+**The honest consequence for the cure's scope.** The cure does exactly what it claims and no
+more — it converts a THROWN death into a record; it does not make every death legible. A
+body-less spine is still REACHABLE, and `msw1cupd` is the proof on disk. "One line and silence"
+therefore still cannot be read as evidence that a run is in flight. The ambiguity §2 names is
+NARROWED, not eliminated.
+
+**OPEN, parked, not decided here.** Whether `run-author.mjs` should install signal handlers so
+a SIGINT/SIGTERM also leaves a body. It is not free: a handler that writes on the way out is one
+more thing that can fail or hang while the process is being killed — F70's class, a guard
+carrying the failure mode it was built to guard. The option and its cost are named; the call is
+hamr's, per the standing park discipline, and no design is recommended here.
+
+**Still not claimed** (extending §6, not repeating it):
+
+- **No claim about WHY `msw1cupd` ended.** Not a signal, not a hang, not a kill — nothing. The
+  evidence bounds the class of causes and identifies none of them.
+- **No claim about who started, stopped or interrupted it, or why.** The tree records a start
+  and a silence; intent is not in the artifact.
+- **No claim about its spend.** As with `msum52ah`, no `authored` event fired, so no `cost`
+  object exists. Even "$0" would be a claim this record cannot support.
+- **No claim that the two body-less runs share a cause.** They share a shape. That is all that
+  has been observed.
+- **No claim that the crash handler has fired on a death the programme MET.** The one
+  `author-crash` on disk is an agent-fired probe's, on a failure the prober caused on purpose.
+  The handler is now proven to execute outside the test suite; it is not yet proven to have
+  caught anything that happened by itself.
+- **No claim about `msw1u5kq`.** It is named above only to correct a stale count of files on
+  disk. Its outcome, its cause and who ran it are not read here.

@@ -614,6 +614,81 @@ alone. An absent goal renders as absent rather than as a bare label. This is a R
 validator: nothing compares the goal to the declaration, because deriving one from the other
 is exactly what F87 forbids.
 
+**The path an adopter actually drives is TWO scripts, and the first one spends nothing.**
+`runInterview` is a pure function over answers with no prompt loop in it, so until
+`scripts/run-interview.mjs` existed the only way in was to hand-write an `answers.json` and a
+spec draft — precisely the SWE tax this product refuses. That script is the half that ASKS
+(`--patient <repoPath> --verdict <class> --out <outdir> [--budget <usd>] [--lang js]`, default
+`js`), and it is deliberately GLUE: **it calls no provider at all**, so a whole interview costs
+$0 and no model ever sees it. Everything load-bearing in it is borrowed rather than respelled —
+the QUESTIONS are the library's frozen sets (`questionsFor` / `requiredAnswersFor`), printed as
+handed over and never re-worded, re-ordered or re-numbered by the script; the REFUSALS are
+`runInterview`'s; the SCRUB is `redactSecrets` at capture AND again at the library's own ingest,
+so no keystroke reaches stdout or disk by a route that skips the one inventory; and the spec
+draft is checked by the SAME `validateJob` that will judge it after the paid call, with the
+authored half's expected reds filtered off `AUTHORED_SPEC_FIELDS` by name. A typo'd slug or an
+under-floor wall therefore costs $0 rather than a scout plus a model call.
+
+A LOCKED class refuses BEFORE a single question is asked: the script hands `runInterview` an
+empty answer set, prints the counted `request-red` verbatim, and stops — nothing is asked and
+nothing is written, because asking a class's questions for a job nothing here can close is an
+interview at the wrong price. On success it writes exactly TWO files into `--out`:
+`answers.json`, which is the LIBRARY's redacted reading of the answers (`iv.answers`) and never
+the raw keystrokes; and `specdraft.json`, which is the OPERATOR's half ONLY — no `close`, no
+`closeDecl`, no `verdictType`, because those three ARE `AUTHORED_SPEC_FIELDS` and `assembleSpec`
+refuses a draft carrying any of them rather than merging over it. `tools` is deliberately
+OMITTED from the draft too (MED-1: an omitted menu hashes as the concrete current `TOOL_MENU`,
+which pins WHICH menu was signed; naming today's list would freeze it into the operator's half).
+An interview that never finishes writes NOTHING: a half-collected answer set that looks finished
+is the failure nobody sees.
+
+**Two ceilings, two names, never pooled on screen or anywhere else.** `--budget` is the
+AUTHORING ceiling — what the authoring call may spend — parsed by the same `parseCeiling` rule
+`run-author.mjs` parses it with: absent is UNBOUNDED and ANNOUNCED before anything spends,
+malformed is an ERROR rather than a silent fallback, and zero or negative is rejected on the
+same rule. `budgetUsd` is the JOB's budget, asked separately and signed into the spec. The
+interview stores neither: the ceiling is handed straight to the child, which is the process that
+spends it.
+
+**It ends by OFFERING the paid step, and the offer's default is NO.** `run-author.mjs` is a
+DIFFERENT PROCESS under its own ceiling; the interview prints its exact command line (with
+`--budget` propagated only when one was given, and a note when `ANTHROPIC_API_KEY` is unset)
+before asking `Run it now? [y/N]`, so declining still leaves a command to paste and two files
+already on disk. Only an explicit yes spends — the answer that costs nothing is the one you get
+by saying nothing, the same lean the pause's doors take. On a yes it releases stdin before
+spawning (two readers on one terminal is a keystroke landing in whichever happens to be
+listening) and then propagates the CHILD's exit status rather than flattening a refusal there
+into a success one process up.
+
+**Both scripts speak exit codes, and an adopter wrapping them in CI reads them:**
+
+- `run-interview.mjs` — **0** the interview finished (and, when it spawned the paid step, that
+  step's own status is what you get, never a flattened 0); **1** a REFUSAL — a locked class, the
+  library's own reds over the answers, or a spec draft that does not validate; **2**
+  operator/config — usage, a missing or non-existent `--patient`, a present-but-empty `--lang`,
+  a malformed `--budget`, stdin ending mid-interview, or a child that could not be started;
+  **3** a LEAK that `scanSecrets` found in a file it had just written (count and path only —
+  echoing the matched string is the same leak, one hop on).
+- `run-author.mjs` — **1** a refusal or a failed gate; **2** operator/config; **3** a leak;
+  **4** a CRASH inside the paid span. **3 deliberately OVERRIDES a 4**: a secret sitting in a
+  written file is the harder line of the two, and the crash keeps both of its own louder
+  channels — the whole error on stderr and its own `author-crash` spine record.
+
+**A crash inside the paid span leaves a BODY.** The fallible span — from just after
+`author-start` to the end of the main flow — sits in ONE try/catch that RETRIES NOTHING and
+SWALLOWS NOTHING. The operator's copy goes first and verbatim (it must not depend on the two
+writes below it succeeding), then the spine gets `author-crash` via `crashRecord`: `name`,
+`message` and `code` through `redactSecrets`, the STACK through `scrubRaw` — the ONE persist
+boundary, the same `SECRET_PATTERNS` inventory, bounded with the bound announcing its own size —
+plus `author-end {outcome: 'crashed'}`, because `author-end` is the one record that says a run
+stopped AT ALL and a crash omitting it leaves a spine that reads as still-running. The spine
+write is itself guarded and its failure said out loud (F70: a crash handler that crashes
+destroys the report it was built to make). Nothing ABOVE the try is inside it, deliberately —
+the argv and config `die()` paths run before the spine file exists, so they stop loud on stderr
+and 2 instead. **Latent, not live:** nothing reads the author spine today, and the nearest
+reader (`classifyIncidents`, `src/ledger.js`) keys on types neither record uses, so both fall
+through every branch UNCOUNTED — the fail-safe direction, uncounted rather than miscounted.
+
 **Refusals are COUNTED (D13).** `refusalEvents(refusal)` returns the spine events: a
 `job-red` carrying `{ code: 'request-red', verb, lib: 'bareloop' }` — the `lib` stamped at
 the EMIT SITE, so `classifyIncidents` files it against bareloop's own catalogue and its

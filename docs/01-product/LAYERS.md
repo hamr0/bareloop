@@ -117,7 +117,7 @@ verb blocks the work, the worker files a *request-red* and a human decides.
 |---|---|
 | **green** | hard proof — the judge's exit code says pass; the only thing that mints learning |
 | **soft-green** | a rubric judged it acceptable — weaker credit, kept distinct. *Today: a user-pickable radio value, DECLARED-BUT-LOCKED (v1.57 §1) — picking it returns the counted request-red refusal; it goes live on the close-authoring surface, after this rung (needs the RSI judged-floor analog first)* |
-| **hitl** | a human rendered the verdict. *Today: declared-but-locked exactly like soft-green — the pick is counted demand, refused until the hitl declaration surface exists (a hitl close IS a declaration)* |
+| **hitl** | a human rendered the verdict. *Today: ~~declared-but-locked exactly like soft-green — the pick is counted demand, refused until the hitl declaration surface exists~~ is **SUPERSEDED** — hitl is ADMITTED (N4 slice 1, 2026-08-15, branch `n4-verdict-classes`; unmerged and unreleased). `LOCKED_CLASSES` is now `soft-green` ALONE, so picking hitl runs a real interview (green's questions byte-for-byte plus one — "when you look at the finished result yourself, what are you deciding?"), attaches green's own mechanical guard battery verbatim, and composes ONE `human-confirms` stage that measures nothing and PAUSES the run decision-ready instead of rendering a verdict. The live paid hitl loop has NOT fired yet* |
 | **red** | failed; the gap feeds the next attempt |
 | **already-green** | was green before any work happened — mints **nothing** (credit for work not done poisons inheritance) |
 
@@ -282,7 +282,10 @@ to show it — never to fix a wording problem.
 The flow, end to end:
 
 ```
-6 plain interview questions, keyed to the verdict CLASS (no code, no paths typed by hand)
+the verdict CLASS's plain interview questions (no code, no paths typed by hand) — five for
+   green, six for hitl, and the COUNT is the library's to report (requiredAnswersFor), never
+   a number to memorise: every generalisation so far has DELETED a slot rather than reworded
+   one, and the set renumbers contiguously each time
  → a bounded READ-ONLY scout lists what is really in the repo (runner, flags, env, paths)
  → a model fills a TYPED FORM: a declaration over a fixed catalogue of stage KINDS whose
    implementations bareloop owns — the schema is DERIVED from the catalogue and emitted as a
@@ -316,7 +319,8 @@ through the derived check menu, one hop, one direction.
 
 **verdictType is a USER CHOICE again (2026-08-08, hamr).** ~~D4 — derived from the answers,
 never picked~~ is **SUPERSEDED**. The green / soft-green / hitl radio of the 2026-07-21 Layer 2
-locked design returns as the user's own answer (v1 still admits only `green`). The user is the
+locked design returns as the user's own answer (~~v1 still admits only `green`~~ — since N4
+slice 1, 2026-08-15, it admits `green` and `hitl`; `soft-green` alone stays locked). The user is the
 one who knows whether their "done" is machine-checkable (green), needs judgment (soft-green),
 or needs a person (hitl) — and that choice DRIVES the close authoring rather than falling out
 of it.
@@ -401,7 +405,8 @@ addenda (v1.36–v1.50); this list is deliberately one line each.
   arbiter's own books are never read by the worker and never red the close.
 - **Close AUTHORING** *(BUILT; review closed and paid-proofed live — 2026-08-09; see the rung
   section above)*: the close stops being hand-written JavaScript and becomes a DECLARATION over
-  owned stage kinds — 6 interview questions keyed to the verdict CLASS + a read-only scout (up
+  owned stage kinds — the verdict CLASS's interview questions (five for green, six for hitl;
+  `requiredAnswersFor` reports the set, nothing hardcodes a count) + a read-only scout (up
   to 3 attempts, retried only when the emission itself was unreadable) + a typed form, through
   that class's mandatory guard battery, every stage seed-verified, signed by the user as a
   resolved hash. Governance is unchanged by construction (the signature and everything after it
@@ -859,6 +864,26 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
    spec forms, and two review rounds (10 findings, all fixed — F100). **soft-green + hitl
    come next**, sequenced immediately after: a hitl close IS a declaration, and the
    declaration surface now exists.
+   **Status 2026-08-15: N4 slice 1 — hitl — is BUILT on branch `n4-verdict-classes`, unmerged
+   and unreleased** (build plan `docs/02-features/2026-08-13-n4-verdict-classes-build.md`, with
+   hamr's rulings inline). hitl left the locked menu at all six coupled sites — `LOCKED_CLASSES`
+   is now `soft-green` alone — and `human-confirms` went live as the one kind that measures
+   NOTHING: its whole parameter surface is `ask`, it is `offer:false` BY LAW, at-most-once, must
+   be the LAST stage, and it SKIPS the seed-verdict read, with the skip recorded as a row
+   carrying `verdict: 'skipped'` rather than taken in silence. Three new terminals came with it:
+   `hitl-pause` — a decision-ready CHECKPOINT that carries the evidence package (every mechanical
+   stage's own result, the close's declared question, the files this run changed), sits on
+   `CHECKPOINT_OUTCOMES` and is age-gated at 60 days by the library's own `PAUSE_TTL_MS` —
+   plus `hitl-cancel` and `hitl-decision-red`. The signer answers on the SAME command line and
+   under the SAME signature (`scripts/run-u.mjs --decide accept|rerun|cancel`, `--text` on the
+   rerun door, all gated on `--approve <specHash>`), and the hitl guard battery INHERITS green's
+   mechanical guards verbatim (hamr's OPEN-1 ruling, 2026-08-13). **What has NOT happened, said
+   plainly rather than rounded up:** the live paid hitl loop has never fired — it waits on hamr's
+   blessing of the interview wording and on him driving it personally; `jobs/litectx-maintainer.json`,
+   the proving job, DOES NOT EXIST — `scripts/run-u.mjs` carries its row and REFUSES BY NAME until
+   the spec is authored and signed, because a row is the runner's half of a job and never the
+   signer's; and slice 2 (soft-green — `judged-floor` live, wired to a metered judge behind the
+   ruling-7 calibration floor) is NOT started, so soft-green stays declared-but-locked.
 
 ---
 

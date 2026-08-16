@@ -56,6 +56,26 @@ either, and prefers the run's own terminal over a stale watchdog record when fol
 so a person's deciding time is never billed to it. What an adopter's own runner has to do is in
 `bareloop.context.md`.
 
+Beside it, `scripts/run-interview.mjs` — **the terminal interview, and the answer to hand-writing
+an `answers.json`**, which is precisely the SWE tax this product exists to refuse. It asks the
+LIBRARY's frozen questions ONE AT A TIME, **calls no model and costs $0**, and writes
+`answers.json` (the shape `run-author.mjs` consumes) plus `specdraft.json` (the operator half — no
+close and no `verdictType`, because those are what `run-author` authors). The draft is checked for
+$0 by `validateJob`, the SAME validator that will judge the resolved spec, so a draft that cannot
+become a spec says so before a provider is ever built. It then OFFERS to spawn the paid
+`run-author.mjs` under its OWN `--budget` ceiling — **default NO** (`[y/N]`, the same lean the
+pause's three doors take: the answer that costs nothing is the one you get by saying nothing), and
+it prints the exact command either way. The two ceilings are kept apart out loud: `--budget` is
+what the AUTHORING call may spend, `budgetUsd` is what the RUN may spend, signed into the spec.
+
+And `scripts/run-u.mjs` gains a `litectx-maintainer` JOBS row — **N4's hitl PROVING job, dark
+since the legacy `steps[]` deletion took its old spec's path with it**, back as a plan-flow job
+with an AUTHORED close. `jobs/litectx-maintainer.json` **DOES NOT EXIST, and the row does not
+create it**: the spec is authored live through `run-interview.mjs` → `run-author.mjs` and signed
+by hamr, goal and answers included, and until it lands **the runner REFUSES BY NAME** — a row is
+the runner's half of a job, never the signer's. The patient is a COPY at the convention this table
+already uses, and the seed is that copy's own HEAD (litectx v0.32.0, `115213d`).
+
 ### Changed
 
 - **Both suite pins move up a minor — `bare-agent ^0.35.0 → ^0.36.0`, `bareguard ^0.12.0 →
@@ -99,6 +119,39 @@ so a person's deciding time is never billed to it. What an adopter's own runner 
   files, everything else read-only), that patterns are repo-root-relative, and that absolute paths
   are refused because the run works on a copy. The multi-line hint spells the keystroke: *press
   Enter on an empty line, i.e. Enter twice*.
+- **Suspended minutes stop charging a signed wall — the run clock is MONOTONIC** (hamr's ruling,
+  2026-08-15: *"if computer suspended, time shouldn't count."*). `createClock`'s default source
+  moves from `Date.now` — CLOCK_REALTIME, which counts every minute the machine was asleep — to
+  `performance.now`, which reads libuv's `uv_hrtime` and so CLOCK_MONOTONIC, which per
+  `clock_gettime(2)` *"does not count time that the system is suspended"*. That was not
+  hypothetical: an s2idle suspend landing mid-run charged **45 phantom minutes against a
+  45-minute wall**, and the same exposure covers an NTP step or a hand-set date. Nothing corrects
+  for a suspend after the fact; the reading simply never includes one. **The epoch change is safe
+  by construction**: every use of `now()` in `src/clock.js` is RELATIVE (`now() - startedAt`) and
+  no value derived from this clock is ever published as a calendar timestamp — `report()` carries
+  durations only, and the `at:`/`ts:` stamps a run writes come from their own `Date.now` seams in
+  `src/reuse.js`, which stay calendar-correct on purpose. `now` is still injectable, which is what
+  every clock test drives. Three runJob-level wall tests mocked `Date` because that is the only
+  seam `runJob` exposes, and the monotonic source made them BLIND — they redded `provider-red` /
+  `plan-red` instead of `wall-halt`, which is the failing-first evidence that the mock was
+  load-bearing; they now go through one shared helper (`tests/helpers.js`) that pins
+  `performance.now` to the mocked `Date` and restores it after. **KNOWN LIMITATION, recorded
+  rather than fixed** (PRD Addendum v1.67, hamr: *"leave it and mark it in prd as possible known
+  limitations"*): the OUTSIDE watchdog still measures silence in CALENDAR time, so a long suspend
+  can still read to it as a stall. The half that charges money is fixed; the half that reads
+  silence is not.
+- **`scripts/run-u.mjs` PRINTS the sleep-inhibitor launch line** the way `scripts/run-reuse.mjs`
+  has since F72, instead of carrying it as a comment — a rule nobody reads at the moment they
+  launch (and like every runner change here, `scripts/` never ships in the tarball). A suspend
+  freezes EVERY guard: the outside watchdog is a POLLER, so it cannot observe — let alone kill — a
+  run whose machine is asleep, and after the monotonic clock above the run's own wall does not
+  count those minutes either. A suspended run is therefore simply UNWATCHED for as long as it
+  sleeps, and the launch banner is the last moment the operator can still do something about it.
+  The printed line is `systemd-inhibit --what=idle:sleep --why="bareloop u run" env …`, with `env`
+  before the key assignment on purpose: `systemd-inhibit` execs a COMMAND, and a bare `VAR=value`
+  prefix is shell syntax it would try to run as one — the key still rides an env assignment and
+  never argv. A pause with no ruling prints the line prefixed to NONE of its three doors, because
+  prefixing one would quietly recommend it and this surface's lean runs the other way.
 
 ### Fixed
 
@@ -108,6 +161,38 @@ so a person's deciding time is never billed to it. What an adopter's own runner 
   copy-paste it and `run-author` reads the word `--budget` as its language. Both scripts now stop
   LOUD on a present-but-empty `--lang` (an ABSENT flag still takes the default, the same rule the
   money ceilings are parsed by).
+- **A crashed authoring run left one line and no body — `scripts/run-author.mjs`'s spine now says
+  it died.** A real run's `author-<runid>.jsonl` held exactly ONE line, `author-start`, and
+  stopped: the paid pipeline threw, the error reached the operator's terminal as an unhandled
+  rejection, and the spine's record of the run was **byte-for-byte what a run still IN FLIGHT
+  looks like**. A log that cannot tell a death from a hang is not a record of either — which is
+  why this is a fix to the record and not a new feature, even though the mechanism is new
+  records. The fallible span — from just after `author-start` through the end of the main flow, a
+  real scout, a real model call and a real toolchain per close stage — is now ONE try/catch, and
+  nothing above it is inside, deliberately: the argv/config `die()` paths run before the spine
+  file exists, and a crash record with no spine to land in is a record nobody can read (those
+  still stop loud on stderr and 2). **The catch RETRIES NOTHING and SWALLOWS NOTHING**: the whole
+  error reaches stderr FIRST and verbatim — before the two writes that could themselves fail,
+  because a diagnosis that only arrives if the disk is writable has a dependency nobody asked for
+  — and only then is it written down as `author-crash` plus `author-end {outcome:'crashed'}`.
+  `crashRecord` lives in `scripts/author-readout.mjs`, where the runner's other
+  untestable-in-place rules live: `name`/`message`/`code` go through `redactSecrets`, and the
+  STACK — the evidence, and the string most likely to quote a credential out of a URL or an env
+  value into a file that outlives the run — goes through `scrubRaw`, the ONE persist boundary,
+  which redacts over the same `SECRET_PATTERNS` inventory the validator reds on and bounds it with
+  the bound announcing its own size (F28). One level of `cause`, no chain-walking. A non-Error
+  throw is recorded honestly rather than coerced into an Error shape. The detail is said ONCE, on
+  the crash record; `author-end` carries only the outcome, because two hand-spelled copies of one
+  fact are two instruments that can disagree (this file already paid for that in the
+  cap-halt/pricing-red type). The spine write is itself guarded — a crash handler that crashes
+  destroys the report it was built to make (F70) — and a failed append says so out loud while the
+  original error still stands. **NEW EXIT CODE 4**, distinct from 1 (a refusal or a failed gate),
+  2 (operator/config) and 3 (a leak): a crash is none of those, and sharing a code with a refusal
+  would file a bug as a result. The leak scan still OVERRIDES a 4 deliberately — a written secret
+  is the harder line, and the crash keeps both of its own louder channels. **No reader changes**:
+  `classifyIncidents` (`src/ledger.js`) keys on event types it does not emit, so both new records
+  fall through every branch and are simply not counted — uncounted, never miscounted, which is
+  the fail-safe direction.
 
 ## [0.10.0] — 2026-08-13
 
