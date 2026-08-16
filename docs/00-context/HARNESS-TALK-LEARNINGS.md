@@ -87,7 +87,9 @@ It adds two rows, and then states plainly that the rest of the transcript is alr
 for — so the second read is visibly **complete**, not another partial slice. The rules do not
 change: nothing here is evidence, and nothing here moves a bar by itself. One new legend entry:
 **ADOPT-LATER** = worth taking, but the rung that would consume it is not open — recorded with the
-rung named, not scheduled and not built.*
+rung named, not scheduled and not built. The second read's adopted outgrowth — the harness
+tightness audit hamr broadened out of v1.69's replay — lives in PRD Addendum v1.70, which also
+carries row #11's export-rung question as its §6.*
 
 | # | Item (theirs) | Status | Where it lands |
 |---|---|---|---|
