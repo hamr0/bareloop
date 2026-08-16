@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { LIVE_KINDS, regexGroups } from '../src/kinds.js';
 import { VERDICT_TYPES, LOCKED_VERDICTS } from '../src/job.js';
-import { hasNestedQuantifier } from '../src/validate.js';
+import { hasNestedQuantifier, scanSecrets } from '../src/validate.js';
 import {
   KIND_CATALOGUE, CATALOGUE_KINDS, CATALOGUE_LIVE_KINDS, LOCKED_KINDS, MAX_STAGES, DIRECTIONS, BASELINES,
   TYPES_GENRE, TYPES_GENRE_TEMPLATE, GENRE_LANGUAGES, DENIED_COMMANDS,
@@ -38,7 +38,8 @@ import {
   classGuards, closeCeiling, genreEnv, genreOwnedEnvNames, genreInstruments,
   validateDeclaration, normalizeDeclaration,
 } from '../src/authoring.js';
-import { declarationLines, parseCeiling, ceilingLine } from '../scripts/author-readout.mjs';
+import { declarationLines, parseCeiling, ceilingLine, crashRecord } from '../scripts/author-readout.mjs';
+import { RAW_PERSIST_MAX, RAW_TRIM_MARKER } from '../src/text.js';
 
 /** The battery for the one class v1 admits. The attachment point is the CLASS
  * (PRD v1.57 §2) and every fixture in this file is a green job, so the class is
@@ -1501,4 +1502,81 @@ test('an UNBOUNDED authoring run ANNOUNCES itself — an absent cap is a stated 
   assert.match(bounded, /\$2\.5 ceiling/);
   assert.match(bounded, /BETWEEN metered calls/, 'and a bounded run states the seam it binds at');
   assert.ok(!/UNBOUNDED/.test(bounded), 'the two readings are never confusable');
+});
+
+// ── the CRASH record ─────────────────────────────────────────────────────────
+//
+// Watched live: a real authoring run's spine held exactly one line — `author-start`
+// — and stopped. The paid pipeline threw, the error went to the operator's
+// terminal, and the record of the run said nothing at all about the death. A spine
+// that stops mid-sentence is indistinguishable from a run still in flight.
+//
+// `crashRecord` is the extractable half of the fix, here for the same reason the
+// two above are: `run-author.mjs` is a script and the throwing span is only
+// reached by paying for a scout and a model call. The catch that calls it is
+// pinned from source in tests/run-author.test.js.
+
+test('crashRecord: a REAL thrown error keeps its name, message, code and stack', () => {
+  // a real uncaught failure out of the stdlib, not an Error I authored to contain
+  // the answer — the fields under test are the ones node itself fills in
+  let caught;
+  try { readFileSync(join(REPO, 'no-such-file-9f3a2')); } catch (e) { caught = e; }
+  const rec = crashRecord(caught);
+  assert.equal(rec.name, 'Error');
+  assert.equal(rec.code, 'ENOENT', 'the errno code is the field that names WHAT failed');
+  assert.match(rec.message ?? '', /no-such-file-9f3a2/);
+  assert.match(rec.raw.text, /^Error: ENOENT/, 'the stack is the evidence — without it the record says a run died and not where');
+  assert.match(rec.raw.text, /authoring\.test\.js/, 'and it is the real stack, with real frames');
+  assert.equal(rec.raw.trimmed, false);
+  assert.equal(rec.raw.label, 'author-crash');
+});
+
+test('crashRecord: a secret in the error never reaches the file, in the message or in the stack', () => {
+  // the record lands in `author-<runid>.jsonl`, which outlives the run — and a
+  // stack is the single string in this system most likely to quote a credential
+  // out of a URL, an argv, or an env value
+  const secret = ['sk', 'live', 'B1b2C3d4E5f6G7h8I9j0KLMN'].join('-');
+  const err = new Error(`POST https://api.example/v1?key=${secret} failed`);
+  const rec = crashRecord(err);
+  assert.deepEqual(scanSecrets(JSON.stringify(rec)), [],
+    'a secret-shaped string survived into the crash record — detection and redaction read ONE inventory');
+  assert.match(rec.message ?? '', /POST https/, 'the diagnosis survives the mask; only the secret does not');
+});
+
+test('crashRecord: a huge stack is BOUNDED and the bound announces itself', () => {
+  const err = new Error('boom');
+  err.stack = `Error: boom\n${'    at somewhere (/a/very/long/path.js:1:1)\n'.repeat(400)}`;
+  const rec = crashRecord(err);
+  assert.ok(Buffer.byteLength(rec.raw.text) <= RAW_PERSIST_MAX + 200, 'the persisted stack is bounded');
+  assert.ok(rec.raw.text.includes(RAW_TRIM_MARKER), 'a trim is never silent (F28)');
+  assert.ok(rec.raw.bytes > RAW_PERSIST_MAX, 'and the FULL size is still reported');
+  assert.equal(rec.raw.trimmed, true);
+});
+
+test('crashRecord: a cause is carried, one level, on the record it describes', () => {
+  // a wrapped throw names its origin in exactly this field, and the origin is
+  // usually the only interesting half
+  const rec = crashRecord(new Error('outer', { cause: new Error('the socket died') }));
+  assert.equal(rec.raw.reason, 'the socket died');
+  assert.equal(rec.message, 'outer');
+  // …and a bare cause (some libraries throw a string) is not dropped for having
+  // the wrong shape
+  assert.equal(crashRecord(new Error('outer', { cause: 'ECONNRESET' })).raw.reason, 'ECONNRESET');
+  // an absent cause is ABSENT, never an empty string that reads like a diagnosis
+  assert.equal(crashRecord(new Error('plain')).raw.reason, null);
+});
+
+test('crashRecord: a non-Error throw is recorded honestly, never coerced into an Error shape', () => {
+  // `throw 'boom'` and `throw {code: 7}` are both legal and both happen in the wild
+  const str = crashRecord('boom');
+  assert.equal(str.name, null, 'a string has no name — inventing "Error" would be a fact nobody observed');
+  assert.equal(str.message, null);
+  assert.equal(str.raw.text, 'boom', 'and what WAS thrown is still written down');
+  const obj = crashRecord({ code: 'E_ODD' });
+  assert.equal(obj.code, 'E_ODD');
+  assert.equal(obj.raw.text, '[object Object]');
+  // null and undefined are thrown too, and the record must survive them rather
+  // than crash inside the crash handler (F70)
+  assert.equal(crashRecord(null).raw.text, 'null');
+  assert.equal(crashRecord(undefined).name, null);
 });

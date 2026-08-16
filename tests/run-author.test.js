@@ -29,8 +29,25 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
 const SRC = readFileSync(join(REPO, 'scripts/run-author.mjs'), 'utf8');
 
-/** the governance block: from its guard to the emit that closes it */
-const BLOCK = /if \(authored\.stop === 'cap-halt' \|\| authored\.stop === 'pricing-red'\) \{[\s\S]*?\n\}\n/.exec(SRC)?.[0];
+/** the governance block: from its guard to the emit that closes it. Both ends are
+ * INDENT-ANCHORED, because the whole flow now sits inside one `try {`: a pattern
+ * closing on a bare `\n}\n` swallowed everything down to the catch's own brace and
+ * the guard silently became a guard over the rest of the file — every assertion
+ * below still passing while reading a block it was never written against. */
+const BLOCK = /\n {2}if \(authored\.stop === 'cap-halt' \|\| authored\.stop === 'pricing-red'\) \{[\s\S]*?\n {2}\}\n/.exec(SRC)?.[0];
+/** the crash catch: the whole handler, from its brace to its brace */
+const CATCH = /\n\} catch \(err\) \{[\s\S]*?\n\}\n/.exec(SRC)?.[0];
+
+test('the governance block is still BOUNDED — the guard reads a block, not the rest of the file', () => {
+  // The instrument's own pre-flight. `BLOCK` is a lazy regex over source, and the
+  // failure mode is not that it stops matching (that fails loud) but that it
+  // matches TOO MUCH: every `assert.ok(BLOCK.includes(...))` below is satisfied by
+  // a bigger haystack, so the guard passes while checking nothing it names. This is
+  // the blind-instrument class, on the test side.
+  assert.ok(BLOCK, 'the governance block moved — this guard no longer reads the code it guards');
+  assert.ok(!/catch \(/.test(BLOCK), 'BLOCK ran past the governance stop into the crash handler');
+  assert.ok(!/author-end/.test(BLOCK), 'BLOCK ran past the governance stop into the flow below it');
+});
 
 test('the governance stop is emitted under ITS OWN name, never hardcoded to cap-halt', () => {
   assert.ok(BLOCK, 'the governance block moved — this guard no longer reads the code it guards');
@@ -80,4 +97,77 @@ test('the spine MEANING splits by stop — a blind meter is never spelled as a s
   const phrase = /meaning: ('not under cap[^']*')/.exec(shipped)?.[1];
   assert.ok(phrase, 'ralph.js no longer spells a cap-halt meaning — the shared vocabulary moved');
   assert.ok(BLOCK.includes(phrase), `the cap-halt arm drifted from the shipped spelling ${phrase}`);
+});
+
+// ── A CRASH LEAVES A BODY ────────────────────────────────────────────────────
+//
+// The defect these lock out was watched live: a real run's spine
+// (`author-<runid>.jsonl`) held exactly ONE line, `author-start`, and nothing
+// else. The paid pipeline threw, the error went to the operator's terminal as an
+// unhandled rejection, and the record of the run stopped mid-sentence — which is
+// byte-for-byte indistinguishable from a run still in flight.
+//
+// Read from SOURCE for the same reason the block above is: the span only reached
+// by paying for a scout and a model call cannot be driven from a test, and the
+// alternative to pinning it here is not pinning it at all. What CAN be extracted
+// was — `crashRecord` lives in `scripts/author-readout.mjs` and is exercised on
+// real thrown values in tests/authoring.test.js.
+
+test('the paid span is inside a catch, and only the paid span is', () => {
+  assert.ok(CATCH, 'the crash handler is gone — a throw in the paid span leaves no spine body again');
+  // the try opens AFTER the spine exists and after author-start is on it. Opening
+  // it earlier would put the argv/config `die()` paths inside a handler whose
+  // whole job is to write to a file that does not exist yet.
+  const start = SRC.indexOf("emit('author-start'");
+  const tryAt = SRC.indexOf('\ntry {\n');
+  assert.ok(start !== -1 && tryAt !== -1, 'the try/author-start pair moved');
+  assert.ok(start < tryAt, 'the try opens BEFORE author-start — a crash would have no spine to land in');
+  // and the paid call itself is inside it
+  assert.ok(SRC.indexOf('authorCloseForJob({') > tryAt, 'the paid call sits outside the catch');
+});
+
+test('the catch writes a BODY: the crash and the end, each said once', () => {
+  assert.ok(CATCH, 'the crash handler is gone');
+  // the crash record, built by the ONE helper — a hand-rolled object here would be
+  // a second scrub boundary, and an unredacted stack is the worst string in this
+  // system to write to a file that outlives the run
+  assert.match(CATCH, /emit\('author-crash', crashRecord\(err\)\)/,
+    'the crash body must go through crashRecord — an inline object bypasses the redactor and the bound');
+  // and the run's END, under an outcome no other arm uses
+  assert.match(CATCH, /emit\('author-end', \{ outcome: 'crashed' \}\)/,
+    "a spine with no author-end reads as a run still in flight — that IS the defect");
+  // the detail is said ONCE. Re-spelling the error onto author-end is two
+  // instruments over one fact, which this file has already paid for once.
+  assert.ok(!/outcome: 'crashed',/.test(CATCH), 'author-end carries a second copy of the crash detail');
+});
+
+test('the catch does not swallow, does not retry, and does not exit()', () => {
+  assert.ok(CATCH, 'the crash handler is gone');
+  // the operator's whole error, on stderr, and FIRST — before the two writes that
+  // could themselves fail
+  assert.match(CATCH, /console\.error\(err\)/, 'the raw error must still reach the terminal in full');
+  const printed = CATCH.indexOf('console.error(err)');
+  const emitted = CATCH.indexOf("emit('author-crash'");
+  assert.ok(printed !== -1 && emitted !== -1 && printed < emitted,
+    'the error is written down before it is printed — a full disk would then swallow it');
+  // NOTHING is re-run. A catch that re-enters the pipeline spends real money on a
+  // failure nobody has read yet.
+  assert.ok(!/await /.test(CATCH), 'the catch awaits something — a crash handler must not retry');
+  assert.ok(!/authorCloseForJob|prepareSigning/.test(CATCH), 'the catch re-enters the pipeline');
+  // F71 — process.exit() can discard queued stdout, and this handler runs with a
+  // readout already queued behind it (the leak scan and the spine line)
+  assert.ok(!/process\.exit\(/.test(CATCH), 'process.exit() in the crash path can discard the readout it just wrote (F71)');
+  assert.match(CATCH, /process\.exitCode = 4/, 'the crash needs its own exit code, distinct from 1/2/3');
+  // and the record survives its own writer failing: an appendFileSync that throws
+  // must not take the printed error down with it (F70 — a guard carrying the
+  // failure mode it guards)
+  assert.match(CATCH, /catch \(spineErr\)/, 'the spine write is unguarded — a failing emit would crash the crash handler');
+});
+
+test('exit code 4 is the CRASH, and nothing else in this runner claims it', () => {
+  // 1 = a refusal or a failed gate, 2 = operator/config, 3 = a leak. Sharing a
+  // code would file a crash as one of those — a bug read as a result.
+  const codes = [...SRC.matchAll(/process\.exit(?:Code = |\()(\d)/g)].map((m) => m[1]);
+  assert.deepEqual([...new Set(codes)].sort(), ['1', '2', '3', '4'], 'the runner\'s exit vocabulary changed');
+  assert.equal(codes.filter((c) => c === '4').length, 1, 'a second site claims exit 4 — the crash code is no longer distinct');
 });
