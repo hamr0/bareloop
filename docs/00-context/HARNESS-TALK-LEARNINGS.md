@@ -79,6 +79,34 @@ retirement met (900 spiked cases, 0 divergences, the comparison itself proven di
   governance — who retries, who stops, who holds the wallet — outsources the product. The
   hard line is unchanged: the agent authors its workflow and never its arbiter.
 
+## Second read — 2026-08-16 (the full transcript, and what the first pass did not carry)
+
+*The fold above was written from the talk's first read. This section records a second pass over
+the **full transcript** (`evolution_of_agentic_surfaces_transcript_and_guide.txt`, the same talk).
+It adds two rows, and then states plainly that the rest of the transcript is already accounted
+for — so the second read is visibly **complete**, not another partial slice. The rules do not
+change: nothing here is evidence, and nothing here moves a bar by itself. One new legend entry:
+**ADOPT-LATER** = worth taking, but the rung that would consume it is not open — recorded with the
+rung named, not scheduled and not built.*
+
+| # | Item (theirs) | Status | Where it lands |
+|---|---|---|---|
+| 11 | **An outbound network allow-list on their Environment primitive.** Their sandbox is configured to run "with the networking limited and allowed hosts only" — the single allowed host being the MCP server it must reach — and the stated purpose is that the environment "effectively stops Claude from doing things that you didn't intend." | **ADOPT-LATER — assess at the EXPORT-ARTIFACT rung** | This is the **network mirror of bareloop's write fence**: the fence bounds what a run may write, an allow-list bounds where it may talk. **Locally it is irrelevant by standing ruling** — bareloop is local-trust, the blast radius is a copied patient on a work branch, and worker code keeps network and OS-user permissions with that limitation documented rather than papered. It stops being irrelevant at **export**: a bundle running headless on a foreign machine, under an operator who did not author the job, is a different threat model from a workbench run on hamr's own box. Recorded as a **question for the export rung** — *should the exported bundle's environment carry an outbound allow-list?* — not as a decision, not as work, and not as a change to the local posture. |
+| 12 | **Organizational-scale memory**, named as a third memory tier beyond per-user memory and Dreaming's self-improvement: a store that "illustrates and stores the team's runbooks and details", which they call an initial direction rather than a shipped thing. | **CONVERGES — no action** | Straight confirmation of bareloop's already-signed product goal: the **ledger and logs as a cross-workflow trend instrument**. Nothing to adopt and nothing to change — it is the same destination, named by a team that has not arrived at it either. The Layer 3 kill-switch bar governs it exactly as it governs Dreaming (#8): paired ON/OFF on the same non-identical job set, plus a memorization audit, before anything inherits. |
+
+**Everything else in the full transcript is already accounted for.** The just-in-time sandbox
+spin-up, the P95/P99 time-to-first-token latency case for decoupling, MCP tunnels (private-network
+MCP servers reached over outbound-only connections), reusable environment and agent definitions as
+durable resources, the session observability dashboard, and the closing framing that harnesses
+"have become the limiting factor to what models can achieve" — each is either already folded above
+(#1–#10) or falls under a standing skip: **latency parallelism** (skipped — bareloop runs are
+token-dominated, process startup is noise against a round), **sandbox/VPC machinery** (skipped —
+local-trust by explicit ruling), and **managed agents as infrastructure** (skipped — bareloop *is*
+the arbiter layer). The sandbox skip stands for the container machinery; #11 deliberately splits
+its **network-boundary half** out of that skip and sends it to the export rung, because that half
+survives the local-trust ruling where the container half does not. No other line of the transcript
+earned a row.
+
 ## What this does NOT tell you
 
 - **It is a talk, not a paper.** No numbers here were replicated, none carry an n, and the
@@ -89,3 +117,6 @@ retirement met (900 spiked cases, 0 divergences, the comparison itself proven di
   logs. This is external context, on the precedent RSI-LEARNINGS set.
 - **The adopted practice is unfired.** The model-bump replay has a trigger and no result. When
   it first runs, what it finds is a finding — and belongs there, not here.
+- **The ADOPT-LATER item is undecided, not deferred-and-agreed.** #11 records a question for the
+  export rung; whether an exported bundle gets a network fence is hamr's call at that rung, and
+  the local posture (local-trust, documented limitations) is unchanged by recording it.

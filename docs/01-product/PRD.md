@@ -5014,3 +5014,110 @@ in it was replicated here. No finding number is minted (`docs/FINDINGS.md` is un
 findings there are grounded in this repo's own runs and logs). No budget, no rung and no
 sequencing changes. The adopted practice is **unfired**; when its trigger first pulls, what the
 replay finds is a finding and belongs in FINDINGS, not in the context document.
+
+## Addendum v1.70 — 2026-08-16 (a named feature to TRY: the HARNESS TIGHTNESS AUDIT — one $0 sweep asking whether a rule is dead weight or friction TODAY, a paired rule contrast behind hamr's word, the tier question kept separate — and the arbiter law that keeps a run from ever tuning itself — hamr: *"what other feat we should add and fold into prd"*)
+
+**DOCS ONLY. Nothing is built, nothing is fired, and no number is picked here.** This addendum
+names a feature to be tried and specifies it well enough that it can be fired on hamr's word
+without a fresh design session. Its origin is hamr broadening v1.69 after the harness-talk fold
+was read a second time (the full transcript; the second-read rows live in
+`docs/00-context/HARNESS-TALK-LEARNINGS.md`).
+
+### 1. The question v1.69 cannot ask
+
+v1.69's **model-bump dead-weight replay** is triggered by a **tier change** and asks one question:
+*is this rule too tight for TOMORROW's model?* It is a good habit and it stays exactly as written.
+But it has a waiting problem: the pin is `claude-sonnet-5` and it may not move for a long time,
+while every rule in the harness is being paid for **today** — in latency, in cache damage, in
+drafting friction, and in runs that hit a wall the rule put there.
+
+The **harness tightness audit** asks the same family of question **without waiting for a model
+change**: *is this rule too tight, or too loose, RIGHT NOW, at the tier we actually run?* It is
+three steps, and only the first is free.
+
+### 2. Step 1 — the $0 archive sweep (fireable on hamr's word; no model, no money)
+
+Over **all archived spines and gate audits**, per **enforced harness rule** — validation-gate
+rules, drafter prompt registers, and guards — the sweep produces two candidate lists:
+
+- **(a) Never fired = dead-weight candidates.** A rule with zero firings across the whole archive
+  is either protecting against something extinct, or unreachable. Both are worth knowing; F50's
+  silently-ignored `layerRoot` is the reminder that *wired* and *the code exists* are different
+  claims, and an unreachable rule reads identically to an extinct one from the outside.
+- **(b) Fired repeatedly on runs that later greened anyway = friction / too-tight candidates.** A
+  rule that keeps stopping runs which then succeed is buying refusals, not safety. This is the
+  measurable form of "the rule costs more than it prevents".
+- **(c) The too-LOOSE side is deliberately NOT duplicated here.** It is already covered
+  continuously and by better instruments: `docs/FINDINGS.md`, the guard batteries, and the
+  standing RSI rule that **verifier hardening never ends** (every battery pass asks "did the
+  worker exploit the close?", and finding nothing is itself suspicious). The audit **records this
+  asymmetry** rather than building a second, weaker loose-side detector — a too-tight rule has no
+  standing instrument, a too-loose one has three.
+
+The sweep's mechanics are the standing **no-paid-fire-before-archive-read** rule's: archived
+artifacts only, no model called, cost $0. Its output is a **named candidate list with the finding
+that minted each rule** — never a change.
+
+### 3. Step 2 — the paired rule contrast (only if step 1 names a suspect; hamr-approved per fire)
+
+If and only if step 1 names a suspect worth paying for: **same job, same tier, rule-ON vs
+rule-OFF.** That answers "too tight **for the current tier**" with a control instead of an
+argument. Two precedents already exist in this repo and both are the shape to copy:
+
+- the **Gate 2 POC's C1 control** — the guard-stripped arm, which refuted its own prediction and
+  left D5 standing on *sufficiency, not necessity*;
+- the **scout ON/OFF 2×2**, which refuted "the scout is dead weight" for about a dollar.
+
+Both precedents cut the same way in the end: a rule that *looked* like dead weight survived the
+contrast. That is the expected outcome and it is a useful one — the contrast exists to make the
+removal case pay for itself.
+
+### 4. Step 3 — the tier contrast (a SEPARATE question, never folded into step 2)
+
+**Same job, identical rules, sonnet vs opus.** That answers a different question: *which rules are
+tier-load-bearing?* — i.e. which exist only because of what the current tier does. The precedent is
+the **`--model haiku` probe**, which reproduced the mailbox trap verbatim downward and told us the
+rule was tier-independent in that direction. Step 3 is effectively a **live preview of v1.69's
+model-bump replay**: it reads the tier axis before the pin moves, instead of after.
+
+**Never toggle a rule AND a tier in one arm.** That is the standing two-changes-one-pass rule —
+a delta produced by two simultaneous levers is unattributable to either, and gets recorded
+INCONCLUSIVE rather than as evidence for the more convenient story.
+
+### 5. The arbiter law, restated — because this feature sits right next to it
+
+A tightness audit is the closest thing in this product to a system tuning itself, so the line is
+restated rather than assumed:
+
+- **Probes only PROPOSE.** The audit's output is a candidate list. **hamr parks or retires**; the
+  bar for actually removing a rule is the F40 park's bar — a measurement, or hamr's word, in that
+  order.
+- **No run ever adjusts its own harness in flight.** The self-healing machinery — the stall fuse,
+  the outside watchdog, F32 crash routing, the strike ladder, replan, resume — heals **execution
+  inside a fixed harness**. It never edits the harness.
+- **Self-healing is the SENSOR this audit reads, offline.** Repeated same-shape strikes across
+  *cold* runs are exactly the scar tissue that names a too-tight rule, and they are already
+  spine-recorded. The audit reads those scars after the fact; the healing machinery keeps knowing
+  nothing about them. **The two must never merge** — a loop that could relax the rule it keeps
+  hitting has authored its arbiter, which is the one thing this product does not do.
+- **Any threshold or decision number this audit ever needs is hamr's**, under the standing
+  no-agent-threshold-picking rule. None is picked here, and none is needed to fire step 1.
+
+### 6. One line carried from the same second read — the export rung's network fence
+
+Recorded here rather than by editing the signed export direction (v1.44 §2–§3, which is not
+rewritten): **the exported bundle's environment may deserve an outbound network allow-list** — the
+network mirror of the write fence, where the fence bounds what a run may *write* and an allow-list
+bounds where it may *talk*. Origin is the harness-talk second read (their Environment primitive
+runs "with the networking limited and allowed hosts only"). It is **irrelevant locally** by
+standing ruling — bareloop is local-trust and the blast radius is a copied patient on a work
+branch — and stops being irrelevant only when a bundle runs headless on a foreign machine under an
+operator who did not author the job. **Assess when the export rung opens**; nothing is decided,
+nothing is scheduled, and the local posture is unchanged.
+
+### 7. Not claimed
+
+The audit is **unfired** and has produced no candidate, so nothing here says any rule is dead
+weight — the two named candidate *classes* are a specification, not a finding. No finding number
+is minted. No budget, rung or sequencing changes, and step 1 is not scheduled: like everything
+paid-adjacent, it waits for hamr's word.
