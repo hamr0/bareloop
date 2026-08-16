@@ -56,7 +56,8 @@ import {
 import { makeLoopGenerate } from '../src/authorflow.js';
 import { validateJob, jobSpecHash } from '../src/job.js';
 import { scanSecrets } from '../src/validate.js';
-import { declarationLines, parseCeiling, ceilingLine, crashRecord } from './author-readout.mjs';
+import { tallyCalls } from '../src/text.js';
+import { declarationLines, parseCeiling, ceilingLine, crashRecord, phaseLine } from './author-readout.mjs';
 
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
@@ -186,6 +187,87 @@ console.log('  stops at prepareSigning — this script NEVER signs and NEVER run
 const provider = new AnthropicProvider({ apiKey, model: MODEL });
 emit('author-start', { runid, patient: PATIENT, lang: LANG, verdictType: VERDICT, model: MODEL, job: draft?.job ?? null, timeoutMs: TIMEOUT_MS, ceilingUsd: CEILING_USD });
 
+// ── WHAT IS HAPPENING, AND WHAT IT HAS COST, WHILE IT IS STILL HAPPENING ─────
+//
+// Everything below reports; nothing below governs. The ceiling is enforced where
+// it always was — `capStop`, between metered calls, inside the library — and no
+// decision anywhere reads these.
+
+/** EVERY METERED CALL, in the order they landed, in the ONE shape `costLine`
+ * already reads. A second hand-spelled running total is exactly the pair this
+ * file has already paid for once (the cap-halt/pricing-red type), so the totals
+ * are DERIVED from this list through `tallyCalls` — the same reader the library's
+ * own cost book uses — rather than accumulated a second time here.
+ * @type {{label: string, costUsd: number|null, unpricedRounds: number}[]} */
+const metered = [];
+/** the run's spend AS OF NOW, shaped exactly like a `makeCostBook().report()` so
+ * `costLine` renders it with no second spelling. F6 rides intact: an unpriced
+ * call makes `costUsd` null and the known half is reported as a `≥` floor. */
+const costSoFar = () => ({ ...tallyCalls(metered), calls: metered.map((c) => ({ ...c })) });
+
+/** the phase the run is inside, for the killed report below. A plain string
+ * rather than a stack: the question a killed run has to answer is "where did my
+ * money go", and the phase plus the cost line answers it. */
+let phase = 'starting';
+/** @param {string} name @param {any} [data] */
+const onPhase = (name, data = {}) => {
+  phase = name;
+  // BEST-EFFORT, and deliberately: this is progress reporting on a PAID run, and
+  // a full disk or a closed pipe must never take down work that is being paid
+  // for. The run's real records (`authored.json`, the crash catch, `author-end`)
+  // are all downstream of this and unaffected.
+  try {
+    console.log(phaseLine(name, data));
+    emit('author-phase', { phase: name, ...data });
+  } catch { /* a reporter that kills the run it reports on is worse than silence (F70) */ }
+};
+/** @param {{label: string, costUsd: number|null, unpricedRounds: number}} call */
+const onCall = (call) => {
+  metered.push({ ...call });
+  try {
+    const t = tallyCalls(metered);
+    console.log(`·   ${call.label} — ${costLine(costSoFar())}`);
+    // `costUsd` rides as `null` when the call was unpriced — `?? 0` launders
+    // unknown into $0 (F6), and this record is what a killed run is read from.
+    emit('author-cost', {
+      label: call.label, costUsd: call.costUsd, unpricedRounds: call.unpricedRounds,
+      knownUsdSoFar: t.knownUsd, spendCompleteSoFar: t.spendComplete, calls: metered.length,
+      ceilingUsd: CEILING_USD,
+    });
+  } catch { /* see onPhase */ }
+};
+
+// ── A KILL LEAVES A BODY, exactly as a crash does ────────────────────────────
+//
+// SIGINT (the operator's own ^C on a run that looks hung), SIGTERM and SIGHUP
+// (a closed terminal, a harness stopping the group) used to end this process
+// with the spine holding ONE line — `author-start` — which is byte-for-byte what
+// a run still in flight looks like, and with 100% of the spend record dying with
+// the process. The paid calls had happened; nothing on disk said so.
+//
+// SIGKILL is NOT covered and cannot be: it is uncatchable by design, and there
+// is no handler to write for it.
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.on(sig, () => {
+    try {
+      emit('author-killed', { signal: sig, phase, ...costSoFar() });
+      emit('author-end', { outcome: 'killed', signal: sig });
+    } catch { /* a killed-handler that crashes destroys its own report (F70) */ }
+    console.error(`\nKILLED by ${sig} during ${phase} — spine: author-killed + author-end`);
+    console.error(`  spent ${costLine(costSoFar())}`);
+    console.error(`  spine ${spineFile}`);
+    // RE-RAISED rather than exited: the honest exit code for a signal death is
+    // 128+signo, and setting an exit code here — any of them — would report a
+    // killed run under a name this runner's vocabulary already spends on
+    // something else. The listener is removed first so the default disposition
+    // takes it (and so the handler cannot re-enter itself).
+    // `appendFileSync` inside `emit` is synchronous, so the record is already on
+    // disk before this line runs.
+    process.removeAllListeners(sig);
+    process.kill(process.pid, sig);
+  });
+}
+
 // ── EVERYTHING PAID FOR, INSIDE ONE CATCH ────────────────────────────────────
 // The span from here to the end of the main flow is the fallible one: a real
 // scout, a real model call, and a real toolchain per close stage. When it threw,
@@ -218,6 +300,9 @@ try {
     // ONE number, both paid seams (the survey's and the declaration loop's) — the
     // advertised ceiling and the enforced ceiling are the same ceiling
     ceilingUsd: CEILING_USD,
+    // …and the two reporting seams. The library emits nothing itself (the
+    // `runJob` → `runPlan` shape): this runner owns the spine and the terminal.
+    onPhase, onCall,
   });
   const authoredFile = writeOut('authored.json', authored);
   emit('authored', { ok: authored.ok, stop: authored.stop, seedRef: authored.seedRef, cost: authored.cost, reds: authored.reds });

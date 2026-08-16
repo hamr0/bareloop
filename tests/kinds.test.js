@@ -1205,6 +1205,57 @@ test('seedRead runs EVERY stage regardless of reds — changed-from-seed is red 
   assert.ok(rows.every((x) => x.verdict !== 'not-reached'));
 });
 
+// ── the seed read TELLS, per stage, as each one lands ────────────────────────
+//
+// A whole seed read is one opaque await from outside: every stage spawns a real
+// toolchain and the slowest is a suite, so a three-minute silence is what the
+// caller sees. `onStage` is REPORTING and nothing else — it fires AFTER a stage
+// completes (a line saying a stage started cannot carry a verdict), it decides
+// nothing, and no row anywhere depends on it.
+
+test('seedRead reports each stage AS IT LANDS — the row, its verdict, and how long it took', async (t) => {
+  const r = makeRepo(t, { 'report.txt': '# tests 11\n', 'src/a.js': 'a\n' });
+  /** @type {any[]} */
+  const told = [];
+  const rows = await seedRead(TWO_STAGE_DECL, ctxFor(r, { onStage: (/** @type {any} */ x) => told.push(x) }));
+  // one report per row, in row order, and NOTHING that is not a row
+  assert.equal(told.length, rows.length);
+  assert.deepEqual(told.map((x) => x.stage), rows.map((x) => x.stage));
+  assert.deepEqual(told.map((x) => x.kind), rows.map((x) => x.kind));
+  // the VERDICT rides along — which is only knowable after the stage finished,
+  // and is the whole reason the report is fired after rather than before
+  assert.deepEqual(told.map((x) => x.verdict), rows.map((x) => x.verdict));
+  assert.equal(told[0].verdict, 'red', 'nothing has changed at the seed');
+  for (const x of told) {
+    assert.equal(typeof x.durationMs, 'number');
+    assert.ok(x.durationMs >= 0 && Number.isFinite(x.durationMs), `a duration that is not a number is not a duration: ${x.durationMs}`);
+  }
+});
+
+test('a SKIPPED stage is reported too — ruling 8 exempts it from measurement, not from the readout (F59)', async (t) => {
+  const r = makeRepo(t, { 'src/a.js': 'a\n' });
+  /** @type {any[]} */
+  const told = [];
+  const decl = {
+    stages: [
+      { name: 'changed-from-seed', kind: 'files-changed', params: { allowPrefixes: ['src/'], requireNonEmpty: true } },
+      { name: 'a-person-looks', kind: 'human-confirms', params: { ask: 'does this look right?' } },
+    ],
+  };
+  const rows = await seedRead(decl, ctxFor(r, { onStage: (/** @type {any} */ x) => told.push(x) }));
+  assert.deepEqual(rows.map((x) => x.verdict), ['red', 'skipped']);
+  assert.deepEqual(told.map((x) => [x.stage, x.verdict]), [['changed-from-seed', 'red'], ['a-person-looks', 'skipped']],
+    'an absent line would read as a stage that never existed — the same reason the row itself is kept');
+});
+
+test('seedRead without an onStage is BYTE-IDENTICAL — the reporter is optional and never load-bearing', async (t) => {
+  const r = makeRepo(t, { 'report.txt': '# tests 11\n', 'src/a.js': 'a\n' });
+  const quiet = await seedRead(TWO_STAGE_DECL, ctxFor(r));
+  const loud = await seedRead(TWO_STAGE_DECL, ctxFor(r, { onStage: () => {} }));
+  assert.deepEqual(quiet.map((x) => [x.stage, x.verdict, x.value, x.baseline]),
+    loud.map((x) => [x.stage, x.verdict, x.value, x.baseline]));
+});
+
 test('runDeclaredClose is first-red-wins: the deciding stage names the verdict and later stages are NOT REACHED', async (t) => {
   const r = makeRepo(t, { 'report.txt': '# tests 11\n', 'src/a.js': 'a\n' });
   const res = await runDeclaredClose(TWO_STAGE_DECL, ctxFor(r));

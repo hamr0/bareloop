@@ -84,6 +84,47 @@ export function ceilingLine(ceilingUsd) {
     : `budget   $${ceilingUsd} ceiling — the pipeline stops BETWEEN metered calls once the spend reaches it`;
 }
 
+/**
+ * ONE PROGRESS PHASE, as a console line.
+ *
+ * The pipeline used to run up to ~15 minutes saying nothing between
+ * `author-start` and its result — a real survey ladder, a real declaration
+ * ladder, and a real toolchain per close stage, all inside one await. Silence
+ * and a hang are the same bytes on a terminal, and the operator's only lever is
+ * to kill a run that may be working.
+ *
+ * It says WHAT is happening, never how far along it is: there is no honest
+ * fraction to print (a survey attempt has no progress, and a suite stage
+ * finishes when it finishes), and an invented percentage is a number nobody
+ * measured. What it does carry is the two facts a person waiting actually uses —
+ * which phase, and how long the last thing took.
+ *
+ * `durationMs` prints as UNKNOWN when it is absent rather than as 0 (F6's rule,
+ * in its time form): a stage whose duration was never measured did not take no
+ * time.
+ * @param {string} phase @param {any} [data]
+ * @returns {string}
+ */
+export function phaseLine(phase, data = {}) {
+  const ms = (/** @type {any} */ v) => (typeof v === 'number' && Number.isFinite(v) ? `${(v / 1000).toFixed(1)}s` : 'unknown');
+  switch (phase) {
+    case 'seed': return '· reading the seed commit…';
+    case 'scout': return `· scout running (up to ${data.attempts ?? '?'} attempt(s)) — a real survey over the repository…`;
+    case 'scout-done': return `· scout ${data.state ?? 'unknown'} — ${data.facts ?? 0} fact(s)`;
+    case 'listing': return '· listing the files the declaration may name…';
+    case 'listing-done': return `· listing ${data.stop ? `STOPPED (${data.stop})` : `${data.files ?? 'unknown'} file(s)`}`;
+    case 'author': return '· authoring the close declaration…';
+    case 'author-call': return `· ${data.call} (call ${(data.i ?? 0) + 1} of up to ${(data.of ?? 0) + 1})…`;
+    case 'seed-read': return `· measuring ${data.stages ?? '?'} stage(s) at the seed — each one runs a real toolchain…`;
+    case 'stage': return `·   ${data.stage} [${data.kind}] ${data.verdict} — ${ms(data.durationMs)}`;
+    case 'seed-read-done': return `· seed read done (${data.stages ?? '?'} stage(s))`;
+    // A phase this renderer does not know is PRINTED, not swallowed: the callers
+    // are the library's own seams and a new one appearing unrendered is how a
+    // readout silently stops covering what it reports on.
+    default: return `· ${phase} ${JSON.stringify(data ?? {})}`;
+  }
+}
+
 /** an ABSENT field stays absent — `null`, never a filled-in guess — and every
  * field that survives goes through the ONE redactor on its way to a file that
  * outlives the run. `name`/`message`/`code` are short, but `message` is the field

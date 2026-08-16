@@ -158,11 +158,17 @@ export const HUMAN_DECISIONS = Object.freeze(['accept', 'rerun', 'cancel']);
  * @typedef {{workdir: string, seedRef: string, gapKeep: string,
  *   timeoutMsDefault?: number, baselineMode?: 'auto'|'worktree',
  *   gapCap?: number, maxBuffer?: number, seedTrees?: SeedTrees,
- *   humanRuling?: {decision: string, text?: string|null}|null}} Ctx
+ *   humanRuling?: {decision: string, text?: string|null}|null,
+ *   onStage?: (row: {stage: string|null, kind: string|null, verdict: string, durationMs: number}) => void}} Ctx
  *   The arbiter's half of a stage run. Every field here is operator/runner
  *   territory: a declaration parameterises kinds, never the contracts.
  *   `humanRuling` is the SIGNER's answer at a hitl pause, carried in from the
  *   runner — never authored, never defaulted, and absent on every ordinary run.
+ *   `onStage` is a REPORTING seam and nothing else: the seed read spawns a real
+ *   toolchain per stage (a suite is the slow one) and a whole read is one opaque
+ *   await, so the shell gets told as each stage lands. It decides nothing, it is
+ *   never consulted, and no verdict depends on it — the house pattern is
+ *   `runJob`'s `emit` (the library reports, the shell prints).
  * @typedef {{verdict: 'green'|'red'|'instrument-stop'|'not-reached'|'pause'|'skipped',
  *   exitCode: number|null, value: number|null, baseline: number|null,
  *   baselineSource: string|null, gapLines: string[], judged: boolean,
@@ -1513,6 +1519,17 @@ export async function seedRead(declaration, ctx) {
   const owned = !ctx.seedTrees;
   const seedTrees = ctx.seedTrees ?? makeSeedTrees();
   const inner = { ...ctx, seedTrees };
+  /** AFTER the stage completes, never before: a line saying a stage STARTED and
+   * a line saying what it RETURNED are two different facts, and only the second
+   * one can carry a verdict. The duration is measured around the call rather
+   * than reported by it, so a stage that stops still gets a real number.
+   * @param {StageResult} row @param {number} startedAt */
+  const told = (row, startedAt) => {
+    if (typeof ctx.onStage === 'function') {
+      ctx.onStage({ stage: row.stage, kind: row.kind, verdict: row.verdict, durationMs: Date.now() - startedAt });
+    }
+    return row;
+  };
   try {
     /** @type {StageResult[]} */
     const rows = [];
@@ -1520,8 +1537,9 @@ export async function seedRead(declaration, ctx) {
       // RULING 8 — judged and human stages are EXEMPT from the seed read, and
       // the exemption is a ROW, not an absence (F59). A person asked at the seed
       // is being interviewed, not measured, and there is nothing to baseline.
+      const startedAt = Date.now();
       if (SEED_EXEMPT_KINDS.includes(stage?.kind)) {
-        rows.push(result(stage, {
+        rows.push(told(result(stage, {
           verdict: 'skipped',
           exitCode: null,
           judged: false,
@@ -1531,10 +1549,10 @@ export async function seedRead(declaration, ctx) {
               + 'is unstable and a person at seed is an interview, not a measurement. This stage has no seed baseline '
               + 'and contributes none.',
           },
-        }));
+        }), startedAt));
         continue;
       }
-      rows.push(await runStageIn(stage, inner));
+      rows.push(told(await runStageIn(stage, inner), startedAt));
     }
     return rows;
   } finally {

@@ -349,6 +349,7 @@ const defaultLoop = (/** @type {any} */ { system, policy, onLlmResult, provider 
  * @param {{workdir: string, provider?: any,
  *   rounds?: number, minBytes?: number, blobMax?: number, maxTokens?: number, ctx?: boolean,
  *   attempts?: number, ceilingUsd?: number|null,
+ *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number}) => void,
  *   createLoop?: (o: {system: string, policy: any, onLlmResult: any, provider: any}) => any,
  *   createSurveyor?: (o: {workdir: string, granted: readonly string[], ctx: boolean}) => Promise<any>}} o
  * @returns {Promise<Survey & {raw: string, raws: ReturnType<typeof scrubRaw>[],
@@ -364,6 +365,7 @@ export async function runAuthorScout({
   ctx = true,
   attempts = SCOUT_ATTEMPTS,
   ceilingUsd = null,
+  onCall = () => {},
   createLoop = defaultLoop,
   createSurveyor = defaultSurveyor,
 }) {
@@ -384,7 +386,17 @@ export async function runAuthorScout({
    * @param {string} label @param {number} attempt @param {any} r @returns {number}
    */
   const record = (label, attempt, r) => {
-    calls.push({ label, ...priceOf(r) });
+    const call = { label, ...priceOf(r) };
+    calls.push(call);
+    // …and the SHELL is told, at the same instant and off the same entry. A run
+    // killed from outside used to lose 100% of its spend record (F6/F12: a
+    // halted attempt's spend was invisible by 300×) — the totals only ever
+    // existed in this array, which dies with the process. Fired from inside the
+    // one recorder rather than at the call sites, so a paid call cannot be
+    // metered without the report going out: exactly the pairing invariant the
+    // raw already rides. It REPORTS and decides nothing; the ceiling still binds
+    // through `capStop` between calls, untouched.
+    onCall({ ...call });
     return raws.push(scrubRaw({ label, attempt, text: r?.text })) - 1;
   };
   // TIGHTEN-ONLY: an operator may lower the ceiling, never raise it. A garbage

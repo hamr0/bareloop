@@ -96,7 +96,7 @@ import {
   GENRE_LANGUAGES, LOCKED_KINDS, TYPES_GENRE, VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES,
 } from './authoring.js';
 import { QUESTION_SETS, questionsFor, requiredAnswersFor, authorClose } from './authorflow.js';
-import { runAuthorScout, buildSeedListing } from './authorscout.js';
+import { runAuthorScout, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
 import {
   DECLARED_GAP_PREFIX, DECLARED_GENRES, guardNames, isDeclaredClose, validateCloseDecl,
 } from './declaredclose.js';
@@ -366,6 +366,8 @@ function composerRefusal(reds) {
  *   verdictType?: string|null,
  *   questions?: Record<string|number, string>|null, generate?: Function, provider?: any,
  *   seedRef?: string|null, scout?: any, listing?: any, ceilingUsd?: number|null,
+ *   onPhase?: (phase: string, data?: any) => void,
+ *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number}) => void,
  *   seedFn?: Function, scoutFn?: Function, listingFn?: Function,
  *   authorFn?: Function, authorOpts?: object}} o
  * @returns {Promise<{ok: boolean, refusal: Refusal|null, verdictType: string|null,
@@ -376,6 +378,13 @@ export async function authorCloseForJob({
   answers, repoPath = null, lang, verdictType = null, questions = null,
   generate, provider = null, seedRef = null, scout = null, listing = null,
   ceilingUsd = null,
+  // THE PROGRESS SEAMS. This composition is the pipeline's long silence — a real
+  // survey, a real declaration ladder, and a real toolchain per close stage — and
+  // it emitted nothing until it returned, so an operator watching a live run
+  // could not tell work from a hang. The library REPORTS and the shell PRINTS
+  // (`runJob`'s `emit` → `runPlan`, the same shape): nothing here reads either
+  // callback back, and no decision in this file or below it depends on one.
+  onPhase = () => {}, onCall = () => {},
   seedFn = seedAtHead, scoutFn = runAuthorScout, listingFn = buildSeedListing,
   authorFn = authorClose, authorOpts = {},
 }) {
@@ -425,6 +434,10 @@ export async function authorCloseForJob({
   // D8 — the seed, READ rather than typed.
   let seed = seedRef;
   if (!isNonEmptyString(seed)) {
+    // Announced only on the path that actually READS one: a caller who handed a
+    // seedRef in never paid for a git call, and a phase line for work nobody did
+    // is the blind-instrument class, one line wide.
+    onPhase('seed', {});
     const s = await seedFn(workdir);
     if (s.stop !== null) {
       // same git-stderr channel as `prepareSigning`'s, scrubbed at the same
@@ -445,15 +458,46 @@ export async function authorCloseForJob({
   // form). `null` travels EXPLICITLY rather than being left off — unbounded is a
   // stated operator choice, and an absent field read as falsy is the same state
   // arrived at by accident.
-  const survey = scout ?? await scoutFn({ workdir, provider, ceilingUsd });
-  const seeds = listing ?? await listingFn({
-    workdir, seedRef: seed, sourcePaths: survey?.facts?.sourcePaths, testPaths: survey?.facts?.testPaths,
-  });
+  /** @type {any} */
+  let survey = scout;
+  // `== null` and not `!survey`: this is the `??` these two lines replaced, kept
+  // exactly — a caller-supplied survey is used whatever it is, and only an
+  // ABSENT one is paid for.
+  if (survey == null) {
+    // The scout is the pipeline's FIRST paid stage and its longest single
+    // silence: up to three ladder attempts, each a real toolable survey over a
+    // real tree. `attempts` is the ceiling the scout enforces on itself, so the
+    // reader knows how many the line could repeat for.
+    onPhase('scout', { attempts: SCOUT_ATTEMPTS });
+    survey = await scoutFn({ workdir, provider, ceilingUsd, onCall });
+    // …and the survey's own VERDICT, said the moment it lands. `state` is what
+    // every downstream refusal keys on (F59: absent is never "no facts needed"),
+    // and the fact count is the one number that says whether the ladder came
+    // back with anything to author from.
+    onPhase('scout-done', { state: survey?.state ?? null, facts: Object.keys(survey?.facts ?? {}).length });
+  }
+  /** @type {any} */
+  let seeds = listing;
+  if (seeds == null) {
+    onPhase('listing', {});
+    seeds = await listingFn({
+      workdir, seedRef: seed, sourcePaths: survey?.facts?.sourcePaths, testPaths: survey?.facts?.testPaths,
+    });
+    // the count is only knowable AFTER, so it rides the done line rather than
+    // being guessed onto the start one
+    onPhase('listing-done', { files: seeds?.files?.length ?? null, stop: seeds?.stop ?? null });
+  }
 
+  // The declaration ladder. The REVISION CAP is deliberately not quoted here:
+  // the tighten-only clamp lives in `authorClose` (and `authorOpts` may lower
+  // it), so a number spelled at this call site could disagree with the one the
+  // loop obeys — `author-call` carries the enforced cap instead, from where it
+  // is computed.
+  onPhase('author', {});
   const authored = await authorFn({
     workdir, seedRef: seed, lang, verdictType: picked,
     answers: interview.answers, questions: questions ?? questionsFor(picked),
-    scout: survey, listing: seeds, generate, ceilingUsd, ...authorOpts,
+    scout: survey, listing: seeds, generate, ceilingUsd, onPhase, onCall, ...authorOpts,
   });
 
   if (!authored.ok) {

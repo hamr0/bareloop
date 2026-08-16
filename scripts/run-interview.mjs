@@ -340,25 +340,41 @@ say(`It runs under the AUTHORING ceiling (${CEILING_USD === null ? 'UNBOUNDED �
 say('It stops at prepareSigning: it never signs, and it never runs the job.');
 say('');
 say(`  ANTHROPIC_API_KEY=... node scripts/run-author.mjs ${childArgs.join(' ')}`);
-if (!process.env.ANTHROPIC_API_KEY) {
+// NO KEY, NO OFFER. `run-author.mjs` refuses without one and exits 2 at its own
+// door, before a spine exists — so with the shell unkeyed this question has
+// exactly one possible outcome for the person, and putting it anyway spends
+// their attention on a choice they do not have. What is actionable instead is
+// the command above and the one line that says how to make it work.
+const KEYED = Boolean(process.env.ANTHROPIC_API_KEY);
+if (!KEYED) {
   say('');
   say('  (ANTHROPIC_API_KEY is not set in this shell — run-author refuses without it; secrets load from the environment, never the tree)');
+  // The repair, in plain words and WITHOUT a command: which secret store a person
+  // keeps their key in is theirs, and printing one specific incantation would be
+  // this script guessing at their setup — while the one thing it must never do is
+  // put a key anywhere a command line can be read from.
+  say('  set the key in the shell you run it from, e.g. from your secret store, then paste the command above.');
 }
 say('');
-prompt('Run it now? [y/N] ');
 // The default is NO, and it is the same lean the pause's doors take: the answer that
 // costs nothing is the one you get by saying nothing. Only an explicit yes spends.
-const answer = await (async () => {
+// Unkeyed, the offer is never made and the answer is the default one — not a
+// refusal typed on the person's behalf, but the only answer the state admits.
+let answer = '';
+if (KEYED) {
+  prompt('Run it now? [y/N] ');
   const l = await nextLine();
-  return l === null ? '' : String(l).trim().toLowerCase();
-})();
+  answer = l === null ? '' : String(l).trim().toLowerCase();
+}
 // the reader lets go of stdin BEFORE the child is spawned: `stdio:'inherit'` hands
 // the same descriptor over, and two readers on one terminal is a keystroke landing
 // in whichever of them happens to be listening.
 rl.close();
 if (answer !== 'y' && answer !== 'yes') {
   say('');
-  say('Not run. The command above is yours to fire when you are ready — the two files are already on disk.');
+  say(KEYED
+    ? 'Not run. The command above is yours to fire when you are ready — the two files are already on disk.'
+    : 'Not offered — there is no key in this shell to run it with. The command above is yours to fire once you set one; the two files are already on disk.');
   // F71 — never process.exit() after output: exit() can discard queued stdout.
   process.exitCode = 0;
 } else {

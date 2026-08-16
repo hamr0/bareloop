@@ -1413,6 +1413,130 @@ test('makeCostBook: absorbed and added calls both land, and unknown stays unknow
   assert.equal(r.spendComplete, false);
 });
 
+// ── 8a. THE SPEND, REPORTED WHILE IT IS STILL HAPPENING ──────────────────────
+//
+// A run killed from outside used to lose 100% of its spend record: the totals
+// only ever existed in the book, which dies with the process (F6/F12 — a halted
+// attempt's spend was invisible by 300×). `onCall` fires as each metered call
+// lands, from inside `add` itself, so a paid call cannot be metered without the
+// report going out. It REPORTS: `capStop` is still the one predicate, still
+// reading the same entries.
+
+test('makeCostBook: every ADDED call is reported as it lands, in order, with its own price', () => {
+  /** @type {any[]} */
+  const told = [];
+  const book = makeCostBook({ onCall: (/** @type {any} */ c) => told.push(c) });
+  book.add('author', { metrics: { costUsd: 0.01, unpricedRounds: 0 } });
+  book.add('revise-1', { metrics: { costUsd: 0.02, unpricedRounds: 3 } });
+  assert.deepEqual(told, [
+    { label: 'author', costUsd: 0.01, unpricedRounds: 0 },
+    { label: 'revise-1', costUsd: 0.02, unpricedRounds: 3 },
+  ]);
+  // the same list the report is a reading of — one fact, never two accumulators
+  assert.deepEqual(book.report().calls, told);
+});
+
+test('makeCostBook: an UNPRICED call reports its null — `?? 0` would launder unknown into $0 (F6)', () => {
+  /** @type {any[]} */
+  const told = [];
+  const book = makeCostBook({ onCall: (/** @type {any} */ c) => told.push(c) });
+  book.add('author', { metrics: { costUsd: null, unpricedRounds: 1 } });
+  assert.equal(told[0].costUsd, null, 'a floor that reads as exact is F6 in an honest coat');
+});
+
+test('makeCostBook: ABSORBED calls are NOT re-reported — they were metered by whoever made them', () => {
+  /** @type {any[]} */
+  const told = [];
+  const book = makeCostBook({ onCall: (/** @type {any} */ c) => told.push(c) });
+  book.absorb([{ label: 'author-scout', costUsd: 0.03, unpricedRounds: 0 }]);
+  assert.deepEqual(told, [], 'the scout reported its own calls — reporting them again doubles its spend downstream');
+  book.add('author', { metrics: { costUsd: 0.01, unpricedRounds: 0 } });
+  assert.deepEqual(told.map((c) => c.label), ['author']);
+  // and the book's own total still sees BOTH, exactly as it did
+  assert.equal(book.report().costUsd, 0.04);
+});
+
+test('makeCostBook with no onCall is unchanged — the reporter is optional and never load-bearing', () => {
+  const book = makeCostBook({ ceilingUsd: 0.05 });
+  book.add('author', { metrics: { costUsd: 0.06, unpricedRounds: 0 } });
+  assert.equal(book.capStop(), 'cap-halt', 'the ceiling reads the same entries whether anyone is listening or not');
+});
+
+// ── 8a-ii. THE PHASES, from inside the declaration ladder ────────────────────
+
+test('authorClose announces each call and each seed read — the two long silences it owns', async () => {
+  /** @type {[string, any][]} */
+  const phases = [];
+  const { generate } = scriptGenerate([{ declaration: goodDeclaration() }]);
+  const seed = scriptSeedRead();
+  const r = await authorClose({
+    ...baseArgs(), generate, seedReadFn: seed.fn, maxRevisions: 0,
+    onPhase: (/** @type {string} */ n, /** @type {any} */ d) => phases.push([n, d]),
+  });
+  assert.equal(r.ok, true, JSON.stringify(r.reds));
+  assert.deepEqual(phases.map(([n]) => n), ['author-call', 'seed-read', 'seed-read-done']);
+
+  const call = phases[0][1];
+  assert.equal(call.call, 'author');
+  assert.equal(call.i, 0);
+  // the ENFORCED cap, not the constant: `maxRevisions: 0` was honoured, and a
+  // readout quoting a number the loop does not obey is a second instrument
+  assert.equal(call.of, 0, 'the ladder was capped at zero revisions and says so');
+
+  const read = phases[1][1];
+  assert.equal(read.call, 'author');
+  assert.equal(read.stages, goodDeclaration().stages.length, 'how many toolchains this await is about to spawn');
+  assert.deepEqual(phases[2][1], read, 'the done line names the same read it closes');
+});
+
+test('authorClose: a REVISE ladder announces each rung, and the cap it announces is the one it obeys', async () => {
+  /** @type {[string, any][]} */
+  const phases = [];
+  // two DISTINCT declarations, so the unchanged-declaration early stop does not
+  // end the ladder before the second rung
+  const { generate } = scriptGenerate([
+    { declaration: goodDeclaration() },
+    { declaration: goodDeclaration('js', ['src/email.js']) },
+  ]);
+  await authorClose({
+    ...baseArgs(), generate, seedReadFn: scriptSeedRead().fn, maxRevisions: 1,
+    onPhase: (/** @type {string} */ n, /** @type {any} */ d) => phases.push([n, d]),
+  });
+  const calls = phases.filter(([n]) => n === 'author-call').map(([, d]) => d);
+  assert.deepEqual(calls.map((c) => [c.call, c.i, c.of]), [['author', 0, 1], ['revise-1', 1, 1]]);
+});
+
+test('authorClose threads the per-stage reporter into the seed read — the shell hears each stage land', async () => {
+  /** @type {any[]} */
+  const phases = [];
+  const { generate } = scriptGenerate([{ declaration: goodDeclaration() }]);
+  // the seam under test: whatever ctx `authorClose` builds is what the real
+  // `seedRead` receives, so the reporter has to arrive on it
+  const seedReadFn = async (/** @type {any} */ declaration, /** @type {any} */ ctx) => {
+    for (const s of declaration.stages) ctx.onStage({ stage: s.name, kind: s.kind, verdict: 'green', durationMs: 7 });
+    return declaration.stages.map((/** @type {any} */ s) => ({
+      verdict: 'green', exitCode: 0, value: null, baseline: null, baselineSource: null,
+      gapLines: [], judged: true, stage: s.name, kind: s.kind, detail: {},
+    }));
+  };
+  await authorClose({
+    ...baseArgs(), generate, seedReadFn, maxRevisions: 0,
+    onPhase: (/** @type {string} */ n, /** @type {any} */ d) => phases.push([n, d]),
+  });
+  const stages = phases.filter(([n]) => n === 'stage').map(([, d]) => d);
+  assert.deepEqual(stages.map((s) => s.stage), goodDeclaration().stages.map((s) => s.name));
+  // and each one is stamped with WHICH call's read it belongs to — a revise
+  // ladder measures the same stage names more than once
+  assert.ok(stages.every((s) => s.call === 'author' && s.durationMs === 7), JSON.stringify(stages));
+});
+
+test('authorClose without an onPhase is unchanged — every seam is optional', async () => {
+  const { generate } = scriptGenerate([{ declaration: goodDeclaration() }]);
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: scriptSeedRead().fn, maxRevisions: 0 });
+  assert.equal(r.ok, true, JSON.stringify(r.reds));
+  assert.equal(r.finalFrom, 'author');
+});
+
 // ── 8b. THE AUTHORING CEILING ────────────────────────────────────────────────
 //
 // The pipeline metered spend and nothing bounded it: `run-author.mjs` REPORTED a

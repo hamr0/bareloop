@@ -972,8 +972,19 @@ export function resolveSourcePrefixes({ workdir, sourcePaths, seedFiles }) {
  * run could not be read afterwards. A cost entry with no raw beside it is that
  * run again.
  */
-/** @param {{ceilingUsd?: number|null}} [o] the OPERATOR's ceiling; `null`/absent is UNBOUNDED */
-export function makeCostBook({ ceilingUsd = null } = {}) {
+/**
+ * @param {{ceilingUsd?: number|null,
+ *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number}) => void}} [o]
+ *   `ceilingUsd` is the OPERATOR's ceiling; `null`/absent is UNBOUNDED.
+ *   `onCall` is a REPORTING seam fired as each metered call lands — the shell's
+ *   only chance to know what has been spent while the run is still alive. It is
+ *   never consulted and never governs: `capStop` below is still the one
+ *   predicate, still asked between calls, and still reads the same `entries`.
+ *   `absorb` deliberately does NOT fire it: those calls were metered (and
+ *   reported) by whoever made them, and reporting them twice would double the
+ *   scout's spend in every reader downstream.
+ */
+export function makeCostBook({ ceilingUsd = null, onCall = () => {} } = {}) {
   /** @type {{label: string, costUsd: number|null, unpricedRounds: number}[]} */
   const entries = [];
   /** @type {ReturnType<typeof scrubRaw>[]} */
@@ -981,8 +992,10 @@ export function makeCostBook({ ceilingUsd = null } = {}) {
   return {
     /** @param {string} label @param {any} r a bare-agent run result @param {number} [attempt] */
     add(label, r, attempt = 1) {
-      entries.push({ label, ...priceOf(r) });
+      const call = { label, ...priceOf(r) };
+      entries.push(call);
       raws.push(scrubRaw({ label, attempt, text: r?.text, reason: r?.error ? String(r.error) : null }));
+      onCall({ ...call });
       return entries.at(-1);
     },
     /** @param {{label: string, costUsd: number|null, unpricedRounds: number}[]} calls
@@ -1145,6 +1158,8 @@ async function askDeclaration({ messages, generate, mode, retries, label, book, 
  *   listing?: {stop: string|null, files: string[]|null, block: string|null, meta: any}|null,
  *   generate: Function, seedReadFn?: Function, closeCtx?: any,
  *   ceilingUsd?: number|null,
+ *   onPhase?: (phase: string, data?: any) => void,
+ *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number}) => void,
  *   maxRevisions?: number, structureRetries?: number,
  *   structuredMode?: 'tool'|'text', catalogue?: Record<string, any>}} o
  */
@@ -1154,6 +1169,11 @@ export async function authorClose({
   scout, listing = null,
   generate, seedReadFn = runSeedReadStages, closeCtx = {},
   ceilingUsd = null,
+  // The two REPORTING seams, defaulted to nothing so every existing caller is
+  // byte-identical. Neither is consulted: the revise ladder, the ceiling and the
+  // seed read all run exactly as they did — the shell is merely told, while the
+  // run is still alive, which of the up-to-15 silent minutes it is inside.
+  onPhase = () => {}, onCall = () => {},
   maxRevisions = MAX_REVISIONS,
   structureRetries = MAX_STRUCTURE_RETRIES,
   structuredMode = 'tool',
@@ -1178,7 +1198,7 @@ export async function authorClose({
   // no default for exactly this reason, and `shellCapUsd` left off judged against
   // a number nobody chose). An unbounded authoring run is legal; it is just never
   // an accident, which is why the driver PRINTS it.
-  const book = makeCostBook({ ceilingUsd });
+  const book = makeCostBook({ ceilingUsd, onCall });
   // The scout's calls AND its raws, together. The raws matter most on the path
   // that spends nothing more: run mslhn707 refused at the $0 preflight below,
   // and the survey text that would have said WHY died with the process.
@@ -1366,6 +1386,11 @@ export async function authorClose({
   try {
     for (let i = 0; i <= revisionCap; i += 1) {
       const label = i === 0 ? 'author' : `revise-${i}`;
+      // WHICH call, and how many the ladder may make. `of` is the ENFORCED cap
+      // (`revisionCap`, already clamped tighten-only) rather than the constant —
+      // a readout quoting a number the loop does not obey is a second
+      // instrument, and this file's own history is what that costs.
+      onPhase('author-call', { call: label, i, of: revisionCap });
       const ask = await askDeclaration({ messages, generate, mode: structuredMode, retries: retryCap, label, book, catalogue });
       messages = ask.convo;
 
@@ -1452,7 +1477,20 @@ export async function authorClose({
         // `gapKeep` defaults to EMPTY rather than being left undefined: M1
         // prefixes every gap line with it verbatim, so an unset one prints the
         // word "undefined" on every failure line the model is asked to read
-        const rows = await seedReadFn(injected.declaration, { gapKeep: '', ...closeCtx, workdir, seedRef, seedTrees });
+        // THE LONG ONE. Every stage of the declaration spawns a real toolchain
+        // against the patient, so this single await is where a run spends
+        // minutes saying nothing — the per-stage line below is the whole point,
+        // and the block boundary is what makes it readable.
+        const stageCount = injected.declaration?.stages?.length ?? null;
+        onPhase('seed-read', { call: label, stages: stageCount });
+        // `onStage` sits AFTER the `closeCtx` spread beside `workdir`/`seedRef`:
+        // it is the runner's own reporting channel, not a knob a caller's close
+        // context may quietly redirect.
+        const rows = await seedReadFn(injected.declaration, {
+          gapKeep: '', ...closeCtx, workdir, seedRef, seedTrees,
+          onStage: (/** @type {any} */ row) => onPhase('stage', { call: label, ...row }),
+        });
+        onPhase('seed-read-done', { call: label, stages: stageCount });
         iter.seedRead = rows;
         accepted = injected.declaration;
         acceptedSeedRead = rows;

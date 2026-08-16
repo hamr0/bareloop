@@ -27,6 +27,7 @@ import {
 } from '../src/authorjob.js';
 import { validateJob, jobSpecHash, checkApproval } from '../src/job.js';
 import { questionsFor } from '../src/authorflow.js';
+import { SCOUT_ATTEMPTS } from '../src/authorscout.js';
 import { scanSecrets } from '../src/validate.js';
 import { classGuards } from '../src/authoring.js';
 
@@ -851,6 +852,96 @@ test('NO ceiling travels as an EXPLICIT null — an unbounded run is a stated ch
   });
   assert.equal(seen.scout, null, 'null is "nobody set one", and it is spelled');
   assert.equal(seen.author, null);
+});
+
+// ── PROGRESS: the composition says what it is doing, while it is doing it ─────
+//
+// The pipeline used to be one opaque await: a real survey ladder, a real
+// declaration ladder and a real toolchain per close stage, up to ~15 minutes of
+// it, with nothing on the terminal or the spine between `author-start` and the
+// result. Silence and a hang are the same bytes, and the operator's only lever
+// was to kill a run that might have been working.
+//
+// The library REPORTS and the shell PRINTS (`runJob`'s `emit` → `runPlan`), so
+// what is under test here is that the boundaries fire, in order, with the facts
+// a person waiting actually uses — and that a phase is never announced for work
+// nobody did.
+
+test('the composition announces each boundary IN ORDER, with the facts a waiting person uses', async (t) => {
+  const p = makePatient(t);
+  /** @type {[string, any][]} */
+  const phases = [];
+  const r = await authorCloseForJob({
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js',
+    onPhase: (/** @type {string} */ n, /** @type {any} */ d) => phases.push([n, d]),
+    seedFn: async () => ({ stop: null, seedRef: p.seed }),
+    scoutFn: async () => SURVEY(p.dir),
+    listingFn: async () => ({ stop: null, files: ['src/fix.js', 'check.mjs'] }),
+    authorFn: async () => ({ ok: false, declaration: null, reds: [], stop: 'max-revisions', cost: null }),
+  });
+  assert.equal(r.ok, false, 'the authorFn stub decides nothing here — the phases do');
+  assert.deepEqual(phases.map(([n]) => n), ['seed', 'scout', 'scout-done', 'listing', 'listing-done', 'author'],
+    'every boundary, in the order the design puts them in');
+
+  const at = (/** @type {string} */ n) => phases.find(([x]) => x === n)?.[1];
+  // the scout's line says how many attempts it may take, so a repeat is expected
+  // rather than read as a stuck run — and the number is the LIBRARY's own bound
+  assert.equal(at('scout').attempts, SCOUT_ATTEMPTS);
+  // and its verdict is said the moment it lands: `state` is what every downstream
+  // refusal keys on, and the fact count says whether there is anything to author
+  assert.equal(at('scout-done').state, 'PRESENT');
+  assert.equal(at('scout-done').facts, Object.keys(SURVEY(p.dir).facts).length);
+  assert.equal(at('listing-done').files, 2);
+  assert.equal(at('listing-done').stop, null);
+});
+
+test('a phase is NEVER announced for work nobody did — a supplied seed, survey or listing is silent', async (t) => {
+  const p = makePatient(t);
+  /** @type {string[]} */
+  const phases = [];
+  await authorCloseForJob({
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js',
+    // all three handed in: nothing below is paid for, so nothing below is claimed
+    seedRef: p.seed, scout: SURVEY(p.dir), listing: { stop: null, files: ['src/fix.js'] },
+    onPhase: (/** @type {string} */ n) => phases.push(n),
+    seedFn: async () => { throw new Error('a supplied seedRef must not be re-read'); },
+    scoutFn: async () => { throw new Error('a supplied survey must not be re-run'); },
+    listingFn: async () => { throw new Error('a supplied listing must not be rebuilt'); },
+    authorFn: async () => ({ ok: false, declaration: null, reds: [], stop: 'max-revisions', cost: null }),
+  });
+  assert.deepEqual(phases, ['author'], 'a line for work that never happened is the blind-instrument class, one line wide');
+});
+
+test('the composition refusing early announces NOTHING it did not reach', async () => {
+  /** @type {string[]} */
+  const phases = [];
+  const r = await authorCloseForJob({
+    verdictType: 'green', answers: ANSWERS, repoPath: '/tmp/x', lang: 'rust',
+    onPhase: (/** @type {string} */ n) => phases.push(n),
+    scoutFn: async () => { throw new Error('the genre refusal precedes the scout'); },
+  });
+  assert.equal(r.stop, 'refused');
+  assert.deepEqual(phases, [], 'a $0 refusal has no phases to report — it never got that far');
+});
+
+test('the COST seam reaches BOTH paid stages: a metered call is never made without the shell being told', async (t) => {
+  const p = makePatient(t);
+  /** @type {any} */
+  const seen = { scout: 'never called', author: 'never called' };
+  await authorCloseForJob({
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
+    onCall: () => {},
+    scoutFn: async (/** @type {any} */ o) => { seen.scout = typeof o.onCall; return SURVEY(p.dir); },
+    authorFn: async (/** @type {any} */ o) => {
+      seen.author = typeof o.onCall;
+      return { ok: false, declaration: null, reds: [], stop: 'max-revisions', cost: null };
+    },
+  });
+  // the SAME reason the ceiling reaches both: the pipeline meters two populations
+  // of paid call in two accumulators, and a run killed mid-flight loses whichever
+  // one it was not told about
+  assert.equal(seen.scout, 'function', 'the survey is a paid stage and its spend must be reportable');
+  assert.equal(seen.author, 'function', 'and so is the declaration loop');
 });
 
 test('THE COMPOSER carries a LOCKED KIND up as counted demand — the reds array is not where a refusal hides', async (t) => {

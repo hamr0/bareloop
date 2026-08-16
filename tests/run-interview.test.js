@@ -35,14 +35,19 @@ const outDir = () => join(base, `out-${n += 1}`);
  * Drive the real script with a scripted stdin. `lines` are typed one per line; a
  * free-text answer is ended by an empty string, exactly as a person ends one with a
  * blank line.
- * @param {{verdict?: string, patient?: string, out: string, budget?: string|null, lines: string[]}} o
+ * `key` is the SHELL's state, not a value this script ever reads: it gates
+ * whether the paid-step offer is put at all, and the default is unkeyed. The
+ * scenarios that set one use a value no provider would accept — nothing here
+ * talks to a provider, and every keyed scenario still answers the offer "n".
+ * @param {{verdict?: string, patient?: string, out: string, budget?: string|null,
+ *   key?: string, lines: string[]}} o
  */
-const interview = ({ verdict = 'hitl', patient = base, out, budget = '2.50', lines }) => {
+const interview = ({ verdict = 'hitl', patient = base, out, budget = '2.50', key = '', lines }) => {
   const args = ['--patient', patient, '--verdict', verdict, '--out', out, ...(budget === null ? [] : ['--budget', budget])];
   const r = spawnSync(process.execPath, [SCRIPT, ...args], {
     encoding: 'utf8', timeout: 120_000, input: `${lines.join('\n')}\n`,
-    // no key reaches this script and it must never need one
-    env: { ...process.env, ANTHROPIC_API_KEY: '' },
+    // no key VALUE reaches this script and it must never need one
+    env: { ...process.env, ANTHROPIC_API_KEY: key },
   });
   if (r.status === null) throw new Error(`run-interview.mjs never exited (${r.error?.code ?? r.signal ?? '?'}):\n${(r.stdout ?? '').slice(0, 400)}`);
   return { code: r.status, out: `${r.stdout ?? ''}${r.stderr ?? ''}` };
@@ -296,17 +301,55 @@ test('tripwire: the draft\'s validity is the LIBRARY\'s reading, and the authore
 
 test('the paid step is OFFERED, never taken: the default is no, and saying nothing runs nothing', () => {
   const out = outDir();
-  // input simply ENDS at the offer — the same as pressing return
-  const r = interview({ out, lines: session('hitl').slice(0, -1) });
+  // input simply ENDS at the offer — the same as pressing return. A KEYED shell,
+  // because the offer is only put when it could actually be taken (below).
+  const r = interview({ out, key: 'sk-test-not-a-real-key', lines: session('hitl').slice(0, -1) });
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /Run it now\? \[y\/N\]/);
   assert.match(r.out, /Not run\./);
   assert.match(r.out, /the two files are already on disk/);
 });
 
-test('the offer names the key it will need, without ever printing one', () => {
+// ── AN OFFER THAT CAN ONLY BE REFUSED IS NOT PUT ──────────────────────────────
+//
+// `run-author.mjs` exits 2 at its own key guard, before a spine exists. So with
+// the shell unkeyed, "Run it now?" has exactly one reachable outcome: a yes
+// spawns a child that dies at the door and reports an operator/config error as
+// though it were the result of an authoring run.
+
+test('with no key in the shell, the run offer is NOT PUT — the question has only one possible answer', () => {
+  const out = outDir();
+  // the full session INCLUDING its trailing "y": if the offer were still put,
+  // this would spawn the paid child. It must not be read at all.
+  const r = interview({ out, lines: session('hitl', { run: 'y' }) });
+  assert.equal(r.code, 0, r.out);
+  assert.doesNotMatch(r.out, /Run it now\?/, 'the offer is put over a shell that cannot take it');
+  assert.doesNotMatch(r.out, /close-authoring, run /, 'a "y" was read and the paid child was spawned without a key');
+  assert.match(r.out, /Not offered — there is no key in this shell/);
+  assert.match(r.out, /the two files are already on disk/);
+});
+
+test('the offer names the key it will need, without ever printing one — and says how to set it', () => {
   const out = outDir();
   const r = interview({ out, lines: session('hitl') });
   assert.match(r.out, /ANTHROPIC_API_KEY is not set in this shell/);
   assert.match(r.out, /ANTHROPIC_API_KEY=\.\.\. node scripts\/run-author\.mjs/, 'the command shows the shape, never a value');
+  assert.match(r.out, /set the key in the shell you run it from/, 'the explainer says what to DO, not only what is wrong');
+  // and it never guesses at WHICH secret store, nor prints a command that would
+  // put a key on a readable command line
+  // named commands only — a bare word like "pass" appears in ordinary prose (the
+  // goal answer itself says "pass the checker"), and a guard that matches that is
+  // matching the wrong thing
+  assert.doesNotMatch(r.out, /pass show|gpg |security find-generic-password|1password|op read|export ANTHROPIC_API_KEY=\S/);
+});
+
+test('the two files are on disk EITHER WAY — the offer is the only thing the key gates', () => {
+  const unkeyed = outDir();
+  const keyed = outDir();
+  assert.equal(interview({ out: unkeyed, lines: session('hitl') }).code, 0);
+  assert.equal(interview({ out: keyed, key: 'sk-test-not-a-real-key', lines: session('hitl') }).code, 0);
+  for (const out of [unkeyed, keyed]) {
+    assert.ok(existsSync(join(out, 'answers.json')), `${out} lost its answers`);
+    assert.ok(existsSync(join(out, 'specdraft.json')), `${out} lost its draft`);
+  }
 });

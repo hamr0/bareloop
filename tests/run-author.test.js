@@ -20,7 +20,9 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { capStop } from '../src/text.js';
@@ -162,6 +164,179 @@ test('the catch does not swallow, does not retry, and does not exit()', () => {
   // must not take the printed error down with it (F70 — a guard carrying the
   // failure mode it guards)
   assert.match(CATCH, /catch \(spineErr\)/, 'the spine write is unguarded — a failing emit would crash the crash handler');
+});
+
+// ── A KILL LEAVES A BODY, TOO ────────────────────────────────────────────────
+//
+// The crash catch above covers a throw. It does NOT cover a signal: ^C on a run
+// that looks hung, a closed terminal, a harness stopping the process group. Those
+// left the same one-line spine the crash used to — `author-start` and silence,
+// byte-for-byte what a run still in flight looks like — and took 100% of the
+// spend record with them (F6/F12: a halted attempt's spend was invisible by 300×).
+//
+// The instrument below is a TWIN, and what is twinned is stated honestly: the
+// handler and the cost/phase recorders are the RUNNER'S OWN BYTES, extracted from
+// source and executed; the ~10 lines around them (a temp spine, a stub `emit`
+// call site) are the test's. The alternative is not a better test — it is no test
+// at all, because the real script installs these only AFTER the key guard, and
+// past that line every path costs real money.
+
+/** the progress/cost/kill region: from the metered list to the close of the
+ * signal loop. INDENT-ANCHORED at both ends (`\n}` at column 0), the same
+ * lesson the governance block above already paid for. */
+const KILL = /const metered = \[\];[\s\S]*?\n\}\n/.exec(SRC)?.[0];
+/** F6's own renderer, extracted with it — the killed report must not spell the
+ * spend a second way */
+const COSTLINE = /const costLine = \(cost\) => \{[\s\S]*?\n\};\n/.exec(SRC)?.[0];
+
+test('the kill region is still BOUNDED — this guard reads the handler, not the rest of the file', () => {
+  assert.ok(KILL, 'the kill/progress region moved — this guard no longer reads the code it guards');
+  assert.ok(COSTLINE, 'costLine moved');
+  assert.ok(!/authorCloseForJob/.test(KILL), 'KILL ran past the handler into the paid flow');
+  assert.ok(!/catch \(err\)/.test(KILL), 'KILL ran past the handler into the crash catch');
+});
+
+test('all three catchable kills are handled — and SIGKILL is not pretended to be', () => {
+  assert.ok(KILL);
+  assert.match(KILL, /\['SIGINT', 'SIGTERM', 'SIGHUP'\]/, 'a terminal ^C, a harness stop and a closed terminal are three different deaths and one record');
+  // SIGKILL is uncatchable. It may be NAMED (saying so is the honest thing) but
+  // it must never be registered — a listener that can never fire reads as cover
+  // this runner does not have.
+  assert.ok(!/process\.on\('SIGKILL'|'SIGKILL',/.test(KILL), 'SIGKILL is uncatchable — a handler for it is a promise nothing keeps');
+});
+
+test('the killed report is written, then the signal is RE-RAISED — never exited', () => {
+  assert.ok(KILL);
+  assert.match(KILL, /emit\('author-killed', \{ signal: sig, phase, \.\.\.costSoFar\(\) \}\)/,
+    'the report names WHICH signal, WHERE it landed, and what had been spent');
+  assert.match(KILL, /emit\('author-end', \{ outcome: 'killed', signal: sig \}\)/,
+    'a spine with no author-end reads as a run still in flight — that IS the defect');
+  // F70 — a killed-handler that crashes destroys the report it exists to make
+  assert.match(KILL, /\} catch \{/, 'the emits are unguarded — a failing append would take the report down with it');
+  // the honest exit code for a signal death is 128+signo, and only the default
+  // disposition produces it. `process.exit(0)` here reports a killed run as clean.
+  assert.match(KILL, /process\.removeAllListeners\(sig\);\s*\n\s*process\.kill\(process\.pid, sig\)/,
+    'the listener must be removed BEFORE the re-raise, or the handler re-enters itself');
+  assert.ok(!/process\.exit\(/.test(KILL), 'process.exit() in the kill path invents an exit code and can discard queued output (F71)');
+});
+
+test('the running cost is ONE list read through the shared tally — never a second hand-spelled total', () => {
+  assert.ok(KILL);
+  // the pair this file has already paid for once (the cap-halt/pricing-red type):
+  // a second accumulator is a second instrument, and these two must never disagree
+  assert.match(KILL, /tallyCalls\(metered\)/, 'the totals are DERIVED from the call list, through the library\'s own reader');
+  assert.match(KILL, /costUsd: call\.costUsd/, 'an unpriced call rides as null — `?? 0` launders unknown into $0 (F6)');
+  assert.ok(!/costUsd: [^cn]/.test(KILL), 'a hand-computed cost appeared in the cost record');
+  assert.match(KILL, /costLine\(costSoFar\(\)\)/, 'and the console reading goes through the one renderer');
+});
+
+test('the reporters never take down the run they report on', () => {
+  assert.ok(KILL);
+  // this is progress reporting on a PAID run: a full disk or a closed pipe must
+  // not kill work that is being paid for, and the run's real records are all
+  // downstream of these
+  const guarded = [...KILL.matchAll(/\} catch \{/g)].length;
+  assert.ok(guarded >= 3, `onPhase, onCall and the kill handler must each be guarded (saw ${guarded})`);
+});
+
+// ── the twin: the extracted bytes, actually signalled ────────────────────────
+
+const twinBase = mkdtempSync(join(tmpdir(), 'run-author-kill-'));
+process.on('exit', () => rmSync(twinBase, { recursive: true, force: true }));
+
+/**
+ * Run the runner's OWN kill/cost bytes in a child, signal it, and read what it
+ * left behind. Only the ~10 lines of scaffolding around the extracted region are
+ * the test's: the spine path, a stub `emit`, and one call to each recorder.
+ * @param {string} sig
+ */
+const twin = (sig) => new Promise((resolve, reject) => {
+  const dir = mkdtempSync(join(twinBase, 'run-'));
+  const spine = join(dir, 'spine.jsonl');
+  const file = join(dir, 'twin.mjs');
+  writeFileSync(file, [
+    "import { appendFileSync } from 'node:fs';",
+    `import { tallyCalls } from ${JSON.stringify(join(REPO, 'src/text.js'))};`,
+    `import { phaseLine } from ${JSON.stringify(join(REPO, 'scripts/author-readout.mjs'))};`,
+    `const spineFile = ${JSON.stringify(spine)};`,
+    'const CEILING_USD = 2.5;',
+    "const emit = (type, data = {}) => { appendFileSync(spineFile, `${JSON.stringify({ type, ts: new Date().toISOString(), ...data })}\\n`); };",
+    COSTLINE,
+    KILL,
+    // one real paid call and one real phase, then hold the process open exactly
+    // as an awaited pipeline would
+    "onPhase('scout', { attempts: 3 });",
+    "onCall({ label: 'author-scout', costUsd: 0.03, unpricedRounds: 0 });",
+    "onCall({ label: 'author', costUsd: null, unpricedRounds: 2 });",
+    "process.stdout.write('READY\\n');",
+    'setInterval(() => {}, 1000);',
+  ].join('\n'));
+
+  const child = spawn(process.execPath, [file], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let out = '';
+  let err = '';
+  let signalled = false;
+  child.stdout.on('data', (b) => {
+    out += b;
+    // signalled on the marker, never on a timer: a fixed sleep is load-sensitive
+    // and would flake instead of failing
+    if (!signalled && out.includes('READY')) { signalled = true; child.kill(sig); }
+  });
+  child.stderr.on('data', (b) => { err += b; });
+  child.on('error', reject);
+  child.on('close', (code, signal) => {
+    const events = existsSync(spine)
+      ? readFileSync(spine, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
+      : [];
+    resolve({ code, signal, out, err, events });
+  });
+});
+
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  test(`${sig} leaves a BODY: the phase it died in, the spend, and an author-end`, async () => {
+    const r = await twin(sig);
+
+    const killed = r.events.find((e) => e.type === 'author-killed');
+    assert.ok(killed, `no author-killed on the spine — this is the one-line-spine defect returning\n${r.err}`);
+    assert.equal(killed.signal, sig);
+    assert.equal(killed.phase, 'scout', 'the phase is WHERE the money went — the question a killed run has to answer');
+    // the spend survived the process. `costUsd` is null because one call was
+    // unpriced (F6: unknown is reported as unknown), and the KNOWN half is still
+    // on the record rather than being lost with it.
+    assert.equal(killed.costUsd, null, 'an unpriced call makes the total unknown, and unknown is what is written');
+    assert.equal(killed.knownUsd, 0.03);
+    assert.equal(killed.spendComplete, false);
+    assert.deepEqual(killed.calls.map((/** @type {any} */ c) => c.label), ['author-scout', 'author']);
+
+    const end = r.events.find((e) => e.type === 'author-end');
+    assert.ok(end, 'a spine with no author-end reads as a run still in flight');
+    assert.equal(end.outcome, 'killed');
+    assert.equal(end.signal, sig);
+    // ORDER: the killed detail is written before the end, and the end is last
+    assert.ok(r.events.indexOf(killed) < r.events.indexOf(end));
+    assert.equal(r.events.at(-1).type, 'author-end');
+
+    // the honest death: BY the signal, not an invented exit code
+    assert.equal(r.signal, sig, `the process did not die by ${sig} (code ${r.code}) — the re-raise was swallowed`);
+    assert.equal(r.code, null);
+    assert.match(r.err, new RegExp(`KILLED by ${sig} during scout`));
+  });
+}
+
+test('twin: the paid calls were on the spine BEFORE the kill — a run that dies mid-flight still has its spend', async () => {
+  const r = await twin('SIGTERM');
+  const costs = r.events.filter((e) => e.type === 'author-cost');
+  assert.deepEqual(costs.map((c) => [c.label, c.costUsd, c.unpricedRounds]), [
+    ['author-scout', 0.03, 0],
+    ['author', null, 2],
+  ], 'each metered call is reported as it lands, with its own price — null stays null (F6)');
+  assert.equal(costs[0].knownUsdSoFar, 0.03);
+  assert.equal(costs[1].spendCompleteSoFar, false, 'the unpriced call makes the running total unknown from then on');
+  assert.equal(costs[1].ceilingUsd, 2.5, 'the ceiling rides along, so the record can be read against it');
+
+  const phases = r.events.filter((e) => e.type === 'author-phase');
+  assert.deepEqual(phases.map((p) => [p.phase, p.attempts]), [['scout', 3]]);
+  assert.match(r.out, /· scout running \(up to 3 attempt\(s\)\)/, 'and the person watching was told, in words');
 });
 
 test('exit code 4 is the CRASH, and nothing else in this runner claims it', () => {

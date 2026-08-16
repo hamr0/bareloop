@@ -38,7 +38,7 @@ import {
   classGuards, closeCeiling, genreEnv, genreOwnedEnvNames, genreInstruments,
   validateDeclaration, normalizeDeclaration,
 } from '../src/authoring.js';
-import { declarationLines, parseCeiling, ceilingLine, crashRecord } from '../scripts/author-readout.mjs';
+import { declarationLines, parseCeiling, ceilingLine, crashRecord, phaseLine } from '../scripts/author-readout.mjs';
 import { RAW_PERSIST_MAX, RAW_TRIM_MARKER } from '../src/text.js';
 
 /** The battery for the one class v1 admits. The attachment point is the CLASS
@@ -1502,6 +1502,59 @@ test('an UNBOUNDED authoring run ANNOUNCES itself — an absent cap is a stated 
   assert.match(bounded, /\$2\.5 ceiling/);
   assert.match(bounded, /BETWEEN metered calls/, 'and a bounded run states the seam it binds at');
   assert.ok(!/UNBOUNDED/.test(bounded), 'the two readings are never confusable');
+});
+
+// ── the PROGRESS readout ─────────────────────────────────────────────────────
+//
+// Up to ~15 minutes used to pass between `author-start` and a result with nothing
+// said: a survey ladder, a declaration ladder and a real toolchain per close
+// stage, all inside one await. Silence and a hang are the same bytes on a
+// terminal, and the operator's only lever was to kill a run that might have been
+// working. Here for the same reason the three readouts above are: the runner is a
+// script, and a readout no test can reach is a readout nothing checks.
+
+test('phaseLine says WHAT is happening — never a fraction nobody measured', () => {
+  const lines = [
+    phaseLine('seed'),
+    phaseLine('scout', { attempts: 3 }),
+    phaseLine('scout-done', { state: 'PRESENT', facts: 7 }),
+    phaseLine('listing-done', { files: 12, stop: null }),
+    phaseLine('author-call', { call: 'revise-1', i: 1, of: 2 }),
+    phaseLine('seed-read', { stages: 4 }),
+    phaseLine('stage', { stage: 'suite-green', kind: 'command-exit', verdict: 'green', durationMs: 46_200 }),
+  ];
+  assert.match(lines[1], /up to 3 attempt\(s\)/, 'a repeat is expected rather than read as a stuck run');
+  assert.match(lines[2], /PRESENT/);
+  assert.match(lines[2], /7 fact\(s\)/);
+  assert.match(lines[3], /12 file\(s\)/);
+  assert.match(lines[4], /revise-1/);
+  assert.match(lines[4], /call 2 of up to 3/, 'the rungs are counted from one for a person, not from zero');
+  assert.match(lines[6], /suite-green \[command-exit\] green — 46\.2s/, 'the stage, what it is, what it said, how long it took');
+  // no invented progress: a survey attempt has no fraction and a suite finishes
+  // when it finishes, so a percentage here would be a number nobody measured
+  assert.ok(!lines.some((l) => /%/.test(l)), `an invented percentage appeared: ${lines.find((l) => /%/.test(l))}`);
+});
+
+test('phaseLine: an UNMEASURED duration reads as unknown, never as 0 (F6, in its time form)', () => {
+  // a stage whose duration was never measured did not take no time
+  assert.match(phaseLine('stage', { stage: 's', kind: 'command-exit', verdict: 'green' }), /unknown/);
+  assert.match(phaseLine('stage', { stage: 's', kind: 'command-exit', verdict: 'green', durationMs: null }), /unknown/);
+  assert.match(phaseLine('stage', { stage: 's', kind: 'command-exit', verdict: 'green', durationMs: 0 }), /0\.0s/,
+    'a MEASURED zero is a real reading and stays one');
+});
+
+test('phaseLine: a listing that STOPPED says so — a stop is never rendered as a file count', () => {
+  const stopped = phaseLine('listing-done', { files: null, stop: 'no-seed-tree' });
+  assert.match(stopped, /STOPPED \(no-seed-tree\)/);
+  assert.ok(!/unknown file/.test(stopped), 'a stop and an unknown count are different facts');
+});
+
+test('phaseLine: a phase this readout does not know is PRINTED, not swallowed', () => {
+  // the callers are the library's own seams; a new one appearing unrendered is
+  // how a readout silently stops covering what it reports on
+  const l = phaseLine('some-new-phase', { n: 1 });
+  assert.match(l, /some-new-phase/);
+  assert.match(l, /"n":1/);
 });
 
 // ── the CRASH record ─────────────────────────────────────────────────────────
