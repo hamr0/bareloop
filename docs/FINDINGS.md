@@ -7763,24 +7763,42 @@ SIGINT from an interrupted or closed terminal, a SIGTERM, a SIGKILL), a `process
 the span, or a hard death (OOM kill, segfault): in each of those the JS never runs, so no body
 is written. Lines `:188-203` are blank and comment only, so every executable statement after
 `author-start` is inside the try — which narrows the set of causes consistent with this artifact
-without selecting one. **This entry does not pick.** A signal is CONSISTENT with the evidence;
-so is more than one other cause; the root cause of `msw1cupd` is not diagnosed here, and a
-reading not traced to source is a reading this programme withdraws.
+without selecting one.
 
-**An agent-fired $0 PROBE ran the crash path end to end — a death that was made, not met.**
-Provenance first, because it changes how the row is weighed: during this docs-only sweep of this
-file a documentation SUBAGENT started `run-author.mjs` itself, deliberately, with an invalid
-`ANTHROPIC_API_KEY` and `--out` into a scratch sibling directory `…-author-debug/`, for the sole
-purpose of exercising the handler. It was NOT a programme run, not driven by hamr, not part of
-any authored job — and it was outside the brief it was fired under, which was documentation-only
-and forbade starting a process. It is recorded because the artifact exists on disk and an
-undisclosed artifact is worse than a disclosed one. It spent **$0**, and that is a property of
-how it was constructed rather than a permission it held: the key was rejected at authentication
-(HTTP ≥400, thrown at `node_modules/bare-agent/src/provider-anthropic.js:317`) before any tokens
-were generated. The artifact lives OUTSIDE the repository, under `bareloop-patients/`, so nothing
+**The cause is now known for two of the three, on the operator's own word.** hamr confirmed
+in-session that `msw1cupd` and `msw1u5kq` were **his own Ctrl-C**, on runs that LOOKED hung.
+The pipeline emits nothing for up to ~15 minutes across the scout, the model calls and the seed
+reads, so from the terminal a healthy run and a wedged one are indistinguishable — **F101's own
+ambiguity, one layer up: not in the file, on the operator's screen.** A separate investigation
+measured that silence budget and REFUTED two leads for it, slow `tsc` and a network stall;
+nothing beyond the budget itself is asserted here. **The mechanism closes the loop:** a signal
+terminates node **without unwinding the stack**, so `9ae4844`'s try/catch is STRUCTURALLY
+UNREACHABLE on SIGINT — which is exactly why code containing the cure still left no body. The
+cure was never wrong; it was never reached. That is the same source fact as the paragraph above,
+read forward: the file installs no signal handler, so nothing else was ever going to run.
+`msum52ah` (2026-08-15, the run that minted this finding) shows the SAME signature, and Ctrl-C is
+the **LEADING explanation** for it — leading, and **UNCONFIRMED**. §1's "the root cause was never
+diagnosed" stands for that run. A consistent hypothesis is not a diagnosis and this entry does
+not promote one to the other.
+
+**A $0 REPRODUCTION ran the crash path end to end — a death that was made, not met.**
+Provenance first, because it was gotten wrong once: `msw1oms4` was fired by the **session
+ORCHESTRATOR**, deliberately and documented in the session record, as a $0 reproduction whose
+sole purpose was to exercise the handler — `run-author.mjs` with an invalid `ANTHROPIC_API_KEY`
+and `--out` into the scratch sibling directory `…-author-debug/`. It was not a programme run and
+not part of any authored job. It spent **$0**: the key was rejected at authentication (HTTP ≥400,
+thrown at `node_modules/bare-agent/src/provider-anthropic.js:317`) before any tokens were
+generated. The artifact lives OUTSIDE the repository, under `bareloop-patients/`, so nothing
 about it enters a commit.
 
-**What the probe left, re-verified against the file itself.** `msw1oms4`: `author-start` at
+**WITHDRAWN: the earlier attribution of this run to a documentation subagent acting outside its
+brief.** That reading rested on timing correlation plus the `-author-debug/` directory name, and
+it does not survive the check that settles it: `find / -name 'author-msw1oms4.jsonl'` returns
+**one** file, and runids are TIME-DERIVED, so one spine is one firing — two processes cannot mint
+one runid. The subagent that first wrote this paragraph cited a legitimate run; it never claimed
+to have fired anything.
+
+**What the reproduction left, re-verified against the file itself.** `msw1oms4`: `author-start` at
 `2026-08-16T16:54:22.046Z`, `author-crash` at `…:22.460Z` (414ms in), `author-end` at `…:22.461Z`
 — three lines, 990 bytes. The throw is a `ProviderError`, `code PROVIDER_ERROR`, message
 `[AnthropicProvider] API key is invalid.`. `crashRecord` populated `name`, `message` and `code`
@@ -7791,26 +7809,29 @@ announcement is honest); `author-end {outcome:'crashed'}` follows the crash reco
 order. The code it ran contains the cure (`git merge-base --is-ancestor 9ae4844 HEAD` = yes,
 HEAD `8ddb995`).
 
-**So §6's "no claim that the fix has been exercised LIVE" is PARTIALLY superseded, and no
-further than partially.** PROVEN by this probe: the catch executes on a real thrown `Error`
-outside the test suite, `crashRecord` fills name/message/code from it, the stack survives the
-persist boundary under its bound, `author-end {outcome:'crashed'}` follows, and the handler's
-ordering holds in a real process — the first end-to-end execution of that path anywhere but the
-suite. NOT proven: that the programme has met this failure in the wild. The death was
-manufactured by the prober, chosen for being easy to cause, so §6's sentence that "its first
-real firing will be its first live validation" is still standing and still unsatisfied. A
-synthetic firing validates the mechanism; it does not observe the event.
+**So §6's "no claim that the fix has been exercised LIVE" is SUPERSEDED on the MECHANISM.** The
+crash path WAS observed live, with provenance named: a real process, a real `ProviderError`
+thrown off a real provider at a real network boundary, the full body written, exit 4. The catch
+executes on a real `Error` outside the test suite, `crashRecord` fills name/message/code from it,
+the stack survives the persist
+boundary under its bound, `author-end {outcome:'crashed'}` follows, and the handler's ordering
+holds — the first end-to-end execution of that path anywhere but the suite, and it holds. The one
+remaining limit is precise and small: the failure was **INDUCED** (an invalid key, chosen for
+being easy to cause) rather than **ENCOUNTERED**. That validates the handler end to end without
+being an in-the-wild crash, so §6's "its first real firing will be its first live validation"
+stands unsatisfied on the event while the mechanism no longer waits on it.
 
 **The §6 grep, re-run at the time of this correction.** Exactly ONE author spine on disk carries
-an `author-crash` record, and it is this probe's — so §6's zero is broken by a probe artifact,
-not by a programme one: the file the grep returns is the file the prober manufactured to be
-returned. The COUNT in the first version of this paragraph ("five, not four") is stale and is
+an `author-crash` record, and it is the reproduction's — so §6's zero is broken by an induced
+artifact, not by a programme one: the file the grep returns is the file the repro was fired to
+produce. The COUNT in the first version of this paragraph ("five, not four") is stale and is
 corrected here: `bareloop-patients/*/author-*.jsonl` plus `*/*/author-*.jsonl` now returns SIX
 files, because `litectx-maintainer-author/author-msw1u5kq.jsonl` (271 bytes, one line,
 `author-start` `2026-08-16T16:58:39.685Z`) appeared after the paragraph above was written. It is
-another body-less spine; nothing about it is claimed or diagnosed here. Two deaths nine minutes
-apart under identical code — the throw left a body, the other did not — but the difference is the
-KIND of death, not the code, and only one of the two was encountered rather than caused.
+another body-less spine, and it is one of the two hamr confirmed as his own Ctrl-C above. Two
+deaths nine minutes apart under identical code — the throw left a body, the signal did not — and
+the difference is the KIND of death, not the code: a throw unwinds into the catch, a signal never
+gives it the chance.
 
 **The honest consequence for the cure's scope.** The cure does exactly what it claims and no
 more — it converts a THROWN death into a record; it does not make every death legible. A
@@ -7818,25 +7839,39 @@ body-less spine is still REACHABLE, and `msw1cupd` is the proof on disk. "One li
 therefore still cannot be read as evidence that a run is in flight. The ambiguity §2 names is
 NARROWED, not eliminated.
 
-**OPEN, parked, not decided here.** Whether `run-author.mjs` should install signal handlers so
-a SIGINT/SIGTERM also leaves a body. It is not free: a handler that writes on the way out is one
-more thing that can fail or hang while the process is being killed — F70's class, a guard
-carrying the failure mode it was built to guard. The option and its cost are named; the call is
-hamr's, per the standing park discipline, and no design is recommended here.
+**The cure is IN FLIGHT, not parked.** A concurrent builder is landing three things on this same
+branch as this correction is written — commit ref **to follow**, it is not in the tree yet (HEAD
+is `b476834`, no builder commit above it):
+
+- a **signal handler**, so a SIGINT/SIGTERM also leaves a body — closing the exact hole the
+  paragraphs above diagnose, where the try/catch is structurally unreachable;
+- **per-phase progress records**, so the ~15 silent minutes stop being silent;
+- **per-call cost records.**
+
+The progress records attack the OPERATOR-FACING half of the same ambiguity, and that half is why
+this section exists at all: both killed runs were killed because a live run and a wedged one
+looked identical from outside. A record the operator can watch is what makes Ctrl-C a decision
+instead of a guess. The cost of the first item is real and stands as a design tension the build
+must respect — a handler that writes on the way out is one more thing that can fail or hang while
+the process is being killed, **F70's class, a guard carrying the failure mode it was built to
+guard**. That is a constraint on how it ships, not a reason to park it; it is no longer parked.
 
 **Still not claimed** (extending §6, not repeating it):
 
-- **No claim about WHY `msw1cupd` ended.** Not a signal, not a hang, not a kill — nothing. The
-  evidence bounds the class of causes and identifies none of them.
-- **No claim about who started, stopped or interrupted it, or why.** The tree records a start
-  and a silence; intent is not in the artifact.
-- **No claim about its spend.** As with `msum52ah`, no `authored` event fired, so no `cost`
-  object exists. Even "$0" would be a claim this record cannot support.
-- **No claim that the two body-less runs share a cause.** They share a shape. That is all that
-  has been observed.
+- **SUPERSEDED — "no claim about WHY `msw1cupd` ended", and "no claim about who started,
+  stopped or interrupted it".** Both are answered for `msw1cupd` and `msw1u5kq`, on hamr's
+  confirmation in-session: he interrupted them himself with Ctrl-C, because the runs looked hung
+  from the terminal. The authority is operator testimony, not the artifact — the tree still
+  records only a start and a silence, and it always will, because a signal never gave the catch
+  a chance to write.
+- **STILL UNCONFIRMED for `msum52ah`.** The same signature, and Ctrl-C is the leading
+  explanation — leading, not established. §1's "the root cause was never diagnosed" stands.
+- **No claim about the spend of any of the three.** No `authored` event fired for `msum52ah`,
+  `msw1cupd` or `msw1u5kq`, so no `cost` object exists for any of them. Even "$0" would be a
+  claim these records cannot support.
+- **No claim that all three body-less runs share a cause.** Two of them do, confirmed. The third
+  shares a SHAPE with them, and a hypothesis.
 - **No claim that the crash handler has fired on a death the programme MET.** The one
-  `author-crash` on disk is an agent-fired probe's, on a failure the prober caused on purpose.
-  The handler is now proven to execute outside the test suite; it is not yet proven to have
-  caught anything that happened by itself.
-- **No claim about `msw1u5kq`.** It is named above only to correct a stale count of files on
-  disk. Its outcome, its cause and who ran it are not read here.
+  `author-crash` on disk is the orchestrator's $0 reproduction, on a failure induced on purpose.
+  The handler is proven to execute live, end to end; it is not yet proven to have caught anything
+  the programme did not cause.
