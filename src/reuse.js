@@ -57,7 +57,7 @@ import { readGrade } from './trend.js';
  * it and `runJob` writes it onto `job-end`), spelled once in `declaredclose.js`
  * beside the close-verdict word it translates, so the emitters, the checkpoint
  * list, and the TTL gate below cannot drift from each other */
-import { HITL_PAUSE } from './declaredclose.js';
+import { HITL_PAUSE, HUMAN_CHECKPOINTS } from './declaredclose.js';
 import { extractArtifact, priceOf } from './text.js';
 import { runJob as shippedRunJob } from './run.js';
 
@@ -107,8 +107,14 @@ export const REUSE_GRADED_RED = Object.freeze(['escalated']);
  * already rendered is never on this list: `hitl-cancel` is the signer's own
  * terminal and `green`/`escalated` are graded rows, and re-buying any of them
  * would pay twice for an answer already in hand.
+ *
+ * The human half is SPLICED IN from `declaredclose.js` rather than spelled again,
+ * because the try loop below reads the two halves differently and a second copy is
+ * how they would come to disagree about which member is which: the first three are
+ * allowances the loop's remaining tries are meant to spend against, and the human
+ * ones are the stop no further try can change (see `hardStop`).
  */
-export const CHECKPOINT_OUTCOMES = Object.freeze(['cap-halt', 'wall-halt', 'step-stalled', HITL_PAUSE]);
+export const CHECKPOINT_OUTCOMES = Object.freeze(['cap-halt', 'wall-halt', 'step-stalled', ...HUMAN_CHECKPOINTS]);
 
 /**
  * v1's definition of "the same KIND of recipe" — and it is the LOAD GATE's own: the
@@ -1513,6 +1519,26 @@ export async function runReuse(opts) {
         toolsUsed: [...new Set((read.plan.steps ?? []).flatMap((/** @type {any} */ s) => s.tools ?? []))],
       };
       row.bridgeWrite = writeGreen(bridge, meta, { ...record, plan: read.plan });
+    } else if (HUMAN_CHECKPOINTS.includes(outcome)) {
+      // A PAUSE IS NOT A RESULT, so the box gets nothing — not a casualty row, not a red,
+      // and the workflow is left exactly as it was. The recipe has not been judged: the
+      // close is not FINISHED rendering its verdict, and the answer that would finish it
+      // is a person's. Filing it as history would put a row on the entry that reads as a
+      // run this workflow failed to carry, and the signer's `accept` moments later would
+      // leave that row standing as evidence against a workflow that in fact greened.
+      // Recorded as an explicit no-write for the already-green branch's reason: a reader
+      // never has to branch on absence.
+      bridgeWrites.push({
+        name,
+        action: 'none',
+        file: null,
+        reds: [{
+          code: 'run-paused-for-decision',
+          path: 'outcome',
+          detail: `the run is waiting on a person (${outcome}) — nothing has been judged yet, so there is no result to `
+            + 'file against this workflow. The row is written by whatever the resumed run finally earns.',
+        }],
+      });
     } else if (bridge) {
       // R1: the recipe is NOT edited by a red. `outcome` rides in verbatim — a casualty
       // keeps its own name, and only the literal 'red' demotes (D6).
@@ -1619,6 +1645,31 @@ export async function runReuse(opts) {
    * @param {any} row @returns {any|null} the terminal, or null to carry on
    */
   const hardStop = (row) => {
+    // THE HUMAN HALF, read before the table and off the LIBRARY's own list: a run
+    // waiting on a person is not one of the stops below, which are properties of the
+    // run that would reproduce for $0. This one is the opposite — a try that did real
+    // work and reached the one stage a machine cannot render. Buying the next try (and
+    // then the cold leg) would spend the envelope re-asking a question already put to
+    // someone who has not replied yet, and the second attempt could not be graded any
+    // sooner than the first. The allowance still unspent is a person, so the loop stops
+    // and hands the run back; the checkpoint on disk is untouched and resumable, which
+    // is the runner script's half (N4 §1.6, PAUSE_TTL_MS).
+    if (HUMAN_CHECKPOINTS.includes(row.runOutcome)) {
+      return done(row.runOutcome, {
+        category: row.runOutcome,
+        decision: 'The run reached a stage only a person can render, and it is waiting on that answer. Every further '
+          + 'try and the cold leg would run the same job to the same question, so the loop stops here rather than '
+          + 'buying attempts nobody can grade yet. Nothing is lost: the run kept everything it did, and it resumes '
+          + 'from this checkpoint once the decision is in.',
+        options: [
+          'read the evidence package the pause recorded, then answer it and resume this run',
+          'leave it: an unanswered checkpoint expires on its own once the pause TTL is up',
+        ],
+      // NOT re-filed, for `interpreter-red`'s reason: the pause already escalated from
+      // its own site inside the run, under this same name and with the evidence package
+      // attached. A second copy here would count one person's pending decision twice.
+      }, false);
+    }
     const decisions = {
       'unapproved-spec': {
         decision: `No approval record matches the per-try spec (hash ${trySpecHash}). Tightening the caps with an envelope makes a NEW spec version, and a new version is signed, not inherited — nothing was run.`,

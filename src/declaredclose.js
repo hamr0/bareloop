@@ -137,6 +137,23 @@ export const HITL_PAUSE = 'hitl-pause';
 export const HITL_CANCEL = 'hitl-cancel';
 export const HITL_DECISION_RED = 'hitl-decision-red';
 
+/**
+ * The terminals above that leave the run WAITING ON A PERSON — as a list, minted
+ * beside the names it holds so a reader keys on membership rather than on a
+ * spelling, and a rename here travels to every reader for free.
+ *
+ * It is deliberately NOT `reuse.js`'s `CHECKPOINT_OUTCOMES`, which is the wider
+ * RESUME list: every stop that left work on disk and an allowance unspent, money
+ * and time included. Those are governance stops the reuse loop is meant to try
+ * again under its remaining tries; this is the half no further attempt can
+ * change, because the allowance still unspent is a human answer. `CHECKPOINT_OUTCOMES`
+ * is composed FROM this list so the two can never disagree about which is which.
+ *
+ * `HITL_CANCEL` and `HITL_DECISION_RED` are not here: both are a verdict the signer
+ * already rendered, not a question still open.
+ */
+export const HUMAN_CHECKPOINTS = Object.freeze([HITL_PAUSE]);
+
 /** The verdict classes a DECLARED close may claim. Named as data so the job
  * validator reads one hierarchy table rather than hard-coding a class.
  *
