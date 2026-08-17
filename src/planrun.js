@@ -33,7 +33,7 @@ import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
 import { validateBridge, loadGate } from './bridges.js';
 import { extractArtifact } from './text.js';
 import { createClock, isWallTimeout } from './clock.js';
-import { isDeclaredClose, runDeclaredStages, validateCloseDecl, closeGrade, HUMAN_PAUSE } from './declaredclose.js';
+import { isDeclaredClose, runDeclaredStages, validateCloseDecl, closeGrade, HUMAN_PAUSE, HITL_PAUSE, HITL_CANCEL, HITL_DECISION_RED } from './declaredclose.js';
 import {
   seedAtHead, seedListing, changedSet, GAP_TRIM_MARKER, GATE_AUDIT_FILE, ARBITER_BOOK_STORES,
   HUMAN_KIND, HUMAN_DECISIONS, normalizeHumanRuling,
@@ -673,7 +673,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   const ruling = normalizeHumanRuling(humanRuling);
   const decisionRed = (/** @type {string} */ detail) => {
     emit('escalation', {
-      category: 'hitl-decision-red', decisionReady: true,
+      category: HITL_DECISION_RED, decisionReady: true,
       decision: 'The decision handed to this run could not be applied, so nothing was run and nothing was spent.',
       options: [
         `re-run the resume with one of: ${HUMAN_DECISIONS.join(' | ')} (a rerun carries the text the worker converts)`,
@@ -681,7 +681,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       ],
       detail: scrub(detail),
     });
-    return 'hitl-decision-red';
+    return HITL_DECISION_RED;
   };
   if (!ruling.ok) return decisionRed(/** @type {string} */ (ruling.why));
   if (ruling.ruling !== null && !hasHumanStage) {
@@ -701,7 +701,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // stages to discover a person said "stop" is wall time spent on an answer
   // already in hand.
   if (liveRuling?.decision === 'cancel') {
-    emit('hitl-cancel', {
+    emit(HITL_CANCEL, {
       stage: stagedClose.find((/** @type {any} */ s) => s?.kind === HUMAN_KIND)?.name ?? null,
       decisionReady: true,
       // EXPLICITLY null, never absent: every gap consumer guards with `if (gap)`,
@@ -711,7 +711,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         + 'the run\'s own branch exactly as it was left.',
       options: ['start a fresh run when the job is worth doing again', 'revise the goal/spec (a new hash needs re-approval)'],
     });
-    return 'hitl-cancel';
+    return HITL_CANCEL;
   }
 
   // ── native wiring: a clipipe-subscription job needs the native provider
@@ -983,7 +983,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const cs = declaredCtx ? await changedSet(workdir, declaredCtx.seedRef) : { stop: 'no seed', paths: [] };
     const paths = cs.stop === null ? cs.paths : [];
     const shown = paths.slice(0, PAUSE_CHANGED_CAP);
-    emit('hitl-pause', {
+    emit(HITL_PAUSE, {
       stage: v.stage ?? null,
       ask: v.ask ?? null,
       decisionReady: true,
@@ -1181,7 +1181,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // is the honest answer; running a plan first would spend a budget to arrive at
   // exactly this question. No `planExecuted` — there is no plan yet, and an empty
   // one on the spine would be a record of work nobody did.
-  if (pre.verdict === HUMAN_PAUSE) { await emitHitlPause(pre); return 'hitl-pause'; }
+  if (pre.verdict === HUMAN_PAUSE) { await emitHitlPause(pre); return HITL_PAUSE; }
   const preFault = Object.hasOwn(CLOSE_FAULTS, pre.verdict) ? CLOSE_FAULTS[pre.verdict] : undefined;
   if (preFault) {
     emit('escalation', { category: preFault.category, decisionReady: true, decision: preFault.decision, options: preFault.options, detail: pre.detail });
@@ -2712,7 +2712,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   if (post.verdict === HUMAN_PAUSE) {
     await emitHitlPause(post);
     planExecuted();
-    return 'hitl-pause';
+    return HITL_PAUSE;
   }
   const postFault = Object.hasOwn(CLOSE_FAULTS, post.verdict) ? CLOSE_FAULTS[post.verdict] : undefined;
   if (postFault) {
@@ -2871,7 +2871,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         const err = /** @type {CategorizedError} */ (new Error(
           `the close is waiting on the signer at stage "${lastCloseVerdict.stage ?? 'unknown'}" — every mechanical `
           + `stage passes, so fix attempt ${iteration} could not change the answer`));
-        err.category = 'hitl-pause';
+        err.category = HITL_PAUSE;
         throw err;
       }
       if (clock.expired()) {
@@ -2958,9 +2958,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // The fix loop ran into the person again (the `middle` stop above). Same
   // terminal as the first pause, and never `escalated`: nothing failed, and the
   // work this loop did is exactly what the signer is now being asked about.
-  if (fixOutcome !== 'green' && lastEscalation?.category === 'hitl-pause') {
+  if (fixOutcome !== 'green' && lastEscalation?.category === HITL_PAUSE) {
     await emitHitlPause(lastCloseVerdict);
-    return 'hitl-pause';
+    return HITL_PAUSE;
   }
   if (fixOutcome !== 'green' && lastEscalation?.category === 'wall-halt') {
     // F64 in the close-fix loop: the same governance stop, and it must not ride out

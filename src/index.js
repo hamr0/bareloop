@@ -134,7 +134,7 @@ export {
 export {
   validateCloseDecl, runDeclaredStages, declaredStages, isDeclaredClose, guardNames, closeGrade,
   DECLARED_GENRES, DECLARED_GAP_PREFIX, DECLARED_GAP_KEEP, DECLARED_CLOSE_CLASSES, CLOSE_DECL_FIELDS,
-  HUMAN_PAUSE,
+  HUMAN_PAUSE, HITL_PAUSE, HITL_CANCEL, HITL_DECISION_RED,
 } from './declaredclose.js';
 export { closeStagesOf } from './plan.js';
 // M4b — the interview, the refusal, the composition, and D9's three gates.

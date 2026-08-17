@@ -419,12 +419,14 @@ test('#9 E2E: the real preview of a paused checkpoint names the review, not a st
 
 test('§5.2 the PAUSE readout shows the package and the doors where the person is standing', () => {
   const src = readFileSync(RUNNER, 'utf8');
-  const at = src.indexOf("if (outcome === 'hitl-pause') {");
+  const at = src.indexOf('if (outcome === HITL_PAUSE) {');
   assert.ok(at > 0, 'the pause readout exists');
   const end = src.indexOf('\n}', at);
   assert.ok(end > at);
   const block = src.slice(at, end);
-  assert.match(block, /evidencePackage\(/, 'the same package the preview renders — never a second assembly of one run\'s facts');
+  assert.match(block, /printPauseEvidence\(/, 'the same package the preview renders — never a second assembly of one run\'s facts');
+  assert.match(src, /const printPauseEvidence = [\s\S]*?evidencePackage\(\{ pause, diff: readDiff\(paths\) \}\)/,
+    'and the shared renderer is the one that assembles it, for both screens');
   assert.match(block, /doorLines\(/, 'and the three doors, in the one order that is a rule');
   assert.match(block, /--resume \$\{runid\}/, 'with the actual resume invocation, not the idea of one');
   assert.match(block, /--approve \$\{specHash\}/, 'and the hash ALREADY signed: a decision moves no allowance, so nothing here needs re-signing');
@@ -433,7 +435,7 @@ test('§5.2 the PAUSE readout shows the package and the doors where the person i
 
 test('§1 the CANCEL readout is terminal — it reports the spend and offers no continuation', () => {
   const src = readFileSync(RUNNER, 'utf8');
-  const at = src.indexOf("if (outcome === 'hitl-cancel') {");
+  const at = src.indexOf('if (outcome === HITL_CANCEL) {');
   assert.ok(at > 0, 'the cancel readout exists');
   const end = src.indexOf('\n}', at);
   const block = src.slice(at, end);

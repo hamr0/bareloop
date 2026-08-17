@@ -124,6 +124,19 @@ export const DECLARED_GAP_KEEP = `^${DECLARED_GAP_PREFIX.replace(/[.*+?^${}()|[\
  */
 export const HUMAN_PAUSE = 'human-pause';
 
+/**
+ * The RUN-level terminal names the hitl class mints one layer up from
+ * `HUMAN_PAUSE` (N4 §1.3–§1.5): the checkpoint, the signer's own cancel, and
+ * the honest refusal of the operator's rerun input. Spelled once here, beside
+ * the close-verdict word they translate, for the same reason `HUMAN_PAUSE` is —
+ * the emitters (`planrun.js`), the ledger's excluded set, the resume reader
+ * (`reuse.js`), and the runner script all key on them, and hand-spelled copies
+ * of one terminal is how they come to disagree.
+ */
+export const HITL_PAUSE = 'hitl-pause';
+export const HITL_CANCEL = 'hitl-cancel';
+export const HITL_DECISION_RED = 'hitl-decision-red';
+
 /** The verdict classes a DECLARED close may claim. Named as data so the job
  * validator reads one hierarchy table rather than hard-coding a class.
  *

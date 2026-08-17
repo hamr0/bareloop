@@ -54,9 +54,10 @@ import { isObj, isNonEmptyString } from './validate.js';
 import { readGrade } from './trend.js';
 
 /** the paused-run TERMINAL and its spine record share one name (`runPlan` returns
- * it and `runJob` writes it onto `job-end`), spelled once here so the checkpoint
- * list and the TTL gate below cannot drift from each other */
-const HITL_PAUSE = 'hitl-pause';
+ * it and `runJob` writes it onto `job-end`), spelled once in `declaredclose.js`
+ * beside the close-verdict word it translates, so the emitters, the checkpoint
+ * list, and the TTL gate below cannot drift from each other */
+import { HITL_PAUSE } from './declaredclose.js';
 import { extractArtifact, priceOf } from './text.js';
 import { runJob as shippedRunJob } from './run.js';
 

@@ -22,6 +22,7 @@
 import { readFileSync, appendFileSync, existsSync } from 'node:fs';
 import { basename } from 'node:path';
 import { createHash } from 'node:crypto';
+import { HITL_PAUSE, HITL_CANCEL, HITL_DECISION_RED } from './declaredclose.js';
 
 /** severity order, worst-first (the fold's display order; frequency ranks within) */
 export const LEDGER_CLASSES = Object.freeze([
@@ -94,9 +95,9 @@ const EXCLUDED_ESCALATIONS = new Set([
   // MINTED, never borrowed: the legacy `hitl-close` above is the deleted path's
   // close TYPE and keeps its own meaning. Reusing that name would have made two
   // different facts one number (the `step-stalled` lesson).
-  'hitl-pause',
-  'hitl-cancel',
-  'hitl-decision-red',
+  HITL_PAUSE,
+  HITL_CANCEL,
+  HITL_DECISION_RED,
   'close-unsupported',  // honest refusal, by design
   // Close authoring (M4, D13) — the interview refusing a job we cannot close: a
   // genre we do not run, a job with no seed to measure against, a locked kind.

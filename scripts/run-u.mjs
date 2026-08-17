@@ -21,6 +21,7 @@ import { normalizeHumanRuling } from '../src/kinds.js';
 // --resume reads the halted run's own spine back through the SAME reader the reuse
 // path uses (never a second one) and keeps its patient the way it left it.
 import { readResume, resumeTreeGate, checkpointAgeGate, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS } from '../src/reuse.js';
+import { HITL_PAUSE, HITL_CANCEL } from '../src/declaredclose.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
 import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines } from './u-readout.mjs';
@@ -351,16 +352,16 @@ if (deadSpineFile !== null) {
   // ruling for a close with no human stage; this is the other half of the same
   // question, and only the runner can ask it (it is about WHICH checkpoint is being
   // answered, not about the close's shape).
-  if (RULING !== null && dead.endOutcome !== 'hitl-pause') {
+  if (RULING !== null && dead.endOutcome !== HITL_PAUSE) {
     die(`--decide ${RULING.decision}: that run stopped on ${dead.endOutcome ?? 'an unrecorded terminal'}, not at a human stage. `
       + 'A decision answers a pause — the run has to have asked you something before you can answer it. Resume it without a decision.');
   }
-  pauseRecord = deadEvents.filter((/** @type {any} */ e) => e?.type === 'hitl-pause').at(-1) ?? null;
+  pauseRecord = deadEvents.filter((/** @type {any} */ e) => e?.type === HITL_PAUSE).at(-1) ?? null;
 }
 /** is this resume the one a PERSON has to answer? Read off the recorded terminal,
  * never off the presence of a `--decide` — the whole point is that the flag is
  * absent on the first visit. */
-const PAUSED = !!dead && dead.endOutcome === 'hitl-pause';
+const PAUSED = !!dead && dead.endOutcome === HITL_PAUSE;
 
 /**
  * The LINE-level half of the evidence package (ruling 2). The library carries WHICH
@@ -380,6 +381,21 @@ const PAUSED = !!dead && dead.endOutcome === 'hitl-pause';
  * @param {string[]} paths the pause record's own changed set, used as a pathspec
  */
 const DIFF_LINE_CAP = 200;
+/** One renderer for the review screen's evidence, shared by the resume preview
+ * and the fresh-pause terminal so the fallback rule cannot drift between them:
+ * with a `hitl-pause` record, the package is the close's own ask + the diff of
+ * what changed; without one, say so plainly (per-site wording) rather than
+ * rendering the bare "approve?" ruling 2 forbids.
+ * @param {any} pause @param {string[]} fallbackLines */
+const printPauseEvidence = (pause, fallbackLines) => {
+  if (!pause) {
+    for (const l of fallbackLines) console.log(l);
+  } else {
+    const paths = Array.isArray(pause.changed?.paths) ? pause.changed.paths : [];
+    for (const l of evidencePackage({ pause, diff: readDiff(paths) })) console.log(l);
+  }
+};
+
 const readDiff = (paths) => {
   const run = (/** @type {string[]} */ a) => execFileSync('git', ['-C', wd, ...a], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
   try {
@@ -454,7 +470,7 @@ if (arg('approve') !== specHash) {
     // the step arithmetic used to walk off the end of the plan (`at step 2 of 1
     // "(unknown)"`). The rule the helper holds is that a step count may never exceed the
     // plan, and that the phase is said in words.
-    for (const l of resumeAtLines({ seed: rs.seed, paused: dead.endOutcome === 'hitl-pause' })) console.log(l);
+    for (const l of resumeAtLines({ seed: rs.seed, paused: dead.endOutcome === HITL_PAUSE })) console.log(l);
     // WHAT IT INHERITS as a trend baseline. Without this line the resumed run's
     // halt readout can name a direction the leg itself never measured, and a reader
     // has no way to tell that the number came from the leg before it.
@@ -517,18 +533,14 @@ if (arg('approve') !== specHash) {
   // mechanical stage's result, what the run changed and the lines it changed.
   if (PAUSED) {
     console.log('');
-    if (!pauseRecord) {
-      // the terminal says a person was asked and the record that says WHAT is gone.
-      // Refusing would strand real work; rendering a bare "approve?" is the exact
-      // thing ruling 2 forbids. So: say it, and let the operator decide with the
-      // spine in front of them.
-      console.log('HUMAN REVIEW — this run paused for a person, but its `hitl-pause` record is not on the spine, so there is');
-      console.log('no evidence package to show. Read the spine and the patient yourself before answering; nothing here can');
-      console.log(`stand in for it: ${deadSpineFile}`);
-    } else {
-      const paths = Array.isArray(pauseRecord.changed?.paths) ? pauseRecord.changed.paths : [];
-      for (const l of evidencePackage({ pause: pauseRecord, diff: readDiff(paths) })) console.log(l);
-    }
+    // if the record that says WHAT a person was asked is gone: refusing would
+    // strand real work, so say it, and let the operator decide with the spine
+    // in front of them.
+    printPauseEvidence(pauseRecord, [
+      'HUMAN REVIEW — this run paused for a person, but its `hitl-pause` record is not on the spine, so there is',
+      'no evidence package to show. Read the spine and the patient yourself before answering; nothing here can',
+      `stand in for it: ${deadSpineFile}`,
+    ]);
   }
   console.log(`  hash     ${specHash}`);
   if (arg('approve') !== null) console.error(`\nREFUSED: --approve ${arg('approve')} does not match this spec version.`);
@@ -874,16 +886,13 @@ if (outcome === 'step-stalled') {
 //
 // A decision moves no allowance, so nothing here needs re-signing — the hash that
 // bought this run is the hash that answers it, exactly like the stall readout above.
-if (outcome === 'hitl-pause') {
-  const pause = events.filter((e) => e.type === 'hitl-pause').at(-1) ?? null;
+if (outcome === HITL_PAUSE) {
+  const pause = events.filter((e) => e.type === HITL_PAUSE).at(-1) ?? null;
   console.log('');
-  if (!pause) {
-    console.log('HUMAN REVIEW — the run paused for a person but wrote no `hitl-pause` record; read the spine and the patient');
-    console.log('yourself before answering. Nothing here can stand in for the evidence it did not write.');
-  } else {
-    const paths = Array.isArray(pause.changed?.paths) ? pause.changed.paths : [];
-    for (const l of evidencePackage({ pause, diff: readDiff(paths) })) console.log(l);
-  }
+  printPauseEvidence(pause, [
+    'HUMAN REVIEW — the run paused for a person but wrote no `hitl-pause` record; read the spine and the patient',
+    'yourself before answering. Nothing here can stand in for the evidence it did not write.',
+  ]);
   console.log('  clock    STOPPED — the wall does not run while a person is reading (W-2), and this leg\'s elapsed is what folds into the resume');
   console.log('');
   const answer = (/** @type {string} */ tail) => `node scripts/run-u.mjs --job ${jobKey} --resume ${runid}${tail} --approve ${specHash}`;
@@ -898,7 +907,7 @@ if (outcome === 'hitl-pause') {
 // no worker round: the signer decided the job was not worth another pass. The
 // spend line above is the honest report — a cancel costs whatever the run had
 // already spent before it asked, and nothing after.
-if (outcome === 'hitl-cancel') {
+if (outcome === HITL_CANCEL) {
   console.log('\nCANCELLED — the signer closed the run at its human stage. TERMINAL: no gap, no continuation, and no worker round bought by the decision.');
   console.log('  the work stays on the run\'s own branch exactly as it was left — read it, keep it, or throw it away yourself');
   console.log('  a fresh run is a fresh run (the same hash) — revising the goal or the spec changes the hash and needs a new signature');
