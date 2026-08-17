@@ -515,6 +515,10 @@ test('N4: a HUMAN CHECKPOINT stops the loop dead — no further try, no cold leg
     assert.equal(runs.calls.length, 1, `${outcome}: exactly ONE run — the second try and the cold leg are never bought while a person is deciding`);
     assert.equal(r.tries.length, 1, `${outcome}: and the readout holds that one try only`);
     assert.equal(r.outcome, outcome, `${outcome}: the pause is the run's own terminal, surfaced verbatim`);
+    // …and the ROW says what it is. A pause used to fall past the graded-red set into
+    // `casualty`, which reads as a run that died — the one thing it is not: nothing
+    // failed, nothing is lost, and the answer it is waiting for is a person's.
+    assert.equal(r.tries[0].verdictClass, 'checkpoint', `${outcome}: a pause is a checkpoint, never a casualty`);
     assert.ok(r.decision, `${outcome}: and it comes back decision-ready, so the operator knows a human answer is owed`);
 
     const after = loadBridge(join(dir, 'alpha.json')).bridge;

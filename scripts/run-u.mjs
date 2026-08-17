@@ -21,7 +21,7 @@ import { normalizeHumanRuling } from '../src/kinds.js';
 // --resume reads the halted run's own spine back through the SAME reader the reuse
 // path uses (never a second one) and keeps its patient the way it left it.
 import { readResume, resumeTreeGate, checkpointAgeGate, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS } from '../src/reuse.js';
-import { HITL_PAUSE, HITL_CANCEL } from '../src/declaredclose.js';
+import { HITL_PAUSE } from '../src/declaredclose.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
 import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines } from './u-readout.mjs';
@@ -561,7 +561,7 @@ if (arg('approve') !== specHash) {
     for (const l of doorLines({
       rerun: invoke(' --decide rerun --text "<what you want done differently>"').trim(),
       accept: invoke(' --decide accept').trim(),
-      cancel: invoke(' --decide cancel').trim(),
+      pause: invoke(' --decide pause').trim(),
     })) console.log(l);
   } else {
     if (RULING !== null) {
@@ -622,9 +622,34 @@ if (dead && RESUME_WALL_MS !== null && RESUME_WALL_MS <= 0) {
 // to ask the same question twice.
 if (PAUSED && RULING === null) {
   console.error('NO DECISION — this resume continues a run that is waiting on a person, and no decision was given.');
-  console.error('Answer it with one of: --decide rerun --text "<your words>" · --decide accept · --decide cancel');
+  console.error('Answer it with one of: --decide rerun --text "<your words>" · --decide accept · --decide pause');
   console.error('(run the same command without --approve to read the evidence package first — that is the screen this decision is made on)');
   process.exit(2);
+}
+
+// ── THE PAUSE DOOR (2026-08-17) — answered HERE, and it launches nothing.
+//
+// hamr's ruling replaced cancel with a pause that can resume, and the honest way to
+// keep a checkpoint is to leave it alone. This runner writes one spine file per LEG,
+// and a leg that returns before drafting emits no `plan-accepted` and no `step-end` —
+// which is exactly what `readStepCheckpoint` reads. So launching a run to say "not
+// now" would mint a NEW runid whose own checkpoint is empty, and an operator who
+// later resumed that runid would re-draft and re-pay for every step the paused leg
+// already finished. The checkpoint that matters is the one already on disk.
+//
+// So the decision is recorded to the operator, in words, against the runid they
+// resume — and nothing is spent, nothing is signed away, and no allowance moves. The
+// library keeps its own half (`runPlan` mints a `hitl-pause` with `humanDecision`
+// when an adopter drives the door directly); this is the runner's, and the two agree
+// on the one fact that matters: the run stays paused and stays resumable.
+if (PAUSED && RULING?.decision === 'pause') {
+  console.log(`\nPAUSED BY YOU — nothing was run and nothing was spent. The checkpoint stands exactly as it was: the work is on the run's own branch, the plan and the money are where the paused leg left them.`);
+  console.log(`  keeps    ${PAUSE_TTL_MS / 86_400_000} days from the pause on the record — after that the checkpoint expires on its own, and nothing has to be decided today to let that happen`);
+  console.log('  resume   the SAME runid, whenever you want, with the door you pick then:');
+  console.log(`           node scripts/run-u.mjs --job ${jobKey} --resume ${RESUME} --decide accept --approve ${specHash}`);
+  console.log(`           node scripts/run-u.mjs --job ${jobKey} --resume ${RESUME} --decide rerun --text "<what you want done differently>" --approve ${specHash}`);
+  console.log(`  read     the same command with no --decide re-prints the evidence package you just looked at`);
+  process.exit(0);
 }
 
 const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -808,7 +833,7 @@ try {
     // carried in on the leg that resumes the pause. It is spent ONCE, on this leg's
     // close readings: `accept` greens the human stage after the mechanical stages
     // re-run on the tree as it stands (OPEN-3), `rerun` reds it with these words as
-    // the gap, and `cancel` never gets this far (it is terminal before any work).
+    // the gap, and `pause` never gets this far (it is answered above, launching nothing).
     // Absent on every ordinary run — refused-but-unwired would pause forever.
     ...(RULING === null ? {} : { humanRuling: RULING }),
   });
@@ -899,18 +924,9 @@ if (outcome === HITL_PAUSE) {
   for (const l of doorLines({
     rerun: answer(' --decide rerun --text "<what you want done differently>"'),
     accept: answer(' --decide accept'),
-    cancel: answer(' --decide cancel'),
+    pause: answer(' --decide pause'),
   })) console.log(l);
   console.log(`  (the same command without --approve re-prints this package — the checkpoint keeps for ${PAUSE_TTL_MS / 86_400_000} days)`);
-}
-// ── the third door, and it is the one that ends things. No gap, no continuation,
-// no worker round: the signer decided the job was not worth another pass. The
-// spend line above is the honest report — a cancel costs whatever the run had
-// already spent before it asked, and nothing after.
-if (outcome === HITL_CANCEL) {
-  console.log('\nCANCELLED — the signer closed the run at its human stage. TERMINAL: no gap, no continuation, and no worker round bought by the decision.');
-  console.log('  the work stays on the run\'s own branch exactly as it was left — read it, keep it, or throw it away yourself');
-  console.log('  a fresh run is a fresh run (the same hash) — revising the goal or the spec changes the hash and needs a new signature');
 }
 // A leak is the HARD LINE broken, not a note in the margin: an advisory that
 // prints a count and then exits 0 while still writing the bridge is a guard in

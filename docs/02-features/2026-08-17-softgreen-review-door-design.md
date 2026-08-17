@@ -285,3 +285,74 @@ explicit word, as everything paid-adjacent does.
   *bareguard's* judge on *bareguard's* task; the borrow is a shape, and it has to earn its own
   calibration here.
 - **No number is picked here** — not the calibration size, not a floor, not a budget.
+
+---
+
+## Addendum — 2026-08-18: the third door is PAUSE, and cancel is deleted
+
+*Appended. Nothing above is rewritten: §3.2 and §3.3 stand as the record of what was
+decided on 2026-08-17, and this is what hamr changed the following day.*
+
+**The three doors are now `accept` / `rerun` / `pause`.** `cancel` is deleted as a concept
+— not renamed, not kept as an alias, not reachable behind a flag.
+
+hamr's reasoning, near-verbatim:
+
+> *"rerun implies I don't like it, go again"*
+>
+> *"what's the point of cancel anyways? pause can resume — that would be more honest"*
+>
+> *"for green I can pause and it would resume from beginning of last step, and in
+> softgreen it can pause"*
+
+### What each door now means
+
+- **accept** — unchanged. Confirmation, and the gate that releases reuse / learning credit.
+  It confirms a verdict; it never mints one.
+- **rerun** — unchanged. A fresh engagement (§3.4): the person's text IS the gap, empty or
+  whitespace text is refused, and the allowance is spent once the fix loop opens.
+- **pause** — *not now.* Nothing is run, nothing is spent, no worker round is bought and the
+  fix loop never opens. The run keeps the checkpoint it already has and resumes **from the
+  start of its last step** whenever somebody comes back to it — on a green run and on a
+  softgreen run alike, since both are the same checkpoint machinery.
+
+### The TTL is the cancel case, without the forever-decision
+
+An unresumed pause is not a special state and needs no new machinery: it simply expires
+under the existing 60-day checkpoint TTL (§1.6 / `PAUSE_TTL_MS`). **That expiry IS what
+cancel used to do** — the run ends up abandoned, its branch left exactly as it was, nothing
+graduated, the ledger's verdict untouched. The difference is entirely in what the door asks
+of the person: cancel demanded a permanent judgment at the one moment they had least reason
+to make one, and pause asks for nothing at all. A person who never comes back gets the same
+outcome; a person who changes their mind keeps the work they paid for.
+
+The disposition reading of cancel in §3.2 (*"the verdict stands, but I'm not taking the
+merchandise"*) is therefore retired as a DOOR. The fact it recorded — the loop's own verdict
+is never changed by what a person does afterwards — is unaffected and is still §3.1's law.
+
+### What it changes in the machinery
+
+- `HUMAN_DECISIONS` is `['accept', 'rerun', 'pause']`. A fourth door remains inexpressible,
+  and `cancel` is now refused by the same seam that refuses any other non-door.
+- The `hitl-cancel` **terminal is no longer mintable anywhere**. The constant is gone from
+  the library; the ledger keeps the bare string in its excluded set so a spine written
+  before today still reads as governance rather than as a counted capability gap. That is a
+  reader's backward compatibility, deliberately not a constant a writer can reach.
+- A pause answer mints the ordinary `hitl-pause` checkpoint terminal, with an explicit
+  `humanDecision: 'pause'` on the record: *a person looked and kept it* and *nobody has
+  looked yet* are two different facts, and one record spelling both is how a reader comes to
+  confuse them.
+- It does **not** consume the one-shot rerun allowance, and it does **not** open the fix
+  loop. The same three doors are open the next time somebody looks.
+- `hitl-decision-red` is untouched: a malformed decision is still an honest refusal of the
+  operator's own input.
+
+### The runner's half
+
+`scripts/run-u.mjs --decide pause` answers the door and **launches nothing**. This is not a
+style choice, it is the checkpoint: the runner writes one spine per leg, and a leg that
+returns before drafting emits neither `plan-accepted` nor `step-end` — which is all the
+step-checkpoint reader reads. Launching a run to say "not now" would mint a fresh runid
+whose own checkpoint is empty, and an operator who later resumed *that* runid would re-draft
+and re-pay for every step the paused leg had already finished. So the runner prints the
+decision, names the TTL and the original runid, and exits having spent nothing.

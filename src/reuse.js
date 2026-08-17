@@ -104,9 +104,11 @@ export const REUSE_GRADED_RED = Object.freeze(['escalated']);
  *
  * Every entry is a stop that left WORK ON DISK and an allowance unspent — money,
  * time, a self-healed stall, and now a person who has not answered yet. A verdict
- * already rendered is never on this list: `hitl-cancel` is the signer's own
- * terminal and `green`/`escalated` are graded rows, and re-buying any of them
- * would pay twice for an answer already in hand.
+ * already rendered is never on this list: `green`/`escalated` are graded rows, and
+ * re-buying one would pay twice for an answer already in hand. (The signer's own
+ * `hitl-cancel` terminal used to be the other example; the door was deleted on
+ * 2026-08-17 — a person who does not want to carry on pauses, and the checkpoint
+ * they keep is retired by the TTL rather than by a terminal.)
  *
  * The human half is SPLICED IN from `declaredclose.js` rather than spelled again,
  * because the try loop below reads the two halves differently and a second copy is
@@ -450,13 +452,24 @@ function readTry(events) {
   };
 }
 
-/** the three-way verdict read of a runJob outcome, in ONE place: a green, the one
- * GRADED red that demotes (D6), or a casualty that keeps its own name. Both the live
- * try loop and the resume reader classify through this — two spellings of "what kind
- * of answer was that" is how a casualty ends up demoting a recipe.
- * @param {string} outcome @returns {'green'|'red'|'casualty'} */
+/** the verdict read of a runJob outcome, in ONE place: a green, the one GRADED red
+ * that demotes (D6), a CHECKPOINT waiting on a person, or a casualty that keeps its
+ * own name. Both the live try loop and the resume reader classify through this — two
+ * spellings of "what kind of answer was that" is how a casualty ends up demoting a
+ * recipe.
+ *
+ * `checkpoint` is its own name rather than a fourth flavour of casualty (2026-08-17).
+ * A casualty is a run that DIED — a transport fault, a governance cut, a broken close
+ * — and a reader that sees one is being told the attempt is over. A human checkpoint
+ * is the opposite fact in every respect: nothing failed, nothing is discarded, the
+ * work and the money are exactly where they were, and the allowance still unspent is
+ * a person's answer. It behaves like neither a red nor a casualty everywhere it
+ * matters already (`hardStop` ends the loop on it, the box is left untouched), so the
+ * ROW saying "casualty" was the one place the machinery still mis-described itself.
+ * @param {string} outcome @returns {'green'|'red'|'checkpoint'|'casualty'} */
 function verdictClassOf(outcome) {
   if (outcome === 'green' || outcome === 'already-green') return 'green';
+  if (HUMAN_CHECKPOINTS.includes(outcome)) return 'checkpoint';
   return REUSE_GRADED_RED.includes(outcome) ? 'red' : 'casualty';
 }
 

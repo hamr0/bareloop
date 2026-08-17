@@ -141,7 +141,7 @@ async function primitiveSmoke(workdir) {
  *        default is the OFF arm. (Shell-owned seam, same doctrine as the provider
  *        binding.)
  * @param {{decision: string, text?: string}|null} [opts.humanRuling] N4 — the SIGNER's
- *   answer at a hitl pause (accept | rerun <text> | cancel), carried by the leg that
+ *   answer at a hitl pause (accept | rerun <text> | pause), carried by the leg that
  *   RESUMES a paused run and forwarded verbatim to the plan flow. Absent on every
  *   ordinary run; never authored and never defaulted (a defaulted answer to "is this
  *   done?" is the rubber-stamp the class exists to prevent, 2026-08-12 §4).
@@ -149,7 +149,7 @@ async function primitiveSmoke(workdir) {
  *   'unapproved-spec' | 'job-red' | 'smoke-red' | 'plan-red' | 'check-red' |
  *   'close-red' | 'close-unsupported' | 'recipe-stale' | 'branch-red' | 'pricing-red' | 'provider-red' |
  *   'interpreter-red' | 'cap-halt' | 'wall-halt' | 'step-stalled' |
- *   'hitl-pause' | 'hitl-cancel' | 'hitl-decision-red' | `step-red:<id>`
+ *   'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
 export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, layerRoot = false, bridge = null, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null }) {
   // 0. the ledger's counters, declared FIRST so that every job-end — including

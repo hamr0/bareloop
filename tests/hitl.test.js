@@ -230,7 +230,7 @@ test('§1.3 — the human ruling decides the stage: accept is green, rerun is a 
 });
 
 test('§1.3 — a decision the stage cannot read renders NO verdict (an instrument stop, never a guess)', async () => {
-  for (const humanRuling of [{ decision: 'cancel' }, { decision: 'maybe' }, { decision: 'rerun', text: '  \n' }]) {
+  for (const humanRuling of [{ decision: 'pause' }, { decision: 'maybe' }, { decision: 'rerun', text: '  \n' }]) {
     const r = await runStage(humanStage, { ...nowhere, humanRuling });
     assert.equal(r.verdict, 'instrument-stop', JSON.stringify(humanRuling));
     assert.equal(r.judged, false);
@@ -279,11 +279,14 @@ test('§1.3 — a PAUSE is never graded: neither runDeclaredClose nor the arbite
 // `hitl-close` entry in the ledger stays exactly where it is, meaning what it
 // always meant, and nothing is renamed in passing.
 
-test('§1.4 readers — the ledger EXCLUDES the three hitl terminals, and keeps the legacy hitl-close entry untouched', () => {
+test('§1.4 readers — the ledger EXCLUDES the hitl terminals (the LEGACY cancel name included) and keeps hitl-close untouched', () => {
   const at = (/** @type {string} */ category) => classifyIncidents([
     { type: 'escalation', category, decisionReady: true, detail: 'x', seq: 1 },
   ], { spine: 'run' });
-  for (const category of ['hitl-pause', 'hitl-cancel', 'hitl-decision-red']) {
+  for (const category of ['hitl-pause', 'hitl-decision-red', 'hitl-cancel']) {
+    // `hitl-cancel` is the deleted door's terminal (2026-08-17). No writer can mint it
+    // any more, but a spine written before the change still carries it, and a reader
+    // that stopped recognising it would re-file governance as a capability gap.
     assert.deepEqual(at(category), [], `${category} is a checkpoint or an operator refusal, never a lib bug`);
   }
   // the CONTROL: an unmapped category is still COUNTED against the executable
@@ -292,10 +295,10 @@ test('§1.4 readers — the ledger EXCLUDES the three hitl terminals, and keeps 
   assert.deepEqual(at('hitl-close'), [], 'the legacy entry keeps its own meaning (a human IS the close)');
 });
 
-test('§1.4 readers — a pause and a cancel NEVER demote a bridge, and the graded red still does', () => {
+test('§1.4 readers — a pause NEVER demotes a bridge, and the graded red still does', () => {
   const proven = [{ outcome: 'green', patient: 'p1' }, { outcome: 'green', patient: 'p2' }];
   assert.equal(deriveStatus(proven), 'proven');
-  for (const outcome of ['hitl-pause', 'hitl-cancel', 'hitl-decision-red']) {
+  for (const outcome of ['hitl-pause', 'hitl-decision-red']) {
     assert.equal(deriveStatus([...proven, { outcome, patient: 'p3' }]), 'proven', outcome);
   }
   // the two halves of the rule this rests on: only `escalated` is GRADED as a
@@ -308,7 +311,8 @@ test('§1.4 readers — a pause and a cancel NEVER demote a bridge, and the grad
 test('§1.4 readers — the checkpoint list is the LIBRARY\'s, so an exported bundle inherits it rather than re-spelling it', () => {
   assert.ok(CHECKPOINT_OUTCOMES.includes('hitl-pause'), 'a pause is a checkpoint: there is something left to continue');
   assert.deepEqual([...CHECKPOINT_OUTCOMES], ['cap-halt', 'wall-halt', 'step-stalled', 'hitl-pause']);
-  assert.equal(CHECKPOINT_OUTCOMES.includes('hitl-cancel'), false, 'cancel is TERMINAL — a verdict already rendered is never re-bought');
+  assert.equal(CHECKPOINT_OUTCOMES.includes('hitl-decision-red'), false, 'a refusal of the operator\'s own input is a verdict already rendered, never re-bought');
+  assert.equal(CHECKPOINT_OUTCOMES.includes('hitl-cancel'), false, 'the deleted door mints nothing — and nothing re-buys a name no writer can write');
   assert.equal(CHECKPOINT_OUTCOMES.includes('green'), false);
 });
 
@@ -368,7 +372,8 @@ test('§1.6 TTL — it is the PAUSE\'s rule: another checkpoint is not aged out 
 test('§1.5 — the decision GATE refuses an empty rerun: the fix worker must never receive an empty human gap', () => {
   assert.equal(normalizeHumanRuling({ decision: 'rerun', text: 'do it again, properly' }).ok, true);
   assert.equal(normalizeHumanRuling({ decision: 'accept' }).ok, true);
-  assert.equal(normalizeHumanRuling({ decision: 'cancel' }).ok, true);
+  assert.equal(normalizeHumanRuling({ decision: 'pause' }).ok, true);
+  assert.equal(normalizeHumanRuling({ decision: 'cancel' }).ok, false, 'the deleted door is not a ruling any run can act on (2026-08-17)');
   assert.equal(normalizeHumanRuling(null).ok, true, 'no ruling at all is the PAUSE path, not a refusal');
   assert.equal(normalizeHumanRuling(null).ruling, null);
   for (const bad of [{ decision: 'rerun' }, { decision: 'rerun', text: '' }, { decision: 'rerun', text: '   \n\t ' }]) {

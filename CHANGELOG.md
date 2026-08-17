@@ -7,6 +7,38 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Changed (2026-08-18 — the review door's third button)
+
+- **The three doors are `accept` / `rerun` / `pause`; `cancel` is DELETED as a concept.** hamr:
+  *"what's the point of cancel anyways? pause can resume — that would be more honest"* and
+  *"rerun implies I don't like it, go again"*. A `pause` answer runs nothing, spends nothing,
+  buys no worker round, never opens the fix loop and does NOT consume the one-shot rerun
+  allowance: it mints the ordinary `hitl-pause` checkpoint with an explicit
+  `humanDecision: 'pause'` and leaves the run resumable from the start of its last step. An
+  unresumed pause simply expires under the existing 60-day `PAUSE_TTL_MS` — **that expiry is
+  what cancel used to be**, without forcing a permanent decision. `HUMAN_DECISIONS` is the
+  enumerated set the surface derives from, so `cancel` is now inexpressible rather than
+  rejected after the fact; `hitl-decision-red` still refuses any word that is not a door.
+- **`hitl-cancel` is no longer mintable and the constant is gone** (removed from
+  `src/declaredclose.js` and the package exports). The ledger keeps the bare string in its
+  excluded-escalation set — the `gate-red` precedent — so a spine written before this change
+  still reads as governance rather than as a counted capability gap; no spine on disk carries
+  it (the door never fired live), so that entry is forward compatibility, not bookkeeping.
+- **A human checkpoint row is classed `checkpoint`, not `casualty`** (`src/reuse.js`, both the
+  live try loop and the resume reconstruction). A casualty is a run that died; a checkpoint is
+  a run that is waiting on a person with nothing lost — every other reader already treated it
+  that way, and the row was the last place the machinery mis-described itself.
+- **Runner surface (`scripts/` never ships):** `scripts/run-u.mjs --decide pause` answers the
+  door and launches nothing at all — it prints the decision, names the TTL and the ORIGINAL
+  runid, and exits having spent nothing. Deliberate: the runner writes one spine per leg, and a
+  leg that returns before drafting emits no `plan-accepted` and no `step-end`, so launching a
+  run to say "not now" would mint a runid whose own checkpoint is empty and re-pay for finished
+  steps on the next resume. Door rendering (`scripts/u-readout.mjs`) and the escalation
+  passthrough (`src/ralph.js`) carry the new third door.
+- **Docs:** dated addendum on `docs/02-features/2026-08-17-softgreen-review-door-design.md`
+  (closed sections untouched), **PRD Addendum v1.72**, README's *"You have the last word"*,
+  `bareloop.context.md`'s terminal/decision surface, and `docs/01-product/LAYERS.md`.
+
 ### Docs (2026-08-17 — decisions only; NO code changed, and no build is authorized)
 
 - **New design record `docs/02-features/2026-08-17-softgreen-review-door-design.md`, and PRD

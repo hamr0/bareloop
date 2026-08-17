@@ -20,7 +20,7 @@
 > `soft-green`**, and the hitl pause machinery is **RE-HOMED, not deleted**: it becomes the
 > **review door** at the end of EVERY run (green and soft-green alike), where the person
 > `accept`s, `rerun`s (their text is the gap, funded as a FRESH engagement with its own money
-> and time) or `cancel`s — and **the door never changes the loop's own verdict**. `soft-green`
+> and time) or `pause`s — and **the door never changes the loop's own verdict**. `soft-green`
 > gets a `judged-floor` stage behind a signed rubric card and a signed calibration set.
 > **Everything documented in this file describes the code as it actually is on this branch**,
 > where `hitl` IS admitted, `human-confirms` IS live, and the three `hitl-*` terminals exist —
@@ -809,22 +809,32 @@ known-answer round-trip before tokens: `smoke-red` — a silent degradation thro
 
 Outcomes: `green | already-green | escalated | unapproved-spec | job-red | smoke-red |
 plan-red | check-red | close-red | close-unsupported | recipe-stale | branch-red | pricing-red |
-provider-red | interpreter-red | cap-halt | wall-halt | step-stalled | hitl-pause | hitl-cancel |
+provider-red | interpreter-red | cap-halt | wall-halt | step-stalled | hitl-pause |
 hitl-decision-red | step-red:<id>`.
 
-**The three hitl terminals (N4 slice 1)** are the class's whole surface at this layer, and each
-is a CLEAN exit (`spendComplete` stays true — only the two casualties floor). `hitl-pause` is a
+**The two hitl terminals (N4 slice 1, doors re-cut 2026-08-18)** are the class's whole surface
+at this layer, and each is a CLEAN exit (`spendComplete` stays true — only the two casualties floor). `hitl-pause` is a
 decision-ready CHECKPOINT: the close reached a stage no machine can render, so the run stops
 holding everything it has done, emits the evidence package (every mechanical stage's result, the
 close's own `ask`, and the changed paths — bounded, trim announced), and the clock stops with
 it. It is on `CHECKPOINT_OUTCOMES` (the canonical `resumableOutcomes` list, exported so an
 exported bundle inherits one spelling), and `checkpointAgeGate` refuses one older than
-`PAUSE_TTL_MS` (60 days) by NAMING the age and the TTL. `hitl-cancel` is the signer ending the
-run: terminal, explicit `gap: null`, no fix loop, no worker round, never resumable.
-`hitl-decision-red` refuses a decision the run cannot act on — a fourth door, a `rerun` with
-empty text, or a decision handed to a close with no human stage — before anything is spent.
-None of the three demotes a bridge, and all three are excluded from the ledger's escalation
-counting. Pass the signer's answer as `humanRuling: { decision, text? }`; it is spent once, at
+`PAUSE_TTL_MS` (60 days) by NAMING the age and the TTL. The signer's own `pause` door mints
+that SAME terminal, with `humanDecision: 'pause'` and an explicit `gap: null` on the record: no
+fix loop, no worker round, nothing spent, the rerun allowance untouched, and the checkpoint left
+exactly as it was. `hitl-decision-red` refuses a decision the run cannot act on — a word that is
+not one of the three doors, a `rerun` with empty text, or a decision handed to a close with no
+human stage — before anything is spent. Neither demotes a bridge, and both are excluded from the
+ledger's escalation counting.
+
+There was a third terminal, `hitl-cancel`, for a `cancel` door that no longer exists (hamr,
+2026-08-17: *"pause can resume — that would be more honest"*). Nothing mints it and no constant
+exports it; the ledger still RECOGNISES the bare string so a spine written before the change
+reads as governance rather than as a counted capability gap. An unresumed pause expiring under
+the TTL is what cancel used to be.
+
+Pass the signer's answer as `humanRuling: { decision, text? }` (`accept | rerun | pause`, the
+enumerated `HUMAN_DECISIONS` set); it is spent once, at
 the close readings up to the moment the fix loop opens, so the human's words become `post.gap`
 through the SAME seam (same bound, same scrub) and the next machine-clean tree pauses for a
 SECOND review rather than converting one sentence forever.
@@ -922,7 +932,7 @@ never replans) — plus at most ONE arbiter-granted extra on a second variance s
 REAL close and governed by the close TREND rule below (`capRuns`, default 3, survives only as
 its blind fallback). `plan-executed` (the plan-as-executed record, design law #2) lands on the
 spine on every path that executed steps. Additional outcomes: `already-green |
-plan-red | check-red | close-red | wall-halt | hitl-pause | hitl-cancel | hitl-decision-red`.
+plan-red | check-red | close-red | wall-halt | hitl-pause | hitl-decision-red`.
 A `human-confirms` stage is caught at BOTH close seams — the precheck (reaching a person there
 means the machine half already passes on the untouched tree, so pausing costs $0 where drafting
 a plan first would spend a budget to arrive at the same question) and the post-steps close. Worker prompts hold the v1.12 §5 contract
@@ -1526,7 +1536,7 @@ and is re-signed.
 
 **A `hitl-pause` checkpoint is answered on the same command line** (N4, 2026-08-12 §5.2 — the
 terminal is the v1 surface; the panel is N6's). The reference runner takes
-`--decide accept|rerun|cancel` with `--text` for the rerun door, gated on the SAME
+`--decide accept|rerun|pause` with `--text` for the rerun door, gated on the SAME
 `--approve <specHash>` signature the run itself is signed with (ruling 4: the spec hash is the
 only signer proof this repo has, and no second identity mechanism was invented). The decision
 SEMANTICS are the library's — an adopter's runner should call `normalizeHumanRuling` and print

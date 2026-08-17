@@ -130,16 +130,21 @@ export function evidencePackage({ pause, diff }) {
  * "Default" here is which door the prompt LEADS with — never an action taken for
  * the operator. No door happens without its flag, and this says so.
  *
- * @param {{rerun: string, accept: string, cancel: string}} invocations the exact
+ * The third door is PAUSE (2026-08-18), not cancel. hamr: *"what's the point of
+ * cancel anyways? pause can resume — that would be more honest"*. A person who does
+ * not want to carry on today is not making a permanent judgment, and the door should
+ * not ask them to: the checkpoint keeps, and an unanswered one expires on its own.
+ *
+ * @param {{rerun: string, accept: string, pause: string}} invocations the exact
  *   command each door costs, so nobody has to reconstruct one
  * @returns {string[]}
  */
-export function doorLines({ rerun, accept, cancel }) {
+export function doorLines({ rerun, accept, pause }) {
   return [
     'THREE DOORS — no fourth, and no decision is taken for you: nothing happens without the flag.',
     `  rerun   your words BECOME the gap the worker fixes from, and the run continues under what is left of the budget:\n            ${rerun}`,
     `  accept  green — minted on FRESH evidence (the mechanical stages re-run first, since the tree may have moved):\n            ${accept}`,
-    `  cancel  terminal. No gap, no continuation; the work stays on the run's own branch exactly as it is:\n            ${cancel}`,
+    `  pause   not now. Nothing is run and nothing is spent; the checkpoint keeps and this run resumes from the start of its last step whenever you come back:\n            ${pause}`,
   ];
 }
 

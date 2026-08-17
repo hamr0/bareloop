@@ -1,5 +1,6 @@
-// N4 slice 1 — the hitl PAUSE, the CANCEL terminal, and THE RETURN, through the
-// shipped entry (`runJob`), against a real patient with a real declared close.
+// N4 slice 1 — the hitl PAUSE, the three doors (2026-08-18: accept/rerun/pause) and
+// THE RETURN, through the shipped entry (`runJob`), against a real patient with a
+// real declared close.
 //
 // tests/hitl.test.js pins the admission and the kind; this file pins what the
 // POC (poc/n4-hitl-return.md) proved with two labelled shims, now that the shims
@@ -107,7 +108,7 @@ function virtualSpine(/** @type {string} */ file, /** @type {any} */ clock, star
   };
 }
 const readEvents = (/** @type {string} */ f) => readFileSync(f, 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
-/** a provider that must never be called — accept and cancel buy no worker round */
+/** a provider that must never be called — accept and pause buy no worker round */
 const forbiddenProvider = () => {
   const state = { calls: 0 };
   return { state, async generate() { state.calls += 1; throw new Error('a worker round was bought on a path that must buy none'); } };
@@ -160,7 +161,7 @@ test('§1.4 — the run PAUSES at the human stage: a decision-ready terminal, ne
   assert.equal(pause.stage, 'signer-reviews');
   assert.equal(pause.decisionReady, true);
   assert.equal(pause.ask, 'Does this fix read like something you would ship?');
-  assert.deepEqual(pause.options, ['accept', 'rerun', 'cancel'], 'three doors, and no fourth');
+  assert.deepEqual(pause.options, ['accept', 'rerun', 'pause'], 'three doors, and no fourth');
 
   // RULING 2 — the evidence package: every mechanical stage's own result, never
   // a bare "approve?", plus what this run actually changed
@@ -258,20 +259,28 @@ test('§1.4 accept — OPEN-3\'s control: a tree that CHANGED during the pause d
   assert.equal(r.events.find((e) => e.type === 'close-precheck').stage, 'changed-from-seed');
 });
 
-test('§1.4 cancel — terminal: no gap, no fix loop, no worker round, and the spend stays exact', async (t) => {
+test('§1.4 pause — the third door KEEPS the checkpoint: no gap, no fix loop, no worker round, still resumable', async (t) => {
+  // hamr, 2026-08-17: *"what's the point of cancel anyways? pause can resume — that
+  // would be more honest"*. So the door that used to end the run now records the
+  // person's own "not now" and leaves everything exactly where it was: the outcome is
+  // the SAME checkpoint terminal a machine-side pause mints, which is what makes it
+  // resumable under the existing TTL rather than a decision the signer can never undo.
   const leg = await pauseLeg(t);
   const fp = forbiddenProvider();
-  const r = await resume(leg, { humanRuling: { decision: 'cancel' }, provider: fp });
-  assert.equal(r.outcome, 'hitl-cancel');
-  const rec = r.events.find((e) => e.type === 'hitl-cancel');
-  assert.equal(rec.gap, null, 'explicitly null: cancel is terminal, and there is nothing for a worker to convert');
+  const r = await resume(leg, { humanRuling: { decision: 'pause' }, provider: fp });
+  assert.equal(r.outcome, 'hitl-pause');
+  const rec = r.events.findLast((e) => e.type === 'hitl-pause');
+  assert.equal(rec.humanDecision, 'pause', 'an EXPLICIT record: the person answered "not now", which is not the same fact as walking away');
+  assert.equal(rec.gap, null, 'explicitly null: nobody asked for anything to be changed');
   assert.equal(rec.decisionReady, true);
-  assert.equal(r.events.some((e) => e.type === 'fix-loop'), false);
-  assert.equal(fp.state.calls, 0);
+  assert.equal(r.events.some((e) => e.type === 'fix-loop'), false, 'a pause never opens the fix loop');
+  assert.equal(fp.state.calls, 0, 'and buys no worker round');
   assert.equal(r.events.find((e) => e.type === 'job-end').spendComplete, true);
-  // and it is TERMINAL: the reader must not offer it back as a checkpoint
+  // …and it stays a CHECKPOINT: the rerun allowance is untouched, so the same three
+  // doors are open the next time somebody looks at it.
   const after = readResume(readEvents(leg.spine), { direct: true, resumableOutcomes: RESUMABLE });
-  assert.equal(after.endOutcome, 'hitl-cancel');
+  assert.equal(after.endOutcome, 'hitl-pause');
+  assert.notEqual(after.restart, null, 'there is something left to continue — that is the whole of hamr\'s ruling');
 });
 
 // ── §1.5 THE RETURN ─────────────────────────────────────────────────────────

@@ -31,7 +31,7 @@ AGENT drafts the road as it walks it:
   ├─ small loop: UNDERSTAND ─ read what the code promises ───── settled? → next
   ├─ small loop: WRITE ────── change it; judge reds; retry ──── settled? → next
   └─ small loop: VERIFY ───── the OUTER judge: green / soft-green
-        │                      …then the REVIEW DOOR: the person accepts, reruns, or cancels
+        │                      …then the REVIEW DOOR: the person accepts, reruns, or pauses
         │                        (a disposition — it never changes the verdict)
         │
         ▼
@@ -133,7 +133,10 @@ soft-green alike, finishes at a **review door** carrying the evidence package an
   judge's ongoing report card);
 - **rerun** — the person's text IS the gap, and the rerun is a **FRESH ENGAGEMENT** with its own
   money and its own time, never the leftovers of the run it corrects;
-- **cancel** — a **disposition only**: *the verdict stands, but I'm not taking the merchandise.*
+- **pause** — *not now.* Nothing runs and nothing is spent; the checkpoint keeps, the run
+  resumes from the start of its last step whenever the person comes back, and an unresumed
+  pause expires on its own under the 60-day TTL. (It replaced `cancel` on 2026-08-18 — hamr:
+  *"pause can resume — that would be more honest"* — and that expiry IS the old cancel case.)
 
 **The door NEVER changes the loop's own verdict** (hamr: *"it's important not to change the loop
 self verdict"*). The close mints the verdict; the door records what the person did about it. A
@@ -900,8 +903,10 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
    `hitl-pause` — a decision-ready CHECKPOINT that carries the evidence package (every mechanical
    stage's own result, the close's declared question, the files this run changed), sits on
    `CHECKPOINT_OUTCOMES` and is age-gated at 60 days by the library's own `PAUSE_TTL_MS` —
-   plus `hitl-cancel` and `hitl-decision-red`. The signer answers on the SAME command line and
-   under the SAME signature (`scripts/run-u.mjs --decide accept|rerun|cancel`, `--text` on the
+   plus `hitl-decision-red` (and, until the doors were re-cut on 2026-08-18, `hitl-cancel` —
+   deleted with the cancel door it belonged to; a pause the person never returns to is what it
+   used to be). The signer answers on the SAME command line and
+   under the SAME signature (`scripts/run-u.mjs --decide accept|rerun|pause`, `--text` on the
    rerun door, all gated on `--approve <specHash>`), and the hitl guard battery INHERITS green's
    mechanical guards verbatim (hamr's OPEN-1 ruling, 2026-08-13). **What has NOT happened, said
    plainly rather than rounded up:** the live paid hitl loop has never fired — it waits on hamr's

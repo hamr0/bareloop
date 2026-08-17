@@ -148,10 +148,17 @@ export const SEED_EXEMPT_KINDS = Object.freeze(['judged-floor', 'human-confirms'
  * decisions on it (is there a door to answer, which stage paused, whose ruling
  * this is) and three literals is how they come to disagree */
 export const HUMAN_KIND = 'human-confirms';
-/** the three doors the signer is offered at a hitl pause (2026-08-12 §1). No
- * fourth door, and no free-text-only variant: a red that is not one of these two
- * is not a ruling the run can act on. */
-export const HUMAN_DECISIONS = Object.freeze(['accept', 'rerun', 'cancel']);
+/** the three doors the signer is offered at a hitl pause (2026-08-12 §1, doors
+ * re-cut 2026-08-17). No fourth door, and no free-text-only variant: a red that
+ * is not one of these two is not a ruling the run can act on.
+ *
+ * `cancel` was the third door and is DELETED as a concept (hamr: *"what's the
+ * point of cancel anyways? pause can resume — that would be more honest"*). The
+ * case it served — a person who looks and does not want to carry on — is a pause
+ * nobody returns to, which the 60-day checkpoint TTL retires on its own. Nothing
+ * here forces a forever-decision at the one moment the person has least reason
+ * to make one. */
+export const HUMAN_DECISIONS = Object.freeze(['accept', 'rerun', 'pause']);
 
 /**
  * @typedef {{code: string, path: string, detail: string}} Red
@@ -1410,10 +1417,13 @@ export function normalizeHumanRuling(ruling) {
  * It spawns nothing, reads nothing and touches no tree, which is why it can
  * render both without a workdir that exists.
  *
- * `cancel` is deliberately NOT a case here. It is not a judgment about the tree
- * — it is the signer ending the run — and it is consumed by the runner before
- * the close is ever asked (a cancel that reached this far has bypassed that seam,
- * so it renders NO verdict rather than being guessed into one).
+ * `pause` is deliberately NOT a case here. It is not a judgment about the tree
+ * — it is the signer saying "not now" — and it is consumed above this stage, by
+ * the runner and by `runPlan` before the close is ever asked (a `pause` that
+ * reached this far has bypassed that seam, so it renders NO verdict rather than
+ * being guessed into one). With no ruling in hand this kind pauses anyway, which
+ * is the same place the person is left; what the door adds is the RECORD that
+ * they looked and chose to keep the checkpoint.
  * @param {any} stage @param {Ctx} ctx @returns {Promise<StageResult>}
  */
 async function runHumanConfirms(stage, ctx) {

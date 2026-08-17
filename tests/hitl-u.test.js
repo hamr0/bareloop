@@ -56,7 +56,7 @@ const pausedSpine = ({ at = '2026-08-04T10:20:00.000Z', job = SPEC.job, changed 
     ],
     changed,
     decision: 'The close reached its human stage and is waiting on you: Does this fix read like something you would ship?',
-    options: ['accept', 'rerun', 'cancel'],
+    options: ['accept', 'rerun', 'pause'],
     meaning: 'not a verdict — the run is paused, the clock is stopped, and the last thing it did stands until you answer',
     ts: at,
     seq: 40,
@@ -187,14 +187,14 @@ test('§1 no --decide on a paused run: the evidence package and the three doors,
   const acceptAt = out.indexOf('--decide accept');
   assert.ok(rerunAt > 0 && acceptAt > 0, 'both doors are offered');
   assert.ok(rerunAt < acceptAt, 'rerun is the door the prompt leads with (2026-08-12 §4)');
-  assert.match(out, /--decide cancel/);
+  assert.match(out, /--decide pause/);
   assert.match(out, /no decision is taken for you/i, 'the lean is a FRAMING, never an action');
 });
 
 test('§1 REFUSED: the fourth door does not exist, and the refusal names the three that do', () => {
   const { code, out } = preview(['--resume', spineFile(pausedSpine()), '--decide', 'maybe']);
   assert.equal(code, 2);
-  assert.match(out, /not one of the three doors \(accept \| rerun \| cancel\)/, 'the LIBRARY\'s own refusal, surfaced');
+  assert.match(out, /not one of the three doors \(accept \| rerun \| pause\)/, 'the LIBRARY\'s own refusal, surfaced');
   assert.match(out, /no fourth/);
 });
 
@@ -209,7 +209,7 @@ test('§1 REFUSED: a rerun with no text — the human IS the gap author, and an 
 });
 
 test('§1 REFUSED: --text on a door that has no text is not silently dropped', () => {
-  for (const d of ['accept', 'cancel']) {
+  for (const d of ['accept', 'pause']) {
     const { code, out } = preview(['--resume', spineFile(pausedSpine()), '--decide', d, '--text', 'but also fix the docs']);
     assert.equal(code, 2, d);
     assert.match(out, /only a "rerun" carries text/);
@@ -255,7 +255,7 @@ test('§1 tripwire: the runner HANDS the ruling to runJob, and builds it through
   const src = readFileSync(RUNNER, 'utf8');
   assert.match(src, /import \{[^}]*\bnormalizeHumanRuling\b/, 'the shape check is the library\'s');
   assert.match(src, /humanRuling:\s*RULING/, 'and the normalised ruling reaches runJob — refused-but-unwired would pause forever');
-  assert.doesNotMatch(src, /\['accept', 'rerun', 'cancel'\]/, 'the door list is never re-spelled here');
+  assert.doesNotMatch(src, /\['accept', 'rerun', 'pause'\]/, 'the door list is never re-spelled here');
 });
 
 // ══ the evidence package, as a pure rendering ══════════════════════════════════
@@ -433,16 +433,31 @@ test('§5.2 the PAUSE readout shows the package and the doors where the person i
   assert.doesNotMatch(block, /\bdie\(|process\.exit/, 'a readout never changes the run\'s own exit');
 });
 
-test('§1 the CANCEL readout is terminal — it reports the spend and offers no continuation', () => {
+test('§1 the PAUSE door launches NOTHING and keeps the checkpoint the operator already has', () => {
+  // The door that used to end the run now keeps it. The hazard this shape avoids is
+  // measured, not stylistic: this runner writes one spine per LEG, and a leg that
+  // returns before drafting emits no `plan-accepted` and no `step-end` — which is all
+  // `readStepCheckpoint` reads. A launched "not now" would therefore mint a runid whose
+  // checkpoint is empty, and resuming THAT one re-drafts and re-pays for finished work.
   const src = readFileSync(RUNNER, 'utf8');
-  const at = src.indexOf('if (outcome === HITL_CANCEL) {');
-  assert.ok(at > 0, 'the cancel readout exists');
+  const at = src.indexOf("if (PAUSED && RULING?.decision === 'pause') {");
+  assert.ok(at > 0, 'the pause door is answered in the runner');
   const end = src.indexOf('\n}', at);
   const block = src.slice(at, end);
-  assert.match(block, /TERMINAL|terminal/);
-  assert.doesNotMatch(block, /--resume/, 'cancel is a door that closes: offering a resume would re-open a verdict the signer already rendered');
-  assert.doesNotMatch(block, /--decide/, 'and there is nothing left to decide');
-  assert.doesNotMatch(block, /\bdie\(|process\.exit/);
+  assert.match(block, /PAUSED BY YOU/);
+  assert.match(block, /nothing was run and nothing was spent/, 'a pause costs nothing — that is the whole of it');
+  assert.match(block, /--resume \$\{RESUME\}/, 'and it points at the SAME runid: the checkpoint that matters is the one already on disk');
+  assert.match(block, /process\.exit\(0\)/, 'it exits before the key, the spine and the launch — nothing downstream runs');
+  assert.ok(at < src.indexOf('const apiKey = process.env.ANTHROPIC_API_KEY'), 'above the key: nothing about saying "not now" needs a secret');
+});
+
+test('§1 the pause door is REACHABLE and silent about money: a signed `--decide pause` exits 0 having launched nothing', () => {
+  const { code, out } = preview(['--resume', spineFile(pausedSpine()), '--decide', 'pause', '--approve', jobSpecHash(SPEC)]);
+  assert.equal(code, 0, out);
+  assert.match(out, /PAUSED BY YOU/);
+  assert.match(out, /60 days/, 'the TTL is the library\'s number, stated rather than implied');
+  assert.doesNotMatch(out, /ANTHROPIC_API_KEY not set/, 'it never reaches the key');
+  assert.doesNotMatch(out, /outcome +hitl-pause/, 'and it never launched a run: there is no leg to report');
 });
 
 test('§1 a pause writes NO bridge: the artifact is minted by a green, and a pause is not one', () => {

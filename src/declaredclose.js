@@ -126,15 +126,22 @@ export const HUMAN_PAUSE = 'human-pause';
 
 /**
  * The RUN-level terminal names the hitl class mints one layer up from
- * `HUMAN_PAUSE` (N4 §1.3–§1.5): the checkpoint, the signer's own cancel, and
- * the honest refusal of the operator's rerun input. Spelled once here, beside
- * the close-verdict word they translate, for the same reason `HUMAN_PAUSE` is —
- * the emitters (`planrun.js`), the ledger's excluded set, the resume reader
- * (`reuse.js`), and the runner script all key on them, and hand-spelled copies
- * of one terminal is how they come to disagree.
+ * `HUMAN_PAUSE` (N4 §1.3–§1.5): the checkpoint, and the honest refusal of the
+ * operator's rerun input. Spelled once here, beside the close-verdict word they
+ * translate, for the same reason `HUMAN_PAUSE` is — the emitters (`planrun.js`),
+ * the ledger's excluded set, the resume reader (`reuse.js`), and the runner
+ * script all key on them, and hand-spelled copies of one terminal is how they
+ * come to disagree.
+ *
+ * There were three (2026-08-17): `hitl-cancel` was the signer's own terminal and
+ * is DELETED with the door it belonged to. A person who does not want to carry on
+ * now PAUSES — the same checkpoint, resumable, retired by the TTL if nobody comes
+ * back — so nothing in this tree mints that name any more. The ledger keeps the
+ * bare string in its excluded set so a spine written before this change still
+ * reads as governance rather than as a capability gap; that is a READER's
+ * backward compatibility, and deliberately not a constant a writer could reach.
  */
 export const HITL_PAUSE = 'hitl-pause';
-export const HITL_CANCEL = 'hitl-cancel';
 export const HITL_DECISION_RED = 'hitl-decision-red';
 
 /**
@@ -149,8 +156,8 @@ export const HITL_DECISION_RED = 'hitl-decision-red';
  * change, because the allowance still unspent is a human answer. `CHECKPOINT_OUTCOMES`
  * is composed FROM this list so the two can never disagree about which is which.
  *
- * `HITL_CANCEL` and `HITL_DECISION_RED` are not here: both are a verdict the signer
- * already rendered, not a question still open.
+ * `HITL_DECISION_RED` is not here: it is a verdict already rendered on the operator's
+ * own input, not a question still open.
  */
 export const HUMAN_CHECKPOINTS = Object.freeze([HITL_PAUSE]);
 

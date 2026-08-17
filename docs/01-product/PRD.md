@@ -5260,3 +5260,77 @@ Summarised; the record carries it in full.
   bareguard's judge on bareguard's task, and the borrow has to earn its own calibration here.
 - **No claim the hitl machinery was defective.** It executed correctly on its first live firing.
 - **NO BUILD IS AUTHORIZED.** These are decisions; the build waits for hamr's explicit go.
+
+---
+
+## Addendum v1.72 — 2026-08-18 (the review door's third button is PAUSE: **cancel is deleted as a concept**, an unresumed pause expires under the existing checkpoint TTL, and the `hitl-cancel` terminal stops being mintable — hamr: *"what's the point of cancel anyways? pause can resume — that would be more honest"*)
+
+v1.71 §3 put the review door at the end of every run with three buttons: accept / rerun /
+cancel. This addendum re-cuts the third one. It is a small change with one law behind it: a
+door must not force a permanent decision at the moment a person has least reason to make one.
+
+### 1. The ruling
+
+hamr, near-verbatim:
+
+> *"rerun implies I don't like it, go again"* · *"what's the point of cancel anyways? pause can
+> resume — that would be more honest"* · *"for green I can pause and it would resume from
+> beginning of last step, and in softgreen it can pause"*
+
+**The doors are `accept` / `rerun` / `pause`.** `cancel` is deleted — not renamed, not kept as
+an alias, not reachable behind a flag. `HUMAN_DECISIONS` is the enumerated set the whole
+surface derives from, so the deleted door is now *inexpressible* rather than rejected after
+the fact (the standing hand-over-the-enumerated-set rule).
+
+### 2. What pause does, exactly
+
+- **Nothing is run and nothing is spent.** No worker round, no fix loop, no allowance moved.
+- It does **not** consume the one-shot rerun allowance. The same three doors are open next time.
+- It mints the ordinary **`hitl-pause` checkpoint terminal** — the same one a machine-side pause
+  mints — which is what keeps it resumable. The run re-enters **at the start of its last step**,
+  on a green run and (when it ships) on a softgreen run alike: one checkpoint mechanism, not two.
+- The record carries an explicit **`humanDecision: 'pause'`**. *A person looked and kept it* and
+  *nobody has looked yet* are two different facts; one record spelling both is how a reader
+  comes to confuse them.
+
+### 3. The TTL IS the cancel case
+
+An unresumed pause needs no machinery of its own: it expires under the existing 60-day
+checkpoint TTL (`PAUSE_TTL_MS`). That expiry produces exactly cancel's end-state — the run is
+abandoned, its branch left as it was, nothing graduates, the ledger's verdict untouched. The
+difference is only in what the door demands of the person, and it demands nothing. Somebody who
+never comes back gets cancel's outcome for free; somebody who changes their mind keeps the work
+they already paid for.
+
+v1.71 §3's disposition reading of cancel (*"the verdict stands, but I'm not taking the
+merchandise"*) is retired **as a door**. The law underneath it is untouched and still binding:
+**the door never changes the loop's own verdict.**
+
+### 4. `hitl-cancel` stops being mintable
+
+The terminal is gone from every live path and the constant no longer exists. The ledger keeps
+the bare string `'hitl-cancel'` in its excluded-escalation set — the `gate-red` precedent
+exactly: this set is executable, and dropping a name does not delete the category, it re-files
+any spine that still carries one as a counted capability gap against a library that did nothing.
+**A reader must keep recognising what a writer can no longer write.** Evidence for the choice:
+no spine on disk anywhere carries the string (the door never fired live), so the entry is pure
+forward-compatibility for exported bundles and older artifacts, not live bookkeeping.
+
+`hitl-decision-red` is unchanged: a malformed decision is still an honest refusal of the
+operator's own input, and refusing the now-deleted word `cancel` is one instance of it.
+
+### 5. One honest-naming fix that travelled with it
+
+A paused row in the reuse readout and the resume reconstruction was classified `casualty`.
+It is not one: a casualty is a run that DIED, and a human checkpoint is the opposite fact in
+every respect — nothing failed, nothing is discarded, and the allowance still unspent is a
+person's answer. The class is now **`checkpoint`**, which is what every other reader already
+treated it as (the loop hard-stops on it, the box is left untouched); the row was the last
+place the machinery mis-described itself.
+
+### 6. Not claimed
+
+- **No claim about softgreen.** Softgreen is still unbuilt; this states what its door will be.
+- **No live firing.** The pause door has not been exercised on a paid run; it is test-proven,
+  including a sabotage-proven checkpoint classification.
+- **The arbiter does not move.** No budget, cap, fence or merge semantics change here.

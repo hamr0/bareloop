@@ -50,7 +50,9 @@ finds in the real work, and fixed rules — not the judge — render the verdict
 
 Every run ends at a **review door**: here is what changed, here is what every check said, here
 is what I'm asking you. **Accept** it, **rerun** it — what you type is the feedback the next
-attempt works from, funded fresh — or **cancel** and walk away with nothing merged.
+attempt works from, funded fresh — or **pause** it and decide another day. A pause costs
+nothing, keeps everything, and picks up from the start of the last step whenever you come back.
+Never come back, and it quietly expires on its own.
 
 The door never rewrites the run's own verdict. A green stays green in the record whatever you
 decide about it; your answer says what happens to the work, not what the work scored.

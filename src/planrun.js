@@ -33,7 +33,7 @@ import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
 import { validateBridge, loadGate } from './bridges.js';
 import { extractArtifact } from './text.js';
 import { createClock, isWallTimeout } from './clock.js';
-import { isDeclaredClose, runDeclaredStages, validateCloseDecl, closeGrade, HUMAN_PAUSE, HITL_PAUSE, HITL_CANCEL, HITL_DECISION_RED } from './declaredclose.js';
+import { isDeclaredClose, runDeclaredStages, validateCloseDecl, closeGrade, HUMAN_PAUSE, HITL_PAUSE, HITL_DECISION_RED } from './declaredclose.js';
 import {
   seedAtHead, seedListing, changedSet, GAP_TRIM_MARKER, GATE_AUDIT_FILE, ARBITER_BOOK_STORES,
   HUMAN_KIND, HUMAN_DECISIONS, normalizeHumanRuling,
@@ -590,21 +590,21 @@ ${scoutBlob || '(no scout notes)'}`;
  *   would mint a `-2` beside the progress the resume exists to keep. Absent is the cold
  *   path. A recorded branch that no longer exists is a STOP, never a fresh start.
  * @param {{decision: string, text?: string}|null} [opts.humanRuling] N4 — the SIGNER's
- *   answer at a hitl pause (2026-08-12 §1: accept | rerun <text> | cancel), carried in
+ *   answer at a hitl pause (2026-08-12 §1, re-cut 2026-08-17: accept | rerun <text> | pause), carried in
  *   by the runner on the leg that RESUMES a paused run. Absent on every ordinary run and
  *   on the leg that pauses; it is never authored, never defaulted, and never inferred.
  *
  *   It is spent ONCE, on this leg's close readings up to the moment the fix loop opens:
  *   `accept` greens the human stage on fresh evidence (OPEN-3 — the mechanical stages
  *   re-run first, because the tree can change while a run is paused), `rerun` reds it
- *   with the human's own words as the gap, and `cancel` ends the run before anything is
- *   read at all. After the fix loop opens the ruling is gone, so once the mechanical
+ *   with the human's own words as the gap, and `pause` keeps the checkpoint exactly as it
+ *   is, before anything is read at all. After the fix loop opens the ruling is gone, so once the mechanical
  *   stages pass again the run PAUSES for a second review rather than converting the same
  *   sentence forever.
  * @returns {Promise<string>} 'green' | 'already-green' | 'escalated' | 'plan-red' |
  *   'check-red' | 'close-red' | 'close-unsupported' | 'recipe-stale' | 'pricing-red' |
  *   'branch-red' | 'cap-halt' | 'wall-halt' | 'provider-red' | 'interpreter-red' |
- *   'step-stalled' | 'hitl-pause' | 'hitl-cancel' | 'hitl-decision-red' | `step-red:<id>`
+ *   'step-stalled' | 'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
 export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null }) {
   workdir = resolve(workdir);
@@ -694,24 +694,41 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * next machine-clean tree is a new question for the person, not the old one. */
   let liveRuling = ruling.ruling;
 
-  // ── CANCEL: terminal, and it costs nothing at all (2026-08-12 §1, door three).
-  // Before the branch, the seed, the precheck and the clock, because a cancelled
-  // run has no work to do and nothing to measure: no gap, no continuation, no
-  // worker round. It is deliberately NOT routed through the close — running four
-  // stages to discover a person said "stop" is wall time spent on an answer
-  // already in hand.
-  if (liveRuling?.decision === 'cancel') {
-    emit(HITL_CANCEL, {
+  // ── PAUSE: the third door, and it costs nothing at all (2026-08-12 §1, doors
+  // re-cut 2026-08-17). Before the branch, the seed, the precheck and the clock,
+  // because a person who answered "not now" has asked for nothing to be done: no
+  // gap, no continuation, no worker round. It is deliberately NOT routed through
+  // the close — running four stages to arrive back at the question the person has
+  // just declined to answer is wall time spent on an answer already in hand.
+  //
+  // hamr's ruling, verbatim: *"what's the point of cancel anyways? pause can
+  // resume — that would be more honest"*. So this mints the SAME checkpoint
+  // terminal the machine-side pause mints, which is what keeps it resumable under
+  // the existing TTL: the run re-enters at the start of its last step whenever
+  // somebody comes back, and if nobody does, the checkpoint expires on its own.
+  // That expiry IS the case cancel used to serve, without forcing a person into a
+  // forever-decision at the moment they least want to make one.
+  //
+  // The record is EXPLICIT (`humanDecision`) rather than a silent re-pause: "a
+  // person looked and kept it" and "nobody has looked yet" are two different
+  // facts, and one record spelling both is how a reader comes to confuse them.
+  // The evidence package is not re-assembled here — it is already on the spine of
+  // the leg that asked, and this leg measured nothing, so it states nothing (F6:
+  // absent, never an empty list dressed as a reading).
+  if (liveRuling?.decision === 'pause') {
+    emit(HITL_PAUSE, {
       stage: stagedClose.find((/** @type {any} */ s) => s?.kind === HUMAN_KIND)?.name ?? null,
+      humanDecision: 'pause',
       decisionReady: true,
       // EXPLICITLY null, never absent: every gap consumer guards with `if (gap)`,
       // and the field states the ruling rather than leaving it to be inferred.
       gap: null,
-      decision: 'The signer cancelled at the human stage. Terminal: no gap, no continuation, and the work stays on '
-        + 'the run\'s own branch exactly as it was left.',
-      options: ['start a fresh run when the job is worth doing again', 'revise the goal/spec (a new hash needs re-approval)'],
+      decision: 'The signer looked and paused: nothing was asked for, so nothing was run and nothing was spent. The '
+        + 'checkpoint stands exactly as it was — the work, the plan and the money are where the paused leg left them.',
+      options: [...HUMAN_DECISIONS],
+      meaning: 'not a verdict — the run is still paused, the clock is still stopped, and the same three doors are open',
     });
-    return HITL_CANCEL;
+    return HITL_PAUSE;
   }
 
   // ── native wiring: a clipipe-subscription job needs the native provider

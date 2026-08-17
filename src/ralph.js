@@ -637,7 +637,7 @@ export async function ralph({ middle, close, judge, capRuns, ladder, emit, redac
         // entry exists so the passthrough never narrates a paused run as a
         // broken middle.
         'hitl-pause': ['The close reached its human stage — the run is paused, decision-ready, and the clock is stopped.',
-          ['accept', 'rerun (your words become the gap the worker converts)', 'cancel']],
+          ['accept', 'rerun (your words become the gap the worker converts)', 'pause (the checkpoint keeps, and it resumes)']],
       };
       // Object.hasOwn, not bare lookup: a category named after an
       // Object.prototype member ("toString") would return the inherited
