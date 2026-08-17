@@ -32,20 +32,28 @@ bareloop takes that principle and makes it the product. You describe a repeated,
 job and what *done* means for it. The agent handles the rest, under verification it never
 gets to touch.
 
-## Three kinds of done
+## Two kinds of done
 
-Jobs differ by who or what decides the result is good. That difference is the product's
-spine, so you choose it when you create the job.
+Jobs differ by what decides the result is good. That difference is the product's spine, so you
+choose it when you create the job.
 
 **green** — a predicate decides. Tests pass, the build exits clean, the type checker is
 quiet.
 > *"Fix the failing suite."* · *"Migrate this package to strict types."*
 
-**softgreen** — an assessment decides against a rubric.
-> *"Reserve a ticket from SF to LA under $400."*
+**softgreen** — an assessment decides, against a rubric you wrote and signed. You say what
+separates a pass from a fail, and give one example of each; the judge only quotes back what it
+finds in the real work, and fixed rules — not the judge — render the verdict.
+> *"Reserve a ticket from SF to LA under $400."* · *"Improve my resume."*
 
-**hitl** — a human makes the final call.
-> *"Improve my resume."*
+## You have the last word
+
+Every run ends at a **review door**: here is what changed, here is what every check said, here
+is what I'm asking you. **Accept** it, **rerun** it — what you type is the feedback the next
+attempt works from, funded fresh — or **cancel** and walk away with nothing merged.
+
+The door never rewrites the run's own verdict. A green stays green in the record whatever you
+decide about it; your answer says what happens to the work, not what the work scored.
 
 ## Why the agent authors the workflow
 

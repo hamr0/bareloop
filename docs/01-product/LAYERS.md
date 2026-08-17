@@ -30,7 +30,9 @@ AGENT drafts the road as it walks it:
   ┌─ small loop: LOCATE ───── find the culprit ──────────────── settled? → next
   ├─ small loop: UNDERSTAND ─ read what the code promises ───── settled? → next
   ├─ small loop: WRITE ────── change it; judge reds; retry ──── settled? → next
-  └─ small loop: VERIFY ───── the OUTER judge: green / soft-green / hitl
+  └─ small loop: VERIFY ───── the OUTER judge: green / soft-green
+        │                      …then the REVIEW DOOR: the person accepts, reruns, or cancels
+        │                        (a disposition — it never changes the verdict)
         │
         ▼
 escalate ONLY what the agent truly cannot decide
@@ -116,10 +118,26 @@ verb blocks the work, the worker files a *request-red* and a human decides.
 | verdict | meaning |
 |---|---|
 | **green** | hard proof — the judge's exit code says pass; the only thing that mints learning |
-| **soft-green** | a rubric judged it acceptable — weaker credit, kept distinct. *Today: a user-pickable radio value, DECLARED-BUT-LOCKED (v1.57 §1) — picking it returns the counted request-red refusal; it goes live on the close-authoring surface, after this rung (needs the RSI judged-floor analog first)* |
-| **hitl** | a human rendered the verdict. *Today: ~~declared-but-locked exactly like soft-green — the pick is counted demand, refused until the hitl declaration surface exists~~ is **SUPERSEDED** — hitl is ADMITTED (N4 slice 1, 2026-08-15, branch `n4-verdict-classes`; unmerged and unreleased). `LOCKED_CLASSES` is now `soft-green` ALONE, so picking hitl runs a real interview (green's questions byte-for-byte plus one — "when you look at the finished result yourself, what are you deciding?"), attaches green's own mechanical guard battery verbatim, and composes ONE `human-confirms` stage that measures nothing and PAUSES the run decision-ready instead of rendering a verdict. The live paid hitl loop has NOT fired yet* |
+| **soft-green** | a rubric judged it acceptable — weaker credit, kept distinct. *Today: a user-pickable radio value, DECLARED-BUT-LOCKED (v1.57 §1) — picking it returns the counted request-red refusal. Since 2026-08-17 it is **the forward path for every job whose *done* is a judgement** (PRD v1.71 §5): a `judged-floor` stage on the LOCATE+DECIDE pattern — the judge only EXTRACTS facts with quotes from the real artifact, an arbiter-owned `decide()` renders pass/fail — behind a signed rubric card and a signed calibration set the whole pipe must grade correctly before the close is signable. Designed, **not built**, and no build is authorized* |
+| **hitl** | a human rendered the verdict. *~~declared-but-locked~~ → ~~ADMITTED as N4 slice 1~~ → **RETIRED as a verdict class, 2026-08-17** (PRD v1.71 §2; design record `docs/02-features/2026-08-17-softgreen-review-door-design.md`). The slice was BUILT and live-PROVEN first — the first hitl pause in programme history fired on `litectx-maintainer` (F105) — and hamr then retired the class for what it asks of a composer and of a person: the composer is forced to build a mechanical checker for jobs whose essence is subjective (F104), and a human as a mid-run checkpoint is chat. **The machinery is RE-HOMED, not deleted** — it becomes the review door below. On this branch the code still admits hitl; the class retires when the next rung lands* |
 | **red** | failed; the gap feeds the next attempt |
 | **already-green** | was green before any work happened — mints **nothing** (credit for work not done poisons inheritance) |
+
+### The review door (designed 2026-08-17, not built)
+
+The person still decides — at the **END** of the run, not inside the close. Every run, green and
+soft-green alike, finishes at a **review door** carrying the evidence package and three answers:
+
+- **accept** — confirmation, and the gate that releases reuse / learning credit (on a
+  soft-green run, accept is what lifts the quarantine, and the signer's accepts double as the
+  judge's ongoing report card);
+- **rerun** — the person's text IS the gap, and the rerun is a **FRESH ENGAGEMENT** with its own
+  money and its own time, never the leftovers of the run it corrects;
+- **cancel** — a **disposition only**: *the verdict stands, but I'm not taking the merchandise.*
+
+**The door NEVER changes the loop's own verdict** (hamr: *"it's important not to change the loop
+self verdict"*). The close mints the verdict; the door records what the person did about it. A
+green stays green in the ledger, forever.
 
 ---
 
@@ -325,6 +343,13 @@ one who knows whether their "done" is machine-checkable (green), needs judgment 
 or needs a person (hitl) — and that choice DRIVES the close authoring rather than falling out
 of it.
 
+> **2026-08-17 — the radio loses its third value.** hitl is RETIRED as a verdict class (PRD
+> v1.71 §2, F104); the choice becomes **machine-checkable (green) or a judgement
+> (soft-green)**, and the person who needs to look at the result themselves does so at the
+> **review door** at the end of the run instead of inside the close. The softgreen question set
+> becomes **seven** — green's five byte for byte, plus Q6 (the rubric card) and Q7 (the
+> calibration examples). Designed, not built; the code on this branch still admits hitl.
+
 **The interview re-keys from GENRE to VERDICT CLASS (2026-08-08, hamr).** Three frozen question
 sets — green / soft-green / hitl — cover every job, instead of one set per genre. Genres are a
 fat long tail that cannot be enumerated (TYPES was the first specimen, not the pattern), so
@@ -493,7 +518,8 @@ stage change.
 - The one reuse hypothesis still standing is TEMPLATE-ONLY reuse (strip the patient prose,
   carry rounds/tools/scope/attempts/tier and the iterate sentence) — specified in v1.52 §4,
   frozen, awaiting hamr. Next rung instead: close-authoring (the frozen 2026-08-07 design
-  record), then softgreen + hitl on that surface.
+  record), then the verdict classes on that surface — ~~softgreen + hitl~~ **softgreen + the
+  review door** since 2026-08-17, hitl having been built, proven and then retired as a class.
 - A tightened reuse envelope changes the resolved hash → re-sign.
 
 **2026-08-15 — the industry converges on the ambition; the opening approach does not move.**
@@ -884,6 +910,32 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
    the spec is authored and signed, because a row is the runner's half of a job and never the
    signer's; and slice 2 (soft-green — `judged-floor` live, wired to a metered judge behind the
    ruling-7 calibration floor) is NOT started, so soft-green stays declared-but-locked.
+   **Status 2026-08-17: the two "has NOT happened" items above are SPENT** — the spec was
+   authored and signed, and the live paid hitl loop fired (five runs, F102–F105) — **and the
+   class was then RETIRED**. Everything from *"soft-green + hitl come next"* upward is
+   superseded on the CLASS by item 7; the close-authoring surface itself is unchanged.
+7. **Build SOFTGREEN + THE REVIEW DOOR — the next rung** (design record
+   `docs/02-features/2026-08-17-softgreen-review-door-design.md`, PRD v1.71; **no build is
+   authorized — it waits on hamr's explicit go**). What happened first, said plainly: the hitl
+   slice FIRED live on `litectx-maintainer` and **worked** — the worker took litectx `src/` from
+   64 strict errors to 0, the authored `no-suppressions` stage caught the cheat genre twice and
+   the worker undid both honestly, all seven mechanical stages went satisfied, and the run
+   PAUSED decision-ready with its evidence package, three doors, stopped clock and 60-day
+   checkpoint (**F105** — the first hitl pause in programme history, $2.95). Two defects sat
+   under it: **F102**, a pending rerun decision does not survive a wall-halt → resume (the resume
+   re-asked the original question byte for byte, and the human paid the same decision twice), and
+   **F103**, the wall folds across legs so a decide-time rerun inherited 87 seconds. Rerun
+   DELIVERY is proven (nine worker rounds ran on the human's words); rerun CONVERSION is
+   **unproven-live** — zero writes landed before the wall — and is blocked on those two, not
+   refuted. **Then hamr retired hitl as a verdict class** (**F104**: a documentation job's close
+   could only be composed by measuring a typecheck PROXY, because no kind can count docs — the
+   harness revealing that its whole design is built around a verifiable gradient). The rung that
+   replaces it is ONE rung, not two: the **review door** at the end of every run (where
+   softgreen's learning credit is released) plus the **`judged-floor`** kind on the LOCATE+DECIDE
+   pattern, with the F102/F103 primitives — a checkpoint carrying the pending decision and
+   re-entering the FIX LOOP with it, and a rerun that authors its own money and time with
+   separate cumulative / this-engagement counters — shipping INSIDE it rather than behind it.
+   **Resume-genre jobs now wait on this floor, not on doc-genre mechanical kinds.**
 
 ---
 

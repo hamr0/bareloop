@@ -7875,3 +7875,323 @@ guard**. That is a constraint on how it ships, not a reason to park it; it is no
   `author-crash` on disk is the orchestrator's $0 reproduction, on a failure induced on purpose.
   The handler is proven to execute live, end to end; it is not yet proven to have caught anything
   the programme did not cause.
+
+## F102 — the signer said what to fix, the wall fell, and the resume asked him the same question again: a pending human decision does not survive a wall-halt → resume
+
+**Status: minted 2026-08-17 from the first live hitl proving loop on `litectx-maintainer` —
+spines `bareloop-patients/litectx-maintainer-bareloop/u-mswks15g.jsonl` (the pause),
+`u-msx7a3rj.jsonl` (the decide-time wall-halt) and `u-msx7xoe0.jsonl` (the resume that re-asked).
+NOT FIXED — the missing primitive is named in §4 and its build is sequenced with the review door
+(PRD v1.71 §6). Cost of the FINDING: $0 (spine reads). Cost of the incident: the decision was
+paid TWICE by the person, and $0 of provider spend, because the leg that should have carried his
+words never ran a round.**
+
+### 1. The sequence, in run ids
+
+1. `mswks15g` ($2.95, 28.6 of 30 min) reached its `human-confirms-real-fixes` stage and emitted
+   `hitl-pause` — decision-ready, seven mechanical stages satisfied, eleven changed paths, three
+   doors, the clock stopped. That part is F105.
+2. hamr took the **rerun** door and typed his reason: the new `better-sqlite3.d.ts` leans on
+   `any` for every query result. That text is the gap, and it was accepted as such — the fix
+   loop opened.
+3. It opened onto **87 seconds of wall** (`u-msx7a3rj.jsonl`: `wall-clock` at seq 3 reads
+   `elapsedMs 1713419` against `requestedMs 1800000`, so `remainingMs 86580`). The leg
+   wall-halted with **`iterationsUsed: 0`** and `spentUsd` unchanged at `2.9509049` — the same
+   figure the paused leg ended on, to the last digit. Zero rounds. That half is F103.
+4. The wall was raised to 60 minutes and the spec re-signed (hash `528a15d…`). The resume,
+   `u-msx7xoe0.jsonl`, is **8 lines long**: `job-start`, `work-branch`, `wall-clock`,
+   `primitive-smoke`, `close-precheck`, `close-decl`, **`hitl-pause`**, `job-end`. No step, no
+   round, no fix loop.
+
+### 2. The proof is two records that are byte-identical
+
+The `hitl-pause` emitted by the resumed leg and the `hitl-pause` emitted by the original leg
+differ **in `seq` and `ts` and in nothing else**. Compared field by field — `stage`, `ask`,
+`stages`, `changed`, `decision`, `options`, `meaning`, `decisionReady` — every one is equal:
+
+```
+ask same:    True
+stages same: True
+```
+
+The ask both times: *"Look at the diff in src/: are the type errors genuinely fixed (real type
+annotations/logic corrections), with nothing silenced, ts-ignored, or cast away just to make the
+checker pass?"*
+
+**That is the finding on disk.** The resume re-entered at the close, re-ran the mechanical
+stages, found them still green, arrived at the human stage and **asked the original question as
+though the rerun decision had never been taken.** The signer's words did not exist anywhere the
+resumed process could see them.
+
+### 3. Why, mechanically
+
+The decision lives in the **in-flight process** — it arrives on the runner's command line
+(`--decide rerun --text …`), is normalized, and is handed to the fix loop as the gap. That is
+the whole of its life. The **checkpoint does not carry it.** A wall-halt writes what a halt
+writes; a pending human decision was never one of the things a halt was told to record. So the
+resume gate reads a checkpoint that is, from its own point of view, complete — and correctly
+re-enters at the close, because re-entering at the close is what a hitl checkpoint means when no
+decision is attached.
+
+**Nothing malfunctioned.** Every component did what it was built to do. The primitive is
+missing, which is why this is a finding and not a bug report.
+
+### 4. The missing primitive, stated as the rule it becomes
+
+- **The checkpoint must persist the PENDING HUMAN DECISION** — the door that was taken and the
+  words that were said — alongside time, money, strikes and progress. That is hamr's ruling 4
+  (PRD v1.71 §4), and this run is what minted it: *"on any wall hit time/money/strikes
+  notes/progress should be recorded"*.
+- **A resume carrying one must re-enter the FIX LOOP with it, never the ask.** Re-asking is
+  correct behaviour for an *empty* checkpoint and is the wrong behaviour for a *pending* one,
+  and today the artifact cannot tell those apart.
+
+### 5. Kin
+
+| kin | what it shares | what is different here |
+|---|---|---|
+| **F101** — one artifact for two opposite states | a checkpoint that reads the same whether a decision is pending or none was ever taken | F101's ambiguity is in a LOG nobody can fix at the reader. This one is in a STATE FILE, and the writer can simply record the missing field |
+| **F98 / F28** — a gap bound eliding the detail that converts | the human's words are a gap, and a gap that does not reach the next attempt is not a gap | those elided detail INSIDE a delivered gap; this one dropped the whole gap at a process boundary |
+| **F97** — check what a resume will RE-ENTER before paying | the resume re-entered a state that could not do the work asked of it | F97's operator could have known from the artifacts. Here the artifact was complete and still could not carry the fact |
+
+### Lessons
+
+- **A decision a person made is state, and state that lives only in a process dies with it.**
+  Anything a human is asked for is expensive by definition — it costs their attention, and they
+  will not thank you for charging twice.
+- **Ask of every checkpoint: what did the run know that this file does not?** The answer here
+  was one string, and its absence made a $2.95 pause worth nothing on resume.
+- **A wall boundary is a serialization boundary.** Everything that crosses it must have been
+  written down; everything else is lost, silently, and looks like a fresh start.
+
+### What is NOT claimed
+
+- **No claim about how often this fires.** One observation, on the first live hitl loop there
+  has ever been. It is structural rather than probabilistic, which is a different kind of
+  argument and is not the same as a rate.
+- **No claim that the resume behaved wrongly given its input.** It behaved correctly on an
+  incomplete record; the record is the defect.
+- **No claim that the fix is small.** It is one field and two behaviours, and the second one
+  (re-enter the fix loop, not the ask) touches the resume gate, which is arbiter-adjacent.
+
+## F103 — the rerun door opened onto 87 seconds: the wall folds across legs, so a decision made at the end of a run inherits whatever the run did not spend
+
+**Status: minted 2026-08-17 from the same loop — `u-msx7a3rj.jsonl` (87 seconds, 0 rounds) and
+`u-msx87qqs.jsonl` (15.2 minutes, 9 rounds, 0 writes). RULED by hamr the same day (PRD v1.71
+§4): a rerun is a FRESH ENGAGEMENT with its own money and time and its own counters. NOT BUILT.
+Cost of the FINDING: $0. Cost of the incident: $0.36 of worker rounds that could never have
+finished, plus a second full wall.**
+
+### 1. The measurement
+
+| leg | wall granted | wall left when the fix loop opened | rounds | writes |
+|---|---|---|---|---|
+| `msx7a3rj` | 30 min (signed) | **86,580 ms — 87 seconds** | 0 | 0 |
+| `msx87qqs` | 60 min (re-signed) | **~15.2 min** of it, after the folded prior legs | 9 | 0 |
+
+`msx7a3rj`'s `wall-clock` record reads `requestedMs 1800000`, `elapsedMs 1713419`,
+`remainingMs 86580`, and its terminal is `wall-halt` with `iterationsUsed: 0`, `phase: "fix"`,
+`stage: "human-confirms-real-fixes"`. `msx87qqs` ends `wall-halt` at `elapsedMs 3603793` against
+`requestedMs 3600000` with `cutMidCall: true` and `spentUsd 3.3086624`, `spendComplete: false` —
+$1.69 of the $5 budget still unspent when TIME, not money, ended it.
+
+### 2. Why 87 seconds is not merely unlucky
+
+The wall folds across legs by design — it is the W-2 machinery that stops a resumed run from
+silently buying a second wall. That is correct for a resume of *the same engagement*. It is
+wrong for a **decision**, for a reason the numbers make plain: **this worker reads ~9 or more
+rounds before its first write.** `mswk0xvg` spent 22 rounds reading and never wrote at all
+before its truncation casualty; `msx87qqs` spent its whole 9 rounds on the human's words and
+landed nothing. A fix engagement that begins with a minute and a half of wall is not a short
+engagement — it is a **structurally impossible** one, and the run pays real money to discover
+that.
+
+**The decision is not made on the run's clock.** The person read the evidence package
+overnight; the wall they inherited was consumed by work they did not commission, on a leg that
+had already ended.
+
+### 3. The ruling (hamr, verbatim, in-turn)
+
+> *"redo/rerun comes with new authoring for money+time and keeps accounting of this far and
+> this session separate counters"*
+
+- A rerun is a **FRESH ENGAGEMENT**: its own money and its own time, authored at the moment the
+  door is taken.
+- **It never scavenges the corrected run's leftover wall.**
+- The ledger carries **two counters, side by side** — *cumulative so far* (this job, across
+  engagements) and *this engagement*. One number meaning both is exactly how a decision came to
+  inherit 87 seconds.
+- The corrected run's **verdict is untouched** (PRD v1.71 §3): a rerun is new work against the
+  same signed spec, never a re-grade.
+
+### 4. Kin
+
+| kin | what it shares | what is different here |
+|---|---|---|
+| **F45** — a budget must fund the attempt PLUS its close | a cap that binds before the work can finish kills the row before it can be read | F45's ceiling was money and mid-attempt. This one is time and pre-attempt — the engagement was dead before its first round |
+| **W-2** — *"when time is up, keep the grade we already have and stop"* | the same clock, honoured correctly | W-2 governs a run's own work. It was never asked whether a HUMAN's decision starts a new engagement or continues an old one |
+| **F44** — a silent second ceiling under an advertised cap | the advertised cap said 30 minutes; the engagement got 87 seconds | there is no hidden ceiling here — the arithmetic is honest and visible. What was missing is the notion that a decision deserves its own clock |
+
+### Lessons
+
+- **A clock that folds is right for a resume and wrong for a decision.** The difference is who
+  started the work: the same engagement continuing, or a person commissioning new work.
+- **Size an engagement against the worker's OWN measured shape.** A fix loop that needs nine
+  rounds to reach its first write cannot be funded in a minute, and that number was already on
+  the record before this run.
+- **Two things counted by one number will eventually be asked to disagree.** The cure is two
+  counters, not a smarter reading of one.
+
+### What is NOT claimed
+
+- **No claim that 9 rounds is THE number.** It is what this worker did on this job today; the
+  ruling does not depend on it and no threshold is picked from it.
+- **No claim that the wall folding is wrong in general.** It is right everywhere it was
+  designed for, and this finding narrows where that is.
+- **No claim about what the rerun would have produced with real time.** It never got any. That
+  is F105's unproven half, not evidence about capability.
+
+## F104 — the catalogue cannot count documentation, so the composer measured something else: a mechanical work stage at seed makes pure-human-judgement jobs structurally inexpressible
+
+**Status: minted 2026-08-17 from authoring run `msx81t76` ($0.45), which reached SIGNING
+PREPARED at hash `aee1dcbd…` for a NEW job `litectx-jsdoc` — *"document every exported function
+in `src/` with accurate JSDoc"*. The spec is UNSIGNED and UNFIRED. This is the finding that
+retired the hitl verdict class (PRD v1.71 §2) and the one softgreen's composition law dissolves
+(§5). Cost of the FINDING: $0 beyond the authoring run itself.**
+
+### 1. What the composer did, and what it said about it
+
+The close-authoring catalogue's kinds count exit codes, parsed numbers, patterns in added
+lines, and changed paths. **None of them can see whether a doc comment is any good** — or that
+it exists, or that it describes the function it sits above.
+
+Gate 3, the seed-verdict read, requires a **mechanical work stage that is RED at seed**: a close
+where nothing is red at seed has nothing to do. So the composer, needing a red, reached for the
+one mechanical thing in the neighbourhood — the strict typecheck — and **named what it was
+doing** in its own note: *"intentional calibration"*, on the reasoning that honest JSDoc with
+typed `@param` tags retires the implicit-any errors **as a side effect**.
+
+That reasoning is not wrong. It is a **PROXY**, and it only exists because this patient is a
+`checkJs` repo where documentation happens to cast a mechanical shadow.
+
+### 2. The general shape
+
+- **A resume-tailoring job has no such shadow.** There is no type checker for a résumé, no exit
+  code for *"this reads well and does not oversell"*. Under gate 3 as written, such a job has no
+  legal red-at-seed stage, and the close **refuses**.
+- **The composer, forced by the harness, will always manufacture a mechanical stage.** Given a
+  gate it must satisfy and a catalogue that cannot express the ask, the only move left is to
+  measure something adjacent and hope the correlation holds. That is the machine being
+  obedient, not the machine cheating.
+- **So the harness reveals its own premise:** the whole design is built around a **verifiable
+  gradient** — something red at the start that goes green by the end. Where no gradient exists,
+  the system either refuses honestly or invents one, and inventing one is worse.
+
+### 3. Why this retired a verdict class rather than adding a kind
+
+The available repair looked like *"admit doc-genre kinds to the catalogue"*. It was rejected on
+this evidence: a doc-genre kind that could mechanically grade prose would be a **rubric close in
+a mechanical coat** — the self-consistency gotcha the RSI fold named, with no judged floor under
+it. F87's lesson points the same way: a close that measures a shadow of the ask is a cost hazard
+the run discovers at the tail.
+
+The repair that survives is **softgreen's composition law**: the judged stage IS the work stage,
+it is `offer:false`, and it **SKIPS the seed-verdict read** because its bar comes from a signed
+calibration set rather than from what was red at seed. That makes a pure-judgement job
+expressible **without a manufactured mechanical shadow** — which is the dissolution of this
+finding, and the reason resume-genre jobs now wait on the judged floor rather than on doc-genre
+kinds (PRD v1.71 §6).
+
+### 4. Kin
+
+| kin | what it shares | what is different here |
+|---|---|---|
+| **F87** — the goal must state everything the close judges | a mismatch between what was asked and what gets measured | F87's mismatch was an UNSTATED stage the close still judged honestly. Here the close judges something the goal never asked for, because it cannot judge what it did ask for |
+| **the rubric-close gotcha** (RSI fold) — a rubric close is self-consistency in disguise | measuring the ask with an instrument shaped by the ask | the gotcha is about a judge grading its own homework; this is about a harness with no judge at all, substituting an unrelated ruler |
+| **F34/F36** — the benchmark paradox | the shape of the problem determines whether any instrument can read it | those were about producing a gradient for a BENCHMARK. This is about a real job that has no gradient and never will |
+
+### Lessons
+
+- **A gate that cannot be satisfied honestly will be satisfied dishonestly by an obedient
+  machine.** The composer did not cheat; it did the only thing the harness left available, and
+  it documented it. The tell was in its own note.
+- **When the system starts manufacturing what it requires, read the requirement, not the
+  output.** The proxy stage is not the defect — the demand for a mechanical red at seed on a job
+  with no mechanical axis is.
+- **Widening a catalogue to cover a genre it cannot honestly measure buys a proxy, not a
+  capability.** The honest refusal was the better of the two available answers, and the third
+  answer (a judged floor) is what the next rung is for.
+
+### What is NOT claimed
+
+- **No claim that the jsdoc close is wrong.** It validates, it prechecks, and it is signable. It
+  measures a proxy, and it says so.
+- **No claim that it would fail if fired.** It has not been fired, and nothing here predicts its
+  outcome.
+- **No claim that `judged-floor` solves this.** Nothing is built. The dissolution in §3 is a
+  design claim about expressibility, not a measurement of a judge.
+- **No claim about how many genres are affected.** One job, one shadowless genre named by
+  reasoning (résumé work), and a general shape. No survey was run.
+
+## F105 — the pause worked: the first hitl loop in programme history delivered every part of the surface, and delivered the human's words to the worker — what it did not deliver is a write
+
+**Status: minted 2026-08-17 from `u-mswks15g.jsonl` ($2.95, 28.6 of 30 min) and
+`u-msx87qqs.jsonl` ($0.36, 9 rounds). Recorded as a POSITIVE finding because a machinery that
+works is evidence exactly as much as one that breaks, and because the class it belongs to was
+retired the same day — this is the record of what was proven before the re-homing (PRD v1.71
+§1). Cost of the FINDING: $0 (spine reads).**
+
+### 1. What executed, read off the spine
+
+- **The worker did the work.** litectx `src/` went from **64 strict errors to 0** through the
+  worker's own in-run check loop — ONE plan step (`fix-strict-type-errors`) over three
+  iterations, 23 errors → 20 → satisfied — followed by the outer close-fix loop over three more
+  (2 errors → a suppression red → the pause).
+- **The authored guard caught the cheat genre TWICE, and the worker undid both honestly.** Two
+  added `any`s, then one hidden cast — `no-suppressions` reporting `[cast] src/tsalias.js:38`,
+  an ADDED-lines match carrying its own address. Neither survived to the pause.
+- **All seven mechanical stages went satisfied:** `changed-from-seed`, `typecheck-src-errors`
+  (0 against baseline 0), `typecheck-outside-errors` (0/0), `tests-kept` (423 against baseline
+  423), `suite-green-exit`, `suite-green-zero-failures`, `no-suppressions`.
+- **Then the eighth stage paused the run** rather than grading it. `close-verdict` iteration 3
+  reads `"verdict":"human-pause"`, and the run emitted `hitl-pause` carrying the ask, the
+  per-stage evidence with values and baselines, the **eleven changed paths**, the three options
+  `["accept","rerun","cancel"]`, and its own meaning in plain words: *"not a verdict — the run
+  is paused, the clock is stopped, and the last thing it did stands until you answer"*.
+- **The trend reader stayed honest about the blind axis.** The ladder's last row reads
+  `"trend":"unknown"`, `"reading":"the close is waiting on a person — not a grade"`,
+  `"paused":true`. F6's rule held at the one place it is easiest to break: a human stage
+  produces no number, and none was invented.
+- **W-2's clock stop worked for free.** The pause was the last event on the leg, so the hours
+  hamr spent reading never entered `priorWallMs`.
+- **`job-end` recorded `outcome:"hitl-pause"`, `spentUsd:2.9509049`, `spendComplete:true`** — a
+  clean exit, priced, not a casualty.
+
+### 2. The RETURN, which was the riskiest assumption
+
+The 2026-08-13 build plan named the return — not the pause — as the thing most likely to be
+wrong. It held: hamr's rerun text became the gap through the same seam `post.gap` uses, the fix
+loop opened, and **nine worker rounds ran on the human's words** (`u-msx87qqs.jsonl`).
+
+**Delivery is proven. Conversion is not.** Zero writes landed before the wall ended the leg at
+60.1 of 60 minutes with $1.69 of the $5 budget unspent. That is the F32 split (told ≠ acted on)
+arriving on a new channel, and it is **unread rather than negative** — the leg died of time, not
+of refusal, and it died of time for the reasons in F103.
+
+### Lessons
+
+- **Prove the surface and the channel separately from the outcome.** The pause, the evidence
+  package, the doors, the clock and the gap seam are all now live-proven; whether a human's
+  sentence changes a file is a different question and this run does not answer it.
+- **A machinery can be fully correct and still be the wrong shape for the job** — which is what
+  happened here, hours later, when the class was retired for what it asks of a composer and a
+  person rather than for anything it did wrong (F104, PRD v1.71 §2).
+- **Record the green parts of a run you are about to retire.** The pause machinery is being
+  re-homed, not deleted, and the next rung inherits exactly the parts this entry shows working.
+
+### What is NOT claimed
+
+- **No claim of rerun CONVERSION.** Zero writes. Blocked on F102 and F103, not refuted.
+- **No claim about replication.** One pause, one return, one patient, one genre.
+- **No claim that the hitl class is viable.** It is retired; this entry says what it proved
+  before it was, and nothing about what it would prove later.

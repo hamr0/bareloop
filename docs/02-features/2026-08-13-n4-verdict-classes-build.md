@@ -301,3 +301,39 @@ it should pause and allow raising cap and resign and go"). The alternative (lett
 accept/cancel through on the W-2 close-exemption reading, blocking only rerun) was
 explained and passed on. The shipped refusal that NAMES the spent wall is therefore the
 final behavior, not a placeholder.
+
+---
+
+## Addendum — 2026-08-17, slice 1 was PROVEN LIVE and the verdict class was then RETIRED
+
+**This record is closed and is not rewritten. What follows points forward.**
+
+Slice 1 fired for real on `litectx-maintainer`, the proving job this plan names. It worked:
+run `mswks15g` ($2.95, 28.6 of 30 min) took litectx `src/` from 64 strict errors to 0 through
+the worker's own check loop, the authored `no-suppressions` stage caught the cheat genre twice
+and the worker undid both honestly, all seven mechanical stages went satisfied, and the
+`human-confirms` stage produced **the first hitl pause in programme history** — evidence
+package, three doors, W-2 clock stopped, 60-day checkpoint, every part of §1.3–§1.7 executing
+as written. The §1.8 POC's riskiest assumption, THE RETURN, also held: the signer's rerun text
+became the gap and the fix loop opened and ran nine worker rounds on his words (`msx87qqs`).
+
+Two defects surfaced under it and are logged: **F102** (a pending rerun decision does not
+survive a wall-halt → resume — the resume re-asked the original question and the human paid the
+same decision twice) and **F103** (the wall folds across legs, so a decide-time rerun inherits
+leftovers — 87 seconds, then 15.2 minutes). Rerun CONVERSION — worker WRITES driven by the
+human's words — is therefore **unproven-live**, blocked on those two rather than refuted.
+
+**And then hamr retired the class.** A second authoring run on a documentation job showed the
+composer manufacturing a mechanical PROXY stage for work no kind can measure (**F104**), which
+is the system revealing what its whole design is built around. hitl is retired as a verdict
+class; the verdict classes are now `green` + `soft-green`; and **this slice's pause machinery is
+re-homed, not deleted** — it becomes the REVIEW DOOR at the end of every run, where it never
+changes the loop's own verdict.
+
+**Slice 2 as written here is superseded** by that record's §4: the judged floor is now a
+LOCATE + DECIDE `judged-floor` kind with a signed rubric card and a signed calibration set, and
+softgreen carries the review door with it. Everything in slice 2's list that is mechanism
+(metered judge, `judgeToAnnotation`, quarantine, itemized reds, the haiku tier) is carried
+forward unchanged.
+
+**The forward record: `docs/02-features/2026-08-17-softgreen-review-door-design.md`.**

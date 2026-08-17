@@ -1,0 +1,217 @@
+{
+  "schema": "job-v1",
+  "job": "litectx-maintainer",
+  "description": "litectx-maintainer \u2014 authored through the bareloop interview (hitl, js) against /home/hamr/PycharmProjects/bareloop-patients/litectx-maintainer",
+  "provider": "anthropic-api",
+  "cadence": {
+    "unit": "day",
+    "every": 1
+  },
+  "budgetUsd": 5,
+  "maxWallMs": 3600000,
+  "writeScope": [
+    "src/"
+  ],
+  "goal": "Get src/ to zero errors under npx tsc --strict --noEmit, with no @ts-ignore/@ts-expect-error/@ts-nocheck and no new any, npm test still exiting 0, and nothing outside src/ changed.",
+  "escalation": {
+    "mode": "decision-ready"
+  },
+  "verdictType": "hitl",
+  "closeDecl": {
+    "genre": "TYPES",
+    "lang": "js",
+    "stages": [
+      {
+        "name": "changed-from-seed",
+        "kind": "files-changed",
+        "params": {
+          "requireNonEmpty": true,
+          "allowPrefixes": [
+            "src/"
+          ]
+        }
+      },
+      {
+        "name": "typecheck-src-errors",
+        "kind": "count-not-worse",
+        "params": {
+          "cmd": "npx",
+          "args": [
+            "tsc",
+            "--strict",
+            "--noEmit"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "error TS\\d+",
+                "capture": null,
+                "sign": 1,
+                "aggregate": "sum",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "src/"
+            ]
+          },
+          "direction": "lower-is-better",
+          "baseline": 0
+        }
+      },
+      {
+        "name": "typecheck-outside-errors",
+        "kind": "count-not-worse",
+        "params": {
+          "cmd": "npx",
+          "args": [
+            "tsc",
+            "--strict",
+            "--noEmit"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "error TS\\d+",
+                "capture": null,
+                "sign": 1,
+                "aggregate": "sum",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "excludePrefixes": [
+              "src/"
+            ]
+          },
+          "direction": "lower-is-better",
+          "baseline": "seed"
+        }
+      },
+      {
+        "name": "tests-kept",
+        "kind": "count-not-worse",
+        "params": {
+          "cmd": "node",
+          "args": [
+            "--test"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "^# tests (\\d+)$",
+                "capture": 1,
+                "sign": 1,
+                "aggregate": "first",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "test/"
+            ]
+          },
+          "direction": "higher-is-better",
+          "baseline": "seed"
+        }
+      },
+      {
+        "name": "suite-green-exit",
+        "kind": "command-exit",
+        "params": {
+          "cmd": "node",
+          "args": [
+            "--test"
+          ],
+          "expectExit": 0
+        }
+      },
+      {
+        "name": "suite-green-zero-failures",
+        "kind": "count-not-worse",
+        "params": {
+          "cmd": "node",
+          "args": [
+            "--test"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "^# fail (\\d+)$",
+                "capture": 1,
+                "sign": 1,
+                "aggregate": "first",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "test/"
+            ]
+          },
+          "direction": "lower-is-better",
+          "baseline": 0
+        }
+      },
+      {
+        "name": "no-suppressions",
+        "kind": "pattern-absent-in-diff",
+        "params": {
+          "patterns": [
+            {
+              "id": "ts-ignore",
+              "regex": "@ts-ignore"
+            },
+            {
+              "id": "ts-expect-error",
+              "regex": "@ts-expect-error"
+            },
+            {
+              "id": "ts-nocheck",
+              "regex": "@ts-nocheck"
+            },
+            {
+              "id": "eslint-disable",
+              "regex": "eslint-disable"
+            },
+            {
+              "id": "any",
+              "regex": "(?:[{<|(\\[:,]|\\bas)\\s*any\\b|\\bany\\[\\]"
+            },
+            {
+              "id": "any-star",
+              "regex": "@\\w+\\s*\\{\\s*[*?]\\s*\\}"
+            },
+            {
+              "id": "cast",
+              "regex": "@type\\s*\\{.*\\}\\s*\\*\\/\\s*\\("
+            }
+          ],
+          "extensions": [
+            ".js",
+            ".mjs",
+            ".cjs"
+          ]
+        }
+      },
+      {
+        "name": "human-confirms-real-fixes",
+        "kind": "human-confirms",
+        "params": {
+          "ask": "Look at the diff in src/: are the type errors genuinely fixed (real type annotations/logic corrections), with nothing silenced, ts-ignored, or cast away just to make the checker pass?"
+        }
+      }
+    ],
+    "notes": [
+      "Re-submitted unchanged after seed-read review: the seed signature is as expected for unstarted work \u2014 changed-from-seed red (no work done yet), typecheck-src-errors red at 64 (real baseline-0 errors in src/), typecheck-outside-errors green (0 errors outside src/, baseline measured in place), tests-kept and suite-green stages green (423 tests executed at seed, 0 failures, baseline measured in place), no-suppressions green (no diff yet). This confirms the instruments are measuring the right populations and will correctly grade the real work once src/ is fixed.",
+      "src/**/*.js matched no files in the seed listing even though src/assemble.js and src/chunker.js appear in the measured tsc output \u2014 the seed file listing under sourcePaths was apparently stale/incomplete for src/*.js; allowPrefixes and scope for src/ are used as given in the interview and facts since src/ is the named target directory.",
+      "No path-bearing fact was available for the exact list of src/*.js files, so scope includePrefixes for src/ stages is left as the directory prefix 'src/' rather than enumerated files.",
+      "human-confirms stage correctly shows 'skipped' at seed since it only renders after the mechanical stages pass; this is expected and not an error."
+    ]
+  }
+}

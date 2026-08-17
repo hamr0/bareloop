@@ -7,6 +7,38 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Docs (2026-08-17 — decisions only; NO code changed, and no build is authorized)
+
+- **New design record `docs/02-features/2026-08-17-softgreen-review-door-design.md`, and PRD
+  Addendum v1.71: `hitl` is RETIRED as a verdict class, its pause becomes the REVIEW DOOR at
+  the end of EVERY run, and `soft-green` becomes the forward path.** The hitl slice below FIRED
+  live first and worked — the first hitl pause in programme history, 64 strict errors to 0, the
+  authored guard catching the cheat genre twice, evidence package and three doors and a stopped
+  clock (F105). hamr then retired the class for what it asks of a composer and of a person:
+  *"checkers are subjective human experience that they should grade for"*, and *"it's hard to
+  apply deterministic flow on a probabilistic throughput"*. **The machinery is re-homed, not
+  deleted.** The door never changes the loop's own verdict (*"it's important not to change the
+  loop self verdict"*): a green stays green in the ledger and the door records a disposition —
+  `accept` (and, on soft-green, the release of quarantined learning credit), `rerun` (the text
+  IS the gap), `cancel` (*"the verdict stands, but I'm not taking the merchandise"*). A rerun is
+  a **FRESH ENGAGEMENT** with its own money and time and two side-by-side counters, and **any**
+  wall or halt now records full state — time, money, strikes, notes/progress and any pending
+  human decision. `soft-green` gets a `judged-floor` kind on the LOCATE+DECIDE pattern (the
+  judge extracts facts with quotes from the real artifact; an arbiter-owned `decide()` renders
+  pass/fail; unsure = red), behind a signed rubric card (Q6) and a signed calibration set (Q7)
+  the whole pipe must grade correctly before the close is signable. **Nothing is built.**
+- **F102, F103, F104 and F105 in `docs/FINDINGS.md`**, each grounded in today's spines under
+  `bareloop-patients/litectx-maintainer-bareloop/`: a pending rerun decision does not survive a
+  wall-halt → resume (two byte-identical pause records — the human paid the same decision
+  twice); the wall folds across legs, so a decide-time rerun inherited 87 seconds; the
+  catalogue cannot count documentation, so a composer measured a typecheck PROXY instead —
+  which is what retired the class; and the positive record of everything the first live hitl
+  loop proved, including that rerun DELIVERY works and rerun CONVERSION is still unproven-live.
+- **`docs/01-product/LAYERS.md`** gains the review door, the two-verdict table and the next
+  rung; the **2026-08-13 N4 build record** (closed) gains a dated addendum pointing forward;
+  **README** and **`bareloop.context.md`** carry the direction change, the contract still
+  describing what the code on this branch actually does today.
+
 ### Added
 
 - **N4 slice 1 — the `hitl` verdict class is ADMITTED, and the run PAUSES for a person.** A job

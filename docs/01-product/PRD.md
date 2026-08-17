@@ -5121,3 +5121,142 @@ The audit is **unfired** and has produced no candidate, so nothing here says any
 weight — the two named candidate *classes* are a specification, not a finding. No finding number
 is minted. No budget, rung or sequencing changes, and step 1 is not scheduled: like everything
 paid-adjacent, it waits for hamr's word.
+
+## Addendum v1.71 — 2026-08-17 (the verdict classes are REKEYED after the first live hitl loop: **hitl is RETIRED as a class**, its pause becomes the REVIEW DOOR at the end of EVERY run — which never changes the loop's own verdict — a rerun becomes a FRESH ENGAGEMENT with its own money and time, a halt records its FULL state including any pending human decision, and **softgreen becomes the forward path** on a LOCATE+DECIDE judged floor — hamr: *"it's hard to apply deterministic flow on a probabilistic throughput"*)
+
+**DOCS ONLY. Nothing is built here and no build is authorized.** The origin is five runs fired
+today on `litectx-maintainer` — the first live hitl proving loop — plus a second authoring run
+on a documentation job. The full design is the record
+`docs/02-features/2026-08-17-softgreen-review-door-design.md`; the evidence is F102–F105 in
+`docs/FINDINGS.md`, grounded in spines under `bareloop-patients/litectx-maintainer-bareloop/`.
+This addendum is where the rulings enter the contract.
+
+### 1. What the live loop proved, before anything was changed
+
+N4 slice 1 executed. Run `mswks15g` ($2.95, 28.6 of 30 min) drove litectx `src/` from 64 strict
+errors to 0 through the worker's own check loop; the AUTHORED `no-suppressions` stage caught the
+cheat genre twice and the worker undid both honestly; all seven mechanical stages went
+satisfied; the `human-confirms` stage produced the **first hitl pause in programme history**,
+with the evidence package, the three doors, the W-2 clock stop and the 60-day checkpoint all
+behaving as specified. **The class is not retired for a defect.** It is retired for what it asks
+of a composer and of a person — §2.
+
+Two real defects did surface and they are carried into the next build rather than parked:
+**F102** (a pending rerun decision does not survive a wall-halt → resume; the human paid the
+same decision twice, live) and **F103** (the wall folds across legs, so a decide-time rerun
+inherits leftovers). **Rerun CONVERSION is UNPROVEN-LIVE** — the signer's words reached the fix
+worker and nine rounds ran on them, and zero writes landed before the wall. Blocked, not
+refuted.
+
+### 2. RULING — `hitl` is RETIRED as a verdict class. The classes are `green` + `soft-green`
+
+hamr's reasoning, recorded verbatim because the reasoning IS the ruling:
+
+> *"checkers are subjective human experience that they should grade for"*
+
+> *"hitl should be at every step, which is more like a chat, then do it in regular chat"*
+
+> *"it's hard to apply deterministic flow on a probabilistic throughput"*
+
+The forcing evidence is F104: a second authoring run composed a close for *"document every
+exported function in `src/` with accurate JSDoc"* and, because **no kind in the catalogue can
+count documentation**, reached for the strict typecheck as a **PROXY** work stage — its own note
+called it *"intentional calibration"*. The machines could not see documentation at all. A
+harness that forces a mechanical stage onto a job with no mechanical shadow manufactures a
+proxy, and a proxy is precisely what F87 taught this programme not to trust.
+
+`soft-green` stays **declared-but-locked** until the judged floor of §5 exists. The standing
+quarantine ruling is unchanged; it now has a build behind it.
+
+**This supersedes** the v1.57 radio's third value and the sequencing note that put hitl first
+(2026-08-13 build record, now closed with a forward addendum). It does not supersede anything
+about how a person relates to a run — that moves to §3.
+
+### 3. RULING — the pause machinery is RE-HOMED as the REVIEW DOOR, and the door never changes the verdict
+
+Nothing built for slice 1 is deleted. The pause, the evidence package, the three doors, the
+checkpoint, the TTL, the clock stop and the rerun-text-as-gap seam move **one level out** —
+from a stage inside the close to **the door at the end of EVERY run**, green and softgreen
+alike.
+
+**The law, hamr verbatim:** *"it's important not to change the loop self verdict."* The close
+mints the verdict; the door records a **disposition**. A green stays green in the ledger,
+forever, whatever the person then does with it.
+
+- **green** — the close mints it before the door opens; the door is **non-blocking**. `accept` =
+  confirmation, and the gate that releases reuse / learning credit. `rerun` = a fresh
+  engagement (§4). `cancel` = **disposition only** — *"the verdict stands, but I'm not taking
+  the merchandise"*: the discard branch, nothing graduates, the ledger's green untouched.
+- **soft-green** — the same door, with one addition while the judge is young: **`accept` is
+  what releases the run's learning credit** (the quarantine ruling, finally with a mechanism),
+  and **the signer's accepts double as the judge's ongoing report card**.
+
+### 4. RULINGS — a rerun is a FRESH ENGAGEMENT, and a halt records FULL state
+
+**Fresh engagement**, hamr verbatim: *"redo/rerun comes with new authoring for money+time and
+keeps accounting of this far and this session separate counters"*. A rerun authors its own
+money and its own time at the moment the person takes the door; it **never scavenges** the
+corrected run's leftover wall (F103's direct cure). The ledger carries **two counters side by
+side** — *cumulative so far* and *this engagement*. The corrected run's verdict is untouched.
+
+**Full-state checkpoint**, hamr verbatim: *"on any wall hit time/money/strikes notes/progress
+should be recorded"*. On any wall or halt the checkpoint records time and money against the
+signed caps, the ladder's strike state, notes/progress/trend, **and any PENDING HUMAN
+DECISION** — and a resume carrying one **re-enters the FIX LOOP with it, never the ask**. That
+last clause is F102's missing primitive stated as a rule.
+
+### 5. RULING — the softgreen design, agreed in principle (*"we can try it"*)
+
+Summarised; the record carries it in full.
+
+- A new locked kind **`judged-floor`**, on the **LOCATE + DECIDE** pattern. The shape is
+  borrowed from bareguard's e6 judge A/B — **a POC that never shipped**; we import only
+  **shipped primitives** (bare-agent 0.36 `judge`/`calibrate`/`judgeToAnnotation`, bareguard
+  0.13's annotation drain) and the `decide()` rulebook is **written fresh in bareloop,
+  arbiter-owned**. Graduation is a rewrite, never a copy.
+- **The judge never utters a verdict.** Pinned `claude-haiku-4-5`, never agent-selectable, it
+  **EXTRACTS FACTS WITH QUOTES** from the **authoritative artifact** (the real diff, never the
+  worker's summary); a deterministic arbiter-owned `decide()` renders per-item pass/fail;
+  first-red-wins composes. bareguard's A/B is why: **`judgeVerdict` is injectable,
+  `judgeLocate` is not** — there is nothing to argue into. Axis rule carried over: *"B always
+  surfaces; only A halts."* **Unsure = red**; decisive binary stays.
+- **The rubric card comes from interview Q6** (*"When you judge the result yourself, what
+  separates a pass from a fail? Name the few things you actually look for."*), compiled at
+  interview time into extractable items D5-style: LLM proposes the rewrite, **the signer signs
+  it**, enumerated in the hash; a card change is a re-sign. **Documented ceiling** (bareguard
+  §6.4, mapping to F87): the judge catches violations of **stated card items only** —
+  omissions, and lies needing an oracle, fall to the review door, and the fix is **a new card
+  line and a re-sign**, never a smarter judge.
+- **Calibration comes from Q7** (*"Give one example you'd pass and one you'd fail, and say
+  why."*): a frozen set, LLM proposes / signer signs, and **the WHOLE pipe — extraction AND
+  `decide()` — must grade it correctly with itemized reds BEFORE the close is signable**. A
+  **judge-model bump forces recalibration** (v1.69's replay rule aimed at the one component
+  whose job is a stable ruler).
+- **Composition law:** mechanical stages first, judged stage after, first-red-wins; the judged
+  stage is `offer:false`, metered from the same wallet, and **SKIPS the seed-verdict read**
+  because its bar comes from calibration. **That dissolves F104's inexpressibility** — the
+  judged stage IS the work stage, so a resume-tailoring job becomes expressible without a
+  manufactured mechanical shadow.
+- **The softgreen interview is SEVEN questions:** green's five, byte for byte, plus Q6 and Q7.
+
+### 6. Sequencing
+
+1. **Softgreen + the review door are ONE rung, and they are next** — the door is where
+   softgreen's learning credit is released, so shipping the floor without the door ships a
+   class with a quarantine and no unlock.
+2. **The F102 / F103 primitives ship inside it**, not behind it: the door does not work without
+   a checkpoint that carries a pending decision, or without a rerun that funds itself.
+3. **Resume-genre jobs now wait on softgreen's judged floor, NOT on doc-genre mechanical
+   kinds.** This **reverses** the standing note that blocked doc-genre jobs behind widening the
+   catalogue. Tonight's evidence is why: the mechanical route for subjective work produces a
+   proxy, and a proxy is worse than an honest refusal.
+
+### 7. Not claimed, and one open threshold
+
+- **OPEN, reserved for hamr:** the calibration set's SIZE is a threshold, and no number is
+  picked here — the standing no-agent-threshold-picking rule binds.
+- **No claim that rerun conversion works** (delivery proven, conversion unproven-live).
+- **No claim that `judged-floor` works.** Nothing is built; bareguard's A/B is evidence about
+  bareguard's judge on bareguard's task, and the borrow has to earn its own calibration here.
+- **No claim the hitl machinery was defective.** It executed correctly on its first live firing.
+- **NO BUILD IS AUTHORIZED.** These are decisions; the build waits for hamr's explicit go.

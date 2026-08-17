@@ -15,6 +15,20 @@
 > file ships with the package and is the complete adopter contract; the README is only
 > the pitch.
 
+> **DIRECTION CHANGE — 2026-08-17 (design decided, NOT built; nothing below has moved yet).**
+> **`hitl` is RETIRED as a verdict class.** The verdict classes become **`green` +
+> `soft-green`**, and the hitl pause machinery is **RE-HOMED, not deleted**: it becomes the
+> **review door** at the end of EVERY run (green and soft-green alike), where the person
+> `accept`s, `rerun`s (their text is the gap, funded as a FRESH engagement with its own money
+> and time) or `cancel`s — and **the door never changes the loop's own verdict**. `soft-green`
+> gets a `judged-floor` stage behind a signed rubric card and a signed calibration set.
+> **Everything documented in this file describes the code as it actually is on this branch**,
+> where `hitl` IS admitted, `human-confirms` IS live, and the three `hitl-*` terminals exist —
+> integrate against what is written here, and expect the class-level rename when the next rung
+> lands. Records: PRD Addendum v1.71 and
+> `docs/02-features/2026-08-17-softgreen-review-door-design.md` (repo-only, not shipped);
+> evidence F102–F105.
+
 ## What this is
 
 **"Automate this job — I don't know the best workflow."** bareloop runs tasks that are
@@ -96,7 +110,7 @@ the step plan at run time (gated by `validatePlan`); the human signs only:
 | field | shape | notes |
 |---|---|---|
 | `goal` | non-empty text | what the agent plans against |
-| `verdictType` | `green` \| `soft-green` \| `hitl` | declared radio, never inferred (`VERDICT_TYPES`, frozen). **`green` and `hitl` are ADMITTED** (N4 slice 1); `soft-green` is still declared-but-locked and reds `request-red` with the type as a structured `verb` field (the tool-menu pattern) until its judged floor exists. Every `request-red` also carries `lib` — the territory the demand lands against, stamped at the emit site (`verdictType` → `bareloop`, a locked tool verb → `bare-agent`): the ledger keys and its `suggestedAsk` seed on it, so a bareloop-catalogue refusal never files as an upstream ask |
+| `verdictType` | `green` \| `soft-green` \| `hitl` | declared radio, never inferred (`VERDICT_TYPES`, frozen). **`green` and `hitl` are ADMITTED** (N4 slice 1) — *and `hitl` is RETIRED as a class by the 2026-08-17 design (see the direction note at the top): it still works exactly as documented here on this branch, and the forward path for a job needing judgement is `soft-green` plus the end-of-run review door*; `soft-green` is still declared-but-locked and reds `request-red` with the type as a structured `verb` field (the tool-menu pattern) until its judged floor exists. Every `request-red` also carries `lib` — the territory the demand lands against, stamped at the emit site (`verdictType` → `bareloop`, a locked tool verb → `bare-agent`): the ledger keys and its `suggestedAsk` seed on it, so a bareloop-catalogue refusal never files as an upstream ask |
 | `close` | **an ORDERED LIST of named stages** `[{ name, cmd, expect, judged?, gapKeep?, offer?, needs? }, ...]` (PRD v1.28), or a close object (table below) **only** for the declared-but-locked verdict classes | the destination, the only thing hand-authored; the check menu DERIVES from it (below). The plan flow executes a staged close directly and adapts a bare `predicate` object into a one-stage list; a `gold`/`rubric`/`hitl` object close validates (the declared-but-locked verdict classes still parse) but the plan flow refuses it at runtime as `close-unsupported` — it names no command to run |
 | `closeDecl` | **the AUTHORED close** `{ genre: "TYPES", lang: "js"\|"python", stages: [{ name, kind, params }], notes? }` | the ALTERNATIVE to `close`, and the point of the close-authoring rung: the user answers an interview and an LLM composes a DECLARATION over kinds whose implementations we own — never a script, never a shell fragment, never a new kind. **`close` and `closeDecl` are alternatives**: declaring both reds `close-duplicated` (two closes are two arbiters). It is HARD-class by construction (`CLASS_BY_CLOSE.declared`), so a locked verdict on one reds `close-hierarchy` as well as `request-red`. The declaration is validated by `validateCloseDecl`; the TREE-GROUNDED half of that gate (the path rule, and the scoped-job derivation that arms the F84 one-population law) is DEFERRED at spec-validation time — a job spec is validated with no repository in hand — and the runner re-runs it GROUNDED against the real seed before any stage and before any token. It stores the counting RULE and never a number (D12): there is no seed field, and `baseline: "seed"` is measured at each run's own HEAD |
 | `checks` | **RETIRED** (PRD v1.28/v1.32) | hand-authored checks are gone, not merely discouraged: declaring `checks` reds `checks-derived` by name. The check menu is DERIVED from the close's own stages instead — see **Staged close** below. The hazard this removes is measured, not theoretical: job #5's three hand-written checks were re-implementations of three stages the close already ran, and a hand-carved copy can drift LENIENT (the worker passes the operator's ruler and fails the real inspection) |
@@ -477,7 +491,9 @@ is COUNTED.
 **The verdict class is the USER's answer (PRD v1.57 §1), and it DRIVES the authoring.**
 `verdictType` is a declared radio the preflight validates, never inferred:
 `VERDICT_CLASSES` = `green` | `soft-green` | `hitl`, with `LOCKED_CLASSES` =
-`soft-green` alone (N4 slice 1 admitted `hitl`; `soft-green` waits for its judged floor). Picking a locked one returns a counted
+`soft-green` alone (N4 slice 1 admitted `hitl`; `soft-green` waits for its judged floor —
+**which is now the forward path: `hitl` is retired as a class by the 2026-08-17 design and its
+pause becomes the end-of-run review door, unbuilt as of this branch**). Picking a locked one returns a counted
 `request-red` refusal at ADMISSION — before that class's questions are ever asked. The
 pick is also a PROMISE: every catalogue kind carries the `verdictClass` it can honestly
 render, `closeCeiling(declaration)` reports the highest class a declaration demands, and a
