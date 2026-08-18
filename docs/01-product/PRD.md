@@ -5395,3 +5395,149 @@ hamr, verbatim: *"go build 10, we could double later"*.
 - **No build authorized.** These are the numbers the build will use on hamr's explicit go.
 - **The arbiter does not move.** Every number here is operator-set, operator-changeable, and
   unreachable from the agent's side.
+
+---
+
+## Addendum v1.74 — 2026-08-18 (context economy — streamlining a healthy base: a $0 archive
+read into where programme spend goes, a signed four-lever + one-guard shape, and a staged
+A0–A3 test design. **This is not a new rung** — hamr's own framing: *"i look at it as a
+streamlining to existing healthy base."* NO PAID FIRE IS AUTHORIZED.)
+
+**Full record:** `docs/02-features/2026-08-18-context-economy-package.md`. This entry is the
+ruling ledger; the feature doc carries every number.
+
+### 1. Finding — pricing is a guess wearing `priced`'s coat (F6's class, again)
+
+`claude-sonnet-5` (and `claude-opus-5`) are absent from bare-agent 0.36.1's `COST_PER_1K`.
+7,217 of 7,506 archived priced `worker-round` records match the library's `_default` fallback
+average to <0.1%; zero match sonnet rates. The rounds are stamped `pricing:'priced'` regardless
+— unknown reading as confident, not as zero.
+
+hamr's ruling, verbatim: *"if price not passed in apis (i doubt) we use guesstimate and run but
+keep user in the know, never refuse."*
+
+- A **third pricing state, `estimated`**, joins `priced`/`unpriced`, surfaced at the halt
+  readout and at job-end.
+- **Never refuse a run on an unlisted model.** The estimate still runs; it must be sayable, not
+  blockable.
+- **Immediate local mitigation exists without waiting on upstream:** `COST_PER_1K` is exported
+  by bare-agent — bareloop can set `sonnet-5`/`opus-5` entries at process startup on its own
+  copy of the table.
+- Filed upstream as **BA-21** (`docs/UPSTREAM-ASKS.md`) with FAIL-able acceptance criteria;
+  not restated here.
+
+### 2. Finding — where the money actually goes (7,507 rounds, ~$236 archive-wide)
+
+**76% of all programme spend is the prompt, not the model working.** Cache write 41% / cache
+read 35% / output 24% / input 0.1%. Read amplification: every admitted token is re-read 10.5x
+on average; the lifetime cost of admitting one token runs 2.30x the base input rate. Across
+150 runs / 6,775 aligned rounds, `shell_read` + `shell_grep` are 74% of tool-call spend
+together — not `run` (locked, out of scope by construction) but plain file reads and greps.
+`shell_read` alone is 52.8% of cache-write spend and costs 5.4x what `ctx_get` costs per call.
+
+### 3. Finding — litectx is unused by SELECTION, not by quality (F19 at the draft layer)
+
+`ctx_recall` returns **zero zero-hit results** across 2,324 calls, median 5 hits — it indexes,
+it chunks per function, it always finds something. When the agent declares its own tool menu
+explicitly, it includes a litectx verb **1.4% of the time** (2 of 148 declarations). The
+retrieval verbs work; the agent does not reach for them unless made to.
+
+### 4. The SIGNED SHAPE — four levers plus one mandatory guard
+
+- **L1 POINTER** — a re-read of a file unchanged since last delivery returns a pointer, not
+  bytes. Keys on **what was delivered**, never on the path — a capped first read must not let
+  the pointer lie "unchanged" for bytes the worker never actually saw (the L4 collision).
+- **L2 DIFF** — a re-read after the worker's own edit returns the diff, not the whole file.
+- **L3 SIZES** — directory listings carry byte size + token estimate (today `kind\tname` only).
+  Without this, no "read only files under X" rule is followable — the worker cannot know a
+  file's size before paying for it.
+- **L4 CAP+STEER** — `shell_read` over **~24KB** returns head + a steer notice to
+  `ctx_recall`/`ctx_get`, mirroring the shipped native `NATIVE_READ_CAP` pattern (native has
+  this at `planrun.js:1589`; the API path never got it). A mechanical 256KB cap already exists
+  and is simply never reached — lowering it is a parameter change, not new machinery.
+- **G1 MANDATORY GUARD** — a step granting `read` **must also grant `recall` and `get`**.
+  Capping a worker's raw reads while leaving it with no retrieval verb reproduces BA-17
+  read-blinding on purpose. Same shape as the mailbox rule (validatePlan-enforced, not a prose
+  ask).
+
+### 5. Phase 1 result — $0 archive replay (report ratios, not dollars)
+
+Instrument: position-aware replay over 153 runs / 733 transcript segments off the real gate
+audit read sequences. **Model honesty, carried forward rather than smoothed:** the model
+predicts $135 of read-driven spend against a measured band of ~$85–100 — it runs **~1.4x hot**
+and the residual is unexplained (named, unconfirmed candidates: unsizable reads excluded biasing
+down, early-run caching-off rounds, segmentation misses, possible worker-side maxBytes).
+**Tuning was STOPPED here, not fitted.** Report ratios; they are robust to a uniform scale error
+and every arm runs through the same model.
+
+| arm | with amplification | tokens-only |
+|---|---|---|
+| A1 cap + pointer | 77.0% | 71.8% |
+| A2 diff only | 3.2% | 4.8% |
+| A3 all combined | 78.4% | 74.0% |
+
+Cap alone (63.9%/60.8%) beats pointer alone (46.3%/36.2%) — the earlier read to hamr had this
+backwards; corrected below. A3 buys only 1.4–2.2 points over A1: diff is nearly redundant on
+cost once cap+pointer ship, **but it must not be killed on cost alone** — this model measures
+money only, and a diff may still be more useful to the worker than a whole file.
+
+Money translation, stated as a band: reads drive **~$85–100 of the archive's ~$236**. Removing
+74–78% of that is **~$63–78 ≈ 27–33% of everything the programme has ever spent.**
+
+**Two self-corrections, carried honestly, not silently fixed:**
+1. Diff was told to hamr as ~15%/~$13; it is actually 3–5%. The earlier number used a flat
+   2.30x amplification; post-edit re-reads happen late in a segment and barely amplify.
+2. Pointer was told to hamr as the biggest lever; **cap beats pointer** — big files read early
+   amplify hugely, and the cap is what catches them, not the pointer.
+
+### 6. hamr's FROZEN test design (his words: test separately, then combine, compare all)
+
+Arms **A0** (baseline) / **A1** (cap+mechanics: L1+L3+L4+G1) / **A2** (diff only: L2) / **A3**
+(all combined). Reading stays **staged** even if the code lands together — two levers landing
+in one pass makes the delta unattributable (standing rule).
+
+- **PRIMARY** — median spend per run, per arm.
+- **VETO** — green rate must not drop. Cost is the headline only if greens hold (cost and
+  capability are separate axes, measured 3x already in this programme).
+- **SECONDARY** — `ctx_recall`/`ctx_get` share of tool calls (did steering actually steer).
+- **DISCARD** — provider-red rows are casualties, never evidence.
+- **n≥3 per arm** — n=1 on a nondeterministic worker is an anecdote, standing rule.
+
+**Phase 2 (paid) is NOT approved.** Budget and patient await hamr's explicit word.
+
+### 7. Memory-harness talk verdict — NO BUILD
+
+Zero context-overflow events across 147 archived runs. The ranked-decision-ledger idea from the
+conference talk solves a problem bareloop has never had — corroborates F39 and F88 from outside
+data. The only live borrow: a **context-headroom meter** (peak prompt tokens per run + a NAMED
+overflow terminal, never laundered into `provider-red`).
+
+### 8. Sequencing and a standing instrument rule
+
+This package lands **after** the softgreen rung (v1.71–v1.73). The softgreen rung adds a new
+spend record type, **`judge-round`** (`ACCOUNTED_ROUND_TYPES` in `src/run.js`) — **mandatory**
+in every future spend-slicing instrument from this point forward, or it becomes the F45
+unaccounted-writer class again. (Verified by peer review as not affecting Phase 1: no archived
+spine carries `judge-round` yet, since the rung is still in flight.)
+
+**Summarize-before-admit is a QUALITY lever, never a cost lever** — recorded so it is never
+re-sold as a savings mechanism. The math: admitting N tokens costs 2.30N x in-rate over its
+life; a sonnet summarizer to N/10 nets 0.67N saved, haiku ~1.32N saved; a free slice saves the
+full 2.07N at zero cost. Slicing always beats summarizing on cost. Summarizing is justified
+only where a slice would cut meaning the worker actually needs.
+
+### 9. Provenance
+
+The thread began as a conference-talk review; the pricing finding (§1) was an unasked-for
+detour hamr flagged as drift in-turn. The findings survived his challenge and he signed the
+shape in §4 and the test design in §6.
+
+### 10. Not claimed
+
+- **No paid run has fired.** Phase 1 is $0 archive replay only.
+- **No claim the four levers work in practice** — the veto (green rate) has not been read on a
+  single live arm.
+- **No new threshold picked beyond what the ledger already fixed** (the ~24KB cap figure). Any
+  number not already in the signed shape is operator territory, unset.
+- **The arbiter does not move.** L4's cap is a tighten-only operator bound; G1 is a
+  validation-gate rule, not agent-authorable; nothing here touches budgets, the fence, or merge.
