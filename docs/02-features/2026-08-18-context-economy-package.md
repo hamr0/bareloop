@@ -85,13 +85,12 @@ Instrument: position-aware replay over 153 runs / 733 transcript segments, built
 audit's real read sequences, segmented at spine transcript resets (a fresh Loop per
 step/attempt). A token admitted at round `r` of `R` costs `1.25 (write) + 0.1*(R-r)` (re-reads).
 
-**Model honesty — read before quoting any dollar.** The instrument predicts $135 of read-driven
-spend against a measured band of ~$85–100: it runs **~1.4x hot**, and the residual is not
-explained. Named, unconfirmed candidates: 33.6% of reads unsizable and excluded (biases the
-prediction down, so the true error is worse than 1.4x suggests); prompt caching was off in early
-runs (F18); segmentation may miss some resets; the worker may pass its own maxBytes. **Tuning
-was stopped here, not fitted to a target.** Conclusion: report ratios, not dollars — ratios are
-robust to a uniform scale error, and every arm runs through the same model.
+**Model honesty — read before quoting any dollar.** The instrument predicted $135 of read-driven
+spend against a measured band of ~$85–100: it ran **~1.4x hot**. *(This was the open state when
+first measured. It is EXPLAINED and superseded by the calibrated read in §3a below — read this
+paragraph as history, not as the current uncertainty.)* **Tuning was stopped here, not fitted to
+a target.** Conclusion: report ratios, not dollars — ratios are robust to a uniform scale error,
+and every arm runs through the same model.
 
 | arm | with amplification | tokens-only |
 |---|---|---|
@@ -118,6 +117,53 @@ be more useful to the worker than a whole file.
 **Money translation, stated as a band, not a point estimate:** reads drive ~$85–100 of the
 archive's ~$236 measured spend. Removing 74–78% of that is ~$63–78 ≈ **27–33% of everything the
 programme has ever spent.**
+
+### 3a. Correction — 2026-08-18, later the same day (VALIDATION ONLY — hamr's explicit
+instruction in the neighbouring session was "only validate, no building"; nothing built, nothing
+fired)
+
+**The ~1.4x hot residual is explained — it was in the amplification term, not read sizes.** The
+model implied an 18.7x re-read amplification rate against 10.5x actually measured archive-wide
+(total cacheRead/cacheWrite) — a 1.78x-hot error concentrated in that one term. Root cause:
+transcript segmentation missed some resets; the tell was a single 272-round segment that should
+have been split into several.
+
+**Candidate cleanup**, resolving the "named, unconfirmed candidates" list this section used to
+carry:
+- **Early-run caching-off (F18) — REFUTED.** 0 of 147 archived runs lack cache tiers.
+- **Worker-side maxBytes — UNVERIFIABLE from this archive.** The gate audit records only
+  `{tool}`, no byte counts, so this candidate cannot be checked directly; it is superseded by
+  the effect-level check below, which settles the practical question without it.
+- **"Reads admitted whole" — HOLDS on the API surface.** Actual-vs-predicted ratio median
+  2.00–2.01; under-1 in only 7/125 API runs, and those 7 trace to file-grew-since-read on
+  TYPES-genre jobs — a real accounted-for effect, not instrument noise.
+
+**The calibrated column is now the central estimate** (10.5/18.7 applied to the re-read term
+only, one global calibration factor, no per-arm tuning). §3's original table stands as the
+outer bracket, not as a wrong number to discard:
+
+| arm | calibrated (central) | original bracket |
+|---|---|---|
+| A1 cap + pointer | 75.8% | 71.8–77.0% |
+| A2 diff only | 3.6% | 3.2–4.8% |
+| A3 all combined | 77.3% | 74.0–78.4% |
+| — cap alone | 63.1% | 60.8–63.9% |
+| — pointer alone | 43.9% | 36.2–46.3% |
+
+**The finding is the stability, not the calibration.** The conclusion — cap dominates, A3 barely
+beats A1, diff is cheap but not worthless — is unchanged across a 3x swing in the most uncertain
+parameter. Dollars remain unquotable; ratios only, unchanged from §3.
+
+**Bias-direction check, not assumed.** Over-stating amplification flattered EARLY reads, which
+flattered the cap (the cap is what catches large early files) — so §3's original "cap beats
+pointer" was read off a model biased in the direction of its own conclusion. That was checked
+rather than waved through: at ZERO amplification, cap still wins, 60.8% vs pointer's 36.2%. The
+conclusion survives its own worst case.
+
+**New caveat — the read model does not describe native/clipipe runs.** No API cache economics
+apply there. The 11 archived native runs were the worst-fit outliers in the whole replay,
+actual-vs-predicted ratios 0.03–0.34. If a worker ever routes natively, none of the arm numbers
+above — original or calibrated — describe it.
 
 ---
 

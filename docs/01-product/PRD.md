@@ -5464,9 +5464,9 @@ retrieval verbs work; the agent does not reach for them unless made to.
 
 Instrument: position-aware replay over 153 runs / 733 transcript segments off the real gate
 audit read sequences. **Model honesty, carried forward rather than smoothed:** the model
-predicts $135 of read-driven spend against a measured band of ~$85–100 — it runs **~1.4x hot**
-and the residual is unexplained (named, unconfirmed candidates: unsizable reads excluded biasing
-down, early-run caching-off rounds, segmentation misses, possible worker-side maxBytes).
+predicted $135 of read-driven spend against a measured band of ~$85–100 — it ran **~1.4x hot**.
+*(This residual was open when first reported; it is EXPLAINED and superseded by the calibrated
+read in §5a below — do not read this paragraph as the current state of the uncertainty.)*
 **Tuning was STOPPED here, not fitted.** Report ratios; they are robust to a uniform scale error
 and every arm runs through the same model.
 
@@ -5489,6 +5489,54 @@ Money translation, stated as a band: reads drive **~$85–100 of the archive's ~
    2.30x amplification; post-edit re-reads happen late in a segment and barely amplify.
 2. Pointer was told to hamr as the biggest lever; **cap beats pointer** — big files read early
    amplify hugely, and the cap is what catches them, not the pointer.
+
+### 5a. Correction — 2026-08-18, later the same day (VALIDATION ONLY, nothing built or fired,
+by hamr's explicit instruction in the neighbouring session): the ~1.4x hot residual is
+EXPLAINED, and the CALIBRATED arm numbers are now the central estimate
+
+**The residual was in the amplification term, not read sizes.** The model implied an 18.7x
+re-read amplification rate against the 10.5x actually measured archive-wide (total
+cacheRead/cacheWrite) — a 1.78x-hot error concentrated in exactly that one term. Root cause:
+transcript segmentation missed some resets (tell: a single 272-round segment that should have
+been several). This is a distinct, narrower claim than "1.4x hot, unexplained" — it names the
+mechanism and the axis, not just the magnitude.
+
+**Candidate cleanup**, closing out §5's "named, unconfirmed candidates" list rather than leaving
+it standing:
+- **"Early-run caching-off (F18)" — REFUTED.** 0 of 147 archived runs lack cache tiers.
+- **"Worker-side maxBytes" — UNVERIFIABLE from this archive.** The gate audit records only
+  `{tool}`, not byte counts passed to it; superseded by the effect-level check below, which
+  makes the question moot for this instrument's purpose.
+- **"Reads admitted whole" — HOLDS on the API surface.** Actual-vs-predicted ratio has a median
+  of 2.00–2.01, under-1 in only 7/125 API runs, and those 7 are explained by file-grew-since-read
+  on TYPES-genre jobs (a real, accounted-for effect, not instrument noise).
+
+**The calibrated column** (10.5/18.7 applied to the re-read term only — one global calibration
+factor, no per-arm tuning) is now the **central estimate**, with §5's original numbers standing
+as the outer bracket:
+
+| arm | calibrated (central) | original bracket |
+|---|---|---|
+| A1 cap + pointer | 75.8% | 71.8–77.0% |
+| A2 diff only | 3.6% | 3.2–4.8% |
+| A3 all combined | 77.3% | 74.0–78.4% |
+| — cap alone | 63.1% | 60.8–63.9% |
+| — pointer alone | 43.9% | 36.2–46.3% |
+
+**The finding is the stability, not the calibration itself.** The conclusion (cap dominates,
+A3 barely beats A1, diff is cheap-but-not-worthless) is unchanged across a 3x swing in the most
+uncertain parameter. Dollars remain unquotable; ratios only — unchanged from §5.
+
+**Bias-direction check, not assumed.** Over-stating amplification flattered EARLY reads, which
+flattered the cap (cap catches early large files) — so "cap beats pointer" in §5 was originally
+read off a biased model, in the direction that favored the conclusion actually reported. It was
+checked, not waved through: at ZERO amplification, cap still wins, 60.8% vs pointer's 36.2%. The
+conclusion survives its own worst case.
+
+**New caveat: the read model does not describe native/clipipe runs at all.** No API cache
+economics apply there. The 11 archived native runs were the worst-fit outliers in the whole
+replay, actual-vs-predicted ratios 0.03–0.34. If a worker ever routes natively, none of the arm
+numbers above — original or calibrated — describe it.
 
 ### 6. hamr's FROZEN test design (his words: test separately, then combine, compare all)
 
