@@ -17,7 +17,7 @@
   "close": [
     {
       "name": "changed-from-seed",
-      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-spawner-close.mjs changed-from-seed",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop-readshim/scripts/u-spawner-close.mjs changed-from-seed",
       "expect": 0,
       "judged": {
         "pattern": "SPAWNER judged=(\\d+)",
@@ -28,7 +28,7 @@
     },
     {
       "name": "typecheck",
-      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-spawner-close.mjs typecheck",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop-readshim/scripts/u-spawner-close.mjs typecheck",
       "expect": 0,
       "judged": {
         "pattern": "SPAWNER judged=(\\d+)",
@@ -38,7 +38,7 @@
     },
     {
       "name": "tests-kept",
-      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-spawner-close.mjs tests-kept",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop-readshim/scripts/u-spawner-close.mjs tests-kept",
       "expect": 0,
       "judged": {
         "pattern": "SPAWNER judged=(\\d+)",
@@ -48,7 +48,7 @@
     },
     {
       "name": "suite-green",
-      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-spawner-close.mjs suite-green",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop-readshim/scripts/u-spawner-close.mjs suite-green",
       "expect": 0,
       "judged": {
         "pattern": "SPAWNER judged=(\\d+)",
@@ -58,7 +58,7 @@
     },
     {
       "name": "no-suppressions",
-      "cmd": "node /home/hamr/PycharmProjects/bareloop/scripts/u-spawner-close.mjs no-suppressions",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop-readshim/scripts/u-spawner-close.mjs no-suppressions",
       "expect": 0,
       "judged": {
         "pattern": "SPAWNER judged=(\\d+)",
