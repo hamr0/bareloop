@@ -37,7 +37,7 @@ import { createClock, isWallTimeout } from './clock.js';
 import { isDeclaredClose, runDeclaredStages, validateCloseDecl, closeGrade, HUMAN_PAUSE, HITL_PAUSE, HITL_DECISION_RED } from './declaredclose.js';
 import {
   seedAtHead, seedListing, changedSet, GAP_TRIM_MARKER, GATE_AUDIT_FILE, ARBITER_BOOK_STORES,
-  HUMAN_KIND, HUMAN_DECISIONS, normalizeHumanRuling,
+  HUMAN_KIND, HUMAN_DECISIONS, normalizeHumanRuling, resolveHumanRuling,
 } from './kinds.js';
 import { workBranchName, prepareWorkBranch } from './workbranch.js';
 
@@ -609,12 +609,27 @@ ${scoutBlob || '(no scout notes)'}`;
  *   is, before anything is read at all. After the fix loop opens the ruling is gone, so once the mechanical
  *   stages pass again the run PAUSES for a second review rather than converting the same
  *   sentence forever.
+ * @param {{decision: string, text?: string|null, receivedAt?: string|null}|null} [opts.heldRuling]
+ *   F102 — the decision the CHECKPOINT carries (`readResume`'s `restart.pendingDecision`):
+ *   an answer a person already gave, on a leg that stopped before a single round was
+ *   bought for it. It is applied exactly as a fresh one is, through the same seam, so
+ *   the person is never asked the same question twice; the spine records that it came
+ *   from a record rather than from a person, and `receivedAt` says when they said it.
+ *
+ *   A leg handed BOTH is refused (`hitl-decision-red`, naming the held decision): two
+ *   answers to one question is ambiguity, and a merge would pick a winner nobody chose.
+ *   Absent is every ordinary run and every leg the operator answers directly.
+ * @param {number} [opts.priorSpentUsd=0] F103 — money the CHAIN spent before this leg,
+ *   for the `engagement` record's money half ONLY. It bounds nothing here: the wallet
+ *   is the ledger's one level up, and `remainingUsd` already nets this fold against the
+ *   signed budget on every path (the signed budget is the chain's ceiling, and a rerun
+ *   spends what remains of it — never a refill). Reporting, never governance.
  * @returns {Promise<string>} 'green' | 'already-green' | 'escalated' | 'plan-red' |
  *   'check-red' | 'close-red' | 'close-unsupported' | 'recipe-stale' | 'pricing-red' |
  *   'branch-red' | 'cap-halt' | 'wall-halt' | 'provider-red' | 'interpreter-red' |
  *   'step-stalled' | 'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0 }) {
   workdir = resolve(workdir);
   // ONE spelling of the redaction, housed next to the inventory it reads
   // (src/validate.js) — the same helper the isolate verbs scrub the litectx store
@@ -678,7 +693,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // answered. It is a terminal of its own rather than an `interpreter-red` — no
   // library failed, the operator's own input is what could not be read.
   const hasHumanStage = stagedClose.some((/** @type {any} */ s) => s?.kind === HUMAN_KIND);
-  const ruling = normalizeHumanRuling(humanRuling);
+  const ruling = resolveHumanRuling(humanRuling, heldRuling);
   const decisionRed = (/** @type {string} */ detail) => {
     emit('escalation', {
       category: HITL_DECISION_RED, decisionReady: true,
@@ -702,6 +717,57 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * next machine-clean tree is a new question for the person, not the old one. */
   let liveRuling = ruling.ruling;
 
+  // ── F102: THE DECISION IS WRITTEN DOWN, because a wall is a serialization
+  // boundary and a decision that lives only in this process dies with it.
+  //
+  // Two records, and they answer two DIFFERENT questions:
+  //   `human-decision`        — what this leg was handed, and by whom
+  //   `human-decision-spent`  — what actually BOUGHT it
+  //
+  // The split is the whole finding. `liveRuling` is cleared when the fix loop
+  // OPENS (N4 §1.5, unchanged below) — that is a rule about this leg's close
+  // readings. Whether the person must be asked AGAIN is a different question, and
+  // F102's incident is exactly where the two answers differ: the rerun opened the
+  // fix loop and then wall-halted with `iterationsUsed: 0`, so the loop had
+  // "spent" a decision no worker ever saw and the resume re-asked the byte-
+  // identical question. So the spend marker fires on the WORK: a round bought for
+  // the fix, an accept that greened, a pause honoured. Anything short of that and
+  // the words are still owed to the person, and the checkpoint says so.
+  //
+  // The source travels with it (`operator` | `checkpoint`): "a person answered
+  // this leg" and "a record answered this leg" are different facts, and one
+  // spelling for both is F101's class in a decision's coat.
+  /** the decision this leg still OWES the person — the door, held until work buys
+   * it. @type {string|null} */
+  let owedRuling = null;
+  if (liveRuling !== null) {
+    owedRuling = liveRuling.decision;
+    emit('human-decision', {
+      decision: liveRuling.decision,
+      // the human's words are the gap, so they ride the same scrub every other
+      // model- or operator-authored string on this spine does (append-only: a log
+      // that captures a key captures it forever)
+      text: liveRuling.text === null ? null : scrub(liveRuling.text),
+      source: ruling.source,
+      // WHEN THE PERSON SAID IT, carried across the boundary rather than re-stamped.
+      // Omitted on a fresh answer, where this record's own `ts` IS the receipt —
+      // a decorative copy of `ts` would be indistinguishable from a carried one.
+      ...(ruling.receivedAt === null ? {} : { receivedAt: ruling.receivedAt }),
+      meaning: ruling.source === 'checkpoint'
+        ? 'held by the checkpoint and applied directly — the person is not asked again (F102)'
+        : 'answered on this invocation',
+    });
+  }
+  /** the decision is PAID FOR — by the work it commissioned, never by the loop
+   * merely opening. Idempotent: the first payment is the one that settles it.
+   * @param {string} reason */
+  const spendRuling = (reason) => {
+    if (owedRuling === null) return;
+    const decision = owedRuling;
+    owedRuling = null;
+    emit('human-decision-spent', { decision, reason });
+  };
+
   // ── PAUSE: the third door, and it costs nothing at all (2026-08-12 §1, doors
   // re-cut 2026-08-17). Before the branch, the seed, the precheck and the clock,
   // because a person who answered "not now" has asked for nothing to be done: no
@@ -724,6 +790,12 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // the leg that asked, and this leg measured nothing, so it states nothing (F6:
   // absent, never an empty list dressed as a reading).
   if (liveRuling?.decision === 'pause') {
+    // ANSWERED IN FULL, here. A pause commissions nothing, so there is nothing left
+    // owing and nothing for a later leg to hold over the person — the same three
+    // doors are open the next time somebody looks (doors addendum, v1.73 ruling 5:
+    // the pause door is allowance-free in EVERY state, including a wall-exhausted
+    // one, which is why this sits above the clock as well as above the wallet).
+    spendRuling('paused');
     emit(HITL_PAUSE, {
       stage: stagedClose.find((/** @type {any} */ s) => s?.kind === HUMAN_KIND)?.name ?? null,
       humanDecision: 'pause',
@@ -832,10 +904,55 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // RESUME (module C): `priorWallMs` is time a killed attempt of this same try already
   // consumed. It folds into the clock's start, never into `maxWallMs` — the cap stays the
   // signed one in the record and in the hash, and only the REMAINDER is left to run.
-  const clock = createClock({ maxWallMs: job.maxWallMs ?? null, closeStages: stagedClose.length, priorElapsedMs: priorWallMs, ...(now ? { now } : {}) });
+  //
+  // F103 — TWO COUNTERS, AND NEITHER DOES THE OTHER'S JOB. hamr, verbatim:
+  // *"redo/rerun comes with new authoring for money+time and keeps accounting of
+  // this far and this session separate counters"*.
+  //
+  //   CHAIN      — every leg of this job added up. It is what the halt readout
+  //                reports and what a person reads, and it is never lost.
+  //   ENGAGEMENT — what BOUNDS this leg. A resume of the same engagement folds
+  //                (W-2 exactly as it was: a kill may never buy a second wall). A
+  //                RERUN does not, because the person did not decide on the run's
+  //                clock: `msx7a3rj` took the door and inherited 87 seconds from a
+  //                leg that had already ended, on a worker measured to read nine
+  //                rounds before its first write. That engagement was not short, it
+  //                was structurally impossible, and it paid real money to find out.
+  //
+  // The cap itself is untouched on both paths — `maxWallMs` is the signed number,
+  // in the record and in the hash, and only a re-sign changes what a rerun can buy.
+  // MONEY IS DELIBERATELY NOT SYMMETRIC and is folded on every path (`remainingUsd`,
+  // one level up): the signed budget is the CHAIN's ceiling, a signature for $5
+  // never silently authorizes $10, and the fresh engagement spends what remains of
+  // it. The asymmetry is the point — time was the axis F103 measured, and a refilled
+  // wallet is the failure F45 measured.
+  const chainWallMs = typeof priorWallMs === 'number' && Number.isFinite(priorWallMs) && priorWallMs > 0 ? priorWallMs : 0;
+  const engagementPriorWallMs = ruling.fresh ? 0 : chainWallMs;
+  const clock = createClock({ maxWallMs: job.maxWallMs ?? null, closeStages: stagedClose.length, priorElapsedMs: engagementPriorWallMs, ...(now ? { now } : {}) });
   const closeTimeoutForReport = closeTimeoutMs ?? 120_000;
+  emit('engagement', {
+    kind: ruling.fresh ? 'rerun' : (chainWallMs > 0 || resumeSeed !== null ? 'resume' : 'cold'),
+    chainWallMs,
+    engagementPriorWallMs,
+    wallCapMs: job.maxWallMs ?? null,
+    // the money half of the same pair, stated where the time half is so a reader
+    // never has to assemble one leg's accounting from two records. The BOUND lives
+    // one level up (the ledger owns the wallet); these are its two readings.
+    // belted like every other number entering a record: a garbage fold reads 0
+    // rather than putting a NaN where a reader expects money (F6's arithmetic half)
+    chainSpentUsd: typeof priorSpentUsd === 'number' && Number.isFinite(priorSpentUsd) && priorSpentUsd > 0 ? priorSpentUsd : 0,
+    budgetUsd: job.budgetUsd,
+    meaning: ruling.fresh
+      ? 'a rerun is a FRESH ENGAGEMENT: its own clock, the same signed wallet (F103)'
+      : 'the same engagement continuing: the wall folds, as it always has (W-2)',
+  });
   emit('wall-clock', {
     ...clock.report(closeTimeoutForReport),
+    // the CHAIN view, beside the engagement's own elapsed rather than folded into
+    // it: on a rerun leg `elapsedMs` is this engagement's and this is the job's,
+    // and one number meaning both is exactly how a decision came to inherit 87
+    // seconds.
+    chainWallMs,
     meaning: clock.bounded
       ? 'a between-round deadline; a close already in flight when it trips runs to completion'
       : 'NO time cap was set — time-unbounded by explicit operator choice, never by a default',
@@ -1227,7 +1344,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // record, zero tokens; a forbidden-zone verdict escalates before any spend
   const pre = await judgeClose();
   emit('close-precheck', { ...pre });
-  if (pre.verdict === 'satisfied') return 'already-green';
+  // …and if a signer's `accept` is what greened the human stage, it is PAID FOR:
+  // the answer was applied to the tree they were shown, and no later leg may hold
+  // it over a tree they have not seen (F102's persistence must never become a
+  // decision that outlives its evidence).
+  if (pre.verdict === 'satisfied') { spendRuling('accepted'); return 'already-green'; }
   // …and the pause's own arm of the same gate. Reaching a human stage HERE means
   // every mechanical stage already passes on the untouched tree: the machine half
   // of this job is done and the only thing left is a person. Pausing costs $0 and
@@ -1754,6 +1875,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         // repo never ships (F6/F44 — unknown is reported as unknown, never as zero;
         // stall.js says it plainly: a reissue can pay twice, and the wallet is what
         // caps that).
+        // F102 — the decision is spent BY THE WORK IT COMMISSIONED. This is the
+        // moment a round is really bought for the fix, which is the only moment the
+        // human's words have actually reached a worker. A wall or a cap that lands
+        // before it leaves the words owed, and the checkpoint carries them on.
+        if (phase === 'fix') spendRuling('fix-round');
         emit('worker-round', {
           phase, iteration: roundIteration, kind: arg?.kind ?? 'turn',
           costUsd: arg?.costUsd ?? null, pricing: arg?.pricing ?? null,
@@ -2754,6 +2880,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   const post = await judgeClose();
   emit('outer-close', { ...post });
   if (post.verdict === 'satisfied') {
+    spendRuling('accepted');
     planExecuted();
     return 'green';
   }

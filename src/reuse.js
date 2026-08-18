@@ -595,6 +595,46 @@ function readWorkBranch(seen) {
 }
 
 /**
+ * F102 — the SIGNER'S ANSWER this window received and never paid for.
+ *
+ * Two records, two questions, and the pairing is the whole reading:
+ *   `human-decision`        — a decision reached this leg (with the person's own
+ *                             words, and when THEY said them)
+ *   `human-decision-spent`  — work was bought for it (a fix round, an accept that
+ *                             greened, a pause honoured)
+ *
+ * A decision with no spend after it is still owed to the person. That is the state
+ * F102 found unrepresentable: the resumed leg re-ran the close, arrived at the human
+ * stage and asked the byte-identical question, because "a decision is pending" and
+ * "nobody has looked yet" were the same empty checkpoint.
+ *
+ * The LAST unspent one wins — a leg emits at most one, and a window that reaches
+ * across a resume must act on the newest. `receivedAt` prefers the carried stamp (the
+ * moment the PERSON answered, forwarded leg to leg) and falls back to the record's own
+ * `ts`, which is that same moment on the leg that first heard it.
+ * @param {any[]} seen the window's own events, in file order
+ * @returns {{decision: string, text: string|null, receivedAt: string|null, source: string|null}|null}
+ */
+function readPendingDecision(seen) {
+  for (let i = seen.length - 1; i >= 0; i -= 1) {
+    const e = seen[i];
+    if (!isObj(e)) continue;
+    // a spend seen while walking backwards settles everything older: the decision it
+    // paid for is the newest one there is, and nothing before it can still be owed
+    if (e.type === 'human-decision-spent') return null;
+    if (e.type !== 'human-decision' || !isNonEmptyString(e.decision)) continue;
+    const at = isNonEmptyString(e.receivedAt) ? String(e.receivedAt) : (isNonEmptyString(e.ts) ? String(e.ts) : null);
+    return {
+      decision: String(e.decision),
+      text: typeof e.text === 'string' ? e.text : null,
+      receivedAt: at,
+      source: isNonEmptyString(e.source) ? String(e.source) : null,
+    };
+  }
+  return null;
+}
+
+/**
  * The dead leg's CLOSE GRADES, in order — the trend baselines a resumed leg
  * inherits (PRD v1.46 §3, and hamr's approved #2: *a resumed run's trend judges the
  * whole tree*).
@@ -1045,6 +1085,25 @@ export function readResume(events, { deathAt = null, direct = false, resumableOu
         priorRounds: open.declaredRounds !== null && typeof windowRounds === 'number'
           ? open.declaredRounds + windowRounds
           : null,
+        // F102 — the DECISION this leg was given and never paid for. A person's
+        // answer is state, and state that lives only in a process dies with it: the
+        // paused run `msx7a3rj` took the rerun door, stopped with `iterationsUsed: 0`,
+        // and its resume asked the byte-identical question again because the
+        // checkpoint could not tell "pending" from "nobody has looked yet".
+        //
+        // The two records are the run's own (`human-decision` / `human-decision-spent`,
+        // src/planrun.js) and the reading is the plain one: the last decision received
+        // with nothing after it that bought it. Deliberately NOT re-derived from a
+        // terminal or a phase — the writer says both facts, and a reader inventing a
+        // third rule is how two instruments come to disagree.
+        //
+        // THIS WINDOW ONLY, unlike the plan seed and the work branch beside it. Those
+        // are facts about the TREE and survive an attempt that died before recording
+        // anything; a decision is a fact about a PERSON and about the tree they were
+        // shown, and reaching back into an abandoned attempt to re-apply one could
+        // hand a leg an answer given about a tree two attempts ago. Stated as the
+        // narrower rule rather than discovered as a mis-applied accept.
+        pendingDecision: readPendingDecision(open.seen),
       };
       if (open.bridge) tried.push(open.bridge);
     }

@@ -17,7 +17,7 @@ import { closeStagesOf } from '../src/plan.js';
 import { makeSpine } from '../src/spine.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
 // the three doors' SEMANTICS live in the library; this script surfaces them
-import { normalizeHumanRuling } from '../src/kinds.js';
+import { normalizeHumanRuling, resolveHumanRuling } from '../src/kinds.js';
 // --resume reads the halted run's own spine back through the SAME reader the reuse
 // path uses (never a second one) and keeps its patient the way it left it.
 import { readResume, resumeTreeGate, checkpointAgeGate, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS } from '../src/reuse.js';
@@ -266,6 +266,11 @@ const deadSpineFile = RESUME == null ? null
   : (RESUME.includes('/') || RESUME.endsWith('.jsonl') ? resolve(RESUME) : join(spineDir, `u-${RESUME}.jsonl`));
 /** @type {any} */
 let dead = null;
+/** F102 — the decision this checkpoint HOLDS: an answer the person already gave, on
+ * a leg that stopped before a single round was bought for it. Null on every ordinary
+ * resume. It is applied directly and the ask is never re-rendered — the whole of the
+ * finding is that the person paid for that decision once and must not pay again. */
+let HELD = null;
 /** the paused run's own `hitl-pause` record — the evidence package the LIBRARY
  * assembled (the ask, every mechanical stage's result, the changed set). Hoisted
  * out of the reader block because the preview below renders it, and re-deriving
@@ -346,12 +351,29 @@ if (deadSpineFile !== null) {
     console.error('  - or abandon it and keep the verdict the paused run already minted.');
     process.exit(2);
   }
+  // F102 — DOES THIS CHECKPOINT ALREADY HOLD AN ANSWER? A leg that received a
+  // decision and stopped before a single round was bought for it left the person's
+  // words on its own spine, and the reader carries them. Read BEFORE the two gates
+  // below, because a held decision is precisely the case where the terminal is NOT a
+  // pause and a decision is nonetheless outstanding — the state F102's resume could
+  // not tell apart from "nobody has looked yet".
+  HELD = dead.restart.pendingDecision ?? null;
+  // and TWO ANSWERS TO ONE QUESTION is refused by the library's own resolver, so the
+  // runner cannot admit what the run refuses (a second rulebook here is how those two
+  // come apart). The message names the held decision: the operator has to know what
+  // they would be overriding. An unreadable HELD record refuses through the same seam
+  // rather than being repaired — a decision nobody can read is not one to act on.
+  const resolved = resolveHumanRuling(RULING, HELD);
+  if (!resolved.ok) {
+    die(`${RULING === null ? `--resume: the held decision on ${deadSpineFile}` : `--decide ${RULING.decision}`}: ${resolved.why}`);
+  }
   // A decision answers a PAUSE. Every other checkpoint here stopped on an allowance,
   // and nothing about it is waiting on a person — handing one a ruling would let an
   // `accept` mint a green over evidence nobody was ever shown. The library refuses a
   // ruling for a close with no human stage; this is the other half of the same
   // question, and only the runner can ask it (it is about WHICH checkpoint is being
-  // answered, not about the close's shape).
+  // answered, not about the close's shape). A HELD decision is deliberately exempt:
+  // it was answered against a pause, on a leg that then died carrying it.
   if (RULING !== null && dead.endOutcome !== HITL_PAUSE) {
     die(`--decide ${RULING.decision}: that run stopped on ${dead.endOutcome ?? 'an unrecorded terminal'}, not at a human stage. `
       + 'A decision answers a pause — the run has to have asked you something before you can answer it. Resume it without a decision.');
@@ -419,10 +441,23 @@ const readDiff = (paths) => {
     };
   }
 };
+/** F103 — is THIS leg a fresh engagement? A rerun is: the person commissioned new
+ * work at the moment they took the door, and they did not decide on the run's clock.
+ * The reading comes from the library's one resolver, never a second spelling here. */
+const FRESH_ENGAGEMENT = resolveHumanRuling(RULING, HELD).fresh;
 /** the restart runs on the REMAINDER of the signed wall, never a fresh allotment —
  * "a budget ceiling folds in prior spend so re-invoking cannot silently widen it",
- * in a time coat. Both the run's own clock and the outside watchdog read this one. */
-const RESUME_WALL_MS = WALL_MS === null || !dead ? WALL_MS : Math.max(0, WALL_MS - dead.restart.priorWallMs);
+ * in a time coat. Both the run's own clock and the outside watchdog read this one.
+ *
+ * F103 narrows where that is true. A RESUME of the same engagement folds, exactly as
+ * it always has (W-2: a kill may never buy a second wall). A RERUN does not: `msx7a3rj`
+ * took the door and inherited 87 seconds from a leg that had already ended, on a worker
+ * measured to read nine rounds before its first write — not a short engagement, a
+ * structurally impossible one, and it paid real money to find that out. MONEY still
+ * folds on every path (the `left` line below): the signed budget is the chain's
+ * ceiling, and a raise is a spec edit somebody signs. */
+const RESUME_WALL_MS = WALL_MS === null || !dead ? WALL_MS
+  : (FRESH_ENGAGEMENT ? WALL_MS : Math.max(0, WALL_MS - dead.restart.priorWallMs));
 
 if (arg('approve') !== specHash) {
   console.log(dead ? 'U — RESUME, continuing a halted run, REAL dollars' : 'U — user-mode e2e, ONE run, REAL dollars');
@@ -460,7 +495,25 @@ if (arg('approve') !== specHash) {
     if (dead.wallDerivedHalt) {
       console.log('           recorded step-red RE-READ as wall-halt off this run\'s own wall-bounded record — the wall was crossed before it ended');
     }
-    console.log(`  spent    ${dead.spendComplete ? '' : '≥'}$${rs.priorSpentUsd.toFixed(4)} and ${(rs.priorWallMs / 60000).toFixed(1)}min before the halt — FOLDED IN, so this restarts on the REMAINDER`);
+    // the fold line says which of the two counters folds, per case: on an ordinary
+    // resume BOTH do (unchanged), and on a decide-time rerun the money still does
+    // while the wall does not (F103, spelled out in the `clock` line below).
+    console.log(`  spent    ${dead.spendComplete ? '' : '≥'}$${rs.priorSpentUsd.toFixed(4)} and ${(rs.priorWallMs / 60000).toFixed(1)}min before the halt — ${FRESH_ENGAGEMENT ? 'the MONEY is FOLDED IN, so this spends the REMAINDER; the wall is not (below)' : 'FOLDED IN, so this restarts on the REMAINDER'}`);
+    // F102 — SAY THAT THE ANSWER SURVIVED. Without this line the operator cannot
+    // tell a resume that will act on their words from one that will ask again, and
+    // that is the difference this whole rung exists for.
+    if (HELD) {
+      console.log(`  held     "${HELD.decision}"${HELD.text === null ? '' : ' — your own words, still the gap:'} answered ${HELD.receivedAt ?? 'at an unrecorded time'} and never paid for`);
+      if (HELD.text !== null) for (const l of String(HELD.text).split('\n')) console.log(`           ${l}`);
+      console.log('           this resume APPLIES it — you are not asked again (F102)');
+    }
+    // F103 — and say which clock this leg gets, because a rerun's is not the
+    // remainder. The two counters are both printed rather than one number meaning
+    // both: chain so far, and what this engagement may spend.
+    if (FRESH_ENGAGEMENT && WALL_MS !== null) {
+      console.log(`  clock    FRESH ENGAGEMENT — a rerun is new work you commissioned, so it opens on the full signed ${WALL_MS / 60000}min rather than on what the corrected leg left (F103)`);
+      console.log(`           chain so far ${(rs.priorWallMs / 60000).toFixed(1)}min — reported, never a bound on work you have just asked for`);
+    }
     console.log(`  left     $${(spec.budgetUsd - rs.priorSpentUsd).toFixed(4)} of $${spec.budgetUsd}${WALL_MS === null ? '' : ` and ${(/** @type {number} */ (RESUME_WALL_MS) / 60000).toFixed(1)}min of ${WALL_MS / 60000}min`}`);
     // WHERE it picks up. Without this line "resume" covers two runs that cost very
     // different amounts — one that re-scouts and re-drafts from nothing, and one that
@@ -591,6 +644,39 @@ if (arg('approve') !== specHash) {
   process.exit(arg('approve') === null ? 0 : 1);
 }
 
+// ── THE PAUSE DOOR (2026-08-17) — answered HERE, and it launches nothing.
+//
+// hamr's ruling replaced cancel with a pause that can resume, and the honest way to
+// keep a checkpoint is to leave it alone. This runner writes one spine file per LEG,
+// and a leg that returns before drafting emits no `plan-accepted` and no `step-end` —
+// which is exactly what `readStepCheckpoint` reads. So launching a run to say "not
+// now" would mint a NEW runid whose own checkpoint is empty, and an operator who
+// later resumed that runid would re-draft and re-pay for every step the paused leg
+// already finished. The checkpoint that matters is the one already on disk.
+//
+// So the decision is recorded to the operator, in words, against the runid they
+// resume — and nothing is spent, nothing is signed away, and no allowance moves. The
+// library keeps its own half (`runPlan` mints a `hitl-pause` with `humanDecision`
+// when an adopter drives the door directly); this is the runner's, and the two agree
+// on the one fact that matters: the run stays paused and stays resumable.
+//
+// IT SITS ABOVE THE WALL GATE, and that placement is a ruling (v1.73 addendum 2,
+// ruling 5): *the pause door is ALLOWANCE-FREE in every state, including below the
+// wall-exhausted gate*. Pause does no work and spends no money, so there is nothing
+// for an allowance to pay for, and charging one would be the door billing a person
+// for declining to decide. A raise-and-re-sign is what changes what a RERUN can buy;
+// it was never what a pause costs. `accept` and `rerun` still meet the wall below —
+// they commission work, and work meets the clock.
+if (PAUSED && RULING?.decision === 'pause') {
+  console.log(`\nPAUSED BY YOU — nothing was run and nothing was spent. The checkpoint stands exactly as it was: the work is on the run's own branch, the plan and the money are where the paused leg left them.`);
+  console.log(`  keeps    ${PAUSE_TTL_MS / 86_400_000} days from the pause on the record — after that the checkpoint expires on its own, and nothing has to be decided today to let that happen`);
+  console.log('  resume   the SAME runid, whenever you want, with the door you pick then:');
+  console.log(`           node scripts/run-u.mjs --job ${jobKey} --resume ${RESUME} --decide accept --approve ${specHash}`);
+  console.log(`           node scripts/run-u.mjs --job ${jobKey} --resume ${RESUME} --decide rerun --text "<what you want done differently>" --approve ${specHash}`);
+  console.log(`  read     the same command with no --decide re-prints the evidence package you just looked at`);
+  process.exit(0);
+}
+
 // W-2, on the launch side: "when time is up, keep the grade we already have and stop".
 // A resume whose wall remainder is zero or negative has no time to start anything in,
 // and launching it buys a scout and a precheck's worth of nothing before the clock
@@ -604,13 +690,18 @@ if (dead && RESUME_WALL_MS !== null && RESUME_WALL_MS <= 0) {
   console.error(`  - RAISE maxWallMs in jobs/${target.spec} — that is a spec edit, so the hash changes and you sign the new one with --approve;`);
   console.error('  - or revise the goal/spec, or abandon the run and keep the verdict it already minted.');
   // NAMED, because it is a real and non-obvious consequence rather than an oversight:
-  // a PAUSED run whose wall is gone cannot be answered either — not even with an
-  // `accept`, which buys no worker round at all. The wall is governance and this
-  // runner does not get to decide that some decisions are free of it; changing that
-  // is an arbiter call, and it belongs to hamr rather than to this script.
+  // a PAUSED run whose wall is gone cannot be ACCEPTED — an accept re-runs every
+  // mechanical stage against the tree as it stands (OPEN-3), which is work, and work
+  // meets the clock. The wall is governance and this runner does not get to decide
+  // that some decisions are free of it.
+  //
+  // The one door that IS free of it is `pause`, answered above and never reaching
+  // here (v1.73 ruling 5). That is not this script relaxing a governance gate: a pause
+  // runs nothing and spends nothing, so there is no allowance for it to be charged
+  // against, and the checkpoint it keeps is the one already on disk.
   if (PAUSED) {
-    console.error('  NOTE: this run is waiting on a DECISION and its wall is gone, so the decision cannot be applied until the wall is.');
-    console.error('        Even --decide accept (which buys no worker round) goes through this gate: the allowance is the arbiter\'s, not the runner\'s.');
+    console.error('  NOTE: this run is waiting on a DECISION and its wall is gone, so accept and rerun cannot be applied until the wall is.');
+    console.error(`        --decide pause is still open and always is: it costs nothing in any state, and the checkpoint keeps for ${PAUSE_TTL_MS / 86_400_000} days.`);
   }
   process.exit(2);
 }
@@ -627,30 +718,6 @@ if (PAUSED && RULING === null) {
   process.exit(2);
 }
 
-// ── THE PAUSE DOOR (2026-08-17) — answered HERE, and it launches nothing.
-//
-// hamr's ruling replaced cancel with a pause that can resume, and the honest way to
-// keep a checkpoint is to leave it alone. This runner writes one spine file per LEG,
-// and a leg that returns before drafting emits no `plan-accepted` and no `step-end` —
-// which is exactly what `readStepCheckpoint` reads. So launching a run to say "not
-// now" would mint a NEW runid whose own checkpoint is empty, and an operator who
-// later resumed that runid would re-draft and re-pay for every step the paused leg
-// already finished. The checkpoint that matters is the one already on disk.
-//
-// So the decision is recorded to the operator, in words, against the runid they
-// resume — and nothing is spent, nothing is signed away, and no allowance moves. The
-// library keeps its own half (`runPlan` mints a `hitl-pause` with `humanDecision`
-// when an adopter drives the door directly); this is the runner's, and the two agree
-// on the one fact that matters: the run stays paused and stays resumable.
-if (PAUSED && RULING?.decision === 'pause') {
-  console.log(`\nPAUSED BY YOU — nothing was run and nothing was spent. The checkpoint stands exactly as it was: the work is on the run's own branch, the plan and the money are where the paused leg left them.`);
-  console.log(`  keeps    ${PAUSE_TTL_MS / 86_400_000} days from the pause on the record — after that the checkpoint expires on its own, and nothing has to be decided today to let that happen`);
-  console.log('  resume   the SAME runid, whenever you want, with the door you pick then:');
-  console.log(`           node scripts/run-u.mjs --job ${jobKey} --resume ${RESUME} --decide accept --approve ${specHash}`);
-  console.log(`           node scripts/run-u.mjs --job ${jobKey} --resume ${RESUME} --decide rerun --text "<what you want done differently>" --approve ${specHash}`);
-  console.log(`  read     the same command with no --decide re-prints the evidence package you just looked at`);
-  process.exit(0);
-}
 
 const apiKey = process.env.ANTHROPIC_API_KEY;
 if (!apiKey) { console.error('ANTHROPIC_API_KEY not set (secrets load from the environment — never the tree)'); process.exit(2); }
@@ -836,6 +903,12 @@ try {
     // the gap, and `pause` never gets this far (it is answered above, launching nothing).
     // Absent on every ordinary run — refused-but-unwired would pause forever.
     ...(RULING === null ? {} : { humanRuling: RULING }),
+    // F102 — and the answer the CHECKPOINT holds, when the leg before this one died
+    // holding it. Same seam, same semantics, one difference the spine records: the
+    // decision came from a record rather than from a person on this invocation. The
+    // two are never both set (the resolver refused above), so this can never be a
+    // silent override of words somebody just typed.
+    ...(HELD === null ? {} : { heldRuling: HELD }),
   });
 } finally {
   // the guard outlives the run only by accident, never by design

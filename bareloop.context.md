@@ -897,7 +897,7 @@ Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
 `coordination-red` — a failure between units (scope contention, step order, store
 races), never to be folded into worker/interpreter reds.
 
-### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, layerRoot?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, layerRoot?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling? })` → outcome — `src/run.js`
 
 The last seven are the RESUME fold and are documented under *Resuming a killed run* below; they
 default to `0` / `true` / `0` / `null` / `[]` / `null` / `null`, so a fresh run passes none of them.
@@ -942,6 +942,23 @@ enumerated `HUMAN_DECISIONS` set); it is spent once, at
 the close readings up to the moment the fix loop opens, so the human's words become `post.gap`
 through the SAME seam (same bound, same scrub) and the next machine-clean tree pauses for a
 SECOND review rather than converting one sentence forever.
+
+**A decision SURVIVES the halt that interrupts it** (F102). The run records the answer it was
+handed (`human-decision` — the door, the words, the source) and, separately, what BOUGHT it
+(`human-decision-spent` — a fix round, an accept that greened, a pause honoured). A decision with
+no spend after it is still owed to the person, and `readResume` surfaces it as
+`restart.pendingDecision` (`{decision, text, receivedAt, source}`). Hand that back as
+**`heldRuling`** and the leg applies it directly — the ask is never re-rendered, and the spine
+says the answer came from a record rather than from a person. F102's incident is what this is
+for: a rerun that opened the fix loop, stopped with `iterationsUsed: 0`, and whose resume asked
+the byte-identical question again. The two markers are deliberately not one: the fix loop
+"spends" the ruling for THIS leg's close readings the moment it opens, while whether the person
+must be asked AGAIN depends on work actually having been bought.
+
+A leg handed BOTH a fresh `humanRuling` and a `heldRuling` is refused (`hitl-decision-red`,
+naming the held decision) before anything costs anything: two answers to one question is
+ambiguity, not a merge. `resolveHumanRuling(fresh, held)` is the exported seam that decides this
+(and whether the leg is a fresh engagement, below), so a runner cannot admit what a run refuses.
 `branch-red` is the WORK BRANCH refusing (below): the patient is not a git checkout, its
 branch namespace has no free name, or a resume's recorded branch is gone. Zero tokens, and
 never a fallback to working on the branch the run was handed. `provider-red` is a
@@ -1760,6 +1777,20 @@ action taken for the operator.
   (or `wall-halt`, below one close timeout: a try that cannot fund its close produces an
   unreadable row) with **nothing launched**. Topping up is a new envelope, and a new
   envelope is a new signature.
+- **…except a decide-time RERUN, which is a FRESH ENGAGEMENT** (F103, design record §3.4 —
+  hamr: *"redo/rerun comes with new authoring for money+time and keeps accounting of this far
+  and this session separate counters"*). A rerun opens on the full signed `maxWallMs` instead of
+  the remainder, because the person did not decide on the run's clock: the incident that minted
+  it took the door and inherited **87 seconds** from a leg that had already ended, on a worker
+  measured to read nine rounds before its first write. So there are TWO counters and neither
+  does the other's job — the CHAIN (every leg added up: `engagement.chainWallMs`,
+  `chainSpentUsd`, `job-end.spentUsd`, what the halt readout reports) and the ENGAGEMENT (what
+  bounds THIS leg: the clock's `priorElapsedMs`, `job-end.engagementSpentUsd`). The `engagement`
+  record states both at the top of every run. **MONEY IS DELIBERATELY NOT SYMMETRIC**: it folds
+  on every path, because the signed budget is the CHAIN's ceiling and a signature for $5 never
+  silently authorizes $10 — a rerun spends what REMAINS of it, never a refill. A rerun leg also
+  declares its `job-start` fold engagement-scoped (`priorWallMs` omitted, `chainWallMs` carried),
+  so a later resume of it inherits this engagement's minutes rather than the chain's again.
 - **Money stays honest end to end.** `carrySpentUsd` (completed tries + selection calls)
   seeds the resumed ledger; the mid-try fold is deliberately NOT in it, because it comes
   back inside the restarted try's own terminal — counting it in both places would bill it

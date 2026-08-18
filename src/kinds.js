@@ -1444,6 +1444,59 @@ export function normalizeHumanRuling(ruling) {
 }
 
 /**
+ * WHICH ANSWER IS THIS LEG ACTING ON — the fresh one, or the one the checkpoint
+ * held? F102's cure needs one seam that can say, because two callers ask the same
+ * question (`runJob` declares the fold on `job-start` before `runPlan` reads the
+ * ruling at all), and two spellings of "is this a fresh engagement" is how the
+ * record and the clock come to disagree about the same leg.
+ *
+ * THE AMBIGUITY IS REFUSED, NEVER MERGED. A checkpoint that holds a decision and a
+ * command line that carries another are two answers to one question. Merging them
+ * picks a winner nobody chose; overriding silently discards words a person typed
+ * (the F98/F28 class at a process boundary). So it comes back as a refusal that
+ * NAMES the held decision, and the operator resolves it — by answering the held
+ * one, or by starting a fresh run against the tree as it stands.
+ *
+ * `fresh` is F103's half: a `rerun` is a FRESH ENGAGEMENT (design record §3.4 —
+ * *"redo/rerun comes with new authoring for money+time and keeps accounting of
+ * this far and this session separate counters"*), and nothing else is. An `accept`
+ * commissions no work and a `pause` runs nothing, so neither opens one.
+ * @param {any} fresh the answer arriving on this invocation (`--decide`), or null
+ * @param {any} held the answer the CHECKPOINT carries (`readResume`'s
+ *   `restart.pendingDecision`), or null. `receivedAt` is when the PERSON said it —
+ *   carried through so the resumed leg records the receipt, not its own re-reading.
+ * @returns {{ok: boolean, why: string|null, ruling: {decision: string, text: string|null}|null,
+ *   source: 'operator'|'checkpoint'|null, receivedAt: string|null, fresh: boolean}}
+ */
+export function resolveHumanRuling(fresh, held) {
+  const has = (/** @type {any} */ v) => v !== null && v !== undefined;
+  const none = { ruling: null, source: /** @type {any} */ (null), receivedAt: null, fresh: false };
+  if (has(fresh) && has(held)) {
+    const d = typeof held === 'object' && !Array.isArray(held) ? String(/** @type {any} */ (held).decision) : String(held);
+    return {
+      ok: false,
+      why: `this checkpoint already holds a "${d}" decision that no round was ever bought for, and a second answer `
+        + 'arrived with this invocation. Two answers to one question is ambiguity, not a merge: resume with no '
+        + 'decision to act on the held one, or start a fresh run against the tree as it stands.',
+      ...none,
+    };
+  }
+  const raw = has(fresh) ? fresh : held;
+  const norm = normalizeHumanRuling(raw ?? null);
+  if (!norm.ok) return { ok: false, why: norm.why, ...none };
+  if (norm.ruling === null) return { ok: true, why: null, ...none };
+  const at = has(held) ? /** @type {any} */ (held).receivedAt : null;
+  return {
+    ok: true,
+    why: null,
+    ruling: norm.ruling,
+    source: has(fresh) ? 'operator' : 'checkpoint',
+    receivedAt: typeof at === 'string' && at.length > 0 ? at : null,
+    fresh: norm.ruling.decision === 'rerun',
+  };
+}
+
+/**
  * THE HUMAN STAGE (N4 slice 1) — the one kind that measures nothing.
  *
  * With no ruling in hand it does not RUN, it PAUSES: the fifth outcome, neither

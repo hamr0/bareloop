@@ -482,3 +482,77 @@ test('§1/W-2 a paused run whose WALL is gone refuses, and NAMES that the decisi
   assert.match(out, /RAISE maxWallMs/, 'and the lever is the same signed spec edit every other wall stop names');
   assert.doesNotMatch(out, /ANTHROPIC_API_KEY not set/, 'still above the key');
 });
+
+// ══ SOFTGREEN module 7 — F102/F103 AT THE SURFACE ══════════════════════════════
+//
+// The library halves are pinned in tests/decision-carry.test.js against a real
+// `runJob`. What is pinned here is the RUNNER's: the operator has to be able to see,
+// before signing anything, that their answer survived and which clock this leg gets.
+
+/** a leg that RECEIVED a decision and died holding it — the F102 shape, and the
+ * shape a watchdog/harness kill actually leaves. The `human-decision` record is what
+ * `src/planrun.js` emits (pinned against the real machinery in decision-carry). */
+const heldSpine = ({ at = '2026-08-04T10:20:00.000Z', decision = 'rerun', text = 'the d.ts leans on `any` everywhere', outcome = 'wall-halt' } = {}) => [
+  { type: 'job-start', job: SPEC.job, specHash: 'old-hash-0000', budgetUsd: SPEC.budgetUsd, shape: 'plan', goal: SPEC.goal, ts: '2026-08-04T10:00:00.000Z', seq: 1 },
+  { type: 'human-decision', decision, text, source: 'operator', meaning: 'answered on this invocation', ts: '2026-08-04T10:01:00.000Z', seq: 2 },
+  { type: 'plan-accepted', plan: { schema: 'plan-v1', steps: [{ id: 'fix-types' }] }, ts: '2026-08-04T10:02:00.000Z', seq: 3 },
+  { type: 'worker-round', kind: 'turn', costUsd: SPEC.budgetUsd * 0.25, ts: '2026-08-04T10:05:00.000Z', seq: 4 },
+  { type: 'step-end', step: 'fix-types', outcome: 'green', ts: '2026-08-04T10:10:00.000Z', seq: 5 },
+  { type: 'job-end', outcome, spentUsd: SPEC.budgetUsd * 0.25, spendComplete: true, engagementSpentUsd: SPEC.budgetUsd * 0.25, ts: at, seq: 6 },
+];
+
+test('F102 — the preview SAYS the answer survived, in the person\'s own words, before anything is signed', () => {
+  const { code, out } = preview(['--resume', spineFile(heldSpine())]);
+  assert.equal(code, 0, out);
+  assert.match(out, /held +"rerun"/, 'which door is being applied');
+  assert.match(out, /the d\.ts leans on `any` everywhere/, 'and the words themselves — they ARE the gap');
+  assert.match(out, /this resume APPLIES it — you are not asked again/,
+    'the difference between a resume that acts on the decision and one that re-asks is the whole finding');
+});
+
+test('F102 — a FRESH --decide over a HELD one is refused at the runner, naming what is held', () => {
+  const { code, out } = preview(['--resume', spineFile(heldSpine()), '--decide', 'accept']);
+  assert.equal(code, 2);
+  assert.match(out, /already holds a "rerun" decision/, 'named, so the operator knows what they would be overriding');
+  assert.match(out, /ambiguity, not a merge/);
+});
+
+test('F103 — a held RERUN opens on the full signed wall: the preview says so, and the wall gate does not refuse it', () => {
+  const wallMin = SPEC.maxWallMs / 60_000;
+  const t = (/** @type {number} */ m) => new Date(Date.parse('2026-08-04T10:00:00.000Z') + m * 60_000).toISOString();
+  const burnt = spineFile(heldSpine({ at: t(wallMin + 5) }));
+  const pre = preview(['--resume', burnt]);
+  assert.match(pre.out, /FRESH ENGAGEMENT/, 'the operator is told which clock this leg gets');
+  assert.match(pre.out, /chain so far/, 'and the chain total is still reported beside it — two counters, never one');
+  assert.doesNotMatch(pre.out, /NOTHING LEFT/, 'the wall the person did not commission is not a warning about their rerun');
+
+  // and past the signature it is not refused: F103's incident was the door opening
+  // onto 87 seconds of a wall a dead leg had already spent
+  const { out } = preview(['--resume', burnt, '--approve', jobSpecHash(SPEC)]);
+  assert.doesNotMatch(out, /WALL ALREADY EXHAUSTED/);
+  assert.match(out, /ANTHROPIC_API_KEY not set/, 'it reached the launch — the only thing missing is a key');
+});
+
+test('F103 — an ordinary resume with no decision still meets the exhausted wall (W-2 untouched)', () => {
+  const wallMin = SPEC.maxWallMs / 60_000;
+  const t = (/** @type {number} */ m) => new Date(Date.parse('2026-08-04T10:00:00.000Z') + m * 60_000).toISOString();
+  // same burnt spine, no held decision on it at all
+  const plain = heldSpine({ at: t(wallMin + 5) }).filter((e) => e.type !== 'human-decision');
+  const { code, out } = preview(['--resume', spineFile(plain), '--approve', jobSpecHash(SPEC)]);
+  assert.equal(code, 2);
+  assert.match(out, /WALL ALREADY EXHAUSTED/);
+});
+
+test('ruling 5 — the PAUSE door is answered even below the wall-exhausted gate: it costs nothing in any state', () => {
+  // v1.73 addendum 2, ruling 5, SELECTED: *the pause door is allowance-free in every
+  // state, including below the wall-exhausted gate*. A raise-and-re-sign changes what
+  // a rerun can BUY; it was never what a pause COSTS.
+  const wallMin = SPEC.maxWallMs / 60_000;
+  const t = (/** @type {number} */ m) => new Date(Date.parse('2026-08-04T10:00:00.000Z') + m * 60_000).toISOString();
+  const burnt = pausedSpine({ at: t(wallMin + 5) });
+  const { code, out } = preview(['--resume', spineFile(burnt), '--decide', 'pause', '--approve', jobSpecHash(SPEC)]);
+  assert.equal(code, 0, out);
+  assert.match(out, /PAUSED BY YOU/);
+  assert.doesNotMatch(out, /WALL ALREADY EXHAUSTED/, 'the gate is for work, and a pause is not work');
+  assert.doesNotMatch(out, /ANTHROPIC_API_KEY not set/, 'nothing launched, nothing spent');
+});

@@ -106,7 +106,7 @@ export {
   // N4 slice 1 — the hitl surface an adopting runner needs: the three doors, the
   // gate that reads a signer's answer (and refuses an empty one), and the seed
   // exemption ruling 8 states.
-  HUMAN_DECISIONS, SEED_EXEMPT_KINDS, normalizeHumanRuling,
+  HUMAN_DECISIONS, SEED_EXEMPT_KINDS, normalizeHumanRuling, resolveHumanRuling,
   // SOFTGREEN module 2 — the judged stage's own arbiter-owned bounds. An adopter
   // wiring `judgeProvider` needs both numbers to reason about what a judged close
   // can cost: one paid call per artifact, at most one retry each.
