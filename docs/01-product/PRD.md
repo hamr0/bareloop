@@ -5420,9 +5420,12 @@ keep user in the know, never refuse."*
   readout and at job-end.
 - **Never refuse a run on an unlisted model.** The estimate still runs; it must be sayable, not
   blockable.
-- **Immediate local mitigation exists without waiting on upstream:** `COST_PER_1K` is exported
+- ~~**Immediate local mitigation exists without waiting on upstream:** `COST_PER_1K` is exported
   by bare-agent — bareloop can set `sonnet-5`/`opus-5` entries at process startup on its own
-  copy of the table.
+  copy of the table.~~ **DEAD — see §11 below.** Executed and refuted: bare-agent's own package
+  exports do not reach the table (`require('bare-agent')` → undefined; the deep import throws
+  `ERR_PACKAGE_PATH_NOT_EXPORTED`, the strict exports map working as designed). No "proceed
+  independently" path exists. **The fix is BA-21 upstream, or nothing.**
 - Filed upstream as **BA-21** (`docs/UPSTREAM-ASKS.md`) with FAIL-able acceptance criteria;
   not restated here.
 
@@ -5589,6 +5592,44 @@ shape in §4 and the test design in §6.
   number not already in the signed shape is operator territory, unset.
 - **The arbiter does not move.** L4's cap is a tighten-only operator bound; G1 is a
   validation-gate rule, not agent-authorable; nothing here touches budgets, the fence, or merge.
+
+### 11. Correction — 2026-08-18, later same day: pricing numbers corrected, local mitigation
+dead, `estimated` needs a new field (VALIDATION ONLY — full record in the feature doc)
+
+**Full detail:** `docs/02-features/2026-08-18-context-economy-package.md` §1.1a/§1.1b/§1.1c and
+the "Upstream vs local" correction. Summarized here so the wrong numbers cannot be quoted from
+this entry alone.
+
+1. **Sonnet-5 underpricing is ~5.7%, not 2–2.5x.** §1's 2.0–2.5x figure was clipipe's
+   provider-billed ratio on a different billing surface (F48: never pools with `anthropic-api`)
+   — generalizing it to sonnet-5's own mispricing was the error. Proper repricing over the
+   7,217-row confirmed `_default` population: `_default`-as-recorded $219.15 (1.000x); sonnet-5
+   **introductory** rate $2/$10 per 1M → $231.72 (**1.057x**); sonnet-5 **list** rate $3/$15 per
+   1M → $347.58 (1.586x). The introductory rate runs through **2026-08-31**, and the entire
+   archive sits inside that window — 1.057x is the historically honest ratio. **On 2026-09-01
+   the honest ratio jumps silently to ~1.586x and nothing in the system detects the change** —
+   small today, structural forever.
+2. **The "immediate local mitigation" is DEAD**, struck in §1 above. `COST_PER_1K` is
+   unreachable through bare-agent's public exports (`require('bare-agent')` → undefined; the
+   deep import throws `ERR_PACKAGE_PATH_NOT_EXPORTED` — the strict exports map working as
+   designed). Reachable only via an absolute `node_modules` path with no semver contract — not a
+   plan. **The fix is BA-21 upstream, or nothing.**
+3. **Feasibility survey: bareloop cannot mint `estimated` today, even with BA-21 unlanded.**
+   `planrun.js` forwards `arg?.pricing` verbatim; upstream's mint is a hardcoded binary
+   (`cost===null?'unpriced':'priced'`); every downstream trust check is a finite-number boolean
+   (one choke point in `text.js`, plus `run.js`/`planrun.js`/`reuse.js`) — already satisfying
+   "never refuse on an estimate," but making an estimate **indistinguishable from a known
+   price**, the opposite of "keep the user in the know." A local table patch would make this
+   *worse* (guess and real rate both stamp `'priced'`). **The marker needs a new field, not a
+   new value in the existing one.** Candidate sites recorded, nothing built: `run.js:307`,
+   `bridges.js` `HISTORY_FIELDS`, a new non-red `ledger.js` category. BA-21-upstream-first.
+4. **Method note.** The repricing had a $25.98 unexplained gap, audited before being absorbed
+   into a number — the F45 unaccounted-writer class caught pre-emptively: 24 `kind:"session"`
+   clipipe-native rows carrying provider-billed cost, correctly excluded per F48.
+5. **Carried as unverified, not settled:** 8 mismatched `worker-result` files + 55 unattributed
+   rows ($16.97); no per-row model field (haiku/sonnet separable only at file level); ~$2.06 of
+   draft/selection/authored rows unrepriceable; `job-end.spentUsd` vs an independent sum
+   unchecked; the bridges validator's unknown-field behaviour unchecked.
 
 ---
 

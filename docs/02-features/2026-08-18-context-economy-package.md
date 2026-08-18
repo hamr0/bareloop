@@ -23,10 +23,87 @@ peer review):
 `estimateCost` falls to `_default` (documented in-source as "fallback average across popular
 models," $0.002/1K in, $0.008/1K out). 7,217 of 7,506 archived priced `worker-round` records
 match `_default` to <0.1%; zero match sonnet's real rates. The 289 non-matches are all clipipe
-rows, where the CLI reports its own real cost — an accidental control, and it runs 2.0–2.5x the
-`_default` guess. Every one of these rounds is stamped `pricing:'priced'`. bareloop has no price
-table of its own; the Anthropic API returns no dollar cost, only token counts, so local
-computation is unavoidable somewhere in the stack.
+rows, where the CLI reports its own **provider-billed** cost on a different billing surface —
+an accidental control on that surface, and it runs 2.0–2.5x the `_default` guess *there*. *(This
+figure does not generalize to sonnet-5's own underpricing ratio on the API surface — that was an
+error, corrected in §1.1a below; clipipe cost never pools with `anthropic-api` cost, F48.)* Every
+one of these rounds is stamped `pricing:'priced'`. bareloop has no price table of its own; the
+Anthropic API returns no dollar cost, only token counts, so local computation is unavoidable
+somewhere in the stack.
+
+### 1.1a Correction — 2026-08-18, later same day: sonnet-5 underpricing is ~5.7%, not 2–2.5x,
+and it carries an intro-rate cliff
+
+**The 2.0–2.5x figure in §1.1 above was misapplied.** It is a real number, but it belongs to
+clipipe's provider-billed rows on clipipe's own billing surface, not to sonnet-5's mispricing on
+the `anthropic-api` surface — generalizing from one to the other was the error, and F48 already
+established these two billing surfaces never pool.
+
+**Proper repricing**, over the 7,217-row confirmed `_default` population, applying the real
+cache-tier multipliers (0.1x for a cache read, 1.25x for a cache write) that `_default` already
+implicitly carries:
+
+| pricing basis | total | ratio to `_default`-as-recorded |
+|---|---|---|
+| `_default`-as-recorded | $219.15 | 1.000x |
+| sonnet-5 **INTRODUCTORY** rate ($2/$10 per 1M) | $231.72 | **1.057x** |
+| sonnet-5 **LIST** rate ($3/$15 per 1M) | $347.58 | 1.586x |
+
+**Load-bearing:** sonnet-5's introductory rate runs through **2026-08-31**, and the entire
+archive (2026-07-15 .. 2026-08-17) sits inside that window — independently verified against the
+archive's own date range, not assumed. **1.057x (~5.7% underpriced) is therefore the historically
+honest ratio for every round this programme has ever run.**
+
+**Structural warning, recorded because nothing in the system will say it on its own:** on
+**2026-09-01** the honest ratio jumps silently to ~1.586x, and no code path detects the rate
+change — the `_default` guess does not know an introductory window exists, let alone that it
+ends. Small today (~5.7% on the whole archive to date); structural forever until BA-21 lands or
+its equivalent local awareness exists.
+
+**Method note:** the repricing exercise turned up a $25.98 gap between the reprice and the
+archive-wide total before it was explained — the F45 unaccounted-writer class, caught before it
+reached a reported number. Root cause: 24 `kind:"session"` clipipe-native rows carrying real
+provider-billed cost, correctly excluded per F48 (a different billing surface, never pooled).
+
+### 1.1b Feasibility survey (new information, not a correction): bareloop cannot mint the ruled
+`estimated` pricing state today
+
+With the local `COST_PER_1K` mitigation dead, the question of what actually mints `estimated`
+was surveyed directly against the running code, not assumed:
+
+- `planrun.js` forwards `arg?.pricing` **verbatim** from upstream.
+- Upstream's mint is a **hardcoded binary**: `cost === null ? 'unpriced' : 'priced'`. There is
+  no third branch to forward even if bareloop wanted one.
+- Every downstream trust check that consumes this field is a **finite-number boolean** — a
+  single choke point in `text.js`, plus sites in `run.js`/`planrun.js`/`reuse.js` — which already
+  satisfies "never refuse on an estimate" (a finite guess reads as trustworthy-enough to proceed)
+  but makes an estimate **indistinguishable from a known price**. That is the exact opposite of
+  "keep the user in the know."
+- A local `COST_PER_1K` patch (even setting aside §"Correction" above, that it cannot be reached)
+  would make this **worse**, not better: a guessed rate and a real rate both stamp `'priced'`,
+  so patching the table produces a more accurate number wearing the identical confident label.
+
+**The conclusion the survey forces:** the `estimated` marker needs a **new field**, not a new
+value inside the existing `pricing` field — the existing field's whole downstream contract is a
+boolean, and widening its value set breaks that contract silently at every choke point rather
+than at one signed edit. Candidate landing sites the lane recorded for a future build: `run.js`
+line 307, `bridges.js`'s `HISTORY_FIELDS`, and a new **non-red** category in `ledger.js` so "N
+estimated rounds" folds into neither `pricing-red` nor silence. **All of this remains
+BA-21-upstream-first; nothing is built.**
+
+### 1.1c What is carried as unverified, not settled
+
+The repricing lane's own list, carried honestly rather than rounded into the headline numbers
+above:
+
+- **8 mismatched `worker-result` files** and **55 unattributed rows ($16.97)** remain
+  unresolved.
+- **No per-row model field exists** — haiku vs sonnet spend is separable only at the file level,
+  not the round level.
+- **~$2.06 of draft/selection/authored rows** are unrepriceable with the current instrument.
+- **`job-end.spentUsd` vs an independent sum** has not been cross-checked.
+- **The bridges validator's behaviour on an unknown field** has not been checked — relevant to
+  whichever landing site §1.1b's future build picks.
 
 ### 1.2 Where the money goes (7,507 rounds, ~$236 estimated archive-wide)
 
@@ -73,9 +150,26 @@ verbs.
   paying for it without this); the pricing `estimated` state and current-gen `COST_PER_1K`
   entries, filed as **BA-21** (`docs/UPSTREAM-ASKS.md`, already committed on `n4-softgreen` at
   `f2f44af` — not restated here).
-- **Local (bareloop):** L1/L2/L4 as API-path seams; G1 as a `validatePlan` rule; an immediate
-  `COST_PER_1K` startup patch for `sonnet-5`/`opus-5` (the table is exported by bare-agent,
-  mutable by a caller today, independent of BA-21 landing); the context-headroom meter (§4).
+- **Local (bareloop):** L1/L2/L4 as API-path seams; G1 as a `validatePlan` rule; the
+  context-headroom meter (§4). *(A local `COST_PER_1K` startup patch for `sonnet-5`/`opus-5`
+  was proposed as an immediate mitigation in the first pass of this record and is now DEAD —
+  see the correction below. The fix is BA-21 upstream, or nothing.)*
+
+### Correction — 2026-08-18, later same day: the "immediate local mitigation" is DEAD
+
+The claim that bareloop "can proceed independently" by patching `COST_PER_1K` at process
+startup was **executed and refuted**, not merely reconsidered:
+
+- `require('bare-agent')` → `COST_PER_1K` is **undefined** (`index.js` never re-exports it).
+- `require('bare-agent/src/loop')` → `ERR_PACKAGE_PATH_NOT_EXPORTED` — the package's strict
+  `exports` map working exactly as designed, blocking the deep import.
+
+The table is reachable **only** via an absolute `node_modules` path with **no semver contract**
+behind it — a live-mutable global with the next patch release free to break it silently. That is
+not a local mitigation, it is a private hack against another package's internals, and it is
+struck as an option. **The fix is BA-21 landing upstream, or nothing.** Any prior "recommended
+first" or "can proceed independently" framing attached to this idea is retracted, here and in
+PRD Addendum v1.74.
 
 ---
 
