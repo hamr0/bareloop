@@ -164,7 +164,8 @@ test('a LOCKED class refuses at ADMISSION, BEFORE its questions run — counted 
     assert.equal(r.refusal.red.code, 'request-red');
     assert.ok(r.refusal.detail.includes(verdictType));
   }
-  assert.deepEqual([...LIVE_CLASSES], ['green', 'hitl'], 'N4 slice 1 admits two; soft-green is slice 2');
+  assert.deepEqual([...LOCKED_CLASSES], [], 'softgreen module 3 admitted the last locked class');
+  assert.deepEqual([...LIVE_CLASSES], [...VERDICT_CLASSES], 'every class the radio names is built');
 });
 
 test('the interview asks NOTHING about a genre and NOTHING about the repo — an unasked answer is not a slot', () => {
@@ -210,16 +211,19 @@ test('interview answers are scrubbed at INGEST — an answer becomes a prompt, a
 // ── 2. THE LEDGER ATTRIBUTION, end to end ────────────────────────────────────
 
 test('D13 REGRESSION: a close-authoring refusal files under bareloop, and its suggestedAsk is never an upstream ask', () => {
-  // the exemplar is the class still LOCKED (hitl was admitted at N4 slice 1);
-  // what is under test is the attribution of a class refusal, not which class
-  const refusal = runInterview({ verdictType: 'soft-green', answers: ANSWERS, repoPath: '/tmp/x' }).refusal;
+  // What is under test is the ATTRIBUTION of an interview refusal, never which
+  // class produced it. The exemplar used to be the last locked class; softgreen
+  // module 3 admitted it, so the exemplar is now the other counted refusal this
+  // interview can still render — a job with no repository, which has no seed to
+  // measure against (D13). The assertions below are unchanged apart from the verb.
+  const refusal = runInterview({ verdictType: 'green', answers: ANSWERS, repoPath: null }).refusal;
   const events = refusalEvents(refusal).map((e, i) => ({ ...e, seq: i + 1 }));
 
   const occs = classifyIncidents(events, { spine: 'authoring' });
   const req = occs.filter((o) => o.class === 'request-red');
   assert.equal(req.length, 1, 'the demand is counted exactly once');
   assert.equal(req[0].lib, REFUSAL_LIB, 'the lib is the STAMPED one — inferring it here is the BA-2 misattribution class');
-  assert.equal(req[0].verb, 'soft-green', 'the demand names the verdict class, which is what the rung waits on');
+  assert.equal(req[0].verb, 'non-green-verdict', 'the demand names what was asked for and could not be honoured');
 
   // …and the template a human actually FILES from must aim at the same target.
   // Fixing the occurrence alone would leave the misattribution in the one field
@@ -309,13 +313,22 @@ test('assembleSpec REFUSES a draft that already carries the authored half — ne
   assert.deepEqual(validateJob(spec).reds, []);
 });
 
-test('the laundering guard holds from the declared side: a LOCKED verdict on a declared close reds twice, never launders', () => {
-  const r = validateJob(assembleSpec(SPEC_DRAFT, { closeDecl: DECL(), verdictType: 'soft-green' }));
+test('the laundering guard holds from the declared side: a soft verdict on a HARD close type still reds close-hierarchy', () => {
+  // This used to read a LOCKED verdict redding TWICE — counted demand plus the
+  // hierarchy. Softgreen module 3 admitted the class and widened
+  // DECLARED_CLOSE_CLASSES to hard|soft|hitl, so an authored declaration is no
+  // longer the laundering surface and the request-red half is unreachable by
+  // construction. The hierarchy half is what mattered and it is exercised here on
+  // the surface where it still bites: a COMMAND close type that can only ever
+  // claim `hard`, under a verdict that demands `soft`.
+  const spec = assembleSpec(SPEC_DRAFT, { closeDecl: DECL(), verdictType: 'soft-green' });
+  assert.deepEqual(validateJob(spec).reds, [], 'the authored declaration itself now admits a soft verdict');
+  const { closeDecl: _dropped, ...rest } = spec;
+  const r = validateJob({ ...rest, close: { type: 'predicate', cmd: 'npm test', expect: { exitCode: 0 } } });
   assert.equal(r.ok, false);
-  const codes = r.reds.map((x) => x.code);
-  assert.ok(codes.includes('request-red'), 'the locked verdict is counted demand');
-  assert.ok(codes.includes('close-hierarchy'), 'and a soft verdict can never ride a hard close');
-  assert.equal(r.reds.find((x) => x.code === 'request-red').lib, 'bareloop');
+  const hierarchy = r.reds.find((x) => x.code === 'close-hierarchy');
+  assert.ok(hierarchy, JSON.stringify(r.reds));
+  assert.equal(hierarchy.path, 'verdictType', 'a predicate can never be soft — PRD §7');
 });
 
 test('a malformed declaration reds THROUGH validateJob, pathed under closeDecl', () => {
@@ -788,6 +801,9 @@ test('a genre that owns NO environment records none — absent is not empty (F59
 });
 
 test('the pipeline REFUSES before spending anything when the interview refuses the CLASS', async () => {
+  // unreachable while nothing is locked (softgreen module 3) — stated rather than
+  // left as a loop that silently iterates nothing
+  assert.deepEqual([...LOCKED_CLASSES], []);
   for (const verdictType of LOCKED_CLASSES) {
     let called = 0;
     const r = await authorCloseForJob({

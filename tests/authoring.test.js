@@ -611,17 +611,22 @@ test('classes: the two copies of the menu are IDENTICAL — the spec radio and t
   assert.deepEqual([...LOCKED_CLASSES], [...LOCKED_VERDICTS]);
 });
 
-test('classes: the class menu is exactly three, and v1 builds two of them (N4 slice 1)', () => {
+test('classes: the class menu is exactly three, and every one of them is built (softgreen module 3)', () => {
   assert.deepEqual([...VERDICT_CLASSES], ['green', 'soft-green', 'hitl']);
-  assert.deepEqual([...LOCKED_CLASSES], ['soft-green']);
-  assert.deepEqual([...LIVE_CLASSES], ['green', 'hitl']);
+  assert.deepEqual([...LOCKED_CLASSES], [], 'hitl left at N4 slice 1, soft-green at softgreen module 3');
+  assert.deepEqual([...LIVE_CLASSES], [...VERDICT_CLASSES]);
   // the batteries cover the menu and nothing else — a class with no entry would
   // be a class whose guards nothing can supply
   assert.deepEqual(Object.keys(CLASS_BATTERIES).sort(), [...VERDICT_CLASSES].sort());
-  for (const c of LOCKED_CLASSES) {
-    assert.equal(CLASS_BATTERIES[c].locked, true, `${c} must be a named but LOCKED set`);
-    assert.equal(CLASS_BATTERIES[c].guards, null, `${c}'s battery is ABSENT (null), never an empty array`);
+  for (const c of VERDICT_CLASSES) {
+    assert.equal(CLASS_BATTERIES[c].locked, false, `${c} is built`);
+    assert.ok(Array.isArray(CLASS_BATTERIES[c].guards) && CLASS_BATTERIES[c].guards.length > 0,
+      `${c} carries real guards — an empty battery is the one sentence D5 exists to make unsayable`);
   }
+  // the LOCKED shape (`guards: null`, never `[]`) is unreachable while nothing is
+  // locked. It stays in `classGuards` for the next class that arrives locked, and
+  // the statement above is what says so out loud rather than leaving a loop that
+  // silently iterates nothing.
 });
 
 test('battery: an EMPTY battery is IMPOSSIBLE for a known class and a known language', () => {
@@ -645,6 +650,7 @@ test('battery: an EMPTY battery is IMPOSSIBLE for a known class and a known lang
 
 test('battery: an unknown class, and a LOCKED class, THROW rather than hand back nothing', () => {
   assert.throws(() => classGuards({ verdictType: 'chartreuse', lang: 'js' }), /chartreuse/);
+  assert.deepEqual([...LOCKED_CLASSES], [], 'the locked arm below is unreachable today, and says so');
   for (const c of LOCKED_CLASSES) {
     assert.throws(() => classGuards({ verdictType: c, lang: 'js' }), new RegExp(c),
       `a locked class must never resolve a battery — admission refuses it first`);

@@ -165,15 +165,22 @@ export const HUMAN_CHECKPOINTS = Object.freeze([HITL_PAUSE]);
  * validator reads one hierarchy table rather than hard-coding a class.
  *
  * `hard` is by CONSTRUCTION: every mechanical kind is a command whose measurement
- * is the truth. `hitl` joined it at N4 slice 1, and only because `human-confirms`
- * is genuinely LIVE — the widening and the kind go in one commit, or this table
- * admits a class the executor cannot render. The `soft` class is still absent:
- * `judged-floor` is locked, so no declaration can reach above hitl.
+ * is the truth. `hitl` joined it at N4 slice 1, and `soft` at softgreen module 3
+ * — each only because its kind is genuinely LIVE (`human-confirms`, then
+ * `judged-floor`): the widening and the kind go in one commit, or this table
+ * admits a class the executor cannot render.
+ *
+ * `hitl` STAYS despite the class's retirement (PRD v1.71: the human stage moved
+ * out of the close and became the review door at the end of every run). It is
+ * kept because `jobs/litectx-maintainer.json` is a SIGNED spec carrying a hitl
+ * declaration, and a signed spec is untouchable — dropping the spelling here
+ * would invalidate a signature the operator already gave, which is a re-sign
+ * nobody asked for. Retiring it is a separate, deliberate deletion.
  *
  * The direction that matters is unchanged. This says which class a declaration
  * MAY claim; `closeCeiling` says which class its stages actually NEED. A pick
  * below the ceiling is still the silent upgrade `class-ceiling` refuses. */
-export const DECLARED_CLOSE_CLASSES = Object.freeze(['hard', 'hitl']);
+export const DECLARED_CLOSE_CLASSES = Object.freeze(['hard', 'soft', 'hitl']);
 
 /** @param {any} job @returns {boolean} */
 export function isDeclaredClose(job) {

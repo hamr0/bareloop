@@ -126,7 +126,7 @@ export {
   DIRECTIONS, BASELINES, MAX_STAGES,
   // the verdict-class surface (PRD v1.57 §1–§2): the radio's own menu, the guard
   // battery keyed off it, and the ceiling that makes the pick a promise
-  VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES, CLASS_BATTERIES, classGuards, closeCeiling,
+  VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES, CLASS_BATTERIES, classGuards, classMenu, closeCeiling,
   // ruling 5 as data: the kinds no agent may ever be offered as an in-run ruler
   NEVER_OFFERED_KINDS,
 } from './authoring.js';
@@ -145,7 +145,7 @@ export {
 export { scrubRaw, RAW_PERSIST_MAX, RAW_TRIM_MARKER } from './text.js';
 export {
   authorClose, authorPrompt, declarationSchema, makeLoopGenerate, MAX_REVISIONS,
-  QUESTION_SETS, GREEN_QUESTIONS, CLASS_STATEMENTS, questionsFor, requiredAnswersFor,
+  QUESTION_SETS, GREEN_QUESTIONS, SOFTGREEN_QUESTIONS, CLASS_STATEMENTS, questionsFor, requiredAnswersFor,
 } from './authorflow.js';
 // M4a — the runtime bridge. `validateCloseDecl` is the spec-level gate (the job
 // validator's own branch calls it); `runDeclaredStages` is the executor seam a

@@ -98,17 +98,30 @@ export const MIN_WALL_MS = 120_000;
  * counts admission demand, and a generic invalid-value would bury it as a typo. */
 export const LOCKED_TOOLS = Object.freeze(['run']);
 /** Layer 2 (design record 2026-07-21, decision 5): the verdict-type radio of
- * the four-field plan shape. v1 ADMITS only `green`; soft-green/hitl are
- * declared-but-locked — declaring one is a `request-red` (the tool-menu
- * pattern: disclosure ≠ admission), so the ledger counts the demand and the
- * non-code rung later fills a declared slot instead of reshaping the schema. */
+ * the four-field plan shape. All three are ADMITTED as of softgreen module 3;
+ * the declared-but-locked mechanism below (`LOCKED_VERDICTS`) is what carried
+ * them here one rung at a time — declaring a locked one is a `request-red` (the
+ * tool-menu pattern: disclosure ≠ admission), so the ledger counted the demand
+ * instead of the schema being reshaped when the rung finally landed. */
 export const VERDICT_TYPES = Object.freeze(['green', 'soft-green', 'hitl']);
-/** N4 slice 1: `hitl` is ADMITTED — the class whose *done* needs a person runs
- * through the same signed spec, the same agent-authored plan and the same
- * arbiter as a green job (the nine rulings, 2026-08-07; the three-button surface,
- * 2026-08-12). `soft-green` stays declared-but-locked until its judged floor is
- * built and proven (slice 2): a wobbly ruler must not mint anything. */
-export const LOCKED_VERDICTS = Object.freeze(['soft-green']);
+/** N4 slice 1 admitted `hitl`; softgreen module 3 admits `soft-green`, and the
+ * menu is now EMPTY — every class the radio names is built.
+ *
+ * `soft-green`'s lock was never a policy, it was a missing floor: a judged
+ * verdict with no ruler mints nothing honestly. Modules 1 and 2 built the ruler
+ * (a pinned judge that only LOCATES, an arbiter-owned `decide()`, a calibration
+ * gate) and wired it as the `judged-floor` kind, so the lock has nothing left to
+ * protect (design record 2026-08-17 §4, and the 2026-08-18 thresholds addendum).
+ *
+ * EMPTY here means "nothing is locked", which is a TRUE statement about a closed
+ * menu — not F59's absent-read-as-empty, where a `{}` stood in for a fact nobody
+ * gathered. The mechanism below stays exactly as it is: it is read at call time
+ * from this constant, so re-locking a class (or admitting a fourth) is one edit
+ * and the counted `request-red` path comes back with it. `LOCKED_CLASSES` in
+ * src/authoring.js is the twin and moved in the same commit; the suite pins the
+ * two identical. */
+/** @type {readonly string[]} */
+export const LOCKED_VERDICTS = Object.freeze([]);
 /** which close CLASS a declared verdictType demands — the close hierarchy one
  * level up: the same laundering guard as CLASS_BY_CLOSE, applied to the plan
  * shape's single close (green on a rubric would be a fake-hard verdict). */
@@ -520,8 +533,9 @@ function validateStagedClose(stages, red) {
  * stages instead (PRD v1.28/v1.32), and a spec that still declares it gets the
  * `checks-derived` red below rather than a bare unknown-field.
  *
- * v1 admits only verdictType `green`; soft-green/hitl are declared-but-locked
- * and red as `request-red` — admission demand the ledger counts, never a grant.
+ * Every verdictType the radio names is admitted (softgreen module 3); a class
+ * that were locked reds as `request-red` — admission demand the ledger counts,
+ * never a grant.
  * The close is validated one level up as well: a declared verdict demands a
  * close CLASS, so green-on-rubric reds as `close-hierarchy` rather than
  * laundering a soft judgement into a hard one.
@@ -541,7 +555,7 @@ function validatePlanShape(spec, red, reds) {
     // the type rides as a structured field — the ledger keys admission demand
     // on it, never on prose. `lib: 'bareloop'`: the refused catalogue is OURS
     // (VERDICT_TYPES), so this demand is never an upstream ask.
-    reds.push({ code: 'request-red', path: 'verdictType', verb: spec.verdictType, lib: 'bareloop', detail: `"${spec.verdictType}" is declared-but-locked — not at this rung (v1 admits green only); this red IS the admission evidence, never a grant` });
+    reds.push({ code: 'request-red', path: 'verdictType', verb: spec.verdictType, lib: 'bareloop', detail: `"${spec.verdictType}" is declared-but-locked — not at this rung (admitted: ${VERDICT_TYPES.filter((v) => !LOCKED_VERDICTS.includes(v)).join(', ')}); this red IS the admission evidence, never a grant` });
     demanded = CLASS_BY_VERDICT[spec.verdictType];
   } else if (!VERDICT_TYPES.includes(spec.verdictType)) {
     red('invalid-value', 'verdictType', `menu: ${VERDICT_TYPES.join('|')} — an unknown type is a typo, never a request`);

@@ -93,9 +93,11 @@ test('the verdict-class hierarchy is ONE table: every close type plus `declared`
     'CLASS_BY_CLOSE and CLOSE_TYPES must not drift — a class table missing a shape launders that shape',
   );
   assert.deepEqual(CLASS_BY_CLOSE.declared, DECLARED_CLOSE_CLASSES);
-  // N4 slice 1: `hitl` joined `hard` when `human-confirms` went live. `soft` is
-  // still absent — `judged-floor` is locked, so no declaration reaches above hitl.
-  assert.deepEqual([...DECLARED_CLOSE_CLASSES], ['hard', 'hitl']);
+  // N4 slice 1: `hitl` joined `hard` when `human-confirms` went live. `soft`
+  // joined at softgreen module 3, when `judged-floor` did — each class arrives in
+  // the same commit as the kind that renders it, or this table admits a class the
+  // executor cannot run.
+  assert.deepEqual([...DECLARED_CLOSE_CLASSES], ['hard', 'soft', 'hitl']);
 });
 
 test('closeStagesOf reads EITHER field, and a declared stage carries the arbiter\'s own gapKeep', () => {
@@ -128,6 +130,7 @@ test('guardNames names the genre\'s guards and nothing else — the work/guard s
   assert.deepEqual(guardNames(decl, 'green').sort(), greenGuards('js').map((g) => g.name).sort());
   assert.deepEqual(guardNames({ genre: 'TYPES', lang: 'nope', stages: [] }, 'green'), []);
   // the battery keys off the CLASS, so a class with no battery names no guards
+  assert.deepEqual([...LOCKED_CLASSES], [], 'unreachable while nothing is locked (softgreen module 3)');
   for (const c of LOCKED_CLASSES) assert.deepEqual(guardNames(decl, c), [], c);
   assert.deepEqual(guardNames(decl, undefined), []);
   assert.equal(isDeclaredClose({ closeDecl: decl }), true);
@@ -157,6 +160,10 @@ test('validateCloseDecl needs the PICKED CLASS — the battery hangs off it and 
 });
 
 test('validateCloseDecl refuses a LOCKED class outright — there is no battery to validate against', () => {
+  // The mechanism stands; nothing currently trips it (softgreen module 3 admitted
+  // the last locked class). The reachable sibling — an UNKNOWN class — is asserted
+  // in the test above, and bails on the same rule for the same reason.
+  assert.deepEqual([...LOCKED_CLASSES], []);
   for (const verdictType of LOCKED_CLASSES) {
     const r = validateCloseDecl(GOOD_DECL(), { deferListing: true, verdictType });
     assert.equal(r.ok, false);

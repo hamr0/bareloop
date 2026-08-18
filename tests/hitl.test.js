@@ -76,12 +76,15 @@ const decl = () => ({
 
 // ── §1.1 the six coupled sites ──────────────────────────────────────────────
 
-test('§1.1 admission — hitl leaves the locked menu on BOTH copies, soft-green stays', () => {
-  // the two copies are pinned identical elsewhere; what this asserts is the MOVE
+test('§1.1 admission — hitl leaves the locked menu on BOTH copies', () => {
+  // the two copies are pinned identical elsewhere; what this asserts is the MOVE.
+  // soft-green was the control here until softgreen module 3 admitted it too —
+  // the flip is pinned in tests/softgreen-class.test.js, and hitl's own admission
+  // is what this file still owns.
   assert.deepEqual([...VERDICT_TYPES], ['green', 'soft-green', 'hitl'], 'the menu itself never changed');
-  assert.deepEqual([...LOCKED_VERDICTS], ['soft-green'], 'hitl is admitted; soft-green is slice 2');
-  assert.deepEqual([...LOCKED_CLASSES], ['soft-green']);
-  assert.deepEqual([...LIVE_CLASSES], ['green', 'hitl']);
+  assert.ok(!LOCKED_VERDICTS.includes('hitl'), 'hitl is admitted');
+  assert.ok(!LOCKED_CLASSES.includes('hitl'));
+  assert.ok(LIVE_CLASSES.includes('hitl'));
 });
 
 test('§1.1 admission — a hitl spec with a command close validates, with NO request-red', () => {
@@ -90,28 +93,33 @@ test('§1.1 admission — a hitl spec with a command close validates, with NO re
   assert.equal(r.ok, true);
 });
 
-test('§1.1 admission — soft-green is the CONTROL: still one counted request-red', () => {
+test('§1.1 admission — a rubric-close spec is the CONTROL: the object form is admitted here and refused at RUNTIME, unchanged', () => {
+  // soft-green used to be this control (one counted request-red). Module 3
+  // admitted the class, so what is left to control against is the legacy CLOSE
+  // TYPE: `rubric` claims `soft`, which soft-green now legally demands, and the
+  // plan flow still refuses the object form at runtime (`close-unsupported`).
+  assert.deepEqual([...LOCKED_VERDICTS], [], 'nothing is declared-but-locked any more');
   const r = validateJob(spec('soft-green', { close: { type: 'rubric', criteria: 'reads well' } }));
-  assert.equal(r.ok, false);
-  const red = r.reds.find((x) => x.code === 'request-red' && x.path === 'verdictType');
-  assert.equal(red.verb, 'soft-green');
-  assert.equal(red.lib, 'bareloop', 'our own catalogue refusing, never an upstream ask');
+  assert.equal(r.reds.filter((x) => x.code === 'request-red').length, 0);
+  assert.deepEqual(CLASS_BY_CLOSE.rubric, ['soft'], 'the hierarchy table is untouched by the admission');
 });
 
-test('§1.1 admission — DECLARED_CLOSE_CLASSES widens to hard|hitl, so a hitl verdict on an authored declaration stops redding close-hierarchy', () => {
-  assert.deepEqual([...DECLARED_CLOSE_CLASSES], ['hard', 'hitl']);
+test('§1.1 admission — DECLARED_CLOSE_CLASSES carries hitl, so a hitl verdict on an authored declaration stops redding close-hierarchy', () => {
+  assert.ok(DECLARED_CLOSE_CLASSES.includes('hitl'), 'the widening that came with human-confirms; `soft` joined at module 3');
   assert.deepEqual(CLASS_BY_CLOSE.declared, DECLARED_CLOSE_CLASSES, 'one hierarchy table, read by the validator');
   const r = validateJob(spec('hitl', { close: undefined, closeDecl: decl() }));
   assert.equal(r.reds.filter((x) => x.code === 'close-hierarchy').length, 0, JSON.stringify(r.reds));
   assert.equal(r.ok, true, JSON.stringify(r.reds));
 });
 
-test('§1.1 admission — validateCloseDecl stops emitting class-battery-locked for hitl (and still emits it for soft-green)', () => {
+test('§1.1 admission — validateCloseDecl stops emitting class-battery-locked for hitl (an UNKNOWN class still bails)', () => {
   const live = validateCloseDecl(decl(), { deferListing: true, verdictType: 'hitl' });
   assert.equal(live.reds.filter((x) => x.code === 'class-battery-locked').length, 0, JSON.stringify(live.reds));
   assert.equal(live.ok, true, JSON.stringify(live.reds));
-  const locked = validateCloseDecl(decl(), { deferListing: true, verdictType: 'soft-green' });
-  assert.equal(locked.reds.find((x) => x.code === 'class-battery-locked').path, 'verdictType');
+  // soft-green was the locked control; module 3 admitted it, so the reachable
+  // control is a class with no battery at all
+  const unknown = validateCloseDecl(decl(), { deferListing: true, verdictType: 'chartreuse' });
+  assert.equal(unknown.reds.find((x) => x.code === 'class-absent').path, 'verdictType');
 });
 
 test('§1.1 OPEN-1 — the hitl battery IS the green mechanical battery (hamr, 2026-08-13): same guards, nothing a human stage cannot see', () => {
@@ -125,9 +133,9 @@ test('§1.1 OPEN-1 — the hitl battery IS the green mechanical battery (hamr, 2
   }
 });
 
-test('§1.1 OPEN-1 — classGuards stops THROWING for hitl, and still throws for soft-green', () => {
+test('§1.1 OPEN-1 — classGuards stops THROWING for hitl, and still throws for a class it has no battery for', () => {
   assert.doesNotThrow(() => classGuards({ verdictType: 'hitl', lang: 'js' }));
-  assert.throws(() => classGuards({ verdictType: 'soft-green', lang: 'js' }), /LOCKED/);
+  assert.throws(() => classGuards({ verdictType: 'chartreuse', lang: 'js' }), /chartreuse/);
 });
 
 test('§1.1 — the hitl INTERVIEW set and composer statement exist (the two authorflow throws stop firing)', () => {
@@ -138,9 +146,10 @@ test('§1.1 — the hitl INTERVIEW set and composer statement exist (the two aut
   assert.deepEqual(requiredAnswersFor('hitl'), Object.keys(qs).map(Number).sort((a, b) => a - b));
   assert.equal(typeof CLASS_STATEMENTS.hitl, 'string');
   assert.match(CLASS_STATEMENTS.hitl, /person/i, 'the statement says a PERSON renders the verdict');
-  // soft-green is the control on both, still absent rather than empty (F59)
-  assert.equal(QUESTION_SETS['soft-green'].questions, null);
-  assert.equal(CLASS_STATEMENTS['soft-green'], null);
+  // soft-green was the control on both and is now live too (module 3); the
+  // unknown class is what the readers still refuse
+  assert.throws(() => questionsFor('chartreuse'), /chartreuse/);
+  assert.equal(CLASS_STATEMENTS.chartreuse, undefined);
 });
 
 test('§1.1 finding 1 — the legacy close.type "hitl" OBJECT form is NOT widened: the catalogue entry stands untouched', () => {

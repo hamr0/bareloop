@@ -80,7 +80,7 @@ import { JUDGE_RULE_IDS } from './judged.js';
 import {
   KIND_CATALOGUE, MAX_STAGES, DIRECTIONS, BASELINES,
   GENRE_LANGUAGES, TYPES_GENRE_TEMPLATE, classGuards, genreEnv, genreOwnedEnvNames, genreInstruments,
-  validateDeclaration, envCapableKind, VERDICT_CLASSES, LIVE_CLASSES,
+  validateDeclaration, envCapableKind, classMenu, VERDICT_CLASSES, LIVE_CLASSES,
 } from './authoring.js';
 import { buildSeedListing, cleanEntry, SURVEY_CAUSES } from './authorscout.js';
 import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop } from './text.js';
@@ -224,11 +224,47 @@ export const HITL_QUESTIONS = Object.freeze({
 });
 
 /**
- * The three sets. `questions: null` on a locked class is ABSENT, never `{}`:
- * an empty set would read as "this class needs no questions", which is a
- * different and false statement (F59's distinction, at the interview layer).
- * Nothing ever reads them — a locked class refuses at ADMISSION, before its
- * questions run — and the two readers below throw rather than hand back nothing.
+ * THE SOFTGREEN SET (module 3, design record §4.6) — the green questions BYTE
+ * FOR BYTE, plus TWO.
+ *
+ * Same discipline as the hitl set, and for the same reason: a softgreen close is
+ * *mechanical stages first, the judged stage after* (§4.5), so a softgreen job
+ * needs every mechanical fact a green one does. No renumbering of the green set,
+ * no genre question, nothing reworded.
+ *
+ * The two additions are the only things the green set cannot supply, and neither
+ * is a flourish — they are the judged floor's two REQUIRED inputs:
+ *   - Q6 becomes the RUBRIC CARD (§4.3): the person's own pass/fail lines,
+ *     compiled into enumerated items, signed, and enumerated in the spec hash.
+ *     The documented ceiling rides with it — the judge catches violations of
+ *     STATED card items only, and the fix for a miss is a new card line and a
+ *     re-sign, never a smarter judge.
+ *   - Q7 becomes the frozen CALIBRATION SET (§4.4): the whole pipe must grade it
+ *     correctly before the close is signable.
+ * Both are asked in the person's own terms — an example they would pass and one
+ * they would fail, not a rubric they are asked to write — because compiling a lay
+ * answer into extractable items is the LLM's job (D5, proposed-and-signed) and
+ * asking the person to do it is the SWE tax this product refuses.
+ *
+ * What the two answers COMPILE INTO is module 4. This module carries them
+ * exactly as the hitl set carries its own last answer: they ride in `answers`,
+ * they reach the composer verbatim through the prompt's interview block, and
+ * nothing here derives anything from them.
+ */
+export const SOFTGREEN_QUESTIONS = Object.freeze({
+  ...GREEN_QUESTIONS,
+  6: 'When you judge the result yourself, what separates a pass from a fail? Name the few things you actually look for.',
+  7: 'Give one example you\'d pass and one you\'d fail, and say why.',
+});
+
+/**
+ * The three sets, all LIVE as of softgreen module 3. The locked shape stays
+ * spelled out in the readers below rather than deleted with the last locked
+ * class: `questions: null` is ABSENT, never `{}` — an empty set would read as
+ * "this class needs no questions", a different and false statement (F59's
+ * distinction, at the interview layer) — and a locked class refuses at ADMISSION,
+ * before its questions run, so the two readers throw rather than hand back
+ * nothing. A fourth class arrives locked, and the machinery is here for it.
  * @type {Record<string, {locked: boolean, questions: Record<string|number, string>|null, required: readonly number[]|null}>}
  */
 export const QUESTION_SETS = Object.freeze({
@@ -237,7 +273,11 @@ export const QUESTION_SETS = Object.freeze({
     questions: GREEN_QUESTIONS,
     required: Object.freeze(Object.keys(GREEN_QUESTIONS).map(Number).sort((a, b) => a - b)),
   }),
-  'soft-green': Object.freeze({ locked: true, questions: null, required: null }),
+  'soft-green': Object.freeze({
+    locked: false,
+    questions: SOFTGREEN_QUESTIONS,
+    required: Object.freeze(Object.keys(SOFTGREEN_QUESTIONS).map(Number).sort((a, b) => a - b)),
+  }),
   hitl: Object.freeze({
     locked: false,
     questions: HITL_QUESTIONS,
@@ -260,7 +300,18 @@ export const CLASS_STATEMENTS = Object.freeze({
     + 'to decide it — no judgement, no score, and no person in the loop. Every stage you compose is a mechanical '
     + 'measurement of this repository. If part of what they asked for cannot be measured that way, leave it out and '
     + 'say so in your notes rather than approximating it with a stage that means something else.',
-  'soft-green': null,
+  // softgreen module 3. Stated as an ORDER for the same reason hitl's is: the
+  // close is first-red-wins, so the cheap mechanical stages shield the one stage
+  // that spends money, and the judge is never the first filter. The last sentence
+  // is the documented ceiling (§4.3) said to the composer in its own terms — the
+  // judge only ever checks lines the card names, so an unstated expectation is
+  // not a stricter judge, it is a line nobody wrote.
+  'soft-green': 'The person declared this job SOFT-GREEN: part of what "done" means here needs JUDGEMENT — reading '
+    + 'the result and deciding whether it is any good — and no command can render it. Compose the mechanical part '
+    + 'first: everything about this repository a command can decide is still a mechanical stage, exactly as it would '
+    + 'be for a green job. Then put ONE judged-floor stage AFTER them, carrying the few things the person said they '
+    + 'actually look for and the real files the work lands in. A judged stage decides only the lines its card names, '
+    + 'so name each thing they look for as its own line, and leave nothing to be inferred.',
   // N4 slice 1. The mechanical-first composition law is stated as an ORDER
   // because first-red-wins makes the order the mechanism: the cheap stages shield
   // the expensive one, and the person is never the first filter.
@@ -485,19 +536,27 @@ export function schemaCoverage(catalogue = KIND_CATALOGUE) {
  * and they arrive as validation reds through the revise loop — a schema that
  * tried to restate them would be a second validator.
  *
+ * `verdictType` narrows the branches to the kinds the picked class may express
+ * (softgreen module 3, `classMenu`): a green job cannot SPELL `judged-floor`,
+ * rather than spelling it and being told afterwards. COVERAGE is still computed
+ * over the WHOLE catalogue — the class filter must never make a parameter look
+ * orphaned and turn a menu narrowing into a catalogue-drift alarm.
+ *
  * THROWS on a catalogue it cannot cover: a malformed catalogue is a bareloop bug,
  * and failing loudly beats emitting a schema that quietly cannot say something
  * the validator will then demand.
  * @param {Record<string, any>} [catalogue]
+ * @param {{verdictType?: string|null}} [o]
  */
-export function declarationSchema(catalogue = KIND_CATALOGUE) {
+export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = null } = {}) {
   const cov = schemaCoverage(catalogue);
   if (!cov.ok) {
     throw new Error('[authorflow] the declaration schema does not cover the catalogue — '
       + `missing: ${cov.missing.join(', ') || 'none'}; orphaned: ${cov.orphan.join(', ') || 'none'}`);
   }
+  const menu = classMenu(verdictType, catalogue);
   const branches = Object.entries(catalogue)
-    .filter(([, spec]) => !spec.locked)
+    .filter(([kind, spec]) => !spec.locked && menu.includes(kind))
     .map(([kind, spec]) => {
       /** @type {Record<string, any>} */
       const properties = {};
@@ -545,13 +604,13 @@ export function declarationSchema(catalogue = KIND_CATALOGUE) {
  * The output channel. It records and acknowledges; it takes no action, which is
  * why handing it to a toolless authoring call does not reopen D3.
  * @param {{calls: any[]}} box
- * @param {{catalogue?: Record<string, any>}} [o]
+ * @param {{catalogue?: Record<string, any>, verdictType?: string|null}} [o]
  */
-export function declarationTool(box, { catalogue = KIND_CATALOGUE } = {}) {
+export function declarationTool(box, { catalogue = KIND_CATALOGUE, verdictType = null } = {}) {
   return {
     name: DECLARATION_TOOL_NAME,
     description: 'Deliver the finished close. Call this exactly once, with the whole declaration as its arguments.',
-    parameters: declarationSchema(catalogue),
+    parameters: declarationSchema(catalogue, { verdictType }),
     execute: async (/** @type {any} */ args) => { box.calls.push(args); return DECLARATION_ACK; },
   };
 }
@@ -562,10 +621,19 @@ export function declarationTool(box, { catalogue = KIND_CATALOGUE } = {}) {
  * The catalogue, as the authoring call sees it — rendered FROM the catalogue, so
  * the prompt and the validator judge one set of facts. `shape` and `asserts` are
  * M2's own strings.
+ *
+ * `verdictType` narrows it to the picked class's menu, exactly as it narrows the
+ * schema — the prompt and the tool must offer ONE set of kinds, or the composer
+ * reads about a kind it cannot call. A kind above the ceiling is omitted rather
+ * than rendered as unavailable: a LOCKED row says "this does not run in v1",
+ * which is a fact about the build; "not for your class" is a fact about a choice
+ * the person already made, and printing it invites the composer to argue with it.
  * @param {Record<string, any>} [catalogue]
+ * @param {{verdictType?: string|null}} [o]
  */
-export function catalogueBlock(catalogue = KIND_CATALOGUE) {
-  const rows = Object.entries(catalogue).map(([name, spec]) => (spec.locked
+export function catalogueBlock(catalogue = KIND_CATALOGUE, { verdictType = null } = {}) {
+  const menu = classMenu(verdictType, catalogue);
+  const rows = Object.entries(catalogue).filter(([name]) => menu.includes(name)).map(([name, spec]) => (spec.locked
     ? `- ${name}  — LOCKED. Not available in v1; it will not run.`
     : `- ${name}\n    ${spec.shape}\n    required: ${spec.required.join(', ')}`
       + `${spec.optional.length ? `   optional: ${spec.optional.join(', ')}` : ''}\n    asserts: ${spec.asserts}`));
@@ -753,7 +821,9 @@ measure anything.`;
     `THE INTERVIEW — the person's own words\n\n${interview}`,
     `THE FACTS OBJECT — from a read-only survey of the repository\n\n${JSON.stringify(facts, null, 2)}`
       + (listingBlock ? `\n\n${listingBlock}` : ''),
-    catalogueBlock(catalogue),
+    // CLASS-SCOPED (softgreen module 3): the composer for a green job is never
+    // shown a kind whose pick would red as `class-ceiling` after the call.
+    catalogueBlock(catalogue, { verdictType }),
     lawsBlock(),
     `THE GENRE TEMPLATE — fixed by the job's genre (${lang}), not yours to decide\n\n`
       + 'This job\'s genre carries a fixed close SHAPE. The following policy is law for your declaration. It names\n'
@@ -1096,9 +1166,10 @@ function canonical(x) {
  * under a cap, write nothing — and it never consumes a revision, because a
  * transport fault is not a defect in a close.
  * @param {{messages: any[], generate: Function, mode: 'tool'|'text', retries: number,
- *   label: string, book: ReturnType<typeof makeCostBook>, catalogue: Record<string, any>}} o
+ *   label: string, book: ReturnType<typeof makeCostBook>, catalogue: Record<string, any>,
+ *   verdictType: string}} o
  */
-async function askDeclaration({ messages, generate, mode, retries, label, book, catalogue }) {
+async function askDeclaration({ messages, generate, mode, retries, label, book, catalogue, verdictType }) {
   /** @type {any[]} */
   const convo = [...messages];
   let attempts = 0;
@@ -1118,7 +1189,10 @@ async function askDeclaration({ messages, generate, mode, retries, label, book, 
 
     /** @type {{calls: any[]}} */
     const box = { calls: [] };
-    const tools = mode === 'tool' ? [declarationTool(box, { catalogue })] : [];
+    // the tool's schema is CLASS-SCOPED, like the prompt's catalogue block: the
+    // two must offer one set of kinds, or the composer reads about a kind it
+    // cannot call — or worse, calls one the ceiling will refuse after we paid.
+    const tools = mode === 'tool' ? [declarationTool(box, { catalogue, verdictType })] : [];
     const r = await generate(convo, tools, {});
     attempts += 1;
     book.add(attempt === 0 ? label : `${label}#${attempt + 1}`, r, attempts);
@@ -1425,7 +1499,7 @@ export async function authorClose({
       // a readout quoting a number the loop does not obey is a second
       // instrument, and this file's own history is what that costs.
       onPhase('author-call', { call: label, i, of: revisionCap });
-      const ask = await askDeclaration({ messages, generate, mode: structuredMode, retries: retryCap, label, book, catalogue });
+      const ask = await askDeclaration({ messages, generate, mode: structuredMode, retries: retryCap, label, book, catalogue, verdictType });
       messages = ask.convo;
 
       // The cap tripped BEFORE this ask made any call at all, so there is no
