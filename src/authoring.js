@@ -72,7 +72,8 @@
 // flagged a `runClose` naming collision between the kind executor and
 // src/ralph.js; the public surface is settled once at M4, not piecemeal.
 
-import { normalizeParser } from './kinds.js';
+import { normalizeParser, MAX_JUDGED_PATHS } from './kinds.js';
+import { JUDGE_RULE_IDS, validateCard } from './judged.js';
 import { isObj, isNonEmptyString, hasNestedQuantifier, globToPrefix } from './validate.js';
 
 /** @typedef {{code: string, path: string, detail: string, [k: string]: any}} Red */
@@ -229,15 +230,33 @@ export const KIND_CATALOGUE = Object.freeze({
     shape: 'allowPrefixes: string[], requireNonEmpty: true',
     asserts: 'the set of files this run changed must be non-empty and must lie wholly inside allowPrefixes.',
   }),
-  // LOCKED: named so declaring one is COUNTED DEMAND rather than an unknown-kind
-  // typo (D13 forward-compat point 2). Disclosure is not admission — these do
-  // not run in v1, and `close[]` on disk stays predicate-only and shape-enforced
-  // (src/job.js:442), so the inexpressibility that is already free stays free.
+  // LIVE at softgreen module 2, and the only kind that BUYS its measurement: a
+  // pinned toolless judge extracts facts WITH QUOTES from each named artifact and
+  // an arbiter-owned rulebook renders the verdict over them (src/judged.js). The
+  // judge never says whether anything passed — a model asked "did this pass?" is
+  // a model that can be argued with, and bareguard's A/B measured that
+  // `judgeLocate` is not injectable where `judgeVerdict` is.
+  //
+  // `card` is the signer's own rubric, compiled to ENUMERATED items: `rule`
+  // SELECTS from the rulebook we implement, so a rule we do not own is
+  // inexpressible rather than rejected late, and `text` is the signer's words —
+  // what a red is explained WITH, never what a red is decided BY. `paths` names
+  // the AUTHORITATIVE artifacts, selected from the seed listing like every other
+  // path, never the worker's summary of what it did.
+  //
+  // No `timeoutMs` and no `env`: this kind spawns nothing. Its own bounds are the
+  // arbiter's (the retry ladder and the artifact ceiling live in src/kinds.js),
+  // because a declaration that could widen them is a declaration that can spend.
   'judged-floor': Object.freeze({
     verdictClass: 'soft-green',
-    required: Object.freeze([]), optional: Object.freeze([]), pathParams: Object.freeze([]), locked: true,
-    shape: 'LOCKED — not available in v1',
-    asserts: 'a judged score must clear a floor. Declaring it is recorded as demand; it will not run.',
+    required: Object.freeze(['card', 'paths']),
+    optional: Object.freeze([]),
+    pathParams: Object.freeze(['paths']),
+    shape: `card: {items: [{rule: ${JUDGE_RULE_IDS.join('|')}, text: string}]}, paths: string[] (at most ${MAX_JUDGED_PATHS})`,
+    asserts: 'a pinned judge extracts facts and VERBATIM quotes from each named artifact, and an arbiter-owned rulebook '
+      + 'renders pass/fail per card item over those facts — first red wins, and anything it cannot be sure of is a red. '
+      + 'Name one card line per thing you actually look for, in the order you look for them, and name the real files the '
+      + 'work lands in. It is never offered to the agent as an in-run check.',
   }),
   // LIVE at N4 slice 1, and the ONLY kind that does not measure anything: it
   // does not RUN, it PAUSES the run and hands the tree to a person (ruling 1).
@@ -1405,6 +1424,30 @@ function checkKind({ kind, params: p, at, red, scoped, label, populations, envOw
           + 'result — a human stage with nothing to ask is the bare "approve?" ruling 2 forbids');
       }
       break;
+    case 'judged-floor': {
+      // ONE spelling of what a card is, the JUDGE's own (`validateCard`, src/judged.js) —
+      // the same rule `normalizeParser` follows: the validator and the grader must agree
+      // about what a card MEANS, or the one that grades is the one nobody validated.
+      const cv = validateCard(p.card);
+      for (const detail of cv.reds) red('invalid-value', `${at}.params.card`, detail);
+      // the artifact list. The listing rule (`checkPaths`) judges whether each element
+      // EXISTS; this judges the shape and the bill — one paid call per artifact, so an
+      // unbounded list is a bill rather than a red (the MAX_TERMS sibling).
+      if (!strArray(p.paths)) {
+        red('invalid-value', `${at}.params.paths`, 'a non-empty array of repository-relative files to judge — the '
+          + 'AUTHORITATIVE artifacts, read off the seed listing, never the worker\'s summary of what it did');
+      } else if (new Set(p.paths.map(String)).size !== p.paths.length) {
+        // one artifact is one population, and a list naming it twice buys two paid
+        // calls over identical bytes — deduplicating it silently would leave the
+        // signer reading one list while the runner spent on another
+        red('invalid-value', `${at}.params.paths`, 'the same artifact is named twice — one artifact is one population, '
+          + 'and a duplicate buys a second paid call over identical bytes');
+      } else if (p.paths.length > MAX_JUDGED_PATHS) {
+        red('bounds', `${at}.params.paths`, `${p.paths.length} artifacts exceeds the ceiling of ${MAX_JUDGED_PATHS} — a `
+          + 'judged stage buys one call per artifact, and the ceiling is the arbiter\'s, not the declaration\'s');
+      }
+      break;
+    }
     default:
       red('unknown-kind', `${at}.kind`, `"${kind}" is in the catalogue but has no checker`, { kind });
   }

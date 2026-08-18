@@ -59,7 +59,7 @@ import { readGrade } from './trend.js';
  * list, and the TTL gate below cannot drift from each other */
 import { HITL_PAUSE, HUMAN_CHECKPOINTS } from './declaredclose.js';
 import { extractArtifact, priceOf } from './text.js';
-import { runJob as shippedRunJob } from './run.js';
+import { runJob as shippedRunJob, ACCOUNTED_ROUND_TYPES } from './run.js';
 
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
@@ -653,8 +653,11 @@ function readGradeSeed(seen) {
  *  4. **Which envelope this spine belongs to** — the `reuse-start` record's own
  *     approval hash, so a resume can prove it is continuing the SAME signed run.
  *
- * **F45 governs the arithmetic here.** A window's spend is summed from `worker-round`
- * ONLY — the same event `runJob`'s own ledger accounts, no other. The selection calls
+ * **F45 governs the arithmetic here.** A window's spend is summed from
+ * `ACCOUNTED_ROUND_TYPES` ONLY — the ledger's OWN list (src/run.js), imported rather
+ * than re-spelled, so a record `runJob` charges and this reader has never heard of
+ * cannot silently widen a resumed run's ceiling by exactly that amount. It was one
+ * event (`worker-round`) until the close itself could spend (`judge-round`). The selection calls
  * are real money and are counted, but as the RUN's cost and never as a try's: a
  * picker's tokens are not a worker's, and attributing them to a try would misstate
  * both the fold and the row. `worker-turn` (native attribution, cost null by design)
@@ -815,7 +818,7 @@ export function readResume(events, { deathAt = null, direct = false, resumableOu
       // a priced worker round outside every try window: nothing in this runner emits
       // one, so it is a writer this reader does not model. It is COUNTED and reported
       // rather than dropped — the blind-instrument class is what F45 is about.
-      if (ev.type === 'worker-round') {
+      if (ACCOUNTED_ROUND_TYPES.includes(ev.type)) {
         strayRounds += 1;
         if (typeof ev.costUsd === 'number' && Number.isFinite(ev.costUsd)) strayCostUsd += ev.costUsd;
         else selectionComplete = false;
@@ -823,8 +826,11 @@ export function readResume(events, { deathAt = null, direct = false, resumableOu
       continue;
     }
     open.seen.push(ev);
-    if (ev.type === 'worker-round') {
-      // the ONE event the live ledger accounts (src/run.js) — same rule, same spelling
+    if (ACCOUNTED_ROUND_TYPES.includes(ev.type)) {
+      // the events the live ledger accounts (src/run.js), read from ITS OWN list rather
+      // than re-spelled here: the fold is what stops a resume silently widening a signed
+      // budget, so a record the ledger charges and this reader does not know about is a
+      // ceiling that grows by exactly the close's own spend (`judge-round`, softgreen)
       if (typeof ev.costUsd === 'number' && Number.isFinite(ev.costUsd)) open.roundsUsd += ev.costUsd;
       else open.roundsComplete = false;
     } else if (ev.type === 'job-end') {

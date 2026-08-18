@@ -168,7 +168,7 @@ test('§1.2 — human-confirms is LIVE in both catalogues, and the two lists sta
   assert.ok(CATALOGUE_LIVE_KINDS.includes('human-confirms'));
   assert.deepEqual([...CATALOGUE_LIVE_KINDS].sort(), [...LIVE_KINDS].sort(),
     'the catalogue offers exactly what the executor implements — both directions');
-  assert.deepEqual([...LOCKED_KINDS], ['judged-floor'], 'judged-floor is slice 2');
+  assert.deepEqual([...LOCKED_KINDS], [], 'judged-floor joined it at softgreen module 2 — nothing ships locked');
   const k = KIND_CATALOGUE['human-confirms'];
   assert.deepEqual([...k.required], ['ask']);
   assert.deepEqual([...k.optional], [], 'no timeoutMs and no env — a human stage spawns nothing');

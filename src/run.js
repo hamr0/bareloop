@@ -19,6 +19,22 @@ import { SMOKE_STORE } from './kinds.js';
 
 /** @typedef {{code: string, path: string, detail?: string}} Red */
 
+/**
+ * THE ROUND RECORDS THE ONE LEDGER SUMS — as data, because two of them now exist
+ * and a hand-spelled condition per record is how a paid call comes to be free.
+ *
+ * `worker-round` is the attempt's own spend, metered per ROUND rather than per
+ * attempt-return (F12: a halted attempt's spend was invisible by 300×).
+ * `judge-round` is the CLOSE's, and it is the first spend a close has ever had:
+ * the judged floor (softgreen) buys a pinned locate call per artifact, and the
+ * budget-identity rule is that a budget funds the attempt PLUS its close. Both
+ * carry the honest `costUsd` — a null lands as `unpriced` and halts, never as $0.
+ *
+ * What is deliberately NOT here: `worker-result` / `worker-plan`, which are
+ * attempt TOTALS of the same rounds and would double-count.
+ */
+export const ACCOUNTED_ROUND_TYPES = Object.freeze(['worker-round', 'judge-round']);
+
 
 /**
  * Known-answer smoke on the primitive the run is about to trust (PRD v1.5 §4,
@@ -77,6 +93,13 @@ async function primitiveSmoke(workdir) {
  *   metered claude-json text provider for the toolless drafter); ignored on every Loop-driven provider
  * @param {(type: string, data?: object) => object} opts.emit spine emitter
  * @param {(tier: string) => any} [opts.providerFor] P: per-step model-tier provider factory (forwarded to the plan flow)
+ * @param {any} [opts.judgeProvider] SOFTGREEN — the provider a JUDGED close stage runs its
+ *   locate call through, wired by the operator and PINNED to `JUDGE_MODEL` (src/judged.js:
+ *   the only tier with established injection resistance upstream). Forwarded to the plan
+ *   flow. It is its own seam and not `provider`/`providerFor`, because the judge tier is
+ *   never a step knob and never agent-selectable; absent, a judged stage instrument-stops as
+ *   a wiring gap rather than grading on whatever binding happened to be at hand. Its spend
+ *   lands on this ledger as `judge-round` (see `ACCOUNTED_ROUND_TYPES`).
  * @param {number} [opts.capRuns] shell-owned iteration cap for the plan flow's
  *   CLOSE-FIX loop (a plan STEP runs under the strike ladder instead)
  * @param {number} [opts.strikeLimit] shell-owned strike ceiling for a plan step's ladder
@@ -151,7 +174,7 @@ async function primitiveSmoke(workdir) {
  *   'interpreter-red' | 'cap-halt' | 'wall-halt' | 'step-stalled' |
  *   'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, layerRoot = false, bridge = null, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null }) {
+export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, layerRoot = false, bridge = null, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null }) {
   // 0. the ledger's counters, declared FIRST so that every job-end — including
   // the pre-token reds below — can state a real figure. An omitted `spentUsd` is
   // not a zero: a consumer reads `undefined` and either crashes or launders it
@@ -265,7 +288,9 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
     // `account` reds the run on ANY unpriced round (a null cost is the honest
     // unknown, never $0 — F6): per-round metering means a partially-unpriced run
     // is caught natively, round by round, with no separate unpricedRounds tally.
-    if (type === 'worker-round') account(/** @type {any} */ (data)?.costUsd);
+    // …and the CLOSE's own rounds sum into the same wallet the moment a close can
+    // spend at all (the judged floor): one ledger, never a second arithmetic.
+    if (ACCOUNTED_ROUND_TYPES.includes(type)) account(/** @type {any} */ (data)?.costUsd);
     // W1: a `stall` is the plan flow announcing it ABANDONED a call and reissued
     // it. The abandoned call's spend is unknowable from here (billed or not,
     // indistinguishable), so from this point the priced sum is a floor no matter
@@ -289,7 +314,7 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // accounts it natively (F12) and the job-end money contract is unchanged.
   {
     const outcome = await runPlan(job, {
-      workdir, provider, nativeProvider, providerFor, emit: meter, capRuns, ...(strikeLimit !== undefined ? { strikeLimit } : {}), closeTimeoutMs, layerRoot, bridge, priorWallMs, resumeSeed, resumeGrades, resumeReplans, resumeBranch, humanRuling,
+      workdir, provider, nativeProvider, providerFor, judgeProvider, emit: meter, capRuns, ...(strikeLimit !== undefined ? { strikeLimit } : {}), closeTimeoutMs, layerRoot, bridge, priorWallMs, resumeSeed, resumeGrades, resumeReplans, resumeBranch, humanRuling,
       remainingUsd: () => Math.min(shellCapUsd, job.budgetUsd - spentUsd),
       isUnpriced: () => unpriced, // F6: let the plan flow bail in-flight, not just after it returns
       spendComplete, // …and let its money-halt readout say whether the remaining it quotes is exact

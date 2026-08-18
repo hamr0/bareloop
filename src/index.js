@@ -31,7 +31,11 @@ export { validateJob, jobSpecHash, checkApproval, checkMenu, CLOSE_TYPES, CLASS_
 export { validatePlan, stageClose, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, WRITE_VERBS } from './plan.js';
 export { snapshotScope, evalExits } from './exits.js';
 export { runPlan } from './planrun.js';
-export { runJob } from './run.js';
+// `ACCOUNTED_ROUND_TYPES` rides with it: the round records the ONE ledger sums.
+// A runner reconstructing a killed run's spend (the resume fold) must add exactly
+// these and nothing else, and a second hand-kept list is how a paid call comes to
+// be free (`judge-round` — the close's own spend — joined at softgreen module 2).
+export { runJob, ACCOUNTED_ROUND_TYPES } from './run.js';
 // Layer 3 — the REUSE registry (bridge-v1) and D3's display half. The registry is a
 // directory of plain files at an OPERATOR-supplied path (never a default location), the
 // load gate is the code half of D2's split, and `renderListing`/`selectionPrompt` are
@@ -93,7 +97,23 @@ export {
   // gate that reads a signer's answer (and refuses an empty one), and the seed
   // exemption ruling 8 states.
   HUMAN_DECISIONS, SEED_EXEMPT_KINDS, normalizeHumanRuling,
+  // SOFTGREEN module 2 — the judged stage's own arbiter-owned bounds. An adopter
+  // wiring `judgeProvider` needs both numbers to reason about what a judged close
+  // can cost: one paid call per artifact, at most one retry each.
+  JUDGE_ATTEMPTS, MAX_JUDGED_PATHS,
 } from './kinds.js';
+// SOFTGREEN module 1 — the judged floor's core. The pieces an adopter (and an
+// integrating UI) genuinely needs: the PIN (`JUDGE_MODEL` — what a wired judge
+// provider must be bound to, and a bump of which forces recalibration), the
+// rulebook a card SELECTS from, the card gate, and the two halves themselves so a
+// calibration harness can grade the whole pipe without running a close.
+// `defaultJudgeLoop` is the one spelling of how this repo drives a judge; the
+// runner reaches it through `runPlan`'s `judgeProvider`, and it is exported so a
+// caller building its own harness does not spell a second one.
+export {
+  JUDGE_MODEL, JUDGE_MAX_TOKENS, JUDGE_RULES, JUDGE_RULE_IDS, LOCATE_AXES, LOCATE_LABEL,
+  validateCard, validateFacts, locatePrompt, runLocate, decide, defaultJudgeLoop,
+} from './judged.js';
 // M2 — what a declaration may SAY, and whether one said it legally. The
 // catalogue and the genre are DATA an integrating UI renders (the kind menu, the
 // guard batteries it must show the user under D5 and cannot let them remove).

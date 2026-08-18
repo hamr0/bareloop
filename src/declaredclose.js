@@ -480,11 +480,16 @@ function translate(r, redact) {
  * @param {(s: string) => string} [redact] the scrub, applied at THIS boundary
  * @param {{timeoutMs?: number, cwd?: string, seedRef?: string,
  *   seedTrees?: any, gapCap?: number, maxBuffer?: number, baselineMode?: 'auto'|'worktree',
- *   humanRuling?: {decision: string, text?: string|null}|null}} [opts]
+ *   humanRuling?: {decision: string, text?: string|null}|null,
+ *   judgeLoop?: ((o: {system: string}) => any)|null,
+ *   onJudgeCost?: ((c: any) => void)|null}} [opts]
  * @returns {Promise<any>}
  */
 export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
-  const { timeoutMs, cwd, seedRef, seedTrees: shared, gapCap, maxBuffer, baselineMode, humanRuling = null } = opts;
+  const {
+    timeoutMs, cwd, seedRef, seedTrees: shared, gapCap, maxBuffer, baselineMode, humanRuling = null,
+    judgeLoop = null, onJudgeCost = null,
+  } = opts;
   if (!isNonEmptyString(cwd) || !isNonEmptyString(seedRef)) {
     // Refuse rather than guess. A declared close measures against a SEED; a
     // missing one is the close unable to run, not a red about the worker.
@@ -513,6 +518,14 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
     // human stage reads the absence as "nobody has answered yet", which is the
     // whole of what a pause means.
     humanRuling,
+    // THE PAID SEAM and THE METER, both operator territory and both absent on
+    // every mechanical close. A judged stage with no seam STOPS as a wiring gap
+    // rather than falling back to some other model (M1 owns no provider and the
+    // judge tier is pinned), and every locate call it does buy is reported OUT
+    // through the meter so the run's ONE ledger can see it — a close has cost $0
+    // until this kind, and a budget must fund the attempt PLUS its close.
+    judgeLoop,
+    onJudgeCost,
     seedTrees,
   };
   try {

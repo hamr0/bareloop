@@ -260,10 +260,26 @@ test('declarationSchema: one branch per LIVE kind, required derived from the cat
 });
 
 test('declarationSchema: a LOCKED kind is INEXPRESSIBLE — no branch, no mention', () => {
-  const schema = declarationSchema();
-  const text = JSON.stringify(schema);
-  assert.ok(LOCKED_KINDS.length > 0, 'the catalogue must still carry locked entries');
-  for (const k of LOCKED_KINDS) assert.ok(!text.includes(k), `${k} must not appear anywhere in the tool schema`);
+  // v1's catalogue carries NO locked entry any more (`judged-floor` went live at
+  // softgreen module 2), so the rule is watched against an INJECTED locked
+  // catalogue — the same move the ceiling tests make. A vacuous loop over an empty
+  // LOCKED_KINDS would assert nothing while reading like a guard.
+  assert.deepEqual([...LOCKED_KINDS], [], 'nothing shipped is locked today — the rule is tested by injection');
+  // the injected subject is a locked kind with no parameters of its own —
+  // `schemaCoverage` reads the seam BOTH ways, so locking a live kind would orphan
+  // its parameter schemas and red the build rather than test the rule
+  const locked = {
+    ...KIND_CATALOGUE,
+    'harness-loop': {
+      verdictClass: 'green', required: [], optional: [], pathParams: [], locked: true,
+      shape: 'LOCKED — not available in v1', asserts: 'declaring it is recorded demand; it will not run.',
+    },
+  };
+  const text = JSON.stringify(declarationSchema(locked));
+  assert.ok(!text.includes('harness-loop'), 'a locked kind must not appear anywhere in the tool schema');
+  // …and the live one IS expressible, with the catalogue's own parameters
+  const live = JSON.stringify(declarationSchema());
+  assert.ok(live.includes('judged-floor') && live.includes('card') && live.includes('paths'));
 });
 
 test('declarationSchema: a note is a NON-EMPTY string — an empty one is inexpressible at the source, not rejected after', () => {
@@ -1141,14 +1157,18 @@ test('authorClose: a last revision that REGRESSES keeps the last accepted close 
 
 test('the text fallback parses a fenced declaration and is the ONLY locked-kind demand channel', async () => {
   const decl = goodDeclaration();
-  // the exemplar is the kind still LOCKED: `human-confirms` went live at N4
-  // slice 1, so the demand channel is now tested with `judged-floor` (slice 2)
+  // The exemplar is an INJECTED locked kind: `human-confirms` went live at N4
+  // slice 1 and `judged-floor` at softgreen module 2, so v1's catalogue has no
+  // locked entry left to demand. The CHANNEL is what is under test, and it must
+  // keep a real subject rather than a vacuous one — the day a kind is locked
+  // again (harness-loop is the named candidate) this is the path it arrives on.
   decl.stages.push({ name: 'judged-check', kind: 'judged-floor', params: {} });
   const generate = async () => ({
     text: `\`\`\`json\n${JSON.stringify(decl)}\n\`\`\``,
     error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 },
   });
-  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: scriptSeedRead().fn, structuredMode: 'text' });
+  const catalogue = { ...KIND_CATALOGUE, 'judged-floor': { ...KIND_CATALOGUE['judged-floor'], locked: true } };
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: scriptSeedRead().fn, structuredMode: 'text', catalogue });
   // the demand IS counted here, because text mode can express what the schema cannot
   const locked = r.iterations[0].validation.reds.filter((/** @type {any} */ x) => x.code === 'locked-kind');
   assert.equal(locked.length, 1);

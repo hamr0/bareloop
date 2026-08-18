@@ -238,8 +238,11 @@ test('D13 REGRESSION: a close-authoring refusal files under bareloop, and its su
   assert.ok(LEDGER_CLASSES.includes('request-red'));
 });
 
-test('a locked KIND is counted demand too — the tool-mode schema makes it unsayable, so the interview layer carries it', () => {
-  for (const kind of ['judged-floor', 'human-confirms']) {
+test('a kind we do not run is counted demand too — the tool-mode schema makes it unsayable, so the interview layer carries it', () => {
+  // `human-confirms` (N4 slice 1) and `judged-floor` (softgreen module 2) both went
+  // LIVE, so the demand this channel carries today is for kinds the catalogue does
+  // not have at all — `harness-loop` is the named one (TESTGEN's out-of-v1 need).
+  for (const kind of ['harness-loop', 'doc-coverage']) {
     const r = refuseLockedKind(kind);
     assert.equal(r.red.lib, REFUSAL_LIB);
     assert.equal(r.red.verb, kind);
@@ -323,14 +326,19 @@ test('a malformed declaration reds THROUGH validateJob, pathed under closeDecl',
   assert.ok(r.reds.some((x) => x.code === 'unknown-kind' && x.path.startsWith('closeDecl.')), JSON.stringify(r.reds));
 });
 
-test('a LOCKED kind in a declaration is a distinct counted red, never an unknown-kind typo', () => {
+test('the LIVE judged kind under a green pick reds THROUGH validateJob as a class-ceiling, never a silent upgrade', () => {
+  // this WAS the locked-kind red until softgreen module 2 unlocked the kind. The
+  // refusal did not disappear, it moved axis: the kind runs, the CLASS it renders is
+  // still not admitted, and a judgment ruler under a machine-checkable promise is
+  // exactly the fake-hard verdict the ceiling refuses.
   const bad = DECL();
-  bad.stages[1] = { name: 'judged', kind: 'judged-floor', params: {} };
+  bad.stages[1] = { name: 'judged', kind: 'judged-floor', params: { card: { items: [{ rule: 'has-doc', text: 'documented' }] }, paths: ['src/email.js'] } };
   const r = validateJob(assembleSpec(SPEC_DRAFT, { closeDecl: bad, verdictType: 'green' }));
-  const locked = r.reds.find((x) => x.code === 'locked-kind');
-  assert.ok(locked, JSON.stringify(r.reds.map((x) => x.code)));
-  assert.equal(locked.lib, 'bareloop');
-  assert.equal(locked.verb, 'judged-floor');
+  const ceiling = r.reds.find((x) => x.code === 'class-ceiling');
+  assert.ok(ceiling, JSON.stringify(r.reds.map((x) => x.code)));
+  assert.equal(ceiling.kind, 'judged-floor');
+  assert.equal(ceiling.kindClass, 'soft-green');
+  assert.equal(r.reds.find((x) => x.code === 'locked-kind'), undefined);
 });
 
 // ── 4. D6 — the hash ─────────────────────────────────────────────────────────

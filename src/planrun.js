@@ -32,6 +32,7 @@ import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, str
 import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
 import { validateBridge, loadGate } from './bridges.js';
 import { extractArtifact } from './text.js';
+import { defaultJudgeLoop } from './judged.js';
 import { createClock, isWallTimeout } from './clock.js';
 import { isDeclaredClose, runDeclaredStages, validateCloseDecl, closeGrade, HUMAN_PAUSE, HITL_PAUSE, HITL_DECISION_RED } from './declaredclose.js';
 import {
@@ -462,6 +463,13 @@ ${scoutBlob || '(no scout notes)'}`;
  *   `false` → the drafter has no tools, so a native session would report NO cost — return a
  *   metered claude-json TEXT provider (`--output-format json`, `parse:'claude-json'`) instead,
  *   so its spend is never invisible. The Loop path (`anthropic-api`) never touches this.
+ * @param {any} [opts.judgeProvider] softgreen — the provider a JUDGED close stage runs its
+ *   locate call through, pinned by the operator to `JUDGE_MODEL` (src/judged.js). Separate
+ *   from `provider`/`providerFor` on purpose: the judge tier is not a step knob and never
+ *   agent-selectable, and the worker's binding is not a legal stand-in for it. Absent is not
+ *   a fall-back — a judged stage with no seam instrument-STOPS as a wiring gap, the same
+ *   answer a native job with no `nativeProvider` gets. A close with no judged stage never
+ *   reads it.
  * @param {(type: string, data?: object) => object} opts.emit spine emitter (the caller's METERED emit)
  * @param {() => number} opts.remainingUsd the one wallet: what is left of the signed budget right now
  * @param {() => boolean} [opts.isUnpriced] has any round come back with a null cost? (F6) — the
@@ -606,7 +614,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   'branch-red' | 'cap-halt' | 'wall-halt' | 'provider-red' | 'interpreter-red' |
  *   'step-stalled' | 'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null }) {
   workdir = resolve(workdir);
   // ONE spelling of the redaction, housed next to the inventory it reads
   // (src/validate.js) — the same helper the isolate verbs scrub the litectx store
@@ -927,6 +935,19 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // arbiter-owned fact reaches a stage: through the ctx, never through the
       // declaration. A command close has no human stage to hand it to.
       humanRuling: liveRuling,
+      // SOFTGREEN — the judged stage's paid seam and its meter, the same way: through
+      // the ctx, never the declaration. The seam is null unless the operator wired a
+      // pinned judge provider (a judged stage then STOPS as a wiring gap rather than
+      // grading on the worker's model). The meter emits a distinct `judge-round`
+      // record carrying the call's own honest cost — the SAME emit the worker rounds
+      // ride, so `runJob`'s ONE ledger accounts a close's spend exactly as it accounts
+      // an attempt's (a budget funds the attempt PLUS its close), and a null cost trips
+      // the same F6 pricing halt rather than being laundered into $0.
+      judgeLoop: judgeProvider ? (/** @type {{system: string}} */ o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system }) : null,
+      onJudgeCost: (/** @type {any} */ c) => emit('judge-round', {
+        stage: c.stage, path: c.path, attempt: c.attempt, label: c.label, model: c.model,
+        costUsd: c.costUsd, unpricedRounds: c.unpricedRounds,
+      }),
     })
     : runStages(stages, scrub, closeOpts));
   /** @type {string|undefined} the stage that rendered the LAST close verdict (Layer R's red-set source) */

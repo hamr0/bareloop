@@ -530,11 +530,37 @@ no model found, it moves no seed number, and a declaration that authors it itsel
 `genre-owned-env`.
 
 **The kind catalogue** (`KIND_CATALOGUE`, and it IS the whole vocabulary): `command-exit`,
-`count-not-worse`, `pattern-absent-in-diff`, `files-changed` and `human-confirms` are live;
-`judged-floor` is NAMED BUT LOCKED (`verdictClass: 'soft-green'`), so declaring it is a counted
-`locked-kind` red rather than an unknown-kind typo; `harness-loop` (TESTGEN) is ABSENT from v1
-entirely. In tool mode a locked kind is INEXPRESSIBLE — the schema carries one branch per live
-kind — so that demand arrives through the interview layer instead (`refuseLockedKind(kind)`).
+`count-not-worse`, `pattern-absent-in-diff`, `files-changed`, `human-confirms` and
+`judged-floor` are all live — `LOCKED_KINDS` is EMPTY today; `harness-loop` (TESTGEN) is ABSENT
+from v1 entirely (an unknown-kind typo, never counted demand). The locked-kind machinery is
+unchanged and is what a future entry arrives on: in tool mode a locked kind is INEXPRESSIBLE —
+the schema carries one branch per live kind — so that demand arrives through the interview
+layer instead (`refuseLockedKind(kind)`), whose "named but locked" wording is currently
+unreachable for exactly the reason above.
+
+**`judged-floor` is the one kind that BUYS its measurement** (softgreen module 2), and it is
+CLASS-GATED rather than locked: it renders a `soft-green` verdict, `soft-green` is still a
+LOCKED verdict class, so a real declaration naming it reds `class-ceiling` under a green pick
+and `class-battery-locked` under a soft-green one. The kind runs; no signable spec can reach it
+until the class is admitted. Its parameters are `card` — the signer's rubric as ENUMERATED
+items, where `rule` SELECTS from the arbiter's own rulebook (`JUDGE_RULES` / `JUDGE_RULE_IDS`,
+so a rule we do not implement is inexpressible) and `text` is the signer's words, which explain
+a red and never decide one — and `paths`, the AUTHORITATIVE artifacts, read off the seed listing
+like every other path and bounded at `MAX_JUDGED_PATHS` (one paid call each). It spawns nothing,
+so it takes no `cmd`, no `timeoutMs` and no `env`; it is `offer: false` BY LAW
+(`NEVER_OFFERED_KINDS` — a paid judge is never an in-run ruler); and it SKIPS the seed-verdict
+read (ruling 8) as a recorded `skipped` row.
+
+**Wiring a judged close, and what it costs.** The judge is PINNED (`JUDGE_MODEL`, exported) and
+is never a step knob: the runner supplies `runJob({ judgeProvider })` — its own seam, not
+`provider`/`providerFor` — and a judged stage with none instrument-STOPS as a wiring gap rather
+than grading on whatever binding was at hand. Each locate call is metered per call and emitted
+as a distinct `judge-round` spine record, which `runJob`'s ONE ledger accounts exactly like a
+`worker-round` (`ACCOUNTED_ROUND_TYPES`, and `readResume`'s fold reads that same list, so a
+resumed leg cannot silently widen a signed budget by the close's own spend). A budget funds the
+attempt PLUS its close. Unpriced is never free: a null cost is a `pricing-red` stop that is
+never retried, and the ladder is otherwise ONE retry (`JUDGE_ATTEMPTS`) — after that a broken
+judge is an instrument stop, never a red about the tree.
 
 **`human-confirms` is the one kind that measures NOTHING** (N4 slice 1). Its whole parameter
 surface is `ask` — the plain question the signer answers — so it cannot spawn, cannot be

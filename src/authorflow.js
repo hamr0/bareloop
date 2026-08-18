@@ -75,7 +75,8 @@
 import { createRequire } from 'node:module';
 import { realpathSync } from 'node:fs';
 import { join, relative, isAbsolute } from 'node:path';
-import { seedRead as runSeedReadStages, makeSeedTrees, AGGREGATES, SIGNS, MAX_TERMS } from './kinds.js';
+import { seedRead as runSeedReadStages, makeSeedTrees, AGGREGATES, SIGNS, MAX_TERMS, MAX_JUDGED_PATHS } from './kinds.js';
+import { JUDGE_RULE_IDS } from './judged.js';
 import {
   KIND_CATALOGUE, MAX_STAGES, DIRECTIONS, BASELINES,
   GENRE_LANGUAGES, TYPES_GENRE_TEMPLATE, classGuards, genreEnv, genreOwnedEnvNames, genreInstruments,
@@ -408,6 +409,39 @@ export const PARAM_SCHEMAS = Object.freeze({
   extensions: { type: 'array', minItems: 1, items: { type: 'string' } },
   allowPrefixes: { type: 'array', minItems: 1, items: { type: 'string' } },
   requireNonEmpty: { const: true },
+  // SOFTGREEN's two. `rule` is an ENUM off the judge's own rulebook — where only a
+  // closed set can satisfy a field, the illegal value is made inexpressible rather
+  // than rejected after the fact (`check-passes(name)`, again) — and `text` is the
+  // only free string, carrying the signer's words so a red can be explained in them.
+  card: {
+    type: 'object',
+    description: 'the rubric, as enumerated items: one line per thing the person actually looks for, in the order '
+      + 'they look for them. The rule is SELECTED from the arbiter\'s own rulebook; the text is theirs.',
+    properties: {
+      items: {
+        type: 'array',
+        minItems: 1,
+        items: {
+          type: 'object',
+          properties: {
+            rule: { enum: [...JUDGE_RULE_IDS], description: 'which owned rule this line asserts' },
+            text: { type: 'string', minLength: 1, description: 'what this line means, in the person\'s own words' },
+          },
+          required: ['rule', 'text'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['items'],
+    additionalProperties: false,
+  },
+  paths: {
+    type: 'array',
+    minItems: 1,
+    maxItems: MAX_JUDGED_PATHS,
+    items: { type: 'string' },
+    description: 'the AUTHORITATIVE artifacts to judge, repository-relative, read off the listing. One paid call each.',
+  },
   ask: {
     type: 'string',
     minLength: 1,
