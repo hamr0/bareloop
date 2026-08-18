@@ -5,6 +5,34 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Added (2026-08-18 — the read shim, flag-gated OFF)
+
+- **`src/readshim.js` — a per-worker delivery ledger over the read tool**, off unless the new
+  `readShim` flag is set on `runJob`/`runPlan`. A read over 24KB (`READ_SHIM_CAP`) delivers its
+  next unseen slice plus a trusted steer at `ctx_recall`/`ctx_get`; a re-read of a file the
+  worker holds WHOLE and unchanged returns a short pointer instead of the bytes; a re-read of
+  a file it holds only PART of returns the next slice, never a pointer; any content change
+  re-delivers from the start. Measured on a $0 replay of 1,844 real `shell_read` actions from
+  143 archived gate audits: 48% of reads re-read unchanged bytes, and cap+pointer keyed on what
+  was DELIVERED saved 65.6% of read payload with **zero** untruthful responses — where the
+  naive path+hash key saved 8.2 points more by telling **250 lies**, median 73,348 bytes hidden
+  each (BA-17 read-blinding, reproduced).
+- **G1 at the validation gate (`read-blind`)**: under the shim, a plan step granting `read` must
+  also grant `recall` and `get`. Capping a worker with no retrieval verb is BA-17 on purpose —
+  the cap is what makes the pair mandatory. Stated in the drafting prompt as well as enforced
+  (the mailbox precedent).
+- **One flag, one unit, default OFF** (the `layerRoot` precedent, F41): cap + pointer +
+  next-unseen-slice + G1 all ride `readShim`, and with it off every observable — validator reds,
+  persona, delivered bytes — is byte-identical to the pre-shim run. The frozen Phase-2 A0 arm has
+  to be exactly today, and a guard firing under a disabled shim would make the baseline a
+  treatment arm. The default-flip is not in this change: it waits on a paid contrast.
+- On the native surface the shim REPLACES the `NATIVE_READ_CAP` wrapper rather than layering over
+  it (both bound the same seam at the same 24KB, and a shim outside the native wrapper would
+  ledger already-truncated text as a whole file — the exact lie it exists to prevent). L2
+  (diff-on-change) is deliberately not built: it never fired on the real corpus.
+
 ## [0.12.0] — 2026-08-23
 
 ### Added (N4 slice 2 — the softgreen rung: a close that JUDGES, and a signer who has the last word)

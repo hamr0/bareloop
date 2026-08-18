@@ -156,6 +156,13 @@ async function primitiveSmoke(workdir) {
  *   collision walk would mint a `-2` beside the work the resume exists to continue. The
  *   fold's precedent exactly: the chain's state is DECLARED, never re-derived. Forwarded
  *   verbatim to the plan flow; absent is the cold path.
+ * @param {boolean} [opts.readShim=false] THE READ SHIM (src/readshim.js) — the capped,
+ *        pointer-backed read seam plus its G1 admission rule, threaded to the plan flow
+ *        as ONE flag. Defaults OFF, and OFF is byte-identical to the pre-shim run in
+ *        every observable (G1 included): the frozen A0 baseline arm has to be exactly
+ *        today, so a guard firing under a disabled shim would make the baseline a
+ *        treatment arm. `true` is the experimental arm; the default-flip belongs to a
+ *        paid contrast nobody has approved yet (the `layerRoot` precedent, F41).
  * @param {boolean} [opts.layerRoot=false] Layer R (within-run ratchet) — shell
  *        territory, threaded to the plan flow. Defaults OFF
  *        (decided 2026-07-21): fixation is extinct on every current job (F41), so
@@ -187,7 +194,7 @@ async function primitiveSmoke(workdir) {
  *   'interpreter-red' | 'cap-halt' | 'wall-halt' | 'step-stalled' |
  *   'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, layerRoot = false, bridge = null, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, reviewDoor = null, doorRerun = null }) {
+export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, layerRoot = false, readShim = false, bridge = null, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, reviewDoor = null, doorRerun = null }) {
   // 0. the ledger's counters, declared FIRST so that every job-end — including
   // the pre-token reds below — can state a real figure. An omitted `spentUsd` is
   // not a zero: a consumer reads `undefined` and either crashes or launders it
@@ -356,7 +363,7 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // accounts it natively (F12) and the job-end money contract is unchanged.
   {
     const outcome = await runPlan(job, {
-      workdir, provider, nativeProvider, providerFor, judgeProvider, emit: meter, capRuns, ...(strikeLimit !== undefined ? { strikeLimit } : {}), closeTimeoutMs, layerRoot, bridge, priorWallMs: chainWallMs, resumeSeed, resumeGrades, resumeReplans, resumeBranch, humanRuling, heldRuling, reviewDoor, doorRerun, priorSpentUsd: chainFoldUsd,
+      workdir, provider, nativeProvider, providerFor, judgeProvider, emit: meter, capRuns, ...(strikeLimit !== undefined ? { strikeLimit } : {}), closeTimeoutMs, layerRoot, readShim, bridge, priorWallMs: chainWallMs, resumeSeed, resumeGrades, resumeReplans, resumeBranch, humanRuling, heldRuling, reviewDoor, doorRerun, priorSpentUsd: chainFoldUsd,
       remainingUsd: () => Math.min(shellCapUsd, job.budgetUsd - spentUsd),
       isUnpriced: () => unpriced, // F6: let the plan flow bail in-flight, not just after it returns
       spendComplete, // …and let its money-halt readout say whether the remaining it quotes is exact

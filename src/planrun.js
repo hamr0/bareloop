@@ -29,6 +29,7 @@ import { createLadder, STRIKE_LIMIT } from './ladder.js';
 import { createTrend, FIX_STRIKE_LIMIT } from './trend.js';
 import { TOOL_MENU, STORE_VERBS, checkMenu } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, strategyFor } from './tools.js';
+import { wrapReadTool, READ_SHIM_STRATEGY } from './readshim.js';
 import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
 import { validateBridge, loadGate, newestEligibleVersion, reuseEligibility, quarantinesCredit, QUARANTINED_CODE } from './bridges.js';
 import { extractArtifact } from './text.js';
@@ -374,8 +375,11 @@ export function boundedNote(bounded, rounds) {
  *   REQUIREMENT the plan must meet, never a replacement for the goal: the signed goal and
  *   the signed close are unchanged, and what the person added is what the machine could
  *   not see.
+ * @param {boolean} [readShim] is the read shim ON? Then G1 is STATED as well as enforced
+ *   (the mailbox precedent again: a law only the validator knows costs a redraft per
+ *   draft). False renders byte-identically to the pre-shim prompt.
  */
-export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, startingDraft = null, checkFacts = {}, doorNote = null) {
+export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, startingDraft = null, checkFacts = {}, doorNote = null, readShim = false) {
   const scopeMenu = Array.isArray(scopes) && scopes.length ? scopes : legalScopes(job.writeScope ?? []);
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
   // The shape-lottery laws, stated where the check menu is offered (the mailbox
@@ -399,6 +403,13 @@ export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes,
   // (`?? []`: a close naming no command stages nothing, so it offers nothing)
   const closeStages = closeStagesOf(job) ?? [];
   const checkNames = checkMenu(closeStages).map((m) => m.name);
+  // G1, stated where the grant is offered. Only under the shim — with it off the
+  // rule does not exist and neither does this sentence (the A0 render).
+  const readShimLaw = readShim
+    ? `\n  A step granting "read" must also grant "recall" and "get": a read of a large file
+  returns only its next 24KB, and those two verbs are the only way to read a symbol in
+  full. A step that grants "read" without both is rejected.`
+    : '';
   const doc = `DRAFT-PLAN
 You are planning how to accomplish a goal in a repository, as an ordered list of bounded
 steps (schema "plan-v1"). The plan is pure declarative JSON validated by a strict schema;
@@ -409,7 +420,7 @@ Shape: { "schema": "plan-v1", "steps": [ ... 1..${MAX_PLAN_STEPS} steps ... ] } 
 strictly in array order. Each step (no other fields exist):
 - "id": kebab-case slug, unique
 - "action": the step's task, precise enough for a worker that sees ONLY this step
-- "tools": non-empty unique subset of ${JSON.stringify(ceiling)} (read/grep are the worker's ONLY way to see the tree — there is no shell; write/edit change the tree; recall/get/impact/related/recent search and navigate the repository index; compress/peek read cheaply; stash/remember/forget park and record notes across steps)
+- "tools": non-empty unique subset of ${JSON.stringify(ceiling)} (read/grep are the worker's ONLY way to see the tree — there is no shell; write/edit change the tree; recall/get/impact/related/recent search and navigate the repository index; compress/peek read cheaply; stash/remember/forget park and record notes across steps)${readShimLaw}
 - "rounds": integer 1..${maxStepRounds} — the step's per-attempt tool-round bound
 - "target": the step's deliverable path (REQUIRED when tools include write/edit), inside ${JSON.stringify(job.writeScope)}
 - "scope" (optional): narrow this step's WRITE fence — copy one value from the offered scopes below.
@@ -518,6 +529,13 @@ ${scoutBlob || '(no scout notes)'}`;
  * @param {number} [opts.scoutRounds] the read-only survey's round bound (F59: the LAST round is
  *   reserved — a scout that spends every round on tools gets one toolless round to write its
  *   survey, because the bound halts it mid-tool-use and text is its only deliverable)
+ * @param {boolean} [opts.readShim=false] THE READ SHIM (src/readshim.js) — cap, pointer,
+ *   next-unseen-slice and the G1 admission rule, gated as ONE unit and OFF by default.
+ *   OFF is byte-identical to the pre-shim run in every observable, G1 included: the frozen
+ *   A0 baseline arm must be exactly today's behaviour, and a guard firing under a disabled
+ *   shim would quietly make the baseline a treatment arm. `true` is the experimental arm;
+ *   the default-flip waits on a paid contrast that has not been approved (the `layerRoot`
+ *   precedent, F41 — an unproven lever ships OFF and earns its default).
  * @param {boolean} [opts.layerRoot=false] Layer R — the within-run ratchet (src/root.js),
  *   scoped PER STEP's ralph loop (each micro-wheel is the Layer-1 atom). Shell-assembled from
  *   the step's own books: per-attempt write-sets from the F32 workerWrites audit (teed for
@@ -667,7 +685,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   'branch-red' | 'cap-halt' | 'wall-halt' | 'provider-red' | 'interpreter-red' |
  *   'step-stalled' | 'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, readShim = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null }) {
   workdir = resolve(workdir);
   // ONE spelling of the redaction, housed next to the inventory it reads
   // (src/validate.js) — the same helper the isolate verbs scrub the litectx store
@@ -1855,11 +1873,28 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     };
     const grantedNames = new Set(granted.map((v) => /** @type {Record<string, string>} */ (TOOL_BY_VERB)[v]));
     const shell = createShellTools().tools.filter((/** @type {{name: string}} */ t) => grantedNames.has(t.name));
+    // THE READ SHIM (flag-gated, default OFF): a per-worker delivery ledger over the
+    // read tool — cap at READ_SHIM_CAP, pointer only once the CURRENT content has been
+    // delivered whole, next-unseen-slice otherwise. Same seam and the same per-worker
+    // lifetime argument as the native cap below: `createShellTools()` above builds fresh
+    // tool objects for THIS worker, so the ledger dies with the worker, which is the
+    // reset the archive replay segmented on.
+    //
+    // COMPOSITION ON NATIVE, decided: the shim REPLACES the native wrapper, never layers
+    // over it. Both bound the same seam at the same 24 KB (READ_SHIM_CAP === NATIVE_READ_CAP,
+    // deliberately one number) and both hand back a trusted steer at the same two verbs, so
+    // stacking them would truncate twice and append two notices — and worse, the shim on the
+    // OUTSIDE would ledger the native wrapper's already-truncated text as the whole file and
+    // then answer a re-read with a pointer, which is precisely the lie this module exists to
+    // prevent. The shim is the strictly stronger wrapper (it keeps the CLI display bound AND
+    // continues where the worker left off), so with the flag ON it takes the seam alone.
+    const rdTool = shell.find((/** @type {{name: string}} */ t) => t.name === TOOL_BY_VERB.read);
+    if (readShim && rdTool) wrapReadTool(rdTool);
     // F48: on native, bound shell_read below the CLI's tool-result display cap and hand back a
     // TRUSTED truncation notice steering to ctx_get — the CLI's own truncation blinds the worker
     // (spilled + injection-flagged). Fresh tool objects per mkWorker call, so mutating is per-worker.
-    if (native) {
-      const rd = shell.find((/** @type {{name: string}} */ t) => t.name === TOOL_BY_VERB.read);
+    if (native && !readShim) {
+      const rd = rdTool;
       if (rd) {
         const inner = rd.execute;
         rd.execute = async (/** @type {any} */ args) => {
@@ -1888,8 +1923,12 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // isolate/retrieval paragraphs named other components' verbs outright. The
     // assembly lives in tools.js beside the prose it composes, and is asserted
     // byte-identical to the full-component paragraphs on a full grant.
+    // One bound, one strategy line: with the shim on it OWNS the read seam on both
+    // surfaces (it replaced the native wrapper above), so it speaks for the cap and the
+    // native line stands down — two notices describing one bound is how a worker learns
+    // to distrust both. Off, this renders exactly as before.
     const system = PERSONA_TOOLS + strategyFor(granted)
-      + (native && grantedNames.has(TOOL_BY_VERB.read) ? NATIVE_READ_STRATEGY : '');
+      + (grantedNames.has(TOOL_BY_VERB.read) && (readShim || native) ? (readShim ? READ_SHIM_STRATEGY : NATIVE_READ_STRATEGY) : '');
     /** @param {any} u @returns {{inputTokens: number, outputTokens: number, cacheReadTokens: number, cacheCreationTokens: number}} */
     const usageOf = (u) => ({ inputTokens: u?.inputTokens ?? 0, outputTokens: u?.outputTokens ?? 0, cacheReadTokens: u?.cacheReadTokens ?? 0, cacheCreationTokens: u?.cacheCreationTokens ?? 0 });
 
@@ -2276,7 +2315,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     };
     const draftPlan = async (/** @type {any[]|null} */ reds) => {
       drafter.setIteration(reds ? 'redraft' : 'draft');
-      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials, starting, checkFacts, doorWords?.text ?? null), []);
+      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials, starting, checkFacts, doorWords?.text ?? null, readShim), []);
       return extractArtifact(r.text).code ?? '';
     };
     // Scrubbed HERE, once, before any consumer reads them — the judge() precedent
@@ -2289,7 +2328,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // emit sites: scrubbing here makes the leak inexpressible, scrubbing each
     // consumer makes it something the next consumer has to remember.
     const validate = (/** @type {string} */ t) => {
-      const v = validatePlan(t, { job, maxStepRounds, scopes: scopeMenu, ...checkFacts });
+      const v = validatePlan(t, { job, maxStepRounds, scopes: scopeMenu, readShim, ...checkFacts });
       return { ...v, reds: v.reds.map((r) => (typeof r.detail === 'string' ? { ...r, detail: scrub(r.detail) } : r)) };
     };
     let text = await draftPlan(null);
@@ -2320,7 +2359,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // burn the very work resume exists to keep (hamr: "why would i want to waste
     // more money on something i already started"). Omission = rules inactive, by
     // the validator's contract.
-    const pv = validatePlan(resumeSeed.plan, { job, maxStepRounds, scopes: scopeMenu });
+    // `readShim` IS passed, unlike the shape-lottery opts above: G1 is not a drafting
+    // law about plan quality but a precondition of the machinery that is about to run —
+    // a capped worker with no retrieval verb is blind, whether its plan is fresh or
+    // reloaded. A plan drafted under the shim already passed it, so the only way this
+    // refuses paid work is an operator flipping the flag between legs, which is a spec
+    // change deserving the refusal. Off, it is inert, and this line renders as before.
+    const pv = validatePlan(resumeSeed.plan, { job, maxStepRounds, scopes: scopeMenu, readShim });
     // scrubbed at the boundary for `validate()`'s own reason: a `parse-error` detail
     // quotes a window of the SOURCE, and the spine is append-only forever
     const reds = pv.reds.map((r) => (typeof r.detail === 'string' ? { ...r, detail: scrub(r.detail) } : r));

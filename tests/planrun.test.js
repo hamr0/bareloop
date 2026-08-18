@@ -4637,3 +4637,104 @@ test('the FIX loop is write-capable too, and it works on the same branch the ste
   assert.equal(currentBranch(wd), 'bareloop-plan-patient');
   assert.deepEqual(localBranches(wd), ['bareloop-plan-patient', 'main']);
 });
+
+// ── THE READ SHIM at its seam (flag-gated, default OFF) ────────────────────
+//
+// The shim wraps the same `rd.execute` the native cap wraps, and these two tests
+// drive it through the REAL runner: real shell tools, real Loop, real gate, the
+// scripted provider as the one legitimate seam. What the worker was actually
+// handed is observable — `scriptedProvider` records the last message of every
+// call, and after a tool round that message IS the tool result.
+const BIG_BODY = Array.from({ length: 60 }, (_, i) => `BLOCK-${String(i).padStart(4, '0')} ${'x'.repeat(982)}\n`).join('');
+
+/** the plan the two arms share: one step that reads the big file twice, then writes */
+const READ_TWICE = (wd) => JSON.stringify({
+  schema: 'plan-v1',
+  steps: [{
+    id: 'read-then-write', action: 'Read src/big.txt, then write tests/test_x.mjs.',
+    tools: ['read', 'recall', 'get', 'write'], rounds: 6, target: 'tests/test_x.mjs',
+    exit: [{ type: 'tree-changed', scope: 'tests/**' }],
+  }],
+});
+
+const readTwiceProvider = (wd) => scriptedProvider([
+  { text: 'src/big.txt is large; tests/ is empty.' },                            // scout
+  { text: READ_TWICE(wd) },                                                       // plan draft
+  { toolCalls: [tcall('t1', 'shell_read', { path: join(wd, 'src', 'big.txt') })] },
+  { toolCalls: [tcall('t2', 'shell_read', { path: join(wd, 'src', 'big.txt') })] },
+  { toolCalls: [tcall('t3', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+  { text: 'done' },
+]);
+
+test('read shim ON: the second read of an unchanged big file is the NEXT UNSEEN SLICE, at the real seam', async (t) => {
+  const wd = makePatient(t);
+  writeFileSync(join(wd, 'src', 'big.txt'), BIG_BODY);
+  const jv = validateJob(JOB(wd, { tools: ['read', 'recall', 'get', 'write', 'edit'] }));
+  assert.deepEqual(jv.reds, []);
+  const provider = readTwiceProvider(wd);
+  const { events, emit } = collector();
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 3, readShim: true, remainingUsd: () => 1.5 });
+  assert.equal(outcome, 'green');
+
+  // calls: [scout, plan, step-round-1, after-read-1, after-read-2, after-write]
+  const afterFirst = JSON.stringify(provider.calls[3]);
+  const afterSecond = JSON.stringify(provider.calls[4]);
+  assert.ok(afterFirst.includes('BLOCK-0000'), 'the first read starts the file');
+  assert.ok(!afterFirst.includes('BLOCK-0030'), 'and the cap really bound it');
+  assert.ok(!/unchanged/.test(afterSecond), 'a partly-seen file is never answered with a pointer (the 250-lie design)');
+  assert.ok(afterSecond.includes('BLOCK-0025'), 'the second read carries bytes the worker had not seen');
+  assert.match(JSON.stringify(provider.systems.at(-1) ?? ''), /READ LIMIT/, 'and the worker was told the bound exists');
+});
+
+test('read shim OFF (the default): the same run delivers the tool\'s own bytes, twice — the A0 guarantee', async (t) => {
+  const wd = makePatient(t);
+  writeFileSync(join(wd, 'src', 'big.txt'), BIG_BODY);
+  const jv = validateJob(JOB(wd, { tools: ['read', 'recall', 'get', 'write', 'edit'] }));
+  const provider = readTwiceProvider(wd);
+  const { events, emit } = collector();
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 3, remainingUsd: () => 1.5 });
+  assert.equal(outcome, 'green');
+
+  for (const i of [3, 4]) {
+    const shown = JSON.stringify(provider.calls[i]);
+    assert.ok(shown.includes('BLOCK-0000') && shown.includes('BLOCK-0059'), `call ${i}: the whole file, both times`);
+    assert.ok(!shown.includes('bareloop:'), `call ${i}: the shim left no mark of any kind`);
+  }
+  assert.ok(!/READ LIMIT/.test(JSON.stringify(provider.systems)), 'and no strategy line was added to the persona');
+});
+
+test('read shim ON, NATIVE surface: the shim OWNS the seam — one cap, one notice, and a continuation on the re-read', async (t) => {
+  // The composition decision, asserted rather than described: with the shim on,
+  // the F48 native wrapper stands down. Layered, the second read would come back
+  // with two truncation notices and — worse — the shim would have ledgered the
+  // native wrapper's already-cut text as the whole file.
+  const wd = makePatient(t);
+  writeFileSync(join(wd, 'src', 'big.txt'), BIG_BODY);
+  const jv = validateJob(JOB(wd, { provider: 'clipipe-subscription', tools: ['read', 'recall', 'get', 'write', 'edit'] }));
+  assert.deepEqual(jv.reds, []);
+  const nativeProvider = scriptedNativeFactory([
+    { turns: [{ text: 'src/big.txt is large.' }] },
+    { turns: [{ text: READ_TWICE(wd) }] },
+    {
+      turns: [
+        { tool: 'shell_read', args: { path: join(wd, 'src', 'big.txt') } },
+        { tool: 'shell_read', args: { path: join(wd, 'src', 'big.txt') } },
+        { tool: 'shell_write', args: { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' } },
+        { text: 'done' },
+      ],
+    },
+  ]);
+  const { events, emit } = collector();
+  const outcome = await runPlan(jv.job, { workdir: wd, nativeProvider, emit, capRuns: 3, readShim: true, remainingUsd: () => 1.5 });
+  assert.equal(outcome, 'green');
+
+  const results = nativeProvider.toolResults ?? [];
+  const reads = results.filter((r) => r.name === 'shell_read').map((r) => String(r.result));
+  assert.equal(reads.length, 2, 'both reads really ran through the native bridge');
+  assert.ok(reads[0].includes('BLOCK-0000') && !reads[0].includes('BLOCK-0030'), 'the first read is capped');
+  assert.ok(reads[1].includes('BLOCK-0025'), 'the second read continues instead of repeating or pointing');
+  for (const r of reads) {
+    assert.equal(r.split('[bareloop:').length - 1, 1, 'exactly ONE notice — the two wrappers never stack');
+    assert.ok(!r.includes('file truncated at'), 'and the native wrapper\'s own notice is not among them');
+  }
+});

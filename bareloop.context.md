@@ -918,7 +918,7 @@ Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
 `coordination-red` — a failure between units (scope contention, step order, store
 races), never to be folded into worker/interpreter reds.
 
-### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, layerRoot?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling?, reviewDoor?, doorRerun? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, layerRoot?, readShim?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling?, reviewDoor?, doorRerun? })` → outcome — `src/run.js`
 
 The last seven are the RESUME fold and are documented under *Resuming a killed run* below; they
 default to `0` / `true` / `0` / `null` / `[]` / `null` / `null`, so a fresh run passes none of them.
@@ -936,6 +936,18 @@ Outcomes: `green | already-green | escalated | unapproved-spec | job-red | smoke
 plan-red | check-red | close-red | close-unsupported | recipe-stale | branch-red | pricing-red |
 provider-red | interpreter-red | cap-halt | wall-halt | step-stalled | hitl-pause |
 hitl-decision-red | step-red:<id>`.
+
+**`readShim` (default `false`) — the capped read seam.** OFF is the shipped behaviour and is
+byte-identical to a run without the flag, guards included. ON, three things move together:
+`shell_read` delivers at most `READ_SHIM_CAP` (24KB) per call with a trusted steer at
+`ctx_recall`/`ctx_get`; a re-read continues from where the last one stopped, and once the worker
+holds the whole unchanged file a re-read returns a pointer instead of the bytes (keyed on what
+was DELIVERED — a partly-seen file NEVER gets a pointer, which is the measured correctness point);
+and `validatePlan` reds `read-blind` on any step granting `read` without `recall` and `get`, since
+a capped worker with no retrieval verb cannot reach the rest of a file. The ledger is per worker,
+so it resets with every step. On the native (clipipe) surface the shim replaces the CLI-display
+cap rather than stacking on it. Default-flip pending a paid contrast; see CHANGELOG for the
+replay numbers behind it.
 
 **The two hitl terminals (N4 slice 1, doors re-cut 2026-08-18)** are the class's whole surface
 at this layer, and each is a CLEAN exit (`spendComplete` stays true — only the two casualties floor). `hitl-pause` is a

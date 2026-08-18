@@ -27,6 +27,7 @@
 import { TOOL_MENU, LOCKED_TOOLS, WRITE_VERBS, checkMenu } from './job.js';
 import { declaredStages } from './declaredclose.js';
 import { globToPrefix, scopeContained, isObj, isNonEmptyString, sweepSecretLiterals, hasNestedQuantifier } from './validate.js';
+import { READ_SHIM_CAP } from './readshim.js';
 
 /** the closed exit menu (PRD v1.12 §3 + decision 1's `check-passes`): the
  * shell evaluates every form with its own fixed code, never a command — the
@@ -49,6 +50,11 @@ export { WRITE_VERBS };
  * count. Shallow entries survive the cap (see `legalScopes`) because they are
  * the useful ones — a deep leaf is reachable via its parent. */
 export const MAX_SCOPE_MENU = 24;
+/** G1's pair (read shim only): the two verbs that can reach INTO a file the cap
+ * cut short — `recall` names where a symbol lives, `get` reads that symbol in
+ * full. Named here because the rule that needs them lives here; the cap that
+ * makes them mandatory lives in src/readshim.js. */
+const RETRIEVAL_PAIR = Object.freeze(['recall', 'get']);
 
 /**
  * The MENU of legal `tree-changed` scopes — choose-don't-describe (design record
@@ -202,7 +208,7 @@ export function closeStagesOf(job) {
  * job spec. Never throws on JSON text or plain parsed data; every failure is
  * a named red. Returns the parsed plan on ok (single parse), null on any red.
  * @param {object|string} input parsed plan, or raw JSON text (parse failures are a red)
- * @param {{ job?: any, maxStepRounds?: number, scopes?: string[], seedRed?: string[], priorChecks?: string[] }} [opts] `job`: the
+ * @param {{ job?: any, maxStepRounds?: number, scopes?: string[], seedRed?: string[], priorChecks?: string[], readShim?: boolean }} [opts] `job`: the
  *   validateJob-GREEN four-field spec (the ceiling, the fence, and the checks
  *   menu all come from it — a missing or non-plan-shape job fails CLOSED);
  *   `maxStepRounds`: the shell's per-step rounds ceiling (interpret's
@@ -224,9 +230,14 @@ export function closeStagesOf(job) {
  *   only). Rule B — a redraft may not drop one (`check-shed`): exits without
  *   the check verify FORM alone, so a shed lets the run "green" unearned
  *   (u-msdsmkid mechanism b; the 3 archived sheds were all on step-red runs).
+ *   `readShim` (G1): is the read shim ON for this run? Default false, and false
+ *   renders byte-identically to the pre-shim validator — the flag gates cap,
+ *   pointer and this rule as ONE unit, so a baseline arm stays a baseline arm.
+ *   True adds one rule: a step granting `read` must also grant `recall` and
+ *   `get` (`read-blind`), because a capped read is only navigable with them.
  * @returns {{ ok: boolean, reds: Red[], plan: object|null }}
  */
-export function validatePlan(input, { job, maxStepRounds = 40, scopes, seedRed, priorChecks } = {}) {
+export function validatePlan(input, { job, maxStepRounds = 40, scopes, seedRed, priorChecks, readShim = false } = {}) {
   /** @type {Red[]} */
   const reds = [];
   /** @type {(code: string, path: string, detail?: string) => void} */
@@ -335,6 +346,21 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes, seedRed, 
         }
         writeStep = s.tools.some((/** @type {string} */ t) => WRITE_VERBS.includes(t));
         toolsParsed = true;
+        // G1 — the read shim's admission rule, and it only exists while the shim
+        // does. The shim caps a read at READ_SHIM_CAP and hands back a steer;
+        // capping a worker whose grant holds no retrieval verb leaves it with no
+        // way to reach the rest of the file, which is BA-17 read-blinding on
+        // purpose. So the cap is what makes the pair mandatory — the two ship
+        // together or neither ships.
+        // Fires only inside the parsed branch (the mailbox precedent: a rule
+        // derived from an unknowable grant charges the ledger for a violation
+        // the agent never committed), and only per step, because the grant IS
+        // the step boundary.
+        if (readShim && s.tools.includes('read') && !RETRIEVAL_PAIR.every((/** @type {string} */ v) => s.tools.includes(v))) {
+          const short = RETRIEVAL_PAIR.filter((v) => !ceiling.includes(v));
+          red('read-blind', `${at}.tools`, `a step granting "read" must also grant ${RETRIEVAL_PAIR.join(' and ')} — reads are capped at ${READ_SHIM_CAP} bytes and the rest of a big file is reachable only through the retrieval verbs; a capped worker without them is blind to it`
+            + (short.length ? ` (the signed ceiling [${ceiling.join(', ')}] offers no ${short.join('/')}: this plan cannot satisfy the rule — the spec needs re-signing with them, or the run needs the shim off)` : ''));
+        }
       }
 
       // rounds ≤ the shell cap (cap-not-estimate; the step bound IS maxTurns)

@@ -91,6 +91,12 @@ export { classifyIncidents, foldLedger, ledgerDeltas, updateLedger, LEDGER_CLASS
 // still there before spending anything. The runner applies the rule itself either way —
 // neither export is a way to opt out of it.
 export { workBranchName, prepareWorkBranch, WORK_BRANCH_PREFIX, WORK_BRANCH_RE } from './workbranch.js';
+// THE READ SHIM (flag-gated OFF via `runJob`'s `readShim`). The cap is exported because
+// bareloop.context.md names it, and documented-but-unexported is a false contract; the
+// wrapper goes with it so a caller building its own worker seam wraps the SAME ledger
+// rather than reimplementing the one rule that matters (a pointer keys on what was
+// DELIVERED, never on path+hash).
+export { wrapReadTool, READ_SHIM_CAP, READ_SHIM_STRATEGY } from './readshim.js';
 // ── CLOSE AUTHORING v1 (gate 4) — the user declares what done means ──────────
 // The public surface is settled ONCE, here, at M4 (M2's header flagged the
 // naming collision and deferred it rather than exporting piecemeal).

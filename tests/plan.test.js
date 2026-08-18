@@ -1071,3 +1071,65 @@ test('planPrompt without checkFacts renders byte-identical to the pre-rules prom
     planPrompt(JOB, 'survey', null, 40, null, scopes, undefined, null),
   );
 });
+
+// ─── G1: the read shim's admission rule (flag-gated, default inactive) ───
+// The shim caps a read at 24 KB and hands back a steer. A worker capped with no
+// retrieval verb has no way to reach the rest of the file — that is BA-17
+// read-blinding, this time on purpose. So a step that grants `read` under the
+// shim must also grant `recall` and `get`. Keyed on a FACT the caller passes
+// (`readShim`), inactive when omitted: with the shim off the validator must
+// render byte-identically, or the frozen A0 baseline arm quietly becomes a
+// treatment arm and the whole contrast is unreadable.
+
+test('G1: a step granting read without recall+get reds read-blind when the shim is ON', () => {
+  const r = validatePlan(mut((p) => { p.steps[0].tools = ['read', 'write']; }), { ...OPTS, readShim: true });
+  assert.equal(r.ok, false);
+  assert.equal(r.reds.length, 1, `exactly one red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'read-blind:steps.0.tools');
+  assert.match(r.reds[0].detail ?? '', /recall/);
+  assert.match(r.reds[0].detail ?? '', /get/);
+});
+
+test('G1: a PARTIAL retrieval grant is still blind — one of the pair is not the pair', () => {
+  for (const tools of [['read', 'recall', 'write'], ['read', 'get', 'write']]) {
+    const r = validatePlan(mut((p) => { p.steps[0].tools = tools; }), { ...OPTS, readShim: true });
+    assert.equal(r.ok, false, `${JSON.stringify(tools)} must red`);
+    assert.equal(r.reds.filter((x) => x.code === 'read-blind').length, 1, `got ${JSON.stringify(r.reds)}`);
+  }
+});
+
+test('G1 does NOT fire on a step that never granted read — the cap only binds the verb it wraps', () => {
+  const r = validatePlan(mut((p) => { p.steps[0].tools = ['recall', 'get', 'write']; }), { ...OPTS, readShim: true });
+  assert.deepEqual(r.reds, []);
+});
+
+test('G1 is INERT with the flag off: the same plan validates byte-identically to today (the A0 guarantee)', () => {
+  const blind = mut((p) => { p.steps[0].tools = ['read', 'write']; });
+  const off = validatePlan(blind, OPTS);
+  assert.deepEqual(off.reds, [], 'the shim being off means the rule does not exist');
+  assert.equal(off.ok, true);
+  // and the ON arm on the SAME input reds — the check is proven divergeable,
+  // not a rule that would pass whatever it was handed
+  assert.equal(validatePlan(blind, { ...OPTS, readShim: true }).ok, false);
+});
+
+test('G1 with an UNPARSEABLE grant stays silent: one defect, one red (the mailbox precedent)', () => {
+  const r = validatePlan(mut((p) => { delete p.steps[0].tools; }), { ...OPTS, readShim: true });
+  assert.equal(r.reds.length, 1, `exactly one red, got ${JSON.stringify(r.reds)}`);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'missing-required:steps.0.tools');
+});
+
+test('G1 names the SIGNED CEILING when it is the ceiling that lacks the retrieval pair', () => {
+  // The step cannot grant what the spec never signed, so the redraft loop can
+  // never satisfy this — and the honest stop is a red that says so, not a
+  // capped worker sent in blind. The cure is operator territory: re-sign the
+  // spec with recall/get, or run with the shim off.
+  const job = { ...JOB, tools: ['read', 'write', 'edit'] };
+  const plan = clone(PLAN);
+  plan.steps[0].tools = ['read', 'write'];
+  plan.steps[1].tools = ['write', 'edit'];
+  const r = validatePlan(plan, { job, readShim: true });
+  assert.equal(r.ok, false);
+  assert.equal(r.reds.filter((x) => x.code === 'read-blind').length, 1, `got ${JSON.stringify(r.reds)}`);
+  assert.match(r.reds.find((x) => x.code === 'read-blind')?.detail ?? '', /signed ceiling/);
+});
