@@ -5,7 +5,7 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.11.0] — 2026-08-18
 
 ### Changed (2026-08-18 — the review door's third button)
 
@@ -104,13 +104,41 @@ feature lands, **patch** = docs, fixes, scaffolding.
   forever, while a mechanical red in between is still converted normally.
 - **New public exports**: `HUMAN_DECISIONS`, `SEED_EXEMPT_KINDS`, `normalizeHumanRuling`,
   `NEVER_OFFERED_KINDS`, `HUMAN_PAUSE`, `CHECKPOINT_OUTCOMES`, `PAUSE_TTL_MS`,
-  `checkpointAgeGate`. The 60-day pause TTL and the canonical checkpoint list live in the
-  LIBRARY (hamr's OPEN-2 ruling) so the exported bundle inherits them rather than every runner
-  re-implementing them.
+  `checkpointAgeGate`, `HITL_PAUSE`, `HITL_DECISION_RED`, `HUMAN_CHECKPOINTS`. The 60-day pause TTL and the
+  canonical checkpoint list live in the LIBRARY (hamr's OPEN-2 ruling) so the exported bundle
+  inherits them rather than every runner re-implementing them. The two terminal names are
+  spelled ONCE, in `src/declaredclose.js` beside the `HUMAN_PAUSE` close-verdict word they
+  translate, because four different readers key on them — the emitters (`src/planrun.js`), the
+  ledger's excluded-escalation set, the resume reader (`src/reuse.js`) and the runner script —
+  and hand-spelled copies of one terminal is how those readers come to disagree.
 - **A registry guard that was only holding by accident**: an `already-green` terminal now mints
   no bridge version for a NAMED reason (`green-predates-run`) rather than because no plan
   happened to be on the spine — a hitl try that paused and came back with `accept` has its
   predecessor's plan in the very same try window.
+- **An authoring run says what it is doing while it is still doing it — three REPORTING seams,
+  `onPhase` / `onStage` / `onCall`.** The pipeline ran up to ~15 minutes between `author-start`
+  and its result with nothing on the terminal or the spine — a real survey ladder, a real
+  declaration ladder, and a real toolchain per close stage, all inside one await — and silence
+  is byte-for-byte what a hang looks like, so the operator's only lever was to kill a run that
+  might be working. The library REPORTS and the shell PRINTS, the same shape `runJob` → `runPlan`
+  already has: `onPhase` fires at the composition's boundaries in `authorCloseForJob`
+  (`src/authorjob.js`) and `authorClose` (`src/authorflow.js`) — `seed`, `scout`/`scout-done`,
+  `listing`/`listing-done`, `author`, `author-call`, `seed-read`/`seed-read-done`; `onStage`
+  (a new `Ctx` field in `src/kinds.js`) fires per seed-read stage, AFTER the stage lands, because
+  only then is there a verdict to carry; `onCall` fires from inside each of the two metered
+  recorders (`makeCostBook.add`, `runAuthorScout`'s `record`) rather than at the call sites, so a
+  paid call cannot be metered without its report going out. **Nothing here is consulted and
+  nothing decides**: `capStop` is still the one ceiling predicate, still asked between calls,
+  still reading the same entries — and every callback defaults to a no-op, so every existing
+  caller is byte-identical. Two deliberate omissions: `makeCostBook.absorb` does NOT fire
+  `onCall` (those calls were already metered and reported by whoever made them, and reporting
+  them twice would double the scout's spend in every reader downstream), and the `seed` phase is
+  announced only on the path that actually reads one, because a phase line for work nobody did is
+  the blind-instrument class one line wide. The renderer is `phaseLine` in
+  `scripts/author-readout.mjs` (a readout no test can reach is a readout nothing checks); it
+  prints WHAT is happening and never a fraction — a survey attempt has no progress and a suite
+  stage finishes when it finishes — and an unmeasured `durationMs` prints as `unknown`, never as
+  `0` (F6 in its time form). A phase the renderer does not know is printed rather than swallowed.
 
 The runner half of the same slice landed beside it and is deliberately NOT in the tarball
 (`scripts/` never ships): `scripts/run-u.mjs` gains `--decide accept|rerun|cancel` (+ `--text`)
@@ -216,6 +244,22 @@ already uses, and the seed is that copy's own HEAD (litectx v0.32.0, `115213d`).
   prefix is shell syntax it would try to run as one — the key still rides an env assignment and
   never argv. A pause with no ruling prints the line prefixed to NONE of its three doors, because
   prefixing one would quietly recommend it and this surface's lean runs the other way.
+- **The hitl terminals get one canonical spelling, and the pause screen gets one renderer**
+  (`/code-review medium`, findings 2 and 3). The terminal names were hand-spelled string
+  literals at every reader: 9 sites in `src/planrun.js`, the ledger's `EXCLUDED_ESCALATIONS`
+  set, `src/reuse.js`, the `src/index.js` re-export and 7 sites in `scripts/run-u.mjs`. They now
+  all import the constants exported from `src/declaredclose.js` (the `hitl-cancel` constant
+  introduced with them is gone again — see the review-door entry above). Beside it,
+  `printPauseEvidence()` in `scripts/run-u.mjs` becomes the SINGLE assembly point for both pause
+  screens — the resume preview and the fresh-pause terminal — so the fallback rule cannot drift
+  between them: with a pause record the package is the close's own ask plus the diff of what
+  changed; without one it says so plainly, rather than rendering the bare "approve?" that ruling
+  2 forbids. Finding 1 — `runReuse` classing a `hitl-pause` as a casualty and buying another try
+  — was parked as arbiter territory when this bullet was first written, and has since been FIXED
+  on this same branch: `d183c95` gave the checkpoint its hard stop (`hardStop` reads
+  `HUMAN_CHECKPOINTS` before the retry table, so the loop hands the run back rather than re-asking
+  a question already put to someone who has not answered), and `4e0ab94` gave the ROW its own
+  `checkpoint` class, so the machinery no longer mis-describes a waiting run as one that died.
 
 ### Fixed
 
@@ -257,6 +301,60 @@ already uses, and the seed is that copy's own HEAD (litectx v0.32.0, `115213d`).
   `classifyIncidents` (`src/ledger.js`) keys on event types it does not emit, so both new records
   fall through every branch and are simply not counted — uncounted, never miscounted, which is
   the fail-safe direction.
+- **A KILLED authoring run kept losing 100% of its own money record — it now leaves a body, the
+  way a crash does.** The crash catch above covers a THROW and never a SIGNAL, so a `^C` on a run
+  that merely looked hung ended the process with the spine holding one line, `author-start`, and
+  with the spend existing only inside the cost book, which dies with the process (F6/F12: a
+  halted attempt's spend was invisible by 300×). `scripts/run-author.mjs` now handles `SIGINT`,
+  `SIGTERM` and `SIGHUP` by emitting `author-killed {signal, phase, …cost}` plus
+  `author-end {outcome:'killed'}` — `appendFileSync` inside `emit` is synchronous, so the record
+  is on disk before the process goes — then removing its own listener and re-raising the signal,
+  because the honest exit code for a signal death is 128+signo and any code set here would file a
+  killed run under a name this runner's vocabulary already spends on something else. **SIGKILL is
+  not covered and is not pretended otherwise**: it is uncatchable, and there is no handler to
+  write for it. The killed report and the live running total read ONE list (`metered`) through
+  `tallyCalls` — the same reader the library's own cost book uses — rather than a second
+  hand-spelled accumulator, because this file has already paid once for a pair of instruments
+  over one fact (the cap-halt/pricing-red type); `costUsd` rides as `null` when a call was
+  unpriced, so the known half is reported as a `≥` floor instead of `?? 0` laundering unknown
+  into $0. Both reporting seams are wrapped best-effort (`try/catch`) on purpose: progress
+  reporting on a PAID run must never take down the work being paid for (F70), and the run's real
+  records — `authored.json`, the crash catch, `author-end` — are all downstream and unaffected.
+- **`scripts/run-interview.mjs` stops making an offer that can only be refused.** With no
+  `ANTHROPIC_API_KEY` in the shell, `run-author.mjs` exits 2 at its own door before a spine
+  exists, so the *"Run it now? [y/N]"* question had exactly one possible outcome and spent a
+  person's attention on a choice they did not have. Unkeyed, the question is not asked at all and
+  the closing line says which state it is in (*"Not offered — there is no key in this shell to
+  run it with"*) rather than reporting a refusal typed on the operator's behalf. What is printed
+  instead is what is actionable: the exact command, and one line saying to set the key in the
+  shell from their own secret store — deliberately WITHOUT a specific incantation, because which
+  store a person keeps a key in is theirs, and the one thing this script must never do is put a
+  key anywhere a command line can be read from.
+- **A run that landed its own terminal now dates its own stop (N4 surface §1.6).** The resumed
+  leg's `deathAt` preferred the watchdog's kill record whenever one existed. That is right for a
+  run that was KILLED — the process was alive, silently, right up to the signal, and billing only
+  to its last emitted event under-reports the wall it really burnt — and wrong for a run that
+  ENDED ITSELF. A `hitl-pause` is the second kind: a clean terminal a person may answer days
+  later, and any record dated after it bills their deciding time to the run's wall. The POC
+  measured the shape — a report 45 days after the pause put `RESUME_WALL_MS` at 0 and doomed the
+  resumed leg before it opened, on a run that had barely started. So the preference order is not
+  *"the later record wins"* but *"the run's own record wins when there is one"*: a spine carrying
+  a `job-end` returns `null`, which hands `readResume` back its own documented default (the last
+  event's timestamp, which for a clean terminal IS the terminal). The order moved out of
+  `scripts/run-u.mjs` into `deathAtOf` (`scripts/u-readout.mjs`) so a test can reach it at all,
+  with the killed-run case kept as the control, and an unreadable watchdog stamp reads as UNKNOWN
+  rather than handing a `NaN` to a fold (F6).
+- **A pause is a PHASE — the resume readout stops walking off the end of the plan (N4 #9).** hamr
+  read `at step 2 of 1 "(unknown)"` on the first paused resume preview he drove. A pause happens
+  AFTER the plan's steps, at the close's human stage, and the checkpoint a person actually meets
+  reads `phase:'steps'` with every step green (the pause site emits no `outer-close` of its own),
+  so the `at` line's step arithmetic ran past the plan and named an id nobody drafted. The same
+  walk-off was reachable one terminal over with no person involved: a kill between the last
+  `step-end` and the `outer-close` leaves exactly that shape and printed `step 3 of 2`. The
+  rendering moves to `resumeAtLines` (`scripts/u-readout.mjs`, where a test can reach it) and
+  holds one rule — a step count never exceeds the plan, and the phase is said in words: the human
+  review, the close and its fix loop, the close after an exhausted plan, or a named next step.
+  Rendering only; it decides nothing and bounds nothing.
 
 ## [0.10.0] — 2026-08-13
 
