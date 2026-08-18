@@ -1402,6 +1402,34 @@ it points, and a percentage over 2–3 runs is fake precision. `costUsd`/`wallMs
 a number or an EXPLICIT `null`, and the key is REQUIRED either way, so an unknown has to be
 said rather than omitted (F6 — an omitted key is how a `?? 0` gets written downstream).
 
+**QUARANTINE — a judged green earns nothing until the signer accepts it** (softgreen module
+6; the standing ruling PRD v1.53, given its mechanism by v1.71 §3). A green minted under
+`verdictType: "soft-green"` carries `quarantined: true` on BOTH halves of R1's pair — the
+**version** (what inherits) and its **history row** (what the status ladder reads). It is a
+FLAG, never a withheld row: the run happened, the record says so, and the listing shows it —
+it is simply worth nothing yet. A held green does not count in `deriveStatus` (an entry whose
+only greens are held derives `null` and renders `HELD`, never `NO-GREEN`), and
+`reuseEligibility(bridge)` / `newestEligibleVersion(bridge)` refuse it for reuse **with a
+stated reason** — the same visible-skip discipline an unreadable registry file gets.
+`green` and `hitl` are untouched, byte for byte: the key is ABSENT, because the hold is about
+the young JUDGE, not about every class that is not green. `QUARANTINED_VERDICTS` is the one
+list; `quarantinesCredit(verdictType)` is the one predicate. The class travels on the green
+record as `verdictType` — an unrecognised value REDS rather than falling through to unheld.
+
+**The review door releases it, forward-only.** `recordDoor(bridge, {runid, decision, at})`
+records the signer's disposition (`accept | rerun | pause`, the same three doors `kinds.js`
+owns) on that run's own green row as an append-only `doors: [{decision, at}]` — the **report
+card**, kept as facts and never as a computed agreement rate (D6's no-score rule applies to
+the judge too). `accept` over a held green also flips `quarantined` to `false` on both halves;
+`rerun` and `pause` record and release nothing. There is deliberately **no re-hold path**: an
+accept followed by a rerun records the disagreement and leaves the credit granted. A repeat of
+the last decision is a no-op (`released` says whether THIS call freed it), and a door aimed at
+a run with **no green row of its own** — an already-green run, a red, a casualty — is the red
+`no-row-for-run`: releasing is not minting. `applyDoorDecision({registryDir, name, runid,
+decision, at})` is the on-disk half; the door opens AFTER the run ends, so the decision cannot
+ride the run's return path. **The door never changes the loop's verdict** — a green stays green
+in the ledger whatever the person then does with it.
+
 **`loadGate(bridge, job)` → `{ ok, reds }` — the load-time gate.** Exactly three checks,
 asked *"is this the right KIND of recipe?"*: the job's **verdict type**, the **close-stage
 kinds** (v1: the same stage names in the same order), and every stored verb **within THIS
@@ -1423,12 +1451,16 @@ their next green, not repaired.
 
 **`runJob`/`runPlan` take `bridge?`** — a validated entry to reuse. The gate runs **at the
 door**: before the clock, before the close precheck, before any token. On a pass, the
-**newest** version's plan rides into the FIRST drafting prompt as a starting draft
+**newest ELIGIBLE** version's plan (the newest one no quarantine holds) rides into the FIRST
+drafting prompt as a starting draft
 (`bridge-loaded {name, versions, runid}` on the spine) and everything after it is the
 ordinary shipped path — same validator, same redraft-on-reds, the same replan ceiling, and a
 **replan never re-injects the bridge** (it drafts from the run's own state). On a fail the
 run returns the distinct terminal **`recipe-stale`** with `bridge-gate {outcome, name, reds}`
-and a decision-ready escalation, having spent nothing. **Falling back to cold is the
+and a decision-ready escalation, having spent nothing. A **wholly HELD** entry handed in
+directly is refused at the same door and by the same terminal, with `bridge-gate
+{outcome: 'quarantined'}` and the accept-then-rerun option named — the recipe is the right
+kind, it is simply unaccepted, and the two are never spelled the same. **Falling back to cold is the
 caller's decision, not an automatic silent fallback** — starting a paid run on a decision
 nobody made is the same class of error as widening a cap to manufacture a green. Omit
 `bridge` and the flow is byte-identical to a pre-Layer-3 run: no new event, and no starting

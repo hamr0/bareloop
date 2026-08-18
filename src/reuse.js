@@ -46,7 +46,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { loadRegistry, saveBridge, appendGreen, appendRed, mintBridge, registryExists } from './bridges.js';
+import { loadRegistry, loadBridge, saveBridge, appendGreen, appendRed, mintBridge, registryExists, reuseEligibility, recordDoor } from './bridges.js';
 import { renderListing, selectionPrompt } from './selection.js';
 import { closeStagesOf } from './plan.js';
 import { MIN_WALL_MS, jobSpecHash } from './job.js';
@@ -338,7 +338,8 @@ export function reuseSpecHash(resolved) {
  * @param {boolean} [opts.forceCold]
  * @param {string[]} [opts.exclude] names already tried this run
  * @returns {Promise<any>} `{ choice, reason, called, refused, forcedCold, red, costUsd,
- *   spendComplete, candidates, listing }`
+ *   spendComplete, candidates, quarantineSkips, listing }` — `quarantineSkips` names every
+ *   workflow held back for want of a signer's accept, with its reason (module 6)
  */
 export async function selectBridge({ registry, job, ask, provider, pinned = null, shortlist = null, forceCold = false, exclude = [] }) {
   const r = /** @type {any} */ (registry);
@@ -346,22 +347,48 @@ export async function selectBridge({ registry, job, ask, provider, pinned = null
   const skipReds = Array.isArray(r?.reds) ? r.reds : [];
   const excluded = new Set(exclude);
   const shortSet = Array.isArray(shortlist) ? new Set(shortlist) : null;
-  const candidates = all.filter((/** @type {any} */ b) => !excluded.has(b.name) && (!shortSet || shortSet.has(b.name)));
+  const offered = all.filter((/** @type {any} */ b) => !excluded.has(b.name) && (!shortSet || shortSet.has(b.name)));
+
+  // SOFTGREEN MODULE 6 — a HELD workflow is not offered, and the skip is stated.
+  // Its green was rendered by the judged floor and no signer has accepted it yet,
+  // so it has earned no reuse; handing it to the picker would spend the credit
+  // before it was granted. The reason travels TWO ways — into the listing the
+  // picker reads (as a distinct note, never dressed as an unreadable file) and out
+  // to the caller — because a shelf that quietly shrinks teaches the operator that
+  // the registry is empty when it is merely waiting on them.
+  /** @type {{name: string|null, reason: string}[]} */
+  const quarantineSkips = [];
+  const candidates = offered.filter((/** @type {any} */ b) => {
+    const e = reuseEligibility(b);
+    if (!e.ok) quarantineSkips.push({ name: isNonEmptyString(b.name) ? b.name : null, reason: e.reason });
+    return e.ok;
+  });
 
   /** the shape every return here holds, so a caller never branches on field presence */
-  const base = { choice: null, reason: '', called: false, refused: false, forcedCold: false, red: null, costUsd: 0, spendComplete: true, candidates: candidates.map((/** @type {any} */ b) => b.name), listing: null, pinned };
+  const base = { choice: null, reason: '', called: false, refused: false, forcedCold: false, red: null, costUsd: 0, spendComplete: true, candidates: candidates.map((/** @type {any} */ b) => b.name), quarantineSkips, listing: null, pinned };
 
   if (forceCold) {
     return { ...base, forcedCold: true, reason: 'the operator forced a cold draft — no workflow was offered and no selection call was made' };
   }
   if (candidates.length === 0) {
-    return { ...base, reason: exclude.length || shortSet ? 'no workflow remains to offer (every candidate was excluded or outside the shortlist)' : 'the registry holds no reusable workflow' };
+    return {
+      ...base,
+      // "nothing to reuse" and "everything is waiting on YOU" are different facts,
+      // and the empty-shelf sentence must not be said about the second
+      reason: quarantineSkips.length
+        ? `every workflow this run could have started from is HELD: ${quarantineSkips.map((s) => `${s.name} (${s.reason})`).join('; ')}`
+        : (exclude.length || shortSet ? 'no workflow remains to offer (every candidate was excluded or outside the shortlist)' : 'the registry holds no reusable workflow'),
+    };
   }
 
   // the listing the MODEL reads is the listing a human reads — same function, same text,
   // and the skip reds travel with it so a picker is never handed a set shorter than the
   // directory without being told
-  const listing = renderListing({ ok: skipReds.length === 0, reds: skipReds, bridges: candidates });
+  const listing = renderListing({
+    ok: skipReds.length === 0 && quarantineSkips.length === 0,
+    reds: [...skipReds, ...quarantineSkips.map((s) => ({ code: 'quarantined', path: s.name, detail: s.reason }))],
+    bridges: candidates,
+  });
   const prompt = selectionPrompt(listing, ask, pinned);
 
   let result;
@@ -1500,6 +1527,10 @@ export async function runReuse(opts) {
       runid: `${runid}-t${n}`, patient, at: new Date(now()).toISOString(),
       costUsd: read.spentUsd, spendComplete: read.spendComplete, wallMs, rounds,
       ...(trySpecHash ? { specHash: trySpecHash } : {}),
+      // the CLASS this run was signed under, carried to the one place a green is
+      // built (softgreen module 6). It decides whether the minted version is HELD;
+      // `appendRed` ignores it, because a red minted nothing to hold.
+      verdictType: job.verdictType,
     };
     if (outcome === 'already-green') {
       // A GREEN THAT PREDATES THE RUN mints nothing, and the guard keys on the
@@ -1914,7 +1945,10 @@ export async function runReuse(opts) {
     });
     selection.push({ n, ...sel, listing: undefined });
     account(sel.costUsd, sel.spendComplete);
-    emit('selection-result', { n, choice: sel.choice, reason: sel.reason, called: sel.called, refused: sel.refused, costUsd: sel.costUsd, candidates: sel.candidates });
+    // `quarantineSkips` rides the spine beside the candidates for the same reason it rides
+    // the listing: a shelf that quietly shrank is indistinguishable from an empty one, and
+    // "held, waiting on you" is the fact the operator needs to see (softgreen module 6)
+    emit('selection-result', { n, choice: sel.choice, reason: sel.reason, called: sel.called, refused: sel.refused, costUsd: sel.costUsd, candidates: sel.candidates, quarantineSkips: sel.quarantineSkips });
 
     if (sel.refused) {
       return done('selection-refused', {
@@ -1967,4 +2001,44 @@ export async function runReuse(opts) {
       + ` ${typeof t.wallMs === 'number' && Number.isFinite(t.wallMs) ? `${(t.wallMs / 60000).toFixed(1)}min of ${(t.wallCapMs / 60000).toFixed(1)}min` : 'wall UNKNOWN'},`
       + ` close ${t.closeReached ? 'reached' : 'NEVER REACHED'}`).join('\n'),
   });
+}
+
+// ── the REVIEW DOOR's registry half (softgreen module 6) ────────────────────
+
+/**
+ * Apply a signer's door decision to the workflow a run wrote its row against:
+ * record the disposition, and — on `accept` over a HELD judged green — release the
+ * learning credit that green has been carrying unspent (PRD v1.71 §3).
+ *
+ * This is the ONE seam between a person's answer and the box. It is deliberately
+ * separate from `runReuse`: the door opens AFTER the run has ended (a green run is
+ * over, non-blocking, and the person may answer minutes or days later), so the
+ * decision cannot ride the run's own return path. The runner calls this with the
+ * runid it printed at the door.
+ *
+ * Never throws and never conjures: a missing registry, a missing entry, a
+ * malformed one and a runid with no green row all come back as named reds. The
+ * loop's verdict is untouched in every branch — this writes a disposition, never a
+ * result.
+ *
+ * @param {object} opts
+ * @param {string} opts.registryDir the operator-supplied registry directory
+ * @param {string} opts.name the workflow the run wrote to
+ * @param {string} opts.runid the RUN's id, exactly as the bridge row records it
+ * @param {string} opts.decision one of the three doors
+ * @param {string|null} [opts.at] when the person answered
+ * @returns {{ok: boolean, reds: any[], released: boolean, file: string|null}}
+ */
+export function applyDoorDecision({ registryDir, name, runid, decision, at = null }) {
+  if (!isNonEmptyString(registryDir) || !registryExists(registryDir)) {
+    return { ok: false, reds: [{ code: 'registry-missing', path: String(registryDir), detail: 'the registry path is operator-supplied and is never conjured' }], released: false, file: null };
+  }
+  if (!isNonEmptyString(name)) return { ok: false, reds: [{ code: 'invalid-value', path: 'name', detail: 'the workflow this run wrote its row against' }], released: false, file: null };
+  const file = join(registryDir, `${name}.json`);
+  const loaded = loadBridge(file);
+  if (!loaded.ok) return { ok: false, reds: loaded.reds, released: false, file: null };
+  const r = recordDoor(loaded.bridge, { runid, decision, at });
+  if (!r.ok) return { ok: false, reds: r.reds, released: false, file: null };
+  const s = saveBridge(registryDir, r.bridge);
+  return { ok: s.ok, reds: s.reds, released: s.ok && r.released, file: s.file };
 }

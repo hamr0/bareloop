@@ -35,10 +35,38 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isObj, isNonEmptyString, sweepNestedQuantifiers } from './validate.js';
-import { TOOL_MENU, LOCKED_TOOLS } from './job.js';
+import { TOOL_MENU, LOCKED_TOOLS, VERDICT_TYPES } from './job.js';
 import { closeStagesOf } from './plan.js';
+// the three doors, in their ONE spelling. A second copy of "what a person may
+// answer" here would be a second vocabulary to drift from the one the runner
+// applies — the same rule the outcome classes already live under. `kinds.js` is
+// already in this module's transitive graph (job → declaredclose → kinds), so
+// this costs nothing at load and buys a single source for the door names.
+import { HUMAN_DECISIONS } from './kinds.js';
 
 export const BRIDGE_SCHEMA = 'bridge-v1';
+
+/**
+ * SOFTGREEN MODULE 6 — the verdict classes whose greens are minted QUARANTINED.
+ *
+ * The standing ruling (PRD v1.53, given a mechanism by v1.71 §3): *softgreen
+ * passes are quarantined from learning credit until the judged floor is proven*,
+ * and **the signer's `accept` at the review door is what releases it**.
+ *
+ * `soft-green` and NOT `hitl`: the hold is about the young JUDGE, not about every
+ * class that is not `green`. A hitl close is rendered by a PERSON at close time —
+ * there is no unproven ruler in it to distrust. A green earns its credit at its
+ * own close, exactly as it always has.
+ */
+export const QUARANTINED_VERDICTS = Object.freeze(['soft-green']);
+
+/** does a green under this verdict class earn its learning credit at the close, or
+ * does it wait for a person? Absent/unknown means green's behaviour, byte for byte
+ * — the pre-softgreen path is the default and stays untouched.
+ * @param {unknown} verdictType @returns {boolean} */
+export function quarantinesCredit(verdictType) {
+  return typeof verdictType === 'string' && QUARANTINED_VERDICTS.includes(verdictType);
+}
 
 /** @typedef {{code: string, path: string, detail?: string}} Red */
 
@@ -50,10 +78,21 @@ const BRIDGE_FIELDS = ['schema', 'name', 'goal', 'specHash', 'closeStageNames', 
 /** a VERSION is one green's plan-as-executed plus that green's receipts.
  * `specHash` is optional and per-version on purpose: the five real probe-era
  * bridges carry THREE distinct spec hashes across greens of the same job, so a
- * single top-level hash cannot hold them without dropping provenance. */
-const VERSION_FIELDS = ['plan', 'runid', 'greenAt', 'patient', 'costUsd', 'wallMs', 'rounds', 'specHash'];
-/** a HISTORY row is one run against this bridge, green or not */
-const HISTORY_FIELDS = ['at', 'runid', 'patient', 'outcome', 'failingStage', 'costUsd', 'spendComplete', 'wallMs', 'rounds'];
+ * single top-level hash cannot hold them without dropping provenance.
+ *
+ * `quarantined` is softgreen module 6's hold and is OPTIONAL: absent is the green
+ * path, byte for byte, and `false` means a signer released it (a flag, never a
+ * deletion — the record keeps saying that this green was once held). */
+const VERSION_FIELDS = ['plan', 'runid', 'greenAt', 'patient', 'costUsd', 'wallMs', 'rounds', 'specHash', 'quarantined'];
+/** a HISTORY row is one run against this bridge, green or not. `quarantined` is the
+ * version's twin (they are minted and released together, in one place each);
+ * `doors` is the REPORT CARD — every disposition a signer took on this run, in
+ * order, as recorded facts. Deliberately no rate and no score: D6's no-score rule
+ * applies to the judge exactly as it applies to the workflow. */
+const HISTORY_FIELDS = ['at', 'runid', 'patient', 'outcome', 'failingStage', 'costUsd', 'spendComplete', 'wallMs', 'rounds', 'quarantined', 'doors'];
+/** one door: what the person said, and when. Nothing else — a note that outranked
+ * the decision would be the smuggle channel the field sets exist to close. */
+const DOOR_FIELDS = ['decision', 'at'];
 
 /**
  * D6's status ladder, walked in history order. Pure, total, and never throws —
@@ -70,6 +109,10 @@ const HISTORY_FIELDS = ['at', 'runid', 'patient', 'outcome', 'failingStage', 'co
  *   the entry on the first repeat green.
  * - a red on a CANDIDATE changes nothing: there is nothing below the entry bar, and
  *   the entry stays in the record with the red beside it.
+ * - a **QUARANTINED green is not evidence** (softgreen module 6). The row exists and
+ *   the run happened, but a judged green earns nothing until the signer's `accept`
+ *   releases it, so it neither clears the entry bar nor adds a distinct patient. An
+ *   entry whose only greens are held derives `null` — below the bar, not demoted.
  * - a **CASUALTY is not a red.** Only the literal outcome `'red'` demotes; every
  *   other non-green outcome (`provider-red`, `wall-halt`, `close-crashed`, …) is a
  *   casualty, and casualties are never evidence in either direction.
@@ -86,6 +129,7 @@ export function deriveStatus(history) {
     if (!isObj(row)) continue;
     const r = /** @type {Record<string, any>} */ (row);
     if (r.outcome === 'green') {
+      if (r.quarantined === true) continue; // held: minted, visible, and worth nothing yet
       if (!isNonEmptyString(r.patient)) continue; // an unattributable green cannot prove a second instance
       everGreen = true;
       patients.add(r.patient);
@@ -200,9 +244,22 @@ export function validateBridge(input) {
   // second red on an already-broken field would bury the real defect): every green
   // mints exactly one version, and a red mints none.
   if (reds.length === 0) {
-    const greens = e.history.filter((/** @type {any} */ h) => h.outcome === 'green').length;
-    if (greens !== e.versions.length) {
-      red('history-mismatch', 'history', `${greens} green row(s) but ${e.versions.length} version(s) — a green mints exactly one version and a red mints none (R1)`);
+    const greenRows = e.history.filter((/** @type {any} */ h) => h.outcome === 'green');
+    if (greenRows.length !== e.versions.length) {
+      red('history-mismatch', 'history', `${greenRows.length} green row(s) but ${e.versions.length} version(s) — a green mints exactly one version and a red mints none (R1)`);
+    } else {
+      // THE HOLD HAS TWO HALVES AND THEY ARE ONE FACT (softgreen module 6). The
+      // version carries it because the version is what INHERITS; the row carries
+      // it because the row is what the status ladder reads. Both are written in
+      // one place and released in one place, so a disagreement on disk is a
+      // hand-edit or a half-written file claiming a release nobody granted — and
+      // a hold that survives on only one half is worse than either state, because
+      // each reader would answer the credit question differently.
+      const holds = (/** @type {any[]} */ rows) => rows.filter((r) => r.quarantined === true).map((r) => r.runid).sort().join(',');
+      if (holds(e.versions) !== holds(greenRows)) {
+        red('quarantine-mismatch', 'history', `the versions hold [${holds(e.versions) || '—'}] and the green rows hold [${holds(greenRows) || '—'}]`
+          + ' — one hold, two halves: they are minted together and released together, so a difference is not a state this record can be in');
+      }
     }
   }
 
@@ -223,6 +280,9 @@ function validateVersion(v, at, red) {
   nullableNumber(o, 'costUsd', at, red);
   nullableNumber(o, 'wallMs', at, red, true);
   nullableNumber(o, 'rounds', at, red, true);
+  if ('quarantined' in o && typeof o.quarantined !== 'boolean') {
+    red('invalid-value', `${at}quarantined`, 'boolean — true while held, false once the signer released it. ABSENT is the green path (a class whose greens were never held)');
+  }
 }
 
 /** @param {unknown} h @param {string} at @param {(code: string, path: string, detail?: string) => void} red */
@@ -243,6 +303,23 @@ function validateHistoryRow(h, at, red) {
   nullableNumber(o, 'costUsd', at, red);
   nullableNumber(o, 'wallMs', at, red, true);
   nullableNumber(o, 'rounds', at, red, true);
+  // the hold, and the disposition record beside it (softgreen module 6)
+  if ('quarantined' in o) {
+    if (typeof o.quarantined !== 'boolean') red('invalid-value', `${at}quarantined`, 'boolean — true while held, false once released');
+    else if (o.outcome !== 'green') red('invalid-value', `${at}quarantined`, 'only a GREEN row can be held: a red and a casualty minted no credit, so there is none to withhold');
+  }
+  if ('doors' in o) {
+    if (!Array.isArray(o.doors)) red('invalid-value', `${at}doors`, 'array of {decision, at} — every disposition a signer took on this run, in order');
+    else {
+      o.doors.forEach((/** @type {unknown} */ d, /** @type {number} */ i) => {
+        if (!isObj(d)) { red('invalid-value', `${at}doors.${i}`, 'a door is an object {decision, at}'); return; }
+        const dd = /** @type {Record<string, any>} */ (d);
+        for (const key of Object.keys(dd)) if (!DOOR_FIELDS.includes(key)) red('unknown-field', `${at}doors.${i}.${key}`, `fields: ${DOOR_FIELDS.join(', ')}`);
+        if (!HUMAN_DECISIONS.includes(dd.decision)) red('invalid-value', `${at}doors.${i}.decision`, `one of ${HUMAN_DECISIONS.join(' | ')} — there is no fourth door`);
+        nullableString(dd, 'at', `${at}doors.${i}.`, red);
+      });
+    }
+  }
   if (typeof o.spendComplete !== 'boolean') red('invalid-value', `${at}spendComplete`, 'boolean — it travels with the spend on every row (F44)');
   else if (o.costUsd === null && o.spendComplete === true) {
     red('invalid-value', `${at}spendComplete`, 'an UNKNOWN cost cannot be a COMPLETE spend — a bare floor that reads as exact is F6 in an honest coat');
@@ -281,7 +358,14 @@ function greenParts(o) {
   /** @type {Record<string, any>} */
   const version = { plan: o.plan, runid: o.runid, greenAt: at, patient: o.patient, costUsd: o.costUsd, wallMs: o.wallMs, rounds: o.rounds };
   if (o.specHash !== undefined) version.specHash = o.specHash;
-  return { version, row: { at, runid: o.runid, patient: o.patient, outcome: 'green', failingStage: null, costUsd: o.costUsd, spendComplete: o.spendComplete, wallMs: o.wallMs, rounds: o.rounds } };
+  /** @type {Record<string, any>} */
+  const row = { at, runid: o.runid, patient: o.patient, outcome: 'green', failingStage: null, costUsd: o.costUsd, spendComplete: o.spendComplete, wallMs: o.wallMs, rounds: o.rounds };
+  // softgreen module 6 — the HOLD, decided in the one place a green is built, from
+  // the class the run was signed under. The key is ABSENT rather than `false` for
+  // every other class: an absent key is the pre-softgreen record byte for byte, and
+  // a `false` on a green would say "a signer released this", which nobody did.
+  if (quarantinesCredit(o.verdictType)) { version.quarantined = true; row.quarantined = true; }
+  return { version, row };
 }
 
 /**
@@ -294,6 +378,15 @@ function validateGreenRecord(record, red) {
   const o = /** @type {Record<string, any>} */ (isObj(record) ? record : {});
   if (o.plan === undefined) red('missing-required', 'plan', 'the plan AS EXECUTED (post-replan) — a green mints the artifact that actually ran, not the one proposed');
   else if (!isObj(o.plan)) red('invalid-value', 'plan', 'the plan object as executed');
+  // the class this green was signed under decides whether it is HELD (module 6).
+  // Optional — absent is green's own path — but a value OUTSIDE the radio reds
+  // rather than falling through to "not a quarantined class": a typo that mints a
+  // judged green with its credit already released is exactly the failure this
+  // whole module exists to prevent, and it must never be a silent one.
+  if (o.verdictType !== undefined && !VERDICT_TYPES.includes(o.verdictType)) {
+    red('invalid-value', 'verdictType', `the class this run was signed under, one of ${VERDICT_TYPES.join(' | ')} `
+      + '— it decides whether this green is held; an unrecognised one is a typo, and a typo must not mint an unheld judged green');
+  }
 }
 
 /**
@@ -382,6 +475,128 @@ export function appendRed(bridge, record) {
   return { ok: true, reds: [], bridge: next };
 }
 
+// ── softgreen module 6: the hold, and the door that releases it ─────────────
+
+/**
+ * The version that would INHERIT — the newest one whose credit has actually been
+ * released. `versions` is oldest-first, so this is normally the last of them; it
+ * differs only when a judged green sits on top of a released one, and in that case
+ * the RELEASED plan is what a reuse starts from. A held version is not a worse
+ * recipe, it is an unjudged one: nobody has said yet whether the ruler that passed
+ * it was right, and starting the next run from it would spend the credit before it
+ * was granted.
+ *
+ * Total and never throws — it is read at selection time and at the load door.
+ * @param {unknown} bridge
+ * @returns {any|null} null when every version is held (or there are none)
+ */
+export function newestEligibleVersion(bridge) {
+  const e = /** @type {Record<string, any>} */ (isObj(bridge) ? bridge : {});
+  const versions = Array.isArray(e.versions) ? e.versions.filter(isObj) : [];
+  for (let i = versions.length - 1; i >= 0; i -= 1) if (versions[i].quarantined !== true) return versions[i];
+  return null;
+}
+
+/**
+ * May this workflow be offered for reuse at all? A held entry is SKIPPED WITH A
+ * REASON everywhere it is skipped — the same visible-skip discipline an unreadable
+ * registry file already gets, because a shelf that quietly shrinks teaches the
+ * operator that the registry is empty when it is merely holding.
+ * @param {unknown} bridge
+ * @returns {{ok: boolean, reason: string}} `reason` is '' when ok
+ */
+export function reuseEligibility(bridge) {
+  if (newestEligibleVersion(bridge) !== null) return { ok: true, reason: '' };
+  const held = Array.isArray(/** @type {any} */ (bridge)?.versions) ? /** @type {any[]} */ (/** @type {any} */ (bridge).versions).length : 0;
+  return {
+    ok: false,
+    reason: held
+      ? `held: ${held === 1 ? 'its green was' : `all ${held} of its greens were`} rendered by the judged floor and no signer has accepted `
+        + 'one yet — a judged green earns no reuse until a person takes the door and accepts it'
+      : 'no version to reuse',
+  };
+}
+
+/**
+ * THE REVIEW DOOR, written down (PRD v1.71 §3). The person read the finished run
+ * and said one of three things; this records that on the run's own row, and — for
+ * `accept` on a HELD green — releases the learning credit that green has been
+ * carrying unspent.
+ *
+ * Three properties, and each is a ruling rather than a convenience:
+ *
+ *  - **the door never changes the loop's verdict.** A green row stays a green row,
+ *    whatever the person then does with it. `rerun` and `pause` are dispositions,
+ *    recorded and nothing more; a rerun's own outcome is a NEW run's row.
+ *  - **release is FORWARD-ONLY.** Nothing here can set `quarantined` back to true,
+ *    so a signer who accepts and later reruns has recorded a disagreement — which
+ *    is a datum worth keeping — without un-granting credit already granted. There
+ *    is deliberately no re-hold path at all: it would be a way to walk the ledger
+ *    backwards, which the ruling forbids.
+ *  - **releasing is not minting.** A door aimed at a run with no green row of its
+ *    own is a named red — never an invented entry. That is slice 1's already-green
+ *    rule holding from the other side: `accept` confirms a verdict, it never
+ *    creates one.
+ *
+ * Idempotent by shape: a decision identical to the last one recorded is a no-op
+ * that returns the entry unchanged, so a double-click at the door cannot inflate
+ * the report card (and `released` says whether THIS call was the one that freed it).
+ *
+ * Pure — returns a NEW entry; the input is never mutated.
+ * @param {unknown} bridge a validated bridge entry
+ * @param {unknown} door `{ runid, decision, at }` — `at` may be an explicit null
+ * @returns {{ ok: boolean, reds: Red[], bridge: any, released: boolean }}
+ */
+export function recordDoor(bridge, door) {
+  /** @type {Red[]} */
+  const reds = [];
+  const base = validateBridge(bridge);
+  if (!base.ok) return { ok: false, reds: [{ code: 'bridge-invalid', path: 'bridge', detail: base.reds.map((r) => `${r.code}:${r.path}`).join(', ') }], bridge: null, released: false };
+  if (!isObj(door)) return { ok: false, reds: [{ code: 'invalid-value', path: 'door', detail: `a door is an object { runid, decision, at } — decision one of ${HUMAN_DECISIONS.join(' | ')}` }], bridge: null, released: false };
+  const d = /** @type {Record<string, any>} */ (door);
+  if (!isNonEmptyString(d.runid)) reds.push({ code: 'invalid-value', path: 'runid', detail: 'the run whose result the person just read' });
+  if (!HUMAN_DECISIONS.includes(d.decision)) {
+    reds.push({ code: 'invalid-value', path: 'decision', detail: `one of ${HUMAN_DECISIONS.join(' | ')} — there is no fourth door` });
+  }
+  if (d.at !== undefined && d.at !== null && !isNonEmptyString(d.at)) reds.push({ code: 'invalid-value', path: 'at', detail: 'a timestamp string, or an EXPLICIT null' });
+  if (reds.length) return { ok: false, reds, bridge: null, released: false };
+
+  const at = d.at ?? null;
+  const idx = base.bridge.history.findIndex((/** @type {any} */ h) => h.outcome === 'green' && h.runid === d.runid);
+  if (idx === -1) {
+    return {
+      ok: false,
+      reds: [{
+        code: 'no-row-for-run',
+        path: 'runid',
+        detail: `this workflow holds no GREEN row for run "${d.runid}", so there is no disposition to record and nothing to release. `
+          + 'A door answers a run that earned a row — an already-green run, a red and a casualty all earned none, and accept mints nothing',
+      }],
+      bridge: null,
+      released: false,
+    };
+  }
+
+  const row = base.bridge.history[idx];
+  const doors = Array.isArray(row.doors) ? row.doors : [];
+  if (doors.at(-1)?.decision === d.decision) return { ok: true, reds: [], bridge: base.bridge, released: false };
+
+  const releases = d.decision === 'accept' && row.quarantined === true;
+  /** @type {Record<string, any>} */
+  const nextRow = { ...row, doors: [...doors, { decision: d.decision, at }] };
+  if (releases) nextRow.quarantined = false;
+  const next = {
+    ...base.bridge,
+    // the version's half of the same one fact, flipped in the same breath
+    versions: releases
+      ? base.bridge.versions.map((/** @type {any} */ v) => (v.runid === d.runid && v.quarantined === true ? { ...v, quarantined: false } : v))
+      : base.bridge.versions,
+    history: base.bridge.history.map((/** @type {any} */ h, /** @type {number} */ i) => (i === idx ? nextRow : h)),
+  };
+  const v = validateBridge(next);
+  return v.ok ? { ok: true, reds: [], bridge: next, released: releases } : { ok: false, reds: v.reds, bridge: null, released: false };
+}
+
 /**
  * One row of D3's listing: what the user (and the selecting LLM) sees per bridge —
  * name, the job sentence it greened, status, greens/reds, and the cost/time BAND of
@@ -394,7 +609,7 @@ export function appendRed(bridge, record) {
  * Total and never throws: the listing is a display surface, and one malformed
  * entry must not take the whole listing down (loadRegistry already reports it).
  * @param {unknown} bridge
- * @returns {{name: string|null, goal: string|null, status: 'candidate'|'proven'|null, greens: number, reds: number, lastOutcome: string|null, greenCost: {minUsd: number|null, maxUsd: number|null, minWallMs: number|null, maxWallMs: number|null, unpricedCount: number, untimedCount: number}}}
+ * @returns {{name: string|null, goal: string|null, status: 'candidate'|'proven'|null, greens: number, reds: number, quarantinedGreens: number, doorDecisions: {runid: string|null, decision: string|null, at: string|null}[], lastOutcome: string|null, greenCost: {minUsd: number|null, maxUsd: number|null, minWallMs: number|null, maxWallMs: number|null, unpricedCount: number, untimedCount: number}}}
  */
 export function listingRow(bridge) {
   const e = /** @type {Record<string, any>} */ (isObj(bridge) ? bridge : {});
@@ -411,6 +626,13 @@ export function listingRow(bridge) {
     // 'red' EXACTLY — a casualty is not a red, in the listing for the same reason
     // it is not one in the status ladder (provider-red rows are never evidence)
     reds: history.filter((h) => h.outcome === 'red').length,
+    // softgreen module 6, both halves of it. `quarantinedGreens` is why an entry
+    // with greens can still derive no status; `doorDecisions` is the REPORT CARD —
+    // every disposition a signer took, verbatim and in order. Facts, not a rate: an
+    // agreement percentage over three runs is the fake precision D6 already refuses
+    // for the workflow, and the judge gets no looser rule than the recipe does.
+    quarantinedGreens: history.filter((h) => h.outcome === 'green' && h.quarantined === true).length,
+    doorDecisions: history.flatMap((h) => (Array.isArray(h.doors) ? h.doors.filter(isObj).map((/** @type {any} */ x) => ({ runid: isNonEmptyString(h.runid) ? h.runid : null, decision: x.decision ?? null, at: x.at ?? null })) : [])),
     lastOutcome: isNonEmptyString(history.at(-1)?.outcome) ? history.at(-1).outcome : null,
     greenCost: {
       minUsd: usd.length ? Math.min(...usd) : null,

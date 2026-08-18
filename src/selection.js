@@ -74,10 +74,22 @@ export function renderListing(registry) {
   const reds = Array.isArray(r?.reds) ? r.reds : [];
   const rows = bridges.map(listingRow).sort((a, b) => String(a.name).localeCompare(String(b.name)));
 
-  const skipped = reds.length
-    ? [`\n\nNOTE: ${reds.length} registry entr${reds.length === 1 ? 'y' : 'ies'} could not be read and ${reds.length === 1 ? 'is' : 'are'} NOT listed — this listing is smaller than the directory:`,
-      ...reds.map((/** @type {any} */ x) => `  ${x.path ?? '(unknown file)'}${x.detail ? ` — ${x.detail}` : ''}`)].join('\n')
-    : '';
+  // TWO KINDS OF SKIP, and they are never written as one. An unreadable entry is a
+  // broken file; a HELD one (softgreen module 6) is a perfectly good workflow whose
+  // judged green no signer has accepted yet. Saying "could not be read" about the
+  // second would send the operator to fix a file that is not broken.
+  const broken = reds.filter((/** @type {any} */ x) => x?.code !== 'quarantined');
+  const held = reds.filter((/** @type {any} */ x) => x?.code === 'quarantined');
+  const skipped = [
+    broken.length
+      ? [`\n\nNOTE: ${broken.length} registry entr${broken.length === 1 ? 'y' : 'ies'} could not be read and ${broken.length === 1 ? 'is' : 'are'} NOT listed — this listing is smaller than the directory:`,
+        ...broken.map((/** @type {any} */ x) => `  ${x.path ?? '(unknown file)'}${x.detail ? ` — ${x.detail}` : ''}`)].join('\n')
+      : '',
+    held.length
+      ? [`\n\nNOTE: ${held.length} workflow${held.length === 1 ? ' is' : 's are'} HELD and NOT offered — a judged green earns no reuse until the person who owns the job accepts it:`,
+        ...held.map((/** @type {any} */ x) => `  ${x.path ?? '(unnamed)'}${x.detail ? ` — ${x.detail}` : ''}`)].join('\n')
+      : '',
+  ].join('');
 
   if (!rows.length) {
     return `WORKFLOWS ON RECORD — none.\nThere are no workflows to reuse; a plan has to be drafted from scratch.${skipped}`;
@@ -86,7 +98,11 @@ export function renderListing(registry) {
   const blocks = rows.map((row) => {
     const g = row.greenCost;
     return [
-      `[${row.name ?? '(unnamed)'}]  ${(row.status ?? 'no-green').toUpperCase()}`,
+      // an entry whose only greens are HELD has no status — but "NO-GREEN" would be
+      // false about it: it greened, and a person has simply not accepted the judged
+      // verdict yet. The distinct word is the whole difference between "this never
+      // worked" and "this is waiting on you".
+      `[${row.name ?? '(unnamed)'}]  ${(row.status ?? (row.quarantinedGreens > 0 ? 'held' : 'no-green')).toUpperCase()}`,
       `  goal   ${row.goal ?? '(no goal recorded)'}`,
       `  runs   ${row.greens} green · ${row.reds} red${row.lastOutcome ? `  (last: ${row.lastOutcome})` : ''}`,
       `  green  cost ${band(g.minUsd, g.maxUsd, usd, g.unpricedCount, row.greens, 'unpriced')}`

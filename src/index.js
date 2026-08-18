@@ -42,10 +42,17 @@ export { runJob, ACCOUNTED_ROUND_TYPES } from './run.js';
 // pure text: they send nothing, parse nothing and decide nothing. The selection CALL and
 // the pin/shortlist/force-cold flow are the adopter's, which is why the pieces they need
 // are exported rather than kept internal to the runner.
+//
+// Softgreen module 6 exports the QUARANTINE surface with them: a judged green is minted
+// HELD and earns nothing until the signer's `accept` at the review door releases it
+// (PRD v1.71 §3). `recordDoor` is the pure half (record the disposition, release
+// forward-only) and `reuseEligibility`/`newestEligibleVersion` are what every consumer
+// asks before starting from a stored plan.
 export {
   BRIDGE_SCHEMA, validateBridge, deriveStatus, listingRow, loadGate,
   mintBridge, appendGreen, appendRed,
   loadBridge, loadRegistry, saveBridge, makeRegistry, registryExists,
+  QUARANTINED_VERDICTS, quarantinesCredit, newestEligibleVersion, reuseEligibility, recordDoor,
 } from './bridges.js';
 export { renderListing, selectionPrompt } from './selection.js';
 // Layer 3 modules 4+5 — the D7 envelope and the reuse runner. `runReuse` composes
@@ -64,7 +71,10 @@ export { renderListing, selectionPrompt } from './selection.js';
 // `resumeTreeGate` is the ruling that a resumed patient is continued dirty and never
 // reset. Both are read by a runner BEFORE the approval gate, so neither can live behind
 // `runReuse`'s own entry.
-export { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED, readResume, resumeTreeGate, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS, checkpointAgeGate } from './reuse.js';
+// `applyDoorDecision` is the registry half of the REVIEW DOOR (softgreen module 6): the
+// door opens AFTER a run has ended, so a person's answer cannot ride the run's own return
+// path — the runner calls this with the runid it printed at the door.
+export { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED, readResume, resumeTreeGate, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS, checkpointAgeGate, applyDoorDecision } from './reuse.js';
 export { classifyIncidents, foldLedger, ledgerDeltas, updateLedger, LEDGER_CLASSES } from './ledger.js';
 // THE WORK BRANCH (PRD v1.57 §3). `workBranchName` is exported so an operator runner can
 // SHOW, before the approval gate, which branch the run will work on — the same reason the

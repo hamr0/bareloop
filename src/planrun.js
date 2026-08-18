@@ -30,7 +30,7 @@ import { createTrend, FIX_STRIKE_LIMIT } from './trend.js';
 import { TOOL_MENU, STORE_VERBS, checkMenu } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, strategyFor } from './tools.js';
 import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
-import { validateBridge, loadGate } from './bridges.js';
+import { validateBridge, loadGate, newestEligibleVersion, reuseEligibility } from './bridges.js';
 import { extractArtifact } from './text.js';
 import { defaultJudgeLoop } from './judged.js';
 import { createClock, isWallTimeout } from './clock.js';
@@ -768,7 +768,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   //
   // The entry is re-validated here even though the caller is contracted to pass a valid
   // one. Not defensive decoration: the very next thing this code does is reach into
-  // `versions.at(-1).plan`, and a half-written file that reached a reader anyway must come
+  // the newest eligible version's `plan`, and a half-written file that reached a reader anyway must come
   // back as named reds, never as a TypeError out of the runner (`loadRegistry` already
   // skips-and-reports for the same reason).
   let startingDraft = null;
@@ -787,8 +787,23 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       return 'recipe-stale';
     }
     // `versions` is oldest-first and non-empty by the validator's entry bar, so the newest
-    // green's plan-as-executed is the one that inherits (R1) — never the founding one.
-    const newest = bv.bridge.versions.at(-1);
+    // RELEASED green's plan-as-executed is the one that inherits (R1) — never the founding
+    // one, and never a HELD one (softgreen module 6: a judged green earns no reuse until a
+    // person accepts it). Selection already skips a wholly-held entry with a stated reason;
+    // this is the same rule at the point of CONSUMPTION, so a second caller handing a
+    // bridge in directly cannot spend credit no signer granted.
+    const newest = newestEligibleVersion(bv.bridge);
+    if (newest === null) {
+      const reds = [{ code: 'quarantined', path: 'versions', detail: reuseEligibility(bv.bridge).reason }];
+      emit('bridge-gate', { outcome: 'quarantined', name, reds });
+      emit('escalation', {
+        category: 'recipe-stale', decisionReady: true,
+        decision: `The selected workflow${name ? ` "${name}"` : ''} is HELD: its green was rendered by the judged floor and nobody has accepted it yet, so it has earned no reuse. Nothing was spent.`,
+        options: ['accept that run at the review door, then rerun', 'rerun COLD (draft a new plan from scratch)', 'select a different workflow from the registry'],
+        detail: reds.map((r) => `${r.code}:${r.path} — ${r.detail}`).join('\n'),
+      });
+      return 'recipe-stale';
+    }
     startingDraft = newest.plan;
     emit('bridge-loaded', { name: bv.bridge.name, versions: bv.bridge.versions.length, runid: newest.runid });
   }
