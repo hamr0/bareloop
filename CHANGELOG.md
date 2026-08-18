@@ -23,11 +23,18 @@ feature lands, **patch** = docs, fixes, scaffolding.
   also grant `recall` and `get`. Capping a worker with no retrieval verb is BA-17 on purpose —
   the cap is what makes the pair mandatory. Stated in the drafting prompt as well as enforced
   (the mailbox precedent).
-- **One flag, one unit, default OFF** (the `layerRoot` precedent, F41): cap + pointer +
-  next-unseen-slice + G1 all ride `readShim`, and with it off every observable — validator reds,
-  persona, delivered bytes — is byte-identical to the pre-shim run. The frozen Phase-2 A0 arm has
-  to be exactly today, and a guard firing under a disabled shim would make the baseline a
-  treatment arm. The default-flip is not in this change: it waits on a paid contrast.
+- **One flag, four ARMS, default OFF** (the `layerRoot` precedent, F41). `readShim` names which
+  levers run, one value per row of the frozen Phase 2 pre-registration: `false` = A0 (off),
+  `'cap'` = A1 (cap + pointer + next-unseen-slice + G1), `'diff'` = A2 (the diff lever alone — no
+  cap, no pointer, no G1), `true` = A3 (every lever). The two booleans mean exactly what they
+  meant before the arms existed, so nothing written against them changed meaning. With the shim
+  off every observable — validator reds, persona, delivered bytes — is byte-identical to the
+  pre-shim run: the frozen A0 arm has to be exactly today, and a guard firing under a disabled
+  shim would make the baseline a treatment arm. Each arm's persona line describes only the
+  machinery actually installed (A2 is never told about a 24KB limit that is not in force). An
+  unrecognised value THROWS at the entry (`readShimArm`) rather than coercing into a truthy
+  shim — a mis-spelled arm would run one treatment under another's label and be invisible in the
+  results afterwards. The default-flip is not in this change: it waits on a paid contrast.
 - On the native surface the shim REPLACES the `NATIVE_READ_CAP` wrapper rather than layering over
   it (both bound the same seam at the same 24KB, and a shim outside the native wrapper would
   ledger already-truncated text as a whole file — the exact lie it exists to prevent). L2

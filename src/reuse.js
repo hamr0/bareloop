@@ -1332,7 +1332,7 @@ export function resumeTreeGate({ head, seed, dirty }) {
  * @param {number} [opts.strikeLimit] forwarded (a plan step's strike ceiling)
  * @param {number} [opts.closeTimeoutMs] forwarded
  * @param {boolean} [opts.layerRoot] forwarded
- * @param {boolean} [opts.readShim] forwarded
+ * @param {boolean|'cap'|'diff'} [opts.readShim] the read shim's ARM (A0/A1/A2/A3), forwarded verbatim
  * @param {any} [opts.resume] RESUME (module C) — a `readResume` reading of the KILLED
  *   run's own spine. Its `approvalHash` must match this run's, or the run refuses:
  *   a resume continues ONE signed run, not any run.

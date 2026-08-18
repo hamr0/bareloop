@@ -1119,6 +1119,33 @@ test('G1 with an UNPARSEABLE grant stays silent: one defect, one red (the mailbo
   assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'missing-required:steps.0.tools');
 });
 
+test('G1 fires under the CAP arm and is silent under the DIFF arm — the rule belongs to the cap, not to the shim', () => {
+  // A2 caps nothing, so there is nothing for a worker to be blind to. Firing G1
+  // there would narrow A2's admissible plan space on top of the one lever it is
+  // meant to isolate, and the A2-vs-A1 contrast would be reading two changes.
+  const blind = mut((p) => { p.steps[0].tools = ['read', 'write']; });
+  const cap = validatePlan(blind, { ...OPTS, readShim: 'cap' });
+  assert.equal(cap.ok, false, "'cap' carries G1");
+  assert.equal(`${cap.reds[0].code}:${cap.reds[0].path}`, 'read-blind:steps.0.tools');
+
+  const diff = validatePlan(blind, { ...OPTS, readShim: 'diff' });
+  assert.deepEqual(diff.reds, [], "'diff' does not — the same plan, admissible");
+  assert.equal(diff.ok, true);
+
+  // and the two capping arms agree with each other, so A1 and A3 admit the same plans
+  assert.deepEqual(validatePlan(blind, { ...OPTS, readShim: true }).reds, cap.reds);
+  // …while the diff arm agrees with the OFF baseline, byte for byte
+  assert.deepEqual(diff.reds, validatePlan(blind, OPTS).reds);
+});
+
+test('an unrecognised arm THROWS out of validatePlan — the caller\'s own argument, not a plan red', () => {
+  // The "never throws" contract covers the AGENT's artifact. This is the
+  // operator's: coerced by truthiness it would validate A2's plans under A3's
+  // admission rule and nothing downstream would ever say so.
+  assert.throws(() => validatePlan(clone(PLAN), { ...OPTS, readShim: /** @type {any} */ ('diff ') }), /unknown arm/);
+  assert.throws(() => validatePlan(clone(PLAN), { ...OPTS, readShim: /** @type {any} */ ('all') }), /unknown arm/);
+});
+
 test('G1 names the SIGNED CEILING when it is the ceiling that lacks the retrieval pair', () => {
   // The step cannot grant what the spec never signed, so the redraft loop can
   // never satisfy this — and the honest stop is a red that says so, not a

@@ -4703,6 +4703,57 @@ test('read shim OFF (the default): the same run delivers the tool\'s own bytes, 
   assert.ok(!/READ LIMIT/.test(JSON.stringify(provider.systems)), 'and no strategy line was added to the persona');
 });
 
+test("read shim arm 'cap' (A1): capped and continued at the real seam, and the persona states the bound", async (t) => {
+  const wd = makePatient(t);
+  writeFileSync(join(wd, 'src', 'big.txt'), BIG_BODY);
+  const jv = validateJob(JOB(wd, { tools: ['read', 'recall', 'get', 'write', 'edit'] }));
+  const provider = readTwiceProvider(wd);
+  const { emit } = collector();
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 3, readShim: 'cap', remainingUsd: () => 1.5 });
+  assert.equal(outcome, 'green');
+
+  const afterFirst = JSON.stringify(provider.calls[3]);
+  const afterSecond = JSON.stringify(provider.calls[4]);
+  assert.ok(afterFirst.includes('BLOCK-0000') && !afterFirst.includes('BLOCK-0030'), 'the cap bound the first read');
+  assert.ok(afterSecond.includes('BLOCK-0025'), 'and the second read continued into unseen bytes');
+  const system = JSON.stringify(provider.systems.at(-1) ?? '');
+  assert.match(system, /READ LIMIT/, 'the worker was told the bound exists');
+  assert.ok(!/RE-READS/.test(system), 'and was NOT told about a diff this arm never sends');
+});
+
+test("read shim arm 'diff' (A2): NO cap at the real seam, and the persona says nothing about a limit", async (t) => {
+  const wd = makePatient(t);
+  writeFileSync(join(wd, 'src', 'big.txt'), BIG_BODY);
+  const jv = validateJob(JOB(wd, { tools: ['read', 'recall', 'get', 'write', 'edit'] }));
+  const provider = readTwiceProvider(wd);
+  const { emit } = collector();
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 3, readShim: 'diff', remainingUsd: () => 1.5 });
+  assert.equal(outcome, 'green');
+
+  for (const i of [3, 4]) {
+    const shown = JSON.stringify(provider.calls[i]);
+    assert.ok(shown.includes('BLOCK-0000') && shown.includes('BLOCK-0059'), `call ${i}: the whole 60 KB file, uncapped`);
+    assert.ok(!shown.includes('bareloop:'), `call ${i}: nothing was capped, so nothing was announced`);
+  }
+  const system = JSON.stringify(provider.systems.at(-1) ?? '');
+  assert.ok(!/READ LIMIT/.test(system), 'a 24KB limit is NOT in force and must not be claimed — that would be a different treatment than the arm names');
+  assert.match(system, /RE-READS/, 'the diff, which IS in force, is explained');
+});
+
+test('an unrecognised read shim arm is refused at the runner door, before a single provider call', async (t) => {
+  const wd = makePatient(t);
+  const jv = validateJob(JOB(wd, { tools: ['read', 'recall', 'get', 'write', 'edit'] }));
+  const provider = readTwiceProvider(wd);
+  const { events, emit } = collector();
+  await assert.rejects(
+    () => runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 3, readShim: /** @type {any} */ ('diff '), remainingUsd: () => 1.5 }),
+    /unknown arm/,
+    'a typo coerced into a truthy shim would run A3 under an A2 label for a whole paid row',
+  );
+  assert.equal(provider.calls.length, 0, 'and it costs nothing: not one call was made');
+  assert.deepEqual(events, [], 'nor one spine record');
+});
+
 test('read shim ON, NATIVE surface: the shim OWNS the seam — one cap, one notice, and a continuation on the re-read', async (t) => {
   // The composition decision, asserted rather than described: with the shim on,
   // the F48 native wrapper stands down. Layered, the second read would come back

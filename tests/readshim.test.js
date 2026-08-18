@@ -12,11 +12,11 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
-import { wrapReadTool, READ_SHIM_CAP } from '../src/readshim.js';
+import { wrapReadTool, readShimArm, readShimStrategy, READ_SHIM_CAP, READ_SHIM_STRATEGY } from '../src/readshim.js';
 
 const require = createRequire(import.meta.url);
 const { createShellTools } = require('bare-agent/tools');
@@ -236,4 +236,156 @@ test('L2: after a FALLBACK the ledger says only what was delivered — the next 
   const after = await rd.execute({ path });
   assert.ok(!/unchanged/i.test(after), 'the worker holds 24 KB of 60 KB — a pointer here is the lie');
   assert.ok(after.includes('NEWBLOCK-0025'), 'it continues with bytes never delivered');
+});
+
+// ---------------------------------------------------------------------------
+// THE ARMS (Phase 2 pre-registration, 2026-08-18). Four arms, and the whole
+// battery is unreadable unless each one runs EXACTLY the levers its row names:
+// an arm that quietly carries a neighbour's lever attributes that lever's effect
+// to the wrong row, and no reading of the results can recover it afterwards.
+//
+// So every arm below is asserted on BOTH sides — what is on AND what is off.
+// A test that only checks the levers it expects to fire cannot tell an arm from
+// a superset of it, which is precisely the failure mode.
+
+/** a file that changed under the worker's feet, given back through `rd` */
+const changeAndRead = async (rd, path, from, to) => {
+  const cur = readFileSync(path, 'utf8');
+  writeFileSync(path, cur.replace(from, to));
+  return rd.execute({ path });
+};
+
+test('ARM false (A0): the seam is not wrapped at all — the tool the runner built is the tool the worker gets', async (t) => {
+  const d = patient(t);
+  const { path, body } = bigFile(d, 'big.txt', 60);
+  const raw = rawRead();
+  const before = raw.execute;
+  const rd = wrapReadTool(raw, { arm: readShimArm(false) });
+
+  assert.equal(rd, raw, 'the same tool object');
+  assert.equal(rd.execute, before, 'with the SAME execute — A0 is the seam untouched, not a wrapper that behaves the same');
+
+  const first = await rd.execute({ path });
+  assert.equal(first, body, 'a 60 KB file comes back whole, byte for byte');
+  const second = await rd.execute({ path });
+  assert.equal(second, body, 'and again — no ledger, no pointer');
+  assert.ok(!first.includes('bareloop:'), 'the shim left no mark of any kind');
+  assert.equal(await changeAndRead(rd, path, 'BLOCK-0042', 'BLOCK-XXXX'), body.replace('BLOCK-0042', 'BLOCK-XXXX'), 'and a changed file is the file, never a diff');
+});
+
+test('ARM cap (A1): cap ON, pointer ON, slice ON — and the diff OFF', async (t) => {
+  const d = patient(t);
+  const { path } = bigFile(d, 'big.txt', 60);
+  const rd = wrapReadTool(rawRead(), { arm: readShimArm('cap') });
+
+  // ON: the cap binds and the notice says so
+  const first = await rd.execute({ path });
+  assert.ok(first.includes('BLOCK-0000') && !first.includes('BLOCK-0030'), 'the cap binds the first read');
+  assert.match(first, /this read is capped/, 'and the capped-slice notice rides with it');
+  // ON: the next unseen slice, never a re-send and never a premature pointer
+  const second = await rd.execute({ path });
+  assert.ok(second.includes('BLOCK-0025') && !second.includes('BLOCK-0000'), 'the re-read continues where it stopped');
+  assert.ok(!/unchanged/i.test(second), 'a partly-seen file is never pointed at');
+  const third = await rd.execute({ path });
+  assert.ok(third.includes('BLOCK-0059'), 'and the third slice ends the file');
+  // ON: the pointer, once coverage is complete
+  assert.match(await rd.execute({ path }), /unchanged/, 'a fully-delivered unchanged file is answered with the pointer');
+
+  // OFF: the diff. The worker holds this file IN FULL and one line changed —
+  // the exact state A3 diffs from — and this arm must re-deliver instead.
+  const after = await changeAndRead(rd, path, 'BLOCK-0042', 'BLOCK-XXXX');
+  assert.ok(!/^@@ /m.test(after), 'no hunk header: the diff lever is not in this arm');
+  assert.ok(!/DIFF against/.test(after), 'and no diff framing');
+  assert.ok(after.includes('BLOCK-0000'), 'the changed file re-delivers from byte 0, exactly as it did before L2 existed');
+  assert.match(after, /this read is capped/, 'under the ordinary cap rules');
+});
+
+test('ARM diff (A2): diff ON — and the cap OFF, the pointer OFF', async (t) => {
+  const d = patient(t);
+  const { path, body } = bigFile(d, 'big.txt', 60);      // 60 KB, 2.4x the cap
+  const rd = wrapReadTool(rawRead(), { arm: readShimArm('diff') });
+
+  // OFF: the cap. A file well over READ_SHIM_CAP arrives WHOLE, unannotated.
+  const first = await rd.execute({ path });
+  assert.equal(first, body, 'a 60 KB first read is the whole file, byte for byte');
+  assert.ok(!first.includes('bareloop:'), 'and carries no notice — there is no bound to announce');
+  assert.ok(Buffer.byteLength(first, 'utf8') > READ_SHIM_CAP * 2, 'sanity: the fixture really is far over the cap the other arms apply');
+
+  // OFF: the pointer. The worker demonstrably holds the file whole (that is what
+  // makes the diff below legal), so this is the pointer's own best case — and
+  // this arm still hands the bytes back, because the pointer belongs to A1.
+  const second = await rd.execute({ path });
+  assert.equal(second, body, 'an unchanged re-read re-delivers');
+  assert.ok(!/unchanged|already hold/i.test(second), 'no pointer: that saving is A1\'s lever, not this arm\'s');
+
+  // ON: the diff.
+  const after = await changeAndRead(rd, path, 'BLOCK-0042', 'BLOCK-XXXX');
+  assert.match(after, /DIFF against/, 'a changed file comes back as a labelled diff');
+  assert.match(after, /^@@ /m, 'with a hunk header');
+  assert.match(after, /^-BLOCK-0042/m, 'the line that went');
+  assert.match(after, /^\+BLOCK-XXXX/m, 'and the line that came');
+  assert.ok(!after.includes('BLOCK-0007'), 'untouched regions are not re-sent');
+  assert.ok(!/this read is capped/.test(after), 'and no cap notice — nothing was capped');
+});
+
+test('ARM diff (A2): the diff still refuses what it cannot honestly assert — an oversized diff re-delivers WHOLE', async (t) => {
+  const d = patient(t);
+  const { path } = bigFile(d, 'big.txt', 60);
+  const rd = wrapReadTool(rawRead(), { arm: readShimArm('diff') });
+  await rd.execute({ path });
+
+  // every line different: the diff would be ~2x the file, a loss over re-sending it
+  const rewritten = Array.from({ length: 60 }, (_, i) => `NEWBLOCK-${String(i).padStart(4, '0')} ${'y'.repeat(979)}\n`).join('');
+  writeFileSync(path, rewritten);
+  const after = await rd.execute({ path });
+  assert.ok(!/^@@ /m.test(after), 'the diff was bigger than the re-delivery it replaces, so it is not sent');
+  assert.equal(after, rewritten, 'and the fallback is the whole new file — uncapped, like every other read in this arm');
+});
+
+test('ARM true (A3): every lever at once — cap, slice, pointer AND diff', async (t) => {
+  const d = patient(t);
+  const { path } = bigFile(d, 'big.txt', 60);
+  const rd = wrapReadTool(rawRead(), { arm: readShimArm(true) });
+
+  const first = await rd.execute({ path });
+  assert.ok(first.includes('BLOCK-0000') && !first.includes('BLOCK-0030'), 'cap');
+  const slices = [first, ...await readWhole(rd, path)];
+  assert.ok(slices.some((s) => s.includes('BLOCK-0059')), 'slice: the file is delivered in full across re-reads');
+  assert.match(await rd.execute({ path }), /unchanged/, 'pointer');
+  assert.match(await changeAndRead(rd, path, 'BLOCK-0042', 'BLOCK-XXXX'), /^@@ /m, 'diff');
+});
+
+test('ARM true is byte-identical to the DEFAULT — no caller written against the boolean changed meaning', async (t) => {
+  const d = patient(t);
+  const run = async (opts) => {
+    const { path } = bigFile(d, `b${Math.random()}.txt`, 60);
+    const rd = wrapReadTool(rawRead(), opts);
+    const out = [await rd.execute({ path }), await rd.execute({ path }), await rd.execute({ path }), await rd.execute({ path })];
+    out.push(await changeAndRead(rd, path, 'BLOCK-0042', 'BLOCK-XXXX'));
+    // the paths differ per run, so compare on the shim's OWN framing and payload
+    return out.map((s) => s.replace(/\/[^\s\]]*b0\.[0-9]+\.txt/g, '<path>'));
+  };
+  assert.deepEqual(await run({ arm: readShimArm(true) }), await run(undefined), 'explicit A3 and the default wrap agree on every response');
+});
+
+test('an unrecognised arm THROWS at the guard — a typo must never coerce into a truthy shim', () => {
+  for (const bad of ['diff ', 'Diff', 'cap+diff', 'all', '', 'true', 1, 0, null, {}, ['cap']]) {
+    assert.throws(() => readShimArm(/** @type {any} */ (bad)), /unknown arm/,
+      `${JSON.stringify(bad)} must be refused, not coerced`);
+  }
+  // …and the four legal spellings are, and stay, legal
+  assert.deepEqual(readShimArm(false), { on: false, cap: false, pointer: false, diff: false, g1: false });
+  assert.deepEqual(readShimArm(undefined), readShimArm(false), 'an omitted flag is A0, not an error');
+  assert.deepEqual(readShimArm('cap'), { on: true, cap: true, pointer: true, diff: false, g1: true });
+  assert.deepEqual(readShimArm('diff'), { on: true, cap: false, pointer: false, diff: true, g1: false });
+  assert.deepEqual(readShimArm(true), { on: true, cap: true, pointer: true, diff: true, g1: true });
+});
+
+test('the persona line describes the arm that is actually installed, and nothing else', () => {
+  assert.equal(readShimStrategy(readShimArm(false)), '', 'A0 says nothing');
+  assert.equal(readShimStrategy(readShimArm('cap')), READ_SHIM_STRATEGY, 'A1 states the bound');
+  assert.equal(readShimStrategy(readShimArm(true)), READ_SHIM_STRATEGY, 'A3 states the same bound, unchanged');
+  const a2 = readShimStrategy(readShimArm('diff'));
+  assert.match(a2, /DIFF/, 'A2 explains the diff it will actually be sent');
+  assert.ok(!/24KB|24 KB|capped|continues where/i.test(a2), 'and never mentions a limit that is not in force — a prompt describing machinery that is off is a lie to the worker');
 });

@@ -1,6 +1,8 @@
 // THE READ SHIM (L1 pointer + L4 cap) — a per-worker delivery ledger over the
-// read tool. Flag-gated OFF by default; nothing here runs unless `readShim` is
-// set on the run (src/planrun.js wires it, src/run.js plumbs it).
+// read tool. ARM-gated and OFF by default; nothing here runs unless `readShim`
+// names an arm on the run (src/planrun.js wires it, src/run.js plumbs it). WHICH
+// levers an arm carries is `readShimArm` below, and the reasoning for each arm's
+// membership sits with it.
 //
 // The measured shape ($0 replay, 1,844 real `shell_read` actions from 143
 // archived gate audits, cap 24,576 B):
@@ -26,8 +28,8 @@
 // because it is exactly what the worker gets. It never claims the worker holds
 // bytes the tool itself withheld.
 //
-// L2 (ship a diff when the content changed) is here, under the SAME flag and
-// deliberately narrow. It never fired on the real corpus and was worth 3–5% on
+// L2 (ship a diff when the content changed) is here — its own lever, live under
+// the `'diff'` and `true` arms — and deliberately narrow. It never fired on the real corpus and was worth 3–5% on
 // the money replay, so it is built to be worthless-but-harmless rather than
 // clever: it fires only where the ledger already proves the worker holds the
 // complete previous version, and only when the diff is smaller than the slice
@@ -43,12 +45,101 @@ import { createHash } from 'node:crypto';
  * number keeps them from double-truncating each other (see planrun's wiring). */
 export const READ_SHIM_CAP = 24 * 1024;
 
+// ── THE ARMS (Phase 2 pre-registration, 2026-08-18) ────────────────────────
+// The frozen battery names four arms — A0 off, A1 cap+pointer+slice+G1, A2 diff
+// only, A3 everything — and a single boolean can express exactly two of them.
+// So `readShim` is an ARM NAME that still accepts the two booleans it used to:
+// `false` is A0 and `true` is A3, both byte-identical to what they meant before
+// this file learned the word "arm", because a flag whose meaning shifts under a
+// caller written against the old spelling is a silent treatment change.
+//
+// Every lever is a separate field rather than a level on a dial, because the
+// arms are not nested: A2 is not "less of" A1, it is a different lever entirely.
+//
+// Why A2 carries neither the pointer nor G1, stated so it can be argued with
+// rather than discovered in a result:
+//   - POINTER: the prereg's table lists "pointer" inside A1 and A2 as "diff
+//     only". The pointer is the lever that answers the 48% of reads that
+//     re-read an UNCHANGED file — the single biggest saving in the replay. Fold
+//     it into A2 and A2 stops being the diff's own read: A2-vs-A1 would compare
+//     (diff + the big saving) against (cap + the big saving) and attribute the
+//     shared term to neither. So an unchanged re-read under A2 re-delivers.
+//   - G1: G1 exists because a CAP blinds a worker that cannot aim — it forces
+//     the retrieval pair onto any step granting `read`. A2 caps nothing, so
+//     there is nothing to be blind about, and firing it would make A2 a
+//     different treatment than the prereg names (a narrower admissible plan
+//     space, on top of the diff). An admission rule is not free.
+/** @typedef {{on: boolean, cap: boolean, pointer: boolean, diff: boolean, g1: boolean}} ReadShimArm */
+/** @type {ReadShimArm} */
+const ARM_OFF = Object.freeze({ on: false, cap: false, pointer: false, diff: false, g1: false });
+/** @type {ReadShimArm} */
+const ARM_CAP = Object.freeze({ on: true, cap: true, pointer: true, diff: false, g1: true });
+/** @type {ReadShimArm} */
+const ARM_DIFF = Object.freeze({ on: true, cap: false, pointer: false, diff: true, g1: false });
+/** @type {ReadShimArm} */
+const ARM_ALL = Object.freeze({ on: true, cap: true, pointer: true, diff: true, g1: true });
+
+/** The legal spellings, in one place so an error message cannot drift from the
+ * set it describes. */
+export const READ_SHIM_ARMS = Object.freeze(['false (A0 — off)', "'cap' (A1)", "'diff' (A2)", 'true (A3 — all levers)']);
+
+/**
+ * Resolve the `readShim` flag into its arm. THROWS on anything else — the BA-4
+ * param-guard class, and deliberately not a red.
+ *
+ * An unrecognised value is OPERATOR input, arriving before a single token is
+ * spent, and there is exactly one safe way to fail on it: loudly, at once. The
+ * failure this guard exists to prevent is `readShim: 'diff '` (or 'Diff', or
+ * 'cap+diff') coerced by truthiness into A3 — a battery row that RAN the wrong
+ * arm, recorded the arm it was asked for, and is invisible in the results
+ * afterwards. That is the blind-instrument class this programme keeps paying
+ * for, and it would corrupt the contrast rather than merely fail a run.
+ *
+ * A red was the alternative and is wrong here twice over: a red is a verdict on
+ * the AGENT's work (the plan, the artifact), and this is the operator's own
+ * argument; and a red would need a terminal outcome name, which is arbiter
+ * territory and out of this change's scope.
+ * @param {boolean|'cap'|'diff'|undefined} [flag]
+ * @returns {ReadShimArm}
+ */
+export function readShimArm(flag) {
+  if (flag === undefined || flag === false) return ARM_OFF;
+  if (flag === true) return ARM_ALL;
+  if (flag === 'cap') return ARM_CAP;
+  if (flag === 'diff') return ARM_DIFF;
+  throw new TypeError(`readShim: unknown arm ${JSON.stringify(flag)} — legal values are ${READ_SHIM_ARMS.join(', ')}`);
+}
+
 /** F19 at the bound rather than the verb (the NATIVE_READ_STRATEGY precedent):
  * a cap the worker does not know about is a worker that reads the same file
  * three times wondering why it keeps starting over. It states the bound, what a
  * re-read does, and the two verbs that read a symbol whole — the capability the
  * cap makes mandatory (G1). */
 export const READ_SHIM_STRATEGY = '\nREAD LIMIT: a shell_read of a file over 24KB returns only the next 24KB of it, followed by a notice saying which bytes you got. This is NOT the whole file. Reading the same path again continues where the last read stopped, and once you hold all of it a re-read says so instead of re-sending the bytes. To read a function IN FULL, use ctx_recall(<symbol>) then ctx_get(<pointer>) — that returns the entire function however large its file is. To locate a line, use shell_grep(<pattern>). Never try to understand a large file by reading it whole.';
+
+/** The DIFF arm's own line. It says nothing about a 24KB limit and nothing about
+ * continuation reads, because under A2 neither exists — a persona describing
+ * machinery that is off is a lie to the worker, and a worker rationing its reads
+ * against an imaginary cap is a different treatment than the arm names.
+ *
+ * It does not repeat the steer at ctx_recall/ctx_get either: that steer is the
+ * CAP's compensation (G1's other half), and offering it here would import half
+ * of A1 into A2. The delivery itself carries `diffNotice`'s framing inline; this
+ * line exists so the first diff is not a surprise. */
+export const READ_SHIM_DIFF_STRATEGY = '\nRE-READS: if you shell_read a file you have already been shown in full and it has changed since, the result is a unified DIFF against the copy you already hold — not the file itself. It is labelled as one. Lines starting \'-\' were removed, \'+\' were added, \' \' are unchanged context; apply it to the copy you have and you hold the current file.';
+
+/**
+ * The persona line this arm is entitled to — empty when the arm changes nothing
+ * the worker can perceive. One arm, one line: the two are never concatenated,
+ * because a cap arm has no diff and a diff arm has no cap.
+ * @param {ReadShimArm} arm
+ * @returns {string}
+ */
+export function readShimStrategy(arm) {
+  if (arm.cap) return READ_SHIM_STRATEGY;
+  if (arm.diff) return READ_SHIM_DIFF_STRATEGY;
+  return '';
+}
 
 /** A slice that ends the file needs no steer — the worker has it all now. */
 const doneNotice = (start, total) =>
@@ -199,12 +290,18 @@ function utf8Boundary(buf, end) {
  * A process-wide ledger would carry one step's coverage into the next step's
  * transcript, which never held those bytes.
  * @param {{name: string, execute: (args: any) => Promise<any>}} tool the read tool
- * @param {{cap?: number}} [opts] `cap`: delivery bound in bytes (the shipped
- *   value is `READ_SHIM_CAP`; the option exists so the native path can pin the
- *   two bounds to one number rather than two constants drifting apart).
+ * @param {{cap?: number, arm?: ReadShimArm}} [opts] `cap`: delivery bound in bytes (the
+ *   shipped value is `READ_SHIM_CAP`; the option exists so the native path can pin the
+ *   two bounds to one number rather than two constants drifting apart). `arm`: which
+ *   levers are live (`readShimArm`). Defaults to ALL of them, so every caller written
+ *   before the arms existed keeps the behaviour it was written against.
  * @returns {{name: string, execute: (args: any) => Promise<any>}} the same tool
  */
-export function wrapReadTool(tool, { cap = READ_SHIM_CAP } = {}) {
+export function wrapReadTool(tool, { cap = READ_SHIM_CAP, arm = ARM_ALL } = {}) {
+  // An OFF arm wraps nothing at all — not a wrapper that passes through, which
+  // would still be a `tool.execute` this module owns. A0 has to be the seam
+  // untouched, and "untouched" is the assertion, not "behaves the same".
+  if (!arm.on) return tool;
   const inner = tool.execute;
   /** path → what the worker has been handed of the CURRENT content. `full` is
    * the delivered text itself, kept ONLY while the worker holds the whole file
@@ -238,8 +335,14 @@ export function wrapReadTool(tool, { cap = READ_SHIM_CAP } = {}) {
     // Any change (grown, shrunk, edited) resets to zero: coverage that survives
     // a content change is the masking direction, because a file that shrank
     // under stale coverage would answer as "fully delivered".
-    const start = seen && seen.hash === hash ? seen.delivered : 0;
-    const end = utf8Boundary(buf, Math.min(start + cap, total));
+    //
+    // Without the CAP lever (A2) there is no such thing as partial coverage: a
+    // read hands over the file, so `start` is always 0 and `end` is always the
+    // end. Everything below then falls out unchanged — the slice IS the file,
+    // and the diff's budget below is the whole re-delivery it replaces, which is
+    // the same sentence the capped arm's budget says, at a different size.
+    const start = arm.cap && seen && seen.hash === hash ? seen.delivered : 0;
+    const end = arm.cap ? utf8Boundary(buf, Math.min(start + cap, total)) : total;
 
     // L2, THE DIFF LEVER. Two guards, both refusals rather than adjustments:
     //   - `seen.full !== null` IS the coverage guard: the previous bytes are
@@ -260,7 +363,7 @@ export function wrapReadTool(tool, { cap = READ_SHIM_CAP } = {}) {
     // the worker holds the new content whole, so the next unchanged read is a
     // truthful pointer. Anything less than complete falls through to the slice
     // path and records only what that path actually handed over.
-    if (seen && seen.hash !== hash && seen.full !== null) {
+    if (arm.diff && seen && seen.hash !== hash && seen.full !== null) {
       const d = lineDiff(seen.full, r, Math.max(0, (end - start) - Buffer.byteLength(diffNotice(path, total), 'utf8') - 2));
       if (d !== null) {
         ledger.set(path, { hash, total, delivered: total, full: r });
@@ -268,7 +371,12 @@ export function wrapReadTool(tool, { cap = READ_SHIM_CAP } = {}) {
       }
     }
 
-    if (start >= total) {
+    // The POINTER lever. Reachable only when the ledger already covers the
+    // current content — under A2 that is an unchanged re-read of a file handed
+    // over whole, and the arm answers it by handing the bytes over again. Saying
+    // "you already have it" there would be TRUE and still wrong: it is the
+    // pointer's saving, and A2 is the diff's own read (see the arm table above).
+    if (arm.pointer && start >= total) {
       ledger.set(path, { hash, total, delivered: total, full: r });
       return pointer(path, total);
     }

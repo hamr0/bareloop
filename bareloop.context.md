@@ -937,17 +937,34 @@ plan-red | check-red | close-red | close-unsupported | recipe-stale | branch-red
 provider-red | interpreter-red | cap-halt | wall-halt | step-stalled | hitl-pause |
 hitl-decision-red | step-red:<id>`.
 
-**`readShim` (default `false`) — the capped read seam.** OFF is the shipped behaviour and is
-byte-identical to a run without the flag, guards included. ON, three things move together:
-`shell_read` delivers at most `READ_SHIM_CAP` (24KB) per call with a trusted steer at
-`ctx_recall`/`ctx_get`; a re-read continues from where the last one stopped, and once the worker
-holds the whole unchanged file a re-read returns a pointer instead of the bytes (keyed on what
-was DELIVERED — a partly-seen file NEVER gets a pointer, which is the measured correctness point);
-and `validatePlan` reds `read-blind` on any step granting `read` without `recall` and `get`, since
-a capped worker with no retrieval verb cannot reach the rest of a file. The ledger is per worker,
-so it resets with every step. On the native (clipipe) surface the shim replaces the CLI-display
-cap rather than stacking on it. Default-flip pending a paid contrast; see CHANGELOG for the
-replay numbers behind it.
+**`readShim` (default `false`) — the capped read seam, per ARM.** The value names which levers
+run — the four arms of the frozen Phase 2 pre-registration:
+
+| value | arm | cap + next-unseen-slice | pointer | diff on a changed re-read | G1 (`read-blind`) | persona line |
+|---|---|---|---|---|---|---|
+| `false` *(default)* | A0 | — | — | — | — | none |
+| `'cap'` | A1 | ✓ | ✓ | — | ✓ | `READ_SHIM_STRATEGY` |
+| `'diff'` | A2 | — | — | ✓ | — | `READ_SHIM_DIFF_STRATEGY` |
+| `true` | A3 | ✓ | ✓ | ✓ | ✓ | `READ_SHIM_STRATEGY` |
+
+Anything else **throws** (`readShimArm`) at `runJob`/`runPlan`/`validatePlan` before a token is
+spent — a mis-spelled arm coerced by truthiness would run one treatment under another's label and
+be invisible in the results afterwards.
+
+`false` is the shipped behaviour and is byte-identical to a run without the flag, guards included;
+`true` means exactly what it meant before the arms existed, so nothing written against the boolean
+changed meaning. Where the CAP runs, `shell_read` delivers at most `READ_SHIM_CAP` (24KB) per call
+with a trusted steer at `ctx_recall`/`ctx_get`; a re-read continues from where the last one
+stopped, and once the worker holds the whole unchanged file a re-read returns a pointer instead of
+the bytes (keyed on what was DELIVERED — a partly-seen file NEVER gets a pointer, which is the
+measured correctness point); and `validatePlan` reds `read-blind` on any step granting `read`
+without `recall` and `get`. Where only the DIFF runs, nothing is capped (a first read delivers
+whole, whatever the size), an unchanged re-read re-delivers rather than pointing, and G1 does not
+exist — G1 is the cap's compensation, and an arm that caps nothing has nothing to compensate for.
+The ledger is per worker, so it resets with every step. On the native (clipipe) surface a CAPPING
+arm replaces the CLI-display cap rather than stacking on it; a non-capping arm leaves that wrapper
+installed *inside* the shim, so native never loses its bound. Default-flip pending a paid contrast;
+see CHANGELOG for the replay numbers behind it.
 
 **The two hitl terminals (N4 slice 1, doors re-cut 2026-08-18)** are the class's whole surface
 at this layer, and each is a CLEAN exit (`spendComplete` stays true — only the two casualties floor). `hitl-pause` is a

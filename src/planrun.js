@@ -29,7 +29,7 @@ import { createLadder, STRIKE_LIMIT } from './ladder.js';
 import { createTrend, FIX_STRIKE_LIMIT } from './trend.js';
 import { TOOL_MENU, STORE_VERBS, checkMenu } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, strategyFor } from './tools.js';
-import { wrapReadTool, READ_SHIM_STRATEGY } from './readshim.js';
+import { wrapReadTool, readShimArm, readShimStrategy } from './readshim.js';
 import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
 import { validateBridge, loadGate, newestEligibleVersion, reuseEligibility, quarantinesCredit, QUARANTINED_CODE } from './bridges.js';
 import { extractArtifact } from './text.js';
@@ -375,9 +375,10 @@ export function boundedNote(bounded, rounds) {
  *   REQUIREMENT the plan must meet, never a replacement for the goal: the signed goal and
  *   the signed close are unchanged, and what the person added is what the machine could
  *   not see.
- * @param {boolean} [readShim] is the read shim ON? Then G1 is STATED as well as enforced
- *   (the mailbox precedent again: a law only the validator knows costs a redraft per
- *   draft). False renders byte-identically to the pre-shim prompt.
+ * @param {boolean|'cap'|'diff'} [readShim] the read shim's ARM. Does it carry G1? Then G1
+ *   is STATED as well as enforced (the mailbox precedent again: a law only the validator
+ *   knows costs a redraft per draft). The arms without it — `false` and `'diff'` — render
+ *   byte-identically to the pre-shim prompt.
  */
 export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, startingDraft = null, checkFacts = {}, doorNote = null, readShim = false) {
   const scopeMenu = Array.isArray(scopes) && scopes.length ? scopes : legalScopes(job.writeScope ?? []);
@@ -403,9 +404,12 @@ export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes,
   // (`?? []`: a close naming no command stages nothing, so it offers nothing)
   const closeStages = closeStagesOf(job) ?? [];
   const checkNames = checkMenu(closeStages).map((m) => m.name);
-  // G1, stated where the grant is offered. Only under the shim — with it off the
-  // rule does not exist and neither does this sentence (the A0 render).
-  const readShimLaw = readShim
+  // G1, stated where the grant is offered. Only under an arm that CARRIES G1 —
+  // with the shim off, or under the diff-only arm that caps nothing, the rule
+  // does not exist and neither does this sentence (the A0 and A2 renders). The
+  // sentence also states the 24KB bound as its reason, which is the second
+  // reason it cannot render for A2: that bound is not in force there.
+  const readShimLaw = readShimArm(readShim).g1
     ? `\n  A step granting "read" must also grant "recall" and "get": a read of a large file
   returns only its next 24KB, and those two verbs are the only way to read a symbol in
   full. A step that grants "read" without both is rejected.`
@@ -529,13 +533,17 @@ ${scoutBlob || '(no scout notes)'}`;
  * @param {number} [opts.scoutRounds] the read-only survey's round bound (F59: the LAST round is
  *   reserved — a scout that spends every round on tools gets one toolless round to write its
  *   survey, because the bound halts it mid-tool-use and text is its only deliverable)
- * @param {boolean} [opts.readShim=false] THE READ SHIM (src/readshim.js) — cap, pointer,
- *   next-unseen-slice and the G1 admission rule, gated as ONE unit and OFF by default.
+ * @param {boolean|'cap'|'diff'} [opts.readShim=false] THE READ SHIM (src/readshim.js) — the
+ *   ARM to run, one of the Phase 2 pre-registration's four: `false` (A0, off — the default),
+ *   `'cap'` (A1: cap + pointer + next-unseen-slice + G1), `'diff'` (A2: the diff lever alone,
+ *   no cap, no pointer, no G1), `true` (A3: every lever). Anything else THROWS at the entry
+ *   below rather than coercing into a truthy shim — a mis-spelled arm that silently ran A3
+ *   is a corrupted battery row, invisible afterwards.
  *   OFF is byte-identical to the pre-shim run in every observable, G1 included: the frozen
  *   A0 baseline arm must be exactly today's behaviour, and a guard firing under a disabled
- *   shim would quietly make the baseline a treatment arm. `true` is the experimental arm;
- *   the default-flip waits on a paid contrast that has not been approved (the `layerRoot`
- *   precedent, F41 — an unproven lever ships OFF and earns its default).
+ *   shim would quietly make the baseline a treatment arm. The default-flip waits on a paid
+ *   contrast that has not been approved (the `layerRoot` precedent, F41 — an unproven lever
+ *   ships OFF and earns its default).
  * @param {boolean} [opts.layerRoot=false] Layer R — the within-run ratchet (src/root.js),
  *   scoped PER STEP's ralph loop (each micro-wheel is the Layer-1 atom). Shell-assembled from
  *   the step's own books: per-attempt write-sets from the F32 workerWrites audit (teed for
@@ -687,6 +695,13 @@ ${scoutBlob || '(no scout notes)'}`;
  */
 export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, readShim = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null }) {
   workdir = resolve(workdir);
+  // The read shim's ARM, resolved at the door — before the workdir is read, before
+  // the scout, before a single token. An unrecognised spelling throws HERE, where
+  // it costs nothing, rather than coercing into a truthy shim and running A3 under
+  // an A2 label for the rest of a paid row (the blind-instrument class: the result
+  // would be wrong and would look fine). Only the guard runs here; the flag itself
+  // is still threaded onward as written.
+  readShimArm(readShim);
   // ONE spelling of the redaction, housed next to the inventory it reads
   // (src/validate.js) — the same helper the isolate verbs scrub the litectx store
   // with. Two hand-spelled copies of "what a secret looks like" is exactly how
@@ -1873,27 +1888,40 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     };
     const grantedNames = new Set(granted.map((v) => /** @type {Record<string, string>} */ (TOOL_BY_VERB)[v]));
     const shell = createShellTools().tools.filter((/** @type {{name: string}} */ t) => grantedNames.has(t.name));
-    // THE READ SHIM (flag-gated, default OFF): a per-worker delivery ledger over the
+    // THE READ SHIM (arm-gated, default OFF): a per-worker delivery ledger over the
     // read tool — cap at READ_SHIM_CAP, pointer only once the CURRENT content has been
-    // delivered whole, next-unseen-slice otherwise. Same seam and the same per-worker
-    // lifetime argument as the native cap below: `createShellTools()` above builds fresh
-    // tool objects for THIS worker, so the ledger dies with the worker, which is the
-    // reset the archive replay segmented on.
+    // delivered whole, next-unseen-slice otherwise, diff on a changed re-read. WHICH of
+    // those are live is the arm (`readShimArm`, Phase 2's A0/A1/A2/A3); off is no wrapper at
+    // all. Same seam and the same per-worker lifetime argument as the native cap below:
+    // `createShellTools()` above builds fresh tool objects for THIS worker, so the ledger
+    // dies with the worker, which is the reset the archive replay segmented on.
     //
-    // COMPOSITION ON NATIVE, decided: the shim REPLACES the native wrapper, never layers
+    // COMPOSITION ON NATIVE, decided: a CAPPING arm REPLACES the native wrapper, never layers
     // over it. Both bound the same seam at the same 24 KB (READ_SHIM_CAP === NATIVE_READ_CAP,
     // deliberately one number) and both hand back a trusted steer at the same two verbs, so
     // stacking them would truncate twice and append two notices — and worse, the shim on the
     // OUTSIDE would ledger the native wrapper's already-truncated text as the whole file and
     // then answer a re-read with a pointer, which is precisely the lie this module exists to
     // prevent. The shim is the strictly stronger wrapper (it keeps the CLI display bound AND
-    // continues where the worker left off), so with the flag ON it takes the seam alone.
+    // continues where the worker left off), so with a CAPPING arm ON it takes the seam alone.
+    // An arm that brings NO cap (A2) is the other case and is handled at the block below —
+    // it must not take the native bound away, because losing a bound is not one of its levers.
+    const shimArm = readShimArm(readShim);
     const rdTool = shell.find((/** @type {{name: string}} */ t) => t.name === TOOL_BY_VERB.read);
-    if (readShim && rdTool) wrapReadTool(rdTool);
     // F48: on native, bound shell_read below the CLI's tool-result display cap and hand back a
     // TRUSTED truncation notice steering to ctx_get — the CLI's own truncation blinds the worker
     // (spilled + injection-flagged). Fresh tool objects per mkWorker call, so mutating is per-worker.
-    if (native && !readShim) {
+    //
+    // The condition is the shim's CAP, not the shim: an arm that caps nothing (A2, the diff)
+    // takes the native wrapper's cap away from a native run and hands the seam back to the CLI's
+    // silent truncation — a REGRESSION against A0 on that surface, produced by a lever that is
+    // not about capping at all. So the native bound stays whenever the shim brings none, and it
+    // is applied FIRST, INSIDE the shim: the shim's own doctrine is that it ledgers the text the
+    // worker actually received (the tool's own maxBytes bound is already handled this way), so a
+    // diff against a natively-truncated delivery is a diff against bytes the worker really holds.
+    // Outside, it would truncate the shim's diff mid-hunk. Under A1/A3 this block does not run at
+    // all, so the order is unobservable there and the composition decision below is unchanged.
+    if (native && !shimArm.cap) {
       const rd = rdTool;
       if (rd) {
         const inner = rd.execute;
@@ -1907,6 +1935,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         };
       }
     }
+    // …and the shim goes on last, so it is the OUTER wrapper wherever both apply.
+    if (shimArm.on && rdTool) wrapReadTool(rdTool, { arm: shimArm });
     const ctx = [...CTX_TOOLS].some((t) => grantedNames.has(t))
       ? createCtxTools(lc, workdir, emitCtx).filter((t) => grantedNames.has(t.name))
       : [];
@@ -1923,12 +1953,21 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // isolate/retrieval paragraphs named other components' verbs outright. The
     // assembly lives in tools.js beside the prose it composes, and is asserted
     // byte-identical to the full-component paragraphs on a full grant.
-    // One bound, one strategy line: with the shim on it OWNS the read seam on both
-    // surfaces (it replaced the native wrapper above), so it speaks for the cap and the
-    // native line stands down — two notices describing one bound is how a worker learns
+    // One bound, one strategy line: with a CAPPING arm on, the shim OWNS the read seam on
+    // both surfaces (it replaced the native wrapper above), so it speaks for the cap and
+    // the native line stands down — two notices describing one bound is how a worker learns
     // to distrust both. Off, this renders exactly as before.
-    const system = PERSONA_TOOLS + strategyFor(granted)
-      + (grantedNames.has(TOOL_BY_VERB.read) && (readShim || native) ? (readShim ? READ_SHIM_STRATEGY : NATIVE_READ_STRATEGY) : '');
+    //
+    // The lines are assembled from the SAME two facts the wrappers were: whichever bound is
+    // actually installed speaks for itself, and the arm's own line rides along. A2 on the API
+    // surface therefore gets the diff sentence and NOTHING about a 24KB limit — a persona
+    // describing machinery that is off is a lie to the worker, and a worker rationing reads
+    // against an imaginary cap is a different treatment than the arm names. A2 on native gets
+    // both, because on native both bounds really are installed.
+    const readLines = grantedNames.has(TOOL_BY_VERB.read)
+      ? (native && !shimArm.cap ? NATIVE_READ_STRATEGY : '') + readShimStrategy(shimArm)
+      : '';
+    const system = PERSONA_TOOLS + strategyFor(granted) + readLines;
     /** @param {any} u @returns {{inputTokens: number, outputTokens: number, cacheReadTokens: number, cacheCreationTokens: number}} */
     const usageOf = (u) => ({ inputTokens: u?.inputTokens ?? 0, outputTokens: u?.outputTokens ?? 0, cacheReadTokens: u?.cacheReadTokens ?? 0, cacheCreationTokens: u?.cacheCreationTokens ?? 0 });
 
