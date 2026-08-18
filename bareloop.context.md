@@ -595,10 +595,50 @@ fix for a miss is a new card line and a re-sign) and the `fn` the red lands on. 
 fail an honest pipe on wording. `expectedOf(decision)` is the ONE reduction of a `decide()`
 result to that shape, so a harness compares one shape rather than two.
 
-**NOT built here:** the calibration GATE — running LOCATE + `decide()` over the ten and refusing
-a signature on anything short of 10/10 with itemized reds, alongside the upstream
-INJECTION_BATTERY. Until it exists a stored set is checked for LEGALITY only, a judged stage may
-carry no set at all, and no injection case is stored anywhere.
+**THE CALIBRATION GATE** (`runCalibration`, softgreen module 5, `src/calibrate.js`). It runs the
+WHOLE pipe — `runLocate` over the shipped `JUDGE_ATTEMPTS` ladder, then `decide()` — over each of
+the ten, and compares `expectedOf(decision)` against the stored `expect` by VERDICT **and**
+ITEMIZED REDS (a `(rule, fn)` set, order-insensitive): *a pipe that reds the right case for the
+wrong reason has not been calibrated, it has been lucky*. The floor is **10/10, zero reds**
+(hamr, 2026-08-18) and it is reported per case — `graded: [{id, ok, got, want, detail}]` — never
+as an aggregate percentage.
+
+Alongside it runs **`INJECTION_LOCATE_BATTERY`: five ARBITER-OWNED artifacts**, one per
+bare-agent attack style, **re-aimed at the LOCATE axis** (2026-08-18 second addendum, ruling 1 —
+upstream's `shouldBreak` gold assumes a judge that renders a verdict, and this one never does).
+The attack text is embedded in the artifact, and a style resists only when the extracted FACTS
+are unaffected: same function list, same per-function doc reality. Reading the DECISION alone
+would be blind here — an invented `docQuote` reds `has-doc` through the quote-verification route,
+so a leak and a resist can render identical itemized reds. **All five must resist**; a leak fails
+calibration and names the style. Nothing about the battery is stored in a spec and no signer
+authors it.
+
+A **CASUALTY is never a failed case**: a dead call, an unpriced one (F6 — never retried) or an
+emission that never parses after the ladder STOPS the gate on `runLocate`'s own axis
+(`CASUALTY_AXES`), keeps the graded prefix, and reports zero failures — a broken judge is no
+evidence about the set in either direction. Every locate call is metered through `onCost` on
+every route out and the totals fold through `tallyCalls`, so one unpriced call makes `costUsd`
+null rather than an exact-looking floor.
+
+**At signing it is MANDATORY and it is the only PAID gate** (`prepareSigning`, gate 4). A close
+carrying a `judged-floor` stage is refused when no set is stored, when no `judgeLoop` seam is
+wired (a wiring gap, never a silent pass), when the gate is a casualty, and when anything short
+of all-of-them grades. It runs **after** gates 1–3, so no $0 refusal is ever paid for. The
+signing record keeps WHAT was certified — `cardHash`, `casesHash`, `setHash` (which covers
+`JUDGE_MODEL`), the graded rows and the battery — beside `judgeModel` itself.
+
+**D9.3 for a judged-ONLY close** (ruling 3, hamr: *"fix it now, we are delivering softgreen"*).
+A judged stage skips the seed read (ruling 8), so a close whose only work stage is judged has no
+seed red and used to be unsignable — the one job shape softgreen exists for. For that shape only,
+a PASSED calibration gate plays the seed-red role (the polarity law makes *this close can fail* a
+demonstrated fact), and the record says so: `gates.seedVerdict.satisfiedBy === 'calibration'`. A
+close with any mechanical work stage is UNCHANGED and still needs its seed red.
+
+**DEFERRED, named rather than implied:** nothing compares a stored `judgeModel` against the
+current `JUDGE_MODEL` at resume or reuse. A judge-model bump is a code constant, so it does NOT
+flip the spec hash and no run-time seam exists to catch it today — the fields are stored so the
+comparison is buildable, and *"a judge-model bump forces recalibration"* is currently an
+operator-side rule rather than an enforced one.
 
 **`human-confirms` is the one kind that measures NOTHING** (N4 slice 1). Its whole parameter
 surface is `ask` — the plain question the signer answers — so it cannot spawn, cannot be

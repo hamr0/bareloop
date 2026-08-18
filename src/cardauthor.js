@@ -279,11 +279,25 @@ const proposalChannel = () => ({
 /** every free string in the two artifacts, scrubbed at INGEST — an answer, a
  * proposed snippet and a signer's edit all become a SIGNED artefact that outlives
  * the run, and a file that captures a key captures it forever. The ONE shared
- * inventory, never a second one. @param {any} v */
-function scrubDeep(v) {
-  if (typeof v === 'string') return redactSecrets(v);
-  if (Array.isArray(v)) return v.map(scrubDeep);
-  if (isObj(v)) return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, scrubDeep(x)]));
+ * inventory, never a second one.
+ *
+ * AND IT ANNOUNCES. A scrub that silently rewrites bytes leaves a signer reading
+ * one artifact on screen and signing another on disk — the same failure
+ * `applyGenreEnv` refuses by returning its `dropped` list rather than quietly
+ * deleting a model-authored env var. Every altered value is reported by PATH (the
+ * path only: echoing the matched secret into the announcement would be the same
+ * leak, one hop on), so the caller can say *this was masked* out loud.
+ * @param {any} v @param {string} at @param {{path: string}[]} altered */
+function scrubDeep(v, at, altered) {
+  if (typeof v === 'string') {
+    const masked = redactSecrets(v);
+    // `redactSecrets` returns a non-matching string byte-identical, so this
+    // compares equal on every honest value and costs the clean path nothing
+    if (masked !== v) altered.push({ path: at });
+    return masked;
+  }
+  if (Array.isArray(v)) return v.map((x, i) => scrubDeep(x, `${at}[${i}]`, altered));
+  if (isObj(v)) return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, scrubDeep(x, at ? `${at}.${k}` : k, altered)]));
   return v;
 }
 
@@ -300,8 +314,15 @@ function scrubDeep(v) {
  * THE GATE RUNS OVER WHAT WILL BE STORED, never over the proposal: a signer can
  * fix a legal proposal into an illegal one, and the artifact that reaches the
  * hash is the one that must be legal.
+ *
+ * `scrubbed` is the INGEST SCRUB'S OWN ANNOUNCEMENT — the paths whose bytes the
+ * secret inventory masked on the way in. Empty on every honest artifact, and
+ * never silent when it is not: a signer signs a hash over the STORED bytes, so
+ * "what you typed is not what was stored" is a fact they are owed rather than one
+ * the redactor keeps.
  * @param {{proposal: any, fix?: any}} o
- * @returns {{ok: boolean, reds: Red[], card: any, cases: any[]|null, source: 'signer'|'proposal'}}
+ * @returns {{ok: boolean, reds: Red[], card: any, cases: any[]|null, source: 'signer'|'proposal',
+ *   scrubbed: {path: string}[]}}
  */
 export function signJudgedArtifacts({ proposal, fix = null }) {
   const source = /** @type {'signer'|'proposal'} */ (fix === null || fix === undefined ? 'proposal' : 'signer');
@@ -313,14 +334,17 @@ export function signJudgedArtifacts({ proposal, fix = null }) {
       card: null,
       cases: null,
       source,
+      scrubbed: [],
     };
   }
   // A COPY, scrubbed. The caller keeps its proposal (the run's own audit of what
   // the model said); what is stored can never be reached back through it.
-  const card = scrubDeep(structuredClone(/** @type {any} */ (chosen).card ?? null));
-  const cases = scrubDeep(structuredClone(/** @type {any} */ (chosen).cases ?? null));
+  /** @type {{path: string}[]} */
+  const scrubbed = [];
+  const card = scrubDeep(structuredClone(/** @type {any} */ (chosen).card ?? null), 'card', scrubbed);
+  const cases = scrubDeep(structuredClone(/** @type {any} */ (chosen).cases ?? null), 'cases', scrubbed);
   const v = validateJudgedArtifacts({ card, cases });
-  return { ok: v.ok, reds: v.reds, card, cases: Array.isArray(cases) ? cases : null, source };
+  return { ok: v.ok, reds: v.reds, card, cases: Array.isArray(cases) ? cases : null, source, scrubbed };
 }
 
 // ── 5. THE FOLD — enumerated into the signed spec ───────────────────────────

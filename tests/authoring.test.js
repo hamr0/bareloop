@@ -38,7 +38,9 @@ import {
   classGuards, closeCeiling, genreEnv, genreOwnedEnvNames, genreInstruments,
   validateDeclaration, normalizeDeclaration,
 } from '../src/authoring.js';
-import { declarationLines, parseCeiling, ceilingLine, crashRecord, phaseLine } from '../scripts/author-readout.mjs';
+import {
+  declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
+} from '../scripts/author-readout.mjs';
 import { RAW_PERSIST_MAX, RAW_TRIM_MARKER } from '../src/text.js';
 
 /** The battery for the one class v1 admits. The attachment point is the CLASS
@@ -1520,6 +1522,67 @@ test('signing readout: a missing goal reads as MISSING, never as an empty pair o
   assert.ok(lines.some((l) => l.startsWith('  a  [command-exit]')));
   // and a spec with no declaration at all still renders its goal rather than throwing
   assert.deepEqual(declarationLines({ goal: 'g' }), ['goal       "g"', 'declaration']);
+});
+
+// ── the JUDGED half of the same readout (softgreen modules 4+5) ──────────────
+
+test('signing readout: a judged close shows its CARD in full and its ten as a roster', () => {
+  const spec = {
+    closeDecl: {
+      stages: [
+        { name: 'guard', kind: 'files-changed', params: {} },
+        { name: 'reads-well', kind: 'judged-floor', params: { card: { items: [{ rule: 'has-doc', text: 'every function is documented' }] } } },
+      ],
+      calibration: {
+        cases: [
+          { id: 'p1', artifact: 'export function a() {}', expect: { verdict: 'pass', reds: [] } },
+          { id: 'r1', artifact: 'export function b() {}', expect: { verdict: 'red', reds: [{ rule: 'has-doc', fn: 'b' }] } },
+        ],
+      },
+    },
+  };
+  const lines = rubricLines(spec);
+  assert.ok(lines.some((l) => l.includes('[has-doc] every function is documented')), 'the signer reads their own words');
+  assert.ok(lines.some((l) => /1 pass, 1 red/.test(l)), 'both polarities are visible at a glance');
+  assert.ok(lines.some((l) => l.includes('r1') && l.includes('has-doc@b')), 'a red case names WHICH line, on WHICH function');
+  // the artifacts themselves are NOT dumped: ten real files is a page of code
+  assert.ok(!lines.some((l) => l.includes('export function')));
+  // a close that judges nothing says nothing — an empty list, not a "no card" line
+  assert.deepEqual(rubricLines({ closeDecl: { stages: [{ name: 'g', kind: 'command-exit' }] } }), []);
+  // …and a judged close with NO set says exactly that
+  assert.ok(rubricLines({ closeDecl: { stages: [spec.closeDecl.stages[1]] } }).some((l) => /NONE STORED/.test(l)));
+});
+
+test('calibration readout: itemized rows, never an aggregate — and a casualty says so', () => {
+  const pass = calibrationLines({
+    ok: true, judgeModel: 'claude-haiku-4-5', cardHash: 'a'.repeat(64), casesHash: 'b'.repeat(64), setHash: 'c'.repeat(64),
+    graded: [{ id: 'p1', ok: true }, { id: 'r1', ok: true }],
+    injection: { styles: [{ style: 's', resisted: true }] },
+  });
+  assert.match(pass[0], /PASS — 2\/2 case\(s\).*1\/1 injection style\(s\)/);
+  assert.match(pass.at(-1), /certified {2}card aaaaaaaaaaaa/, 'WHICH bytes were certified, and by which judge');
+  assert.match(pass[0], /claude-haiku-4-5/);
+
+  const fail = calibrationLines({
+    ok: false, judgeModel: 'm', graded: [{ id: 'r1', ok: false, detail: 'verdict: signed "red"' }],
+    injection: { styles: [{ style: 'direct override', resisted: false, detail: 'the facts moved' }] },
+  });
+  assert.ok(fail.some((l) => l.includes('WRONG  r1: verdict: signed "red"')));
+  assert.ok(fail.some((l) => l.includes('LEAK   direct override: the facts moved')));
+
+  const dead = calibrationLines({ ok: false, stop: 'provider-red', graded: [], injection: { styles: [] }, casualty: { kind: 'case', at: 'p1', axis: 'provider-red' } });
+  assert.ok(dead.some((l) => /CASUALTY.*no evidence about the set/.test(l)));
+  // the two refusals that never ran a call read as refusals, not as 0/0 scores
+  assert.match(calibrationLines({ stop: 'calibration-missing' })[0], /no calibration set is stored/);
+  assert.match(calibrationLines({ stop: 'no-judge' })[0], /never ran/);
+  assert.match(calibrationLines(null)[0], /not reached/);
+});
+
+test('phaseLine renders the compile and the paid gate, including the scrub announcement', () => {
+  assert.match(phaseLine('rubric', { size: 10 }), /10 calibration cases/);
+  assert.match(phaseLine('rubric-done', { ok: false, stop: 'artifact-red', attempts: 3 }), /NOT compiled \(artifact-red\)/);
+  assert.match(phaseLine('rubric-scrubbed', { paths: ['card.items[0].text'] }), /MASKED before storing: card\.items\[0\]\.text/);
+  assert.match(phaseLine('calibration', { cases: 10, styles: 5 }), /10 case\(s\) \+ 5 injection style\(s\)/);
 });
 
 // ── the authoring CEILING's parse and its announcement ───────────────────────
