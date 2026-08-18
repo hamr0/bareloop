@@ -26,9 +26,15 @@
 // because it is exactly what the worker gets. It never claims the worker holds
 // bytes the tool itself withheld.
 //
-// L2 (ship a diff when the content changed) is deliberately NOT here: it never
-// fired on the real corpus, is proven synthetically only, and was worth 3–5% on
-// the money replay. It needs its own eval before it earns a seam.
+// L2 (ship a diff when the content changed) is here, under the SAME flag and
+// deliberately narrow. It never fired on the real corpus and was worth 3–5% on
+// the money replay, so it is built to be worthless-but-harmless rather than
+// clever: it fires only where the ledger already proves the worker holds the
+// complete previous version, and only when the diff is smaller than the slice
+// it would replace. A diff is a statement ABOUT bytes the worker has — assert
+// it over bytes it never had and you have re-invented the path+hash lie in a
+// costlier form, because a worker told "line 900 changed" about a file it only
+// ever saw 24 KB of has no way to notice it was told a fiction.
 
 import { createHash } from 'node:crypto';
 
@@ -64,6 +70,116 @@ const capNotice = (start, end, total) =>
 const pointer = (path, total) =>
   `[bareloop: ${path} is unchanged since you read it — you already hold all ${total} bytes of it. Nothing new to show.]`;
 
+/** The diff's own TRUSTED framing, same `bareloop:` register as the notices
+ * above. It says what the payload IS (a diff, not the file) and what it is
+ * against (the copy the worker already holds), because a worker that reads a
+ * hunk as the file's contents has been read-blinded by a saving. */
+const diffNotice = (path, total) =>
+  `[bareloop: ${path} changed since you read it. Below is a DIFF against the version you already hold IN FULL — not the file. `
+  + "Lines starting '-' were removed, '+' were added, ' ' are unchanged context; '@@ -a +b @@' gives the line numbers in the old and new file. "
+  + `Apply it to the copy you have and you hold the current ${total} bytes; there is nothing else to read.]`;
+
+/** Lines of unchanged context on each side of a hunk — enough to place the
+ * change without re-sending the file around it. */
+const DIFF_CONTEXT = 2;
+
+/** The LCS table is old-lines × new-lines cells. Bounded because this runs
+ * INSIDE a tool call the worker is waiting on: a 20k-line file rewritten whole
+ * is 400M cells, which is a stall and a heap spike in exchange for a diff that
+ * would blow the size bound anyway. Over the bound we decline and re-deliver —
+ * the same answer, reached without the arithmetic. */
+const DIFF_CELL_BOUND = 1_000_000;
+
+/**
+ * A line-based diff of `oldText` → `newText`, or null if it cannot be produced
+ * within `maxBytes`. Stdlib only, and deliberately not byte-compatible with
+ * GNU `diff -u`: hunk headers here are plain 1-based `-start,count +start,count`
+ * with no attempt to match GNU's empty-range convention, because the reader is
+ * a model reading prose, not `patch`.
+ *
+ * The byte budget is enforced WHILE rendering, not checked afterwards, so an
+ * enormous diff is abandoned rather than built and then thrown away.
+ * @param {string} oldText
+ * @param {string} newText
+ * @param {number} maxBytes
+ * @returns {string|null}
+ */
+function lineDiff(oldText, newText, maxBytes) {
+  const a = oldText.split('\n');
+  const b = newText.split('\n');
+  // Common head and tail come off first: real edits touch a fraction of a file,
+  // and trimming is what keeps the quadratic middle small enough to be legal.
+  let head = 0;
+  while (head < a.length && head < b.length && a[head] === b[head]) head++;
+  let tail = 0;
+  while (tail < a.length - head && tail < b.length - head
+    && a[a.length - 1 - tail] === b[b.length - 1 - tail]) tail++;
+  const ar = a.slice(head, a.length - tail);
+  const br = b.slice(head, b.length - tail);
+  if (ar.length * br.length > DIFF_CELL_BOUND) return null;
+
+  // Longest common subsequence over the changed middle, classic DP.
+  const w = br.length + 1;
+  const dp = new Uint32Array((ar.length + 1) * w);
+  for (let i = ar.length - 1; i >= 0; i--) {
+    for (let j = br.length - 1; j >= 0; j--) {
+      dp[i * w + j] = ar[i] === br[j]
+        ? dp[(i + 1) * w + j + 1] + 1
+        : Math.max(dp[(i + 1) * w + j], dp[i * w + j + 1]);
+    }
+  }
+  /** @type {{t: string, line: string, ai: number, bi: number}[]} */
+  const rows = [];
+  let ai = 0, bi = 0;
+  const push = (/** @type {string} */ t, /** @type {string} */ line) => {
+    rows.push({ t, line, ai, bi });
+    if (t !== '+') ai++;
+    if (t !== '-') bi++;
+  };
+  for (let k = 0; k < head; k++) push(' ', a[k]);
+  let i = 0, j = 0;
+  while (i < ar.length && j < br.length) {
+    if (ar[i] === br[j]) { push(' ', ar[i]); i++; j++; }
+    else if (dp[(i + 1) * w + j] >= dp[i * w + j + 1]) { push('-', ar[i]); i++; }
+    else { push('+', br[j]); j++; }
+  }
+  while (i < ar.length) { push('-', ar[i]); i++; }
+  while (j < br.length) { push('+', br[j]); j++; }
+  for (let k = a.length - tail; k < a.length; k++) push(' ', a[k]);
+
+  // Group the changed rows into hunks, each padded with context; two changes
+  // closer than twice the context share one hunk rather than repeating lines.
+  const changed = rows.map((r, k) => (r.t === ' ' ? -1 : k)).filter((k) => k >= 0);
+  if (changed.length === 0) return null;
+  /** @type {[number, number][]} */
+  const hunks = [];
+  for (const k of changed) {
+    const last = hunks[hunks.length - 1];
+    if (last && k - last[1] <= DIFF_CONTEXT * 2 + 1) last[1] = k;
+    else hunks.push([k, k]);
+  }
+
+  let out = '';
+  let bytes = 0;
+  const emit = (/** @type {string} */ s) => {
+    bytes += Buffer.byteLength(s, 'utf8');
+    out += s;
+    return bytes <= maxBytes;
+  };
+  for (const [lo, hi] of hunks) {
+    const from = Math.max(0, lo - DIFF_CONTEXT);
+    const to = Math.min(rows.length - 1, hi + DIFF_CONTEXT);
+    let aCount = 0, bCount = 0;
+    for (let k = from; k <= to; k++) {
+      if (rows[k].t !== '+') aCount++;
+      if (rows[k].t !== '-') bCount++;
+    }
+    if (!emit(`@@ -${rows[from].ai + 1},${aCount} +${rows[from].bi + 1},${bCount} @@\n`)) return null;
+    for (let k = from; k <= to; k++) if (!emit(`${rows[k].t}${rows[k].line}\n`)) return null;
+  }
+  return out;
+}
+
 /** A UTF-8 sequence split across a slice boundary decodes to a replacement
  * character on BOTH sides — the byte is then delivered twice and read as
  * garbage once. Walk back to the last lead byte instead. `end` moves by at most
@@ -90,8 +206,19 @@ function utf8Boundary(buf, end) {
  */
 export function wrapReadTool(tool, { cap = READ_SHIM_CAP } = {}) {
   const inner = tool.execute;
-  /** path → what the worker has been handed of the CURRENT content.
-   * @type {Map<string, {hash: string, total: number, delivered: number}>} */
+  /** path → what the worker has been handed of the CURRENT content. `full` is
+   * the delivered text itself, kept ONLY while the worker holds the whole file
+   * (null otherwise) because that is the only state a diff is legal from.
+   *
+   * MEMORY COST, stated rather than waved at: one copy of every fully-delivered
+   * file, for the lifetime of one worker. The ceiling is real but it is not a
+   * new one — those exact bytes are already sitting in the worker's transcript,
+   * where they are the expensive copy (they are billed every round; this one is
+   * billed never). A partly-delivered file stores nothing, so the pathological
+   * case — a worker paging through many huge files — is precisely the case that
+   * holds no copies. The map dies with the worker along with the rest of the
+   * ledger; nothing here is process-wide.
+   * @type {Map<string, {hash: string, total: number, delivered: number, full: string|null}>} */
   const ledger = new Map();
 
   tool.execute = async (/** @type {any} */ args) => {
@@ -112,13 +239,40 @@ export function wrapReadTool(tool, { cap = READ_SHIM_CAP } = {}) {
     // a content change is the masking direction, because a file that shrank
     // under stale coverage would answer as "fully delivered".
     const start = seen && seen.hash === hash ? seen.delivered : 0;
+    const end = utf8Boundary(buf, Math.min(start + cap, total));
+
+    // L2, THE DIFF LEVER. Two guards, both refusals rather than adjustments:
+    //   - `seen.full !== null` IS the coverage guard: the previous bytes are
+    //     retained only when every one of them was delivered, so a partly-seen
+    //     old version has nothing to diff against and re-delivers from 0.
+    //   - the budget is the slice this diff REPLACES, `end - start` bytes of a
+    //     fresh capped re-delivery. Bounding by the cap alone would let a diff
+    //     be several times a small file and still ship; bounding by the slice
+    //     makes "smaller than what it replaces" true by construction, and is
+    //     never looser than the cap.
+    // A consequence worth naming rather than tuning away: the framing itself is
+    // ~350 bytes, so a file smaller than that can never produce a legal diff and
+    // always re-delivers whole. That is the rule working, not a gap — a diff of
+    // a 78-byte file costs more than the file.
+    //
+    // A rendered diff is always COMPLETE — the renderer returns the whole thing
+    // or null, never a prefix — which is what licenses the ledger line below:
+    // the worker holds the new content whole, so the next unchanged read is a
+    // truthful pointer. Anything less than complete falls through to the slice
+    // path and records only what that path actually handed over.
+    if (seen && seen.hash !== hash && seen.full !== null) {
+      const d = lineDiff(seen.full, r, Math.max(0, (end - start) - Buffer.byteLength(diffNotice(path, total), 'utf8') - 2));
+      if (d !== null) {
+        ledger.set(path, { hash, total, delivered: total, full: r });
+        return `${diffNotice(path, total)}\n\n${d}`;
+      }
+    }
 
     if (start >= total) {
-      ledger.set(path, { hash, total, delivered: total });
+      ledger.set(path, { hash, total, delivered: total, full: r });
       return pointer(path, total);
     }
-    const end = utf8Boundary(buf, Math.min(start + cap, total));
-    ledger.set(path, { hash, total, delivered: end });
+    ledger.set(path, { hash, total, delivered: end, full: end === total ? r : null });
     const slice = buf.subarray(start, end).toString('utf8');
     // A first read that fits under the cap is the tool's own bytes, untouched —
     // no notice, no reframing. That is the overwhelming majority of reads, and

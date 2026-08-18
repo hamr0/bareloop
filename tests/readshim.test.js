@@ -119,3 +119,121 @@ test('a THROWN read (the file is not there) propagates and leaves no ledger entr
   writeFileSync(p, 'appeared\n');
   assert.equal(await rd.execute({ path: p }), 'appeared\n', 'a path that failed once still delivers its bytes when it exists');
 });
+
+// ---------------------------------------------------------------------------
+// L2 (the DIFF lever). The claim under test is narrow on purpose: a diff is a
+// statement ABOUT bytes the worker already has, so it is legal only when the
+// ledger proves it has all of them, and only when it is smaller than the slice
+// it replaces. Both guards are load-bearing — the first is the same lie class
+// the pointer exists to prevent, the second turns a saving into a loss.
+
+/** deliver `path` in full through the shim, whatever it takes */
+async function readWhole(rd, path) {
+  const out = [];
+  for (let i = 0; i < 20; i++) {
+    const r = await rd.execute({ path });
+    out.push(r);
+    if (!/this read is capped/.test(r)) break;
+  }
+  return out;
+}
+
+test('L2: a file the worker holds IN FULL comes back as a DIFF when it changes', async (t) => {
+  const d = patient(t);
+  const { path } = bigFile(d, 'big.txt', 60);                  // 60 KB, three reads to hold whole
+  const rd = wrapReadTool(rawRead());
+  const slices = await readWhole(rd, path);
+  assert.equal(slices.length, 3, 'the file really did take three capped reads to deliver');
+
+  // one line edited, deep in the file — the archetypal re-read after an edit
+  const edited = slices.map((s) => s.replace(/\n\n\[bareloop:[^\]]*\]$/, '')).join('')
+    .replace('BLOCK-0042', 'BLOCK-XXXX');
+  writeFileSync(path, edited);
+
+  const after = await rd.execute({ path });
+  assert.match(after, /\[bareloop:/, 'the diff carries the same TRUSTED framing as the other notices');
+  assert.match(after, /diff/i, 'and says plainly that it is a diff, not the file');
+  assert.match(after, /^@@ /m, 'a unified-style hunk header locates the change');
+  assert.match(after, /^-BLOCK-0042/m, 'the line that went');
+  assert.match(after, /^\+BLOCK-XXXX/m, 'and the line that came');
+  assert.ok(!after.includes('BLOCK-0007'), 'untouched regions are not re-sent — that is the whole point');
+});
+
+test('L2: the diff is SMALLER than the content it replaces', async (t) => {
+  const d = patient(t);
+  const { path } = bigFile(d, 'big.txt', 60);
+  const rd = wrapReadTool(rawRead());
+  const slices = await readWhole(rd, path);
+  const whole = slices.map((s) => s.replace(/\n\n\[bareloop:[^\]]*\]$/, '')).join('');
+  writeFileSync(path, whole.replace('BLOCK-0042', 'BLOCK-XXXX'));
+
+  const after = await rd.execute({ path });
+  assert.ok(Buffer.byteLength(after, 'utf8') < READ_SHIM_CAP,
+    `a one-line edit must cost far less than a capped re-delivery (got ${Buffer.byteLength(after, 'utf8')})`);
+  // one hunk is the changed line plus four context lines, and this fixture's
+  // lines are ~1 KB each — so the floor here is the fixture's, not the diff's
+  assert.ok(Buffer.byteLength(after, 'utf8') < READ_SHIM_CAP / 3, 'and in practice one hunk plus its framing, not a payload');
+});
+
+test('L2: PARTIAL coverage gets NO diff — a diff against bytes the worker never had is the pointer lie again', async (t) => {
+  const d = patient(t);
+  const { path, body } = bigFile(d, 'big.txt', 60);
+  const rd = wrapReadTool(rawRead());
+  await rd.execute({ path });                                  // only the first 24 KB, ever
+  writeFileSync(path, body.replace('BLOCK-0042', 'BLOCK-XXXX'));
+
+  const after = await rd.execute({ path });
+  assert.ok(!/^@@ /m.test(after), 'no diff: the worker never held the old version whole');
+  assert.ok(after.includes('BLOCK-0000'), 'it re-delivers from byte 0 under the cap rules instead');
+  assert.match(after, /this read is capped/, 'with the ordinary cap notice');
+});
+
+test('L2: an OVERSIZED diff falls back to the capped re-delivery — never an unbounded diff', async (t) => {
+  const d = patient(t);
+  const { path } = bigFile(d, 'big.txt', 60);
+  const rd = wrapReadTool(rawRead());
+  await readWhole(rd, path);                                   // held in full
+
+  // every line different: the diff would be ~2x the file, a loss over the slice
+  const rewritten = Array.from({ length: 60 }, (_, i) => `NEWBLOCK-${String(i).padStart(4, '0')} ${'y'.repeat(979)}\n`).join('');
+  writeFileSync(path, rewritten);
+
+  const after = await rd.execute({ path });
+  assert.ok(!/^@@ /m.test(after), 'the diff was bigger than the slice it replaces, so it is not sent');
+  assert.ok(after.includes('NEWBLOCK-0000'), 're-delivery starts at byte 0');
+  assert.match(after, /this read is capped/, 'under the ordinary cap');
+  assert.ok(Buffer.byteLength(after, 'utf8') < READ_SHIM_CAP + 600, 'and is bounded by the cap, like any other slice');
+});
+
+test('L2: after a diff the ledger says the worker holds the NEW content — the next read is a truthful pointer', async (t) => {
+  const d = patient(t);
+  const { path } = bigFile(d, 'big.txt', 60);
+  const rd = wrapReadTool(rawRead());
+  const slices = await readWhole(rd, path);
+  const whole = slices.map((s) => s.replace(/\n\n\[bareloop:[^\]]*\]$/, '')).join('');
+  // a LENGTH-changing edit, so the pointer's byte count can only be right by
+  // reading the new content — not by echoing the old total back unchanged
+  const next = whole.replace('BLOCK-0042 xx', 'BLOCK-XXXX ');
+  writeFileSync(path, next);
+  const diff = await rd.execute({ path });
+  assert.match(diff, /^@@ /m, 'precondition: the diff did fire');
+
+  const after = await rd.execute({ path });
+  assert.match(after, /unchanged/, 'a diff against a complete copy leaves the worker holding the new file whole');
+  assert.ok(after.includes(String(Buffer.byteLength(next, 'utf8'))), 'and the pointer names the NEW total');
+});
+
+test('L2: after a FALLBACK the ledger says only what was delivered — the next read continues, it does not point', async (t) => {
+  const d = patient(t);
+  const { path } = bigFile(d, 'big.txt', 60);
+  const rd = wrapReadTool(rawRead());
+  await readWhole(rd, path);
+  const rewritten = Array.from({ length: 60 }, (_, i) => `NEWBLOCK-${String(i).padStart(4, '0')} ${'y'.repeat(979)}\n`).join('');
+  writeFileSync(path, rewritten);
+  const fallback = await rd.execute({ path });
+  assert.ok(!/^@@ /m.test(fallback), 'precondition: the oversized diff fell back');
+
+  const after = await rd.execute({ path });
+  assert.ok(!/unchanged/i.test(after), 'the worker holds 24 KB of 60 KB — a pointer here is the lie');
+  assert.ok(after.includes('NEWBLOCK-0025'), 'it continues with bytes never delivered');
+});
