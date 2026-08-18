@@ -5589,3 +5589,50 @@ shape in §4 and the test design in §6.
   number not already in the signed shape is operator territory, unset.
 - **The arbiter does not move.** L4's cap is a tighten-only operator bound; G1 is a
   validation-gate rule, not agent-authorable; nothing here touches budgets, the fence, or merge.
+
+---
+
+## Addendum v1.75 — 2026-08-18 (three parked softgreen questions RULED: injection battery
+ADAPTED to the locate axis not run as-is, judge bounds CONFIRMED, and pure-judged closes made
+SIGNABLE in this rung via the calibration gate — hamr: *"fix it now, we are delivering
+softgreen, isn't that the whole point?"*)
+
+**Full record:** `docs/02-features/2026-08-17-softgreen-review-door-design.md`, second
+same-day addendum. **DOCS ONLY. No build performed by this pass.**
+
+### 1. RULING — injection battery ADAPTED, not run as-is (selected option "1A")
+
+bare-agent's 5 `INJECTION_BATTERY` styles assume a judge that renders a verdict; a LOCATE-only
+judge has none for their `shouldBreak` gold to grade (POC finding). Same 5 attack styles,
+re-aimed: attack text embedded in the artifact, case passes only if the **extracted facts** are
+unaffected. All 5 must still resist or calibration fails — the v1.73 all-or-nothing reading is
+unchanged. **This amends v1.73 ruling 3's letter, keeps its spirit** — stated explicitly, not
+left implicit.
+
+### 2. RULING — judge bounds CONFIRMED (hamr verbatim: *"keep the caps"*)
+
+`JUDGE_MAX_TOKENS` 4000 (caller-overridable; binding it → truncation-red, never a silent partial
+pass), `JUDGE_ATTEMPTS` 2 (one retry; POC measured ~1-in-6 malformed JSON at haiku-4.5),
+`MAX_JUDGED_PATHS` 8 (bounds a runaway file list / runaway bill). All three builder-proposed,
+now operator-confirmed; changes to any remain operator territory (standing rule).
+
+### 3. RULING — pure-judged closes MUST be signable, fixed in THIS rung (hamr verbatim: *"fix it
+now, we are delivering softgreen, isn't that the whole point?"*)
+
+The D9.3 signing gate (≥1 work stage red at seed) currently blocks a close whose only work stage
+is `judged-floor` — the exact jsdoc-genre shape F104 was named for. §4.5's earlier "dissolves
+F104" claim (design record, 2026-08-17) was true of the composition law only, not of this
+separate signing-time gate; corrected in place in the design record, not left standing as two
+disagreeing claims.
+
+**Mechanism:** for a judged-only close, the **calibration gate** (10/10 cases, zero reds) plays
+the role the seed-red check plays for mechanical stages — proof the close can fail, which is
+what D9.3 actually protects. A judged-only close with a **passed** calibration gate is signable;
+without one, it is not. **Mechanical-stage closes are unchanged** — this is an alternate route
+to D9.3's intent for the judged-only shape, not a relaxation for anyone else.
+
+### 4. Not claimed
+
+- **No claim `judged-floor` works.** Calibration existing and passing is still unproven.
+- **The arbiter does not move.** D9.3's intent (a close must be provably failable before
+  signing) is preserved, not loosened.
