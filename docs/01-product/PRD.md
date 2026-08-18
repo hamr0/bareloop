@@ -5334,3 +5334,64 @@ place the machinery mis-described itself.
 - **No live firing.** The pause door has not been exercised on a paid run; it is test-proven,
   including a sabotage-proven checkpoint classification.
 - **The arbiter does not move.** No budget, cap, fence or merge semantics change here.
+
+---
+
+## Addendum v1.73 — 2026-08-18 (softgreen's thresholds are RULED: the calibration set is **10**, the floor is **10/10 with zero reds**, the upstream **INJECTION_BATTERY runs alongside it and all 5 must resist**, softgreen's **D5 guard battery inherits green's**, and the **pause door is ALLOWANCE-FREE in every state** — hamr: *"go build 10, we could double later"*)
+
+**DOCS ONLY. No build is authorized here.** This closes v1.71 §7's reserved `OPEN` and the
+allowance question left open at the v0.11.0 doors build. Two rulings carry hamr's own words;
+three are options he selected and are marked as such.
+
+### 1. RULING — the calibration set's SIZE is **10**
+
+hamr, verbatim: *"go build 10, we could double later"*.
+
+- **v1.71 §7's `OPEN` is CLOSED.** The frozen calibration set is **10 cases**.
+- **Doubling later is explicitly allowed** — that clause is part of the ruling, not a gloss.
+- A size change is a **spec-level threshold change and remains operator territory**. The
+  standing no-agent-threshold-picking rule is untouched: hamr picked it, which is the only
+  admissible way this number gets picked.
+
+### 2. RULING — the calibration FLOOR is **10/10, zero reds** (selected option)
+
+- The **WHOLE PIPE — extraction AND `decide()` — must grade all 10 signed cases correctly,
+  with itemized reds**, before the close is signable.
+- No partial floor, no best-of: **one wrong grade is a failed calibration and an unsignable
+  close.** This is v1.71 §5's *"must grade it correctly"* given its number, and it carries the
+  decisive-binary discipline into the calibration layer.
+
+### 3. RULING — bare-agent's **INJECTION_BATTERY (5 styles)** runs alongside the 10 (selected option)
+
+- It runs **at calibration time, with the 10 cases**, and **all 5 must resist or calibration
+  fails**.
+- Reason: the pipe's safety claim IS *`judgeVerdict` is injectable, `judgeLocate` is not*
+  (v1.71 §5). A judge that clears 10/10 and folds to an injection has cleared nothing. Same
+  gate, same moment, same all-or-nothing reading.
+
+### 4. RULING — softgreen's D5 guard battery **INHERITS green's** (selected option)
+
+- Softgreen gets **no battery of its own**; it inherits green's **verbatim** — the same
+  precedent hitl was built on (OPEN-1 at slice 1: nothing a human stage cannot see).
+- A softgreen job is a green job's agent-authored plan under the same arbiter with one judged
+  stage at the end. The mandatory guards bound the **worker**, and a judged final stage relaxes
+  none of them.
+
+### 5. RULING — the pause door is **ALLOWANCE-FREE**, including below the wall-exhausted gate (selected option)
+
+- **Pressing pause never spends a rerun-allowance token, in any state** — including below the
+  wall-exhausted gate. Pause does no work and spends no money; charging a token would bill a
+  person for declining to decide.
+- The **60-day TTL (`PAUSE_TTL_MS`) remains the backstop** and stays the only thing that ends a
+  paused run.
+- **This amends the open arbiter question logged at the v0.11.0 doors build.** v1.72 §2 already
+  stated the ordinary case; what stayed open was whether an exhausted wall made an exception.
+  It does not: **a raise-and-re-sign changes what a rerun can BUY, never what a pause COSTS.**
+
+### 6. Not claimed
+
+- **No claim that `judged-floor` works.** v1.71 §7 stands in full — a floor with a signed size
+  and a signed pass bar is still a floor nothing has ever graded.
+- **No build authorized.** These are the numbers the build will use on hamr's explicit go.
+- **The arbiter does not move.** Every number here is operator-set, operator-changeable, and
+  unreachable from the agent's side.
