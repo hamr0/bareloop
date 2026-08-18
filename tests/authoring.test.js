@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { LIVE_KINDS, regexGroups } from '../src/kinds.js';
 import { VERDICT_TYPES, LOCKED_VERDICTS } from '../src/job.js';
-import { hasNestedQuantifier } from '../src/validate.js';
+import { hasNestedQuantifier, scanSecrets } from '../src/validate.js';
 import {
   KIND_CATALOGUE, CATALOGUE_KINDS, CATALOGUE_LIVE_KINDS, LOCKED_KINDS, MAX_STAGES, DIRECTIONS, BASELINES,
   TYPES_GENRE, TYPES_GENRE_TEMPLATE, GENRE_LANGUAGES, DENIED_COMMANDS,
@@ -38,7 +38,8 @@ import {
   classGuards, closeCeiling, genreEnv, genreOwnedEnvNames, genreInstruments,
   validateDeclaration, normalizeDeclaration,
 } from '../src/authoring.js';
-import { declarationLines, parseCeiling, ceilingLine } from '../scripts/author-readout.mjs';
+import { declarationLines, parseCeiling, ceilingLine, crashRecord, phaseLine } from '../scripts/author-readout.mjs';
+import { RAW_PERSIST_MAX, RAW_TRIM_MARKER } from '../src/text.js';
 
 /** The battery for the one class v1 admits. The attachment point is the CLASS
  * (PRD v1.57 §2) and every fixture in this file is a green job, so the class is
@@ -147,8 +148,10 @@ test('catalogue: the live kinds are EXACTLY the executor\'s live kinds, both dir
   assert.deepEqual([...live].sort(), [...LIVE_KINDS].sort());
 });
 
-test('catalogue: judged-floor and human-confirms are LOCKED entries; harness-loop is ABSENT', () => {
-  assert.deepEqual([...LOCKED_KINDS].sort(), ['human-confirms', 'judged-floor']);
+test('catalogue: judged-floor is the one LOCKED entry; harness-loop is ABSENT', () => {
+  // `human-confirms` went LIVE at N4 slice 1; `judged-floor` waits for the
+  // judged floor its class needs (slice 2)
+  assert.deepEqual([...LOCKED_KINDS].sort(), ['judged-floor']);
   for (const k of LOCKED_KINDS) assert.equal(KIND_CATALOGUE[k].locked, true, `${k} must be marked locked`);
   // absent is not the same as locked: declaring harness-loop is an unknown-kind
   // typo, not counted demand — it is out of v1 with no menu entry at all
@@ -606,10 +609,10 @@ test('classes: the two copies of the menu are IDENTICAL — the spec radio and t
   assert.deepEqual([...LOCKED_CLASSES], [...LOCKED_VERDICTS]);
 });
 
-test('classes: the class menu is exactly three, and v1 builds exactly one of them', () => {
+test('classes: the class menu is exactly three, and v1 builds two of them (N4 slice 1)', () => {
   assert.deepEqual([...VERDICT_CLASSES], ['green', 'soft-green', 'hitl']);
-  assert.deepEqual([...LOCKED_CLASSES], ['soft-green', 'hitl']);
-  assert.deepEqual([...LIVE_CLASSES], ['green']);
+  assert.deepEqual([...LOCKED_CLASSES], ['soft-green']);
+  assert.deepEqual([...LIVE_CLASSES], ['green', 'hitl']);
   // the batteries cover the menu and nothing else — a class with no entry would
   // be a class whose guards nothing can supply
   assert.deepEqual(Object.keys(CLASS_BATTERIES).sort(), [...VERDICT_CLASSES].sort());
@@ -684,8 +687,12 @@ test('ceiling: every catalogue kind carries the verdict class it can honestly re
   for (const [name, spec] of Object.entries(KIND_CATALOGUE)) {
     assert.ok(VERDICT_CLASSES.includes(spec.verdictClass), `${name}.verdictClass is ${String(spec.verdictClass)}`);
   }
-  // every LIVE kind is mechanical, which is exactly why the rule is inert in v1
-  for (const k of CATALOGUE_LIVE_KINDS) assert.equal(KIND_CATALOGUE[k].verdictClass, 'green', k);
+  // every live MEASURING kind is mechanical — the ceiling rule was inert in v1
+  // by construction, and `human-confirms` is the first kind to make it bite: a
+  // human stage in a green spec is a class-ceiling red (tests/hitl.test.js)
+  for (const k of CATALOGUE_LIVE_KINDS.filter((x) => x !== 'human-confirms')) {
+    assert.equal(KIND_CATALOGUE[k].verdictClass, 'green', k);
+  }
   assert.equal(KIND_CATALOGUE['judged-floor'].verdictClass, 'soft-green');
   assert.equal(KIND_CATALOGUE['human-confirms'].verdictClass, 'hitl');
 });
@@ -1495,4 +1502,134 @@ test('an UNBOUNDED authoring run ANNOUNCES itself — an absent cap is a stated 
   assert.match(bounded, /\$2\.5 ceiling/);
   assert.match(bounded, /BETWEEN metered calls/, 'and a bounded run states the seam it binds at');
   assert.ok(!/UNBOUNDED/.test(bounded), 'the two readings are never confusable');
+});
+
+// ── the PROGRESS readout ─────────────────────────────────────────────────────
+//
+// Up to ~15 minutes used to pass between `author-start` and a result with nothing
+// said: a survey ladder, a declaration ladder and a real toolchain per close
+// stage, all inside one await. Silence and a hang are the same bytes on a
+// terminal, and the operator's only lever was to kill a run that might have been
+// working. Here for the same reason the three readouts above are: the runner is a
+// script, and a readout no test can reach is a readout nothing checks.
+
+test('phaseLine says WHAT is happening — never a fraction nobody measured', () => {
+  const lines = [
+    phaseLine('seed'),
+    phaseLine('scout', { attempts: 3 }),
+    phaseLine('scout-done', { state: 'PRESENT', facts: 7 }),
+    phaseLine('listing-done', { files: 12, stop: null }),
+    phaseLine('author-call', { call: 'revise-1', i: 1, of: 2 }),
+    phaseLine('seed-read', { stages: 4 }),
+    phaseLine('stage', { stage: 'suite-green', kind: 'command-exit', verdict: 'green', durationMs: 46_200 }),
+  ];
+  assert.match(lines[1], /up to 3 attempt\(s\)/, 'a repeat is expected rather than read as a stuck run');
+  assert.match(lines[2], /PRESENT/);
+  assert.match(lines[2], /7 fact\(s\)/);
+  assert.match(lines[3], /12 file\(s\)/);
+  assert.match(lines[4], /revise-1/);
+  assert.match(lines[4], /call 2 of up to 3/, 'the rungs are counted from one for a person, not from zero');
+  assert.match(lines[6], /suite-green \[command-exit\] green — 46\.2s/, 'the stage, what it is, what it said, how long it took');
+  // no invented progress: a survey attempt has no fraction and a suite finishes
+  // when it finishes, so a percentage here would be a number nobody measured
+  assert.ok(!lines.some((l) => /%/.test(l)), `an invented percentage appeared: ${lines.find((l) => /%/.test(l))}`);
+});
+
+test('phaseLine: an UNMEASURED duration reads as unknown, never as 0 (F6, in its time form)', () => {
+  // a stage whose duration was never measured did not take no time
+  assert.match(phaseLine('stage', { stage: 's', kind: 'command-exit', verdict: 'green' }), /unknown/);
+  assert.match(phaseLine('stage', { stage: 's', kind: 'command-exit', verdict: 'green', durationMs: null }), /unknown/);
+  assert.match(phaseLine('stage', { stage: 's', kind: 'command-exit', verdict: 'green', durationMs: 0 }), /0\.0s/,
+    'a MEASURED zero is a real reading and stays one');
+});
+
+test('phaseLine: a listing that STOPPED says so — a stop is never rendered as a file count', () => {
+  const stopped = phaseLine('listing-done', { files: null, stop: 'no-seed-tree' });
+  assert.match(stopped, /STOPPED \(no-seed-tree\)/);
+  assert.ok(!/unknown file/.test(stopped), 'a stop and an unknown count are different facts');
+});
+
+test('phaseLine: a phase this readout does not know is PRINTED, not swallowed', () => {
+  // the callers are the library's own seams; a new one appearing unrendered is
+  // how a readout silently stops covering what it reports on
+  const l = phaseLine('some-new-phase', { n: 1 });
+  assert.match(l, /some-new-phase/);
+  assert.match(l, /"n":1/);
+});
+
+// ── the CRASH record ─────────────────────────────────────────────────────────
+//
+// Watched live: a real authoring run's spine held exactly one line — `author-start`
+// — and stopped. The paid pipeline threw, the error went to the operator's
+// terminal, and the record of the run said nothing at all about the death. A spine
+// that stops mid-sentence is indistinguishable from a run still in flight.
+//
+// `crashRecord` is the extractable half of the fix, here for the same reason the
+// two above are: `run-author.mjs` is a script and the throwing span is only
+// reached by paying for a scout and a model call. The catch that calls it is
+// pinned from source in tests/run-author.test.js.
+
+test('crashRecord: a REAL thrown error keeps its name, message, code and stack', () => {
+  // a real uncaught failure out of the stdlib, not an Error I authored to contain
+  // the answer — the fields under test are the ones node itself fills in
+  let caught;
+  try { readFileSync(join(REPO, 'no-such-file-9f3a2')); } catch (e) { caught = e; }
+  const rec = crashRecord(caught);
+  assert.equal(rec.name, 'Error');
+  assert.equal(rec.code, 'ENOENT', 'the errno code is the field that names WHAT failed');
+  assert.match(rec.message ?? '', /no-such-file-9f3a2/);
+  assert.match(rec.raw.text, /^Error: ENOENT/, 'the stack is the evidence — without it the record says a run died and not where');
+  assert.match(rec.raw.text, /authoring\.test\.js/, 'and it is the real stack, with real frames');
+  assert.equal(rec.raw.trimmed, false);
+  assert.equal(rec.raw.label, 'author-crash');
+});
+
+test('crashRecord: a secret in the error never reaches the file, in the message or in the stack', () => {
+  // the record lands in `author-<runid>.jsonl`, which outlives the run — and a
+  // stack is the single string in this system most likely to quote a credential
+  // out of a URL, an argv, or an env value
+  const secret = ['sk', 'live', 'B1b2C3d4E5f6G7h8I9j0KLMN'].join('-');
+  const err = new Error(`POST https://api.example/v1?key=${secret} failed`);
+  const rec = crashRecord(err);
+  assert.deepEqual(scanSecrets(JSON.stringify(rec)), [],
+    'a secret-shaped string survived into the crash record — detection and redaction read ONE inventory');
+  assert.match(rec.message ?? '', /POST https/, 'the diagnosis survives the mask; only the secret does not');
+});
+
+test('crashRecord: a huge stack is BOUNDED and the bound announces itself', () => {
+  const err = new Error('boom');
+  err.stack = `Error: boom\n${'    at somewhere (/a/very/long/path.js:1:1)\n'.repeat(400)}`;
+  const rec = crashRecord(err);
+  assert.ok(Buffer.byteLength(rec.raw.text) <= RAW_PERSIST_MAX + 200, 'the persisted stack is bounded');
+  assert.ok(rec.raw.text.includes(RAW_TRIM_MARKER), 'a trim is never silent (F28)');
+  assert.ok(rec.raw.bytes > RAW_PERSIST_MAX, 'and the FULL size is still reported');
+  assert.equal(rec.raw.trimmed, true);
+});
+
+test('crashRecord: a cause is carried, one level, on the record it describes', () => {
+  // a wrapped throw names its origin in exactly this field, and the origin is
+  // usually the only interesting half
+  const rec = crashRecord(new Error('outer', { cause: new Error('the socket died') }));
+  assert.equal(rec.raw.reason, 'the socket died');
+  assert.equal(rec.message, 'outer');
+  // …and a bare cause (some libraries throw a string) is not dropped for having
+  // the wrong shape
+  assert.equal(crashRecord(new Error('outer', { cause: 'ECONNRESET' })).raw.reason, 'ECONNRESET');
+  // an absent cause is ABSENT, never an empty string that reads like a diagnosis
+  assert.equal(crashRecord(new Error('plain')).raw.reason, null);
+});
+
+test('crashRecord: a non-Error throw is recorded honestly, never coerced into an Error shape', () => {
+  // `throw 'boom'` and `throw {code: 7}` are both legal and both happen in the wild
+  const str = crashRecord('boom');
+  assert.equal(str.name, null, 'a string has no name — inventing "Error" would be a fact nobody observed');
+  assert.equal(str.message, null);
+  assert.equal(str.raw.text, 'boom', 'and what WAS thrown is still written down');
+  const obj = crashRecord({ code: 'E_ODD' });
+  assert.equal(obj.code, 'E_ODD');
+  assert.equal(obj.raw.text, '[object Object]');
+  // null and undefined are thrown too, and the record must survive them rather
+  // than crash inside the crash handler (F70)
+  assert.equal(crashRecord(null).raw.text, 'null');
+  assert.equal(crashRecord(undefined).name, null);
 });

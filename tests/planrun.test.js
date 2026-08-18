@@ -965,22 +965,41 @@ test('W5: a single-predicate (object-form) close still advertises exactly one cl
   assert.equal(wc.enforcedMs, 720_000);
 });
 
+/** the capture provider both materials tests script: it records every prompt and
+ * optionally lets the caller move the clock on a chosen call. `onCall` is how a
+ * test makes TIME PASS between `createClock()` and the drafting call — the only
+ * window in which the rendered balance is decided. */
+const capturingProvider = (wd, prompts, onCall = () => {}) => ({
+  name: 'capture',
+  async generate(msgs) {
+    prompts.push(String(msgs.at(-1)?.content ?? ''));
+    onCall(prompts.length);
+    const scripted = [
+      { text: 'scout' }, { text: PLAN(wd) },
+      { text: 'writing', toolCalls: [tcall('1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+      { text: 'done' },
+    ][prompts.length - 1] ?? { text: 'done' };
+    return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
+  },
+});
+
 test('T: the materials handed to the planner are a BALANCE — no rate, no per-round allowance, no derived round count (hamr\'s correction; F57 measured a 150x spread on verification gaps)', async (t) => {
   const wd = makePatient(t);
   const prompts = [];
-  const provider = {
-    name: 'capture',
-    async generate(msgs) {
-      prompts.push(String(msgs.at(-1)?.content ?? ''));
-      const scripted = [
-        { text: 'scout' }, { text: PLAN(wd) },
-        { text: 'writing', toolCalls: [tcall('1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
-        { text: 'done' },
-      ][prompts.length - 1] ?? { text: 'done' };
-      return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
-    },
-  };
-  await go(wd, provider, { job: JOB(wd, { maxWallMs: 2_700_000 }) });
+  // The clock is PINNED, and that is the point of this test rather than an
+  // accident of it: the subject is the SHAPE of the materials block (a balance,
+  // never a rate), so the rendered number must come from the signed cap and
+  // nothing else. Read off the real `Date.now()` it came from the machine — and
+  // `Date.now()` is the WALL clock, which is not monotonic. A full-suite run on
+  // 2026-08-15 was frozen by a 45m44s s2idle suspend (journal 02:53:23 → 03:39:07)
+  // while node's own monotonic timer recorded the test as 8.5s: `Date.now()` had
+  // advanced 2,744,000ms past a 2,700,000ms cap, so `remainingMs()` floored to 0
+  // and this line read "0 minutes" on a run seconds old. The same assertion is
+  // load-exposed without any suspend at all — 30s of real time between the clock
+  // and the draft renders "44". `runPlan` exposes `now` for exactly this, and the
+  // companion test below is what covers the number MOVING.
+  const clk = fakeClock();
+  await go(wd, capturingProvider(wd, prompts), { job: JOB(wd, { maxWallMs: 2_700_000 }), now: clk.now });
   const draft = prompts.find((p) => p.includes('DRAFT-PLAN'));
   assert.ok(draft, 'the drafting prompt was captured');
   assert.match(draft, /money left for the whole run: \$1\.50/);
@@ -992,22 +1011,26 @@ test('T: the materials handed to the planner are a BALANCE — no rate, no per-r
   assert.doesNotMatch(draft, /seconds of model time/, 'no duration rate');
 });
 
+test('T: the time balance is LIVE — a run that has already burned time hands the planner what is LEFT, not the signed cap', async (t) => {
+  const wd = makePatient(t);
+  const prompts = [];
+  // The half the pinned clock above cannot see, and the reason it is a separate
+  // test rather than a looser regex there: with the clock driven deliberately,
+  // "the number tracks elapsed" is an assertion instead of a coincidence. 15
+  // minutes pass during the SCOUT call — after `createClock()`, before the
+  // drafting call reads the balance — so 45 must arrive as 30.
+  const clk = fakeClock();
+  const provider = capturingProvider(wd, prompts, (n) => { if (n === 1) clk.advance(900_000); });
+  await go(wd, provider, { job: JOB(wd, { maxWallMs: 2_700_000 }), now: clk.now });
+  const draft = prompts.find((p) => p.includes('DRAFT-PLAN'));
+  assert.ok(draft, 'the drafting prompt was captured');
+  assert.match(draft, /time left for the whole run: 30 minutes/, 'the balance is what is LEFT — a cap echoed back would read 45');
+});
+
 test('T: with no maxWallMs the materials block carries money only — an absent cap is never rendered as a number', async (t) => {
   const wd = makePatient(t);
   const prompts = [];
-  const provider = {
-    name: 'capture',
-    async generate(msgs) {
-      prompts.push(String(msgs.at(-1)?.content ?? ''));
-      const scripted = [
-        { text: 'scout' }, { text: PLAN(wd) },
-        { text: 'writing', toolCalls: [tcall('1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
-        { text: 'done' },
-      ][prompts.length - 1] ?? { text: 'done' };
-      return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
-    },
-  };
-  await go(wd, provider);
+  await go(wd, capturingProvider(wd, prompts));
   const draft = prompts.find((p) => p.includes('DRAFT-PLAN'));
   assert.match(draft, /money left for the whole run/);
   assert.doesNotMatch(draft, /time left for the whole run/, 'no cap means no time line — not "0 minutes", not "unlimited"');

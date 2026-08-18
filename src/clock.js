@@ -43,6 +43,21 @@
 //      it from the remaining budget is what stops the LAST round outliving the run.
 //   3. ~90% accuracy is the bar, by hamr's ruling (addendum 3). This module does
 //      not chase precision; it reports honestly at the precision it has.
+//   4. SUSPENDED MINUTES NEVER CHARGE A SIGNED WALL (hamr's ruling, 2026-08-15:
+//      "if computer suspended, time shouldn't count"). The default source is
+//      therefore MONOTONIC — `performance.now()`, which reads libuv's `uv_hrtime`
+//      and so CLOCK_MONOTONIC, which per clock_gettime(2) "does not count time
+//      that the system is suspended" on Linux (CLOCK_BOOTTIME is the one that
+//      would). `Date.now()` is CLOCK_REALTIME and counts every suspended minute:
+//      that was not a hypothetical, it charged 45 phantom minutes against a
+//      45-minute wall when an s2idle suspend landed mid-run, and it is the same
+//      exposure for an NTP step or a hand-set date. Nothing here corrects for a
+//      suspend after the fact; the reading simply never includes one.
+//      The epoch change is safe by construction: every use of `now()` below is
+//      RELATIVE (`now() - startedAt`), and no value derived from this clock is
+//      ever published as a calendar timestamp — `report()` carries durations only,
+//      and the `at:`/`ts:` stamps a run writes come from their own `Date.now`
+//      seams (src/reuse.js), which stay calendar-correct on purpose.
 //
 // Unbounded is a REAL state, not a large number: hamr ruled `maxWallMs` has no
 // default, so a run without one is time-unbounded by explicit operator choice and
@@ -135,11 +150,14 @@ export function isWallTimeout(err, clock) {
  *   run. `closeStages`: how many stages the job's close runs (W5) — each one gets
  *   the FULL `closeTimeoutMs`, so this is the multiplier on the overshoot, not a
  *   decoration. Defaults to 1, the single-predicate close. `now`: injected for
- *   tests — the default is the real clock. `priorElapsedMs`: time this attempt's
- *   PREDECESSOR already consumed (see below).
+ *   tests — the default is the real clock, and it stays injectable precisely so
+ *   every test here can drive time deterministically without a sleep. That default
+ *   is MONOTONIC (fact 4 above), not `Date.now`: a wall-clock jump — a suspend, an
+ *   NTP step, a hand-set date — must not be able to reach a signed deadline.
+ *   `priorElapsedMs`: time this attempt's PREDECESSOR already consumed (see below).
  * @returns {Clock}
  */
-export function createClock({ maxWallMs = null, closeStages = 1, now = () => Date.now(), priorElapsedMs = 0 } = {}) {
+export function createClock({ maxWallMs = null, closeStages = 1, now = () => performance.now(), priorElapsedMs = 0 } = {}) {
   // RESUME (module C) — hamr's checkpoint ruling in a time coat: a run killed
   // mid-try restarts THAT try under the REMAINDER of its signed per-try numbers,
   // because "a budget ceiling folds in prior spend so re-invoking cannot silently

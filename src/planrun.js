@@ -33,8 +33,11 @@ import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
 import { validateBridge, loadGate } from './bridges.js';
 import { extractArtifact } from './text.js';
 import { createClock, isWallTimeout } from './clock.js';
-import { isDeclaredClose, runDeclaredStages, validateCloseDecl, closeGrade } from './declaredclose.js';
-import { seedAtHead, seedListing, GAP_TRIM_MARKER, GATE_AUDIT_FILE, ARBITER_BOOK_STORES } from './kinds.js';
+import { isDeclaredClose, runDeclaredStages, validateCloseDecl, closeGrade, HUMAN_PAUSE, HITL_PAUSE, HITL_DECISION_RED } from './declaredclose.js';
+import {
+  seedAtHead, seedListing, changedSet, GAP_TRIM_MARKER, GATE_AUDIT_FILE, ARBITER_BOOK_STORES,
+  HUMAN_KIND, HUMAN_DECISIONS, normalizeHumanRuling,
+} from './kinds.js';
 import { workBranchName, prepareWorkBranch } from './workbranch.js';
 
 const require = createRequire(import.meta.url);
@@ -65,6 +68,11 @@ const NATIVE_READ_STRATEGY = '\nINTERFACE LIMIT: on this surface a whole-file re
 const SCOUT_MIN_BYTES = 200;
 /** feed-forward artifact bound per step (prompt ingredient, spine-bound) */
 const ARTIFACT_MAX = 2000;
+/** how many changed paths ride the hitl pause's evidence package. Bounded like
+ * every other list this repo puts on a spine, and the trim ANNOUNCED (F28): the
+ * person needs to see WHAT moved, and a run that touched a thousand files is
+ * telling them something a thousand lines would not. */
+const PAUSE_CHANGED_CAP = 50;
 /** the wallet floor below which a replan is a stop, not an adaptation (review
  * #5): a money-gate halt drains the wallet to ~0, so replanning against dust
  * just burns another draft and mislabels the money-cut as "exits still red"
@@ -581,12 +589,24 @@ ${scoutBlob || '(no scout notes)'}`;
  *   it the deterministic name would collide with that very branch and the collision walk
  *   would mint a `-2` beside the progress the resume exists to keep. Absent is the cold
  *   path. A recorded branch that no longer exists is a STOP, never a fresh start.
+ * @param {{decision: string, text?: string}|null} [opts.humanRuling] N4 — the SIGNER's
+ *   answer at a hitl pause (2026-08-12 §1, re-cut 2026-08-17: accept | rerun <text> | pause), carried in
+ *   by the runner on the leg that RESUMES a paused run. Absent on every ordinary run and
+ *   on the leg that pauses; it is never authored, never defaulted, and never inferred.
+ *
+ *   It is spent ONCE, on this leg's close readings up to the moment the fix loop opens:
+ *   `accept` greens the human stage on fresh evidence (OPEN-3 — the mechanical stages
+ *   re-run first, because the tree can change while a run is paused), `rerun` reds it
+ *   with the human's own words as the gap, and `pause` keeps the checkpoint exactly as it
+ *   is, before anything is read at all. After the fix loop opens the ruling is gone, so once the mechanical
+ *   stages pass again the run PAUSES for a second review rather than converting the same
+ *   sentence forever.
  * @returns {Promise<string>} 'green' | 'already-green' | 'escalated' | 'plan-red' |
  *   'check-red' | 'close-red' | 'close-unsupported' | 'recipe-stale' | 'pricing-red' |
  *   'branch-red' | 'cap-halt' | 'wall-halt' | 'provider-red' | 'interpreter-red' |
- *   'step-stalled' | `step-red:<id>`
+ *   'step-stalled' | 'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null }) {
   workdir = resolve(workdir);
   // ONE spelling of the redaction, housed next to the inventory it reads
   // (src/validate.js) — the same helper the isolate verbs scrub the litectx store
@@ -636,6 +656,79 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       options: ['restate the close as a predicate', 'wait for the verdict-classes rung'],
     });
     return 'close-unsupported';
+  }
+
+  // ── THE SIGNER'S ANSWER (N4 §1.4), read before anything costs anything.
+  //
+  // Three gates, and each refuses rather than guesses. A decision that is not one
+  // of the three doors — or a `rerun` whose text is empty — is refused at the
+  // seam that ACCEPTS it, because the whole of what a rerun gives the fix worker
+  // is the human's words, and an empty gap re-runs the worker as though nothing
+  // had been said (the POC's negative control measured exactly that). A decision
+  // handed to a close with no human stage is refused too: there is nothing for it
+  // to rule on, and silently ignoring it would leave a person believing they had
+  // answered. It is a terminal of its own rather than an `interpreter-red` — no
+  // library failed, the operator's own input is what could not be read.
+  const hasHumanStage = stagedClose.some((/** @type {any} */ s) => s?.kind === HUMAN_KIND);
+  const ruling = normalizeHumanRuling(humanRuling);
+  const decisionRed = (/** @type {string} */ detail) => {
+    emit('escalation', {
+      category: HITL_DECISION_RED, decisionReady: true,
+      decision: 'The decision handed to this run could not be applied, so nothing was run and nothing was spent.',
+      options: [
+        `re-run the resume with one of: ${HUMAN_DECISIONS.join(' | ')} (a rerun carries the text the worker converts)`,
+        'abandon the task',
+      ],
+      detail: scrub(detail),
+    });
+    return HITL_DECISION_RED;
+  };
+  if (!ruling.ok) return decisionRed(/** @type {string} */ (ruling.why));
+  if (ruling.ruling !== null && !hasHumanStage) {
+    return decisionRed(`this job's close has no ${HUMAN_KIND} stage, so a signer's "${ruling.ruling.decision}" has `
+      + 'nothing to rule on — the verdict class is a promise about the CLOSE, and only a close that asks a person '
+      + 'can be answered by one');
+  }
+  /** the ruling still to be spent. Cleared the moment the fix loop opens: the
+   * human's words are what OPENS that loop, and once the worker holds them the
+   * next machine-clean tree is a new question for the person, not the old one. */
+  let liveRuling = ruling.ruling;
+
+  // ── PAUSE: the third door, and it costs nothing at all (2026-08-12 §1, doors
+  // re-cut 2026-08-17). Before the branch, the seed, the precheck and the clock,
+  // because a person who answered "not now" has asked for nothing to be done: no
+  // gap, no continuation, no worker round. It is deliberately NOT routed through
+  // the close — running four stages to arrive back at the question the person has
+  // just declined to answer is wall time spent on an answer already in hand.
+  //
+  // hamr's ruling, verbatim: *"what's the point of cancel anyways? pause can
+  // resume — that would be more honest"*. So this mints the SAME checkpoint
+  // terminal the machine-side pause mints, which is what keeps it resumable under
+  // the existing TTL: the run re-enters at the start of its last step whenever
+  // somebody comes back, and if nobody does, the checkpoint expires on its own.
+  // That expiry IS the case cancel used to serve, without forcing a person into a
+  // forever-decision at the moment they least want to make one.
+  //
+  // The record is EXPLICIT (`humanDecision`) rather than a silent re-pause: "a
+  // person looked and kept it" and "nobody has looked yet" are two different
+  // facts, and one record spelling both is how a reader comes to confuse them.
+  // The evidence package is not re-assembled here — it is already on the spine of
+  // the leg that asked, and this leg measured nothing, so it states nothing (F6:
+  // absent, never an empty list dressed as a reading).
+  if (liveRuling?.decision === 'pause') {
+    emit(HITL_PAUSE, {
+      stage: stagedClose.find((/** @type {any} */ s) => s?.kind === HUMAN_KIND)?.name ?? null,
+      humanDecision: 'pause',
+      decisionReady: true,
+      // EXPLICITLY null, never absent: every gap consumer guards with `if (gap)`,
+      // and the field states the ruling rather than leaving it to be inferred.
+      gap: null,
+      decision: 'The signer looked and paused: nothing was asked for, so nothing was run and nothing was spent. The '
+        + 'checkpoint stands exactly as it was — the work, the plan and the money are where the paused leg left them.',
+      options: [...HUMAN_DECISIONS],
+      meaning: 'not a verdict — the run is still paused, the clock is still stopped, and the same three doors are open',
+    });
+    return HITL_PAUSE;
   }
 
   // ── native wiring: a clipipe-subscription job needs the native provider
@@ -827,7 +920,14 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * @param {any[]} stages
    */
   const runCloseStages = (stages) => (declared
-    ? runDeclaredStages(stages, scrub, { ...closeOpts, seedRef: /** @type {any} */ (declaredCtx).seedRef })
+    ? runDeclaredStages(stages, scrub, {
+      ...closeOpts,
+      seedRef: /** @type {any} */ (declaredCtx).seedRef,
+      // the signer's answer reaches the human stage the same way every other
+      // arbiter-owned fact reaches a stage: through the ctx, never through the
+      // declaration. A command close has no human stage to hand it to.
+      humanRuling: liveRuling,
+    })
     : runStages(stages, scrub, closeOpts));
   /** @type {string|undefined} the stage that rendered the LAST close verdict (Layer R's red-set source) */
   let closeStage;
@@ -884,6 +984,41 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       ...extra,
     });
   };
+  /**
+   * THE PAUSE (N4 §1.3/§1.4, rulings 1 and 2) — a decision-ready checkpoint, and
+   * never a bare "approve?". What the person is shown is assembled here rather
+   * than by whatever surface renders it: every mechanical stage's own result, the
+   * question the close itself declared, and the set of files this run changed.
+   *
+   * The changed set is the "before/after" half, at the granularity a library can
+   * state honestly — WHICH files moved. Rendering the lines belongs to the
+   * surface that has a screen; carrying the list is what makes the surface's job
+   * possible without it re-deriving the run's own facts.
+   * @param {any} v the close verdict that paused @returns {Promise<void>}
+   */
+  const emitHitlPause = async (v) => {
+    const cs = declaredCtx ? await changedSet(workdir, declaredCtx.seedRef) : { stop: 'no seed', paths: [] };
+    const paths = cs.stop === null ? cs.paths : [];
+    const shown = paths.slice(0, PAUSE_CHANGED_CAP);
+    emit(HITL_PAUSE, {
+      stage: v.stage ?? null,
+      ask: v.ask ?? null,
+      decisionReady: true,
+      // ruling 2: the whole evidence package, never a bare "approve?"
+      stages: v.stages ?? [],
+      changed: {
+        paths: shown,
+        // the trim is ANNOUNCED (F28), and an unreadable set is UNKNOWN, never
+        // an empty list dressed as "nothing changed" (F6)
+        ...(paths.length > shown.length ? { more: paths.length - shown.length } : {}),
+        ...(cs.stop === null ? {} : { unreadable: scrub(String(cs.stop)) }),
+      },
+      decision: `The close reached its human stage and is waiting on you: ${v.ask ?? 'review the result'}`,
+      options: [...HUMAN_DECISIONS],
+      meaning: 'not a verdict — the run is paused, the clock is stopped, and the last thing it did stands until you answer',
+    });
+  };
+
   /** the close, as ONE verdict: every stage in order, first red wins */
   const judgeClose = async () => {
     const v = await runCloseStages(stagedClose);
@@ -1057,6 +1192,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   const pre = await judgeClose();
   emit('close-precheck', { ...pre });
   if (pre.verdict === 'satisfied') return 'already-green';
+  // …and the pause's own arm of the same gate. Reaching a human stage HERE means
+  // every mechanical stage already passes on the untouched tree: the machine half
+  // of this job is done and the only thing left is a person. Pausing costs $0 and
+  // is the honest answer; running a plan first would spend a budget to arrive at
+  // exactly this question. No `planExecuted` — there is no plan yet, and an empty
+  // one on the spine would be a record of work nobody did.
+  if (pre.verdict === HUMAN_PAUSE) { await emitHitlPause(pre); return HITL_PAUSE; }
   const preFault = Object.hasOwn(CLOSE_FAULTS, pre.verdict) ? CLOSE_FAULTS[pre.verdict] : undefined;
   if (preFault) {
     emit('escalation', { category: preFault.category, decisionReady: true, decision: preFault.decision, options: preFault.options, detail: pre.detail });
@@ -2579,6 +2721,16 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     planExecuted();
     return 'green';
   }
+  // ── THE THIRD BRANCH (N4 §1.3): between `satisfied` and the fix loop, because
+  // a pause is neither. It is not green (nobody said so), not a red (nobody has
+  // written a gap), and not a CLOSE_FAULT (nothing broke) — so it must be caught
+  // before the fix loop, which would otherwise buy a worker round to convert a
+  // wall that does not exist yet.
+  if (post.verdict === HUMAN_PAUSE) {
+    await emitHitlPause(post);
+    planExecuted();
+    return HITL_PAUSE;
+  }
   const postFault = Object.hasOwn(CLOSE_FAULTS, post.verdict) ? CLOSE_FAULTS[post.verdict] : undefined;
   if (postFault) {
     emit('escalation', { category: postFault.category, decisionReady: true, decision: postFault.decision, options: postFault.options, detail: post.detail });
@@ -2586,6 +2738,15 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     return 'close-red';
   }
   emit('fix-loop', { gapBytes: Buffer.byteLength(post.gap ?? '') });
+  // ── THE RULING IS SPENT HERE (N4 §1.5). The human's words are what OPENS this
+  // loop; the worker now holds them. Leaving the ruling live would make the human
+  // stage red on every judgment for the rest of the leg, so the loop would keep
+  // converting one sentence until the governor or the money stopped it. Cleared,
+  // the next machine-clean tree pauses for a SECOND review — which is the honest
+  // cycle: a person asked for a change, the change happened, the person looks
+  // again. A mechanical red in between is still converted normally, because
+  // first-red-wins reaches it before the person's stage.
+  liveRuling = null;
   let fixOutcome;
   /** @type {object|null} W-2 — set when the WALL stopped the fix loop BETWEEN
    * iterations. It carries that stop's own record fields, and its presence is what
@@ -2667,6 +2828,15 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const fixGovernor = {
       record: (/** @type {{iteration: number, gap?: string}} */ o) => {
         fixIterationsUsed = o.iteration;
+        // A PAUSE IS NEVER GRADED. ralph records every non-satisfied iteration,
+        // and a pause is one — but it carries no gap and no number, so feeding it
+        // to the trend would mint a strike out of a non-verdict and could strike
+        // the loop out into a `cap-halt` that never happened. The reading says
+        // what it is and the meter is left untouched; `middle` stops the loop on
+        // the next iteration, before anything is bought.
+        if (lastCloseVerdict?.verdict === HUMAN_PAUSE) {
+          return { governor: 'close-trend', trend: 'unknown', reading: 'the close is waiting on a person — not a grade', iteration: o.iteration, paused: true };
+        }
         return { governor: 'close-trend', ...fixTrend.record({ gap: o.gap }), iteration: o.iteration };
       },
       struckOut: fixTrend.struckOut,
@@ -2708,6 +2878,19 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // until the next iteration is about to start. The close is never bounded — a
       // wall that kills grading leaves the run unreadable after the money is spent
       // (the F45 class), so the one thing this must never do is stop a close.
+      // ── THE CLOSE IS WAITING ON A PERSON. Read here, in the same place and for
+      // the same reason the wall is: past this point the iteration is guaranteed
+      // to be worthless, because the machine half of the close already passes and
+      // nothing a worker writes can answer a question only a person can. So the
+      // loop stops ON that reading — the run pauses again, with everything it has
+      // done kept, exactly as the first pause did.
+      if (lastCloseVerdict?.verdict === HUMAN_PAUSE) {
+        const err = /** @type {CategorizedError} */ (new Error(
+          `the close is waiting on the signer at stage "${lastCloseVerdict.stage ?? 'unknown'}" — every mechanical `
+          + `stage passes, so fix attempt ${iteration} could not change the answer`));
+        err.category = HITL_PAUSE;
+        throw err;
+      }
       if (clock.expired()) {
         // ONE progress instrument, shared with the money halt (PRD v1.46 §2/§4).
         // This site used to run its own `gapTrend`: byte equality of the last two
@@ -2789,6 +2972,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     return relay(e, 'fix');
   }
   planExecuted();
+  // The fix loop ran into the person again (the `middle` stop above). Same
+  // terminal as the first pause, and never `escalated`: nothing failed, and the
+  // work this loop did is exactly what the signer is now being asked about.
+  if (fixOutcome !== 'green' && lastEscalation?.category === HITL_PAUSE) {
+    await emitHitlPause(lastCloseVerdict);
+    return HITL_PAUSE;
+  }
   if (fixOutcome !== 'green' && lastEscalation?.category === 'wall-halt') {
     // F64 in the close-fix loop: the same governance stop, and it must not ride out
     // as a bare `escalated` either — that reads as "the fix failed" when the fix was

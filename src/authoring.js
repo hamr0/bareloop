@@ -94,9 +94,11 @@ import { isObj, isNonEmptyString, hasNestedQuantifier, globToPrefix } from './va
 
 /** the whole menu, in ascending order of what it takes to render the verdict */
 export const VERDICT_CLASSES = Object.freeze(['green', 'soft-green', 'hitl']);
-/** declared-but-locked: selecting one is COUNTED demand, never an admission */
-export const LOCKED_CLASSES = Object.freeze(['soft-green', 'hitl']);
-/** the classes v1 actually builds — exactly one */
+/** declared-but-locked: selecting one is COUNTED demand, never an admission.
+ * `hitl` LEFT this list at N4 slice 1 (see `src/job.js`'s twin) — the class is
+ * built, and its battery is below. `soft-green` waits for the judged floor. */
+export const LOCKED_CLASSES = Object.freeze(['soft-green']);
+/** the classes v1 actually builds */
 export const LIVE_CLASSES = Object.freeze(VERDICT_CLASSES.filter((c) => !LOCKED_CLASSES.includes(c)));
 
 /** the hierarchy as a comparable number. `green` is the FLOOR: a mechanical
@@ -237,11 +239,22 @@ export const KIND_CATALOGUE = Object.freeze({
     shape: 'LOCKED — not available in v1',
     asserts: 'a judged score must clear a floor. Declaring it is recorded as demand; it will not run.',
   }),
+  // LIVE at N4 slice 1, and the ONLY kind that does not measure anything: it
+  // does not RUN, it PAUSES the run and hands the tree to a person (ruling 1).
+  // `ask` is the whole parameter surface — no cmd, no timeoutMs, no env — so a
+  // human stage cannot spawn, cannot be env-capable, and cannot be given a
+  // second job. `offer` is never one of its fields either: ruling 5's law is a
+  // LAW, checked by the validator, not a knob the composer sets.
   'human-confirms': Object.freeze({
     verdictClass: 'hitl',
-    required: Object.freeze([]), optional: Object.freeze([]), pathParams: Object.freeze([]), locked: true,
-    shape: 'LOCKED — not available in v1',
-    asserts: 'a person renders the verdict. Declaring it is recorded as demand; it will not run.',
+    required: Object.freeze(['ask']),
+    optional: Object.freeze([]),
+    pathParams: Object.freeze([]),
+    shape: 'ask: string',
+    asserts: 'a PERSON renders this verdict, at the end of the run, and nothing about it is measured. Write `ask` as '
+      + 'the plain question they answer while looking at the finished result. It is always the LAST stage, it is '
+      + 'never offered to the agent as an in-run check, and every part of the job a command can decide belongs in a '
+      + 'mechanical stage before it.',
   }),
 });
 
@@ -613,30 +626,40 @@ function language(lang) {
  * than hand back nothing if anything ever does.
  * @type {Record<string, {locked: boolean, guards: readonly any[]|null}>}
  */
-export const CLASS_BATTERIES = Object.freeze({
-  green: Object.freeze({
-    locked: false,
-    guards: Object.freeze([
-      Object.freeze({
-        name: 'changed-from-seed',
-        kind: 'files-changed',
-        params: Object.freeze({ requireNonEmpty: true }),
-        compose: Object.freeze([]),
-        fill: Object.freeze(['allowPrefixes']),
-      }),
-      Object.freeze({
-        name: 'no-suppressions',
-        kind: 'pattern-absent-in-diff',
-        // NO scope: the scan covers every changed file of these extensions. A
-        // narrowing here is the round-3 arm A defect and is a red, not a taste.
-        params: Object.freeze({}),
-        compose: Object.freeze(['patterns', 'extensions']),
-        fill: Object.freeze([]),
-      }),
-    ]),
+/** THE MECHANICAL BATTERY — the two guards a machine can always render, named
+ * once because TWO classes carry exactly them (OPEN-1's ruling below). It is
+ * shared by reference and never mutated: `classGuards` deep-copies before it
+ * hands anything back, so one battery cannot be weakened through another class. */
+const MECHANICAL_GUARDS = Object.freeze([
+  Object.freeze({
+    name: 'changed-from-seed',
+    kind: 'files-changed',
+    params: Object.freeze({ requireNonEmpty: true }),
+    compose: Object.freeze([]),
+    fill: Object.freeze(['allowPrefixes']),
   }),
+  Object.freeze({
+    name: 'no-suppressions',
+    kind: 'pattern-absent-in-diff',
+    // NO scope: the scan covers every changed file of these extensions. A
+    // narrowing here is the round-3 arm A defect and is a red, not a taste.
+    params: Object.freeze({}),
+    compose: Object.freeze(['patterns', 'extensions']),
+    fill: Object.freeze([]),
+  }),
+]);
+
+export const CLASS_BATTERIES = Object.freeze({
+  green: Object.freeze({ locked: false, guards: MECHANICAL_GUARDS }),
   'soft-green': Object.freeze({ locked: true, guards: null }),
-  hitl: Object.freeze({ locked: true, guards: null }),
+  // OPEN-1, RULED (hamr, in-turn, 2026-08-13): **hitl inherits the green
+  // mechanical guards and adds nothing a human stage cannot see.** D5 makes the
+  // battery mandatory, shown-and-fixed and un-removable, and PRD v1.57 §2 keys it
+  // to the CLASS; the mechanical-first composition law makes every hitl close
+  // mostly mechanical anyway, so the green battery is the right FLOOR. A guard a
+  // person cannot verify by looking would be a guard nobody checks — the one
+  // thing D5 exists to make unsayable.
+  hitl: Object.freeze({ locked: false, guards: MECHANICAL_GUARDS }),
 });
 
 /**
@@ -925,7 +948,12 @@ function scopeOfJob(declaration, idx, guards) {
  * stage — applied to the one population that decides whether the law fires at
  * all.
  */
-const AT_MOST_ONCE_KINDS = Object.freeze(['files-changed']);
+const AT_MOST_ONCE_KINDS = Object.freeze(['files-changed', 'human-confirms']);
+
+/** the kinds NO ONE runs as an in-run ruler — ruling 5's law, as data. A
+ * declaration that offers one is a red rather than a normalization: the signer
+ * must not read one thing and have the runner store another. */
+export const NEVER_OFFERED_KINDS = Object.freeze(['human-confirms', 'judged-floor']);
 
 /** @param {any} v */
 const strArray = (v) => Array.isArray(v) && v.length > 0 && v.every(isNonEmptyString);
@@ -1128,11 +1156,41 @@ export function validateDeclaration(declaration, opts = {}) {
     if (AT_MOST_ONCE_KINDS.includes(s.kind)) {
       const owner = kindOwners.get(s.kind);
       if (owner !== undefined) {
-        red('duplicate-kind', `${at}.kind`, `stage "${label}" is a second ${s.kind} stage — "${owner}" already declares `
-          + 'which files this job may change. Stages are ANDed, so two of them mean the intersection of two prefix sets, '
-          + 'which is itself a prefix set and already says the same thing in one stage; what a second one does add is a '
-          + 'second answer to what this job\'s scope IS', { kind: s.kind, stage: label, twin: owner });
+        red('duplicate-kind', `${at}.kind`, s.kind === 'human-confirms'
+          ? `stage "${label}" is a second ${s.kind} stage — "${owner}" already asks the person. One signer, one judge `
+            + '(ruling 4), asked ONCE at the end: a second door is a second verdict, and the run has no way to say '
+            + 'which of them was the one it stopped for'
+          : `stage "${label}" is a second ${s.kind} stage — "${owner}" already declares `
+            + 'which files this job may change. Stages are ANDed, so two of them mean the intersection of two prefix sets, '
+            + 'which is itself a prefix set and already says the same thing in one stage; what a second one does add is a '
+            + 'second answer to what this job\'s scope IS', { kind: s.kind, stage: label, twin: owner });
       } else kindOwners.set(s.kind, label);
+    }
+
+    // ── RULING 5, AS LAW: judged and human stages are `offer: false`, and the
+    // law is checked rather than applied. `checkMenu` filters `offer !== false`,
+    // so a declaration that says nothing is silent about a rule the runner
+    // enforces anyway (`declaredStages` stamps it) — that part is the arbiter's
+    // own bookkeeping. What must never happen is a declaration that says
+    // something ELSE: `offer: true` on a human stage is the composer asking to
+    // use a person as an in-run ruler, and a silent normalization would leave
+    // the signer reading one thing while the runner stored another.
+    if (NEVER_OFFERED_KINDS.includes(s.kind) && Object.hasOwn(s, 'offer') && s.offer !== false) {
+      red('human-stage-offered', `${at}.offer`, `stage "${label}" is a ${s.kind} stage and offers itself as an in-run `
+        + 'check. A person (or a paid judge) is never an in-run ruler (ruling 5): the agent may never use one to '
+        + 'decide a step, and this is refused rather than quietly rewritten to offer: false',
+      { kind: s.kind, stage: label });
+    }
+    // ── THE COMPOSITION LAW's ordering half (2026-08-07: *mechanical first,
+    // judge minimal, human LAST*), enforced where it is cheap. First-red-wins
+    // means anything after the human stage never runs — so a human stage in the
+    // middle silently deletes the mechanical stages behind it AND empties the
+    // evidence package ruling 2 requires the person to be shown.
+    if (s.kind === 'human-confirms' && i !== stages.length - 1) {
+      red('human-stage-not-last', `${at}.kind`, `stage "${label}" asks a person and is not the LAST stage. The close `
+        + 'is first-red-wins, so every stage after this one would never run: the person would be shown an incomplete '
+        + 'evidence package and the mechanical stages behind them would be silently deleted (the composition law: '
+        + 'mechanical first, human last)', { kind: s.kind, stage: label, at: i, last: stages.length - 1 });
     }
 
     const p = s.params;
@@ -1337,6 +1395,15 @@ function checkKind({ kind, params: p, at, red, scoped, label, populations, envOw
     case 'files-changed':
       if (!strArray(p.allowPrefixes)) red('invalid-value', `${at}.params.allowPrefixes`, 'a non-empty array of path prefixes');
       if (p.requireNonEmpty !== true) red('invalid-value', `${at}.params.requireNonEmpty`, 'literally true');
+      break;
+    case 'human-confirms':
+      // the whole surface: the question the signer answers. It is shown to a
+      // person verbatim, so an empty one is a bare "approve?" — ruling 2's
+      // named failure mode, refused here rather than rendered.
+      if (!isNonEmptyString(p.ask)) {
+        red('invalid-value', `${at}.params.ask`, 'the plain question the signer answers while looking at the finished '
+          + 'result — a human stage with nothing to ask is the bare "approve?" ruling 2 forbids');
+      }
       break;
     default:
       red('unknown-kind', `${at}.kind`, `"${kind}" is in the catalogue but has no checker`, { kind });

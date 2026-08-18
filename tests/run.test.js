@@ -23,7 +23,7 @@ import { makeSpine } from '../src/spine.js';
 import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
 import { STALL_MS } from '../src/stall.js';
-import { readSpine, scriptedProvider, initPatientRepo } from './helpers.js';
+import { readSpine, scriptedProvider, initPatientRepo, mockWallClock } from './helpers.js';
 
 const base = mkdtempSync(join(tmpdir(), 'run-test-'));
 
@@ -321,10 +321,13 @@ test('money on the job-end: an UNPRICED round halts pricing-red and the priced s
 // wall-halt record's own `cutMidCall`, never the outcome (keying on the outcome would
 // floor the exact stop too, which is the same dishonesty pointing the other way).
 //
-// The wall is mocked at `Date`, the one seam a runJob-level test has: `maxWallMs` has
-// a two-minute floor (MIN_WALL_MS — a cap under one close cannot fund its own close),
-// so a real-time test would have to run for two minutes to read a deadline. Only Date
-// is mocked; setTimeout, the spawned close and the real plan flow are untouched.
+// The wall is mocked at its time SOURCE (`mockWallClock`, tests/helpers.js), the one
+// seam a runJob-level test has: `maxWallMs` has a two-minute floor (MIN_WALL_MS — a cap
+// under one close cannot fund its own close), so a real-time test would have to run for
+// two minutes to read a deadline. That source is `performance.now` since the clock went
+// monotonic (hamr, 2026-08-15: suspended minutes never charge a signed wall), pinned to
+// a mocked `Date` so one tick still moves both. Nothing else is mocked; setTimeout, the
+// spawned close and the real plan flow are untouched.
 
 /** the plan-shape job with the operator's time cap set at its floor */
 const wallJob = () => ({ ...planJob(), maxWallMs: 120_000 });
@@ -334,7 +337,7 @@ const etimedout = () => Object.assign(new Error('[AnthropicProvider] request tim
 test('a MID-CALL wall-halt states spendComplete:false — the cut call returned no usage, so the priced sum is a FLOOR (F64/F6)', async (t) => {
   const wd = makePlanWork('wall-mid-call');
   const job = wallJob();
-  t.mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
+  mockWallClock(t);
   let n = 0;
   const provider = {
     calls: [],
@@ -363,7 +366,7 @@ test('a MID-CALL wall-halt states spendComplete:false — the cut call returned 
 test('CONTROL: a BETWEEN-ATTEMPTS wall-halt keeps spendComplete:true — nothing was in flight, so the exact total must not be dressed up as a floor', async (t) => {
   const wd = makePlanWork('wall-between-attempts');
   const job = wallJob();
-  t.mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
+  mockWallClock(t);
   const plan = JSON.stringify({
     schema: 'plan-v1',
     steps: [{

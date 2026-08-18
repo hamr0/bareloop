@@ -5,7 +5,168 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.11.0] — 2026-08-18
+
+### Changed (2026-08-18 — the review door's third button)
+
+- **The three doors are `accept` / `rerun` / `pause`; `cancel` is DELETED as a concept.** hamr:
+  *"what's the point of cancel anyways? pause can resume — that would be more honest"* and
+  *"rerun implies I don't like it, go again"*. A `pause` answer runs nothing, spends nothing,
+  buys no worker round, never opens the fix loop and does NOT consume the one-shot rerun
+  allowance: it mints the ordinary `hitl-pause` checkpoint with an explicit
+  `humanDecision: 'pause'` and leaves the run resumable from the start of its last step. An
+  unresumed pause simply expires under the existing 60-day `PAUSE_TTL_MS` — **that expiry is
+  what cancel used to be**, without forcing a permanent decision. `HUMAN_DECISIONS` is the
+  enumerated set the surface derives from, so `cancel` is now inexpressible rather than
+  rejected after the fact; `hitl-decision-red` still refuses any word that is not a door.
+- **`hitl-cancel` is no longer mintable and the constant is gone** (removed from
+  `src/declaredclose.js` and the package exports). The ledger keeps the bare string in its
+  excluded-escalation set — the `gate-red` precedent — so a spine written before this change
+  still reads as governance rather than as a counted capability gap; no spine on disk carries
+  it (the door never fired live), so that entry is forward compatibility, not bookkeeping.
+- **A human checkpoint row is classed `checkpoint`, not `casualty`** (`src/reuse.js`, both the
+  live try loop and the resume reconstruction). A casualty is a run that died; a checkpoint is
+  a run that is waiting on a person with nothing lost — every other reader already treated it
+  that way, and the row was the last place the machinery mis-described itself.
+- **Runner surface (`scripts/` never ships):** `scripts/run-u.mjs --decide pause` answers the
+  door and launches nothing at all — it prints the decision, names the TTL and the ORIGINAL
+  runid, and exits having spent nothing. Deliberate: the runner writes one spine per leg, and a
+  leg that returns before drafting emits no `plan-accepted` and no `step-end`, so launching a
+  run to say "not now" would mint a runid whose own checkpoint is empty and re-pay for finished
+  steps on the next resume. Door rendering (`scripts/u-readout.mjs`) and the escalation
+  passthrough (`src/ralph.js`) carry the new third door.
+- **Docs:** dated addendum on `docs/02-features/2026-08-17-softgreen-review-door-design.md`
+  (closed sections untouched), **PRD Addendum v1.72**, README's *"You have the last word"*,
+  `bareloop.context.md`'s terminal/decision surface, and `docs/01-product/LAYERS.md`.
+
+### Docs (2026-08-17 — decisions only; NO code changed, and no build is authorized)
+
+- **New design record `docs/02-features/2026-08-17-softgreen-review-door-design.md`, and PRD
+  Addendum v1.71: `hitl` is RETIRED as a verdict class, its pause becomes the REVIEW DOOR at
+  the end of EVERY run, and `soft-green` becomes the forward path.** The hitl slice below FIRED
+  live first and worked — the first hitl pause in programme history, 64 strict errors to 0, the
+  authored guard catching the cheat genre twice, evidence package and three doors and a stopped
+  clock (F105). hamr then retired the class for what it asks of a composer and of a person:
+  *"checkers are subjective human experience that they should grade for"*, and *"it's hard to
+  apply deterministic flow on a probabilistic throughput"*. **The machinery is re-homed, not
+  deleted.** The door never changes the loop's own verdict (*"it's important not to change the
+  loop self verdict"*): a green stays green in the ledger and the door records a disposition —
+  `accept` (and, on soft-green, the release of quarantined learning credit), `rerun` (the text
+  IS the gap), `cancel` (*"the verdict stands, but I'm not taking the merchandise"*). A rerun is
+  a **FRESH ENGAGEMENT** with its own money and time and two side-by-side counters, and **any**
+  wall or halt now records full state — time, money, strikes, notes/progress and any pending
+  human decision. `soft-green` gets a `judged-floor` kind on the LOCATE+DECIDE pattern (the
+  judge extracts facts with quotes from the real artifact; an arbiter-owned `decide()` renders
+  pass/fail; unsure = red), behind a signed rubric card (Q6) and a signed calibration set (Q7)
+  the whole pipe must grade correctly before the close is signable. **Nothing is built.**
+- **F102, F103, F104 and F105 in `docs/FINDINGS.md`**, each grounded in today's spines under
+  `bareloop-patients/litectx-maintainer-bareloop/`: a pending rerun decision does not survive a
+  wall-halt → resume (two byte-identical pause records — the human paid the same decision
+  twice); the wall folds across legs, so a decide-time rerun inherited 87 seconds; the
+  catalogue cannot count documentation, so a composer measured a typecheck PROXY instead —
+  which is what retired the class; and the positive record of everything the first live hitl
+  loop proved, including that rerun DELIVERY works and rerun CONVERSION is still unproven-live.
+- **`docs/01-product/LAYERS.md`** gains the review door, the two-verdict table and the next
+  rung; the **2026-08-13 N4 build record** (closed) gains a dated addendum pointing forward;
+  **README** and **`bareloop.context.md`** carry the direction change, the contract still
+  describing what the code on this branch actually does today.
+
+### Added
+
+- **N4 slice 1 — the `hitl` verdict class is ADMITTED, and the run PAUSES for a person.** A job
+  whose *done* needs someone to say so now runs through the same signed spec, the same
+  agent-authored plan and the same arbiter as a green job. The refusal was never one flag, so
+  every coupled site moved together: `LOCKED_VERDICTS` / `LOCKED_CLASSES` drop it,
+  `DECLARED_CLOSE_CLASSES` widens to `['hard','hitl']`, the class battery is the GREEN mechanical
+  battery inherited verbatim (hamr's OPEN-1 ruling: nothing a human stage cannot see), and the
+  interview gains a hitl question set (the green questions byte for byte, plus the one thing
+  they cannot supply — the question the signer actually answers). **`soft-green` stays
+  declared-but-locked**: its judged floor is slice 2, and a wobbly ruler must mint nothing.
+- **`human-confirms` goes live as the one kind that measures nothing.** Its whole parameter
+  surface is `ask`; it cannot spawn, is never env-capable, is `offer: false` BY LAW (a
+  declaration that offers one is a validation red, and the arbiter's own bridge stamps the law
+  onto the stage the runner sees, so the agent can never compose `check-passes(<a person>)`), is
+  at-most-once, and must be the LAST stage — first-red-wins would otherwise silently delete every
+  mechanical stage behind it. It also SKIPS the seed-verdict read (ruling 8), and the skip is
+  recorded as a row rather than taken in silence.
+- **Three new terminals, minted rather than borrowed.** `hitl-pause` is a decision-ready
+  CHECKPOINT carrying the evidence package (every mechanical stage's result, the close's own
+  question, and what the run changed) — never a bare "approve?"; `hitl-cancel` is terminal with
+  an explicit `gap: null`, no fix loop and no worker round; `hitl-decision-red` refuses a
+  decision the run cannot act on (a fourth door, a `rerun` with empty text, or a decision handed
+  to a close with no human stage) before anything is spent. All three are excluded from the
+  ledger's escalation counting for their own stated reasons, and none demotes a bridge. The
+  legacy `hitl-close` entry keeps its own meaning; nothing was renamed in passing.
+- **The RETURN needs no new channel.** A resumed leg carrying the signer's `rerun` feeds their
+  words through the same seam `post.gap` uses — same bound, same scrub — and the run continues
+  under the folded wallet on an unbilled clock. The ruling is spent when the fix loop opens, so
+  the next machine-clean tree pauses for a second review instead of converting one sentence
+  forever, while a mechanical red in between is still converted normally.
+- **New public exports**: `HUMAN_DECISIONS`, `SEED_EXEMPT_KINDS`, `normalizeHumanRuling`,
+  `NEVER_OFFERED_KINDS`, `HUMAN_PAUSE`, `CHECKPOINT_OUTCOMES`, `PAUSE_TTL_MS`,
+  `checkpointAgeGate`, `HITL_PAUSE`, `HITL_DECISION_RED`, `HUMAN_CHECKPOINTS`. The 60-day pause TTL and the
+  canonical checkpoint list live in the LIBRARY (hamr's OPEN-2 ruling) so the exported bundle
+  inherits them rather than every runner re-implementing them. The two terminal names are
+  spelled ONCE, in `src/declaredclose.js` beside the `HUMAN_PAUSE` close-verdict word they
+  translate, because four different readers key on them — the emitters (`src/planrun.js`), the
+  ledger's excluded-escalation set, the resume reader (`src/reuse.js`) and the runner script —
+  and hand-spelled copies of one terminal is how those readers come to disagree.
+- **A registry guard that was only holding by accident**: an `already-green` terminal now mints
+  no bridge version for a NAMED reason (`green-predates-run`) rather than because no plan
+  happened to be on the spine — a hitl try that paused and came back with `accept` has its
+  predecessor's plan in the very same try window.
+- **An authoring run says what it is doing while it is still doing it — three REPORTING seams,
+  `onPhase` / `onStage` / `onCall`.** The pipeline ran up to ~15 minutes between `author-start`
+  and its result with nothing on the terminal or the spine — a real survey ladder, a real
+  declaration ladder, and a real toolchain per close stage, all inside one await — and silence
+  is byte-for-byte what a hang looks like, so the operator's only lever was to kill a run that
+  might be working. The library REPORTS and the shell PRINTS, the same shape `runJob` → `runPlan`
+  already has: `onPhase` fires at the composition's boundaries in `authorCloseForJob`
+  (`src/authorjob.js`) and `authorClose` (`src/authorflow.js`) — `seed`, `scout`/`scout-done`,
+  `listing`/`listing-done`, `author`, `author-call`, `seed-read`/`seed-read-done`; `onStage`
+  (a new `Ctx` field in `src/kinds.js`) fires per seed-read stage, AFTER the stage lands, because
+  only then is there a verdict to carry; `onCall` fires from inside each of the two metered
+  recorders (`makeCostBook.add`, `runAuthorScout`'s `record`) rather than at the call sites, so a
+  paid call cannot be metered without its report going out. **Nothing here is consulted and
+  nothing decides**: `capStop` is still the one ceiling predicate, still asked between calls,
+  still reading the same entries — and every callback defaults to a no-op, so every existing
+  caller is byte-identical. Two deliberate omissions: `makeCostBook.absorb` does NOT fire
+  `onCall` (those calls were already metered and reported by whoever made them, and reporting
+  them twice would double the scout's spend in every reader downstream), and the `seed` phase is
+  announced only on the path that actually reads one, because a phase line for work nobody did is
+  the blind-instrument class one line wide. The renderer is `phaseLine` in
+  `scripts/author-readout.mjs` (a readout no test can reach is a readout nothing checks); it
+  prints WHAT is happening and never a fraction — a survey attempt has no progress and a suite
+  stage finishes when it finishes — and an unmeasured `durationMs` prints as `unknown`, never as
+  `0` (F6 in its time form). A phase the renderer does not know is printed rather than swallowed.
+
+The runner half of the same slice landed beside it and is deliberately NOT in the tarball
+(`scripts/` never ships): `scripts/run-u.mjs` gains `--decide accept|rerun|cancel` (+ `--text`)
+on the existing `--approve <specHash>` signature, renders the pause's evidence package plus the
+line-level diff, consumes `CHECKPOINT_OUTCOMES` and `checkpointAgeGate` instead of re-spelling
+either, and prefers the run's own terminal over a stale watchdog record when folding the wall —
+so a person's deciding time is never billed to it. What an adopter's own runner has to do is in
+`bareloop.context.md`.
+
+Beside it, `scripts/run-interview.mjs` — **the terminal interview, and the answer to hand-writing
+an `answers.json`**, which is precisely the SWE tax this product exists to refuse. It asks the
+LIBRARY's frozen questions ONE AT A TIME, **calls no model and costs $0**, and writes
+`answers.json` (the shape `run-author.mjs` consumes) plus `specdraft.json` (the operator half — no
+close and no `verdictType`, because those are what `run-author` authors). The draft is checked for
+$0 by `validateJob`, the SAME validator that will judge the resolved spec, so a draft that cannot
+become a spec says so before a provider is ever built. It then OFFERS to spawn the paid
+`run-author.mjs` under its OWN `--budget` ceiling — **default NO** (`[y/N]`, the same lean the
+pause's three doors take: the answer that costs nothing is the one you get by saying nothing), and
+it prints the exact command either way. The two ceilings are kept apart out loud: `--budget` is
+what the AUTHORING call may spend, `budgetUsd` is what the RUN may spend, signed into the spec.
+
+And `scripts/run-u.mjs` gains a `litectx-maintainer` JOBS row — **N4's hitl PROVING job, dark
+since the legacy `steps[]` deletion took its old spec's path with it**, back as a plan-flow job
+with an AUTHORED close. `jobs/litectx-maintainer.json` **DOES NOT EXIST, and the row does not
+create it**: the spec is authored live through `run-interview.mjs` → `run-author.mjs` and signed
+by hamr, goal and answers included, and until it lands **the runner REFUSES BY NAME** — a row is
+the runner's half of a job, never the signer's. The patient is a COPY at the convention this table
+already uses, and the seed is that copy's own HEAD (litectx v0.32.0, `115213d`).
 
 ### Changed
 
@@ -30,6 +191,170 @@ feature lands, **patch** = docs, fixes, scaffolding.
   a `judged` close stage and executing BA-20's acceptance criteria live (running `calibrate`
   against the frozen floor and naming the hash it graded) are deferred to N4's opening — a
   verified delivery, not a verified acceptance.
+
+- **The interview loses its repo question and widens its scope question — hamr drove the terminal
+  himself and ruled on the wording (2026-08-15).** `GREEN_QUESTIONS` drops *"Is there a code repo I
+  can look at? Where?"*: the repository is already MANDATORY STRUCTURED input (`runInterview`'s
+  `repoPath`, taken from `--patient`, without which nothing starts), so asking a person to re-type
+  a path the machine is holding is the SWE tax this product exists to refuse — and it invites a
+  second, drifting answer for one fact (hamr's own live answer was *"Yes — the patient itself."*).
+  Question 2 gains the other half of the same decision — *"…And which files should the work read or
+  draw from (they stay untouched)?"* The sets **renumber contiguously from 1**, so the green set is
+  five questions and hitl's signer-ask is now **6**, not 7. Nothing hardcodes a count: `run-author`,
+  `run-interview` and the suite all read `requiredAnswersFor(cls)`. **Adopter note: an
+  `answers.json` written before this change is SILENTLY MISREAD** — its key `6` was the repo answer
+  and now reads as hitl's signer-ask, and its key `7` is dropped as unasked. Re-run the interview
+  (it is $0 and calls no model) rather than hand-editing.
+- **The interview's own prose stops citing finding numbers and says the mechanics out loud.** The
+  goal prompt no longer prints *"F87"* at a person who has never read the findings — the rule is
+  unchanged and the price is now named as a price. The fence prompt says what a fence IS (writable
+  files, everything else read-only), that patterns are repo-root-relative, and that absolute paths
+  are refused because the run works on a copy. The multi-line hint spells the keystroke: *press
+  Enter on an empty line, i.e. Enter twice*.
+- **Suspended minutes stop charging a signed wall — the run clock is MONOTONIC** (hamr's ruling,
+  2026-08-15: *"if computer suspended, time shouldn't count."*). `createClock`'s default source
+  moves from `Date.now` — CLOCK_REALTIME, which counts every minute the machine was asleep — to
+  `performance.now`, which reads libuv's `uv_hrtime` and so CLOCK_MONOTONIC, which per
+  `clock_gettime(2)` *"does not count time that the system is suspended"*. That was not
+  hypothetical: an s2idle suspend landing mid-run charged **45 phantom minutes against a
+  45-minute wall**, and the same exposure covers an NTP step or a hand-set date. Nothing corrects
+  for a suspend after the fact; the reading simply never includes one. **The epoch change is safe
+  by construction**: every use of `now()` in `src/clock.js` is RELATIVE (`now() - startedAt`) and
+  no value derived from this clock is ever published as a calendar timestamp — `report()` carries
+  durations only, and the `at:`/`ts:` stamps a run writes come from their own `Date.now` seams in
+  `src/reuse.js`, which stay calendar-correct on purpose. `now` is still injectable, which is what
+  every clock test drives. Three runJob-level wall tests mocked `Date` because that is the only
+  seam `runJob` exposes, and the monotonic source made them BLIND — they redded `provider-red` /
+  `plan-red` instead of `wall-halt`, which is the failing-first evidence that the mock was
+  load-bearing; they now go through one shared helper (`tests/helpers.js`) that pins
+  `performance.now` to the mocked `Date` and restores it after. **KNOWN LIMITATION, recorded
+  rather than fixed** (PRD Addendum v1.67, hamr: *"leave it and mark it in prd as possible known
+  limitations"*): the OUTSIDE watchdog still measures silence in CALENDAR time, so a long suspend
+  can still read to it as a stall. The half that charges money is fixed; the half that reads
+  silence is not.
+- **`scripts/run-u.mjs` PRINTS the sleep-inhibitor launch line** the way `scripts/run-reuse.mjs`
+  has since F72, instead of carrying it as a comment — a rule nobody reads at the moment they
+  launch (and like every runner change here, `scripts/` never ships in the tarball). A suspend
+  freezes EVERY guard: the outside watchdog is a POLLER, so it cannot observe — let alone kill — a
+  run whose machine is asleep, and after the monotonic clock above the run's own wall does not
+  count those minutes either. A suspended run is therefore simply UNWATCHED for as long as it
+  sleeps, and the launch banner is the last moment the operator can still do something about it.
+  The printed line is `systemd-inhibit --what=idle:sleep --why="bareloop u run" env …`, with `env`
+  before the key assignment on purpose: `systemd-inhibit` execs a COMMAND, and a bare `VAR=value`
+  prefix is shell syntax it would try to run as one — the key still rides an env assignment and
+  never argv. A pause with no ruling prints the line prefixed to NONE of its three doors, because
+  prefixing one would quietly recommend it and this surface's lean runs the other way.
+- **The hitl terminals get one canonical spelling, and the pause screen gets one renderer**
+  (`/code-review medium`, findings 2 and 3). The terminal names were hand-spelled string
+  literals at every reader: 9 sites in `src/planrun.js`, the ledger's `EXCLUDED_ESCALATIONS`
+  set, `src/reuse.js`, the `src/index.js` re-export and 7 sites in `scripts/run-u.mjs`. They now
+  all import the constants exported from `src/declaredclose.js` (the `hitl-cancel` constant
+  introduced with them is gone again — see the review-door entry above). Beside it,
+  `printPauseEvidence()` in `scripts/run-u.mjs` becomes the SINGLE assembly point for both pause
+  screens — the resume preview and the fresh-pause terminal — so the fallback rule cannot drift
+  between them: with a pause record the package is the close's own ask plus the diff of what
+  changed; without one it says so plainly, rather than rendering the bare "approve?" that ruling
+  2 forbids. Finding 1 — `runReuse` classing a `hitl-pause` as a casualty and buying another try
+  — was parked as arbiter territory when this bullet was first written, and has since been FIXED
+  on this same branch: `d183c95` gave the checkpoint its hard stop (`hardStop` reads
+  `HUMAN_CHECKPOINTS` before the retry table, so the loop hands the run back rather than re-asking
+  a question already put to someone who has not answered), and `4e0ab94` gave the ROW its own
+  `checkpoint` class, so the machinery no longer mis-describes a waiting run as one that died.
+
+### Fixed
+
+- **`--lang` given with no value no longer poisons the command the interview prints.** `arg()`
+  returns the EMPTY STRING for a flag typed with nothing after it and `?? 'js'` passes an empty
+  string straight through, so the printed next-step command collapsed to `--lang  --budget 2.5` —
+  copy-paste it and `run-author` reads the word `--budget` as its language. Both scripts now stop
+  LOUD on a present-but-empty `--lang` (an ABSENT flag still takes the default, the same rule the
+  money ceilings are parsed by).
+- **A crashed authoring run left one line and no body — `scripts/run-author.mjs`'s spine now says
+  it died.** A real run's `author-<runid>.jsonl` held exactly ONE line, `author-start`, and
+  stopped: the paid pipeline threw, the error reached the operator's terminal as an unhandled
+  rejection, and the spine's record of the run was **byte-for-byte what a run still IN FLIGHT
+  looks like**. A log that cannot tell a death from a hang is not a record of either — which is
+  why this is a fix to the record and not a new feature, even though the mechanism is new
+  records. The fallible span — from just after `author-start` through the end of the main flow, a
+  real scout, a real model call and a real toolchain per close stage — is now ONE try/catch, and
+  nothing above it is inside, deliberately: the argv/config `die()` paths run before the spine
+  file exists, and a crash record with no spine to land in is a record nobody can read (those
+  still stop loud on stderr and 2). **The catch RETRIES NOTHING and SWALLOWS NOTHING**: the whole
+  error reaches stderr FIRST and verbatim — before the two writes that could themselves fail,
+  because a diagnosis that only arrives if the disk is writable has a dependency nobody asked for
+  — and only then is it written down as `author-crash` plus `author-end {outcome:'crashed'}`.
+  `crashRecord` lives in `scripts/author-readout.mjs`, where the runner's other
+  untestable-in-place rules live: `name`/`message`/`code` go through `redactSecrets`, and the
+  STACK — the evidence, and the string most likely to quote a credential out of a URL or an env
+  value into a file that outlives the run — goes through `scrubRaw`, the ONE persist boundary,
+  which redacts over the same `SECRET_PATTERNS` inventory the validator reds on and bounds it with
+  the bound announcing its own size (F28). One level of `cause`, no chain-walking. A non-Error
+  throw is recorded honestly rather than coerced into an Error shape. The detail is said ONCE, on
+  the crash record; `author-end` carries only the outcome, because two hand-spelled copies of one
+  fact are two instruments that can disagree (this file already paid for that in the
+  cap-halt/pricing-red type). The spine write is itself guarded — a crash handler that crashes
+  destroys the report it was built to make (F70) — and a failed append says so out loud while the
+  original error still stands. **NEW EXIT CODE 4**, distinct from 1 (a refusal or a failed gate),
+  2 (operator/config) and 3 (a leak): a crash is none of those, and sharing a code with a refusal
+  would file a bug as a result. The leak scan still OVERRIDES a 4 deliberately — a written secret
+  is the harder line, and the crash keeps both of its own louder channels. **No reader changes**:
+  `classifyIncidents` (`src/ledger.js`) keys on event types it does not emit, so both new records
+  fall through every branch and are simply not counted — uncounted, never miscounted, which is
+  the fail-safe direction.
+- **A KILLED authoring run kept losing 100% of its own money record — it now leaves a body, the
+  way a crash does.** The crash catch above covers a THROW and never a SIGNAL, so a `^C` on a run
+  that merely looked hung ended the process with the spine holding one line, `author-start`, and
+  with the spend existing only inside the cost book, which dies with the process (F6/F12: a
+  halted attempt's spend was invisible by 300×). `scripts/run-author.mjs` now handles `SIGINT`,
+  `SIGTERM` and `SIGHUP` by emitting `author-killed {signal, phase, …cost}` plus
+  `author-end {outcome:'killed'}` — `appendFileSync` inside `emit` is synchronous, so the record
+  is on disk before the process goes — then removing its own listener and re-raising the signal,
+  because the honest exit code for a signal death is 128+signo and any code set here would file a
+  killed run under a name this runner's vocabulary already spends on something else. **SIGKILL is
+  not covered and is not pretended otherwise**: it is uncatchable, and there is no handler to
+  write for it. The killed report and the live running total read ONE list (`metered`) through
+  `tallyCalls` — the same reader the library's own cost book uses — rather than a second
+  hand-spelled accumulator, because this file has already paid once for a pair of instruments
+  over one fact (the cap-halt/pricing-red type); `costUsd` rides as `null` when a call was
+  unpriced, so the known half is reported as a `≥` floor instead of `?? 0` laundering unknown
+  into $0. Both reporting seams are wrapped best-effort (`try/catch`) on purpose: progress
+  reporting on a PAID run must never take down the work being paid for (F70), and the run's real
+  records — `authored.json`, the crash catch, `author-end` — are all downstream and unaffected.
+- **`scripts/run-interview.mjs` stops making an offer that can only be refused.** With no
+  `ANTHROPIC_API_KEY` in the shell, `run-author.mjs` exits 2 at its own door before a spine
+  exists, so the *"Run it now? [y/N]"* question had exactly one possible outcome and spent a
+  person's attention on a choice they did not have. Unkeyed, the question is not asked at all and
+  the closing line says which state it is in (*"Not offered — there is no key in this shell to
+  run it with"*) rather than reporting a refusal typed on the operator's behalf. What is printed
+  instead is what is actionable: the exact command, and one line saying to set the key in the
+  shell from their own secret store — deliberately WITHOUT a specific incantation, because which
+  store a person keeps a key in is theirs, and the one thing this script must never do is put a
+  key anywhere a command line can be read from.
+- **A run that landed its own terminal now dates its own stop (N4 surface §1.6).** The resumed
+  leg's `deathAt` preferred the watchdog's kill record whenever one existed. That is right for a
+  run that was KILLED — the process was alive, silently, right up to the signal, and billing only
+  to its last emitted event under-reports the wall it really burnt — and wrong for a run that
+  ENDED ITSELF. A `hitl-pause` is the second kind: a clean terminal a person may answer days
+  later, and any record dated after it bills their deciding time to the run's wall. The POC
+  measured the shape — a report 45 days after the pause put `RESUME_WALL_MS` at 0 and doomed the
+  resumed leg before it opened, on a run that had barely started. So the preference order is not
+  *"the later record wins"* but *"the run's own record wins when there is one"*: a spine carrying
+  a `job-end` returns `null`, which hands `readResume` back its own documented default (the last
+  event's timestamp, which for a clean terminal IS the terminal). The order moved out of
+  `scripts/run-u.mjs` into `deathAtOf` (`scripts/u-readout.mjs`) so a test can reach it at all,
+  with the killed-run case kept as the control, and an unreadable watchdog stamp reads as UNKNOWN
+  rather than handing a `NaN` to a fold (F6).
+- **A pause is a PHASE — the resume readout stops walking off the end of the plan (N4 #9).** hamr
+  read `at step 2 of 1 "(unknown)"` on the first paused resume preview he drove. A pause happens
+  AFTER the plan's steps, at the close's human stage, and the checkpoint a person actually meets
+  reads `phase:'steps'` with every step green (the pause site emits no `outer-close` of its own),
+  so the `at` line's step arithmetic ran past the plan and named an id nobody drafted. The same
+  walk-off was reachable one terminal over with no person involved: a kill between the last
+  `step-end` and the `outer-close` leaves exactly that shape and printed `step 3 of 2`. The
+  rendering moves to `resumeAtLines` (`scripts/u-readout.mjs`, where a test can reach it) and
+  holds one rule — a step count never exceeds the plan, and the phase is said in words: the human
+  review, the close and its fix loop, the close after an exhausted plan, or a named next step.
+  Rendering only; it decides nothing and bounds nothing.
 
 ## [0.10.0] — 2026-08-13
 

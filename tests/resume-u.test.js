@@ -22,6 +22,9 @@ import { spawnSync } from 'node:child_process';
 // signature rather than a literal, so a spec edit cannot leave them approving a
 // version that no longer exists
 import { jobSpecHash } from '../src/job.js';
+// the LIBRARY's checkpoint set — the runner consumes it, so the tests read the
+// same one rather than a literal that could drift from either
+import { CHECKPOINT_OUTCOMES } from '../src/reuse.js';
 
 const RUNNER = new URL('../scripts/run-u.mjs', import.meta.url).pathname;
 const SPEC = JSON.parse(readFileSync(new URL('../jobs/bareagent-u-types.json', import.meta.url), 'utf8'));
@@ -233,11 +236,20 @@ test('§3 the refusal names the resumable set from the ONE constant, and every t
   // the operator reading a stale list to decide whether their run is recoverable. So
   // the list is read out of the runner's own constant rather than spelled twice here —
   // the same rule the money and wall numbers in this file follow.
+  //
+  // N4: that constant is now the LIBRARY's (`CHECKPOINT_OUTCOMES`, src/reuse.js). The
+  // runner kept its own literal copy, and the exported bundle (PRD v1.44 §2 — a thin
+  // runner with bareloop as a dependency) would have had to keep a third; the same
+  // reasoning that put the pause TTL in the library puts this there. So what is pinned
+  // here is that the script CONSUMES it rather than re-spelling it.
   const src = readFileSync(RUNNER, 'utf8');
-  const decl = src.match(/const RESUMABLE_HALTS = \[([^\]]*)\]/);
-  assert.ok(decl, 'the resumable set is still ONE constant');
-  const halts = decl[1].split(',').map((s) => s.trim().replace(/^'|'$/g, '')).filter(Boolean);
+  assert.match(src, /import \{[^}]*\bCHECKPOINT_OUTCOMES\b[^}]*\} from '\.\.\/src\/reuse\.js'/,
+    'the runner reads the checkpoint set from the library that owns it');
+  assert.doesNotMatch(src, /const RESUMABLE_HALTS = \[/,
+    'and the literal copy is GONE, not merely shadowed — two spellings of one set is how a runner comes to refuse a terminal the library resumes');
+  const halts = [...CHECKPOINT_OUTCOMES];
   assert.ok(halts.includes('step-stalled'), 'a stall is a checkpoint (hamr, 2026-08-13)');
+  assert.ok(halts.includes('hitl-pause'), 'and so is a person who has not answered yet (N4 §1.6)');
 
   const refused = preview(['--resume', spineFile(haltedSpine({ outcome: 'escalated' }))]);
   assert.equal(refused.code, 2, 'an escalation is an answer, and answers are not resumable');
@@ -548,7 +560,9 @@ test('§F97 predicate: a garbage ledger never SUPPRESSES the warning by reading 
 test('§F97 banner: the runner prints it through THIS predicate, and it WARNS rather than blocks', () => {
   const src = readFileSync(RUNNER, 'utf8');
   assert.match(src, /doomedResume\(/, 'the script drives the shared predicate rather than re-deriving the shape');
-  assert.match(src, /import \{ wallLine, doomedResume \}|import \{ doomedResume, wallLine \}/, 'imported from the readout module the tests can reach');
+  // membership, not the exact list: the readout module has grown (N4's `deathAtOf`),
+  // and pinning the spelling of the whole import made an unrelated addition a red
+  assert.match(src, /import \{[^}]*\bdoomedResume\b[^}]*\} from '\.\/u-readout\.mjs'/, 'imported from the readout module the tests can reach');
   // WARNING ONLY: the F97 lesson is an operator pre-flight, not a new gate. A `die(`
   // or a `process.exit` reached from this predicate would turn a $0 read into a
   // refusal the operator never signed up for.

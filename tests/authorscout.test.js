@@ -197,6 +197,54 @@ test('runAuthorScout: the round bound stops the loop at SCOUT_ROUNDS', async () 
   assert.equal(seen.cleaned, 1, 'the surveyor is always cleaned up');
 });
 
+// The survey is the pipeline's FIRST paid stage, and its spend used to exist
+// only inside `calls[]` — which dies with the process. A run killed mid-survey
+// therefore lost 100% of what it had spent (F6/F12). `onCall` fires from inside
+// the ONE recorder, so a call cannot be metered without the report going out —
+// the same pairing invariant the persisted raw already rides.
+
+test('runAuthorScout: every metered call is REPORTED as it lands, recovery round included', async () => {
+  /** @type {any[]} */
+  const told = [];
+  const { factory } = scriptLoops([
+    { text: '', turns: AUTHOR_SCOUT_ROUNDS + 2, costUsd: 0.03 },
+    { text: factsBlob(), turns: 1, costUsd: 0.02, unpricedRounds: 1 },
+  ]);
+  const { createSurveyor } = stubSurveyor();
+  const r = await runAuthorScout({
+    workdir: '/w', createLoop: factory, createSurveyor,
+    onCall: (/** @type {any} */ c) => told.push(c),
+  });
+  assert.equal(r.meta.recovered, true, 'the reserved round fired — and it is a paid call like any other');
+  assert.deepEqual(told, [
+    { label: 'author-scout', costUsd: 0.03, unpricedRounds: 0 },
+    { label: 'author-scout-recovery', costUsd: 0.02, unpricedRounds: 1 },
+  ]);
+  // ONE list, read two ways — the report is not a second accumulator
+  assert.deepEqual(r.calls, told);
+});
+
+test('runAuthorScout: an UNPRICED call reports its null — never a floor wearing a complete coat (F6)', async () => {
+  /** @type {any[]} */
+  const told = [];
+  const { factory } = scriptLoops([{ text: factsBlob(), turns: 1, costUsd: null, unpricedRounds: 2 }]);
+  const { createSurveyor } = stubSurveyor();
+  await runAuthorScout({
+    workdir: '/w', createLoop: factory, createSurveyor, onCall: (/** @type {any} */ c) => told.push(c),
+  });
+  assert.equal(told.length, 1);
+  assert.equal(told[0].costUsd, null);
+  assert.equal(told[0].unpricedRounds, 2);
+});
+
+test('runAuthorScout without an onCall is unchanged — the reporter is optional and never load-bearing', async () => {
+  const { factory } = scriptLoops([{ text: factsBlob(), turns: 1 }]);
+  const { createSurveyor } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', createLoop: factory, createSurveyor });
+  assert.equal(r.state, 'PRESENT');
+  assert.equal(r.calls.length, 1);
+});
+
 test('runAuthorScout: a survey that finishes on its own is not bounded and gets no recovery round', async () => {
   const { factory, created } = scriptLoops([{ text: factsBlob(), turns: 2 }]);
   const { createSurveyor } = stubSurveyor();

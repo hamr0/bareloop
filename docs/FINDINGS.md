@@ -4361,6 +4361,94 @@ the thing it guards** — event loop, process, session slice, machine, host — 
 at or above that scope takes them together, and the artifacts it leaves will look exactly like
 the failure the guard was built to catch.
 
+> ### Addendum — 2026-08-15: the half that charges MONEY is fixed; the half that reads SILENCE is not
+>
+> **This is an ADDENDUM, not a rewrite.** Everything above stands as minted on 2026-08-01 and
+> is unchanged. What follows records how two of the parked items were resolved fourteen days
+> later — one built, one accepted as a known limitation — so the park does not read as still
+> wholly open.
+>
+> **hamr's ruling, verbatim: *"if computer suspended, time shouldn't count."***
+>
+> #### Built (`f154eb2`) — the wall stops charging for sleep
+>
+> `src/clock.js`'s default clock source moves from `Date.now` (CLOCK_REALTIME, which counts
+> every suspended minute) to **`performance.now`** — libuv's `uv_hrtime`, hence CLOCK_MONOTONIC,
+> which per `clock_gettime(2)` **does not count time that the system is suspended** on Linux
+> (CLOCK_BOOTTIME is the one that would). The default now reads
+> `now = () => performance.now()` at `src/clock.js:160`, with the rule written out as clock
+> fact 4 at `src/clock.js:46-60`.
+>
+> **F72's own timeline is the measured instance.** The `wall-bounded` row at 07:45:56.372 in
+> the table above — `elapsedMs 27,841,506` against `requestedMs 2,700,000` — is a 45-minute
+> wall being charged 45 phantom minutes plus a night's sleep by an s2idle suspend the run had
+> no part in. Nothing here corrects for a suspend after the fact; **the reading simply never
+> includes one.** The same change closes the same exposure to an NTP step or a hand-set date.
+>
+> **Safe by construction, and stated as such rather than assumed.** Every use of `now()` in the
+> module is RELATIVE (`now() - startedAt`), and no value derived from this clock is ever
+> published as a calendar timestamp — `report()` carries durations only, and the `at:`/`ts:`
+> stamps a run writes come from their own `Date.now` seams in `src/reuse.js` (`:1242`, `:1474`),
+> which stay calendar-correct on purpose. `now` remains injectable, which is what every clock
+> test drives.
+>
+> **The failing-first evidence is that the mock went blind.** Three `runJob`-level wall tests
+> mocked `Date`, because `runJob` builds its clock internally and exposes no `now` (only
+> `runPlan` does). Against a monotonic source those mocks moved nothing: the tests ticked their
+> way past the deadline and read **zero elapsed**, redding `provider-red` / `plan-red` instead
+> of `wall-halt`. They now go through one shared helper, `mockWallClock` (`tests/helpers.js:54`),
+> which pins `performance.now` to the mocked `Date.now` and restores it after — a leaked
+> `performance.now` would silently follow a mocked `Date` into every test that ran next.
+>
+> **And the operational mitigation stops being a memory rule.** `scripts/run-u.mjs` now PRINTS
+> the `systemd-inhibit --what=idle:sleep` launch line (`:569-578`) the way `run-reuse.mjs` has
+> since F72 was minted, instead of carrying it as a comment — a rule nobody reads at the moment
+> they launch is not a protection.
+>
+> #### NOT fixed, and accepted — PRD Addendum v1.67 (`docs/01-product/PRD.md:4799`)
+>
+> hamr's ruling: *"leave it and mark it in prd as possible known limitations."*
+>
+> `scripts/u-watchdog.mjs` measures the run's silence in **CALENDAR** time: `Date.now()` at
+> every poll (`:181`, `:275`) against one `stat(2)` of the spine. Its `stale` trigger fires on
+> inactivity alone and carries no deadline term (`:280-282`). A suspend freezes the watchdog
+> exactly as it freezes the run — the separate process is separate from the run, not from the
+> kernel — while the wall clock keeps running, so **the first poll after a wake reads the whole
+> suspended interval as spine silence and can kill a live run.** That is precisely the kill
+> recorded in the table above (`coldMs 27,108,007` against `staleMs 4,200,000`, with the
+> buffered response completing 6 ms later).
+>
+> **State the split cleanly: the half that charges MONEY is fixed; the half that reads SILENCE
+> is not.**
+>
+> v1.67 also records a **secondary skew, same cause, different severity**: `startedAt` is
+> `Date.now()` too (`u-watchdog.mjs:123`), so post-suspend `elapsed` can read PAST DEADLINE
+> while the run's own (now monotonic) wall still has time left. **This one does not kill** —
+> `wall-dead` requires the spine flat for `deadMs` as well as the deadline passed
+> (`:288-295`), so an active run survives and merely gets the LOUD `PAST DEADLINE … NOT killing`
+> line every poll. It is a reporting divergence between two clocks, not a stop.
+>
+> **Why it is left as-is (v1.67's own reason, not a summary of one):** the fail-safe direction
+> is right — a guard that cannot distinguish a frozen event loop from a frozen machine must err
+> toward killing, since F67 exists because an 81.5-minute wedge produced no bytes and no guard
+> fired. Teaching this watchdog to discount suspended intervals **would widen the exact window
+> F67 was built to close**, and would do it with a second clock source inside a file whose whole
+> design is *"no shared code, no shared failure, one `stat(2)` per poll"*. The standing
+> mitigation is the inhibitor, now printed at launch; and a killed run is not a lost one (the
+> kill is recorded before the signal, and resume is STEP-level).
+>
+> **v1.67's own "not claimed", carried here verbatim in substance:** no claim that the limit is
+> rare, and none that the inhibitor is airtight — a run launched without it is exposed, which is
+> why the banner prints it. **If this fires again on a run that WAS inhibited, that is new
+> evidence and belongs in FINDINGS, not under the park.**
+>
+> #### What this addendum does NOT resolve
+>
+> Parked items **A** (a liveness contract), **B** (a kill-checks-before-kill taxonomy, of which
+> a resume marker is the missing check) and **D** (BA-19's `deadlineMs`) are untouched by both
+> commits and remain parked exactly as written above. **C** (resume-after-kill) was answered
+> separately by the step-level resume work, not by anything here.
+
 ## F73 — the first end-to-end REUSE run: the same-repo bridge burned $4.74 without reaching the close, the CROSS-LANGUAGE one greened in 14.7 minutes, and the cost read is confounded by a shared workdir
 
 **Status: minted 2026-08-02 from the first paid run of the whole reuse path (spine
@@ -7476,3 +7564,634 @@ ceiling, not on anything it read"* while quoting the reply it was denying. Every
 - **A rename is the wrong shape of fix when another instrument keys on the name.** The honest
   version widened the read and left the terminal alone, because `step-stalled` is what tells
   the ledger the spend figure is a floor.
+
+## F101 — a crash left one line and no body: the authoring spine recorded `author-start` and stopped, and one line is byte-for-byte what a run still in flight looks like
+
+**Status: minted 2026-08-16 from hamr's first live `run-author.mjs` fire — spine
+`bareloop-patients/litectx-maintainer-author/author-msum52ah.jsonl`, 2026-08-15T16:51:28.627Z,
+patient `litectx-maintainer`, verdict class `hitl`, `ceilingUsd 5`. The file is 271 bytes and
+ONE line. THE ROOT CAUSE WAS NEVER DIAGNOSED, and that is the entire point of the entry: the
+error existed only on the operator's terminal, the terminal scrolled, and it is LOST. Nothing
+below speculates about what threw. Cure shipped in `9ae4844` (2026-08-16). Cost of the
+FINDING: $0 (artifact + source reads). Cost of the RUN: UNRECORDED, and unrecoverable from the
+tree — see §1.**
+
+### 1. The incident, and the whole of the record it left
+
+The spine, complete — one line on disk, wrapped here for width only; this is not an excerpt:
+
+```json
+{"type":"author-start","ts":"2026-08-15T16:51:28.627Z","runid":"msum52ah",
+ "patient":"…/bareloop-patients/litectx-maintainer","lang":"js","verdictType":"hitl",
+ "model":"claude-sonnet-5","job":"litectx-maintainer","timeoutMs":300000,"ceilingUsd":5}
+```
+
+The run died somewhere after `emit('author-start', …)` (`scripts/run-author.mjs:187`) and
+before the next event the pipeline emits, `authored`. What is known about it is exactly the
+contents of that line and nothing else.
+
+**Two consequences, stated separately because they are different sizes.**
+
+- **The diagnosis is gone.** The throw reached `process` as an unhandled rejection and printed
+  to hamr's terminal. Nothing wrote it down. There is no stack, no message, no code, no
+  `name` — no evidence anywhere in the tree of what failed or where.
+- **The spend is not merely unknown, it is unrecorded.** `authored` is the event that carries
+  the `cost` object, and it never fired. Whether a paid byte was ever sent is not answerable
+  from any artifact in this repository. This is not F6's "unknown rendered as zero" — nothing
+  was rendered at all — but it is the same family: the run declared a $5 ceiling on the line
+  it did write, and the tree holds no figure at all for what it actually spent, honest or
+  otherwise. Even "$0" would be a claim this record cannot support.
+
+For scale, a run that reaches its own end leaves five to eight lines. `author-msmsy579.jsonl`
+(2026-08-10, `prepared`) is 5; `author-msmbpjk6.jsonl` (2026-08-09, `gates-failed`) is 8.
+One is not a short record. One is no record.
+
+**"First" is scoped, deliberately.** Two earlier authoring runs exist in the tree
+(`pulselog-author-live-bareloop/author-out{,2}/`, the F91/F92 proofs) and both completed. This
+was the first fire hamr drove himself, the first on the `litectx-maintainer` patient, and the
+first on the `hitl` class — not the first execution of the script.
+
+### 2. The class: an artifact that reads the same for two opposite outcomes
+
+A day later, at `2026-08-16T16:45:12.447Z`, a second authoring run started on the same patient
+under the fixed code. Read at 16:49:46Z, its spine `author-msw1cupd.jsonl` was **271 bytes, one
+line, `author-start`** — differing from the dead run's spine only in `runid` and `ts` — while
+the run was demonstrably alive (`systemd-inhibit --what=idle:sleep … node scripts/run-author.mjs`,
+pid 2240363, 4m45s elapsed). Two files in one directory, identical in shape, in opposite states.
+That is not an argument for the finding; it is the finding, on disk, twice.
+
+**A log that cannot tell a DEATH from a HANG is not a record of either.** The reader is not
+being given a hard question — the reader is being given a file that contains no answer.
+
+| kin | what it shares | what is different here |
+|---|---|---|
+| **F67** — a guard that lives inside the thing it guards shares its fate | the spine's only writer is the process the spine describes, so the one event it can never emit unaided is its own death | F67's answer was a SEPARATE PROCESS. That is the wrong shape for a record: the fix is not to move the writer out, it is to give the process a last thing to say |
+| the **blind-instrument family** (ordinary form: an instrument that cannot see the variable — the ledger blind to cache tiers, the gate audit collapsing every read, `git status` as a write detector, job #1's aim probe) | a governance artifact narrating a state it does not hold | those instruments read a WRONG value. This one reads the SAME value for both truths |
+| **F59** — the UNREAD sub-class (`scout-result {bytes:0}` emitted faithfully 18/18 into the void) | an emitted record with no consumer that fails loudly | F59's instrument was right and unread. This one is read and is not wrong — it is ambiguous |
+| **F96** — "not an instrument that cannot see, but a decision that never looked" | the fact was available at the moment of the stop | F96's run HAD the fact in its own spine. This run had the fact only in a variable that was about to be discarded |
+
+**The asymmetry is what makes it worse than a blind instrument.** A blind instrument reads
+zero where the truth is five, so the tell is that the number is degenerate and the standing
+rule (audit a degenerate number before believing it) can catch it. Here there is no degenerate
+number to audit: `author-start` and silence is the CORRECT and expected artifact of a healthy
+run in flight. No amount of reading harder recovers the difference, because the difference is
+not in the file. An instrument that produces one artifact for two opposite outcomes has to be
+fixed at the WRITER; there is nothing a reader can do.
+
+### 3. The cure, shipped in `9ae4844` — every claim at file:line
+
+| rule | where | why it is that way |
+|---|---|---|
+| the fallible span sits in ONE try/catch | `scripts/run-author.mjs:204` (`try {`) → `:396` (`} catch (err) {`) → `:430` | a real scout, a real model call, a real toolchain per close stage — the span that can throw is the span that must leave a body |
+| NOTHING above it is inside, deliberately | `run-author.mjs:189-203` (the comment carrying the rule), `:73` and `:138` (the `die()`/no-key paths, `process.exit(2)`), spine created at `:142` | the argv/config paths run **before the spine file exists**; a crash record with no spine to land in is a record nobody can read. Those still stop loud on stderr and 2 |
+| the catch RETRIES NOTHING and SWALLOWS NOTHING | `:401-402` — `console.error('CRASHED — …')` then `console.error(err)`, the whole error, verbatim | a catch that re-enters the pipeline spends real money on a failure nobody has read yet |
+| the operator's copy comes FIRST | `:402` precedes `:412` | a diagnosis that reaches the person **only if the disk is writable** is a diagnosis with a dependency nobody asked for. The two writes below it can themselves fail |
+| then `author-crash` + `author-end {outcome:'crashed'}` | `:412`, `:419` | `author-end` is the one record that says a run stopped AT ALL — a crash that omits it leaves a spine that still reads as in-flight, which is the defect |
+| the DETAIL is said ONCE, on the crash record | `:413-418`; `author-end` carries the outcome and nothing else | two hand-spelled copies of one fact are two instruments that can disagree — this file has already paid for that once, in run-author's own `cap-halt`/`pricing-red` pair (F100 §3) |
+| `crashRecord` lives with the runner's other untestable-in-place rules | `scripts/author-readout.mjs:95-139`, beside `declarationLines` and `parseCeiling`; the reason is written at `:17-19` | `run-author.mjs` is a script — importing it runs it, and the span is only reached by paying. **A rule no test can reach is a rule nothing checks** |
+| `name` / `message` / `code` through `redactSecrets` | `author-readout.mjs:93` (`field`), used at `:129-131` | short fields, but `message` is the one most likely to quote a path, a URL or an env value back at us. An ABSENT field stays `null`, never a filled-in guess |
+| the STACK through `scrubRaw` — the ONE persist boundary | `author-readout.mjs:132-137` → `src/text.js:209` | the stack is the evidence (this incident had no idea WHERE the throw came from) and simultaneously the string in this system most likely to quote a credential out of a URL or an env value **into a file that outlives the run**. `scrubRaw` redacts over the same `SECRET_PATTERNS` inventory the validator reds on, and bounds it with the bound announcing its own size (F28: `src/text.js:233-235`, full `bytes` always reported) |
+| a non-Error throw is recorded honestly | `author-readout.mjs:120-122` — `String(err)` into the raw, `name` stays `null` | `throw 'boom'` is legal and happens; coercing it into an Error shape would invent a field |
+| ONE level of `cause`, no recursion | `author-readout.mjs:123-127, 136` | a wrapped throw names its origin in exactly that field. Walking a chain would be **speculative code standing over a shape nothing here has produced** |
+| the spine write is itself guarded, best-effort | `:411`, `:421-424` — `catch (spineErr)`, which says out loud that the spine could not be written and that the printed error is now the only record | **F70**: a crash handler that crashes destroys the report it was built to make |
+| **exit 4** | `:429` | distinct from 1 (a refusal or a failed gate: `:296`, `:325`, `:387`), 2 (operator/config: `:73`, `:138`) and 3 (a leak: `:442`). A crash sharing a code with a refusal files a bug as a result |
+| the leak scan still OVERRIDES 4 | `:434-443`, the scan running after the catch and setting `exitCode = 3` at `:442`, with the reason at `:438-441` | a secret sitting in a written file is the harder line of the two, and the crash keeps both of its own louder channels — the whole error on stderr and its own `author-crash` record |
+| no `process.exit()` anywhere in the handler | pinned by test, and by `run-author.mjs:445-446` | F71 — `exit()` can discard queued stdout and produce a clean-looking short readout of a run that said more than that |
+
+`crashRecord` itself is exercised on real thrown values in `tests/authoring.test.js:1519-1580`:
+a genuine `ENOENT` out of `readFileSync` (name/code/message/real frames, not an Error authored
+to contain the answer), a secret-bearing message checked with `scanSecrets` over the whole
+serialized record, a 400-frame stack proving the trim fires AND announces, a one-level `cause`
+including the bare-string shape, and a non-Error throw.
+
+### 4. The test-side instance of the SAME class, in the same commit
+
+`tests/run-author.test.js` reads the governance block out of the runner's source with a lazy
+regex. Its terminator was `\n}\n`. The moment the flow moved inside a `try {`, that pattern
+stopped closing on the block's own brace and closed on **the catch's** — so `BLOCK` silently
+became most of the file, and every `assert.ok(BLOCK.includes(…))` below it would have kept
+passing while reading a block it was never written against. **The failure mode is not that the
+regex stops matching (that fails loud) — it is that it matches TOO MUCH, and a bigger haystack
+satisfies every assertion.** This is F101's own class on the test side: the instrument's output
+looks identical whether it is guarding the right code or nothing at all.
+
+Fixed at `tests/run-author.test.js:37` — indent-anchored at **both** ends (`\n {2}if (…) {` …
+`\n {2}}\n`) — with `CATCH` added at `:39`, and a **pre-flight test at `:41`** that pins the
+block stays bounded: `BLOCK` exists, contains no `catch (`, and contains no `author-end`. The
+handler's own rules are pinned from source at `:116` (the try opens AFTER `author-start`, and
+the paid call is inside), `:129` (a body is written, each fact once), `:144` (no swallow, no
+`await`, no re-entry into `authorCloseForJob`/`prepareSigning`, no `process.exit(`, a guarded
+spine write, `exitCode = 4`) and `:167` (the runner's exit vocabulary is exactly {1,2,3,4} and
+exactly one site claims 4).
+
+### 5. The readers, verified rather than asserted
+
+Read at source, not from the commit message. `classifyIncidents` (`src/ledger.js:178`) branches
+on `primitive-smoke` (`:190`), `retention-red` (`:192`), `cap-halt` (`:194`), `config-red`
+(`:196`), `job-red`+`request-red` (`:200`) and `escalation` (`:215`). **`author-crash` and
+`author-end` are none of those**, so both fall through every branch and are simply NOT COUNTED
+— uncounted, never miscounted, which is the fail-safe direction. Nothing else in the tree reads
+the author spine today; `classifyIncidents` is the nearest reader and it does not read this
+file. The `EXCLUDED_ESCALATIONS` set (`src/ledger.js:66-…`) is not involved either: these are
+new EVENT TYPES, not new escalation categories, so the executable excluded-set's
+"unclassified category counts against bareloop" rule (`:256`) cannot fire on them.
+
+### 6. What is NOT claimed
+
+- **The original error is unrecovered and the root cause is UNKNOWN.** No hypothesis is offered
+  here, because none can be grounded. The cure makes the NEXT one legible; it diagnoses nothing
+  about this one, and the tree will never hold the answer.
+- **No claim that the crash class is rare.** One observation is one observation. Nothing here
+  measures how often the authoring pipeline throws, and the very defect being fixed is that
+  prior instances would be indistinguishable from runs that were simply still going.
+- **No claim that the fix has been exercised LIVE.** A search of every author spine on disk
+  (`bareloop-patients/*/author-*.jsonl` and `*/*/author-*.jsonl`, four files) returns **zero
+  `author-crash` records**. The handler is proven by source-pinned and unit tests only; its
+  first real firing will be its first live validation, exactly as F67's watchdog wiring was
+  recorded as unfired at mint time.
+- **No claim about the run in flight at write time.** `msw1cupd` (started 2026-08-16T16:45:12Z)
+  is cited here for the SHAPE of its spine at 16:49:46Z and for nothing else. Its outcome was
+  unknown when this was written.
+- **No claim that the spend of `msum52ah` can be reconstructed.** It cannot, from this tree.
+
+### Lessons
+
+- **A crash must leave a body.** A runner whose fallible span has no catch writes no trace of
+  its own death — and the process that dies is the only writer the record has. The last thing
+  a process does is the only chance the record gets.
+- **Ask of every log: what does it look like when the thing that writes it stops?** If the
+  answer is "the same as when it is working", the log is not a record of the run, only of the
+  parts of the run that finished. That question is $0 and belongs in the design of the writer,
+  not in the reading of the artifact.
+- **A blind instrument reads the wrong value; an AMBIGUOUS one reads the same value for two
+  opposite truths, and only the second is unfixable at the reader.** The standing "audit a
+  degenerate number" rule is powerless here — the artifact is not degenerate, it is correct for
+  one of the two states it stands for.
+- **A diagnosis routed only to a terminal is a diagnosis with a timer on it.** stderr reaches
+  the person; the file reaches everyone after. The fix ships both, in that order, and the
+  ordering is itself pinned by test — because the write is the half that can fail.
+- **A regex that reads source is an instrument, and it can go blind by matching MORE.** A
+  lazily-terminated block pattern degrades silently into "the rest of the file" and every
+  assertion over it keeps passing. Bound both ends, and pin the bound.
+
+### Addendum — observed 2026-08-16, later the same day, after the entry above was written
+
+**§2's illustration has an outcome now, and it is the wrong one for the cure's comfort.** The
+run cited there as "in flight" — `msw1cupd`, started `2026-08-16T16:45:12.447Z` — is over, and
+it ended leaving the same one line it started with. §6's "its outcome was unknown when this was
+written" is SUPERSEDED by observation. §2 and §6 are left exactly as they were: this file
+amends, it never rewrites.
+
+**Measured, with the instrument named.** `author-msw1cupd.jsonl` is 271 bytes and one line, and
+its mtime is `2026-08-16T16:45:12.448Z` — equal to its own `author-start`, so nothing was ever
+appended to it. Five polls between `16:56:42Z` and `16:58:16Z` read zero live `run-author.mjs`
+processes and a spine static at 271 bytes at every poll. The liveness read is by
+`ps -eo args | grep -F run-author.mjs`, NOT `pgrep -af run-author.mjs`: the pgrep form matches
+the poller's own command line and reports a hit forever — the standing never-poll-with-pgrep
+rule, re-earned here on the first attempt. The `--out` directory holds `answers.json`,
+`specdraft.json` and the two spine files and nothing else — no `authored.json`, no
+`resolved-spec.json`, no `signing.json` — so the run never reached `writeOut('authored.json', …)`
+at `run-author.mjs:222`. It emitted neither `author-crash` nor `author-end`. The code it ran
+CONTAINS the cure (`git merge-base --is-ancestor 9ae4844 HEAD` = yes; HEAD `8ddb995`).
+
+**So the process ended without the catch running, and the source says why that is possible.**
+`grep -nE 'process\.(on|once)\(|SIGINT|SIGTERM|SIGHUP|uncaughtException|unhandledRejection'`
+over `scripts/run-author.mjs` returns **no matches** — the file installs no signal handler and
+no global handler; its only `process.exit(` sites are `:73` and `:138`, both before the spine
+exists. A `try/catch` catches a THROW. It cannot catch a process terminated by a SIGNAL (a
+SIGINT from an interrupted or closed terminal, a SIGTERM, a SIGKILL), a `process.exit()` inside
+the span, or a hard death (OOM kill, segfault): in each of those the JS never runs, so no body
+is written. Lines `:188-203` are blank and comment only, so every executable statement after
+`author-start` is inside the try — which narrows the set of causes consistent with this artifact
+without selecting one.
+
+**The cause is now known for two of the three, on the operator's own word.** hamr confirmed
+in-session that `msw1cupd` and `msw1u5kq` were **his own Ctrl-C**, on runs that LOOKED hung.
+The pipeline emits nothing for up to ~15 minutes across the scout, the model calls and the seed
+reads, so from the terminal a healthy run and a wedged one are indistinguishable — **F101's own
+ambiguity, one layer up: not in the file, on the operator's screen.** A separate investigation
+measured that silence budget and REFUTED two leads for it, slow `tsc` and a network stall;
+nothing beyond the budget itself is asserted here. **The mechanism closes the loop:** a signal
+terminates node **without unwinding the stack**, so `9ae4844`'s try/catch is STRUCTURALLY
+UNREACHABLE on SIGINT — which is exactly why code containing the cure still left no body. The
+cure was never wrong; it was never reached. That is the same source fact as the paragraph above,
+read forward: the file installs no signal handler, so nothing else was ever going to run.
+`msum52ah` (2026-08-15, the run that minted this finding) shows the SAME signature, and Ctrl-C is
+the **LEADING explanation** for it — leading, and **UNCONFIRMED**. §1's "the root cause was never
+diagnosed" stands for that run. A consistent hypothesis is not a diagnosis and this entry does
+not promote one to the other.
+
+**A $0 REPRODUCTION ran the crash path end to end — a death that was made, not met.**
+Provenance first, because it was gotten wrong once: `msw1oms4` was fired by the **session
+ORCHESTRATOR**, deliberately and documented in the session record, as a $0 reproduction whose
+sole purpose was to exercise the handler — `run-author.mjs` with an invalid `ANTHROPIC_API_KEY`
+and `--out` into the scratch sibling directory `…-author-debug/`. It was not a programme run and
+not part of any authored job. It spent **$0**: the key was rejected at authentication (HTTP ≥400,
+thrown at `node_modules/bare-agent/src/provider-anthropic.js:317`) before any tokens were
+generated. The artifact lives OUTSIDE the repository, under `bareloop-patients/`, so nothing
+about it enters a commit.
+
+**WITHDRAWN: the earlier attribution of this run to a documentation subagent acting outside its
+brief.** That reading rested on timing correlation plus the `-author-debug/` directory name, and
+it does not survive the check that settles it: `find / -name 'author-msw1oms4.jsonl'` returns
+**one** file, and runids are TIME-DERIVED, so one spine is one firing — two processes cannot mint
+one runid. The subagent that first wrote this paragraph cited a legitimate run; it never claimed
+to have fired anything.
+
+**What the reproduction left, re-verified against the file itself.** `msw1oms4`: `author-start` at
+`2026-08-16T16:54:22.046Z`, `author-crash` at `…:22.460Z` (414ms in), `author-end` at `…:22.461Z`
+— three lines, 990 bytes. The throw is a `ProviderError`, `code PROVIDER_ERROR`, message
+`[AnthropicProvider] API key is invalid.`. `crashRecord` populated `name`, `message` and `code`
+off the real Error; the throw carried no `cause`, so `cause` and `reason` persist as `null` and
+nothing was invented to fill them; the raw stack went through `scrubRaw` at 378 bytes with
+`trimmed:false` (the bound is `RAW_PERSIST_MAX` = 8000, so it is genuinely under the cap and the
+announcement is honest); `author-end {outcome:'crashed'}` follows the crash record, in that
+order. The code it ran contains the cure (`git merge-base --is-ancestor 9ae4844 HEAD` = yes,
+HEAD `8ddb995`).
+
+**So §6's "no claim that the fix has been exercised LIVE" is SUPERSEDED on the MECHANISM.** The
+crash path WAS observed live, with provenance named: a real process, a real `ProviderError`
+thrown off a real provider at a real network boundary, the full body written, exit 4. The catch
+executes on a real `Error` outside the test suite, `crashRecord` fills name/message/code from it,
+the stack survives the persist
+boundary under its bound, `author-end {outcome:'crashed'}` follows, and the handler's ordering
+holds — the first end-to-end execution of that path anywhere but the suite, and it holds. The one
+remaining limit is precise and small: the failure was **INDUCED** (an invalid key, chosen for
+being easy to cause) rather than **ENCOUNTERED**. That validates the handler end to end without
+being an in-the-wild crash, so §6's "its first real firing will be its first live validation"
+stands unsatisfied on the event while the mechanism no longer waits on it.
+
+**The §6 grep, re-run at the time of this correction.** Exactly ONE author spine on disk carries
+an `author-crash` record, and it is the reproduction's — so §6's zero is broken by an induced
+artifact, not by a programme one: the file the grep returns is the file the repro was fired to
+produce. The COUNT in the first version of this paragraph ("five, not four") is stale and is
+corrected here: `bareloop-patients/*/author-*.jsonl` plus `*/*/author-*.jsonl` now returns SIX
+files, because `litectx-maintainer-author/author-msw1u5kq.jsonl` (271 bytes, one line,
+`author-start` `2026-08-16T16:58:39.685Z`) appeared after the paragraph above was written. It is
+another body-less spine, and it is one of the two hamr confirmed as his own Ctrl-C above. Two
+deaths nine minutes apart under identical code — the throw left a body, the signal did not — and
+the difference is the KIND of death, not the code: a throw unwinds into the catch, a signal never
+gives it the chance.
+
+**The honest consequence for the cure's scope.** The cure does exactly what it claims and no
+more — it converts a THROWN death into a record; it does not make every death legible. A
+body-less spine is still REACHABLE, and `msw1cupd` is the proof on disk. "One line and silence"
+therefore still cannot be read as evidence that a run is in flight. The ambiguity §2 names is
+NARROWED, not eliminated.
+
+**The cure is IN FLIGHT, not parked.** A concurrent builder is landing three things on this same
+branch as this correction is written — commit ref **to follow**, it is not in the tree yet (HEAD
+is `b476834`, no builder commit above it):
+
+- a **signal handler**, so a SIGINT/SIGTERM also leaves a body — closing the exact hole the
+  paragraphs above diagnose, where the try/catch is structurally unreachable;
+- **per-phase progress records**, so the ~15 silent minutes stop being silent;
+- **per-call cost records.**
+
+The progress records attack the OPERATOR-FACING half of the same ambiguity, and that half is why
+this section exists at all: both killed runs were killed because a live run and a wedged one
+looked identical from outside. A record the operator can watch is what makes Ctrl-C a decision
+instead of a guess. The cost of the first item is real and stands as a design tension the build
+must respect — a handler that writes on the way out is one more thing that can fail or hang while
+the process is being killed, **F70's class, a guard carrying the failure mode it was built to
+guard**. That is a constraint on how it ships, not a reason to park it; it is no longer parked.
+
+**Still not claimed** (extending §6, not repeating it):
+
+- **SUPERSEDED — "no claim about WHY `msw1cupd` ended", and "no claim about who started,
+  stopped or interrupted it".** Both are answered for `msw1cupd` and `msw1u5kq`, on hamr's
+  confirmation in-session: he interrupted them himself with Ctrl-C, because the runs looked hung
+  from the terminal. The authority is operator testimony, not the artifact — the tree still
+  records only a start and a silence, and it always will, because a signal never gave the catch
+  a chance to write.
+- **STILL UNCONFIRMED for `msum52ah`.** The same signature, and Ctrl-C is the leading
+  explanation — leading, not established. §1's "the root cause was never diagnosed" stands.
+- **No claim about the spend of any of the three.** No `authored` event fired for `msum52ah`,
+  `msw1cupd` or `msw1u5kq`, so no `cost` object exists for any of them. Even "$0" would be a
+  claim these records cannot support.
+- **No claim that all three body-less runs share a cause.** Two of them do, confirmed. The third
+  shares a SHAPE with them, and a hypothesis.
+- **No claim that the crash handler has fired on a death the programme MET.** The one
+  `author-crash` on disk is the orchestrator's $0 reproduction, on a failure induced on purpose.
+  The handler is proven to execute live, end to end; it is not yet proven to have caught anything
+  the programme did not cause.
+
+## F102 — the signer said what to fix, the wall fell, and the resume asked him the same question again: a pending human decision does not survive a wall-halt → resume
+
+**Status: minted 2026-08-17 from the first live hitl proving loop on `litectx-maintainer` —
+spines `bareloop-patients/litectx-maintainer-bareloop/u-mswks15g.jsonl` (the pause),
+`u-msx7a3rj.jsonl` (the decide-time wall-halt) and `u-msx7xoe0.jsonl` (the resume that re-asked).
+NOT FIXED — the missing primitive is named in §4 and its build is sequenced with the review door
+(PRD v1.71 §6). Cost of the FINDING: $0 (spine reads). Cost of the incident: the decision was
+paid TWICE by the person, and $0 of provider spend, because the leg that should have carried his
+words never ran a round.**
+
+### 1. The sequence, in run ids
+
+1. `mswks15g` ($2.95, 28.6 of 30 min) reached its `human-confirms-real-fixes` stage and emitted
+   `hitl-pause` — decision-ready, seven mechanical stages satisfied, eleven changed paths, three
+   doors, the clock stopped. That part is F105.
+2. hamr took the **rerun** door and typed his reason: the new `better-sqlite3.d.ts` leans on
+   `any` for every query result. That text is the gap, and it was accepted as such — the fix
+   loop opened.
+3. It opened onto **87 seconds of wall** (`u-msx7a3rj.jsonl`: `wall-clock` at seq 3 reads
+   `elapsedMs 1713419` against `requestedMs 1800000`, so `remainingMs 86580`). The leg
+   wall-halted with **`iterationsUsed: 0`** and `spentUsd` unchanged at `2.9509049` — the same
+   figure the paused leg ended on, to the last digit. Zero rounds. That half is F103.
+4. The wall was raised to 60 minutes and the spec re-signed (hash `528a15d…`). The resume,
+   `u-msx7xoe0.jsonl`, is **8 lines long**: `job-start`, `work-branch`, `wall-clock`,
+   `primitive-smoke`, `close-precheck`, `close-decl`, **`hitl-pause`**, `job-end`. No step, no
+   round, no fix loop.
+
+### 2. The proof is two records that are byte-identical
+
+The `hitl-pause` emitted by the resumed leg and the `hitl-pause` emitted by the original leg
+differ **in `seq` and `ts` and in nothing else**. Compared field by field — `stage`, `ask`,
+`stages`, `changed`, `decision`, `options`, `meaning`, `decisionReady` — every one is equal:
+
+```
+ask same:    True
+stages same: True
+```
+
+The ask both times: *"Look at the diff in src/: are the type errors genuinely fixed (real type
+annotations/logic corrections), with nothing silenced, ts-ignored, or cast away just to make the
+checker pass?"*
+
+**That is the finding on disk.** The resume re-entered at the close, re-ran the mechanical
+stages, found them still green, arrived at the human stage and **asked the original question as
+though the rerun decision had never been taken.** The signer's words did not exist anywhere the
+resumed process could see them.
+
+### 3. Why, mechanically
+
+The decision lives in the **in-flight process** — it arrives on the runner's command line
+(`--decide rerun --text …`), is normalized, and is handed to the fix loop as the gap. That is
+the whole of its life. The **checkpoint does not carry it.** A wall-halt writes what a halt
+writes; a pending human decision was never one of the things a halt was told to record. So the
+resume gate reads a checkpoint that is, from its own point of view, complete — and correctly
+re-enters at the close, because re-entering at the close is what a hitl checkpoint means when no
+decision is attached.
+
+**Nothing malfunctioned.** Every component did what it was built to do. The primitive is
+missing, which is why this is a finding and not a bug report.
+
+### 4. The missing primitive, stated as the rule it becomes
+
+- **The checkpoint must persist the PENDING HUMAN DECISION** — the door that was taken and the
+  words that were said — alongside time, money, strikes and progress. That is hamr's ruling 4
+  (PRD v1.71 §4), and this run is what minted it: *"on any wall hit time/money/strikes
+  notes/progress should be recorded"*.
+- **A resume carrying one must re-enter the FIX LOOP with it, never the ask.** Re-asking is
+  correct behaviour for an *empty* checkpoint and is the wrong behaviour for a *pending* one,
+  and today the artifact cannot tell those apart.
+
+### 5. Kin
+
+| kin | what it shares | what is different here |
+|---|---|---|
+| **F101** — one artifact for two opposite states | a checkpoint that reads the same whether a decision is pending or none was ever taken | F101's ambiguity is in a LOG nobody can fix at the reader. This one is in a STATE FILE, and the writer can simply record the missing field |
+| **F98 / F28** — a gap bound eliding the detail that converts | the human's words are a gap, and a gap that does not reach the next attempt is not a gap | those elided detail INSIDE a delivered gap; this one dropped the whole gap at a process boundary |
+| **F97** — check what a resume will RE-ENTER before paying | the resume re-entered a state that could not do the work asked of it | F97's operator could have known from the artifacts. Here the artifact was complete and still could not carry the fact |
+
+### Lessons
+
+- **A decision a person made is state, and state that lives only in a process dies with it.**
+  Anything a human is asked for is expensive by definition — it costs their attention, and they
+  will not thank you for charging twice.
+- **Ask of every checkpoint: what did the run know that this file does not?** The answer here
+  was one string, and its absence made a $2.95 pause worth nothing on resume.
+- **A wall boundary is a serialization boundary.** Everything that crosses it must have been
+  written down; everything else is lost, silently, and looks like a fresh start.
+
+### What is NOT claimed
+
+- **No claim about how often this fires.** One observation, on the first live hitl loop there
+  has ever been. It is structural rather than probabilistic, which is a different kind of
+  argument and is not the same as a rate.
+- **No claim that the resume behaved wrongly given its input.** It behaved correctly on an
+  incomplete record; the record is the defect.
+- **No claim that the fix is small.** It is one field and two behaviours, and the second one
+  (re-enter the fix loop, not the ask) touches the resume gate, which is arbiter-adjacent.
+
+## F103 — the rerun door opened onto 87 seconds: the wall folds across legs, so a decision made at the end of a run inherits whatever the run did not spend
+
+**Status: minted 2026-08-17 from the same loop — `u-msx7a3rj.jsonl` (87 seconds, 0 rounds) and
+`u-msx87qqs.jsonl` (15.2 minutes, 9 rounds, 0 writes). RULED by hamr the same day (PRD v1.71
+§4): a rerun is a FRESH ENGAGEMENT with its own money and time and its own counters. NOT BUILT.
+Cost of the FINDING: $0. Cost of the incident: $0.36 of worker rounds that could never have
+finished, plus a second full wall.**
+
+### 1. The measurement
+
+| leg | wall granted | wall left when the fix loop opened | rounds | writes |
+|---|---|---|---|---|
+| `msx7a3rj` | 30 min (signed) | **86,580 ms — 87 seconds** | 0 | 0 |
+| `msx87qqs` | 60 min (re-signed) | **~15.2 min** of it, after the folded prior legs | 9 | 0 |
+
+`msx7a3rj`'s `wall-clock` record reads `requestedMs 1800000`, `elapsedMs 1713419`,
+`remainingMs 86580`, and its terminal is `wall-halt` with `iterationsUsed: 0`, `phase: "fix"`,
+`stage: "human-confirms-real-fixes"`. `msx87qqs` ends `wall-halt` at `elapsedMs 3603793` against
+`requestedMs 3600000` with `cutMidCall: true` and `spentUsd 3.3086624`, `spendComplete: false` —
+$1.69 of the $5 budget still unspent when TIME, not money, ended it.
+
+### 2. Why 87 seconds is not merely unlucky
+
+The wall folds across legs by design — it is the W-2 machinery that stops a resumed run from
+silently buying a second wall. That is correct for a resume of *the same engagement*. It is
+wrong for a **decision**, for a reason the numbers make plain: **this worker reads ~9 or more
+rounds before its first write.** `mswk0xvg` spent 22 rounds reading and never wrote at all
+before its truncation casualty; `msx87qqs` spent its whole 9 rounds on the human's words and
+landed nothing. A fix engagement that begins with a minute and a half of wall is not a short
+engagement — it is a **structurally impossible** one, and the run pays real money to discover
+that.
+
+**The decision is not made on the run's clock.** The person read the evidence package
+overnight; the wall they inherited was consumed by work they did not commission, on a leg that
+had already ended.
+
+### 3. The ruling (hamr, verbatim, in-turn)
+
+> *"redo/rerun comes with new authoring for money+time and keeps accounting of this far and
+> this session separate counters"*
+
+- A rerun is a **FRESH ENGAGEMENT**: its own money and its own time, authored at the moment the
+  door is taken.
+- **It never scavenges the corrected run's leftover wall.**
+- The ledger carries **two counters, side by side** — *cumulative so far* (this job, across
+  engagements) and *this engagement*. One number meaning both is exactly how a decision came to
+  inherit 87 seconds.
+- The corrected run's **verdict is untouched** (PRD v1.71 §3): a rerun is new work against the
+  same signed spec, never a re-grade.
+
+### 4. Kin
+
+| kin | what it shares | what is different here |
+|---|---|---|
+| **F45** — a budget must fund the attempt PLUS its close | a cap that binds before the work can finish kills the row before it can be read | F45's ceiling was money and mid-attempt. This one is time and pre-attempt — the engagement was dead before its first round |
+| **W-2** — *"when time is up, keep the grade we already have and stop"* | the same clock, honoured correctly | W-2 governs a run's own work. It was never asked whether a HUMAN's decision starts a new engagement or continues an old one |
+| **F44** — a silent second ceiling under an advertised cap | the advertised cap said 30 minutes; the engagement got 87 seconds | there is no hidden ceiling here — the arithmetic is honest and visible. What was missing is the notion that a decision deserves its own clock |
+
+### Lessons
+
+- **A clock that folds is right for a resume and wrong for a decision.** The difference is who
+  started the work: the same engagement continuing, or a person commissioning new work.
+- **Size an engagement against the worker's OWN measured shape.** A fix loop that needs nine
+  rounds to reach its first write cannot be funded in a minute, and that number was already on
+  the record before this run.
+- **Two things counted by one number will eventually be asked to disagree.** The cure is two
+  counters, not a smarter reading of one.
+
+### What is NOT claimed
+
+- **No claim that 9 rounds is THE number.** It is what this worker did on this job today; the
+  ruling does not depend on it and no threshold is picked from it.
+- **No claim that the wall folding is wrong in general.** It is right everywhere it was
+  designed for, and this finding narrows where that is.
+- **No claim about what the rerun would have produced with real time.** It never got any. That
+  is F105's unproven half, not evidence about capability.
+
+## F104 — the catalogue cannot count documentation, so the composer measured something else: a mechanical work stage at seed makes pure-human-judgement jobs structurally inexpressible
+
+**Status: minted 2026-08-17 from authoring run `msx81t76` ($0.45), which reached SIGNING
+PREPARED at hash `aee1dcbd…` for a NEW job `litectx-jsdoc` — *"document every exported function
+in `src/` with accurate JSDoc"*. The spec is UNSIGNED and UNFIRED. This is the finding that
+retired the hitl verdict class (PRD v1.71 §2) and the one softgreen's composition law dissolves
+(§5). Cost of the FINDING: $0 beyond the authoring run itself.**
+
+### 1. What the composer did, and what it said about it
+
+The close-authoring catalogue's kinds count exit codes, parsed numbers, patterns in added
+lines, and changed paths. **None of them can see whether a doc comment is any good** — or that
+it exists, or that it describes the function it sits above.
+
+Gate 3, the seed-verdict read, requires a **mechanical work stage that is RED at seed**: a close
+where nothing is red at seed has nothing to do. So the composer, needing a red, reached for the
+one mechanical thing in the neighbourhood — the strict typecheck — and **named what it was
+doing** in its own note: *"intentional calibration"*, on the reasoning that honest JSDoc with
+typed `@param` tags retires the implicit-any errors **as a side effect**.
+
+That reasoning is not wrong. It is a **PROXY**, and it only exists because this patient is a
+`checkJs` repo where documentation happens to cast a mechanical shadow.
+
+### 2. The general shape
+
+- **A resume-tailoring job has no such shadow.** There is no type checker for a résumé, no exit
+  code for *"this reads well and does not oversell"*. Under gate 3 as written, such a job has no
+  legal red-at-seed stage, and the close **refuses**.
+- **The composer, forced by the harness, will always manufacture a mechanical stage.** Given a
+  gate it must satisfy and a catalogue that cannot express the ask, the only move left is to
+  measure something adjacent and hope the correlation holds. That is the machine being
+  obedient, not the machine cheating.
+- **So the harness reveals its own premise:** the whole design is built around a **verifiable
+  gradient** — something red at the start that goes green by the end. Where no gradient exists,
+  the system either refuses honestly or invents one, and inventing one is worse.
+
+### 3. Why this retired a verdict class rather than adding a kind
+
+The available repair looked like *"admit doc-genre kinds to the catalogue"*. It was rejected on
+this evidence: a doc-genre kind that could mechanically grade prose would be a **rubric close in
+a mechanical coat** — the self-consistency gotcha the RSI fold named, with no judged floor under
+it. F87's lesson points the same way: a close that measures a shadow of the ask is a cost hazard
+the run discovers at the tail.
+
+The repair that survives is **softgreen's composition law**: the judged stage IS the work stage,
+it is `offer:false`, and it **SKIPS the seed-verdict read** because its bar comes from a signed
+calibration set rather than from what was red at seed. That makes a pure-judgement job
+expressible **without a manufactured mechanical shadow** — which is the dissolution of this
+finding, and the reason resume-genre jobs now wait on the judged floor rather than on doc-genre
+kinds (PRD v1.71 §6).
+
+### 4. Kin
+
+| kin | what it shares | what is different here |
+|---|---|---|
+| **F87** — the goal must state everything the close judges | a mismatch between what was asked and what gets measured | F87's mismatch was an UNSTATED stage the close still judged honestly. Here the close judges something the goal never asked for, because it cannot judge what it did ask for |
+| **the rubric-close gotcha** (RSI fold) — a rubric close is self-consistency in disguise | measuring the ask with an instrument shaped by the ask | the gotcha is about a judge grading its own homework; this is about a harness with no judge at all, substituting an unrelated ruler |
+| **F34/F36** — the benchmark paradox | the shape of the problem determines whether any instrument can read it | those were about producing a gradient for a BENCHMARK. This is about a real job that has no gradient and never will |
+
+### Lessons
+
+- **A gate that cannot be satisfied honestly will be satisfied dishonestly by an obedient
+  machine.** The composer did not cheat; it did the only thing the harness left available, and
+  it documented it. The tell was in its own note.
+- **When the system starts manufacturing what it requires, read the requirement, not the
+  output.** The proxy stage is not the defect — the demand for a mechanical red at seed on a job
+  with no mechanical axis is.
+- **Widening a catalogue to cover a genre it cannot honestly measure buys a proxy, not a
+  capability.** The honest refusal was the better of the two available answers, and the third
+  answer (a judged floor) is what the next rung is for.
+
+### What is NOT claimed
+
+- **No claim that the jsdoc close is wrong.** It validates, it prechecks, and it is signable. It
+  measures a proxy, and it says so.
+- **No claim that it would fail if fired.** It has not been fired, and nothing here predicts its
+  outcome.
+- **No claim that `judged-floor` solves this.** Nothing is built. The dissolution in §3 is a
+  design claim about expressibility, not a measurement of a judge.
+- **No claim about how many genres are affected.** One job, one shadowless genre named by
+  reasoning (résumé work), and a general shape. No survey was run.
+
+## F105 — the pause worked: the first hitl loop in programme history delivered every part of the surface, and delivered the human's words to the worker — what it did not deliver is a write
+
+**Status: minted 2026-08-17 from `u-mswks15g.jsonl` ($2.95, 28.6 of 30 min) and
+`u-msx87qqs.jsonl` ($0.36, 9 rounds). Recorded as a POSITIVE finding because a machinery that
+works is evidence exactly as much as one that breaks, and because the class it belongs to was
+retired the same day — this is the record of what was proven before the re-homing (PRD v1.71
+§1). Cost of the FINDING: $0 (spine reads).**
+
+### 1. What executed, read off the spine
+
+- **The worker did the work.** litectx `src/` went from **64 strict errors to 0** through the
+  worker's own in-run check loop — ONE plan step (`fix-strict-type-errors`) over three
+  iterations, 23 errors → 20 → satisfied — followed by the outer close-fix loop over three more
+  (2 errors → a suppression red → the pause).
+- **The authored guard caught the cheat genre TWICE, and the worker undid both honestly.** Two
+  added `any`s, then one hidden cast — `no-suppressions` reporting `[cast] src/tsalias.js:38`,
+  an ADDED-lines match carrying its own address. Neither survived to the pause.
+- **All seven mechanical stages went satisfied:** `changed-from-seed`, `typecheck-src-errors`
+  (0 against baseline 0), `typecheck-outside-errors` (0/0), `tests-kept` (423 against baseline
+  423), `suite-green-exit`, `suite-green-zero-failures`, `no-suppressions`.
+- **Then the eighth stage paused the run** rather than grading it. `close-verdict` iteration 3
+  reads `"verdict":"human-pause"`, and the run emitted `hitl-pause` carrying the ask, the
+  per-stage evidence with values and baselines, the **eleven changed paths**, the three options
+  `["accept","rerun","cancel"]`, and its own meaning in plain words: *"not a verdict — the run
+  is paused, the clock is stopped, and the last thing it did stands until you answer"*.
+- **The trend reader stayed honest about the blind axis.** The ladder's last row reads
+  `"trend":"unknown"`, `"reading":"the close is waiting on a person — not a grade"`,
+  `"paused":true`. F6's rule held at the one place it is easiest to break: a human stage
+  produces no number, and none was invented.
+- **W-2's clock stop worked for free.** The pause was the last event on the leg, so the hours
+  hamr spent reading never entered `priorWallMs`.
+- **`job-end` recorded `outcome:"hitl-pause"`, `spentUsd:2.9509049`, `spendComplete:true`** — a
+  clean exit, priced, not a casualty.
+
+### 2. The RETURN, which was the riskiest assumption
+
+The 2026-08-13 build plan named the return — not the pause — as the thing most likely to be
+wrong. It held: hamr's rerun text became the gap through the same seam `post.gap` uses, the fix
+loop opened, and **nine worker rounds ran on the human's words** (`u-msx87qqs.jsonl`).
+
+**Delivery is proven. Conversion is not.** Zero writes landed before the wall ended the leg at
+60.1 of 60 minutes with $1.69 of the $5 budget unspent. That is the F32 split (told ≠ acted on)
+arriving on a new channel, and it is **unread rather than negative** — the leg died of time, not
+of refusal, and it died of time for the reasons in F103.
+
+### Lessons
+
+- **Prove the surface and the channel separately from the outcome.** The pause, the evidence
+  package, the doors, the clock and the gap seam are all now live-proven; whether a human's
+  sentence changes a file is a different question and this run does not answer it.
+- **A machinery can be fully correct and still be the wrong shape for the job** — which is what
+  happened here, hours later, when the class was retired for what it asks of a composer and a
+  person rather than for anything it did wrong (F104, PRD v1.71 §2).
+- **Record the green parts of a run you are about to retire.** The pause machinery is being
+  re-homed, not deleted, and the next rung inherits exactly the parts this entry shows working.
+
+### What is NOT claimed
+
+- **No claim of rerun CONVERSION.** Zero writes. Blocked on F102 and F103, not refuted.
+- **No claim about replication.** One pause, one return, one patient, one genre.
+- **No claim that the hitl class is viable.** It is retired; this entry says what it proved
+  before it was, and nothing about what it would prove later.

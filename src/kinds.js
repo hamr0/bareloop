@@ -64,7 +64,7 @@ import { realpathSync } from 'node:fs';
 import { readFile, stat, mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
-import { globToPrefix } from './validate.js';
+import { globToPrefix, isNonEmptyString } from './validate.js';
 import { CLOSE_ENV_DENY } from './ralph.js';
 
 /** the close's two judgment exits — a stage's verdict, in the shape the
@@ -136,19 +136,56 @@ export const SIGNS = Object.freeze([1, -1]);
  * are catalogue entries and are deliberately absent here: declaring one is
  * counted demand (the request-red path), and reaching one at runtime is a
  * stop — never a red, and never a silent pass. */
-export const LIVE_KINDS = Object.freeze(['command-exit', 'count-not-worse', 'pattern-absent-in-diff', 'files-changed']);
+export const LIVE_KINDS = Object.freeze(['command-exit', 'count-not-worse', 'pattern-absent-in-diff', 'files-changed', 'human-confirms']);
+/** RULING 8 — the stages the seed-verdict read (D12) must NOT run. A judged
+ * number at seed is unstable and a person at seed is an interview, not a
+ * measurement; their bar comes from calibration (soft-green) or from the person
+ * themselves (hitl), never from the seed. The skip is RECORDED by name rather
+ * than taken in silence (F59: absent is not empty), so `seedRead` still returns
+ * one row per declared stage. */
+export const SEED_EXEMPT_KINDS = Object.freeze(['judged-floor', 'human-confirms']);
+/** the one kind a PERSON renders — named once, because the runner keys three
+ * decisions on it (is there a door to answer, which stage paused, whose ruling
+ * this is) and three literals is how they come to disagree */
+export const HUMAN_KIND = 'human-confirms';
+/** the three doors the signer is offered at a hitl pause (2026-08-12 §1, doors
+ * re-cut 2026-08-17). No fourth door, and no free-text-only variant: a red that
+ * is not one of these two is not a ruling the run can act on.
+ *
+ * `cancel` was the third door and is DELETED as a concept (hamr: *"what's the
+ * point of cancel anyways? pause can resume — that would be more honest"*). The
+ * case it served — a person who looks and does not want to carry on — is a pause
+ * nobody returns to, which the 60-day checkpoint TTL retires on its own. Nothing
+ * here forces a forever-decision at the one moment the person has least reason
+ * to make one. */
+export const HUMAN_DECISIONS = Object.freeze(['accept', 'rerun', 'pause']);
 
 /**
  * @typedef {{code: string, path: string, detail: string}} Red
  * @typedef {{workdir: string, seedRef: string, gapKeep: string,
  *   timeoutMsDefault?: number, baselineMode?: 'auto'|'worktree',
- *   gapCap?: number, maxBuffer?: number, seedTrees?: SeedTrees}} Ctx
+ *   gapCap?: number, maxBuffer?: number, seedTrees?: SeedTrees,
+ *   humanRuling?: {decision: string, text?: string|null}|null,
+ *   onStage?: (row: {stage: string|null, kind: string|null, verdict: string, durationMs: number}) => void}} Ctx
  *   The arbiter's half of a stage run. Every field here is operator/runner
  *   territory: a declaration parameterises kinds, never the contracts.
- * @typedef {{verdict: 'green'|'red'|'instrument-stop'|'not-reached',
+ *   `humanRuling` is the SIGNER's answer at a hitl pause, carried in from the
+ *   runner — never authored, never defaulted, and absent on every ordinary run.
+ *   `onStage` is a REPORTING seam and nothing else: the seed read spawns a real
+ *   toolchain per stage (a suite is the slow one) and a whole read is one opaque
+ *   await, so the shell gets told as each stage lands. It decides nothing, it is
+ *   never consulted, and no verdict depends on it — the house pattern is
+ *   `runJob`'s `emit` (the library reports, the shell prints).
+ * @typedef {{verdict: 'green'|'red'|'instrument-stop'|'not-reached'|'pause'|'skipped',
  *   exitCode: number|null, value: number|null, baseline: number|null,
  *   baselineSource: string|null, gapLines: string[], judged: boolean,
  *   stage: string|null, kind: string|null, detail: Record<string, any>}} StageResult
+ *   Six outcomes, and only two of them are verdicts. `pause` is N4's fifth: the
+ *   close reached a stage a machine cannot render and is WAITING on a person —
+ *   neither green nor red, and never graded (the F17 forbidden-zone rule applied
+ *   to a non-verdict). `skipped` is the sixth and says a stage was deliberately
+ *   not run at THIS reading (ruling 8's seed exemption), which is a different
+ *   fact from `not-reached` (an earlier stage decided first).
  * @typedef {{ensure: (workdir: string, seedRef: string) => Promise<{stop: string, fault: string}|{stop: null, dir: string}>,
  *   cleanup: () => Promise<{ok: boolean, leaked: string[], detail: string|null}>}} SeedTrees
  */
@@ -1323,12 +1360,117 @@ async function runFilesChanged(stage, ctx) {
   });
 }
 
+/**
+ * THE SIGNER'S ANSWER, normalised at the seam that accepts it — the library half
+ * of the three-button gate (2026-08-12 §1).
+ *
+ * `null` is not a refusal: no ruling at all IS the pause path, which is how every
+ * ordinary run and every first leg of a hitl run arrives here. What is refused is
+ * an answer that is not one of the three doors, and — the case the POC's negative
+ * control measured — a `rerun` with no text. Ruling 3 makes the human's words the
+ * gap the worker converts from; an empty one launches a fix worker that re-runs
+ * as though nothing had been said, which is the failure this refusal exists for.
+ *
+ * It never throws and never repairs: a decision that cannot be read is handed
+ * back as a refusal with its reason, and the caller decides what to do about it.
+ * @param {any} ruling
+ * @returns {{ok: boolean, ruling: {decision: string, text: string|null}|null, why: string|null}}
+ */
+export function normalizeHumanRuling(ruling) {
+  if (ruling === null || ruling === undefined) return { ok: true, ruling: null, why: null };
+  if (typeof ruling !== 'object' || Array.isArray(ruling)) {
+    return { ok: false, ruling: null, why: `a decision is an object {decision, text?} — one of ${HUMAN_DECISIONS.join(' | ')}` };
+  }
+  const decision = String(/** @type {any} */ (ruling).decision);
+  if (!HUMAN_DECISIONS.includes(decision)) {
+    return {
+      ok: false,
+      ruling: null,
+      why: `"${decision}" is not one of the three doors (${HUMAN_DECISIONS.join(' | ')}). There is no fourth, and no `
+        + 'free-text-only variant: a red that is not one of these two is not a ruling the run can act on',
+    };
+  }
+  const text = /** @type {any} */ (ruling).text;
+  if (decision === 'rerun') {
+    if (typeof text !== 'string' || text.trim().length === 0) {
+      return {
+        ok: false,
+        ruling: null,
+        why: 'a "rerun" decision needs TEXT: the human is the gap author (ruling 3), and their words are the whole of '
+          + 'what the fix worker is given. An empty gap re-runs the worker as though nothing had been said',
+      };
+    }
+    return { ok: true, ruling: { decision, text }, why: null };
+  }
+  return { ok: true, ruling: { decision, text: null }, why: null };
+}
+
+/**
+ * THE HUMAN STAGE (N4 slice 1) — the one kind that measures nothing.
+ *
+ * With no ruling in hand it does not RUN, it PAUSES: the fifth outcome, neither
+ * green nor red, so nothing downstream grades it. With the signer's ruling in
+ * hand it renders exactly what the person said — `accept` is a green a PERSON
+ * judged, and `rerun` is a red whose gap is the human's own words, verbatim,
+ * through the same bounded/announced channel every other stage's gap uses.
+ *
+ * It spawns nothing, reads nothing and touches no tree, which is why it can
+ * render both without a workdir that exists.
+ *
+ * `pause` is deliberately NOT a case here. It is not a judgment about the tree
+ * — it is the signer saying "not now" — and it is consumed above this stage, by
+ * the runner and by `runPlan` before the close is ever asked (a `pause` that
+ * reached this far has bypassed that seam, so it renders NO verdict rather than
+ * being guessed into one). With no ruling in hand this kind pauses anyway, which
+ * is the same place the person is left; what the door adds is the RECORD that
+ * they looked and chose to keep the checkpoint.
+ * @param {any} stage @param {Ctx} ctx @returns {Promise<StageResult>}
+ */
+async function runHumanConfirms(stage, ctx) {
+  const ask = stage?.params?.ask;
+  const norm = normalizeHumanRuling(ctx.humanRuling ?? null);
+  if (!norm.ok) {
+    return stopped(stage, ctx, `INSTRUMENT: stage "${stage.name}" was handed a decision it cannot read — ${norm.why}`,
+      {}, STOP_FAULTS.CRASHED);
+  }
+  if (norm.ruling === null) {
+    // THE PAUSE. `judged: false` and `exitCode: null` together are the whole
+    // contract: nothing was measured and no process ran, so a zero here would be
+    // F6 in an exit code's coat.
+    return result(stage, {
+      verdict: 'pause',
+      exitCode: null,
+      judged: false,
+      detail: { ask: isNonEmptyString(ask) ? ask : null },
+    });
+  }
+  if (norm.ruling.decision === 'accept') {
+    return result(stage, { verdict: 'green', exitCode: EXIT_GREEN, judged: true, detail: { ask: ask ?? null, decision: 'accept' } });
+  }
+  if (norm.ruling.decision === 'rerun') {
+    const gap = new Gap(ctx.gapKeep, ctx.gapCap);
+    gap.push(`${stage.name}: the signer reviewed the result and asked for another pass. Their words:`);
+    gap.push(/** @type {string} */ (norm.ruling.text));
+    return result(stage, {
+      verdict: 'red',
+      exitCode: EXIT_RED,
+      judged: true,
+      gapLines: gap.render(),
+      detail: { ask: ask ?? null, decision: 'rerun' },
+    });
+  }
+  return stopped(stage, ctx, `INSTRUMENT: stage "${stage.name}" was handed a "${norm.ruling.decision}" decision, which `
+    + 'is the signer ending the run and is never a verdict about the tree — the runner consumes it before the close',
+  {}, STOP_FAULTS.CRASHED);
+}
+
 /** @type {Record<string, (stage: any, ctx: Ctx) => Promise<StageResult>>} */
 const RUNNERS = {
   'command-exit': runCommandExit,
   'count-not-worse': runCountNotWorse,
   'pattern-absent-in-diff': runPatternAbsentInDiff,
   'files-changed': runFilesChanged,
+  'human-confirms': runHumanConfirms,
 };
 
 /**
@@ -1387,10 +1529,41 @@ export async function seedRead(declaration, ctx) {
   const owned = !ctx.seedTrees;
   const seedTrees = ctx.seedTrees ?? makeSeedTrees();
   const inner = { ...ctx, seedTrees };
+  /** AFTER the stage completes, never before: a line saying a stage STARTED and
+   * a line saying what it RETURNED are two different facts, and only the second
+   * one can carry a verdict. The duration is measured around the call rather
+   * than reported by it, so a stage that stops still gets a real number.
+   * @param {StageResult} row @param {number} startedAt */
+  const told = (row, startedAt) => {
+    if (typeof ctx.onStage === 'function') {
+      ctx.onStage({ stage: row.stage, kind: row.kind, verdict: row.verdict, durationMs: Date.now() - startedAt });
+    }
+    return row;
+  };
   try {
     /** @type {StageResult[]} */
     const rows = [];
-    for (const stage of declaration?.stages ?? []) rows.push(await runStageIn(stage, inner));
+    for (const stage of declaration?.stages ?? []) {
+      // RULING 8 — judged and human stages are EXEMPT from the seed read, and
+      // the exemption is a ROW, not an absence (F59). A person asked at the seed
+      // is being interviewed, not measured, and there is nothing to baseline.
+      const startedAt = Date.now();
+      if (SEED_EXEMPT_KINDS.includes(stage?.kind)) {
+        rows.push(told(result(stage, {
+          verdict: 'skipped',
+          exitCode: null,
+          judged: false,
+          detail: {
+            skipped: true,
+            why: 'ruling 8 (2026-08-07): judged and human stages skip the seed-verdict read — a judged number at seed '
+              + 'is unstable and a person at seed is an interview, not a measurement. This stage has no seed baseline '
+              + 'and contributes none.',
+          },
+        }), startedAt));
+        continue;
+      }
+      rows.push(told(await runStageIn(stage, inner), startedAt));
+    }
     return rows;
   } finally {
     if (owned) await seedTrees.cleanup();
@@ -1412,7 +1585,7 @@ export async function seedRead(declaration, ctx) {
  * room would break a documented adopter contract for nothing; the new name says
  * exactly what differs. `src/declaredclose.js` is what bridges the two shapes.
  * @param {any} declaration @param {Ctx} ctx
- * @returns {Promise<{verdict: 'green'|'red'|'instrument-stop', exitCode: number, judged: boolean, firstRed: string|null, stages: StageResult[]}>}
+ * @returns {Promise<{verdict: 'green'|'red'|'instrument-stop'|'pause', exitCode: number|null, judged: boolean, firstRed: string|null, pausedAt: string|null, stages: StageResult[]}>}
  */
 export async function runDeclaredClose(declaration, ctx) {
   const owned = !ctx.seedTrees;
@@ -1431,12 +1604,20 @@ export async function runDeclaredClose(declaration, ctx) {
       stages.push(r);
       if (r.verdict !== 'green') ended = true;
     }
+    // A PAUSE stops the close exactly like a red does, and is DELIBERATELY not
+    // in this list: `deciding` names the stage that rendered a VERDICT, and a
+    // pause rendered none. Reading it as one would fall through to green — the
+    // close would mint a verdict nobody gave (the defect this line exists to
+    // make impossible).
     const deciding = stages.find((s) => s.verdict === 'red' || s.verdict === 'instrument-stop');
+    const paused = deciding ? null : stages.find((s) => s.verdict === 'pause') ?? null;
     return {
-      verdict: /** @type {'green'|'red'|'instrument-stop'} */ (deciding ? deciding.verdict : 'green'),
-      exitCode: deciding ? /** @type {number} */ (deciding.exitCode) : EXIT_GREEN,
-      judged: deciding ? deciding.judged : true,
+      verdict: /** @type {'green'|'red'|'instrument-stop'|'pause'} */ (deciding ? deciding.verdict : (paused ? 'pause' : 'green')),
+      exitCode: deciding ? /** @type {number} */ (deciding.exitCode) : (paused ? null : EXIT_GREEN),
+      judged: deciding ? deciding.judged : (paused ? false : true),
       firstRed: deciding ? deciding.stage : null,
+      /** the stage the close is WAITING on, when it is waiting on a person */
+      pausedAt: paused ? paused.stage : null,
       stages,
     };
   } finally {

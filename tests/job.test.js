@@ -473,18 +473,17 @@ test('tools is optional in the plan shape (the ceiling defaults to the full menu
   assert.deepEqual(r.reds, []);
 });
 
-test('VERDICT_TYPES ships frozen: green admitted, soft-green/hitl declared-but-locked', () => {
+test('VERDICT_TYPES ships frozen: green and hitl admitted, soft-green declared-but-locked', () => {
   assert.deepEqual([...VERDICT_TYPES], ['green', 'soft-green', 'hitl']);
   assert.ok(Object.isFrozen(VERDICT_TYPES));
-  assert.deepEqual([...LOCKED_VERDICTS], ['soft-green', 'hitl']);
+  // N4 slice 1 admitted hitl; the whole admission table is pinned in tests/hitl.test.js
+  assert.deepEqual([...LOCKED_VERDICTS], ['soft-green']);
   assert.ok(Object.isFrozen(LOCKED_VERDICTS));
 });
 
 test('a locked verdictType is a request-red with the type as a STRUCTURED verb field (admission demand, the ledger keys on it)', () => {
-  for (const vt of ['soft-green', 'hitl']) {
-    const close = vt === 'hitl'
-      ? { type: 'hitl', prompt: 'review the draft?' }
-      : { type: 'rubric', criteria: 'summary reads well' };
+  for (const vt of LOCKED_VERDICTS) {
+    const close = { type: 'rubric', criteria: 'summary reads well' };
     const r = validateJob(mut4((j) => { j.verdictType = vt; j.close = close; }));
     assert.equal(r.ok, false, `${vt} must red`);
     assert.equal(r.reds.length, 1, `exactly one red, got ${JSON.stringify(r.reds)}`);
@@ -500,9 +499,7 @@ test('request-red carries the LIB stamped at the emit site: a locked verdict is 
   // getting it wrong files a bareloop-catalogue refusal as an upstream bug
   // against bare-agent (the BA-2 misattribution class).
   for (const vt of LOCKED_VERDICTS) {
-    const close = vt === 'hitl'
-      ? { type: 'hitl', prompt: 'review the draft?' }
-      : { type: 'rubric', criteria: 'summary reads well' };
+    const close = { type: 'rubric', criteria: 'summary reads well' };
     const r = validateJob(mut4((j) => { j.verdictType = vt; j.close = close; }));
     const red = r.reds.find((x) => x.code === 'request-red' && x.path === 'verdictType');
     assert.equal(red.lib, 'bareloop', `${vt} is OUR catalogue refusing, never an upstream gap`);

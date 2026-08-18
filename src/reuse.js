@@ -52,6 +52,12 @@ import { closeStagesOf } from './plan.js';
 import { MIN_WALL_MS, jobSpecHash } from './job.js';
 import { isObj, isNonEmptyString } from './validate.js';
 import { readGrade } from './trend.js';
+
+/** the paused-run TERMINAL and its spine record share one name (`runPlan` returns
+ * it and `runJob` writes it onto `job-end`), spelled once in `declaredclose.js`
+ * beside the close-verdict word it translates, so the emitters, the checkpoint
+ * list, and the TTL gate below cannot drift from each other */
+import { HITL_PAUSE, HUMAN_CHECKPOINTS } from './declaredclose.js';
 import { extractArtifact, priceOf } from './text.js';
 import { runJob as shippedRunJob } from './run.js';
 
@@ -83,6 +89,34 @@ const { Loop } = require('bare-agent');
  *    started.
  */
 export const REUSE_GRADED_RED = Object.freeze(['escalated']);
+
+/**
+ * WHICH TERMINALS ARE A CHECKPOINT — the list a runner hands `readResume` as
+ * `resumableOutcomes`, minted HERE rather than in whichever script happens to
+ * launch a run.
+ *
+ * `readResume` deliberately takes it as a parameter and defaults to empty, and
+ * that stays true: the reuse loop's own semantics depend on the empty default.
+ * What did not exist was a canonical ANSWER, so `scripts/run-u.mjs` kept its own
+ * copy — and the exported bundle (PRD v1.44 §2: a thin runner with bareloop as a
+ * dependency) would have had to keep a third. The same reasoning that put the
+ * pause TTL in the library (OPEN-2, hamr, 2026-08-13) puts this here.
+ *
+ * Every entry is a stop that left WORK ON DISK and an allowance unspent — money,
+ * time, a self-healed stall, and now a person who has not answered yet. A verdict
+ * already rendered is never on this list: `green`/`escalated` are graded rows, and
+ * re-buying one would pay twice for an answer already in hand. (The signer's own
+ * `hitl-cancel` terminal used to be the other example; the door was deleted on
+ * 2026-08-17 — a person who does not want to carry on pauses, and the checkpoint
+ * they keep is retired by the TTL rather than by a terminal.)
+ *
+ * The human half is SPLICED IN from `declaredclose.js` rather than spelled again,
+ * because the try loop below reads the two halves differently and a second copy is
+ * how they would come to disagree about which member is which: the first three are
+ * allowances the loop's remaining tries are meant to spend against, and the human
+ * ones are the stop no further try can change (see `hardStop`).
+ */
+export const CHECKPOINT_OUTCOMES = Object.freeze(['cap-halt', 'wall-halt', 'step-stalled', ...HUMAN_CHECKPOINTS]);
 
 /**
  * v1's definition of "the same KIND of recipe" — and it is the LOAD GATE's own: the
@@ -418,13 +452,24 @@ function readTry(events) {
   };
 }
 
-/** the three-way verdict read of a runJob outcome, in ONE place: a green, the one
- * GRADED red that demotes (D6), or a casualty that keeps its own name. Both the live
- * try loop and the resume reader classify through this — two spellings of "what kind
- * of answer was that" is how a casualty ends up demoting a recipe.
- * @param {string} outcome @returns {'green'|'red'|'casualty'} */
+/** the verdict read of a runJob outcome, in ONE place: a green, the one GRADED red
+ * that demotes (D6), a CHECKPOINT waiting on a person, or a casualty that keeps its
+ * own name. Both the live try loop and the resume reader classify through this — two
+ * spellings of "what kind of answer was that" is how a casualty ends up demoting a
+ * recipe.
+ *
+ * `checkpoint` is its own name rather than a fourth flavour of casualty (2026-08-17).
+ * A casualty is a run that DIED — a transport fault, a governance cut, a broken close
+ * — and a reader that sees one is being told the attempt is over. A human checkpoint
+ * is the opposite fact in every respect: nothing failed, nothing is discarded, the
+ * work and the money are exactly where they were, and the allowance still unspent is
+ * a person's answer. It behaves like neither a red nor a casualty everywhere it
+ * matters already (`hardStop` ends the loop on it, the box is left untouched), so the
+ * ROW saying "casualty" was the one place the machinery still mis-described itself.
+ * @param {string} outcome @returns {'green'|'red'|'checkpoint'|'casualty'} */
 function verdictClassOf(outcome) {
   if (outcome === 'green' || outcome === 'already-green') return 'green';
+  if (HUMAN_CHECKPOINTS.includes(outcome)) return 'checkpoint';
   return REUSE_GRADED_RED.includes(outcome) ? 'red' : 'casualty';
 }
 
@@ -1024,6 +1069,81 @@ export function readResume(events, { deathAt = null, direct = false, resumableOu
 }
 
 /**
+ * THE PAUSE TTL (2026-08-12 §2): a hitl checkpoint is kept for 60 days.
+ *
+ * OPEN-2, RULED (hamr, in-turn, 2026-08-13): **the TTL lives in the LIBRARY**, so
+ * the exported bundle (a headless runner with bareloop as a dependency, PRD v1.44
+ * §2) inherits it instead of every runner re-implementing it. A script-only TTL
+ * would vanish on export — the one place the rule is most needed and least
+ * likely to be re-typed.
+ */
+export const PAUSE_TTL_MS = 60 * 24 * 60 * 60_000;
+
+/**
+ * The AGE gate for a paused checkpoint — the sibling of `resumeTreeGate`, and it
+ * asks the other question a 60-day-old checkpoint raises. The tree gate asks
+ * *is this still the tree the run left?*; this asks *is this still a decision
+ * anyone is waiting on?*
+ *
+ * THREE things it deliberately does NOT do:
+ *
+ *  - it does not widen any other resume rule. The 2026-08-12 ruling is about a
+ *    person deciding, so `applies: false` on every other terminal: a cap-halt
+ *    checkpoint is a different stop under a different allowance, and quietly
+ *    ageing it out would be a governance change nobody ruled.
+ *  - it does not treat an unreadable stamp as young (F6). A checkpoint that
+ *    cannot say WHEN it paused has an unknown age, and unknown is refused rather
+ *    than rounded down to fresh — the direction that fails safe.
+ *  - it does not skip silently. An expired checkpoint comes back as a refusal
+ *    that NAMES the age and the TTL, because the operator's next move (start
+ *    fresh) depends on knowing which of the two it hit.
+ *
+ * The clock is injected for the same reason `runPlan`'s is: a rule measured in
+ * months cannot otherwise be tested at all.
+ *
+ * @param {any[]} events the paused run's own spine, parsed, in file order
+ * @param {{now?: () => number, ttlMs?: number}} [opts]
+ * @returns {{ok: boolean, applies: boolean, ageMs: number|null, ttlMs: number, pausedAt: string|null, detail: string|null}}
+ */
+export function checkpointAgeGate(events, { now = Date.now, ttlMs = PAUSE_TTL_MS } = {}) {
+  const list = Array.isArray(events) ? events.filter(isObj) : [];
+  const end = list.filter((e) => e.type === 'job-end').at(-1) ?? null;
+  const base = { applies: false, ageMs: null, ttlMs, pausedAt: null, detail: null };
+  if (end?.outcome !== HITL_PAUSE) return { ...base, ok: true };
+
+  // the PAUSE RECORD's own timestamp, and its terminal's as the fallback: the
+  // pause is what the human is answering, so its stamp is when the waiting began
+  const pause = list.filter((e) => e.type === HITL_PAUSE).at(-1) ?? end;
+  const pausedAt = typeof pause.ts === 'string' ? pause.ts : null;
+  const atMs = pausedAt === null ? NaN : Date.parse(pausedAt);
+  if (!Number.isFinite(atMs)) {
+    return {
+      ...base,
+      ok: false,
+      applies: true,
+      detail: 'this checkpoint does not record when it paused, so its age is unknown — and an unknown age is not a '
+        + `young one (F6). The TTL is ${Math.round(ttlMs / 86_400_000)} days; start a fresh run rather than resuming a `
+        + 'checkpoint nothing can date.',
+    };
+  }
+  const ageMs = Math.max(0, now() - atMs);
+  const days = (/** @type {number} */ ms) => Math.floor(ms / 86_400_000);
+  if (ageMs > ttlMs) {
+    return {
+      ...base,
+      ok: false,
+      applies: true,
+      ageMs,
+      pausedAt,
+      detail: `this run paused ${days(ageMs)} days ago and the pause TTL is ${days(ttlMs)} days — the tree, the `
+        + 'toolchain and the job itself have had two months to move, so the evidence the signer would be answering '
+        + 'about is no longer the evidence the run produced. Start a fresh run.',
+    };
+  }
+  return { ...base, ok: true, applies: true, ageMs, pausedAt };
+}
+
+/**
  * The PATIENT gate for a resume, which is deliberately NOT the fresh-launch one.
  *
  * A fresh reuse run refuses a dirty tree: a run that inherits the previous run's edits
@@ -1375,7 +1495,30 @@ export async function runReuse(opts) {
       costUsd: read.spentUsd, spendComplete: read.spendComplete, wallMs, rounds,
       ...(trySpecHash ? { specHash: trySpecHash } : {}),
     };
-    if (verdictClass === 'green' && read.plan === null) {
+    if (outcome === 'already-green') {
+      // A GREEN THAT PREDATES THE RUN mints nothing, and the guard keys on the
+      // TERMINAL rather than on the absence of a plan. `already-green` means the
+      // close was satisfied at the precheck — before this leg wrote a byte — so
+      // whatever plan is on the spine did not produce it, and minting a version
+      // from one would be learning credit for work that did not happen.
+      //
+      // It used to be covered by accident: a cold already-green never drafts, so
+      // `read.plan` was null and the branch below caught it. N4 broke that
+      // accident — a hitl try that PAUSED and came back with the signer's
+      // `accept` lands `already-green` with its predecessor's `plan-accepted`
+      // sitting in the same try window. A rule with no wired detector is prose.
+      bridgeWrites.push({
+        name,
+        action: 'none',
+        file: null,
+        reds: [{
+          code: 'green-predates-run',
+          path: 'outcome',
+          detail: 'the close was already satisfied before this run did anything (already-green) — nothing here earned '
+            + 'a version, and a plan on the spine did not produce this green',
+        }],
+      });
+    } else if (verdictClass === 'green' && read.plan === null) {
       // a green with no plan on the spine cannot mint a version — the artifact that
       // inherits is the one that RAN, and there is nothing here to inherit. Reported,
       // never faked with a placeholder.
@@ -1389,6 +1532,26 @@ export async function runReuse(opts) {
         toolsUsed: [...new Set((read.plan.steps ?? []).flatMap((/** @type {any} */ s) => s.tools ?? []))],
       };
       row.bridgeWrite = writeGreen(bridge, meta, { ...record, plan: read.plan });
+    } else if (HUMAN_CHECKPOINTS.includes(outcome)) {
+      // A PAUSE IS NOT A RESULT, so the box gets nothing — not a casualty row, not a red,
+      // and the workflow is left exactly as it was. The recipe has not been judged: the
+      // close is not FINISHED rendering its verdict, and the answer that would finish it
+      // is a person's. Filing it as history would put a row on the entry that reads as a
+      // run this workflow failed to carry, and the signer's `accept` moments later would
+      // leave that row standing as evidence against a workflow that in fact greened.
+      // Recorded as an explicit no-write for the already-green branch's reason: a reader
+      // never has to branch on absence.
+      bridgeWrites.push({
+        name,
+        action: 'none',
+        file: null,
+        reds: [{
+          code: 'run-paused-for-decision',
+          path: 'outcome',
+          detail: `the run is waiting on a person (${outcome}) — nothing has been judged yet, so there is no result to `
+            + 'file against this workflow. The row is written by whatever the resumed run finally earns.',
+        }],
+      });
     } else if (bridge) {
       // R1: the recipe is NOT edited by a red. `outcome` rides in verbatim — a casualty
       // keeps its own name, and only the literal 'red' demotes (D6).
@@ -1495,6 +1658,31 @@ export async function runReuse(opts) {
    * @param {any} row @returns {any|null} the terminal, or null to carry on
    */
   const hardStop = (row) => {
+    // THE HUMAN HALF, read before the table and off the LIBRARY's own list: a run
+    // waiting on a person is not one of the stops below, which are properties of the
+    // run that would reproduce for $0. This one is the opposite — a try that did real
+    // work and reached the one stage a machine cannot render. Buying the next try (and
+    // then the cold leg) would spend the envelope re-asking a question already put to
+    // someone who has not replied yet, and the second attempt could not be graded any
+    // sooner than the first. The allowance still unspent is a person, so the loop stops
+    // and hands the run back; the checkpoint on disk is untouched and resumable, which
+    // is the runner script's half (N4 §1.6, PAUSE_TTL_MS).
+    if (HUMAN_CHECKPOINTS.includes(row.runOutcome)) {
+      return done(row.runOutcome, {
+        category: row.runOutcome,
+        decision: 'The run reached a stage only a person can render, and it is waiting on that answer. Every further '
+          + 'try and the cold leg would run the same job to the same question, so the loop stops here rather than '
+          + 'buying attempts nobody can grade yet. Nothing is lost: the run kept everything it did, and it resumes '
+          + 'from this checkpoint once the decision is in.',
+        options: [
+          'read the evidence package the pause recorded, then answer it and resume this run',
+          'leave it: an unanswered checkpoint expires on its own once the pause TTL is up',
+        ],
+      // NOT re-filed, for `interpreter-red`'s reason: the pause already escalated from
+      // its own site inside the run, under this same name and with the evidence package
+      // attached. A second copy here would count one person's pending decision twice.
+      }, false);
+    }
     const decisions = {
       'unapproved-spec': {
         decision: `No approval record matches the per-try spec (hash ${trySpecHash}). Tightening the caps with an envelope makes a NEW spec version, and a new version is signed, not inherited — nothing was run.`,

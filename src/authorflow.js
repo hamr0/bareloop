@@ -163,21 +163,63 @@ export const STRUCTURE_INSTRUCTION_TEXT = 'Your reply could not be read as one J
  * cannot emit anything else (D2/D3), so a genre it has never seen is a
  * composition problem, not a catalogue problem.
  *
- * The GREEN set is questions 1–6 of the frozen TYPES set (prereg §5) BYTE FOR
- * BYTE. What is gone is the seventh slot — D13's genre CONFIRM ("this looks like
- * a type-fixing job, correct?") — superseded in full: the interview never asks
- * about a genre again. The refusal it carried did not disappear; it MOVED to the
- * composer, on the same counted `request-red` path (see `authorCloseForJob`).
- * The remaining six are already genre-neutral, which is why generalising them
- * required deleting a slot rather than rewording one.
+ * The GREEN set descends from questions 1–6 of the frozen TYPES set (prereg §5).
+ * TWO slots have been deleted since, both because the interview was ASKING FOR
+ * SOMETHING IT ALREADY HAD or already knew:
+ *
+ *   - D13's genre CONFIRM ("this looks like a type-fixing job, correct?") —
+ *     superseded in full: the interview never asks about a genre again, and the
+ *     refusal it carried MOVED to the composer, on the same counted
+ *     `request-red` path (see `authorCloseForJob`);
+ *   - "Is there a code repo I can look at? Where?" — DROPPED on hamr's ruling
+ *     after he drove the terminal interview himself (2026-08-15, verbatim: *"drop
+ *     Q6"*). The repository is a MANDATORY, STRUCTURED input already —
+ *     `runInterview`'s own `repoPath`, which the runner takes from `--patient` and
+ *     refuses to start without. Asking a person to re-type in prose a path the
+ *     machine is holding in a variable is the SWE tax this product refuses, and
+ *     it invites a second, drifting answer for the same fact (hamr's own answer
+ *     on the live run was *"Yes — the patient itself."*). Nothing downstream lost
+ *     anything: the scout reads `repoPath`, never the answer.
+ *
+ * Question 2 was WIDENED in the same ruling: it now asks for the read-or-draw-from
+ * files as well as the ones that change. The two halves belong in one answer
+ * because they are one decision for the person answering — what the work touches,
+ * and what it touches only to look at.
+ *
+ * The five that remain are genre-neutral, which is why every generalisation so far
+ * has deleted a slot rather than reworded one. They are NUMBERED CONTIGUOUSLY from
+ * 1: the number a person sees is the key their answer is filed under, and a gap
+ * would be a hole in a form nobody can explain.
  */
 export const GREEN_QUESTIONS = Object.freeze({
   1: 'What do you want done?',
-  2: 'Which files or folders should change?',
+  2: 'Which files or folders should change? And which files should the work read or draw from (they stay untouched)?',
   3: 'Is there anything that must not change?',
   4: 'How do you check today whether it\'s working?',
   5: 'What would make you say this came back worse than before?',
-  6: 'Is there a code repo I can look at? Where?',
+});
+
+/**
+ * THE HITL SET (N4 slice 1) — the green questions BYTE FOR BYTE, plus one.
+ *
+ * The five are unchanged deliberately rather than economically: the
+ * mechanical-first composition law (2026-08-07) says every hitl close is
+ * *deterministic stages first, judge minimal, human last*, so a hitl job needs
+ * exactly the same mechanical facts a green one does — what changes, what must
+ * not, how it is checked today, what "worse" looks like. Rewording them would
+ * fork one interview into two that drift.
+ *
+ * The last one is the only thing the green set cannot supply, and it is not a
+ * flourish: `human-confirms` requires an `ask` — the question the signer answers
+ * at the end of the run — and nothing else in the interview names it. Without it
+ * the composer would have to invent what a person is deciding, which is the one
+ * thing a human stage must never have done for it. It is the SPREAD's next number
+ * rather than a fixed one, so a green-side deletion renumbers it instead of
+ * leaving a gap (it was 7 while the green set held six, and is 6 now it holds five).
+ */
+export const HITL_QUESTIONS = Object.freeze({
+  ...GREEN_QUESTIONS,
+  6: 'When you look at the finished result yourself, what are you deciding?',
 });
 
 /**
@@ -195,7 +237,11 @@ export const QUESTION_SETS = Object.freeze({
     required: Object.freeze(Object.keys(GREEN_QUESTIONS).map(Number).sort((a, b) => a - b)),
   }),
   'soft-green': Object.freeze({ locked: true, questions: null, required: null }),
-  hitl: Object.freeze({ locked: true, questions: null, required: null }),
+  hitl: Object.freeze({
+    locked: false,
+    questions: HITL_QUESTIONS,
+    required: Object.freeze(Object.keys(HITL_QUESTIONS).map(Number).sort((a, b) => a - b)),
+  }),
 });
 
 /**
@@ -214,7 +260,15 @@ export const CLASS_STATEMENTS = Object.freeze({
     + 'measurement of this repository. If part of what they asked for cannot be measured that way, leave it out and '
     + 'say so in your notes rather than approximating it with a stage that means something else.',
   'soft-green': null,
-  hitl: null,
+  // N4 slice 1. The mechanical-first composition law is stated as an ORDER
+  // because first-red-wins makes the order the mechanism: the cheap stages shield
+  // the expensive one, and the person is never the first filter.
+  hitl: 'The person declared this job HITL: a PERSON renders the final verdict, because their judgement is what '
+    + '"done" means here. Compose the mechanical part first — everything about this repository a command can decide '
+    + 'is still a mechanical stage, exactly as it would be for a green job — and put ONE human-confirms stage LAST, '
+    + 'carrying the question they answer when they look at the result. Never make the person the first filter: a '
+    + 'stage a command can render is never handed to them, and they are asked only once, at the end, about the part '
+    + 'no command can hold.',
 });
 
 /** @param {string} verdictType @returns {{locked: boolean, questions: any, required: any}} */
@@ -354,6 +408,12 @@ export const PARAM_SCHEMAS = Object.freeze({
   extensions: { type: 'array', minItems: 1, items: { type: 'string' } },
   allowPrefixes: { type: 'array', minItems: 1, items: { type: 'string' } },
   requireNonEmpty: { const: true },
+  ask: {
+    type: 'string',
+    minLength: 1,
+    description: 'the plain question the person answers while looking at the finished result. They see it verbatim, '
+      + 'so write what they are DECIDING — never a bare "approve?".',
+  },
 });
 
 /**
@@ -912,8 +972,19 @@ export function resolveSourcePrefixes({ workdir, sourcePaths, seedFiles }) {
  * run could not be read afterwards. A cost entry with no raw beside it is that
  * run again.
  */
-/** @param {{ceilingUsd?: number|null}} [o] the OPERATOR's ceiling; `null`/absent is UNBOUNDED */
-export function makeCostBook({ ceilingUsd = null } = {}) {
+/**
+ * @param {{ceilingUsd?: number|null,
+ *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number}) => void}} [o]
+ *   `ceilingUsd` is the OPERATOR's ceiling; `null`/absent is UNBOUNDED.
+ *   `onCall` is a REPORTING seam fired as each metered call lands — the shell's
+ *   only chance to know what has been spent while the run is still alive. It is
+ *   never consulted and never governs: `capStop` below is still the one
+ *   predicate, still asked between calls, and still reads the same `entries`.
+ *   `absorb` deliberately does NOT fire it: those calls were metered (and
+ *   reported) by whoever made them, and reporting them twice would double the
+ *   scout's spend in every reader downstream.
+ */
+export function makeCostBook({ ceilingUsd = null, onCall = () => {} } = {}) {
   /** @type {{label: string, costUsd: number|null, unpricedRounds: number}[]} */
   const entries = [];
   /** @type {ReturnType<typeof scrubRaw>[]} */
@@ -921,8 +992,10 @@ export function makeCostBook({ ceilingUsd = null } = {}) {
   return {
     /** @param {string} label @param {any} r a bare-agent run result @param {number} [attempt] */
     add(label, r, attempt = 1) {
-      entries.push({ label, ...priceOf(r) });
+      const call = { label, ...priceOf(r) };
+      entries.push(call);
       raws.push(scrubRaw({ label, attempt, text: r?.text, reason: r?.error ? String(r.error) : null }));
+      onCall({ ...call });
       return entries.at(-1);
     },
     /** @param {{label: string, costUsd: number|null, unpricedRounds: number}[]} calls
@@ -1085,6 +1158,8 @@ async function askDeclaration({ messages, generate, mode, retries, label, book, 
  *   listing?: {stop: string|null, files: string[]|null, block: string|null, meta: any}|null,
  *   generate: Function, seedReadFn?: Function, closeCtx?: any,
  *   ceilingUsd?: number|null,
+ *   onPhase?: (phase: string, data?: any) => void,
+ *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number}) => void,
  *   maxRevisions?: number, structureRetries?: number,
  *   structuredMode?: 'tool'|'text', catalogue?: Record<string, any>}} o
  */
@@ -1094,6 +1169,11 @@ export async function authorClose({
   scout, listing = null,
   generate, seedReadFn = runSeedReadStages, closeCtx = {},
   ceilingUsd = null,
+  // The two REPORTING seams, defaulted to nothing so every existing caller is
+  // byte-identical. Neither is consulted: the revise ladder, the ceiling and the
+  // seed read all run exactly as they did — the shell is merely told, while the
+  // run is still alive, which of the up-to-15 silent minutes it is inside.
+  onPhase = () => {}, onCall = () => {},
   maxRevisions = MAX_REVISIONS,
   structureRetries = MAX_STRUCTURE_RETRIES,
   structuredMode = 'tool',
@@ -1118,7 +1198,7 @@ export async function authorClose({
   // no default for exactly this reason, and `shellCapUsd` left off judged against
   // a number nobody chose). An unbounded authoring run is legal; it is just never
   // an accident, which is why the driver PRINTS it.
-  const book = makeCostBook({ ceilingUsd });
+  const book = makeCostBook({ ceilingUsd, onCall });
   // The scout's calls AND its raws, together. The raws matter most on the path
   // that spends nothing more: run mslhn707 refused at the $0 preflight below,
   // and the survey text that would have said WHY died with the process.
@@ -1306,6 +1386,11 @@ export async function authorClose({
   try {
     for (let i = 0; i <= revisionCap; i += 1) {
       const label = i === 0 ? 'author' : `revise-${i}`;
+      // WHICH call, and how many the ladder may make. `of` is the ENFORCED cap
+      // (`revisionCap`, already clamped tighten-only) rather than the constant —
+      // a readout quoting a number the loop does not obey is a second
+      // instrument, and this file's own history is what that costs.
+      onPhase('author-call', { call: label, i, of: revisionCap });
       const ask = await askDeclaration({ messages, generate, mode: structuredMode, retries: retryCap, label, book, catalogue });
       messages = ask.convo;
 
@@ -1392,7 +1477,20 @@ export async function authorClose({
         // `gapKeep` defaults to EMPTY rather than being left undefined: M1
         // prefixes every gap line with it verbatim, so an unset one prints the
         // word "undefined" on every failure line the model is asked to read
-        const rows = await seedReadFn(injected.declaration, { gapKeep: '', ...closeCtx, workdir, seedRef, seedTrees });
+        // THE LONG ONE. Every stage of the declaration spawns a real toolchain
+        // against the patient, so this single await is where a run spends
+        // minutes saying nothing — the per-stage line below is the whole point,
+        // and the block boundary is what makes it readable.
+        const stageCount = injected.declaration?.stages?.length ?? null;
+        onPhase('seed-read', { call: label, stages: stageCount });
+        // `onStage` sits AFTER the `closeCtx` spread beside `workdir`/`seedRef`:
+        // it is the runner's own reporting channel, not a knob a caller's close
+        // context may quietly redirect.
+        const rows = await seedReadFn(injected.declaration, {
+          gapKeep: '', ...closeCtx, workdir, seedRef, seedTrees,
+          onStage: (/** @type {any} */ row) => onPhase('stage', { call: label, ...row }),
+        });
+        onPhase('seed-read-done', { call: label, stages: stageCount });
         iter.seedRead = rows;
         accepted = injected.declaration;
         acceptedSeedRead = rows;

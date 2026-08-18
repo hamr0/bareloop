@@ -30,7 +30,8 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED } from '../src/reuse.js';
+import { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED, CHECKPOINT_OUTCOMES } from '../src/reuse.js';
+import { HUMAN_CHECKPOINTS } from '../src/declaredclose.js';
 import { makeRegistry, saveBridge, loadRegistry, loadBridge, deriveStatus } from '../src/bridges.js';
 import { jobSpecHash, validateJob } from '../src/job.js';
 import { classifyIncidents } from '../src/ledger.js';
@@ -489,6 +490,60 @@ test('R1/D6 DEMOTION TABLE: `escalated` demotes a PROVEN entry; every other non-
   }
 });
 
+test('N4: a HUMAN CHECKPOINT stops the loop dead — no further try, no cold leg, and nothing written to the box', async () => {
+  // hamr's ruling: a run waiting on a PERSON is a pause, not a casualty and not a retry
+  // trigger. It used to be neither — `hitl-pause` fell past the graded-red set into
+  // `casualty`, `hardStop` had no entry for it, and a null there means CARRY ON: the run
+  // bought another paid bridge try (and then the cold leg) while a human decision on the
+  // first one was still outstanding, and filed the pause on the bridge as an
+  // `appendCasualty` row.
+  //
+  // The loop is over the LIBRARY's own list, not a spelling of it: a fifth human
+  // checkpoint minted in `declaredclose.js` is covered by this test the day it is added,
+  // and a rename of any of them cannot leave a hand-typed copy behind.
+  for (const outcome of HUMAN_CHECKPOINTS) {
+    const dir = seed(PROVEN(), BRIDGE('beta'));
+    const runs = scriptedRuns([{ outcome, closeStage: 'human-review', spentUsd: 0.4 }, { outcome: 'green', plan: PLAN(), spentUsd: 0.4 }]);
+    const r = await runReuse(runOpts({
+      envelope: ENVELOPE({ bridgeTries: 2 }),
+      registryDir: dir,
+      patient: 'third-patient',
+      selectionProvider: picker({ choice: 'alpha', reason: 'fits' }, { choice: 'beta', reason: 'next' }),
+      runJob: runs,
+    }));
+
+    assert.equal(runs.calls.length, 1, `${outcome}: exactly ONE run — the second try and the cold leg are never bought while a person is deciding`);
+    assert.equal(r.tries.length, 1, `${outcome}: and the readout holds that one try only`);
+    assert.equal(r.outcome, outcome, `${outcome}: the pause is the run's own terminal, surfaced verbatim`);
+    // …and the ROW says what it is. A pause used to fall past the graded-red set into
+    // `casualty`, which reads as a run that died — the one thing it is not: nothing
+    // failed, nothing is lost, and the answer it is waiting for is a person's.
+    assert.equal(r.tries[0].verdictClass, 'checkpoint', `${outcome}: a pause is a checkpoint, never a casualty`);
+    assert.ok(r.decision, `${outcome}: and it comes back decision-ready, so the operator knows a human answer is owed`);
+
+    const after = loadBridge(join(dir, 'alpha.json')).bridge;
+    assert.deepEqual(after.history, PROVEN().history, `${outcome}: the box is untouched — a pause is not a casualty row`);
+    assert.equal(after.versions.length, 2, `${outcome}: and nothing is minted`);
+    assert.equal(deriveStatus(after.history), 'proven', `${outcome}: a pause can never demote`);
+    assert.ok(!r.bridgeWrites.some((w) => w.action === 'appendCasualty' || w.action === 'appendRed'),
+      `${outcome}: no history write of any kind: ${JSON.stringify(r.bridgeWrites)}`);
+  }
+});
+
+test('N4: the human-checkpoint set is the PAUSE half of CHECKPOINT_OUTCOMES — the allowance halts are not in it', () => {
+  // the other direction, for `REUSE_GRADED_RED`'s reason (a set guarded only by what it
+  // CONTAINS survives being widened). `CHECKPOINT_OUTCOMES` is the RESUME list — every
+  // stop that left work on disk and an allowance unspent — and three of its four members
+  // are governance stops whose carry-on the demotion-table test above asserts
+  // deliberately. Folding the hard stop onto that list would silently end a run at its
+  // first cap-halt.
+  assert.ok(HUMAN_CHECKPOINTS.length > 0, 'an empty set would make the stop above unreachable');
+  for (const o of HUMAN_CHECKPOINTS) assert.ok(CHECKPOINT_OUTCOMES.includes(o), `${o}: a human checkpoint is still a resumable checkpoint`);
+  for (const o of ['cap-halt', 'wall-halt', 'step-stalled']) {
+    assert.ok(!HUMAN_CHECKPOINTS.includes(o), `${o}: an allowance halt is not a person deciding — its carry-on is asserted above`);
+  }
+});
+
 test('an ALREADY-GREEN tree ends the loop but mints NOTHING — no unearned learning credit', async () => {
   const dir = seed(BRIDGE('alpha'));
   const runs = scriptedRuns([{ outcome: 'already-green' }]); // no plan-accepted: nothing was drafted
@@ -499,9 +554,37 @@ test('an ALREADY-GREEN tree ends the loop but mints NOTHING — no unearned lear
   }));
   assert.equal(runs.calls.length, 1, 'the job is done — there is nothing to try');
   const after = loadBridge(join(dir, 'alpha.json')).bridge;
-  assert.equal(after.versions.length, 1, 'no plan ran, so no plan inherits (R1)');
+  assert.equal(after.versions.length, 1, 'nothing inherits from a green that predates the run');
   assert.equal(r.bridgeWrites[0].action, 'none');
-  assert.equal(r.bridgeWrites[0].reds[0].code, 'no-plan-executed');
+  assert.equal(r.bridgeWrites[0].reds[0].code, 'green-predates-run');
+});
+
+test('…and it mints nothing even with a PLAN on the spine — the guard is the TERMINAL, not the absence of a plan', async () => {
+  // N4's shape, and the reason this needed a wired guard rather than an accident:
+  // a hitl try that PAUSED and then came back with the signer's `accept` lands
+  // `already-green` (the close was satisfied before that leg did anything) with
+  // its predecessor's `plan-accepted` sitting in the very same try window. Read
+  // by the old rule — "green with no plan mints nothing" — that plan WOULD have
+  // minted a version for a green nobody's plan produced.
+  const dir = seed(BRIDGE('alpha'));
+  const runs = scriptedRuns([{ outcome: 'already-green', plan: PLAN('from-the-paused-leg'), closeStage: 'typecheck' }]);
+  const r = await runReuse(runOpts({
+    registryDir: dir,
+    selectionProvider: picker({ choice: 'alpha', reason: 'fits' }),
+    runJob: runs,
+  }));
+  const after = loadBridge(join(dir, 'alpha.json')).bridge;
+  assert.equal(after.versions.length, 1, 'no version minted');
+  assert.equal(r.bridgeWrites[0].action, 'none');
+  assert.equal(r.bridgeWrites[0].reds[0].code, 'green-predates-run');
+  // the CONTROL, byte-identical but for the terminal: a real green DOES mint
+  const dir2 = seed(BRIDGE('alpha'));
+  await runReuse(runOpts({
+    registryDir: dir2,
+    selectionProvider: picker({ choice: 'alpha', reason: 'fits' }),
+    runJob: scriptedRuns([{ outcome: 'green', plan: PLAN('from-the-paused-leg'), closeStage: 'typecheck' }]),
+  }));
+  assert.equal(loadBridge(join(dir2, 'alpha.json')).bridge.versions.length, 2, 'the two arms must differ');
 });
 
 test('try loop: after a red the NEXT try re-runs selection with the failed bridge EXCLUDED', async () => {

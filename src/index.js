@@ -60,7 +60,7 @@ export { renderListing, selectionPrompt } from './selection.js';
 // `resumeTreeGate` is the ruling that a resumed patient is continued dirty and never
 // reset. Both are read by a runner BEFORE the approval gate, so neither can live behind
 // `runReuse`'s own entry.
-export { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED, readResume, resumeTreeGate } from './reuse.js';
+export { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED, readResume, resumeTreeGate, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS, checkpointAgeGate } from './reuse.js';
 export { classifyIncidents, foldLedger, ledgerDeltas, updateLedger, LEDGER_CLASSES } from './ledger.js';
 // THE WORK BRANCH (PRD v1.57 §3). `workBranchName` is exported so an operator runner can
 // SHOW, before the approval gate, which branch the run will work on — the same reason the
@@ -89,6 +89,10 @@ export { workBranchName, prepareWorkBranch, WORK_BRANCH_PREFIX, WORK_BRANCH_RE }
 export {
   runDeclaredClose, runStage, seedRead, seedAtHead, seedListing, changedSet, makeSeedTrees,
   LIVE_KINDS, STOP_FAULTS, JUDGED_MARKER, EXIT_GREEN, EXIT_RED, EXIT_STOP,
+  // N4 slice 1 — the hitl surface an adopting runner needs: the three doors, the
+  // gate that reads a signer's answer (and refuses an empty one), and the seed
+  // exemption ruling 8 states.
+  HUMAN_DECISIONS, SEED_EXEMPT_KINDS, normalizeHumanRuling,
 } from './kinds.js';
 // M2 — what a declaration may SAY, and whether one said it legally. The
 // catalogue and the genre are DATA an integrating UI renders (the kind menu, the
@@ -103,6 +107,8 @@ export {
   // the verdict-class surface (PRD v1.57 §1–§2): the radio's own menu, the guard
   // battery keyed off it, and the ceiling that makes the pick a promise
   VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES, CLASS_BATTERIES, classGuards, closeCeiling,
+  // ruling 5 as data: the kinds no agent may ever be offered as an in-run ruler
+  NEVER_OFFERED_KINDS,
 } from './authoring.js';
 // M3 — the looking half and the writing half. `authorClose` is the grounded
 // loop; `runAuthorScout`/`buildSeedListing` are exported because a caller that
@@ -128,6 +134,7 @@ export {
 export {
   validateCloseDecl, runDeclaredStages, declaredStages, isDeclaredClose, guardNames, closeGrade,
   DECLARED_GENRES, DECLARED_GAP_PREFIX, DECLARED_GAP_KEEP, DECLARED_CLOSE_CLASSES, CLOSE_DECL_FIELDS,
+  HUMAN_PAUSE, HITL_PAUSE, HITL_DECISION_RED, HUMAN_CHECKPOINTS,
 } from './declaredclose.js';
 export { closeStagesOf } from './plan.js';
 // M4b — the interview, the refusal, the composition, and D9's three gates.

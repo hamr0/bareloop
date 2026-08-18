@@ -15,13 +15,16 @@ import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
 import { closeStagesOf } from '../src/plan.js';
 import { makeSpine } from '../src/spine.js';
-import { scanSecrets } from '../src/validate.js';
+import { scanSecrets, redactSecrets } from '../src/validate.js';
+// the three doors' SEMANTICS live in the library; this script surfaces them
+import { normalizeHumanRuling } from '../src/kinds.js';
 // --resume reads the halted run's own spine back through the SAME reader the reuse
 // path uses (never a second one) and keeps its patient the way it left it.
-import { readResume, resumeTreeGate } from '../src/reuse.js';
+import { readResume, resumeTreeGate, checkpointAgeGate, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS } from '../src/reuse.js';
+import { HITL_PAUSE } from '../src/declaredclose.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
-import { wallLine, doomedResume } from './u-readout.mjs';
+import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines } from './u-readout.mjs';
 
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
@@ -75,6 +78,22 @@ const JOBS = {
     spine: 'bareguard-u-bareloop',
     seed: '2ae8fcd37041c186524a6eb5e953b9752cd602fa',
   },
+  // N4's hitl PROVING job (build plan §Proving; hamr's ruling, 2026-08-13). The job
+  // has been dark since 507adbb deleted the legacy `steps[]` path its old spec was
+  // written against, and it comes back as a plan-flow job with an AUTHORED close.
+  //
+  // `jobs/litectx-maintainer.json` DOES NOT EXIST, and this row does not create it:
+  // the spec is authored live through scripts/run-interview.mjs → run-author.mjs and
+  // signed by hamr, goal and answers included. Until it lands the runner refuses by
+  // name (see the spec read below) — a row is the runner's half of a job, never the
+  // signer's. The patient is a COPY at the convention this table already uses, and
+  // the seed is that copy's own HEAD (litectx v0.32.0, 115213d).
+  'litectx-maintainer': {
+    spec: 'litectx-maintainer.json',
+    workdir: '/home/hamr/PycharmProjects/bareloop-patients/litectx-maintainer',
+    spine: 'litectx-maintainer-bareloop',
+    seed: '115213dcb4c9f468c1045a212e6802456ed9119e',
+  },
 };
 const CLOSE_TIMEOUT_MS = 900_000; // the slowest close stage is the suite (~23s aurora, ~53s litectx); headroom, not a budget
 // The close-fix loop's RETIRED iteration cap (PRD v1.46 §4). It no longer governs:
@@ -89,6 +108,10 @@ const CAP_RUNS = 4;
 const STRIKE_LIMIT = 2;
 
 const arg = (/** @type {string} */ n) => { const i = process.argv.indexOf(`--${n}`); return i === -1 ? null : (process.argv[i + 1] ?? ''); };
+/** every operator/config stop this script makes, in one exit code. Declared HERE,
+ * above the first thing that can refuse (the job table's own spec file), rather than
+ * beside the resume gates it used to sit with. */
+const die = (/** @type {string} */ m) => { console.error(m); process.exit(2); };
 // --model picks the DEFAULT worker tier (runner territory — the spec names no model, so
 // the signed hash is unaffected). Tier names, not model ids. This map is the OPERATOR's
 // and is deliberately WIDER than the planner's menu: since 2026-08-06 `STEP_MODELS` is
@@ -108,7 +131,23 @@ const target = JOBS[/** @type {keyof typeof JOBS} */ (jobKey)];
 if (!target) { console.error(`unknown --job "${jobKey}" — one of: ${Object.keys(JOBS).join(', ')}`); process.exit(2); }
 const WORKDIR = target.workdir;
 const SEED = target.seed;
-const spec = JSON.parse(readFileSync(new URL(`../jobs/${target.spec}`, import.meta.url), 'utf8'));
+// THE SPEC IS THE OTHER HALF, AND IT MAY NOT BE THERE YET. A row in the table above
+// is the RUNNER's half of a job — the patient, its seed, where the spine goes. The
+// spec is the SIGNER's half: it is authored (scripts/run-interview.mjs →
+// scripts/run-author.mjs) and signed, and nothing here may invent one. A row whose
+// spec has not been authored yet used to die on `readFileSync`'s ENOENT stack, which
+// reads as the runner being broken rather than as the job being unauthored.
+const specPath = fileURLToPath(new URL(`../jobs/${target.spec}`, import.meta.url));
+if (!existsSync(specPath)) {
+  die(`--job ${jobKey}: there is no spec at ${specPath}.\n`
+    + '  The table row is the runner\'s half of a job (patient, seed, spine); the SPEC is yours — authored through\n'
+    + `  scripts/run-interview.mjs and scripts/run-author.mjs, then signed. Nothing here can stand in for it: a job\n`
+    + '  with no spec has no goal, no close, no budget and no hash to approve.');
+}
+let spec;
+try { spec = JSON.parse(readFileSync(specPath, 'utf8')); } catch (e) {
+  die(`--job ${jobKey}: ${specPath} is not readable JSON (${e.message}) — a spec nobody can parse is a spec nobody signed`);
+}
 const specHash = jobSpecHash(spec);
 // `maxWallMs` is OPTIONAL in job-v1 and has NO DEFAULT — a spec without one is
 // time-unbounded by explicit operator choice, and the whole point of the missing
@@ -136,8 +175,19 @@ const WALL_LABEL = WALL_MS === null ? 'UNBOUNDED (spec sets no maxWallMs — del
 // declines to throw away what the dead run already bought — the tree, the plan, the
 // steps that finished, and the money, which is folded IN so the ceiling cannot widen.
 const RESUME = arg('resume');
-/** the terminals that are a checkpoint rather than a verdict. Nothing else is
- * resumable — a green is done, and a red is an answer.
+/** the terminals that are a checkpoint rather than a verdict — THE LIBRARY's set
+ * (`CHECKPOINT_OUTCOMES`, src/reuse.js), not this script's own.
+ *
+ * It used to be a literal here, and N4 is what made that untenable: a fourth
+ * checkpoint (`hitl-pause`) had to be added in two places at once, and the
+ * exported bundle (PRD v1.44 §2 — a thin runner with bareloop as a dependency)
+ * would have needed a third copy. `readResume` still takes the list as a
+ * PARAMETER and still defaults to empty — that default is what the reuse loop's
+ * graded-row semantics depend on — so what moved is the canonical ANSWER, not
+ * the seam. Same reasoning that put the pause TTL in the library (OPEN-2, hamr,
+ * 2026-08-13).
+ *
+ * Nothing else is resumable — a green is done, and a red is an answer.
  *
  * The first two are governance halts: an operator-owned allowance ran out with the
  * work on disk.
@@ -157,9 +207,53 @@ const RESUME = arg('resume');
  *
  * The floor rides along honestly — a stalled run's `spendComplete:false` reaches the
  * preview's fold as `≥$x` and `runJob` as `priorSpendComplete:false`, so the resumed
- * leg's own terminal stays a floor too rather than healing an unknown by inheriting it. */
-const RESUMABLE_HALTS = ['cap-halt', 'wall-halt', 'step-stalled'];
-const die = (/** @type {string} */ m) => { console.error(m); process.exit(2); };
+ * leg's own terminal stays a floor too rather than healing an unknown by inheriting it.
+ *
+ * `hitl-pause` (N4 §1.6) is the fourth, and the only one whose missing allowance is a
+ * PERSON: the run reached the one stage a machine cannot render and stopped with its
+ * work, its plan and its money exactly where they were. Answering it needs `--decide`
+ * (below); every other entry here resumes on the hash alone. */
+const RESUMABLE_HALTS = CHECKPOINT_OUTCOMES;
+
+// ── THE THREE DOORS (N4, 2026-08-12 §1) — the hitl surface, at the terminal ──
+//
+// There is no interactive surface anywhere in this repo and there is not going to
+// be one here: paid runs launch setsid-detached under `systemd-inhibit`, so a
+// process blocking on stdin would block on a terminal nobody is watching. "Three
+// buttons" is therefore a PAUSE plus a re-invocation — the run stops
+// decision-ready, the person reads the evidence package, and their answer comes
+// back as a flag on the resume that continues it.
+//
+// SIGNER-ONLY (ruling 4): the only signer proof this repo has is the spec-hash
+// approval, so the decision rides that same gate rather than inventing a second
+// identity mechanism. A decision without the matching hash never reaches `runJob`.
+//
+// The SEMANTICS are the library's (`normalizeHumanRuling`, src/kinds.js): three
+// doors and no fourth, and a `rerun` whose text is the whole of what the fix
+// worker will be given. This script asks that function and prints its refusal —
+// a second rulebook here is how a runner comes to admit what the run refuses.
+const DECIDE = arg('decide');
+const TEXT = arg('text');
+if (DECIDE !== null && RESUME === null) {
+  die('--decide answers a PAUSED run, and there is no --resume here. A decision is an answer to a checkpoint that '
+    + 'already exists — there is nothing for it to rule on at the start of a fresh run.');
+}
+// A door that carries no text REFUSES the flag rather than dropping it. Silently
+// discarding words a person typed is worse than refusing them: they would believe
+// they had said something, and nothing downstream would ever carry it.
+if (TEXT !== null && DECIDE !== 'rerun') {
+  die(`--text is for the rerun door: only a "rerun" carries text (the human's words ARE the gap the worker converts from). `
+    + `${DECIDE === null ? 'No --decide was given at all.' : `This run was handed --decide ${DECIDE}, which takes none.`}`);
+}
+/** the signer's answer, normalised at the LIBRARY's seam, or null for every
+ * ordinary run and for the leg that pauses. Never authored here, never defaulted,
+ * never inferred. */
+const RULING = (() => {
+  if (DECIDE === null) return null;
+  const norm = normalizeHumanRuling({ decision: DECIDE, ...(TEXT === null ? {} : { text: TEXT }) });
+  if (!norm.ok) die(`--decide ${JSON.stringify(DECIDE)} is not a ruling this run can act on: ${norm.why}`);
+  return norm.ruling;
+})();
 /** the patient's tree, and the spine directory beside it — derived ONCE, here, because
  * both the RESUME reader below and the live run further down need them. Two spellings of
  * one path is how `--resume` comes to read a different directory than the run writes. */
@@ -172,6 +266,11 @@ const deadSpineFile = RESUME == null ? null
   : (RESUME.includes('/') || RESUME.endsWith('.jsonl') ? resolve(RESUME) : join(spineDir, `u-${RESUME}.jsonl`));
 /** @type {any} */
 let dead = null;
+/** the paused run's own `hitl-pause` record — the evidence package the LIBRARY
+ * assembled (the ask, every mechanical stage's result, the changed set). Hoisted
+ * out of the reader block because the preview below renders it, and re-deriving
+ * the run's facts at the surface is how a screen comes to disagree with a spine. */
+let pauseRecord = null;
 if (deadSpineFile !== null) {
   if (!existsSync(deadSpineFile)) die(`--resume: no spine at ${deadSpineFile} — a resume continues a run that happened, and this one left no log`);
   let raw = '';
@@ -208,20 +307,118 @@ if (deadSpineFile !== null) {
       console.error(`--resume: pid ${watchdog.pid} is alive but is NOT this runner (${cmdline.slice(0, 80)}) — the pid was recycled; continuing.`);
     }
   }
-  // the watchdog's kill record is later, better evidence of how long the dead run
-  // really lived than its last spine event
-  const killedAt = Date.parse(String(watchdog?.at ?? ''));
+  // WHEN did the dead leg stop? The watchdog's kill record is later, better evidence
+  // than the last spine event for a run that was KILLED — and worse evidence for one
+  // that ended itself, which is what N4's pause is. The preference order lives in
+  // `deathAtOf` (scripts/u-readout.mjs) so it is reachable by a test; the hazard it
+  // closes was measured, not imagined (a report dated after a pause bills the human's
+  // deciding time to the run's wall and can zero the remainder outright).
+  const deathAt = deathAtOf({ watchdogAt: watchdog?.at, events: deadEvents });
   dead = readResume(deadEvents, {
     direct: true,
     resumableOutcomes: RESUMABLE_HALTS,
-    ...(Number.isFinite(killedAt) ? { deathAt: killedAt } : {}),
+    ...(deathAt === null ? {} : { deathAt }),
   });
   if (!dead.started) die(`--resume: ${deadSpineFile} carries no job-start — that is not a bareloop run's spine`);
   if (dead.job !== spec.job) die(`--resume: that spine is job "${dead.job}", not "${spec.job}" — a resume continues ONE job, and running another job's plan as this one's is a substitution nothing here is allowed to make`);
   if (dead.greened) die('--resume: that run already GREENED — there is nothing to resume.');
   if (dead.ended) die(`--resume: that run reached its own terminal (${dead.endOutcome}) — only a governance halt (${RESUMABLE_HALTS.join(' / ')}) leaves work to continue. Start a fresh run.`);
   if (!dead.restart) die(`--resume: ${deadSpineFile} has no attempt to continue — it never opened one.`);
+  // ── THE PAUSE TTL (2026-08-12 §2): a hitl checkpoint is kept for 60 days.
+  //
+  // The rule and the number are the LIBRARY's (`checkpointAgeGate` / `PAUSE_TTL_MS`,
+  // OPEN-2 as hamr ruled it) so the exported bundle inherits them; this reads its
+  // answer and refuses. It sits HERE, with the spine gates, rather than beside
+  // `resumeTreeGate` further down, for two reasons: an expired checkpoint must refuse
+  // BEFORE the operator signs a hash for it, and the age gate needs no git — the
+  // tree gate does, and that is why the tree gate is where it is.
+  //
+  // `applies:false` on every other terminal is the gate's own doing: ageing out a
+  // cap-halt would be a governance change nobody ruled. An UNREADABLE stamp refuses
+  // too (unknown is not young — F6), which is why this branches on `ok` and not on
+  // an age comparison of its own.
+  const age = checkpointAgeGate(deadEvents);
+  if (!age.ok) {
+    console.error(`CHECKPOINT EXPIRED — ${age.detail}`);
+    console.error('The work is still on the run\'s own branch; what has expired is the DECISION, not the tree. The levers are yours:');
+    console.error('  - start a fresh run against the current tree (the same hash, nothing to re-sign);');
+    console.error(`  - or revise the goal/spec in jobs/${target.spec} — a spec edit, so the hash changes and you sign the new one;`);
+    console.error('  - or abandon it and keep the verdict the paused run already minted.');
+    process.exit(2);
+  }
+  // A decision answers a PAUSE. Every other checkpoint here stopped on an allowance,
+  // and nothing about it is waiting on a person — handing one a ruling would let an
+  // `accept` mint a green over evidence nobody was ever shown. The library refuses a
+  // ruling for a close with no human stage; this is the other half of the same
+  // question, and only the runner can ask it (it is about WHICH checkpoint is being
+  // answered, not about the close's shape).
+  if (RULING !== null && dead.endOutcome !== HITL_PAUSE) {
+    die(`--decide ${RULING.decision}: that run stopped on ${dead.endOutcome ?? 'an unrecorded terminal'}, not at a human stage. `
+      + 'A decision answers a pause — the run has to have asked you something before you can answer it. Resume it without a decision.');
+  }
+  pauseRecord = deadEvents.filter((/** @type {any} */ e) => e?.type === HITL_PAUSE).at(-1) ?? null;
 }
+/** is this resume the one a PERSON has to answer? Read off the recorded terminal,
+ * never off the presence of a `--decide` — the whole point is that the flag is
+ * absent on the first visit. */
+const PAUSED = !!dead && dead.endOutcome === HITL_PAUSE;
+
+/**
+ * The LINE-level half of the evidence package (ruling 2). The library carries WHICH
+ * files moved — the granularity it can state honestly from where it sits — and this
+ * reads the lines themselves out of the patient.
+ *
+ * READ-ONLY and BEST-EFFORT, in that order. It runs in the preview, above the
+ * approval gate, so it may never mutate a patient (no `add -N`, no index touch) and
+ * it may never throw: a diff nobody can read is a missing SECTION of a readout, not
+ * a failed resume. Its absence is NAMED rather than rendered as an empty diff, which
+ * would read as "nothing changed" — the F6 direction that matters most here, since a
+ * person is about to mint a green off what this shows them.
+ *
+ * The patient is read AS IT STANDS NOW, not as it stood at the pause: a checkpoint
+ * lives 60 days and nothing freezes a tree. That is exactly why `accept` re-runs the
+ * mechanical stages (OPEN-3) instead of trusting what the human read.
+ * @param {string[]} paths the pause record's own changed set, used as a pathspec
+ */
+const DIFF_LINE_CAP = 200;
+/** One renderer for the review screen's evidence, shared by the resume preview
+ * and the fresh-pause terminal so the fallback rule cannot drift between them:
+ * with a `hitl-pause` record, the package is the close's own ask + the diff of
+ * what changed; without one, say so plainly (per-site wording) rather than
+ * rendering the bare "approve?" ruling 2 forbids.
+ * @param {any} pause @param {string[]} fallbackLines */
+const printPauseEvidence = (pause, fallbackLines) => {
+  if (!pause) {
+    for (const l of fallbackLines) console.log(l);
+  } else {
+    const paths = Array.isArray(pause.changed?.paths) ? pause.changed.paths : [];
+    for (const l of evidencePackage({ pause, diff: readDiff(paths) })) console.log(l);
+  }
+};
+
+const readDiff = (paths) => {
+  const run = (/** @type {string[]} */ a) => execFileSync('git', ['-C', wd, ...a], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+  try {
+    // after `--`, so a path that starts with a dash is a PATH and never a flag
+    const pathspec = paths.length ? ['--', ...paths] : [];
+    // secrets are scrubbed through the ONE inventory (src/validate.js), never a
+    // second spelling: a token sitting in a patient's diff must not be echoed onto
+    // a terminal or into whatever log is capturing it.
+    const raw = redactSecrets(run(['diff', '--unified=1', SEED, ...pathspec]));
+    const all = raw.split('\n').filter((l, i, a) => !(l === '' && i === a.length - 1));
+    const lines = all.slice(0, DIFF_LINE_CAP);
+    const others = run(['ls-files', '--others', '--exclude-standard']).split('\n').map((s) => s.trim()).filter(Boolean);
+    const untracked = paths.length ? others.filter((f) => paths.includes(f)) : others;
+    return { lines, truncated: Math.max(0, all.length - lines.length), untracked, unavailable: null };
+  } catch (e) {
+    return {
+      lines: [],
+      truncated: 0,
+      untracked: [],
+      unavailable: `${wd} could not be read against the seed ${SEED.slice(0, 12)} (${redactSecrets(String(e?.message ?? e)).split('\n')[0]})`,
+    };
+  }
+};
 /** the restart runs on the REMAINDER of the signed wall, never a fresh allotment —
  * "a budget ceiling folds in prior spend so re-invoking cannot silently widen it",
  * in a time coat. Both the run's own clock and the outside watchdog read this one. */
@@ -268,11 +465,12 @@ if (arg('approve') !== specHash) {
     // WHERE it picks up. Without this line "resume" covers two runs that cost very
     // different amounts — one that re-scouts and re-drafts from nothing, and one that
     // re-enters at the close — and the hash being signed authorizes the dollars either way.
-    const sd = rs.seed;
-    if (!sd) console.log('  at       the beginning — it halted before a plan was accepted, so nothing paid is re-payable');
-    else if (sd.phase === 'close') console.log(`  at       the close and its fix loop — all ${sd.plan.steps.length} step(s) are done and are SKIPPED; the close re-runs for no tokens`);
-    else console.log(`  at       step ${sd.completedSteps.length + 1} of ${sd.plan.steps.length} ${JSON.stringify(sd.plan.steps[sd.completedSteps.length]?.id ?? '(unknown)')} — ${sd.completedSteps.length} already finished and SKIPPED, not re-paid`);
-    if (sd) console.log('           the plan is reloaded from that run\'s own spine: no re-scout, no re-draft');
+    // …through `resumeAtLines` (scripts/u-readout.mjs), because a PAUSE is a phase this
+    // line did not have: it stops after the plan's steps, at the close's human stage, and
+    // the step arithmetic used to walk off the end of the plan (`at step 2 of 1
+    // "(unknown)"`). The rule the helper holds is that a step count may never exceed the
+    // plan, and that the phase is said in words.
+    for (const l of resumeAtLines({ seed: rs.seed, paused: dead.endOutcome === HITL_PAUSE })) console.log(l);
     // WHAT IT INHERITS as a trend baseline. Without this line the resumed run's
     // halt readout can name a direction the leg itself never measured, and a reader
     // has no way to tell that the number came from the leg before it.
@@ -329,9 +527,67 @@ if (arg('approve') !== specHash) {
       console.log('           that is what a TOP-UP looks like: budgetUsd is in the hash, so raising it is a spec edit you sign below. The reloaded plan is re-validated against THIS spec and refused by name if it no longer fits.');
     }
   }
+  // ── THE REVIEW (N4, ruling 2 + 2026-08-12 §5.2). This is the screen the whole
+  // class exists for: the person is deciding, and they decide HERE, before any
+  // signature. Never a bare "approve?" — the package is the close's own ask, every
+  // mechanical stage's result, what the run changed and the lines it changed.
+  if (PAUSED) {
+    console.log('');
+    // if the record that says WHAT a person was asked is gone: refusing would
+    // strand real work, so say it, and let the operator decide with the spine
+    // in front of them.
+    printPauseEvidence(pauseRecord, [
+      'HUMAN REVIEW — this run paused for a person, but its `hitl-pause` record is not on the spine, so there is',
+      'no evidence package to show. Read the spine and the patient yourself before answering; nothing here can',
+      `stand in for it: ${deadSpineFile}`,
+    ]);
+  }
   console.log(`  hash     ${specHash}`);
   if (arg('approve') !== null) console.error(`\nREFUSED: --approve ${arg('approve')} does not match this spec version.`);
-  console.log(`\nTo approve and run:\n  ANTHROPIC_API_KEY=... node scripts/run-u.mjs --job ${jobKey}${dead ? ` --resume ${RESUME}` : ''} --approve ${specHash}`);
+  // WHICH DOOR. A pause with no ruling yet is offered all three, rerun first
+  // (2026-08-12 §4 — the ~40% rubber-stamp datum: the lean is toward the answer that
+  // costs a cycle, never toward the one that mints a green nobody read). A pause WITH
+  // a ruling is shown the ruling back — including the words that will BE the gap —
+  // and one invocation to sign.
+  const invoke = (/** @type {string} */ tail) => `  ANTHROPIC_API_KEY=... node scripts/run-u.mjs --job ${jobKey}${dead ? ` --resume ${RESUME}` : ''}${tail} --approve ${specHash}`;
+  /** the door the operator has already picked, as flags — hoisted out of the else
+   * below so the inhibitor line at the bottom can print the WHOLE command rather
+   * than a shape the operator has to assemble. Empty on an ordinary run and on the
+   * pause that has not been ruled on yet (there the three doors are the answer). */
+  const decisionTail = RULING === null ? ''
+    : ` --decide ${RULING.decision}${RULING.text === null ? '' : ` --text ${JSON.stringify(RULING.text)}`}`;
+  if (PAUSED && RULING === null) {
+    console.log('');
+    for (const l of doorLines({
+      rerun: invoke(' --decide rerun --text "<what you want done differently>"').trim(),
+      accept: invoke(' --decide accept').trim(),
+      pause: invoke(' --decide pause').trim(),
+    })) console.log(l);
+  } else {
+    if (RULING !== null) {
+      console.log(`\n  decision ${RULING.decision}${RULING.decision === 'rerun' ? ' — and these words become the gap the fix worker converts from:' : ''}`);
+      if (RULING.text !== null) for (const l of String(RULING.text).split('\n')) console.log(`           ${l}`);
+    }
+    console.log(`\nTo approve and run:\n${invoke(decisionTail)}`);
+  }
+  // THE INHIBITOR, printed rather than remembered (F72). A suspend freezes
+  // EVERYTHING: the outside watchdog is a poller, so it cannot observe — let alone
+  // kill — a run whose machine is asleep, and since hamr's 2026-08-15 ruling the
+  // run's own wall does not count those minutes either (src/clock.js is monotonic
+  // now). So a suspended run is simply unwatched for as long as it sleeps. This is
+  // the moment the operator can still do something about it, and run-reuse.mjs has
+  // printed the same line here since F72 was minted; the U runner carried it only as
+  // a comment, which is a rule nobody reads at the moment they launch.
+  console.log('\nLaunch under a sleep inhibitor — a suspend freezes every guard, including the outside watchdog (F72):');
+  console.log(PAUSED && RULING === null
+    // a pause with no ruling is choosing between three doors above; prefixing one of
+    // them would quietly recommend it, and the lean this surface was built with runs
+    // the other way (rerun first, never the rubber stamp)
+    ? '  systemd-inhibit --what=idle:sleep --why="bareloop u run" env <the door you picked, above>'
+    // `env` before the assignment on purpose: systemd-inhibit execs a COMMAND, and a
+    // bare `VAR=value` prefix is shell syntax it would try to run as one. The key
+    // still rides an env assignment and never argv (it must never reach a cmdline).
+    : `  systemd-inhibit --what=idle:sleep --why="bareloop u run" env \\\n  ${invoke(decisionTail).trim()}`);
   process.exit(arg('approve') === null ? 0 : 1);
 }
 
@@ -347,7 +603,53 @@ if (dead && RESUME_WALL_MS !== null && RESUME_WALL_MS <= 0) {
   console.error('Nothing here refills it (a run may never widen its own cap). The lever is yours:');
   console.error(`  - RAISE maxWallMs in jobs/${target.spec} — that is a spec edit, so the hash changes and you sign the new one with --approve;`);
   console.error('  - or revise the goal/spec, or abandon the run and keep the verdict it already minted.');
+  // NAMED, because it is a real and non-obvious consequence rather than an oversight:
+  // a PAUSED run whose wall is gone cannot be answered either — not even with an
+  // `accept`, which buys no worker round at all. The wall is governance and this
+  // runner does not get to decide that some decisions are free of it; changing that
+  // is an arbiter call, and it belongs to hamr rather than to this script.
+  if (PAUSED) {
+    console.error('  NOTE: this run is waiting on a DECISION and its wall is gone, so the decision cannot be applied until the wall is.');
+    console.error('        Even --decide accept (which buys no worker round) goes through this gate: the allowance is the arbiter\'s, not the runner\'s.');
+  }
   process.exit(2);
+}
+
+// A PAUSE is answered, or it is not resumed. The lean-rerun rule (2026-08-12 §4) is
+// about which door a prompt LEADS with — it is never an action taken for the
+// operator, so there is no default here to fall through to. Resuming a pause with no
+// ruling would re-run the close and pause again at the same stage, buying a precheck
+// to ask the same question twice.
+if (PAUSED && RULING === null) {
+  console.error('NO DECISION — this resume continues a run that is waiting on a person, and no decision was given.');
+  console.error('Answer it with one of: --decide rerun --text "<your words>" · --decide accept · --decide pause');
+  console.error('(run the same command without --approve to read the evidence package first — that is the screen this decision is made on)');
+  process.exit(2);
+}
+
+// ── THE PAUSE DOOR (2026-08-17) — answered HERE, and it launches nothing.
+//
+// hamr's ruling replaced cancel with a pause that can resume, and the honest way to
+// keep a checkpoint is to leave it alone. This runner writes one spine file per LEG,
+// and a leg that returns before drafting emits no `plan-accepted` and no `step-end` —
+// which is exactly what `readStepCheckpoint` reads. So launching a run to say "not
+// now" would mint a NEW runid whose own checkpoint is empty, and an operator who
+// later resumed that runid would re-draft and re-pay for every step the paused leg
+// already finished. The checkpoint that matters is the one already on disk.
+//
+// So the decision is recorded to the operator, in words, against the runid they
+// resume — and nothing is spent, nothing is signed away, and no allowance moves. The
+// library keeps its own half (`runPlan` mints a `hitl-pause` with `humanDecision`
+// when an adopter drives the door directly); this is the runner's, and the two agree
+// on the one fact that matters: the run stays paused and stays resumable.
+if (PAUSED && RULING?.decision === 'pause') {
+  console.log(`\nPAUSED BY YOU — nothing was run and nothing was spent. The checkpoint stands exactly as it was: the work is on the run's own branch, the plan and the money are where the paused leg left them.`);
+  console.log(`  keeps    ${PAUSE_TTL_MS / 86_400_000} days from the pause on the record — after that the checkpoint expires on its own, and nothing has to be decided today to let that happen`);
+  console.log('  resume   the SAME runid, whenever you want, with the door you pick then:');
+  console.log(`           node scripts/run-u.mjs --job ${jobKey} --resume ${RESUME} --decide accept --approve ${specHash}`);
+  console.log(`           node scripts/run-u.mjs --job ${jobKey} --resume ${RESUME} --decide rerun --text "<what you want done differently>" --approve ${specHash}`);
+  console.log(`  read     the same command with no --decide re-prints the evidence package you just looked at`);
+  process.exit(0);
 }
 
 const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -527,6 +829,13 @@ try {
       // it a fresh `-2` standing beside the work it came back to continue.
       ...(dead.restart.branch ? { resumeBranch: dead.restart.branch } : {}),
     } : {}),
+    // N4 — the SIGNER's answer, normalised at the library's own seam above and
+    // carried in on the leg that resumes the pause. It is spent ONCE, on this leg's
+    // close readings: `accept` greens the human stage after the mechanical stages
+    // re-run on the tree as it stands (OPEN-3), `rerun` reds it with these words as
+    // the gap, and `pause` never gets this far (it is answered above, launching nothing).
+    // Absent on every ordinary run — refused-but-unwired would pause forever.
+    ...(RULING === null ? {} : { humanRuling: RULING }),
   });
 } finally {
   // the guard outlives the run only by accident, never by design
@@ -593,6 +902,31 @@ if (outcome === 'step-stalled') {
   console.log(`  resume  node scripts/run-u.mjs --job ${jobKey} --resume ${runid} --approve ${specHash}`);
   console.log('          (no spec edit, so the hash is unchanged — this re-enters at the stalled step and re-pays for none of the ones before it)');
   console.log('          (if the allowance is what actually ran out underneath the stall, that preview says so and refuses — it is read there, not asserted here)');
+}
+// ── N4 §1.4/§5.2 — THE PAUSE, at the terminal the person is actually standing at.
+// The run stopped decision-ready with the clock stopped (ruling 1) and everything
+// it did stands until an answer comes back. This renders the SAME evidence package
+// the resume preview renders, from the SAME record and the SAME function: one
+// assembly of one run's facts, two screens.
+//
+// A decision moves no allowance, so nothing here needs re-signing — the hash that
+// bought this run is the hash that answers it, exactly like the stall readout above.
+if (outcome === HITL_PAUSE) {
+  const pause = events.filter((e) => e.type === HITL_PAUSE).at(-1) ?? null;
+  console.log('');
+  printPauseEvidence(pause, [
+    'HUMAN REVIEW — the run paused for a person but wrote no `hitl-pause` record; read the spine and the patient',
+    'yourself before answering. Nothing here can stand in for the evidence it did not write.',
+  ]);
+  console.log('  clock    STOPPED — the wall does not run while a person is reading (W-2), and this leg\'s elapsed is what folds into the resume');
+  console.log('');
+  const answer = (/** @type {string} */ tail) => `node scripts/run-u.mjs --job ${jobKey} --resume ${runid}${tail} --approve ${specHash}`;
+  for (const l of doorLines({
+    rerun: answer(' --decide rerun --text "<what you want done differently>"'),
+    accept: answer(' --decide accept'),
+    pause: answer(' --decide pause'),
+  })) console.log(l);
+  console.log(`  (the same command without --approve re-prints this package — the checkpoint keeps for ${PAUSE_TTL_MS / 86_400_000} days)`);
 }
 // A leak is the HARD LINE broken, not a note in the margin: an advisory that
 // prints a count and then exits 0 while still writing the bridge is a guard in

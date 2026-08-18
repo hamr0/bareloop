@@ -32,6 +32,33 @@ export const reply = (entry, fallbackCostUsd = 0.001) => ({
 });
 
 /**
+ * The RUN's wall clock, mocked — the one seam a `runJob`-level test has, since
+ * `runJob` builds its clock internally and exposes no `now` (only `runPlan` does).
+ *
+ * It mocks TWO things, and it has to. `src/clock.js` reads `performance.now()`
+ * since hamr's 2026-08-15 ruling that suspended minutes never charge a signed wall
+ * (CLOCK_MONOTONIC does not count a suspend; `Date.now`'s CLOCK_REALTIME does), so
+ * mocking Date alone no longer moves the deadline at all — a wall test would tick
+ * 200 seconds and read zero elapsed. `Date` stays mocked because the rest of the run
+ * stamps its records with it, and the two are pinned TOGETHER so one tick still means
+ * one thing: `performance.now` is pointed at the mocked `Date.now`, which is exactly
+ * the relative arithmetic the clock does with it.
+ *
+ * The pair is restored after the test — a leaked `performance.now` would silently
+ * follow a mocked Date into every test that ran next. `t.mock.timers` restores its
+ * own half; this restores the half node does not know about.
+ *
+ * @param {{mock: {timers: {enable: (o: object) => void}}, after: (fn: () => void) => void}} t the test context
+ * @param {number} [now] the mocked epoch, in ms
+ */
+export function mockWallClock(t, now = 1_000_000) {
+  t.mock.timers.enable({ apis: ['Date'], now });
+  const realPerfNow = performance.now;
+  performance.now = () => Date.now();
+  t.after(() => { performance.now = realPerfNow; });
+}
+
+/**
  * Scripted provider: returns each script entry in turn (sticks on the last),
  * records each prompt in `calls`.
  * @param {Array<{text?: string, toolCalls?: object[], costUsd?: number|null, usage?: object}>} script

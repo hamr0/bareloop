@@ -1,6 +1,6 @@
 // RUN-AUTHOR — the first LIVE end-to-end of the close-authoring pipeline (M1–M4b).
 //
-// Seven interview answers in; a REAL scout over a REAL repository; a REAL model
+// The picked class's interview answers in; a REAL scout over a REAL repository; a REAL model
 // filling the typed declaration form; the operator's own half of the spec folded
 // in; the job validator; and D9's three mechanical gates. What comes out is a
 // resolved spec, its hash, and the evidence to sign against.
@@ -36,10 +36,13 @@
 //                  defaulted class would be this script answering a question the
 //                  person was asked. v1 admits `green`; the other two return the
 //                  honest counted refusal.
-//   answers.json   {"1": "...", ..., "6": "..."}  the picked class's own frozen
-//                  questions (green: six; the seventh slot was D13's genre
-//                  confirm and is DELETED — the interview never asks about a
-//                  genre, and that refusal moved to the composer).
+//   answers.json   {"1": "...", ...}  the picked class's own frozen questions,
+//                  keyed by the LIBRARY's own numbers (`requiredAnswersFor`) —
+//                  green: five, hitl: those five plus the signer's ask. Never a
+//                  count spelled here: two slots have already been deleted (D13's
+//                  genre confirm, then the repo question hamr dropped once the
+//                  mandatory --patient made it redundant), and a hardcoded number
+//                  would have gone stale twice.
 //   specdraft.json the OPERATOR half of a job-v1 spec — budgets, fence, cadence,
 //                  goal, tools, escalation. NO close, NO verdictType: the close is
 //                  what this pipeline authors, and the class comes from --verdict.
@@ -53,7 +56,8 @@ import {
 import { makeLoopGenerate } from '../src/authorflow.js';
 import { validateJob, jobSpecHash } from '../src/job.js';
 import { scanSecrets } from '../src/validate.js';
-import { declarationLines, parseCeiling, ceilingLine } from './author-readout.mjs';
+import { tallyCalls } from '../src/text.js';
+import { declarationLines, parseCeiling, ceilingLine, crashRecord, phaseLine } from './author-readout.mjs';
 
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
@@ -74,7 +78,15 @@ const answersArg = arg('answers');
 const draftArg = arg('draft');
 const outArg = arg('out');
 const verdictArg = arg('verdict');
-const LANG = arg('lang') ?? 'js';
+// Same rule as the interview that hands this script its command line: absent takes
+// the default, present-with-no-value stops LOUD. A silently empty language reaches
+// the genre lookup as "" and dies there anyway, but as a genre-data error rather
+// than as the argv typo it is.
+const langArg = arg('lang');
+if (langArg !== null && langArg.trim() === '') {
+  die('--lang was given with no value — pass a language (e.g. `--lang js`), or omit the flag to take the default');
+}
+const LANG = langArg ?? 'js';
 const timeoutArg = arg('timeout');
 const TIMEOUT_MS = timeoutArg === null ? DEFAULT_TIMEOUT_MS : Number(timeoutArg);
 /** NO DEFAULT, deliberately: `null` is "nobody set one" and means UNBOUNDED. It
@@ -175,196 +187,331 @@ console.log('  stops at prepareSigning — this script NEVER signs and NEVER run
 const provider = new AnthropicProvider({ apiKey, model: MODEL });
 emit('author-start', { runid, patient: PATIENT, lang: LANG, verdictType: VERDICT, model: MODEL, job: draft?.job ?? null, timeoutMs: TIMEOUT_MS, ceilingUsd: CEILING_USD });
 
-// ── 1. answers → scout → the model fills the form → a close DECLARATION ──────
-// `provider` drives the scout; `generate` is the declaration model boundary (one
-// bare-agent Loop per call, the tool wired to end the call it is used in).
-const authored = await authorCloseForJob({
-  answers,
-  verdictType: VERDICT,
-  repoPath: PATIENT,
-  lang: LANG,
-  // the picked class's own frozen set — LOCKED classes never reach here, they
-  // refuse at admission before their questions are ever asked
-  questions: VERDICT === 'green' ? questionsFor(VERDICT) : null,
-  provider,
-  generate: makeLoopGenerate(provider),
-  // ONE number, both paid seams (the survey's and the declaration loop's) — the
-  // advertised ceiling and the enforced ceiling are the same ceiling
-  ceilingUsd: CEILING_USD,
-});
-const authoredFile = writeOut('authored.json', authored);
-emit('authored', { ok: authored.ok, stop: authored.stop, seedRef: authored.seedRef, cost: authored.cost, reds: authored.reds });
+// ── WHAT IS HAPPENING, AND WHAT IT HAS COST, WHILE IT IS STILL HAPPENING ─────
+//
+// Everything below reports; nothing below governs. The ceiling is enforced where
+// it always was — `capStop`, between metered calls, inside the library — and no
+// decision anywhere reads these.
 
-console.log(`authoring  ${authored.ok ? 'OK' : 'NOT OK'}  stop=${authored.stop ?? 'none'}  seed=${authored.seedRef ?? 'unread'}`);
-console.log(`cost       ${costLine(authored.cost)}`);
-console.log(`written    ${authoredFile}`);
+/** EVERY METERED CALL, in the order they landed, in the ONE shape `costLine`
+ * already reads. A second hand-spelled running total is exactly the pair this
+ * file has already paid for once (the cap-halt/pricing-red type), so the totals
+ * are DERIVED from this list through `tallyCalls` — the same reader the library's
+ * own cost book uses — rather than accumulated a second time here.
+ * @type {{label: string, costUsd: number|null, unpricedRounds: number}[]} */
+const metered = [];
+/** the run's spend AS OF NOW, shaped exactly like a `makeCostBook().report()` so
+ * `costLine` renders it with no second spelling. F6 rides intact: an unpriced
+ * call makes `costUsd` null and the known half is reported as a `≥` floor. */
+const costSoFar = () => ({ ...tallyCalls(metered), calls: metered.map((c) => ({ ...c })) });
 
-// THE GOVERNANCE STOP, read out on BOTH paths. A money stop can land with a
-// signable close already authored and measured (`ok:true` — the cap tripped
-// before a LATER revise), and burying it in that case would let a run that ran
-// out of money read as a run that simply finished. It is not an error and it is
-// not a verdict on the close: nothing retries, nothing is rolled back, and every
-// artifact the run paid for is on disk exactly where it was written.
-if (authored.stop === 'cap-halt' || authored.stop === 'pricing-red') {
-  const c = authored.cost ?? {};
-  // ONE reading of what this stop MEANS, spent on the console AND on the spine.
-  // Two hand-spelled answers is two instruments, and this is exactly the pair
-  // that must not disagree: a `cap-halt` says the money is gone, a `pricing-red`
-  // says the meter went blind (F6), and they send the operator to different
-  // repairs — one raises a number, the other binds a priced provider.
-  const meaning = authored.stop === 'cap-halt'
-    ? 'not under cap — not "can\'t"' // the shipped vocabulary, spelled the way ralph spells it
-    : 'the spend cannot be SEEN, so the ceiling cannot govern it — a blind meter, not a spent wallet (F6)';
-  console.log(`\n${authored.stop.toUpperCase()} — the authoring pipeline stopped on the operator's ceiling, not on anything it read`);
-  console.log(`  ceiling  $${CEILING_USD}`);
-  console.log(`  spent    ${costLine(authored.cost)}`);
-  console.log(`  the cap binds BETWEEN calls, so nothing was cut off mid-flight — everything paid for is in ${OUT}`);
-  console.log(authored.stop === 'cap-halt'
-    ? '  the stop IS the checkpoint: raise --budget and re-run, or read what is here and stop'
-    : '  unpriced is never free (F6) — a ceiling that cannot see the spend cannot enforce it, so the run stopped rather than spend blind');
-  // THE TYPE IS THE STOP. It used to be the literal 'cap-halt' on both arms, so a
-  // `pricing-red` was written down as a cap-halt with its real name demoted to a
-  // payload field. Every OTHER emitter in this tree keys the two apart — ralph and
-  // planrun emit `type:'cap-halt'` only ever with `category:'cap-halt'`, and a
-  // pricing-red rides its own name (run.js's escalation) — so this was the one
-  // site in the repo where the type and the category could disagree, and
-  // type-keyed slicing is precisely how F45 misread a shared log.
-  //
-  // Latent, not live: nothing reads the author spine by type today. The nearest
-  // reader is `classifyIncidents` (src/ledger.js), which sets `capHalted` on
-  // `type === 'cap-halt'` and would therefore have armed the capability-gap fuse
-  // — "the run cap-halted" — on a run whose wallet was never empty. Under its own
-  // name a pricing-red instead falls through every branch and is simply not
-  // counted, which is the FAIL-SAFE direction: uncounted, never miscounted.
-  //
-  // No falsy type can reach here: the `if` above narrows `authored.stop` to
-  // exactly these two strings, so a guard would be speculative code standing over
-  // an unreachable case rather than protection.
-  emit(authored.stop, {
-    category: authored.stop, meaning,
-    ceilingUsd: CEILING_USD, spentUsd: c.costUsd ?? null, knownUsd: c.knownUsd ?? null,
-    spendComplete: c.spendComplete ?? null,
+/** the phase the run is inside, for the killed report below. A plain string
+ * rather than a stack: the question a killed run has to answer is "where did my
+ * money go", and the phase plus the cost line answers it. */
+let phase = 'starting';
+/** @param {string} name @param {any} [data] */
+const onPhase = (name, data = {}) => {
+  phase = name;
+  // BEST-EFFORT, and deliberately: this is progress reporting on a PAID run, and
+  // a full disk or a closed pipe must never take down work that is being paid
+  // for. The run's real records (`authored.json`, the crash catch, `author-end`)
+  // are all downstream of this and unaffected.
+  try {
+    console.log(phaseLine(name, data));
+    emit('author-phase', { phase: name, ...data });
+  } catch { /* a reporter that kills the run it reports on is worse than silence (F70) */ }
+};
+/** @param {{label: string, costUsd: number|null, unpricedRounds: number}} call */
+const onCall = (call) => {
+  metered.push({ ...call });
+  try {
+    const t = tallyCalls(metered);
+    console.log(`·   ${call.label} — ${costLine(costSoFar())}`);
+    // `costUsd` rides as `null` when the call was unpriced — `?? 0` launders
+    // unknown into $0 (F6), and this record is what a killed run is read from.
+    emit('author-cost', {
+      label: call.label, costUsd: call.costUsd, unpricedRounds: call.unpricedRounds,
+      knownUsdSoFar: t.knownUsd, spendCompleteSoFar: t.spendComplete, calls: metered.length,
+      ceilingUsd: CEILING_USD,
+    });
+  } catch { /* see onPhase */ }
+};
+
+// ── A KILL LEAVES A BODY, exactly as a crash does ────────────────────────────
+//
+// SIGINT (the operator's own ^C on a run that looks hung), SIGTERM and SIGHUP
+// (a closed terminal, a harness stopping the group) used to end this process
+// with the spine holding ONE line — `author-start` — which is byte-for-byte what
+// a run still in flight looks like, and with 100% of the spend record dying with
+// the process. The paid calls had happened; nothing on disk said so.
+//
+// SIGKILL is NOT covered and cannot be: it is uncatchable by design, and there
+// is no handler to write for it.
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.on(sig, () => {
+    try {
+      emit('author-killed', { signal: sig, phase, ...costSoFar() });
+      emit('author-end', { outcome: 'killed', signal: sig });
+    } catch { /* a killed-handler that crashes destroys its own report (F70) */ }
+    console.error(`\nKILLED by ${sig} during ${phase} — spine: author-killed + author-end`);
+    console.error(`  spent ${costLine(costSoFar())}`);
+    console.error(`  spine ${spineFile}`);
+    // RE-RAISED rather than exited: the honest exit code for a signal death is
+    // 128+signo, and setting an exit code here — any of them — would report a
+    // killed run under a name this runner's vocabulary already spends on
+    // something else. The listener is removed first so the default disposition
+    // takes it (and so the handler cannot re-enter itself).
+    // `appendFileSync` inside `emit` is synchronous, so the record is already on
+    // disk before this line runs.
+    process.removeAllListeners(sig);
+    process.kill(process.pid, sig);
   });
 }
 
-if (!authored.ok) {
-  // Verbatim, and in full. A refusal is COUNTED demand against bareloop's own
-  // catalogue (the `request-red` admission path) — narrating around it destroys
-  // the evidence the verdict-classes rung waits on.
-  if (authored.refusal) {
-    const r = authored.refusal;
-    console.log(`\nREFUSED (${r.kind})  verb=${r.verb ?? 'none'}  path=${r.path}`);
-    console.log(r.detail);
-    for (const o of r.options ?? []) console.log(`  · ${o}`);
-    if (r.red) console.log(`  red: ${JSON.stringify(r.red)}`);
-    for (const e of refusalEvents(r)) emit(e.type, e);
-  }
-  for (const red of authored.reds ?? []) {
-    console.log(`\nRED ${red.code} at ${red.path}\n${red.detail}`);
-    emit('job-red', red);
-  }
-  if (!authored.refusal && !(authored.reds ?? []).length) console.log(`\nNo refusal and no reds — the stop is "${authored.stop}" on its own (read ${authoredFile}).`);
-  console.log(`\nSTOPPED at authoring. Nothing was assembled, nothing was validated, nothing was signed.`);
-  emit('author-end', { outcome: 'not-authored', stop: authored.stop });
-  process.exitCode = 1;
-} else {
-  // ── 2. the operator's half + the authored half → one spec ──────────────────
-  const spec = assembleSpec(draft, authored);
-  const specFile = writeOut('resolved-spec.json', spec);
-  console.log(`\nverdictType ${authored.verdictType} (the person's own pick, validated — never inferred)`);
-  // F87: the goal and the stages that judge it are ONE reading. This surface used to
-  // print the declaration alone, which shows a signer everything the close measures
-  // and nothing about whether the goal ever said so. Rendered from the RESOLVED spec
-  // — the bytes that get hashed — and out of `scripts/author-readout.mjs`, because
-  // this block is otherwise reachable only after a paid scout and a paid model call,
-  // and a readout no test can reach is a readout nothing checks.
-  for (const l of declarationLines(spec)) console.log(l);
-  console.log(`written    ${specFile}`);
+// ── EVERYTHING PAID FOR, INSIDE ONE CATCH ────────────────────────────────────
+// The span from here to the end of the main flow is the fallible one: a real
+// scout, a real model call, and a real toolchain per close stage. When it threw,
+// the error went to the operator's terminal and the spine said NOTHING — one
+// `author-start` line and then silence, which is byte-for-byte what a run still
+// in flight looks like. A log that cannot tell a death from a hang is not a
+// record of either.
+//
+// Nothing ABOVE this line is inside it, deliberately: the argv and config `die()`
+// paths run before the spine file exists, and a crash record with no spine to
+// land in is a record nobody can read — those still stop loud on stderr and 2.
+//
+// The catch RETRIES NOTHING and SWALLOWS NOTHING. The operator still gets the
+// whole error, first and verbatim; the spine additionally gets a bounded, redacted
+// body saying the run died and roughly where.
+try {
+  // ── 1. answers → scout → the model fills the form → a close DECLARATION ──────
+  // `provider` drives the scout; `generate` is the declaration model boundary (one
+  // bare-agent Loop per call, the tool wired to end the call it is used in).
+  const authored = await authorCloseForJob({
+    answers,
+    verdictType: VERDICT,
+    repoPath: PATIENT,
+    lang: LANG,
+    // the picked class's own frozen set — LOCKED classes never reach here, they
+    // refuse at admission before their questions are ever asked
+    questions: VERDICT === 'green' ? questionsFor(VERDICT) : null,
+    provider,
+    generate: makeLoopGenerate(provider),
+    // ONE number, both paid seams (the survey's and the declaration loop's) — the
+    // advertised ceiling and the enforced ceiling are the same ceiling
+    ceilingUsd: CEILING_USD,
+    // …and the two reporting seams. The library emits nothing itself (the
+    // `runJob` → `runPlan` shape): this runner owns the spine and the terminal.
+    onPhase, onCall,
+  });
+  const authoredFile = writeOut('authored.json', authored);
+  emit('authored', { ok: authored.ok, stop: authored.stop, seedRef: authored.seedRef, cost: authored.cost, reds: authored.reds });
 
-  // `shellCapUsd` COUPLES to the spec's own budget, exactly as run-u does it at the
-  // launch site. Left off, both gates below judge against validateJob's default
-  // ceiling of 2 — a silent second ceiling, and the worst-placed one there is: the
-  // draft's `budgetUsd` is the operator's own signed input, so a $4 draft would be
-  // paid for in full (interview, scout, declaration) and only THEN redded on a
-  // number nobody set. The advertised budget and the enforced budget are the same
-  // number; the agent may tighten and never widen, and neither may this script.
-  const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
-  emit('job-validate', { ok: jv.ok, reds: jv.reds });
-  if (!jv.ok) {
-    console.log(`\nSPEC INVALID — ${jv.reds.length} red(s):`);
-    for (const red of jv.reds) console.log(`  ${red.code} at ${red.path}: ${red.detail}`);
-    console.log('\nSTOPPED at validateJob. The draft and the authored close do not compose into a runnable spec.');
-    emit('author-end', { outcome: 'spec-invalid' });
-    process.exitCode = 1;
-  } else {
-    // ── 3. D9's three gates. Nothing here judges the close; it measures it. ───
-    const signing = await prepareSigning({
-      spec, workdir: PATIENT, seedRef: authored.seedRef, timeoutMs: TIMEOUT_MS,
-      // gate 1a re-runs the job validator inside prepareSigning — same coupling, or
-      // the spec that just passed above would fail the gate that signs it
-      shellCapUsd: spec.budgetUsd,
+  console.log(`authoring  ${authored.ok ? 'OK' : 'NOT OK'}  stop=${authored.stop ?? 'none'}  seed=${authored.seedRef ?? 'unread'}`);
+  console.log(`cost       ${costLine(authored.cost)}`);
+  console.log(`written    ${authoredFile}`);
+
+  // THE GOVERNANCE STOP, read out on BOTH paths. A money stop can land with a
+  // signable close already authored and measured (`ok:true` — the cap tripped
+  // before a LATER revise), and burying it in that case would let a run that ran
+  // out of money read as a run that simply finished. It is not an error and it is
+  // not a verdict on the close: nothing retries, nothing is rolled back, and every
+  // artifact the run paid for is on disk exactly where it was written.
+  if (authored.stop === 'cap-halt' || authored.stop === 'pricing-red') {
+    const c = authored.cost ?? {};
+    // ONE reading of what this stop MEANS, spent on the console AND on the spine.
+    // Two hand-spelled answers is two instruments, and this is exactly the pair
+    // that must not disagree: a `cap-halt` says the money is gone, a `pricing-red`
+    // says the meter went blind (F6), and they send the operator to different
+    // repairs — one raises a number, the other binds a priced provider.
+    const meaning = authored.stop === 'cap-halt'
+      ? 'not under cap — not "can\'t"' // the shipped vocabulary, spelled the way ralph spells it
+      : 'the spend cannot be SEEN, so the ceiling cannot govern it — a blind meter, not a spent wallet (F6)';
+    console.log(`\n${authored.stop.toUpperCase()} — the authoring pipeline stopped on the operator's ceiling, not on anything it read`);
+    console.log(`  ceiling  $${CEILING_USD}`);
+    console.log(`  spent    ${costLine(authored.cost)}`);
+    console.log(`  the cap binds BETWEEN calls, so nothing was cut off mid-flight — everything paid for is in ${OUT}`);
+    console.log(authored.stop === 'cap-halt'
+      ? '  the stop IS the checkpoint: raise --budget and re-run, or read what is here and stop'
+      : '  unpriced is never free (F6) — a ceiling that cannot see the spend cannot enforce it, so the run stopped rather than spend blind');
+    // THE TYPE IS THE STOP. It used to be the literal 'cap-halt' on both arms, so a
+    // `pricing-red` was written down as a cap-halt with its real name demoted to a
+    // payload field. Every OTHER emitter in this tree keys the two apart — ralph and
+    // planrun emit `type:'cap-halt'` only ever with `category:'cap-halt'`, and a
+    // pricing-red rides its own name (run.js's escalation) — so this was the one
+    // site in the repo where the type and the category could disagree, and
+    // type-keyed slicing is precisely how F45 misread a shared log.
+    //
+    // Latent, not live: nothing reads the author spine by type today. The nearest
+    // reader is `classifyIncidents` (src/ledger.js), which sets `capHalted` on
+    // `type === 'cap-halt'` and would therefore have armed the capability-gap fuse
+    // — "the run cap-halted" — on a run whose wallet was never empty. Under its own
+    // name a pricing-red instead falls through every branch and is simply not
+    // counted, which is the FAIL-SAFE direction: uncounted, never miscounted.
+    //
+    // No falsy type can reach here: the `if` above narrows `authored.stop` to
+    // exactly these two strings, so a guard would be speculative code standing over
+    // an unreachable case rather than protection.
+    emit(authored.stop, {
+      category: authored.stop, meaning,
+      ceilingUsd: CEILING_USD, spentUsd: c.costUsd ?? null, knownUsd: c.knownUsd ?? null,
+      spendComplete: c.spendComplete ?? null,
     });
-    const signingFile = writeOut('signing.json', signing);
-    emit('signing', { ok: signing.ok, specHash: signing.specHash, seedRef: signing.seedRef, gates: signing.gates });
+  }
 
-    const g = signing.gates ?? {};
-    console.log('\ngates');
-    console.log(`  1 declaration  ${g.declaration?.ok ? 'PASS' : 'FAIL'}  grounded=${g.declaration?.grounded ?? '-'}${g.declaration?.scoped ? `  scoped=${JSON.stringify(g.declaration.scoped)}` : ''}`);
-    console.log(`  2 precheck     ${g.precheck === null ? 'not reached' : (g.precheck.ok ? 'PASS — every stage ran' : `FAIL — ${g.precheck.stops.length} stage(s) could not run`)}`);
-    console.log(`  3 seed verdict ${g.seedVerdict === null ? 'not reached' : (g.seedVerdict.ok ? `PASS — work red at seed: ${g.seedVerdict.workRed.join(', ')}` : 'FAIL — no work stage is red at the seed')}`);
-    if (g.seedVerdict) {
-      console.log(`      red at seed:   ${g.seedVerdict.redAtSeed.join(', ') || '(none)'}`);
-      console.log(`      green at seed: ${g.seedVerdict.greenAtSeed.join(', ') || '(none)'}`);
-    }
-
-    /** the seed evidence a user READS to decide whether this close measures their
-     * job. `value`/`baseline` print as `unknown` when absent — never as 0. */
-    const row = (/** @type {any} */ r) => {
-      console.log(`  ${r.verdict.toUpperCase().padEnd(16)} ${r.stage} [${r.kind}]  value=${r.value ?? 'unknown'}  baseline=${r.baseline ?? 'unknown'}${r.baselineSource ? ` (${r.baselineSource})` : ''}`);
-      for (const l of (r.gap ?? []).slice(0, 8)) console.log(`      | ${l}`);
-      if ((r.gap ?? []).length > 8) console.log(`      | … ${r.gap.length - 8} more gap line(s) — full text in ${signingFile}`);
-    };
-    if ((signing.work ?? []).length) { console.log('\nwork stages at the seed'); for (const r of signing.work) row(r); }
-    if ((signing.guards ?? []).length) { console.log('\nguard stages at the seed'); for (const r of signing.guards) row(r); }
-    if ((signing.stops ?? []).length) { console.log('\nstages that could NOT RUN (a broken instrument is a casualty, never a verdict)'); for (const r of signing.stops) row(r); }
-
-    if (signing.refusal) {
-      const r = signing.refusal;
+  if (!authored.ok) {
+    // Verbatim, and in full. A refusal is COUNTED demand against bareloop's own
+    // catalogue (the `request-red` admission path) — narrating around it destroys
+    // the evidence the verdict-classes rung waits on.
+    if (authored.refusal) {
+      const r = authored.refusal;
       console.log(`\nREFUSED (${r.kind})  verb=${r.verb ?? 'none'}  path=${r.path}`);
       console.log(r.detail);
       for (const o of r.options ?? []) console.log(`  · ${o}`);
+      if (r.red) console.log(`  red: ${JSON.stringify(r.red)}`);
       for (const e of refusalEvents(r)) emit(e.type, e);
     }
-    for (const red of signing.reds ?? []) {
+    for (const red of authored.reds ?? []) {
       console.log(`\nRED ${red.code} at ${red.path}\n${red.detail}`);
       emit('job-red', red);
     }
+    if (!authored.refusal && !(authored.reds ?? []).length) console.log(`\nNo refusal and no reds — the stop is "${authored.stop}" on its own (read ${authoredFile}).`);
+    console.log(`\nSTOPPED at authoring. Nothing was assembled, nothing was validated, nothing was signed.`);
+    emit('author-end', { outcome: 'not-authored', stop: authored.stop });
+    process.exitCode = 1;
+  } else {
+    // ── 2. the operator's half + the authored half → one spec ──────────────────
+    const spec = assembleSpec(draft, authored);
+    const specFile = writeOut('resolved-spec.json', spec);
+    console.log(`\nverdictType ${authored.verdictType} (the person's own pick, validated — never inferred)`);
+    // F87: the goal and the stages that judge it are ONE reading. This surface used to
+    // print the declaration alone, which shows a signer everything the close measures
+    // and nothing about whether the goal ever said so. Rendered from the RESOLVED spec
+    // — the bytes that get hashed — and out of `scripts/author-readout.mjs`, because
+    // this block is otherwise reachable only after a paid scout and a paid model call,
+    // and a readout no test can reach is a readout nothing checks.
+    for (const l of declarationLines(spec)) console.log(l);
+    console.log(`written    ${specFile}`);
 
-    console.log(`\nwritten    ${signingFile}`);
-    const hash = jobSpecHash(spec);
-    // A hash printed beside a refusal reads like something to sign. It is the
-    // record of WHICH bytes were measured, and on a failed gate it says so.
-    console.log(`spec hash  ${hash}${signing.ok ? '' : '  (for the record — this spec did NOT clear the gates and is not signable)'}`);
-    // The hash prepareSigning returns is over the VALIDATED spec; this one is
-    // over the assembled bytes. They are the same object by construction, and a
-    // divergence would mean the validator normalized something — say it rather
-    // than pick one.
-    if (signing.specHash && signing.specHash !== hash) {
-      console.log(`  NOTE  prepareSigning hashed ${signing.specHash} — the validator normalized the spec; sign the resolved one.`);
-    }
-    console.log(`total cost ${costLine(authored.cost)}   (the gates spend no tokens — they run commands)`);
-
-    if (!signing.ok) {
-      console.log('\nSIGNING NOT PREPARED — the close did not clear D9\'s gates. Nothing was signed and nothing was run.');
-      emit('author-end', { outcome: 'gates-failed', specHash: hash });
+    // `shellCapUsd` COUPLES to the spec's own budget, exactly as run-u does it at the
+    // launch site. Left off, both gates below judge against validateJob's default
+    // ceiling of 2 — a silent second ceiling, and the worst-placed one there is: the
+    // draft's `budgetUsd` is the operator's own signed input, so a $4 draft would be
+    // paid for in full (interview, scout, declaration) and only THEN redded on a
+    // number nobody set. The advertised budget and the enforced budget are the same
+    // number; the agent may tighten and never widen, and neither may this script.
+    const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
+    emit('job-validate', { ok: jv.ok, reds: jv.reds });
+    if (!jv.ok) {
+      console.log(`\nSPEC INVALID — ${jv.reds.length} red(s):`);
+      for (const red of jv.reds) console.log(`  ${red.code} at ${red.path}: ${red.detail}`);
+      console.log('\nSTOPPED at validateJob. The draft and the authored close do not compose into a runnable spec.');
+      emit('author-end', { outcome: 'spec-invalid' });
       process.exitCode = 1;
     } else {
-      console.log('\nSIGNING PREPARED — NOT SIGNED. This script stops here, by design.');
-      console.log(`  the resolved spec is ${specFile} and it hashes to ${hash}`);
-      console.log('  read the seed evidence above; if the close measures your job, the signature is yours to give.');
-      emit('author-end', { outcome: 'prepared', specHash: hash });
+      // ── 3. D9's three gates. Nothing here judges the close; it measures it. ───
+      const signing = await prepareSigning({
+        spec, workdir: PATIENT, seedRef: authored.seedRef, timeoutMs: TIMEOUT_MS,
+        // gate 1a re-runs the job validator inside prepareSigning — same coupling, or
+        // the spec that just passed above would fail the gate that signs it
+        shellCapUsd: spec.budgetUsd,
+      });
+      const signingFile = writeOut('signing.json', signing);
+      emit('signing', { ok: signing.ok, specHash: signing.specHash, seedRef: signing.seedRef, gates: signing.gates });
+
+      const g = signing.gates ?? {};
+      console.log('\ngates');
+      console.log(`  1 declaration  ${g.declaration?.ok ? 'PASS' : 'FAIL'}  grounded=${g.declaration?.grounded ?? '-'}${g.declaration?.scoped ? `  scoped=${JSON.stringify(g.declaration.scoped)}` : ''}`);
+      console.log(`  2 precheck     ${g.precheck === null ? 'not reached' : (g.precheck.ok ? 'PASS — every stage ran' : `FAIL — ${g.precheck.stops.length} stage(s) could not run`)}`);
+      console.log(`  3 seed verdict ${g.seedVerdict === null ? 'not reached' : (g.seedVerdict.ok ? `PASS — work red at seed: ${g.seedVerdict.workRed.join(', ')}` : 'FAIL — no work stage is red at the seed')}`);
+      if (g.seedVerdict) {
+        console.log(`      red at seed:   ${g.seedVerdict.redAtSeed.join(', ') || '(none)'}`);
+        console.log(`      green at seed: ${g.seedVerdict.greenAtSeed.join(', ') || '(none)'}`);
+      }
+
+      /** the seed evidence a user READS to decide whether this close measures their
+       * job. `value`/`baseline` print as `unknown` when absent — never as 0. */
+      const row = (/** @type {any} */ r) => {
+        console.log(`  ${r.verdict.toUpperCase().padEnd(16)} ${r.stage} [${r.kind}]  value=${r.value ?? 'unknown'}  baseline=${r.baseline ?? 'unknown'}${r.baselineSource ? ` (${r.baselineSource})` : ''}`);
+        for (const l of (r.gap ?? []).slice(0, 8)) console.log(`      | ${l}`);
+        if ((r.gap ?? []).length > 8) console.log(`      | … ${r.gap.length - 8} more gap line(s) — full text in ${signingFile}`);
+      };
+      if ((signing.work ?? []).length) { console.log('\nwork stages at the seed'); for (const r of signing.work) row(r); }
+      if ((signing.guards ?? []).length) { console.log('\nguard stages at the seed'); for (const r of signing.guards) row(r); }
+      if ((signing.stops ?? []).length) { console.log('\nstages that could NOT RUN (a broken instrument is a casualty, never a verdict)'); for (const r of signing.stops) row(r); }
+
+      if (signing.refusal) {
+        const r = signing.refusal;
+        console.log(`\nREFUSED (${r.kind})  verb=${r.verb ?? 'none'}  path=${r.path}`);
+        console.log(r.detail);
+        for (const o of r.options ?? []) console.log(`  · ${o}`);
+        for (const e of refusalEvents(r)) emit(e.type, e);
+      }
+      for (const red of signing.reds ?? []) {
+        console.log(`\nRED ${red.code} at ${red.path}\n${red.detail}`);
+        emit('job-red', red);
+      }
+
+      console.log(`\nwritten    ${signingFile}`);
+      const hash = jobSpecHash(spec);
+      // A hash printed beside a refusal reads like something to sign. It is the
+      // record of WHICH bytes were measured, and on a failed gate it says so.
+      console.log(`spec hash  ${hash}${signing.ok ? '' : '  (for the record — this spec did NOT clear the gates and is not signable)'}`);
+      // The hash prepareSigning returns is over the VALIDATED spec; this one is
+      // over the assembled bytes. They are the same object by construction, and a
+      // divergence would mean the validator normalized something — say it rather
+      // than pick one.
+      if (signing.specHash && signing.specHash !== hash) {
+        console.log(`  NOTE  prepareSigning hashed ${signing.specHash} — the validator normalized the spec; sign the resolved one.`);
+      }
+      console.log(`total cost ${costLine(authored.cost)}   (the gates spend no tokens — they run commands)`);
+
+      if (!signing.ok) {
+        console.log('\nSIGNING NOT PREPARED — the close did not clear D9\'s gates. Nothing was signed and nothing was run.');
+        emit('author-end', { outcome: 'gates-failed', specHash: hash });
+        process.exitCode = 1;
+      } else {
+        console.log('\nSIGNING PREPARED — NOT SIGNED. This script stops here, by design.');
+        console.log(`  the resolved spec is ${specFile} and it hashes to ${hash}`);
+        console.log('  read the seed evidence above; if the close measures your job, the signature is yours to give.');
+        emit('author-end', { outcome: 'prepared', specHash: hash });
+      }
     }
   }
+} catch (err) {
+  // THE OPERATOR'S COPY FIRST, and whole — the same bytes the unhandled rejection
+  // used to print, on the same stream. First because it must not depend on the two
+  // writes below succeeding: a diagnosis that reaches the person only if the disk
+  // is writable is a diagnosis with a dependency nobody asked for.
+  console.error('\nCRASHED — the authoring run died inside the paid span. Nothing was signed, and nothing was retried.');
+  console.error(err);
+  // ...and the spine's copy, through the ONE persist boundary (`crashRecord` →
+  // `scrubRaw` → the same `SECRET_PATTERNS` inventory the validator reds on). A
+  // stack is exactly the string most likely to carry a live credential out of a
+  // process, and this file outlives the run.
+  //
+  // BEST-EFFORT, and that is the point: a crash handler that crashes destroys the
+  // report it was built to make (F70). If the record cannot be built or the append
+  // fails, that failure is said out loud and the original error above still stands.
+  try {
+    emit('author-crash', crashRecord(err));
+    // The run ENDED, and it ended a way no other arm ends. `author-end` is the one
+    // record that says a run stopped AT ALL, so a crash that omits it leaves a spine
+    // that reads as still-running. The detail is NOT repeated here — it is on the
+    // `author-crash` record above, because two hand-spelled copies of one fact are
+    // two instruments, and this file has already paid once for letting a pair of
+    // those disagree (the cap-halt/pricing-red type).
+    emit('author-end', { outcome: 'crashed' });
+    console.error(`  written to the spine as author-crash + author-end{outcome:'crashed'}`);
+  } catch (spineErr) {
+    console.error(`  AND THE SPINE COULD NOT BE WRITTEN: ${/** @type {any} */ (spineErr)?.message ?? spineErr}`);
+    console.error('  the error above is the only record of this run — copy it before it scrolls');
+  }
+  console.error(`  spine ${spineFile}`);
+  // 4, distinct from 1 (a refusal or a failed gate), 2 (operator/config) and 3 (a
+  // leak). A crash is none of those: it is the run failing to reach a verdict at
+  // all, and sharing an exit code with a refusal would file a bug as a result.
+  process.exitCode = 4;
 }
 
 // The hard line, on the artifacts this run just wrote. Count and PATH only —
@@ -373,7 +520,11 @@ const written = [spineFile, join(OUT, 'authored.json'), join(OUT, 'resolved-spec
 const leaks = written.flatMap((f) => scanSecrets(readFileSync(f, 'utf8')).map(() => f));
 if (leaks.length) {
   console.log(`\nLEAK: ${leaks.length} secret-shaped string(s) across ${new Set(leaks).size} written file(s) — the hard line is broken; do NOT sign this spec`);
-  process.exitCode = 3; // distinct from 2 (operator/config) and 1 (a refusal or a failed gate)
+  // distinct from 2 (operator/config) and 1 (a refusal or a failed gate). It also
+  // OVERRIDES a 4 set by the crash catch above, deliberately: a secret sitting in a
+  // file is the harder line of the two, and the crash keeps both of its own louder
+  // channels — the whole error on stderr and its own `author-crash` spine record.
+  process.exitCode = 3;
 }
 console.log(`\nspine      ${spineFile}`);
 // F71 — never process.exit() after output: exit() can discard queued stdout and

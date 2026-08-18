@@ -13,6 +13,12 @@
 // signing surface offered that: this one printed the declaration and never the
 // goal, run-u's --approve gate printed the goal and never the declaration.
 // A half of a reading is not a smaller reading; it is a different one.
+//
+// The ceiling parse and the crash record below are here for the same one reason,
+// not because they are readouts: the runner is a script, and a rule no test can
+// reach is a rule nothing checks.
+import { scrubRaw } from '../src/text.js';
+import { redactSecrets } from '../src/validate.js';
 
 /**
  * @param {{goal?: string|null, closeDecl?: any}} spec the RESOLVED spec — the bytes
@@ -76,4 +82,99 @@ export function ceilingLine(ceilingUsd) {
   return ceilingUsd === null
     ? 'budget   UNBOUNDED — no --budget was given, so nothing stops this pipeline spending; spend is reported, never capped'
     : `budget   $${ceilingUsd} ceiling — the pipeline stops BETWEEN metered calls once the spend reaches it`;
+}
+
+/**
+ * ONE PROGRESS PHASE, as a console line.
+ *
+ * The pipeline used to run up to ~15 minutes saying nothing between
+ * `author-start` and its result — a real survey ladder, a real declaration
+ * ladder, and a real toolchain per close stage, all inside one await. Silence
+ * and a hang are the same bytes on a terminal, and the operator's only lever is
+ * to kill a run that may be working.
+ *
+ * It says WHAT is happening, never how far along it is: there is no honest
+ * fraction to print (a survey attempt has no progress, and a suite stage
+ * finishes when it finishes), and an invented percentage is a number nobody
+ * measured. What it does carry is the two facts a person waiting actually uses —
+ * which phase, and how long the last thing took.
+ *
+ * `durationMs` prints as UNKNOWN when it is absent rather than as 0 (F6's rule,
+ * in its time form): a stage whose duration was never measured did not take no
+ * time.
+ * @param {string} phase @param {any} [data]
+ * @returns {string}
+ */
+export function phaseLine(phase, data = {}) {
+  const ms = (/** @type {any} */ v) => (typeof v === 'number' && Number.isFinite(v) ? `${(v / 1000).toFixed(1)}s` : 'unknown');
+  switch (phase) {
+    case 'seed': return '· reading the seed commit…';
+    case 'scout': return `· scout running (up to ${data.attempts ?? '?'} attempt(s)) — a real survey over the repository…`;
+    case 'scout-done': return `· scout ${data.state ?? 'unknown'} — ${data.facts ?? 0} fact(s)`;
+    case 'listing': return '· listing the files the declaration may name…';
+    case 'listing-done': return `· listing ${data.stop ? `STOPPED (${data.stop})` : `${data.files ?? 'unknown'} file(s)`}`;
+    case 'author': return '· authoring the close declaration…';
+    case 'author-call': return `· ${data.call} (call ${(data.i ?? 0) + 1} of up to ${(data.of ?? 0) + 1})…`;
+    case 'seed-read': return `· measuring ${data.stages ?? '?'} stage(s) at the seed — each one runs a real toolchain…`;
+    case 'stage': return `·   ${data.stage} [${data.kind}] ${data.verdict} — ${ms(data.durationMs)}`;
+    case 'seed-read-done': return `· seed read done (${data.stages ?? '?'} stage(s))`;
+    // A phase this renderer does not know is PRINTED, not swallowed: the callers
+    // are the library's own seams and a new one appearing unrendered is how a
+    // readout silently stops covering what it reports on.
+    default: return `· ${phase} ${JSON.stringify(data ?? {})}`;
+  }
+}
+
+/** an ABSENT field stays absent — `null`, never a filled-in guess — and every
+ * field that survives goes through the ONE redactor on its way to a file that
+ * outlives the run. `name`/`message`/`code` are short, but `message` is the field
+ * most likely in this whole record to quote a path, a URL or an environment value
+ * back at us, so it rides the same inventory as everything else.
+ * @param {unknown} v */
+const field = (v) => (v === undefined || v === null ? null : redactSecrets(String(v)));
+
+/**
+ * ONE crashed authoring run, ready for the spine.
+ *
+ * It exists because a crash used to leave NO body. `run-author.mjs` awaited the
+ * paid pipeline at the top level, so a throw anywhere inside it went to the
+ * operator's terminal as an unhandled rejection and the spine kept exactly one
+ * line — `author-start` — which is byte-for-byte what a run still in flight looks
+ * like. The terminal scrolls; the spine is the record.
+ *
+ * The STACK is the evidence (the incident that minted this had no idea WHERE the
+ * throw came from), and a stack is the one field here that can be arbitrarily
+ * long and can quote anything the process had open. So it goes through `scrubRaw`
+ * — the ONE persist boundary for a raw blob — which redacts it over the same
+ * `SECRET_PATTERNS` inventory the validator reds on and bounds it with the bound
+ * announcing its own size (F28). Nothing here is hand-rolled: a second spelling
+ * of either rule is how the two drift.
+ *
+ * A non-Error throw (a string, a plain object) is honest rather than coerced into
+ * an Error shape: it has no `name`, so `name` is `null`, and `String(err)` is what
+ * lands in the raw.
+ * @param {unknown} err whatever was thrown
+ * @returns {{name: string|null, message: string|null, code: string|null,
+ *   raw: ReturnType<typeof scrubRaw>}}
+ */
+export function crashRecord(err) {
+  const e = /** @type {any} */ (err);
+  const obj = e !== null && (typeof e === 'object' || typeof e === 'function');
+  const stack = obj && typeof e.stack === 'string' && e.stack ? e.stack : String(err);
+  // ONE level of `cause`, and no recursion: a wrapped throw names its origin in
+  // exactly that field, and `scrubRaw` already knows how a diagnosis becomes
+  // persistable (it redacts `reason` through the same inventory). Walking a chain
+  // would be speculative code standing over a shape nothing here has produced.
+  const cause = obj ? e.cause : undefined;
+  return {
+    name: field(obj ? e.name : undefined),
+    message: field(obj ? e.message : undefined),
+    code: field(obj ? e.code : undefined),
+    raw: scrubRaw({
+      label: 'author-crash',
+      attempt: 1,
+      text: stack,
+      reason: cause === undefined || cause === null ? null : String(cause?.message ?? cause),
+    }),
+  };
 }

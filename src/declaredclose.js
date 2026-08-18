@@ -71,7 +71,7 @@
 import { runStage, makeSeedTrees, STOP_FAULTS, EXIT_RED } from './kinds.js';
 import {
   validateDeclaration, classGuards, genreOwnedEnvNames, ungroundedGenreEnv, GENRE_LANGUAGES, TYPES_GENRE,
-  VERDICT_CLASSES, LIVE_CLASSES,
+  VERDICT_CLASSES, LIVE_CLASSES, NEVER_OFFERED_KINDS,
 } from './authoring.js';
 import { stageGap } from './ralph.js';
 import { isObj, isNonEmptyString } from './validate.js';
@@ -112,12 +112,68 @@ export const DECLARED_GAP_PREFIX = 'close: ';
  * whole judged output rather than a hand-picked slice of it. */
 export const DECLARED_GAP_KEEP = `^${DECLARED_GAP_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`;
 
-/** The verdict class a DECLARED close may claim. Hard, and by CONSTRUCTION
- * rather than by assertion: every live kind is a mechanical command whose
- * measurement is the truth, and the two judgment kinds are locked out at the
- * catalogue (M2) and absent from the executor (M1). Named as data so the job
- * validator reads one hierarchy table rather than hard-coding a class. */
-export const DECLARED_CLOSE_CLASSES = Object.freeze(['hard']);
+/**
+ * The close verdict word for a run WAITING on a person (N4 §1.3/§1.4). A
+ * literal, exported, because three readers key on it — the runner's pause
+ * branch, the ledger's excluded set, and the trend reader's blind rule — and
+ * three hand-spelled copies of one terminal is how they come to disagree.
+ *
+ * It is not in `CLOSE_FAULTS` and must never be added: a fault says the close
+ * could not render a verdict, and this says the close is not FINISHED rendering
+ * one. The first escalates; the second is a checkpoint the operator returns to.
+ */
+export const HUMAN_PAUSE = 'human-pause';
+
+/**
+ * The RUN-level terminal names the hitl class mints one layer up from
+ * `HUMAN_PAUSE` (N4 §1.3–§1.5): the checkpoint, and the honest refusal of the
+ * operator's rerun input. Spelled once here, beside the close-verdict word they
+ * translate, for the same reason `HUMAN_PAUSE` is — the emitters (`planrun.js`),
+ * the ledger's excluded set, the resume reader (`reuse.js`), and the runner
+ * script all key on them, and hand-spelled copies of one terminal is how they
+ * come to disagree.
+ *
+ * There were three (2026-08-17): `hitl-cancel` was the signer's own terminal and
+ * is DELETED with the door it belonged to. A person who does not want to carry on
+ * now PAUSES — the same checkpoint, resumable, retired by the TTL if nobody comes
+ * back — so nothing in this tree mints that name any more. The ledger keeps the
+ * bare string in its excluded set so a spine written before this change still
+ * reads as governance rather than as a capability gap; that is a READER's
+ * backward compatibility, and deliberately not a constant a writer could reach.
+ */
+export const HITL_PAUSE = 'hitl-pause';
+export const HITL_DECISION_RED = 'hitl-decision-red';
+
+/**
+ * The terminals above that leave the run WAITING ON A PERSON — as a list, minted
+ * beside the names it holds so a reader keys on membership rather than on a
+ * spelling, and a rename here travels to every reader for free.
+ *
+ * It is deliberately NOT `reuse.js`'s `CHECKPOINT_OUTCOMES`, which is the wider
+ * RESUME list: every stop that left work on disk and an allowance unspent, money
+ * and time included. Those are governance stops the reuse loop is meant to try
+ * again under its remaining tries; this is the half no further attempt can
+ * change, because the allowance still unspent is a human answer. `CHECKPOINT_OUTCOMES`
+ * is composed FROM this list so the two can never disagree about which is which.
+ *
+ * `HITL_DECISION_RED` is not here: it is a verdict already rendered on the operator's
+ * own input, not a question still open.
+ */
+export const HUMAN_CHECKPOINTS = Object.freeze([HITL_PAUSE]);
+
+/** The verdict classes a DECLARED close may claim. Named as data so the job
+ * validator reads one hierarchy table rather than hard-coding a class.
+ *
+ * `hard` is by CONSTRUCTION: every mechanical kind is a command whose measurement
+ * is the truth. `hitl` joined it at N4 slice 1, and only because `human-confirms`
+ * is genuinely LIVE — the widening and the kind go in one commit, or this table
+ * admits a class the executor cannot render. The `soft` class is still absent:
+ * `judged-floor` is locked, so no declaration can reach above hitl.
+ *
+ * The direction that matters is unchanged. This says which class a declaration
+ * MAY claim; `closeCeiling` says which class its stages actually NEED. A pick
+ * below the ceiling is still the silent upgrade `class-ceiling` refuses. */
+export const DECLARED_CLOSE_CLASSES = Object.freeze(['hard', 'hitl']);
 
 /** @param {any} job @returns {boolean} */
 export function isDeclaredClose(job) {
@@ -135,7 +191,15 @@ export function isDeclaredClose(job) {
  */
 export function declaredStages(closeDecl) {
   if (!isObj(closeDecl) || !Array.isArray(closeDecl.stages)) return null;
-  return closeDecl.stages.map((s) => (isObj(s) ? { ...s, gapKeep: DECLARED_GAP_KEEP } : s));
+  return closeDecl.stages.map((s) => (isObj(s)
+    // RULING 5, stamped by the ARBITER rather than trusted from the artefact:
+    // a judged or human stage is `offer: false` BY LAW, so `checkMenu` can never
+    // hand the agent `check-passes(<a person>)`. The validator refuses a
+    // declaration that says anything else (`human-stage-offered`), so this is
+    // never overwriting a signer-visible value — it is filling in a law the
+    // declaration schema deliberately gives the composer no way to state.
+    ? { ...s, gapKeep: DECLARED_GAP_KEEP, ...(NEVER_OFFERED_KINDS.includes(s.kind) ? { offer: false } : {}) }
+    : s));
 }
 
 // ── the spec-level gate ──────────────────────────────────────────────────────
@@ -361,7 +425,7 @@ export function guardNames(closeDecl, verdictType) {
  * @param {any} r an M1 `StageResult`
  * @param {(s: string) => string} redact
  * @returns {{verdict: string, notes?: string, gap?: string, detail?: string,
- *   exitCode?: number, judgedCount?: number}} `notes` is absent, never empty —
+ *   exitCode?: number, judgedCount?: number, ask?: string|null}} `notes` is absent, never empty —
  *   a field that is always there says nothing; a RED carries its diagnostics
  *   inside `gap` and so has none of its own.
  */
@@ -370,6 +434,13 @@ function translate(r, redact) {
   /** absent rather than empty: a field that is always there says nothing */
   const notes = gapText ? { notes: gapText } : {};
   if (r.verdict === 'green') return { verdict: 'satisfied', judgedCount: 1, ...notes };
+  // THE PAUSE (N4 §1.3) — its own verdict word, and deliberately NOT one of the
+  // three below. `satisfied` would mint a green nobody gave; `needs_revision`
+  // would hand the fix worker a gap the person has not written yet; a
+  // `CLOSE_FAULTS` word would file a working arbiter as a broken instrument.
+  // No `gap` and no `judgedCount`: nothing was judged, and every consumer guards
+  // with `if (gap)`.
+  if (r.verdict === 'pause') return { verdict: HUMAN_PAUSE, ask: r.detail?.ask ?? null, ...notes };
   if (r.verdict === 'red') {
     return {
       verdict: 'needs_revision',
@@ -408,11 +479,12 @@ function translate(r, redact) {
  * @param {any[]} stages declared stage descriptors, already validated
  * @param {(s: string) => string} [redact] the scrub, applied at THIS boundary
  * @param {{timeoutMs?: number, cwd?: string, seedRef?: string,
- *   seedTrees?: any, gapCap?: number, maxBuffer?: number, baselineMode?: 'auto'|'worktree'}} [opts]
+ *   seedTrees?: any, gapCap?: number, maxBuffer?: number, baselineMode?: 'auto'|'worktree',
+ *   humanRuling?: {decision: string, text?: string|null}|null}} [opts]
  * @returns {Promise<any>}
  */
 export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
-  const { timeoutMs, cwd, seedRef, seedTrees: shared, gapCap, maxBuffer, baselineMode } = opts;
+  const { timeoutMs, cwd, seedRef, seedTrees: shared, gapCap, maxBuffer, baselineMode, humanRuling = null } = opts;
   if (!isNonEmptyString(cwd) || !isNonEmptyString(seedRef)) {
     // Refuse rather than guess. A declared close measures against a SEED; a
     // missing one is the close unable to run, not a red about the worker.
@@ -436,6 +508,11 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
     ...(gapCap !== undefined ? { gapCap } : {}),
     ...(maxBuffer !== undefined ? { maxBuffer } : {}),
     ...(baselineMode !== undefined ? { baselineMode } : {}),
+    // the SIGNER's answer, when this close has a human stage and a leg is
+    // carrying one. Absent (null) is the ordinary path AND the pause path — the
+    // human stage reads the absence as "nobody has answered yet", which is the
+    // whole of what a pause means.
+    humanRuling,
     seedTrees,
   };
   try {

@@ -4793,3 +4793,544 @@ grounds:
 - **Scape's own design is context, not adopted.** Its watchdog auto-approvals are an agent
   authoring its own arbiter, and it carries no close and no learning loop — the mechanism read
   is what transfers, nothing downstream of it.
+
+---
+
+## Addendum v1.67 — 2026-08-15 (a KNOWN LIMITATION recorded rather than fixed: the outside watchdog measures silence in CALENDAR time, so a long machine suspend can read as a stall — hamr: *"leave it and mark it in prd as possible known limitations"*)
+
+**DOCS ONLY. Nothing is built and nothing is changed by this addendum.** It records an
+accepted limit of the outside watchdog so it is a known cost rather than a surprise the
+next long run discovers. The ruling is hamr's, in-turn, 2026-08-15: leave the code as it
+is and mark it here.
+
+### 1. The limit, stated so it can be recognised in an artifact
+
+`scripts/u-watchdog.mjs` — the separate-process guard F67 built, because a guard inside the
+run shares the run's fate — measures the run's silence with **calendar time**: `Date.now()`
+at every poll, against the spine file's `mtime`/size from one `stat(2)`. Its `stale` trigger
+is the one that fires on **inactivity alone**; it carries no deadline term at all (the
+decision table's first row is `any | cold >= staleMs | KILL 'stale'`).
+
+A machine **suspend** freezes the watchdog exactly as it freezes the run — both live in the
+operator's own `user.slice`, and the separate process is separate from the run, not from the
+kernel. The wall clock, however, keeps running across the sleep. So the FIRST poll after wake
+reads the whole suspended interval as spine silence: `spineColdMs` comes back as the entire
+sleep, which is unconditionally past any `staleMs` window, and the guard kills a run that is
+alive and about to produce its next byte. F72 recorded this happening: a healthy run, 12.2
+minutes in and walking a typecheck gap 61 → 20, was killed on the first post-thaw tick with
+`coldMs 27,108,007` against `staleMs 4,200,000` — the response it was waiting on completed
+**6 ms** later.
+
+**The secondary skew, same cause, different severity.** `startedAt` is also `Date.now()`, so
+`elapsed` includes suspended minutes. Post-suspend the watchdog can therefore consider a run
+**past deadline** while the run's own wall still has time left. This one does NOT kill a
+working run: the `wall-dead` trigger requires the spine flat for `deadMs` **as well as** the
+deadline passed, so an active run survives it and merely gets the LOUD `PAST DEADLINE …
+NOT killing` line every poll. It is a reporting divergence between two clocks, not a stop.
+
+### 2. Why it is LEFT AS-IS
+
+- **The standing mitigation is operational and already in the launch path.** Paid runs hold
+  `systemd-inhibit --what=idle:sleep`, which is what actually prevents the machine from
+  suspending under a run at all. Both `run-u.mjs` and `run-reuse.mjs` now PRINT that
+  invocation at launch, so the protection is in front of the operator rather than in a
+  memory rule.
+- **The half that charges money is already fixed, and monotonically.** The *runner's* own
+  clock (`src/clock.js`) reads `performance.now()` — libuv's `uv_hrtime`, which does not
+  accrue across suspend — since `f154eb2`. Suspended minutes never charge against a signed
+  wall. The remaining exposure is the watchdog's read of *silence*, not the arbiter's read of
+  *time spent*.
+- **The fail-safe direction is right, and the alternative is worse.** A guard that cannot
+  distinguish a frozen event loop from a frozen machine must err toward killing: F67 exists
+  because an 81.5-minute wedge produced no bytes and no guard fired. Teaching this one to
+  discount suspended intervals would widen the exact window F67 was built to close, and it
+  would do so with a second clock source inside a file whose whole design is "no shared code,
+  no shared failure, one `stat(2)` per poll".
+- **A killed run is not a lost one.** The kill is recorded before the signal goes out
+  (`<spine>.watchdog.json`, reason `stale`, with the marker's value and age), and resume is
+  STEP-level — so the cost of this limit firing is a resumable stop with a written cause, not
+  a silent loss.
+
+### 3. Cross-references
+
+- **F72** (`docs/FINDINGS.md`) — the measured instance, including the journal-reconciled
+  timeline and the timezone confound that first produced a false *"the watchdog failed"*
+  reading. It did not fail; it fired exactly as specified, on a premise the sleep had
+  invalidated.
+- **The W-3 ruling** (hamr, 2026-07-30, verbatim): *"the kill from outside should check for
+  activity/bytes or other markers for activity, not a silent kill"* — which is why the
+  `stale` trigger reads bytes at all, and why this limit is a **wrong premise about what
+  silence means**, never a silent clock-only kill.
+
+### 4. Not claimed
+
+No claim is made that the limit is rare, and none that the inhibitor is airtight — a run
+launched without it is exposed, which is precisely why the launch banner prints it. If this
+fires again on a run that WAS inhibited, that is new evidence and belongs in FINDINGS, not
+under this park.
+
+---
+
+## Addendum v1.68 — 2026-08-15 (hamr drives the terminal interview himself and rules on it: the repo question is DROPPED, the scope question is WIDENED, and the prose stops citing findings at the person answering)
+
+**Source: hamr running `scripts/run-interview.mjs` end to end, not a review.** Every change here
+is his wording or his ruling, recorded verbatim where it was a ruling. The interview questions
+are frozen artefacts (prereg §5, PRD v1.57 §2), so a change to them is an amendment, and this
+is it.
+
+### 1. Q6 — *"Is there a code repo I can look at? Where?"* — is DELETED (hamr: *"drop Q6"*)
+
+**The question was asking for something the system already had, in a worse form.** The
+repository reaches `runInterview` as `repoPath` — STRUCTURED, MANDATORY input, taken from
+`--patient`, which both `run-interview.mjs` and `run-author.mjs` refuse to start without
+(*"the close is authored against a repository on this machine, never out of prose"*). Nothing
+downstream ever read the answer: the scout reads `repoPath`.
+
+So the slot could only do two things, both bad. It taxed a non-engineer with a question the
+machine had already answered — the exact SWE tax this product's premise refuses. And it opened
+a second channel for one fact, which is how two answers drift apart. hamr's own answer on the
+live run was *"Yes — the patient itself."*: a true sentence carrying no information, typed by
+the person who had just passed the path on the command line.
+
+**The set RENUMBERS contiguously from 1** rather than leaving a hole at 6. The number a person
+is shown is the key their answer is filed under, and a gap is a hole in a form nobody can
+explain. Consequences, stated because they are silent otherwise:
+
+- the green set is **five** questions; hitl is those five plus the signer's ask, which is now
+  **6**, not 7;
+- **nothing hardcodes a count.** `run-author.mjs`, `run-interview.mjs` and the suite all read
+  `requiredAnswersFor(cls)`. Two slots have now been deleted from this set (D13's genre confirm,
+  then this one) — a literal would have gone stale twice while still passing once;
+- **an `answers.json` written before this change is silently MISREAD.** Its key `6` was the repo
+  answer and now reads as hitl's signer-ask; its key `7` — the real signer-ask — is dropped as
+  unasked, and `runInterview` returns `ok` because the five it requires are all present. The
+  remedy is to re-run the interview, which costs $0 and calls no model. **No compatibility shim
+  was built and none is proposed silently**: a mechanical detector is available if hamr wants one
+  (a live class asks at most six questions, so an answers file carrying a key `7` can only be
+  old-shape and could be refused outright) — it is named here and NOT built, because what
+  `runInterview` accepts is admission territory.
+
+### 2. Q2 is WIDENED — the read-only half of the same decision
+
+Now: *"Which files or folders should change? And which files should the work read or draw from
+(they stay untouched)?"* One decision for the person answering — what the work touches, and what
+it touches only to look at — so it is one answer, not two slots. The composer already had a use
+for the second half and no channel that carried it.
+
+### 3. The interview's own prose: no finding numbers at the person answering
+
+**A finding number in a user-facing prompt is a private reference standing where an instruction
+belongs.** The person answering has not read the findings and never will. Three prompts were
+re-worded to hamr's own wording; the RULES behind them are unchanged in every case:
+
+- **the GOAL prompt** stops printing *"F87, paid for in a live run"* and states the same law as
+  a price the person can act on: say everything you'll check, because *"anything you leave out
+  here still gets checked at the very end, and finding it only then wastes the run's money"*;
+- **the FENCE prompt** says what a fence IS before saying what may not be done to it — the files
+  the worker may WRITE, everything else read-only, patterns relative to the repo root, and
+  absolute paths refused *because the run works on a copy of the repo* (which is also the
+  standing patients-are-copies rule, now said where it bites);
+- **the multi-line hint** spells the keystroke instead of naming the convention: *"press Enter on
+  an empty line, i.e. Enter twice, to finish an answer"*.
+
+**Q6 of the hitl set (the signer's ask) keeps its wording** on hamr's earlier call. A SWEEP of
+the remaining user-facing lines for internal jargon was run and reported to hamr; **nothing else
+was changed**, because user-facing prose needs his sign-off before it lands.
+
+### 4. Not claimed
+
+This addendum changes what is ASKED and how it is worded. It changes nothing about what the
+close judges, what the validator admits, or what any signature covers — no signed spec hash
+moves. The one behavioural risk it creates is the stale-`answers.json` misread in §1, and that
+is stated rather than papered.
+
+---
+
+## Addendum v1.69 — 2026-08-15 (an external fold: ONE practice is ADOPTED — the model-bump dead-weight replay — and two industry convergences are RECORDED with no doctrine moved)
+
+**DOCS ONLY. Nothing is built and nothing is fired here.** The origin is an outside source read
+and accepted this session: **"The evolution of agentic surfaces"**, Gagan Bhat & Isabella Kai He
+(Anthropic Applied AI — Claude Managed Agents), YouTube `K0X9QDRkIdg`. The full fold — what they
+found, and where each item lands on this repo's map — is the context document
+`docs/00-context/HARNESS-TALK-LEARNINGS.md`, written on the RSI-LEARNINGS pattern. As with that
+fold, the context document changes no doctrine by itself; this addendum is where the one adopted
+item enters the record, so it can be assessed when we come to it.
+
+### 1. ADOPTED — the model-bump dead-weight replay
+
+**The practice.** On every **worker-model tier change**, a **$0 archive replay** runs before the
+first paid row, asking one question: *which guards, rules and prompt registers here were built
+for failure modes the new model no longer produces?* Every candidate is named with the finding
+that minted it and the evidence that would retire it, and is then **PARKED for hamr's word**.
+Nothing is deleted on assertion, and nothing is deleted because a model looks stronger.
+
+**Origin, and why it is not just borrowed.** Their case was concrete: reset logic written for
+Sonnet 4.5's "context anxiety" became, on Opus 4.5, pure added latency and a cache-killer —
+scaffolding that encodes what a model *can't* do turns into dead weight the moment the model
+can. That is the general form of **F41**, which this repo paid for from the other end: Layer R's
+fixation detector was extinct on every current job *before it shipped*, and ships OFF by default
+for that reason. F41 found it by accident, in an archive sweep run for another purpose. The
+convergence is what makes it worth a habit: a guard against a real, measured failure quietly
+becomes cost the day the failure stops happening, and **nothing in a healthy system ever
+announces that it stopped**.
+
+**The trigger is the BUMP, not a build.** This is deliberately not a scheduled chore and not a
+rung. The standing worker tier is `claude-sonnet-5`; the next time that pin moves, the replay
+runs first. Its mechanics are the standing **no-paid-fire-before-archive-read** rule's — archived
+spines, gate audits and ladders only, no model called, cost $0. Its bar for actually retiring
+anything is the F40 park's bar: a measurement, or hamr's word, in that order.
+
+**What it is expected to surface**, so its first firing has something to be checked against: the
+fixation detector (already OFF), the strike ladder's threshold (chosen by $0 replay over 110
+archived ladders), the mailbox rule and the exit-freedom law (both minted against specific
+observed model behaviours), and the no-shell drafter register. Naming them here is a prediction,
+not a verdict — a replay that retires none of them is a valid and informative result.
+
+### 2. RECORDED — two convergences, no doctrine changed
+
+Both are corroboration from an independent direction, and neither moves a bar:
+
+- **"Dreaming"** (their offline batch distillation of session logs into agent memory, which
+  "returns measurably smarter") cross-validates **Layer 3's ambition** and the confirmed product
+  goal of the ledger/logs as a cross-workflow trend instrument. It names **no control**, so it
+  is evidence for the ambition and for nothing else. The **kill-switch bar stands unchanged**:
+  paired inheritance-ON vs inheritance-OFF on the same non-identical job set, only the
+  normalized difference counts, plus a memorization audit before any rule inherits — because
+  CL-BENCH's read is still that memory systems LOSE to plain in-context learning once base
+  capability is subtracted.
+- **"Outcomes"** (developer rubric + parallel grader agent + retry-until-pass; outcome-based
+  convergence preferred over step-by-step instruction) cross-validates the **close/gap/retry
+  spine** and the **Aug-4 shape-lottery result** — one step over the whole territory with a real
+  check and iterate greens 7/7 across the archive, while per-file decomposition with an early
+  whole-goal check has 0 honest greens ever. The **judged-floor requirement stands unchanged**:
+  a rubric close is self-consistency in disguise and needs a frozen calibration set graded
+  correctly first; deterministic closes remain first, and the judged/human verdict classes stay
+  declared-but-locked until that floor exists.
+
+### 3. Not claimed
+
+No claim that the talk is evidence for anything — it carries no n and no controls, and nothing
+in it was replicated here. No finding number is minted (`docs/FINDINGS.md` is untouched:
+findings there are grounded in this repo's own runs and logs). No budget, no rung and no
+sequencing changes. The adopted practice is **unfired**; when its trigger first pulls, what the
+replay finds is a finding and belongs in FINDINGS, not in the context document.
+
+## Addendum v1.70 — 2026-08-16 (a named feature to TRY: the HARNESS TIGHTNESS AUDIT — one $0 sweep asking whether a rule is dead weight or friction TODAY, a paired rule contrast behind hamr's word, the tier question kept separate — and the arbiter law that keeps a run from ever tuning itself — hamr: *"what other feat we should add and fold into prd"*)
+
+**DOCS ONLY. Nothing is built, nothing is fired, and no number is picked here.** This addendum
+names a feature to be tried and specifies it well enough that it can be fired on hamr's word
+without a fresh design session. Its origin is hamr broadening v1.69 after the harness-talk fold
+was read a second time (the full transcript; the second-read rows live in
+`docs/00-context/HARNESS-TALK-LEARNINGS.md`).
+
+### 1. The question v1.69 cannot ask
+
+v1.69's **model-bump dead-weight replay** is triggered by a **tier change** and asks one question:
+*is this rule too tight for TOMORROW's model?* It is a good habit and it stays exactly as written.
+But it has a waiting problem: the pin is `claude-sonnet-5` and it may not move for a long time,
+while every rule in the harness is being paid for **today** — in latency, in cache damage, in
+drafting friction, and in runs that hit a wall the rule put there.
+
+The **harness tightness audit** asks the same family of question **without waiting for a model
+change**: *is this rule too tight, or too loose, RIGHT NOW, at the tier we actually run?* It is
+three steps, and only the first is free.
+
+### 2. Step 1 — the $0 archive sweep (fireable on hamr's word; no model, no money)
+
+Over **all archived spines and gate audits**, per **enforced harness rule** — validation-gate
+rules, drafter prompt registers, and guards — the sweep produces two candidate lists:
+
+- **(a) Never fired = dead-weight candidates.** A rule with zero firings across the whole archive
+  is either protecting against something extinct, or unreachable. Both are worth knowing; F50's
+  silently-ignored `layerRoot` is the reminder that *wired* and *the code exists* are different
+  claims, and an unreachable rule reads identically to an extinct one from the outside.
+- **(b) Fired repeatedly on runs that later greened anyway = friction / too-tight candidates.** A
+  rule that keeps stopping runs which then succeed is buying refusals, not safety. This is the
+  measurable form of "the rule costs more than it prevents".
+- **(c) The too-LOOSE side is deliberately NOT duplicated here.** It is already covered
+  continuously and by better instruments: `docs/FINDINGS.md`, the guard batteries, and the
+  standing RSI rule that **verifier hardening never ends** (every battery pass asks "did the
+  worker exploit the close?", and finding nothing is itself suspicious). The audit **records this
+  asymmetry** rather than building a second, weaker loose-side detector — a too-tight rule has no
+  standing instrument, a too-loose one has three.
+
+The sweep's mechanics are the standing **no-paid-fire-before-archive-read** rule's: archived
+artifacts only, no model called, cost $0. Its output is a **named candidate list with the finding
+that minted each rule** — never a change.
+
+### 3. Step 2 — the paired rule contrast (only if step 1 names a suspect; hamr-approved per fire)
+
+If and only if step 1 names a suspect worth paying for: **same job, same tier, rule-ON vs
+rule-OFF.** That answers "too tight **for the current tier**" with a control instead of an
+argument. Two precedents already exist in this repo and both are the shape to copy:
+
+- the **Gate 2 POC's C1 control** — the guard-stripped arm, which refuted its own prediction and
+  left D5 standing on *sufficiency, not necessity*;
+- the **scout ON/OFF 2×2**, which refuted "the scout is dead weight" for about a dollar.
+
+Both precedents cut the same way in the end: a rule that *looked* like dead weight survived the
+contrast. That is the expected outcome and it is a useful one — the contrast exists to make the
+removal case pay for itself.
+
+### 4. Step 3 — the tier contrast (a SEPARATE question, never folded into step 2)
+
+**Same job, identical rules, sonnet vs opus.** That answers a different question: *which rules are
+tier-load-bearing?* — i.e. which exist only because of what the current tier does. The precedent is
+the **`--model haiku` probe**, which reproduced the mailbox trap verbatim downward and told us the
+rule was tier-independent in that direction. Step 3 is effectively a **live preview of v1.69's
+model-bump replay**: it reads the tier axis before the pin moves, instead of after.
+
+**Never toggle a rule AND a tier in one arm.** That is the standing two-changes-one-pass rule —
+a delta produced by two simultaneous levers is unattributable to either, and gets recorded
+INCONCLUSIVE rather than as evidence for the more convenient story.
+
+### 5. The arbiter law, restated — because this feature sits right next to it
+
+A tightness audit is the closest thing in this product to a system tuning itself, so the line is
+restated rather than assumed:
+
+- **Probes only PROPOSE.** The audit's output is a candidate list. **hamr parks or retires**; the
+  bar for actually removing a rule is the F40 park's bar — a measurement, or hamr's word, in that
+  order.
+- **No run ever adjusts its own harness in flight.** The self-healing machinery — the stall fuse,
+  the outside watchdog, F32 crash routing, the strike ladder, replan, resume — heals **execution
+  inside a fixed harness**. It never edits the harness.
+- **Self-healing is the SENSOR this audit reads, offline.** Repeated same-shape strikes across
+  *cold* runs are exactly the scar tissue that names a too-tight rule, and they are already
+  spine-recorded. The audit reads those scars after the fact; the healing machinery keeps knowing
+  nothing about them. **The two must never merge** — a loop that could relax the rule it keeps
+  hitting has authored its arbiter, which is the one thing this product does not do.
+- **Any threshold or decision number this audit ever needs is hamr's**, under the standing
+  no-agent-threshold-picking rule. None is picked here, and none is needed to fire step 1.
+
+### 6. One line carried from the same second read — the export rung's network fence
+
+Recorded here rather than by editing the signed export direction (v1.44 §2–§3, which is not
+rewritten): **the exported bundle's environment may deserve an outbound network allow-list** — the
+network mirror of the write fence, where the fence bounds what a run may *write* and an allow-list
+bounds where it may *talk*. Origin is the harness-talk second read (their Environment primitive
+runs "with the networking limited and allowed hosts only"). It is **irrelevant locally** by
+standing ruling — bareloop is local-trust and the blast radius is a copied patient on a work
+branch — and stops being irrelevant only when a bundle runs headless on a foreign machine under an
+operator who did not author the job. **Assess when the export rung opens**; nothing is decided,
+nothing is scheduled, and the local posture is unchanged.
+
+### 7. Not claimed
+
+The audit is **unfired** and has produced no candidate, so nothing here says any rule is dead
+weight — the two named candidate *classes* are a specification, not a finding. No finding number
+is minted. No budget, rung or sequencing changes, and step 1 is not scheduled: like everything
+paid-adjacent, it waits for hamr's word.
+
+## Addendum v1.71 — 2026-08-17 (the verdict classes are REKEYED after the first live hitl loop: **hitl is RETIRED as a class**, its pause becomes the REVIEW DOOR at the end of EVERY run — which never changes the loop's own verdict — a rerun becomes a FRESH ENGAGEMENT with its own money and time, a halt records its FULL state including any pending human decision, and **softgreen becomes the forward path** on a LOCATE+DECIDE judged floor — hamr: *"it's hard to apply deterministic flow on a probabilistic throughput"*)
+
+**DOCS ONLY. Nothing is built here and no build is authorized.** The origin is five runs fired
+today on `litectx-maintainer` — the first live hitl proving loop — plus a second authoring run
+on a documentation job. The full design is the record
+`docs/02-features/2026-08-17-softgreen-review-door-design.md`; the evidence is F102–F105 in
+`docs/FINDINGS.md`, grounded in spines under `bareloop-patients/litectx-maintainer-bareloop/`.
+This addendum is where the rulings enter the contract.
+
+### 1. What the live loop proved, before anything was changed
+
+N4 slice 1 executed. Run `mswks15g` ($2.95, 28.6 of 30 min) drove litectx `src/` from 64 strict
+errors to 0 through the worker's own check loop; the AUTHORED `no-suppressions` stage caught the
+cheat genre twice and the worker undid both honestly; all seven mechanical stages went
+satisfied; the `human-confirms` stage produced the **first hitl pause in programme history**,
+with the evidence package, the three doors, the W-2 clock stop and the 60-day checkpoint all
+behaving as specified. **The class is not retired for a defect.** It is retired for what it asks
+of a composer and of a person — §2.
+
+Two real defects did surface and they are carried into the next build rather than parked:
+**F102** (a pending rerun decision does not survive a wall-halt → resume; the human paid the
+same decision twice, live) and **F103** (the wall folds across legs, so a decide-time rerun
+inherits leftovers). **Rerun CONVERSION is UNPROVEN-LIVE** — the signer's words reached the fix
+worker and nine rounds ran on them, and zero writes landed before the wall. Blocked, not
+refuted.
+
+### 2. RULING — `hitl` is RETIRED as a verdict class. The classes are `green` + `soft-green`
+
+hamr's reasoning, recorded verbatim because the reasoning IS the ruling:
+
+> *"checkers are subjective human experience that they should grade for"*
+
+> *"hitl should be at every step, which is more like a chat, then do it in regular chat"*
+
+> *"it's hard to apply deterministic flow on a probabilistic throughput"*
+
+The forcing evidence is F104: a second authoring run composed a close for *"document every
+exported function in `src/` with accurate JSDoc"* and, because **no kind in the catalogue can
+count documentation**, reached for the strict typecheck as a **PROXY** work stage — its own note
+called it *"intentional calibration"*. The machines could not see documentation at all. A
+harness that forces a mechanical stage onto a job with no mechanical shadow manufactures a
+proxy, and a proxy is precisely what F87 taught this programme not to trust.
+
+`soft-green` stays **declared-but-locked** until the judged floor of §5 exists. The standing
+quarantine ruling is unchanged; it now has a build behind it.
+
+**This supersedes** the v1.57 radio's third value and the sequencing note that put hitl first
+(2026-08-13 build record, now closed with a forward addendum). It does not supersede anything
+about how a person relates to a run — that moves to §3.
+
+### 3. RULING — the pause machinery is RE-HOMED as the REVIEW DOOR, and the door never changes the verdict
+
+Nothing built for slice 1 is deleted. The pause, the evidence package, the three doors, the
+checkpoint, the TTL, the clock stop and the rerun-text-as-gap seam move **one level out** —
+from a stage inside the close to **the door at the end of EVERY run**, green and softgreen
+alike.
+
+**The law, hamr verbatim:** *"it's important not to change the loop self verdict."* The close
+mints the verdict; the door records a **disposition**. A green stays green in the ledger,
+forever, whatever the person then does with it.
+
+- **green** — the close mints it before the door opens; the door is **non-blocking**. `accept` =
+  confirmation, and the gate that releases reuse / learning credit. `rerun` = a fresh
+  engagement (§4). `cancel` = **disposition only** — *"the verdict stands, but I'm not taking
+  the merchandise"*: the discard branch, nothing graduates, the ledger's green untouched.
+- **soft-green** — the same door, with one addition while the judge is young: **`accept` is
+  what releases the run's learning credit** (the quarantine ruling, finally with a mechanism),
+  and **the signer's accepts double as the judge's ongoing report card**.
+
+### 4. RULINGS — a rerun is a FRESH ENGAGEMENT, and a halt records FULL state
+
+**Fresh engagement**, hamr verbatim: *"redo/rerun comes with new authoring for money+time and
+keeps accounting of this far and this session separate counters"*. A rerun authors its own
+money and its own time at the moment the person takes the door; it **never scavenges** the
+corrected run's leftover wall (F103's direct cure). The ledger carries **two counters side by
+side** — *cumulative so far* and *this engagement*. The corrected run's verdict is untouched.
+
+**Full-state checkpoint**, hamr verbatim: *"on any wall hit time/money/strikes notes/progress
+should be recorded"*. On any wall or halt the checkpoint records time and money against the
+signed caps, the ladder's strike state, notes/progress/trend, **and any PENDING HUMAN
+DECISION** — and a resume carrying one **re-enters the FIX LOOP with it, never the ask**. That
+last clause is F102's missing primitive stated as a rule.
+
+### 5. RULING — the softgreen design, agreed in principle (*"we can try it"*)
+
+Summarised; the record carries it in full.
+
+- A new locked kind **`judged-floor`**, on the **LOCATE + DECIDE** pattern. The shape is
+  borrowed from bareguard's e6 judge A/B — **a POC that never shipped**; we import only
+  **shipped primitives** (bare-agent 0.36 `judge`/`calibrate`/`judgeToAnnotation`, bareguard
+  0.13's annotation drain) and the `decide()` rulebook is **written fresh in bareloop,
+  arbiter-owned**. Graduation is a rewrite, never a copy.
+- **The judge never utters a verdict.** Pinned `claude-haiku-4-5`, never agent-selectable, it
+  **EXTRACTS FACTS WITH QUOTES** from the **authoritative artifact** (the real diff, never the
+  worker's summary); a deterministic arbiter-owned `decide()` renders per-item pass/fail;
+  first-red-wins composes. bareguard's A/B is why: **`judgeVerdict` is injectable,
+  `judgeLocate` is not** — there is nothing to argue into. Axis rule carried over: *"B always
+  surfaces; only A halts."* **Unsure = red**; decisive binary stays.
+- **The rubric card comes from interview Q6** (*"When you judge the result yourself, what
+  separates a pass from a fail? Name the few things you actually look for."*), compiled at
+  interview time into extractable items D5-style: LLM proposes the rewrite, **the signer signs
+  it**, enumerated in the hash; a card change is a re-sign. **Documented ceiling** (bareguard
+  §6.4, mapping to F87): the judge catches violations of **stated card items only** —
+  omissions, and lies needing an oracle, fall to the review door, and the fix is **a new card
+  line and a re-sign**, never a smarter judge.
+- **Calibration comes from Q7** (*"Give one example you'd pass and one you'd fail, and say
+  why."*): a frozen set, LLM proposes / signer signs, and **the WHOLE pipe — extraction AND
+  `decide()` — must grade it correctly with itemized reds BEFORE the close is signable**. A
+  **judge-model bump forces recalibration** (v1.69's replay rule aimed at the one component
+  whose job is a stable ruler).
+- **Composition law:** mechanical stages first, judged stage after, first-red-wins; the judged
+  stage is `offer:false`, metered from the same wallet, and **SKIPS the seed-verdict read**
+  because its bar comes from calibration. **That dissolves F104's inexpressibility** — the
+  judged stage IS the work stage, so a resume-tailoring job becomes expressible without a
+  manufactured mechanical shadow.
+- **The softgreen interview is SEVEN questions:** green's five, byte for byte, plus Q6 and Q7.
+
+### 6. Sequencing
+
+1. **Softgreen + the review door are ONE rung, and they are next** — the door is where
+   softgreen's learning credit is released, so shipping the floor without the door ships a
+   class with a quarantine and no unlock.
+2. **The F102 / F103 primitives ship inside it**, not behind it: the door does not work without
+   a checkpoint that carries a pending decision, or without a rerun that funds itself.
+3. **Resume-genre jobs now wait on softgreen's judged floor, NOT on doc-genre mechanical
+   kinds.** This **reverses** the standing note that blocked doc-genre jobs behind widening the
+   catalogue. Tonight's evidence is why: the mechanical route for subjective work produces a
+   proxy, and a proxy is worse than an honest refusal.
+
+### 7. Not claimed, and one open threshold
+
+- **OPEN, reserved for hamr:** the calibration set's SIZE is a threshold, and no number is
+  picked here — the standing no-agent-threshold-picking rule binds.
+- **No claim that rerun conversion works** (delivery proven, conversion unproven-live).
+- **No claim that `judged-floor` works.** Nothing is built; bareguard's A/B is evidence about
+  bareguard's judge on bareguard's task, and the borrow has to earn its own calibration here.
+- **No claim the hitl machinery was defective.** It executed correctly on its first live firing.
+- **NO BUILD IS AUTHORIZED.** These are decisions; the build waits for hamr's explicit go.
+
+---
+
+## Addendum v1.72 — 2026-08-18 (the review door's third button is PAUSE: **cancel is deleted as a concept**, an unresumed pause expires under the existing checkpoint TTL, and the `hitl-cancel` terminal stops being mintable — hamr: *"what's the point of cancel anyways? pause can resume — that would be more honest"*)
+
+v1.71 §3 put the review door at the end of every run with three buttons: accept / rerun /
+cancel. This addendum re-cuts the third one. It is a small change with one law behind it: a
+door must not force a permanent decision at the moment a person has least reason to make one.
+
+### 1. The ruling
+
+hamr, near-verbatim:
+
+> *"rerun implies I don't like it, go again"* · *"what's the point of cancel anyways? pause can
+> resume — that would be more honest"* · *"for green I can pause and it would resume from
+> beginning of last step, and in softgreen it can pause"*
+
+**The doors are `accept` / `rerun` / `pause`.** `cancel` is deleted — not renamed, not kept as
+an alias, not reachable behind a flag. `HUMAN_DECISIONS` is the enumerated set the whole
+surface derives from, so the deleted door is now *inexpressible* rather than rejected after
+the fact (the standing hand-over-the-enumerated-set rule).
+
+### 2. What pause does, exactly
+
+- **Nothing is run and nothing is spent.** No worker round, no fix loop, no allowance moved.
+- It does **not** consume the one-shot rerun allowance. The same three doors are open next time.
+- It mints the ordinary **`hitl-pause` checkpoint terminal** — the same one a machine-side pause
+  mints — which is what keeps it resumable. The run re-enters **at the start of its last step**,
+  on a green run and (when it ships) on a softgreen run alike: one checkpoint mechanism, not two.
+- The record carries an explicit **`humanDecision: 'pause'`**. *A person looked and kept it* and
+  *nobody has looked yet* are two different facts; one record spelling both is how a reader
+  comes to confuse them.
+
+### 3. The TTL IS the cancel case
+
+An unresumed pause needs no machinery of its own: it expires under the existing 60-day
+checkpoint TTL (`PAUSE_TTL_MS`). That expiry produces exactly cancel's end-state — the run is
+abandoned, its branch left as it was, nothing graduates, the ledger's verdict untouched. The
+difference is only in what the door demands of the person, and it demands nothing. Somebody who
+never comes back gets cancel's outcome for free; somebody who changes their mind keeps the work
+they already paid for.
+
+v1.71 §3's disposition reading of cancel (*"the verdict stands, but I'm not taking the
+merchandise"*) is retired **as a door**. The law underneath it is untouched and still binding:
+**the door never changes the loop's own verdict.**
+
+### 4. `hitl-cancel` stops being mintable
+
+The terminal is gone from every live path and the constant no longer exists. The ledger keeps
+the bare string `'hitl-cancel'` in its excluded-escalation set — the `gate-red` precedent
+exactly: this set is executable, and dropping a name does not delete the category, it re-files
+any spine that still carries one as a counted capability gap against a library that did nothing.
+**A reader must keep recognising what a writer can no longer write.** Evidence for the choice:
+no spine on disk anywhere carries the string (the door never fired live), so the entry is pure
+forward-compatibility for exported bundles and older artifacts, not live bookkeeping.
+
+`hitl-decision-red` is unchanged: a malformed decision is still an honest refusal of the
+operator's own input, and refusing the now-deleted word `cancel` is one instance of it.
+
+### 5. One honest-naming fix that travelled with it
+
+A paused row in the reuse readout and the resume reconstruction was classified `casualty`.
+It is not one: a casualty is a run that DIED, and a human checkpoint is the opposite fact in
+every respect — nothing failed, nothing is discarded, and the allowance still unspent is a
+person's answer. The class is now **`checkpoint`**, which is what every other reader already
+treated it as (the loop hard-stops on it, the box is left untouched); the row was the last
+place the machinery mis-described itself.
+
+### 6. Not claimed
+
+- **No claim about softgreen.** Softgreen is still unbuilt; this states what its door will be.
+- **No live firing.** The pause door has not been exercised on a paid run; it is test-proven,
+  including a sabotage-proven checkpoint classification.
+- **The arbiter does not move.** No budget, cap, fence or merge semantics change here.
