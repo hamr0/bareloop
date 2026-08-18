@@ -30,7 +30,7 @@ import { createTrend, FIX_STRIKE_LIMIT } from './trend.js';
 import { TOOL_MENU, STORE_VERBS, checkMenu } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, strategyFor } from './tools.js';
 import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
-import { validateBridge, loadGate, newestEligibleVersion, reuseEligibility } from './bridges.js';
+import { validateBridge, loadGate, newestEligibleVersion, reuseEligibility, quarantinesCredit } from './bridges.js';
 import { extractArtifact } from './text.js';
 import { defaultJudgeLoop } from './judged.js';
 import { createClock, isWallTimeout } from './clock.js';
@@ -38,6 +38,7 @@ import { isDeclaredClose, runDeclaredStages, validateCloseDecl, closeGrade, HUMA
 import {
   seedAtHead, seedListing, changedSet, GAP_TRIM_MARKER, GATE_AUDIT_FILE, ARBITER_BOOK_STORES,
   HUMAN_KIND, HUMAN_DECISIONS, normalizeHumanRuling, resolveHumanRuling,
+  REVIEW_DOOR, doorOpens, mechanicalStages,
 } from './kinds.js';
 import { workBranchName, prepareWorkBranch } from './workbranch.js';
 
@@ -132,6 +133,24 @@ function materialsBlock(m) {
   // and it is the adaptation channel (addendum 2). At draft there is no progress.
   if (m.progress) lines.push(`- where the run got to: ${m.progress}`);
   return `\nWhat this run has left to spend — plan within it:\n${lines.join('\n')}\nThese are totals for the run, not per-step allowances. Nothing here is a rate: a step's cost depends on what it does.\n`;
+}
+
+/**
+ * MODULE 8 — the signer's words, when this leg is a RERUN taken at a previous run's
+ * review door (PRD v1.71 §3.4: *"redo/rerun comes with new authoring"*).
+ *
+ * It is stated as a REQUIREMENT beside the goal, not as a replacement for it: the
+ * signed goal and the signed close are unchanged, and what the person added is the
+ * half a machine could not see. The block also says what the previous run's verdict
+ * WAS, because the planner would otherwise draft against a tree that already passes
+ * the close with no idea why it is being asked to do more.
+ *
+ * Empty/absent renders '' — every existing prompt is byte-identical.
+ * @param {string|null|undefined} note
+ */
+function doorNoteBlock(note) {
+  if (typeof note !== 'string' || !note.trim()) return '';
+  return `\nA previous run of this job satisfied the close, and the person who owns it REVIEWED the\nresult and asked for another pass. Their words, which are a requirement this plan must\nmeet on top of the goal above (the goal and the close are unchanged):\n${note.trim()}\nThe close will judge the result exactly as it judged the last one — passing it again is\nnecessary and is not sufficient.\n`;
 }
 
 /**
@@ -349,8 +368,14 @@ export function boundedNote(bounded, rounds) {
  *   Rule A-v2's law (final write step only, framed wide). `priorChecks`: the predecessor
  *   plan's carried checks, replan phase only — Rule B's law (keep every one). Empty/omitted
  *   renders byte-identically to the pre-rules prompt.
+ * @param {string|null} [doorNote] MODULE 8 — the signer's own words, when a previous run
+ *   of this spec ended at the review door and they took the RERUN door. Additive and
+ *   omitted-by-default, so every existing caller renders byte-identically. It is a
+ *   REQUIREMENT the plan must meet, never a replacement for the goal: the signed goal and
+ *   the signed close are unchanged, and what the person added is what the machine could
+ *   not see.
  */
-export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, startingDraft = null, checkFacts = {}) {
+export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, startingDraft = null, checkFacts = {}, doorNote = null) {
   const scopeMenu = Array.isArray(scopes) && scopes.length ? scopes : legalScopes(job.writeScope ?? []);
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
   // The shape-lottery laws, stated where the check menu is offered (the mailbox
@@ -430,7 +455,7 @@ ${scopeMenu.map((s) => `  ${JSON.stringify(s)}`).join('\n')}
 
 Goal:
 ${job.goal}
-${materialsBlock(materials)}
+${doorNoteBlock(doorNote)}${materialsBlock(materials)}
 Repository survey (from a read-only scout):
 ${scoutBlob || '(no scout notes)'}`;
   let p = doc;
@@ -624,12 +649,25 @@ ${scoutBlob || '(no scout notes)'}`;
  *   is the ledger's one level up, and `remainingUsd` already nets this fold against the
  *   signed budget on every path (the signed budget is the chain's ceiling, and a rerun
  *   spends what remains of it — never a refill). Reporting, never governance.
+ * @param {boolean|null} [opts.reviewDoor] MODULE 8 — does this run END at the review
+ *   door (PRD v1.71 §3)? `true`/`false` is the operator's explicit choice in either
+ *   direction; absent is the CLASS default (`doorOpens`): always for soft-green,
+ *   whose credit is held until a person accepts, and never for green-class unless
+ *   asked. It changes what the run RECORDS and never what it returns — the door is
+ *   a disposition, and the loop's verdict is not the door's to touch.
+ * @param {{text: string, fromRunid?: string|null, receivedAt?: string|null}|null} [opts.doorRerun]
+ *   MODULE 8 — the signer took the RERUN door on a previous run: a FRESH ENGAGEMENT
+ *   (§3.4) against the same signed spec, carrying their words. Two things follow, and
+ *   only two: the already-green shortcut is refused (the tree passing the close is
+ *   precisely the state the person rejected), and the words reach the PLANNER as new
+ *   authoring. It is never a `humanRuling` — that answers a close's human STAGE, and
+ *   a green-class job has none. Empty words are refused at the same seam every door is.
  * @returns {Promise<string>} 'green' | 'already-green' | 'escalated' | 'plan-red' |
  *   'check-red' | 'close-red' | 'close-unsupported' | 'recipe-stale' | 'pricing-red' |
  *   'branch-red' | 'cap-halt' | 'wall-halt' | 'provider-red' | 'interpreter-red' |
  *   'step-stalled' | 'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0 }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null }) {
   workdir = resolve(workdir);
   // ONE spelling of the redaction, housed next to the inventory it reads
   // (src/validate.js) — the same helper the isolate verbs scrub the litectx store
@@ -712,6 +750,36 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       + 'nothing to rule on — the verdict class is a promise about the CLOSE, and only a close that asks a person '
       + 'can be answered by one');
   }
+  // ── THE RERUN DOOR, one level out (module 8). A previous run ended at the
+  // review door, the person said "I don't like it, go again", and this leg IS the
+  // fresh engagement (§3.4). It is validated HERE, at the same seam and against the
+  // same rulebook the close's own doors use — empty words are refused before a
+  // branch is cut, before a scout is bought, before anything costs anything, because
+  // the whole of what a rerun gives the run is the words.
+  //
+  // Deliberately NOT a `humanRuling`: that answers a close's human STAGE and is
+  // refused for a close that has none, which is every green-class job. The two
+  // decisions look alike on a screen and are different facts.
+  /** @type {{text: string, fromRunid: string|null, receivedAt: string|null}|null} */
+  let doorWords = null;
+  if (doorRerun != null) {
+    const dn = normalizeHumanRuling({ decision: 'rerun', text: /** @type {any} */ (doorRerun)?.text ?? null });
+    if (!dn.ok) return decisionRed(`the rerun door was taken on a previous run, and ${dn.why}`);
+    doorWords = {
+      text: /** @type {string} */ (/** @type {any} */ (dn.ruling).text),
+      fromRunid: typeof (/** @type {any} */ (doorRerun).fromRunid) === 'string' ? /** @type {any} */ (doorRerun).fromRunid : null,
+      receivedAt: typeof (/** @type {any} */ (doorRerun).receivedAt) === 'string' ? /** @type {any} */ (doorRerun).receivedAt : null,
+    };
+    emit('door-rerun', {
+      // the person's words are the gap, so they ride the same scrub every other
+      // operator-authored string on this append-only log does
+      text: scrub(doorWords.text),
+      fromRunid: doorWords.fromRunid,
+      ...(doorWords.receivedAt === null ? {} : { receivedAt: doorWords.receivedAt }),
+      meaning: 'a FRESH ENGAGEMENT against the same signed spec — the previous run\'s verdict is untouched, and this leg buys its own clock',
+    });
+  }
+
   /** the ruling still to be spent. Cleared the moment the fix loop opens: the
    * human's words are what OPENS that loop, and once the worker holds them the
    * next machine-clean tree is a new question for the person, not the old one. */
@@ -1172,6 +1240,56 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     });
   };
 
+  /**
+   * THE REVIEW DOOR (softgreen module 8, PRD v1.71 §3) — the pause machinery one
+   * level out: a run that reaches a VERDICT-BEARING terminal offers the person the
+   * same three doors, off the same evidence package, at the end of every run the
+   * door is open for.
+   *
+   * THE LAW, hamr verbatim: *"it's important not to change the loop self verdict."*
+   * This writes a RECORD and returns nothing. The caller's very next statement is
+   * `return 'green'` / `return 'already-green'` — unchanged, unconditional, and
+   * pinned by test. The close mints the verdict; the door records a disposition,
+   * and `src/reviewdoor.js` is where a person's answer is applied, later, off this
+   * record. Nothing here waits, blocks, or spends: a green run that is never
+   * answered is still a green run.
+   *
+   * WHICH RUNS: always the classes whose credit is HELD (soft-green — module 6's
+   * quarantine has no other release), and otherwise only when the operator asks
+   * (`reviewDoor`). `doorOpens` owns that question, in one place.
+   * @param {string} outcome the verdict the close minted @param {any} v that close verdict
+   */
+  const emitReviewDoor = async (outcome, v) => {
+    if (!doorOpens(job, reviewDoor)) return;
+    // the same evidence a pause carries, assembled the same way and bounded by the
+    // same cap — one assembly of one run's facts, however the person arrives at it
+    const cs = declaredCtx ? await changedSet(workdir, declaredCtx.seedRef) : { stop: 'no seed', paths: [] };
+    const paths = cs.stop === null ? cs.paths : [];
+    const shown = paths.slice(0, PAUSE_CHANGED_CAP);
+    const cls = job.verdictType ?? 'green';
+    emit(REVIEW_DOOR, {
+      outcome,
+      verdictType: cls,
+      // …and whether this run's credit is being HELD pending the answer. Read from
+      // the ONE place that decides it (module 6), never re-spelled here.
+      quarantined: quarantinesCredit(cls),
+      stages: v?.stages ?? [],
+      // the stages an `accept` will RE-RUN, named up front: the person is told what
+      // their answer is about to be checked against before they give it
+      mechanical: mechanicalStages(stagedClose).map((/** @type {any} */ s) => s?.name ?? null),
+      changed: {
+        paths: shown,
+        ...(paths.length > shown.length ? { more: paths.length - shown.length } : {}),
+        ...(cs.stop === null ? {} : { unreadable: scrub(String(cs.stop)) }),
+      },
+      decisionReady: true,
+      decision: `The close minted ${outcome} and it STANDS. What happens to the work is yours: accept it, rerun it with your own words as the gap, or pause and come back.`
+        + (quarantinesCredit(cls) ? ' This green was rendered by the judged floor, so it has earned no reuse until you accept it.' : ''),
+      options: [...HUMAN_DECISIONS],
+      meaning: 'not a verdict — the verdict is already minted and nothing an answer does can change it; this records a disposition',
+    });
+  };
+
   /** the close, as ONE verdict: every stage in order, first red wins */
   const judgeClose = async () => {
     const v = await runCloseStages(stagedClose);
@@ -1348,7 +1466,19 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // the answer was applied to the tree they were shown, and no later leg may hold
   // it over a tree they have not seen (F102's persistence must never become a
   // decision that outlives its evidence).
-  if (pre.verdict === 'satisfied') { spendRuling('accepted'); return 'already-green'; }
+  if (pre.verdict === 'satisfied') {
+    // ── THE RERUN DOOR REFUSES THIS SHORTCUT (module 8). A tree that already
+    // passes the close is EXACTLY the state the person rejected when they took the
+    // rerun door: returning `already-green` here would answer "go again" with "there
+    // is nothing to do", spend nothing, and hand back the verdict they just declined
+    // to take. So the run proceeds — a plan is drafted with their words in it, the
+    // work happens, and the close judges it again at the end, as it judges everything.
+    if (doorWords === null) { spendRuling('accepted'); await emitReviewDoor('already-green', pre); return 'already-green'; }
+    emit('door-rerun-open', {
+      fromRunid: doorWords.fromRunid,
+      meaning: 'the close is already satisfied and the run continues anyway — the signer asked for different work, not for a re-grade of the same work',
+    });
+  }
   // …and the pause's own arm of the same gate. Reaching a human stage HERE means
   // every mechanical stage already passes on the untouched tree: the machine half
   // of this job is done and the only thing left is a person. Pausing costs $0 and
@@ -2132,7 +2262,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     };
     const draftPlan = async (/** @type {any[]|null} */ reds) => {
       drafter.setIteration(reds ? 'redraft' : 'draft');
-      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials, starting, checkFacts), []);
+      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials, starting, checkFacts, doorWords?.text ?? null), []);
       return extractArtifact(r.text).code ?? '';
     };
     // Scrubbed HERE, once, before any consumer reads them — the judge() precedent
@@ -2882,6 +3012,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   if (post.verdict === 'satisfied') {
     spendRuling('accepted');
     planExecuted();
+    await emitReviewDoor('green', post);
     return 'green';
   }
   // ── THE THIRD BRANCH (N4 §1.3): between `satisfied` and the fix loop, because
@@ -3186,5 +3317,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // an exact-looking total for a call that never billed back.
     return lastEscalation.category;
   }
+  // …and the fix loop's own green reaches the SAME door. A green the loop had to
+  // work for is exactly as much a green as one the close minted first time, and a
+  // door that opened on only one of them would be a door that quietly graded how
+  // the verdict was arrived at.
+  if (fixOutcome === 'green') await emitReviewDoor('green', lastCloseVerdict);
   return fixOutcome === 'green' ? 'green' : 'escalated';
 }

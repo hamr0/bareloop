@@ -22,9 +22,12 @@ import { normalizeHumanRuling, resolveHumanRuling } from '../src/kinds.js';
 // path uses (never a second one) and keeps its patient the way it left it.
 import { readResume, resumeTreeGate, checkpointAgeGate, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS } from '../src/reuse.js';
 import { HITL_PAUSE } from '../src/declaredclose.js';
+// the REVIEW DOOR (module 8): the library opens it on the run's own spine, and this
+// is the seam that answers one. Same rulebook, one level out.
+import { answerReviewDoor, doorRecordOf, doorAgeGate } from '../src/reviewdoor.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
-import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines } from './u-readout.mjs';
+import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines, reviewDoorPackage, runDoorLines } from './u-readout.mjs';
 
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
@@ -234,9 +237,31 @@ const RESUMABLE_HALTS = CHECKPOINT_OUTCOMES;
 // a second rulebook here is how a runner comes to admit what the run refuses.
 const DECIDE = arg('decide');
 const TEXT = arg('text');
-if (DECIDE !== null && RESUME === null) {
-  die('--decide answers a PAUSED run, and there is no --resume here. A decision is an answer to a checkpoint that '
-    + 'already exists — there is nothing for it to rule on at the start of a fresh run.');
+
+// ── THE REVIEW DOOR (softgreen module 8, PRD v1.71 §3) — the same three doors,
+// one level out: at the END of a run rather than at a stage inside the close.
+//
+// `--door <runid>` answers a FINISHED run's door; `--resume` continues a HALTED
+// one. They are different runs in different states and are refused together
+// rather than merged, because a merge would have to pick which question the
+// operator meant.
+//
+// `--review-door` is the OPT-IN half, and it is the one operator-facing default
+// this module has: a soft-green run opens its door unasked (its credit is held
+// until a person accepts, and nothing else releases it), and a green-class run
+// behaves exactly as it always has unless this flag is passed. PRD v1.71 §3 says
+// "the end of EVERY run" and also that a green door is NON-BLOCKING; the reading
+// that changes an existing job's spine without being asked is hamr's to pick, and
+// flipping it is one line in `REVIEW_DOOR_CLASSES` (src/kinds.js).
+const DOOR = arg('door');
+const REVIEW_DOOR_ON = process.argv.includes('--review-door');
+if (DOOR !== null && RESUME !== null) {
+  die('--door answers the review door of a run that FINISHED; --resume continues one that HALTED. Those are two '
+    + 'different runs in two different states — give one.');
+}
+if (DECIDE !== null && RESUME === null && DOOR === null) {
+  die('--decide answers a PAUSED run (--resume) or a finished run\'s REVIEW DOOR (--door), and there is neither here. '
+    + 'A decision is an answer to something that already exists — there is nothing for it to rule on at the start of a fresh run.');
 }
 // A door that carries no text REFUSES the flag rather than dropping it. Silently
 // discarding words a person typed is worse than refusing them: they would believe
@@ -380,6 +405,58 @@ if (deadSpineFile !== null) {
   }
   pauseRecord = deadEvents.filter((/** @type {any} */ e) => e?.type === HITL_PAUSE).at(-1) ?? null;
 }
+// ── THE DOOR's own reader. A finished run's spine, its door record, and what it
+// spent — the last of those because the signed budget is the CHAIN's ceiling and a
+// rerun spends what REMAINS of it (F103's money half: time is fresh, money folds).
+/** @type {string|null} */
+const doorSpineFile = DOOR == null ? null
+  : (DOOR.includes('/') || DOOR.endsWith('.jsonl') ? resolve(DOOR) : join(spineDir, `u-${DOOR}.jsonl`));
+/** @type {any[]|null} */
+let doorEvents = null;
+/** @type {any} */
+let doorRecord = null;
+/** @type {{spentUsd: number, spendComplete: boolean}|null} */
+let doorPrior = null;
+if (doorSpineFile !== null) {
+  if (!existsSync(doorSpineFile)) die(`--door: no spine at ${doorSpineFile} — a door belongs to a run that happened, and this one left no log`);
+  let raw = '';
+  try { raw = readFileSync(doorSpineFile, 'utf8'); } catch (e) { die(`--door: cannot read ${doorSpineFile}: ${e.message}`); }
+  doorEvents = [];
+  raw.split('\n').forEach((line, i) => {
+    if (!line.trim()) return;
+    try { /** @type {any[]} */ (doorEvents).push(JSON.parse(line)); } catch (e) {
+      die(`--door: ${doorSpineFile} is corrupt at line ${i + 1} (${e.message}) — a decision made on a damaged record is a decision about a run nobody can read`);
+    }
+  });
+  const start = doorEvents.find((/** @type {any} */ e) => e?.type === 'job-start');
+  if (!start) die(`--door: ${doorSpineFile} carries no job-start — that is not a bareloop run's spine`);
+  if (start.job !== spec.job) die(`--door: that spine is job "${start.job}", not "${spec.job}" — a door is answered against the spec that was signed for it`);
+  // THE DOOR ITSELF. Its absence is a refusal and never an invented one: a run that
+  // opened no door has a verdict standing on its own, and answering a door nobody
+  // was shown the evidence for is the rubber stamp this whole class exists to stop.
+  doorRecord = doorRecordOf(doorEvents);
+  if (!doorRecord) {
+    die(`--door ${DOOR}: that run opened no review door — its verdict (${doorEvents.findLast((/** @type {any} */ e) => e?.type === 'job-end')?.outcome ?? 'unrecorded'}) stands on its own and there is nothing here to dispose of.\n`
+      + '  A soft-green run opens one always; a green-class run opens one only when the run was launched with --review-door.');
+  }
+  // …and the 60-day TTL, read HERE for the same reason the pause TTL is read with
+  // the spine gates: an expired door must refuse BEFORE a hash is signed for it.
+  const dage = doorAgeGate(doorRecord);
+  if (!dage.ok) {
+    console.error(`DOOR EXPIRED — ${dage.detail}`);
+    console.error('That expiry IS what "cancel" used to be: the verdict the run minted stands, nothing graduated, and nobody had to decide.');
+    console.error('  - start a fresh run against the current tree (the same hash, nothing to re-sign);');
+    console.error(`  - or revise the goal/spec in jobs/${target.spec} — a spec edit, so the hash changes and you sign the new one.`);
+    process.exit(2);
+  }
+  const je = doorEvents.findLast((/** @type {any} */ e) => e?.type === 'job-end');
+  doorPrior = {
+    spentUsd: typeof je?.spentUsd === 'number' && Number.isFinite(je.spentUsd) ? je.spentUsd : 0,
+    // a FLOOR stays a floor across the door, exactly as it does across a resume (F6)
+    spendComplete: je?.spendComplete !== false,
+  };
+}
+
 /** is this resume the one a PERSON has to answer? Read off the recorded terminal,
  * never off the presence of a `--decide` — the whole point is that the flag is
  * absent on the first visit. */
@@ -458,6 +535,45 @@ const FRESH_ENGAGEMENT = resolveHumanRuling(RULING, HELD).fresh;
  * ceiling, and a raise is a spec edit somebody signs. */
 const RESUME_WALL_MS = WALL_MS === null || !dead ? WALL_MS
   : (FRESH_ENGAGEMENT ? WALL_MS : Math.max(0, WALL_MS - dead.restart.priorWallMs));
+
+// ── THE REVIEW DOOR's screen (module 8). Its OWN preview, deliberately not folded
+// into the resume banner below: a door is answered about a run that is OVER, so
+// none of that banner's arithmetic (what is left to resume with, which step it
+// re-enters, whether the plan is doomed) is a true sentence here. What a person
+// needs is the evidence, the three doors, and what each one costs.
+if (doorSpineFile !== null && arg('approve') !== specHash) {
+  console.log('U — REVIEW DOOR, answering a run that has already ended');
+  console.log(`  spec     jobs/${target.spec}  $${spec.budgetUsd}  wall ${WALL_LABEL}`);
+  console.log(`  run      ${DOOR}  ${doorPrior?.spendComplete === false ? '≥' : ''}$${(doorPrior?.spentUsd ?? 0).toFixed(4)} spent  ·  ${doorSpineFile}`);
+  console.log(`  patient  ${WORKDIR} @ ${SEED.slice(0, 12)}`);
+  console.log('');
+  for (const l of reviewDoorPackage({
+    door: doorRecord,
+    diff: readDiff(Array.isArray(doorRecord?.changed?.paths) ? doorRecord.changed.paths : []),
+  })) console.log(l);
+  console.log(`\n  hash     ${specHash}`);
+  if (arg('approve') !== null) console.error(`\nREFUSED: --approve ${arg('approve')} does not match this spec version.`);
+  const doorInvoke = (/** @type {string} */ tail) => `  node scripts/run-u.mjs --job ${jobKey} --door ${DOOR}${tail} --approve ${specHash}`;
+  console.log('');
+  if (RULING === null) {
+    for (const l of runDoorLines({
+      rerun: doorInvoke(' --decide rerun --text "<what you want done differently>"').trim(),
+      accept: doorInvoke(' --decide accept').trim(),
+      pause: doorInvoke(' --decide pause').trim(),
+      ttlDays: PAUSE_TTL_MS / 86_400_000,
+      held: doorRecord?.quarantined === true,
+    })) console.log(l);
+  } else {
+    console.log(`  decision ${RULING.decision}${RULING.decision === 'rerun' ? ' — and these words become the requirement the fresh engagement plans against:' : ''}`);
+    if (RULING.text !== null) for (const l of String(RULING.text).split('\n')) console.log(`           ${l}`);
+    console.log(`\nTo approve and answer:\n${doorInvoke(` --decide ${RULING.decision}${RULING.text === null ? '' : ` --text ${JSON.stringify(RULING.text)}`}`)}`);
+    if (RULING.decision === 'rerun') {
+      console.log('\nA rerun COMMISSIONS WORK — launch it under a sleep inhibitor (a suspend freezes every guard, F72):');
+      console.log('  systemd-inhibit --what=idle:sleep --why="bareloop u run" env <the command above>');
+    }
+  }
+  process.exit(arg('approve') === null ? 0 : 1);
+}
 
 if (arg('approve') !== specHash) {
   console.log(dead ? 'U — RESUME, continuing a halted run, REAL dollars' : 'U — user-mode e2e, ONE run, REAL dollars');
@@ -642,6 +758,74 @@ if (arg('approve') !== specHash) {
     // still rides an env assignment and never argv (it must never reach a cmdline).
     : `  systemd-inhibit --what=idle:sleep --why="bareloop u run" env \\\n  ${invoke(decisionTail).trim()}`);
   process.exit(arg('approve') === null ? 0 : 1);
+}
+
+// ── THE REVIEW DOOR, ANSWERED (module 8). Past the approval gate, so the signer
+// proof is the same one every other decision rides: the spec hash they approved.
+//
+// The rulebook is the LIBRARY's (`answerReviewDoor`) and nothing is re-decided
+// here: it validates the door, re-proves the tree for an `accept`, records the
+// disposition and releases a held judged green. This prints what it did.
+//
+// `accept` and `pause` LAUNCH NOTHING and exit. `rerun` falls through into the run
+// below as a FRESH ENGAGEMENT (§3.4): its own clock, and what REMAINS of the signed
+// budget — money folds on every path, time does not.
+/** @type {{text: string, fromRunid: string, receivedAt: string}|null} */
+let DOOR_RERUN = null;
+if (doorSpineFile !== null) {
+  if (RULING === null) {
+    console.error('NO DECISION — this run is standing at its review door and no decision was given.');
+    console.error('Answer it with one of: --decide rerun --text "<your words>" · --decide accept · --decide pause');
+    console.error('(the same command without --approve prints the evidence package — that is the screen this decision is made on)');
+    process.exit(2);
+  }
+  const answeredAt = new Date().toISOString();
+  const ans = await answerReviewDoor({
+    job: spec,
+    workdir: wd,
+    events: doorEvents ?? [],
+    decision: RULING.decision,
+    text: RULING.text,
+    closeTimeoutMs: CLOSE_TIMEOUT_MS,
+    at: answeredAt,
+    // THE REGISTRY IS OPTIONAL AND NEVER CONJURED. This runner keeps standalone
+    // bridge FILES, not a registry, so a release has nothing to write unless the
+    // operator names one. Absent, the answer is recorded on the run's own spine and
+    // the readout SAYS the credit was not released — never a silent no-op.
+    registryDir: arg('registry'),
+    name: arg('workflow') ?? spec.job,
+    runid: DOOR,
+    // the decision goes onto the answered run's OWN append-only log: the record of
+    // what a person decided about a run belongs beside the record of the run
+    emit: makeSpine(doorSpineFile, { startSeq: doorEvents?.at(-1)?.seq ?? 0 }),
+  });
+  if (!ans.ok) {
+    console.error(`\nDOOR REFUSED (${RULING.decision}) — nothing was recorded and nothing was released.`);
+    for (const r of ans.reds) console.error(`  ${r.code}:${r.path} — ${r.detail}`);
+    if (ans.mechanical?.stages?.length) {
+      console.error('  the mechanical re-run, stage by stage:');
+      for (const s of ans.mechanical.stages) console.error(`    ${s.name}  ${s.verdict}`);
+    }
+    process.exit(2);
+  }
+  if (RULING.decision !== 'rerun') {
+    console.log(`\n${RULING.decision === 'accept' ? 'ACCEPTED' : 'PAUSED'} — the verdict this run minted (${doorRecord.outcome}) is UNTOUCHED; what you answered is what happens to the work.`);
+    if (RULING.decision === 'accept') {
+      console.log(`  proved   ${ans.mechanical?.ran ?? 0} mechanical stage(s) re-ran on the tree as it stands, and passed — an accept is not a rubber stamp`);
+      console.log(`  credit   ${ans.released ? 'RELEASED — this workflow is now eligible for reuse' : (arg('registry') === null ? 'not released: no --registry was named, so there is no entry to release (the answer is on the spine)' : 'nothing was held — a green-class run was never quarantined')}`);
+      if (ans.note) console.log(`  note     ${ans.note}`);
+    } else {
+      console.log(`  costs    nothing, in any state — no work, no money, no allowance moved`);
+      console.log(`  keeps    ${PAUSE_TTL_MS / 86_400_000} days from the door on the record; after that it expires on its own, which is all "cancel" ever meant`);
+      console.log(`  reopen   node scripts/run-u.mjs --job ${jobKey} --door ${DOOR} --approve ${specHash}`);
+    }
+    process.exit(0);
+  }
+  DOOR_RERUN = { text: /** @type {string} */ (RULING.text), fromRunid: /** @type {string} */ (DOOR), receivedAt: answeredAt };
+  console.log(`\nRERUN — a FRESH ENGAGEMENT against the same signed spec. The previous run's verdict (${doorRecord.outcome}) is untouched.`);
+  console.log(`  clock    its own: the full signed wall (${WALL_LABEL}) — a person does not decide on the run's clock (F103)`);
+  console.log(`  money    what REMAINS of the signed $${spec.budgetUsd}: ${doorPrior?.spendComplete === false ? '≥' : ''}$${(doorPrior?.spentUsd ?? 0).toFixed(4)} is already spent and folds in (a signature for $${spec.budgetUsd} never authorises more)`);
+  console.log('  gap      your words, carried to the PLANNER as a requirement on top of the goal');
 }
 
 // ── THE PAUSE DOOR (2026-08-17) — answered HERE, and it launches nothing.
@@ -902,13 +1086,32 @@ try {
     // re-run on the tree as it stands (OPEN-3), `rerun` reds it with these words as
     // the gap, and `pause` never gets this far (it is answered above, launching nothing).
     // Absent on every ordinary run — refused-but-unwired would pause forever.
-    ...(RULING === null ? {} : { humanRuling: RULING }),
+    // …and NOT on the review-door path (module 8), where the same `--decide rerun`
+    // means something else entirely: a `humanRuling` answers a close's human STAGE
+    // and is refused for a close that has none, which is every green-class job. The
+    // door's rerun travels as `doorRerun` below instead. One flag, two questions —
+    // the runner picks by which run is being answered, never by the flag's spelling.
+    ...(RULING === null || DOOR !== null ? {} : { humanRuling: RULING }),
     // F102 — and the answer the CHECKPOINT holds, when the leg before this one died
     // holding it. Same seam, same semantics, one difference the spine records: the
     // decision came from a record rather than from a person on this invocation. The
     // two are never both set (the resolver refused above), so this can never be a
     // silent override of words somebody just typed.
     ...(HELD === null ? {} : { heldRuling: HELD }),
+    // MODULE 8 — does this run END at a review door? Soft-green opens one unasked
+    // (the library's class default); `--review-door` is the green-class opt-in; and a
+    // leg that IS a rerun taken at a door opens the next one by construction — the
+    // person is working through the door, and a rerun that ended silently would be
+    // the one leg in the chain they could not answer.
+    ...(REVIEW_DOOR_ON || DOOR_RERUN ? { reviewDoor: true } : {}),
+    // …and the signer's words, when this leg is that rerun. The money the answered
+    // run spent folds in (the signed budget is the chain's ceiling); the WALL does
+    // not (F103 — a rerun that inherits a dead leg's clock is structurally doomed).
+    ...(DOOR_RERUN === null ? {} : {
+      doorRerun: DOOR_RERUN,
+      priorSpentUsd: doorPrior?.spentUsd ?? 0,
+      priorSpendComplete: doorPrior?.spendComplete !== false,
+    }),
   });
 } finally {
   // the guard outlives the run only by accident, never by design
@@ -1000,6 +1203,28 @@ if (outcome === HITL_PAUSE) {
     pause: answer(' --decide pause'),
   })) console.log(l);
   console.log(`  (the same command without --approve re-prints this package — the checkpoint keeps for ${PAUSE_TTL_MS / 86_400_000} days)`);
+}
+// ── THE REVIEW DOOR, where the person is actually standing (module 8). The run
+// ENDED and its verdict is minted — this readout offers the three doors over it and
+// changes nothing about the outcome printed above. Read off the run's own record
+// (never off a flag), so a green that opened no door prints exactly what it always did.
+const doorHere = events.findLast((e) => e.type === 'review-door') ?? null;
+if (doorHere) {
+  console.log('');
+  for (const l of reviewDoorPackage({
+    door: doorHere,
+    diff: readDiff(Array.isArray(doorHere.changed?.paths) ? doorHere.changed.paths : []),
+  })) console.log(l);
+  console.log('');
+  const answerDoor = (/** @type {string} */ tail) => `node scripts/run-u.mjs --job ${jobKey} --door ${runid}${tail} --approve ${specHash}`;
+  for (const l of runDoorLines({
+    rerun: answerDoor(' --decide rerun --text "<what you want done differently>"'),
+    accept: answerDoor(' --decide accept'),
+    pause: answerDoor(' --decide pause'),
+    ttlDays: PAUSE_TTL_MS / 86_400_000,
+    held: doorHere.quarantined === true,
+  })) console.log(l);
+  console.log(`  (the same command with no --decide re-prints this package — the door keeps for ${PAUSE_TTL_MS / 86_400_000} days)`);
 }
 // A leak is the HARD LINE broken, not a note in the margin: an advisory that
 // prints a count and then exits 0 while still writing the bridge is a guard in

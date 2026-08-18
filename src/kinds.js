@@ -185,6 +185,68 @@ export const HUMAN_KIND = 'human-confirms';
  * to make one. */
 export const HUMAN_DECISIONS = Object.freeze(['accept', 'rerun', 'pause']);
 
+// ── THE REVIEW DOOR's vocabulary (softgreen module 8, PRD v1.71 §3) ──────────
+//
+// The pause machinery re-homed: the same three doors, one level out — from a
+// stage INSIDE the close to the door at the END of a run. The vocabulary lives
+// here, beside the doors themselves, because `src/planrun.js` needs it to OPEN a
+// door and `src/reviewdoor.js` needs it to ANSWER one, and a constant imported
+// through the answering module would drag the registry (and `runJob` behind it)
+// into the run's own import graph.
+
+/** the door's record type on the spine. It is a DISPOSITION, never a verdict:
+ * hamr's law, verbatim — *"it's important not to change the loop self verdict"*.
+ * The close mints the verdict before this is written, and nothing downstream of
+ * this record may change what the ledger recorded. */
+export const REVIEW_DOOR = 'review-door';
+
+/** the terminals a door opens on: the verdict-bearing ones, and only those. A red,
+ * a casualty and a governance halt are not offered to a person as merchandise —
+ * they are already decision-ready in their own right, with their own levers. */
+export const DOOR_OPEN_OUTCOMES = Object.freeze(['green', 'already-green']);
+
+/** the classes whose door opens WITHOUT being asked for. Soft-green is here
+ * because the judge is young: its green is quarantined at mint (module 6) and a
+ * person's `accept` is the only thing that releases the credit, so a run that
+ * never offered the door would hold its own credit forever.
+ *
+ * `green` is deliberately ABSENT, and that is the one operator-facing default in
+ * this module: a green-class run behaves exactly as it always has unless the
+ * runner asks for the door (`reviewDoor: true`, `--review-door`). PRD v1.71 §3
+ * says *"the door at the end of EVERY run"* and also that a green door is
+ * NON-BLOCKING, and the two readings differ only in whether an unasked-for door
+ * appears on an existing job's spine. Flipping it is one line — adding `'green'`
+ * here — and it is hamr's to flip, not this module's to assume. A constant, never
+ * a threshold; widening it is arbiter territory. */
+export const REVIEW_DOOR_CLASSES = Object.freeze(['soft-green']);
+
+/**
+ * Does this run end at a review door? The operator's flag WINS in both
+ * directions and is never inferred: `true` opens it for any class, `false` shuts
+ * it for any class, and `null`/absent is the class default above.
+ * @param {any} job the signed spec (its `verdictType` is the class)
+ * @param {boolean|null} [reviewDoor] the operator's explicit choice, or null
+ * @returns {boolean}
+ */
+export function doorOpens(job, reviewDoor = null) {
+  if (reviewDoor === true) return true;
+  if (reviewDoor === false) return false;
+  return REVIEW_DOOR_CLASSES.includes(job?.verdictType ?? 'green');
+}
+
+/**
+ * The stages an `accept` re-runs: the MECHANICAL ones, and never a judged floor
+ * or a person (`SEED_EXEMPT_KINDS`, ruling 8's set, for the same reason it was
+ * drawn — a machine may re-prove a machine's reading, and may not re-prove a
+ * judgment). hamr's N4 ruling: an accept re-runs the mechanical stages, because a
+ * door lives 60 days and nothing freezes a tree.
+ * @param {any[]|null|undefined} stages
+ * @returns {any[]}
+ */
+export function mechanicalStages(stages) {
+  return (Array.isArray(stages) ? stages : []).filter((s) => !SEED_EXEMPT_KINDS.includes(s?.kind));
+}
+
 /**
  * @typedef {{code: string, path: string, detail: string}} Red
  * @typedef {{workdir: string, seedRef: string, gapKeep: string,

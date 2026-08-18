@@ -111,7 +111,18 @@ export {
   // wiring `judgeProvider` needs both numbers to reason about what a judged close
   // can cost: one paid call per artifact, at most one retry each.
   JUDGE_ATTEMPTS, MAX_JUDGED_PATHS,
+  // SOFTGREEN module 8 — the REVIEW DOOR's vocabulary: the record type a run
+  // writes when it ends at the door, which terminals open one, which classes open
+  // one unasked, and the mechanical-only rule an `accept` re-proves against.
+  REVIEW_DOOR, DOOR_OPEN_OUTCOMES, REVIEW_DOOR_CLASSES, doorOpens, mechanicalStages,
 } from './kinds.js';
+// SOFTGREEN module 8 — the door's ANSWERING half. A run OPENS the door on its own
+// spine and ends; a person answers minutes or days later, from another process, so
+// the answer cannot ride the run's return path. `answerReviewDoor` is that seam:
+// it re-proves the tree for an `accept`, releases a held judged green through
+// module 6's registry half, and refuses an expired door under the same 60-day TTL a
+// hitl checkpoint keeps. It never returns, writes or implies a verdict.
+export { answerReviewDoor, doorRecordOf, doorAgeGate } from './reviewdoor.js';
 // SOFTGREEN module 1 — the judged floor's core. The pieces an adopter (and an
 // integrating UI) genuinely needs: the PIN (`JUDGE_MODEL` — what a wired judge
 // provider must be bound to, and a bump of which forces recalibration), the

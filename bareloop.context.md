@@ -897,7 +897,7 @@ Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
 `coordination-red` — a failure between units (scope contention, step order, store
 races), never to be folded into worker/interpreter reds.
 
-### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, layerRoot?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, layerRoot?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling?, reviewDoor?, doorRerun? })` → outcome — `src/run.js`
 
 The last seven are the RESUME fold and are documented under *Resuming a killed run* below; they
 default to `0` / `true` / `0` / `null` / `[]` / `null` / `null`, so a fresh run passes none of them.
@@ -959,6 +959,7 @@ A leg handed BOTH a fresh `humanRuling` and a `heldRuling` is refused (`hitl-dec
 naming the held decision) before anything costs anything: two answers to one question is
 ambiguity, not a merge. `resolveHumanRuling(fresh, held)` is the exported seam that decides this
 (and whether the leg is a fresh engagement, below), so a runner cannot admit what a run refuses.
+
 `branch-red` is the WORK BRANCH refusing (below): the patient is not a git checkout, its
 branch namespace has no free name, or a resume's recorded branch is gone. Zero tokens, and
 never a fallback to working on the branch the run was handed. `provider-red` is a
@@ -1390,6 +1391,64 @@ run the rounds of a bounded attempt. N2 bounds (honest): `gold`/`rubric`/`hitl` 
 closes refuse `close-unsupported` — N4's hitl is a `human-confirms` STAGE inside a `closeDecl`,
 never a close TYPE, so there is one live expression of hitl rather than two.
 
+### THE REVIEW DOOR — the three doors at the END of a run (softgreen module 8, PRD v1.71 §3)
+
+The pause machinery re-homed: the same doors, the same evidence package and the same 60-day TTL,
+one level OUT — from a stage inside the close to the door at the end of a run.
+
+**THE LAW, and it is not negotiable** (hamr, verbatim: *"it's important not to change the loop
+self verdict"*): the close mints the verdict, the door records a **disposition**. `runJob`
+returns `green` / `already-green` exactly as it always did, the ledger records exactly what it
+always recorded, and no answer a person gives can change either. A green run that is never
+answered is still a green run — the door is non-blocking.
+
+**Opening one.** A run whose terminal is verdict-bearing (`DOOR_OPEN_OUTCOMES` — `green`,
+`already-green`) emits ONE `review-door` record carrying the evidence: the outcome, the class,
+whether the credit is `quarantined`, every close stage's own result, the stages an `accept` will
+re-run (`mechanical`), and the changed set (same cap and same F28/F6 announcements the pause
+package makes). Which runs open one is `doorOpens(job, reviewDoor)`:
+
+- **always** for the classes in `REVIEW_DOOR_CLASSES` — `['soft-green']`, because a judged green
+  is quarantined at mint (module 6) and an `accept` is the ONLY thing that releases the credit;
+- **on request** for everything else: `reviewDoor: true` (the runner's `--review-door`). A
+  green-class run is byte-identical to what it always was unless it is asked for.
+- `reviewDoor: false` shuts it for any class. The flag wins in both directions and is never
+  inferred; `REVIEW_DOOR_CLASSES` is a constant, not a threshold, and widening it is arbiter
+  territory.
+
+**Answering one — `answerReviewDoor({ job, workdir, events, decision, text?, closeTimeoutMs?,
+registryDir?, name?, runid?, at?, now?, emit? })`** (`src/reviewdoor.js`). The answer arrives
+after the run has ended, possibly days later and from another process, so it cannot ride the
+run's return path. This is that seam. It never throws and never conjures — a fourth door, an
+empty `rerun`, a run that opened no door (`no-door`), an expired one (`door-expired`), a tree
+that moved (`door-accept-red`) and a missing registry all come back as named reds.
+
+- **`accept`** re-runs the close's **mechanical** stages against the tree AS IT STANDS
+  (`mechanicalStages` — everything outside `SEED_EXEMPT_KINDS`, so never a judged floor and never
+  a person) before it is honoured: hamr's ruling that an accept is not a rubber stamp, and the
+  answer to a tree that can move in the 60 days a door keeps. A red REFUSES the accept with the
+  stage named and records **nothing**. A pass records the disposition and, over a held judged
+  green, RELEASES the credit through module 6's `applyDoorDecision`.
+- **`rerun`** carries the person's words back as a directive (`next: 'rerun'`) and re-proves
+  nothing: the new run's close is what judges. Empty or whitespace text is refused at the same
+  seam every other door is.
+- **`pause`** runs nothing and spends nothing, in any state. The door simply keeps, and an
+  unanswered one expires under `PAUSE_TTL_MS` — that expiry IS what `cancel` used to be.
+
+Every door is recorded when a registry is wired, not only the accepts: *"the signer's accepts
+double as the judge's ongoing report card"*, and a rerun over a judged green is exactly as
+informative. An **already-green** run wrote no row of its own, so its door records nothing and
+releases nothing — slice 1's already-green no-mint rule, holding from the other side, and stated
+in the result's `note` rather than surfaced as a failure.
+
+**The rerun as a FRESH ENGAGEMENT** — hand the words back to the next run as
+**`doorRerun: {text, fromRunid?, receivedAt?}`**. Two things follow and only two: the
+`already-green` shortcut is refused (a tree that passes the close is precisely the state the
+person rejected — the run emits `door-rerun-open` and carries on), and the words reach the
+PLANNER as a requirement on top of the signed goal. It is never a `humanRuling`: that answers a
+close's human STAGE, and a green-class job has none. Money folds (the signed budget is the
+chain's ceiling); the WALL does not (F103).
+
 ### The reuse registry (Layer 3) — `src/bridges.js`, `src/selection.js`
 
 A **bridge** is the plan a green actually executed, kept so the next run of the same SHAPE
@@ -1700,6 +1759,17 @@ them: a decision with no run to answer, and a decision aimed at a checkpoint tha
 paused spine goes through `checkpointAgeGate`, and the run is not resumed without an explicit
 decision: the lean-rerun rule (2026-08-12 §4) governs which door a prompt LEADS with, never an
 action taken for the operator.
+
+**A finished run's REVIEW DOOR is answered the same way, one flag over**: `--door <runid>`
+selects the run (its own spine, its own `review-door` record), `--decide` picks the door and
+`--approve <specHash>` signs it. The screen is its OWN preview and deliberately not the resume
+banner: a door is answered about a run that is OVER, so nothing that banner computes (what is
+left to resume with, which step it re-enters) is a true sentence there. `accept` and `pause`
+launch nothing and exit; `rerun` falls through into a fresh engagement — its own clock, the
+answered run's spend folded in — carrying the person's words as `doorRerun`. `--registry <dir>
+--workflow <name>` are optional: without them the answer is recorded on the run's own spine and
+the readout SAYS the credit was not released, rather than reporting a release that never
+happened.
 
 - **Completed tries are not re-run.** They come back as rows (marked `inherited`) and
   their bridges stay excluded from every later selection. A try whose `job-end` landed —
