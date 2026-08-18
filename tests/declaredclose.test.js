@@ -388,7 +388,9 @@ test('validateCloseDecl reds the envelope: unknown field, wrong genre, unknown l
   // …and every legal field is accepted: a valid declaration carrying all of them
   // reds NOTHING (a negative assertion over an already-empty list proves nothing)
   assert.deepEqual(codes({ ...GOOD_DECL(), notes: ['a note'] }), []);
-  assert.deepEqual([...CLOSE_DECL_FIELDS].sort(), ['genre', 'genreEnv', 'lang', 'notes', 'stages']);
+  // `calibration` joined the list at softgreen module 4 — the frozen ten a judged
+  // close is calibrated against ride the declaration, not a stage's params
+  assert.deepEqual([...CLOSE_DECL_FIELDS].sort(), ['calibration', 'genre', 'genreEnv', 'lang', 'notes', 'stages']);
 });
 
 test('validateCloseDecl refuses when a guard was WEAKENED — D5 is not a taste', () => {

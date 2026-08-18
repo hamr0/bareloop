@@ -562,6 +562,44 @@ attempt PLUS its close. Unpriced is never free: a null cost is a `pricing-red` s
 never retried, and the ladder is otherwise ONE retry (`JUDGE_ATTEMPTS`) — after that a broken
 judge is an instrument stop, never a red about the tree.
 
+**The two SIGNED artifacts of a judged close** (softgreen module 4, design §4.3/§4.4). Q6 and
+Q7 of the softgreen interview compile into the RUBRIC CARD and the FROZEN CALIBRATION SET, on
+the D5 shown-and-fixed path: `proposeJudgedArtifacts({answers, generate, book})` buys ONE
+schema-forced proposal (tool `propose_rubric`, over the same bounded malformed-emission ladder
+the declaration uses — a parse failure is an `artifact-red` retried under the cap, a proposal
+that parsed and then broke a rule is NOT retried); a UI shows it; `signJudgedArtifacts({proposal,
+fix})` stores the SIGNER's version (the fix replaces the proposal WHOLE, never merges — a signer
+who deleted a line must not get it back) and reports `source: 'signer'|'proposal'`; and
+`foldJudgedArtifacts(closeDecl, {card, cases})` enumerates both into the declaration. Free text
+in either artifact is scrubbed at ingest through the one `SECRET_PATTERNS` inventory, because a
+signed spec outlives the run that produced it.
+
+**Where they land, and what the hash covers.** The card replaces the ONE `judged-floor` stage's
+`params.card` — one card per close, and it is the signed one; a fold into a close with no judged
+stage (or two) THROWS rather than storing a rubric nothing reads. The cases land beside the
+stages as `closeDecl.calibration.cases`, because the set calibrates the RULER and is read before
+any stage runs. Both sit inside the spec, so `jobSpecHash` covers them by construction: a card
+line or a single case edit flips the hash and forces a re-sign, and a byte-identical re-store
+does not.
+
+**What a legal calibration set is** (`validateCalibrationSet`, beside the rulebook in
+`src/judged.js`, and re-checked at the spec gate by `validateCloseDecl`). EXACTLY
+`CALIBRATION_SIZE` = 10 cases — hamr's ruling, verbatim *"go build 10, we could double later"*,
+operator territory and never agent-picked — with BOTH polarities present, because a set that
+cannot fail one way proves nothing. A case is
+`{id, artifact, expect: {verdict: 'pass'|'red', reds: [{rule, fn}]}}`: `artifact` is the REAL
+source text the judge will be pointed at (never a description of one), and a red case must be
+ITEMIZED, naming a `rule` THIS close's card actually carries (§4.3's ceiling, mechanically — the
+fix for a miss is a new card line and a re-sign) and the `fn` the red lands on. The judge's own
+`why`/`quote` are deliberately NOT stored: no signer can predict prose, and pinning it would
+fail an honest pipe on wording. `expectedOf(decision)` is the ONE reduction of a `decide()`
+result to that shape, so a harness compares one shape rather than two.
+
+**NOT built here:** the calibration GATE — running LOCATE + `decide()` over the ten and refusing
+a signature on anything short of 10/10 with itemized reds, alongside the upstream
+INJECTION_BATTERY. Until it exists a stored set is checked for LEGALITY only, a judged stage may
+carry no set at all, and no injection case is stored anywhere.
+
 **`human-confirms` is the one kind that measures NOTHING** (N4 slice 1). Its whole parameter
 surface is `ask` — the plain question the signer answers — so it cannot spawn, cannot be
 env-capable, and cannot be handed a second job. Four laws ride on it, all checked rather than

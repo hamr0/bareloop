@@ -297,6 +297,218 @@ export function validateCard(card) {
   return { ok: reds.length === 0, reds };
 }
 
+// ── THE CALIBRATION SET ─────────────────────────────────────────────────────
+//
+// Softgreen module 4, and it lives HERE beside `validateCard` for the reason the
+// card's own gate does: the set is graded against the RULEBOOK and the CARD, both
+// of which are this module's, and a validator in another file would be a second
+// opinion about what a judged floor's signed artifacts are. The COMPILE (an LLM
+// proposing, a signer fixing) is `src/cardauthor.js`; what a legal set IS, is
+// arbiter territory and it is here. The GATE that runs the whole pipe over the
+// ten before a close is signable is module 5, and is deliberately absent.
+
+/**
+ * THE SIZE — hamr, 2026-08-18, verbatim: *"go build 10, we could double later"*.
+ *
+ * Not a number measurement found, and not one the agent may revisit: a size
+ * change is a spec-level threshold change and stays operator territory (the
+ * standing no-agent-threshold-picking rule). The second half of his sentence is
+ * part of the ruling — doubling later is explicitly allowed — which is why it is
+ * ONE constant read by the schema, the validator and the refusal alike.
+ */
+export const CALIBRATION_SIZE = 10;
+
+/** the two verdicts a case may expect — `decide()`'s own closed set */
+export const CASE_VERDICTS = Object.freeze(['pass', 'red']);
+
+const CASE_ID_RE = /^[a-z0-9][a-z0-9-]{0,48}$/;
+
+/** the rules a CARD judges — the closed set a case's expected reds select from
+ * @param {any} card @returns {string[]} */
+function cardRuleIds(card) {
+  const items = card !== null && typeof card === 'object' && Array.isArray(/** @type {any} */ (card).items)
+    ? /** @type {any[]} */ (card.items) : [];
+  return items
+    .filter((it) => it !== null && typeof it === 'object' && typeof it.rule === 'string' && it.rule.trim() !== '')
+    .map((it) => String(it.rule));
+}
+
+/** @param {any} v */
+const obj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+/** @param {any} v */
+const str = (v) => typeof v === 'string' && v.trim() !== '';
+
+/**
+ * THE CALIBRATION SET's gate. Never throws on proposed input — every failure is a
+ * named red in the shipped `{ok, reds}` shape.
+ *
+ * A CASE is `{id, artifact, expect: {verdict, reds: [{rule, fn}]}}`:
+ *   `artifact` is REAL TEXT — what LOCATE will actually be pointed at, never a
+ *   description of it; `verdict` is what `decide()` must render; and `reds` is the
+ *   ITEMIZED expectation, because the floor is *graded correctly WITH ITEMIZED
+ *   REDS* — a pipe that reds the right case for the wrong reason has not been
+ *   calibrated, it has been lucky. `rule` selects from the CARD's own lines (the
+ *   §4.3 ceiling made mechanical: the judge only ever checks lines the card
+ *   names) and `fn` is the address `decide()` itself reports.
+ *
+ * THE SIZE and THE POLARITY are separate reds on purpose: one is hamr's
+ * threshold, the other is *the test must be able to FAIL*. A set of ten that can
+ * only pass is exactly as unusable as a set of nine, and one red for both would
+ * send an operator to fix the wrong half.
+ *
+ * `card` is REQUIRED and its absence is a red rather than a skipped check — a
+ * validator handed no card would report a set it never examined against anything.
+ * @param {any} cases @param {{card?: any}} [o]
+ * @returns {{ok: boolean, reds: {code: string, path: string, detail: string, [k: string]: any}[]}}
+ */
+export function validateCalibrationSet(cases, { card = null } = {}) {
+  /** @type {{code: string, path: string, detail: string, [k: string]: any}[]} */
+  const reds = [];
+  /** @type {(code: string, path: string, detail: string, extra?: object) => void} */
+  const red = (code, path, detail, extra = {}) => { reds.push({ code, path, detail, ...extra }); };
+
+  const rules = cardRuleIds(card);
+  if (rules.length === 0) {
+    red('calibration-cardless', 'card', 'the calibration set is graded against the card\'s own lines and there are '
+      + 'none — a set validated against no card is a set nobody checked');
+  }
+
+  if (!Array.isArray(cases)) {
+    red('calibration-size', 'calibration.cases', `the calibration set is an array of exactly ${CALIBRATION_SIZE} cases `
+      + '(hamr, 2026-08-18: "go build 10, we could double later") — the size is operator territory, never inferred');
+    return { ok: false, reds };
+  }
+  if (cases.length !== CALIBRATION_SIZE) {
+    red('calibration-size', 'calibration.cases', `${cases.length} case(s): the frozen calibration set is exactly `
+      + `${CALIBRATION_SIZE} (hamr's ruling, 2026-08-18: "go build 10, we could double later"). The size is a `
+      + 'spec-level threshold and stays operator territory — never picked, padded or trimmed to fit a set',
+    { declared: cases.length, required: CALIBRATION_SIZE });
+  }
+
+  /** @type {Set<string>} */ const ids = new Set();
+  /** @type {Set<string>} */ const artifacts = new Set();
+  let passes = 0;
+  let redSide = 0;
+
+  cases.forEach((c, i) => {
+    const at = `calibration.cases[${i}]`;
+    if (!obj(c)) { red('calibration-case', at, 'a case is an object {id, artifact, expect}'); return; }
+
+    if (!str(c.id) || !CASE_ID_RE.test(c.id)) {
+      red('calibration-case', `${at}.id`, 'a unique lowercase-hyphenated slug naming this case');
+    } else if (ids.has(c.id)) {
+      red('calibration-case', `${at}.id`, `"${c.id}" is declared twice — ${CALIBRATION_SIZE} names over fewer cases is `
+        + 'fewer cases, and the floor counts cases');
+    } else ids.add(c.id);
+
+    // REAL TEXT: a blank artifact grades the pipe's handling of an empty file
+    // rather than anything the signer meant.
+    if (!str(c.artifact)) {
+      red('calibration-case', `${at}.artifact`, 'the REAL source text this case is about — a case with no artifact '
+        + 'measures the pipe\'s handling of an empty file, which is not what anybody signed');
+    } else if (artifacts.has(String(c.artifact))) {
+      red('calibration-case', `${at}.artifact`, 'the same artifact is used twice — two identical cases are one case '
+        + 'counted twice, and the floor is over distinct evidence');
+    } else artifacts.add(String(c.artifact));
+
+    const e = c.expect;
+    if (!obj(e)) { red('calibration-case', `${at}.expect`, `{verdict: ${CASE_VERDICTS.join('|')}, reds: [...]}`); return; }
+    if (!CASE_VERDICTS.includes(e.verdict)) {
+      red('calibration-case', `${at}.expect.verdict`, `one of ${CASE_VERDICTS.join(' | ')} — what decide() must render `
+        + 'over this artifact');
+      return;
+    }
+    if (e.verdict === 'pass') passes += 1; else redSide += 1;
+
+    const list = e.reds;
+    if (!Array.isArray(list)) {
+      red('calibration-case', `${at}.expect.reds`, 'the itemized expectation, as an array — empty for a pass');
+      return;
+    }
+    if (e.verdict === 'pass' && list.length > 0) {
+      red('calibration-case', `${at}.expect.reds`, 'a PASS case expects no reds — a case that passes while naming a '
+        + 'violation is a contradiction, and only one of its two halves is what the signer meant');
+    }
+    if (e.verdict === 'red' && list.length === 0) {
+      red('calibration-case', `${at}.expect.reds`, 'a RED case names WHICH card line it breaks and on which function. '
+        + 'The floor is "graded correctly WITH ITEMIZED REDS": a pipe that reds the right case for the wrong reason '
+        + 'has not been calibrated, it has been lucky');
+    }
+    /** @type {Set<string>} */
+    const seen = new Set();
+    list.forEach((r, j) => {
+      const rat = `${at}.expect.reds[${j}]`;
+      if (!obj(r)) { red('calibration-case', rat, 'an expected red is {rule, fn}'); return; }
+      if (!str(r.rule)) {
+        red('calibration-case', `${rat}.rule`, `which card line this breaks — the rules are: ${JUDGE_RULE_IDS.join(', ')}`);
+      } else if (!rules.includes(String(r.rule))) {
+        red('calibration-case', `${rat}.rule`, `"${r.rule}" is not a line THIS card carries (it judges: `
+          + `${rules.join(', ') || 'nothing'}). The judge only ever checks lines the card names, so a case expecting a `
+          + 'red from an unjudged rule can never be graded correctly — the fix is a new card line and a re-sign',
+        { rule: String(r.rule), cardRules: rules });
+      }
+      if (!str(r.fn)) {
+        red('calibration-case', `${rat}.fn`, 'the function this red lands on — the address decide() itself reports');
+      }
+      const key = `${String(r.rule)} ${String(r.fn)}`;
+      if (seen.has(key)) red('calibration-case', rat, 'the same (rule, function) pair is expected twice — one red is one item');
+      else seen.add(key);
+    });
+  });
+
+  // THE POLARITY LAW: a set that cannot fail one way proves nothing (the repo's
+  // own *the test must be able to FAIL*, at the ruler's own calibration).
+  if (cases.length > 0 && (passes === 0 || redSide === 0)) {
+    red('calibration-polarity', 'calibration.cases', `the set is ${passes} pass and ${redSide} red: it must carry at `
+      + 'least one of each. A set that can only fail one way cannot tell a working ruler from one that answers the '
+      + 'same thing every time', { passes, reds: redSide });
+  }
+
+  return { ok: reds.length === 0, reds };
+}
+
+/**
+ * BOTH signed artifacts, judged independently and reported together. The card
+ * goes through `validateCard` rather than a second spelling of it.
+ * @param {{card: any, cases: any}} o
+ * @returns {{ok: boolean, reds: {code: string, path: string, detail: string, [k: string]: any}[]}}
+ */
+export function validateJudgedArtifacts({ card, cases }) {
+  /** @type {{code: string, path: string, detail: string, [k: string]: any}[]} */
+  const reds = validateCard(card).reds.map((detail) => ({ code: 'invalid-value', path: 'card', detail }));
+  reds.push(...validateCalibrationSet(cases, { card }).reds);
+  return { ok: reds.length === 0, reds };
+}
+
+/**
+ * A `decide()` result reduced to the shape a case STORES. ONE spelling, so the
+ * expectation a signer signs and the reading module 5 takes off the live pipe are
+ * one shape read twice rather than two that can disagree.
+ *
+ * `why` and `quote` are deliberately dropped: both are the judge's prose about
+ * one emission, no signer can predict either, and pinning them would fail an
+ * honest pipe on wording. What survives is the ADDRESS — which card line, which
+ * function — which is what "itemized reds" means.
+ * @param {any} decision
+ * @returns {{verdict: string, reds: {rule: string, fn: string}[]}}
+ */
+export function expectedOf(decision) {
+  /** @type {{rule: string, fn: string}[]} */
+  const reds = [];
+  /** @type {Set<string>} */
+  const seen = new Set();
+  for (const item of decision?.items ?? []) {
+    for (const r of item?.reds ?? []) {
+      const row = { rule: String(item?.rule ?? ''), fn: String(r?.fn ?? '') };
+      const key = `${row.rule} ${row.fn}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      reds.push(row);
+    }
+  }
+  return { verdict: String(decision?.verdict ?? 'red'), reds };
+}
+
 /** the ONE spelling of "refuse a card rather than work against garbage"
  * @param {any} card @returns {{rule: string, text: string}[]} */
 function cardItems(card) {

@@ -1162,14 +1162,23 @@ function canonical(x) {
 
 /**
  * ONE structured ask, with the malformed-emission retry bounded on its OWN axis.
- * A reply that carries no declaration is an ARTIFACT-RED — name the axis, retry
+ * A reply that carries no artifact is an ARTIFACT-RED — name the axis, retry
  * under a cap, write nothing — and it never consumes a revision, because a
  * transport fault is not a defect in a close.
+ *
+ * THE CHANNEL IS A PARAMETER, and that is softgreen module 4's only change here:
+ * the rubric card and the calibration set are a SECOND schema-forced emission
+ * with the same failure modes, and a second ladder is a second place for the cap,
+ * the reject block and the re-ask to drift. The declaration channel below is the
+ * one this loop has always used, spelled out rather than inlined — nothing about
+ * the authoring path's behaviour moves.
  * @param {{messages: any[], generate: Function, mode: 'tool'|'text', retries: number,
- *   label: string, book: ReturnType<typeof makeCostBook>, catalogue: Record<string, any>,
- *   verdictType: string}} o
+ *   label: string, book: ReturnType<typeof makeCostBook>,
+ *   channel: {name: string, instruction: string, textPath?: string, tool: (box: {calls: any[]}) => any}}} o
+ * @returns {Promise<{artifact: any, attempts: number, convo: any[], raw: string,
+ *   providerError: string|null, red: Red|null, budget: 'cap-halt'|'pricing-red'|null}>}
  */
-async function askDeclaration({ messages, generate, mode, retries, label, book, catalogue, verdictType }) {
+export async function askStructured({ messages, generate, mode, retries, label, book, channel }) {
   /** @type {any[]} */
   const convo = [...messages];
   let attempts = 0;
@@ -1185,52 +1194,78 @@ async function askDeclaration({ messages, generate, mode, retries, label, book, 
     // unbounded. `attempts` is returned as-is so the caller can tell a cap that
     // tripped before this ask began (0) from one that cut a retry ladder short.
     const halt = book.capStop();
-    if (halt) return { declaration: null, attempts, convo, raw: '', providerError: null, red: null, budget: halt };
+    if (halt) return { artifact: null, attempts, convo, raw: '', providerError: null, red: null, budget: halt };
 
     /** @type {{calls: any[]}} */
     const box = { calls: [] };
     // the tool's schema is CLASS-SCOPED, like the prompt's catalogue block: the
     // two must offer one set of kinds, or the composer reads about a kind it
     // cannot call — or worse, calls one the ceiling will refuse after we paid.
-    const tools = mode === 'tool' ? [declarationTool(box, { catalogue, verdictType })] : [];
+    const tools = mode === 'tool' ? [channel.tool(box)] : [];
     const r = await generate(convo, tools, {});
     attempts += 1;
     book.add(attempt === 0 ? label : `${label}#${attempt + 1}`, r, attempts);
     const raw = redactSecrets(String(r?.text ?? ''));
 
     if (r?.error) {
-      return { declaration: null, attempts, convo, raw, providerError: String(r.error), red: null, budget: null };
+      return { artifact: null, attempts, convo, raw, providerError: String(r.error), red: null, budget: null };
     }
 
     if (mode === 'tool') {
-      if (box.calls.length === 1) return { declaration: box.calls[0], attempts, convo, raw, providerError: null, red: null, budget: null };
+      if (box.calls.length === 1) return { artifact: box.calls[0], attempts, convo, raw, providerError: null, red: null, budget: null };
       red = {
         code: 'artifact-red',
-        path: DECLARATION_TOOL_NAME,
+        path: channel.name,
         detail: box.calls.length === 0
-          ? `the reply delivered no ${DECLARATION_TOOL_NAME} call — structure is enforced, prose is never parsed`
-          : `the reply delivered ${box.calls.length} ${DECLARATION_TOOL_NAME} calls; exactly one declaration is expected`,
+          ? `the reply delivered no ${channel.name} call — structure is enforced, prose is never parsed`
+          : `the reply delivered ${box.calls.length} ${channel.name} calls; exactly one is expected`,
         axis: box.calls.length === 0 ? 'no-declaration-tool-call' : 'multiple-declaration-tool-calls',
       };
     } else {
       // THE FALLBACK PATH — providers without tool mode only. The ONE shipped
       // parser, never a second one.
+      const at = channel.textPath ?? channel.name;
       const { code, red: extractRed } = extractArtifact(raw);
       if (code) {
-        try { return { declaration: JSON.parse(code), attempts, convo, raw, providerError: null, red: null, budget: null }; }
-        catch (e) { red = { code: 'artifact-red', path: 'declaration', detail: `the declaration did not parse as JSON: ${String(/** @type {any} */ (e)?.message ?? e)}`, axis: 'unparseable-json' }; }
+        try { return { artifact: JSON.parse(code), attempts, convo, raw, providerError: null, red: null, budget: null }; }
+        catch (e) { red = { code: 'artifact-red', path: at, detail: `the ${at} did not parse as JSON: ${String(/** @type {any} */ (e)?.message ?? e)}`, axis: 'unparseable-json' }; }
       } else {
-        red = { code: 'artifact-red', path: 'declaration', detail: `no artifact in the reply: ${extractRed}`, axis: 'no-artifact' };
+        red = { code: 'artifact-red', path: at, detail: `no artifact in the reply: ${extractRed}`, axis: 'no-artifact' };
       }
     }
 
     if (attempt < retries) {
       const block = renderRejectBlock({ kind: 'artifact', reds: [/** @type {Red} */ (red).detail] });
       convo.push({ role: 'assistant', content: raw.trim() || '(the reply carried no text)' });
-      convo.push({ role: 'user', content: `${block}\n\n${mode === 'tool' ? STRUCTURE_INSTRUCTION_TOOL : STRUCTURE_INSTRUCTION_TEXT}` });
+      convo.push({ role: 'user', content: `${block}\n\n${mode === 'tool' ? channel.instruction : STRUCTURE_INSTRUCTION_TEXT}` });
     }
   }
-  return { declaration: null, attempts, convo, raw: '', providerError: null, red, budget: null };
+  return { artifact: null, attempts, convo, raw: '', providerError: null, red, budget: null };
+}
+
+/** THE DECLARATION CHANNEL — the one this loop has always used. Its schema is
+ * CLASS-SCOPED, like the prompt's catalogue block: the two must offer one set of
+ * kinds, or the composer reads about a kind it cannot call.
+ * @param {{catalogue: Record<string, any>, verdictType: string}} o */
+const declarationChannel = ({ catalogue, verdictType }) => ({
+  name: DECLARATION_TOOL_NAME,
+  instruction: STRUCTURE_INSTRUCTION_TOOL,
+  textPath: 'declaration',
+  tool: (/** @type {{calls: any[]}} */ box) => declarationTool(box, { catalogue, verdictType }),
+});
+
+/** The declaration ask, over the shared ladder. `declaration` is `artifact`
+ * under this channel's own name — the flow below reads a declaration, not an
+ * anonymous artifact, and one word for two things is how a reader loses which.
+ * @param {{messages: any[], generate: Function, mode: 'tool'|'text', retries: number,
+ *   label: string, book: ReturnType<typeof makeCostBook>, catalogue: Record<string, any>,
+ *   verdictType: string}} o
+ */
+async function askDeclaration({ messages, generate, mode, retries, label, book, catalogue, verdictType }) {
+  const r = await askStructured({
+    messages, generate, mode, retries, label, book, channel: declarationChannel({ catalogue, verdictType }),
+  });
+  return { ...r, declaration: r.artifact };
 }
 
 /**

@@ -113,7 +113,23 @@ export {
 export {
   JUDGE_MODEL, JUDGE_MAX_TOKENS, JUDGE_RULES, JUDGE_RULE_IDS, LOCATE_AXES, LOCATE_LABEL,
   validateCard, validateFacts, locatePrompt, runLocate, decide, defaultJudgeLoop,
+  // SOFTGREEN module 4 — what a legal SIGNED calibration set is. The SIZE is
+  // hamr's own ruling and a size change is a spec-level threshold change;
+  // `expectedOf` is the ONE reduction of a `decide()` result to the shape a case
+  // stores, so a calibration harness compares one shape rather than two.
+  CALIBRATION_SIZE, CASE_VERDICTS, validateCalibrationSet, validateJudgedArtifacts, expectedOf,
 } from './judged.js';
+// SOFTGREEN module 4 — the COMPILE. Q6 becomes the rubric card and Q7 becomes the
+// frozen calibration set, both on the D5 shown-and-fixed path: the LLM proposes
+// through `proposeJudgedArtifacts`, an integrating UI shows the proposal, the
+// SIGNER's fix goes through `signJudgedArtifacts`, and `foldJudgedArtifacts`
+// enumerates both into the closeDecl — where the spec hash covers them, so a card
+// line or a case is a re-sign like every other spec edit.
+export {
+  proposeJudgedArtifacts, signJudgedArtifacts, foldJudgedArtifacts,
+  proposalSchema, proposalTool, cardCasesPrompt,
+  PROPOSAL_TOOL_NAME, PROPOSAL_LABEL, MAX_PROPOSAL_RETRIES, COMPILE_SYSTEM,
+} from './cardauthor.js';
 // M2 — what a declaration may SAY, and whether one said it legally. The
 // catalogue and the genre are DATA an integrating UI renders (the kind menu, the
 // guard batteries it must show the user under D5 and cannot let them remove).

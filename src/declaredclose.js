@@ -73,6 +73,9 @@ import {
   validateDeclaration, classGuards, genreOwnedEnvNames, ungroundedGenreEnv, GENRE_LANGUAGES, TYPES_GENRE,
   VERDICT_CLASSES, LIVE_CLASSES, NEVER_OFFERED_KINDS,
 } from './authoring.js';
+// the calibration set's own gate lives beside the rulebook it is graded against
+// (src/judged.js) — one opinion about what a judged floor's signed artifacts are
+import { validateCalibrationSet } from './judged.js';
 import { stageGap } from './ralph.js';
 import { isObj, isNonEmptyString } from './validate.js';
 
@@ -99,7 +102,7 @@ export const DECLARED_GENRES = Object.freeze([TYPES_GENRE.name]);
  * constrained to the names the genre OWNS, so it can never become an environment
  * channel of its own.
  */
-export const CLOSE_DECL_FIELDS = Object.freeze(['genre', 'lang', 'stages', 'notes', 'genreEnv']);
+export const CLOSE_DECL_FIELDS = Object.freeze(['genre', 'lang', 'stages', 'notes', 'genreEnv', 'calibration']);
 
 /**
  * The prefix M1 puts on EVERY gap line of a declared stage (its `ctx.gapKeep`).
@@ -380,6 +383,39 @@ export function validateCloseDecl(closeDecl, opts = {}) {
     envInjected,
   });
   for (const r of v.reds) reds.push({ ...r, path: r.path ? `${at}.${r.path}` : at });
+
+  // ── THE FROZEN CALIBRATION SET (softgreen module 4, design §4.4). It rides
+  // the closeDecl rather than a stage's params because it calibrates the RULER,
+  // not one stage's parameters — and because it is read BEFORE any stage runs.
+  //
+  // WHAT IS CHECKED HERE is that a stored set is LEGAL: exactly the signed size,
+  // both polarities present, itemized reds naming lines THIS close's card
+  // actually carries. WHAT IS NOT is whether the pipe grades it correctly — that
+  // is module 5's gate, it costs paid calls, and a validator cannot buy them.
+  //
+  // A set with NO judged stage to calibrate is its own red: the card lives on
+  // the stage, so an orphan set is graded against nothing and would validate
+  // clean forever. The reverse (a judged stage with no set) is deliberately NOT
+  // redded here — making the set MANDATORY is the signing gate's call, and
+  // module 5 owns it.
+  if (closeDecl.calibration !== undefined) {
+    const judged = (Array.isArray(closeDecl.stages) ? closeDecl.stages : [])
+      .filter((/** @type {any} */ s) => isObj(s) && s.kind === 'judged-floor');
+    if (!isObj(closeDecl.calibration)) {
+      red('invalid-value', `${at}.calibration`, 'the frozen calibration set, as an object carrying `cases`');
+    } else if (judged.length !== 1) {
+      red('calibration-orphan', `${at}.calibration`, `this close carries a calibration set and ${judged.length} `
+        + 'judged-floor stage(s). The set calibrates ONE judged ruler against ONE card — with no judged stage it is '
+        + 'graded against nothing and would read clean forever, and with two there is no one card it belongs to',
+      { judgedStages: judged.length });
+    } else {
+      for (const key of Object.keys(closeDecl.calibration)) {
+        if (key !== 'cases') red('invalid-value', `${at}.calibration.${key}`, 'a calibration set carries `cases` and nothing else');
+      }
+      const cv = validateCalibrationSet(closeDecl.calibration.cases, { card: judged[0]?.params?.card ?? null });
+      for (const r of cv.reds) reds.push({ ...r, path: r.path ? `${at}.${r.path}` : `${at}.calibration` });
+    }
+  }
 
   const ok = reds.length === 0;
   return {
