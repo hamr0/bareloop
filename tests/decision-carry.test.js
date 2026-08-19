@@ -360,6 +360,26 @@ test('F103 — an ordinary resume still FOLDS the wall: W-2 is untouched where i
   assert.equal(r2.events.find((e) => e.type === 'engagement').engagementPriorWallMs, burnt);
 });
 
+test('F103 — the resolver reads BOTH doors: a review door\'s rerun is a fresh engagement too', () => {
+  // the door's rerun is deliberately NOT a ruling (it answers a finished RUN, not a
+  // close's human stage), so it arrives in its own slot — and "is this a fresh
+  // engagement" still gets exactly one spelling.
+  const door = { text: WORDS, fromRunid: 'ms1' };
+  assert.equal(resolveHumanRuling(null, null, door).fresh, true, 'the door alone opens a fresh engagement');
+  assert.equal(resolveHumanRuling(null, null).fresh, false, 'and a cold leg is not one');
+  assert.equal(resolveHumanRuling(null, null, door).ruling, null, 'the door is never read AS a ruling');
+
+  // PRECEDENCE, stated: the two are OR'd, never merged. A leg handed both is fresh —
+  // freshness is the fail-safe direction (a fresh clock costs nothing; inheriting a
+  // dead leg's wall is the structurally impossible engagement F103 measured).
+  assert.equal(resolveHumanRuling({ decision: 'accept' }, null, door).fresh, true,
+    'a door rerun makes the leg fresh whatever the close\'s own ruling says');
+  assert.equal(resolveHumanRuling({ decision: 'accept' }, null, door).ruling.decision, 'accept',
+    'and the ruling itself is untouched — one reading is shared, the two answers are not');
+  // the ambiguity refusal is unchanged: the door is not a third answer to that question
+  assert.equal(resolveHumanRuling({ decision: 'accept' }, { decision: 'rerun', text: WORDS }, door).ok, false);
+});
+
 test('F103 — the MONEY ceiling is the CHAIN\'s: a rerun spends the remaining signed budget, never a refill', async (t) => {
   const leg = await pauseLeg(t);
   const p = scriptedProvider([

@@ -18,6 +18,9 @@ import { makeSpine } from '../src/spine.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
 // the three doors' SEMANTICS live in the library; this script surfaces them
 import { normalizeHumanRuling, resolveHumanRuling } from '../src/kinds.js';
+// SOFTGREEN — the judged stage's PINNED tier. The constant is the library's; a
+// spelling here would be a second pin that can drift from the one the gate calibrated.
+import { JUDGE_MODEL } from '../src/judged.js';
 // --resume reads the halted run's own spine back through the SAME reader the reuse
 // path uses (never a second one) and keeps its patient the way it left it.
 import { readResume, resumeTreeGate, checkpointAgeGate, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS } from '../src/reuse.js';
@@ -520,8 +523,16 @@ const readDiff = (paths) => {
 };
 /** F103 — is THIS leg a fresh engagement? A rerun is: the person commissioned new
  * work at the moment they took the door, and they did not decide on the run's clock.
- * The reading comes from the library's one resolver, never a second spelling here. */
-const FRESH_ENGAGEMENT = resolveHumanRuling(RULING, HELD).fresh;
+ * The reading comes from the library's one resolver, never a second spelling here.
+ *
+ * BOTH DOORS are handed to it. A `--decide rerun` on a `--door` reaches the library
+ * as `doorRerun` rather than as a ruling (one flag, two questions), so it is passed
+ * in that slot here too — the `DOOR_RERUN` record itself is only built further down,
+ * after the library has answered the door, and a runner whose watchdog wall folded
+ * while the run's own clock did not would be the two counters disagreeing again. */
+const FRESH_ENGAGEMENT = resolveHumanRuling(
+  RULING, HELD, DOOR !== null && RULING?.decision === 'rerun' ? RULING : null,
+).fresh;
 /** the restart runs on the REMAINDER of the signed wall, never a fresh allotment —
  * "a budget ceiling folds in prior spend so re-invoking cannot silently widen it",
  * in a time coat. Both the run's own clock and the outside watchdog read this one.
@@ -954,6 +965,16 @@ const TIER_MODELS = DEFAULT_TIER_MODELS;
 /** @type {Record<string, any>} */
 const tierCache = {};
 const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] === MODEL ? provider : new AnthropicProvider({ apiKey, model: TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] }));
+/** SOFTGREEN — the JUDGED stage's own provider, and it is not the worker's. The tier
+ * is PINNED (`JUDGE_MODEL`), never a step knob and never agent-selectable: §4.2's
+ * safety argument is worth exactly as much as the tier its injection evidence was
+ * measured on. Built UNCONDITIONALLY and deliberately so — construction costs nothing
+ * and makes no call, `runPlan` reads it only when a stage is `judged-floor`, and the
+ * alternative (deriving "does this close judge?" here) is a second reading of the
+ * declaration that can drift from the one the runner actually executes. Absent, a
+ * judged stage instrument-STOPS as a wiring gap, which is what every live softgreen
+ * run would have done: run-author wired this seam and this runner never did. */
+const judgeProvider = new AnthropicProvider({ apiKey, model: JUDGE_MODEL });
 
 const started = Date.now();
 console.log(`\n== U run ${runid} ==  $${spec.budgetUsd} · ${WALL_LABEL} · ${MODEL}`);
@@ -1048,7 +1069,7 @@ const lagTimer = setInterval(() => {
 let outcome;
 try {
   outcome = await runJob(spec, {
-    approvals, workdir: wd, provider, providerFor, emit: makeSpine(spineFile),
+    approvals, workdir: wd, provider, providerFor, judgeProvider, emit: makeSpine(spineFile),
     shellCapUsd: spec.budgetUsd, capRuns: CAP_RUNS, strikeLimit: STRIKE_LIMIT, closeTimeoutMs: CLOSE_TIMEOUT_MS,
     // RESUME: the money and the wall the halted run already burned are FOLDED IN (so
     // the signed ceiling cannot widen by being re-invoked), and the checkpoint it

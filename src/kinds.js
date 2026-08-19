@@ -1523,16 +1523,35 @@ export function normalizeHumanRuling(ruling) {
  * *"redo/rerun comes with new authoring for money+time and keeps accounting of
  * this far and this session separate counters"*), and nothing else is. An `accept`
  * commissions no work and a `pause` runs nothing, so neither opens one.
+ *
+ * A REVIEW DOOR's rerun (module 8) is the SAME fact arriving one level out, and it
+ * is folded in here rather than beside the clock, because "is this a fresh
+ * engagement" gets ONE spelling — a second one is how a record and a clock come to
+ * disagree about the same leg, which is the very thing this resolver exists to
+ * prevent. It is deliberately NOT read as a ruling: a `humanRuling` answers a
+ * close's human STAGE and is refused for a close that has none, so the door's words
+ * stay in their own parameter and only this reading is shared.
+ *
+ * PRECEDENCE, stated because both CAN be handed to one leg: a door rerun makes the
+ * engagement fresh whatever the ruling says, and the two are OR'd, never merged.
+ * Freshness is the FAIL-SAFE direction — a fresh clock costs a leg nothing, while
+ * inheriting a dead leg's wall is F103's measured, structurally-impossible
+ * engagement. The door's own validation (empty words are refused) stays where it
+ * is, at the seam that accepts it.
  * @param {any} fresh the answer arriving on this invocation (`--decide`), or null
  * @param {any} held the answer the CHECKPOINT carries (`readResume`'s
  *   `restart.pendingDecision`), or null. `receivedAt` is when the PERSON said it —
  *   carried through so the resumed leg records the receipt, not its own re-reading.
+ * @param {any} [doorRerun] MODULE 8 — the review door's rerun, when this leg IS the
+ *   fresh engagement a signer commissioned at a previous run's door. Presence is the
+ *   whole of what is read here; the words are the accepting seam's business.
  * @returns {{ok: boolean, why: string|null, ruling: {decision: string, text: string|null}|null,
  *   source: 'operator'|'checkpoint'|null, receivedAt: string|null, fresh: boolean}}
  */
-export function resolveHumanRuling(fresh, held) {
+export function resolveHumanRuling(fresh, held, doorRerun = null) {
   const has = (/** @type {any} */ v) => v !== null && v !== undefined;
-  const none = { ruling: null, source: /** @type {any} */ (null), receivedAt: null, fresh: false };
+  const atDoor = has(doorRerun);
+  const none = { ruling: null, source: /** @type {any} */ (null), receivedAt: null, fresh: atDoor };
   if (has(fresh) && has(held)) {
     const d = typeof held === 'object' && !Array.isArray(held) ? String(/** @type {any} */ (held).decision) : String(held);
     return {
@@ -1554,7 +1573,8 @@ export function resolveHumanRuling(fresh, held) {
     ruling: norm.ruling,
     source: has(fresh) ? 'operator' : 'checkpoint',
     receivedAt: typeof at === 'string' && at.length > 0 ? at : null,
-    fresh: norm.ruling.decision === 'rerun',
+    // OR'd, never merged: either door the person came through commissions work
+    fresh: atDoor || norm.ruling.decision === 'rerun',
   };
 }
 

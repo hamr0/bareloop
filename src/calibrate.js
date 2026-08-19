@@ -301,10 +301,18 @@ export function factsResist(facts, gold, artifactText) {
  * because a retry of an unpriced call buys more spend nobody can see (F6). A
  * calibration that ran a different ladder from the close would certify a pipe
  * nobody is going to run.
+ * THE CEILING IS READ HERE, immediately before each paid call and nowhere else —
+ * the same siting `askStructured` uses for the declaration ladder, and for the
+ * same reason: this loop is where every locate call the gate buys is actually
+ * made, retries included. The retry axis matters most, because it fires exactly
+ * when the model is malforming, which is the worst moment for a paid ladder to be
+ * unbounded. A stop comes back as its own field rather than as a `red`: a ceiling
+ * is the OPERATOR's governance, never the transport's casualty.
  * @param {{artifactText: string, card: any, judgeLoop: Function, attempts: number,
- *   meter: (c: any) => void, id: string, kind: string}} o
+ *   meter: (c: any) => void, id: string, kind: string,
+ *   capStop: () => 'cap-halt'|'pricing-red'|null}} o
  */
-async function pipeOnce({ artifactText, card, judgeLoop, attempts, meter, id, kind }) {
+async function pipeOnce({ artifactText, card, judgeLoop, attempts, meter, id, kind, capStop }) {
   /** @type {any} */
   let last = null;
   /** @type {any[]} */
@@ -315,6 +323,8 @@ async function pipeOnce({ artifactText, card, judgeLoop, attempts, meter, id, ki
   // no reading to report, which is the one direction that must be unreachable.
   const bound = Math.max(1, Math.min(Math.trunc(Number(attempts)) || 0, JUDGE_ATTEMPTS));
   for (let attempt = 1; attempt <= bound; attempt += 1) {
+    const halt = capStop();
+    if (halt) return { ok: false, budget: halt, tries, red: null, facts: null, decision: null };
     last = await runLocate({
       artifactText,
       card,
@@ -329,8 +339,8 @@ async function pipeOnce({ artifactText, card, judgeLoop, attempts, meter, id, ki
     if (last.ok) break;
     if (last.red.axis === LOCATE_AXES.PRICING) break;
   }
-  if (!last.ok) return { ok: false, tries, red: last.red, facts: null, decision: null };
-  return { ok: true, tries, red: null, facts: last.facts, decision: decide(last.facts, card, { artifactText }) };
+  if (!last.ok) return { ok: false, budget: null, tries, red: last.red, facts: null, decision: null };
+  return { ok: true, budget: null, tries, red: null, facts: last.facts, decision: decide(last.facts, card, { artifactText }) };
 }
 
 /**
@@ -351,8 +361,19 @@ async function pipeOnce({ artifactText, card, judgeLoop, attempts, meter, id, ki
  * ALL-OR-NOTHING, both halves (v1.73 ruling 2 and ruling 3, kept by the second
  * addendum's ruling 1): `ok` is true only when all ten graded correctly AND all
  * five styles resisted AND nothing was a casualty.
+ * THE OPERATOR'S CEILING RIDES IN AS A PREDICATE (`capStop`), asked between metered
+ * calls exactly as the authoring pipeline's cost book asks its own. It is the
+ * CALLER's book that answers, because the gate is the THIRD paid seam of one run and
+ * a tally that starts at zero here would be a second ceiling wearing the first one's
+ * number. Absent is UNBOUNDED, and unbounded is a stated operator choice.
+ *
+ * A ceiling stop is a REFUSAL, never a throw and never a partial set presented as a
+ * graded one: `ok` is false, the cases nobody bought are absent rather than recorded
+ * as failures, and `casualty` stays null — the transport was fine, the operator's own
+ * governance stopped the gate.
  * @param {{cases: any, card: any, judgeLoop: Function|null,
- *   onCost?: (c: any) => void, attempts?: number, battery?: any[], batteryCard?: any}} o
+ *   onCost?: (c: any) => void, attempts?: number, battery?: any[], batteryCard?: any,
+ *   capStop?: () => 'cap-halt'|'pricing-red'|null}} o
  * @returns {Promise<{ok: boolean, stop: string|null, casualty: any,
  *   graded: {id: string, ok: boolean, got: any, want: any, detail: string|null}[],
  *   injection: {styles: any[], allResisted: boolean, leaks: string[]},
@@ -365,6 +386,7 @@ export async function runCalibration({
   attempts = JUDGE_ATTEMPTS,
   battery = /** @type {any[]} */ (/** @type {unknown} */ (INJECTION_LOCATE_BATTERY)),
   batteryCard = INJECTION_CARD,
+  capStop = () => null,
 }) {
   /** @type {any[]} */
   const calls = [];
@@ -387,6 +409,28 @@ export async function runCalibration({
       ...extra,
     });
   };
+
+  /**
+   * THE CEILING'S STOP, said in money's own words. It is a refusal the operator
+   * reads, not a reading of their close: nothing here says the ruler is wrong, only
+   * that nobody funded the rest of the question.
+   * @param {'cap-halt'|'pricing-red'} stop @param {string} at @param {object} extra
+   */
+  const budgetOut = (stop, at, extra) => out({
+    ...extra,
+    stop,
+    reds: [{
+      code: stop,
+      path: 'budgetUsd',
+      detail: stop === 'cap-halt'
+        ? `the ceiling is spent, and the next calibration call (${at}) was never made. The gate buys `
+          + `${CALIBRATION_SIZE} locate calls plus a ${battery.length}-artifact injection battery, and a set that was `
+          + 'only part-graded is still an ungraded ruler — raise the ceiling and re-run the gate'
+        : `an unpriced call has made this run's total UNKNOWN, so the ceiling cannot be read against it and the next `
+          + `calibration call (${at}) was never made. Unpriced is never free (F6), and a retry only buys more spend `
+          + 'nobody can see',
+    }],
+  });
 
   // ── $0 first: is there anything legal to grade? ────────────────────────────
   const cv = validateCard(card);
@@ -427,8 +471,11 @@ export async function runCalibration({
   for (const c of cases) {
     const r = await pipeOnce({
       artifactText: String(c.artifact), card, judgeLoop: /** @type {Function} */ (judgeLoop),
-      attempts, meter, id: String(c.id), kind: 'case',
+      attempts, meter, id: String(c.id), kind: 'case', capStop,
     });
+    // the ceiling, ahead of the casualty branch: a call nobody funded is not a call
+    // that failed, and filing it as one would blame the transport for a budget
+    if (r.budget) return budgetOut(r.budget, `case "${c.id}"`, { ...stamped, graded });
     if (!r.ok) {
       // A CASUALTY STOPS THE GATE. It is not a failed case and it is never
       // recorded as one: the pipe never read this artifact, so the set is
@@ -471,8 +518,13 @@ export async function runCalibration({
   for (const b of battery) {
     const r = await pipeOnce({
       artifactText: b.artifact, card: batteryCard, judgeLoop: /** @type {Function} */ (judgeLoop),
-      attempts, meter, id: b.id, kind: 'injection',
+      attempts, meter, id: b.id, kind: 'injection', capStop,
     });
+    if (r.budget) {
+      return budgetOut(r.budget, `injection style "${b.style}"`, {
+        ...stamped, graded, injection: { styles, allResisted: false, leaks: [] },
+      });
+    }
     if (!r.ok) {
       return out({
         ...stamped,

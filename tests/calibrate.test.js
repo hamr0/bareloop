@@ -660,6 +660,113 @@ test('the paid gate runs LAST — a close that fails a $0 gate never buys a call
   assert.equal(j.calls.length, 0, 'and never paid for');
 });
 
+// ── 7b. THE THIRD PAID SEAM MEETS THE ONE CEILING ───────────────────────────
+//
+// The gate buys up to ten locate calls plus a five-artifact battery, each under
+// its own retry ladder — the largest paid seam the authoring pipeline has. It
+// used to run with NO ceiling at all while the scout and the declaration loop
+// were both bounded by the operator's own number, which is the advertised budget
+// and the enforced budget being two different numbers (PRD v1.62).
+//
+// A ceiling stop here is a REFUSAL that names money: never a throw, never a
+// partial set presented as a graded one, and never a casualty (the transport was
+// fine — the operator's own governance stopped the gate). Tighten-only: the gate
+// may stop earlier than the ceiling and never runs past it.
+
+test('the CEILING is read before every paid call — a spent one buys nothing at all', async () => {
+  const j = honest();
+  const r = await runCalibration({ cases: CASES(), card: CARD(), judgeLoop: j.loop, capStop: () => 'cap-halt' });
+  assert.equal(r.ok, false);
+  assert.equal(r.stop, 'cap-halt');
+  assert.equal(j.calls.length, 0, 'the check is BEFORE the call, not after it');
+  assert.equal(r.casualty, null, 'a ceiling is governance — never a casualty, and never a verdict on the set');
+  assert.deepEqual(r.graded, [], 'nothing was graded, and nothing is reported as graded');
+  assert.equal(r.injection.allResisted, false, 'an unrun battery resisted nothing');
+  assert.ok(r.reds.some((x) => x.code === 'cap-halt' && x.path === 'budgetUsd'), JSON.stringify(r.reds));
+  assert.match(r.reds[0].detail, /ceiling/);
+});
+
+test('a ceiling that trips MID-SET stops there, and the partial is never presented as complete', async () => {
+  const j = honest();
+  let left = 3;
+  const r = await runCalibration({
+    cases: CASES(), card: CARD(), judgeLoop: j.loop,
+    capStop: () => (left-- > 0 ? null : 'cap-halt'),
+  });
+  assert.equal(r.ok, false, 'a gate that graded three of ten has not passed');
+  assert.equal(r.stop, 'cap-halt');
+  assert.equal(j.calls.length, 3, 'it stopped at the ceiling, never past it');
+  assert.equal(r.graded.length, 3);
+  assert.ok(r.graded.every((g) => g.ok), 'and the three it DID grade are reported honestly');
+  assert.equal(r.failures.length, 0, 'a case nobody bought is not a failed case');
+  assert.ok(r.costUsd > 0, 'what it did spend is still metered');
+});
+
+test('an UNPRICED prior call trips the ceiling as a pricing-red — unknown is never free (F6)', async () => {
+  const j = honest();
+  const r = await runCalibration({ cases: CASES(), card: CARD(), judgeLoop: j.loop, capStop: () => 'pricing-red' });
+  assert.equal(r.stop, 'pricing-red');
+  assert.equal(j.calls.length, 0);
+  assert.ok(r.reds.some((x) => x.code === 'pricing-red' && x.path === 'budgetUsd'));
+});
+
+test('THE ONE OPERATOR NUMBER reaches the gate: a ceiling already spent refuses before a token', async (t) => {
+  const p = makePatient(t);
+  const j = honest();
+  const r = await prepareSigning({
+    spec: sgSpec(), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeLoop: j.loop,
+    ceilingUsd: 0.25,
+    // what the scout and the declaration loop already spent, folded in — a ceiling
+    // that starts each seam's tally at zero is three ceilings wearing one number
+    priorCalls: [{ label: 'author', costUsd: 0.25, unpricedRounds: 0 }],
+  });
+  assert.equal(r.ok, false);
+  assert.equal(r.specHash, null);
+  assert.equal(j.calls.length, 0, 'the gate never bought a call against a spent ceiling');
+  assert.equal(r.gates.calibration.stop, 'cap-halt');
+  assert.match(r.refusal.detail, /ceiling/i);
+  assert.equal(r.refusal.kind, 'decision-ready');
+  assert.ok(r.refusal.options.some((o) => /raise/i.test(o)), JSON.stringify(r.refusal.options));
+});
+
+test('the ceiling BINDS the gate mid-flight, and a gate with room is unchanged', async (t) => {
+  const p = makePatient(t);
+  // each locate call is $0.0004 and $0.0009 of headroom is left, so three calls land
+  // and the fourth never fires: the ceiling is read BETWEEN calls (`capStop`'s one
+  // predicate, everywhere in this pipeline), so the last call it admits may carry the
+  // tally past the number. That is the shipped semantics, asserted rather than
+  // rounded — a test claiming an exact-to-the-cent cut would be testing a bound
+  // nothing in this repository has.
+  const j = honest();
+  const bound = await prepareSigning({
+    spec: sgSpec(), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeLoop: j.loop,
+    ceilingUsd: 0.01, priorCalls: [{ label: 'author', costUsd: 0.0091, unpricedRounds: 0 }],
+  });
+  assert.equal(bound.ok, false);
+  assert.equal(bound.gates.calibration.stop, 'cap-halt');
+  assert.equal(j.calls.length, 3, 'the balance funded three calls, and the fourth never fired');
+
+  // …and the SAME spec under a ceiling with room signs exactly as it did before
+  const j2 = honest();
+  const free = await prepareSigning({
+    spec: sgSpec(), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeLoop: j2.loop,
+    ceilingUsd: 5,
+  });
+  assert.equal(free.ok, true, JSON.stringify(free.reds ?? free.refusal));
+  assert.equal(free.gates.calibration.ok, true);
+  assert.equal(j2.calls.length, CALIBRATION_SIZE + INJECTION_LOCATE_BATTERY.length);
+});
+
+test('NO ceiling is unbounded here too — an absent number is a stated operator choice, never a default', async (t) => {
+  const p = makePatient(t);
+  const j = honest();
+  const r = await prepareSigning({
+    spec: sgSpec(), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeLoop: j.loop,
+  });
+  assert.equal(r.ok, true, JSON.stringify(r.reds ?? r.refusal));
+  assert.equal(j.calls.length, CALIBRATION_SIZE + INJECTION_LOCATE_BATTERY.length);
+});
+
 // ── 8. THE COMPILE, WIRED INTO THE DRIVER ───────────────────────────────────
 
 test('authorCloseForJob compiles Q6/Q7 into the close for a judged declaration', async (t) => {

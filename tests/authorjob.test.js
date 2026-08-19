@@ -117,6 +117,19 @@ const ANSWERS = {
   5: 'If the complaints only went quiet because something was told to look the other way.',
 };
 
+/** the same interview, for the class that buys a THIRD paid seam (the rubric and
+ * calibration compile). Q6/Q7 are soft-green's own two extra questions. */
+const JUDGED_ANSWERS = {
+  ...ANSWERS,
+  6: 'Whether every exported function reads like somebody meant it to be read.',
+  7: 'I would pass a documented function and fail an undocumented one.',
+};
+
+/** a declaration carrying a judged stage — what makes the compile seam reachable */
+const JUDGED_STAGES = () => [
+  { name: 'judged', kind: 'judged-floor', params: { card: { items: [{ rule: 'has-doc', text: 'documented' }] }, paths: ['src/email.js'] } },
+];
+
 const collector = () => {
   const events = [];
   return { events, emit: (type, data = {}) => { const e = { type, ...data }; events.push(e); return e; } };
@@ -844,7 +857,7 @@ test('THE GENRE REFUSAL MOVED TO THE COMPOSER: a language the catalogue cannot m
   assert.deepEqual(occs.map((o) => [o.class, o.lib, o.verb]), [['request-red', REFUSAL_LIB, 'genre-other']]);
 });
 
-test('THE CEILING is ONE operator number and it reaches BOTH paid seams', async (t) => {
+test('THE CEILING is ONE operator number and it reaches ALL THREE paid seams', async (t) => {
   const p = makePatient(t);
   /** @type {any} */
   const seen = { scout: 'never called', author: 'never called' };
@@ -860,7 +873,38 @@ test('THE CEILING is ONE operator number and it reaches BOTH paid seams', async 
   assert.equal(seen.scout, 0.25, 'the survey is a paid stage and is bounded by the same number');
   assert.equal(seen.author, 0.25, 'and so is the declaration loop — one ceiling, not two');
   assert.equal(r.stop, 'cap-halt', 'and the governance stop travels up as itself');
+
+  // …and the THIRD seam: the rubric/calibration compile, which only a judged close
+  // buys. It is bounded through the BOOK (the same object the ceiling is read off),
+  // and the declaration loop's own calls are absorbed into it first, so what the
+  // compile sees is the remaining balance rather than a fresh allowance.
+  /** @type {any} */
+  const compile = { ceiling: 'never called', absorbed: null };
+  await authorCloseForJob({
+    verdictType: 'soft-green', answers: JUDGED_ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
+    ceilingUsd: 0.25,
+    scoutFn: async () => SURVEY(p.dir),
+    authorFn: async () => ({
+      ok: true,
+      declaration: { stages: JUDGED_STAGES(), notes: [] },
+      reds: [],
+      stop: null,
+      genreEnv: { applied: {} },
+      cost: { costUsd: 0.1, knownUsd: 0.1, spendComplete: true, calls: [{ label: 'author', costUsd: 0.1, unpricedRounds: 0 }] },
+    }),
+    proposeFn: async (/** @type {any} */ o) => {
+      compile.ceiling = o.book.ceilingUsd;
+      compile.absorbed = o.book.report().costUsd;
+      return { ok: false, proposal: null, reds: [], stop: 'artifact-red', attempts: 1 };
+    },
+  });
+  assert.equal(compile.ceiling, 0.25, 'the compile is a paid seam and is bounded by the same number');
+  assert.equal(compile.absorbed, 0.1, 'with the declaration loop\'s spend already folded in — never a fresh allowance');
 });
+
+// the FOURTH place the same number has to reach is `prepareSigning`'s calibration
+// gate, which is not on this function's path: it is measured against the real gate
+// in tests/calibrate.test.js ("THE ONE OPERATOR NUMBER reaches the gate").
 
 test('NO ceiling travels as an EXPLICIT null — an unbounded run is a stated choice, not an absent field', async (t) => {
   const p = makePatient(t);

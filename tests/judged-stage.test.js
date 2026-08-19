@@ -172,6 +172,71 @@ test('judged-floor: a card item the facts do not satisfy is a RED, itemized down
   for (const line of r.gapLines) assert.ok(line.startsWith('close: '), `every gap line carries the keep: ${line}`);
   assert.equal(r.detail.redFiles, 1);
   assert.ok(r.detail.redItems >= 2, 'every item is graded, not just the first');
+
+  // …AND NOT ONE WORD MORE. The `unsure` line is the fail-safe's own voice — a red
+  // with nothing itemized under it — and it is pushed only when `decide()` named no
+  // card item at all. On an ITEMIZED red it must be silent: an unsure line beside
+  // named items would tell a worker the judge could not read the file it just quoted.
+  assert.deepEqual(r.detail.unsure, [], 'an itemized red is not an unsure one');
+  const bodies = r.gapLines.map((l) => l.replace(/^close: /, ''));
+  const twoSpace = bodies.filter((l) => /^ {2}\S/.test(l));
+  assert.ok(twoSpace.length > 0, 'the itemized card lines are there to be distinguished from');
+  assert.ok(twoSpace.every((l) => l.startsWith('  [')),
+    `only card items sit at that indent — an unsure line appeared: ${twoSpace.join(' | ')}`);
+});
+
+test('judged-floor: FIRST-RED-WINS is the CARD\'s order, ACROSS artifacts — never the file loop\'s', async () => {
+  // The two orders diverge only in this shape, and nothing exercised it: artifact 1
+  // reds a LATE card item and artifact 2 reds an EARLY one, so the file loop's first
+  // red and the card's first red are different rules. Reading the file loop's answer
+  // would make `firstRed` depend on the order the DECLARATION happened to list paths
+  // in — the arbiter's stable order is the card's, and it is signed.
+  const wd = patient();
+  writeFileSync(join(wd, 'src', 'late.js'), '/**\n * alpha does a thing.\n */\nexport function alpha() {\n  return 1;\n}\n');
+  writeFileSync(join(wd, 'src', 'early.js'), 'export function beta() {\n}\n');
+
+  /** documented and parameterless, but returns a value with no @returns → `returns` only */
+  const LATE_FACTS = {
+    functions: [{
+      name: 'alpha',
+      declarationQuote: 'export function alpha() {',
+      docQuote: '/**',
+      paramNames: [],
+      paramIsPattern: [],
+      paramTagNames: [],
+      returnsTagQuote: null,
+      returnsValueQuote: 'return 1;',
+    }],
+  };
+  /** undocumented, parameterless, returns nothing → `has-doc` only */
+  const EARLY_FACTS = {
+    functions: [{
+      name: 'beta',
+      declarationQuote: 'export function beta() {',
+      docQuote: null,
+      paramNames: [],
+      paramIsPattern: [],
+      paramTagNames: [],
+      returnsTagQuote: null,
+      returnsValueQuote: null,
+    }],
+  };
+
+  const j = fakeJudge([facts(LATE_FACTS), facts(EARLY_FACTS)]);
+  const r = await runStage(
+    stage({ card: CARD, paths: ['src/late.js', 'src/early.js'] }),
+    CTX(wd, { judgeLoop: j.loop }),
+  );
+
+  assert.equal(r.verdict, 'red');
+  assert.equal(r.detail.redFiles, 2);
+  // the divergence is REAL, asserted rather than assumed: the first artifact
+  // processed reds a rule the card declares LAST
+  assert.equal(r.detail.perPath[0].firstRed, 'returns', 'the file loop\'s first red is the LATE card item');
+  assert.equal(r.detail.perPath[1].firstRed, 'has-doc');
+  // …and the stage still reports the CARD's first red
+  assert.match(r.gapLines.join('\n'), /first red: has-doc/,
+    'the card\'s signed order decides — reading redItems[0] would answer "returns"');
 });
 
 test('judged-floor: an UNSURE reading is a red, not a pass — the fail-safe survives the wiring', async () => {

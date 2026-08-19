@@ -738,11 +738,20 @@ const scrubRed = (r) => /** @type {any} */ (Object.fromEntries(
  * says NOTHING about the set. It refuses the signature — an ungraded ruler is
  * still ungraded — but it refuses under the TRANSPORT's name, so the operator is
  * sent to the socket or the meter and never to their own rubric.
+ * AND IT MEETS THE ONE CEILING. This is the run's THIRD paid seam — the largest of
+ * them, at up to `CALIBRATION_SIZE` locate calls plus a five-artifact battery, each
+ * under its own retry ladder — and it used to run with no bound at all while the
+ * scout and the declaration loop were both stopped by the operator's own number.
+ * That is the advertised budget and the enforced budget being two different numbers.
+ * The book is built HERE and PRIOR SPEND IS ABSORBED into it, so the ceiling folds in
+ * what the earlier seams already spent and re-invoking a seam cannot silently widen
+ * it; the gate reads it between calls and stops as a refusal that names money.
  * @param {{spec: any, judgedStages: any[], judgeLoop: Function|null,
- *   onJudgeCost: ((c: any) => void)|null, calibrateFn: Function}} o
+ *   onJudgeCost: ((c: any) => void)|null, calibrateFn: Function,
+ *   ceilingUsd: number|null, priorCalls: any[]}} o
  * @returns {Promise<{ok: boolean, record: any, reds: Red[], refusal: Refusal|null}>}
  */
-async function calibrationGate({ spec, judgedStages, judgeLoop, onJudgeCost, calibrateFn }) {
+async function calibrationGate({ spec, judgedStages, judgeLoop, onJudgeCost, calibrateFn, ceilingUsd, priorCalls }) {
   const cases = spec.closeDecl?.calibration?.cases ?? null;
   // ONE card, and it is the SIGNED one — the card the calibration is graded
   // against must be the card the close will RUN, or the gate certifies a ruler
@@ -772,11 +781,24 @@ async function calibrationGate({ spec, judgedStages, judgeLoop, onJudgeCost, cal
     };
   }
 
+  // ONE CEILING, ALL THE PAID SEAMS (`authorCloseForJob` says the same words over
+  // the compile). The book absorbs what the run has already spent, so what the gate
+  // reads is the REMAINING balance and never a fresh allowance; `absorb` deliberately
+  // does not re-fire a reporter, so nothing is counted twice downstream.
+  const book = makeCostBook({ ceilingUsd });
+  book.absorb(Array.isArray(priorCalls) ? priorCalls : []);
   const cal = await calibrateFn({
     cases,
     card,
     judgeLoop,
-    onCost: typeof onJudgeCost === 'function' ? onJudgeCost : () => {},
+    // the gate's own calls join the same tally the ceiling is read against — a
+    // ceiling that cannot see the spend it bounds is F45's blind detector in a
+    // money coat. The caller's reporter fires with the call's whole record, after.
+    onCost: (/** @type {any} */ c) => {
+      book.absorb([{ label: c?.label ?? 'calibrate', costUsd: c?.costUsd ?? null, unpricedRounds: c?.unpricedRounds ?? 0 }]);
+      if (typeof onJudgeCost === 'function') onJudgeCost(c);
+    },
+    capStop: () => book.capStop(),
   });
 
   /** what the signing evidence KEEPS about this gate. The per-case artifacts are
@@ -805,21 +827,32 @@ async function calibrationGate({ spec, judgedStages, judgeLoop, onJudgeCost, cal
 
   const reds = cal.reds.map(scrubRed);
   const casualty = cal.casualty !== null && cal.casualty !== undefined;
-  const detail = casualty
-    ? `The calibration gate could not be RUN: the judge produced no usable facts for ${cal.casualty.kind} `
-      + `"${cal.casualty.at}" [${cal.casualty.axis}]. A broken judge is a casualty and never a verdict, so this says `
-      + 'nothing about the set — but an ungraded ruler is still an ungraded ruler, and it cannot be signed.'
-    : cal.stop === 'no-judge'
-      ? `This close carries a judged stage and no judge seam was wired, so the ${CALIBRATION_SIZE}-case gate never ran. `
-        + 'An absent seam is a wiring gap, never a fall-back: a gate that grades nothing would certify every close.'
-      : cal.stop === 'invalid-set'
-        ? 'The stored rubric card and calibration set do not compose into something gradeable, so the gate refused '
-          + 'before spending anything.'
-        : `The whole pipe did not grade this close's own calibration set correctly: `
-          + `${cal.failures.length} of ${Array.isArray(cases) ? cases.length : 0} case(s) graded wrong`
-          + `${cal.injection.leaks.length ? ` and ${cal.injection.leaks.length} injection style(s) leaked` : ''}. `
-          + `The floor is ${CALIBRATION_SIZE}/${CALIBRATION_SIZE} with itemized reds and all styles resisting `
-          + '(hamr, 2026-08-18) — the fix for a miss is a new card line or a corrected case, and a re-sign.';
+  /** the OPERATOR's own governance stop, and it is neither a casualty nor a reading
+   * of the close: the ceiling ran out mid-question, and what was graded before it
+   * did says nothing either way about the rest of the set. */
+  const budget = cal.stop === 'cap-halt' || cal.stop === 'pricing-red';
+  const detail = budget
+    ? (cal.stop === 'cap-halt'
+      ? `The calibration gate ran out of CEILING before it could finish: ${cal.graded.length} of `
+        + `${Array.isArray(cases) ? cases.length : 0} case(s) were graded and the next call was never made. A `
+        + 'part-graded set is an ungraded ruler, so nothing is signable — and nothing here says the ruler is wrong.'
+      : 'The calibration gate stopped on an UNPRICED call: with the run\'s total unknown the ceiling cannot be read '
+        + 'against it, and unpriced is never free (F6). Nothing here says anything about the set.')
+    : casualty
+      ? `The calibration gate could not be RUN: the judge produced no usable facts for ${cal.casualty.kind} `
+        + `"${cal.casualty.at}" [${cal.casualty.axis}]. A broken judge is a casualty and never a verdict, so this says `
+        + 'nothing about the set — but an ungraded ruler is still an ungraded ruler, and it cannot be signed.'
+      : cal.stop === 'no-judge'
+        ? `This close carries a judged stage and no judge seam was wired, so the ${CALIBRATION_SIZE}-case gate never ran. `
+          + 'An absent seam is a wiring gap, never a fall-back: a gate that grades nothing would certify every close.'
+        : cal.stop === 'invalid-set'
+          ? 'The stored rubric card and calibration set do not compose into something gradeable, so the gate refused '
+            + 'before spending anything.'
+          : `The whole pipe did not grade this close's own calibration set correctly: `
+            + `${cal.failures.length} of ${Array.isArray(cases) ? cases.length : 0} case(s) graded wrong`
+            + `${cal.injection.leaks.length ? ` and ${cal.injection.leaks.length} injection style(s) leaked` : ''}. `
+            + `The floor is ${CALIBRATION_SIZE}/${CALIBRATION_SIZE} with itemized reds and all styles resisting `
+            + '(hamr, 2026-08-18) — the fix for a miss is a new card line or a corrected case, and a re-sign.';
 
   return {
     ok: false,
@@ -830,17 +863,23 @@ async function calibrationGate({ spec, judgedStages, judgeLoop, onJudgeCost, cal
       verb: null,
       path: 'closeDecl.calibration',
       detail,
-      options: casualty || cal.stop === 'no-judge'
+      options: budget
         ? [
-          'wire a judge provider pinned to the judged tier and re-run the gate',
-          'wait out the provider and re-run — nothing about the close was judged here',
+          'raise the authoring ceiling and re-run the gate — the $0 gates above are already passed',
+          'run the gate unbounded (omit the ceiling) — that is a stated operator choice, never a default',
           'abandon the job',
         ]
-        : [
-          'correct the card line or the case the pipe graded differently, and re-sign',
-          'read the itemized rows above: a case the pipe reds for the WRONG reason is the card talking, not the judge',
-          'abandon the job',
-        ],
+        : casualty || cal.stop === 'no-judge'
+          ? [
+            'wire a judge provider pinned to the judged tier and re-run the gate',
+            'wait out the provider and re-run — nothing about the close was judged here',
+            'abandon the job',
+          ]
+          : [
+            'correct the card line or the case the pipe graded differently, and re-sign',
+            'read the itemized rows above: a case the pipe reds for the WRONG reason is the card talking, not the judge',
+            'abandon the job',
+          ],
     }),
   };
 }
@@ -889,7 +928,8 @@ async function calibrationGate({ spec, judgedStages, judgeLoop, onJudgeCost, cal
  *
  * @param {{spec: any, workdir: string, seedRef?: string|null, shellCapUsd?: number,
  *   timeoutMs?: number, seedFn?: Function, listingFn?: Function, seedReadFn?: Function,
- *   judgeLoop?: Function|null, onJudgeCost?: ((c: any) => void)|null, calibrateFn?: Function}} o
+ *   judgeLoop?: Function|null, onJudgeCost?: ((c: any) => void)|null, calibrateFn?: Function,
+ *   ceilingUsd?: number|null, priorCalls?: any[]}} o
  * @returns {Promise<{ok: boolean, specHash: string|null, seedRef: string|null,
  *   gates: any, work: any[], guards: any[], stops: any[], reds: Red[], refusal: Refusal|null}>}
  */
@@ -901,6 +941,13 @@ export async function prepareSigning({
   // drafting model). Absent is never a fall-back: a judged close whose gate could
   // not run is refused, not waved through.
   judgeLoop = null, onJudgeCost = null, calibrateFn = runCalibration,
+  // THE OPERATOR'S CEILING, and the spend it has already met. `null`/absent is
+  // UNBOUNDED and is a stated choice, never a default invented here (the same
+  // contract `authorCloseForJob` keeps). `priorCalls` is what the earlier paid
+  // seams of this run already cost — a `makeCostBook().report().calls` list — and
+  // it is ABSORBED so the gate reads the remaining balance rather than opening a
+  // fresh allowance under the same number.
+  ceilingUsd = null, priorCalls = [],
 }) {
   /** @type {any} */
   const base = {
@@ -1050,7 +1097,7 @@ export async function prepareSigning({
   // decision and this is the signing gate.
   const judgedStages = (spec.closeDecl.stages ?? []).filter((/** @type {any} */ s) => isObj(s) && s.kind === 'judged-floor');
   if (judgedStages.length) {
-    const cal = await calibrationGate({ spec, judgedStages, judgeLoop, onJudgeCost, calibrateFn });
+    const cal = await calibrationGate({ spec, judgedStages, judgeLoop, onJudgeCost, calibrateFn, ceilingUsd, priorCalls });
     base.gates.calibration = cal.record;
     if (!cal.ok) return { ...base, work, guards, reds: cal.reds, refusal: cal.refusal };
   }

@@ -383,6 +383,66 @@ test('a DOOR RERUN re-enters the run: the already-green shortcut is refused, and
   assert.ok(provider.calls.some((c) => c.includes(WORDS)), 'the signer\'s words reach the PLANNER — a rerun is new authoring');
 });
 
+// F103 AT THE DOOR — the rerun the DOOR commissions is a fresh engagement too.
+//
+// `ruling.fresh` was the only source of that reading, and a door's rerun does not
+// arrive as a `humanRuling`: it is a separate parameter, so every door-rerun leg
+// recorded itself as `cold` (or, with a wall folded in, `resume`) and would have
+// inherited the dead leg's clock — the exact defect F103 measured on `msx7a3rj`,
+// re-opened one door along.
+
+test('a DOOR RERUN is a FRESH ENGAGEMENT: it says so on the record and it buys its own clock', async (t) => {
+  const p = makePatient(t);
+  const job = SPEC('green');
+  writeFileSync(join(p.dir, 'src', 'fix.js'), '// ok\n');
+  const clock = { t: Date.parse('2026-08-19T13:00:00.000Z'), stepMs: 500 };
+  const provider = scriptedProvider([
+    { text: 'src/ holds mod.js and fix.js.' },
+    { text: PLAN },
+    tcall('t1', join(p.dir, 'src', 'fix.js'), '// ok — the real implementation\n'),
+    { text: 'rewrote src/fix.js' },
+  ]);
+  const outcome = await runJob(job, {
+    approvals: approve(job), workdir: p.dir, provider, emit: virtualSpine(p.spine, clock), reviewDoor: true,
+    doorRerun: { text: WORDS, fromRunid: 'ms1', receivedAt: '2026-08-19T12:00:00.000Z' },
+    // …and the chain's own minutes, which is the shape that made this dangerous:
+    // 29 of the signed 30 already burnt by the leg the person REJECTED
+    priorWallMs: 29 * 60_000,
+  });
+  assert.equal(outcome, 'green', 'a rerun that opens onto one minute of a 30-minute wall is structurally doomed');
+
+  const events = readEvents(p.spine);
+  const eng = events.find((e) => e.type === 'engagement');
+  assert.equal(eng.kind, 'rerun', 'the audit record must not say "cold" about a leg a person commissioned');
+  assert.equal(eng.engagementPriorWallMs, 0, 'F103: the rejected leg\'s minutes are not a bound on this one');
+  // …and the CHAIN view is untouched: the halt readout still spans every leg
+  assert.equal(eng.chainWallMs, 29 * 60_000, 'the chain total is never lost — the two counters answer two questions');
+  assert.match(eng.meaning, /FRESH ENGAGEMENT/);
+  const wc = events.find((e) => e.type === 'wall-clock');
+  assert.equal(wc.chainWallMs, 29 * 60_000);
+  assert.ok(wc.remainingMs > 25 * 60_000, `the fresh engagement opens on a real wall, not a minute (${wc.remainingMs}ms)`);
+  // the job-start DECLARATION carries the same reading — a resume of THIS leg must
+  // fold this engagement's minutes, never the chain's
+  const start = events.find((e) => e.type === 'job-start');
+  assert.equal(start.priorWallMs, undefined, 'no wall folds into a fresh engagement');
+  assert.equal(start.chainWallMs, 29 * 60_000, 'and the chain figure is still declared');
+});
+
+test('an ordinary resume is UNCHANGED — the door\'s fold is the only thing that moved', async (t) => {
+  const p = makePatient(t);
+  const job = SPEC('green');
+  writeFileSync(join(p.dir, 'src', 'fix.js'), '// ok\n');
+  const clock = { t: Date.parse('2026-08-19T13:00:00.000Z'), stepMs: 500 };
+  const outcome = await runJob(job, {
+    approvals: approve(job), workdir: p.dir, provider: forbiddenProvider(), emit: virtualSpine(p.spine, clock),
+    priorWallMs: 29 * 60_000,
+  });
+  assert.equal(outcome, 'already-green');
+  const eng = readEvents(p.spine).find((e) => e.type === 'engagement');
+  assert.equal(eng.kind, 'resume', 'a kill may never buy a second wall (W-2)');
+  assert.equal(eng.engagementPriorWallMs, 29 * 60_000, 'and the same engagement continuing still folds');
+});
+
 test('a door\'s rerun is NOT a close-stage answer: the same words handed as a humanRuling are refused', async (t) => {
   // ONE FLAG, TWO QUESTIONS, and this is why the runner must pick by which run is
   // being answered. `humanRuling` answers a close's human STAGE and is refused for a

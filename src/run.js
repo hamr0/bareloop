@@ -268,7 +268,7 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
    * `runPlan`'s clock. An unreadable ruling resolves to `fresh: false` and folds as
    * it always did; `runPlan` is where it is refused, so this never has to. */
   const chainWallMs = typeof priorWallMs === 'number' && Number.isFinite(priorWallMs) && priorWallMs > 0 ? priorWallMs : 0;
-  const wallFold = resolveHumanRuling(humanRuling, heldRuling).fresh ? 0 : chainWallMs;
+  const wallFold = resolveHumanRuling(humanRuling, heldRuling, doorRerun).fresh ? 0 : chainWallMs;
   emit('job-start', {
     job: job.job, specHash: jobSpecHash(job), budgetUsd: job.budgetUsd,
     shape: 'plan', goal: job.goal,

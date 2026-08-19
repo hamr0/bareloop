@@ -177,6 +177,23 @@ test('tripwire: the runner ANSWERS through the library seam and never re-spells 
   assert.doesNotMatch(src, /\['accept', 'rerun', 'pause'\]/, 'the door list is never re-spelled here');
 });
 
+test('tripwire: the JUDGE SEAM reaches runJob — a judged stage with no provider instrument-STOPS', () => {
+  // softgreen's whole point is a close that JUDGES, and the judged stage's provider
+  // is not the worker's: it is pinned to JUDGE_MODEL, never agent-selectable, and
+  // absent it the stage stops as a wiring gap rather than grading on whatever model
+  // was lying around. `run-author.mjs` wired it; this runner — the one that actually
+  // runs the job — did not, so every live softgreen run would have died at its own
+  // judged stage. A parsed-and-dropped seam is a flag that opens nothing.
+  const src = readFileSync(RUNNER, 'utf8');
+  assert.match(src, /import \{[^}]*\bJUDGE_MODEL\b/s, 'the tier is the library\'s constant, never a spelling here');
+  assert.match(src, /judgeProvider/, 'the judge provider must be built');
+  assert.match(src, /new AnthropicProvider\(\{ apiKey, model: JUDGE_MODEL \}\)/, 'and PINNED to the judged tier');
+  assert.match(src, /judgeProvider,/, 'and it must reach runJob — a provider built and dropped grades nothing');
+  // the key rides the same way every other secret does here: out of the environment,
+  // never argv, never printed
+  assert.doesNotMatch(src, /apiKey: ['"]/, 'a literal key must never appear in this runner');
+});
+
 test('tripwire: a rerun buys its OWN clock and folds the answered run\'s money (F103)', () => {
   const src = readFileSync(RUNNER, 'utf8');
   const call = src.slice(src.indexOf('DOOR_RERUN === null ? {} : {'), src.indexOf('DOOR_RERUN === null ? {} : {') + 400);

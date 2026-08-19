@@ -239,6 +239,31 @@ test('the reporters never take down the run they report on', () => {
   assert.ok(guarded >= 3, `onPhase, onCall and the kill handler must each be guarded (saw ${guarded})`);
 });
 
+// ── THE THIRD PAID SEAM IS BOUNDED BY THE SAME NUMBER ────────────────────────
+//
+// `--budget` bounds the scout and the declaration loop through the library's cost
+// book. The calibration gate is this runner's THIRD paid seam — up to ten locate
+// calls plus a five-artifact battery — and it ran with no ceiling at all: the
+// advertised budget and the enforced budget being two different numbers, which is
+// the one thing a governance number may never be. Pinned from source for the same
+// reason the block above is: the call site is reachable only after a real scout and
+// a real model call have been paid for.
+
+/** the `prepareSigning` call, from its opening to its closing paren */
+const SIGN = /const signing = await prepareSigning\(\{[\s\S]*?\n {6}\}\);/.exec(SRC)?.[0];
+
+test('the calibration gate runs under the OPERATOR\'s ceiling, with prior spend folded in', () => {
+  assert.ok(SIGN, 'the prepareSigning call moved — this guard no longer reads the code it guards');
+  assert.ok(!/authorCloseForJob/.test(SIGN), 'SIGN ran past the signing call into the flow around it');
+  assert.match(SIGN, /ceilingUsd: CEILING_USD/, 'the gate must run under the same operator number as the other two seams');
+  // …and the fold. A ceiling that starts this seam's tally at zero is a second
+  // ceiling wearing the first one's number, and re-invoking it would widen it.
+  assert.match(SIGN, /priorCalls: \[\.\.\.metered\]/, 'the run\'s spend so far must be folded into the gate\'s ceiling');
+  // the fold reads the ONE metered list this runner already keeps — never a second
+  // hand-spelled total (the pair this file has paid for once already)
+  assert.ok(!/priorCalls: \[\{/.test(SIGN), 'priorCalls must be the run\'s own call list, not a hand-built one');
+});
+
 // ── the twin: the extracted bytes, actually signalled ────────────────────────
 
 const twinBase = mkdtempSync(join(tmpdir(), 'run-author-kill-'));

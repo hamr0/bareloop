@@ -448,6 +448,13 @@ try {
         // gate 1a re-runs the job validator inside prepareSigning — same coupling, or
         // the spec that just passed above would fail the gate that signs it
         shellCapUsd: spec.budgetUsd,
+        // …and the SAME operator ceiling the scout and the declaration loop ran under,
+        // with everything they spent folded in. The gate is this run's third and
+        // largest paid seam; without both halves the advertised budget and the
+        // enforced budget are two different numbers, and re-invoking a seam under one
+        // number would silently widen it.
+        ceilingUsd: CEILING_USD,
+        priorCalls: [...metered],
         judgeLoop: judgeProvider ? (o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system }) : null,
         // the gate's spend joins the run's ONE metered list, under the judge call's
         // own label — a close's calibration is money like any other money (F12)

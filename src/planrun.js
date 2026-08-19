@@ -731,7 +731,12 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // answered. It is a terminal of its own rather than an `interpreter-red` — no
   // library failed, the operator's own input is what could not be read.
   const hasHumanStage = stagedClose.some((/** @type {any} */ s) => s?.kind === HUMAN_KIND);
-  const ruling = resolveHumanRuling(humanRuling, heldRuling);
+  // …and the DOOR's rerun rides into the same resolver (module 8): it is not a
+  // ruling and is never read as one, but "is this leg a fresh engagement" has ONE
+  // spelling, and the clock split below reads it. Resolved HERE, before anything is
+  // spent, so a door-rerun leg can never be recorded as `cold` or opened onto the
+  // wall of the leg the person just rejected (F103).
+  const ruling = resolveHumanRuling(humanRuling, heldRuling, doorRerun);
   const decisionRed = (/** @type {string} */ detail) => {
     emit('escalation', {
       category: HITL_DECISION_RED, decisionReady: true,
