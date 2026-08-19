@@ -245,12 +245,27 @@ test('the L1 bound is unaffected by the scrub: an over-cap payload is still refu
 });
 
 test('tripwire: scripts/run-u.mjs still resets the .litectx store before every run', () => {
+  // The MECHANISM moved (2026-08-19) into `scripts/u-patient.mjs` so the read-shim
+  // battery driver rehearses the SAME reset rather than a second spelling of it. The
+  // tripwire follows it rather than being deleted: it now asserts both halves — that
+  // the runner calls the shared reset on its cold path, and that the shared reset is
+  // still the thing that removes the store. Loosening either half would let cold stop
+  // meaning cold, which is the leak this guard exists for.
   const src = readFileSync(RUNNER, 'utf8');
+  assert.match(src, /import \{ coldReset \} from '\.\/u-patient\.mjs'/, 'the runner must use the shared cold reset');
+  assert.match(src, /coldReset\(wd, SEED\)/, 'the runner must CALL it on the cold path, with its own workdir and frozen seed');
   // Loose on purpose — the semantic pieces only (rmSync ... .litectx ... recursive),
   // so reformatting or renaming the workdir variable does not red this.
   assert.match(
-    src,
-    /rmSync\(\s*join\([^)]*['"]\.litectx['"]\s*\)\s*,\s*\{[^}]*recursive:\s*true/,
-    'COLD MEANS COLD: the runner must delete <workdir>/.litectx before a run — removing it silently leaks isolate-verb memory into the next cold baseline',
+    readFileSync(new URL('../scripts/u-patient.mjs', import.meta.url).pathname, 'utf8'),
+    /rmSync\(\s*store\s*,\s*\{[^}]*recursive:\s*true/,
+    'COLD MEANS COLD: the reset must delete <workdir>/.litectx before a run — removing it silently leaks isolate-verb memory into the next cold baseline',
+  );
+  // …and the seed reset is the other half of cold: a store-only wipe leaves the
+  // previous run's EDITS in the tree.
+  assert.match(
+    readFileSync(new URL('../scripts/u-patient.mjs', import.meta.url).pathname, 'utf8'),
+    /git\(\['reset', '--hard', seed\]\)/,
+    'COLD MEANS COLD: the tree must go back to the frozen seed too',
   );
 });

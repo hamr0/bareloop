@@ -13,6 +13,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
+import { readShimArm } from '../src/readshim.js';
 import { closeStagesOf } from '../src/plan.js';
 import { makeSpine } from '../src/spine.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
@@ -29,6 +30,8 @@ import { HITL_PAUSE } from '../src/declaredclose.js';
 // the REVIEW DOOR (module 8): the library opens it on the run's own spine, and this
 // is the seam that answers one. Same rulebook, one level out.
 import { answerReviewDoor, doorRecordOf, doorAgeGate } from '../src/reviewdoor.js';
+// the cold reset, shared with the battery drivers so "cold" has one spelling
+import { coldReset } from './u-patient.mjs';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
 import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines, reviewDoorPackage, runDoorLines } from './u-readout.mjs';
@@ -133,6 +136,38 @@ const DEFAULT_TIER_MODELS = { sonnet: 'claude-sonnet-5', haiku: 'claude-haiku-4-
 const tierArg = arg('model') ?? 'sonnet';
 const MODEL = DEFAULT_TIER_MODELS[/** @type {keyof typeof DEFAULT_TIER_MODELS} */ (tierArg)];
 if (!MODEL) { console.error(`unknown --model "${tierArg}" — one of: ${Object.keys(DEFAULT_TIER_MODELS).join(', ')}`); process.exit(2); }
+// --read-shim picks the READ SHIM's ARM (src/readshim.js, Phase 2 A0/A1/A2/A3). Runner
+// territory exactly like --model: the spec names no shim, so the signed hash is
+// unaffected, and the default is OFF — the flag stays OFF regardless of the Phase 2
+// outcome (the prereg's own "what this experiment does NOT claim"), so a default here
+// would flip a decision that is hamr's alone.
+//
+// The arm NAMES are the operator's spelling; `readShimArm` is the one resolver, and it
+// THROWS on anything it does not recognise (BA-4 param-guard class) before a token is
+// spent — a row that silently ran the wrong arm is worse than a row that refused.
+const READ_SHIM_ARM_NAMES = /** @type {Record<string, boolean|'cap'|'diff'>} */ ({
+  A0: false, off: false, false: false,
+  A1: 'cap', cap: 'cap',
+  A2: 'diff', diff: 'diff',
+  A3: true, all: true, true: true,
+});
+const shimArg = arg('read-shim');
+if (shimArg !== null && !Object.prototype.hasOwnProperty.call(READ_SHIM_ARM_NAMES, shimArg)) {
+  console.error(`unknown --read-shim "${shimArg}" — one of: ${Object.keys(READ_SHIM_ARM_NAMES).join(', ')}`);
+  process.exit(2);
+}
+const READ_SHIM = shimArg === null ? false : READ_SHIM_ARM_NAMES[shimArg];
+// resolve it HERE, at argv, not at runJob: the throw must land before the approval
+// gate, the patient reset and the provider, not three hundred lines and one API key later.
+const READ_SHIM_LEVERS = readShimArm(READ_SHIM);
+const READ_SHIM_LABEL = shimArg === null
+  ? 'read shim OFF (A0 — default; the flag is not flipped by any experiment)'
+  : `read shim ${shimArg} -> ${JSON.stringify(READ_SHIM)} (cap ${READ_SHIM_LEVERS.cap} · pointer ${READ_SHIM_LEVERS.pointer} · diff ${READ_SHIM_LEVERS.diff} · G1 ${READ_SHIM_LEVERS.g1})`;
+/** every re-invocation this script PRINTS carries the arm. A resume that drops it runs
+ * A0 while being filed under the arm it was launched with — a silently mislabelled row
+ * is the one failure the arm resolver's throw cannot catch. */
+const SHIM_TAIL = shimArg === null ? '' : ` --read-shim ${shimArg}`;
+
 const jobKey = arg('job') ?? 'aurora-spawner';
 const target = JOBS[/** @type {keyof typeof JOBS} */ (jobKey)];
 if (!target) { console.error(`unknown --job "${jobKey}" — one of: ${Object.keys(JOBS).join(', ')}`); process.exit(2); }
@@ -620,6 +655,7 @@ if (arg('approve') !== specHash) {
   console.log(dead ? 'U — RESUME, continuing a halted run, REAL dollars' : 'U — user-mode e2e, ONE run, REAL dollars');
   console.log(`  spec     jobs/${target.spec}  $${spec.budgetUsd}  wall ${WALL_LABEL}  strikeLimit=${STRIKE_LIMIT} (step ladder + close-fix progress rule)`);
   console.log(`  patient  ${WORKDIR} @ ${SEED.slice(0, 12)}`);
+  console.log(`  shim     ${READ_SHIM_LABEL}`);
   console.log(`  goal     "${spec.goal}"`);
   // F87 — the goal must state everything the close will judge, and nothing derives
   // one from the other or checks them against each other. So the only defence is
@@ -759,7 +795,7 @@ if (arg('approve') !== specHash) {
   // costs a cycle, never toward the one that mints a green nobody read). A pause WITH
   // a ruling is shown the ruling back — including the words that will BE the gap —
   // and one invocation to sign.
-  const invoke = (/** @type {string} */ tail) => `  ANTHROPIC_API_KEY=... node scripts/run-u.mjs --job ${jobKey}${dead ? ` --resume ${RESUME}` : ''}${tail} --approve ${specHash}`;
+  const invoke = (/** @type {string} */ tail) => `  ANTHROPIC_API_KEY=... node scripts/run-u.mjs --job ${jobKey}${dead ? ` --resume ${RESUME}` : ''}${SHIM_TAIL}${tail} --approve ${specHash}`;
   /** the door the operator has already picked, as flags — hoisted out of the else
    * below so the inhibitor line at the bottom can print the WHOLE command rather
    * than a shape the operator has to assemble. Empty on an ordinary run and on the
@@ -896,8 +932,8 @@ if (PAUSED && RULING?.decision === 'pause') {
   console.log(`\nPAUSED BY YOU — nothing was run and nothing was spent. The checkpoint stands exactly as it was: the work is on the run's own branch, the plan and the money are where the paused leg left them.`);
   console.log(`  keeps    ${PAUSE_TTL_MS / 86_400_000} days from the pause on the record — after that the checkpoint expires on its own, and nothing has to be decided today to let that happen`);
   console.log('  resume   the SAME runid, whenever you want, with the door you pick then:');
-  console.log(`           node scripts/run-u.mjs --job ${jobKey} --resume ${RESUME} --decide accept --approve ${specHash}`);
-  console.log(`           node scripts/run-u.mjs --job ${jobKey} --resume ${RESUME} --decide rerun --text "<what you want done differently>" --approve ${specHash}`);
+  console.log(`           node scripts/run-u.mjs --job ${jobKey} --resume ${RESUME}${SHIM_TAIL} --decide accept --approve ${specHash}`);
+  console.log(`           node scripts/run-u.mjs --job ${jobKey} --resume ${RESUME}${SHIM_TAIL} --decide rerun --text "<what you want done differently>" --approve ${specHash}`);
   console.log(`  read     the same command with no --decide re-prints the evidence package you just looked at`);
   process.exit(0);
 }
@@ -971,17 +1007,18 @@ if (dead) {
   console.log(`patient   ${gate.detail ?? 'clean — the halted run left no uncommitted work'} (store kept: it is indexing this run already paid for)`);
 } else {
   // the patient starts at the seed, every time — a run that inherits the previous
-  // run's edits is measuring the wrong thing
-  git(['reset', '--hard', SEED]);
-  git(['clean', '-fd']);
-  // COLD MEANS COLD (P design record): the isolate verbs (stash/remember) persist in
-  // .litectx across runs — an uncleaned store would leak run N's memory into run N+1's
-  // "cold" baseline and quietly poison every contrast (the reuse rung's OFF arm above
-  // all). The store is a derived, self-healing cache by litectx's own contract; the
-  // re-index it costs is ~65s under yield. When the reuse rung lands, KEEPING the
-  // store becomes an explicit ledger-attributed choice — never a leak.
-  rmSync(join(wd, '.litectx'), { recursive: true, force: true });
-  console.log(`patient reset — clean at ${git(['rev-parse', '--short', 'HEAD'])}, store cold`);
+  // run's edits is measuring the wrong thing. COLD MEANS COLD (P design record): the
+  // isolate verbs (stash/remember) persist in .litectx across runs, so an uncleaned
+  // store would leak run N's memory into run N+1's "cold" baseline and quietly poison
+  // every contrast (the reuse rung's OFF arm above all). The store is a derived,
+  // self-healing cache by litectx's own contract; the re-index it costs is ~65s under
+  // yield. When the reuse rung lands, KEEPING the store becomes an explicit
+  // ledger-attributed choice — never a leak.
+  //
+  // The mechanism lives in `scripts/u-patient.mjs` so a battery driver rehearsing a
+  // cold row runs THIS reset rather than a second spelling of it.
+  const cold = coldReset(wd, SEED);
+  console.log(`patient reset — clean at ${cold.head}, store ${cold.storeRemoved ? 'removed (cold)' : 'was already absent (cold)'}`);
 }
 
 const approvals = [{ specHash, signer: process.env.USER ?? 'human', ts: new Date().toISOString() }];
@@ -1008,6 +1045,9 @@ const judgeProvider = new AnthropicProvider({ apiKey, model: JUDGE_MODEL });
 
 const started = Date.now();
 console.log(`\n== U run ${runid} ==  $${spec.budgetUsd} · ${WALL_LABEL} · ${MODEL}`);
+// the arm is named on the run's own stdout: a battery row whose arm is only in the
+// driver's plan is a row nobody can audit from its own log.
+console.log(`   ${READ_SHIM_LABEL}`);
 
 // F67 — the OUTSIDE watchdog, started before the run and sharing nothing with it.
 // Every guard bareloop had lived inside this process, and ms3197n8/ms3jh76q proved
@@ -1101,6 +1141,7 @@ try {
   outcome = await runJob(spec, {
     approvals, workdir: wd, provider, providerFor, judgeProvider, emit: makeSpine(spineFile),
     shellCapUsd: spec.budgetUsd, capRuns: CAP_RUNS, strikeLimit: STRIKE_LIMIT, closeTimeoutMs: CLOSE_TIMEOUT_MS,
+    readShim: READ_SHIM,
     // RESUME: the money and the wall the halted run already burned are FOLDED IN (so
     // the signed ceiling cannot widen by being re-invoked), and the checkpoint it
     // reached is handed over so the plan is reloaded rather than re-drafted and the
@@ -1217,7 +1258,7 @@ if (mh) {
   console.log(`  trend   ${mh.trend} — ${mh.reading}`);
   console.log(`  lever   ${mh.lever}`);
   for (const o of mh.options ?? []) console.log(`          · ${o}`);
-  console.log(`  resume  node scripts/run-u.mjs --job ${jobKey} --resume ${runid} --approve <the NEW hash after you edit budgetUsd>`);
+  console.log(`  resume  node scripts/run-u.mjs --job ${jobKey} --resume ${runid}${SHIM_TAIL} --approve <the NEW hash after you edit budgetUsd>`);
   console.log('          (the top-up is yours to sign — nothing in the run may widen its own budget)');
 }
 // A STALL is a checkpoint too (hamr's go, 2026-08-13). Its own escalation prints one
@@ -1227,7 +1268,7 @@ if (mh) {
 // the hash already approved is the hash that resumes.
 if (outcome === 'step-stalled') {
   console.log('\nSTALL HALT — the model stopped producing rounds and reissuing the call did not recover it. The tree, the plan and the steps already finished STAND.');
-  console.log(`  resume  node scripts/run-u.mjs --job ${jobKey} --resume ${runid} --approve ${specHash}`);
+  console.log(`  resume  node scripts/run-u.mjs --job ${jobKey} --resume ${runid}${SHIM_TAIL} --approve ${specHash}`);
   console.log('          (no spec edit, so the hash is unchanged — this re-enters at the stalled step and re-pays for none of the ones before it)');
   console.log('          (if the allowance is what actually ran out underneath the stall, that preview says so and refuses — it is read there, not asserted here)');
 }
@@ -1248,7 +1289,7 @@ if (outcome === HITL_PAUSE) {
   ]);
   console.log('  clock    STOPPED — the wall does not run while a person is reading (W-2), and this leg\'s elapsed is what folds into the resume');
   console.log('');
-  const answer = (/** @type {string} */ tail) => `node scripts/run-u.mjs --job ${jobKey} --resume ${runid}${tail} --approve ${specHash}`;
+  const answer = (/** @type {string} */ tail) => `node scripts/run-u.mjs --job ${jobKey} --resume ${runid}${SHIM_TAIL}${tail} --approve ${specHash}`;
   for (const l of doorLines({
     rerun: answer(' --decide rerun --text "<what you want done differently>"'),
     accept: answer(' --decide accept'),
