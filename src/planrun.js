@@ -29,7 +29,7 @@ import { createLadder, STRIKE_LIMIT } from './ladder.js';
 import { createTrend, FIX_STRIKE_LIMIT } from './trend.js';
 import { TOOL_MENU, STORE_VERBS, checkMenu } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, strategyFor } from './tools.js';
-import { wrapReadTool, readShimArm, readShimStrategy } from './readshim.js';
+import { createReadShim, readShimArm, readShimStrategy } from './readshim.js';
 import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
 import { validateBridge, loadGate, newestEligibleVersion, reuseEligibility, quarantinesCredit, QUARANTINED_CODE } from './bridges.js';
 import { extractArtifact } from './text.js';
@@ -1907,6 +1907,12 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // An arm that brings NO cap (A2) is the other case and is handled at the block below —
     // it must not take the native bound away, because losing a bound is not one of its levers.
     const shimArm = readShimArm(readShim);
+    // ONE shim per worker, holding ONE ledger, wrapping BOTH seams the cap touches:
+    // the read tool below, and `ctx_get`'s stale-pointer answer further down. They
+    // are one shim because the cap creates the second problem — its strategy line
+    // sends a capped worker to ctx_recall/ctx_get for a whole function, and a stale
+    // pointer there is the cap's own dead end, not litectx's.
+    const shim = createReadShim({ arm: shimArm });
     const rdTool = shell.find((/** @type {{name: string}} */ t) => t.name === TOOL_BY_VERB.read);
     // F48: on native, bound shell_read below the CLI's tool-result display cap and hand back a
     // TRUSTED truncation notice steering to ctx_get — the CLI's own truncation blinds the worker
@@ -1936,9 +1942,12 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       }
     }
     // …and the shim goes on last, so it is the OUTER wrapper wherever both apply.
-    if (shimArm.on && rdTool) wrapReadTool(rdTool, { arm: shimArm });
+    if (shimArm.on && rdTool) shim.wrapRead(rdTool);
+    // The stale-pointer serve rides ONLY with a capping arm — `serveStale` refuses
+    // on any other arm anyway, and passing the hook regardless would still change
+    // A0's `ctx_get` object, which has to stay the untouched baseline.
     const ctx = [...CTX_TOOLS].some((t) => grantedNames.has(t))
-      ? createCtxTools(lc, workdir, emitCtx).filter((t) => grantedNames.has(t.name))
+      ? createCtxTools(lc, workdir, emitCtx, shimArm.cap ? { onStalePointer: shim.serveStale } : {}).filter((t) => grantedNames.has(t.name))
       : [];
     // LC-3 (litectx 0.31.0): cooperative yield — index() is async but its work is sync CPU,
     // and the default pass holds THIS event loop (the fuse's timers, the wall clock, the lag

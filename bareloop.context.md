@@ -951,6 +951,16 @@ Anything else **throws** (`readShimArm`) at `runJob`/`runPlan`/`validatePlan` be
 spent — a mis-spelled arm coerced by truthiness would run one treatment under another's label and
 be invisible in the results afterwards.
 
+Under a CAPPING arm (A1/A3) the shim also answers a **stale `ctx_get` pointer**: the cap steers the
+worker at `ctx_recall`/`ctx_get`, and `ctx_get` refuses a file that changed after indexing — the
+normal case once the worker has edited it. Instead of nothing, the shim serves that pointer's
+0-based inclusive line range read fresh from disk, capped the same way, under a trusted notice
+saying the pointer was stale, that the range may now hold DIFFERENT code than the symbol asked
+for, and that nothing was recorded as delivered. A vanished file or a range past the end is a
+refusal result, never a throw. The serve never writes the delivery ledger, so it can never mint a
+"you already hold it" pointer for bytes the read seam did not hand over. A0 and A2 do not wire it
+and `ctx_get` behaves exactly as it always did.
+
 `false` is the shipped behaviour and is byte-identical to a run without the flag, guards included;
 `true` means exactly what it meant before the arms existed, so nothing written against the boolean
 changed meaning. Where the CAP runs, `shell_read` delivers at most `READ_SHIM_CAP` (24KB) per call

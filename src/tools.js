@@ -21,7 +21,7 @@ const require = createRequire(import.meta.url);
 const { createShellTools } = require('bare-agent/tools');
 // litectx's rank-tiered render — a free function, not a ctx method (its contract's
 // own recipe: the caller slices the chunk body, compress renders the signature tier)
-const { compress: compressNode } = require('litectx');
+const { compress: compressNode, StalePointerError } = require('litectx');
 
 import { extractArtifact, priceOf } from './text.js';
 // The isolate verbs write MODEL-AUTHORED text into `<workdir>/.litectx` — a file
@@ -243,8 +243,13 @@ const LINE_SPACE = 'Line numbers here are 0-BASED index positions from the repos
  *   RESULT is invisible cannot be judged: a `ctx_get` that silently reds (stale pointer,
  *   bad range) looks exactly like one that worked, and the worker's fallback to a
  *   whole-file read looks like a free choice instead of a forced one.
+ * @param {{onStalePointer?: ((req: {file: string, path: string, startLine: number, endLine: number, detail: string}) => {text: string, outcome: string}|null)|null}} [opts]
+ *   `onStalePointer`: the read shim's stale-pointer serve, wired ONLY by a capping
+ *   arm (see `createReadShim`). Absent — every caller today except that one — this
+ *   whole seam is byte-identical to what it was, which is what keeps A0 the
+ *   untouched baseline an experiment has already run against.
  */
-export function createCtxTools(lc, workdir, emit) {
+export function createCtxTools(lc, workdir, emit, { onStalePointer = null } = {}) {
   // ctx_get's failure contract, generalised to the palette (review 2026-07-31).
   // `emit` exists in this file because a verb whose RESULT is invisible cannot be
   // judged — and a THROWN call is the most invisible result there is: it looks
@@ -337,6 +342,33 @@ export function createCtxTools(lc, workdir, emit) {
           // StalePointerError: the file changed after indexing, so these lines now describe
           // DIFFERENT code. Its message IS the recovery instruction — hand it to the worker.
           const detail = String(/** @type {Error} */ (e)?.message || e);
+          // …and under a CAPPING read-shim arm, the recovery instruction is not
+          // enough. That arm's own strategy line steers the worker HERE for a whole
+          // function, and a worker that just edited the file it is working on — the
+          // normal case — gets a stale pointer and zero bytes for a paid round
+          // (measured: 5 of 10 ctx_get calls across the A1 arm's three green runs).
+          // So the shim serves the requested LINE RANGE from disk, labelled; see
+          // `serveStale`. The branch is on the TYPED error, never on the message
+          // prose — a prose sniff would fire on any failure whose wording happens
+          // to match, and litectx exports the class precisely so it need not.
+          if (onStalePointer && e instanceof StalePointerError) {
+            // The gate judged `resolve(workdir, expandHome(path))` for this call
+            // (toolAction, 'ctx_get'); the serve reads that same absolute path and
+            // no other, so it can never reach a byte the fence did not allow.
+            const served = onStalePointer({
+              file: resolve(workdir, expandHome(String(p))),
+              path: rel,
+              startLine: Number(startLine),
+              endLine: Number(endLine),
+              detail,
+            });
+            if (served && typeof served.text === 'string') {
+              // No `detail` on the event: the served TEXT is file content and the
+              // spine is append-only. Bytes and the outcome are what a reader needs.
+              emit('ctx-tool', { tool: 'ctx_get', path: rel, startLine, endLine, outcome: served.outcome, bytes: Buffer.byteLength(served.text) });
+              return served.text;
+            }
+          }
           emit('ctx-tool', { tool: 'ctx_get', path: rel, startLine, endLine, outcome: 'stale', bytes: 0, detail });
           return `stale pointer: ${detail}`;
         }

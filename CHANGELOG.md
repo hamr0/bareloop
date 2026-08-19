@@ -35,6 +35,25 @@ feature lands, **patch** = docs, fixes, scaffolding.
   unrecognised value THROWS at the entry (`readShimArm`) rather than coercing into a truthy
   shim — a mis-spelled arm would run one treatment under another's label and be invisible in the
   results afterwards. The default-flip is not in this change: it waits on a paid contrast.
+- **A stale `ctx_get` pointer serves the requested line range from disk** (2026-08-19), under a
+  CAPPING arm only. The cap's own strategy line steers a capped worker at `ctx_recall` →
+  `ctx_get` for a whole function; `ctx_get` is content-hash gated and throws `StalePointerError`
+  the moment the file changed after indexing — which is the normal case for a worker that just
+  EDITED the file it is working on. Measured on the A1 arm's three green runs: 10 `ctx_get`
+  calls, 5 stale, 0 bytes each, every one a just-written file. A paid round returning nothing,
+  down a path the cap itself chose. The serve hands back the requested 0-based inclusive line
+  range read fresh from disk, under TRUSTED framing that says the pointer was stale, that the
+  range may now hold DIFFERENT code than the symbol asked for, which lines arrived, and that
+  nothing was recorded as delivered. litectx refuses to slice a drifted range itself because an
+  UNLABELLED slice can silently be another symbol's body — the label is what makes it legal.
+  Detection is on the exported `StalePointerError` CLASS, never on message prose. A vanished
+  file or a range now entirely past the end is a refusal RESULT naming what happened, never a
+  throw. It **never touches the delivery ledger**: a slice is not the file, and a ledger that
+  recorded one would answer the next read with "you already have it" to a worker holding 90
+  lines of 900 — the untruthful-pointer failure the shim exists to prevent. The cost of that is
+  a later `shell_read` may re-deliver bytes the serve already showed; the shim over-delivers
+  rather than lies. A0 and A2 are untouched: with no capping arm the hook is not wired and
+  `ctx_get`'s contract is byte-identical.
 - On the native surface the shim REPLACES the `NATIVE_READ_CAP` wrapper rather than layering over
   it (both bound the same seam at the same 24KB, and a shim outside the native wrapper would
   ledger already-truncated text as a whole file — the exact lie it exists to prevent). L2

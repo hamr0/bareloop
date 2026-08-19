@@ -39,6 +39,7 @@
 // ever saw 24 KB of has no way to notice it was told a fiction.
 
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 /** The delivery cap, in bytes. Equal to `NATIVE_READ_CAP` by construction — the
  * native path's CLI display bound and this cap bound the SAME seam, so one
@@ -282,27 +283,62 @@ function utf8Boundary(buf, end) {
   return e;
 }
 
+/** The stale-serve's TRUSTED framing, same `bareloop:` register as the notices
+ * above. Everything it has to say is load-bearing and none of it can be dropped
+ * for brevity:
+ *   - the pointer is STALE, so the worker knows why it is not getting a chunk;
+ *   - the range may now hold DIFFERENT code than the symbol it asked for. This
+ *     is the sentence that makes the serve legal at all. litectx refuses to
+ *     slice a drifted range itself, and says why in `StalePointerError`'s own
+ *     docstring: an UNLABELLED line slice can silently be another symbol's body,
+ *     which is worse than an exception. Labelled, it is a raw slice the worker
+ *     can judge; unlabelled it would be the same lie the ledger exists to stop;
+ *   - which lines it actually got, and how long the file is now;
+ *   - that NOTHING here was recorded as delivered, so the worker cannot read the
+ *     serve as progress against the read seam's cap;
+ *   - how to get a real pointer back.
+ * No `]` appears before the end: the bracket is the notice's own terminator. */
+const staleServeNotice = (path, startLine, shownEnd, lines, cut, cap) =>
+  `[bareloop: the ctx_get pointer for ${path} lines ${startLine}-${shownEnd} is STALE — that file changed on disk after it was indexed, `
+  + 'so the recorded line range may now hold DIFFERENT code than the symbol you asked for. '
+  + `Rather than nothing, below are lines ${startLine}-${shownEnd} of ${path} exactly as they stand on disk right now `
+  + `(0-based line indexes, as ctx_recall prints them; the file has ${lines} lines, so its last index is ${lines - 1})`
+  + `${cut ? `, cut at the ${cap}-byte read limit` : ''}. `
+  + 'This is a raw line slice — not a chunk, not the whole file — and none of it was recorded as delivered to you, '
+  + 'so a shell_read of this path is unaffected. Re-run ctx_recall(<symbol>) for a fresh pointer.]';
+
+/** The two refusals. Both are RESULTS the worker reads, never throws — a stale
+ * pointer on a vanished or shrunken file is ordinary worker feedback, and a
+ * throw here would look exactly like a verb that was never reached (the F18
+ * blindness rule that put `emit` in `createCtxTools` in the first place). */
+const staleAbsentNotice = (path, startLine, endLine, detail) =>
+  `[bareloop: the ctx_get pointer for ${path} lines ${startLine}-${endLine} is stale (${detail}), `
+  + `and ${path} is no longer on disk — there is nothing to show you. Re-run ctx_recall(<symbol>) for a fresh pointer.]`;
+
+const stalePastEofNotice = (path, startLine, endLine, lines, detail) =>
+  `[bareloop: the ctx_get pointer for ${path} lines ${startLine}-${endLine} is stale (${detail}), `
+  + `and that file ${lines === 0 ? 'is now empty' : `is now only ${lines} lines long, so its last 0-based index is ${lines - 1}`}, `
+  + 'so that range is entirely past its end — there is nothing to show you. '
+  + 'Re-run ctx_recall(<symbol>) for a fresh pointer.]';
+
+/** @typedef {{file: string, path: string, startLine: number, endLine: number, detail: string}} StaleReq */
+/** @typedef {{text: string, outcome: 'stale-served'|'stale-absent'|'stale-past-eof'}} StaleServe */
+
 /**
- * Wrap a read tool with the delivery ledger. MUTATES `tool.execute` and returns
- * the tool, which is safe because the caller builds fresh tool objects per
- * worker (`createShellTools()` inside `mkWorker`) — so the ledger's lifetime is
- * one worker, matching the fresh-Loop-per-step reset the replay segmented on.
- * A process-wide ledger would carry one step's coverage into the next step's
- * transcript, which never held those bytes.
- * @param {{name: string, execute: (args: any) => Promise<any>}} tool the read tool
+ * Create the shim: one delivery ledger, and the two seams that speak for it.
+ *
+ * `wrapRead` is the read tool's wrapper (the ledger's only writer). `serveStale`
+ * is the answer to a stale `ctx_get` pointer, and it deliberately holds NO
+ * reference to the ledger — see its own note. Both live in one object because
+ * they are one worker's shim: the read seam and the retrieval seam the cap
+ * steers a capped worker towards.
  * @param {{cap?: number, arm?: ReadShimArm}} [opts] `cap`: delivery bound in bytes (the
  *   shipped value is `READ_SHIM_CAP`; the option exists so the native path can pin the
  *   two bounds to one number rather than two constants drifting apart). `arm`: which
  *   levers are live (`readShimArm`). Defaults to ALL of them, so every caller written
  *   before the arms existed keeps the behaviour it was written against.
- * @returns {{name: string, execute: (args: any) => Promise<any>}} the same tool
  */
-export function wrapReadTool(tool, { cap = READ_SHIM_CAP, arm = ARM_ALL } = {}) {
-  // An OFF arm wraps nothing at all — not a wrapper that passes through, which
-  // would still be a `tool.execute` this module owns. A0 has to be the seam
-  // untouched, and "untouched" is the assertion, not "behaves the same".
-  if (!arm.on) return tool;
-  const inner = tool.execute;
+export function createReadShim({ cap = READ_SHIM_CAP, arm = ARM_ALL } = {}) {
   /** path → what the worker has been handed of the CURRENT content. `full` is
    * the delivered text itself, kept ONLY while the worker holds the whole file
    * (null otherwise) because that is the only state a diff is legal from.
@@ -318,75 +354,176 @@ export function wrapReadTool(tool, { cap = READ_SHIM_CAP, arm = ARM_ALL } = {}) 
    * @type {Map<string, {hash: string, total: number, delivered: number, full: string|null}>} */
   const ledger = new Map();
 
-  tool.execute = async (/** @type {any} */ args) => {
-    const path = typeof args?.path === 'string' ? args.path : null;
-    const r = await inner(args);
-    // Anything that is not text (or a call with no path to key on) is the tool's
-    // own business — pass it through and record nothing. A throw never reaches
-    // here at all: the worker gets the failure, and the ledger stays clean of a
-    // path nobody ever received bytes for.
-    if (path === null || typeof r !== 'string') return r;
-
-    const buf = Buffer.from(r, 'utf8');
-    const total = buf.length;
-    const hash = createHash('sha256').update(buf).digest('hex');
-    const seen = ledger.get(path);
-    // Same content as last time — and only then does coverage mean anything.
-    // Any change (grown, shrunk, edited) resets to zero: coverage that survives
-    // a content change is the masking direction, because a file that shrank
-    // under stale coverage would answer as "fully delivered".
-    //
-    // Without the CAP lever (A2) there is no such thing as partial coverage: a
-    // read hands over the file, so `start` is always 0 and `end` is always the
-    // end. Everything below then falls out unchanged — the slice IS the file,
-    // and the diff's budget below is the whole re-delivery it replaces, which is
-    // the same sentence the capped arm's budget says, at a different size.
-    const start = arm.cap && seen && seen.hash === hash ? seen.delivered : 0;
-    const end = arm.cap ? utf8Boundary(buf, Math.min(start + cap, total)) : total;
-
-    // L2, THE DIFF LEVER. Two guards, both refusals rather than adjustments:
-    //   - `seen.full !== null` IS the coverage guard: the previous bytes are
-    //     retained only when every one of them was delivered, so a partly-seen
-    //     old version has nothing to diff against and re-delivers from 0.
-    //   - the budget is the slice this diff REPLACES, `end - start` bytes of a
-    //     fresh capped re-delivery. Bounding by the cap alone would let a diff
-    //     be several times a small file and still ship; bounding by the slice
-    //     makes "smaller than what it replaces" true by construction, and is
-    //     never looser than the cap.
-    // A consequence worth naming rather than tuning away: the framing itself is
-    // ~350 bytes, so a file smaller than that can never produce a legal diff and
-    // always re-delivers whole. That is the rule working, not a gap — a diff of
-    // a 78-byte file costs more than the file.
-    //
-    // A rendered diff is always COMPLETE — the renderer returns the whole thing
-    // or null, never a prefix — which is what licenses the ledger line below:
-    // the worker holds the new content whole, so the next unchanged read is a
-    // truthful pointer. Anything less than complete falls through to the slice
-    // path and records only what that path actually handed over.
-    if (arm.diff && seen && seen.hash !== hash && seen.full !== null) {
-      const d = lineDiff(seen.full, r, Math.max(0, (end - start) - Buffer.byteLength(diffNotice(path, total), 'utf8') - 2));
-      if (d !== null) {
-        ledger.set(path, { hash, total, delivered: total, full: r });
-        return `${diffNotice(path, total)}\n\n${d}`;
-      }
+  /**
+   * THE STALE-POINTER SERVE. When `ctx_get` throws `StalePointerError` — the file
+   * changed on disk after indexing — hand back the REQUESTED LINE RANGE read
+   * fresh from disk, labelled, instead of nothing.
+   *
+   * WHY IT EXISTS: the cap's own strategy line steers a capped worker at
+   * `ctx_recall` → `ctx_get` for a whole function. A worker that has just EDITED
+   * the file it is working on — the normal case — then gets a stale pointer and
+   * zero bytes. Measured on the A1 arm's three green runs: 10 `ctx_get` calls, 5
+   * stale, 0 bytes each, every one a file the worker had just written. The round
+   * is paid for and returns nothing, and the steer is what walked it there.
+   *
+   * WHY IT NEVER TOUCHES THE LEDGER, and why that is the whole design: the
+   * ledger's `full` is the licence for the pointer response ("you already hold
+   * all of it"), and it is held ONLY while `delivered === total`. A ranged serve
+   * hands over a SLICE — of a file the read seam may never have delivered a byte
+   * of, from the MIDDLE rather than the next unseen prefix. Record it and the
+   * next read answers "unchanged, you already have it" to a worker holding 90
+   * lines of 900: exactly the untruthful-pointer failure this module was built
+   * to prevent (250 of them in the $0 replay, median 73,348 bytes hidden). So
+   * `ledger` is not in scope here — not "we are careful not to write it", but no
+   * reference at all — and the cost is that a later `shell_read` may re-deliver
+   * bytes the serve already showed. That is the fail-safe direction: the shim
+   * over-delivers rather than lies.
+   *
+   * Gated on the CAP lever, not on `arm.on`: the serve is the cap's own
+   * compensation (the same argument G1 and `READ_SHIM_STRATEGY` are made of). An
+   * arm that caps nothing never steered the worker at `ctx_get` and must keep
+   * `ctx_get`'s untouched contract.
+   *
+   * Never throws — a vanished or shrunken file is a refusal RESULT.
+   * @param {StaleReq} req `file` is the ABSOLUTE path the gate already judged
+   *   for this call; `path` is the repo-relative spelling shown to the worker.
+   * @returns {StaleServe|null} null when this arm carries no cap
+   */
+  const serveStale = ({ file, path, startLine, endLine, detail }) => {
+    if (!arm.cap) return null;
+    // THE LINE SPACE, verified against real litectx rather than read off a
+    // comment: `ctx_recall`/`ctx_get` handles are 0-BASED and INCLUSIVE (a probe
+    // indexed a file, took recall's pointer, and matched `get`'s text against
+    // `lines.slice(start, end + 1)` — the 1-based reading returned the wrong two
+    // lines). The worker's numbers are echoed back in that same space, because
+    // `LINE_SPACE` already told it that is the space it is in, and a serve that
+    // silently renumbered would be the off-by-one that doc exists to prevent.
+    const a = Math.max(0, Math.floor(Number(startLine) || 0));
+    const b = Math.max(a, Math.floor(Number(endLine) || a));
+    let content;
+    try {
+      content = readFileSync(file, 'utf8');
+    } catch {
+      return { text: staleAbsentNotice(path, a, b, detail), outcome: 'stale-absent' };
     }
-
-    // The POINTER lever. Reachable only when the ledger already covers the
-    // current content — under A2 that is an unchanged re-read of a file handed
-    // over whole, and the arm answers it by handing the bytes over again. Saying
-    // "you already have it" there would be TRUE and still wrong: it is the
-    // pointer's saving, and A2 is the diff's own read (see the arm table above).
-    if (arm.pointer && start >= total) {
-      ledger.set(path, { hash, total, delivered: total, full: r });
-      return pointer(path, total);
+    const lines = content.split('\n');
+    // A trailing newline yields a final empty element that is not a line.
+    if (lines.length && lines[lines.length - 1] === '') lines.pop();
+    if (a >= lines.length) {
+      return { text: stalePastEofNotice(path, a, b, lines.length, detail), outcome: 'stale-past-eof' };
     }
-    ledger.set(path, { hash, total, delivered: end, full: end === total ? r : null });
-    const slice = buf.subarray(start, end).toString('utf8');
-    // A first read that fits under the cap is the tool's own bytes, untouched —
-    // no notice, no reframing. That is the overwhelming majority of reads, and
-    // it keeps the shim invisible where it buys nothing.
-    if (start === 0 && end === total) return slice;
-    return slice + (end < total ? capNotice(start, end, total) : doneNotice(start, total));
+    const shownEnd = Math.min(b, lines.length - 1);
+    let body = `${lines.slice(a, shownEnd + 1).join('\n')}\n`;
+    // The same cap as every other delivery this module makes, on the same
+    // UTF-8-safe boundary. A requested range is worker-chosen and unbounded.
+    const buf = Buffer.from(body, 'utf8');
+    const cut = buf.length > cap;
+    if (cut) body = buf.subarray(0, utf8Boundary(buf, cap)).toString('utf8');
+    return {
+      text: `${staleServeNotice(path, a, shownEnd, lines.length, cut, cap)}\n\n${body}`,
+      outcome: 'stale-served',
+    };
   };
-  return tool;
+
+  /**
+   * Wrap a read tool with the delivery ledger. MUTATES `tool.execute` and returns
+   * the tool, which is safe because the caller builds fresh tool objects per
+   * worker (`createShellTools()` inside `mkWorker`) — so the ledger's lifetime is
+   * one worker, matching the fresh-Loop-per-step reset the replay segmented on.
+   * A process-wide ledger would carry one step's coverage into the next step's
+   * transcript, which never held those bytes.
+   * @param {{name: string, execute: (args: any) => Promise<any>}} tool the read tool
+   * @returns {{name: string, execute: (args: any) => Promise<any>}} the same tool
+   */
+  const wrapRead = (tool) => {
+    // An OFF arm wraps nothing at all — not a wrapper that passes through, which
+    // would still be a `tool.execute` this module owns. A0 has to be the seam
+    // untouched, and "untouched" is the assertion, not "behaves the same".
+    if (!arm.on) return tool;
+    const inner = tool.execute;
+    tool.execute = async (/** @type {any} */ args) => {
+      const path = typeof args?.path === 'string' ? args.path : null;
+      const r = await inner(args);
+      // Anything that is not text (or a call with no path to key on) is the tool's
+      // own business — pass it through and record nothing. A throw never reaches
+      // here at all: the worker gets the failure, and the ledger stays clean of a
+      // path nobody ever received bytes for.
+      if (path === null || typeof r !== 'string') return r;
+
+      const buf = Buffer.from(r, 'utf8');
+      const total = buf.length;
+      const hash = createHash('sha256').update(buf).digest('hex');
+      const seen = ledger.get(path);
+      // Same content as last time — and only then does coverage mean anything.
+      // Any change (grown, shrunk, edited) resets to zero: coverage that survives
+      // a content change is the masking direction, because a file that shrank
+      // under stale coverage would answer as "fully delivered".
+      //
+      // Without the CAP lever (A2) there is no such thing as partial coverage: a
+      // read hands over the file, so `start` is always 0 and `end` is always the
+      // end. Everything below then falls out unchanged — the slice IS the file,
+      // and the diff's budget below is the whole re-delivery it replaces, which is
+      // the same sentence the capped arm's budget says, at a different size.
+      const start = arm.cap && seen && seen.hash === hash ? seen.delivered : 0;
+      const end = arm.cap ? utf8Boundary(buf, Math.min(start + cap, total)) : total;
+
+      // L2, THE DIFF LEVER. Two guards, both refusals rather than adjustments:
+      //   - `seen.full !== null` IS the coverage guard: the previous bytes are
+      //     retained only when every one of them was delivered, so a partly-seen
+      //     old version has nothing to diff against and re-delivers from 0.
+      //   - the budget is the slice this diff REPLACES, `end - start` bytes of a
+      //     fresh capped re-delivery. Bounding by the cap alone would let a diff
+      //     be several times a small file and still ship; bounding by the slice
+      //     makes "smaller than what it replaces" true by construction, and is
+      //     never looser than the cap.
+      // A consequence worth naming rather than tuning away: the framing itself is
+      // ~350 bytes, so a file smaller than that can never produce a legal diff and
+      // always re-delivers whole. That is the rule working, not a gap — a diff of
+      // a 78-byte file costs more than the file.
+      //
+      // A rendered diff is always COMPLETE — the renderer returns the whole thing
+      // or null, never a prefix — which is what licenses the ledger line below:
+      // the worker holds the new content whole, so the next unchanged read is a
+      // truthful pointer. Anything less than complete falls through to the slice
+      // path and records only what that path actually handed over.
+      if (arm.diff && seen && seen.hash !== hash && seen.full !== null) {
+        const d = lineDiff(seen.full, r, Math.max(0, (end - start) - Buffer.byteLength(diffNotice(path, total), 'utf8') - 2));
+        if (d !== null) {
+          ledger.set(path, { hash, total, delivered: total, full: r });
+          return `${diffNotice(path, total)}\n\n${d}`;
+        }
+      }
+
+      // The POINTER lever. Reachable only when the ledger already covers the
+      // current content — under A2 that is an unchanged re-read of a file handed
+      // over whole, and the arm answers it by handing the bytes over again. Saying
+      // "you already have it" there would be TRUE and still wrong: it is the
+      // pointer's saving, and A2 is the diff's own read (see the arm table above).
+      if (arm.pointer && start >= total) {
+        ledger.set(path, { hash, total, delivered: total, full: r });
+        return pointer(path, total);
+      }
+      ledger.set(path, { hash, total, delivered: end, full: end === total ? r : null });
+      const slice = buf.subarray(start, end).toString('utf8');
+      // A first read that fits under the cap is the tool's own bytes, untouched —
+      // no notice, no reframing. That is the overwhelming majority of reads, and
+      // it keeps the shim invisible where it buys nothing.
+      if (start === 0 && end === total) return slice;
+      return slice + (end < total ? capNotice(start, end, total) : doneNotice(start, total));
+    };
+    return tool;
+  };
+
+  return { arm, cap, wrapRead, serveStale };
+}
+
+/**
+ * The one-tool spelling, kept for every caller written before the shim became an
+ * object: wrap this read tool with its own private ledger and hand it back.
+ * @param {{name: string, execute: (args: any) => Promise<any>}} tool
+ * @param {{cap?: number, arm?: ReadShimArm}} [opts]
+ * @returns {{name: string, execute: (args: any) => Promise<any>}} the same tool
+ */
+export function wrapReadTool(tool, opts = {}) {
+  return createReadShim(opts).wrapRead(tool);
 }

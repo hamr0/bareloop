@@ -100,7 +100,7 @@ export { workBranchName, prepareWorkBranch, WORK_BRANCH_PREFIX, WORK_BRANCH_RE }
 // `readShimArm` is exported for the same reason the cap is: a battery driver has to be able
 // to name and check the arm it is about to run BEFORE it launches, and the legal set living
 // only inside a runner would leave the driver guessing at spellings the guard will reject.
-export { wrapReadTool, readShimArm, readShimStrategy, READ_SHIM_CAP, READ_SHIM_STRATEGY, READ_SHIM_DIFF_STRATEGY, READ_SHIM_ARMS } from './readshim.js';
+export { createReadShim, wrapReadTool, readShimArm, readShimStrategy, READ_SHIM_CAP, READ_SHIM_STRATEGY, READ_SHIM_DIFF_STRATEGY, READ_SHIM_ARMS } from './readshim.js';
 // ── CLOSE AUTHORING v1 (gate 4) — the user declares what done means ──────────
 // The public surface is settled ONCE, here, at M4 (M2's header flagged the
 // naming collision and deferred it rather than exporting piecemeal).
