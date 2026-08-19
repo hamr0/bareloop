@@ -5,6 +5,75 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Added (N4 slice 2 — the softgreen rung: a close that JUDGES, and a signer who has the last word)
+
+- **The judged floor is real: LOCATE + DECIDE (`src/judged.js`).** A judge (haiku-4.5, pinned —
+  never a step knob) extracts FACTS from the real artifact with quotes; an arbiter-owned `decide()`
+  renders pass/fail from a signed rubric card; *unsure* is a red, never a pass. The judge never
+  renders a verdict, so the rubric-is-self-consistency gotcha stays closed. Wired as the
+  `judged-floor` close kind — metered from the run's own wallet, `offer:false` by law, and skipping
+  the seed-verdict read (its bar comes from calibration instead).
+- **`soft-green` is ADMITTED as a verdict class** — the class-scoped question set, the inherited
+  green guard battery (hamr: *"battery ties with job type"*), the class-scoped kind menu, and the
+  promise rule: composition stays ≤ the picked class, and exceeding it is an honest red rather than
+  a silent up- or downgrade.
+- **The signer's two artifacts are AUTHORED and enumerated in the hash** (`src/cardauthor.js`): the
+  rubric card comes from Q6 and the calibration set from Q7, both handed to the compiler verbatim,
+  both SHOWN to the signer (D5 shown-and-fixed), and what the signer fixed is what is stored —
+  `source: 'proposal'` says *nobody changed this*, which is a different fact from *a person read it
+  and changed nothing*.
+- **The calibration gate — ten graded truths and five resisted lies buy a signature**
+  (`src/calibrate.js`, gate 4 of `prepareSigning`). The whole pipe grades the signer's own ten cases
+  and faces a 5-artifact injection battery adapted to the locate axis; the floor is **10/10 with
+  itemized reds** (hamr, 2026-08-18) and all-or-nothing on both halves. The $0 legality check runs
+  first and buys no calls. A dead judge is a CASUALTY under the transport's name, never a reading of
+  the operator's rubric.
+- **Quarantine: a judged green earns no learning credit until an `accept` releases it.** Minted
+  soft-green bridge rows are held at mint, the release is forward-only, a rerun re-quarantines, and
+  a held entry is never offered by selection — so a soft-green pass cannot feed N3 before the judged
+  floor is proven.
+- **The review door — every run ends at the signer's three doors** (`accept` / `rerun` / `pause`).
+  The door records a DISPOSITION and never touches the loop's own verdict (hamr: *"it's important
+  not to change the loop self verdict"*): `runPlan` returns `green`/`already-green` exactly as
+  before. It opens at all three green sites (precheck `already-green`, the outer close, and the fix
+  loop's green). **Soft-green always** (`REVIEW_DOOR_CLASSES`), **green opt-in** via `reviewDoor:
+  true` / `--review-door` — the flag wins in both directions and is never inferred. An `accept`
+  re-runs the close's MECHANICAL stages (never a judged floor, never a person): a door keeps for 60
+  days and nothing freezes a tree.
+
+### Fixed
+
+- **F102 — a pending human decision now survives a wall-halt → resume** (`a6f62c9`). Two records
+  answering two different questions: `human-decision` (the door, the words, and by whom, with
+  `source: 'operator'|'checkpoint'` and the moment the PERSON spoke) and `human-decision-spent`
+  (what actually bought it). The spend marker fires on the **WORK** — a fix round bought, an accept
+  that greened, a pause honoured — **not on the fix loop opening**, which is precisely the shape of
+  the incident (`iterationsUsed: 0`). A resume carrying one re-enters the fix loop through the same
+  seam a fresh answer uses; the ask is never re-rendered. Two answers to one question are REFUSED
+  (`hitl-decision-red` naming what is held), never merged.
+- **F103 — a rerun buys its own clock** (`a6f62c9`). Two counters that never do each other's job:
+  CHAIN (`chainWallMs`/`chainSpentUsd`, `job-end.spentUsd`) is every leg added up and is what the
+  halt readout reports; ENGAGEMENT (`priorElapsedMs`, `job-end.engagementSpentUsd`) is what bounds
+  THIS leg. Money is deliberately not symmetric — the signed budget stays the CHAIN's ceiling,
+  because a refilled wallet is the failure F45 measured. W-2 is untouched where it was designed for:
+  an ordinary resume folds exactly as it always has, and so does an `accept`.
+- **F106 (HIGH, review) — the calibration gate now meets the one ceiling** (`0ae7693`). The run's
+  third and largest paid seam (up to 10 locate calls plus the 5-artifact battery, each under its own
+  retry ladder) ran with no bound while the scout and the declaration loop were both stopped by
+  `run-author --budget` — the advertised budget and the enforced budget were two different numbers.
+  `prepareSigning`/`calibrationGate` take `ceilingUsd` + `priorCalls`, a cost book absorbs prior
+  spend so the gate reads the REMAINING balance, `capStop` is asked before each paid call inside the
+  pipe (retries included), and a ceiling stop returns as an operator refusal naming money
+  (`cap-halt` / `pricing-red`) — never a casualty, and never a part-graded set presented as graded.
+- **A review door's rerun is a fresh engagement too** (`0ae7693`): `resolveHumanRuling` takes
+  `doorRerun` as a third input, OR'd and never merged, so *"is this leg a fresh engagement"* keeps
+  ONE spelling and a door-rerun leg cannot inherit the rejected leg's wall.
+- **`scripts/run-u.mjs` wires `judgeProvider`** (pinned to the judge model, never a step knob) — a
+  live soft-green run no longer instrument-stops at the judged stage.
+- **Two mutation-blind gaps in `src/kinds.js` covered by tests** (found by the same review).
+
 ## [0.11.0] — 2026-08-18
 
 ### Changed (2026-08-18 — the review door's third button)
