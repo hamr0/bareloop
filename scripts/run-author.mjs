@@ -57,6 +57,7 @@ import { makeLoopGenerate } from '../src/authorflow.js';
 import { defaultJudgeLoop, JUDGE_MODEL } from '../src/judged.js';
 import { validateJob, jobSpecHash } from '../src/job.js';
 import { scanSecrets } from '../src/validate.js';
+import { JUDGED_FLOOR_KIND } from '../src/kinds.js';
 import { tallyCalls } from '../src/text.js';
 import {
   declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
@@ -437,7 +438,7 @@ try {
       // worth exactly as much as the tier its injection evidence was measured on.
       // Absent it, `prepareSigning` refuses the close as a wiring gap rather than
       // signing an ungraded ruler.
-      const judges = (spec.closeDecl?.stages ?? []).some((s) => s?.kind === 'judged-floor');
+      const judges = (spec.closeDecl?.stages ?? []).some((s) => s?.kind === JUDGED_FLOOR_KIND);
       const judgeProvider = judges ? new AnthropicProvider({ apiKey, model: JUDGE_MODEL }) : null;
       if (judges) {
         console.log(`\ncalibration gate — REAL judge calls at ${JUDGE_MODEL}, one per case plus the injection battery.`);

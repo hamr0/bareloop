@@ -19,6 +19,7 @@
 // reach is a rule nothing checks.
 import { scrubRaw } from '../src/text.js';
 import { redactSecrets } from '../src/validate.js';
+import { JUDGED_FLOOR_KIND } from '../src/kinds.js';
 
 /**
  * @param {{goal?: string|null, closeDecl?: any}} spec the RESOLVED spec — the bytes
@@ -57,7 +58,7 @@ export function declarationLines({ goal, closeDecl }) {
  * @returns {string[]}
  */
 export function rubricLines({ closeDecl }) {
-  const judged = (closeDecl?.stages ?? []).filter((/** @type {any} */ s) => s?.kind === 'judged-floor');
+  const judged = (closeDecl?.stages ?? []).filter((/** @type {any} */ s) => s?.kind === JUDGED_FLOOR_KIND);
   if (!judged.length) return [];
   /** @type {string[]} */
   const lines = ['rubric card (what the judge will hold the work to — YOUR words, signed)'];

@@ -72,7 +72,7 @@
 // flagged a `runClose` naming collision between the kind executor and
 // src/ralph.js; the public surface is settled once at M4, not piecemeal.
 
-import { normalizeParser, MAX_JUDGED_PATHS } from './kinds.js';
+import { normalizeParser, MAX_JUDGED_PATHS, JUDGED_FLOOR_KIND } from './kinds.js';
 import { JUDGE_RULE_IDS, validateCard } from './judged.js';
 import { isObj, isNonEmptyString, hasNestedQuantifier, globToPrefix } from './validate.js';
 
@@ -1301,7 +1301,7 @@ export function validateDeclaration(declaration, opts = {}) {
     // the mechanical red still lands, so the money bought no verdict either.
     // A SECOND judged stage is NOT this red (it is `duplicate-kind`, emitted
     // above): one problem, one red, in one vocabulary.
-    if (s.kind === 'judged-floor') {
+    if (s.kind === JUDGED_FLOOR_KIND) {
       const behind = stages.slice(i + 1).filter((/** @type {any} */ x) => isObj(x) && isNonEmptyString(x.kind)
         && catalogue[x.kind] && CLASS_RANK[catalogue[x.kind].verdictClass] < CLASS_RANK['soft-green']);
       if (behind.length) {

@@ -60,6 +60,11 @@ export const BRIDGE_SCHEMA = 'bridge-v1';
  */
 export const QUARANTINED_VERDICTS = Object.freeze(['soft-green']);
 
+/** the red CODE a hold travels under — the gate emits it, the listing splits the
+ * held rows out of the broken ones on it, and the runner reads it back. One
+ * spelling, because three literals is how a hold silently becomes a breakage. */
+export const QUARANTINED_CODE = 'quarantined';
+
 /** does a green under this verdict class earn its learning credit at the close, or
  * does it wait for a person? Absent/unknown means green's behaviour, byte for byte
  * — the pre-softgreen path is the default and stays untouched.

@@ -168,7 +168,11 @@ export const MAX_JUDGED_PATHS = 8;
  * themselves (hitl), never from the seed. The skip is RECORDED by name rather
  * than taken in silence (F59: absent is not empty), so `seedRead` still returns
  * one row per declared stage. */
-export const SEED_EXEMPT_KINDS = Object.freeze(['judged-floor', 'human-confirms']);
+/** the one kind a MODEL renders. Named once for the same reason `HUMAN_KIND` is:
+ * the authoring pipeline, the card, the catalogue and the close each key a
+ * decision on it, and five literals is how they come to disagree. */
+export const JUDGED_FLOOR_KIND = 'judged-floor';
+export const SEED_EXEMPT_KINDS = Object.freeze([JUDGED_FLOOR_KIND, 'human-confirms']);
 /** the one kind a PERSON renders — named once, because the runner keys three
  * decisions on it (is there a door to answer, which stage paused, whose ruling
  * this is) and three literals is how they come to disagree */

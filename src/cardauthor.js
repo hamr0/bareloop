@@ -63,6 +63,7 @@ import {
   JUDGE_RULE_IDS, JUDGE_RULES, CALIBRATION_SIZE, CASE_VERDICTS, validateJudgedArtifacts,
 } from './judged.js';
 import { askStructured, makeCostBook } from './authorflow.js';
+import { JUDGED_FLOOR_KIND } from './kinds.js';
 import { isObj, redactSecrets } from './validate.js';
 
 /** @typedef {{code: string, path: string, detail: string, [k: string]: any}} Red */
@@ -376,7 +377,7 @@ export function signJudgedArtifacts({ proposal, fix = null }) {
 export function foldJudgedArtifacts(closeDecl, { card, cases }) {
   const out = structuredClone(closeDecl);
   const stages = Array.isArray(out?.stages) ? out.stages : [];
-  const judged = stages.filter((/** @type {any} */ s) => isObj(s) && s.kind === 'judged-floor');
+  const judged = stages.filter((/** @type {any} */ s) => isObj(s) && s.kind === JUDGED_FLOOR_KIND);
   if (judged.length !== 1) {
     throw new Error(`[cardauthor] the signed card folds into the close's ONE judged-floor stage, and this close has `
       + `${judged.length} — a rubric with nowhere to land is signed evidence nothing reads, and a second judged stage `

@@ -154,6 +154,29 @@ export function reviewDoorPackage({ door, diff }) {
 }
 
 /**
+ * THE DOOR LIST ITSELF — the header, the order, and the gutter, spelled ONCE.
+ *
+ * Both screens that offer the three doors (the step-level pause and the review
+ * door at the end of a run) show the same list in the same order for the same
+ * reason; only the CONSEQUENCES differ, so only the prose is passed in. Spelling
+ * the structure twice is how the two screens come to disagree about which door
+ * leads — and the order is the whole design input (see `doorLines`).
+ * @param {{rerun: string, accept: string, pause: string}} prose what each door
+ *   costs on THIS screen, without its trailing colon
+ * @param {{rerun: string, accept: string, pause: string}} cmd the exact command
+ *   each door costs, so nobody has to reconstruct one
+ * @returns {string[]}
+ */
+function threeDoors(prose, cmd) {
+  return [
+    'THREE DOORS — no fourth, and no decision is taken for you: nothing happens without the flag.',
+    `  rerun   ${prose.rerun}:\n            ${cmd.rerun}`,
+    `  accept  ${prose.accept}:\n            ${cmd.accept}`,
+    `  pause   ${prose.pause}:\n            ${cmd.pause}`,
+  ];
+}
+
+/**
  * The three doors AT THE REVIEW DOOR. Same order and the same rule as
  * `doorLines` (rerun leads, ~40% rubber-stamp), different consequences: this run
  * is OVER, so a rerun is a fresh engagement rather than a continuation, and a
@@ -162,12 +185,11 @@ export function reviewDoorPackage({ door, diff }) {
  * @returns {string[]}
  */
 export function runDoorLines({ rerun, accept, pause, ttlDays, held }) {
-  return [
-    'THREE DOORS — no fourth, and no decision is taken for you: nothing happens without the flag.',
-    `  rerun   "I don't like it, go again" — your words become the requirement a FRESH engagement plans against (its own clock, what is left of the signed budget):\n            ${rerun}`,
-    `  accept  ${held ? 'releases this run\'s learning credit' : 'confirms it'} — and the close\'s MECHANICAL stages re-run first, because the tree can move after a run ends:\n            ${accept}`,
-    `  pause   not now. Nothing runs and nothing is spent; the door keeps for ${ttlDays} days and then expires on its own, which is all that "cancel" ever meant:\n            ${pause}`,
-  ];
+  return threeDoors({
+    rerun: '"I don\'t like it, go again" — your words become the requirement a FRESH engagement plans against (its own clock, what is left of the signed budget)',
+    accept: `${held ? 'releases this run\'s learning credit' : 'confirms it'} — and the close\'s MECHANICAL stages re-run first, because the tree can move after a run ends`,
+    pause: `not now. Nothing runs and nothing is spent; the door keeps for ${ttlDays} days and then expires on its own, which is all that "cancel" ever meant`,
+  }, { rerun, accept, pause });
 }
 
 /**
@@ -191,12 +213,11 @@ export function runDoorLines({ rerun, accept, pause, ttlDays, held }) {
  * @returns {string[]}
  */
 export function doorLines({ rerun, accept, pause }) {
-  return [
-    'THREE DOORS — no fourth, and no decision is taken for you: nothing happens without the flag.',
-    `  rerun   your words BECOME the gap the worker fixes from, and the run continues under what is left of the budget:\n            ${rerun}`,
-    `  accept  green — minted on FRESH evidence (the mechanical stages re-run first, since the tree may have moved):\n            ${accept}`,
-    `  pause   not now. Nothing is run and nothing is spent; the checkpoint keeps and this run resumes from the start of its last step whenever you come back:\n            ${pause}`,
-  ];
+  return threeDoors({
+    rerun: 'your words BECOME the gap the worker fixes from, and the run continues under what is left of the budget',
+    accept: 'green — minted on FRESH evidence (the mechanical stages re-run first, since the tree may have moved)',
+    pause: 'not now. Nothing is run and nothing is spent; the checkpoint keeps and this run resumes from the start of its last step whenever you come back',
+  }, { rerun, accept, pause });
 }
 
 /**

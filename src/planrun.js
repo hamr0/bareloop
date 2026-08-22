@@ -30,7 +30,7 @@ import { createTrend, FIX_STRIKE_LIMIT } from './trend.js';
 import { TOOL_MENU, STORE_VERBS, checkMenu } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, strategyFor } from './tools.js';
 import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
-import { validateBridge, loadGate, newestEligibleVersion, reuseEligibility, quarantinesCredit } from './bridges.js';
+import { validateBridge, loadGate, newestEligibleVersion, reuseEligibility, quarantinesCredit, QUARANTINED_CODE } from './bridges.js';
 import { extractArtifact } from './text.js';
 import { defaultJudgeLoop } from './judged.js';
 import { createClock, isWallTimeout } from './clock.js';
@@ -939,8 +939,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // bridge in directly cannot spend credit no signer granted.
     const newest = newestEligibleVersion(bv.bridge);
     if (newest === null) {
-      const reds = [{ code: 'quarantined', path: 'versions', detail: reuseEligibility(bv.bridge).reason }];
-      emit('bridge-gate', { outcome: 'quarantined', name, reds });
+      const reds = [{ code: QUARANTINED_CODE, path: 'versions', detail: reuseEligibility(bv.bridge).reason }];
+      emit('bridge-gate', { outcome: QUARANTINED_CODE, name, reds });
       emit('escalation', {
         category: 'recipe-stale', decisionReady: true,
         decision: `The selected workflow${name ? ` "${name}"` : ''} is HELD: its green was rendered by the judged floor and nobody has accepted it yet, so it has earned no reuse. Nothing was spent.`,
@@ -1210,6 +1210,18 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       ...extra,
     });
   };
+  /** WHAT THIS RUN MOVED, read once and read the same way for both screens a
+   * person can arrive at (the pause and the review door). An unreadable set comes
+   * back as its own `stop` rather than an empty list, so the caller can say
+   * UNKNOWN instead of "nothing changed" (F6), and the cap is applied here so the
+   * two screens cannot drift apart on how much they show.
+   * @returns {Promise<{cs: any, paths: string[], shown: string[]}>} */
+  const changedEvidence = async () => {
+    const cs = declaredCtx ? await changedSet(workdir, declaredCtx.seedRef) : { stop: 'no seed', paths: [] };
+    const paths = cs.stop === null ? cs.paths : [];
+    return { cs, paths, shown: paths.slice(0, PAUSE_CHANGED_CAP) };
+  };
+
   /**
    * THE PAUSE (N4 §1.3/§1.4, rulings 1 and 2) — a decision-ready checkpoint, and
    * never a bare "approve?". What the person is shown is assembled here rather
@@ -1223,9 +1235,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * @param {any} v the close verdict that paused @returns {Promise<void>}
    */
   const emitHitlPause = async (v) => {
-    const cs = declaredCtx ? await changedSet(workdir, declaredCtx.seedRef) : { stop: 'no seed', paths: [] };
-    const paths = cs.stop === null ? cs.paths : [];
-    const shown = paths.slice(0, PAUSE_CHANGED_CAP);
+    const { cs, paths, shown } = await changedEvidence();
     emit(HITL_PAUSE, {
       stage: v.stage ?? null,
       ask: v.ask ?? null,
@@ -1266,18 +1276,17 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    */
   const emitReviewDoor = async (outcome, v) => {
     if (!doorOpens(job, reviewDoor)) return;
-    // the same evidence a pause carries, assembled the same way and bounded by the
-    // same cap — one assembly of one run's facts, however the person arrives at it
-    const cs = declaredCtx ? await changedSet(workdir, declaredCtx.seedRef) : { stop: 'no seed', paths: [] };
-    const paths = cs.stop === null ? cs.paths : [];
-    const shown = paths.slice(0, PAUSE_CHANGED_CAP);
-    const cls = job.verdictType ?? 'green';
+    const cls = job?.verdictType ?? 'green';
+    const held = quarantinesCredit(cls);
+    // the same evidence a pause carries, assembled by the same helper — one
+    // assembly of one run's facts, however the person arrives at it
+    const { cs, paths, shown } = await changedEvidence();
     emit(REVIEW_DOOR, {
       outcome,
       verdictType: cls,
       // …and whether this run's credit is being HELD pending the answer. Read from
       // the ONE place that decides it (module 6), never re-spelled here.
-      quarantined: quarantinesCredit(cls),
+      quarantined: held,
       stages: v?.stages ?? [],
       // the stages an `accept` will RE-RUN, named up front: the person is told what
       // their answer is about to be checked against before they give it
@@ -1289,7 +1298,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       },
       decisionReady: true,
       decision: `The close minted ${outcome} and it STANDS. What happens to the work is yours: accept it, rerun it with your own words as the gap, or pause and come back.`
-        + (quarantinesCredit(cls) ? ' This green was rendered by the judged floor, so it has earned no reuse until you accept it.' : ''),
+        + (held ? ' This green was rendered by the judged floor, so it has earned no reuse until you accept it.' : ''),
       options: [...HUMAN_DECISIONS],
       meaning: 'not a verdict — the verdict is already minted and nothing an answer does can change it; this records a disposition',
     });

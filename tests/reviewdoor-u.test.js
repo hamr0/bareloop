@@ -31,7 +31,7 @@ let n = 0;
  * `emitReviewDoor` (src/planrun.js) actually writes, pinned against the real
  * machinery by tests/reviewdoor.test.js — so this fixture cannot drift into
  * describing a record the library does not emit. */
-const doorSpine = ({ at = new Date().toISOString(), verdictType = 'green', quarantined = false, outcome = 'green', door = true } = {}) => [
+const doorSpine = ({ at = new Date().toISOString(), verdictType = 'green', quarantined = false, outcome = 'green', door = true, end = true } = {}) => [
   { type: 'job-start', job: SPEC.job, specHash: HASH, budgetUsd: SPEC.budgetUsd, goal: SPEC.goal, ts: at, seq: 1 },
   { type: 'plan-accepted', plan: { schema: 'plan-v1', steps: [{ id: 'fix-types' }] }, ts: at, seq: 2 },
   { type: 'outer-close', verdict: 'satisfied', stage: 'typecheck-clean', ts: at, seq: 3 },
@@ -54,7 +54,7 @@ const doorSpine = ({ at = new Date().toISOString(), verdictType = 'green', quara
     ts: at,
     seq: 4,
   }] : []),
-  { type: 'job-end', outcome, spentUsd: SPEC.budgetUsd * 0.4, spendComplete: true, ts: at, seq: 5 },
+  ...(end ? [{ type: 'job-end', outcome, spentUsd: SPEC.budgetUsd * 0.4, spendComplete: true, ts: at, seq: 5 }] : []),
 ];
 
 function spineFile(events) {
@@ -106,6 +106,17 @@ test('the chosen door is echoed back before it is signed — including the words
   assert.match(out, /the types are any-shaped/);
   assert.match(out, /To approve and answer:/);
   assert.match(out, /systemd-inhibit/, 'a rerun commissions work, so the inhibitor line is printed (F72)');
+});
+
+test('a door whose run left NO job-end reads as a FLOOR, never as complete at $0 (F6)', () => {
+  // the crash between the door record and the job-end, and every legacy spine that
+  // predates the field: the FIGURE is unknown, so the completeness that would
+  // certify it cannot be true either. Rendering $0.0000 exact here would tell a
+  // signer a rerun has the whole signed budget left.
+  const f = spineFile(doorSpine({ end: false }));
+  const { code, out } = preview(['--door', f]);
+  assert.equal(code, 0, out);
+  assert.match(out, /≥\$0\.0000 spent/, 'an absent job-end is an unknown floor, not an exact zero');
 });
 
 // ══ every refusal that must land before a signature ════════════════════════════

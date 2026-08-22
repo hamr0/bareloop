@@ -453,10 +453,12 @@ if (doorSpineFile !== null) {
     process.exit(2);
   }
   const je = doorEvents.findLast((/** @type {any} */ e) => e?.type === 'job-end');
+  const spentKnown = typeof je?.spentUsd === 'number' && Number.isFinite(je.spentUsd);
   doorPrior = {
-    spentUsd: typeof je?.spentUsd === 'number' && Number.isFinite(je.spentUsd) ? je.spentUsd : 0,
-    // a FLOOR stays a floor across the door, exactly as it does across a resume (F6)
-    spendComplete: je?.spendComplete !== false,
+    spentUsd: spentKnown ? je.spentUsd : 0,
+    // a FLOOR stays a floor across the door (F6): an absent FIGURE is never "complete
+    // at $0" — completeness is only trusted when the number it completes is known
+    spendComplete: spentKnown && je?.spendComplete !== false,
   };
 }
 

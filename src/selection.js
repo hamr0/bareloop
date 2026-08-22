@@ -26,7 +26,7 @@
 // in either direction, a percentage over 2–3 runs is fake precision, and if a score ever
 // earns its way in its threshold is hamr's, from a measured base rate.
 
-import { listingRow } from './bridges.js';
+import { listingRow, QUARANTINED_CODE } from './bridges.js';
 
 /** minutes, one decimal — the granularity a human picks a workflow at (the unit is
  * written once, by the band) */
@@ -78,8 +78,8 @@ export function renderListing(registry) {
   // broken file; a HELD one (softgreen module 6) is a perfectly good workflow whose
   // judged green no signer has accepted yet. Saying "could not be read" about the
   // second would send the operator to fix a file that is not broken.
-  const broken = reds.filter((/** @type {any} */ x) => x?.code !== 'quarantined');
-  const held = reds.filter((/** @type {any} */ x) => x?.code === 'quarantined');
+  const broken = reds.filter((/** @type {any} */ x) => x?.code !== QUARANTINED_CODE);
+  const held = reds.filter((/** @type {any} */ x) => x?.code === QUARANTINED_CODE);
   const skipped = [
     broken.length
       ? [`\n\nNOTE: ${broken.length} registry entr${broken.length === 1 ? 'y' : 'ies'} could not be read and ${broken.length === 1 ? 'is' : 'are'} NOT listed — this listing is smaller than the directory:`,

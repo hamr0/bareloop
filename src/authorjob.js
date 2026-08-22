@@ -91,7 +91,7 @@
 // in the stored declaration (forward-compat point 3), and the suite pins it.
 
 import { jobSpecHash, validateJob } from './job.js';
-import { seedAtHead, seedListing, seedRead as runSeedRead, makeSeedTrees, SEED_EXEMPT_KINDS } from './kinds.js';
+import { seedAtHead, seedListing, seedRead as runSeedRead, makeSeedTrees, SEED_EXEMPT_KINDS, JUDGED_FLOOR_KIND } from './kinds.js';
 // SOFTGREEN modules 4 and 5 — the compile the interview's Q6/Q7 answers land in,
 // and the gate that decides whether the ruler they describe is a ruler.
 import { proposeJudgedArtifacts, signJudgedArtifacts, foldJudgedArtifacts } from './cardauthor.js';
@@ -573,7 +573,7 @@ export async function authorCloseForJob({
   // as the caller-error guard it is.
   /** @type {any} */
   let judged = null;
-  if ((closeDecl.stages ?? []).some((/** @type {any} */ s) => isObj(s) && s.kind === 'judged-floor')) {
+  if ((closeDecl.stages ?? []).some((/** @type {any} */ s) => isObj(s) && s.kind === JUDGED_FLOOR_KIND)) {
     // ONE CEILING, ALL THREE PAID SEAMS. The declaration loop's own calls are
     // ABSORBED before the compile is asked for, so the ceiling folds in prior
     // spend and re-invoking a seam cannot silently widen it. `absorb` deliberately
@@ -1095,7 +1095,7 @@ export async function prepareSigning({
   // validator checks a stored set for LEGALITY only and deliberately allows a
   // judged stage with no set at all, because making it mandatory is a signing
   // decision and this is the signing gate.
-  const judgedStages = (spec.closeDecl.stages ?? []).filter((/** @type {any} */ s) => isObj(s) && s.kind === 'judged-floor');
+  const judgedStages = (spec.closeDecl.stages ?? []).filter((/** @type {any} */ s) => isObj(s) && s.kind === JUDGED_FLOOR_KIND);
   if (judgedStages.length) {
     const cal = await calibrationGate({ spec, judgedStages, judgeLoop, onJudgeCost, calibrateFn, ceilingUsd, priorCalls });
     base.gates.calibration = cal.record;

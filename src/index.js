@@ -52,7 +52,7 @@ export {
   BRIDGE_SCHEMA, validateBridge, deriveStatus, listingRow, loadGate,
   mintBridge, appendGreen, appendRed,
   loadBridge, loadRegistry, saveBridge, makeRegistry, registryExists,
-  QUARANTINED_VERDICTS, quarantinesCredit, newestEligibleVersion, reuseEligibility, recordDoor,
+  QUARANTINED_VERDICTS, QUARANTINED_CODE, quarantinesCredit, newestEligibleVersion, reuseEligibility, recordDoor,
 } from './bridges.js';
 export { renderListing, selectionPrompt } from './selection.js';
 // Layer 3 modules 4+5 — the D7 envelope and the reuse runner. `runReuse` composes
@@ -106,7 +106,7 @@ export {
   // N4 slice 1 — the hitl surface an adopting runner needs: the three doors, the
   // gate that reads a signer's answer (and refuses an empty one), and the seed
   // exemption ruling 8 states.
-  HUMAN_DECISIONS, SEED_EXEMPT_KINDS, normalizeHumanRuling, resolveHumanRuling,
+  HUMAN_DECISIONS, SEED_EXEMPT_KINDS, JUDGED_FLOOR_KIND, normalizeHumanRuling, resolveHumanRuling,
   // SOFTGREEN module 2 — the judged stage's own arbiter-owned bounds. An adopter
   // wiring `judgeProvider` needs both numbers to reason about what a judged close
   // can cost: one paid call per artifact, at most one retry each.

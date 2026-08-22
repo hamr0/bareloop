@@ -46,7 +46,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { loadRegistry, loadBridge, saveBridge, appendGreen, appendRed, mintBridge, registryExists, reuseEligibility, recordDoor } from './bridges.js';
+import { loadRegistry, loadBridge, saveBridge, appendGreen, appendRed, mintBridge, registryExists, reuseEligibility, recordDoor, QUARANTINED_CODE } from './bridges.js';
 import { renderListing, selectionPrompt } from './selection.js';
 import { closeStagesOf } from './plan.js';
 import { MIN_WALL_MS, jobSpecHash } from './job.js';
@@ -386,7 +386,7 @@ export async function selectBridge({ registry, job, ask, provider, pinned = null
   // directory without being told
   const listing = renderListing({
     ok: skipReds.length === 0 && quarantineSkips.length === 0,
-    reds: [...skipReds, ...quarantineSkips.map((s) => ({ code: 'quarantined', path: s.name, detail: s.reason }))],
+    reds: [...skipReds, ...quarantineSkips.map((s) => ({ code: QUARANTINED_CODE, path: s.name, detail: s.reason }))],
     bridges: candidates,
   });
   const prompt = selectionPrompt(listing, ask, pinned);
