@@ -298,6 +298,26 @@ export function closeGapBlock(gap) {
 export const BOUND_REASON_MAX = 200;
 
 /**
+ * BA-21 — the WRITE side of the pricing-provenance signal (read side: `rateProvenance` /
+ * `spendProvenance` in src/ledger.js). bare-agent >=0.37 rides `rateSource` beside
+ * `pricing` on every metering payload; both metering callbacks below forward it onto the
+ * spine through THIS one helper, because two sites spelling one rule are two instruments
+ * (the ripgrep fix that landed in ci.yml but not publish.yml).
+ *
+ * Forwarded VERBATIM — the write side reports what upstream said, and src/ledger.js is
+ * the one place that decides what counts as a guess. And an ABSENT provenance stays
+ * absent: a payload carrying no `rateSource` (bare-agent <0.37, and every round already
+ * in the archive) emits no field at all, so a reader sees UNKNOWN rather than a label we
+ * invented. Never defaulted to `null` here — `null` is upstream saying "nothing was
+ * priced", which is a different fact from "nobody told us".
+ * @param {any} arg an `onLlmResult` / `onTurn` payload
+ * @returns {{rateSource?: string|null}} the field to spread into the spine record
+ */
+export function rateSourceFields(arg) {
+  return arg && typeof arg === 'object' && 'rateSource' in arg ? { rateSource: arg.rateSource } : {};
+}
+
+/**
  * What the NEXT attempt is told about the bound that cut the previous one.
  *
  * Two different bounds used to set the same bare `attemptBounded = roundIteration`
@@ -1990,7 +2010,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // WITH tools take this path: a native session with NO tools fires no
       // onTurn and reports no cost (live-verified), so the toolless drafter runs
       // the metered claude-json TEXT path below instead (never unmetered spend).
-      /** @param {{costUsd?: number|null, pricing?: string|null, usage?: any, kind?: string}} arg */
+      /** @param {{costUsd?: number|null, pricing?: string|null, rateSource?: string|null, usage?: any, kind?: string}} arg */
       const nativeMetered = async (arg) => {
         const session = (arg?.kind ?? 'turn') === 'session';
         // per-turn events are ATTRIBUTION ONLY (`worker-turn`, never accounted —
@@ -2001,6 +2021,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         emit(session ? 'worker-round' : 'worker-turn', {
           phase, iteration: roundIteration, kind: arg?.kind ?? 'turn',
           costUsd: session ? (arg?.costUsd ?? null) : null, pricing: arg?.pricing ?? null,
+          // BA-21 provenance. The session event forwards whatever upstream reported; a
+          // per-turn event says `null` — the same deliberate statement `costUsd` makes
+          // one line up. A native turn is unpriced BY DESIGN (the CLI prices the SESSION),
+          // so no rate was consulted and there is no guess to have made. Stated here
+          // rather than forwarded because it is OUR fact about this surface, not one the
+          // provider payload carries.
+          ...(session ? rateSourceFields(arg) : { rateSource: null }),
           tokens: (arg?.usage?.inputTokens ?? 0) + (arg?.usage?.outputTokens ?? 0),
           usage: usageOf(arg?.usage),
         });
@@ -2099,7 +2126,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const newLoop = (gen) => {
       /** @type {any} */
       let self = null;
-      /** @param {{costUsd?: number|null, pricing?: string|null, usage?: any, kind?: string}} arg */
+      /** @param {{costUsd?: number|null, pricing?: string|null, rateSource?: string|null, usage?: any, kind?: string}} arg */
       const metered = async (arg) => {
         // The meter fires for EVERY generation, live or abandoned. An orphaned round
         // was really billed, and spend that no instrument sees is the one thing this
@@ -2114,6 +2141,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         emit('worker-round', {
           phase, iteration: roundIteration, kind: arg?.kind ?? 'turn',
           costUsd: arg?.costUsd ?? null, pricing: arg?.pricing ?? null,
+          // BA-21 provenance, forwarded verbatim: `pricing` says WHETHER the round was
+          // priced, `rateSource` says who stood behind the rate. Reporting only — the
+          // pricing-red halt still keys on cost alone (src/run.js).
+          ...rateSourceFields(arg),
           tokens: (arg?.usage?.inputTokens ?? 0) + (arg?.usage?.outputTokens ?? 0),
           usage: usageOf(arg?.usage),
         });

@@ -13,7 +13,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { runPlan, planPrompt, closeGapBlock, boundedNote, BOUND_REASON_MAX } from '../src/planrun.js';
+import { runPlan, planPrompt, closeGapBlock, boundedNote, BOUND_REASON_MAX, rateSourceFields } from '../src/planrun.js';
 import { ralph, boundGap, GAP_KEEP_TRIM_MARKER } from '../src/ralph.js';
 import { validateJob } from '../src/job.js';
 import { StallError, MAX_STALLS } from '../src/stall.js';
@@ -4788,4 +4788,70 @@ test('read shim ON, NATIVE surface: the shim OWNS the seam — one cap, one noti
     assert.equal(r.split('[bareloop:').length - 1, 1, 'exactly ONE notice — the two wrappers never stack');
     assert.ok(!r.includes('file truncated at'), 'and the native wrapper\'s own notice is not among them');
   }
+});
+
+// ── BA-21 pricing provenance: the WRITE side ─────────────────────────────────
+// `rateSource` rides beside `pricing` on every bare-agent >=0.37 metering payload.
+// Both metering callbacks forward it through ONE helper — two sites spelling one
+// rule are two instruments (the ripgrep-in-ci.yml-only class).
+
+test('rateSourceFields forwards the provenance VERBATIM — including a value we do not recognise', () => {
+  assert.deepEqual(rateSourceFields({ costUsd: 0.02, pricing: 'priced', rateSource: 'tier' }), { rateSource: 'tier' });
+  assert.deepEqual(rateSourceFields({ rateSource: 'provider' }), { rateSource: 'provider' });
+  // never re-labelled here: the write side reports what upstream said, and the READ
+  // side (src/ledger.js) is the one place that decides what counts as a guess
+  assert.deepEqual(rateSourceFields({ rateSource: 'marketplace' }), { rateSource: 'marketplace' });
+});
+
+test('rateSourceFields keeps an ABSENT provenance absent — a payload that said nothing mints no label', () => {
+  // bare-agent <0.37, and every round already in the archive. Emitting `null` here
+  // would say "nothing was priced", which is a different fact from "nobody told us"
+  // — the reader must see UNKNOWN, not a value we invented.
+  assert.deepEqual(rateSourceFields({ costUsd: 0.02, pricing: 'priced' }), {});
+  assert.deepEqual(rateSourceFields({}), {});
+  assert.deepEqual(rateSourceFields(null), {});
+  assert.deepEqual(rateSourceFields(undefined), {});
+});
+
+test('rateSourceFields carries an explicit null through — upstream saying "nothing was priced"', () => {
+  assert.deepEqual(rateSourceFields({ costUsd: null, pricing: 'unpriced', rateSource: null }), { rateSource: null });
+});
+
+test('the API path never invents a provenance: a worker-round carries rateSource only when the provider payload did', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'done' },
+  ]);
+  const { events } = await go(wd, provider);
+  const rounds = events.filter((e) => e.type === 'worker-round');
+  assert.ok(rounds.length >= 4, `expected metered rounds, got ${rounds.length}`);
+  for (const r of rounds) {
+    if (!('rateSource' in r)) continue; // pre-BA-21 bare-agent: absent, and read as UNKNOWN
+    assert.ok(
+      r.rateSource === null || ['provider', 'caller', 'tier', 'default'].includes(r.rateSource),
+      `a forwarded provenance must be bare-agent's own vocabulary, got ${JSON.stringify(r.rateSource)}`,
+    );
+  }
+});
+
+test('NATIVE clipipe: a per-turn event is explicitly unpriced, so its provenance is null — there was no rate to have guessed', async (t) => {
+  const wd = makePatient(t);
+  const jv = validateJob(JOB(wd, { provider: 'clipipe-subscription' }));
+  const nativeProvider = scriptedNativeFactory([
+    { turns: [{ text: 'scout' }], cost: 0.02 },
+    { turns: [{ text: PLAN(wd) }], cost: 0.01 },
+    { turns: [{ tool: 'shell_write', args: { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' } }, { text: 'done' }], cost: 0.03 },
+  ]);
+  const { events, emit } = collector();
+  const outcome = await runPlan(jv.job, { workdir: wd, nativeProvider, emit, capRuns: 3, remainingUsd: () => 1.5 });
+  assert.equal(outcome, 'green');
+  const turnEvents = events.filter((e) => e.type === 'worker-turn');
+  assert.ok(turnEvents.length >= 3, 'per-turn attribution rides the spine as worker-turn');
+  // costUsd is null BY DESIGN on this surface (the CLI prices the SESSION), so the
+  // provenance says the same thing the cost does — never a guess we did not make
+  assert.ok(turnEvents.every((e) => e.costUsd === null && e.rateSource === null),
+    'every native per-turn event states null cost AND null provenance');
 });

@@ -82,7 +82,12 @@ export { renderListing, selectionPrompt } from './selection.js';
 // credit it has no way to release. STORAGE ONLY — nothing here selects, promotes or reuses
 // a bridge; those stay parked on `layer-3-reuse`.
 export { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED, readResume, resumeTreeGate, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS, checkpointAgeGate, applyDoorDecision, writeRunGreenRow } from './reuse.js';
-export { classifyIncidents, foldLedger, ledgerDeltas, updateLedger, LEDGER_CLASSES } from './ledger.js';
+// BA-21 pricing provenance rides out with the ledger because it is the same job: reading
+// a run's own spend record honestly. `rateProvenance`/`spendProvenance` answer "how much of
+// this was priced by a rate nobody vouched for" — REPORTING ONLY, no halt, no refusal.
+// Exported because an adopter enforcing a budget against these numbers is entitled to know
+// which of them are guesses (see bareloop.context.md, "Every cost figure … is an ESTIMATE").
+export { classifyIncidents, foldLedger, ledgerDeltas, updateLedger, LEDGER_CLASSES, VOUCHED_RATE_SOURCES, rateProvenance, spendProvenance } from './ledger.js';
 // THE WORK BRANCH (PRD v1.57 §3). `workBranchName` is exported so an operator runner can
 // SHOW, before the approval gate, which branch the run will work on — the same reason the
 // resolved per-try hash is printed there: a bound the human is agreeing to should not be

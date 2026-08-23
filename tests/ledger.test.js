@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { classifyIncidents, foldLedger, ledgerDeltas, updateLedger, LEDGER_CLASSES } from '../src/ledger.js';
+import { classifyIncidents, foldLedger, ledgerDeltas, updateLedger, LEDGER_CLASSES, VOUCHED_RATE_SOURCES, rateProvenance, spendProvenance } from '../src/ledger.js';
 
 // real-shaped spine events (see primitiveSmoke/runJob in run.js, ask/runOps in
 // interpret.js, ralph's escalations) — seq/ts as makeSpine stamps them
@@ -458,4 +458,107 @@ test('capability-gap suggestedAsk seeds the ask against the STAMPED target', () 
   const row = ledgerDeltas({}, occs).find((r) => r.class === 'capability-gap');
   assert.ok(row.suggestedAsk.startsWith('bareloop:'), row.suggestedAsk);
   assert.ok(!/bare-agent/.test(row.suggestedAsk), 'a bareloop refusal must not seed an ask at bare-agent');
+});
+
+// ── BA-21 pricing provenance (reporting only) ────────────────────────────────
+// bare-agent >=0.37 rides `rateSource` beside `pricing` on every metering payload.
+// These read the SPINE's own spend records (`worker-round`/`worker-turn` as
+// planrun.js writes them), never an invented shape.
+
+test('a TIER-priced round is a GUESSTIMATE — the predicate is an allow-list of vouched sources, never `=== "default"`', () => {
+  // THE load-bearing case. BOTH production models resolve to 'tier' (claude-sonnet-5
+  // and claude-haiku-4-5 each match a recognized Claude tier by model-id substring),
+  // so a guess-test spelled `rateSource === 'default'` would read every normal round
+  // as confidently priced and see NONE of the population. Blind-instrument class.
+  assert.equal(rateProvenance({ type: 'worker-round', costUsd: 0.02, pricing: 'priced', rateSource: 'tier' }), 'guessed');
+});
+
+test('a DEFAULT-priced round (the blind ceiling) is a guesstimate too', () => {
+  assert.equal(rateProvenance({ rateSource: 'default' }), 'guessed');
+});
+
+test('provider- and caller-sourced rounds are VOUCHED, and they are the only two', () => {
+  assert.equal(rateProvenance({ rateSource: 'provider' }), 'vouched');
+  assert.equal(rateProvenance({ rateSource: 'caller' }), 'vouched');
+  assert.deepEqual([...VOUCHED_RATE_SOURCES], ['provider', 'caller']);
+  assert.ok(Object.isFrozen(VOUCHED_RATE_SOURCES));
+});
+
+test('an UNKNOWN/future rateSource reads as a guesstimate, never as vouched (fail-safe direction)', () => {
+  assert.equal(rateProvenance({ rateSource: 'marketplace' }), 'guessed');
+  assert.equal(rateProvenance({ rateSource: 'provider-ish' }), 'guessed');
+});
+
+test('rateSource null is UNPRICED — nothing was priced, so there was no rate to have guessed', () => {
+  assert.equal(rateProvenance({ rateSource: null, costUsd: null, pricing: 'unpriced' }), 'unpriced');
+});
+
+test('an ABSENT rateSource (every archived round) is UNKNOWN provenance — never vouched, never backfilled', () => {
+  const archived = { type: 'worker-round', kind: 'turn', phase: 'plan', costUsd: 0.0413, pricing: 'priced' };
+  assert.equal(rateProvenance(archived), 'unknown');
+  assert.notEqual(rateProvenance(archived), 'vouched');
+  // and the same for the shapes a reader can hand it
+  assert.equal(rateProvenance({ rateSource: undefined }), 'unknown');
+  assert.equal(rateProvenance(null), 'unknown');
+});
+
+test('spendProvenance answers "how much of this run was priced by a guess?" over the real spend records', () => {
+  reset();
+  const p = spendProvenance([
+    ev('worker-round', { kind: 'turn', costUsd: 0.10, pricing: 'priced', rateSource: 'tier' }),
+    ev('worker-round', { kind: 'turn', costUsd: 0.20, pricing: 'priced', rateSource: 'default' }),
+    ev('worker-round', { kind: 'turn', costUsd: 0.05, pricing: 'priced', rateSource: 'provider' }),
+    ev('worker-round', { kind: 'turn', costUsd: 0.01, pricing: 'priced', rateSource: 'caller' }),
+    ev('worker-turn', { kind: 'turn', costUsd: null, pricing: 'unpriced', rateSource: null }),
+    ev('worker-result', { costUsd: 99 }), // an attempt-level ECHO of the rounds above (F12) — never counted
+  ]);
+  assert.equal(p.guessed.rounds, 2);
+  assert.ok(Math.abs(p.guessed.usd - 0.30) < 1e-9, `guessed spend, got ${p.guessed.usd}`);
+  assert.equal(p.vouched.rounds, 2);
+  assert.ok(Math.abs(p.vouched.usd - 0.06) < 1e-9, `vouched spend, got ${p.vouched.usd}`);
+  assert.equal(p.unpriced.rounds, 1);
+  assert.equal(p.unpriced.usd, 0);
+  assert.equal(p.unpriced.unpricedRounds, 1, 'F6: an unknown cost is COUNTED, never summed as $0');
+  assert.equal(p.unknown.rounds, 0);
+});
+
+test('an ARCHIVED spine (no rateSource anywhere) reports its whole spend as UNKNOWN provenance, not vouched', () => {
+  reset();
+  const p = spendProvenance([
+    ev('worker-round', { kind: 'turn', phase: 'scout', costUsd: 0.0413, pricing: 'priced' }),
+    ev('worker-round', { kind: 'turn', phase: 'plan', costUsd: 0.1102, pricing: 'priced' }),
+  ]);
+  assert.equal(p.unknown.rounds, 2);
+  assert.ok(Math.abs(p.unknown.usd - 0.1515) < 1e-9, `unknown-provenance spend, got ${p.unknown.usd}`);
+  assert.equal(p.vouched.rounds, 0, 'history is never rounded up to vouched');
+  assert.equal(p.guessed.rounds, 0, 'and it is never dressed up as a labelled guess either');
+});
+
+test('an unpriced-cost round is counted, not summed as $0, whatever its provenance (F6)', () => {
+  reset();
+  const p = spendProvenance([
+    ev('worker-round', { kind: 'turn', costUsd: 0.10, pricing: 'priced', rateSource: 'tier' }),
+    ev('worker-round', { kind: 'turn', costUsd: null, pricing: 'unpriced', rateSource: 'tier' }),
+  ]);
+  assert.equal(p.guessed.rounds, 2);
+  assert.equal(p.guessed.unpricedRounds, 1, 'the bucket declares its usd is a FLOOR');
+  assert.ok(Math.abs(p.guessed.usd - 0.10) < 1e-9);
+});
+
+test('provenance is REPORTING ONLY: a guessed round mints no incident and no new ledger class', () => {
+  reset();
+  // the regression guard — if someone later couples this to run control, this goes red
+  const occs = classifyIncidents([
+    ev('worker-round', { kind: 'turn', costUsd: 0.10, pricing: 'priced', rateSource: 'default' }),
+    ev('worker-round', { kind: 'turn', costUsd: 0.10, pricing: 'priced', rateSource: 'tier' }),
+  ]);
+  assert.deepEqual(occs, [], 'a guesstimate rate is not an incident — `pricing` alone still owns the halt');
+  assert.ok(!LEDGER_CLASSES.some((c) => /rate|guess|provenance/i.test(c)), 'no new escalation category was invented');
+  // `pricing` stays strictly two-valued and untouched: the pricing-red classifier still
+  // fires on the escalation category alone, exactly as before
+  reset();
+  const red = classifyIncidents([ev('escalation', { category: 'pricing-red', decision: 'no priced cost' })]);
+  assert.equal(red.length, 1);
+  assert.equal(red[0].class, 'pricing-red');
+  assert.equal(red[0].lib, 'bare-agent');
 });

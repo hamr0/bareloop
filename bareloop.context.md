@@ -1432,6 +1432,53 @@ reserved round bound, with the LAST round reserved for a toolless summary: the b
 a scout mid-tool-use, and text is its only deliverable, so without that reservation it
 spends its whole allowance exploring and reports nothing (F59 — measured on 15 of 18 runs).
 
+**Every cost figure bareloop reports is an ESTIMATE, not a billed amount (BA-21).** No
+vanilla LLM API returns a price — providers report TOKENS — so `spentUsd`, every
+`worker-round` cost, every halt readout and every ledger dollar is a token count
+multiplied by a RATE, never a provider invoice. Expect it to read somewhat high, and do
+not reconcile it against a bill expecting a match. There is deliberately **no per-model
+price table** behind it, and the reason is worth knowing before you decide how far to
+trust the number: a hand-curated table is a treadmill that rots SILENTLY — a price moves
+or a new model ships, the row goes stale, and the figure under-reports with no detector to
+say so. bare-agent instead matches a recognized Claude TIER (haiku / sonnet) by model id,
+and falls back to a conservative ceiling rate for anything it does not recognize. Both
+deliberately OVER-report rather than under-report, which is the fail-safe direction for a
+cap: a run halts slightly early rather than overspending unnoticed. **The consequence
+bites at the budget, and it is not softened here:** `budgetUsd` and `shellCapUsd` are
+enforced against these estimates, so an inaccurate rate is a cap that binds earlier or
+later than you intended. The cap is exact about the number it holds; the number is a
+guess.
+
+**If you need accuracy, pass your own rates — the supported path, not a workaround.**
+bare-agent's `Loop` takes `rates: {in, out, cacheReadMult?, cacheWriteMult?}` — USD per 1K
+tokens, the two multipliers applying to the input rate for the cache-read and cache-write
+tiers (defaulting to Anthropic's 0.1× / 1.25×). A caller-supplied rate is recorded as
+VOUCHED rather than as a guess, and it silences bare-agent's own guesstimate warning.
+**Named, not papered over:** `runJob`/`runPlan` construct their own `Loop` and do not yet
+accept a `rates` passthrough, so today that option is reachable only by a caller driving
+bare-agent directly — a bareloop-run job is priced by the guesstimate, full stop. The
+passthrough is an open follow-up, and until it lands every paragraph above describes the
+only pricing a `runJob` adopter gets.
+
+**The provenance is on the record, per round (`rateSource`).** The field arrives with
+bare-agent **>= 0.37**; under the pinned `^0.36.0` no provider payload carries it yet, so
+every priced round this library writes today reads UNKNOWN provenance — correctly, and by
+the same rule that governs the archive. (The one exception is the native per-turn
+`worker-turn`, whose `null` is bareloop's OWN statement rather than a forwarded one: that
+surface prices the SESSION, so a turn had no rate to guess.) Once the pin moves, every `worker-round` /
+`worker-turn` the plan flow writes carries bare-agent's own label beside `pricing`:
+`'provider'` (the provider reported its own authoritative cost — the native CLI surface)
+and `'caller'` (you passed the rate) are VOUCHED; `'tier'` (a recognized Claude tier,
+where **both** of bareloop's own production models land) and `'default'` (the blind
+ceiling) are GUESSES; `null` means nothing was priced, so there was no rate to have
+guessed. An ABSENT field is UNKNOWN provenance — every round archived before this signal
+existed, and it is never backfilled, never reconstructed, and never rounded up to vouched.
+Read it with `rateProvenance(record)` and `spendProvenance(events)` (`src/ledger.js`),
+whose predicate is an ALLOW-LIST of the two vouched values: anything else, including a
+value a future bare-agent adds, reads as a GUESS. **Reporting only** — `pricing` stays
+strictly two-valued (`'priced'`|`'unpriced'`), the `pricing-red` halt still keys on cost
+alone, and nothing about provenance decides, halts or refuses anything.
+
 **What the worker is told (tool mode):** the absolute repository root (F10 — bare-agent's
 shell tools resolve relative paths against the PROCESS cwd, so a worker with no root is
 blind), the close's CURRENT output as the tree's state (F13 — never framed as "your previous
@@ -2016,7 +2063,14 @@ the same refusal emits, so counting the escalation too would double every refusa
 `suggestedAsk` on every row is a template seed for an upstream ask — filing stays human;
 status rows (`open → filed → fixed → consumed`) are human-appended, and the fold shows
 the latest per key. Pure pieces exported for custom folds: `classifyIncidents(events,
-{spine?})`, `foldLedger(rows)`, `ledgerDeltas(fold, occurrences)`. CLI lands at N5; the
+{spine?})`, `foldLedger(rows)`, `ledgerDeltas(fold, occurrences)`. Riding with them,
+and deliberately NOT a ledger class: `rateProvenance(record)` → `vouched|guessed|unpriced|unknown`
+and `spendProvenance(events)` → per-provenance `{rounds, usd, unpricedRounds}` buckets answer
+"how much of this run's spend was priced by a rate nobody vouched for" (BA-21 — see *Every cost
+figure bareloop reports is an ESTIMATE* above). A bucket's `usd` sums FINITE costs only and is a
+FLOOR whenever its `unpricedRounds` is non-zero (F6 — an unknown cost is counted, never summed as
+$0). `VOUCHED_RATE_SOURCES` is the frozen allow-list they key on. **Reporting only**: no incident,
+no class, no halt. CLI lands at N5; the
 panel reads the same file at N6.
 
 ## Architecture
