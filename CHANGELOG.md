@@ -5,7 +5,7 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.12.0] — 2026-08-23
 
 ### Added (N4 slice 2 — the softgreen rung: a close that JUDGES, and a signer who has the last word)
 
@@ -43,6 +43,50 @@ feature lands, **patch** = docs, fixes, scaffolding.
   re-runs the close's MECHANICAL stages (never a judged floor, never a person): a door keeps for 60
   days and nothing freezes a tree.
 
+- **The judge tier joins the SIGNATURE — a bump flips the hash and the stage refuses the
+  mismatch** (`649d8a5`). `JUDGE_MODEL`'s docstring has always said a judge-model bump forces a
+  full recalibration, and nothing detected one: `closeDecl.calibration` stored only its `cases`,
+  so the tier that graded them sat OUTSIDE the signed bytes, a bump flipped no hash, and the
+  judged stage never compared the model it was about to buy against the model the signer's set
+  was graded by. A rule with no wired detector is prose (F45). The tier now lives beside the
+  cases as **`calibration.judgeModel`** (`CALIBRATION_FIELDS` in `src/declaredclose.js`
+  enumerates a stored set as exactly those two and nothing else), written by
+  `foldJudgedArtifacts` from the PIN itself rather than from anything a caller may name — and
+  because it is inside the spec, `jobSpecHash` covers it by construction: bump the constant,
+  every signed judged spec hashes differently, the signature dies, and the re-sign is what
+  re-runs the calibration gate. `validateCloseDecl` REQUIRES it on any stored set (a set nobody
+  can attribute to a tier is a floor nobody can tell apart from a bumped one).
+  `declaredStages` carries the close-level fact onto the judged stage as
+  `calibrationJudgeModel` — the same seam, and for the same reason, that already stamps
+  `offer: false` — and it carries it from the SIGNED bytes, so a stage can never name a tier the
+  signature does not. `runJudgedFloor` then refuses to grade on a mismatch, naming both models
+  and the two things that fix it (*re-sign* and *recalibrate*), under the same `FAILED` fault the
+  absent judge seam already stops on: nothing is broken, something was never re-done. An ABSENT
+  stamp is deliberately NOT a runtime stop — a signed spec cannot reach a run without a
+  calibration (the signing gate) or without a model on it (the spec gate), so the only runtime
+  question is WHICH model. No signed spec on disk moves: `jobs/*.json` carries zero
+  `judged-floor` stages today.
+- **The U runner mints the row its review door promises to release** (`e01d0af`). The door tells
+  a person that `accept` *"releases this run's learning credit"*; for every run
+  `scripts/run-u.mjs` has driven that sentence was false by construction — a cold green wrote a
+  standalone `bridge-<job>-<runid>.json` FILE and never a registry ROW, so
+  `--registry --workflow --decide accept` reached `recordDoor`, found no green row for the runid
+  and died `no-row-for-run`. The held credit could be described and never released. **STORAGE
+  ONLY:** nothing here selects, promotes or reuses a bridge — that rung stays parked on
+  `layer-3-reuse` (F88) — and exactly one thing reads the row back, the door. `writeGreenRow` is
+  `runReuse`'s own cold-leg green write LIFTED out of its closure unchanged (the
+  fork-on-a-different-close-shape rule, both collision refusals, the `appendGreen` leg), so the
+  two runners mint a green through ONE spelling; a second spelling of what a green writes is the
+  two-transforms class applied to the ledger itself. **`writeRunGreenRow`** (newly exported) is
+  the U runner's terminal policy on top of it, and every guard is a NAMED refusal rather than a
+  silence: no `--registry` (`no-registry`), an already-green run (`green-predates-run` — accept
+  confirms a verdict, it never mints one), a green with no executed plan (`no-plan-executed`), a
+  class whose credit is not held (`credit-not-held` — `green`-class runs mint nothing here,
+  which is what this runner has always done), and a spine leak blocks the row exactly as it
+  already blocks the bridge file. The row is born HELD because `greenParts` reads the SIGNED
+  class off the record — nothing new sets a flag — and `applyDoorDecision` releases it through
+  the path that already existed. `src/index.js`'s claim that `runReuse` is the only registry
+  writer is CORRECTED rather than left standing.
 ### Fixed
 
 - **F102 — a pending human decision now survives a wall-halt → resume** (`a6f62c9`). Two records
@@ -73,6 +117,52 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - **`scripts/run-u.mjs` wires `judgeProvider`** (pinned to the judge model, never a step knob) — a
   live soft-green run no longer instrument-stops at the judged stage.
 - **Two mutation-blind gaps in `src/kinds.js` covered by tests** (found by the same review).
+
+- **The medium whole-branch code review's five findings** (`e0c87d3`). An absent `job-end` in
+  `scripts/run-u.mjs` (a crash between the door record and `job-end`, or a legacy spine) no
+  longer launders into an exact complete `$0` that folds into the rerun ceiling — unknown is
+  reported unknown (F6), regression test watched failing first. One name per kind and per code:
+  the `'judged-floor'` literal at 7 sites becomes **`JUDGED_FLOOR_KIND`** (`src/kinds.js`,
+  exported) and the `'quarantined'` code at 3 sites becomes **`QUARANTINED_CODE`**
+  (`src/bridges.js` — deliberately not `reuse.js`, which would cycle reuse ↔ selection). One
+  `threeDoors()` builder replaces the copy-pasted door lines in `scripts/u-readout.mjs` (output
+  byte-identical against HEAD), and a `changedEvidence()` helper in `src/planrun.js` replaces
+  the duplicated evidence block and the double `verdictType` default, with `doorOpens`'
+  signature untouched. Two findings were ESCALATED rather than decided — the judge-model bump
+  with no detector, and the U runner's door promising to release credit it never minted — and
+  both are the `1A`/`2B` entries above.
+- **The tail review's six findings over `1A`+`2B`** (`493b2ce`). The door PREVIEW path now
+  checks row-EXISTS before promising a credit release, and its printed commands carry
+  `--registry`/`--workflow` forward — the `e01d0af` fix had landed at the end-of-run readout and
+  not at this sibling site, so the operator's next invocation would have rediscovered
+  `no-row-for-run` one hop later. The registry row records **`rounds` + `roundsComplete`**: a
+  resume leg writes a fresh spine and the halted leg's restart record declares money and wall
+  but never rounds, so on a resume that count is a FLOOR and now says so the way the money
+  beside it already does (F6). A NAMED `--registry` that attempted no row prints the reason
+  rather than staying silent. The two near-identical record builders in `src/reuse.js`
+  consolidate into `commitWrite`, and the duplicated `worker-round` scan is hoisted to one
+  spelling.
+- **The release gate's two findings** (`a5a4731`). `docs/UPSTREAM-ASKS.md`'s BA-21 carries a
+  dated CORRECTION note: the retracted 2.0–2.5× figure was a clipipe-surface number (F48 — a
+  provider-billed surface that never pools with `anthropic-api`), and the measured API-side
+  numbers are ~5.7% / 1.586×; the acceptance criteria are unaffected. In `src/judged.js`, two
+  literal NUL bytes inside composite-key template strings are spelled `\x00` — byte-identical
+  at runtime, but the literal made `grep`/`file` treat the source as binary (the documented git
+  binary-detector trap).
+
+### Docs (2026-08-23)
+
+- **`docs/FINDINGS.md`: F102 and F103 move from NOT FIXED / NOT BUILT to FIXED**, each cited to
+  the commit that did it — `a6f62c9` for both, plus `0ae7693` for F103's extension (the review
+  door's rerun as `resolveHumanRuling`'s third input, OR'd and never merged). **F106 is minted**
+  from the 3-lens review's HIGH: F45's class in a money coat with the direction reversed — the
+  ENFORCED number was the looser one, which is the failure that leaves a bill instead of a red
+  (`cce3ce5`).
+- **PRD Addendum v1.76** (this release): the three doors restated, the green-class review door
+  kept OPT-IN, rerun named as *not a replay*, the `1A`+`2B` escalations ruled, and the one
+  remaining door hole named and left deliberately.
+- **`bareloop.context.md`**: the judge-tier paragraph rewritten from DEFERRED to the live
+  detector it now describes.
 
 ## [0.11.0] — 2026-08-18
 

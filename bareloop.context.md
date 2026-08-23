@@ -634,11 +634,32 @@ a PASSED calibration gate plays the seed-red role (the polarity law makes *this 
 demonstrated fact), and the record says so: `gates.seedVerdict.satisfiedBy === 'calibration'`. A
 close with any mechanical work stage is UNCHANGED and still needs its seed red.
 
-**DEFERRED, named rather than implied:** nothing compares a stored `judgeModel` against the
-current `JUDGE_MODEL` at resume or reuse. A judge-model bump is a code constant, so it does NOT
-flip the spec hash and no run-time seam exists to catch it today — the fields are stored so the
-comparison is buildable, and *"a judge-model bump forces recalibration"* is currently an
-operator-side rule rather than an enforced one.
+**THE JUDGE TIER IS INSIDE THE SIGNATURE, and the stage refuses a mismatch.** *"A judge-model
+bump forces a full recalibration"* used to be an operator-side rule with nothing to fire on,
+which makes it prose (F45); it now has both halves of a detector. The tier the signer's set was
+graded by is stored beside the cases as **`calibration.judgeModel`** — `CALIBRATION_FIELDS`
+enumerates a stored set as exactly `cases` and `judgeModel` and nothing else — written by
+`foldJudgedArtifacts` from the PIN (`JUDGE_MODEL`) rather than from anything a caller may name.
+Because it is INSIDE the spec, `jobSpecHash` covers it by construction: bump the constant and
+every signed judged spec hashes differently, the signature dies, and the re-sign is what re-runs
+the calibration gate. **`validateCloseDecl` REQUIRES it** on any stored set (`missing-required`
+on `…calibration.judgeModel`) — a set nobody can attribute to a tier is a floor nobody can tell
+apart from a bumped one. **`declaredStages` stamps it onto the judged stage** as
+`calibrationJudgeModel`, from the SIGNED bytes and through the one seam that already turns a
+declaration into stages (the same carry `offer: false` rides), so a stage can never name a tier
+the signature does not and no second close-level channel is plumbed through every executor seam.
+**`runJudgedFloor` then STOPS on a stored-vs-live mismatch** before it buys a call, naming both
+models and the two things that fix it — *re-sign the spec with the new tier* and *re-run the
+calibration gate (recalibrate)* — under `STOP_FAULTS.FAILED`, the same fault and the same reason
+as the absent judge seam beside it: nothing is broken, something was never re-done. It stops
+rather than degrading in either direction, because grading on the new tier mints a verdict
+against an uncalibrated floor and grading on the old one is not on offer (the pin is a constant).
+
+**The one honest limit, deliberate:** an ABSENT stamp does not stop. It is the same split the
+SET's own presence already lives under — a signed spec that judges cannot reach a run without a
+calibration (the signing gate) or without a model on it (the spec gate), so the only runtime
+question is ever WHICH model, and a bare stage descriptor handed straight to `runStage` by a test
+or an adopter is not a signed spec making a claim about a tier.
 
 **`human-confirms` is the one kind that measures NOTHING** (N4 slice 1). Its whole parameter
 surface is `ask` — the plain question the signer answers — so it cannot spawn, cannot be

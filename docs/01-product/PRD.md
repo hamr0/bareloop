@@ -5677,3 +5677,99 @@ to D9.3's intent for the judged-only shape, not a relaxation for anyone else.
 - **No claim `judged-floor` works.** Calibration existing and passing is still unproven.
 - **The arbiter does not move.** D9.3's intent (a close must be provably failable before
   signing) is preserved, not loosened.
+
+---
+
+## Addendum v1.76 — 2026-08-23 (the softgreen rung SHIPS: the three doors restated, the
+green-class review door kept **OPT-IN**, a rerun named as **not a replay**, the two review
+escalations ruled **"1A + 2B"** — the judge tier joins the signature and the U runner mints the
+row its door promises to release — and the one remaining door hole named and LEFT — hamr:
+*"accept on softgreen = green, rerun = refuse and try again, pause = ttl for 60 days"*)
+
+**Release record:** `CHANGELOG.md` `[0.12.0]`. This addendum states what hamr ruled while the
+rung was being closed out; nothing here reopens v1.71–v1.75, and no arbiter number moves.
+
+### 1. RULING — the three doors, restated in the signer's own words
+
+hamr, verbatim:
+
+> *"accept on softgreen = green, rerun = refuse and try again, pause = ttl for 60 days"*
+
+This is v1.72's door set said from the SIGNER's side rather than the machinery's, and it is
+recorded because the two readings must not drift. **`accept` on a softgreen IS the green** — not
+a second verdict beside the loop's own (the door never changes it, v1.71 §3) but the person's
+own act on the one that was minted, which is also what releases the quarantined learning credit
+(v1.71 §6). **`rerun` is a refusal that buys another attempt** — the signer's words become the
+gap. **`pause` is the TTL**, 60 days, exactly as v1.72 §3 ruled: nothing runs, nothing is spent,
+the rerun allowance is untouched, and somebody who never comes back gets cancel's end-state for
+free.
+
+### 2. RULING — the green-class review door stays OPT-IN (`--review-door`)
+
+`REVIEW_DOOR_CLASSES` is `['soft-green']`, and green's door remains behind an explicit
+`reviewDoor: true` / `--review-door`. **A green finishes without the signer.** The always-on flip
+for green is still a one-line change and it is still hamr's alone to make; the argument for
+leaving it off is that a mechanical close that rendered a green has already said everything a
+person would be asked to confirm, and a door nobody needs is a rubber stamp — which is the exact
+reading that RETIRED hitl (v1.71). **The later rerun door is the refute lever**: a signer who
+disagrees with a finished green opens the door on that run and reruns it, rather than every
+green waiting for somebody at the moment it lands.
+
+### 3. RULING — a rerun is NEVER a replay
+
+A rerun does not re-run the same plan and does not re-ask the same question. The signer's words
+enter the NEXT plan draft as the gap (v1.71 §3), and the worker under it is probabilistic — this
+programme has MEASURED that: two cold runs of one job produced two different working plans, both
+green (2026-07-27, U's aurora legs; PRD v1.34). So "rerun" is a fresh engagement with its own
+money and its own clock (F103), aimed by a person's sentence, and it is entitled to reach its
+verdict by a different route than the leg it refused. **A different plan across legs is not
+evidence of a worse plan** (hamr's standing correction) — it is what a probabilistic worker
+under a changed brief does.
+
+### 4. RULING — the two review escalations: "1A + 2B", both built
+
+The medium whole-branch review ESCALATED two findings rather than deciding them, because both
+sit against the signature. hamr ruled both in, and both shipped in this release.
+
+- **1A — the judge tier joins the SIGNATURE.** `JUDGE_MODEL`'s promise that a bump forces a full
+  recalibration had no wired detector, which makes it prose (F45). The tier is now stored inside
+  the spec as `calibration.judgeModel`, so `jobSpecHash` covers it by construction: a bump flips
+  every signed judged spec's hash, the signature dies, and the re-sign is what re-runs the
+  calibration gate. `validateCloseDecl` requires it on any stored set, and `runJudgedFloor`
+  refuses to grade a stored-vs-live mismatch — naming both models and the two things that fix
+  it. **An absent stamp is deliberately not a runtime stop**: a signed spec cannot reach a run
+  without a calibration or without a model on it, so the only runtime question is WHICH model.
+- **2B — the U runner mints the row its door promises to release.** The door's own text says
+  `accept` releases this run's learning credit; on `scripts/run-u.mjs` that sentence was false by
+  construction, because a cold green wrote a bridge FILE and never a registry ROW. It now writes
+  the row through the SAME seam `runReuse`'s greens go through. **STORAGE ONLY, and this is the
+  load-bearing half of the ruling: reuse SELECTION and PROMOTION stay parked** on
+  `layer-3-reuse` per F88 — the row is written, and exactly one thing reads it back, which is the
+  door. Nothing here re-opens the reuse rung, and no green minted this way is offered to a later
+  run.
+
+### 5. The one door hole, NAMED and left deliberately
+
+A **green-class** run that names a `--registry` still mints no row, so a green-class `accept`
+against a registry refuses `credit-not-held`. This is correct today and it is not a bug: green
+credit is not quarantined, so there is nothing held for a door to release, and the refusal names
+that rather than inventing a row to satisfy the command. **Widening what enters the registry is
+reuse-rung territory** — that is the question of which greens are eligible to be selected later,
+and it is parked with the rest of the rung. Named here so that the next reader finds the hole
+already described rather than rediscovering it as a defect.
+
+### 6. Housekeeping, recorded because it touched the tree
+
+- **The stray `docs-reorg` branch was DELETED** on hamr's order — *"docs-reorg branch was a
+  test, delete it"*. It was a test of the reorg shape, not a change anyone was going to merge.
+- **The readshim lane merges AFTER this rung.** `scripts/run-u.mjs` is the ONE file both lanes
+  touch; the conflicting hunks are HANDED OVER to the other session rather than resolved blind
+  (the standing cross-session lane rule). The fresh full gate at merge runs on a quiet machine
+  with no concurrent builders.
+
+### 7. Not claimed
+
+- **No claim `judged-floor` works on a paid run.** v1.71 §7 and v1.75 §4 stand in full: the
+  calibration gate exists and is enforced; softgreen has still never rendered a live verdict.
+- **No reuse claim.** 2B is storage. Nothing selects, promotes or inherits from a row it writes.
+- **The arbiter does not move.** No budget, cap, fence, wall or merge semantic changes here.
