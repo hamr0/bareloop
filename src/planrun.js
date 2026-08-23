@@ -1205,6 +1205,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       onJudgeCost: (/** @type {any} */ c) => emit('judge-round', {
         stage: c.stage, path: c.path, attempt: c.attempt, label: c.label, model: c.model,
         costUsd: c.costUsd, unpricedRounds: c.unpricedRounds,
+        // BA-21 provenance, through the SAME helper the worker rounds use — this record
+        // is on `spendProvenance`'s read list (src/ledger.js), so a judge-round that
+        // never carried the field would read UNKNOWN forever inside the readout built to
+        // expose exactly this seam. NAMED, not papered over: the judge cost payload
+        // (src/kinds.js `onJudgeCost({...})`) does not carry `rateSource` today, so it
+        // still reads UNKNOWN — correctly — until that payload forwards it too.
+        ...rateSourceFields(c),
       }),
     })
     : runStages(stages, scrub, closeOpts));

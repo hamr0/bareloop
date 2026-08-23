@@ -410,6 +410,11 @@ export function updateLedger({ ledgerFile, spineFiles }) {
 // and the plan flow forwards it verbatim onto `worker-round`/`judge-round`/`worker-turn`
 // (`rateSourceFields`, src/planrun.js — the write side).
 //
+// NAMED rather than papered over: `judge-round`'s own payload (src/kinds.js's
+// `onJudgeCost({...})`) does not carry `rateSource` yet, so every judge round reads
+// UNKNOWN provenance today — correctly, by the same rule that governs the archive, and
+// the day that payload forwards the field the emit site already spreads it.
+//
 // `pricing` is UNCHANGED and still strictly two-valued ('priced'|'unpriced'). Nothing
 // below reads it, nothing below decides anything, and no new escalation category exists:
 // the `pricing-red` halt in src/run.js keys on cost alone and stays the ONLY pricing

@@ -389,3 +389,29 @@ test('the persona line describes the arm that is actually installed, and nothing
   assert.match(a2, /DIFF/, 'A2 explains the diff it will actually be sent');
   assert.ok(!/24KB|24 KB|capped|continues where/i.test(a2), 'and never mentions a limit that is not in force — a prompt describing machinery that is off is a lie to the worker');
 });
+
+test('REGRESSION: a zero-byte read never mints a pointer for a delivery that never happened', async (t) => {
+  const d = patient(t);
+  const empty = join(d, 'empty.txt');
+  writeFileSync(empty, '');
+  const rd = wrapReadTool(rawRead());
+
+  // 0 >= 0 is true, so the pointer's `start >= total` test held on a file the ledger
+  // had never seen — the FIRST read of an empty file claimed the worker already had it.
+  const first = await rd.execute({ path: empty });
+  assert.ok(!/unchanged since you read it/.test(first), 'a first read is never a pointer');
+  assert.equal(first, '', 'it delivers the file, which is nothing');
+  // and once it HAS been delivered, the pointer is legal and truthful
+  assert.match(await rd.execute({ path: empty }), /unchanged since you read it/);
+
+  // the worse half: a file TRUNCATED to empty since it was handed over must never come
+  // back as "unchanged — you already hold all of it", or the worker keeps believing in
+  // content that is gone.
+  const shrunk = join(d, 'shrunk.txt');
+  writeFileSync(shrunk, 'hello\n');
+  assert.equal(await rd.execute({ path: shrunk }), 'hello\n');
+  writeFileSync(shrunk, '');
+  const after = await rd.execute({ path: shrunk });
+  assert.ok(!/unchanged since you read it/.test(after), 'an emptied file is a CHANGED file, never a pointer');
+  assert.equal(after, '', 'the worker is handed the new content: nothing');
+});

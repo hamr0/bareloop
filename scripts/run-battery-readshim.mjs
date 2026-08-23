@@ -147,6 +147,11 @@ const readRow = (/** @type {string} */ spineFile) => {
     share: tools?.share ?? null,
     tools,
     corruptLines: corrupt,
+    // A dropped record is a record NOBODY READ, and one of them may have carried money.
+    // Counting the count and then reporting the row's spend as exact would be the same
+    // launder `unpricedRounds` refuses: the row's spend is a FLOOR whenever a line of
+    // its own spine was unreadable, and the readout prints the count beside it.
+    spendComplete: spend.spendComplete && corrupt === 0,
     spineFile,
     runid,
   };
@@ -296,6 +301,11 @@ const readout = (/** @type {any[]} */ rows) => {
   console.log(`  reader vs job-end      : ${div.length === 0 ? 'agree on every row' : `DIVERGE on ${div.length} row(s): ${div.map((r) => `row ${r.row} ${r.divergenceUsd > 0 ? '+' : ''}$${r.divergenceUsd.toFixed(6)}`).join(', ')}`}`);
   const floors = rows.filter((r) => r.spendComplete === false);
   if (floors.length) console.log(`  spend FLOORS (F6)      : ${floors.length} row(s) reported spendComplete:false — their spend is >=, never exact.`);
+  // a line of a row's own spine that could not be parsed is a record NOBODY READ — it is
+  // named here, because a silently dropped record is the F45 class arriving through the
+  // reader's own front door rather than through an unaccounted type.
+  const torn = rows.filter((r) => (r.corruptLines ?? 0) > 0);
+  if (torn.length) console.log(`  UNREADABLE spine lines : ${torn.map((r) => `row ${r.row} x${r.corruptLines}`).join(', ')} — those records were dropped, so these rows' spend is a FLOOR.`);
   const unpriced = rows.filter((r) => (r.unpricedRounds ?? 0) > 0);
   if (unpriced.length) console.log(`  UNPRICED rounds        : ${unpriced.map((r) => `row ${r.row} x${r.unpricedRounds}`).join(', ')} — unpriced is never free (F6).`);
 

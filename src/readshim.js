@@ -499,7 +499,16 @@ export function createReadShim({ cap = READ_SHIM_CAP, arm = ARM_ALL } = {}) {
       // over whole, and the arm answers it by handing the bytes over again. Saying
       // "you already have it" there would be TRUE and still wrong: it is the
       // pointer's saving, and A2 is the diff's own read (see the arm table above).
-      if (arm.pointer && start >= total) {
+      //
+      // `seen.hash === hash` is spelled out rather than left implied by `start`: on a
+      // ZERO-BYTE content `start >= total` is 0 >= 0 and holds with no ledger entry at
+      // all, so the FIRST read of an empty file — and, worse, a read of a file that was
+      // just TRUNCATED to empty since the worker was handed its contents — answered
+      // "unchanged since you read it, you already hold all of it". Both are untruthful
+      // pointers on a delivery that never happened, which is the one thing this module
+      // exists to make impossible. With the guard, an empty file falls through to the
+      // slice path and is delivered (as nothing) truthfully.
+      if (arm.pointer && seen && seen.hash === hash && start >= total) {
         ledger.set(path, { hash, total, delivered: total, full: r });
         return pointer(path, total);
       }
