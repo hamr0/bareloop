@@ -8602,3 +8602,178 @@ verdict. That claim needs a paid run.
 **An instrument the arbiter depends on is never hosted in a tree that development mutates.** Not a
 working checkout (goes dirty), not a scratch worktree (gets removed). Pin it, install it, smoke it,
 and re-verify the hash after writing — never before only.
+
+---
+
+## F111
+
+**BA-23's fix did not restore the F6 halt: the $0 laundering moved one layer up, into the
+provider. Our own F6 test was green against a shape production cannot emit.**
+
+The `bare-agent` `^0.36.0` → `^0.38.1` bump was held with the gate honestly red on F6
+("an UNPRICED round halts `pricing-red`"). Root cause was filed upstream as BA-23 and fixed
+in 0.38.1: `loop.js` handed `resolveRoundCost` a stale truthy `lastUsage` instead of the
+round's own usage, so the resolver's `if (!usage) return {cost:null, source:null}` branch was
+dead code on the Loop path.
+
+The fix is correct — and it does **not** make the F6 halt reachable on any real paid path.
+
+### Where it actually launders
+
+`provider-anthropic.js:194-199` builds the usage object **unconditionally**, every field
+`|| 0`-coalesced. An **absent** usage block therefore arrives at the resolver as a *truthy
+all-zeros object*, never null, so the branch BA-23 revived still never fires. Coalescing
+per-field with `|| 0` is right; coalescing the ABSENCE of the whole block into a zero object
+is the defect.
+
+### Proven end to end, $0 — `scratchpad/probe-real-provider.mjs`
+
+Drives the **real** `AnthropicProvider` from the **shipped** 0.38.1 artifact against a local
+HTTP server, varying only the usage block (`baseUrl` is the injectable seam; no network, no key).
+
+| response shape | provider `usage` | `resolveRoundCost` | verdict |
+|---|---|---|---|
+| usage block ABSENT | all zeros | `cost=0 source='tier'` | **PRICED $0** |
+| usage `{}` | all zeros | `cost=0 source='tier'` | **PRICED $0** |
+| usage `null` | all zeros | `cost=0 source='tier'` | **PRICED $0** |
+| CONTROL real usage | `in:10 out:5` | `cost=0.000105` | priced (correct) |
+| CONTROL cache-only | `cacheRead:5000` | `cost=0.0015` | priced (correct) |
+
+The controls price correctly, so the probe **can** produce a negative — it is not rigged.
+Note the laundered $0 wears `source:'tier'`, the **more confident** of the two guesstimate
+labels: a consumer filtering for `'default'` to find blind guesses will not see it.
+
+### The half that is OURS, not upstream's
+
+`tests/run.test.js` F6 passes only because it uses a hand-written provider emitting
+`usage: null` — **a shape `AnthropicProvider` provably cannot emit**. A green test guarding
+nothing on the surface that spends money. This is the "validated against a fixture, never the
+real instrument" class, self-inflicted, and it is why the gap survived two sessions' review.
+
+### Upstream scope (filed as BA-24, confirmed by the bare-agent session)
+
+Systemic across every http provider (`anthropic`, `openai`, `gemini`, `ollama`). Three
+additions contributed from this side: (1) **clipipe is in scope** — `provider-clipipe.js:226`
+and `:220`, plus `mapClaudeMeta` at `provider-clipipe-tools.js:130`, which feeds the *main*
+`claude-json` path (usually rescued by a finite `total_cost_usd`, silent $0 when both are
+absent); (2) upstream's proposed defence-in-depth rule (*truthy-but-all-zero reads unpriced*)
+**can false-fire**, and a false unpriced on our side is a `pricing-red` **halt that kills a
+live paid run** — so it needs must-NOT-fire cases (cache-only round; a clipipe subscription
+round whose authoritative `costUsd` is a legitimate 0); (3) `judge.js:192` and the summarize
+seam `loop.js:691` are correct at their own layer but inherit the manufactured zeros — three
+consumers, one root.
+
+### Severity, honestly
+
+Archive replay found **0 no-usage rounds in 8,352 rounds across 162 spines**. A latent
+forward hazard, low reachability — real, not urgent. Disconfirming evidence was filed **with**
+the ask.
+
+### Standing rule this mints
+
+**A pricing-honesty guard is validated against the REAL provider's output shape, end to end —
+never against a stub that emits the convenient input.** A stub can only prove the branch works
+*if reached*; it can never prove the branch is reachable.
+
+### What is NOT claimed
+
+BA-24 is unfixed. Changing what **bareloop** treats as unpriced is arbiter territory (verdict
+routing) and is **named and parked for hamr**, not built. Our F6 test still validates the
+unreachable shape and its comment still carries the now-misleading claim that `usage:null` is
+"the ONLY genuinely unpriced shape".
+
+---
+
+## F112
+
+**The archived litectx indexes were barely stale: 0.65%. The stale-index build is retired by
+measurement, not by argument.**
+
+The recorded plan carried "stale-index agreed" with a recommendation to **measure first**.
+Measured, $0 and read-only — `scratchpad/stale-index-measure.mjs` recomputes litectx's own
+hash (sha256 of the file body, per `indexer.js:143`) for every indexed file across all 12
+archived patient indexes and compares to the tree.
+
+**1,997 indexed files → 13 stale (0.65%), 0 vanished, 0 indexed-but-missing.** Worst patient
+was 9% — 2 files of 23. Every stale file is the worker's own late edit, the class `serveStale`
+(F108) already handles in-run.
+
+Mid-run re-indexing demonstrably works: in `litectx-u`, git shows **10** worker-modified files
+while the index is behind on **1** — it caught the other nine during the run. The inherited
+"phantom defects from stale indexes" story does **not** appear in this archive, consistent with
+F35 being disconfirming.
+
+### One real gap, of a different kind
+
+litectx lists candidates via `git ls-files` (`indexer.js:75-86`), so a file a worker **creates
+but never commits** is invisible to the index permanently. Exactly **1** instance in 12 runs
+(`pulselog-author-live/src/err-utils.js`). Every other untracked file in the archive is a
+harness artifact (probe/gate logs) litectx should not index anyway.
+
+### What is NOT claimed
+
+This measures the **end-of-run archived** state. A post-run re-index would hide mid-run
+staleness; most indexes carry a single `indexed_at` timestamp, so that cannot be fully excluded.
+The in-run half is covered by `serveStale` regardless.
+
+**Recommendation: do not build.** Measure-first was the recorded rule; the measurement says skip.
+
+---
+
+## F113
+
+**The rates-passthrough's stated justification expires 2026-08-31. Its durable justification is
+the opposite defect, on a different tier: opus/fable are UNDER-priced by 40–70%.**
+
+Read upstream source against the authoritative pricing table before building.
+
+### Upstream is already right about almost everything
+
+`loop.js:180-210` already prices **all four token tiers** separately with Anthropic's 0.1×
+read / 1.25× write multipliers — the cache-tier blindness this repo logged earlier is fixed
+upstream. `TIER_RATES` (USD per 1K) is `haiku {in .001, out .005}` — **exactly correct** — and
+`sonnet {in .003, out .015}`, which is exactly the **standing** Sonnet-5 rate.
+
+### So the sonnet story is a 7-day story
+
+Sonnet 5's **introductory** rate ($2/$10 per 1M) runs through **2026-08-31**. Until then
+upstream over-reports sonnet by **exactly 50%** — both `in` and `out` are exactly 1.5×, and
+every tier scales off them, so the factor is workload-independent (the archive replay returned
+50.0% and could not have returned anything else). **On 2026-09-01 upstream becomes exactly
+correct with zero work.** Over-reporting is also the *safe* direction for a cap: it halts early,
+never overspends.
+
+Archive cross-check: recorded costs sit at median **0.950×** the intro-rate recompute across the
+clean population, consistent with the previously-logged ~5.7% error.
+
+### The measurement was contaminated first — audit the denominator
+
+The first aggregate assumed every `worker-round` was sonnet. That mixed in **clipipe** runs
+(provider-priced, ratio up to 5.36) and at least one **haiku-worker** run (ratio exactly 0.500,
+because haiku is exactly half intro-sonnet). Segmenting gave the clean population: 138 files /
+7,469 rounds, ratio median 0.950, tight `[0.90..0.99]`; contaminants were 6 clipipe files, 1
+haiku file, 12 other. A bucketed denominator gets audited for populations that structurally
+differ **before** the percentage is believed.
+
+### The durable defect is on the tiers nobody matched
+
+`resolveRates` (`loop.js:125-133`) substring-matches only `haiku` and `sonnet`. `claude-opus-5`
+and `claude-fable-5` match **neither**, so both fall to `DEFAULT_RATES` — the sonnet ceiling —
+at `source:'default'`:
+
+- **Opus 5** true $5/$25 per 1M → reported at **60%** of true = **40% UNDER-report**
+- **Fable 5** true $10/$50 per 1M → reported at **30%** of true = **70% UNDER-report**
+
+**Under-reporting is the direction that breaks a budget cap** — the cap does not bind until real
+spend far exceeds it. Upstream's one-time pass-but-warn on `'default'` mitigates but does not
+solve it: a warning is not a halt.
+
+Our own `VOUCHED_RATE_SOURCES` (`src/ledger.js:444`) already classes `'tier'`/`'default'` as
+`guessed` and only `'provider'`/`'caller'` as `vouched` — the honesty plumbing exists; caller
+rates are the only thing that would move a round to `vouched`.
+
+### What is NOT claimed
+
+No opus/fable worker rounds appear in the archive, so this is a **forward** hazard with no
+historical casualties — the same status as F111, and stated rather than rounded up. Whether to
+build the passthrough at all is hamr's call; this finding only relocates its justification.
