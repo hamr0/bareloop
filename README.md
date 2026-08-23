@@ -48,8 +48,9 @@ finds in the real work, and fixed rules — not the judge — render the verdict
 
 ## You have the last word
 
-Every run ends at a **review door**: here is what changed, here is what every check said, here
-is what I'm asking you. **Accept** it, **rerun** it — what you type is the feedback the next
+Every judged run ends at a **review door** (a purely mechanical green finishes on its own —
+ask for the door with `--review-door`): here is what changed, here is what every check said,
+here is what I'm asking you. **Accept** it, **rerun** it — what you type is the feedback the next
 attempt works from, funded fresh — or **pause** it and decide another day. A pause costs
 nothing, keeps everything, and picks up from the start of the last step whenever you come back.
 Never come back, and it quietly expires on its own.
