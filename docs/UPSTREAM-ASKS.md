@@ -2442,3 +2442,83 @@ tarball first ships `rateSource` (0.37.0 or later — not yet published as of th
   (the CLI's own authoritative session cost) is simply unrecorded as vouched.
 - **No local shim.** Per this file's standing rule the resolution is upstream, consumed here by
   version bump when `rateSource` itself ships and is confirmed present on this event.
+
+## BA-23 — a round with NO usage is priced $0 `'default'` on the Loop path, against BA-21's own contract: the F6 halt (`pricing-red`) is structurally unreachable there, and a mid-run no-usage round is re-priced on the PREVIOUS round's tokens (2026-08-23, the ^0.38.0 pin bump gate)
+
+**Found by:** bareloop's own suite, the first execution of anything against bare-agent 0.38.0.
+The F6 regression test ("an UNPRICED round halts `pricing-red`") went red on the bump — not as a
+flake but as a behaviour change, chased to source. **This is the pin bump's first real catch, at
+$0, before any paid run.**
+
+### The defect, in bare-agent's own words against its own code
+
+`src/loop.js:218` (the `resolveRoundCost` docstring, BA-21's contract):
+
+> `source` is null **only when the round is genuinely unpriced (no usage**, or a non-finite
+> estimate).
+
+`resolveRoundCost` honours that: `if (!usage) return { cost: null, source: null }`. But the Loop
+path can never reach it —
+
+```js
+// loop.js:530
+let lastUsage = { inputTokens: 0, outputTokens: 0 };
+// loop.js:832
+lastUsage = result.usage || lastUsage;
+// loop.js:853
+const { cost: roundCost, source: rateSource } = resolveRoundCost(result, model, lastUsage, this.rates);
+```
+
+`lastUsage` is initialised to a **truthy zero-object** and a null/absent `result.usage` keeps it —
+so `resolveRoundCost` receives a usage object on EVERY round, and the "genuinely unpriced" branch
+is dead code on the Loop path.
+
+**Observed (bareloop debug repro, scripted provider returning `usage: null, costUsd: null`):**
+every round emitted `costUsd: 0, pricing: 'priced', rateSource: 'default'`. A round the provider
+reported NOTHING about is stamped priced-$0. $0 is not a guesstimate of unknown usage — there was
+nothing to estimate FROM. That is unknown-laundered-into-$0 (bareloop F6, and bare-agent's own
+context.md line: *"honest null if unpriced, never 0"*), wearing a `'default'` label that makes it
+look like a flagged guess.
+
+**Second facet, by code-read (not yet observed live):** because `lastUsage` RETAINS the previous
+round's numbers, a mid-run round with no usage is priced as if it spent the PREVIOUS round's
+tokens again — not $0 but a repeat charge on stale usage. Both facets have one root: `|| lastUsage`
+where the docstring's contract needs `result.usage ?? null` handed to the resolver.
+
+### Consequence downstream (why this is filed same-day)
+
+bareloop's `pricing-red` halt (F6: "a cap cannot govern spend it cannot see") keys on a null
+round cost (`src/run.js`, `account()`). On 0.38.0 the API-Loop path can no longer produce a null
+cost — so **the F6 halt is structurally unreachable on the primary paid surface**. Only
+native/clipipe null costs can still trigger it. The cap governs a number that is now partly
+invented.
+
+### Disconfirming evidence, considered per this file's standing rule
+
+- **Is priced-$0 the intended BA-21 reading of a no-usage round?** The strongest argument FOR:
+  BA-21's slogan is "guesstimate-and-run, never refuse". But BA-21's own spelling is *"a
+  TOKEN-BEARING round is ALWAYS priced"* (bareagent.context.md §894) — a no-usage round is not
+  token-bearing, and the same document's cost-contract line says *"honest null if unpriced,
+  never 0"*. The docstring at the resolver agrees. Three sources of the author's own intent say
+  null; the implementation says $0. We read this as a defect, not a design.
+- **Does bareloop even have standing?** A real Anthropic API response always carries usage, so
+  the no-usage case may look academic. It is not: transport-degraded results, provider wrappers
+  that drop usage, and BA-16 native rounds all produce usage-less results — and the SECOND facet
+  (stale-usage re-pricing) fires on any of them mid-run, silently inflating the priced sum with
+  phantom token charges.
+
+### Ask
+
+`resolveRoundCost` should receive the round's OWN usage (`result.usage ?? null`), so a no-usage
+round prices as `{cost: null, source: null}` per the existing docstring — unpriced, honest,
+`pricing:'unpriced'` — and never the previous round's numbers. `lastUsage` can keep serving the
+BA-5 return-value role it was built for; it just must not stand in for a usage the round never
+reported.
+
+### No local shim, and the bump is HELD
+
+Per this file's standing rule the fix is upstream, consumed here by version bump. Until then the
+`^0.38.0` bump sits UNCOMMITTED in the working tree with its gate honestly red (2048/2049 — the
+F6 regression test is the failure, and it is doing its job). Restoring F6 locally by minting
+`pricing-red` on a new condition would be both a shim and arbiter-adjacent (verdict routing);
+neither happens without hamr's word.
