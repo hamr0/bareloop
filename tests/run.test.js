@@ -313,13 +313,20 @@ test('money on the job-end: a pre-spend red states a real zero and is COMPLETE �
 test('money on the job-end: an UNPRICED round halts pricing-red and the priced sum rides out as an incomplete FLOOR (F6 — unpriced is never free)', async () => {
   const wd = makePlanWork('money-unpriced');
   const job = planJob();
-  // the scout round comes back with a null cost: honest unknown, never $0
+  // the scout round comes back with NO USAGE AT ALL: under bare-agent >=0.38
+  // (BA-21) that is the ONLY genuinely unpriced shape — a round with usage but a
+  // null provider cost is now priced by the flagged guesstimate (rateSource
+  // 'tier'/'default') and RUNS, per hamr's pricing-honesty ruling ("guesstimate
+  // and run but keep the user in the know, never refuse"). The old fixture
+  // (usage + costUsd:null) stopped manufacturing the condition this test exists
+  // to pin the moment the pin bumped; see the companion test below for what that
+  // shape means now.
   const provider = {
     name: 'unpriced-scout',
     calls: [],
     async generate() {
       provider.calls.push(1);
-      return { text: 'scouted', usage: { inputTokens: 10, outputTokens: 5 }, costUsd: null, pricing: 'unpriced', stopReason: 'end_turn' };
+      return { text: 'scouted', usage: null, costUsd: null, pricing: 'unpriced', stopReason: 'end_turn' };
     },
   };
   const file = join(wd, 'spine.jsonl');
@@ -328,6 +335,32 @@ test('money on the job-end: an UNPRICED round halts pricing-red and the priced s
   const end = readSpine(file).find((e) => e.type === 'job-end');
   assert.equal(end.outcome, 'pricing-red');
   assert.equal(end.spendComplete, false, 'the sum is a floor, and says so');
+});
+
+test('money: usage with a null provider cost is no longer unpriced — it rides as a FLAGGED guesstimate, never a refusal (BA-21, hamr\'s pricing-honesty ruling)', async () => {
+  // The exact fixture the F6 test used before bare-agent 0.38: usage present,
+  // costUsd null. Under 0.36 this halted pricing-red; under BA-21 the loop prices
+  // it off the built-in fail-safe rate and DISCLOSES the guess (rateSource
+  // 'tier'/'default') instead of refusing. Pinning it so the bump's behaviour
+  // change is a recorded contract, not an accident a future test-fix papers over:
+  // the run must get PAST pricing (the drafter's junk answer reds the plan
+  // instead), and the round's spine record must carry the guess label.
+  const wd = makePlanWork('money-guesstimate');
+  const job = planJob();
+  const provider = {
+    name: 'guesstimate-scout',
+    calls: [],
+    async generate() {
+      provider.calls.push(1);
+      return { text: 'scouted', usage: { inputTokens: 10, outputTokens: 5 }, costUsd: null, stopReason: 'end_turn' };
+    },
+  };
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(job, { approvals: approve(job), workdir: wd, provider, emit: makeSpine(file) });
+  assert.notEqual(outcome, 'pricing-red', 'a priceable round must not halt as unpriced — refusing a guesstimate is the retired 0.36 behaviour');
+  const rounds = readSpine(file).filter((e) => typeof e.rateSource === 'string');
+  assert.ok(rounds.length > 0, 'at least one spine record carries the rateSource provenance of the guessed price');
+  assert.ok(rounds.every((e) => ['tier', 'default'].includes(e.rateSource)), 'every guessed round is LABELLED a guesstimate (tier/default), never dressed as provider/caller truth');
 });
 
 // ── F64 at the job-end: `wall-halt` is TWO stops wearing one name, and only one of
