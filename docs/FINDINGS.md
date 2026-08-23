@@ -8533,3 +8533,72 @@ Not yet on npm; see What is NOT claimed.
 - **The earlier "2-2.5x underpricing" figure was WRONG** and is retracted here — it
   generalized from clipipe rows, which report provider-billed cost on a separate surface that
   never pools with `anthropic-api` (F48).
+
+## F110 — the close outlived two homes and both failures were structural: a working checkout goes dirty mid-edit, and a scratch worktree gets deleted for branch juggling
+
+**Date:** 2026-08-23 · **Status:** FIXED (a pinned, never-edited tree with its own deps) ·
+**Class:** instrument-hosting · **Grounded in:** commit `892439f`, `/code-review medium` HIGH
+finding, and this session's own worktree removal
+
+### What happened, twice
+
+`jobs/aurora-u-spawner-types.json`'s five close stages shell out to
+`u-spawner-close.mjs`, which imports `../src/kinds.js` relative to wherever the script sits.
+The close therefore inherits the health of whatever tree hosts it. It has now failed from two
+different homes, for two different reasons, and neither was a bug in the close:
+
+1. **A shared working checkout (before `892439f`).** The tree was on another session's branch and
+   dirty mid-build. A close landing during an edit **dies as an instrument fault, not a verdict** —
+   the run loses the grade it had earned to a casualty caused by an unrelated editor.
+2. **A scratch worktree (`bareloop-readshim`, after `892439f`).** The repoint was correct for
+   problem 1, but it hosted the arbiter's own instrument inside a **branch-lifecycle artifact**.
+   This session removed that worktree to free the branch for review — a routine, correct action —
+   and every stage of the spec silently became `node: cannot find module`. Caught by
+   `/code-review`, not by any detector.
+
+### The shape
+
+**A close is the arbiter's instrument, so its host must have the arbiter's lifetime — not a
+branch's and not an editor's.** Both homes failed because they are things that legitimately
+change: a checkout is *supposed* to go dirty, a scratch worktree is *supposed* to be removable.
+Hosting a close in either makes a normal act of development into a silent instrument kill.
+
+Note the asymmetry that makes this expensive: failure mode 1 is **loud but mistimed** (a casualty
+that eats a real grade), failure mode 2 is **silent until fired** (nothing reads the spec until a
+paid run does). Neither had a detector.
+
+### The fix
+
+A dedicated worktree `/home/hamr/PycharmProjects/bareloop-close`, **detached at the release tag
+`v0.12.0`**, never edited, never checked out to a branch, with its **own `node_modules`**.
+
+- **Verified byte-identical, not assumed:** both `src/kinds.js` and `scripts/u-spawner-close.mjs`
+  are identical between `v0.12.0` and this branch, so pinning changes nothing about how the close
+  behaves today.
+- **A fresh worktree has no `node_modules`.** The first smoke attempt died with
+  `Cannot find package 'bareguard'` — the pinned tree needs its own `npm ci`. Recorded because a
+  future re-pin will hit it again, and because an uninstalled tree fails at the *same* seam as a
+  deleted one.
+- **Smoke-tested by running it**, not by reading it: the close refuses an empty stage with
+  `SPAWNER instrument-stop: unknown stage ""` and names all five stages, exit 97.
+
+### Cost of the edit
+
+Repointing re-flips the signed spec hash `69340bed…` → `c395b716…`, and the Phase 2 battery's
+frozen `EXPECTED_HASH` (`scripts/run-battery-readshim.mjs`) with it. hamr chose the destination
+in-turn; the hash was computed and shown BEFORE the edit, then re-verified against the written
+file. The spec's `approvals` key is `null` — the signature is minted at runtime in
+`scripts/run-u.mjs`, so **the run-time signature is still outstanding** and this finding does not
+claim it.
+
+### What is NOT claimed
+
+The close has **not** been fired against a live model from its new home. The smoke test proves it
+loads, resolves its dependency, and refuses correctly — it does not prove a full stage renders a
+verdict. That claim needs a paid run.
+
+### Standing rule this mints
+
+**An instrument the arbiter depends on is never hosted in a tree that development mutates.** Not a
+working checkout (goes dirty), not a scratch worktree (gets removed). Pin it, install it, smoke it,
+and re-verify the hash after writing — never before only.

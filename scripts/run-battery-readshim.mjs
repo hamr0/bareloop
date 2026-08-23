@@ -44,7 +44,7 @@ const SPEC_FILE = 'aurora-u-spawner-types.json';
 /** hamr-approved, this spec version. A spec that drifted mid-battery invalidates every
  * row that already ran, because rows filed together would have been run against
  * different closes/budgets — so this is a REFUSAL, not a warning. */
-const EXPECTED_HASH = '69340bed432d4353674bc0e53fee7e8478e55c3c716ff59996c73764c2eb9796';
+const EXPECTED_HASH = 'c395b716b7afdbe8e3b637fb46eb394773332a367dd30e47f9ee7fc3aecd56a3';
 const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/aurora-u';
 const SPINE_DIR = '/home/hamr/PycharmProjects/bareloop-patients/aurora-u-bareloop';
 const SEED = 'd661e507c5cd0981368d90ed3e3abf6e2bb9ed18';
