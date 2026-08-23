@@ -5,7 +5,46 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.13.0] — 2026-08-23
+
+### Fixed (2026-08-23 — the release round: a pointer that lied, a close with no home, a rule that charged for its own refusal)
+
+- **The pointer no longer lies about a file emptied since it was read.** `src/readshim.js`'s
+  pointer branch tested `start >= total` alone, so `0 >= 0` held with **no ledger entry at all** —
+  the first read of an empty file and a re-read of a file TRUNCATED TO EMPTY since delivery were
+  indistinguishable, and both answered "you already hold all 0 bytes". A worker would have gone on
+  believing in content that was gone. The guard now requires a ledger entry whose hash still
+  matches. This is precisely the untruthful-pointer class the module exists to prevent, found
+  inside the module built to prevent it, and reproduced live before the fix.
+- **`judge-round` carries its rate provenance.** The judged floor made it the first spend a CLOSE
+  has ever had, and `src/ledger.js` documented the write side as forwarding `rateSource` onto it —
+  but the emit never spread the field, so every judge round would have read UNKNOWN forever. NOT
+  rounded up: `src/kinds.js`'s `onJudgeCost` payload still does not carry the field, so it reads
+  UNKNOWN today, and both the emit and the ledger header now say so plainly.
+- **A torn spine line stops reading as exact spend.** `scripts/run-battery-readshim.mjs` marked
+  unparseable lines `__corrupt` "never guessed at", then counted them, dropped them, and reported
+  the row's spend as EXACT while `corruptLines` reached no readout. `spendComplete` now goes false
+  when any line was unreadable (spend renders `>=`) and the audit prints the count per row.
+- **G1's ceiling half is refused at $0 instead of after the drafter is paid.** `validatePlan` reds
+  `read-blind` when a capped step grants `read` without the retrieval pair — but a step cannot
+  grant what the SIGNED CEILING does not offer, so against a spec whose `tools` lack `recall`/`get`
+  **every** draft red identically and the drafter was paid for each doomed cycle. `runPlan` now
+  throws at the same $0 door as the arm guard, in the same class: an operator param-guard
+  `TypeError`, never a model-output red — nothing the agent authored is wrong when the operator
+  asks for a shim the signature cannot satisfy. Tighten-only; the only configuration it rejects
+  already failed 100% of the time, just later and for money. `RETRIEVAL_PAIR` is now exported from
+  `src/plan.js` rather than respelled, so the rule and its pre-flight cannot drift apart.
+
+### Changed (2026-08-23)
+
+- **The aurora close moved to a tree development cannot mutate** (`jobs/aurora-u-spawner-types.json`,
+  F110). Its stages had pointed at a scratch worktree, which was removed during ordinary branch
+  work — every stage silently became `node: cannot find module`. The home before that was a shared
+  working checkout, where a close landing mid-edit dies as an instrument fault rather than a
+  verdict. Neither is a home: a checkout is *supposed* to go dirty and a scratch worktree is
+  *supposed* to be removable. **A close is the arbiter's instrument, so its host must have the
+  arbiter's lifetime.** Now a worktree pinned at a release tag, never edited, with its own
+  dependencies. Re-signing was required and given in-turn.
 
 ### Added (2026-08-18 — the read shim, flag-gated OFF)
 

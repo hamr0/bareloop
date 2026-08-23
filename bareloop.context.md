@@ -951,6 +951,17 @@ Anything else **throws** (`readShimArm`) at `runJob`/`runPlan`/`validatePlan` be
 spent — a mis-spelled arm coerced by truthiness would run one treatment under another's label and
 be invisible in the results afterwards.
 
+A **capping arm against a signed ceiling that offers no `recall`/`get` also throws at that same
+$0 door**, and for the same reason: G1 below requires the retrieval pair on any step granting
+`read`, but a step cannot grant what `spec.tools` does not offer — so every draft would red
+`read-blind` identically while the drafter was paid for each doomed cycle. The message names the
+missing verbs and both exits (re-sign the spec with them, or run with the shim off). Like the arm
+throw, it is an **operator param-guard `TypeError`, never a model-output red**: nothing the agent
+authored is wrong when the operator asks for a shim the signature cannot satisfy. It narrows
+nothing that works — the only configuration it rejects already failed 100% of the time, later and
+for money. `RETRIEVAL_PAIR` is exported from `src/plan.js` so the rule and this pre-flight read one
+spelling of which verbs count.
+
 Under a CAPPING arm (A1/A3) the shim also answers a **stale `ctx_get` pointer**: the cap steers the
 worker at `ctx_recall`/`ctx_get`, and `ctx_get` refuses a file that changed after indexing — the
 normal case once the worker has edited it. Instead of nothing, the shim serves that pointer's
