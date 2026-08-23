@@ -93,6 +93,12 @@ fail silently as a clean answer. Their one real production incident was this cla
 Cheapest first version: report-only preflight comparing index state against HEAD. $0, gates
 nothing, so not arbiter territory. Detail in the wrinkles doc, W4.
 
+**RETIRED 2026-08-24 (F112).** The $0 measurement the PRD's v1.78 correction demanded was run:
+all 12 archived patient indexes recomputed against their trees — 1,997 files, 13 stale (0.65%),
+0 vanished. The stale files are the worker's own late edits, already handled in-run by
+`serveStale` (F108). The motivating "phantom defects" story does not appear in this archive.
+Do not build.
+
 ---
 
 ## Open questions (answer before handoff)
