@@ -60,7 +60,7 @@
 // pipe produces are one shape read twice (module 5 compares them mechanically).
 
 import {
-  JUDGE_RULE_IDS, JUDGE_RULES, CALIBRATION_SIZE, CASE_VERDICTS, validateJudgedArtifacts,
+  JUDGE_RULE_IDS, JUDGE_RULES, CALIBRATION_SIZE, CASE_VERDICTS, validateJudgedArtifacts, JUDGE_MODEL,
 } from './judged.js';
 import { askStructured, makeCostBook } from './authorflow.js';
 import { JUDGED_FLOOR_KIND } from './kinds.js';
@@ -363,6 +363,15 @@ export function signJudgedArtifacts({ proposal, fix = null }) {
  *   - THE CASES land beside the stages as `calibration.cases` — a close-level
  *     artifact, because the set calibrates the RULER and not one stage's params,
  *     and because module 5's gate reads it before any stage runs.
+ *   - THE JUDGE MODEL lands beside them as `calibration.judgeModel`, and it is the
+ *     PIN (`JUDGE_MODEL`) rather than anything a caller may name. A calibration set
+ *     is only worth the tier that graded it — §4.2's whole safety argument is worth
+ *     exactly as much as BA-20's injection evidence, which is haiku-4.5's alone — so
+ *     the set has to carry which tier certified it or nothing downstream can tell a
+ *     signed floor from a bumped one. Storing it HERE, inside the spec, is what makes
+ *     a bump flip `jobSpecHash`: the signature dies, the signer re-signs, and a
+ *     re-sign is a re-run of the calibration gate. That is the docstring on
+ *     `JUDGE_MODEL` finally given a detector instead of a promise (F45).
  *
  * A card with NOWHERE TO LAND THROWS. It is a caller's own broken input — a
  * signed rubric folded into a close with no judged ruler — and there is no safe
@@ -384,7 +393,7 @@ export function foldJudgedArtifacts(closeDecl, { card, cases }) {
       + 'is a second bar for one verdict');
   }
   judged[0].params = { ...(isObj(judged[0].params) ? judged[0].params : {}), card: structuredClone(card) };
-  out.calibration = { cases: structuredClone(cases) };
+  out.calibration = { cases: structuredClone(cases), judgeModel: JUDGE_MODEL };
   return out;
 }
 

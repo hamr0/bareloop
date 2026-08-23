@@ -74,6 +74,20 @@ const require = createRequire(import.meta.url);
  * INJECTION_BATTERY is haiku-4.5 only), and §4.2's whole safety argument is
  * worth exactly as much as that evidence. A judge-model bump forces a full
  * recalibration — mandatory, per the model-bump dead-weight replay rule.
+ *
+ * THAT IS ENFORCED, not asked for, and it is enforced in three places because a
+ * rule with no wired detector is prose (F45):
+ *   1. the value here is STORED with the set it graded — `foldJudgedArtifacts`
+ *      writes it as `closeDecl.calibration.judgeModel`, inside the spec, so
+ *      `jobSpecHash` covers it by construction. Bump this constant and every
+ *      signed judged spec hashes differently: the signature dies, and re-signing
+ *      is what re-runs the calibration gate.
+ *   2. `validateCloseDecl` REQUIRES it on any stored set — a set nobody can
+ *      attribute to a tier is a floor nobody can tell apart from a bumped one.
+ *   3. `runJudgedFloor` refuses to grade when the stored tier is not this one,
+ *      naming both models. It does not degrade in either direction: grading on
+ *      the new tier judges against a floor nobody calibrated, and the old tier is
+ *      not on offer.
  */
 export const JUDGE_MODEL = 'claude-haiku-4-5';
 

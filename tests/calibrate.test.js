@@ -501,7 +501,10 @@ const sgClose = ({ mechanical = false, cases = CASES() } = {}) => ({
     ...(mechanical ? [{ name: 'checks-clean', kind: 'command-exit', params: { cmd: 'node', args: ['check.mjs'], expectExit: 0 } }] : []),
     { name: 'docs-read-well', kind: 'judged-floor', params: { card: CARD(), paths: ['src/mod.js'] } },
   ],
-  ...(cases === null ? {} : { calibration: { cases } }),
+  // the judge tier that graded the set rides INSIDE it (1A) — the same field
+  // `foldJudgedArtifacts` writes on the real authoring path, and the reason a bump
+  // flips the spec hash. `validateCloseDecl` reds a stored set without it.
+  ...(cases === null ? {} : { calibration: { cases, judgeModel: JUDGE_MODEL } }),
 });
 
 const DRAFT = {
@@ -619,7 +622,7 @@ test('a MECHANICAL close is unchanged: it still needs a seed red, calibration or
         { name: 'already-fine', kind: 'command-exit', params: { cmd: 'node', args: ['-e', ''], expectExit: 0 } },
         { name: 'docs-read-well', kind: 'judged-floor', params: { card: CARD(), paths: ['src/mod.js'] } },
       ],
-      calibration: { cases: CASES() },
+      calibration: { cases: CASES(), judgeModel: JUDGE_MODEL },
     },
     verdictType: 'soft-green',
   });

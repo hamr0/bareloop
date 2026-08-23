@@ -104,6 +104,13 @@ export const DECLARED_GENRES = Object.freeze([TYPES_GENRE.name]);
  */
 export const CLOSE_DECL_FIELDS = Object.freeze(['genre', 'lang', 'stages', 'notes', 'genreEnv', 'calibration']);
 
+/** what a stored calibration set carries, ENUMERATED: the frozen cases and the judge
+ * tier that graded them. Both are inside the spec, so `jobSpecHash` covers both — which
+ * is the whole mechanism behind "a judge-model bump forces a full recalibration"
+ * (src/judged.js, `JUDGE_MODEL`): the field moves, the hash moves, the signature dies,
+ * and the re-sign re-runs the gate. Anything else in there is a field nobody reads. */
+export const CALIBRATION_FIELDS = Object.freeze(['cases', 'judgeModel']);
+
 /**
  * The prefix M1 puts on EVERY gap line of a declared stage (its `ctx.gapKeep`).
  * A literal, so the anchored pattern below is exact.
@@ -196,11 +203,24 @@ export function isDeclaredClose(job) {
  *
  * `offer` and `needs` pass through untouched when a declaration carries them
  * (v1's schema does not let one), so `checkMenu`'s derivation is unchanged.
+ *
+ * THE JUDGE TIER RIDES ALONG, and it rides as a STAMP for the same reason `offer`
+ * does. The tier that graded this close's calibration set is a CLOSE-level fact
+ * (`calibration.judgeModel`), and the stage that would buy a judge call is a STAGE;
+ * `runStage` is handed stages and never the declaration they came out of. Rather than
+ * plumb a second close-level channel down through every executor seam, the one place
+ * that already turns a declaration into stages carries it across — and it carries it
+ * from the SIGNED bytes, so a stage can never name a tier the signature does not.
+ * `runJudgedFloor` refuses a mismatch; the absence of a stamp is the SPEC gate's
+ * business (`validateCloseDecl` reds a set with no model), never a runtime fall-back.
  * @param {any} closeDecl
  * @returns {any[]|null} null when this is not a declaration
  */
 export function declaredStages(closeDecl) {
   if (!isObj(closeDecl) || !Array.isArray(closeDecl.stages)) return null;
+  const calibrationJudgeModel = isObj(closeDecl.calibration) && isNonEmptyString(closeDecl.calibration.judgeModel)
+    ? closeDecl.calibration.judgeModel
+    : null;
   return closeDecl.stages.map((s) => (isObj(s)
     // RULING 5, stamped by the ARBITER rather than trusted from the artefact:
     // a judged or human stage is `offer: false` BY LAW, so `checkMenu` can never
@@ -208,7 +228,12 @@ export function declaredStages(closeDecl) {
     // declaration that says anything else (`human-stage-offered`), so this is
     // never overwriting a signer-visible value — it is filling in a law the
     // declaration schema deliberately gives the composer no way to state.
-    ? { ...s, gapKeep: DECLARED_GAP_KEEP, ...(NEVER_OFFERED_KINDS.includes(s.kind) ? { offer: false } : {}) }
+    ? {
+      ...s,
+      gapKeep: DECLARED_GAP_KEEP,
+      ...(NEVER_OFFERED_KINDS.includes(s.kind) ? { offer: false } : {}),
+      ...(s.kind === JUDGED_FLOOR_KIND && calibrationJudgeModel !== null ? { calibrationJudgeModel } : {}),
+    }
     : s));
 }
 
@@ -410,7 +435,24 @@ export function validateCloseDecl(closeDecl, opts = {}) {
       { judgedStages: judged.length });
     } else {
       for (const key of Object.keys(closeDecl.calibration)) {
-        if (key !== 'cases') red('invalid-value', `${at}.calibration.${key}`, 'a calibration set carries `cases` and nothing else');
+        if (!CALIBRATION_FIELDS.includes(key)) red('invalid-value', `${at}.calibration.${key}`, `a calibration set carries ${CALIBRATION_FIELDS.map((f) => `\`${f}\``).join(' and ')} and nothing else`);
+      }
+      // WHICH TIER GRADED THIS SET, and it is REQUIRED rather than optional. A
+      // stored set is only worth the judge that graded it (§4.2's safety argument
+      // is BA-20's haiku-4.5 injection evidence and nothing else), so a set with
+      // no model beside it is a set nobody can attribute — and the `JUDGE_MODEL`
+      // docstring's promise that a bump forces recalibration has nothing to fire
+      // on. Required HERE and not at the stage, for the same reason the SET's own
+      // presence is the signing gate's call and not this validator's: this gate
+      // reads a stored artifact and says whether it is legal. The RUNTIME half —
+      // refusing to grade when the stored tier is not the tier this run would buy
+      // — is the judged stage's (`runJudgedFloor`), reached through the stamp
+      // `declaredStages` puts on the stage.
+      if (closeDecl.calibration.judgeModel === undefined) {
+        red('missing-required', `${at}.calibration.judgeModel`, 'the judge tier this set was GRADED by — a calibration '
+          + 'nobody can attribute to a model is a floor nobody can tell apart from a bumped one');
+      } else if (!isNonEmptyString(closeDecl.calibration.judgeModel)) {
+        red('invalid-value', `${at}.calibration.judgeModel`, 'the judge tier this set was graded by, as a non-empty string');
       }
       const cv = validateCalibrationSet(closeDecl.calibration.cases, { card: judged[0]?.params?.card ?? null });
       for (const r of cv.reds) reds.push({ ...r, path: r.path ? `${at}.${r.path}` : `${at}.calibration` });

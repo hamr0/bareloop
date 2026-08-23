@@ -1713,6 +1713,30 @@ async function runJudgedFloor(stage, ctx) {
     return stopped(stage, ctx, `INSTRUMENT: stage "${stage.name}" names ${paths.length} artifacts, over the ceiling of `
       + `${MAX_JUDGED_PATHS} — a judged stage buys one call per artifact, and a runaway list is a bill`, {}, STOP_FAULTS.CRASHED);
   }
+  // 1b. THE TIER THE SIGNED SET WAS GRADED BY, against the tier this run would buy.
+  //     `JUDGE_MODEL` has always SAID a bump forces a full recalibration; this is the
+  //     detector, because a rule with no wired detector is prose (F45). The stamp comes
+  //     off the SIGNED calibration (`calibration.judgeModel`, carried across by
+  //     `declaredStages`), so a mismatch means exactly one thing: the pin moved under a
+  //     signature, and the floor standing behind this stage was certified by a model
+  //     nobody is about to call. That is a FAILED wiring gap and not a crash — the same
+  //     fault, and for the same reason, as the absent seam below: nothing is broken,
+  //     something was never re-done. It stops rather than degrading in either direction,
+  //     because grading on the new tier would mint a verdict against an uncalibrated
+  //     floor and grading on the old one is not on offer (the pin is a constant).
+  //     AN ABSENT STAMP IS NOT CHECKED HERE, deliberately and for the reason the SET's
+  //     own presence is not checked in `validateCloseDecl`: a spec that judges cannot
+  //     reach a run without a calibration (the signing gate, module 5) or without a
+  //     model on it (`validateCloseDecl`), so the runtime question is only ever WHICH
+  //     model — and a stage descriptor handed straight to `runStage` by an adopter or a
+  //     test is not a signed spec making a claim about a tier.
+  if (isNonEmptyString(stage.calibrationJudgeModel) && stage.calibrationJudgeModel !== JUDGE_MODEL) {
+    return stopped(stage, ctx, `INSTRUMENT: stage "${stage.name}" would grade with ${JUDGE_MODEL}, and the calibration `
+      + `set signed with this close was graded by ${stage.calibrationJudgeModel} — the judge tier moved under the `
+      + 'signature. A floor is worth exactly the judge that certified it, so this stops rather than grading against a '
+      + 'floor nobody calibrated: re-sign the spec with the new tier and re-run the calibration gate (recalibrate)',
+    { signedJudgeModel: stage.calibrationJudgeModel, judgeModel: JUDGE_MODEL }, STOP_FAULTS.FAILED);
+  }
   if (typeof ctx.judgeLoop !== 'function') {
     return stopped(stage, ctx, `INSTRUMENT: stage "${stage.name}" is a judged stage and this run wired no judge seam `
       + `(ctx.judgeLoop) — an adopter wiring gap, never a silent fall-back: the judge is ${JUDGE_MODEL}, pinned, and a `
