@@ -562,3 +562,19 @@ test('provenance is REPORTING ONLY: a guessed round mints no incident and no new
   assert.equal(red[0].class, 'pricing-red');
   assert.equal(red[0].lib, 'bare-agent');
 });
+
+// The spend-slicing set and the BUDGET's own accounted set must not drift: a provenance
+// readout that misses a money writer is the F45 class, and `judge-round` (the softgreen
+// judged floor — the first spend a close ever had) is exactly the writer that would have
+// gone missing. This is the seam, since the two are re-spelled rather than shared.
+test('spendProvenance covers every record the budget ledger accounts', async () => {
+  const { ACCOUNTED_ROUND_TYPES } = await import('../src/run.js');
+  const judged = { type: 'judge-round', costUsd: 0.004, pricing: 'priced', rateSource: 'tier' };
+  const p = spendProvenance([judged]);
+  assert.equal(p.guessed.rounds, 1, 'a judge-round is a spend record the readout must see');
+  assert.equal(Math.round(p.guessed.usd * 1000), 4);
+  for (const t of ACCOUNTED_ROUND_TYPES) {
+    const seen = spendProvenance([{ type: t, costUsd: 1, pricing: 'priced', rateSource: 'caller' }]);
+    assert.equal(seen.vouched.rounds, 1, `${t} is accounted by the budget but invisible to the readout`);
+  }
+});

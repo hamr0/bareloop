@@ -60,13 +60,26 @@ export const isSpineFile = (f) => /^u-[0-9a-z]+\.jsonl$/.test(f);
 // therefore satisfy the rule today and silently fail the day one is added — which is
 // precisely the failure the rule names.
 //
-// So the reader is DATA-DRIVEN and fail-loud: it sums the accounted type, it names the
+// So the reader is DATA-DRIVEN and fail-loud: it sums the accounted types, it names the
 // echoes it is deliberately skipping, and any OTHER record carrying a non-zero
 // `costUsd` is reported as an UNACCOUNTED WRITER — counted into the row's spend (so
 // the ceiling can never under-read) and printed by name (so nobody can mistake the
-// library's ledger for the whole of the money). A future `judge-round` lands there,
-// loudly, without this file being edited first.
-export const ACCOUNTED_ROUND_TYPES = Object.freeze(['worker-round']);
+// library's ledger for the whole of the money).
+//
+// 2026-08-23 — `judge-round` ARRIVED. The comment above predicted it and the tripwire
+// below `the accounted/echo sets are the ones src/run.js documents` is what caught it,
+// on the rebase onto v0.12.0's softgreen rung: the judged floor buys a pinned locate
+// call per artifact, so a close now has spend of its own and `src/run.js:37` accounts
+// two types. It is added here rather than left to the unaccounted bucket because it is
+// no longer a surprise writer — it is a documented one, and the library's own ledger
+// sums it. The fail-loud path stays exactly as it was for the NEXT one.
+//
+// This list is deliberately a re-spelling rather than an import: this module is pure
+// arithmetic reachable by a test, and importing `src/run.js` would drag the runner (and
+// litectx) behind it. The tripwire test asserts the two spellings are identical, so a
+// divergence is a RED rather than a silent under-read — which is how this very edit was
+// found.
+export const ACCOUNTED_ROUND_TYPES = Object.freeze(['worker-round', 'judge-round']);
 /** attempt-level ECHOES of the accounted rounds. Named explicitly, because "we did not
  * see one" and "we knew to skip it" are different claims. */
 export const ECHO_ROUND_TYPES = Object.freeze(['worker-result', 'worker-plan']);

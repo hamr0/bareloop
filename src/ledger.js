@@ -407,7 +407,7 @@ export function updateLedger({ ledgerFile, spineFiles }) {
 
 // ── BA-21 pricing provenance: the READ side (REPORTING ONLY) ─────────────────
 // bare-agent >=0.37 rides `rateSource` beside `pricing` on every metering payload,
-// and the plan flow forwards it verbatim onto `worker-round`/`worker-turn`
+// and the plan flow forwards it verbatim onto `worker-round`/`judge-round`/`worker-turn`
 // (`rateSourceFields`, src/planrun.js — the write side).
 //
 // `pricing` is UNCHANGED and still strictly two-valued ('priced'|'unpriced'). Nothing
@@ -450,7 +450,7 @@ export const VOUCHED_RATE_SOURCES = Object.freeze(['provider', 'caller']);
  *                  this signal existed lands here and is NEVER backfilled: an absent label
  *                  is reported as unknown, never reconstructed, and never rounded up to
  *                  vouched (F6's unknown-is-never-zero, applied to provenance).
- * @param {any} record a `worker-round` / `worker-turn` spine record
+ * @param {any} record a `worker-round` / `judge-round` / `worker-turn` spine record
  * @returns {'vouched'|'guessed'|'unpriced'|'unknown'}
  */
 export function rateProvenance(record) {
@@ -461,13 +461,20 @@ export function rateProvenance(record) {
   return VOUCHED_RATE_SOURCES.includes(source) ? 'vouched' : 'guessed';
 }
 
-/** The spend records a run's money is read from. `worker-round` is the one ACCOUNTED
- * type (src/run.js sums exactly it, F12); `worker-turn` is the native surface's per-turn
+/** The spend records a run's money is read from. `worker-round` and `judge-round` are the
+ * ACCOUNTED types — exactly `ACCOUNTED_ROUND_TYPES` in src/run.js, which is the ledger that
+ * enforces the budget (F12). `judge-round` is the softgreen rung's judged floor: the first
+ * spend a CLOSE has ever had, and a provenance readout that skipped it would be blind to the
+ * one seam whose rate nobody has audited. `worker-turn` is the native surface's per-turn
  * attribution — unpriced by design, included so the readout covers every metering row the
  * plan flow writes rather than only the ones carrying money. The attempt-level totals
  * (`worker-result`, `worker-plan`) are ECHOES of these same rounds and are excluded, for
- * the same reason the ledger in run.js excludes them: counting them double-counts. */
-const SPEND_RECORD_TYPES = Object.freeze(['worker-round', 'worker-turn']);
+ * the same reason the ledger in run.js excludes them: counting them double-counts.
+ *
+ * Re-spelled rather than imported (src/run.js imports this module's siblings and a cycle
+ * buys nothing here) — `tests/ledger.test.js` asserts the two spellings agree, because a
+ * spend-slicing instrument that misses a writer is the F45 class this list exists to avoid. */
+const SPEND_RECORD_TYPES = Object.freeze(['worker-round', 'judge-round', 'worker-turn']);
 
 /** @typedef {{rounds: number, usd: number, unpricedRounds: number}} ProvenanceBucket */
 

@@ -122,23 +122,40 @@ test('spend accounting sums the accounted round type and EXCLUDES the attempt-le
   assert.equal(s.unaccountedUsd, 0);
 });
 
-test('a NEW money-carrying record type (judge-round) is reported UNACCOUNTED and still counted', () => {
-  // The F45 class: an instrument that misses a writer. There is no judge-round in this
-  // repo today, so an allow-list would pass this rule today and fail the day one lands.
+test('a NEW money-carrying record type is reported UNACCOUNTED and still counted', () => {
+  // The F45 class: an instrument that misses a writer. This test was originally written
+  // with `judge-round` as its hypothetical — and then judge-round actually LANDED with the
+  // softgreen rung, which is the whole point: the property under test is that an unknown
+  // money writer is reported and counted, so the example has to be a type that is genuinely
+  // not accounted TODAY. Swapped rather than deleted; deleting it would retire the guard at
+  // the exact moment it proved it works.
   const events = [
     { type: 'worker-round', costUsd: 2 },
-    { type: 'judge-round', costUsd: 0.25 },
-    { type: 'judge-round', costUsd: 0.25 },
+    { type: 'audit-round', costUsd: 0.25 },
+    { type: 'audit-round', costUsd: 0.25 },
     { type: 'job-end', outcome: 'green', spentUsd: 2, spendComplete: true },
   ];
   const s = readSpend(events);
   assert.equal(s.accountedUsd, 2);
-  assert.deepEqual(s.unaccounted, [{ type: 'judge-round', count: 2, sumUsd: 0.5 }]);
+  assert.deepEqual(s.unaccounted, [{ type: 'audit-round', count: 2, sumUsd: 0.5 }]);
   assert.equal(s.unaccountedUsd, 0.5);
   // counted into the row, so the ceiling can never under-read the battery
   assert.equal(s.spendUsd, 2.5);
   // and the divergence from the library's own ledger is visible, not swallowed
   assert.equal(s.divergenceUsd, 0.5);
+});
+
+test('judge-round is now ACCOUNTED, not an unaccounted writer — the close has spend of its own', () => {
+  const events = [
+    { type: 'worker-round', costUsd: 2 },
+    { type: 'judge-round', costUsd: 0.25 },
+    { type: 'job-end', outcome: 'green', spentUsd: 2.25, spendComplete: true },
+  ];
+  const s = readSpend(events);
+  assert.equal(s.accountedUsd, 2.25, 'the judged floor is the run\'s money like any other round');
+  assert.equal(s.accountedRounds, 2);
+  assert.deepEqual(s.unaccounted, []);
+  assert.equal(s.divergenceUsd, 0, 'and it agrees with the library ledger that now sums it too');
 });
 
 test('an unpriced round is an UNKNOWN, never $0 (F6)', () => {
@@ -183,11 +200,18 @@ test('the spend reader runs on REAL archived spines and agrees with each run\'s 
   assert.ok(withLedger >= 3, `expected >=3 archived runs carrying a job-end ledger, got ${withLedger}`);
 });
 
-test('the accounted/echo sets are the ones src/run.js documents', () => {
-  assert.deepEqual([...ACCOUNTED_ROUND_TYPES], ['worker-round']);
+test('the accounted/echo sets are the ones src/run.js documents', async () => {
+  // The battery re-spells the accounted set instead of importing it (that module is pure
+  // arithmetic and must not drag the runner behind it), so THIS is the seam that stops the
+  // two spellings drifting. It has already earned its keep once: it is what caught
+  // `judge-round` arriving with the softgreen rung, where a silent miss would have been the
+  // F45 unaccounted-writer class in an instrument built to prevent exactly that.
+  const { ACCOUNTED_ROUND_TYPES: libraryTypes } = await import('../src/run.js');
+  assert.deepEqual([...ACCOUNTED_ROUND_TYPES], [...libraryTypes],
+    'the battery reader and src/run.js must account the SAME record types');
+  assert.deepEqual([...ACCOUNTED_ROUND_TYPES], ['worker-round', 'judge-round']);
   assert.deepEqual([...ECHO_ROUND_TYPES], ['worker-result', 'worker-plan']);
   const run = readFileSync(new URL('../src/run.js', import.meta.url), 'utf8');
-  assert.match(run, /if \(type === 'worker-round'\) account\(/, 'src/run.js still accounts worker-round');
   assert.match(run, /worker-result[\s\S]{0,120}deliberately NOT accounted/, 'src/run.js still documents the echoes as excluded');
 });
 
