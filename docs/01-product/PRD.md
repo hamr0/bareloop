@@ -5892,3 +5892,96 @@ quoted.
 - **The pricing provenance has never run.** Built and inert is not working.
 - **The bench does not exist**, and its cost is unmeasured. No number in §4 is a quote.
 - **Nothing about replay is designed** — it is an admitted gap with a cheap first slice named.
+
+---
+
+## Addendum v1.78 — 2026-08-23 (two $0 reads land the same day as v1.77 and correct it: the bench
+cannot inherit ANY row and one of its jobs no longer exists, and the stale-index item hamr just
+agreed to is argued against by our OWN record — hamr)
+
+**Why this exists hours after v1.77.** Two $0 investigations returned after v1.77 was written, and
+both change what it says. Recording the correction rather than editing v1.77 in place, per the
+standing rule that a closed record gets dated addenda and never a rewrite. Every claim below was
+re-verified in this repo before it was written down — a peer lane's report is a lead, not evidence.
+
+### 1. The bench: NO ROW CAN INHERIT, and the G2 job does not exist
+
+v1.77 §4 left Q10 open — could the $0 archive replay pre-screen which bench rows need a paid
+re-baseline? **Answered: none can inherit. All four need paying for.** Two of those are settled by
+hard, spec-level facts that need no proxy:
+
+- **The G2 candidate's spec is DELETED.** `jobs/aurora-testgen.json` — the 0-of-43 row that made
+  G2 attractive in the first place — was removed in `507adbb` ("delete the legacy
+  operator-authored `steps[]` path — config-v1, the drafting call, the interpreter and the hitl
+  draft-PR step"), along with `aurora-testgen-probe.json` and all three `l2poc` specs. **Verified:
+  the file is absent from `jobs/`.** Those 43 rows were produced under a workflow shape that no
+  longer exists in the codebase. G2 is therefore **not stale — it is not re-runnable**. It must be
+  re-authored in plan-v1 first, and *the re-authored job is a different job whose 0-rate is
+  unknown*. **This is work nobody had costed**, including both lanes that proposed the bench.
+- **The G1 candidate's spec was edited TODAY** — `jobs/aurora-u-spawner-types.json`, by this
+  release, repointing the close to the pinned tree (F110). Its hash flipped, so the 6-of-8 baseline
+  of 2026-08-19 was measured under a spec that is no longer live.
+
+Drift for the remaining candidates (`src/` commits since each baseline, and the close/plan subset):
+2026-07-16 → 152 (85) · 2026-07-22 → 132 (80) · 2026-08-06 → 73 (34) · 2026-08-19 → 13 (8).
+
+**The blindness note travels with the number, because it is load-bearing:** commit counts are a
+PROXY for behavioural drift, not proof of it. 152 commits could in principle leave every outcome
+unchanged. The defensible claim is **"no row can be ASSUMED to inherit"**, not "every outcome has
+changed". The two spec-level facts above are hard and stand independent of the proxy.
+
+**Consequences for the ladder:** the bench's first bill is larger than the $10–25 informally
+floated — it now includes re-authoring G2 in plan-v1 *and* re-baselining all four rows before any
+can be frozen. **And Q1 must be re-asked**: "reuse the existing patients" was answered before
+anyone knew the G2 candidate's spec had been deleted. **No ceiling should be quoted until the
+re-authoring is scoped.**
+
+### 2. Stale-index (W4): AGREED by hamr, and our own record argues against it
+
+v1.77 §3 recorded the stale-index preflight as agreed, small and unblocked. That was written from
+a summary. The evidence underneath it is weaker than the summary implied, and this is recorded
+BEFORE any build rather than discovered during one.
+
+- **The IN-RUN half is already fixed.** F108 — `ctx_get` returning zero bytes on every file the
+  worker had just edited — is index staleness biting during a run, observed against a live model.
+  It is cured by `serveStale` (`src/readshim.js`), which serves from disk under an in-band notice
+  and deliberately does not mark the file delivered. W4's remaining surface is only the
+  **run-START** half: an index built at patient-prep time that was already behind before the run
+  began.
+- **The motivating story is INHERITED, not ours.** "A stale index manufactures phantom defects"
+  comes from litectx-side memory. **Verified: `docs/FINDINGS.md` contains zero occurrences of
+  "phantom defect" or "stale index".** It is a hypothesis, and it was carried into an AGREED item
+  without that label.
+- **We hold DISCONFIRMING evidence, filed by us.** **F35 — "a fresh index is a ranking no-op."** A
+  token-free probe falsified F33's mechanism story and found re-indexing changed ranking not at
+  all. On the ranking axis our own record says freshness buys nothing.
+- **Every obvious detector key is BLIND**, which is this programme's most-repeated failure class:
+  *mtime vs working tree* is blind by construction (patients are fresh `cp` copies, so every file
+  is newer than the index on every run — the check screams stale 100% of the time and means
+  nothing); *mtime vs HEAD* reads fresh when the chunker or the litectx version changed
+  underneath; and worst, **flipping `embeddings` on an existing index computes no vectors because
+  indexing is incremental, yet the file's mtime still updates** — so an mtime-keyed check reads
+  "fresh" while the semantic tier is silently inert. **A check that can only ever say fresh is
+  worse than no check.**
+- **Not yet known:** whether litectx stores a commit sha at all. Nobody has read litectx's source
+  on this point, and the standing rule is that a claim about a library is grounded in its source
+  before it is asserted.
+
+**Recommended first move, replacing "build the check":** a **$0 measurement** — across the
+archived patients, how far behind was each index when its run actually started, and was the gap
+ever big enough to matter? If it was always near-zero, W4 closes for free and F35 gains a second
+data point. If some run started against a badly-behind index, the target is real and its size is
+known. **Building the detector first risks building a blind one for a disease we have not shown
+exists here.** The item stays AGREED — hamr said go — but the first spend against it should be the
+measurement, not the build.
+
+### 3. What this addendum claims and does not
+
+- **Claims, each re-verified in this repo:** `jobs/aurora-testgen.json` is absent and was deleted
+  in `507adbb`; F35 exists and says a fresh index is a ranking no-op; F108 exists and covers the
+  in-run half; `docs/FINDINGS.md` has zero hits for the phantom-defect story.
+- **Does not claim** that every archived bench outcome has changed (the commit counts are a proxy),
+  that the stale-index check is worthless (it is *unjustified by our record*, which is a different
+  and weaker statement), or that any number here is a quote.
+- **No arbiter movement.** Nothing here touches a budget, cap, fence, wall, close semantic or merge
+  rule.
