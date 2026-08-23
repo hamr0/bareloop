@@ -16,7 +16,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { makeSpine } from '../src/spine.js';
@@ -98,6 +98,25 @@ test('plan dispatch: a four-field spec runs SCOUT→PLAN→EXECUTE→close throu
   assert.ok(end.spentUsd > 0, 'the plan flow\'s rounds landed on the ONE ledger');
   assert.equal(end.spendComplete, true);
   assert.ok(events.some((e) => e.type === 'plan-executed'));
+});
+
+test('the read shim ARM is guarded at runJob\'s door — ahead of the approval gate, ahead of everything', async () => {
+  // The mis-spelling this exists to stop is `readShim: 'diff '`. Coerced by
+  // truthiness it runs A3 — every lever — while the battery's own log records
+  // the arm it asked for, and no reading of the results afterwards can recover
+  // the substitution. Loud and immediate is the only safe failure here.
+  const wd = makePlanWork('plan-bad-arm');
+  const provider = scriptedProvider([{ text: 'never' }]);
+  const file = join(wd, 'spine.jsonl');
+  for (const bad of ['diff ', 'all', 'cap+diff', 1]) {
+    await assert.rejects(
+      () => runJob(planJob(), { approvals: [], workdir: wd, provider, emit: makeSpine(file), readShim: /** @type {any} */ (bad) }),
+      /unknown arm/,
+      `${JSON.stringify(bad)} must be refused`,
+    );
+  }
+  assert.equal(provider.calls.length, 0, 'not one provider call');
+  assert.equal(existsSync(file), false, 'and not one spine record — the guard runs before the gate, so the spine was never even opened');
 });
 
 test('plan dispatch: an unapproved plan spec spends zero tokens (the approval gate is shape-agnostic)', async () => {

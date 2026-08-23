@@ -360,7 +360,10 @@ test('§3 ORDERING (source tripwire): the resume read and the approval gate both
   const src = readFileSync(RUNNER, 'utf8');
   const readAt = src.indexOf('readResume(deadEvents');
   const gateAt = src.indexOf("if (arg('approve') !== specHash)");
-  const resetAt = src.indexOf("git(['reset', '--hard', SEED])");
+  // the reset MECHANISM moved into scripts/u-patient.mjs (2026-08-19) so the read-shim
+  // battery rehearses the same cold reset; the ORDERING property this tripwire guards
+  // is unchanged, so the anchor follows the call site rather than the deleted literal.
+  const resetAt = src.indexOf('coldReset(wd, SEED)');
   assert.ok(readAt > 0 && gateAt > 0 && resetAt > 0, 'all three sites still exist');
   assert.ok(readAt < gateAt, 'the spine is read BEFORE the gate — the operator signs knowing what will be inherited');
   assert.ok(gateAt < resetAt, 'and nothing touches the patient before the signature');

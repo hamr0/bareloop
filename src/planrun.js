@@ -21,7 +21,7 @@ import { Gate } from 'bareguard';
 import { LiteCtx } from 'litectx';
 import { runClose, runStages, ralph, CLOSE_FAULTS, boundGap } from './ralph.js';
 import { validatePlan, legalScopes, closeStagesOf } from './plan.js';
-import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU } from './plan.js';
+import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, RETRIEVAL_PAIR } from './plan.js';
 import { snapshotScope, evalExits, CHECK_GAP_MAX } from './exits.js';
 import { createRoot } from './root.js';
 import { createStallWatch, STALL_MS, MAX_STALLS } from './stall.js';
@@ -29,6 +29,7 @@ import { createLadder, STRIKE_LIMIT } from './ladder.js';
 import { createTrend, FIX_STRIKE_LIMIT } from './trend.js';
 import { TOOL_MENU, STORE_VERBS, checkMenu } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, strategyFor } from './tools.js';
+import { createReadShim, readShimArm, readShimStrategy } from './readshim.js';
 import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
 import { validateBridge, loadGate, newestEligibleVersion, reuseEligibility, quarantinesCredit, QUARANTINED_CODE } from './bridges.js';
 import { extractArtifact } from './text.js';
@@ -297,6 +298,26 @@ export function closeGapBlock(gap) {
 export const BOUND_REASON_MAX = 200;
 
 /**
+ * BA-21 — the WRITE side of the pricing-provenance signal (read side: `rateProvenance` /
+ * `spendProvenance` in src/ledger.js). bare-agent >=0.37 rides `rateSource` beside
+ * `pricing` on every metering payload; both metering callbacks below forward it onto the
+ * spine through THIS one helper, because two sites spelling one rule are two instruments
+ * (the ripgrep fix that landed in ci.yml but not publish.yml).
+ *
+ * Forwarded VERBATIM — the write side reports what upstream said, and src/ledger.js is
+ * the one place that decides what counts as a guess. And an ABSENT provenance stays
+ * absent: a payload carrying no `rateSource` (bare-agent <0.37, and every round already
+ * in the archive) emits no field at all, so a reader sees UNKNOWN rather than a label we
+ * invented. Never defaulted to `null` here — `null` is upstream saying "nothing was
+ * priced", which is a different fact from "nobody told us".
+ * @param {any} arg an `onLlmResult` / `onTurn` payload
+ * @returns {{rateSource?: string|null}} the field to spread into the spine record
+ */
+export function rateSourceFields(arg) {
+  return arg && typeof arg === 'object' && 'rateSource' in arg ? { rateSource: arg.rateSource } : {};
+}
+
+/**
  * What the NEXT attempt is told about the bound that cut the previous one.
  *
  * Two different bounds used to set the same bare `attemptBounded = roundIteration`
@@ -374,8 +395,12 @@ export function boundedNote(bounded, rounds) {
  *   REQUIREMENT the plan must meet, never a replacement for the goal: the signed goal and
  *   the signed close are unchanged, and what the person added is what the machine could
  *   not see.
+ * @param {boolean|'cap'|'diff'} [readShim] the read shim's ARM. Does it carry G1? Then G1
+ *   is STATED as well as enforced (the mailbox precedent again: a law only the validator
+ *   knows costs a redraft per draft). The arms without it — `false` and `'diff'` — render
+ *   byte-identically to the pre-shim prompt.
  */
-export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, startingDraft = null, checkFacts = {}, doorNote = null) {
+export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, startingDraft = null, checkFacts = {}, doorNote = null, readShim = false) {
   const scopeMenu = Array.isArray(scopes) && scopes.length ? scopes : legalScopes(job.writeScope ?? []);
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
   // The shape-lottery laws, stated where the check menu is offered (the mailbox
@@ -399,6 +424,16 @@ export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes,
   // (`?? []`: a close naming no command stages nothing, so it offers nothing)
   const closeStages = closeStagesOf(job) ?? [];
   const checkNames = checkMenu(closeStages).map((m) => m.name);
+  // G1, stated where the grant is offered. Only under an arm that CARRIES G1 —
+  // with the shim off, or under the diff-only arm that caps nothing, the rule
+  // does not exist and neither does this sentence (the A0 and A2 renders). The
+  // sentence also states the 24KB bound as its reason, which is the second
+  // reason it cannot render for A2: that bound is not in force there.
+  const readShimLaw = readShimArm(readShim).g1
+    ? `\n  A step granting "read" must also grant "recall" and "get": a read of a large file
+  returns only its next 24KB, and those two verbs are the only way to read a symbol in
+  full. A step that grants "read" without both is rejected.`
+    : '';
   const doc = `DRAFT-PLAN
 You are planning how to accomplish a goal in a repository, as an ordered list of bounded
 steps (schema "plan-v1"). The plan is pure declarative JSON validated by a strict schema;
@@ -409,7 +444,7 @@ Shape: { "schema": "plan-v1", "steps": [ ... 1..${MAX_PLAN_STEPS} steps ... ] } 
 strictly in array order. Each step (no other fields exist):
 - "id": kebab-case slug, unique
 - "action": the step's task, precise enough for a worker that sees ONLY this step
-- "tools": non-empty unique subset of ${JSON.stringify(ceiling)} (read/grep are the worker's ONLY way to see the tree — there is no shell; write/edit change the tree; recall/get/impact/related/recent search and navigate the repository index; compress/peek read cheaply; stash/remember/forget park and record notes across steps)
+- "tools": non-empty unique subset of ${JSON.stringify(ceiling)} (read/grep are the worker's ONLY way to see the tree — there is no shell; write/edit change the tree; recall/get/impact/related/recent search and navigate the repository index; compress/peek read cheaply; stash/remember/forget park and record notes across steps)${readShimLaw}
 - "rounds": integer 1..${maxStepRounds} — the step's per-attempt tool-round bound
 - "target": the step's deliverable path (REQUIRED when tools include write/edit), inside ${JSON.stringify(job.writeScope)}
 - "scope" (optional): narrow this step's WRITE fence — copy one value from the offered scopes below.
@@ -518,6 +553,17 @@ ${scoutBlob || '(no scout notes)'}`;
  * @param {number} [opts.scoutRounds] the read-only survey's round bound (F59: the LAST round is
  *   reserved — a scout that spends every round on tools gets one toolless round to write its
  *   survey, because the bound halts it mid-tool-use and text is its only deliverable)
+ * @param {boolean|'cap'|'diff'} [opts.readShim=false] THE READ SHIM (src/readshim.js) — the
+ *   ARM to run, one of the Phase 2 pre-registration's four: `false` (A0, off — the default),
+ *   `'cap'` (A1: cap + pointer + next-unseen-slice + G1), `'diff'` (A2: the diff lever alone,
+ *   no cap, no pointer, no G1), `true` (A3: every lever). Anything else THROWS at the entry
+ *   below rather than coercing into a truthy shim — a mis-spelled arm that silently ran A3
+ *   is a corrupted battery row, invisible afterwards.
+ *   OFF is byte-identical to the pre-shim run in every observable, G1 included: the frozen
+ *   A0 baseline arm must be exactly today's behaviour, and a guard firing under a disabled
+ *   shim would quietly make the baseline a treatment arm. The default-flip waits on a paid
+ *   contrast that has not been approved (the `layerRoot` precedent, F41 — an unproven lever
+ *   ships OFF and earns its default).
  * @param {boolean} [opts.layerRoot=false] Layer R — the within-run ratchet (src/root.js),
  *   scoped PER STEP's ralph loop (each micro-wheel is the Layer-1 atom). Shell-assembled from
  *   the step's own books: per-attempt write-sets from the F32 workerWrites audit (teed for
@@ -667,8 +713,37 @@ ${scoutBlob || '(no scout notes)'}`;
  *   'branch-red' | 'cap-halt' | 'wall-halt' | 'provider-red' | 'interpreter-red' |
  *   'step-stalled' | 'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, readShim = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null }) {
   workdir = resolve(workdir);
+  // The read shim's ARM, resolved at the door — before the workdir is read, before
+  // the scout, before a single token. An unrecognised spelling throws HERE, where
+  // it costs nothing, rather than coercing into a truthy shim and running A3 under
+  // an A2 label for the rest of a paid row (the blind-instrument class: the result
+  // would be wrong and would look fine). Only the guard runs here; the flag itself
+  // is still threaded onward as written.
+  readShimArm(readShim);
+  // G1's OTHER half, refused at the same $0 door. `validatePlan` reds `read-blind`
+  // when a step grants `read` without the retrieval pair — but a step cannot grant
+  // what the SIGNED CEILING does not offer, so against a spec whose `tools` lack
+  // `recall`/`get` EVERY draft reds identically, and the drafter is paid for each
+  // doomed cycle before the run fails. The condition is knowable here, before a
+  // token: the arm is the operator's argument and the ceiling is already signed.
+  //
+  // Same class as the unknown-arm throw above and deliberately NOT a red: a red is
+  // a verdict on the AGENT's work, and nothing the agent authored is wrong here —
+  // the operator asked for a shim the signature cannot satisfy. Tighten-only, and
+  // it narrows nothing that works: the only configuration it rejects is one that
+  // already fails 100% of the time, just later and for money.
+  //
+  // Keyed on `arm.g1`, not on "is the shim on", for the same reason `plan.js` is:
+  // the diff-only arm caps nothing, so there is nothing to be blind about.
+  if (readShimArm(readShim).g1) {
+    const signedCeiling = Array.isArray(job?.tools) ? job.tools : [...TOOL_MENU];
+    const short = RETRIEVAL_PAIR.filter((v) => !signedCeiling.includes(v));
+    if (short.length) {
+      throw new TypeError(`readShim: this arm caps reads, so a step granting "read" must also grant ${RETRIEVAL_PAIR.join(' and ')} — but the signed ceiling [${signedCeiling.join(', ')}] offers no ${short.join('/')}, so no legal plan exists and every draft would red as "read-blind". Re-sign the spec with ${short.join(' and ')}, or run with the shim off.`);
+    }
+  }
   // ONE spelling of the redaction, housed next to the inventory it reads
   // (src/validate.js) — the same helper the isolate verbs scrub the litectx store
   // with. Two hand-spelled copies of "what a secret looks like" is exactly how
@@ -1152,6 +1227,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       onJudgeCost: (/** @type {any} */ c) => emit('judge-round', {
         stage: c.stage, path: c.path, attempt: c.attempt, label: c.label, model: c.model,
         costUsd: c.costUsd, unpricedRounds: c.unpricedRounds,
+        // BA-21 provenance, through the SAME helper the worker rounds use — this record
+        // is on `spendProvenance`'s read list (src/ledger.js), so a judge-round that
+        // never carried the field would read UNKNOWN forever inside the readout built to
+        // expose exactly this seam. NAMED, not papered over: the judge cost payload
+        // (src/kinds.js `onJudgeCost({...})`) does not carry `rateSource` today, so it
+        // still reads UNKNOWN — correctly — until that payload forwards it too.
+        ...rateSourceFields(c),
       }),
     })
     : runStages(stages, scrub, closeOpts));
@@ -1855,11 +1937,47 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     };
     const grantedNames = new Set(granted.map((v) => /** @type {Record<string, string>} */ (TOOL_BY_VERB)[v]));
     const shell = createShellTools().tools.filter((/** @type {{name: string}} */ t) => grantedNames.has(t.name));
+    // THE READ SHIM (arm-gated, default OFF): a per-worker delivery ledger over the
+    // read tool — cap at READ_SHIM_CAP, pointer only once the CURRENT content has been
+    // delivered whole, next-unseen-slice otherwise, diff on a changed re-read. WHICH of
+    // those are live is the arm (`readShimArm`, Phase 2's A0/A1/A2/A3); off is no wrapper at
+    // all. Same seam and the same per-worker lifetime argument as the native cap below:
+    // `createShellTools()` above builds fresh tool objects for THIS worker, so the ledger
+    // dies with the worker, which is the reset the archive replay segmented on.
+    //
+    // COMPOSITION ON NATIVE, decided: a CAPPING arm REPLACES the native wrapper, never layers
+    // over it. Both bound the same seam at the same 24 KB (READ_SHIM_CAP === NATIVE_READ_CAP,
+    // deliberately one number) and both hand back a trusted steer at the same two verbs, so
+    // stacking them would truncate twice and append two notices — and worse, the shim on the
+    // OUTSIDE would ledger the native wrapper's already-truncated text as the whole file and
+    // then answer a re-read with a pointer, which is precisely the lie this module exists to
+    // prevent. The shim is the strictly stronger wrapper (it keeps the CLI display bound AND
+    // continues where the worker left off), so with a CAPPING arm ON it takes the seam alone.
+    // An arm that brings NO cap (A2) is the other case and is handled at the block below —
+    // it must not take the native bound away, because losing a bound is not one of its levers.
+    const shimArm = readShimArm(readShim);
+    // ONE shim per worker, holding ONE ledger, wrapping BOTH seams the cap touches:
+    // the read tool below, and `ctx_get`'s stale-pointer answer further down. They
+    // are one shim because the cap creates the second problem — its strategy line
+    // sends a capped worker to ctx_recall/ctx_get for a whole function, and a stale
+    // pointer there is the cap's own dead end, not litectx's.
+    const shim = createReadShim({ arm: shimArm });
+    const rdTool = shell.find((/** @type {{name: string}} */ t) => t.name === TOOL_BY_VERB.read);
     // F48: on native, bound shell_read below the CLI's tool-result display cap and hand back a
     // TRUSTED truncation notice steering to ctx_get — the CLI's own truncation blinds the worker
     // (spilled + injection-flagged). Fresh tool objects per mkWorker call, so mutating is per-worker.
-    if (native) {
-      const rd = shell.find((/** @type {{name: string}} */ t) => t.name === TOOL_BY_VERB.read);
+    //
+    // The condition is the shim's CAP, not the shim: an arm that caps nothing (A2, the diff)
+    // takes the native wrapper's cap away from a native run and hands the seam back to the CLI's
+    // silent truncation — a REGRESSION against A0 on that surface, produced by a lever that is
+    // not about capping at all. So the native bound stays whenever the shim brings none, and it
+    // is applied FIRST, INSIDE the shim: the shim's own doctrine is that it ledgers the text the
+    // worker actually received (the tool's own maxBytes bound is already handled this way), so a
+    // diff against a natively-truncated delivery is a diff against bytes the worker really holds.
+    // Outside, it would truncate the shim's diff mid-hunk. Under A1/A3 this block does not run at
+    // all, so the order is unobservable there and the composition decision below is unchanged.
+    if (native && !shimArm.cap) {
+      const rd = rdTool;
       if (rd) {
         const inner = rd.execute;
         rd.execute = async (/** @type {any} */ args) => {
@@ -1872,8 +1990,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         };
       }
     }
+    // …and the shim goes on last, so it is the OUTER wrapper wherever both apply.
+    if (shimArm.on && rdTool) shim.wrapRead(rdTool);
+    // The stale-pointer serve rides ONLY with a capping arm — `serveStale` refuses
+    // on any other arm anyway, and passing the hook regardless would still change
+    // A0's `ctx_get` object, which has to stay the untouched baseline.
     const ctx = [...CTX_TOOLS].some((t) => grantedNames.has(t))
-      ? createCtxTools(lc, workdir, emitCtx).filter((t) => grantedNames.has(t.name))
+      ? createCtxTools(lc, workdir, emitCtx, shimArm.cap ? { onStalePointer: shim.serveStale } : {}).filter((t) => grantedNames.has(t.name))
       : [];
     // LC-3 (litectx 0.31.0): cooperative yield — index() is async but its work is sync CPU,
     // and the default pass holds THIS event loop (the fuse's timers, the wall clock, the lag
@@ -1888,8 +2011,21 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // isolate/retrieval paragraphs named other components' verbs outright. The
     // assembly lives in tools.js beside the prose it composes, and is asserted
     // byte-identical to the full-component paragraphs on a full grant.
-    const system = PERSONA_TOOLS + strategyFor(granted)
-      + (native && grantedNames.has(TOOL_BY_VERB.read) ? NATIVE_READ_STRATEGY : '');
+    // One bound, one strategy line: with a CAPPING arm on, the shim OWNS the read seam on
+    // both surfaces (it replaced the native wrapper above), so it speaks for the cap and
+    // the native line stands down — two notices describing one bound is how a worker learns
+    // to distrust both. Off, this renders exactly as before.
+    //
+    // The lines are assembled from the SAME two facts the wrappers were: whichever bound is
+    // actually installed speaks for itself, and the arm's own line rides along. A2 on the API
+    // surface therefore gets the diff sentence and NOTHING about a 24KB limit — a persona
+    // describing machinery that is off is a lie to the worker, and a worker rationing reads
+    // against an imaginary cap is a different treatment than the arm names. A2 on native gets
+    // both, because on native both bounds really are installed.
+    const readLines = grantedNames.has(TOOL_BY_VERB.read)
+      ? (native && !shimArm.cap ? NATIVE_READ_STRATEGY : '') + readShimStrategy(shimArm)
+      : '';
+    const system = PERSONA_TOOLS + strategyFor(granted) + readLines;
     /** @param {any} u @returns {{inputTokens: number, outputTokens: number, cacheReadTokens: number, cacheCreationTokens: number}} */
     const usageOf = (u) => ({ inputTokens: u?.inputTokens ?? 0, outputTokens: u?.outputTokens ?? 0, cacheReadTokens: u?.cacheReadTokens ?? 0, cacheCreationTokens: u?.cacheCreationTokens ?? 0 });
 
@@ -1903,7 +2039,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // WITH tools take this path: a native session with NO tools fires no
       // onTurn and reports no cost (live-verified), so the toolless drafter runs
       // the metered claude-json TEXT path below instead (never unmetered spend).
-      /** @param {{costUsd?: number|null, pricing?: string|null, usage?: any, kind?: string}} arg */
+      /** @param {{costUsd?: number|null, pricing?: string|null, rateSource?: string|null, usage?: any, kind?: string}} arg */
       const nativeMetered = async (arg) => {
         const session = (arg?.kind ?? 'turn') === 'session';
         // per-turn events are ATTRIBUTION ONLY (`worker-turn`, never accounted —
@@ -1914,6 +2050,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         emit(session ? 'worker-round' : 'worker-turn', {
           phase, iteration: roundIteration, kind: arg?.kind ?? 'turn',
           costUsd: session ? (arg?.costUsd ?? null) : null, pricing: arg?.pricing ?? null,
+          // BA-21 provenance. The session event forwards whatever upstream reported; a
+          // per-turn event says `null` — the same deliberate statement `costUsd` makes
+          // one line up. A native turn is unpriced BY DESIGN (the CLI prices the SESSION),
+          // so no rate was consulted and there is no guess to have made. Stated here
+          // rather than forwarded because it is OUR fact about this surface, not one the
+          // provider payload carries.
+          ...(session ? rateSourceFields(arg) : { rateSource: null }),
           tokens: (arg?.usage?.inputTokens ?? 0) + (arg?.usage?.outputTokens ?? 0),
           usage: usageOf(arg?.usage),
         });
@@ -2012,7 +2155,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const newLoop = (gen) => {
       /** @type {any} */
       let self = null;
-      /** @param {{costUsd?: number|null, pricing?: string|null, usage?: any, kind?: string}} arg */
+      /** @param {{costUsd?: number|null, pricing?: string|null, rateSource?: string|null, usage?: any, kind?: string}} arg */
       const metered = async (arg) => {
         // The meter fires for EVERY generation, live or abandoned. An orphaned round
         // was really billed, and spend that no instrument sees is the one thing this
@@ -2027,6 +2170,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         emit('worker-round', {
           phase, iteration: roundIteration, kind: arg?.kind ?? 'turn',
           costUsd: arg?.costUsd ?? null, pricing: arg?.pricing ?? null,
+          // BA-21 provenance, forwarded verbatim: `pricing` says WHETHER the round was
+          // priced, `rateSource` says who stood behind the rate. Reporting only — the
+          // pricing-red halt still keys on cost alone (src/run.js).
+          ...rateSourceFields(arg),
           tokens: (arg?.usage?.inputTokens ?? 0) + (arg?.usage?.outputTokens ?? 0),
           usage: usageOf(arg?.usage),
         });
@@ -2276,7 +2423,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     };
     const draftPlan = async (/** @type {any[]|null} */ reds) => {
       drafter.setIteration(reds ? 'redraft' : 'draft');
-      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials, starting, checkFacts, doorWords?.text ?? null), []);
+      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials, starting, checkFacts, doorWords?.text ?? null, readShim), []);
       return extractArtifact(r.text).code ?? '';
     };
     // Scrubbed HERE, once, before any consumer reads them — the judge() precedent
@@ -2289,7 +2436,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // emit sites: scrubbing here makes the leak inexpressible, scrubbing each
     // consumer makes it something the next consumer has to remember.
     const validate = (/** @type {string} */ t) => {
-      const v = validatePlan(t, { job, maxStepRounds, scopes: scopeMenu, ...checkFacts });
+      const v = validatePlan(t, { job, maxStepRounds, scopes: scopeMenu, readShim, ...checkFacts });
       return { ...v, reds: v.reds.map((r) => (typeof r.detail === 'string' ? { ...r, detail: scrub(r.detail) } : r)) };
     };
     let text = await draftPlan(null);
@@ -2320,7 +2467,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // burn the very work resume exists to keep (hamr: "why would i want to waste
     // more money on something i already started"). Omission = rules inactive, by
     // the validator's contract.
-    const pv = validatePlan(resumeSeed.plan, { job, maxStepRounds, scopes: scopeMenu });
+    // `readShim` IS passed, unlike the shape-lottery opts above: G1 is not a drafting
+    // law about plan quality but a precondition of the machinery that is about to run —
+    // a capped worker with no retrieval verb is blind, whether its plan is fresh or
+    // reloaded. A plan drafted under the shim already passed it, so the only way this
+    // refuses paid work is an operator flipping the flag between legs, which is a spec
+    // change deserving the refusal. Off, it is inert, and this line renders as before.
+    const pv = validatePlan(resumeSeed.plan, { job, maxStepRounds, scopes: scopeMenu, readShim });
     // scrubbed at the boundary for `validate()`'s own reason: a `parse-error` detail
     // quotes a window of the SOURCE, and the spine is append-only forever
     const reds = pv.reds.map((r) => (typeof r.detail === 'string' ? { ...r, detail: scrub(r.detail) } : r));

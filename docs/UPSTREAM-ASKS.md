@@ -46,6 +46,30 @@ it · the fix (upstream commit/PR) · the version bareloop consumed.**
 > "0 callers, risk low". Source-verified and live-probed; consumed here by version bump
 > (`^0.32.0`, 590/590). Full entry with acceptance evidence at the end of the queue.
 
+> **2026-08-22 update — the queue is OPEN again: BA-21 (bare-agent) FILED.** `COST_PER_1K`
+> (`src/loop.js:82`, header comment "Last updated: 2026-06-22") carries no row for the Claude 5
+> generation — no `claude-sonnet-5`, no `claude-opus-5` — so bareloop's own worker model prices
+> through `_default` at `src/loop.js:154`, and because that number is finite it is stamped
+> `pricing: 'priced'` (`:621`, `:800`) with nothing on the wire saying the rate was a guess. The
+> ask is three parts: **(a)** current-generation rate rows, **(b)** — the load-bearing one — a
+> NEW field beside an unchanged `pricing` marking a fallback-table price as estimated (a third
+> `pricing` VALUE would be a silent breaking change for consumers that halt on not-`priced`), and
+> **(c)** a caller-supplied rate override. Measured over bareloop's own archive (7,507 rounds), `_default` reads 5.7% under
+> sonnet-5's introductory rate; against list rate the same corpus would read 1.586x under, and
+> the introductory rate **expires 2026-09-01**. Full entry at the end of the queue. The
+> statement below ("the queue is EMPTY") is the 2026-07-15 snapshot and stands as written.
+
+> **2026-08-23 update — a second open ask: BA-22 (bare-agent) FILED, a follow-on to BA-21.**
+> BA-21's `rateSource` field (parts a/b) is unpublished — the maintainer reports it landed in a
+> local checkout at `bare-agent@0.37.0`/`0.38.0`, neither on npm as of this filing. Even once it
+> ships, it will not by itself cover native CLIPipe's session-close cost event: that event
+> (`kind:'session'`, `provider-clipipe.js:364-375`) prices off the CLI's own reported total
+> (`meta.costUsd`, never a local rate table) rather than through the Loop's table-priced
+> `estimateCost` path that `rateSource` was built for, so it needs its own stamp. The gap is
+> traced to one file only — `provider-clipipe.js`, not `provider-clipipe-mcp.js`, which emits
+> only the (already-correct, already-unpriced) per-turn event. Filed forward against unpublished
+> work, said plainly; severity LOW. Full entry at the end of the queue.
+
 **The queue is EMPTY: BA-13 delivered in `bare-agent@0.29.0`** (same day it was filed) and
 consumed by bareloop the same session (TOOL_MENU/TOOL_BY_VERB gain `edit`; F32). Everything
 prior was already closed: `bare-agent@0.27.0` and `litectx 0.29.1` cleared the earlier queue.
@@ -56,6 +80,8 @@ changelog's word. Withdrawn/superseded entries stay in the record with their rea
 
 | Ask | Package | Status | Delivered in | Acceptance — how verified |
 |---|---|---|---|---|
+| **BA-22** native session-close cost has no `rateSource` | bare-agent | **OPEN / FILED** | — | Filed 2026-08-23 as a follow-on to BA-21, against unpublished work: `rateSource` (BA-21 part b) is reported to have landed in the maintainer's local checkout at `0.37.0`/`0.38.0`, neither on npm; only the 0.36.1 baseline (field absent entirely, verified by grep) was read directly. Native tool mode's session-close event (`kind:'session'`, single emit site `provider-clipipe.js:364-375`) prices off the CLI's own `total_cost_usd` (`:351`, via `mapClaudeMeta`, doc'd at `:21` as "a real price with NO local rate table") — a code path that never touches the Loop's table-priced `estimateCost`, so BA-21's fix does not automatically cover it. The per-turn event (`kind:'turn'`, `provider-clipipe-mcp.js:459-467`, `costUsd:null`/`pricing:'unpriced'`) is already correct and explicitly out of scope. Ask: stamp `rateSource:'provider'` on the session-close event whenever `costUsd` is finite. Fidelity gap only — no number is wrong, no run is at risk; LOW severity, on the already-deprecated (F48) `clipipe-subscription` fallback surface. Full entry at the end of the queue. |
+| **BA-21** Claude 5 rates missing + a guessed price is indistinguishable from a real one | bare-agent | **OPEN / FILED** | — | Filed 2026-08-22 against shipped `bare-agent@0.36.1`, source-read not changelog-read: `COST_PER_1K` (`src/loop.js:82`) has no Claude 5 row (its Anthropic block stops at `claude-fable-5` / `claude-opus-4-8` / `claude-sonnet-4-6` / `claude-haiku-4-5` plus two 2025 snapshots; header comment `Last updated: 2026-06-22`), so an unknown model falls to `_default = {in:0.002,out:0.008}` at `src/loop.js:154` and — the number being finite — is stamped `pricing:'priced'` at `:800` (turn) and `:621` (summarize), with no signal anywhere that the rate was a guess. Three parts, ranked: **(a)** add the Claude 5 rows; **(b)** the load-bearing one — a NEW field (`estimated:true` / `rateSource`) forwarded beside `costUsd` whenever the price came from `_default`, with `pricing` keeping its exact two values: a third `pricing` VALUE would be a SILENT BREAKING CHANGE, since consumers written against the two-value contract treat not-`priced` as unpriced and can halt on it (bareloop's own `pricing-red`), turning an honesty upgrade into a spurious budget halt. A SIGNAL never a refusal (hamr's ruling: *"...we use guesstimate and run but keep user in the know, never refuse"*; F6 extended one notch — F6 killed the silent ZERO, `estimated` kills the silent GUESS); **(c)** a caller-supplied rate override, ranked third because the `resolveRoundCost` provider-`costUsd` seam (`src/loop.js:183-186`) already covers most of it. Scale, measured over bareloop's archive (7,507 rounds, sonnet-5): `_default` $219.15 vs intro-rate $231.72 (**5.7% under**); vs list rate $347.58 (**1.586x under** — a PROSPECTIVE projection, not an observed error). Clock: sonnet-5's introductory rate ends **2026-09-01**. No supported local escape via the rate table (verified twice, separate days): neither `COST_PER_1K` nor `estimateCost` is on the entry's exports, and `require('bare-agent/src/loop')` throws `ERR_PACKAGE_PATH_NOT_EXPORTED` (no `./src/loop` subpath in `exports`). Full entry at the end of the queue. |
 | **BA-20** productized decisive judge + calibration harness | bare-agent | **DELIVERED** | 0.36.0 (consumed 0.36.1) | Three modules source-verified against the shipped tarball 2026-08-13: `src/judge.js` (`judge` — verbatim request + one artifact → `honored`/`broke` with mechanical `where`; `truncated`/`parseError` as DISTINCT flagged outcomes floored to `broke` and excluded from graded denominators; embedded "the user later said…" amendments ignored as untrusted data; composes around a provider, never inside the Loop; optional `onLlmResult` forwards usage/cost to a wired gate as `kind:'judge'`), `src/judge-calibration.js` (`calibrate`, `CALIBRATION_CASES`, `INJECTION_BATTERY` (5 styles), `scoreCase`, `gradeRun`, `constantHonored` — the negative control proving the harness can fail; a tier is admitted only on a pre-registered floor with zero reds AND resistance to every injection style), `src/bareguard-adapter.js` (`judgeToAnnotation` — pure, `surface = v.verdict !== 'honored'`, all three gate caps bounded DEFENSIVELY with a visible `…[clipped]` marker, `opts.limits`; calls no gate — the caller makes the `gate.annotate` call). All exported from the entry (`index.js` lines 10-11, 23, 46-47, 67). **Fixture location, stated precisely:** the tarball ships the clear cases **inlined** in `judge-calibration.js`; the byte-pinned `e6i-cases.frozen.json` + its hash-pin test live in the bare-agent **repo** (tests are excluded from the tarball). Their adopter contract states the clear-case set is byte-equivalent to bareguard's frozen E6i fixture (`sha256(cases)=a840832…`, the hash this ask's "DELIVERED AND PINNED (2026-08-12)" note records) and that **injection resistance is established at `claude-haiku-4-5` only**, re-run required on any tier deviation. **Consumed = pin bump only** (`^0.35.0 → ^0.36.0`); judge wiring and **live execution of the acceptance criteria deferred to the N4 rung**, where the consumer exists. |
 | **BA-13** `shell_edit` anchored edit verb | bare-agent | **DELIVERED** | 0.29.0 | Anchored exact-once replace with BA-4 param guards, atomic temp+rename (mode preserved, 0o600 window), anchor-miss/multi-match as refusal RESULTS naming the count, compact receipt (`tools/shell.js:134-231`). Criteria 2/3/4/6 executed against the shipped tool (all green); C5 pinned by bareloop's own gate test (audit line `{type:'edit'}` denied by writeScope); C7 by the full suite on 0.29.0. C1 (economy) measured live: 229 vs 12,887 output tokens (56.3×), both bounds pass — see the entry. Consumed: `TOOL_MENU`/`TOOL_BY_VERB` gain `edit`, persona carries the strategy (F32 session). |
 | **BA-1** transcript caching | bare-agent | **DELIVERED** | 0.27.0 | `cacheMessages` opt-in rolls `cache_control` onto the last block (`provider-anthropic.js:102-111`). Shipped **opt-in, not default-on as asked** (it changes the wire format); bareloop wires `cacheMessages:true`. Source-verified. |
@@ -2069,3 +2095,350 @@ bareloop can consume most usefully**, because refusing is off the table by opera
 
 **Priority: not a blocker — a truth defect.** Nothing stops running today. Every number those
 runs produce is simply not what it says it is, and no consumer can tell.
+
+### Addendum (2026-08-22, context-economy lane) — the mechanism read out of the shipped source
+
+*Filed independently by the readshim lane before it knew this ask already existed on `main`
+(`f2f44af`). Kept as an addendum rather than a second BA-21: one ask, one number. The material
+below is the source-level read — which rows exist, which line stamps the label, and the scoping
+that limits the defect to the Claude 5 generation — none of which is in the filing above.*
+
+**Package:** `bare-agent`. **Installed and read here:** `0.36.1` (the version bareloop runs today).
+Everything below is read out of `node_modules/bare-agent/src/loop.js` as shipped, not out of a
+changelog.
+
+#### The mechanism, as shipped
+
+- **`COST_PER_1K` (`src/loop.js:82`) stops one generation short.** Its Anthropic block lists
+  `claude-fable-5`, `claude-opus-4-8`, `claude-opus-4-7`, `claude-opus-4-6`, `claude-sonnet-4-6`,
+  `claude-haiku-4-5-20251001`, `claude-haiku-4-5`, plus the two genuinely-different 2025 snapshots
+  (`claude-sonnet-4-20250514`, `claude-opus-4-20250514`). There is **no `claude-sonnet-5` and no
+  `claude-opus-5`** — the current generation, and the tier bareloop's worker actually runs on. The
+  table's own header comment reads `Last updated: 2026-06-22` (`:74`).
+- **An unknown model silently prices at the fallback average.** `estimateCost` (declared at
+  `src/loop.js:152`) resolves rates with `COST_PER_1K[model] || COST_PER_1K['_default']`
+  (`:154`), and `_default` is `{ in: 0.002, out: 0.008 }` per 1K (`:105`) — described in the source
+  itself as *"Fallback average across popular models"*.
+- **And the guess is then stamped as a price.** Because the returned number is finite, the round is
+  labelled `pricing: 'priced'` — on the `onLlmResult` payload at `src/loop.js:800` (`kind:'turn'`)
+  and `:621` (`kind:'summarize'`), and it feeds `metrics.costUsd` through the same finite/null
+  branch (`:562` — `costUsd: pricedAny ? totalCost : null`). **This is the defect:** nothing in the
+  result, the metrics, or the `onLlmResult` payload distinguishes a rate the library vouches for
+  from a fallback average it does not. A guessed price is byte-indistinguishable from a real one.
+
+**Scoped precisely: only the Claude 5 generation is missing, not every model we use.**
+`claude-haiku-4-5` and `claude-haiku-4-5-20251001` are both present (`:97`, `:96`, at
+`{in: 0.001, out: 0.005}`), so bareloop's judge tier does **not** fall to `_default` — the worker
+tier does. And a separate concern kept separate: **we have not verified any listed rate against
+live pricing.** Whether the rows that exist are still accurate is a different question from whether
+the rows we need exist at all, and this ask is only about the second.
+
+The two-valued axis is deliberate and well-reasoned — the comment at `:797-799` explains it was
+built so a gate never mistakes *"couldn't price"* (null) for *"free"* (0). That reasoning is
+correct and this ask does not touch it. The gap is that the axis has **three** real states and only
+two labels: a real rate, a guessed rate, and no rate at all. The middle one currently wears the
+first one's coat.
+
+#### Scale of the error — measured, and labelled where it is a projection
+
+Measured over bareloop's own archive: **7,507 rounds**, runs dated 2026-07-15..08-17, worker model
+`claude-sonnet-5` throughout (so every one of those rounds priced through `_default`).
+
+| Rate used | Corpus total | `_default` reads |
+|---|---|---|
+| `_default` (`0.002 in / 0.008 out` per 1K) — what the library actually charged us | **$219.15** | — |
+| sonnet-5 **introductory** ($2/$10 per 1M = `0.002 / 0.010` per 1K) | **$231.72** | **5.7% under** |
+| sonnet-5 **list** ($3/$15 per 1M = `0.003 / 0.015` per 1K) | **$347.58** | **1.586x under** |
+
+**Stated honestly:** the 5.7% figure is the error we have actually been paying, because every
+archived round falls inside sonnet-5's introductory pricing window. The **1.586x** figure is a
+**prospective arithmetic projection** from the same measured token counts — it has **not** been
+observed, and cannot be until the window closes.
+
+#### The clock — why this is filed now rather than whenever
+
+Sonnet-5's $2/$10 rate is an **introductory** rate that ends **2026-09-01**. Today is 2026-08-22.
+On that date every bareloop run silently begins pricing **1.586x under list**, with **no detector,
+no error, and no visible change in behaviour** — the same rounds, the same `pricing:'priced'`
+stamp, the same numbers reaching the budget cap. A ceiling enforced against an under-read spend
+figure is a ceiling that quietly widens itself. That is the urgency; it is a date, not a guess.
+
+Note the maintenance hazard rather than just the missing rows: a static table with a
+`Last updated:` comment rots silently, and an introductory rate that expires on a **known date**
+rots on a schedule. Part (b) below is the part that survives the next such rot.
+
+#### What we checked before filing: is there a local escape?
+
+Two paths checked; one is genuinely closed, the other is partly open — stated as found rather than
+rounded up into a harder block:
+
+- **Via the rate table — NO.** `COST_PER_1K` and `estimateCost` are live-mutable in-process, but
+  unreachable by any supported path. Neither name is on the package entry's exports (verified:
+  `require('bare-agent')` exposes `Loop, Planner, Evaluator, refine, recurse, buildSearchTool, …`
+  and neither is present), and `package.json` `exports` declares no `./src/loop` subpath (only
+  `.`, `./errors`, `./providers`, `./stores`, `./transports`, `./tools`, `./mcp`, `./bareguard`,
+  `./package.json`) — so `require('bare-agent/src/loop')` throws `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+  Verified twice, on separate days.
+- **Via the provider — YES, partly, and the ask says so rather than overstating the block.**
+  `resolveRoundCost` (`src/loop.js:183-186`) prefers a provider-reported **finite**
+  `result.costUsd` over the rate table, and its docstring names this as the intended shape
+  (CLIPipeProvider `parse:'claude-json'` surfacing the claude CLI's own `total_cost_usd` — *"a real
+  price with NO local rate table"*). So a consumer **can** price correctly today by wrapping its
+  provider and stamping `costUsd` itself.
+  **What that does NOT solve:** the wrapper has to stamp `costUsd` as if it were authoritative, so
+  the guessed-vs-real distinction remains **inexpressible on the wire** — which is exactly what
+  part (b) asks for. A workaround that can only lie in the other direction is not a fix for an
+  honesty defect.
+
+#### The ask — three parts, in priority order
+
+**(a) Add the current-generation rates.** Put `claude-sonnet-5`, `claude-opus-5`, and whatever
+sibling ids bare-agent means to support into `COST_PER_1K`. Straightforward, and the smallest of
+the three. It also rots again on 2026-09-01 unless it carries the post-introductory rate — which is
+the maintenance hazard above, and the reason (b) matters more than (a).
+
+**(b) A SEPARATE marker for a guessed rate, carried BESIDE an unchanged `pricing`. THIS IS THE
+LOAD-BEARING PART.** Today `pricing` is a strict two-value axis — `'priced'` (a finite number,
+whether real or guessed) or `'unpriced'` (null). A fallback-table price is neither, and the honest
+distinction has to go somewhere. The ask: forward a **NEW field beside `costUsd`** — a boolean
+`estimated: true`, or a `rateSource: 'provider' | 'table' | 'fallback'` discriminator, upstream's
+pick — on the `onLlmResult` payloads (`src/loop.js:800` turn, `:621` summarize) and on the result
+metrics, whenever the price came from `_default` (or from any rate the library does not vouch for).
+`pricing` keeps its **exact current two values and its exact current meaning**. That way a consumer
+can **bill honestly AND tell its operator the number is a guess**.
+
+**Why a NEW FIELD and not a third value of `pricing` — this is the strongest argument in the ask,
+and it is about the maintainer's OTHER consumers, not only us.** Adding `'estimated'` as a third
+value of `pricing` would be a **silent breaking change**, not an additive one. Existing consumers
+branch on `pricing` directly, and the two-value contract licenses them to treat *anything that is
+not `'priced'`* as unpriced. bareloop is exactly such a consumer: an unpriced round routes as
+`pricing-red` and **can halt the run** ("unpriced is never free" — F6). A third value would make
+every honest-but-estimated round read as unpriced to code written against the shipped contract,
+converting an honesty upgrade into a **spurious budget halt**. A separate field cannot do that:
+consumers reading only `pricing` are untouched and keep seeing a finite `costUsd` exactly as today,
+and the honesty upgrade is **opt-in at the read site**. *That* is what additive means here.
+
+Grounded in the consumer's own governing ruling, hamr, verbatim:
+
+> *"if price not passed in apis (i doubt) we use guesstimate and run but keep user in the know,
+> never refuse"*
+
+The doctrinal shape, stated plainly: this is bareloop's **F6 doctrine ("unpriced is never free")
+extended one notch**. F6 killed the silent **ZERO**; this marker kills the silent **GUESS**.
+
+**Explicitly NOT asked for: a refusal, a throw, or a halt.** The consumer's ruling forbids refusing
+to run on an unpriced or unknown model. This ask is for a **signal**, never a stop — a run on an
+off-table model must still complete, still return a usable number, still report `pricing:'priced'`,
+and still be billable. The marker changes what the consumer can *say* about the number, never
+whether the run proceeds.
+
+**(c) A caller-supplied rate override.** A supported way to pass rates in — a `pricing` / `rates`
+option on the `Loop` constructor, or simply exporting `COST_PER_1K` from the entry — so a consumer
+who knows its provider's current prices is not hostage to the library's release cadence.
+
+**Ranked third, and here is why it is the weakest of the three:** the provider-`costUsd` seam in
+`resolveRoundCost` already covers most of this ground, so (c) is **ergonomics, not capability** —
+it saves a consumer from wrapping a provider, nothing more. If it does ship as an override, it
+should interact predictably with (b): a caller-supplied rate is presumably **NOT marked estimated**
+(`rateSource: 'provider'` or equivalent), since the caller vouched for it. That interaction is
+upstream's call; we only ask that it be decided rather than left implicit.
+
+#### FAIL-able acceptance criteria
+
+Each is deterministic, executable against a shipped tarball, and able to fail.
+
+1. **(a) — the new rows price correctly.** Run one round on `claude-sonnet-5` with a fixed usage
+   vector (e.g. `inputTokens: 1000, outputTokens: 1000, cacheReadTokens: 0,
+   cacheCreationTokens: 0`) and assert `costUsd` equals the published sonnet-5 rate for that
+   vector — **not** the `_default` value of `0.002 + 0.008 = $0.010`. Same assertion for
+   `claude-opus-5`. FAILS today: the model is absent, so both return the `_default` number.
+2. **(b) — an off-table model carries the estimated marker, keeps `pricing:'priced'`, and the run
+   continues.** Run one round on a model id deliberately not in the table (e.g.
+   `'claude-not-a-real-model-9'`). Assert four things together: `onLlmResult` receives the new
+   marker (`estimated === true`, or `rateSource === 'fallback'`); `pricing === 'priced'`,
+   **unchanged**; `costUsd` is a **finite number** (the `_default` estimate, still usable for
+   billing); and the call **returns normally — no throw, no halt, no error result**. FAILS today on
+   the first assertion (no such field exists) and must never fail on the last two.
+3. **NEGATIVE CONTROL — a table-listed model reports `pricing:'priced'` AND does NOT carry the
+   estimated marker.** Run the same fixed usage vector on a model that **is** in the table (e.g.
+   `claude-haiku-4-5`, present at `src/loop.js:97` alongside its dated sibling
+   `claude-haiku-4-5-20251001` at `:96`) and assert `pricing === 'priced'` **and** the marker is
+   absent/false. Without this the marker is noise: a build that marks *everything* estimated would
+   pass criterion 2 and be strictly worse than today.
+4. **`pricing`'s two values are untouched for every existing case.** No input that produces
+   `'priced'` today may produce anything else after the change, and no input that produces
+   `'unpriced'` today may produce anything else — the marker is a **new field**, never a
+   re-labelling. This is the criterion that fails a third-value implementation.
+5. **The `_default` path stays reachable and still returns a usable number.** With an off-table
+   model, `metrics.costUsd` is finite and non-null and the cumulative `totalCost` includes that
+   round — the marker must **not** be implemented by demoting the round to `unpriced`/null, which
+   would re-introduce F6's silent-zero on the consumer's side and violate the never-refuse ruling.
+6. **`unpriced` still means couldn't-price.** A round with no usage or no model still yields
+   `costUsd === null` and `pricing === 'unpriced'` (`estimateCost` `:152-153`), and carries no
+   estimated marker — there is no rate to have guessed.
+7. **(c), if shipped — a caller-supplied rate wins and is NOT marked estimated.** Construct a
+   `Loop` with an explicit rate for an otherwise off-table model; assert the round prices at the
+   supplied rate, reports `pricing === 'priced'`, and carries no estimated marker (the caller
+   vouched for it).
+
+#### Stated limits of this ask
+
+- **We do not claim what bare-agent's maintainer intends.** The missing Claude 5 rows may be a
+  deliberate wait for stable public pricing, an oversight, or a release-cadence artifact — we read
+  the table, not the intent. The `_default` fallback is clearly intentional and reasonable; the ask
+  is not that it exists, only that it announces itself.
+- **The 1.586x figure has not been observed.** It is arithmetic on measured token counts under a
+  rate that does not apply yet. Should it be filed as observed after 2026-09-01, that will be a
+  distinct measurement with its own date.
+- **The consumer side is not blocked on this.** bareloop can wrap its provider today (the
+  `resolveRoundCost` seam above) and price correctly. What it cannot do at any price is tell its
+  operator *"this number is a guess"* — that sentence is only expressible upstream.
+- **No local shim.** Per this file's standing rule the resolution is upstream, consumed here by
+  version bump. There is no supported local monkey-patch of the rate table anyway (verified above),
+  which is a limiting fact for us and a mild argument for (c).
+
+---
+
+## BA-22 — the native session-close cost has no `rateSource`, so an authoritative price reads as unknown provenance (2026-08-23, read-shim lane)
+
+**Package:** `bare-agent`. **Installed and read here:** `0.36.1` (the version bareloop runs
+today). Everything cited below is read out of `node_modules/bare-agent/src/provider-clipipe.js`
+and `node_modules/bare-agent/src/provider-clipipe-mcp.js` as shipped at that version.
+
+**Status of the field this ask concerns, stated plainly:** `rateSource` (BA-21's part (b),
+carried beside the unchanged `pricing` field) was **added in `bare-agent@0.37.0` and refined in
+`0.38.0`, per the maintainer's own account of their local checkout — neither version is
+published to npm** (`npm view bare-agent dist-tags` returns `latest: 0.36.1` as of this filing).
+This ask is therefore filed against work that has shipped in the maintainer's repo but not to the
+registry: it is forward-looking, and nothing below claims to have read a shipped `0.38.0` tarball.
+0.36.1, the version actually verified here, has **no `rateSource` field anywhere** in either
+`provider-clipipe.js` or `provider-clipipe-mcp.js` (grepped, zero matches) — which is the honest
+baseline this ask starts from, not evidence of what 0.38.0 does or doesn't do.
+
+**Background — what `rateSource` is (per BA-21's acceptance and the maintainer's account of
+0.37/0.38).** It is a provenance discriminator carried beside `pricing`, so a guessed rate is
+distinguishable from a vouched one: `'provider'` (the provider reported its own authoritative
+cost; no local rate table consulted), `'caller'` (caller supplied the rate), `'tier'` (matched a
+recognized Claude tier by model-id substring — a confident guess), `'default'` (unrecognized
+model; blind fail-safe ceiling), or `null` (nothing was priced).
+
+### The mechanism, as shipped at 0.36.1
+
+Native CLIPipe tool mode (`this.nativeTools`, `_generateWithMcp` at
+`provider-clipipe.js:277`) drives the CLI over MCP and reports cost itself through an `onTurn`
+callback the caller supplies (`options.onTurn`, stored at `:147`) — it never runs through the
+Loop's `resolveRoundCost`/`estimateCost` rate-table path (`src/loop.js`) that BA-21 is about,
+because there is no per-round Anthropic response for that path to price. `onTurn` fires **only**
+from `_generateWithMcp` (confirmed: `this.onTurn` is referenced at `:307`, `:364` — both inside
+that one method; the non-native `parse:'claude-json'` emulation path never calls it and instead
+returns `costUsd` directly on the `GenerateResult`, `:405`, which *does* flow through the
+Loop's table path and is BA-21's territory, not this one's).
+
+Two distinct events fire, and they carry the gap asymmetrically:
+
+1. **Per-turn (`kind:'turn'`).** Emitted from `provider-clipipe-mcp.js:459-467`, inside
+   `createSessionStream`. `costUsd: null` (`:463`) with the comment *"the CLI prices the SESSION,
+   not the turn — explicitly unpriced, never a synthetic 0"* immediately beside it, and
+   `pricing: 'unpriced'` (`:464`). **This is correct and this ask does not touch it** — there is
+   no price on this event to have a provenance for, and it should stay that way.
+2. **Session-close (`kind:'session'`).** Emitted from **`provider-clipipe.js:364-375`** — one
+   site, called from `_generateWithMcp` after `runSession` (imported from
+   `provider-clipipe-mcp.js:6`) returns. `costUsd` is read off the CLI's own result envelope at
+   `:351` (`meta.costUsd`, via `mapClaudeMeta`) — never off a local rate table; `provider-clipipe.js:21`
+   documents the `'claude-json'` preset mapping `costUsd ← total_cost_usd`, "a real price with NO
+   local rate table," and that mapping is shared code (`mapClaudeMeta`, imported at `:5`,
+   reused per the comment at `:326-327`) for both the emulation and native paths. The emitted
+   object (`:366-375`) is:
+   ```js
+   await this.onTurn({
+     model: (meta && meta.model) || null,
+     provider: 'clipipe',
+     usage: residual,
+     costUsd,
+     pricing: costUsd === null ? 'unpriced' : 'priced',
+     durationMs: r.ms,
+     ctx: options.ctx,
+     kind: 'session',
+   });
+   ```
+   **It carries no `rateSource` field at all.** When `costUsd` is finite this is the textbook
+   `'provider'` case defined above — the CLI's own authoritative total, sourced from nothing this
+   library guessed — and the field is simply absent.
+
+**Only one file carries the gap.** `provider-clipipe-mcp.js` never emits a `kind:'session'`
+event itself — it only assembles the per-turn stream (`createSessionStream`) and the session
+result (`r.final`/`r.turns`), which `provider-clipipe.js` then turns into the one `onTurn` session
+call at `:364-375`. So the emit site to fix is entirely inside `provider-clipipe.js`; the two
+files are **not symmetric** here, and this is checked, not assumed — the per-turn assembly and
+the session-close assembly are genuinely two different files doing two different jobs.
+
+**This is a fidelity gap, not a correctness bug — say so plainly.** `costUsd`/`pricing` on the
+session-close event are already right: a real number, correctly labelled `priced` when finite and
+`unpriced` when null. Nothing is mispriced and nothing halts wrongly. The gap is that the ONE
+number on this whole surface that is genuinely authoritative — no table, no guess, the CLI's own
+reported total — is indistinguishable, on the wire, from a table-guessed number, because neither
+carries `rateSource` yet at the version installed here.
+
+### Why this matters downstream (bareloop's own read, not an upstream fact)
+
+bareloop's ledger is written to read provenance with a deliberately fail-safe predicate: a
+vouched rate is an ALLOW-LIST of `('provider','caller')`; an absent field reads `unknown`; anything
+unrecognized reads as a guess. That direction is correct and this ask does not ask bareloop to
+loosen it. But it means that, once `rateSource` exists at all, a native session-close cost — the
+single most trustworthy number on this surface — would read as **unknown provenance** rather than
+vouched, purely because the emit site never stamps it. bareloop will not mint the label locally:
+reconstructing a provenance the provider never sent is exactly the laundering BA-21's mechanism
+exists to prevent. So the fix has to happen at the emit site cited above, or the honest reading
+stays permanently understated on this one transport.
+
+### The ask
+
+Stamp `rateSource: 'provider'` on the `kind:'session'` event at `provider-clipipe.js:364-375`
+whenever `costUsd` is a finite number (i.e. whenever `pricing === 'priced'` on that event). When
+`costUsd` is `null` (`pricing === 'unpriced'`), no `rateSource` is stamped — there is nothing to
+vouch for. The per-turn `kind:'turn'` event at `provider-clipipe-mcp.js:459-467` is unchanged —
+explicitly out of scope, per the correct-as-is note above.
+
+### FAIL-able acceptance criteria
+
+Each is deterministic and able to fail; criteria 1-4 should be executable against whichever
+tarball first ships `rateSource` (0.37.0 or later — not yet published as of this filing).
+
+1. **A native session-close event with a finite `costUsd` carries `rateSource: 'provider'`.**
+   Drive `_generateWithMcp` (native tool mode) through a session whose CLI result reports a real
+   `total_cost_usd`; assert the `onTurn` payload with `kind: 'session'` has `costUsd` finite,
+   `pricing === 'priced'`, and `rateSource === 'provider'`. FAILS today at 0.36.1: the field does
+   not exist at all.
+2. **NEGATIVE CONTROL — the per-turn event stays unpriced and unlabelled.** In the same session,
+   assert every `onTurn` payload with `kind: 'turn'` still has `costUsd === null`,
+   `pricing === 'unpriced'`, and carries **no** `rateSource` (not `'provider'`, not any other
+   value). Without this, the fix could be implemented by blanket-stamping every native `onTurn`
+   event regardless of kind, which would fabricate a provenance for a number the CLI itself says
+   it cannot yet price.
+3. **A session-close event with `costUsd === null` does not claim `'provider'` provenance.**
+   Force the CLI result to omit or report a non-finite cost (e.g. a killed/bounded session with no
+   `result` event — `provider-clipipe.js` already falls back to `costUsd: null` in this case);
+   assert the `kind: 'session'` payload has `pricing === 'unpriced'` and no `rateSource` field, or
+   `rateSource: null` — never `'provider'`.
+4. **The existing two-value `pricing` contract on this path is unchanged.** No session-close or
+   per-turn event that reads `pricing: 'priced'` or `pricing: 'unpriced'` today at 0.36.1 may read
+   anything else after the change; `rateSource` is strictly additive on this surface, the same
+   additive shape BA-21 asked for on the table-priced surface.
+
+### Stated limits of this ask
+
+- **Filed forward, not verified against a shipped tarball.** Everything about `rateSource`'s
+  existence and shape is taken from the maintainer's account of an unpublished local checkout
+  (0.37.0/0.38.0); only the 0.36.1 baseline (field absent entirely) was independently read here.
+  This entry should be re-verified against the actual shipped source the day it lands, the same
+  way every other entry in this file is.
+- **Scope is the native `kind:'session'` emit site only.** The per-turn event is deliberately
+  untouched (criterion 2), and the non-native `parse:'claude-json'` emulation path's `costUsd` —
+  which flows through the Loop's ordinary table-priced path, not through `onTurn` at all — is
+  BA-21's surface, not this one's.
+- **Low severity, and said so rather than inflated.** This is a fidelity gap on
+  `clipipe-subscription`, a surface bareloop's own F48 already ruled OUT as an API peer and
+  retains only as a babysat fallback. No number is wrong and no run is at risk; one true fact
+  (the CLI's own authoritative session cost) is simply unrecorded as vouched.
+- **No local shim.** Per this file's standing rule the resolution is upstream, consumed here by
+  version bump when `rateSource` itself ships and is confirmed present on this event.

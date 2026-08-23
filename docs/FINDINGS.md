@@ -8295,3 +8295,310 @@ passes `CEILING_USD` with `[...metered]` — every call the run has already paid
 - **No claim that the three seams are now provably exhaustive.** They are the three that exist
   today; the rule the fix encodes is that a fourth must absorb the same book, and only the review
   question above enforces that.
+## F107 — the read shim earns ~10% and the arithmetic says it cannot earn more: the cap+pointer arm greened 3/3 while the diff arm greened 0/2 and cost the most
+
+**Status: minted 2026-08-23 from the Phase 2 battery fired 2026-08-19 (12 rows, $25.32 of the
+$60 ceiling hamr approved), read off
+`docs/03-logs/experiments/2026-08-18-readshim-phase2-prereg.md` (result committed `fb9c2b7`).
+Pre-registered BEFORE any number existed, including the arms declared underpowered in advance.
+Cost of the FINDING: $0 (the numbers were already in the record; only this entry was missing).
+F106 is the softgreen lane's; the gap is deliberate, not a lost finding.**
+
+### 1. The context-economy premise this tested
+
+The archive said the plan is not the cost driver: persona+goal+plan is a median 3,523 tokens
+(3%) while the tool-result pile is a median 84,884 (**80%**), and every admitted token is
+re-read ~10.5x. `shell_read` alone is 52.8% of cache-write dollars, and **48% of reads
+re-read a file with nothing changed** — one file read 52 times in a single run, ~1.6M tokens
+of identical text.
+
+So: cap what a read delivers, hand back a truthful pointer keyed on WHAT WAS DELIVERED, and
+force any step granting `read` to also grant `recall`+`get` (the G1 rule) so capping cannot
+reproduce BA-17 read-blinding on purpose.
+
+### 2. The result
+
+| arm | valid n | green | median spend | vs A0 | ctx/round | retrieval share |
+|---|---|---|---|---|---|---|
+| A0 shim off | 2 | 2/2 | $1.9152 | — | 67,034 | 0.0% |
+| **A1 cap+pointer+G1** | **3** | **3/3** | **$1.7050** | −11.0% | 54,503 (−19%) | 5.3–15.9% |
+| A2 diff only | 2 | **0/2** | $3.3280 | +73.8% | 62,738 (−6%) | 13.1–14.5% |
+| A3 all levers | 1 | 1/1 | $2.0581 | +7.5% | 58,211 (−13%) | 9.7% |
+
+**The pre-registered veto FIRED on A2** — 0% green against a 100% baseline, and the most
+expensive arm besides. **The diff lever is DROPPED.** A1 is the only arm that reached its
+pre-registered n=3, and it wins every axis the prereg named.
+
+### 3. Why ~10% is the ceiling — the arithmetic explains the measurement, not the reverse
+
+| | cache write | cache read | output | total |
+|---|---|---|---|---|
+| A0 | $0.93 | $0.68 | $0.38 | $1.99 |
+| A1 | $0.68 (**−27%**) | $0.68 (**0%**) | $0.42 (+10%) | $1.78 |
+
+The shim touches exactly one term — bytes ENTERING the conversation — and cut it 27%. It
+**cannot** touch cache reads (the whole transcript is replayed every round; peak 113,650
+tokens in one round) and it slightly RAISES output, because the worker now writes search
+queries. Cache writes are ~47% of the bill, so the reachable prize is ~12% of total, minus
+the output rise. Under sonnet-5's rate structure — fresh input $2/1M, **cache read $0.20/1M
+(0.1x)**, cache write $2.50/1M (1.25x), output $10/1M — that is the whole story.
+
+### 4. The steer demonstrably steers
+
+ctx calls per run: **A1 = 18 / 11 / 4** against **A0 = 1 / 1** (both an automatic `ctx_recent`
+returning zero hits). `ctx_recall` aim was good: 20 calls, 18 landed, and the top hit was the
+right file every time inspected. This is F19 answered at the draft layer — litectx's
+underuse was a SELECTION problem, and a rule that pairs the verbs fixes selection.
+
+### Lessons
+
+- **Declaring an arm underpowered BEFORE the data exists is what stops a favourable number
+  from being read as a result later.** A2/A3's cost was declared unresolvable in advance, so
+  A2's rejection rests on GREENS and nothing else — which is the only axis it had power on.
+- **A lever can win its own mechanism and still be capped by the bill's shape.** The 27% cut
+  is real and the ~10% ceiling is real, and they are the same fact seen from two ends.
+- **A repeating casualty class is a CONDITION, not a casualty.** The battery self-stopped once
+  on its own rule and the session stopped it a second time at 3 provider-reds in 6 rows,
+  rather than keep paying ~$2 a row on a coin flip. Both stops resumed cleanly, and the
+  killed row's $0.21 folded back into the ceiling via `--prior-usd` — never forgiven.
+
+### What is NOT claimed
+
+- **The −11% money saving is NOT established.** A1 $1.44–$1.93 against A0 $1.77–$2.06 — the
+  ranges OVERLAP, and A0 only reached n=2 after a casualty. Suggestive, never measured.
+- **A2/A3 cost is UNRESOLVED**, exactly as declared in advance.
+- **The registered prediction (levers are substitutes, not additive) is NOT refuted and NOT
+  confirmed** — A3 did not beat A1, but A3 is n=1 and settles nothing either way.
+- **5 of 12 rows were provider casualties**, all one TLS `ssl3_read_bytes: bad record mac`
+  class plus one 529. It hit A0, A1 AND A3 — therefore not the shim.
+- **Nothing about native/clipipe** (those surfaces have no API cache economics at all;
+  modelling them this way is a category error), nothing about other genres, and **NO DEFAULT
+  FLIP** — `readShim` lands OFF regardless of this result, pre-registered as hamr's call alone.
+
+## F108 — the instrument's own steer walked the worker into the one path that breaks the moment it does the work: `ctx_get` returned zero bytes on every file the worker had just edited
+
+**Status: minted 2026-08-23 from the same Phase 2 battery. Defect FOUND by the treatment it
+was measuring, FIXED (`af9a0c7`), and independently validated by the session rather than taken
+on the builder's word. Cost of the FINDING: $0 — the battery was already paid for.**
+
+### 1. The defect
+
+The A1 arm's whole purpose is to route the worker away from whole-file reads and toward
+retrieval. It did: `ctx_recall` aimed well, 18 of 20 calls landing on the right file. Then
+**`ctx_get`: 10 calls, 5 STALE, 0 bytes returned** — and every single stale one was a file the
+worker had **just edited itself**.
+
+`ctx_get` was unwrapped, so litectx's content-hash gate threw `StalePointerError` the instant
+the file drifted. The shim's steer therefore has a built-in trapdoor: it points the worker at
+a door that locks as soon as the worker does the job it was sent to do.
+
+### 2. The fix and its one load-bearing property
+
+When the cap arm is on, a stale pointer now serves the REQUESTED LINE RANGE from disk through
+the shim's capped path with an in-band `[bareloop: …]` notice, instead of returning nothing.
+`createReadShim({cap,arm})` in `src/readshim.js`; `createCtxTools` gains `{onStalePointer}` in
+`src/tools.js`, branching only on `e instanceof StalePointerError` — a type check, never a
+prose sniff; one shim per worker feeding both seams in `src/planrun.js`.
+
+**The property that makes it safe: a ranged serve NEVER marks the file delivered.**
+`serveStale` holds no reference to the ledger at all — architectural, not defensive. Were it
+able to set `full`, the next re-read would answer "you already have it" while the worker holds
+90 lines of a 900-line file. That is precisely the untruthful-pointer failure the shim exists
+to prevent, measured at 250 instances with a median 73,348 hidden bytes in the $0 replay.
+**Stated cost: a later `shell_read` may re-deliver bytes the serve already showed.
+Over-delivery is not a lie.**
+
+### 3. The builder's own catch, kept because it is the more useful half
+
+The first implementation read litectx handles as 1-based when they are 0-based inclusive. It
+returned the WRONG LINES with no error anywhere, and **passed all of its own unit tests** —
+because those tests were written to the same wrong assumption. A probe against real litectx
+caught it. A fixture authored to contain the answer, caught in flight.
+
+### Lessons
+
+- **A steering mechanism must be tested against the state it creates, not the state it finds.**
+  Every stale hit was downstream of the worker's own successful edit; a probe on an untouched
+  tree could never have produced the negative.
+- **The dangerous direction is not "the retrieval failed" but "the retrieval failed silently."**
+  Zero bytes and no error is the blind-instrument class wearing a tool's clothes.
+- **A correctness property is stronger when it is structural than when it is checked.**
+  `serveStale` cannot lie about delivery because it cannot reach the ledger at all.
+
+### What is NOT claimed
+
+- **The fix has NEVER run against a live model.** Unit tests, one independently-planted mutant,
+  and one real-litectx integration probe. Whether a worker actually USES a served slice is the
+  F32 delivery-vs-conversion split, and it is **unmeasured** — the cheapest read is the next
+  paid run's gate audit, not a new build.
+- **No claim that serving a drifted range is universally right.** It does what
+  `StalePointerError`'s own docstring refuses to do; the claim is that the in-band label
+  converts it, and that rests on the worker reading the notice. A judgement call, named.
+- `READ_SHIM_STRATEGY` was deliberately left UNCHANGED — telling the worker up front would be
+  a treatment change and no longer Phase 2's A1 prompt.
+
+## F109 — a guessed price and a real one looked identical: every archived round was stamped `priced` while being costed by a generic fallback, and the cliff would have widened the lie to 1.586x in silence
+
+**Status: minted 2026-08-23 over the whole 7,507-round archive (~$236). Filed upstream as
+BA-21, shipped by the bare-agent session as v0.37.0/v0.38.0 (a better design than the one
+filed), consumed into bareloop's spine and ledger as `rateSource` (`ed80fc3`, 15 tests, suite
+1795/1795). BA-22 filed for the remaining gap. Cost of the FINDING: $0 (archive reads).**
+
+### 1. What was wrong
+
+bare-agent's `COST_PER_1K` table had no entry for `claude-sonnet-5`, so every round fell
+through to the generic `_default` rate — and was nonetheless stamped `pricing: 'priced'`. A
+guess and a measurement were **indistinguishable to every consumer**, including the budget
+enforcement that is arbiter territory.
+
+Measured over the archive: `_default` totals **$219.15**, sonnet-5's real introductory rate
+totals **$231.72** (5.7% under — an OBSERVED error), and the standing post-2026-09-01 list rate
+totals **$347.58** (**1.586x under** — a PROSPECTIVE projection, never observed). The
+introductory $2/$10 window covered every archived run, which is exactly why the error stayed
+small enough to go unnoticed and was about to stop being small.
+
+### 2. The design that shipped, and why it beat the one filed
+
+BA-21 asked for a per-model rate table. The bare-agent session refused that framing and
+shipped better: **drop the tables entirely** (a table is a silent-rot treadmill), ship one
+conservative fail-safe default, add a `rates` constructor override, and add a **`rateSource`
+provenance field** so a consumer can tell a price from a guess. Endorsed on the record.
+
+hamr's standing ruling governed the shape: *"if price not passed in apis (i doubt) we use
+guesstimate and run but keep user in the know, never refuse."* The predecessor's proposal — a
+preflight that REFUSES to price an unrated model — is dead by that ruling.
+
+The `estimated` third state landed as the predecessor stash demanded: **a NEW FIELD beside an
+unchanged two-value `pricing`, never a third value of it.** A third value would read as
+UNPRICED to any consumer written against the shipped contract — in bareloop specifically, a
+spurious `pricing-red` HALT.
+
+### 3. The trap that nearly shipped, caught before it reached code
+
+The guesstimate predicate is an **ALLOW-LIST** of vouched `(provider, caller)` pairs — never
+`=== 'default'`. Both production models resolve to `'tier'` (`claude-sonnet-5` → tier,
+`claude-haiku-4-5-*` → tier), so a deny-list keyed on `'default'` would have read **every real
+round as vouched** and seen nothing. The blind-instrument class, its eighth would-be instance,
+avoided only because the bare-agent session warned first. Sabotage-proven: swapping the
+predicate for `=== 'default'` turns 4 tests red, one named for exactly this trap. An
+unrecognized future value reads as a guess (fail-safe); an ABSENT field reads `unknown`, and
+**no archived round is backfilled with a label it never carried.**
+
+### 4. BA-22 — the one honest number in the system reads as a guess
+
+Native CLIPipe's session-close event (`provider-clipipe.js:366-375`) carries the claude CLI's
+own `total_cost_usd` — authoritative, no rate table anywhere near it — but stamps no
+`rateSource`, so the allow-list reads it `unknown`. **bareloop deliberately will NOT mint the
+label locally**: reconstructing a provenance the provider never sent is exactly the laundering
+BA-21 exists to prevent. The fix belongs at the emit site. The per-turn event
+(`provider-clipipe-mcp.js:463`, `costUsd:null`/`pricing:'unpriced'`) is already correct, and
+the ask says so. The asymmetry was grep-confirmed, not assumed.
+
+**Answered upstream the same day this entry was minted:** bare-agent v0.38.0 stamps
+`rateSource:'provider'` on the native session-close when `costUsd` is finite, `null` when the
+session died unknown, per-turn unchanged at `null`. All four acceptance criteria are covered by
+tests and both emit sites are mutation-proven. bareloop needs NO change to consume it — the
+allow-list already vouches `'provider'`, and a `null` reads `unpriced` rather than `guessed`.
+Not yet on npm; see What is NOT claimed.
+
+### Lessons
+
+- **A confidence label attached to a number must be derived from the number's ORIGIN, not
+  asserted alongside it.** `pricing:'priced'` was true of the code path and false of the world.
+- **Whenever the set of "normal" values can silently include the thing you are trying to flag,
+  the guard must be an allow-list.** A deny-list is only as good as your list of the abnormal.
+- **A correction can be half wrong in both directions.** The predecessor's "local mitigation is
+  DEAD, BA-21 or nothing" is TRUE for the `COST_PER_1K` route (not exported;
+  `require('bare-agent/src/loop')` throws `ERR_PACKAGE_PATH_NOT_EXPORTED`) and FALSE more
+  broadly (`resolveRoundCost` prefers a provider-reported finite `costUsd`, and bareloop
+  RECEIVES a provider) — while remaining operationally true, because `AnthropicProvider` never
+  reports `costUsd` at all. All three statements hold at once.
+- **Say the guesstimate out loud in the shipping contract.** Per hamr: *"we did make it with
+  sonnet pricing and avoided preset tables and say that out loud so anyone who consumes it
+  knows that metering is guesstimate and you need to pass your own as a user."*
+  `bareloop.context.md` now carries it, including the load-bearing sentence that **budgets are
+  enforced against these estimates**.
+
+### What is NOT claimed
+
+- **None of this has EXECUTED.** bare-agent 0.37.0/0.38.0 are not on npm (`latest: 0.36.1`)
+  and bareloop's pin is `^0.36.0`. The real `'tier'` provenance forward has never run on
+  either surface. The wiring is committed, tested, and INERT.
+- **No claim that the 1.586x figure was ever observed.** It is a projection past a rate change
+  that had not happened when this was minted.
+- **bareloop provides no door for the `rates` override it now tells adopters to use.** The
+  passthrough is DESIGNED (operator-only, asked upfront in the terminal, part of the UI later,
+  deliberately NOT in the signed job spec so a rate change never re-flips a spec hash) and
+  **not built**.
+- **The earlier "2-2.5x underpricing" figure was WRONG** and is retracted here — it
+  generalized from clipipe rows, which report provider-billed cost on a separate surface that
+  never pools with `anthropic-api` (F48).
+
+## F110 — the close outlived two homes and both failures were structural: a working checkout goes dirty mid-edit, and a scratch worktree gets deleted for branch juggling
+
+**Date:** 2026-08-23 · **Status:** FIXED (a pinned, never-edited tree with its own deps) ·
+**Class:** instrument-hosting · **Grounded in:** commit `892439f`, `/code-review medium` HIGH
+finding, and this session's own worktree removal
+
+### What happened, twice
+
+`jobs/aurora-u-spawner-types.json`'s five close stages shell out to
+`u-spawner-close.mjs`, which imports `../src/kinds.js` relative to wherever the script sits.
+The close therefore inherits the health of whatever tree hosts it. It has now failed from two
+different homes, for two different reasons, and neither was a bug in the close:
+
+1. **A shared working checkout (before `892439f`).** The tree was on another session's branch and
+   dirty mid-build. A close landing during an edit **dies as an instrument fault, not a verdict** —
+   the run loses the grade it had earned to a casualty caused by an unrelated editor.
+2. **A scratch worktree (`bareloop-readshim`, after `892439f`).** The repoint was correct for
+   problem 1, but it hosted the arbiter's own instrument inside a **branch-lifecycle artifact**.
+   This session removed that worktree to free the branch for review — a routine, correct action —
+   and every stage of the spec silently became `node: cannot find module`. Caught by
+   `/code-review`, not by any detector.
+
+### The shape
+
+**A close is the arbiter's instrument, so its host must have the arbiter's lifetime — not a
+branch's and not an editor's.** Both homes failed because they are things that legitimately
+change: a checkout is *supposed* to go dirty, a scratch worktree is *supposed* to be removable.
+Hosting a close in either makes a normal act of development into a silent instrument kill.
+
+Note the asymmetry that makes this expensive: failure mode 1 is **loud but mistimed** (a casualty
+that eats a real grade), failure mode 2 is **silent until fired** (nothing reads the spec until a
+paid run does). Neither had a detector.
+
+### The fix
+
+A dedicated worktree `/home/hamr/PycharmProjects/bareloop-close`, **detached at the release tag
+`v0.12.0`**, never edited, never checked out to a branch, with its **own `node_modules`**.
+
+- **Verified byte-identical, not assumed:** both `src/kinds.js` and `scripts/u-spawner-close.mjs`
+  are identical between `v0.12.0` and this branch, so pinning changes nothing about how the close
+  behaves today.
+- **A fresh worktree has no `node_modules`.** The first smoke attempt died with
+  `Cannot find package 'bareguard'` — the pinned tree needs its own `npm ci`. Recorded because a
+  future re-pin will hit it again, and because an uninstalled tree fails at the *same* seam as a
+  deleted one.
+- **Smoke-tested by running it**, not by reading it: the close refuses an empty stage with
+  `SPAWNER instrument-stop: unknown stage ""` and names all five stages, exit 97.
+
+### Cost of the edit
+
+Repointing re-flips the signed spec hash `69340bed…` → `c395b716…`, and the Phase 2 battery's
+frozen `EXPECTED_HASH` (`scripts/run-battery-readshim.mjs`) with it. hamr chose the destination
+in-turn; the hash was computed and shown BEFORE the edit, then re-verified against the written
+file. The spec's `approvals` key is `null` — the signature is minted at runtime in
+`scripts/run-u.mjs`, so **the run-time signature is still outstanding** and this finding does not
+claim it.
+
+### What is NOT claimed
+
+The close has **not** been fired against a live model from its new home. The smoke test proves it
+loads, resolves its dependency, and refuses correctly — it does not prove a full stage renders a
+verdict. That claim needs a paid run.
+
+### Standing rule this mints
+
+**An instrument the arbiter depends on is never hosted in a tree that development mutates.** Not a
+working checkout (goes dirty), not a scratch worktree (gets removed). Pin it, install it, smoke it,
+and re-verify the hash after writing — never before only.

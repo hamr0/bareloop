@@ -16,6 +16,7 @@ import { LiteCtx } from 'litectx';
 import { validateJob, jobSpecHash, checkApproval } from './job.js';
 import { runPlan } from './planrun.js';
 import { SMOKE_STORE, resolveHumanRuling } from './kinds.js';
+import { readShimArm } from './readshim.js';
 
 /** @typedef {{code: string, path: string, detail?: string}} Red */
 
@@ -156,6 +157,19 @@ async function primitiveSmoke(workdir) {
  *   collision walk would mint a `-2` beside the work the resume exists to continue. The
  *   fold's precedent exactly: the chain's state is DECLARED, never re-derived. Forwarded
  *   verbatim to the plan flow; absent is the cold path.
+ * @param {boolean|'cap'|'diff'} [opts.readShim=false] THE READ SHIM (src/readshim.js) —
+ *        WHICH ARM to run, threaded to the plan flow. The Phase 2 pre-registration's four:
+ *          `false`  A0 — off (the default)
+ *          `'cap'`  A1 — cap + pointer + next-unseen-slice + G1, no diff
+ *          `'diff'` A2 — the diff lever alone: no cap, no pointer, no G1
+ *          `true`   A3 — every lever
+ *        Anything else THROWS below, before a token is spent: a mis-spelled arm coerced
+ *        by truthiness into A3 would run one treatment under another's label and be
+ *        invisible in the results afterwards.
+ *        OFF is byte-identical to the pre-shim run in every observable (G1 included): the
+ *        frozen A0 baseline arm has to be exactly today, so a guard firing under a disabled
+ *        shim would make the baseline a treatment arm. The default-flip belongs to a
+ *        paid contrast nobody has approved yet (the `layerRoot` precedent, F41).
  * @param {boolean} [opts.layerRoot=false] Layer R (within-run ratchet) — shell
  *        territory, threaded to the plan flow. Defaults OFF
  *        (decided 2026-07-21): fixation is extinct on every current job (F41), so
@@ -187,7 +201,15 @@ async function primitiveSmoke(workdir) {
  *   'interpreter-red' | 'cap-halt' | 'wall-halt' | 'step-stalled' |
  *   'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, layerRoot = false, bridge = null, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, reviewDoor = null, doorRerun = null }) {
+export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, layerRoot = false, readShim = false, bridge = null, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, reviewDoor = null, doorRerun = null }) {
+  // THE READ SHIM's ARM, resolved at the door — the FIRST thing this entry does,
+  // before the ledger, before the approval gate, before a byte of the spec is read.
+  // An unrecognised spelling throws here at zero cost instead of being coerced by
+  // truthiness into A3 and running a whole paid battery row under an arm label it
+  // never executed — a wrong result that looks like a fine one, which is the exact
+  // blind-instrument failure this programme keeps logging. Only the guard runs
+  // here; the flag itself is threaded onward to the plan flow as written.
+  readShimArm(readShim);
   // 0. the ledger's counters, declared FIRST so that every job-end — including
   // the pre-token reds below — can state a real figure. An omitted `spentUsd` is
   // not a zero: a consumer reads `undefined` and either crashes or launders it
@@ -356,7 +378,7 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // accounts it natively (F12) and the job-end money contract is unchanged.
   {
     const outcome = await runPlan(job, {
-      workdir, provider, nativeProvider, providerFor, judgeProvider, emit: meter, capRuns, ...(strikeLimit !== undefined ? { strikeLimit } : {}), closeTimeoutMs, layerRoot, bridge, priorWallMs: chainWallMs, resumeSeed, resumeGrades, resumeReplans, resumeBranch, humanRuling, heldRuling, reviewDoor, doorRerun, priorSpentUsd: chainFoldUsd,
+      workdir, provider, nativeProvider, providerFor, judgeProvider, emit: meter, capRuns, ...(strikeLimit !== undefined ? { strikeLimit } : {}), closeTimeoutMs, layerRoot, readShim, bridge, priorWallMs: chainWallMs, resumeSeed, resumeGrades, resumeReplans, resumeBranch, humanRuling, heldRuling, reviewDoor, doorRerun, priorSpentUsd: chainFoldUsd,
       remainingUsd: () => Math.min(shellCapUsd, job.budgetUsd - spentUsd),
       isUnpriced: () => unpriced, // F6: let the plan flow bail in-flight, not just after it returns
       spendComplete, // …and let its money-halt readout say whether the remaining it quotes is exact

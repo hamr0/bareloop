@@ -404,3 +404,105 @@ export function updateLedger({ ledgerFile, spineFiles }) {
   });
   return { appended, fold: foldLedger(rows.concat(appended)) };
 }
+
+// ── BA-21 pricing provenance: the READ side (REPORTING ONLY) ─────────────────
+// bare-agent >=0.37 rides `rateSource` beside `pricing` on every metering payload,
+// and the plan flow forwards it verbatim onto `worker-round`/`judge-round`/`worker-turn`
+// (`rateSourceFields`, src/planrun.js — the write side).
+//
+// NAMED rather than papered over: `judge-round`'s own payload (src/kinds.js's
+// `onJudgeCost({...})`) does not carry `rateSource` yet, so every judge round reads
+// UNKNOWN provenance today — correctly, by the same rule that governs the archive, and
+// the day that payload forwards the field the emit site already spreads it.
+//
+// `pricing` is UNCHANGED and still strictly two-valued ('priced'|'unpriced'). Nothing
+// below reads it, nothing below decides anything, and no new escalation category exists:
+// the `pricing-red` halt in src/run.js keys on cost alone and stays the ONLY pricing
+// signal with teeth. This is a READOUT — how much of a run's spend was priced by a rate
+// nobody vouched for — and coupling it to run control would be a new refusal, which is
+// arbiter territory.
+
+/**
+ * The two rate sources somebody VOUCHED for: `'provider'` (the provider reported its own
+ * authoritative cost, e.g. the claude CLI's `total_cost_usd`) and `'caller'` (we passed
+ * the rate in ourselves). Everything else bare-agent can report is a built-in guess.
+ *
+ * An ALLOW-LIST of vouched values, never a deny-list of guessed ones — this is the
+ * load-bearing line of the whole signal, for two reasons.
+ *
+ * First: BOTH of bareloop's production models resolve to `'tier'`, not to `'default'`
+ * (`claude-sonnet-5` and `claude-haiku-4-5-…` each match a recognized Claude tier by
+ * model-id substring, so bare-agent prices them off a hardcoded tier rate that could
+ * have drifted from Anthropic's). A "is this a guess?" test spelled
+ * `rateSource === 'default'` would therefore read EVERY normal bareloop round as
+ * confidently priced and see none of the population it exists to measure — this repo's
+ * blind-instrument class, seven recorded instances, and not becoming the eighth.
+ *
+ * Second: written this way, any value bare-agent adds later that we do not recognise
+ * reads as a GUESS rather than as vouched. The fail-safe direction, by construction.
+ */
+export const VOUCHED_RATE_SOURCES = Object.freeze(['provider', 'caller']);
+
+/**
+ * Read one spend record's rate PROVENANCE. Four-way, and the two absent-ish cases are
+ * deliberately distinct facts:
+ * - `'vouched'`  — a `VOUCHED_RATE_SOURCES` value: somebody stands behind the rate.
+ * - `'guessed'`  — a rate was used and nobody vouched for it (`'tier'`, `'default'`, or
+ *                  any future value we do not recognise).
+ * - `'unpriced'` — `rateSource: null`: nothing was priced, so there was no rate to have
+ *                  guessed. Upstream said so; we are not inferring it.
+ * - `'unknown'`  — the record carries no `rateSource` at all. Every round archived before
+ *                  this signal existed lands here and is NEVER backfilled: an absent label
+ *                  is reported as unknown, never reconstructed, and never rounded up to
+ *                  vouched (F6's unknown-is-never-zero, applied to provenance).
+ * @param {any} record a `worker-round` / `judge-round` / `worker-turn` spine record
+ * @returns {'vouched'|'guessed'|'unpriced'|'unknown'}
+ */
+export function rateProvenance(record) {
+  if (!record || typeof record !== 'object' || !('rateSource' in record)) return 'unknown';
+  const source = /** @type {any} */ (record).rateSource;
+  if (source === undefined) return 'unknown'; // a key carrying no value taught us nothing
+  if (source === null) return 'unpriced';
+  return VOUCHED_RATE_SOURCES.includes(source) ? 'vouched' : 'guessed';
+}
+
+/** The spend records a run's money is read from. `worker-round` and `judge-round` are the
+ * ACCOUNTED types — exactly `ACCOUNTED_ROUND_TYPES` in src/run.js, which is the ledger that
+ * enforces the budget (F12). `judge-round` is the softgreen rung's judged floor: the first
+ * spend a CLOSE has ever had, and a provenance readout that skipped it would be blind to the
+ * one seam whose rate nobody has audited. `worker-turn` is the native surface's per-turn
+ * attribution — unpriced by design, included so the readout covers every metering row the
+ * plan flow writes rather than only the ones carrying money. The attempt-level totals
+ * (`worker-result`, `worker-plan`) are ECHOES of these same rounds and are excluded, for
+ * the same reason the ledger in run.js excludes them: counting them double-counts.
+ *
+ * Re-spelled rather than imported (src/run.js imports this module's siblings and a cycle
+ * buys nothing here) — `tests/ledger.test.js` asserts the two spellings agree, because a
+ * spend-slicing instrument that misses a writer is the F45 class this list exists to avoid. */
+const SPEND_RECORD_TYPES = Object.freeze(['worker-round', 'judge-round', 'worker-turn']);
+
+/** @typedef {{rounds: number, usd: number, unpricedRounds: number}} ProvenanceBucket */
+
+/**
+ * How much of a run's spend was priced by a guess. Pure fold over one spine's events,
+ * REPORTING ONLY — it mints nothing, halts nothing and refuses nothing.
+ *
+ * `usd` sums only FINITE costs; a round whose cost is not a finite number is counted in
+ * `unpricedRounds` instead of being summed as $0 (F6 — unpriced is never free), so a
+ * bucket's `usd` is a FLOOR whenever its `unpricedRounds` is non-zero.
+ * @param {any[]} events one spine's parsed events
+ * @returns {{vouched: ProvenanceBucket, guessed: ProvenanceBucket, unpriced: ProvenanceBucket, unknown: ProvenanceBucket}}
+ */
+export function spendProvenance(events) {
+  /** @returns {ProvenanceBucket} */
+  const bucket = () => ({ rounds: 0, usd: 0, unpricedRounds: 0 });
+  const out = { vouched: bucket(), guessed: bucket(), unpriced: bucket(), unknown: bucket() };
+  for (const ev of events ?? []) {
+    if (!ev || !SPEND_RECORD_TYPES.includes(ev.type)) continue;
+    const b = out[rateProvenance(ev)];
+    b.rounds += 1;
+    if (typeof ev.costUsd === 'number' && Number.isFinite(ev.costUsd)) b.usd += ev.costUsd;
+    else b.unpricedRounds += 1;
+  }
+  return out;
+}

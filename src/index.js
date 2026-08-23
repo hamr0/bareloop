@@ -82,7 +82,12 @@ export { renderListing, selectionPrompt } from './selection.js';
 // credit it has no way to release. STORAGE ONLY — nothing here selects, promotes or reuses
 // a bridge; those stay parked on `layer-3-reuse`.
 export { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED, readResume, resumeTreeGate, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS, checkpointAgeGate, applyDoorDecision, writeRunGreenRow } from './reuse.js';
-export { classifyIncidents, foldLedger, ledgerDeltas, updateLedger, LEDGER_CLASSES } from './ledger.js';
+// BA-21 pricing provenance rides out with the ledger because it is the same job: reading
+// a run's own spend record honestly. `rateProvenance`/`spendProvenance` answer "how much of
+// this was priced by a rate nobody vouched for" — REPORTING ONLY, no halt, no refusal.
+// Exported because an adopter enforcing a budget against these numbers is entitled to know
+// which of them are guesses (see bareloop.context.md, "Every cost figure … is an ESTIMATE").
+export { classifyIncidents, foldLedger, ledgerDeltas, updateLedger, LEDGER_CLASSES, VOUCHED_RATE_SOURCES, rateProvenance, spendProvenance } from './ledger.js';
 // THE WORK BRANCH (PRD v1.57 §3). `workBranchName` is exported so an operator runner can
 // SHOW, before the approval gate, which branch the run will work on — the same reason the
 // resolved per-try hash is printed there: a bound the human is agreeing to should not be
@@ -91,6 +96,16 @@ export { classifyIncidents, foldLedger, ledgerDeltas, updateLedger, LEDGER_CLASS
 // still there before spending anything. The runner applies the rule itself either way —
 // neither export is a way to opt out of it.
 export { workBranchName, prepareWorkBranch, WORK_BRANCH_PREFIX, WORK_BRANCH_RE } from './workbranch.js';
+// THE READ SHIM (arm-gated, OFF by default via `runJob`'s `readShim`). The cap is exported
+// because bareloop.context.md names it, and documented-but-unexported is a false contract;
+// the wrapper goes with it so a caller building its own worker seam wraps the SAME ledger
+// rather than reimplementing the one rule that matters (a pointer keys on what was
+// DELIVERED, never on path+hash).
+//
+// `readShimArm` is exported for the same reason the cap is: a battery driver has to be able
+// to name and check the arm it is about to run BEFORE it launches, and the legal set living
+// only inside a runner would leave the driver guessing at spellings the guard will reject.
+export { createReadShim, wrapReadTool, readShimArm, readShimStrategy, READ_SHIM_CAP, READ_SHIM_STRATEGY, READ_SHIM_DIFF_STRATEGY, READ_SHIM_ARMS } from './readshim.js';
 // ── CLOSE AUTHORING v1 (gate 4) — the user declares what done means ──────────
 // The public surface is settled ONCE, here, at M4 (M2's header flagged the
 // naming collision and deferred it rather than exporting piecemeal).

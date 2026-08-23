@@ -105,12 +105,15 @@ export function scriptedProvider(script) {
  *   one entry per `generate()` call (sticks on the last)
  */
 export function scriptedNativeFactory(sessions) {
+  /** every tool result handed back inside a session, in order (see the push site)
+   * @type {Array<{name: string, result: any}>} */
+  const toolResults = [];
   // ONE script tape shared across every worker's provider (the runner builds a
   // fresh native provider per worker, so `s` must live OUT here — the analog of
   // scriptedProvider's single shared `calls` cursor; a per-provider counter
   // would replay scout→plan→step from the top for each worker).
   let s = 0;
-  return ({ policy, onTurn, maxTurns, hasTools }) => {
+  const factory = ({ policy, onTurn, maxTurns, hasTools }) => {
     // FAITHFUL to the live-verified reality: a native session with NO tools fires
     // ZERO onTurn events and reports no cost, so the runner routes a toolless
     // worker (the drafter) through claude-json TEXT mode — a plain metered
@@ -165,7 +168,10 @@ export function scriptedNativeFactory(sessions) {
             }
             consecutiveDenials = 0;
             const tool = tools.find((t) => t.name === step.tool);
-            if (tool) await tool.execute(step.args);
+            // What the worker was HANDED, recorded: on this surface the tool result
+            // never reaches the transcript the stub records, so a wrapper that changes
+            // it (the native read cap, the read shim) would otherwise be unobservable.
+            if (tool) toolResults.push({ name: step.tool, result: await tool.execute(step.args) });
           }
         }
         // the authoritative session cost (the CLI prices the whole session)
@@ -174,6 +180,8 @@ export function scriptedNativeFactory(sessions) {
       },
     };
   };
+  factory.toolResults = toolResults;
+  return factory;
 }
 
 /** ONE spine reader: parsed events in seq order. @param {string} file */

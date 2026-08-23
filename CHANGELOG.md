@@ -5,6 +5,99 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.13.0] — 2026-08-23
+
+### Fixed (2026-08-23 — the release round: a pointer that lied, a close with no home, a rule that charged for its own refusal)
+
+- **The pointer no longer lies about a file emptied since it was read.** `src/readshim.js`'s
+  pointer branch tested `start >= total` alone, so `0 >= 0` held with **no ledger entry at all** —
+  the first read of an empty file and a re-read of a file TRUNCATED TO EMPTY since delivery were
+  indistinguishable, and both answered "you already hold all 0 bytes". A worker would have gone on
+  believing in content that was gone. The guard now requires a ledger entry whose hash still
+  matches. This is precisely the untruthful-pointer class the module exists to prevent, found
+  inside the module built to prevent it, and reproduced live before the fix.
+- **`judge-round` carries its rate provenance.** The judged floor made it the first spend a CLOSE
+  has ever had, and `src/ledger.js` documented the write side as forwarding `rateSource` onto it —
+  but the emit never spread the field, so every judge round would have read UNKNOWN forever. NOT
+  rounded up: `src/kinds.js`'s `onJudgeCost` payload still does not carry the field, so it reads
+  UNKNOWN today, and both the emit and the ledger header now say so plainly.
+- **A torn spine line stops reading as exact spend.** `scripts/run-battery-readshim.mjs` marked
+  unparseable lines `__corrupt` "never guessed at", then counted them, dropped them, and reported
+  the row's spend as EXACT while `corruptLines` reached no readout. `spendComplete` now goes false
+  when any line was unreadable (spend renders `>=`) and the audit prints the count per row.
+- **G1's ceiling half is refused at $0 instead of after the drafter is paid.** `validatePlan` reds
+  `read-blind` when a capped step grants `read` without the retrieval pair — but a step cannot
+  grant what the SIGNED CEILING does not offer, so against a spec whose `tools` lack `recall`/`get`
+  **every** draft red identically and the drafter was paid for each doomed cycle. `runPlan` now
+  throws at the same $0 door as the arm guard, in the same class: an operator param-guard
+  `TypeError`, never a model-output red — nothing the agent authored is wrong when the operator
+  asks for a shim the signature cannot satisfy. Tighten-only; the only configuration it rejects
+  already failed 100% of the time, just later and for money. `RETRIEVAL_PAIR` is now exported from
+  `src/plan.js` rather than respelled, so the rule and its pre-flight cannot drift apart.
+
+### Changed (2026-08-23)
+
+- **The aurora close moved to a tree development cannot mutate** (`jobs/aurora-u-spawner-types.json`,
+  F110). Its stages had pointed at a scratch worktree, which was removed during ordinary branch
+  work — every stage silently became `node: cannot find module`. The home before that was a shared
+  working checkout, where a close landing mid-edit dies as an instrument fault rather than a
+  verdict. Neither is a home: a checkout is *supposed* to go dirty and a scratch worktree is
+  *supposed* to be removable. **A close is the arbiter's instrument, so its host must have the
+  arbiter's lifetime.** Now a worktree pinned at a release tag, never edited, with its own
+  dependencies. Re-signing was required and given in-turn.
+
+### Added (2026-08-18 — the read shim, flag-gated OFF)
+
+- **`src/readshim.js` — a per-worker delivery ledger over the read tool**, off unless the new
+  `readShim` flag is set on `runJob`/`runPlan`. A read over 24KB (`READ_SHIM_CAP`) delivers its
+  next unseen slice plus a trusted steer at `ctx_recall`/`ctx_get`; a re-read of a file the
+  worker holds WHOLE and unchanged returns a short pointer instead of the bytes; a re-read of
+  a file it holds only PART of returns the next slice, never a pointer; any content change
+  re-delivers from the start. Measured on a $0 replay of 1,844 real `shell_read` actions from
+  143 archived gate audits: 48% of reads re-read unchanged bytes, and cap+pointer keyed on what
+  was DELIVERED saved 65.6% of read payload with **zero** untruthful responses — where the
+  naive path+hash key saved 8.2 points more by telling **250 lies**, median 73,348 bytes hidden
+  each (BA-17 read-blinding, reproduced).
+- **G1 at the validation gate (`read-blind`)**: under the shim, a plan step granting `read` must
+  also grant `recall` and `get`. Capping a worker with no retrieval verb is BA-17 on purpose —
+  the cap is what makes the pair mandatory. Stated in the drafting prompt as well as enforced
+  (the mailbox precedent).
+- **One flag, four ARMS, default OFF** (the `layerRoot` precedent, F41). `readShim` names which
+  levers run, one value per row of the frozen Phase 2 pre-registration: `false` = A0 (off),
+  `'cap'` = A1 (cap + pointer + next-unseen-slice + G1), `'diff'` = A2 (the diff lever alone — no
+  cap, no pointer, no G1), `true` = A3 (every lever). The two booleans mean exactly what they
+  meant before the arms existed, so nothing written against them changed meaning. With the shim
+  off every observable — validator reds, persona, delivered bytes — is byte-identical to the
+  pre-shim run: the frozen A0 arm has to be exactly today, and a guard firing under a disabled
+  shim would make the baseline a treatment arm. Each arm's persona line describes only the
+  machinery actually installed (A2 is never told about a 24KB limit that is not in force). An
+  unrecognised value THROWS at the entry (`readShimArm`) rather than coercing into a truthy
+  shim — a mis-spelled arm would run one treatment under another's label and be invisible in the
+  results afterwards. The default-flip is not in this change: it waits on a paid contrast.
+- **A stale `ctx_get` pointer serves the requested line range from disk** (2026-08-19), under a
+  CAPPING arm only. The cap's own strategy line steers a capped worker at `ctx_recall` →
+  `ctx_get` for a whole function; `ctx_get` is content-hash gated and throws `StalePointerError`
+  the moment the file changed after indexing — which is the normal case for a worker that just
+  EDITED the file it is working on. Measured on the A1 arm's three green runs: 10 `ctx_get`
+  calls, 5 stale, 0 bytes each, every one a just-written file. A paid round returning nothing,
+  down a path the cap itself chose. The serve hands back the requested 0-based inclusive line
+  range read fresh from disk, under TRUSTED framing that says the pointer was stale, that the
+  range may now hold DIFFERENT code than the symbol asked for, which lines arrived, and that
+  nothing was recorded as delivered. litectx refuses to slice a drifted range itself because an
+  UNLABELLED slice can silently be another symbol's body — the label is what makes it legal.
+  Detection is on the exported `StalePointerError` CLASS, never on message prose. A vanished
+  file or a range now entirely past the end is a refusal RESULT naming what happened, never a
+  throw. It **never touches the delivery ledger**: a slice is not the file, and a ledger that
+  recorded one would answer the next read with "you already have it" to a worker holding 90
+  lines of 900 — the untruthful-pointer failure the shim exists to prevent. The cost of that is
+  a later `shell_read` may re-deliver bytes the serve already showed; the shim over-delivers
+  rather than lies. A0 and A2 are untouched: with no capping arm the hook is not wired and
+  `ctx_get`'s contract is byte-identical.
+- On the native surface the shim REPLACES the `NATIVE_READ_CAP` wrapper rather than layering over
+  it (both bound the same seam at the same 24KB, and a shim outside the native wrapper would
+  ledger already-truncated text as a whole file — the exact lie it exists to prevent). L2
+  (diff-on-change) is deliberately not built: it never fired on the real corpus.
+
 ## [0.12.0] — 2026-08-23
 
 ### Added (N4 slice 2 — the softgreen rung: a close that JUDGES, and a signer who has the last word)

@@ -1332,6 +1332,7 @@ export function resumeTreeGate({ head, seed, dirty }) {
  * @param {number} [opts.strikeLimit] forwarded (a plan step's strike ceiling)
  * @param {number} [opts.closeTimeoutMs] forwarded
  * @param {boolean} [opts.layerRoot] forwarded
+ * @param {boolean|'cap'|'diff'} [opts.readShim] the read shim's ARM (A0/A1/A2/A3), forwarded verbatim
  * @param {any} [opts.resume] RESUME (module C) — a `readResume` reading of the KILLED
  *   run's own spine. Its `approvalHash` must match this run's, or the run refuses:
  *   a resume continues ONE signed run, not any run.
@@ -1348,7 +1349,7 @@ export async function runReuse(opts) {
   const {
     job, approvals, registryDir, patient, workdir, provider, selectionProvider,
     emit, ask, pinned = null, shortlist = null, forceCold = false,
-    providerFor, nativeProvider, capRuns, strikeLimit, closeTimeoutMs, layerRoot,
+    providerFor, nativeProvider, capRuns, strikeLimit, closeTimeoutMs, layerRoot, readShim,
     runJob = shippedRunJob, now = () => Date.now(),
   } = opts;
   const runid = opts.runid ?? Date.now().toString(36);
@@ -1516,6 +1517,7 @@ export async function runReuse(opts) {
         ...(strikeLimit !== undefined ? { strikeLimit } : {}),
         ...(closeTimeoutMs !== undefined ? { closeTimeoutMs } : {}),
         ...(layerRoot !== undefined ? { layerRoot } : {}),
+        ...(readShim !== undefined ? { readShim } : {}),
         // the fold, and whether the fold is EXACT. `priorSpendComplete` used to stop at
         // the `try-start` record: it was computed, written down, and then not handed to
         // the one component whose `job-end` the row's own `spendComplete` is read off —

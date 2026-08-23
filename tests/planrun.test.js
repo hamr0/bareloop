@@ -13,7 +13,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { runPlan, planPrompt, closeGapBlock, boundedNote, BOUND_REASON_MAX } from '../src/planrun.js';
+import { runPlan, planPrompt, closeGapBlock, boundedNote, BOUND_REASON_MAX, rateSourceFields } from '../src/planrun.js';
 import { ralph, boundGap, GAP_KEEP_TRIM_MARKER } from '../src/ralph.js';
 import { validateJob } from '../src/job.js';
 import { StallError, MAX_STALLS } from '../src/stall.js';
@@ -4636,4 +4636,289 @@ test('the FIX loop is write-capable too, and it works on the same branch the ste
   assert.ok(events.some((e) => e.type === 'worker-round' && String(e.phase) === 'fix'), 'the fix loop actually ran');
   assert.equal(currentBranch(wd), 'bareloop-plan-patient');
   assert.deepEqual(localBranches(wd), ['bareloop-plan-patient', 'main']);
+});
+
+// ── THE READ SHIM at its seam (flag-gated, default OFF) ────────────────────
+//
+// The shim wraps the same `rd.execute` the native cap wraps, and these two tests
+// drive it through the REAL runner: real shell tools, real Loop, real gate, the
+// scripted provider as the one legitimate seam. What the worker was actually
+// handed is observable — `scriptedProvider` records the last message of every
+// call, and after a tool round that message IS the tool result.
+const BIG_BODY = Array.from({ length: 60 }, (_, i) => `BLOCK-${String(i).padStart(4, '0')} ${'x'.repeat(982)}\n`).join('');
+
+/** the plan the two arms share: one step that reads the big file twice, then writes */
+const READ_TWICE = (wd) => JSON.stringify({
+  schema: 'plan-v1',
+  steps: [{
+    id: 'read-then-write', action: 'Read src/big.txt, then write tests/test_x.mjs.',
+    tools: ['read', 'recall', 'get', 'write'], rounds: 6, target: 'tests/test_x.mjs',
+    exit: [{ type: 'tree-changed', scope: 'tests/**' }],
+  }],
+});
+
+const readTwiceProvider = (wd) => scriptedProvider([
+  { text: 'src/big.txt is large; tests/ is empty.' },                            // scout
+  { text: READ_TWICE(wd) },                                                       // plan draft
+  { toolCalls: [tcall('t1', 'shell_read', { path: join(wd, 'src', 'big.txt') })] },
+  { toolCalls: [tcall('t2', 'shell_read', { path: join(wd, 'src', 'big.txt') })] },
+  { toolCalls: [tcall('t3', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+  { text: 'done' },
+]);
+
+test('read shim ON: the second read of an unchanged big file is the NEXT UNSEEN SLICE, at the real seam', async (t) => {
+  const wd = makePatient(t);
+  writeFileSync(join(wd, 'src', 'big.txt'), BIG_BODY);
+  const jv = validateJob(JOB(wd, { tools: ['read', 'recall', 'get', 'write', 'edit'] }));
+  assert.deepEqual(jv.reds, []);
+  const provider = readTwiceProvider(wd);
+  const { events, emit } = collector();
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 3, readShim: true, remainingUsd: () => 1.5 });
+  assert.equal(outcome, 'green');
+
+  // calls: [scout, plan, step-round-1, after-read-1, after-read-2, after-write]
+  const afterFirst = JSON.stringify(provider.calls[3]);
+  const afterSecond = JSON.stringify(provider.calls[4]);
+  assert.ok(afterFirst.includes('BLOCK-0000'), 'the first read starts the file');
+  assert.ok(!afterFirst.includes('BLOCK-0030'), 'and the cap really bound it');
+  assert.ok(!/unchanged/.test(afterSecond), 'a partly-seen file is never answered with a pointer (the 250-lie design)');
+  assert.ok(afterSecond.includes('BLOCK-0025'), 'the second read carries bytes the worker had not seen');
+  assert.match(JSON.stringify(provider.systems.at(-1) ?? ''), /READ LIMIT/, 'and the worker was told the bound exists');
+});
+
+test('read shim OFF (the default): the same run delivers the tool\'s own bytes, twice — the A0 guarantee', async (t) => {
+  const wd = makePatient(t);
+  writeFileSync(join(wd, 'src', 'big.txt'), BIG_BODY);
+  const jv = validateJob(JOB(wd, { tools: ['read', 'recall', 'get', 'write', 'edit'] }));
+  const provider = readTwiceProvider(wd);
+  const { events, emit } = collector();
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 3, remainingUsd: () => 1.5 });
+  assert.equal(outcome, 'green');
+
+  for (const i of [3, 4]) {
+    const shown = JSON.stringify(provider.calls[i]);
+    assert.ok(shown.includes('BLOCK-0000') && shown.includes('BLOCK-0059'), `call ${i}: the whole file, both times`);
+    assert.ok(!shown.includes('bareloop:'), `call ${i}: the shim left no mark of any kind`);
+  }
+  assert.ok(!/READ LIMIT/.test(JSON.stringify(provider.systems)), 'and no strategy line was added to the persona');
+});
+
+test("read shim arm 'cap' (A1): capped and continued at the real seam, and the persona states the bound", async (t) => {
+  const wd = makePatient(t);
+  writeFileSync(join(wd, 'src', 'big.txt'), BIG_BODY);
+  const jv = validateJob(JOB(wd, { tools: ['read', 'recall', 'get', 'write', 'edit'] }));
+  const provider = readTwiceProvider(wd);
+  const { emit } = collector();
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 3, readShim: 'cap', remainingUsd: () => 1.5 });
+  assert.equal(outcome, 'green');
+
+  const afterFirst = JSON.stringify(provider.calls[3]);
+  const afterSecond = JSON.stringify(provider.calls[4]);
+  assert.ok(afterFirst.includes('BLOCK-0000') && !afterFirst.includes('BLOCK-0030'), 'the cap bound the first read');
+  assert.ok(afterSecond.includes('BLOCK-0025'), 'and the second read continued into unseen bytes');
+  const system = JSON.stringify(provider.systems.at(-1) ?? '');
+  assert.match(system, /READ LIMIT/, 'the worker was told the bound exists');
+  assert.ok(!/RE-READS/.test(system), 'and was NOT told about a diff this arm never sends');
+});
+
+test("read shim arm 'diff' (A2): NO cap at the real seam, and the persona says nothing about a limit", async (t) => {
+  const wd = makePatient(t);
+  writeFileSync(join(wd, 'src', 'big.txt'), BIG_BODY);
+  const jv = validateJob(JOB(wd, { tools: ['read', 'recall', 'get', 'write', 'edit'] }));
+  const provider = readTwiceProvider(wd);
+  const { emit } = collector();
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 3, readShim: 'diff', remainingUsd: () => 1.5 });
+  assert.equal(outcome, 'green');
+
+  for (const i of [3, 4]) {
+    const shown = JSON.stringify(provider.calls[i]);
+    assert.ok(shown.includes('BLOCK-0000') && shown.includes('BLOCK-0059'), `call ${i}: the whole 60 KB file, uncapped`);
+    assert.ok(!shown.includes('bareloop:'), `call ${i}: nothing was capped, so nothing was announced`);
+  }
+  const system = JSON.stringify(provider.systems.at(-1) ?? '');
+  assert.ok(!/READ LIMIT/.test(system), 'a 24KB limit is NOT in force and must not be claimed — that would be a different treatment than the arm names');
+  assert.match(system, /RE-READS/, 'the diff, which IS in force, is explained');
+});
+
+test('an unrecognised read shim arm is refused at the runner door, before a single provider call', async (t) => {
+  const wd = makePatient(t);
+  const jv = validateJob(JOB(wd, { tools: ['read', 'recall', 'get', 'write', 'edit'] }));
+  const provider = readTwiceProvider(wd);
+  const { events, emit } = collector();
+  await assert.rejects(
+    () => runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 3, readShim: /** @type {any} */ ('diff '), remainingUsd: () => 1.5 }),
+    /unknown arm/,
+    'a typo coerced into a truthy shim would run A3 under an A2 label for a whole paid row',
+  );
+  assert.equal(provider.calls.length, 0, 'and it costs nothing: not one call was made');
+  assert.deepEqual(events, [], 'nor one spine record');
+});
+
+test('read shim ON, NATIVE surface: the shim OWNS the seam — one cap, one notice, and a continuation on the re-read', async (t) => {
+  // The composition decision, asserted rather than described: with the shim on,
+  // the F48 native wrapper stands down. Layered, the second read would come back
+  // with two truncation notices and — worse — the shim would have ledgered the
+  // native wrapper's already-cut text as the whole file.
+  const wd = makePatient(t);
+  writeFileSync(join(wd, 'src', 'big.txt'), BIG_BODY);
+  const jv = validateJob(JOB(wd, { provider: 'clipipe-subscription', tools: ['read', 'recall', 'get', 'write', 'edit'] }));
+  assert.deepEqual(jv.reds, []);
+  const nativeProvider = scriptedNativeFactory([
+    { turns: [{ text: 'src/big.txt is large.' }] },
+    { turns: [{ text: READ_TWICE(wd) }] },
+    {
+      turns: [
+        { tool: 'shell_read', args: { path: join(wd, 'src', 'big.txt') } },
+        { tool: 'shell_read', args: { path: join(wd, 'src', 'big.txt') } },
+        { tool: 'shell_write', args: { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' } },
+        { text: 'done' },
+      ],
+    },
+  ]);
+  const { events, emit } = collector();
+  const outcome = await runPlan(jv.job, { workdir: wd, nativeProvider, emit, capRuns: 3, readShim: true, remainingUsd: () => 1.5 });
+  assert.equal(outcome, 'green');
+
+  const results = nativeProvider.toolResults ?? [];
+  const reads = results.filter((r) => r.name === 'shell_read').map((r) => String(r.result));
+  assert.equal(reads.length, 2, 'both reads really ran through the native bridge');
+  assert.ok(reads[0].includes('BLOCK-0000') && !reads[0].includes('BLOCK-0030'), 'the first read is capped');
+  assert.ok(reads[1].includes('BLOCK-0025'), 'the second read continues instead of repeating or pointing');
+  for (const r of reads) {
+    assert.equal(r.split('[bareloop:').length - 1, 1, 'exactly ONE notice — the two wrappers never stack');
+    assert.ok(!r.includes('file truncated at'), 'and the native wrapper\'s own notice is not among them');
+  }
+});
+
+// ── BA-21 pricing provenance: the WRITE side ─────────────────────────────────
+// `rateSource` rides beside `pricing` on every bare-agent >=0.37 metering payload.
+// Both metering callbacks forward it through ONE helper — two sites spelling one
+// rule are two instruments (the ripgrep-in-ci.yml-only class).
+
+test('rateSourceFields forwards the provenance VERBATIM — including a value we do not recognise', () => {
+  assert.deepEqual(rateSourceFields({ costUsd: 0.02, pricing: 'priced', rateSource: 'tier' }), { rateSource: 'tier' });
+  assert.deepEqual(rateSourceFields({ rateSource: 'provider' }), { rateSource: 'provider' });
+  // never re-labelled here: the write side reports what upstream said, and the READ
+  // side (src/ledger.js) is the one place that decides what counts as a guess
+  assert.deepEqual(rateSourceFields({ rateSource: 'marketplace' }), { rateSource: 'marketplace' });
+});
+
+test('rateSourceFields keeps an ABSENT provenance absent — a payload that said nothing mints no label', () => {
+  // bare-agent <0.37, and every round already in the archive. Emitting `null` here
+  // would say "nothing was priced", which is a different fact from "nobody told us"
+  // — the reader must see UNKNOWN, not a value we invented.
+  assert.deepEqual(rateSourceFields({ costUsd: 0.02, pricing: 'priced' }), {});
+  assert.deepEqual(rateSourceFields({}), {});
+  assert.deepEqual(rateSourceFields(null), {});
+  assert.deepEqual(rateSourceFields(undefined), {});
+});
+
+test('rateSourceFields carries an explicit null through — upstream saying "nothing was priced"', () => {
+  assert.deepEqual(rateSourceFields({ costUsd: null, pricing: 'unpriced', rateSource: null }), { rateSource: null });
+});
+
+test('the API path never invents a provenance: a worker-round carries rateSource only when the provider payload did', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'done' },
+  ]);
+  const { events } = await go(wd, provider);
+  const rounds = events.filter((e) => e.type === 'worker-round');
+  assert.ok(rounds.length >= 4, `expected metered rounds, got ${rounds.length}`);
+  for (const r of rounds) {
+    if (!('rateSource' in r)) continue; // pre-BA-21 bare-agent: absent, and read as UNKNOWN
+    assert.ok(
+      r.rateSource === null || ['provider', 'caller', 'tier', 'default'].includes(r.rateSource),
+      `a forwarded provenance must be bare-agent's own vocabulary, got ${JSON.stringify(r.rateSource)}`,
+    );
+  }
+});
+
+test('NATIVE clipipe: a per-turn event is explicitly unpriced, so its provenance is null — there was no rate to have guessed', async (t) => {
+  const wd = makePatient(t);
+  const jv = validateJob(JOB(wd, { provider: 'clipipe-subscription' }));
+  const nativeProvider = scriptedNativeFactory([
+    { turns: [{ text: 'scout' }], cost: 0.02 },
+    { turns: [{ text: PLAN(wd) }], cost: 0.01 },
+    { turns: [{ tool: 'shell_write', args: { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' } }, { text: 'done' }], cost: 0.03 },
+  ]);
+  const { events, emit } = collector();
+  const outcome = await runPlan(jv.job, { workdir: wd, nativeProvider, emit, capRuns: 3, remainingUsd: () => 1.5 });
+  assert.equal(outcome, 'green');
+  const turnEvents = events.filter((e) => e.type === 'worker-turn');
+  assert.ok(turnEvents.length >= 3, 'per-turn attribution rides the spine as worker-turn');
+  // costUsd is null BY DESIGN on this surface (the CLI prices the SESSION), so the
+  // provenance says the same thing the cost does — never a guess we did not make
+  assert.ok(turnEvents.every((e) => e.costUsd === null && e.rateSource === null),
+    'every native per-turn event states null cost AND null provenance');
+});
+
+// ── G1's ceiling half, refused at $0 ────────────────────────────────────────
+// `validatePlan` reds `read-blind` when a capped step grants `read` without the
+// retrieval pair. But a step cannot grant what the SIGNED CEILING does not
+// offer, so against a spec whose `tools` lack recall/get, EVERY draft reds
+// identically and the drafter is PAID for each doomed cycle. The condition is
+// knowable before a token: the arm is the operator's argument, the ceiling is
+// already signed. These tests pin the refusal AND its blast radius.
+
+test('a capping arm against a ceiling with no retrieval pair throws before a token is spent', async () => {
+  const wd = mkdtempSync(join(tmpdir(), 'g1-ceiling-'));
+  initPatientRepo(wd);
+  // the default JOB's ceiling is ['read','write','edit'] — no recall, no get
+  const jv = validateJob(JOB(wd));
+  assert.deepEqual(jv.reds, [], 'the fixture job must be validateJob-green');
+  const { events, emit } = collector();
+  // a provider that FAILS THE TEST if the run ever reaches it: the claim is not
+  // "it refuses", it is "it refuses without paying", and only a provider that
+  // cannot be called silently can prove the second half
+  const provider = { generate: async () => { assert.fail('the drafter was called — the guard did not fire at $0'); } };
+
+  await assert.rejects(
+    () => runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 3, remainingUsd: () => 1.5, readShim: 'cap' }),
+    (/** @type {any} */ err) => {
+      assert.ok(err instanceof TypeError, 'an operator param-guard, never a model-output red');
+      assert.match(err.message, /recall/, 'names the missing verb');
+      assert.match(err.message, /get/, 'names the missing verb');
+      assert.match(err.message, /read-blind/, 'names the red every draft would have hit');
+      return true;
+    },
+  );
+  assert.deepEqual(events, [], 'a $0 refusal records nothing — no run began');
+  rmSync(wd, { recursive: true, force: true });
+});
+
+test('the same ceiling is fine with the shim off, and fine under the diff-only arm', async () => {
+  // the guard must narrow NOTHING that works. Off caps nothing; the diff arm
+  // caps nothing either (g1:false), so neither can be read-blind. Both must get
+  // PAST the guard — proven by reaching the provider, which off/diff do and the
+  // capping arm above does not.
+  for (const arm of [false, 'diff']) {
+    const wd = mkdtempSync(join(tmpdir(), 'g1-ok-'));
+    initPatientRepo(wd);
+    const jv = validateJob(JOB(wd));
+    const { emit } = collector();
+    let reached = false;
+    const provider = { generate: async () => { reached = true; throw new Error('stop here — past the guard is all this asserts'); } };
+    await runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 3, remainingUsd: () => 1.5, readShim: arm })
+      .catch(() => {});
+    assert.ok(reached, `readShim:${JSON.stringify(arm)} must pass the ceiling guard — it caps nothing, so it cannot be read-blind`);
+    rmSync(wd, { recursive: true, force: true });
+  }
+});
+
+test('a ceiling that DOES offer the retrieval pair passes the capping arm', async () => {
+  const wd = mkdtempSync(join(tmpdir(), 'g1-pair-'));
+  initPatientRepo(wd);
+  const jv = validateJob(JOB(wd, { tools: ['read', 'write', 'edit', 'recall', 'get'] }));
+  assert.deepEqual(jv.reds, [], 'the widened fixture job must be validateJob-green');
+  const { emit } = collector();
+  let reached = false;
+  const provider = { generate: async () => { reached = true; throw new Error('stop here'); } };
+  await runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 3, remainingUsd: () => 1.5, readShim: 'cap' })
+    .catch(() => {});
+  assert.ok(reached, 'a ceiling offering recall+get satisfies G1 — the guard must not fire');
+  rmSync(wd, { recursive: true, force: true });
 });
