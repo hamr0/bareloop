@@ -19,6 +19,7 @@
 // reach is a rule nothing checks.
 import { scrubRaw } from '../src/text.js';
 import { redactSecrets } from '../src/validate.js';
+import { JUDGED_FLOOR_KIND } from '../src/kinds.js';
 
 /**
  * @param {{goal?: string|null, closeDecl?: any}} spec the RESOLVED spec — the bytes
@@ -37,6 +38,78 @@ export function declarationLines({ goal, closeDecl }) {
     lines.push(`      params ${JSON.stringify(s.params ?? {})}`);
   }
   for (const n of closeDecl?.notes ?? []) lines.push(`  note: ${n}`);
+  return lines;
+}
+
+/**
+ * THE TWO SIGNED JUDGED ARTIFACTS, as a person reads them before signing
+ * (softgreen modules 4+5). Absent on a close that judges nothing, which is why
+ * this returns an EMPTY list rather than a "no card" line: a green close has no
+ * rubric and saying so every run is noise, not information.
+ *
+ * The CARD is printed in full — it is short, it is the whole standard the judge
+ * will hold the work to, and it is the signer's own words. The CASES are printed
+ * as a ROSTER (id, verdict, itemized reds) rather than in full: ten real source
+ * artifacts is a page of code the terminal cannot usefully show, and what a
+ * signer checks at this surface is that both polarities are there and that each
+ * red names something they recognise. The artifacts themselves are in the spec
+ * file, which is named right above this block.
+ * @param {{closeDecl?: any}} spec the RESOLVED spec
+ * @returns {string[]}
+ */
+export function rubricLines({ closeDecl }) {
+  const judged = (closeDecl?.stages ?? []).filter((/** @type {any} */ s) => s?.kind === JUDGED_FLOOR_KIND);
+  if (!judged.length) return [];
+  /** @type {string[]} */
+  const lines = ['rubric card (what the judge will hold the work to — YOUR words, signed)'];
+  for (const it of judged[0]?.params?.card?.items ?? []) lines.push(`  [${it.rule}] ${it.text}`);
+  const cases = closeDecl?.calibration?.cases ?? null;
+  if (cases === null) {
+    lines.push('calibration  NONE STORED — a judged close is not signable without one');
+    return lines;
+  }
+  const pass = cases.filter((/** @type {any} */ c) => c?.expect?.verdict === 'pass').length;
+  lines.push(`calibration set (${cases.length} case(s): ${pass} pass, ${cases.length - pass} red)`);
+  for (const c of cases) {
+    const reds = (c?.expect?.reds ?? []).map((/** @type {any} */ r) => `${r.rule}@${r.fn}`).join(', ');
+    lines.push(`  ${String(c?.expect?.verdict ?? '?').padEnd(4)} ${c?.id}${reds ? `  → ${reds}` : ''}`);
+  }
+  return lines;
+}
+
+/**
+ * THE CALIBRATION GATE'S OWN READOUT — the one gate that spends money, and the
+ * one whose rows a signer has to read case by case.
+ *
+ * ITEMIZED, never an aggregate percentage: "9/10" tells a person nothing about
+ * which line of their own rubric is wrong, and the fix for a miss is a card line
+ * or a corrected case (§4.3's ceiling). A CASUALTY prints under its own name and
+ * says so, because a dead judge is not a failed set.
+ * @param {any} calibration `signing.gates.calibration`
+ * @returns {string[]}
+ */
+export function calibrationLines(calibration) {
+  if (!calibration) return ['  4 calibration  not reached'];
+  if (calibration.stop === 'calibration-missing') {
+    return ['  4 calibration  FAIL — this close judges, and no calibration set is stored with it'];
+  }
+  if (calibration.stop === 'no-judge') {
+    return ['  4 calibration  FAIL — no judge seam was wired, so the gate never ran (a wiring gap, never a pass)'];
+  }
+  const graded = calibration.graded ?? [];
+  const styles = calibration.injection?.styles ?? [];
+  /** @type {string[]} */
+  const lines = [`  4 calibration  ${calibration.ok ? 'PASS' : 'FAIL'} — ${graded.filter((/** @type {any} */ g) => g.ok).length}/`
+    + `${graded.length} case(s) graded correctly, ${styles.filter((/** @type {any} */ s) => s.resisted).length}/${styles.length} `
+    + `injection style(s) resisted  [judge ${calibration.judgeModel}]`];
+  if (calibration.casualty) {
+    lines.push(`      CASUALTY on ${calibration.casualty.kind} "${calibration.casualty.at}" [${calibration.casualty.axis}] `
+      + '— a broken judge is no evidence about the set');
+  }
+  for (const g of graded.filter((/** @type {any} */ x) => !x.ok)) lines.push(`      WRONG  ${g.id}: ${g.detail}`);
+  for (const s of styles.filter((/** @type {any} */ x) => !x.resisted)) lines.push(`      LEAK   ${s.style}: ${s.detail}`);
+  lines.push(`      certified  card ${String(calibration.cardHash ?? 'unknown').slice(0, 12)}  cases `
+    + `${String(calibration.casesHash ?? 'unknown').slice(0, 12)}  set ${String(calibration.setHash ?? 'unknown').slice(0, 12)}`);
   return lines;
 }
 
@@ -118,6 +191,11 @@ export function phaseLine(phase, data = {}) {
     case 'seed-read': return `· measuring ${data.stages ?? '?'} stage(s) at the seed — each one runs a real toolchain…`;
     case 'stage': return `·   ${data.stage} [${data.kind}] ${data.verdict} — ${ms(data.durationMs)}`;
     case 'seed-read-done': return `· seed read done (${data.stages ?? '?'} stage(s))`;
+    // softgreen modules 4+5: the compile, and the paid gate that grades it
+    case 'rubric': return `· compiling the rubric card and ${data.size ?? '?'} calibration cases from your own answers…`;
+    case 'rubric-done': return `· rubric ${data.ok ? 'compiled' : `NOT compiled (${data.stop ?? 'unknown'})`} after ${data.attempts ?? '?'} attempt(s)`;
+    case 'rubric-scrubbed': return `· MASKED before storing: ${(data.paths ?? []).join(', ')} — the stored bytes differ from what was typed`;
+    case 'calibration': return `· calibration gate: ${data.cases ?? '?'} case(s) + ${data.styles ?? '?'} injection style(s), one real judge call each…`;
     // A phase this renderer does not know is PRINTED, not swallowed: the callers
     // are the library's own seams and a new one appearing unrendered is how a
     // readout silently stops covering what it reports on.

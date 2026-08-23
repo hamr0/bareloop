@@ -51,13 +51,17 @@ import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import {
   authorCloseForJob, assembleSpec, prepareSigning, refusalEvents,
-  VERDICT_CLASSES, questionsFor, AUTHORED_SPEC_FIELDS,
+  VERDICT_CLASSES, LIVE_CLASSES, questionsFor, AUTHORED_SPEC_FIELDS,
 } from '../src/authorjob.js';
 import { makeLoopGenerate } from '../src/authorflow.js';
+import { defaultJudgeLoop, JUDGE_MODEL } from '../src/judged.js';
 import { validateJob, jobSpecHash } from '../src/job.js';
 import { scanSecrets } from '../src/validate.js';
+import { JUDGED_FLOOR_KIND } from '../src/kinds.js';
 import { tallyCalls } from '../src/text.js';
-import { declarationLines, parseCeiling, ceilingLine, crashRecord, phaseLine } from './author-readout.mjs';
+import {
+  declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
+} from './author-readout.mjs';
 
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
@@ -292,9 +296,12 @@ try {
     verdictType: VERDICT,
     repoPath: PATIENT,
     lang: LANG,
-    // the picked class's own frozen set — LOCKED classes never reach here, they
-    // refuse at admission before their questions are ever asked
-    questions: VERDICT === 'green' ? questionsFor(VERDICT) : null,
+    // the picked class's own frozen set — a LOCKED class never reaches here, it
+    // refuses at admission before its questions are ever asked, and asking for a
+    // locked set THROWS. Keyed off `LIVE_CLASSES` rather than the literal `green`
+    // so admitting a class (softgreen module 3 did exactly that) does not leave
+    // this line silently handing its questions back as `null`.
+    questions: LIVE_CLASSES.includes(VERDICT) ? questionsFor(VERDICT) : null,
     provider,
     generate: makeLoopGenerate(provider),
     // ONE number, both paid seams (the survey's and the declaration loop's) — the
@@ -391,6 +398,20 @@ try {
     // this block is otherwise reachable only after a paid scout and a paid model call,
     // and a readout no test can reach is a readout nothing checks.
     for (const l of declarationLines(spec)) console.log(l);
+    // …and, for a close that JUDGES, the two artifacts the judge is signed with.
+    // NAMED DEFERRAL, said out loud rather than implied: this script is
+    // non-interactive (answers in, files out), so it does not offer the D5 fix
+    // step — the proposal is signed AS PROPOSED. The library seam exists
+    // (`authorCloseForJob({signerFix})`) and the interactive surface is the
+    // interview's and the UI's (N6), which is the same split the guard battery
+    // already lives under here: shown, not edited at this surface.
+    const rubric = rubricLines(spec);
+    if (rubric.length) {
+      for (const l of rubric) console.log(l);
+      console.log(`  source     ${authored.judged?.source ?? 'unknown'}`
+        + (authored.judged?.source === 'proposal' ? '  (proposed and stored unedited — this script offers no fix step)' : ''));
+      for (const s of authored.judged?.scrubbed ?? []) console.log(`  MASKED     ${s.path} — the stored bytes differ from what was typed`);
+    }
     console.log(`written    ${specFile}`);
 
     // `shellCapUsd` COUPLES to the spec's own budget, exactly as run-u does it at the
@@ -409,12 +430,36 @@ try {
       emit('author-end', { outcome: 'spec-invalid' });
       process.exitCode = 1;
     } else {
-      // ── 3. D9's three gates. Nothing here judges the close; it measures it. ───
+      // ── 3. D9's gates. Nothing here judges the close; it measures it. ────────
+      //
+      // THE JUDGE SEAM, wired only when the close actually judges. It is a
+      // SEPARATE provider pinned to `JUDGE_MODEL`: the judge tier is never the
+      // drafter's model and never agent-selectable, and §4.2's safety argument is
+      // worth exactly as much as the tier its injection evidence was measured on.
+      // Absent it, `prepareSigning` refuses the close as a wiring gap rather than
+      // signing an ungraded ruler.
+      const judges = (spec.closeDecl?.stages ?? []).some((s) => s?.kind === JUDGED_FLOOR_KIND);
+      const judgeProvider = judges ? new AnthropicProvider({ apiKey, model: JUDGE_MODEL }) : null;
+      if (judges) {
+        console.log(`\ncalibration gate — REAL judge calls at ${JUDGE_MODEL}, one per case plus the injection battery.`);
+        console.log('  this is the only gate that spends money, and it runs after every free one.');
+      }
       const signing = await prepareSigning({
         spec, workdir: PATIENT, seedRef: authored.seedRef, timeoutMs: TIMEOUT_MS,
         // gate 1a re-runs the job validator inside prepareSigning — same coupling, or
         // the spec that just passed above would fail the gate that signs it
         shellCapUsd: spec.budgetUsd,
+        // …and the SAME operator ceiling the scout and the declaration loop ran under,
+        // with everything they spent folded in. The gate is this run's third and
+        // largest paid seam; without both halves the advertised budget and the
+        // enforced budget are two different numbers, and re-invoking a seam under one
+        // number would silently widen it.
+        ceilingUsd: CEILING_USD,
+        priorCalls: [...metered],
+        judgeLoop: judgeProvider ? (o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system }) : null,
+        // the gate's spend joins the run's ONE metered list, under the judge call's
+        // own label — a close's calibration is money like any other money (F12)
+        onJudgeCost: (c) => onCall({ label: `${c.label}:${c.id}`, costUsd: c.costUsd, unpricedRounds: c.unpricedRounds }),
       });
       const signingFile = writeOut('signing.json', signing);
       emit('signing', { ok: signing.ok, specHash: signing.specHash, seedRef: signing.seedRef, gates: signing.gates });
@@ -423,11 +468,28 @@ try {
       console.log('\ngates');
       console.log(`  1 declaration  ${g.declaration?.ok ? 'PASS' : 'FAIL'}  grounded=${g.declaration?.grounded ?? '-'}${g.declaration?.scoped ? `  scoped=${JSON.stringify(g.declaration.scoped)}` : ''}`);
       console.log(`  2 precheck     ${g.precheck === null ? 'not reached' : (g.precheck.ok ? 'PASS — every stage ran' : `FAIL — ${g.precheck.stops.length} stage(s) could not run`)}`);
-      console.log(`  3 seed verdict ${g.seedVerdict === null ? 'not reached' : (g.seedVerdict.ok ? `PASS — work red at seed: ${g.seedVerdict.workRed.join(', ')}` : 'FAIL — no work stage is red at the seed')}`);
+      // ruling 3: the judged-ONLY close clears this gate on its calibration, so the
+      // line says PASS and names the proof — printing FAIL beside a signable spec
+      // would be the readout disagreeing with the gate it reports on
+      console.log(`  3 seed verdict ${g.seedVerdict === null
+        ? 'not reached'
+        : (g.seedVerdict.ok
+          ? `PASS — work red at seed: ${g.seedVerdict.workRed.join(', ')}`
+          : (g.seedVerdict.satisfiedBy === 'calibration'
+            ? 'PASS via the CALIBRATION gate — this close\'s only work stage is judged'
+            : 'FAIL — no work stage is red at the seed'))}`);
       if (g.seedVerdict) {
         console.log(`      red at seed:   ${g.seedVerdict.redAtSeed.join(', ') || '(none)'}`);
         console.log(`      green at seed: ${g.seedVerdict.greenAtSeed.join(', ') || '(none)'}`);
+        // ruling 3: a judged-ONLY close clears gate 3 on its calibration instead,
+        // and the surface SAYS which proof carried it rather than leaving a reader
+        // to wonder why an empty workRed list passed
+        if (g.seedVerdict.satisfiedBy === 'calibration') {
+          console.log('      a judged stage skips the seed read (ruling 8), so this close\'s proof that it CAN fail is');
+          console.log('      the graded calibration set below — signed cases it must red as well as ones it must pass.');
+        }
       }
+      if (judges) for (const l of calibrationLines(g.calibration)) console.log(l);
 
       /** the seed evidence a user READS to decide whether this close measures their
        * job. `value`/`baseline` print as `unknown` when absent — never as 0. */
@@ -464,7 +526,12 @@ try {
       if (signing.specHash && signing.specHash !== hash) {
         console.log(`  NOTE  prepareSigning hashed ${signing.specHash} — the validator normalized the spec; sign the resolved one.`);
       }
-      console.log(`total cost ${costLine(authored.cost)}   (the gates spend no tokens — they run commands)`);
+      // THE WHOLE RUN's spend, off the ONE metered list — which now has two
+      // populations in it. Gates 1-3 spend no tokens (they run commands); gate 4
+      // buys a real judge call per case, so a line saying "the gates spend no
+      // tokens" would have been false the moment a judged close reached here.
+      console.log(`authoring  ${costLine(authored.cost)}`);
+      console.log(`total cost ${costLine(costSoFar())}${judges ? '   (includes the calibration gate\'s judge calls)' : '   (gates 1-3 spend no tokens — they run commands)'}`);
 
       if (!signing.ok) {
         console.log('\nSIGNING NOT PREPARED — the close did not clear D9\'s gates. Nothing was signed and nothing was run.');

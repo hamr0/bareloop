@@ -15,9 +15,25 @@ import { join } from 'node:path';
 import { LiteCtx } from 'litectx';
 import { validateJob, jobSpecHash, checkApproval } from './job.js';
 import { runPlan } from './planrun.js';
-import { SMOKE_STORE } from './kinds.js';
+import { SMOKE_STORE, resolveHumanRuling } from './kinds.js';
 
 /** @typedef {{code: string, path: string, detail?: string}} Red */
+
+/**
+ * THE ROUND RECORDS THE ONE LEDGER SUMS — as data, because two of them now exist
+ * and a hand-spelled condition per record is how a paid call comes to be free.
+ *
+ * `worker-round` is the attempt's own spend, metered per ROUND rather than per
+ * attempt-return (F12: a halted attempt's spend was invisible by 300×).
+ * `judge-round` is the CLOSE's, and it is the first spend a close has ever had:
+ * the judged floor (softgreen) buys a pinned locate call per artifact, and the
+ * budget-identity rule is that a budget funds the attempt PLUS its close. Both
+ * carry the honest `costUsd` — a null lands as `unpriced` and halts, never as $0.
+ *
+ * What is deliberately NOT here: `worker-result` / `worker-plan`, which are
+ * attempt TOTALS of the same rounds and would double-count.
+ */
+export const ACCOUNTED_ROUND_TYPES = Object.freeze(['worker-round', 'judge-round']);
 
 
 /**
@@ -77,6 +93,13 @@ async function primitiveSmoke(workdir) {
  *   metered claude-json text provider for the toolless drafter); ignored on every Loop-driven provider
  * @param {(type: string, data?: object) => object} opts.emit spine emitter
  * @param {(tier: string) => any} [opts.providerFor] P: per-step model-tier provider factory (forwarded to the plan flow)
+ * @param {any} [opts.judgeProvider] SOFTGREEN — the provider a JUDGED close stage runs its
+ *   locate call through, wired by the operator and PINNED to `JUDGE_MODEL` (src/judged.js:
+ *   the only tier with established injection resistance upstream). Forwarded to the plan
+ *   flow. It is its own seam and not `provider`/`providerFor`, because the judge tier is
+ *   never a step knob and never agent-selectable; absent, a judged stage instrument-stops as
+ *   a wiring gap rather than grading on whatever binding happened to be at hand. Its spend
+ *   lands on this ledger as `judge-round` (see `ACCOUNTED_ROUND_TYPES`).
  * @param {number} [opts.capRuns] shell-owned iteration cap for the plan flow's
  *   CLOSE-FIX loop (a plan STEP runs under the strike ladder instead)
  * @param {number} [opts.strikeLimit] shell-owned strike ceiling for a plan step's ladder
@@ -145,13 +168,26 @@ async function primitiveSmoke(workdir) {
  *   RESUMES a paused run and forwarded verbatim to the plan flow. Absent on every
  *   ordinary run; never authored and never defaulted (a defaulted answer to "is this
  *   done?" is the rubber-stamp the class exists to prevent, 2026-08-12 §4).
+ * @param {{decision: string, text?: string|null, receivedAt?: string|null}|null} [opts.heldRuling]
+ *   F102 — the answer the CHECKPOINT holds (`readResume`'s `restart.pendingDecision`):
+ *   a decision a person already gave on a leg that stopped before a single round was
+ *   bought for it. Forwarded verbatim; the plan flow applies it exactly as a fresh one
+ *   and refuses a leg handed both. It is also what decides whether the TIME fold this
+ *   run declares is the chain's or this engagement's (F103).
+ * @param {boolean|null} [opts.reviewDoor] MODULE 8 — does this run END at the review
+ *   door (PRD v1.71 §3)? Forwarded verbatim to the plan flow, which owns the class
+ *   default. It changes what the run RECORDS and never what it returns: the door is a
+ *   disposition and the loop's verdict is not the door's to touch.
+ * @param {{text: string, fromRunid?: string|null, receivedAt?: string|null}|null} [opts.doorRerun]
+ *   MODULE 8 — this leg IS the fresh engagement a signer commissioned at a previous
+ *   run's review door, carrying their words. Forwarded verbatim.
  * @returns {Promise<string>} outcome: 'green' | 'already-green' | 'escalated' |
  *   'unapproved-spec' | 'job-red' | 'smoke-red' | 'plan-red' | 'check-red' |
  *   'close-red' | 'close-unsupported' | 'recipe-stale' | 'branch-red' | 'pricing-red' | 'provider-red' |
  *   'interpreter-red' | 'cap-halt' | 'wall-halt' | 'step-stalled' |
  *   'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, layerRoot = false, bridge = null, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null }) {
+export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, layerRoot = false, bridge = null, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, reviewDoor = null, doorRerun = null }) {
   // 0. the ledger's counters, declared FIRST so that every job-end — including
   // the pre-token reds below — can state a real figure. An omitted `spentUsd` is
   // not a zero: a consumer reads `undefined` and either crashes or launders it
@@ -162,6 +198,11 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // number that enters the arbiter's arithmetic: a garbage fold is 0, never a NaN
   // that would poison every later comparison into "no cap".
   let spentUsd = typeof priorSpentUsd === 'number' && Number.isFinite(priorSpentUsd) && priorSpentUsd > 0 ? priorSpentUsd : 0;
+  /** F103's money half — the CHAIN's fold, kept as its own figure so `spentUsd`
+   * (the chain total, what a person reads and what the ceiling governs) and THIS
+   * ENGAGEMENT's spend can be stated side by side on every terminal. Two things
+   * counted by one number will eventually be asked to disagree. */
+  const chainFoldUsd = spentUsd;
   let unpriced = false;
   // RESUME (v1.46 §3): was the FOLD itself exact? `readResume` marks it false when any
   // round inside the dead attempt came back unpriced, and that unknown does not heal by
@@ -201,7 +242,16 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // ONE spelling of the four causes, so the terminal and the in-flight money readout can
   // never disagree about whether the same run's figure is exact.
   const spendComplete = () => !unpriced && !stalled && !cutMidCall && !priorFloor;
-  const spend = () => ({ spentUsd, spendComplete: spendComplete() });
+  const spend = () => ({
+    spentUsd,
+    spendComplete: spendComplete(),
+    // F103's second counter, on every terminal beside the chain total it is NOT.
+    // `spentUsd` is cumulative-so-far (this job, across engagements) and governs the
+    // ceiling; this is what THIS engagement spent. Always emitted, never conditional
+    // on there being a fold: a consumer that has to branch on field presence is a
+    // consumer that will read absence as zero.
+    engagementSpentUsd: Math.max(0, spentUsd - chainFoldUsd),
+  });
   // 1. human-signs-always — before ANY provider call (N1 decision #1)
   if (!checkApproval(rawSpec, approvals)) {
     emit('job-end', { outcome: 'unapproved-spec', detail: 'no approval record matches this exact spec version', ...spend() });
@@ -214,6 +264,11 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
     return 'job-red';
   }
   const job = /** @type {any} */ (jv.job);
+  /** F103 — the two TIME figures, resolved once here and read the same way by
+   * `runPlan`'s clock. An unreadable ruling resolves to `fresh: false` and folds as
+   * it always did; `runPlan` is where it is refused, so this never has to. */
+  const chainWallMs = typeof priorWallMs === 'number' && Number.isFinite(priorWallMs) && priorWallMs > 0 ? priorWallMs : 0;
+  const wallFold = resolveHumanRuling(humanRuling, heldRuling, doorRerun).fresh ? 0 : chainWallMs;
   emit('job-start', {
     job: job.job, specHash: jobSpecHash(job), budgetUsd: job.budgetUsd,
     shape: 'plan', goal: job.goal,
@@ -226,7 +281,17 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
     // A fold of $0 that is NOT exact is still a fold — the unknown is the whole of what
     // it inherited, and it is the only field that can carry it forward.
     ...(spentUsd > 0 || priorFloor ? { priorSpentUsd: spentUsd, priorSpendComplete: !priorFloor } : {}),
-    ...(typeof priorWallMs === 'number' && Number.isFinite(priorWallMs) && priorWallMs > 0 ? { priorWallMs } : {}),
+    // …and the TIME fold, which F103 splits in two. `priorWallMs` is what the next
+    // reader ADDS to (the bound), and it is engagement-scoped: a rerun opens a fresh
+    // engagement, so the minutes the person did not commission are not a bound on
+    // anybody. `chainWallMs` is the cumulative view and is declared whenever there is
+    // one, so nothing is lost — the readout keeps spanning the chain (the halt readout
+    // and the leg's own governor answer different questions and are never mixed).
+    // The `fresh` reading comes from the ONE resolver `runPlan`'s clock reads, never a
+    // second spelling of "is this a rerun" (that is how a record and a clock come to
+    // disagree about the same leg).
+    ...(wallFold > 0 ? { priorWallMs: wallFold } : {}),
+    ...(chainWallMs > 0 && chainWallMs !== wallFold ? { chainWallMs } : {}),
     // the REPLAN ledger, on the same declaration and for the same reason — a chain of
     // resumes must fold once. This is the DIRECT-spine half of it: `readResume`'s
     // `direct` mode opens its one implicit window on `job-start` and reads the fold off
@@ -265,7 +330,9 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
     // `account` reds the run on ANY unpriced round (a null cost is the honest
     // unknown, never $0 — F6): per-round metering means a partially-unpriced run
     // is caught natively, round by round, with no separate unpricedRounds tally.
-    if (type === 'worker-round') account(/** @type {any} */ (data)?.costUsd);
+    // …and the CLOSE's own rounds sum into the same wallet the moment a close can
+    // spend at all (the judged floor): one ledger, never a second arithmetic.
+    if (ACCOUNTED_ROUND_TYPES.includes(type)) account(/** @type {any} */ (data)?.costUsd);
     // W1: a `stall` is the plan flow announcing it ABANDONED a call and reissued
     // it. The abandoned call's spend is unknowable from here (billed or not,
     // indistinguishable), so from this point the priced sum is a floor no matter
@@ -289,7 +356,7 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // accounts it natively (F12) and the job-end money contract is unchanged.
   {
     const outcome = await runPlan(job, {
-      workdir, provider, nativeProvider, providerFor, emit: meter, capRuns, ...(strikeLimit !== undefined ? { strikeLimit } : {}), closeTimeoutMs, layerRoot, bridge, priorWallMs, resumeSeed, resumeGrades, resumeReplans, resumeBranch, humanRuling,
+      workdir, provider, nativeProvider, providerFor, judgeProvider, emit: meter, capRuns, ...(strikeLimit !== undefined ? { strikeLimit } : {}), closeTimeoutMs, layerRoot, bridge, priorWallMs: chainWallMs, resumeSeed, resumeGrades, resumeReplans, resumeBranch, humanRuling, heldRuling, reviewDoor, doorRerun, priorSpentUsd: chainFoldUsd,
       remainingUsd: () => Math.min(shellCapUsd, job.budgetUsd - spentUsd),
       isUnpriced: () => unpriced, // F6: let the plan flow bail in-flight, not just after it returns
       spendComplete, // …and let its money-halt readout say whether the remaining it quotes is exact

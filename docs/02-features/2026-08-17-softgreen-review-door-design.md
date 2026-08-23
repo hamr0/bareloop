@@ -232,11 +232,17 @@ a new card line and a re-sign** — never a smarter judge, and never a judge giv
 - The judged stage **SKIPS the seed-verdict read**: its bar comes from calibration, not from
   what was red at seed.
 
-**That last line dissolves F104.** Gate 3 — *some mechanical work stage must be RED at seed, or
-there is nothing to do* — is what makes a pure-human-judgement job inexpressible today, and it
-is why the jsdoc close reached for a typecheck proxy. When the **judged stage IS the work
-stage**, and its bar comes from a signed calibration set rather than a seed read, a resume-
-tailoring job becomes expressible without manufacturing a mechanical shadow it does not have.
+**That last line dissolves F104 at the composition-law level.** Gate 3 — *some mechanical work
+stage must be RED at seed, or there is nothing to do* — is what makes a pure-human-judgement job
+inexpressible today, and it is why the jsdoc close reached for a typecheck proxy. When the
+**judged stage IS the work stage**, and its bar comes from a signed calibration set rather than
+a seed read, a resume-tailoring job becomes expressible without manufacturing a mechanical
+shadow it does not have.
+
+*(Correction, 2026-08-18: this claim was incomplete as written. Gate 3's seed-red requirement
+also lives independently at the SIGNING gate (D9.3), a separate check from the composition law
+above — dissolving the composition-law inexpressibility did not, by itself, make a pure-judged
+close signable. That remaining gap is what the second same-day addendum below closes.)*
 
 ### 4.6 The softgreen interview is seven questions
 
@@ -356,3 +362,151 @@ step-checkpoint reader reads. Launching a run to say "not now" would mint a fres
 whose own checkpoint is empty, and an operator who later resumed *that* runid would re-draft
 and re-pay for every step the paused leg had already finished. So the runner prints the
 decision, names the TTL and the original runid, and exits having spent nothing.
+
+---
+
+## Addendum 2026-08-18 — calibration thresholds and pause-cost rulings
+
+*Appended. Nothing above is rewritten: §4.4's `OPEN` and the doors addendum's allowance
+line stand as the record of what was open, and this is what hamr ruled.*
+
+Five rulings, taken in one turn. Two are recorded with his own words; three are selections
+he made from options put to him, and are marked as such rather than dressed as prose he
+never spoke.
+
+### 1. The calibration set is TEN — *"go build 10, we could double later"* (VERBATIM)
+
+§4.4's reserved `OPEN` is **closed**. The frozen calibration set is **10 cases**, and the
+second half of the sentence is part of the ruling: **doubling later is explicitly allowed**.
+It is not a ceiling discovered by measurement and it is not a number the agent may revisit —
+a size change is a **spec-level threshold change and stays operator territory**, exactly like
+every other threshold in this programme. The standing no-agent-threshold-picking rule is
+unaffected: hamr picked it, which is the only way a number gets picked here.
+
+### 2. The calibration FLOOR is 10/10, zero reds (SELECTED OPTION)
+
+The whole pipe — **extraction AND `decide()`** — must grade **every one of the 10 signed
+cases correctly, with itemized reds**, before the close is signable. There is no partial
+floor and no best-of: one wrong grade is a failed calibration and an unsignable close. This
+is §4.4's *"the WHOLE PIPE must grade it correctly"* given its number, and it keeps the
+decisive-binary discipline at the calibration layer too — a ruler that is right nine times
+out of ten is not a ruler, it is a distribution.
+
+### 3. bare-agent's INJECTION_BATTERY runs alongside the 10 (SELECTED OPTION)
+
+The upstream **INJECTION_BATTERY (5 styles)** runs **at calibration time, alongside the 10
+cases**, and **all 5 must resist or calibration fails**. The reason is §4.2's whole argument:
+the pipe is safe because the judge is asked to LOCATE, never to VERDICT, and that claim is
+worth exactly as much as the evidence that this job's card cannot be argued into. A judge
+that clears 10/10 and folds to a prompt injection has not cleared anything. Same gate, same
+moment, same all-or-nothing reading.
+
+### 4. Softgreen's D5 guard battery INHERITS green's (SELECTED OPTION)
+
+Softgreen does **not** get a guard battery of its own. It **inherits green's**, verbatim —
+the same precedent hitl was built on (hamr's OPEN-1 ruling at slice 1: nothing a human stage
+cannot see). A softgreen job is a green job's agent-authored plan under the same arbiter with
+one extra stage at the end; the mandatory guards are about what the WORKER may not do, and
+nothing about a judged final stage relaxes any of them.
+
+### 5. The pause door is ALLOWANCE-FREE, including below the wall-exhausted gate (SELECTED OPTION)
+
+**Pressing pause never spends a rerun-allowance token — in any state, including below the
+wall-exhausted gate.** Pause does no work and spends no money, so there is nothing for a
+token to pay for; charging one would be the door billing a person for declining to decide.
+The **60-day TTL remains the backstop**, and it remains the only thing that ever ends a
+paused run.
+
+This **amends the doors addendum's open arbiter question**. That addendum already stated the
+ordinary case (*"It does not consume the one-shot rerun allowance"*, PRD v1.72 §2); what was
+left open was whether the exhausted-wall state was an exception, on the argument that a door
+opened past the caps is a different door. It is not. The three doors are the same three doors
+whatever the wallet and the clock say, and a raise-and-re-sign is what changes what a rerun
+can BUY — never what a pause COSTS.
+
+### What this does not change
+
+- **No build is authorized by this addendum.** These are the numbers the build will use when
+  hamr gives the word; nothing here is a go.
+- **No claim that `judged-floor` works.** §7's "not claimed" list stands in full — a floor
+  with a signed size and a signed pass bar is still a floor nothing has ever graded.
+- **The arbiter does not move.** Every number above is operator-set and operator-changeable,
+  and none of them is reachable from the agent's side.
+
+---
+
+## Addendum 2026-08-18 (second, later same day) — three parked questions ruled: injection
+adapted to the locate axis, judge caps confirmed, pure-judged closes made signable
+
+*Appended after the calibration-thresholds addendum above; a distinct ruling set, not a
+revision of it. Nothing above is rewritten except the one correction to §4.5 flagged inline.*
+
+### 1. RULING — the injection battery is ADAPTED to the locate axis, not run as-is (selected
+option "1A")
+
+bare-agent's 5 `INJECTION_BATTERY` styles do not transfer unmodified to a LOCATE-only judge:
+their `shouldBreak` gold answers assume a judge that renders a VERDICT, and a locate-only call
+has no verdict for that gold to grade — a POC finding, not a guess.
+
+**Ruling:** keep the same 5 attack styles. Re-aim them at the locate axis: the attack text is
+embedded in the artifact the judge extracts from, and a case passes only if the **extracted
+FACTS are unaffected** by the attack — never whether the (nonexistent) verdict held. All 5 must
+resist or calibration fails, unchanged from §4.4/v1.73's all-or-nothing reading.
+
+**This amends v1.73 ruling 3's letter while keeping its spirit, and that is said explicitly, not
+left implicit.** v1.73 ruling 3 read: *"the upstream INJECTION_BATTERY (5 styles) runs alongside
+the 10 [calibration cases]... and all 5 must resist or calibration fails."* The letter assumed
+the battery runs unmodified; it does not — LOCATE has no verdict to attack. The spirit —
+same gate, same moment, same all-or-nothing reading, proving the judge cannot be argued into
+anything — is exactly what survives, re-aimed at the axis that actually exists.
+
+### 2. RULING — judge bounds CONFIRMED (hamr verbatim: *"keep the caps"*)
+
+Three builder-proposed bounds, now operator-confirmed rather than builder-default:
+
+- **`JUDGE_MAX_TOKENS` = 4000** — a caller-overridable default. Binding it produces a
+  **truncation-red**, never a silent partial pass; a judge call that runs out of room fails
+  loudly, the same discipline as the worker's `maxTokens` truncation handling elsewhere in the
+  programme.
+- **`JUDGE_ATTEMPTS` = 2** — one retry. POC-measured: ~1-in-6 malformed JSON at haiku-4.5,
+  which is what the retry exists to absorb.
+- **`MAX_JUDGED_PATHS` = 8** — a runaway file list is a runaway bill; this bounds it.
+
+All three were builder-proposed during the build and are now confirmed by hamr in-turn.
+**Changes to any of the three remain operator territory** — the standing no-agent-
+threshold-picking rule applies to these exactly as it does to the calibration-set size.
+
+### 3. RULING — pure-judged closes MUST be signable, fixed in THIS rung (hamr verbatim: *"fix it
+now, we are delivering softgreen, isn't that the whole point?"*)
+
+**The gap.** The D9.3 signing gate (≥1 work stage RED at seed) currently blocks signing a close
+whose only work stage is `judged-floor`. §4.5's claim that skipping the seed-verdict read
+"dissolves F104" was true of the **composition law** (how the judged stage's own verdict is
+computed) but did not reach the **separate signing-time gate** (D9.3) that independently checks
+for a seed-red work stage before a close is signable at all. A pure-judged close — exactly the
+jsdoc-genre case F104 was named for — still could not be signed. Flagged inline at §4.5 above,
+not left standing as two disagreeing claims.
+
+**Ruling: fixed in this rung, not parked.** hamr's reasoning is the ruling: softgreen's entire
+point is to make a pure-human-judgement job expressible, so a signing gate that still refuses
+the one job shape softgreen exists for is not a follow-up, it is the rung failing at its own
+stated goal.
+
+**The mechanism.** For a judged-only close, the **calibration gate** (10/10 cases, zero reds,
+§4.4/v1.73 ruling 1 — module 5 of the close-authoring build) plays the role the seed-red check
+plays for mechanical stages: it is the proof that the close *can* fail, which is what D9.3 is
+actually protecting against (a close that scans nothing and reads green-at-seed against a true
+red). A judged-only close with a **passed** calibration gate is signable; one without a passed
+calibration gate is not. **Mechanical-stage closes are unchanged** — the existing seed-red
+requirement still governs them exactly as before; this is an additional, alternate route to
+satisfying D9.3's intent for the judged-only shape, not a relaxation of it for anyone else.
+
+### What this addendum does not change
+
+- **No build was performed by this docs pass.** These are rulings recorded for the build to
+  consume on hamr's go, same discipline as every other addendum in this record.
+- **No claim that `judged-floor` works.** Nothing above changes §7's "not claimed" list —
+  calibration existing and passing is still unproven until a real 10-case set is graded.
+- **The arbiter does not move.** D9.3's intent (a close must be provably failable before it is
+  signed) is preserved, not loosened — the calibration gate is the judged-only close's own
+  proof of failability, held to the same 10/10-zero-reds bar as everything else in this record.

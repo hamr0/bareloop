@@ -3048,6 +3048,33 @@ test('a bridge that FAILS the load gate is the recipe-stale terminal: zero token
   assert.ok(esc.options.some((o) => /cold/i.test(o)), `the cold option is offered by name: ${JSON.stringify(esc?.options)}`);
 });
 
+test('softgreen module 6: a HELD workflow is refused at the same door — a judged green earns no reuse until a signer accepts it', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([{ text: 'scout' }, { text: PLAN(wd) }]);
+  // every version held: selection already skips these, and this is the same rule at the
+  // point of CONSUMPTION, so a caller handing one in directly cannot spend ungranted credit
+  const held = BRIDGE({
+    versions: [{ ...version(BRIDGE_PLAN, 'ms-newest', 'third-repo'), quarantined: true }],
+    history: [{ ...greenRow('ms-newest', 'third-repo'), quarantined: true }],
+  });
+  const { outcome, events } = await go(wd, provider, { bridge: held });
+  assert.equal(outcome, 'recipe-stale');
+  assert.equal(provider.calls.length, 0, 'refused at the door — not one token was spent');
+  const gate = events.find((e) => e.type === 'bridge-gate');
+  assert.equal(gate?.outcome, 'quarantined', 'and it says HELD, not stale: the recipe is the right kind, it is simply unaccepted');
+  assert.equal(gate.reds[0].code, 'quarantined');
+  assert.ok(!events.some((e) => e.type === 'bridge-loaded'));
+  assert.match(events.find((e) => e.type === 'escalation')?.options.join(' ') ?? '', /accept/i, 'the door that would release it is offered by name');
+
+  // the RELEASED half of the same fixture inherits exactly as it always did
+  const released = BRIDGE({
+    versions: [{ ...version(BRIDGE_PLAN, 'ms-newest', 'third-repo'), quarantined: false }],
+    history: [{ ...greenRow('ms-newest', 'third-repo'), quarantined: false, doors: [{ decision: 'accept', at: '2026-08-18T00:00:00Z' }] }],
+  });
+  const ok = await go(wd, scriptedProvider([{ text: 'scout' }, { text: PLAN(wd) }]), { bridge: released });
+  assert.ok(ok.events.some((e) => e.type === 'bridge-loaded'), 'released is reused, and the run carries on');
+});
+
 test('a MALFORMED bridge is refused at the same door, by its own reds — never a throw on the way to reading its plan', async (t) => {
   const wd = makePatient(t);
   const provider = scriptedProvider([{ text: 'scout' }, { text: PLAN(wd) }]);

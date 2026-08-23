@@ -66,6 +66,7 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { globToPrefix, isNonEmptyString } from './validate.js';
 import { CLOSE_ENV_DENY } from './ralph.js';
+import { runLocate, decide, validateCard, LOCATE_AXES, LOCATE_LABEL, JUDGE_MODEL } from './judged.js';
 
 /** the close's two judgment exits — a stage's verdict, in the shape the
  * hand-written closes already spoke (exit code is truth) */
@@ -132,18 +133,46 @@ export const STOP_FAULTS = Object.freeze({
 
 export const AGGREGATES = Object.freeze(['first', 'sum']);
 export const SIGNS = Object.freeze([1, -1]);
-/** every kind this executor implements. `judged-floor` / `human-confirms`
- * are catalogue entries and are deliberately absent here: declaring one is
- * counted demand (the request-red path), and reaching one at runtime is a
- * stop — never a red, and never a silent pass. */
-export const LIVE_KINDS = Object.freeze(['command-exit', 'count-not-worse', 'pattern-absent-in-diff', 'files-changed', 'human-confirms']);
+/** every kind this executor implements. It is asserted EQUAL to the catalogue's
+ * own live half by the suite, both directions: a kind the catalogue offers and
+ * this executor cannot run is a close that stops at runtime, and a kind this
+ * executor runs that the catalogue never names is a capability nothing can
+ * reach. `judged-floor` joined at softgreen module 2 — the runner and the
+ * catalogue unlock in ONE commit for exactly that reason. */
+export const LIVE_KINDS = Object.freeze(['command-exit', 'count-not-worse', 'pattern-absent-in-diff', 'files-changed', 'human-confirms', 'judged-floor']);
+/**
+ * The judged stage's ladder: ONE attempt plus ONE retry, and no more.
+ *
+ * The POC measured a malformed emission roughly 1 in 6, which is exactly the
+ * shape a single retry buys down and a longer ladder buys nothing more of — each
+ * further attempt is another paid call against the same unchanged artifact and
+ * the same unchanged prompt. It is a CEILING the arbiter owns, never a knob a
+ * declaration can widen: a stage that could re-ask a model forever is a stage
+ * that can spend a budget without ever rendering a verdict.
+ *
+ * A `pricing-red` is never retried at all (see `runJudgedFloor`): a retry of an
+ * unpriced call only buys more spend nobody can see (F6).
+ */
+export const JUDGE_ATTEMPTS = 2;
+/**
+ * The ceiling on how many artifacts ONE judged stage may buy a judgement of —
+ * the sibling of `MAX_TERMS` and `MAX_STAGES`, and here for the same reason: a
+ * runaway list is a bill, not a red. Enforced by the catalogue's validator
+ * before any token, so a declaration that names more is refused at the gate
+ * rather than discovered at the invoice.
+ */
+export const MAX_JUDGED_PATHS = 8;
 /** RULING 8 — the stages the seed-verdict read (D12) must NOT run. A judged
  * number at seed is unstable and a person at seed is an interview, not a
  * measurement; their bar comes from calibration (soft-green) or from the person
  * themselves (hitl), never from the seed. The skip is RECORDED by name rather
  * than taken in silence (F59: absent is not empty), so `seedRead` still returns
  * one row per declared stage. */
-export const SEED_EXEMPT_KINDS = Object.freeze(['judged-floor', 'human-confirms']);
+/** the one kind a MODEL renders. Named once for the same reason `HUMAN_KIND` is:
+ * the authoring pipeline, the card, the catalogue and the close each key a
+ * decision on it, and five literals is how they come to disagree. */
+export const JUDGED_FLOOR_KIND = 'judged-floor';
+export const SEED_EXEMPT_KINDS = Object.freeze([JUDGED_FLOOR_KIND, 'human-confirms']);
 /** the one kind a PERSON renders — named once, because the runner keys three
  * decisions on it (is there a door to answer, which stage paused, whose ruling
  * this is) and three literals is how they come to disagree */
@@ -160,17 +189,92 @@ export const HUMAN_KIND = 'human-confirms';
  * to make one. */
 export const HUMAN_DECISIONS = Object.freeze(['accept', 'rerun', 'pause']);
 
+// ── THE REVIEW DOOR's vocabulary (softgreen module 8, PRD v1.71 §3) ──────────
+//
+// The pause machinery re-homed: the same three doors, one level out — from a
+// stage INSIDE the close to the door at the END of a run. The vocabulary lives
+// here, beside the doors themselves, because `src/planrun.js` needs it to OPEN a
+// door and `src/reviewdoor.js` needs it to ANSWER one, and a constant imported
+// through the answering module would drag the registry (and `runJob` behind it)
+// into the run's own import graph.
+
+/** the door's record type on the spine. It is a DISPOSITION, never a verdict:
+ * hamr's law, verbatim — *"it's important not to change the loop self verdict"*.
+ * The close mints the verdict before this is written, and nothing downstream of
+ * this record may change what the ledger recorded. */
+export const REVIEW_DOOR = 'review-door';
+
+/** the terminals a door opens on: the verdict-bearing ones, and only those. A red,
+ * a casualty and a governance halt are not offered to a person as merchandise —
+ * they are already decision-ready in their own right, with their own levers. */
+export const DOOR_OPEN_OUTCOMES = Object.freeze(['green', 'already-green']);
+
+/** the classes whose door opens WITHOUT being asked for. Soft-green is here
+ * because the judge is young: its green is quarantined at mint (module 6) and a
+ * person's `accept` is the only thing that releases the credit, so a run that
+ * never offered the door would hold its own credit forever.
+ *
+ * `green` is deliberately ABSENT, and that is the one operator-facing default in
+ * this module: a green-class run behaves exactly as it always has unless the
+ * runner asks for the door (`reviewDoor: true`, `--review-door`). PRD v1.71 §3
+ * says *"the door at the end of EVERY run"* and also that a green door is
+ * NON-BLOCKING, and the two readings differ only in whether an unasked-for door
+ * appears on an existing job's spine. Flipping it is one line — adding `'green'`
+ * here — and it is hamr's to flip, not this module's to assume. A constant, never
+ * a threshold; widening it is arbiter territory. */
+export const REVIEW_DOOR_CLASSES = Object.freeze(['soft-green']);
+
+/**
+ * Does this run end at a review door? The operator's flag WINS in both
+ * directions and is never inferred: `true` opens it for any class, `false` shuts
+ * it for any class, and `null`/absent is the class default above.
+ * @param {any} job the signed spec (its `verdictType` is the class)
+ * @param {boolean|null} [reviewDoor] the operator's explicit choice, or null
+ * @returns {boolean}
+ */
+export function doorOpens(job, reviewDoor = null) {
+  if (reviewDoor === true) return true;
+  if (reviewDoor === false) return false;
+  return REVIEW_DOOR_CLASSES.includes(job?.verdictType ?? 'green');
+}
+
+/**
+ * The stages an `accept` re-runs: the MECHANICAL ones, and never a judged floor
+ * or a person (`SEED_EXEMPT_KINDS`, ruling 8's set, for the same reason it was
+ * drawn — a machine may re-prove a machine's reading, and may not re-prove a
+ * judgment). hamr's N4 ruling: an accept re-runs the mechanical stages, because a
+ * door lives 60 days and nothing freezes a tree.
+ * @param {any[]|null|undefined} stages
+ * @returns {any[]}
+ */
+export function mechanicalStages(stages) {
+  return (Array.isArray(stages) ? stages : []).filter((s) => !SEED_EXEMPT_KINDS.includes(s?.kind));
+}
+
 /**
  * @typedef {{code: string, path: string, detail: string}} Red
  * @typedef {{workdir: string, seedRef: string, gapKeep: string,
  *   timeoutMsDefault?: number, baselineMode?: 'auto'|'worktree',
  *   gapCap?: number, maxBuffer?: number, seedTrees?: SeedTrees,
  *   humanRuling?: {decision: string, text?: string|null}|null,
+ *   judgeLoop?: (o: {system: string}) => any,
+ *   onJudgeCost?: (c: {stage: string|null, kind: string|null, path: string, attempt: number,
+ *     label: string, model: string, costUsd: number|null, unpricedRounds: number}) => void,
  *   onStage?: (row: {stage: string|null, kind: string|null, verdict: string, durationMs: number}) => void}} Ctx
  *   The arbiter's half of a stage run. Every field here is operator/runner
  *   territory: a declaration parameterises kinds, never the contracts.
  *   `humanRuling` is the SIGNER's answer at a hitl pause, carried in from the
  *   runner — never authored, never defaulted, and absent on every ordinary run.
+ *   `judgeLoop` is the PAID seam the judged stage runs its locate call through, and
+ *   it is operator territory for the same reason the worker's provider is: this
+ *   module owns no provider and never picks one, and the judge tier is PINNED
+ *   (`JUDGE_MODEL`) rather than chosen. Absent is not a fall-back to some other
+ *   model — the stage stops as a wiring gap, the same answer `runPlan` gives a
+ *   native job with no native factory.
+ *   `onJudgeCost` is the METER, and it is the only reason a judged stage can be
+ *   funded honestly: this executor cannot reach the run's ledger, so every locate
+ *   call's cost is reported OUT through it, once per call, on every route including
+ *   the red ones — a paid call that leaves no meter record is F12 in a judge's coat.
  *   `onStage` is a REPORTING seam and nothing else: the seed read spawns a real
  *   toolchain per stage (a suite is the slow one) and a whole read is one opaque
  *   await, so the shell gets told as each stage lands. It decides nothing, it is
@@ -1406,6 +1510,79 @@ export function normalizeHumanRuling(ruling) {
 }
 
 /**
+ * WHICH ANSWER IS THIS LEG ACTING ON — the fresh one, or the one the checkpoint
+ * held? F102's cure needs one seam that can say, because two callers ask the same
+ * question (`runJob` declares the fold on `job-start` before `runPlan` reads the
+ * ruling at all), and two spellings of "is this a fresh engagement" is how the
+ * record and the clock come to disagree about the same leg.
+ *
+ * THE AMBIGUITY IS REFUSED, NEVER MERGED. A checkpoint that holds a decision and a
+ * command line that carries another are two answers to one question. Merging them
+ * picks a winner nobody chose; overriding silently discards words a person typed
+ * (the F98/F28 class at a process boundary). So it comes back as a refusal that
+ * NAMES the held decision, and the operator resolves it — by answering the held
+ * one, or by starting a fresh run against the tree as it stands.
+ *
+ * `fresh` is F103's half: a `rerun` is a FRESH ENGAGEMENT (design record §3.4 —
+ * *"redo/rerun comes with new authoring for money+time and keeps accounting of
+ * this far and this session separate counters"*), and nothing else is. An `accept`
+ * commissions no work and a `pause` runs nothing, so neither opens one.
+ *
+ * A REVIEW DOOR's rerun (module 8) is the SAME fact arriving one level out, and it
+ * is folded in here rather than beside the clock, because "is this a fresh
+ * engagement" gets ONE spelling — a second one is how a record and a clock come to
+ * disagree about the same leg, which is the very thing this resolver exists to
+ * prevent. It is deliberately NOT read as a ruling: a `humanRuling` answers a
+ * close's human STAGE and is refused for a close that has none, so the door's words
+ * stay in their own parameter and only this reading is shared.
+ *
+ * PRECEDENCE, stated because both CAN be handed to one leg: a door rerun makes the
+ * engagement fresh whatever the ruling says, and the two are OR'd, never merged.
+ * Freshness is the FAIL-SAFE direction — a fresh clock costs a leg nothing, while
+ * inheriting a dead leg's wall is F103's measured, structurally-impossible
+ * engagement. The door's own validation (empty words are refused) stays where it
+ * is, at the seam that accepts it.
+ * @param {any} fresh the answer arriving on this invocation (`--decide`), or null
+ * @param {any} held the answer the CHECKPOINT carries (`readResume`'s
+ *   `restart.pendingDecision`), or null. `receivedAt` is when the PERSON said it —
+ *   carried through so the resumed leg records the receipt, not its own re-reading.
+ * @param {any} [doorRerun] MODULE 8 — the review door's rerun, when this leg IS the
+ *   fresh engagement a signer commissioned at a previous run's door. Presence is the
+ *   whole of what is read here; the words are the accepting seam's business.
+ * @returns {{ok: boolean, why: string|null, ruling: {decision: string, text: string|null}|null,
+ *   source: 'operator'|'checkpoint'|null, receivedAt: string|null, fresh: boolean}}
+ */
+export function resolveHumanRuling(fresh, held, doorRerun = null) {
+  const has = (/** @type {any} */ v) => v !== null && v !== undefined;
+  const atDoor = has(doorRerun);
+  const none = { ruling: null, source: /** @type {any} */ (null), receivedAt: null, fresh: atDoor };
+  if (has(fresh) && has(held)) {
+    const d = typeof held === 'object' && !Array.isArray(held) ? String(/** @type {any} */ (held).decision) : String(held);
+    return {
+      ok: false,
+      why: `this checkpoint already holds a "${d}" decision that no round was ever bought for, and a second answer `
+        + 'arrived with this invocation. Two answers to one question is ambiguity, not a merge: resume with no '
+        + 'decision to act on the held one, or start a fresh run against the tree as it stands.',
+      ...none,
+    };
+  }
+  const raw = has(fresh) ? fresh : held;
+  const norm = normalizeHumanRuling(raw ?? null);
+  if (!norm.ok) return { ok: false, why: norm.why, ...none };
+  if (norm.ruling === null) return { ok: true, why: null, ...none };
+  const at = has(held) ? /** @type {any} */ (held).receivedAt : null;
+  return {
+    ok: true,
+    why: null,
+    ruling: norm.ruling,
+    source: has(fresh) ? 'operator' : 'checkpoint',
+    receivedAt: typeof at === 'string' && at.length > 0 ? at : null,
+    // OR'd, never merged: either door the person came through commissions work
+    fresh: atDoor || norm.ruling.decision === 'rerun',
+  };
+}
+
+/**
  * THE HUMAN STAGE (N4 slice 1) — the one kind that measures nothing.
  *
  * With no ruling in hand it does not RUN, it PAUSES: the fifth outcome, neither
@@ -1464,6 +1641,212 @@ async function runHumanConfirms(stage, ctx) {
   {}, STOP_FAULTS.CRASHED);
 }
 
+/**
+ * THE JUDGED FLOOR (softgreen module 2) — the one kind that BUYS its measurement.
+ *
+ * It is `src/judged.js`'s two halves wired into the close, and the split is the
+ * whole safety argument: LOCATE is a pinned, toolless model asked for facts with
+ * addresses over the AUTHORITATIVE artifact, and DECIDE is a pure arbiter-owned
+ * function with no model in it. The judge never renders a verdict; this runner
+ * renders it, from an owned rulebook, over quotes the artifact must contain.
+ *
+ * FOUR ROUTES OUT, and which is which is the load-bearing part:
+ *
+ *   - GREEN / RED come from `decide()` alone. A red is CONTENT — facts in hand,
+ *     and a card item those facts do not satisfy (or cannot be sure about, since
+ *     unsure is red). That is evidence about the tree.
+ *   - AN INSTRUMENT STOP is everything else: a card this arbiter cannot read, an
+ *     artifact that will not open, no judge seam wired, and — after the ladder —
+ *     a judge whose emission never parsed or whose call never came back.
+ *     Contract (a) names "unreadable or unparseable required output" as a stop in
+ *     so many words, and the reason is the casualty rule: our judge producing
+ *     garbage says nothing whatsoever about the worker, and grading a tree red on
+ *     it would be manufactured evidence (F45).
+ *   - A `pricing-red` locate is that same stop with the retry REFUSED: an
+ *     unpriced call cannot be summed, and buying a second one only adds more
+ *     spend nobody can see (F6).
+ *
+ * The gap is ITEMIZED (ruling 7, F38/F39): named card items, per-file, with the
+ * function names and the instrument's own quotes — never one paragraph. It rides
+ * the same `Gap` bound as every other kind, so the trim is announced.
+ *
+ * EVERY path is judged, not just up to the first red, for the same reason
+ * `decide()` grades every item: calibration reads itemized reds, and a stage that
+ * short-circuits reports the first thing it found rather than what is true.
+ * `firstRed` still names the deciding item in DECLARED order, so the verdict's
+ * reason is stable against whatever order a model emitted anything in.
+ *
+ * NOT WIRED, AND NAMED RATHER THAN SILENTLY SKIPPED — `judgeToAnnotation` →
+ * `gate.annotate` (the slice-2 obligation list, item 4). Two independent reasons,
+ * either of which alone would defer it:
+ *   (1) THE ADAPTER TAKES A VERDICT. bare-agent's `judgeToAnnotation` maps a
+ *       `judge()` verdict (`{verdict, where:{field, stated, returned}}`) onto the
+ *       annotation shape, and this pipe deliberately never buys a verdict from a
+ *       model — LOCATE returns facts, and the verdict is `decide()`'s. Feeding it
+ *       a synthesised verdict would annotate the gate with a judgement no judge
+ *       made, which is the one thing the locate-not-verdict split exists to stop.
+ *   (2) THERE IS NO GATE HERE. A Gate is built per WORKER step (`mkWorker`,
+ *       src/planrun.js) and is gone by the time the close runs; the close is
+ *       deliberately outside every worker's fence. Annotating "the arbiter's own
+ *       gate" needs a run-scoped gate that does not exist today, and inventing
+ *       one to carry an annotation would be plumbing built for its own sake.
+ * The facts themselves are NOT lost meanwhile: every per-path reading (verdict,
+ * itemized reds, the ladder, the scrubbed raw) rides `detail.perPath`.
+ * @param {any} stage @param {Ctx} ctx @returns {Promise<StageResult>}
+ */
+async function runJudgedFloor(stage, ctx) {
+  const p = stage.params;
+  // 1. the CARD, through the one spelling (`validateCard`). A card this arbiter
+  //    cannot read is a broken close, never a red about the tree — and it is
+  //    checked before the seam and before the artifact, because it costs nothing.
+  const cv = validateCard(p?.card);
+  if (!cv.ok) {
+    return stopped(stage, ctx, `INSTRUMENT: stage "${stage.name}" carries a rubric card this arbiter cannot read: ${cv.reds.join('; ')}`,
+      {}, STOP_FAULTS.CRASHED);
+  }
+  const paths = Array.isArray(p?.paths) ? p.paths.filter(isNonEmptyString) : [];
+  if (paths.length === 0) {
+    return stopped(stage, ctx, `INSTRUMENT: stage "${stage.name}" names no artifact to judge — a judged stage with no `
+      + 'paths judges nothing, and nothing is not a pass', {}, STOP_FAULTS.CRASHED);
+  }
+  if (paths.length > MAX_JUDGED_PATHS) {
+    return stopped(stage, ctx, `INSTRUMENT: stage "${stage.name}" names ${paths.length} artifacts, over the ceiling of `
+      + `${MAX_JUDGED_PATHS} — a judged stage buys one call per artifact, and a runaway list is a bill`, {}, STOP_FAULTS.CRASHED);
+  }
+  // 1b. THE TIER THE SIGNED SET WAS GRADED BY, against the tier this run would buy.
+  //     `JUDGE_MODEL` has always SAID a bump forces a full recalibration; this is the
+  //     detector, because a rule with no wired detector is prose (F45). The stamp comes
+  //     off the SIGNED calibration (`calibration.judgeModel`, carried across by
+  //     `declaredStages`), so a mismatch means exactly one thing: the pin moved under a
+  //     signature, and the floor standing behind this stage was certified by a model
+  //     nobody is about to call. That is a FAILED wiring gap and not a crash — the same
+  //     fault, and for the same reason, as the absent seam below: nothing is broken,
+  //     something was never re-done. It stops rather than degrading in either direction,
+  //     because grading on the new tier would mint a verdict against an uncalibrated
+  //     floor and grading on the old one is not on offer (the pin is a constant).
+  //     AN ABSENT STAMP IS NOT CHECKED HERE, deliberately and for the reason the SET's
+  //     own presence is not checked in `validateCloseDecl`: a spec that judges cannot
+  //     reach a run without a calibration (the signing gate, module 5) or without a
+  //     model on it (`validateCloseDecl`), so the runtime question is only ever WHICH
+  //     model — and a stage descriptor handed straight to `runStage` by an adopter or a
+  //     test is not a signed spec making a claim about a tier.
+  if (isNonEmptyString(stage.calibrationJudgeModel) && stage.calibrationJudgeModel !== JUDGE_MODEL) {
+    return stopped(stage, ctx, `INSTRUMENT: stage "${stage.name}" would grade with ${JUDGE_MODEL}, and the calibration `
+      + `set signed with this close was graded by ${stage.calibrationJudgeModel} — the judge tier moved under the `
+      + 'signature. A floor is worth exactly the judge that certified it, so this stops rather than grading against a '
+      + 'floor nobody calibrated: re-sign the spec with the new tier and re-run the calibration gate (recalibrate)',
+    { signedJudgeModel: stage.calibrationJudgeModel, judgeModel: JUDGE_MODEL }, STOP_FAULTS.FAILED);
+  }
+  if (typeof ctx.judgeLoop !== 'function') {
+    return stopped(stage, ctx, `INSTRUMENT: stage "${stage.name}" is a judged stage and this run wired no judge seam `
+      + `(ctx.judgeLoop) — an adopter wiring gap, never a silent fall-back: the judge is ${JUDGE_MODEL}, pinned, and a `
+      + 'stage that quietly graded on whatever model was lying around would be a floor nobody calibrated',
+    {}, STOP_FAULTS.FAILED);
+  }
+  const loopFactory = /** @type {(o: {system: string}) => any} */ (ctx.judgeLoop);
+
+  const gap = new Gap(ctx.gapKeep, ctx.gapCap);
+  /** @type {any[]} */
+  const perPath = [];
+  /** @type {{path: string, rule: string, text: string, reds: any[]}[]} */
+  const redItems = [];
+  /** the reds that name NO card item: `decide()`'s unsure routes (no usable facts,
+   * an empty function list). They are the fail-safe itself, so the verdict is read
+   * off the per-path verdicts and NEVER off `redItems` — a red with nothing itemized
+   * under it is exactly the shape that would otherwise fall through to green. */
+  /** @type {{path: string, reason: string}[]} */
+  const unsure = [];
+  let redFiles = 0;
+
+  for (const rel of paths) {
+    let artifactText;
+    try {
+      artifactText = await readFile(join(ctx.workdir, rel), 'utf8');
+    } catch (e) {
+      return stopped(stage, ctx, `INSTRUMENT: stage "${stage.name}" could not read the artifact it judges (${rel}): `
+        + `${String(/** @type {any} */ (e)?.message ?? e)}`, { path: rel }, STOP_FAULTS.CRASHED);
+    }
+    if (artifactText.trim() === '') {
+      return stopped(stage, ctx, `INSTRUMENT: stage "${stage.name}"'s artifact ${rel} is empty — an empty artifact `
+        + 'yields no facts, and no facts is unknown, never a pass', { path: rel }, STOP_FAULTS.CRASHED);
+    }
+
+    /** @type {any} */
+    let last = null;
+    /** @type {any[]} */
+    const tries = [];
+    for (let attempt = 1; attempt <= JUDGE_ATTEMPTS; attempt += 1) {
+      last = await runLocate({
+        artifactText,
+        card: p.card,
+        loopFactory,
+        attempt,
+        onCost: (c) => {
+          if (typeof ctx.onJudgeCost !== 'function') return;
+          ctx.onJudgeCost({
+            stage: stage?.name ?? null, kind: stage?.kind ?? null, path: rel, attempt,
+            label: LOCATE_LABEL, model: JUDGE_MODEL, costUsd: c.costUsd, unpricedRounds: c.unpricedRounds,
+          });
+        },
+      });
+      tries.push({ attempt, ok: last.ok, axis: last.red?.axis ?? null, costUsd: last.costUsd, truncated: last.truncated, parseError: last.parseError });
+      if (last.ok) break;
+      // the ONE non-retryable axis, and it outranks the ladder: a retry of an
+      // unpriced call buys more spend nobody can see (F6).
+      if (last.red.axis === LOCATE_AXES.PRICING) break;
+    }
+    if (!last.ok) {
+      return stopped(stage, ctx, `INSTRUMENT: stage "${stage.name}"'s judge returned no usable facts for ${rel} after `
+        + `${tries.length} attempt(s) [${last.red.axis}]: ${last.red.detail}`,
+      { path: rel, axis: last.red.axis, attempts: tries }, STOP_FAULTS.CRASHED);
+    }
+
+    const d = decide(last.facts, p.card, { artifactText });
+    perPath.push({ path: rel, verdict: d.verdict, firstRed: d.firstRed, attempts: tries, raw: last.raw, items: d.items });
+    if (d.verdict === 'red') {
+      redFiles += 1;
+      for (const it of d.items) if (!it.ok) redItems.push({ path: rel, rule: it.rule, text: it.text, reds: it.reds });
+      if (!d.items.some((it) => !it.ok)) unsure.push({ path: rel, reason: String(d.reason ?? 'unsure, and unsure is red') });
+    }
+  }
+
+  const red = redFiles > 0;
+  if (red) {
+    // FIRST-RED-WINS in the CARD's own signed order, across every artifact: the
+    // card is the arbiter's order, and the file loop's order is the declaration's.
+    const order = p.card.items.map((/** @type {any} */ it) => it.rule);
+    const firstRed = order.find((/** @type {string} */ r) => redItems.some((x) => x.rule === r))
+      ?? (redItems[0]?.rule ?? 'unsure');
+    gap.push(`${stage.name}: the judged floor is not met — ${redItems.length} card item(s) red across ${redFiles} of `
+      + `${paths.length} artifact(s); first red: ${firstRed}`);
+    for (const u of unsure) gap.push(`  ${u.path}: ${u.reason}`);
+    for (const it of redItems) {
+      gap.push(`  [${it.rule}] ${it.text}`);
+      // the file, the function and the quote are all things the INSTRUMENT itself
+      // reported (contract (b) bars naming a culprit it did not) — and a red with
+      // no address is the semantic genre F38 measured as inert
+      for (const r of it.reds) {
+        gap.push(`    ${it.path}: ${r.fn} — ${r.why}`);
+        if (r.quote) gap.push(`      > ${String(r.quote).split('\n')[0].trim().slice(0, 200)}`);
+      }
+    }
+  }
+  return result(stage, {
+    verdict: red ? 'red' : 'green',
+    exitCode: red ? EXIT_RED : EXIT_GREEN,
+    gapLines: gap.render(),
+    detail: {
+      model: JUDGE_MODEL,
+      card: p.card.items.map((/** @type {any} */ it) => it.rule),
+      paths,
+      perPath,
+      redItems: redItems.length,
+      unsure,
+      redFiles,
+    },
+  });
+}
+
 /** @type {Record<string, (stage: any, ctx: Ctx) => Promise<StageResult>>} */
 const RUNNERS = {
   'command-exit': runCommandExit,
@@ -1471,6 +1854,7 @@ const RUNNERS = {
   'pattern-absent-in-diff': runPatternAbsentInDiff,
   'files-changed': runFilesChanged,
   'human-confirms': runHumanConfirms,
+  'judged-floor': runJudgedFloor,
 };
 
 /**

@@ -120,6 +120,79 @@ export function evidencePackage({ pause, diff }) {
 }
 
 /**
+ * THE REVIEW DOOR's package (softgreen module 8) — the same evidence, at the door
+ * at the END of a run rather than at a stage inside the close.
+ *
+ * It is a SEPARATE renderer from `evidencePackage` and deliberately so: that one
+ * opens with *"this run reached the one stage a machine cannot render, and it is
+ * waiting on you"*, which at a review door would be false twice over — the machine
+ * rendered every stage, and the run is over. What a person needs told here is the
+ * opposite fact: a verdict was minted, it STANDS, and what happens to the work is
+ * theirs. The stage/changed/diff body is shared, because it is the same evidence.
+ * @param {{door: any, diff?: any}} o
+ * @returns {string[]}
+ */
+export function reviewDoorPackage({ door, diff }) {
+  const d = door ?? {};
+  const held = d.quarantined === true;
+  /** @type {string[]} */
+  const out = [];
+  out.push(`REVIEW DOOR — this run's close minted ${String(d.outcome ?? 'a verdict')} and it STANDS. Nothing you do here changes it.`);
+  if (held) {
+    out.push('  held     this green was rendered by the judged floor, so it has earned NO reuse and NO learning credit until you accept it');
+  }
+  // the body: what the machine judged, what moved, and the lines themselves —
+  // rendered by the SAME code the pause screen uses, off the same record shape.
+  // The ASK line is dropped when there is no ask: a door asks nothing of its own
+  // (it offers three answers to a verdict already minted), and the pause renderer's
+  // stand-in sentence would be inventing a question nobody declared. Keyed on the
+  // gutter rather than on that sentence's wording, which is not this file's to pin.
+  const hasAsk = typeof d.ask === 'string' && d.ask.trim() !== '';
+  out.push(...evidencePackage({ pause: { ...d, ask: d.ask ?? null }, diff }).slice(1)
+    .filter((l) => hasAsk || !l.startsWith('  ask ')));
+  return out;
+}
+
+/**
+ * THE DOOR LIST ITSELF — the header, the order, and the gutter, spelled ONCE.
+ *
+ * Both screens that offer the three doors (the step-level pause and the review
+ * door at the end of a run) show the same list in the same order for the same
+ * reason; only the CONSEQUENCES differ, so only the prose is passed in. Spelling
+ * the structure twice is how the two screens come to disagree about which door
+ * leads — and the order is the whole design input (see `doorLines`).
+ * @param {{rerun: string, accept: string, pause: string}} prose what each door
+ *   costs on THIS screen, without its trailing colon
+ * @param {{rerun: string, accept: string, pause: string}} cmd the exact command
+ *   each door costs, so nobody has to reconstruct one
+ * @returns {string[]}
+ */
+function threeDoors(prose, cmd) {
+  return [
+    'THREE DOORS — no fourth, and no decision is taken for you: nothing happens without the flag.',
+    `  rerun   ${prose.rerun}:\n            ${cmd.rerun}`,
+    `  accept  ${prose.accept}:\n            ${cmd.accept}`,
+    `  pause   ${prose.pause}:\n            ${cmd.pause}`,
+  ];
+}
+
+/**
+ * The three doors AT THE REVIEW DOOR. Same order and the same rule as
+ * `doorLines` (rerun leads, ~40% rubber-stamp), different consequences: this run
+ * is OVER, so a rerun is a fresh engagement rather than a continuation, and a
+ * pause keeps the door rather than a step checkpoint.
+ * @param {{rerun: string, accept: string, pause: string, ttlDays: number, held: boolean}} o
+ * @returns {string[]}
+ */
+export function runDoorLines({ rerun, accept, pause, ttlDays, held }) {
+  return threeDoors({
+    rerun: '"I don\'t like it, go again" — your words become the requirement a FRESH engagement plans against (its own clock, what is left of the signed budget)',
+    accept: `${held ? 'releases this run\'s learning credit' : 'confirms it'} — and the close\'s MECHANICAL stages re-run first, because the tree can move after a run ends`,
+    pause: `not now. Nothing runs and nothing is spent; the door keeps for ${ttlDays} days and then expires on its own, which is all that "cancel" ever meant`,
+  }, { rerun, accept, pause });
+}
+
+/**
  * THE THREE DOORS, rendered — and the 2026-08-12 §4 rule is the ORDER.
  *
  * ~40% of human reviewers approve without reading. That datum is a design input:
@@ -140,12 +213,11 @@ export function evidencePackage({ pause, diff }) {
  * @returns {string[]}
  */
 export function doorLines({ rerun, accept, pause }) {
-  return [
-    'THREE DOORS — no fourth, and no decision is taken for you: nothing happens without the flag.',
-    `  rerun   your words BECOME the gap the worker fixes from, and the run continues under what is left of the budget:\n            ${rerun}`,
-    `  accept  green — minted on FRESH evidence (the mechanical stages re-run first, since the tree may have moved):\n            ${accept}`,
-    `  pause   not now. Nothing is run and nothing is spent; the checkpoint keeps and this run resumes from the start of its last step whenever you come back:\n            ${pause}`,
-  ];
+  return threeDoors({
+    rerun: 'your words BECOME the gap the worker fixes from, and the run continues under what is left of the budget',
+    accept: 'green — minted on FRESH evidence (the mechanical stages re-run first, since the tree may have moved)',
+    pause: 'not now. Nothing is run and nothing is spent; the checkpoint keeps and this run resumes from the start of its last step whenever you come back',
+  }, { rerun, accept, pause });
 }
 
 /**

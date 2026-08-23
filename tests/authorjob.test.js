@@ -117,6 +117,19 @@ const ANSWERS = {
   5: 'If the complaints only went quiet because something was told to look the other way.',
 };
 
+/** the same interview, for the class that buys a THIRD paid seam (the rubric and
+ * calibration compile). Q6/Q7 are soft-green's own two extra questions. */
+const JUDGED_ANSWERS = {
+  ...ANSWERS,
+  6: 'Whether every exported function reads like somebody meant it to be read.',
+  7: 'I would pass a documented function and fail an undocumented one.',
+};
+
+/** a declaration carrying a judged stage — what makes the compile seam reachable */
+const JUDGED_STAGES = () => [
+  { name: 'judged', kind: 'judged-floor', params: { card: { items: [{ rule: 'has-doc', text: 'documented' }] }, paths: ['src/email.js'] } },
+];
+
 const collector = () => {
   const events = [];
   return { events, emit: (type, data = {}) => { const e = { type, ...data }; events.push(e); return e; } };
@@ -164,7 +177,8 @@ test('a LOCKED class refuses at ADMISSION, BEFORE its questions run — counted 
     assert.equal(r.refusal.red.code, 'request-red');
     assert.ok(r.refusal.detail.includes(verdictType));
   }
-  assert.deepEqual([...LIVE_CLASSES], ['green', 'hitl'], 'N4 slice 1 admits two; soft-green is slice 2');
+  assert.deepEqual([...LOCKED_CLASSES], [], 'softgreen module 3 admitted the last locked class');
+  assert.deepEqual([...LIVE_CLASSES], [...VERDICT_CLASSES], 'every class the radio names is built');
 });
 
 test('the interview asks NOTHING about a genre and NOTHING about the repo — an unasked answer is not a slot', () => {
@@ -210,16 +224,19 @@ test('interview answers are scrubbed at INGEST — an answer becomes a prompt, a
 // ── 2. THE LEDGER ATTRIBUTION, end to end ────────────────────────────────────
 
 test('D13 REGRESSION: a close-authoring refusal files under bareloop, and its suggestedAsk is never an upstream ask', () => {
-  // the exemplar is the class still LOCKED (hitl was admitted at N4 slice 1);
-  // what is under test is the attribution of a class refusal, not which class
-  const refusal = runInterview({ verdictType: 'soft-green', answers: ANSWERS, repoPath: '/tmp/x' }).refusal;
+  // What is under test is the ATTRIBUTION of an interview refusal, never which
+  // class produced it. The exemplar used to be the last locked class; softgreen
+  // module 3 admitted it, so the exemplar is now the other counted refusal this
+  // interview can still render — a job with no repository, which has no seed to
+  // measure against (D13). The assertions below are unchanged apart from the verb.
+  const refusal = runInterview({ verdictType: 'green', answers: ANSWERS, repoPath: null }).refusal;
   const events = refusalEvents(refusal).map((e, i) => ({ ...e, seq: i + 1 }));
 
   const occs = classifyIncidents(events, { spine: 'authoring' });
   const req = occs.filter((o) => o.class === 'request-red');
   assert.equal(req.length, 1, 'the demand is counted exactly once');
   assert.equal(req[0].lib, REFUSAL_LIB, 'the lib is the STAMPED one — inferring it here is the BA-2 misattribution class');
-  assert.equal(req[0].verb, 'soft-green', 'the demand names the verdict class, which is what the rung waits on');
+  assert.equal(req[0].verb, 'non-green-verdict', 'the demand names what was asked for and could not be honoured');
 
   // …and the template a human actually FILES from must aim at the same target.
   // Fixing the occurrence alone would leave the misattribution in the one field
@@ -238,8 +255,11 @@ test('D13 REGRESSION: a close-authoring refusal files under bareloop, and its su
   assert.ok(LEDGER_CLASSES.includes('request-red'));
 });
 
-test('a locked KIND is counted demand too — the tool-mode schema makes it unsayable, so the interview layer carries it', () => {
-  for (const kind of ['judged-floor', 'human-confirms']) {
+test('a kind we do not run is counted demand too — the tool-mode schema makes it unsayable, so the interview layer carries it', () => {
+  // `human-confirms` (N4 slice 1) and `judged-floor` (softgreen module 2) both went
+  // LIVE, so the demand this channel carries today is for kinds the catalogue does
+  // not have at all — `harness-loop` is the named one (TESTGEN's out-of-v1 need).
+  for (const kind of ['harness-loop', 'doc-coverage']) {
     const r = refuseLockedKind(kind);
     assert.equal(r.red.lib, REFUSAL_LIB);
     assert.equal(r.red.verb, kind);
@@ -306,13 +326,22 @@ test('assembleSpec REFUSES a draft that already carries the authored half — ne
   assert.deepEqual(validateJob(spec).reds, []);
 });
 
-test('the laundering guard holds from the declared side: a LOCKED verdict on a declared close reds twice, never launders', () => {
-  const r = validateJob(assembleSpec(SPEC_DRAFT, { closeDecl: DECL(), verdictType: 'soft-green' }));
+test('the laundering guard holds from the declared side: a soft verdict on a HARD close type still reds close-hierarchy', () => {
+  // This used to read a LOCKED verdict redding TWICE — counted demand plus the
+  // hierarchy. Softgreen module 3 admitted the class and widened
+  // DECLARED_CLOSE_CLASSES to hard|soft|hitl, so an authored declaration is no
+  // longer the laundering surface and the request-red half is unreachable by
+  // construction. The hierarchy half is what mattered and it is exercised here on
+  // the surface where it still bites: a COMMAND close type that can only ever
+  // claim `hard`, under a verdict that demands `soft`.
+  const spec = assembleSpec(SPEC_DRAFT, { closeDecl: DECL(), verdictType: 'soft-green' });
+  assert.deepEqual(validateJob(spec).reds, [], 'the authored declaration itself now admits a soft verdict');
+  const { closeDecl: _dropped, ...rest } = spec;
+  const r = validateJob({ ...rest, close: { type: 'predicate', cmd: 'npm test', expect: { exitCode: 0 } } });
   assert.equal(r.ok, false);
-  const codes = r.reds.map((x) => x.code);
-  assert.ok(codes.includes('request-red'), 'the locked verdict is counted demand');
-  assert.ok(codes.includes('close-hierarchy'), 'and a soft verdict can never ride a hard close');
-  assert.equal(r.reds.find((x) => x.code === 'request-red').lib, 'bareloop');
+  const hierarchy = r.reds.find((x) => x.code === 'close-hierarchy');
+  assert.ok(hierarchy, JSON.stringify(r.reds));
+  assert.equal(hierarchy.path, 'verdictType', 'a predicate can never be soft — PRD §7');
 });
 
 test('a malformed declaration reds THROUGH validateJob, pathed under closeDecl', () => {
@@ -323,14 +352,19 @@ test('a malformed declaration reds THROUGH validateJob, pathed under closeDecl',
   assert.ok(r.reds.some((x) => x.code === 'unknown-kind' && x.path.startsWith('closeDecl.')), JSON.stringify(r.reds));
 });
 
-test('a LOCKED kind in a declaration is a distinct counted red, never an unknown-kind typo', () => {
+test('the LIVE judged kind under a green pick reds THROUGH validateJob as a class-ceiling, never a silent upgrade', () => {
+  // this WAS the locked-kind red until softgreen module 2 unlocked the kind. The
+  // refusal did not disappear, it moved axis: the kind runs, the CLASS it renders is
+  // still not admitted, and a judgment ruler under a machine-checkable promise is
+  // exactly the fake-hard verdict the ceiling refuses.
   const bad = DECL();
-  bad.stages[1] = { name: 'judged', kind: 'judged-floor', params: {} };
+  bad.stages[1] = { name: 'judged', kind: 'judged-floor', params: { card: { items: [{ rule: 'has-doc', text: 'documented' }] }, paths: ['src/email.js'] } };
   const r = validateJob(assembleSpec(SPEC_DRAFT, { closeDecl: bad, verdictType: 'green' }));
-  const locked = r.reds.find((x) => x.code === 'locked-kind');
-  assert.ok(locked, JSON.stringify(r.reds.map((x) => x.code)));
-  assert.equal(locked.lib, 'bareloop');
-  assert.equal(locked.verb, 'judged-floor');
+  const ceiling = r.reds.find((x) => x.code === 'class-ceiling');
+  assert.ok(ceiling, JSON.stringify(r.reds.map((x) => x.code)));
+  assert.equal(ceiling.kind, 'judged-floor');
+  assert.equal(ceiling.kindClass, 'soft-green');
+  assert.equal(r.reds.find((x) => x.code === 'locked-kind'), undefined);
 });
 
 // ── 4. D6 — the hash ─────────────────────────────────────────────────────────
@@ -780,6 +814,9 @@ test('a genre that owns NO environment records none — absent is not empty (F59
 });
 
 test('the pipeline REFUSES before spending anything when the interview refuses the CLASS', async () => {
+  // unreachable while nothing is locked (softgreen module 3) — stated rather than
+  // left as a loop that silently iterates nothing
+  assert.deepEqual([...LOCKED_CLASSES], []);
   for (const verdictType of LOCKED_CLASSES) {
     let called = 0;
     const r = await authorCloseForJob({
@@ -820,7 +857,7 @@ test('THE GENRE REFUSAL MOVED TO THE COMPOSER: a language the catalogue cannot m
   assert.deepEqual(occs.map((o) => [o.class, o.lib, o.verb]), [['request-red', REFUSAL_LIB, 'genre-other']]);
 });
 
-test('THE CEILING is ONE operator number and it reaches BOTH paid seams', async (t) => {
+test('THE CEILING is ONE operator number and it reaches ALL THREE paid seams', async (t) => {
   const p = makePatient(t);
   /** @type {any} */
   const seen = { scout: 'never called', author: 'never called' };
@@ -836,7 +873,38 @@ test('THE CEILING is ONE operator number and it reaches BOTH paid seams', async 
   assert.equal(seen.scout, 0.25, 'the survey is a paid stage and is bounded by the same number');
   assert.equal(seen.author, 0.25, 'and so is the declaration loop — one ceiling, not two');
   assert.equal(r.stop, 'cap-halt', 'and the governance stop travels up as itself');
+
+  // …and the THIRD seam: the rubric/calibration compile, which only a judged close
+  // buys. It is bounded through the BOOK (the same object the ceiling is read off),
+  // and the declaration loop's own calls are absorbed into it first, so what the
+  // compile sees is the remaining balance rather than a fresh allowance.
+  /** @type {any} */
+  const compile = { ceiling: 'never called', absorbed: null };
+  await authorCloseForJob({
+    verdictType: 'soft-green', answers: JUDGED_ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
+    ceilingUsd: 0.25,
+    scoutFn: async () => SURVEY(p.dir),
+    authorFn: async () => ({
+      ok: true,
+      declaration: { stages: JUDGED_STAGES(), notes: [] },
+      reds: [],
+      stop: null,
+      genreEnv: { applied: {} },
+      cost: { costUsd: 0.1, knownUsd: 0.1, spendComplete: true, calls: [{ label: 'author', costUsd: 0.1, unpricedRounds: 0 }] },
+    }),
+    proposeFn: async (/** @type {any} */ o) => {
+      compile.ceiling = o.book.ceilingUsd;
+      compile.absorbed = o.book.report().costUsd;
+      return { ok: false, proposal: null, reds: [], stop: 'artifact-red', attempts: 1 };
+    },
+  });
+  assert.equal(compile.ceiling, 0.25, 'the compile is a paid seam and is bounded by the same number');
+  assert.equal(compile.absorbed, 0.1, 'with the declaration loop\'s spend already folded in — never a fresh allowance');
 });
+
+// the FOURTH place the same number has to reach is `prepareSigning`'s calibration
+// gate, which is not on this function's path: it is measured against the real gate
+// in tests/calibrate.test.js ("THE ONE OPERATOR NUMBER reaches the gate").
 
 test('NO ceiling travels as an EXPLICIT null — an unbounded run is a stated choice, not an absent field', async (t) => {
   const p = makePatient(t);

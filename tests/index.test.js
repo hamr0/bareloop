@@ -36,6 +36,9 @@ test('the documented public surface is actually exported from src/index.js', () 
     'mintBridge', 'appendGreen', 'appendRed',
     'loadBridge', 'loadRegistry', 'saveBridge', 'makeRegistry', 'registryExists',
     'renderListing', 'selectionPrompt',
+    // softgreen module 6 — the quarantine and the door that releases it
+    'QUARANTINED_VERDICTS', 'quarantinesCredit', 'newestEligibleVersion', 'reuseEligibility', 'recordDoor',
+    'applyDoorDecision',
     // Layer 3 modules 4+5 — the envelope and the reuse runner
     'validateEnvelope', 'resolveTrySpec', 'resolveReuse', 'reuseSpecHash', 'selectBridge', 'runReuse', 'REUSE_GRADED_RED',
     // module C — resume after a kill

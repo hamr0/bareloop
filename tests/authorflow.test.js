@@ -36,7 +36,7 @@ import { execFileSync } from 'node:child_process';
 import { AGGREGATES, SIGNS, MAX_TERMS, EXIT_GREEN, EXIT_RED, EXIT_STOP } from '../src/kinds.js';
 import {
   KIND_CATALOGUE, CATALOGUE_LIVE_KINDS, LOCKED_KINDS, MAX_STAGES, VERDICT_CLASSES, LOCKED_CLASSES,
-  DIRECTIONS, BASELINES, classGuards, genreOwnedEnvNames, genreInstruments, validateDeclaration,
+  DIRECTIONS, BASELINES, classGuards, classMenu, genreOwnedEnvNames, genreInstruments, validateDeclaration,
 } from '../src/authoring.js';
 import {
   DECLARATION_TOOL_NAME, DECLARATION_ACK, AUTHOR_MAX_TOKENS,
@@ -157,18 +157,21 @@ const baseArgs = () => ({
 // ── 0. the question sets are keyed by VERDICT CLASS (PRD v1.57 §2) ──────────
 //
 // Genres are a fat tail that cannot be enumerated; classes are exactly three.
-// The green set is fully built; the other two are NAMED LOCKED SETS whose
-// selection refuses at admission before their questions ever run.
+// All three sets are built as of softgreen module 3. The LOCKED shape is still
+// asserted here — as a shape a class arriving locked would take, and as the
+// statement that no class currently takes it — because the readers still throw
+// on it and the next locked class inherits the machinery unchanged.
 
-test('question sets: exactly three, keyed by class, and only the green one is built', () => {
+test('question sets: exactly three, keyed by class, and every one of them is built', () => {
   assert.deepEqual(Object.keys(QUESTION_SETS).sort(), [...VERDICT_CLASSES].sort());
-  assert.equal(QUESTION_SETS.green.locked, false);
-  assert.deepEqual(QUESTION_SETS.green.questions, GREEN_QUESTIONS);
-  for (const c of LOCKED_CLASSES) {
-    assert.equal(QUESTION_SETS[c].locked, true, `${c} is a named but LOCKED set`);
-    assert.equal(QUESTION_SETS[c].questions, null, `${c}'s questions are ABSENT (null), never an empty set`);
-    assert.equal(QUESTION_SETS[c].required, null);
+  assert.deepEqual([...LOCKED_CLASSES], [], 'nothing is declared-but-locked any more (softgreen module 3)');
+  for (const c of VERDICT_CLASSES) {
+    assert.equal(QUESTION_SETS[c].locked, false, `${c} is built`);
+    assert.ok(Object.keys(QUESTION_SETS[c].questions ?? {}).length > 0, `${c} has real questions, never an empty set`);
+    assert.deepEqual(QUESTION_SETS[c].required,
+      Object.keys(QUESTION_SETS[c].questions).map(Number).sort((a, b) => a - b));
   }
+  assert.deepEqual(QUESTION_SETS.green.questions, GREEN_QUESTIONS);
 });
 
 test('question sets: the GREEN set asks nothing about a genre and nothing about the repo — both slots are gone', () => {
@@ -186,13 +189,18 @@ test('question sets: the GREEN set asks nothing about a genre and nothing about 
   for (const q of Object.values(GREEN_QUESTIONS)) assert.ok(q.trim().endsWith('?'), q);
 });
 
-test('question sets: a LOCKED class has no questions to run, and asking for them THROWS', () => {
+test('question sets: an UNKNOWN class has no questions to run, and asking for them THROWS', () => {
   assert.deepEqual(questionsFor('green'), GREEN_QUESTIONS);
+  // With LOCKED_CLASSES empty, the unknown-class arm is the only one reachable
+  // from outside. The locked arm is kept in the reader and is now covered by
+  // nothing but its own construction — named here rather than left unsaid.
+  assert.deepEqual([...LOCKED_CLASSES], []);
   for (const c of LOCKED_CLASSES) {
     assert.throws(() => questionsFor(c), new RegExp(c), 'admission refuses the class BEFORE its questions run');
     assert.throws(() => requiredAnswersFor(c), new RegExp(c));
   }
   assert.throws(() => questionsFor('chartreuse'), /chartreuse/);
+  assert.throws(() => requiredAnswersFor('chartreuse'), /chartreuse/);
 });
 
 test('the prompt STATES the declared class — this is where genre understanding now lives', () => {
@@ -208,6 +216,7 @@ test('the prompt STATES the declared class — this is where genre understanding
     guards: greenGuards('js'), ownedEnvNames: [],
   };
   assert.throws(() => authorPrompt({ ...args }), /verdict class/i);
+  assert.throws(() => authorPrompt({ ...args, verdictType: 'chartreuse' }), /chartreuse/);
   for (const c of LOCKED_CLASSES) assert.throws(() => authorPrompt({ ...args, verdictType: c }), new RegExp(c));
 });
 
@@ -260,10 +269,26 @@ test('declarationSchema: one branch per LIVE kind, required derived from the cat
 });
 
 test('declarationSchema: a LOCKED kind is INEXPRESSIBLE — no branch, no mention', () => {
-  const schema = declarationSchema();
-  const text = JSON.stringify(schema);
-  assert.ok(LOCKED_KINDS.length > 0, 'the catalogue must still carry locked entries');
-  for (const k of LOCKED_KINDS) assert.ok(!text.includes(k), `${k} must not appear anywhere in the tool schema`);
+  // v1's catalogue carries NO locked entry any more (`judged-floor` went live at
+  // softgreen module 2), so the rule is watched against an INJECTED locked
+  // catalogue — the same move the ceiling tests make. A vacuous loop over an empty
+  // LOCKED_KINDS would assert nothing while reading like a guard.
+  assert.deepEqual([...LOCKED_KINDS], [], 'nothing shipped is locked today — the rule is tested by injection');
+  // the injected subject is a locked kind with no parameters of its own —
+  // `schemaCoverage` reads the seam BOTH ways, so locking a live kind would orphan
+  // its parameter schemas and red the build rather than test the rule
+  const locked = {
+    ...KIND_CATALOGUE,
+    'harness-loop': {
+      verdictClass: 'green', required: [], optional: [], pathParams: [], locked: true,
+      shape: 'LOCKED — not available in v1', asserts: 'declaring it is recorded demand; it will not run.',
+    },
+  };
+  const text = JSON.stringify(declarationSchema(locked));
+  assert.ok(!text.includes('harness-loop'), 'a locked kind must not appear anywhere in the tool schema');
+  // …and the live one IS expressible, with the catalogue's own parameters
+  const live = JSON.stringify(declarationSchema());
+  assert.ok(live.includes('judged-floor') && live.includes('card') && live.includes('paths'));
 });
 
 test('declarationSchema: a note is a NON-EMPTY string — an empty one is inexpressible at the source, not rejected after', () => {
@@ -305,7 +330,13 @@ test('the authoring prompt carries the genre template, the catalogue and the FIL
     ownedEnvNames: genreOwnedEnvNames('js'), verdictType: 'green',
   });
   assert.match(p, /The graded instrument is the STRICT form/, 'the frozen TYPES template is law for the declaration');
-  for (const k of CATALOGUE_LIVE_KINDS) assert.ok(p.includes(k), `the catalogue must name ${k}`);
+  // the catalogue this prompt names is the PICKED CLASS's menu (softgreen module
+  // 3), not the whole live set: a green job is never shown a kind whose pick
+  // would red as `class-ceiling` after the call was paid for.
+  for (const k of classMenu('green')) assert.ok(p.includes(k), `the catalogue must name ${k}`);
+  for (const k of CATALOGUE_LIVE_KINDS.filter((x) => !classMenu('green').includes(x))) {
+    assert.ok(!p.includes(k), `${k} is above a green promise and must be inexpressible, not merely refused later`);
+  }
   assert.match(p, /@ts-expect-error/, 'the guard battery arrives fully parameterised — genre property, not model-filled');
   assert.match(p, /<FILL IN>/, 'the one model-filled slot is marked');
   assert.match(p, new RegExp(DECLARATION_TOOL_NAME), 'the output contract is the tool, never a fenced block');
@@ -1141,14 +1172,18 @@ test('authorClose: a last revision that REGRESSES keeps the last accepted close 
 
 test('the text fallback parses a fenced declaration and is the ONLY locked-kind demand channel', async () => {
   const decl = goodDeclaration();
-  // the exemplar is the kind still LOCKED: `human-confirms` went live at N4
-  // slice 1, so the demand channel is now tested with `judged-floor` (slice 2)
+  // The exemplar is an INJECTED locked kind: `human-confirms` went live at N4
+  // slice 1 and `judged-floor` at softgreen module 2, so v1's catalogue has no
+  // locked entry left to demand. The CHANNEL is what is under test, and it must
+  // keep a real subject rather than a vacuous one — the day a kind is locked
+  // again (harness-loop is the named candidate) this is the path it arrives on.
   decl.stages.push({ name: 'judged-check', kind: 'judged-floor', params: {} });
   const generate = async () => ({
     text: `\`\`\`json\n${JSON.stringify(decl)}\n\`\`\``,
     error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 },
   });
-  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: scriptSeedRead().fn, structuredMode: 'text' });
+  const catalogue = { ...KIND_CATALOGUE, 'judged-floor': { ...KIND_CATALOGUE['judged-floor'], locked: true } };
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: scriptSeedRead().fn, structuredMode: 'text', catalogue });
   // the demand IS counted here, because text mode can express what the schema cannot
   const locked = r.iterations[0].validation.reds.filter((/** @type {any} */ x) => x.code === 'locked-kind');
   assert.equal(locked.length, 1);

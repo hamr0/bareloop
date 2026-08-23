@@ -1958,3 +1958,114 @@ above), and why the drain is called **once per turn** by that one path.
 
 **Priority: a hard blocker for N4, and for nothing shipping today.** Nothing in the current green
 path calls a judge, so this stops no rung already on the ladder — it gates the next one.
+
+---
+
+## BA-21 — an UNLISTED model is priced from a generic fallback average and stamped `pricing:'priced'`: the whole bareloop programme's spend record is a guess wearing a fact's clothes (2026-08-18, archive-wide pricing audit)
+
+**Filed against:** bare-agent 0.36.1, `src/loop.js` (`COST_PER_1K`, `estimateCost`, `resolveRoundCost`).
+
+### The defect, in one sentence
+
+`claude-sonnet-5` — bareloop's frozen worker model since the model rule was set — **is not in
+`COST_PER_1K`**, so `estimateCost` falls to `_default`, whose own in-source comment reads
+*"Fallback average across popular models (~$0.002 in, ~$0.008 out per 1K)"* — and the resulting
+number is then stamped **`pricing: 'priced'`** (loop.js:800, `roundCost === null ? 'unpriced' : 'priced'`).
+
+This directly violates bare-agent's own stated contract three lines above it:
+
+> *"Priced vs unpriced is explicit so the gate never mistakes 'couldn't price' (null) for 'free' (0)
+> — the silent-zero that made #3's budget cap a no-op. (D5 / §3.7.)"*
+
+`_default` **is** the "couldn't price" case. It reports as the "priced" case. The contract guards
+the zero direction and leaves the *wrong-number* direction wide open — which is worse, because a
+zero is visibly absurd and a plausible dollar is not.
+
+### Evidence — measured across bareloop's entire archive, not reasoned
+
+382 spine files, 153 runs, **7,506 priced `worker-round` records**:
+
+| reconciliation | rounds |
+|---|---|
+| match `_default` (0.002/0.008) to <0.1% | **7,217** |
+| match sonnet rates (0.003/0.015) | **0** |
+| match neither | 289 — all clipipe, where the CLI reports its own real `total_cost_usd` and `resolveRoundCost` correctly prefers it |
+
+Those 289 clipipe rounds are an accidental control: on the same usage fields the CLI's **real**
+cost runs **2.0–2.5x** the `_default` estimate.
+
+> **Correction (2026-08-19):** the 2.0–2.5x ratio above is clipipe's provider-billed surface,
+> which never pools with `anthropic-api` (F48) — it does NOT generalize to the API archive. The
+> measured API-side error is **~5.7% under** at sonnet-5's introductory rate, jumping to
+> **~1.586x under** at list rate when the intro window ends 2026-09-01 (PRD §11). The acceptance
+> criteria below do not depend on the retracted figure.
+
+Also absent from the table: **`claude-opus-5`**. Present: fable-5, opus-4-6/4-7/4-8, sonnet-4-6,
+haiku-4-5. So the table tracks a generation bareloop no longer runs on.
+
+### Blast radius on this side
+
+Every budget cap, `spentUsd`, cap-halt decision, ledger figure and programme-spend line bareloop
+has ever produced on sonnet-5 rests on that average. Because it is stamped `priced`, **nothing
+downstream can tell.** bareloop has no price table of its own and no way to detect the substitution.
+This is our F6 doctrine ("unpriced is never free") re-shipped in a worse coat: unknown reading as
+*confident* rather than as zero.
+
+### Filed WITH its own disconfirming evidence (standing rule, BA-7 precedent)
+
+**`COST_PER_1K` is EXPORTED** (`module.exports = { Loop, estimateCost, COST_PER_1K }`, loop.js:1216).
+A caller can therefore mutate it today — `COST_PER_1K['claude-sonnet-5'] = { in: 0.003, out: 0.015 }` —
+and bareloop will do exactly that as an immediate local mitigation, without waiting for a release.
+
+So **the missing rates are not, strictly, blocking us.** We are filing anyway because:
+
+1. Mutating another package's exported constant is a hack, not a contract, and silently breaks the
+   day the table becomes frozen or internal.
+2. The rate gap is the symptom. **The silent `_default`-stamped-`priced` is the defect**, and no
+   amount of caller-side table-patching fixes it for the next unlisted model — which arrives with
+   every model release, by construction.
+3. A caller cannot even *detect* the substitution to warn on it, because the returned shape is
+   identical either way.
+
+### The ask — two deliverables, the second one is the real one
+
+**(1) Add current-generation rates.** `claude-sonnet-5` and `claude-opus-5` at minimum.
+Mechanical, and it does not close the class.
+
+**(2) An unlisted model must not be silently averaged.** Either:
+   - return `null` from `estimateCost` for a model with no table entry (so it stamps `unpriced`,
+     which is already an honest, handled state on both sides), **or**
+   - keep the estimate but return a THIRD state — `pricing: 'estimated'` — so a caller can
+     surface it. bareloop's operator ruling (hamr, 2026-08-18, verbatim: *"if price not passed in
+     apis (i doubt) we use guesstimate and run but keep user in the know, never refuse"*) means we
+     will **never refuse a run on this** — we need to be able to *say* it, not to block on it.
+
+We have no preference between the two, and the choice is bare-agent's. **`estimated` is the one
+bareloop can consume most usefully**, because refusing is off the table by operator ruling and
+`unpriced` currently means "we have no number at all", which is a different and less useful claim.
+
+### FAIL-able acceptance criteria
+
+1. `estimateCost('claude-sonnet-5', usage)` returns a value derived from a sonnet-5 table entry,
+   NOT from `_default`. **Fails** if the returned number equals the `_default` formula.
+2. `estimateCost('claude-model-that-does-not-exist', usage)` either returns `null`, or the round
+   reports a `pricing` value that is **neither** `'priced'` **nor** `'unpriced'`. **Fails** if an
+   unlisted model still yields a finite cost stamped `'priced'`.
+3. A listed model's `pricing` value is **unchanged** (`'priced'`). **Fails** if this change
+   re-labels rounds that were already honestly priced.
+4. A provider-reported `costUsd` (the clipipe path) still wins over any table value and still
+   stamps `'priced'`. **Fails** if `resolveRoundCost`'s precedence changes.
+5. The three states are documented in `bareagent.context.md` with the "couldn't price" vs "didn't
+   price" distinction spelled out, so the next consumer cannot re-make this assumption.
+
+### Not asked
+
+- **A price feed, or fetching rates at runtime.** Out of scope, adds a network dependency to a
+  zero-dependency library, and the rates are public static data.
+- **Any change to `resolveRoundCost`'s precedence.** The provider-reported-cost-wins rule is
+  correct and is what makes the clipipe control above possible.
+- **Refusing to run on an unlisted model.** Explicitly rejected by bareloop's operator (above).
+  The library must stay able to run; it must stop being able to *pretend*.
+
+**Priority: not a blocker — a truth defect.** Nothing stops running today. Every number those
+runs produce is simply not what it says it is, and no consumer can tell.

@@ -7881,8 +7881,14 @@ guard**. That is a constraint on how it ships, not a reason to park it; it is no
 **Status: minted 2026-08-17 from the first live hitl proving loop on `litectx-maintainer` —
 spines `bareloop-patients/litectx-maintainer-bareloop/u-mswks15g.jsonl` (the pause),
 `u-msx7a3rj.jsonl` (the decide-time wall-halt) and `u-msx7xoe0.jsonl` (the resume that re-asked).
-NOT FIXED — the missing primitive is named in §4 and its build is sequenced with the review door
-(PRD v1.71 §6). Cost of the FINDING: $0 (spine reads). Cost of the incident: the decision was
+FIXED 2026-08-18 in `a6f62c9` (softgreen module 7) — the missing primitive named in §4 is built:
+a checkpoint now carries the pending decision as TWO records answering two different questions,
+`human-decision` (the door taken, the words, and by whom — `source: 'operator'|'checkpoint'`) and
+`human-decision-spent` (what actually BOUGHT it), `readResume` pairs them into
+`restart.pendingDecision`, and a leg handed one back applies it through the SAME seam a fresh
+answer uses, so the ask is never re-rendered. **The spend marker fires on the WORK, not on the fix
+loop opening** — a fix round bought, an accept that greened, a pause honoured — which is exactly
+where this incident sits (`iterationsUsed: 0` on an opened loop). Cost of the FINDING: $0 (spine reads). Cost of the incident: the decision was
 paid TWICE by the person, and $0 of provider spend, because the leg that should have carried his
 words never ran a round.**
 
@@ -7978,8 +7984,16 @@ missing, which is why this is a finding and not a bug report.
 
 **Status: minted 2026-08-17 from the same loop — `u-msx7a3rj.jsonl` (87 seconds, 0 rounds) and
 `u-msx87qqs.jsonl` (15.2 minutes, 9 rounds, 0 writes). RULED by hamr the same day (PRD v1.71
-§4): a rerun is a FRESH ENGAGEMENT with its own money and time and its own counters. NOT BUILT.
-Cost of the FINDING: $0. Cost of the incident: $0.36 of worker rounds that could never have
+§4): a rerun is a FRESH ENGAGEMENT with its own money and time and its own counters. BUILT
+2026-08-18 in `a6f62c9` (softgreen module 7) — two counters that never do each other's job: CHAIN
+(`engagement.chainWallMs`/`chainSpentUsd`, `wall-clock.chainWallMs`, `job-end.spentUsd`) is every
+leg added up and is what the halt readout reports; ENGAGEMENT (the clock's `priorElapsedMs`,
+`job-end.engagementSpentUsd`) is what bounds THIS leg. A rerun opens on the full signed wall and
+declares its own fold engagement-scoped; MONEY deliberately does not follow — the signed budget is
+the CHAIN's ceiling, because a refilled wallet is the failure F45 measured. EXTENDED 2026-08-19 in
+`0ae7693`: the review door's rerun rides in as a THIRD input to `resolveHumanRuling` (`doorRerun`),
+OR'd and never merged, so "is this leg a fresh engagement" keeps one spelling and a door-rerun leg
+cannot inherit the rejected leg's wall either. Cost of the FINDING: $0. Cost of the incident: $0.36 of worker rounds that could never have
 finished, plus a second full wall.**
 
 ### 1. The measurement
@@ -8195,3 +8209,89 @@ of refusal, and it died of time for the reasons in F103.
 - **No claim about replication.** One pause, one return, one patient, one genre.
 - **No claim that the hitl class is viable.** It is retired; this entry says what it proved
   before it was, and nothing about what it would prove later.
+
+## F106 — the ceiling could not see the seam that spends the most: the calibration gate ran unbounded under an operator's `--budget`, so the advertised budget and the enforced budget were two different numbers
+
+**Status: minted 2026-08-19 by the softgreen rung's 3-lens review (HIGH), found by reading
+`src/authorjob.js` against `scripts/run-author.mjs` — no run, no spend. FIXED the same day in
+`0ae7693`. Cost of the FINDING: $0 (source read). Cost of the incident: $0 — the gate shipped in
+`d94e78a` and the defect was caught before any authoring run bought a calibration.**
+
+### 1. What the number meant, and what it bounded
+
+`scripts/run-author.mjs --budget` is the operator's ceiling over an authoring run. It has no
+default, deliberately: `null` is *nobody set one*, which is UNBOUNDED and a stated operator choice
+rather than a number the script picked. Two of the run's three paid seams honoured it —
+
+- the **scout** takes `ceilingUsd` directly and asks `capStop` before each survey call
+  (`src/authorscout.js`), and
+- the **declaration loop** asks `book.capStop()` immediately before every author call, every
+  revise and every malformed-emission retry (`src/authorflow.js`),
+
+— and the **third did not**. `calibrationGate` took no ceiling at all. It is the LARGEST of the
+three: `CALIBRATION_SIZE` is 10, the injection battery is 5 artifacts, and every one of those 15
+locate calls runs its own `JUDGE_ATTEMPTS` retry ladder. An operator who typed `--budget 1.50` was
+bounded through two seams and then handed the biggest one a blank cheque.
+
+**Nothing overspent, because nothing had run yet.** This is a source-level finding about what the
+flag MEANT, and the meaning was already wrong on disk.
+
+### 2. Why this is F45's class wearing money
+
+F45's rule is that a frozen rule without a wired detector is prose, not protection. The ceiling
+here was wired — it just could not see the spend it was bounding. A bound over two thirds of a run
+is not a tighter bound; it is a bound over a different quantity than the one the operator named,
+and the gap between them is unannounced. The programme has shipped that shape before under other
+names: an advertised cap with a lower silent ceiling behind it (F45), a wall that folds where a
+reader assumed it did not (F103). What is new is the direction — here the *enforced* number was the
+LOOSER one, so the failure mode is a bill rather than a killed row, and a bill is the one failure
+that does not announce itself in the spine.
+
+### 3. The fix, and the two properties it had to hold
+
+`prepareSigning` and `calibrationGate` now take `ceilingUsd` and `priorCalls`, and the runner
+passes `CEILING_USD` with `[...metered]` — every call the run has already paid for.
+
+- **ONE ceiling, all three seams.** The gate builds a cost book and `absorb`s prior spend before
+  the first locate call, so what it reads is the REMAINING balance and never a fresh allowance. A
+  tally that started at zero here would be a second ceiling wearing the first one's number — the
+  exact defect one layer in. `absorb` deliberately does not re-fire `onCall`, so nothing downstream
+  counts the scout twice. `authorCloseForJob` does the same over the rubric compile.
+- **A ceiling stop is a REFUSAL, not a casualty.** `capStop` is asked inside `pipeOnce`,
+  immediately before each paid call and nowhere else — the retry axis included, because a retry
+  ladder fires exactly when the model is malforming, which is the worst moment for a paid loop to
+  be unbounded. The stop comes back as its own `stop` field (`cap-halt` / `pricing-red`), never as
+  a `red` about the set: `casualty` stays null, the ungraded cases are ABSENT rather than recorded
+  as failures, and the refusal names money — *the ceiling is spent, and the next call was never
+  made; a part-graded set is still an ungraded ruler, and nothing here says the ruler is wrong.*
+  The `pricing-red` arm keeps F6 intact: an unpriced call makes the total unknown, and a ceiling
+  cannot be read against an unknown.
+
+### 4. Kin
+
+| kin | what it shares | what is different here |
+|---|---|---|
+| **F45** — the frozen money rule with no wired detector | a governance number that could not see the spend it governed | F45's detector was missing entirely and rows were misclassed. Here two of three seams were correctly wired, which is what made the third invisible |
+| **F44 / F31** — a silent second ceiling under an advertised cap | the advertised number and the enforced number disagree | those hid a TIGHTER ceiling behind a looser advertisement. This one hid a LOOSER one behind a tighter advertisement — the direction that costs money instead of rows |
+| **F6** — unpriced is never free | the same `pricing-red` arm, at a new seam | F6 is about rendering unknown as zero. Here the unknown makes the ceiling unreadable, so the honest move is to stop rather than to guess |
+
+### Lessons
+
+- **A ceiling is only over what it can count.** Ask of every bound: which seams accumulate into the
+  tally it reads? A seam outside the tally is not lightly bounded, it is unbounded, and the flag
+  says otherwise.
+- **A new paid seam inherits no governance.** The gate was built correctly in every other respect
+  and simply predated nothing telling it about the ceiling — the review question that found it was
+  *"which of these three spends money, and which of them is asked to stop?"*
+- **An overspend is the failure that leaves no red.** A cap that binds too early kills a row and
+  says so loudly; a cap that does not bind produces a green and a bill. Only the second one has to
+  be found by reading.
+
+### What is NOT claimed
+
+- **No claim that anything was overspent.** Nothing had run the gate; this is source, not spend.
+- **No claim that the number itself is right.** The ceiling is the operator's and is never picked
+  here — absent still means unbounded, and that stays a visible choice.
+- **No claim that the three seams are now provably exhaustive.** They are the three that exist
+  today; the rule the fix encodes is that a fourth must absorb the same book, and only the review
+  question above enforces that.

@@ -46,7 +46,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { loadRegistry, saveBridge, appendGreen, appendRed, mintBridge, registryExists } from './bridges.js';
+import { loadRegistry, loadBridge, saveBridge, appendGreen, appendRed, mintBridge, registryExists, reuseEligibility, recordDoor, quarantinesCredit, QUARANTINED_CODE } from './bridges.js';
 import { renderListing, selectionPrompt } from './selection.js';
 import { closeStagesOf } from './plan.js';
 import { MIN_WALL_MS, jobSpecHash } from './job.js';
@@ -59,7 +59,7 @@ import { readGrade } from './trend.js';
  * list, and the TTL gate below cannot drift from each other */
 import { HITL_PAUSE, HUMAN_CHECKPOINTS } from './declaredclose.js';
 import { extractArtifact, priceOf } from './text.js';
-import { runJob as shippedRunJob } from './run.js';
+import { runJob as shippedRunJob, ACCOUNTED_ROUND_TYPES } from './run.js';
 
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
@@ -338,7 +338,8 @@ export function reuseSpecHash(resolved) {
  * @param {boolean} [opts.forceCold]
  * @param {string[]} [opts.exclude] names already tried this run
  * @returns {Promise<any>} `{ choice, reason, called, refused, forcedCold, red, costUsd,
- *   spendComplete, candidates, listing }`
+ *   spendComplete, candidates, quarantineSkips, listing }` — `quarantineSkips` names every
+ *   workflow held back for want of a signer's accept, with its reason (module 6)
  */
 export async function selectBridge({ registry, job, ask, provider, pinned = null, shortlist = null, forceCold = false, exclude = [] }) {
   const r = /** @type {any} */ (registry);
@@ -346,22 +347,48 @@ export async function selectBridge({ registry, job, ask, provider, pinned = null
   const skipReds = Array.isArray(r?.reds) ? r.reds : [];
   const excluded = new Set(exclude);
   const shortSet = Array.isArray(shortlist) ? new Set(shortlist) : null;
-  const candidates = all.filter((/** @type {any} */ b) => !excluded.has(b.name) && (!shortSet || shortSet.has(b.name)));
+  const offered = all.filter((/** @type {any} */ b) => !excluded.has(b.name) && (!shortSet || shortSet.has(b.name)));
+
+  // SOFTGREEN MODULE 6 — a HELD workflow is not offered, and the skip is stated.
+  // Its green was rendered by the judged floor and no signer has accepted it yet,
+  // so it has earned no reuse; handing it to the picker would spend the credit
+  // before it was granted. The reason travels TWO ways — into the listing the
+  // picker reads (as a distinct note, never dressed as an unreadable file) and out
+  // to the caller — because a shelf that quietly shrinks teaches the operator that
+  // the registry is empty when it is merely waiting on them.
+  /** @type {{name: string|null, reason: string}[]} */
+  const quarantineSkips = [];
+  const candidates = offered.filter((/** @type {any} */ b) => {
+    const e = reuseEligibility(b);
+    if (!e.ok) quarantineSkips.push({ name: isNonEmptyString(b.name) ? b.name : null, reason: e.reason });
+    return e.ok;
+  });
 
   /** the shape every return here holds, so a caller never branches on field presence */
-  const base = { choice: null, reason: '', called: false, refused: false, forcedCold: false, red: null, costUsd: 0, spendComplete: true, candidates: candidates.map((/** @type {any} */ b) => b.name), listing: null, pinned };
+  const base = { choice: null, reason: '', called: false, refused: false, forcedCold: false, red: null, costUsd: 0, spendComplete: true, candidates: candidates.map((/** @type {any} */ b) => b.name), quarantineSkips, listing: null, pinned };
 
   if (forceCold) {
     return { ...base, forcedCold: true, reason: 'the operator forced a cold draft — no workflow was offered and no selection call was made' };
   }
   if (candidates.length === 0) {
-    return { ...base, reason: exclude.length || shortSet ? 'no workflow remains to offer (every candidate was excluded or outside the shortlist)' : 'the registry holds no reusable workflow' };
+    return {
+      ...base,
+      // "nothing to reuse" and "everything is waiting on YOU" are different facts,
+      // and the empty-shelf sentence must not be said about the second
+      reason: quarantineSkips.length
+        ? `every workflow this run could have started from is HELD: ${quarantineSkips.map((s) => `${s.name} (${s.reason})`).join('; ')}`
+        : (exclude.length || shortSet ? 'no workflow remains to offer (every candidate was excluded or outside the shortlist)' : 'the registry holds no reusable workflow'),
+    };
   }
 
   // the listing the MODEL reads is the listing a human reads — same function, same text,
   // and the skip reds travel with it so a picker is never handed a set shorter than the
   // directory without being told
-  const listing = renderListing({ ok: skipReds.length === 0, reds: skipReds, bridges: candidates });
+  const listing = renderListing({
+    ok: skipReds.length === 0 && quarantineSkips.length === 0,
+    reds: [...skipReds, ...quarantineSkips.map((s) => ({ code: QUARANTINED_CODE, path: s.name, detail: s.reason }))],
+    bridges: candidates,
+  });
   const prompt = selectionPrompt(listing, ask, pinned);
 
   let result;
@@ -568,6 +595,46 @@ function readWorkBranch(seen) {
 }
 
 /**
+ * F102 — the SIGNER'S ANSWER this window received and never paid for.
+ *
+ * Two records, two questions, and the pairing is the whole reading:
+ *   `human-decision`        — a decision reached this leg (with the person's own
+ *                             words, and when THEY said them)
+ *   `human-decision-spent`  — work was bought for it (a fix round, an accept that
+ *                             greened, a pause honoured)
+ *
+ * A decision with no spend after it is still owed to the person. That is the state
+ * F102 found unrepresentable: the resumed leg re-ran the close, arrived at the human
+ * stage and asked the byte-identical question, because "a decision is pending" and
+ * "nobody has looked yet" were the same empty checkpoint.
+ *
+ * The LAST unspent one wins — a leg emits at most one, and a window that reaches
+ * across a resume must act on the newest. `receivedAt` prefers the carried stamp (the
+ * moment the PERSON answered, forwarded leg to leg) and falls back to the record's own
+ * `ts`, which is that same moment on the leg that first heard it.
+ * @param {any[]} seen the window's own events, in file order
+ * @returns {{decision: string, text: string|null, receivedAt: string|null, source: string|null}|null}
+ */
+function readPendingDecision(seen) {
+  for (let i = seen.length - 1; i >= 0; i -= 1) {
+    const e = seen[i];
+    if (!isObj(e)) continue;
+    // a spend seen while walking backwards settles everything older: the decision it
+    // paid for is the newest one there is, and nothing before it can still be owed
+    if (e.type === 'human-decision-spent') return null;
+    if (e.type !== 'human-decision' || !isNonEmptyString(e.decision)) continue;
+    const at = isNonEmptyString(e.receivedAt) ? String(e.receivedAt) : (isNonEmptyString(e.ts) ? String(e.ts) : null);
+    return {
+      decision: String(e.decision),
+      text: typeof e.text === 'string' ? e.text : null,
+      receivedAt: at,
+      source: isNonEmptyString(e.source) ? String(e.source) : null,
+    };
+  }
+  return null;
+}
+
+/**
  * The dead leg's CLOSE GRADES, in order — the trend baselines a resumed leg
  * inherits (PRD v1.46 §3, and hamr's approved #2: *a resumed run's trend judges the
  * whole tree*).
@@ -653,8 +720,11 @@ function readGradeSeed(seen) {
  *  4. **Which envelope this spine belongs to** — the `reuse-start` record's own
  *     approval hash, so a resume can prove it is continuing the SAME signed run.
  *
- * **F45 governs the arithmetic here.** A window's spend is summed from `worker-round`
- * ONLY — the same event `runJob`'s own ledger accounts, no other. The selection calls
+ * **F45 governs the arithmetic here.** A window's spend is summed from
+ * `ACCOUNTED_ROUND_TYPES` ONLY — the ledger's OWN list (src/run.js), imported rather
+ * than re-spelled, so a record `runJob` charges and this reader has never heard of
+ * cannot silently widen a resumed run's ceiling by exactly that amount. It was one
+ * event (`worker-round`) until the close itself could spend (`judge-round`). The selection calls
  * are real money and are counted, but as the RUN's cost and never as a try's: a
  * picker's tokens are not a worker's, and attributing them to a try would misstate
  * both the fold and the row. `worker-turn` (native attribution, cost null by design)
@@ -815,7 +885,7 @@ export function readResume(events, { deathAt = null, direct = false, resumableOu
       // a priced worker round outside every try window: nothing in this runner emits
       // one, so it is a writer this reader does not model. It is COUNTED and reported
       // rather than dropped — the blind-instrument class is what F45 is about.
-      if (ev.type === 'worker-round') {
+      if (ACCOUNTED_ROUND_TYPES.includes(ev.type)) {
         strayRounds += 1;
         if (typeof ev.costUsd === 'number' && Number.isFinite(ev.costUsd)) strayCostUsd += ev.costUsd;
         else selectionComplete = false;
@@ -823,8 +893,11 @@ export function readResume(events, { deathAt = null, direct = false, resumableOu
       continue;
     }
     open.seen.push(ev);
-    if (ev.type === 'worker-round') {
-      // the ONE event the live ledger accounts (src/run.js) — same rule, same spelling
+    if (ACCOUNTED_ROUND_TYPES.includes(ev.type)) {
+      // the events the live ledger accounts (src/run.js), read from ITS OWN list rather
+      // than re-spelled here: the fold is what stops a resume silently widening a signed
+      // budget, so a record the ledger charges and this reader does not know about is a
+      // ceiling that grows by exactly the close's own spend (`judge-round`, softgreen)
       if (typeof ev.costUsd === 'number' && Number.isFinite(ev.costUsd)) open.roundsUsd += ev.costUsd;
       else open.roundsComplete = false;
     } else if (ev.type === 'job-end') {
@@ -1012,6 +1085,25 @@ export function readResume(events, { deathAt = null, direct = false, resumableOu
         priorRounds: open.declaredRounds !== null && typeof windowRounds === 'number'
           ? open.declaredRounds + windowRounds
           : null,
+        // F102 — the DECISION this leg was given and never paid for. A person's
+        // answer is state, and state that lives only in a process dies with it: the
+        // paused run `msx7a3rj` took the rerun door, stopped with `iterationsUsed: 0`,
+        // and its resume asked the byte-identical question again because the
+        // checkpoint could not tell "pending" from "nobody has looked yet".
+        //
+        // The two records are the run's own (`human-decision` / `human-decision-spent`,
+        // src/planrun.js) and the reading is the plain one: the last decision received
+        // with nothing after it that bought it. Deliberately NOT re-derived from a
+        // terminal or a phase — the writer says both facts, and a reader inventing a
+        // third rule is how two instruments come to disagree.
+        //
+        // THIS WINDOW ONLY, unlike the plan seed and the work branch beside it. Those
+        // are facts about the TREE and survive an attempt that died before recording
+        // anything; a decision is a fact about a PERSON and about the tree they were
+        // shown, and reaching back into an abandoned attempt to re-apply one could
+        // hand a leg an answer given about a tree two attempts ago. Stated as the
+        // narrower rule rather than discovered as a mis-applied accept.
+        pendingDecision: readPendingDecision(open.seen),
       };
       if (open.bridge) tried.push(open.bridge);
     }
@@ -1494,6 +1586,10 @@ export async function runReuse(opts) {
       runid: `${runid}-t${n}`, patient, at: new Date(now()).toISOString(),
       costUsd: read.spentUsd, spendComplete: read.spendComplete, wallMs, rounds,
       ...(trySpecHash ? { specHash: trySpecHash } : {}),
+      // the CLASS this run was signed under, carried to the one place a green is
+      // built (softgreen module 6). It decides whether the minted version is HELD;
+      // `appendRed` ignores it, because a red minted nothing to hold.
+      verdictType: job.verdictType,
     };
     if (outcome === 'already-green') {
       // A GREEN THAT PREDATES THE RUN mints nothing, and the guard keys on the
@@ -1531,7 +1627,13 @@ export async function runReuse(opts) {
         closeStageNames: (closeStagesOf(job) ?? []).map((/** @type {any} */ s) => s.name),
         toolsUsed: [...new Set((read.plan.steps ?? []).flatMap((/** @type {any} */ s) => s.tools ?? []))],
       };
-      row.bridgeWrite = writeGreen(bridge, meta, { ...record, plan: read.plan });
+      // ONE spelling of what a green writes, shared with the U runner (2B):
+      // `writeGreenRow` builds the write record and saves it; this leg still owns
+      // the reporting, exactly as `commit` did when the logic lived in here.
+      const w = writeGreenRow({ registryDir, bridge, meta, record: { ...record, plan: read.plan } });
+      bridgeWrites.push(w);
+      emit('bridge-write', w);
+      row.bridgeWrite = w;
     } else if (HUMAN_CHECKPOINTS.includes(outcome)) {
       // A PAUSE IS NOT A RESULT, so the box gets nothing — not a casualty row, not a red,
       // and the workflow is left exactly as it was. The recipe has not been judged: the
@@ -1565,88 +1667,17 @@ export async function runReuse(opts) {
     return row;
   };
 
-  /** save a bridge result and record the write, whatever produced it
+  /** save a bridge result and record the write, whatever produced it — the record
+   * itself is built by `commitWrite` (the one spelling of the write-record shape,
+   * shared with `writeGreenRow`); this closure only adds the reporting
    * @param {{ok: boolean, reds: any[], bridge: any}} r @param {string|null} name @param {string} action
    * @param {object} [extra] fields that make the write's own story visible on the record */
   const commit = (r, name, action, extra = {}) => {
-    if (!r.ok) {
-      const w = { name, action: 'none', file: null, reds: r.reds, ...extra };
-      bridgeWrites.push(w);
-      emit('bridge-write', w);
-      return w;
-    }
-    const s = saveBridge(registryDir, r.bridge);
-    const w = { name: r.bridge.name, action: s.ok ? action : 'none', file: s.file, reds: s.reds, ...extra };
+    const w = commitWrite(registryDir, r, name, action, extra);
     bridgeWrites.push(w);
     emit('bridge-write', w);
     return w;
   };
-
-  /** a refused write, recorded exactly like a committed one so a reader never has to
-   * branch on presence @param {string} name @param {any} red @param {object} [extra] */
-  const refuseWrite = (name, red, extra = {}) => {
-    const w = { name, action: 'none', file: null, reds: [red], ...extra };
-    bridgeWrites.push(w);
-    emit('bridge-write', w);
-    return w;
-  };
-
-  /**
-   * KNOWN LIMIT, named rather than discovered later: `appendGreen` carries the entry's
-   * LABEL (`goal`, `closeStageNames`, `toolsUsed`) forward untouched, so a new version
-   * whose plan uses a verb the founding green did not is not reflected in `toolsUsed`.
-   * The load gate reads that field, so the gate's verb check goes slightly stale across
-   * versions. It is not a safety hole — the gate only ever gets more permissive there,
-   * and the TWEAKED plan still passes the full `validatePlan` against the job's signed
-   * menu at draft time, which is the check that actually decides. Fixing it properly
-   * means `appendGreen` taking a label update, which is module 1's contract and hamr's
-   * call, not something to change from the caller.
-   * @param {any|null} bridge @param {any} meta @param {any} record
-   */
-  function writeGreen(bridge, meta, record) {
-    // the BRIDGE leg needs no shape check: `runJob`'s own load gate already proved this
-    // entry is the same kind of recipe as this job, at the door, before a token was spent
-    // (a mismatch never gets here — it returns `recipe-stale`).
-    if (bridge) return commit(appendGreen(bridge, record), bridge.name, 'appendGreen');
-
-    // the COLD leg's green. `mintBridge` is for a name nobody holds; a name that already
-    // holds greens APPENDS, because a cold run of a job that already has a bridge is
-    // another version of that workflow, and overwriting it would destroy the green that
-    // minted it.
-    //
-    // But the name is the JOB's slug, and a job's CLOSE can be re-signed under that same
-    // slug. Appending across two close shapes does two wrong things at once: it counts a
-    // green another close rendered toward this entry's distinct-patient status (a false
-    // `proven`), and it hands the load gate — which matches on exactly these stage names
-    // — a plan that satisfied a different verification. So the shape is checked here with
-    // the gate's own predicate, and a mismatch neither appends NOR discards the green: it
-    // forks to a deterministic derived name, with the fork ON the record.
-    const stageNames = Array.isArray(meta.closeStageNames) ? meta.closeStageNames : [];
-    const entries = loadRegistry(registryDir).bridges;
-    const existing = entries.find((/** @type {any} */ b) => b.name === meta.name);
-    if (existing && sameCloseShape(existing, stageNames)) return commit(appendGreen(existing, record), meta.name, 'appendGreen');
-
-    const forked = existing !== undefined;
-    const target = forked ? shapeForkName(meta.name, stageNames) : meta.name;
-    /** the fork's own story, carried on every write record it produces */
-    const mark = forked ? { shapeForked: true, forkedFrom: meta.name, closeStageNames: [...stageNames] } : {};
-    const held = forked ? entries.find((/** @type {any} */ b) => b.name === target) : undefined;
-    if (held) {
-      // the derived name is derived FROM the shape, so a readable entry there matches by
-      // construction; a mismatch would mean two different closes hashed the same, and
-      // that is refused rather than appended blind
-      return sameCloseShape(held, stageNames)
-        ? commit(appendGreen(held, record), target, 'appendGreen-shape-forked', mark)
-        : refuseWrite(target, { code: 'shape-fork-collision', path: `${target}.json`, detail: `the derived name for close [${stageNames.join(' → ')}] is already held by an entry of a different shape — refusing to append this green to a recipe another close greened` }, mark);
-    }
-    // A file of that name that `loadRegistry` could not READ is not an absent entry — it
-    // is an entry nobody can see, and minting over it destroys whatever greens it held.
-    // `loadRegistry` skips-and-reports for that reason; the mint must not undo the skip.
-    if (existsSync(join(registryDir, `${target}.json`))) {
-      return refuseWrite(target, { code: 'mint-collision', path: `${target}.json`, detail: 'a file of this name exists but could not be read as a bridge — refusing to mint over it, because whatever greens it holds are not recoverable once overwritten. Repair or move it, then re-run.' }, mark);
-    }
-    return commit(mintBridge({ ...meta, name: target }, record), target, forked ? 'mint-shape-forked' : 'mint', mark);
-  }
 
   /**
    * The stops no further try can change. A spec nobody signed, a spec that will not
@@ -1908,7 +1939,10 @@ export async function runReuse(opts) {
     });
     selection.push({ n, ...sel, listing: undefined });
     account(sel.costUsd, sel.spendComplete);
-    emit('selection-result', { n, choice: sel.choice, reason: sel.reason, called: sel.called, refused: sel.refused, costUsd: sel.costUsd, candidates: sel.candidates });
+    // `quarantineSkips` rides the spine beside the candidates for the same reason it rides
+    // the listing: a shelf that quietly shrank is indistinguishable from an empty one, and
+    // "held, waiting on you" is the fact the operator needs to see (softgreen module 6)
+    emit('selection-result', { n, choice: sel.choice, reason: sel.reason, called: sel.called, refused: sel.refused, costUsd: sel.costUsd, candidates: sel.candidates, quarantineSkips: sel.quarantineSkips });
 
     if (sel.refused) {
       return done('selection-refused', {
@@ -1961,4 +1995,200 @@ export async function runReuse(opts) {
       + ` ${typeof t.wallMs === 'number' && Number.isFinite(t.wallMs) ? `${(t.wallMs / 60000).toFixed(1)}min of ${(t.wallCapMs / 60000).toFixed(1)}min` : 'wall UNKNOWN'},`
       + ` close ${t.closeReached ? 'reached' : 'NEVER REACHED'}`).join('\n'),
   });
+}
+
+// ── the GREEN's registry write, shared by both runners ──────────────────────
+
+/** save a bridge result and BUILD the write record — the ONE spelling of the
+ * write-record shape (`{name, action, file, reds, …extra}`), used by `writeGreenRow`
+ * below AND by `runReuse`'s own red/casualty `commit`, so a field added to one can
+ * never silently miss the other. Reporting (push + emit) stays each caller's.
+ * @param {string} registryDir @param {{ok: boolean, reds: any[], bridge: any}} r
+ * @param {string|null} name @param {string} action @param {object} [extra] */
+function commitWrite(registryDir, r, name, action, extra = {}) {
+  if (!r.ok) return { name, action: 'none', file: null, reds: r.reds, ...extra };
+  const s = saveBridge(registryDir, r.bridge);
+  return { name: r.bridge.name, action: s.ok ? action : 'none', file: s.file, reds: s.reds, ...extra };
+}
+
+/**
+ * WHAT A GREEN WRITES, in ONE place. Lifted verbatim out of `runReuse`'s own
+ * closure when the U runner needed it too (2B) — two spellings of "what a green
+ * writes" would be the two-transforms class applied to the ledger itself, which is
+ * the failure `greenParts` exists one level down to prevent.
+ *
+ * Two legs, and the split is which caller already holds an entry:
+ *   - A BRIDGE IN HAND (the reuse leg) APPENDS. No shape check is needed: `runJob`'s
+ *     load gate already proved at the door, before a token, that this entry is the
+ *     same kind of recipe as this job (a mismatch returns `recipe-stale` and never
+ *     gets here).
+ *   - NO BRIDGE (the cold leg, and every U run) mints — unless a name already holds
+ *     greens, in which case it APPENDS, because a cold run of a job that already has
+ *     a bridge is another version of that workflow and overwriting it would destroy
+ *     the green that minted it.
+ *
+ * But the name is the JOB's slug, and a job's CLOSE can be re-signed under that same
+ * slug. Appending across two close shapes does two wrong things at once: it counts a
+ * green another close rendered toward this entry's distinct-patient status (a false
+ * `proven`), and it hands the load gate — which matches on exactly these stage names
+ * — a plan that satisfied a different verification. So the shape is checked with the
+ * gate's own predicate, and a mismatch neither appends NOR discards the green: it
+ * forks to a deterministic derived name, with the fork ON the record.
+ *
+ * THE HOLD IS NOT DECIDED HERE. `quarantined` comes off `greenParts` reading the
+ * class the run was signed under (`record.verdictType`, module 6), so a caller that
+ * forgets to pass it mints an UNHELD green rather than a held one — which is why
+ * both callers pass the spec's own field and never a literal.
+ *
+ * KNOWN LIMIT, named rather than discovered later: `appendGreen` carries the entry's
+ * LABEL (`goal`, `closeStageNames`, `toolsUsed`) forward untouched, so a new version
+ * whose plan uses a verb the founding green did not is not reflected in `toolsUsed`.
+ * The load gate reads that field, so the gate's verb check goes slightly stale across
+ * versions. It is not a safety hole — the gate only ever gets more permissive there,
+ * and the TWEAKED plan still passes the full `validatePlan` against the job's signed
+ * menu at draft time, which is the check that actually decides. Fixing it properly
+ * means `appendGreen` taking a label update, which is module 1's contract and hamr's
+ * call, not something to change from the caller.
+ *
+ * Returns the WRITE RECORD both runners report — never throws, and a refusal is a
+ * record with `action: 'none'` and named reds rather than an absence a reader has to
+ * branch on.
+ * @param {{registryDir: string, bridge?: any|null, meta: any, record: any}} o
+ * @returns {{name: string|null, action: string, file: string|null, reds: any[], [k: string]: any}}
+ */
+export function writeGreenRow({ registryDir, bridge = null, meta, record }) {
+  /** the shared record builder, with this write's registry bound in
+   * @param {{ok: boolean, reds: any[], bridge: any}} r @param {string|null} name
+   * @param {string} action @param {object} [extra] */
+  const commit = (r, name, action, extra = {}) => commitWrite(registryDir, r, name, action, extra);
+  /** a refused write, recorded exactly like a committed one @param {string} name
+   * @param {any} red @param {object} [extra] */
+  const refuseWrite = (name, red, extra = {}) => ({ name, action: 'none', file: null, reds: [red], ...extra });
+
+  if (bridge) return commit(appendGreen(bridge, record), bridge.name, 'appendGreen');
+
+  const stageNames = Array.isArray(meta.closeStageNames) ? meta.closeStageNames : [];
+  const entries = loadRegistry(registryDir).bridges;
+  const existing = entries.find((/** @type {any} */ b) => b.name === meta.name);
+  if (existing && sameCloseShape(existing, stageNames)) return commit(appendGreen(existing, record), meta.name, 'appendGreen');
+
+  const forked = existing !== undefined;
+  const target = forked ? shapeForkName(meta.name, stageNames) : meta.name;
+  /** the fork's own story, carried on every write record it produces */
+  const mark = forked ? { shapeForked: true, forkedFrom: meta.name, closeStageNames: [...stageNames] } : {};
+  const held = forked ? entries.find((/** @type {any} */ b) => b.name === target) : undefined;
+  if (held) {
+    // the derived name is derived FROM the shape, so a readable entry there matches by
+    // construction; a mismatch would mean two different closes hashed the same, and
+    // that is refused rather than appended blind
+    return sameCloseShape(held, stageNames)
+      ? commit(appendGreen(held, record), target, 'appendGreen-shape-forked', mark)
+      : refuseWrite(target, { code: 'shape-fork-collision', path: `${target}.json`, detail: `the derived name for close [${stageNames.join(' → ')}] is already held by an entry of a different shape — refusing to append this green to a recipe another close greened` }, mark);
+  }
+  // A file of that name that `loadRegistry` could not READ is not an absent entry — it
+  // is an entry nobody can see, and minting over it destroys whatever greens it held.
+  // `loadRegistry` skips-and-reports for that reason; the mint must not undo the skip.
+  if (existsSync(join(registryDir, `${target}.json`))) {
+    return refuseWrite(target, { code: 'mint-collision', path: `${target}.json`, detail: 'a file of this name exists but could not be read as a bridge — refusing to mint over it, because whatever greens it holds are not recoverable once overwritten. Repair or move it, then re-run.' }, mark);
+  }
+  return commit(mintBridge({ ...meta, name: target }, record), target, forked ? 'mint-shape-forked' : 'mint', mark);
+}
+
+/**
+ * THE U RUNNER'S TERMINAL WRITE (2B) — does the run that just ended earn a registry
+ * row, and if so, write it.
+ *
+ * `scripts/run-u.mjs` has always kept standalone bridge FILES and never a registry,
+ * so its review door could describe a held learning credit it had no row to release:
+ * `--decide accept` reached `recordDoor`, found no green row for the runid and died
+ * `no-row-for-run`. This is the row, and STORAGE IS ALL IT IS — selection, promotion
+ * and reuse execution stay parked (layer-3-reuse). Nothing here reads a row back.
+ *
+ * FOUR REFUSALS, each one a guard that already existed somewhere and is kept:
+ *   - NO REGISTRY, no row. The registry path is operator-supplied and never
+ *     conjured; without one the door says, in words, that nothing was released.
+ *   - ALREADY-GREEN mints nothing. The close was satisfied before this run did
+ *     anything, so nothing here earned a version — the reuse-credit leak block, from
+ *     the writing side rather than the door's.
+ *   - A GREEN WITH NO PLAN mints nothing. The artifact that inherits is the one that
+ *     RAN, and there is none (R1).
+ *   - A CLASS WHOSE CREDIT IS NOT HELD mints nothing HERE. That is `green` today, and
+ *     it is main's behaviour kept rather than a new rule: this runner has never
+ *     written a registry row for a green-class run, and widening what enters the
+ *     registry is a reuse-rung question, not a side effect of fixing a door. The
+ *     predicate is `quarantinesCredit` — the ONE spelling of "is this class held" —
+ *     so the row this runner mints and the row a door releases can never disagree
+ *     about which classes they are talking about.
+ *
+ * The row is born HELD for exactly the reason any judged green is: `greenParts` reads
+ * `verdictType` off the record. Nothing here sets the flag.
+ * @param {{registryDir: string|null|undefined, job: any, name: string|null,
+ *   outcome: string, plan: any, record: any}} o
+ * @returns {{minted: boolean, reason: string|null, write: any|null}}
+ */
+export function writeRunGreenRow({ registryDir, job, name, outcome, plan, record }) {
+  if (!isNonEmptyString(registryDir)) return { minted: false, reason: 'no-registry', write: null };
+  if (outcome !== 'green') {
+    return { minted: false, reason: outcome === 'already-green' ? 'green-predates-run' : 'not-green', write: null };
+  }
+  if (!isObj(plan)) return { minted: false, reason: 'no-plan-executed', write: null };
+  if (!quarantinesCredit(job?.verdictType)) return { minted: false, reason: 'credit-not-held', write: null };
+
+  const target = isNonEmptyString(name) ? name : job.job;
+  const meta = {
+    name: target,
+    goal: job.goal,
+    specHash: record?.specHash ?? null,
+    closeStageNames: (closeStagesOf(job) ?? []).map((/** @type {any} */ s) => s.name),
+    toolsUsed: [...new Set((plan.steps ?? []).flatMap((/** @type {any} */ s) => s.tools ?? []))],
+  };
+  const write = writeGreenRow({
+    registryDir,
+    bridge: null,
+    meta,
+    // the class the run was SIGNED under, from the spec — never a literal, so the
+    // hold and the class can never drift apart
+    record: { ...record, plan, verdictType: job.verdictType },
+  });
+  return { minted: write.action !== 'none', reason: write.action === 'none' ? 'write-refused' : null, write };
+}
+
+// ── the REVIEW DOOR's registry half (softgreen module 6) ────────────────────
+
+/**
+ * Apply a signer's door decision to the workflow a run wrote its row against:
+ * record the disposition, and — on `accept` over a HELD judged green — release the
+ * learning credit that green has been carrying unspent (PRD v1.71 §3).
+ *
+ * This is the ONE seam between a person's answer and the box. It is deliberately
+ * separate from `runReuse`: the door opens AFTER the run has ended (a green run is
+ * over, non-blocking, and the person may answer minutes or days later), so the
+ * decision cannot ride the run's own return path. The runner calls this with the
+ * runid it printed at the door.
+ *
+ * Never throws and never conjures: a missing registry, a missing entry, a
+ * malformed one and a runid with no green row all come back as named reds. The
+ * loop's verdict is untouched in every branch — this writes a disposition, never a
+ * result.
+ *
+ * @param {object} opts
+ * @param {string} opts.registryDir the operator-supplied registry directory
+ * @param {string} opts.name the workflow the run wrote to
+ * @param {string} opts.runid the RUN's id, exactly as the bridge row records it
+ * @param {string} opts.decision one of the three doors
+ * @param {string|null} [opts.at] when the person answered
+ * @returns {{ok: boolean, reds: any[], released: boolean, file: string|null}}
+ */
+export function applyDoorDecision({ registryDir, name, runid, decision, at = null }) {
+  if (!isNonEmptyString(registryDir) || !registryExists(registryDir)) {
+    return { ok: false, reds: [{ code: 'registry-missing', path: String(registryDir), detail: 'the registry path is operator-supplied and is never conjured' }], released: false, file: null };
+  }
+  if (!isNonEmptyString(name)) return { ok: false, reds: [{ code: 'invalid-value', path: 'name', detail: 'the workflow this run wrote its row against' }], released: false, file: null };
+  const file = join(registryDir, `${name}.json`);
+  const loaded = loadBridge(file);
+  if (!loaded.ok) return { ok: false, reds: loaded.reds, released: false, file: null };
+  const r = recordDoor(loaded.bridge, { runid, decision, at });
+  if (!r.ok) return { ok: false, reds: r.reds, released: false, file: null };
+  const s = saveBridge(registryDir, r.bridge);
+  return { ok: s.ok, reds: s.reds, released: s.ok && r.released, file: s.file };
 }

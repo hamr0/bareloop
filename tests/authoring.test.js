@@ -28,7 +28,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { LIVE_KINDS, regexGroups } from '../src/kinds.js';
+import { LIVE_KINDS, regexGroups, MAX_JUDGED_PATHS } from '../src/kinds.js';
 import { VERDICT_TYPES, LOCKED_VERDICTS } from '../src/job.js';
 import { hasNestedQuantifier, scanSecrets } from '../src/validate.js';
 import {
@@ -38,7 +38,9 @@ import {
   classGuards, closeCeiling, genreEnv, genreOwnedEnvNames, genreInstruments,
   validateDeclaration, normalizeDeclaration,
 } from '../src/authoring.js';
-import { declarationLines, parseCeiling, ceilingLine, crashRecord, phaseLine } from '../scripts/author-readout.mjs';
+import {
+  declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
+} from '../scripts/author-readout.mjs';
 import { RAW_PERSIST_MAX, RAW_TRIM_MARKER } from '../src/text.js';
 
 /** The battery for the one class v1 admits. The attachment point is the CLASS
@@ -148,11 +150,13 @@ test('catalogue: the live kinds are EXACTLY the executor\'s live kinds, both dir
   assert.deepEqual([...live].sort(), [...LIVE_KINDS].sort());
 });
 
-test('catalogue: judged-floor is the one LOCKED entry; harness-loop is ABSENT', () => {
-  // `human-confirms` went LIVE at N4 slice 1; `judged-floor` waits for the
-  // judged floor its class needs (slice 2)
-  assert.deepEqual([...LOCKED_KINDS].sort(), ['judged-floor']);
-  for (const k of LOCKED_KINDS) assert.equal(KIND_CATALOGUE[k].locked, true, `${k} must be marked locked`);
+test('catalogue: NOTHING is locked any more; harness-loop is ABSENT', () => {
+  // `human-confirms` went LIVE at N4 slice 1 and `judged-floor` at softgreen
+  // module 2 — the executor and the catalogue unlocked in one commit. The
+  // locked-kind MACHINERY is unchanged and is tested by injection (below, and in
+  // tests/authorflow.test.js): the day harness-loop is named, it arrives on it.
+  assert.deepEqual([...LOCKED_KINDS], []);
+  for (const k of CATALOGUE_KINDS) assert.equal(KIND_CATALOGUE[k].locked, undefined, `${k} carries no locked flag`);
   // absent is not the same as locked: declaring harness-loop is an unknown-kind
   // typo, not counted demand — it is out of v1 with no menu entry at all
   assert.equal(Object.hasOwn(KIND_CATALOGUE, 'harness-loop'), false);
@@ -609,17 +613,22 @@ test('classes: the two copies of the menu are IDENTICAL — the spec radio and t
   assert.deepEqual([...LOCKED_CLASSES], [...LOCKED_VERDICTS]);
 });
 
-test('classes: the class menu is exactly three, and v1 builds two of them (N4 slice 1)', () => {
+test('classes: the class menu is exactly three, and every one of them is built (softgreen module 3)', () => {
   assert.deepEqual([...VERDICT_CLASSES], ['green', 'soft-green', 'hitl']);
-  assert.deepEqual([...LOCKED_CLASSES], ['soft-green']);
-  assert.deepEqual([...LIVE_CLASSES], ['green', 'hitl']);
+  assert.deepEqual([...LOCKED_CLASSES], [], 'hitl left at N4 slice 1, soft-green at softgreen module 3');
+  assert.deepEqual([...LIVE_CLASSES], [...VERDICT_CLASSES]);
   // the batteries cover the menu and nothing else — a class with no entry would
   // be a class whose guards nothing can supply
   assert.deepEqual(Object.keys(CLASS_BATTERIES).sort(), [...VERDICT_CLASSES].sort());
-  for (const c of LOCKED_CLASSES) {
-    assert.equal(CLASS_BATTERIES[c].locked, true, `${c} must be a named but LOCKED set`);
-    assert.equal(CLASS_BATTERIES[c].guards, null, `${c}'s battery is ABSENT (null), never an empty array`);
+  for (const c of VERDICT_CLASSES) {
+    assert.equal(CLASS_BATTERIES[c].locked, false, `${c} is built`);
+    assert.ok(Array.isArray(CLASS_BATTERIES[c].guards) && CLASS_BATTERIES[c].guards.length > 0,
+      `${c} carries real guards — an empty battery is the one sentence D5 exists to make unsayable`);
   }
+  // the LOCKED shape (`guards: null`, never `[]`) is unreachable while nothing is
+  // locked. It stays in `classGuards` for the next class that arrives locked, and
+  // the statement above is what says so out loud rather than leaving a loop that
+  // silently iterates nothing.
 });
 
 test('battery: an EMPTY battery is IMPOSSIBLE for a known class and a known language', () => {
@@ -643,6 +652,7 @@ test('battery: an EMPTY battery is IMPOSSIBLE for a known class and a known lang
 
 test('battery: an unknown class, and a LOCKED class, THROW rather than hand back nothing', () => {
   assert.throws(() => classGuards({ verdictType: 'chartreuse', lang: 'js' }), /chartreuse/);
+  assert.deepEqual([...LOCKED_CLASSES], [], 'the locked arm below is unreachable today, and says so');
   for (const c of LOCKED_CLASSES) {
     assert.throws(() => classGuards({ verdictType: c, lang: 'js' }), new RegExp(c),
       `a locked class must never resolve a battery — admission refuses it first`);
@@ -690,7 +700,9 @@ test('ceiling: every catalogue kind carries the verdict class it can honestly re
   // every live MEASURING kind is mechanical — the ceiling rule was inert in v1
   // by construction, and `human-confirms` is the first kind to make it bite: a
   // human stage in a green spec is a class-ceiling red (tests/hitl.test.js)
-  for (const k of CATALOGUE_LIVE_KINDS.filter((x) => x !== 'human-confirms')) {
+  // the two kinds that MAKE the ceiling rule bite — a judge and a person — are
+  // named here so the rest of the menu is asserted mechanical
+  for (const k of CATALOGUE_LIVE_KINDS.filter((x) => !['human-confirms', 'judged-floor'].includes(x))) {
     assert.equal(KIND_CATALOGUE[k].verdictClass, 'green', k);
   }
   assert.equal(KIND_CATALOGUE['judged-floor'].verdictClass, 'soft-green');
@@ -748,11 +760,51 @@ test('ceiling: the SAME declaration under a matching pick is not a ceiling red �
 });
 
 test('ceiling: a LOCKED kind is refused as unavailable and never ALSO redded for its class — one problem, one red', () => {
+  // by INJECTION: v1 ships nothing locked, and the rule must keep a real subject
+  // rather than a vacuous loop that reads like a guard (see the catalogue test)
+  const catalogue = { ...KIND_CATALOGUE, 'judged-floor': { ...KIND_CATALOGUE['judged-floor'], locked: true } };
   const decl = goodDeclaration();
   decl.stages.splice(3, 0, { name: 'reads-well', kind: 'judged-floor', params: {} });
-  const res = run(decl);
+  const res = run(decl, { catalogue });
   assert.equal(at(res, 'locked-kind').length, 1);
   assert.deepEqual(at(res, 'class-ceiling'), []);
+});
+
+test('ceiling: the LIVE judged kind is class-gated instead — a soft-green ruler under a green promise is refused', () => {
+  // what replaces the locked-kind refusal for `judged-floor` now that it runs: the
+  // CEILING. The kind is live and the class it renders is not admitted yet, so a
+  // real declaration still cannot reach it — refused, never silently upgraded.
+  const decl = goodDeclaration();
+  decl.stages.splice(3, 0, { name: 'reads-well', kind: 'judged-floor', params: { card: { items: [{ rule: 'has-doc', text: 'documented' }] }, paths: ['src/email.js'] } });
+  const res = run(decl);
+  assert.deepEqual(at(res, 'locked-kind'), [], 'the kind is not locked any more');
+  const red = at(res, 'class-ceiling')[0];
+  assert.ok(red, JSON.stringify(codes(res)));
+  assert.equal(red.kind, 'judged-floor');
+  assert.equal(red.kindClass, 'soft-green');
+  assert.equal(red.picked, 'green');
+});
+
+test('judged-floor params: the card SELECTS from the owned rulebook, and the artifact list is bounded', () => {
+  const withJudged = (params) => {
+    const decl = goodDeclaration();
+    decl.stages.splice(3, 0, { name: 'reads-well', kind: 'judged-floor', params });
+    return run(decl, { verdictType: 'soft-green' });
+  };
+  const ok = withJudged({ card: { items: [{ rule: 'has-doc', text: 'documented' }] }, paths: ['src/email.js'] });
+  assert.deepEqual(at(ok, 'invalid-value'), [], JSON.stringify(ok.reds));
+
+  const unowned = withJudged({ card: { items: [{ rule: 'vibes', text: 'reads nicely' }] }, paths: ['src/email.js'] });
+  assert.match(at(unowned, 'invalid-value')[0].detail, /not a rule this arbiter implements/);
+
+  const invented = withJudged({ card: { items: [{ rule: 'has-doc', text: 'documented' }] }, paths: ['src/nope.js'] });
+  assert.ok(at(invented, 'path-not-in-listing').length > 0, 'an artifact is READ off the listing, never derived');
+
+  const twice = withJudged({ card: { items: [{ rule: 'has-doc', text: 'documented' }] }, paths: ['src/email.js', 'src/email.js'] });
+  assert.match(at(twice, 'invalid-value')[0].detail, /named twice/, 'one artifact is one population');
+
+  const flood = withJudged({ card: { items: [{ rule: 'has-doc', text: 'documented' }] }, paths: Array.from({ length: MAX_JUDGED_PATHS + 1 }, (_, i) => `src/f${i}.js`) });
+  assert.ok(at(flood, 'bounds').length > 0, 'one paid call per artifact — an unbounded list is a bill');
 });
 
 test('ceiling: the PICK is required — a validator with no pick cannot check the promise', () => {
@@ -843,10 +895,13 @@ test('validator: an unknown kind is a typo red', () => {
 });
 
 test('validator: a LOCKED kind is a DISTINCT red carrying counted demand', () => {
-  for (const locked of LOCKED_KINDS) {
+  // INJECTED, for the reason the catalogue test states: v1 locks nothing today, and
+  // a loop over an empty list would pass while proving nothing
+  const catalogue = { ...KIND_CATALOGUE, 'judged-floor': { ...KIND_CATALOGUE['judged-floor'], locked: true } };
+  for (const locked of ['judged-floor']) {
     const decl = goodDeclaration();
     decl.stages[1] = { name: 'judge-it', kind: locked, params: {} };
-    const res = run(decl);
+    const res = run(decl, { catalogue });
     const red = at(res, 'locked-kind')[0];
     assert.ok(red, `${locked} must red as locked-kind`);
     // the ledger keys admission demand on structured fields, never on prose,
@@ -1467,6 +1522,67 @@ test('signing readout: a missing goal reads as MISSING, never as an empty pair o
   assert.ok(lines.some((l) => l.startsWith('  a  [command-exit]')));
   // and a spec with no declaration at all still renders its goal rather than throwing
   assert.deepEqual(declarationLines({ goal: 'g' }), ['goal       "g"', 'declaration']);
+});
+
+// ── the JUDGED half of the same readout (softgreen modules 4+5) ──────────────
+
+test('signing readout: a judged close shows its CARD in full and its ten as a roster', () => {
+  const spec = {
+    closeDecl: {
+      stages: [
+        { name: 'guard', kind: 'files-changed', params: {} },
+        { name: 'reads-well', kind: 'judged-floor', params: { card: { items: [{ rule: 'has-doc', text: 'every function is documented' }] } } },
+      ],
+      calibration: {
+        cases: [
+          { id: 'p1', artifact: 'export function a() {}', expect: { verdict: 'pass', reds: [] } },
+          { id: 'r1', artifact: 'export function b() {}', expect: { verdict: 'red', reds: [{ rule: 'has-doc', fn: 'b' }] } },
+        ],
+      },
+    },
+  };
+  const lines = rubricLines(spec);
+  assert.ok(lines.some((l) => l.includes('[has-doc] every function is documented')), 'the signer reads their own words');
+  assert.ok(lines.some((l) => /1 pass, 1 red/.test(l)), 'both polarities are visible at a glance');
+  assert.ok(lines.some((l) => l.includes('r1') && l.includes('has-doc@b')), 'a red case names WHICH line, on WHICH function');
+  // the artifacts themselves are NOT dumped: ten real files is a page of code
+  assert.ok(!lines.some((l) => l.includes('export function')));
+  // a close that judges nothing says nothing — an empty list, not a "no card" line
+  assert.deepEqual(rubricLines({ closeDecl: { stages: [{ name: 'g', kind: 'command-exit' }] } }), []);
+  // …and a judged close with NO set says exactly that
+  assert.ok(rubricLines({ closeDecl: { stages: [spec.closeDecl.stages[1]] } }).some((l) => /NONE STORED/.test(l)));
+});
+
+test('calibration readout: itemized rows, never an aggregate — and a casualty says so', () => {
+  const pass = calibrationLines({
+    ok: true, judgeModel: 'claude-haiku-4-5', cardHash: 'a'.repeat(64), casesHash: 'b'.repeat(64), setHash: 'c'.repeat(64),
+    graded: [{ id: 'p1', ok: true }, { id: 'r1', ok: true }],
+    injection: { styles: [{ style: 's', resisted: true }] },
+  });
+  assert.match(pass[0], /PASS — 2\/2 case\(s\).*1\/1 injection style\(s\)/);
+  assert.match(pass.at(-1), /certified {2}card aaaaaaaaaaaa/, 'WHICH bytes were certified, and by which judge');
+  assert.match(pass[0], /claude-haiku-4-5/);
+
+  const fail = calibrationLines({
+    ok: false, judgeModel: 'm', graded: [{ id: 'r1', ok: false, detail: 'verdict: signed "red"' }],
+    injection: { styles: [{ style: 'direct override', resisted: false, detail: 'the facts moved' }] },
+  });
+  assert.ok(fail.some((l) => l.includes('WRONG  r1: verdict: signed "red"')));
+  assert.ok(fail.some((l) => l.includes('LEAK   direct override: the facts moved')));
+
+  const dead = calibrationLines({ ok: false, stop: 'provider-red', graded: [], injection: { styles: [] }, casualty: { kind: 'case', at: 'p1', axis: 'provider-red' } });
+  assert.ok(dead.some((l) => /CASUALTY.*no evidence about the set/.test(l)));
+  // the two refusals that never ran a call read as refusals, not as 0/0 scores
+  assert.match(calibrationLines({ stop: 'calibration-missing' })[0], /no calibration set is stored/);
+  assert.match(calibrationLines({ stop: 'no-judge' })[0], /never ran/);
+  assert.match(calibrationLines(null)[0], /not reached/);
+});
+
+test('phaseLine renders the compile and the paid gate, including the scrub announcement', () => {
+  assert.match(phaseLine('rubric', { size: 10 }), /10 calibration cases/);
+  assert.match(phaseLine('rubric-done', { ok: false, stop: 'artifact-red', attempts: 3 }), /NOT compiled \(artifact-red\)/);
+  assert.match(phaseLine('rubric-scrubbed', { paths: ['card.items[0].text'] }), /MASKED before storing: card\.items\[0\]\.text/);
+  assert.match(phaseLine('calibration', { cases: 10, styles: 5 }), /10 case\(s\) \+ 5 injection style\(s\)/);
 });
 
 // ── the authoring CEILING's parse and its announcement ───────────────────────

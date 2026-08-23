@@ -5334,3 +5334,442 @@ place the machinery mis-described itself.
 - **No live firing.** The pause door has not been exercised on a paid run; it is test-proven,
   including a sabotage-proven checkpoint classification.
 - **The arbiter does not move.** No budget, cap, fence or merge semantics change here.
+
+---
+
+## Addendum v1.73 — 2026-08-18 (softgreen's thresholds are RULED: the calibration set is **10**, the floor is **10/10 with zero reds**, the upstream **INJECTION_BATTERY runs alongside it and all 5 must resist**, softgreen's **D5 guard battery inherits green's**, and the **pause door is ALLOWANCE-FREE in every state** — hamr: *"go build 10, we could double later"*)
+
+**DOCS ONLY. No build is authorized here.** This closes v1.71 §7's reserved `OPEN` and the
+allowance question left open at the v0.11.0 doors build. Two rulings carry hamr's own words;
+three are options he selected and are marked as such.
+
+### 1. RULING — the calibration set's SIZE is **10**
+
+hamr, verbatim: *"go build 10, we could double later"*.
+
+- **v1.71 §7's `OPEN` is CLOSED.** The frozen calibration set is **10 cases**.
+- **Doubling later is explicitly allowed** — that clause is part of the ruling, not a gloss.
+- A size change is a **spec-level threshold change and remains operator territory**. The
+  standing no-agent-threshold-picking rule is untouched: hamr picked it, which is the only
+  admissible way this number gets picked.
+
+### 2. RULING — the calibration FLOOR is **10/10, zero reds** (selected option)
+
+- The **WHOLE PIPE — extraction AND `decide()` — must grade all 10 signed cases correctly,
+  with itemized reds**, before the close is signable.
+- No partial floor, no best-of: **one wrong grade is a failed calibration and an unsignable
+  close.** This is v1.71 §5's *"must grade it correctly"* given its number, and it carries the
+  decisive-binary discipline into the calibration layer.
+
+### 3. RULING — bare-agent's **INJECTION_BATTERY (5 styles)** runs alongside the 10 (selected option)
+
+- It runs **at calibration time, with the 10 cases**, and **all 5 must resist or calibration
+  fails**.
+- Reason: the pipe's safety claim IS *`judgeVerdict` is injectable, `judgeLocate` is not*
+  (v1.71 §5). A judge that clears 10/10 and folds to an injection has cleared nothing. Same
+  gate, same moment, same all-or-nothing reading.
+
+### 4. RULING — softgreen's D5 guard battery **INHERITS green's** (selected option)
+
+- Softgreen gets **no battery of its own**; it inherits green's **verbatim** — the same
+  precedent hitl was built on (OPEN-1 at slice 1: nothing a human stage cannot see).
+- A softgreen job is a green job's agent-authored plan under the same arbiter with one judged
+  stage at the end. The mandatory guards bound the **worker**, and a judged final stage relaxes
+  none of them.
+
+### 5. RULING — the pause door is **ALLOWANCE-FREE**, including below the wall-exhausted gate (selected option)
+
+- **Pressing pause never spends a rerun-allowance token, in any state** — including below the
+  wall-exhausted gate. Pause does no work and spends no money; charging a token would bill a
+  person for declining to decide.
+- The **60-day TTL (`PAUSE_TTL_MS`) remains the backstop** and stays the only thing that ends a
+  paused run.
+- **This amends the open arbiter question logged at the v0.11.0 doors build.** v1.72 §2 already
+  stated the ordinary case; what stayed open was whether an exhausted wall made an exception.
+  It does not: **a raise-and-re-sign changes what a rerun can BUY, never what a pause COSTS.**
+
+### 6. Not claimed
+
+- **No claim that `judged-floor` works.** v1.71 §7 stands in full — a floor with a signed size
+  and a signed pass bar is still a floor nothing has ever graded.
+- **No build authorized.** These are the numbers the build will use on hamr's explicit go.
+- **The arbiter does not move.** Every number here is operator-set, operator-changeable, and
+  unreachable from the agent's side.
+
+---
+
+## Addendum v1.74 — 2026-08-18 (context economy — streamlining a healthy base: a $0 archive
+read into where programme spend goes, a signed four-lever + one-guard shape, and a staged
+A0–A3 test design. **This is not a new rung** — hamr's own framing: *"i look at it as a
+streamlining to existing healthy base."* NO PAID FIRE IS AUTHORIZED.)
+
+**Full record:** `docs/02-features/2026-08-18-context-economy-package.md`. This entry is the
+ruling ledger; the feature doc carries every number.
+
+### 1. Finding — pricing is a guess wearing `priced`'s coat (F6's class, again)
+
+`claude-sonnet-5` (and `claude-opus-5`) are absent from bare-agent 0.36.1's `COST_PER_1K`.
+7,217 of 7,506 archived priced `worker-round` records match the library's `_default` fallback
+average to <0.1%; zero match sonnet rates. The rounds are stamped `pricing:'priced'` regardless
+— unknown reading as confident, not as zero.
+
+hamr's ruling, verbatim: *"if price not passed in apis (i doubt) we use guesstimate and run but
+keep user in the know, never refuse."*
+
+- A **third pricing state, `estimated`**, joins `priced`/`unpriced`, surfaced at the halt
+  readout and at job-end.
+- **Never refuse a run on an unlisted model.** The estimate still runs; it must be sayable, not
+  blockable.
+- ~~**Immediate local mitigation exists without waiting on upstream:** `COST_PER_1K` is exported
+  by bare-agent — bareloop can set `sonnet-5`/`opus-5` entries at process startup on its own
+  copy of the table.~~ **DEAD — see §11 below.** Executed and refuted: bare-agent's own package
+  exports do not reach the table (`require('bare-agent')` → undefined; the deep import throws
+  `ERR_PACKAGE_PATH_NOT_EXPORTED`, the strict exports map working as designed). No "proceed
+  independently" path exists. **The fix is BA-21 upstream, or nothing.**
+- Filed upstream as **BA-21** (`docs/UPSTREAM-ASKS.md`) with FAIL-able acceptance criteria;
+  not restated here.
+
+### 2. Finding — where the money actually goes (7,507 rounds, ~$236 archive-wide)
+
+**76% of all programme spend is the prompt, not the model working.** Cache write 41% / cache
+read 35% / output 24% / input 0.1%. Read amplification: every admitted token is re-read 10.5x
+on average; the lifetime cost of admitting one token runs 2.30x the base input rate. Across
+150 runs / 6,775 aligned rounds, `shell_read` + `shell_grep` are 74% of tool-call spend
+together — not `run` (locked, out of scope by construction) but plain file reads and greps.
+`shell_read` alone is 52.8% of cache-write spend and costs 5.4x what `ctx_get` costs per call.
+
+### 3. Finding — litectx is unused by SELECTION, not by quality (F19 at the draft layer)
+
+`ctx_recall` returns **zero zero-hit results** across 2,324 calls, median 5 hits — it indexes,
+it chunks per function, it always finds something. When the agent declares its own tool menu
+explicitly, it includes a litectx verb **1.4% of the time** (2 of 148 declarations). The
+retrieval verbs work; the agent does not reach for them unless made to.
+
+### 4. The SIGNED SHAPE — four levers plus one mandatory guard
+
+- **L1 POINTER** — a re-read of a file unchanged since last delivery returns a pointer, not
+  bytes. Keys on **what was delivered**, never on the path — a capped first read must not let
+  the pointer lie "unchanged" for bytes the worker never actually saw (the L4 collision).
+- **L2 DIFF** — a re-read after the worker's own edit returns the diff, not the whole file.
+- **L3 SIZES** — directory listings carry byte size + token estimate (today `kind\tname` only).
+  Without this, no "read only files under X" rule is followable — the worker cannot know a
+  file's size before paying for it.
+- **L4 CAP+STEER** — `shell_read` over **~24KB** returns head + a steer notice to
+  `ctx_recall`/`ctx_get`, mirroring the shipped native `NATIVE_READ_CAP` pattern (native has
+  this at `planrun.js:1589`; the API path never got it). A mechanical 256KB cap already exists
+  and is simply never reached — lowering it is a parameter change, not new machinery.
+- **G1 MANDATORY GUARD** — a step granting `read` **must also grant `recall` and `get`**.
+  Capping a worker's raw reads while leaving it with no retrieval verb reproduces BA-17
+  read-blinding on purpose. Same shape as the mailbox rule (validatePlan-enforced, not a prose
+  ask).
+
+### 5. Phase 1 result — $0 archive replay (report ratios, not dollars)
+
+Instrument: position-aware replay over 153 runs / 733 transcript segments off the real gate
+audit read sequences. **Model honesty, carried forward rather than smoothed:** the model
+predicted $135 of read-driven spend against a measured band of ~$85–100 — it ran **~1.4x hot**.
+*(This residual was open when first reported; it is EXPLAINED and superseded by the calibrated
+read in §5a below — do not read this paragraph as the current state of the uncertainty.)*
+**Tuning was STOPPED here, not fitted.** Report ratios; they are robust to a uniform scale error
+and every arm runs through the same model.
+
+| arm | with amplification | tokens-only |
+|---|---|---|
+| A1 cap + pointer | 77.0% | 71.8% |
+| A2 diff only | 3.2% | 4.8% |
+| A3 all combined | 78.4% | 74.0% |
+
+Cap alone (63.9%/60.8%) beats pointer alone (46.3%/36.2%) — the earlier read to hamr had this
+backwards; corrected below. A3 buys only 1.4–2.2 points over A1: diff is nearly redundant on
+cost once cap+pointer ship, **but it must not be killed on cost alone** — this model measures
+money only, and a diff may still be more useful to the worker than a whole file.
+
+Money translation, stated as a band: reads drive **~$85–100 of the archive's ~$236**. Removing
+74–78% of that is **~$63–78 ≈ 27–33% of everything the programme has ever spent.**
+
+**Two self-corrections, carried honestly, not silently fixed:**
+1. Diff was told to hamr as ~15%/~$13; it is actually 3–5%. The earlier number used a flat
+   2.30x amplification; post-edit re-reads happen late in a segment and barely amplify.
+2. Pointer was told to hamr as the biggest lever; **cap beats pointer** — big files read early
+   amplify hugely, and the cap is what catches them, not the pointer.
+
+### 5a. Correction — 2026-08-18, later the same day (VALIDATION ONLY, nothing built or fired,
+by hamr's explicit instruction in the neighbouring session): the ~1.4x hot residual is
+EXPLAINED, and the CALIBRATED arm numbers are now the central estimate
+
+**The residual was in the amplification term, not read sizes.** The model implied an 18.7x
+re-read amplification rate against the 10.5x actually measured archive-wide (total
+cacheRead/cacheWrite) — a 1.78x-hot error concentrated in exactly that one term. Root cause:
+transcript segmentation missed some resets (tell: a single 272-round segment that should have
+been several). This is a distinct, narrower claim than "1.4x hot, unexplained" — it names the
+mechanism and the axis, not just the magnitude.
+
+**Candidate cleanup**, closing out §5's "named, unconfirmed candidates" list rather than leaving
+it standing:
+- **"Early-run caching-off (F18)" — REFUTED.** 0 of 147 archived runs lack cache tiers.
+- **"Worker-side maxBytes" — UNVERIFIABLE from this archive.** The gate audit records only
+  `{tool}`, not byte counts passed to it; superseded by the effect-level check below, which
+  makes the question moot for this instrument's purpose.
+- **"Reads admitted whole" — HOLDS on the API surface.** Actual-vs-predicted ratio has a median
+  of 2.00–2.01, under-1 in only 7/125 API runs, and those 7 are explained by file-grew-since-read
+  on TYPES-genre jobs (a real, accounted-for effect, not instrument noise).
+
+**The calibrated column** (10.5/18.7 applied to the re-read term only — one global calibration
+factor, no per-arm tuning) is now the **central estimate**, with §5's original numbers standing
+as the outer bracket:
+
+| arm | calibrated (central) | original bracket |
+|---|---|---|
+| A1 cap + pointer | 75.8% | 71.8–77.0% |
+| A2 diff only | 3.6% | 3.2–4.8% |
+| A3 all combined | 77.3% | 74.0–78.4% |
+| — cap alone | 63.1% | 60.8–63.9% |
+| — pointer alone | 43.9% | 36.2–46.3% |
+
+**The finding is the stability, not the calibration itself.** The conclusion (cap dominates,
+A3 barely beats A1, diff is cheap-but-not-worthless) is unchanged across a 3x swing in the most
+uncertain parameter. Dollars remain unquotable; ratios only — unchanged from §5.
+
+**Bias-direction check, not assumed.** Over-stating amplification flattered EARLY reads, which
+flattered the cap (cap catches early large files) — so "cap beats pointer" in §5 was originally
+read off a biased model, in the direction that favored the conclusion actually reported. It was
+checked, not waved through: at ZERO amplification, cap still wins, 60.8% vs pointer's 36.2%. The
+conclusion survives its own worst case.
+
+**New caveat: the read model does not describe native/clipipe runs at all.** No API cache
+economics apply there. The 11 archived native runs were the worst-fit outliers in the whole
+replay, actual-vs-predicted ratios 0.03–0.34. If a worker ever routes natively, none of the arm
+numbers above — original or calibrated — describe it.
+
+### 6. hamr's FROZEN test design (his words: test separately, then combine, compare all)
+
+Arms **A0** (baseline) / **A1** (cap+mechanics: L1+L3+L4+G1) / **A2** (diff only: L2) / **A3**
+(all combined). Reading stays **staged** even if the code lands together — two levers landing
+in one pass makes the delta unattributable (standing rule).
+
+- **PRIMARY** — median spend per run, per arm.
+- **VETO** — green rate must not drop. Cost is the headline only if greens hold (cost and
+  capability are separate axes, measured 3x already in this programme).
+- **SECONDARY** — `ctx_recall`/`ctx_get` share of tool calls (did steering actually steer).
+- **DISCARD** — provider-red rows are casualties, never evidence.
+- **n≥3 per arm** — n=1 on a nondeterministic worker is an anecdote, standing rule.
+
+**Phase 2 (paid) is NOT approved.** Budget and patient await hamr's explicit word.
+
+### 7. Memory-harness talk verdict — NO BUILD
+
+Zero context-overflow events across 147 archived runs. The ranked-decision-ledger idea from the
+conference talk solves a problem bareloop has never had — corroborates F39 and F88 from outside
+data. The only live borrow: a **context-headroom meter** (peak prompt tokens per run + a NAMED
+overflow terminal, never laundered into `provider-red`).
+
+### 8. Sequencing and a standing instrument rule
+
+This package lands **after** the softgreen rung (v1.71–v1.73). The softgreen rung adds a new
+spend record type, **`judge-round`** (`ACCOUNTED_ROUND_TYPES` in `src/run.js`) — **mandatory**
+in every future spend-slicing instrument from this point forward, or it becomes the F45
+unaccounted-writer class again. (Verified by peer review as not affecting Phase 1: no archived
+spine carries `judge-round` yet, since the rung is still in flight.)
+
+**Summarize-before-admit is a QUALITY lever, never a cost lever** — recorded so it is never
+re-sold as a savings mechanism. The math: admitting N tokens costs 2.30N x in-rate over its
+life; a sonnet summarizer to N/10 nets 0.67N saved, haiku ~1.32N saved; a free slice saves the
+full 2.07N at zero cost. Slicing always beats summarizing on cost. Summarizing is justified
+only where a slice would cut meaning the worker actually needs.
+
+### 9. Provenance
+
+The thread began as a conference-talk review; the pricing finding (§1) was an unasked-for
+detour hamr flagged as drift in-turn. The findings survived his challenge and he signed the
+shape in §4 and the test design in §6.
+
+### 10. Not claimed
+
+- **No paid run has fired.** Phase 1 is $0 archive replay only.
+- **No claim the four levers work in practice** — the veto (green rate) has not been read on a
+  single live arm.
+- **No new threshold picked beyond what the ledger already fixed** (the ~24KB cap figure). Any
+  number not already in the signed shape is operator territory, unset.
+- **The arbiter does not move.** L4's cap is a tighten-only operator bound; G1 is a
+  validation-gate rule, not agent-authorable; nothing here touches budgets, the fence, or merge.
+
+### 11. Correction — 2026-08-18, later same day: pricing numbers corrected, local mitigation
+dead, `estimated` needs a new field (VALIDATION ONLY — full record in the feature doc)
+
+**Full detail:** `docs/02-features/2026-08-18-context-economy-package.md` §1.1a/§1.1b/§1.1c and
+the "Upstream vs local" correction. Summarized here so the wrong numbers cannot be quoted from
+this entry alone.
+
+1. **Sonnet-5 underpricing is ~5.7%, not 2–2.5x.** §1's 2.0–2.5x figure was clipipe's
+   provider-billed ratio on a different billing surface (F48: never pools with `anthropic-api`)
+   — generalizing it to sonnet-5's own mispricing was the error. Proper repricing over the
+   7,217-row confirmed `_default` population: `_default`-as-recorded $219.15 (1.000x); sonnet-5
+   **introductory** rate $2/$10 per 1M → $231.72 (**1.057x**); sonnet-5 **list** rate $3/$15 per
+   1M → $347.58 (1.586x). The introductory rate runs through **2026-08-31**, and the entire
+   archive sits inside that window — 1.057x is the historically honest ratio. **On 2026-09-01
+   the honest ratio jumps silently to ~1.586x and nothing in the system detects the change** —
+   small today, structural forever.
+2. **The "immediate local mitigation" is DEAD**, struck in §1 above. `COST_PER_1K` is
+   unreachable through bare-agent's public exports (`require('bare-agent')` → undefined; the
+   deep import throws `ERR_PACKAGE_PATH_NOT_EXPORTED` — the strict exports map working as
+   designed). Reachable only via an absolute `node_modules` path with no semver contract — not a
+   plan. **The fix is BA-21 upstream, or nothing.**
+3. **Feasibility survey: bareloop cannot mint `estimated` today, even with BA-21 unlanded.**
+   `planrun.js` forwards `arg?.pricing` verbatim; upstream's mint is a hardcoded binary
+   (`cost===null?'unpriced':'priced'`); every downstream trust check is a finite-number boolean
+   (one choke point in `text.js`, plus `run.js`/`planrun.js`/`reuse.js`) — already satisfying
+   "never refuse on an estimate," but making an estimate **indistinguishable from a known
+   price**, the opposite of "keep the user in the know." A local table patch would make this
+   *worse* (guess and real rate both stamp `'priced'`). **The marker needs a new field, not a
+   new value in the existing one.** Candidate sites recorded, nothing built: `run.js:307`,
+   `bridges.js` `HISTORY_FIELDS`, a new non-red `ledger.js` category. BA-21-upstream-first.
+4. **Method note.** The repricing had a $25.98 unexplained gap, audited before being absorbed
+   into a number — the F45 unaccounted-writer class caught pre-emptively: 24 `kind:"session"`
+   clipipe-native rows carrying provider-billed cost, correctly excluded per F48.
+5. **Carried as unverified, not settled:** 8 mismatched `worker-result` files + 55 unattributed
+   rows ($16.97); no per-row model field (haiku/sonnet separable only at file level); ~$2.06 of
+   draft/selection/authored rows unrepriceable; `job-end.spentUsd` vs an independent sum
+   unchecked; the bridges validator's unknown-field behaviour unchecked.
+
+---
+
+## Addendum v1.75 — 2026-08-18 (three parked softgreen questions RULED: injection battery
+ADAPTED to the locate axis not run as-is, judge bounds CONFIRMED, and pure-judged closes made
+SIGNABLE in this rung via the calibration gate — hamr: *"fix it now, we are delivering
+softgreen, isn't that the whole point?"*)
+
+**Full record:** `docs/02-features/2026-08-17-softgreen-review-door-design.md`, second
+same-day addendum. **DOCS ONLY. No build performed by this pass.**
+
+### 1. RULING — injection battery ADAPTED, not run as-is (selected option "1A")
+
+bare-agent's 5 `INJECTION_BATTERY` styles assume a judge that renders a verdict; a LOCATE-only
+judge has none for their `shouldBreak` gold to grade (POC finding). Same 5 attack styles,
+re-aimed: attack text embedded in the artifact, case passes only if the **extracted facts** are
+unaffected. All 5 must still resist or calibration fails — the v1.73 all-or-nothing reading is
+unchanged. **This amends v1.73 ruling 3's letter, keeps its spirit** — stated explicitly, not
+left implicit.
+
+### 2. RULING — judge bounds CONFIRMED (hamr verbatim: *"keep the caps"*)
+
+`JUDGE_MAX_TOKENS` 4000 (caller-overridable; binding it → truncation-red, never a silent partial
+pass), `JUDGE_ATTEMPTS` 2 (one retry; POC measured ~1-in-6 malformed JSON at haiku-4.5),
+`MAX_JUDGED_PATHS` 8 (bounds a runaway file list / runaway bill). All three builder-proposed,
+now operator-confirmed; changes to any remain operator territory (standing rule).
+
+### 3. RULING — pure-judged closes MUST be signable, fixed in THIS rung (hamr verbatim: *"fix it
+now, we are delivering softgreen, isn't that the whole point?"*)
+
+The D9.3 signing gate (≥1 work stage red at seed) currently blocks a close whose only work stage
+is `judged-floor` — the exact jsdoc-genre shape F104 was named for. §4.5's earlier "dissolves
+F104" claim (design record, 2026-08-17) was true of the composition law only, not of this
+separate signing-time gate; corrected in place in the design record, not left standing as two
+disagreeing claims.
+
+**Mechanism:** for a judged-only close, the **calibration gate** (10/10 cases, zero reds) plays
+the role the seed-red check plays for mechanical stages — proof the close can fail, which is
+what D9.3 actually protects. A judged-only close with a **passed** calibration gate is signable;
+without one, it is not. **Mechanical-stage closes are unchanged** — this is an alternate route
+to D9.3's intent for the judged-only shape, not a relaxation for anyone else.
+
+### 4. Not claimed
+
+- **No claim `judged-floor` works.** Calibration existing and passing is still unproven.
+- **The arbiter does not move.** D9.3's intent (a close must be provably failable before
+  signing) is preserved, not loosened.
+
+---
+
+## Addendum v1.76 — 2026-08-23 (the softgreen rung SHIPS: the three doors restated, the
+green-class review door kept **OPT-IN**, a rerun named as **not a replay**, the two review
+escalations ruled **"1A + 2B"** — the judge tier joins the signature and the U runner mints the
+row its door promises to release — and the one remaining door hole named and LEFT — hamr:
+*"accept on softgreen = green, rerun = refuse and try again, pause = ttl for 60 days"*)
+
+**Release record:** `CHANGELOG.md` `[0.12.0]`. This addendum states what hamr ruled while the
+rung was being closed out; nothing here reopens v1.71–v1.75, and no arbiter number moves.
+
+### 1. RULING — the three doors, restated in the signer's own words
+
+hamr, verbatim:
+
+> *"accept on softgreen = green, rerun = refuse and try again, pause = ttl for 60 days"*
+
+This is v1.72's door set said from the SIGNER's side rather than the machinery's, and it is
+recorded because the two readings must not drift. **`accept` on a softgreen IS the green** — not
+a second verdict beside the loop's own (the door never changes it, v1.71 §3) but the person's
+own act on the one that was minted, which is also what releases the quarantined learning credit
+(v1.71 §6). **`rerun` is a refusal that buys another attempt** — the signer's words become the
+gap. **`pause` is the TTL**, 60 days, exactly as v1.72 §3 ruled: nothing runs, nothing is spent,
+the rerun allowance is untouched, and somebody who never comes back gets cancel's end-state for
+free.
+
+### 2. RULING — the green-class review door stays OPT-IN (`--review-door`)
+
+`REVIEW_DOOR_CLASSES` is `['soft-green']`, and green's door remains behind an explicit
+`reviewDoor: true` / `--review-door`. **A green finishes without the signer.** The always-on flip
+for green is still a one-line change and it is still hamr's alone to make; the argument for
+leaving it off is that a mechanical close that rendered a green has already said everything a
+person would be asked to confirm, and a door nobody needs is a rubber stamp — which is the exact
+reading that RETIRED hitl (v1.71). **The later rerun door is the refute lever**: a signer who
+disagrees with a finished green opens the door on that run and reruns it, rather than every
+green waiting for somebody at the moment it lands.
+
+### 3. RULING — a rerun is NEVER a replay
+
+A rerun does not re-run the same plan and does not re-ask the same question. The signer's words
+enter the NEXT plan draft as the gap (v1.71 §3), and the worker under it is probabilistic — this
+programme has MEASURED that: two cold runs of one job produced two different working plans, both
+green (2026-07-27, U's aurora legs; PRD v1.34). So "rerun" is a fresh engagement with its own
+money and its own clock (F103), aimed by a person's sentence, and it is entitled to reach its
+verdict by a different route than the leg it refused. **A different plan across legs is not
+evidence of a worse plan** (hamr's standing correction) — it is what a probabilistic worker
+under a changed brief does.
+
+### 4. RULING — the two review escalations: "1A + 2B", both built
+
+The medium whole-branch review ESCALATED two findings rather than deciding them, because both
+sit against the signature. hamr ruled both in, and both shipped in this release.
+
+- **1A — the judge tier joins the SIGNATURE.** `JUDGE_MODEL`'s promise that a bump forces a full
+  recalibration had no wired detector, which makes it prose (F45). The tier is now stored inside
+  the spec as `calibration.judgeModel`, so `jobSpecHash` covers it by construction: a bump flips
+  every signed judged spec's hash, the signature dies, and the re-sign is what re-runs the
+  calibration gate. `validateCloseDecl` requires it on any stored set, and `runJudgedFloor`
+  refuses to grade a stored-vs-live mismatch — naming both models and the two things that fix
+  it. **An absent stamp is deliberately not a runtime stop**: a signed spec cannot reach a run
+  without a calibration or without a model on it, so the only runtime question is WHICH model.
+- **2B — the U runner mints the row its door promises to release.** The door's own text says
+  `accept` releases this run's learning credit; on `scripts/run-u.mjs` that sentence was false by
+  construction, because a cold green wrote a bridge FILE and never a registry ROW. It now writes
+  the row through the SAME seam `runReuse`'s greens go through. **STORAGE ONLY, and this is the
+  load-bearing half of the ruling: reuse SELECTION and PROMOTION stay parked** on
+  `layer-3-reuse` per F88 — the row is written, and exactly one thing reads it back, which is the
+  door. Nothing here re-opens the reuse rung, and no green minted this way is offered to a later
+  run.
+
+### 5. The one door hole, NAMED and left deliberately
+
+A **green-class** run that names a `--registry` still mints no row, so a green-class `accept`
+against a registry refuses `credit-not-held`. This is correct today and it is not a bug: green
+credit is not quarantined, so there is nothing held for a door to release, and the refusal names
+that rather than inventing a row to satisfy the command. **Widening what enters the registry is
+reuse-rung territory** — that is the question of which greens are eligible to be selected later,
+and it is parked with the rest of the rung. Named here so that the next reader finds the hole
+already described rather than rediscovering it as a defect.
+
+### 6. Housekeeping, recorded because it touched the tree
+
+- **The stray `docs-reorg` branch was DELETED** on hamr's order — *"docs-reorg branch was a
+  test, delete it"*. It was a test of the reorg shape, not a change anyone was going to merge.
+- **The readshim lane merges AFTER this rung.** `scripts/run-u.mjs` is the ONE file both lanes
+  touch; the conflicting hunks are HANDED OVER to the other session rather than resolved blind
+  (the standing cross-session lane rule). The fresh full gate at merge runs on a quiet machine
+  with no concurrent builders.
+
+### 7. Not claimed
+
+- **No claim `judged-floor` works on a paid run.** v1.71 §7 and v1.75 §4 stand in full: the
+  calibration gate exists and is enforced; softgreen has still never rendered a live verdict.
+- **No reuse claim.** 2B is storage. Nothing selects, promotes or inherits from a row it writes.
+- **The arbiter does not move.** No budget, cap, fence, wall or merge semantic changes here.

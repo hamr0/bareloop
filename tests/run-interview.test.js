@@ -210,16 +210,24 @@ test('a secret typed into an answer is SCRUBBED by the library seam before it re
 
 // ══ the refusals, all of them for $0 ═══════════════════════════════════════════
 
-test('a LOCKED class refuses through the library BEFORE a single question is asked', () => {
+test('the SOFT-GREEN class runs its own seven-question interview, derived from the library', () => {
+  // This slot used to hold the locked-class refusal, with soft-green as its
+  // exemplar. Softgreen module 3 admitted the class, so the refusal is unreachable
+  // (`LOCKED_CLASSES` is empty and the script's branch keys on it) and what
+  // replaces it is the positive the admission bought: the script asks the class's
+  // own set, one at a time, and files every answer — including the two the judged
+  // floor needs (the rubric card and the calibration set, compiled at module 4).
+  assert.deepEqual([...LOCKED_CLASSES], [], 'nothing left to refuse');
   const out = outDir();
-  const locked = LOCKED_CLASSES[0];
-  const r = interview({ verdict: locked, out, lines: ['n'] });
-  assert.equal(r.code, 1, 'a refusal is a RESULT — counted demand, not an error and not a success');
-  assert.match(r.out, /REFUSED \(request-red\)/);
-  assert.match(r.out, new RegExp(`verb=${locked}`));
-  assert.match(r.out, /Nothing was asked and nothing was written/);
-  assert.doesNotMatch(r.out, /── 1 of /, 'asking a locked class\'s questions would be an interview for a job nothing here can close');
-  assert.equal(existsSync(out), false);
+  const r = interview({ verdict: 'soft-green', out, lines: session('soft-green') });
+  assert.equal(r.code, 0, r.out);
+  const nums = requiredAnswersFor('soft-green');
+  assert.equal(nums.length, requiredAnswersFor('green').length + 2, 'green\'s set plus the card and the calibration ask');
+  const qs = questionsFor('soft-green');
+  for (const q of nums) assert.ok(r.out.includes(`${q}. ${qs[q]}`), `question ${q} is asked verbatim`);
+  assert.match(r.out, new RegExp(`── ${nums.length} of ${nums.length} `));
+  const answers = JSON.parse(readFileSync(join(out, 'answers.json'), 'utf8'));
+  assert.deepEqual(Object.keys(answers).map(Number), nums, 'every answer is filed, module 4\'s inputs included');
 });
 
 test('an unknown verdict is a TYPO, refused with the menu handed over enumerated', () => {

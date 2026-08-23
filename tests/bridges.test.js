@@ -444,6 +444,11 @@ test('listingRow reports the derived status, the counts, and the green cost band
     status: 'proven',
     greens: 2,
     reds: 0,
+    // softgreen module 6: a green-class entry is held by nothing and has been
+    // through no door — the fields are present and EMPTY, so a reader never has to
+    // branch on whether this registry predates the quarantine
+    quarantinedGreens: 0,
+    doorDecisions: [],
     lastOutcome: 'green',
     greenCost: { minUsd: 2.21, maxUsd: 2.47, minWallMs: 534_000, maxWallMs: 534_000, unpricedCount: 0, untimedCount: 0 },
   });

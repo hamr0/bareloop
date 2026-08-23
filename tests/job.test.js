@@ -473,15 +473,19 @@ test('tools is optional in the plan shape (the ceiling defaults to the full menu
   assert.deepEqual(r.reds, []);
 });
 
-test('VERDICT_TYPES ships frozen: green and hitl admitted, soft-green declared-but-locked', () => {
+test('VERDICT_TYPES ships frozen, and every type it names is admitted', () => {
   assert.deepEqual([...VERDICT_TYPES], ['green', 'soft-green', 'hitl']);
   assert.ok(Object.isFrozen(VERDICT_TYPES));
-  // N4 slice 1 admitted hitl; the whole admission table is pinned in tests/hitl.test.js
-  assert.deepEqual([...LOCKED_VERDICTS], ['soft-green']);
+  // N4 slice 1 admitted hitl and softgreen module 3 admitted soft-green; the whole
+  // admission table is pinned in tests/hitl.test.js and tests/softgreen-class.test.js
+  assert.deepEqual([...LOCKED_VERDICTS], []);
   assert.ok(Object.isFrozen(LOCKED_VERDICTS));
 });
 
 test('a locked verdictType is a request-red with the type as a STRUCTURED verb field (admission demand, the ledger keys on it)', () => {
+  // no type is locked today (softgreen module 3) — said out loud, because the loop
+  // below iterates nothing and a silent no-op reads exactly like a passing check
+  assert.deepEqual([...LOCKED_VERDICTS], []);
   for (const vt of LOCKED_VERDICTS) {
     const close = { type: 'rubric', criteria: 'summary reads well' };
     const r = validateJob(mut4((j) => { j.verdictType = vt; j.close = close; }));

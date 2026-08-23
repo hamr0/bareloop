@@ -72,7 +72,8 @@
 // flagged a `runClose` naming collision between the kind executor and
 // src/ralph.js; the public surface is settled once at M4, not piecemeal.
 
-import { normalizeParser } from './kinds.js';
+import { normalizeParser, MAX_JUDGED_PATHS, JUDGED_FLOOR_KIND } from './kinds.js';
+import { JUDGE_RULE_IDS, validateCard } from './judged.js';
 import { isObj, isNonEmptyString, hasNestedQuantifier, globToPrefix } from './validate.js';
 
 /** @typedef {{code: string, path: string, detail: string, [k: string]: any}} Red */
@@ -95,9 +96,15 @@ import { isObj, isNonEmptyString, hasNestedQuantifier, globToPrefix } from './va
 /** the whole menu, in ascending order of what it takes to render the verdict */
 export const VERDICT_CLASSES = Object.freeze(['green', 'soft-green', 'hitl']);
 /** declared-but-locked: selecting one is COUNTED demand, never an admission.
- * `hitl` LEFT this list at N4 slice 1 (see `src/job.js`'s twin) — the class is
- * built, and its battery is below. `soft-green` waits for the judged floor. */
-export const LOCKED_CLASSES = Object.freeze(['soft-green']);
+ * `hitl` LEFT this list at N4 slice 1 and `soft-green` at softgreen module 3
+ * (see `src/job.js`'s twin, `LOCKED_VERDICTS`, which moved in the same commit) —
+ * the judged floor its lock was waiting on is built, wired and calibrated.
+ *
+ * EMPTY is a true statement about a closed menu, not F59's absent-as-empty: the
+ * mechanism is read at call time from this constant, so re-locking a class is
+ * one edit and every counted refusal comes back with it. */
+/** @type {readonly string[]} */
+export const LOCKED_CLASSES = Object.freeze([]);
 /** the classes v1 actually builds */
 export const LIVE_CLASSES = Object.freeze(VERDICT_CLASSES.filter((c) => !LOCKED_CLASSES.includes(c)));
 
@@ -117,10 +124,11 @@ const CLASS_RANK = Object.freeze({ green: 0, 'soft-green': 1, hitl: 2 });
  * `CLASS_BY_VERDICT` exist to stop, defeated from ABOVE by never letting the
  * illegal pair be formed.
  *
- * INERT IN v1 BY CONSTRUCTION, which is why it is cheap now: every LIVE kind is
- * mechanical, so no declaration a v1 catalogue can express reaches above green.
- * It is written before the second class exists so the first soft-green kind is
- * not the thing that discovers the question.
+ * NO LONGER INERT: `human-confirms` (N4 slice 1) and `judged-floor` (softgreen
+ * module 2) are both live and both above green, so a green declaration naming
+ * one is a real red rather than a hypothetical. `classMenu` below is the other
+ * half of the same rule, applied one step earlier — the composer is never handed
+ * a kind this would refuse.
  *
  * A kind the catalogue does not know contributes NOTHING — it already carries an
  * `unknown-kind` red, and guessing a class for it would be deriving the promise
@@ -152,6 +160,49 @@ export function closeCeiling(declaration, catalogue = KIND_CATALOGUE) {
     }
   }
   return top;
+}
+
+/**
+ * THE MENU A JOB OF THIS CLASS MAY EXPRESS — the ceiling rule, moved one step
+ * EARLIER, to the moment the composer is handed its vocabulary.
+ *
+ * `closeCeiling` refuses an above-ceiling kind AFTER a paid call has composed a
+ * declaration around it. That is a late red for an illegal pick the composer was
+ * shown in its own catalogue and its own tool schema — and the standing rule is
+ * the opposite: wherever only a closed set can satisfy a field, hand over the
+ * enumerated set, so the illegal value is INEXPRESSIBLE rather than rejected
+ * after the fact (the `check-passes(name)` model). A green job is therefore never
+ * shown `judged-floor` or `human-confirms` at all.
+ *
+ * ONLY THE MENU NARROWS. The VALIDATOR keeps the whole catalogue, deliberately:
+ * a model that names a kind it was never offered must be told which RULE it
+ * broke (`class-ceiling`), not that the kind does not exist (`unknown-kind`) —
+ * one is the truth and the other invites it to invent a spelling.
+ *
+ * `null` means UNFILTERED and exists for callers inspecting the catalogue itself
+ * (the schema/coverage suite). Every composing call site passes the user's own
+ * picked class; `authorPrompt` already throws without one.
+ * @param {string|null} verdictType
+ * @param {Record<string, KindSpec>} [catalogue]
+ * @returns {string[]} kind names at or below the picked class, in catalogue order
+ */
+export function classMenu(verdictType, catalogue = KIND_CATALOGUE) {
+  const names = Object.keys(catalogue);
+  if (verdictType === null || verdictType === undefined) return names;
+  const picked = String(verdictType);
+  if (!Object.hasOwn(CLASS_RANK, picked)) {
+    throw new Error(`[authoring] no verdict class "${picked}" — the menu a composer may be handed is keyed by the `
+      + `class the user picked, one of ${VERDICT_CLASSES.join(', ')}, and guessing one would compose under a promise `
+      + 'nobody made');
+  }
+  return names.filter((k) => {
+    const spec = catalogue[k];
+    if (!spec || !Object.hasOwn(CLASS_RANK, spec.verdictClass)) {
+      throw new Error(`[authoring] catalogue kind "${k}" declares no verdict class — every kind states the class of `
+        + `verdict it can honestly render (one of ${VERDICT_CLASSES.join(', ')})`);
+    }
+    return CLASS_RANK[spec.verdictClass] <= CLASS_RANK[picked];
+  });
 }
 
 // ── 1. THE KIND CATALOGUE ────────────────────────────────────────────────────
@@ -229,15 +280,33 @@ export const KIND_CATALOGUE = Object.freeze({
     shape: 'allowPrefixes: string[], requireNonEmpty: true',
     asserts: 'the set of files this run changed must be non-empty and must lie wholly inside allowPrefixes.',
   }),
-  // LOCKED: named so declaring one is COUNTED DEMAND rather than an unknown-kind
-  // typo (D13 forward-compat point 2). Disclosure is not admission — these do
-  // not run in v1, and `close[]` on disk stays predicate-only and shape-enforced
-  // (src/job.js:442), so the inexpressibility that is already free stays free.
+  // LIVE at softgreen module 2, and the only kind that BUYS its measurement: a
+  // pinned toolless judge extracts facts WITH QUOTES from each named artifact and
+  // an arbiter-owned rulebook renders the verdict over them (src/judged.js). The
+  // judge never says whether anything passed — a model asked "did this pass?" is
+  // a model that can be argued with, and bareguard's A/B measured that
+  // `judgeLocate` is not injectable where `judgeVerdict` is.
+  //
+  // `card` is the signer's own rubric, compiled to ENUMERATED items: `rule`
+  // SELECTS from the rulebook we implement, so a rule we do not own is
+  // inexpressible rather than rejected late, and `text` is the signer's words —
+  // what a red is explained WITH, never what a red is decided BY. `paths` names
+  // the AUTHORITATIVE artifacts, selected from the seed listing like every other
+  // path, never the worker's summary of what it did.
+  //
+  // No `timeoutMs` and no `env`: this kind spawns nothing. Its own bounds are the
+  // arbiter's (the retry ladder and the artifact ceiling live in src/kinds.js),
+  // because a declaration that could widen them is a declaration that can spend.
   'judged-floor': Object.freeze({
     verdictClass: 'soft-green',
-    required: Object.freeze([]), optional: Object.freeze([]), pathParams: Object.freeze([]), locked: true,
-    shape: 'LOCKED — not available in v1',
-    asserts: 'a judged score must clear a floor. Declaring it is recorded as demand; it will not run.',
+    required: Object.freeze(['card', 'paths']),
+    optional: Object.freeze([]),
+    pathParams: Object.freeze(['paths']),
+    shape: `card: {items: [{rule: ${JUDGE_RULE_IDS.join('|')}, text: string}]}, paths: string[] (at most ${MAX_JUDGED_PATHS})`,
+    asserts: 'a pinned judge extracts facts and VERBATIM quotes from each named artifact, and an arbiter-owned rulebook '
+      + 'renders pass/fail per card item over those facts — first red wins, and anything it cannot be sure of is a red. '
+      + 'Name one card line per thing you actually look for, in the order you look for them, and name the real files the '
+      + 'work lands in. It is never offered to the agent as an in-run check.',
   }),
   // LIVE at N4 slice 1, and the ONLY kind that does not measure anything: it
   // does not RUN, it PAUSES the run and hands the tree to a person (ruling 1).
@@ -651,7 +720,15 @@ const MECHANICAL_GUARDS = Object.freeze([
 
 export const CLASS_BATTERIES = Object.freeze({
   green: Object.freeze({ locked: false, guards: MECHANICAL_GUARDS }),
-  'soft-green': Object.freeze({ locked: true, guards: null }),
+  // RULING 4 (hamr, 2026-08-18, selected): **softgreen INHERITS green's
+  // battery** — the same precedent hitl was built on. A softgreen job is a green
+  // job's agent-authored plan under the same arbiter with one judged stage at the
+  // end; the mandatory guards are about what the WORKER may not do, and nothing
+  // about a judged final stage relaxes any of them. It is the SAME OBJECT rather
+  // than a second spelling of the same prose: a fix to green's battery must flow
+  // here with no second edit, and `classGuards` deep-copies on the way out so
+  // sharing cannot become weakening.
+  'soft-green': Object.freeze({ locked: false, guards: MECHANICAL_GUARDS }),
   // OPEN-1, RULED (hamr, in-turn, 2026-08-13): **hitl inherits the green
   // mechanical guards and adds nothing a human stage cannot see.** D5 makes the
   // battery mandatory, shown-and-fixed and un-removable, and PRD v1.57 §2 keys it
@@ -948,7 +1025,29 @@ function scopeOfJob(declaration, idx, guards) {
  * stage — applied to the one population that decides whether the law fires at
  * all.
  */
-const AT_MOST_ONCE_KINDS = Object.freeze(['files-changed', 'human-confirms']);
+const AT_MOST_ONCE_KINDS = Object.freeze(['files-changed', 'human-confirms', 'judged-floor']);
+
+/** why each at-most-once kind is at most once, in the author's own terms. A map
+ * rather than a chain of conditionals: a kind added to the list above with no
+ * reason here is a red nobody can act on, and this fails loudly instead.
+ * @type {Record<string, (label: string, owner: string) => string>} */
+const AT_MOST_ONCE_REASON = Object.freeze({
+  'files-changed': (label, owner) => `stage "${label}" is a second files-changed stage — "${owner}" already declares `
+    + 'which files this job may change. Stages are ANDed, so two of them mean the intersection of two prefix sets, '
+    + 'which is itself a prefix set and already says the same thing in one stage; what a second one does add is a '
+    + 'second answer to what this job\'s scope IS',
+  'human-confirms': (label, owner) => `stage "${label}" is a second human-confirms stage — "${owner}" already asks the `
+    + 'person. One signer, one judge (ruling 4), asked ONCE at the end: a second door is a second verdict, and the run '
+    + 'has no way to say which of them was the one it stopped for',
+  // softgreen module 3. The judged floor is the close's ONE judged ruler: two of
+  // them are two bars for one verdict class, each buying its own paid calls, and
+  // first-red-wins means the second only ever runs when the first was satisfied —
+  // so its only reachable effect is to spend money re-judging a tree that already
+  // cleared the bar the signer signed. One card, one calibration set, one ruler.
+  'judged-floor': (label, owner) => `stage "${label}" is a second judged-floor stage — "${owner}" is already this `
+    + 'close\'s judged ruler. One card and one calibration set decide one bar: a second judged stage is a second bar '
+    + 'for the same verdict, and it buys its own paid calls to re-judge a tree the first one already passed',
+});
 
 /** the kinds NO ONE runs as an in-run ruler — ruling 5's law, as data. A
  * declaration that offers one is a red rather than a normalization: the signer
@@ -1156,14 +1255,12 @@ export function validateDeclaration(declaration, opts = {}) {
     if (AT_MOST_ONCE_KINDS.includes(s.kind)) {
       const owner = kindOwners.get(s.kind);
       if (owner !== undefined) {
-        red('duplicate-kind', `${at}.kind`, s.kind === 'human-confirms'
-          ? `stage "${label}" is a second ${s.kind} stage — "${owner}" already asks the person. One signer, one judge `
-            + '(ruling 4), asked ONCE at the end: a second door is a second verdict, and the run has no way to say '
-            + 'which of them was the one it stopped for'
-          : `stage "${label}" is a second ${s.kind} stage — "${owner}" already declares `
-            + 'which files this job may change. Stages are ANDed, so two of them mean the intersection of two prefix sets, '
-            + 'which is itself a prefix set and already says the same thing in one stage; what a second one does add is a '
-            + 'second answer to what this job\'s scope IS', { kind: s.kind, stage: label, twin: owner });
+        const why = AT_MOST_ONCE_REASON[s.kind];
+        if (!why) {
+          throw new Error(`[authoring] "${s.kind}" is declared at-most-once with no stated reason — a red the author `
+            + 'cannot act on is worse than no rule');
+        }
+        red('duplicate-kind', `${at}.kind`, why(label, owner), { kind: s.kind, stage: label, twin: owner });
       } else kindOwners.set(s.kind, label);
     }
 
@@ -1191,6 +1288,30 @@ export function validateDeclaration(declaration, opts = {}) {
         + 'is first-red-wins, so every stage after this one would never run: the person would be shown an incomplete '
         + 'evidence package and the mechanical stages behind them would be silently deleted (the composition law: '
         + 'mechanical first, human last)', { kind: s.kind, stage: label, at: i, last: stages.length - 1 });
+    }
+    // ── THE SAME LAW's judged half (design record 2026-08-17 §4.5: *mechanical
+    // stages FIRST, the judged stage AFTER, first-red-wins*). The human rule is
+    // stated as "last" because a person is the top of the hierarchy; the judged
+    // rule is stated as "after the mechanical ones", because a human stage may
+    // legally follow it — mechanical → judge → person is the full composition.
+    //
+    // What it costs to admit is the same both ways round: first-red-wins means a
+    // judged stage in front of a mechanical one BUYS PAID CALLS to grade a tree
+    // the free stages would have refused for nothing — and if the judge passes it
+    // the mechanical red still lands, so the money bought no verdict either.
+    // A SECOND judged stage is NOT this red (it is `duplicate-kind`, emitted
+    // above): one problem, one red, in one vocabulary.
+    if (s.kind === JUDGED_FLOOR_KIND) {
+      const behind = stages.slice(i + 1).filter((/** @type {any} */ x) => isObj(x) && isNonEmptyString(x.kind)
+        && catalogue[x.kind] && CLASS_RANK[catalogue[x.kind].verdictClass] < CLASS_RANK['soft-green']);
+      if (behind.length) {
+        red('judged-stage-order', `${at}.kind`, `stage "${label}" is judged and runs BEFORE the mechanical `
+          + `stage${behind.length > 1 ? 's' : ''} ${behind.map((/** @type {any} */ x) => `"${x.name}"`).join(', ')}. `
+          + 'The close is first-red-wins and a judged stage buys a paid call per artifact: put every stage a command '
+          + 'can decide in front of it, so the free rulers shield the expensive one (the composition law: mechanical '
+          + 'first, judge after)',
+        { kind: s.kind, stage: label, at: i, behind: behind.map((/** @type {any} */ x) => x.name) });
+      }
     }
 
     const p = s.params;
@@ -1405,6 +1526,30 @@ function checkKind({ kind, params: p, at, red, scoped, label, populations, envOw
           + 'result — a human stage with nothing to ask is the bare "approve?" ruling 2 forbids');
       }
       break;
+    case 'judged-floor': {
+      // ONE spelling of what a card is, the JUDGE's own (`validateCard`, src/judged.js) —
+      // the same rule `normalizeParser` follows: the validator and the grader must agree
+      // about what a card MEANS, or the one that grades is the one nobody validated.
+      const cv = validateCard(p.card);
+      for (const detail of cv.reds) red('invalid-value', `${at}.params.card`, detail);
+      // the artifact list. The listing rule (`checkPaths`) judges whether each element
+      // EXISTS; this judges the shape and the bill — one paid call per artifact, so an
+      // unbounded list is a bill rather than a red (the MAX_TERMS sibling).
+      if (!strArray(p.paths)) {
+        red('invalid-value', `${at}.params.paths`, 'a non-empty array of repository-relative files to judge — the '
+          + 'AUTHORITATIVE artifacts, read off the seed listing, never the worker\'s summary of what it did');
+      } else if (new Set(p.paths.map(String)).size !== p.paths.length) {
+        // one artifact is one population, and a list naming it twice buys two paid
+        // calls over identical bytes — deduplicating it silently would leave the
+        // signer reading one list while the runner spent on another
+        red('invalid-value', `${at}.params.paths`, 'the same artifact is named twice — one artifact is one population, '
+          + 'and a duplicate buys a second paid call over identical bytes');
+      } else if (p.paths.length > MAX_JUDGED_PATHS) {
+        red('bounds', `${at}.params.paths`, `${p.paths.length} artifacts exceeds the ceiling of ${MAX_JUDGED_PATHS} — a `
+          + 'judged stage buys one call per artifact, and the ceiling is the arbiter\'s, not the declaration\'s');
+      }
+      break;
+    }
     default:
       red('unknown-kind', `${at}.kind`, `"${kind}" is in the catalogue but has no checker`, { kind });
   }

@@ -1163,7 +1163,11 @@ test('judged rides EVERY real judgment (green and red) and is withheld from EVER
     { label: 'red', stage: { name: 's', kind: 'command-exit', params: { cmd: 'node', args: SAY('', 3), expectExit: 0 } }, verdict: 'red' },
     { label: 'timeout', stage: { name: 's', kind: 'command-exit', params: { cmd: 'node', args: ['-e', 'setTimeout(()=>{},60000)'], expectExit: 0, timeoutMs: 250 } }, verdict: 'instrument-stop' },
     { label: 'spawn-fault', stage: { name: 's', kind: 'command-exit', params: { cmd: 'no-such-binary-abc', args: [], expectExit: 0 } }, verdict: 'instrument-stop' },
-    { label: 'locked kind', stage: { name: 's', kind: 'judged-floor', params: {} }, verdict: 'instrument-stop' },
+    // `judged-floor` was the locked-kind exemplar until softgreen module 2 made it
+    // live; a kind the executor does not implement is now spelled by a name that is
+    // not in the catalogue at all (the row below), and this row keeps the judged
+    // stage's OWN stop — a card this arbiter cannot read
+    { label: 'unreadable card', stage: { name: 's', kind: 'judged-floor', params: {} }, verdict: 'instrument-stop' },
     { label: 'unknown kind', stage: { name: 's', kind: 'vibes-check', params: {} }, verdict: 'instrument-stop' },
     { label: 'malformed params', stage: { name: 's', kind: 'pattern-absent-in-diff', params: { patterns: 'not-an-array', extensions: ['.js'], scope: {} } }, verdict: 'instrument-stop' },
     { label: 'parser stop', stage: { name: 's', kind: 'count-not-worse', params: { cmd: 'node', args: CAT('report.txt'), parser: { lineMatch: 'total (\\d+)', capture: 1 }, scope: {}, direction: 'lower-is-better', baseline: 0 } }, verdict: 'instrument-stop' },
@@ -1178,9 +1182,9 @@ test('judged rides EVERY real judgment (green and red) and is withheld from EVER
 
 test('a stop still explains itself on the gap channel — a silent casualty is unreadable', async (t) => {
   const r = makeRepo(t, { 'a.js': 'a\n' });
-  const res = await runStage({ name: 's', kind: 'judged-floor', params: {} }, ctxFor(r));
+  const res = await runStage({ name: 's', kind: 'not-a-kind-we-have', params: {} }, ctxFor(r));
   assert.ok(res.gapLines.length > 0);
-  assert.match(res.gapLines.join('\n'), /judged-floor/);
+  assert.match(res.gapLines.join('\n'), /not-a-kind-we-have/);
   assert.ok(res.gapLines.every((l) => l.startsWith(KEEP)));
 });
 

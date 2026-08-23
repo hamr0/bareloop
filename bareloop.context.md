@@ -530,11 +530,136 @@ no model found, it moves no seed number, and a declaration that authors it itsel
 `genre-owned-env`.
 
 **The kind catalogue** (`KIND_CATALOGUE`, and it IS the whole vocabulary): `command-exit`,
-`count-not-worse`, `pattern-absent-in-diff`, `files-changed` and `human-confirms` are live;
-`judged-floor` is NAMED BUT LOCKED (`verdictClass: 'soft-green'`), so declaring it is a counted
-`locked-kind` red rather than an unknown-kind typo; `harness-loop` (TESTGEN) is ABSENT from v1
-entirely. In tool mode a locked kind is INEXPRESSIBLE — the schema carries one branch per live
-kind — so that demand arrives through the interview layer instead (`refuseLockedKind(kind)`).
+`count-not-worse`, `pattern-absent-in-diff`, `files-changed`, `human-confirms` and
+`judged-floor` are all live — `LOCKED_KINDS` is EMPTY today; `harness-loop` (TESTGEN) is ABSENT
+from v1 entirely (an unknown-kind typo, never counted demand). The locked-kind machinery is
+unchanged and is what a future entry arrives on: in tool mode a locked kind is INEXPRESSIBLE —
+the schema carries one branch per live kind — so that demand arrives through the interview
+layer instead (`refuseLockedKind(kind)`), whose "named but locked" wording is currently
+unreachable for exactly the reason above.
+
+**`judged-floor` is the one kind that BUYS its measurement** (softgreen module 2), and it is
+CLASS-GATED rather than locked: it renders a `soft-green` verdict, `soft-green` is still a
+LOCKED verdict class, so a real declaration naming it reds `class-ceiling` under a green pick
+and `class-battery-locked` under a soft-green one. The kind runs; no signable spec can reach it
+until the class is admitted. Its parameters are `card` — the signer's rubric as ENUMERATED
+items, where `rule` SELECTS from the arbiter's own rulebook (`JUDGE_RULES` / `JUDGE_RULE_IDS`,
+so a rule we do not implement is inexpressible) and `text` is the signer's words, which explain
+a red and never decide one — and `paths`, the AUTHORITATIVE artifacts, read off the seed listing
+like every other path and bounded at `MAX_JUDGED_PATHS` (one paid call each). It spawns nothing,
+so it takes no `cmd`, no `timeoutMs` and no `env`; it is `offer: false` BY LAW
+(`NEVER_OFFERED_KINDS` — a paid judge is never an in-run ruler); and it SKIPS the seed-verdict
+read (ruling 8) as a recorded `skipped` row.
+
+**Wiring a judged close, and what it costs.** The judge is PINNED (`JUDGE_MODEL`, exported) and
+is never a step knob: the runner supplies `runJob({ judgeProvider })` — its own seam, not
+`provider`/`providerFor` — and a judged stage with none instrument-STOPS as a wiring gap rather
+than grading on whatever binding was at hand. Each locate call is metered per call and emitted
+as a distinct `judge-round` spine record, which `runJob`'s ONE ledger accounts exactly like a
+`worker-round` (`ACCOUNTED_ROUND_TYPES`, and `readResume`'s fold reads that same list, so a
+resumed leg cannot silently widen a signed budget by the close's own spend). A budget funds the
+attempt PLUS its close. Unpriced is never free: a null cost is a `pricing-red` stop that is
+never retried, and the ladder is otherwise ONE retry (`JUDGE_ATTEMPTS`) — after that a broken
+judge is an instrument stop, never a red about the tree.
+
+**The two SIGNED artifacts of a judged close** (softgreen module 4, design §4.3/§4.4). Q6 and
+Q7 of the softgreen interview compile into the RUBRIC CARD and the FROZEN CALIBRATION SET, on
+the D5 shown-and-fixed path: `proposeJudgedArtifacts({answers, generate, book})` buys ONE
+schema-forced proposal (tool `propose_rubric`, over the same bounded malformed-emission ladder
+the declaration uses — a parse failure is an `artifact-red` retried under the cap, a proposal
+that parsed and then broke a rule is NOT retried); a UI shows it; `signJudgedArtifacts({proposal,
+fix})` stores the SIGNER's version (the fix replaces the proposal WHOLE, never merges — a signer
+who deleted a line must not get it back) and reports `source: 'signer'|'proposal'`; and
+`foldJudgedArtifacts(closeDecl, {card, cases})` enumerates both into the declaration. Free text
+in either artifact is scrubbed at ingest through the one `SECRET_PATTERNS` inventory, because a
+signed spec outlives the run that produced it.
+
+**Where they land, and what the hash covers.** The card replaces the ONE `judged-floor` stage's
+`params.card` — one card per close, and it is the signed one; a fold into a close with no judged
+stage (or two) THROWS rather than storing a rubric nothing reads. The cases land beside the
+stages as `closeDecl.calibration.cases`, because the set calibrates the RULER and is read before
+any stage runs. Both sit inside the spec, so `jobSpecHash` covers them by construction: a card
+line or a single case edit flips the hash and forces a re-sign, and a byte-identical re-store
+does not.
+
+**What a legal calibration set is** (`validateCalibrationSet`, beside the rulebook in
+`src/judged.js`, and re-checked at the spec gate by `validateCloseDecl`). EXACTLY
+`CALIBRATION_SIZE` = 10 cases — hamr's ruling, verbatim *"go build 10, we could double later"*,
+operator territory and never agent-picked — with BOTH polarities present, because a set that
+cannot fail one way proves nothing. A case is
+`{id, artifact, expect: {verdict: 'pass'|'red', reds: [{rule, fn}]}}`: `artifact` is the REAL
+source text the judge will be pointed at (never a description of one), and a red case must be
+ITEMIZED, naming a `rule` THIS close's card actually carries (§4.3's ceiling, mechanically — the
+fix for a miss is a new card line and a re-sign) and the `fn` the red lands on. The judge's own
+`why`/`quote` are deliberately NOT stored: no signer can predict prose, and pinning it would
+fail an honest pipe on wording. `expectedOf(decision)` is the ONE reduction of a `decide()`
+result to that shape, so a harness compares one shape rather than two.
+
+**THE CALIBRATION GATE** (`runCalibration`, softgreen module 5, `src/calibrate.js`). It runs the
+WHOLE pipe — `runLocate` over the shipped `JUDGE_ATTEMPTS` ladder, then `decide()` — over each of
+the ten, and compares `expectedOf(decision)` against the stored `expect` by VERDICT **and**
+ITEMIZED REDS (a `(rule, fn)` set, order-insensitive): *a pipe that reds the right case for the
+wrong reason has not been calibrated, it has been lucky*. The floor is **10/10, zero reds**
+(hamr, 2026-08-18) and it is reported per case — `graded: [{id, ok, got, want, detail}]` — never
+as an aggregate percentage.
+
+Alongside it runs **`INJECTION_LOCATE_BATTERY`: five ARBITER-OWNED artifacts**, one per
+bare-agent attack style, **re-aimed at the LOCATE axis** (2026-08-18 second addendum, ruling 1 —
+upstream's `shouldBreak` gold assumes a judge that renders a verdict, and this one never does).
+The attack text is embedded in the artifact, and a style resists only when the extracted FACTS
+are unaffected: same function list, same per-function doc reality. Reading the DECISION alone
+would be blind here — an invented `docQuote` reds `has-doc` through the quote-verification route,
+so a leak and a resist can render identical itemized reds. **All five must resist**; a leak fails
+calibration and names the style. Nothing about the battery is stored in a spec and no signer
+authors it.
+
+A **CASUALTY is never a failed case**: a dead call, an unpriced one (F6 — never retried) or an
+emission that never parses after the ladder STOPS the gate on `runLocate`'s own axis
+(`CASUALTY_AXES`), keeps the graded prefix, and reports zero failures — a broken judge is no
+evidence about the set in either direction. Every locate call is metered through `onCost` on
+every route out and the totals fold through `tallyCalls`, so one unpriced call makes `costUsd`
+null rather than an exact-looking floor.
+
+**At signing it is MANDATORY and it is the only PAID gate** (`prepareSigning`, gate 4). A close
+carrying a `judged-floor` stage is refused when no set is stored, when no `judgeLoop` seam is
+wired (a wiring gap, never a silent pass), when the gate is a casualty, and when anything short
+of all-of-them grades. It runs **after** gates 1–3, so no $0 refusal is ever paid for. The
+signing record keeps WHAT was certified — `cardHash`, `casesHash`, `setHash` (which covers
+`JUDGE_MODEL`), the graded rows and the battery — beside `judgeModel` itself.
+
+**D9.3 for a judged-ONLY close** (ruling 3, hamr: *"fix it now, we are delivering softgreen"*).
+A judged stage skips the seed read (ruling 8), so a close whose only work stage is judged has no
+seed red and used to be unsignable — the one job shape softgreen exists for. For that shape only,
+a PASSED calibration gate plays the seed-red role (the polarity law makes *this close can fail* a
+demonstrated fact), and the record says so: `gates.seedVerdict.satisfiedBy === 'calibration'`. A
+close with any mechanical work stage is UNCHANGED and still needs its seed red.
+
+**THE JUDGE TIER IS INSIDE THE SIGNATURE, and the stage refuses a mismatch.** *"A judge-model
+bump forces a full recalibration"* used to be an operator-side rule with nothing to fire on,
+which makes it prose (F45); it now has both halves of a detector. The tier the signer's set was
+graded by is stored beside the cases as **`calibration.judgeModel`** — `CALIBRATION_FIELDS`
+enumerates a stored set as exactly `cases` and `judgeModel` and nothing else — written by
+`foldJudgedArtifacts` from the PIN (`JUDGE_MODEL`) rather than from anything a caller may name.
+Because it is INSIDE the spec, `jobSpecHash` covers it by construction: bump the constant and
+every signed judged spec hashes differently, the signature dies, and the re-sign is what re-runs
+the calibration gate. **`validateCloseDecl` REQUIRES it** on any stored set (`missing-required`
+on `…calibration.judgeModel`) — a set nobody can attribute to a tier is a floor nobody can tell
+apart from a bumped one. **`declaredStages` stamps it onto the judged stage** as
+`calibrationJudgeModel`, from the SIGNED bytes and through the one seam that already turns a
+declaration into stages (the same carry `offer: false` rides), so a stage can never name a tier
+the signature does not and no second close-level channel is plumbed through every executor seam.
+**`runJudgedFloor` then STOPS on a stored-vs-live mismatch** before it buys a call, naming both
+models and the two things that fix it — *re-sign the spec with the new tier* and *re-run the
+calibration gate (recalibrate)* — under `STOP_FAULTS.FAILED`, the same fault and the same reason
+as the absent judge seam beside it: nothing is broken, something was never re-done. It stops
+rather than degrading in either direction, because grading on the new tier mints a verdict
+against an uncalibrated floor and grading on the old one is not on offer (the pin is a constant).
+
+**The one honest limit, deliberate:** an ABSENT stamp does not stop. It is the same split the
+SET's own presence already lives under — a signed spec that judges cannot reach a run without a
+calibration (the signing gate) or without a model on it (the spec gate), so the only runtime
+question is ever WHICH model, and a bare stage descriptor handed straight to `runStage` by a test
+or an adopter is not a signed spec making a claim about a tier.
 
 **`human-confirms` is the one kind that measures NOTHING** (N4 slice 1). Its whole parameter
 surface is `ask` — the plain question the signer answers — so it cannot spawn, cannot be
@@ -793,7 +918,7 @@ Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
 `coordination-red` — a failure between units (scope contention, step order, store
 races), never to be folded into worker/interpreter reds.
 
-### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, layerRoot?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, layerRoot?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling?, reviewDoor?, doorRerun? })` → outcome — `src/run.js`
 
 The last seven are the RESUME fold and are documented under *Resuming a killed run* below; they
 default to `0` / `true` / `0` / `null` / `[]` / `null` / `null`, so a fresh run passes none of them.
@@ -838,6 +963,24 @@ enumerated `HUMAN_DECISIONS` set); it is spent once, at
 the close readings up to the moment the fix loop opens, so the human's words become `post.gap`
 through the SAME seam (same bound, same scrub) and the next machine-clean tree pauses for a
 SECOND review rather than converting one sentence forever.
+
+**A decision SURVIVES the halt that interrupts it** (F102). The run records the answer it was
+handed (`human-decision` — the door, the words, the source) and, separately, what BOUGHT it
+(`human-decision-spent` — a fix round, an accept that greened, a pause honoured). A decision with
+no spend after it is still owed to the person, and `readResume` surfaces it as
+`restart.pendingDecision` (`{decision, text, receivedAt, source}`). Hand that back as
+**`heldRuling`** and the leg applies it directly — the ask is never re-rendered, and the spine
+says the answer came from a record rather than from a person. F102's incident is what this is
+for: a rerun that opened the fix loop, stopped with `iterationsUsed: 0`, and whose resume asked
+the byte-identical question again. The two markers are deliberately not one: the fix loop
+"spends" the ruling for THIS leg's close readings the moment it opens, while whether the person
+must be asked AGAIN depends on work actually having been bought.
+
+A leg handed BOTH a fresh `humanRuling` and a `heldRuling` is refused (`hitl-decision-red`,
+naming the held decision) before anything costs anything: two answers to one question is
+ambiguity, not a merge. `resolveHumanRuling(fresh, held)` is the exported seam that decides this
+(and whether the leg is a fresh engagement, below), so a runner cannot admit what a run refuses.
+
 `branch-red` is the WORK BRANCH refusing (below): the patient is not a git checkout, its
 branch namespace has no free name, or a resume's recorded branch is gone. Zero tokens, and
 never a fallback to working on the branch the run was handed. `provider-red` is a
@@ -1269,6 +1412,64 @@ run the rounds of a bounded attempt. N2 bounds (honest): `gold`/`rubric`/`hitl` 
 closes refuse `close-unsupported` — N4's hitl is a `human-confirms` STAGE inside a `closeDecl`,
 never a close TYPE, so there is one live expression of hitl rather than two.
 
+### THE REVIEW DOOR — the three doors at the END of a run (softgreen module 8, PRD v1.71 §3)
+
+The pause machinery re-homed: the same doors, the same evidence package and the same 60-day TTL,
+one level OUT — from a stage inside the close to the door at the end of a run.
+
+**THE LAW, and it is not negotiable** (hamr, verbatim: *"it's important not to change the loop
+self verdict"*): the close mints the verdict, the door records a **disposition**. `runJob`
+returns `green` / `already-green` exactly as it always did, the ledger records exactly what it
+always recorded, and no answer a person gives can change either. A green run that is never
+answered is still a green run — the door is non-blocking.
+
+**Opening one.** A run whose terminal is verdict-bearing (`DOOR_OPEN_OUTCOMES` — `green`,
+`already-green`) emits ONE `review-door` record carrying the evidence: the outcome, the class,
+whether the credit is `quarantined`, every close stage's own result, the stages an `accept` will
+re-run (`mechanical`), and the changed set (same cap and same F28/F6 announcements the pause
+package makes). Which runs open one is `doorOpens(job, reviewDoor)`:
+
+- **always** for the classes in `REVIEW_DOOR_CLASSES` — `['soft-green']`, because a judged green
+  is quarantined at mint (module 6) and an `accept` is the ONLY thing that releases the credit;
+- **on request** for everything else: `reviewDoor: true` (the runner's `--review-door`). A
+  green-class run is byte-identical to what it always was unless it is asked for.
+- `reviewDoor: false` shuts it for any class. The flag wins in both directions and is never
+  inferred; `REVIEW_DOOR_CLASSES` is a constant, not a threshold, and widening it is arbiter
+  territory.
+
+**Answering one — `answerReviewDoor({ job, workdir, events, decision, text?, closeTimeoutMs?,
+registryDir?, name?, runid?, at?, now?, emit? })`** (`src/reviewdoor.js`). The answer arrives
+after the run has ended, possibly days later and from another process, so it cannot ride the
+run's return path. This is that seam. It never throws and never conjures — a fourth door, an
+empty `rerun`, a run that opened no door (`no-door`), an expired one (`door-expired`), a tree
+that moved (`door-accept-red`) and a missing registry all come back as named reds.
+
+- **`accept`** re-runs the close's **mechanical** stages against the tree AS IT STANDS
+  (`mechanicalStages` — everything outside `SEED_EXEMPT_KINDS`, so never a judged floor and never
+  a person) before it is honoured: hamr's ruling that an accept is not a rubber stamp, and the
+  answer to a tree that can move in the 60 days a door keeps. A red REFUSES the accept with the
+  stage named and records **nothing**. A pass records the disposition and, over a held judged
+  green, RELEASES the credit through module 6's `applyDoorDecision`.
+- **`rerun`** carries the person's words back as a directive (`next: 'rerun'`) and re-proves
+  nothing: the new run's close is what judges. Empty or whitespace text is refused at the same
+  seam every other door is.
+- **`pause`** runs nothing and spends nothing, in any state. The door simply keeps, and an
+  unanswered one expires under `PAUSE_TTL_MS` — that expiry IS what `cancel` used to be.
+
+Every door is recorded when a registry is wired, not only the accepts: *"the signer's accepts
+double as the judge's ongoing report card"*, and a rerun over a judged green is exactly as
+informative. An **already-green** run wrote no row of its own, so its door records nothing and
+releases nothing — slice 1's already-green no-mint rule, holding from the other side, and stated
+in the result's `note` rather than surfaced as a failure.
+
+**The rerun as a FRESH ENGAGEMENT** — hand the words back to the next run as
+**`doorRerun: {text, fromRunid?, receivedAt?}`**. Two things follow and only two: the
+`already-green` shortcut is refused (a tree that passes the close is precisely the state the
+person rejected — the run emits `door-rerun-open` and carries on), and the words reach the
+PLANNER as a requirement on top of the signed goal. It is never a `humanRuling`: that answers a
+close's human STAGE, and a green-class job has none. Money folds (the signed budget is the
+chain's ceiling); the WALL does not (F103).
+
 ### The reuse registry (Layer 3) — `src/bridges.js`, `src/selection.js`
 
 A **bridge** is the plan a green actually executed, kept so the next run of the same SHAPE
@@ -1298,6 +1499,50 @@ it points, and a percentage over 2–3 runs is fake precision. `costUsd`/`wallMs
 a number or an EXPLICIT `null`, and the key is REQUIRED either way, so an unknown has to be
 said rather than omitted (F6 — an omitted key is how a `?? 0` gets written downstream).
 
+**QUARANTINE — a judged green earns nothing until the signer accepts it** (softgreen module
+6; the standing ruling PRD v1.53, given its mechanism by v1.71 §3). A green minted under
+`verdictType: "soft-green"` carries `quarantined: true` on BOTH halves of R1's pair — the
+**version** (what inherits) and its **history row** (what the status ladder reads). It is a
+FLAG, never a withheld row: the run happened, the record says so, and the listing shows it —
+it is simply worth nothing yet. A held green does not count in `deriveStatus` (an entry whose
+only greens are held derives `null` and renders `HELD`, never `NO-GREEN`), and
+`reuseEligibility(bridge)` / `newestEligibleVersion(bridge)` refuse it for reuse **with a
+stated reason** — the same visible-skip discipline an unreadable registry file gets.
+`green` and `hitl` are untouched, byte for byte: the key is ABSENT, because the hold is about
+the young JUDGE, not about every class that is not green. `QUARANTINED_VERDICTS` is the one
+list; `quarantinesCredit(verdictType)` is the one predicate. The class travels on the green
+record as `verdictType` — an unrecognised value REDS rather than falling through to unheld.
+
+**The review door releases it, forward-only.** `recordDoor(bridge, {runid, decision, at})`
+records the signer's disposition (`accept | rerun | pause`, the same three doors `kinds.js`
+owns) on that run's own green row as an append-only `doors: [{decision, at}]` — the **report
+card**, kept as facts and never as a computed agreement rate (D6's no-score rule applies to
+the judge too). `accept` over a held green also flips `quarantined` to `false` on both halves;
+`rerun` and `pause` record and release nothing. There is deliberately **no re-hold path**: an
+accept followed by a rerun records the disagreement and leaves the credit granted. A repeat of
+the last decision is a no-op (`released` says whether THIS call freed it), and a door aimed at
+a run with **no green row of its own** — an already-green run, a red, a casualty — is the red
+`no-row-for-run`: releasing is not minting. `applyDoorDecision({registryDir, name, runid,
+decision, at})` is the on-disk half; the door opens AFTER the run ends, so the decision cannot
+ride the run's return path. **The door never changes the loop's verdict** — a green stays green
+in the ledger whatever the person then does with it.
+
+**`writeRunGreenRow({registryDir, job, name, outcome, plan, record})` → `{minted, reason,
+write}` — the terminal registry write for a runner that drives `runJob` directly** (rather
+than through `runReuse`, which writes its own rows). It is what gives that runner's review
+door a row to release: without one, `accept` reaches `recordDoor` and reds `no-row-for-run`.
+STORAGE ONLY — nothing here selects, promotes or reuses a bridge. Four refusals, each with a
+named `reason`: no `registryDir` (`no-registry` — the registry is operator-supplied, never
+conjured), `outcome !== 'green'` (`green-predates-run` for already-green — accept confirms a
+verdict, it never mints one — else `not-green`), no executed `plan` (`no-plan-executed`, R1),
+and a verdict class whose credit is not held (`credit-not-held` — `green`-class runs mint
+nothing here, `quarantinesCredit` is the one predicate). `name` falls back to `job.job`; the
+row is born HELD because the record carries the spec's own `verdictType`, never a flag. A
+refused underlying write returns `{minted: false, reason: 'write-refused', write}` with the
+reds on `write` — never a throw. Minting goes through the same cold-leg green write `runReuse`
+uses (shape-fork rule and collision refusals included), so the two runners can never spell
+"what a green writes" differently.
+
 **`loadGate(bridge, job)` → `{ ok, reds }` — the load-time gate.** Exactly three checks,
 asked *"is this the right KIND of recipe?"*: the job's **verdict type**, the **close-stage
 kinds** (v1: the same stage names in the same order), and every stored verb **within THIS
@@ -1319,12 +1564,16 @@ their next green, not repaired.
 
 **`runJob`/`runPlan` take `bridge?`** — a validated entry to reuse. The gate runs **at the
 door**: before the clock, before the close precheck, before any token. On a pass, the
-**newest** version's plan rides into the FIRST drafting prompt as a starting draft
+**newest ELIGIBLE** version's plan (the newest one no quarantine holds) rides into the FIRST
+drafting prompt as a starting draft
 (`bridge-loaded {name, versions, runid}` on the spine) and everything after it is the
 ordinary shipped path — same validator, same redraft-on-reds, the same replan ceiling, and a
 **replan never re-injects the bridge** (it drafts from the run's own state). On a fail the
 run returns the distinct terminal **`recipe-stale`** with `bridge-gate {outcome, name, reds}`
-and a decision-ready escalation, having spent nothing. **Falling back to cold is the
+and a decision-ready escalation, having spent nothing. A **wholly HELD** entry handed in
+directly is refused at the same door and by the same terminal, with `bridge-gate
+{outcome: 'quarantined'}` and the accept-then-rerun option named — the recipe is the right
+kind, it is simply unaccepted, and the two are never spelled the same. **Falling back to cold is the
 caller's decision, not an automatic silent fallback** — starting a paid run on a decision
 nobody made is the same class of error as widening a cap to manufacture a green. Omit
 `bridge` and the flow is byte-identical to a pre-Layer-3 run: no new event, and no starting
@@ -1548,6 +1797,17 @@ paused spine goes through `checkpointAgeGate`, and the run is not resumed withou
 decision: the lean-rerun rule (2026-08-12 §4) governs which door a prompt LEADS with, never an
 action taken for the operator.
 
+**A finished run's REVIEW DOOR is answered the same way, one flag over**: `--door <runid>`
+selects the run (its own spine, its own `review-door` record), `--decide` picks the door and
+`--approve <specHash>` signs it. The screen is its OWN preview and deliberately not the resume
+banner: a door is answered about a run that is OVER, so nothing that banner computes (what is
+left to resume with, which step it re-enters) is a true sentence there. `accept` and `pause`
+launch nothing and exit; `rerun` falls through into a fresh engagement — its own clock, the
+answered run's spend folded in — carrying the person's words as `doorRerun`. `--registry <dir>
+--workflow <name>` are optional: without them the answer is recorded on the run's own spine and
+the readout SAYS the credit was not released, rather than reporting a release that never
+happened.
+
 - **Completed tries are not re-run.** They come back as rows (marked `inherited`) and
   their bridges stay excluded from every later selection. A try whose `job-end` landed —
   the close judged it — counts as completed even if the kill beat its `try-end`; paying
@@ -1624,6 +1884,20 @@ action taken for the operator.
   (or `wall-halt`, below one close timeout: a try that cannot fund its close produces an
   unreadable row) with **nothing launched**. Topping up is a new envelope, and a new
   envelope is a new signature.
+- **…except a decide-time RERUN, which is a FRESH ENGAGEMENT** (F103, design record §3.4 —
+  hamr: *"redo/rerun comes with new authoring for money+time and keeps accounting of this far
+  and this session separate counters"*). A rerun opens on the full signed `maxWallMs` instead of
+  the remainder, because the person did not decide on the run's clock: the incident that minted
+  it took the door and inherited **87 seconds** from a leg that had already ended, on a worker
+  measured to read nine rounds before its first write. So there are TWO counters and neither
+  does the other's job — the CHAIN (every leg added up: `engagement.chainWallMs`,
+  `chainSpentUsd`, `job-end.spentUsd`, what the halt readout reports) and the ENGAGEMENT (what
+  bounds THIS leg: the clock's `priorElapsedMs`, `job-end.engagementSpentUsd`). The `engagement`
+  record states both at the top of every run. **MONEY IS DELIBERATELY NOT SYMMETRIC**: it folds
+  on every path, because the signed budget is the CHAIN's ceiling and a signature for $5 never
+  silently authorizes $10 — a rerun spends what REMAINS of it, never a refill. A rerun leg also
+  declares its `job-start` fold engagement-scoped (`priorWallMs` omitted, `chainWallMs` carried),
+  so a later resume of it inherits this engagement's minutes rather than the chain's again.
 - **Money stays honest end to end.** `carrySpentUsd` (completed tries + selection calls)
   seeds the resumed ledger; the mid-try fold is deliberately NOT in it, because it comes
   back inside the restarted try's own terminal — counting it in both places would bill it

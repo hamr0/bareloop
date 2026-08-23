@@ -17,14 +17,21 @@ import { closeStagesOf } from '../src/plan.js';
 import { makeSpine } from '../src/spine.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
 // the three doors' SEMANTICS live in the library; this script surfaces them
-import { normalizeHumanRuling } from '../src/kinds.js';
+import { normalizeHumanRuling, resolveHumanRuling } from '../src/kinds.js';
+// SOFTGREEN — the judged stage's PINNED tier. The constant is the library's; a
+// spelling here would be a second pin that can drift from the one the gate calibrated.
+import { JUDGE_MODEL } from '../src/judged.js';
 // --resume reads the halted run's own spine back through the SAME reader the reuse
 // path uses (never a second one) and keeps its patient the way it left it.
-import { readResume, resumeTreeGate, checkpointAgeGate, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS } from '../src/reuse.js';
+import { readResume, resumeTreeGate, checkpointAgeGate, writeRunGreenRow, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS } from '../src/reuse.js';
+import { loadRegistry } from '../src/bridges.js';
 import { HITL_PAUSE } from '../src/declaredclose.js';
+// the REVIEW DOOR (module 8): the library opens it on the run's own spine, and this
+// is the seam that answers one. Same rulebook, one level out.
+import { answerReviewDoor, doorRecordOf, doorAgeGate } from '../src/reviewdoor.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
-import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines } from './u-readout.mjs';
+import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines, reviewDoorPackage, runDoorLines } from './u-readout.mjs';
 
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
@@ -234,9 +241,31 @@ const RESUMABLE_HALTS = CHECKPOINT_OUTCOMES;
 // a second rulebook here is how a runner comes to admit what the run refuses.
 const DECIDE = arg('decide');
 const TEXT = arg('text');
-if (DECIDE !== null && RESUME === null) {
-  die('--decide answers a PAUSED run, and there is no --resume here. A decision is an answer to a checkpoint that '
-    + 'already exists — there is nothing for it to rule on at the start of a fresh run.');
+
+// ── THE REVIEW DOOR (softgreen module 8, PRD v1.71 §3) — the same three doors,
+// one level out: at the END of a run rather than at a stage inside the close.
+//
+// `--door <runid>` answers a FINISHED run's door; `--resume` continues a HALTED
+// one. They are different runs in different states and are refused together
+// rather than merged, because a merge would have to pick which question the
+// operator meant.
+//
+// `--review-door` is the OPT-IN half, and it is the one operator-facing default
+// this module has: a soft-green run opens its door unasked (its credit is held
+// until a person accepts, and nothing else releases it), and a green-class run
+// behaves exactly as it always has unless this flag is passed. PRD v1.71 §3 says
+// "the end of EVERY run" and also that a green door is NON-BLOCKING; the reading
+// that changes an existing job's spine without being asked is hamr's to pick, and
+// flipping it is one line in `REVIEW_DOOR_CLASSES` (src/kinds.js).
+const DOOR = arg('door');
+const REVIEW_DOOR_ON = process.argv.includes('--review-door');
+if (DOOR !== null && RESUME !== null) {
+  die('--door answers the review door of a run that FINISHED; --resume continues one that HALTED. Those are two '
+    + 'different runs in two different states — give one.');
+}
+if (DECIDE !== null && RESUME === null && DOOR === null) {
+  die('--decide answers a PAUSED run (--resume) or a finished run\'s REVIEW DOOR (--door), and there is neither here. '
+    + 'A decision is an answer to something that already exists — there is nothing for it to rule on at the start of a fresh run.');
 }
 // A door that carries no text REFUSES the flag rather than dropping it. Silently
 // discarding words a person typed is worse than refusing them: they would believe
@@ -266,6 +295,11 @@ const deadSpineFile = RESUME == null ? null
   : (RESUME.includes('/') || RESUME.endsWith('.jsonl') ? resolve(RESUME) : join(spineDir, `u-${RESUME}.jsonl`));
 /** @type {any} */
 let dead = null;
+/** F102 — the decision this checkpoint HOLDS: an answer the person already gave, on
+ * a leg that stopped before a single round was bought for it. Null on every ordinary
+ * resume. It is applied directly and the ask is never re-rendered — the whole of the
+ * finding is that the person paid for that decision once and must not pay again. */
+let HELD = null;
 /** the paused run's own `hitl-pause` record — the evidence package the LIBRARY
  * assembled (the ask, every mechanical stage's result, the changed set). Hoisted
  * out of the reader block because the preview below renders it, and re-deriving
@@ -346,18 +380,89 @@ if (deadSpineFile !== null) {
     console.error('  - or abandon it and keep the verdict the paused run already minted.');
     process.exit(2);
   }
+  // F102 — DOES THIS CHECKPOINT ALREADY HOLD AN ANSWER? A leg that received a
+  // decision and stopped before a single round was bought for it left the person's
+  // words on its own spine, and the reader carries them. Read BEFORE the two gates
+  // below, because a held decision is precisely the case where the terminal is NOT a
+  // pause and a decision is nonetheless outstanding — the state F102's resume could
+  // not tell apart from "nobody has looked yet".
+  HELD = dead.restart.pendingDecision ?? null;
+  // and TWO ANSWERS TO ONE QUESTION is refused by the library's own resolver, so the
+  // runner cannot admit what the run refuses (a second rulebook here is how those two
+  // come apart). The message names the held decision: the operator has to know what
+  // they would be overriding. An unreadable HELD record refuses through the same seam
+  // rather than being repaired — a decision nobody can read is not one to act on.
+  const resolved = resolveHumanRuling(RULING, HELD);
+  if (!resolved.ok) {
+    die(`${RULING === null ? `--resume: the held decision on ${deadSpineFile}` : `--decide ${RULING.decision}`}: ${resolved.why}`);
+  }
   // A decision answers a PAUSE. Every other checkpoint here stopped on an allowance,
   // and nothing about it is waiting on a person — handing one a ruling would let an
   // `accept` mint a green over evidence nobody was ever shown. The library refuses a
   // ruling for a close with no human stage; this is the other half of the same
   // question, and only the runner can ask it (it is about WHICH checkpoint is being
-  // answered, not about the close's shape).
+  // answered, not about the close's shape). A HELD decision is deliberately exempt:
+  // it was answered against a pause, on a leg that then died carrying it.
   if (RULING !== null && dead.endOutcome !== HITL_PAUSE) {
     die(`--decide ${RULING.decision}: that run stopped on ${dead.endOutcome ?? 'an unrecorded terminal'}, not at a human stage. `
       + 'A decision answers a pause — the run has to have asked you something before you can answer it. Resume it without a decision.');
   }
   pauseRecord = deadEvents.filter((/** @type {any} */ e) => e?.type === HITL_PAUSE).at(-1) ?? null;
 }
+// ── THE DOOR's own reader. A finished run's spine, its door record, and what it
+// spent — the last of those because the signed budget is the CHAIN's ceiling and a
+// rerun spends what REMAINS of it (F103's money half: time is fresh, money folds).
+/** @type {string|null} */
+const doorSpineFile = DOOR == null ? null
+  : (DOOR.includes('/') || DOOR.endsWith('.jsonl') ? resolve(DOOR) : join(spineDir, `u-${DOOR}.jsonl`));
+/** @type {any[]|null} */
+let doorEvents = null;
+/** @type {any} */
+let doorRecord = null;
+/** @type {{spentUsd: number, spendComplete: boolean}|null} */
+let doorPrior = null;
+if (doorSpineFile !== null) {
+  if (!existsSync(doorSpineFile)) die(`--door: no spine at ${doorSpineFile} — a door belongs to a run that happened, and this one left no log`);
+  let raw = '';
+  try { raw = readFileSync(doorSpineFile, 'utf8'); } catch (e) { die(`--door: cannot read ${doorSpineFile}: ${e.message}`); }
+  doorEvents = [];
+  raw.split('\n').forEach((line, i) => {
+    if (!line.trim()) return;
+    try { /** @type {any[]} */ (doorEvents).push(JSON.parse(line)); } catch (e) {
+      die(`--door: ${doorSpineFile} is corrupt at line ${i + 1} (${e.message}) — a decision made on a damaged record is a decision about a run nobody can read`);
+    }
+  });
+  const start = doorEvents.find((/** @type {any} */ e) => e?.type === 'job-start');
+  if (!start) die(`--door: ${doorSpineFile} carries no job-start — that is not a bareloop run's spine`);
+  if (start.job !== spec.job) die(`--door: that spine is job "${start.job}", not "${spec.job}" — a door is answered against the spec that was signed for it`);
+  // THE DOOR ITSELF. Its absence is a refusal and never an invented one: a run that
+  // opened no door has a verdict standing on its own, and answering a door nobody
+  // was shown the evidence for is the rubber stamp this whole class exists to stop.
+  doorRecord = doorRecordOf(doorEvents);
+  if (!doorRecord) {
+    die(`--door ${DOOR}: that run opened no review door — its verdict (${doorEvents.findLast((/** @type {any} */ e) => e?.type === 'job-end')?.outcome ?? 'unrecorded'}) stands on its own and there is nothing here to dispose of.\n`
+      + '  A soft-green run opens one always; a green-class run opens one only when the run was launched with --review-door.');
+  }
+  // …and the 60-day TTL, read HERE for the same reason the pause TTL is read with
+  // the spine gates: an expired door must refuse BEFORE a hash is signed for it.
+  const dage = doorAgeGate(doorRecord);
+  if (!dage.ok) {
+    console.error(`DOOR EXPIRED — ${dage.detail}`);
+    console.error('That expiry IS what "cancel" used to be: the verdict the run minted stands, nothing graduated, and nobody had to decide.');
+    console.error('  - start a fresh run against the current tree (the same hash, nothing to re-sign);');
+    console.error(`  - or revise the goal/spec in jobs/${target.spec} — a spec edit, so the hash changes and you sign the new one.`);
+    process.exit(2);
+  }
+  const je = doorEvents.findLast((/** @type {any} */ e) => e?.type === 'job-end');
+  const spentKnown = typeof je?.spentUsd === 'number' && Number.isFinite(je.spentUsd);
+  doorPrior = {
+    spentUsd: spentKnown ? je.spentUsd : 0,
+    // a FLOOR stays a floor across the door (F6): an absent FIGURE is never "complete
+    // at $0" — completeness is only trusted when the number it completes is known
+    spendComplete: spentKnown && je?.spendComplete !== false,
+  };
+}
+
 /** is this resume the one a PERSON has to answer? Read off the recorded terminal,
  * never off the presence of a `--decide` — the whole point is that the flag is
  * absent on the first visit. */
@@ -419,10 +524,97 @@ const readDiff = (paths) => {
     };
   }
 };
+/** F103 — is THIS leg a fresh engagement? A rerun is: the person commissioned new
+ * work at the moment they took the door, and they did not decide on the run's clock.
+ * The reading comes from the library's one resolver, never a second spelling here.
+ *
+ * BOTH DOORS are handed to it. A `--decide rerun` on a `--door` reaches the library
+ * as `doorRerun` rather than as a ruling (one flag, two questions), so it is passed
+ * in that slot here too — the `DOOR_RERUN` record itself is only built further down,
+ * after the library has answered the door, and a runner whose watchdog wall folded
+ * while the run's own clock did not would be the two counters disagreeing again. */
+const FRESH_ENGAGEMENT = resolveHumanRuling(
+  RULING, HELD, DOOR !== null && RULING?.decision === 'rerun' ? RULING : null,
+).fresh;
 /** the restart runs on the REMAINDER of the signed wall, never a fresh allotment —
  * "a budget ceiling folds in prior spend so re-invoking cannot silently widen it",
- * in a time coat. Both the run's own clock and the outside watchdog read this one. */
-const RESUME_WALL_MS = WALL_MS === null || !dead ? WALL_MS : Math.max(0, WALL_MS - dead.restart.priorWallMs);
+ * in a time coat. Both the run's own clock and the outside watchdog read this one.
+ *
+ * F103 narrows where that is true. A RESUME of the same engagement folds, exactly as
+ * it always has (W-2: a kill may never buy a second wall). A RERUN does not: `msx7a3rj`
+ * took the door and inherited 87 seconds from a leg that had already ended, on a worker
+ * measured to read nine rounds before its first write — not a short engagement, a
+ * structurally impossible one, and it paid real money to find that out. MONEY still
+ * folds on every path (the `left` line below): the signed budget is the chain's
+ * ceiling, and a raise is a spec edit somebody signs. */
+const RESUME_WALL_MS = WALL_MS === null || !dead ? WALL_MS
+  : (FRESH_ENGAGEMENT ? WALL_MS : Math.max(0, WALL_MS - dead.restart.priorWallMs));
+
+/** does the named registry HOLD a quarantined green row for this runid under this
+ * workflow name? The door-preview's half of 2B: `quarantined` on the door record says
+ * the credit is held, and THIS says whether there is a row to release — the same two
+ * facts the run's own readout ANDs (`doorHere.quarantined && REGISTRY_ROW.minted`),
+ * recovered here by lookup because a preview is a separate invocation. Read-only, $0,
+ * fail-safe: no registry, an unreadable one, or no matching row all read as "nothing
+ * to release", never as a promise.
+ * @param {string|null} registryDir @param {string} name @param {string} runid */
+function heldRowFor(registryDir, name, runid) {
+  if (registryDir === null || registryDir === '') return false;
+  return loadRegistry(registryDir).bridges.some((b) => b.name === name
+    && (Array.isArray(b.history) ? b.history : []).some((h) => h.runid === runid && h.outcome === 'green' && h.quarantined === true));
+}
+
+// ── THE REVIEW DOOR's screen (module 8). Its OWN preview, deliberately not folded
+// into the resume banner below: a door is answered about a run that is OVER, so
+// none of that banner's arithmetic (what is left to resume with, which step it
+// re-enters, whether the plan is doomed) is a true sentence here. What a person
+// needs is the evidence, the three doors, and what each one costs.
+if (doorSpineFile !== null && arg('approve') !== specHash) {
+  console.log('U — REVIEW DOOR, answering a run that has already ended');
+  console.log(`  spec     jobs/${target.spec}  $${spec.budgetUsd}  wall ${WALL_LABEL}`);
+  console.log(`  run      ${DOOR}  ${doorPrior?.spendComplete === false ? '≥' : ''}$${(doorPrior?.spentUsd ?? 0).toFixed(4)} spent  ·  ${doorSpineFile}`);
+  console.log(`  patient  ${WORKDIR} @ ${SEED.slice(0, 12)}`);
+  console.log('');
+  for (const l of reviewDoorPackage({
+    door: doorRecord,
+    diff: readDiff(Array.isArray(doorRecord?.changed?.paths) ? doorRecord.changed.paths : []),
+  })) console.log(l);
+  console.log(`\n  hash     ${specHash}`);
+  if (arg('approve') !== null) console.error(`\nREFUSED: --approve ${arg('approve')} does not match this spec version.`);
+  // THE PREVIEW MAKES THE SAME PROMISE THE RUN'S OWN READOUT DOES (2B), read the
+  // same way: `quarantined` says the credit is HELD; whether there is anything to
+  // RELEASE is answered by the registry, not the class. The run's readout answers
+  // it off the row it just wrote; a preview is a separate invocation, so it asks
+  // the named registry whether a held green row for this runid actually exists —
+  // and the printed commands carry the registry forward, because an accept aimed
+  // at no registry is the `no-row-for-run` refusal one hop later.
+  const previewHeld = doorRecord?.quarantined === true && heldRowFor(arg('registry'), arg('workflow') ?? spec.job, DOOR);
+  const previewRegistry = arg('registry') !== null ? ` --registry ${arg('registry')} --workflow ${arg('workflow') ?? spec.job}` : '';
+  const doorInvoke = (/** @type {string} */ tail) => `  node scripts/run-u.mjs --job ${jobKey} --door ${DOOR}${tail}${previewRegistry} --approve ${specHash}`;
+  console.log('');
+  if (RULING === null) {
+    for (const l of runDoorLines({
+      rerun: doorInvoke(' --decide rerun --text "<what you want done differently>"').trim(),
+      accept: doorInvoke(' --decide accept').trim(),
+      pause: doorInvoke(' --decide pause').trim(),
+      ttlDays: PAUSE_TTL_MS / 86_400_000,
+      held: previewHeld,
+    })) console.log(l);
+    if (doorRecord?.quarantined === true && !previewHeld) {
+      console.log('  (this run\'s credit is HELD and the named registry holds no green row for it'
+        + `${arg('registry') === null ? ' — no --registry was named' : ''}, so an accept records a disposition and releases nothing)`);
+    }
+  } else {
+    console.log(`  decision ${RULING.decision}${RULING.decision === 'rerun' ? ' — and these words become the requirement the fresh engagement plans against:' : ''}`);
+    if (RULING.text !== null) for (const l of String(RULING.text).split('\n')) console.log(`           ${l}`);
+    console.log(`\nTo approve and answer:\n${doorInvoke(` --decide ${RULING.decision}${RULING.text === null ? '' : ` --text ${JSON.stringify(RULING.text)}`}`)}`);
+    if (RULING.decision === 'rerun') {
+      console.log('\nA rerun COMMISSIONS WORK — launch it under a sleep inhibitor (a suspend freezes every guard, F72):');
+      console.log('  systemd-inhibit --what=idle:sleep --why="bareloop u run" env <the command above>');
+    }
+  }
+  process.exit(arg('approve') === null ? 0 : 1);
+}
 
 if (arg('approve') !== specHash) {
   console.log(dead ? 'U — RESUME, continuing a halted run, REAL dollars' : 'U — user-mode e2e, ONE run, REAL dollars');
@@ -460,7 +652,25 @@ if (arg('approve') !== specHash) {
     if (dead.wallDerivedHalt) {
       console.log('           recorded step-red RE-READ as wall-halt off this run\'s own wall-bounded record — the wall was crossed before it ended');
     }
-    console.log(`  spent    ${dead.spendComplete ? '' : '≥'}$${rs.priorSpentUsd.toFixed(4)} and ${(rs.priorWallMs / 60000).toFixed(1)}min before the halt — FOLDED IN, so this restarts on the REMAINDER`);
+    // the fold line says which of the two counters folds, per case: on an ordinary
+    // resume BOTH do (unchanged), and on a decide-time rerun the money still does
+    // while the wall does not (F103, spelled out in the `clock` line below).
+    console.log(`  spent    ${dead.spendComplete ? '' : '≥'}$${rs.priorSpentUsd.toFixed(4)} and ${(rs.priorWallMs / 60000).toFixed(1)}min before the halt — ${FRESH_ENGAGEMENT ? 'the MONEY is FOLDED IN, so this spends the REMAINDER; the wall is not (below)' : 'FOLDED IN, so this restarts on the REMAINDER'}`);
+    // F102 — SAY THAT THE ANSWER SURVIVED. Without this line the operator cannot
+    // tell a resume that will act on their words from one that will ask again, and
+    // that is the difference this whole rung exists for.
+    if (HELD) {
+      console.log(`  held     "${HELD.decision}"${HELD.text === null ? '' : ' — your own words, still the gap:'} answered ${HELD.receivedAt ?? 'at an unrecorded time'} and never paid for`);
+      if (HELD.text !== null) for (const l of String(HELD.text).split('\n')) console.log(`           ${l}`);
+      console.log('           this resume APPLIES it — you are not asked again (F102)');
+    }
+    // F103 — and say which clock this leg gets, because a rerun's is not the
+    // remainder. The two counters are both printed rather than one number meaning
+    // both: chain so far, and what this engagement may spend.
+    if (FRESH_ENGAGEMENT && WALL_MS !== null) {
+      console.log(`  clock    FRESH ENGAGEMENT — a rerun is new work you commissioned, so it opens on the full signed ${WALL_MS / 60000}min rather than on what the corrected leg left (F103)`);
+      console.log(`           chain so far ${(rs.priorWallMs / 60000).toFixed(1)}min — reported, never a bound on work you have just asked for`);
+    }
     console.log(`  left     $${(spec.budgetUsd - rs.priorSpentUsd).toFixed(4)} of $${spec.budgetUsd}${WALL_MS === null ? '' : ` and ${(/** @type {number} */ (RESUME_WALL_MS) / 60000).toFixed(1)}min of ${WALL_MS / 60000}min`}`);
     // WHERE it picks up. Without this line "resume" covers two runs that cost very
     // different amounts — one that re-scouts and re-drafts from nothing, and one that
@@ -591,40 +801,72 @@ if (arg('approve') !== specHash) {
   process.exit(arg('approve') === null ? 0 : 1);
 }
 
-// W-2, on the launch side: "when time is up, keep the grade we already have and stop".
-// A resume whose wall remainder is zero or negative has no time to start anything in,
-// and launching it buys a scout and a precheck's worth of nothing before the clock
-// halts it. The preview above already warns; this REFUSES, because the warning is
-// advisory and this is the wall itself. It also closes the guard's half of the same
-// hole: `--wall-ms 0` used to reach u-watchdog, which defaulted it to null and armed
-// no deadline at all while this banner still claimed a wall.
-if (dead && RESUME_WALL_MS !== null && RESUME_WALL_MS <= 0) {
-  console.error(`WALL ALREADY EXHAUSTED — the halted run burned ${(dead.restart.priorWallMs / 60000).toFixed(1)}min of the signed ${/** @type {number} */ (WALL_MS) / 60000}min, so this resume starts with no time at all.`);
-  console.error('Nothing here refills it (a run may never widen its own cap). The lever is yours:');
-  console.error(`  - RAISE maxWallMs in jobs/${target.spec} — that is a spec edit, so the hash changes and you sign the new one with --approve;`);
-  console.error('  - or revise the goal/spec, or abandon the run and keep the verdict it already minted.');
-  // NAMED, because it is a real and non-obvious consequence rather than an oversight:
-  // a PAUSED run whose wall is gone cannot be answered either — not even with an
-  // `accept`, which buys no worker round at all. The wall is governance and this
-  // runner does not get to decide that some decisions are free of it; changing that
-  // is an arbiter call, and it belongs to hamr rather than to this script.
-  if (PAUSED) {
-    console.error('  NOTE: this run is waiting on a DECISION and its wall is gone, so the decision cannot be applied until the wall is.');
-    console.error('        Even --decide accept (which buys no worker round) goes through this gate: the allowance is the arbiter\'s, not the runner\'s.');
+// ── THE REVIEW DOOR, ANSWERED (module 8). Past the approval gate, so the signer
+// proof is the same one every other decision rides: the spec hash they approved.
+//
+// The rulebook is the LIBRARY's (`answerReviewDoor`) and nothing is re-decided
+// here: it validates the door, re-proves the tree for an `accept`, records the
+// disposition and releases a held judged green. This prints what it did.
+//
+// `accept` and `pause` LAUNCH NOTHING and exit. `rerun` falls through into the run
+// below as a FRESH ENGAGEMENT (§3.4): its own clock, and what REMAINS of the signed
+// budget — money folds on every path, time does not.
+/** @type {{text: string, fromRunid: string, receivedAt: string}|null} */
+let DOOR_RERUN = null;
+if (doorSpineFile !== null) {
+  if (RULING === null) {
+    console.error('NO DECISION — this run is standing at its review door and no decision was given.');
+    console.error('Answer it with one of: --decide rerun --text "<your words>" · --decide accept · --decide pause');
+    console.error('(the same command without --approve prints the evidence package — that is the screen this decision is made on)');
+    process.exit(2);
   }
-  process.exit(2);
-}
-
-// A PAUSE is answered, or it is not resumed. The lean-rerun rule (2026-08-12 §4) is
-// about which door a prompt LEADS with — it is never an action taken for the
-// operator, so there is no default here to fall through to. Resuming a pause with no
-// ruling would re-run the close and pause again at the same stage, buying a precheck
-// to ask the same question twice.
-if (PAUSED && RULING === null) {
-  console.error('NO DECISION — this resume continues a run that is waiting on a person, and no decision was given.');
-  console.error('Answer it with one of: --decide rerun --text "<your words>" · --decide accept · --decide pause');
-  console.error('(run the same command without --approve to read the evidence package first — that is the screen this decision is made on)');
-  process.exit(2);
+  const answeredAt = new Date().toISOString();
+  const ans = await answerReviewDoor({
+    job: spec,
+    workdir: wd,
+    events: doorEvents ?? [],
+    decision: RULING.decision,
+    text: RULING.text,
+    closeTimeoutMs: CLOSE_TIMEOUT_MS,
+    at: answeredAt,
+    // THE REGISTRY IS OPTIONAL AND NEVER CONJURED. This runner keeps standalone
+    // bridge FILES, not a registry, so a release has nothing to write unless the
+    // operator names one. Absent, the answer is recorded on the run's own spine and
+    // the readout SAYS the credit was not released — never a silent no-op.
+    registryDir: arg('registry'),
+    name: arg('workflow') ?? spec.job,
+    runid: DOOR,
+    // the decision goes onto the answered run's OWN append-only log: the record of
+    // what a person decided about a run belongs beside the record of the run
+    emit: makeSpine(doorSpineFile, { startSeq: doorEvents?.at(-1)?.seq ?? 0 }),
+  });
+  if (!ans.ok) {
+    console.error(`\nDOOR REFUSED (${RULING.decision}) — nothing was recorded and nothing was released.`);
+    for (const r of ans.reds) console.error(`  ${r.code}:${r.path} — ${r.detail}`);
+    if (ans.mechanical?.stages?.length) {
+      console.error('  the mechanical re-run, stage by stage:');
+      for (const s of ans.mechanical.stages) console.error(`    ${s.name}  ${s.verdict}`);
+    }
+    process.exit(2);
+  }
+  if (RULING.decision !== 'rerun') {
+    console.log(`\n${RULING.decision === 'accept' ? 'ACCEPTED' : 'PAUSED'} — the verdict this run minted (${doorRecord.outcome}) is UNTOUCHED; what you answered is what happens to the work.`);
+    if (RULING.decision === 'accept') {
+      console.log(`  proved   ${ans.mechanical?.ran ?? 0} mechanical stage(s) re-ran on the tree as it stands, and passed — an accept is not a rubber stamp`);
+      console.log(`  credit   ${ans.released ? 'RELEASED — this workflow is now eligible for reuse' : (arg('registry') === null ? 'not released: no --registry was named, so there is no entry to release (the answer is on the spine)' : 'nothing was held — a green-class run was never quarantined')}`);
+      if (ans.note) console.log(`  note     ${ans.note}`);
+    } else {
+      console.log(`  costs    nothing, in any state — no work, no money, no allowance moved`);
+      console.log(`  keeps    ${PAUSE_TTL_MS / 86_400_000} days from the door on the record; after that it expires on its own, which is all "cancel" ever meant`);
+      console.log(`  reopen   node scripts/run-u.mjs --job ${jobKey} --door ${DOOR} --approve ${specHash}`);
+    }
+    process.exit(0);
+  }
+  DOOR_RERUN = { text: /** @type {string} */ (RULING.text), fromRunid: /** @type {string} */ (DOOR), receivedAt: answeredAt };
+  console.log(`\nRERUN — a FRESH ENGAGEMENT against the same signed spec. The previous run's verdict (${doorRecord.outcome}) is untouched.`);
+  console.log(`  clock    its own: the full signed wall (${WALL_LABEL}) — a person does not decide on the run's clock (F103)`);
+  console.log(`  money    what REMAINS of the signed $${spec.budgetUsd}: ${doorPrior?.spendComplete === false ? '≥' : ''}$${(doorPrior?.spentUsd ?? 0).toFixed(4)} is already spent and folds in (a signature for $${spec.budgetUsd} never authorises more)`);
+  console.log('  gap      your words, carried to the PLANNER as a requirement on top of the goal');
 }
 
 // ── THE PAUSE DOOR (2026-08-17) — answered HERE, and it launches nothing.
@@ -642,6 +884,14 @@ if (PAUSED && RULING === null) {
 // library keeps its own half (`runPlan` mints a `hitl-pause` with `humanDecision`
 // when an adopter drives the door directly); this is the runner's, and the two agree
 // on the one fact that matters: the run stays paused and stays resumable.
+//
+// IT SITS ABOVE THE WALL GATE, and that placement is a ruling (v1.73 addendum 2,
+// ruling 5): *the pause door is ALLOWANCE-FREE in every state, including below the
+// wall-exhausted gate*. Pause does no work and spends no money, so there is nothing
+// for an allowance to pay for, and charging one would be the door billing a person
+// for declining to decide. A raise-and-re-sign is what changes what a RERUN can buy;
+// it was never what a pause costs. `accept` and `rerun` still meet the wall below —
+// they commission work, and work meets the clock.
 if (PAUSED && RULING?.decision === 'pause') {
   console.log(`\nPAUSED BY YOU — nothing was run and nothing was spent. The checkpoint stands exactly as it was: the work is on the run's own branch, the plan and the money are where the paused leg left them.`);
   console.log(`  keeps    ${PAUSE_TTL_MS / 86_400_000} days from the pause on the record — after that the checkpoint expires on its own, and nothing has to be decided today to let that happen`);
@@ -651,6 +901,48 @@ if (PAUSED && RULING?.decision === 'pause') {
   console.log(`  read     the same command with no --decide re-prints the evidence package you just looked at`);
   process.exit(0);
 }
+
+// W-2, on the launch side: "when time is up, keep the grade we already have and stop".
+// A resume whose wall remainder is zero or negative has no time to start anything in,
+// and launching it buys a scout and a precheck's worth of nothing before the clock
+// halts it. The preview above already warns; this REFUSES, because the warning is
+// advisory and this is the wall itself. It also closes the guard's half of the same
+// hole: `--wall-ms 0` used to reach u-watchdog, which defaulted it to null and armed
+// no deadline at all while this banner still claimed a wall.
+if (dead && RESUME_WALL_MS !== null && RESUME_WALL_MS <= 0) {
+  console.error(`WALL ALREADY EXHAUSTED — the halted run burned ${(dead.restart.priorWallMs / 60000).toFixed(1)}min of the signed ${/** @type {number} */ (WALL_MS) / 60000}min, so this resume starts with no time at all.`);
+  console.error('Nothing here refills it (a run may never widen its own cap). The lever is yours:');
+  console.error(`  - RAISE maxWallMs in jobs/${target.spec} — that is a spec edit, so the hash changes and you sign the new one with --approve;`);
+  console.error('  - or revise the goal/spec, or abandon the run and keep the verdict it already minted.');
+  // NAMED, because it is a real and non-obvious consequence rather than an oversight:
+  // a PAUSED run whose wall is gone cannot be ACCEPTED — an accept re-runs every
+  // mechanical stage against the tree as it stands (OPEN-3), which is work, and work
+  // meets the clock. The wall is governance and this runner does not get to decide
+  // that some decisions are free of it.
+  //
+  // The one door that IS free of it is `pause`, answered above and never reaching
+  // here (v1.73 ruling 5). That is not this script relaxing a governance gate: a pause
+  // runs nothing and spends nothing, so there is no allowance for it to be charged
+  // against, and the checkpoint it keeps is the one already on disk.
+  if (PAUSED) {
+    console.error('  NOTE: this run is waiting on a DECISION and its wall is gone, so accept and rerun cannot be applied until the wall is.');
+    console.error(`        --decide pause is still open and always is: it costs nothing in any state, and the checkpoint keeps for ${PAUSE_TTL_MS / 86_400_000} days.`);
+  }
+  process.exit(2);
+}
+
+// A PAUSE is answered, or it is not resumed. The lean-rerun rule (2026-08-12 §4) is
+// about which door a prompt LEADS with — it is never an action taken for the
+// operator, so there is no default here to fall through to. Resuming a pause with no
+// ruling would re-run the close and pause again at the same stage, buying a precheck
+// to ask the same question twice.
+if (PAUSED && RULING === null) {
+  console.error('NO DECISION — this resume continues a run that is waiting on a person, and no decision was given.');
+  console.error('Answer it with one of: --decide rerun --text "<your words>" · --decide accept · --decide pause');
+  console.error('(run the same command without --approve to read the evidence package first — that is the screen this decision is made on)');
+  process.exit(2);
+}
+
 
 const apiKey = process.env.ANTHROPIC_API_KEY;
 if (!apiKey) { console.error('ANTHROPIC_API_KEY not set (secrets load from the environment — never the tree)'); process.exit(2); }
@@ -703,6 +995,16 @@ const TIER_MODELS = DEFAULT_TIER_MODELS;
 /** @type {Record<string, any>} */
 const tierCache = {};
 const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] === MODEL ? provider : new AnthropicProvider({ apiKey, model: TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] }));
+/** SOFTGREEN — the JUDGED stage's own provider, and it is not the worker's. The tier
+ * is PINNED (`JUDGE_MODEL`), never a step knob and never agent-selectable: §4.2's
+ * safety argument is worth exactly as much as the tier its injection evidence was
+ * measured on. Built UNCONDITIONALLY and deliberately so — construction costs nothing
+ * and makes no call, `runPlan` reads it only when a stage is `judged-floor`, and the
+ * alternative (deriving "does this close judge?" here) is a second reading of the
+ * declaration that can drift from the one the runner actually executes. Absent, a
+ * judged stage instrument-STOPS as a wiring gap, which is what every live softgreen
+ * run would have done: run-author wired this seam and this runner never did. */
+const judgeProvider = new AnthropicProvider({ apiKey, model: JUDGE_MODEL });
 
 const started = Date.now();
 console.log(`\n== U run ${runid} ==  $${spec.budgetUsd} · ${WALL_LABEL} · ${MODEL}`);
@@ -797,7 +1099,7 @@ const lagTimer = setInterval(() => {
 let outcome;
 try {
   outcome = await runJob(spec, {
-    approvals, workdir: wd, provider, providerFor, emit: makeSpine(spineFile),
+    approvals, workdir: wd, provider, providerFor, judgeProvider, emit: makeSpine(spineFile),
     shellCapUsd: spec.budgetUsd, capRuns: CAP_RUNS, strikeLimit: STRIKE_LIMIT, closeTimeoutMs: CLOSE_TIMEOUT_MS,
     // RESUME: the money and the wall the halted run already burned are FOLDED IN (so
     // the signed ceiling cannot widen by being re-invoked), and the checkpoint it
@@ -835,7 +1137,32 @@ try {
     // re-run on the tree as it stands (OPEN-3), `rerun` reds it with these words as
     // the gap, and `pause` never gets this far (it is answered above, launching nothing).
     // Absent on every ordinary run — refused-but-unwired would pause forever.
-    ...(RULING === null ? {} : { humanRuling: RULING }),
+    // …and NOT on the review-door path (module 8), where the same `--decide rerun`
+    // means something else entirely: a `humanRuling` answers a close's human STAGE
+    // and is refused for a close that has none, which is every green-class job. The
+    // door's rerun travels as `doorRerun` below instead. One flag, two questions —
+    // the runner picks by which run is being answered, never by the flag's spelling.
+    ...(RULING === null || DOOR !== null ? {} : { humanRuling: RULING }),
+    // F102 — and the answer the CHECKPOINT holds, when the leg before this one died
+    // holding it. Same seam, same semantics, one difference the spine records: the
+    // decision came from a record rather than from a person on this invocation. The
+    // two are never both set (the resolver refused above), so this can never be a
+    // silent override of words somebody just typed.
+    ...(HELD === null ? {} : { heldRuling: HELD }),
+    // MODULE 8 — does this run END at a review door? Soft-green opens one unasked
+    // (the library's class default); `--review-door` is the green-class opt-in; and a
+    // leg that IS a rerun taken at a door opens the next one by construction — the
+    // person is working through the door, and a rerun that ended silently would be
+    // the one leg in the chain they could not answer.
+    ...(REVIEW_DOOR_ON || DOOR_RERUN ? { reviewDoor: true } : {}),
+    // …and the signer's words, when this leg is that rerun. The money the answered
+    // run spent folds in (the signed budget is the chain's ceiling); the WALL does
+    // not (F103 — a rerun that inherits a dead leg's clock is structurally doomed).
+    ...(DOOR_RERUN === null ? {} : {
+      doorRerun: DOOR_RERUN,
+      priorSpentUsd: doorPrior?.spentUsd ?? 0,
+      priorSpendComplete: doorPrior?.spendComplete !== false,
+    }),
   });
 } finally {
   // the guard outlives the run only by accident, never by design
@@ -868,7 +1195,8 @@ console.log(`spent     ${je?.spentUsd == null ? 'UNKNOWN' : `${je.spendComplete 
 // together, and a leg-only wall next to a folded spend is two framings on one cap with
 // no label to tell them apart (F83). The leg stays on the line beside it.
 console.log(`wall      ${wallLine({ legMs, priorWallMs: dead ? dead.restart.priorWallMs : 0, wallLabel: WALL_LABEL })}`);
-console.log(`rounds    ${events.filter((e) => e.type === 'worker-round' && e.kind === 'turn').length}`);
+const legRounds = events.filter((e) => e.type === 'worker-round' && e.kind === 'turn').length;
+console.log(`rounds    ${legRounds}`);
 console.log(`writes    ${writes.length} allowed (${new Set(writes.map((e) => e.action?.path)).size} distinct files)`);
 console.log(`plan      ${plan ? `${plan.steps?.length ?? '?'} steps` : 'none validated'}`);
 console.log(`checks    ${events.filter((e) => e.type === 'check-run').length} runs · menu [${events.find((e) => e.type === 'check-menu')?.offered?.join(', ') ?? '-'}]`);
@@ -927,6 +1255,102 @@ if (outcome === HITL_PAUSE) {
     pause: answer(' --decide pause'),
   })) console.log(l);
   console.log(`  (the same command without --approve re-prints this package — the checkpoint keeps for ${PAUSE_TTL_MS / 86_400_000} days)`);
+}
+// ── THE REGISTRY ROW (2B), minted BEFORE the door is rendered because the door's own
+// text reads off it. A bridge FILE is not a registry ROW, and the review door answers
+// rows: with none, `--door --decide accept` reached `recordDoor`, found no green row for
+// this runid and refused `no-row-for-run` — so the door could describe a held learning
+// credit it had no way to release.
+//
+// STORAGE ONLY. Nothing here selects, promotes or reuses a bridge (that rung is parked);
+// the row is written, and exactly one thing reads it back — the door. Every rule lives in
+// the library seam, which is where the reuse runner's greens go too, so there is ONE
+// spelling of what a green writes: no `--registry` is no row, an already-green run mints
+// nothing (accept confirms a verdict, it never mints one), a green with no executed plan
+// mints nothing, and a class whose credit is not held — green, today — mints nothing here,
+// which is what this runner has always done. The row is born HELD because `greenParts`
+// reads the SIGNED class off the record, never because a line here set a flag.
+//
+// A SPINE LEAK BLOCKS IT, exactly as it blocks the bridge file below and for the same
+// reason: a spine carrying a secret must never graduate into an artifact that outlives
+// the run, and a registry row outlives it harder than a file does.
+const REGISTRY_ROW = leaks.length
+  ? { minted: false, reason: 'spine-leak', write: null }
+  : writeRunGreenRow({
+    registryDir: arg('registry'),
+    job: spec,
+    name: arg('workflow'),
+    outcome,
+    plan,
+    record: {
+      runid,
+      patient: wd,
+      at: new Date().toISOString(),
+      costUsd: je?.spentUsd ?? null,
+      // F44/F6 — completeness travels WITH the spend, and an absent job-end is
+      // unknown-and-incomplete rather than a floor that reads as exact
+      spendComplete: je?.spentUsd != null && je.spendComplete !== false,
+      // FOLDED across a resume, like every other money and time number this readout
+      // prints: the row records what the RUN cost, never what this leg cost
+      wallMs: legMs + (dead ? dead.restart.priorWallMs : 0),
+      // the ROUND count CANNOT fold — a resume leg writes a fresh spine and the halted
+      // leg's restart record declares money and wall but never rounds — so on a resume
+      // this is a FLOOR, and it says so the way the money above does (F6: a floor that
+      // reads as exact is dishonest; report the floor WITH its completeness)
+      rounds: legRounds,
+      roundsComplete: !dead,
+      specHash,
+    },
+  });
+if (REGISTRY_ROW.minted) {
+  console.log(`\nREGISTRY   ${REGISTRY_ROW.write.name} — ${REGISTRY_ROW.write.action} (${REGISTRY_ROW.write.file})`);
+  console.log('  HELD: this green\'s learning credit is quarantined until you release it at the door below');
+} else if (REGISTRY_ROW.write !== null) {
+  // a REFUSED write is said out loud rather than swallowed — the door below is about to
+  // offer a disposition this run has no row to record
+  console.log(`\nREGISTRY   NOT written — ${REGISTRY_ROW.write.reds.map((r) => `${r.code}:${r.path}`).join(', ')}`);
+} else if (arg('registry') !== null) {
+  // the operator NAMED a registry and no row was even attempted — silence here would
+  // leave them guessing whether the flag was read at all. One line, the reason as-is
+  // (green-predates-run / not-green / no-plan-executed / credit-not-held / spine-leak);
+  // no --registry stays silent, because nothing was asked for.
+  console.log(`\nREGISTRY   no row — ${REGISTRY_ROW.reason}`);
+}
+
+// ── THE REVIEW DOOR, where the person is actually standing (module 8). The run
+// ENDED and its verdict is minted — this readout offers the three doors over it and
+// changes nothing about the outcome printed above. Read off the run's own record
+// (never off a flag), so a green that opened no door prints exactly what it always did.
+const doorHere = events.findLast((e) => e.type === 'review-door') ?? null;
+if (doorHere) {
+  console.log('');
+  for (const l of reviewDoorPackage({
+    door: doorHere,
+    diff: readDiff(Array.isArray(doorHere.changed?.paths) ? doorHere.changed.paths : []),
+  })) console.log(l);
+  console.log('');
+  // the door is answered in a SEPARATE invocation, so the registry this run wrote its row
+  // against has to travel in the printed command — an accept aimed at no registry (or at
+  // a different one) is the `no-row-for-run` refusal all over again, one hop later.
+  const doorRegistry = REGISTRY_ROW.minted ? ` --registry ${arg('registry')} --workflow ${REGISTRY_ROW.write.name}` : '';
+  const answerDoor = (/** @type {string} */ tail) => `node scripts/run-u.mjs --job ${jobKey} --door ${runid}${tail}${doorRegistry} --approve ${specHash}`;
+  // THE PROMISE READS OFF THE ROW, not off the class. `quarantined` on the door record
+  // says this run's credit is HELD; whether there is anything to RELEASE is a second
+  // question, and the honest answer is "only if a row was minted". Without `--registry`
+  // there is none, and a door that promised a release it cannot perform is the defect
+  // 2B closed — so the two are ANDed rather than the class alone being trusted.
+  for (const l of runDoorLines({
+    rerun: answerDoor(' --decide rerun --text "<what you want done differently>"'),
+    accept: answerDoor(' --decide accept'),
+    pause: answerDoor(' --decide pause'),
+    ttlDays: PAUSE_TTL_MS / 86_400_000,
+    held: doorHere.quarantined === true && REGISTRY_ROW.minted,
+  })) console.log(l);
+  if (doorHere.quarantined === true && !REGISTRY_ROW.minted) {
+    console.log('  (this run\'s credit is HELD and no registry row was written, so an accept records a disposition '
+      + 'and releases nothing — name --registry/--workflow on the RUN to give the door something to release)');
+  }
+  console.log(`  (the same command with no --decide re-prints this package — the door keeps for ${PAUSE_TTL_MS / 86_400_000} days)`);
 }
 // A leak is the HARD LINE broken, not a note in the margin: an advisory that
 // prints a count and then exits 0 while still writing the bridge is a guard in
