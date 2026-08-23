@@ -56,9 +56,11 @@ export {
 } from './bridges.js';
 export { renderListing, selectionPrompt } from './selection.js';
 // Layer 3 modules 4+5 — the D7 envelope and the reuse runner. `runReuse` composes
-// `runJob` under an operator-signed envelope (three explicit numbers, tighten-only) and
-// is the only thing in the library that WRITES the registry — minting is a graded
-// green's privilege (R1), never a caller's. `validateEnvelope`/`resolveTrySpec` are
+// `runJob` under an operator-signed envelope (three explicit numbers, tighten-only). It
+// is not the only registry WRITER any more (2B: `writeRunGreenRow`), but the rule it
+// enforced is unchanged and now lives in both — minting is a graded green's privilege
+// (R1), never a caller's: both writers go through `writeGreenRow`, and neither can mint
+// a row for anything but a green that this run actually earned. `validateEnvelope`/`resolveTrySpec` are
 // exported because an operator runner has to show the resolved per-try spec's HASH at
 // its approval gate: a tightened envelope is a new spec version, and the human signs it.
 // `resolveReuse`/`reuseSpecHash` are the pair that gate must actually PRINT: the try
@@ -74,7 +76,12 @@ export { renderListing, selectionPrompt } from './selection.js';
 // `applyDoorDecision` is the registry half of the REVIEW DOOR (softgreen module 6): the
 // door opens AFTER a run has ended, so a person's answer cannot ride the run's own return
 // path — the runner calls this with the runid it printed at the door.
-export { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED, readResume, resumeTreeGate, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS, checkpointAgeGate, applyDoorDecision } from './reuse.js';
+// `writeRunGreenRow` is that door's other half (2B), and it is exported for the same
+// reason: a runner that drives `runJob` directly rather than through `runReuse` still ends
+// at a review door, and a door with no row to act on can only describe a held learning
+// credit it has no way to release. STORAGE ONLY — nothing here selects, promotes or reuses
+// a bridge; those stay parked on `layer-3-reuse`.
+export { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED, readResume, resumeTreeGate, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS, checkpointAgeGate, applyDoorDecision, writeRunGreenRow } from './reuse.js';
 export { classifyIncidents, foldLedger, ledgerDeltas, updateLedger, LEDGER_CLASSES } from './ledger.js';
 // THE WORK BRANCH (PRD v1.57 §3). `workBranchName` is exported so an operator runner can
 // SHOW, before the approval gate, which branch the run will work on — the same reason the

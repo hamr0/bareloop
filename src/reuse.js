@@ -46,7 +46,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { loadRegistry, loadBridge, saveBridge, appendGreen, appendRed, mintBridge, registryExists, reuseEligibility, recordDoor, QUARANTINED_CODE } from './bridges.js';
+import { loadRegistry, loadBridge, saveBridge, appendGreen, appendRed, mintBridge, registryExists, reuseEligibility, recordDoor, quarantinesCredit, QUARANTINED_CODE } from './bridges.js';
 import { renderListing, selectionPrompt } from './selection.js';
 import { closeStagesOf } from './plan.js';
 import { MIN_WALL_MS, jobSpecHash } from './job.js';
@@ -1627,7 +1627,13 @@ export async function runReuse(opts) {
         closeStageNames: (closeStagesOf(job) ?? []).map((/** @type {any} */ s) => s.name),
         toolsUsed: [...new Set((read.plan.steps ?? []).flatMap((/** @type {any} */ s) => s.tools ?? []))],
       };
-      row.bridgeWrite = writeGreen(bridge, meta, { ...record, plan: read.plan });
+      // ONE spelling of what a green writes, shared with the U runner (2B):
+      // `writeGreenRow` builds the write record and saves it; this leg still owns
+      // the reporting, exactly as `commit` did when the logic lived in here.
+      const w = writeGreenRow({ registryDir, bridge, meta, record: { ...record, plan: read.plan } });
+      bridgeWrites.push(w);
+      emit('bridge-write', w);
+      row.bridgeWrite = w;
     } else if (HUMAN_CHECKPOINTS.includes(outcome)) {
       // A PAUSE IS NOT A RESULT, so the box gets nothing — not a casualty row, not a red,
       // and the workflow is left exactly as it was. The recipe has not been judged: the
@@ -1677,72 +1683,6 @@ export async function runReuse(opts) {
     emit('bridge-write', w);
     return w;
   };
-
-  /** a refused write, recorded exactly like a committed one so a reader never has to
-   * branch on presence @param {string} name @param {any} red @param {object} [extra] */
-  const refuseWrite = (name, red, extra = {}) => {
-    const w = { name, action: 'none', file: null, reds: [red], ...extra };
-    bridgeWrites.push(w);
-    emit('bridge-write', w);
-    return w;
-  };
-
-  /**
-   * KNOWN LIMIT, named rather than discovered later: `appendGreen` carries the entry's
-   * LABEL (`goal`, `closeStageNames`, `toolsUsed`) forward untouched, so a new version
-   * whose plan uses a verb the founding green did not is not reflected in `toolsUsed`.
-   * The load gate reads that field, so the gate's verb check goes slightly stale across
-   * versions. It is not a safety hole — the gate only ever gets more permissive there,
-   * and the TWEAKED plan still passes the full `validatePlan` against the job's signed
-   * menu at draft time, which is the check that actually decides. Fixing it properly
-   * means `appendGreen` taking a label update, which is module 1's contract and hamr's
-   * call, not something to change from the caller.
-   * @param {any|null} bridge @param {any} meta @param {any} record
-   */
-  function writeGreen(bridge, meta, record) {
-    // the BRIDGE leg needs no shape check: `runJob`'s own load gate already proved this
-    // entry is the same kind of recipe as this job, at the door, before a token was spent
-    // (a mismatch never gets here — it returns `recipe-stale`).
-    if (bridge) return commit(appendGreen(bridge, record), bridge.name, 'appendGreen');
-
-    // the COLD leg's green. `mintBridge` is for a name nobody holds; a name that already
-    // holds greens APPENDS, because a cold run of a job that already has a bridge is
-    // another version of that workflow, and overwriting it would destroy the green that
-    // minted it.
-    //
-    // But the name is the JOB's slug, and a job's CLOSE can be re-signed under that same
-    // slug. Appending across two close shapes does two wrong things at once: it counts a
-    // green another close rendered toward this entry's distinct-patient status (a false
-    // `proven`), and it hands the load gate — which matches on exactly these stage names
-    // — a plan that satisfied a different verification. So the shape is checked here with
-    // the gate's own predicate, and a mismatch neither appends NOR discards the green: it
-    // forks to a deterministic derived name, with the fork ON the record.
-    const stageNames = Array.isArray(meta.closeStageNames) ? meta.closeStageNames : [];
-    const entries = loadRegistry(registryDir).bridges;
-    const existing = entries.find((/** @type {any} */ b) => b.name === meta.name);
-    if (existing && sameCloseShape(existing, stageNames)) return commit(appendGreen(existing, record), meta.name, 'appendGreen');
-
-    const forked = existing !== undefined;
-    const target = forked ? shapeForkName(meta.name, stageNames) : meta.name;
-    /** the fork's own story, carried on every write record it produces */
-    const mark = forked ? { shapeForked: true, forkedFrom: meta.name, closeStageNames: [...stageNames] } : {};
-    const held = forked ? entries.find((/** @type {any} */ b) => b.name === target) : undefined;
-    if (held) {
-      // the derived name is derived FROM the shape, so a readable entry there matches by
-      // construction; a mismatch would mean two different closes hashed the same, and
-      // that is refused rather than appended blind
-      return sameCloseShape(held, stageNames)
-        ? commit(appendGreen(held, record), target, 'appendGreen-shape-forked', mark)
-        : refuseWrite(target, { code: 'shape-fork-collision', path: `${target}.json`, detail: `the derived name for close [${stageNames.join(' → ')}] is already held by an entry of a different shape — refusing to append this green to a recipe another close greened` }, mark);
-    }
-    // A file of that name that `loadRegistry` could not READ is not an absent entry — it
-    // is an entry nobody can see, and minting over it destroys whatever greens it held.
-    // `loadRegistry` skips-and-reports for that reason; the mint must not undo the skip.
-    if (existsSync(join(registryDir, `${target}.json`))) {
-      return refuseWrite(target, { code: 'mint-collision', path: `${target}.json`, detail: 'a file of this name exists but could not be read as a bridge — refusing to mint over it, because whatever greens it holds are not recoverable once overwritten. Repair or move it, then re-run.' }, mark);
-    }
-    return commit(mintBridge({ ...meta, name: target }, record), target, forked ? 'mint-shape-forked' : 'mint', mark);
-  }
 
   /**
    * The stops no further try can change. A spec nobody signed, a spec that will not
@@ -2060,6 +2000,155 @@ export async function runReuse(opts) {
       + ` ${typeof t.wallMs === 'number' && Number.isFinite(t.wallMs) ? `${(t.wallMs / 60000).toFixed(1)}min of ${(t.wallCapMs / 60000).toFixed(1)}min` : 'wall UNKNOWN'},`
       + ` close ${t.closeReached ? 'reached' : 'NEVER REACHED'}`).join('\n'),
   });
+}
+
+// ── the GREEN's registry write, shared by both runners ──────────────────────
+
+/**
+ * WHAT A GREEN WRITES, in ONE place. Lifted verbatim out of `runReuse`'s own
+ * closure when the U runner needed it too (2B) — two spellings of "what a green
+ * writes" would be the two-transforms class applied to the ledger itself, which is
+ * the failure `greenParts` exists one level down to prevent.
+ *
+ * Two legs, and the split is which caller already holds an entry:
+ *   - A BRIDGE IN HAND (the reuse leg) APPENDS. No shape check is needed: `runJob`'s
+ *     load gate already proved at the door, before a token, that this entry is the
+ *     same kind of recipe as this job (a mismatch returns `recipe-stale` and never
+ *     gets here).
+ *   - NO BRIDGE (the cold leg, and every U run) mints — unless a name already holds
+ *     greens, in which case it APPENDS, because a cold run of a job that already has
+ *     a bridge is another version of that workflow and overwriting it would destroy
+ *     the green that minted it.
+ *
+ * But the name is the JOB's slug, and a job's CLOSE can be re-signed under that same
+ * slug. Appending across two close shapes does two wrong things at once: it counts a
+ * green another close rendered toward this entry's distinct-patient status (a false
+ * `proven`), and it hands the load gate — which matches on exactly these stage names
+ * — a plan that satisfied a different verification. So the shape is checked with the
+ * gate's own predicate, and a mismatch neither appends NOR discards the green: it
+ * forks to a deterministic derived name, with the fork ON the record.
+ *
+ * THE HOLD IS NOT DECIDED HERE. `quarantined` comes off `greenParts` reading the
+ * class the run was signed under (`record.verdictType`, module 6), so a caller that
+ * forgets to pass it mints an UNHELD green rather than a held one — which is why
+ * both callers pass the spec's own field and never a literal.
+ *
+ * KNOWN LIMIT, named rather than discovered later: `appendGreen` carries the entry's
+ * LABEL (`goal`, `closeStageNames`, `toolsUsed`) forward untouched, so a new version
+ * whose plan uses a verb the founding green did not is not reflected in `toolsUsed`.
+ * The load gate reads that field, so the gate's verb check goes slightly stale across
+ * versions. It is not a safety hole — the gate only ever gets more permissive there,
+ * and the TWEAKED plan still passes the full `validatePlan` against the job's signed
+ * menu at draft time, which is the check that actually decides. Fixing it properly
+ * means `appendGreen` taking a label update, which is module 1's contract and hamr's
+ * call, not something to change from the caller.
+ *
+ * Returns the WRITE RECORD both runners report — never throws, and a refusal is a
+ * record with `action: 'none'` and named reds rather than an absence a reader has to
+ * branch on.
+ * @param {{registryDir: string, bridge?: any|null, meta: any, record: any}} o
+ * @returns {{name: string|null, action: string, file: string|null, reds: any[], [k: string]: any}}
+ */
+export function writeGreenRow({ registryDir, bridge = null, meta, record }) {
+  /** save a bridge result and BUILD the write record — the same shape `runReuse`'s
+   * `commit` builds, minus the reporting, which stays the caller's
+   * @param {{ok: boolean, reds: any[], bridge: any}} r @param {string|null} name
+   * @param {string} action @param {object} [extra] */
+  const commit = (r, name, action, extra = {}) => {
+    if (!r.ok) return { name, action: 'none', file: null, reds: r.reds, ...extra };
+    const s = saveBridge(registryDir, r.bridge);
+    return { name: r.bridge.name, action: s.ok ? action : 'none', file: s.file, reds: s.reds, ...extra };
+  };
+  /** a refused write, recorded exactly like a committed one @param {string} name
+   * @param {any} red @param {object} [extra] */
+  const refuseWrite = (name, red, extra = {}) => ({ name, action: 'none', file: null, reds: [red], ...extra });
+
+  if (bridge) return commit(appendGreen(bridge, record), bridge.name, 'appendGreen');
+
+  const stageNames = Array.isArray(meta.closeStageNames) ? meta.closeStageNames : [];
+  const entries = loadRegistry(registryDir).bridges;
+  const existing = entries.find((/** @type {any} */ b) => b.name === meta.name);
+  if (existing && sameCloseShape(existing, stageNames)) return commit(appendGreen(existing, record), meta.name, 'appendGreen');
+
+  const forked = existing !== undefined;
+  const target = forked ? shapeForkName(meta.name, stageNames) : meta.name;
+  /** the fork's own story, carried on every write record it produces */
+  const mark = forked ? { shapeForked: true, forkedFrom: meta.name, closeStageNames: [...stageNames] } : {};
+  const held = forked ? entries.find((/** @type {any} */ b) => b.name === target) : undefined;
+  if (held) {
+    // the derived name is derived FROM the shape, so a readable entry there matches by
+    // construction; a mismatch would mean two different closes hashed the same, and
+    // that is refused rather than appended blind
+    return sameCloseShape(held, stageNames)
+      ? commit(appendGreen(held, record), target, 'appendGreen-shape-forked', mark)
+      : refuseWrite(target, { code: 'shape-fork-collision', path: `${target}.json`, detail: `the derived name for close [${stageNames.join(' → ')}] is already held by an entry of a different shape — refusing to append this green to a recipe another close greened` }, mark);
+  }
+  // A file of that name that `loadRegistry` could not READ is not an absent entry — it
+  // is an entry nobody can see, and minting over it destroys whatever greens it held.
+  // `loadRegistry` skips-and-reports for that reason; the mint must not undo the skip.
+  if (existsSync(join(registryDir, `${target}.json`))) {
+    return refuseWrite(target, { code: 'mint-collision', path: `${target}.json`, detail: 'a file of this name exists but could not be read as a bridge — refusing to mint over it, because whatever greens it holds are not recoverable once overwritten. Repair or move it, then re-run.' }, mark);
+  }
+  return commit(mintBridge({ ...meta, name: target }, record), target, forked ? 'mint-shape-forked' : 'mint', mark);
+}
+
+/**
+ * THE U RUNNER'S TERMINAL WRITE (2B) — does the run that just ended earn a registry
+ * row, and if so, write it.
+ *
+ * `scripts/run-u.mjs` has always kept standalone bridge FILES and never a registry,
+ * so its review door could describe a held learning credit it had no row to release:
+ * `--decide accept` reached `recordDoor`, found no green row for the runid and died
+ * `no-row-for-run`. This is the row, and STORAGE IS ALL IT IS — selection, promotion
+ * and reuse execution stay parked (layer-3-reuse). Nothing here reads a row back.
+ *
+ * FOUR REFUSALS, each one a guard that already existed somewhere and is kept:
+ *   - NO REGISTRY, no row. The registry path is operator-supplied and never
+ *     conjured; without one the door says, in words, that nothing was released.
+ *   - ALREADY-GREEN mints nothing. The close was satisfied before this run did
+ *     anything, so nothing here earned a version — the reuse-credit leak block, from
+ *     the writing side rather than the door's.
+ *   - A GREEN WITH NO PLAN mints nothing. The artifact that inherits is the one that
+ *     RAN, and there is none (R1).
+ *   - A CLASS WHOSE CREDIT IS NOT HELD mints nothing HERE. That is `green` today, and
+ *     it is main's behaviour kept rather than a new rule: this runner has never
+ *     written a registry row for a green-class run, and widening what enters the
+ *     registry is a reuse-rung question, not a side effect of fixing a door. The
+ *     predicate is `quarantinesCredit` — the ONE spelling of "is this class held" —
+ *     so the row this runner mints and the row a door releases can never disagree
+ *     about which classes they are talking about.
+ *
+ * The row is born HELD for exactly the reason any judged green is: `greenParts` reads
+ * `verdictType` off the record. Nothing here sets the flag.
+ * @param {{registryDir: string|null|undefined, job: any, name: string|null,
+ *   outcome: string, plan: any, record: any}} o
+ * @returns {{minted: boolean, reason: string|null, write: any|null}}
+ */
+export function writeRunGreenRow({ registryDir, job, name, outcome, plan, record }) {
+  if (!isNonEmptyString(registryDir)) return { minted: false, reason: 'no-registry', write: null };
+  if (outcome !== 'green') {
+    return { minted: false, reason: outcome === 'already-green' ? 'green-predates-run' : 'not-green', write: null };
+  }
+  if (!isObj(plan)) return { minted: false, reason: 'no-plan-executed', write: null };
+  if (!quarantinesCredit(job?.verdictType)) return { minted: false, reason: 'credit-not-held', write: null };
+
+  const target = isNonEmptyString(name) ? name : job.job;
+  const meta = {
+    name: target,
+    goal: job.goal,
+    specHash: record?.specHash ?? null,
+    closeStageNames: (closeStagesOf(job) ?? []).map((/** @type {any} */ s) => s.name),
+    toolsUsed: [...new Set((plan.steps ?? []).flatMap((/** @type {any} */ s) => s.tools ?? []))],
+  };
+  const write = writeGreenRow({
+    registryDir,
+    bridge: null,
+    meta,
+    // the class the run was SIGNED under, from the spec — never a literal, so the
+    // hold and the class can never drift apart
+    record: { ...record, plan, verdictType: job.verdictType },
+  });
+  return { minted: write.action !== 'none', reason: write.action === 'none' ? 'write-refused' : null, write };
 }
 
 // ── the REVIEW DOOR's registry half (softgreen module 6) ────────────────────

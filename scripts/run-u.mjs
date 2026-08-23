@@ -23,7 +23,7 @@ import { normalizeHumanRuling, resolveHumanRuling } from '../src/kinds.js';
 import { JUDGE_MODEL } from '../src/judged.js';
 // --resume reads the halted run's own spine back through the SAME reader the reuse
 // path uses (never a second one) and keeps its patient the way it left it.
-import { readResume, resumeTreeGate, checkpointAgeGate, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS } from '../src/reuse.js';
+import { readResume, resumeTreeGate, checkpointAgeGate, writeRunGreenRow, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS } from '../src/reuse.js';
 import { HITL_PAUSE } from '../src/declaredclose.js';
 // the REVIEW DOOR (module 8): the library opens it on the run's own spine, and this
 // is the seam that answers one. Same rulebook, one level out.
@@ -1227,6 +1227,56 @@ if (outcome === HITL_PAUSE) {
   })) console.log(l);
   console.log(`  (the same command without --approve re-prints this package — the checkpoint keeps for ${PAUSE_TTL_MS / 86_400_000} days)`);
 }
+// ── THE REGISTRY ROW (2B), minted BEFORE the door is rendered because the door's own
+// text reads off it. A bridge FILE is not a registry ROW, and the review door answers
+// rows: with none, `--door --decide accept` reached `recordDoor`, found no green row for
+// this runid and refused `no-row-for-run` — so the door could describe a held learning
+// credit it had no way to release.
+//
+// STORAGE ONLY. Nothing here selects, promotes or reuses a bridge (that rung is parked);
+// the row is written, and exactly one thing reads it back — the door. Every rule lives in
+// the library seam, which is where the reuse runner's greens go too, so there is ONE
+// spelling of what a green writes: no `--registry` is no row, an already-green run mints
+// nothing (accept confirms a verdict, it never mints one), a green with no executed plan
+// mints nothing, and a class whose credit is not held — green, today — mints nothing here,
+// which is what this runner has always done. The row is born HELD because `greenParts`
+// reads the SIGNED class off the record, never because a line here set a flag.
+//
+// A SPINE LEAK BLOCKS IT, exactly as it blocks the bridge file below and for the same
+// reason: a spine carrying a secret must never graduate into an artifact that outlives
+// the run, and a registry row outlives it harder than a file does.
+const REGISTRY_ROW = leaks.length
+  ? { minted: false, reason: 'spine-leak', write: null }
+  : writeRunGreenRow({
+    registryDir: arg('registry'),
+    job: spec,
+    name: arg('workflow'),
+    outcome,
+    plan,
+    record: {
+      runid,
+      patient: wd,
+      at: new Date().toISOString(),
+      costUsd: je?.spentUsd ?? null,
+      // F44/F6 — completeness travels WITH the spend, and an absent job-end is
+      // unknown-and-incomplete rather than a floor that reads as exact
+      spendComplete: je?.spentUsd != null && je.spendComplete !== false,
+      // FOLDED across a resume, like every other money and time number this readout
+      // prints: the row records what the RUN cost, never what this leg cost
+      wallMs: legMs + (dead ? dead.restart.priorWallMs : 0),
+      rounds: events.filter((e) => e.type === 'worker-round' && e.kind === 'turn').length,
+      specHash,
+    },
+  });
+if (REGISTRY_ROW.minted) {
+  console.log(`\nREGISTRY   ${REGISTRY_ROW.write.name} — ${REGISTRY_ROW.write.action} (${REGISTRY_ROW.write.file})`);
+  console.log('  HELD: this green\'s learning credit is quarantined until you release it at the door below');
+} else if (REGISTRY_ROW.write !== null) {
+  // a REFUSED write is said out loud rather than swallowed — the door below is about to
+  // offer a disposition this run has no row to record
+  console.log(`\nREGISTRY   NOT written — ${REGISTRY_ROW.write.reds.map((r) => `${r.code}:${r.path}`).join(', ')}`);
+}
+
 // ── THE REVIEW DOOR, where the person is actually standing (module 8). The run
 // ENDED and its verdict is minted — this readout offers the three doors over it and
 // changes nothing about the outcome printed above. Read off the run's own record
@@ -1239,14 +1289,27 @@ if (doorHere) {
     diff: readDiff(Array.isArray(doorHere.changed?.paths) ? doorHere.changed.paths : []),
   })) console.log(l);
   console.log('');
-  const answerDoor = (/** @type {string} */ tail) => `node scripts/run-u.mjs --job ${jobKey} --door ${runid}${tail} --approve ${specHash}`;
+  // the door is answered in a SEPARATE invocation, so the registry this run wrote its row
+  // against has to travel in the printed command — an accept aimed at no registry (or at
+  // a different one) is the `no-row-for-run` refusal all over again, one hop later.
+  const doorRegistry = REGISTRY_ROW.minted ? ` --registry ${arg('registry')} --workflow ${REGISTRY_ROW.write.name}` : '';
+  const answerDoor = (/** @type {string} */ tail) => `node scripts/run-u.mjs --job ${jobKey} --door ${runid}${tail}${doorRegistry} --approve ${specHash}`;
+  // THE PROMISE READS OFF THE ROW, not off the class. `quarantined` on the door record
+  // says this run's credit is HELD; whether there is anything to RELEASE is a second
+  // question, and the honest answer is "only if a row was minted". Without `--registry`
+  // there is none, and a door that promised a release it cannot perform is the defect
+  // 2B closed — so the two are ANDed rather than the class alone being trusted.
   for (const l of runDoorLines({
     rerun: answerDoor(' --decide rerun --text "<what you want done differently>"'),
     accept: answerDoor(' --decide accept'),
     pause: answerDoor(' --decide pause'),
     ttlDays: PAUSE_TTL_MS / 86_400_000,
-    held: doorHere.quarantined === true,
+    held: doorHere.quarantined === true && REGISTRY_ROW.minted,
   })) console.log(l);
+  if (doorHere.quarantined === true && !REGISTRY_ROW.minted) {
+    console.log('  (this run\'s credit is HELD and no registry row was written, so an accept records a disposition '
+      + 'and releases nothing — name --registry/--workflow on the RUN to give the door something to release)');
+  }
   console.log(`  (the same command with no --decide re-prints this package — the door keeps for ${PAUSE_TTL_MS / 86_400_000} days)`);
 }
 // A leak is the HARD LINE broken, not a note in the margin: an advisory that
