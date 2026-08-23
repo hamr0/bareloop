@@ -1506,6 +1506,22 @@ decision, at})` is the on-disk half; the door opens AFTER the run ends, so the d
 ride the run's return path. **The door never changes the loop's verdict** — a green stays green
 in the ledger whatever the person then does with it.
 
+**`writeRunGreenRow({registryDir, job, name, outcome, plan, record})` → `{minted, reason,
+write}` — the terminal registry write for a runner that drives `runJob` directly** (rather
+than through `runReuse`, which writes its own rows). It is what gives that runner's review
+door a row to release: without one, `accept` reaches `recordDoor` and reds `no-row-for-run`.
+STORAGE ONLY — nothing here selects, promotes or reuses a bridge. Four refusals, each with a
+named `reason`: no `registryDir` (`no-registry` — the registry is operator-supplied, never
+conjured), `outcome !== 'green'` (`green-predates-run` for already-green — accept confirms a
+verdict, it never mints one — else `not-green`), no executed `plan` (`no-plan-executed`, R1),
+and a verdict class whose credit is not held (`credit-not-held` — `green`-class runs mint
+nothing here, `quarantinesCredit` is the one predicate). `name` falls back to `job.job`; the
+row is born HELD because the record carries the spec's own `verdictType`, never a flag. A
+refused underlying write returns `{minted: false, reason: 'write-refused', write}` with the
+reds on `write` — never a throw. Minting goes through the same cold-leg green write `runReuse`
+uses (shape-fork rule and collision refusals included), so the two runners can never spell
+"what a green writes" differently.
+
 **`loadGate(bridge, job)` → `{ ok, reds }` — the load-time gate.** Exactly three checks,
 asked *"is this the right KIND of recipe?"*: the job's **verdict type**, the **close-stage
 kinds** (v1: the same stage names in the same order), and every stored verb **within THIS

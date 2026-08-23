@@ -16,7 +16,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { jobSpecHash } from '../src/job.js';
-import { PAUSE_TTL_MS } from '../src/reuse.js';
+import { PAUSE_TTL_MS, writeGreenRow } from '../src/reuse.js';
+import { makeRegistry } from '../src/bridges.js';
 import { reviewDoorPackage, runDoorLines } from '../scripts/u-readout.mjs';
 
 const RUNNER = new URL('../scripts/run-u.mjs', import.meta.url).pathname;
@@ -90,12 +91,37 @@ test('the door screen shows the verdict that STANDS, the evidence, and the three
   assert.match(out, new RegExp(`${PAUSE_TTL_MS / 86_400_000} days`), 'and the TTL is named — that expiry is all "cancel" ever meant');
 });
 
-test('a HELD judged green says so on the screen, and says what an accept would release', () => {
+test('a HELD judged green says so on the screen — and the accept door only promises a release the registry can perform (2B, at the preview)', () => {
   const f = spineFile(doorSpine({ verdictType: 'soft-green', quarantined: true }));
-  const { code, out } = preview(['--door', f]);
-  assert.equal(code, 0, out);
-  assert.match(out, /held\s+this green was rendered by the judged floor/);
-  assert.match(out, /accept\s+releases this run's learning credit/);
+  // NO registry named: HELD is said, but the accept door must not promise a release
+  // it has no row to perform — the exact defect 2B closed at the run's own readout,
+  // and the preview is the same promise one invocation later. The screen says why.
+  const bare = preview(['--door', f]);
+  assert.equal(bare.code, 0, bare.out);
+  assert.match(bare.out, /held\s+this green was rendered by the judged floor/);
+  assert.doesNotMatch(bare.out, /accept\s+releases this run's learning credit/);
+  assert.match(bare.out, /releases nothing/, 'the missing row is said in words, never silently dropped');
+
+  // a registry HOLDING this run's green row: the promise is true, printed, and the
+  // registry travels in every printed command (an accept aimed at no registry is the
+  // `no-row-for-run` refusal one hop later). The row's runid is what the decide path
+  // will look up — `runid: DOOR` — which here is the spine path itself.
+  const dir = join(base, `door-reg-${n}`);
+  makeRegistry(dir);
+  const w = writeGreenRow({
+    registryDir: dir,
+    bridge: null,
+    meta: { name: 'bareagent-u-types', goal: 'g', specHash: HASH, closeStageNames: ['a'], toolsUsed: ['read'] },
+    record: {
+      runid: f, patient: '/tmp/patient', at: new Date().toISOString(), costUsd: 1.2, spendComplete: true,
+      wallMs: 60_000, rounds: 3, specHash: HASH, outcome: 'green', plan: { schema: 'plan-v1', steps: [] }, verdictType: 'soft-green',
+    },
+  });
+  assert.equal(w.action, 'mint', JSON.stringify(w));
+  const held = preview(['--door', f, '--registry', dir, '--workflow', 'bareagent-u-types']);
+  assert.equal(held.code, 0, held.out);
+  assert.match(held.out, /accept\s+releases this run's learning credit/);
+  assert.match(held.out, /--decide accept --registry .*--workflow bareagent-u-types --approve/, 'the registry rides the printed command');
 });
 
 test('the chosen door is echoed back before it is signed — including the words that become the requirement', () => {

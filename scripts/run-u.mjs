@@ -24,6 +24,7 @@ import { JUDGE_MODEL } from '../src/judged.js';
 // --resume reads the halted run's own spine back through the SAME reader the reuse
 // path uses (never a second one) and keeps its patient the way it left it.
 import { readResume, resumeTreeGate, checkpointAgeGate, writeRunGreenRow, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS } from '../src/reuse.js';
+import { loadRegistry } from '../src/bridges.js';
 import { HITL_PAUSE } from '../src/declaredclose.js';
 // the REVIEW DOOR (module 8): the library opens it on the run's own spine, and this
 // is the seam that answers one. Same rulebook, one level out.
@@ -549,6 +550,20 @@ const FRESH_ENGAGEMENT = resolveHumanRuling(
 const RESUME_WALL_MS = WALL_MS === null || !dead ? WALL_MS
   : (FRESH_ENGAGEMENT ? WALL_MS : Math.max(0, WALL_MS - dead.restart.priorWallMs));
 
+/** does the named registry HOLD a quarantined green row for this runid under this
+ * workflow name? The door-preview's half of 2B: `quarantined` on the door record says
+ * the credit is held, and THIS says whether there is a row to release — the same two
+ * facts the run's own readout ANDs (`doorHere.quarantined && REGISTRY_ROW.minted`),
+ * recovered here by lookup because a preview is a separate invocation. Read-only, $0,
+ * fail-safe: no registry, an unreadable one, or no matching row all read as "nothing
+ * to release", never as a promise.
+ * @param {string|null} registryDir @param {string} name @param {string} runid */
+function heldRowFor(registryDir, name, runid) {
+  if (registryDir === null || registryDir === '') return false;
+  return loadRegistry(registryDir).bridges.some((b) => b.name === name
+    && (Array.isArray(b.history) ? b.history : []).some((h) => h.runid === runid && h.outcome === 'green' && h.quarantined === true));
+}
+
 // ── THE REVIEW DOOR's screen (module 8). Its OWN preview, deliberately not folded
 // into the resume banner below: a door is answered about a run that is OVER, so
 // none of that banner's arithmetic (what is left to resume with, which step it
@@ -566,7 +581,16 @@ if (doorSpineFile !== null && arg('approve') !== specHash) {
   })) console.log(l);
   console.log(`\n  hash     ${specHash}`);
   if (arg('approve') !== null) console.error(`\nREFUSED: --approve ${arg('approve')} does not match this spec version.`);
-  const doorInvoke = (/** @type {string} */ tail) => `  node scripts/run-u.mjs --job ${jobKey} --door ${DOOR}${tail} --approve ${specHash}`;
+  // THE PREVIEW MAKES THE SAME PROMISE THE RUN'S OWN READOUT DOES (2B), read the
+  // same way: `quarantined` says the credit is HELD; whether there is anything to
+  // RELEASE is answered by the registry, not the class. The run's readout answers
+  // it off the row it just wrote; a preview is a separate invocation, so it asks
+  // the named registry whether a held green row for this runid actually exists —
+  // and the printed commands carry the registry forward, because an accept aimed
+  // at no registry is the `no-row-for-run` refusal one hop later.
+  const previewHeld = doorRecord?.quarantined === true && heldRowFor(arg('registry'), arg('workflow') ?? spec.job, DOOR);
+  const previewRegistry = arg('registry') !== null ? ` --registry ${arg('registry')} --workflow ${arg('workflow') ?? spec.job}` : '';
+  const doorInvoke = (/** @type {string} */ tail) => `  node scripts/run-u.mjs --job ${jobKey} --door ${DOOR}${tail}${previewRegistry} --approve ${specHash}`;
   console.log('');
   if (RULING === null) {
     for (const l of runDoorLines({
@@ -574,8 +598,12 @@ if (doorSpineFile !== null && arg('approve') !== specHash) {
       accept: doorInvoke(' --decide accept').trim(),
       pause: doorInvoke(' --decide pause').trim(),
       ttlDays: PAUSE_TTL_MS / 86_400_000,
-      held: doorRecord?.quarantined === true,
+      held: previewHeld,
     })) console.log(l);
+    if (doorRecord?.quarantined === true && !previewHeld) {
+      console.log('  (this run\'s credit is HELD and the named registry holds no green row for it'
+        + `${arg('registry') === null ? ' — no --registry was named' : ''}, so an accept records a disposition and releases nothing)`);
+    }
   } else {
     console.log(`  decision ${RULING.decision}${RULING.decision === 'rerun' ? ' — and these words become the requirement the fresh engagement plans against:' : ''}`);
     if (RULING.text !== null) for (const l of String(RULING.text).split('\n')) console.log(`           ${l}`);
@@ -1167,7 +1195,8 @@ console.log(`spent     ${je?.spentUsd == null ? 'UNKNOWN' : `${je.spendComplete 
 // together, and a leg-only wall next to a folded spend is two framings on one cap with
 // no label to tell them apart (F83). The leg stays on the line beside it.
 console.log(`wall      ${wallLine({ legMs, priorWallMs: dead ? dead.restart.priorWallMs : 0, wallLabel: WALL_LABEL })}`);
-console.log(`rounds    ${events.filter((e) => e.type === 'worker-round' && e.kind === 'turn').length}`);
+const legRounds = events.filter((e) => e.type === 'worker-round' && e.kind === 'turn').length;
+console.log(`rounds    ${legRounds}`);
 console.log(`writes    ${writes.length} allowed (${new Set(writes.map((e) => e.action?.path)).size} distinct files)`);
 console.log(`plan      ${plan ? `${plan.steps?.length ?? '?'} steps` : 'none validated'}`);
 console.log(`checks    ${events.filter((e) => e.type === 'check-run').length} runs · menu [${events.find((e) => e.type === 'check-menu')?.offered?.join(', ') ?? '-'}]`);
@@ -1264,7 +1293,12 @@ const REGISTRY_ROW = leaks.length
       // FOLDED across a resume, like every other money and time number this readout
       // prints: the row records what the RUN cost, never what this leg cost
       wallMs: legMs + (dead ? dead.restart.priorWallMs : 0),
-      rounds: events.filter((e) => e.type === 'worker-round' && e.kind === 'turn').length,
+      // the ROUND count CANNOT fold — a resume leg writes a fresh spine and the halted
+      // leg's restart record declares money and wall but never rounds — so on a resume
+      // this is a FLOOR, and it says so the way the money above does (F6: a floor that
+      // reads as exact is dishonest; report the floor WITH its completeness)
+      rounds: legRounds,
+      roundsComplete: !dead,
       specHash,
     },
   });
@@ -1275,6 +1309,12 @@ if (REGISTRY_ROW.minted) {
   // a REFUSED write is said out loud rather than swallowed — the door below is about to
   // offer a disposition this run has no row to record
   console.log(`\nREGISTRY   NOT written — ${REGISTRY_ROW.write.reds.map((r) => `${r.code}:${r.path}`).join(', ')}`);
+} else if (arg('registry') !== null) {
+  // the operator NAMED a registry and no row was even attempted — silence here would
+  // leave them guessing whether the flag was read at all. One line, the reason as-is
+  // (green-predates-run / not-green / no-plan-executed / credit-not-held / spine-leak);
+  // no --registry stays silent, because nothing was asked for.
+  console.log(`\nREGISTRY   no row — ${REGISTRY_ROW.reason}`);
 }
 
 // ── THE REVIEW DOOR, where the person is actually standing (module 8). The run

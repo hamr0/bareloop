@@ -1667,18 +1667,13 @@ export async function runReuse(opts) {
     return row;
   };
 
-  /** save a bridge result and record the write, whatever produced it
+  /** save a bridge result and record the write, whatever produced it — the record
+   * itself is built by `commitWrite` (the one spelling of the write-record shape,
+   * shared with `writeGreenRow`); this closure only adds the reporting
    * @param {{ok: boolean, reds: any[], bridge: any}} r @param {string|null} name @param {string} action
    * @param {object} [extra] fields that make the write's own story visible on the record */
   const commit = (r, name, action, extra = {}) => {
-    if (!r.ok) {
-      const w = { name, action: 'none', file: null, reds: r.reds, ...extra };
-      bridgeWrites.push(w);
-      emit('bridge-write', w);
-      return w;
-    }
-    const s = saveBridge(registryDir, r.bridge);
-    const w = { name: r.bridge.name, action: s.ok ? action : 'none', file: s.file, reds: s.reds, ...extra };
+    const w = commitWrite(registryDir, r, name, action, extra);
     bridgeWrites.push(w);
     emit('bridge-write', w);
     return w;
@@ -2004,6 +1999,18 @@ export async function runReuse(opts) {
 
 // ── the GREEN's registry write, shared by both runners ──────────────────────
 
+/** save a bridge result and BUILD the write record — the ONE spelling of the
+ * write-record shape (`{name, action, file, reds, …extra}`), used by `writeGreenRow`
+ * below AND by `runReuse`'s own red/casualty `commit`, so a field added to one can
+ * never silently miss the other. Reporting (push + emit) stays each caller's.
+ * @param {string} registryDir @param {{ok: boolean, reds: any[], bridge: any}} r
+ * @param {string|null} name @param {string} action @param {object} [extra] */
+function commitWrite(registryDir, r, name, action, extra = {}) {
+  if (!r.ok) return { name, action: 'none', file: null, reds: r.reds, ...extra };
+  const s = saveBridge(registryDir, r.bridge);
+  return { name: r.bridge.name, action: s.ok ? action : 'none', file: s.file, reds: s.reds, ...extra };
+}
+
 /**
  * WHAT A GREEN WRITES, in ONE place. Lifted verbatim out of `runReuse`'s own
  * closure when the U runner needed it too (2B) — two spellings of "what a green
@@ -2050,15 +2057,10 @@ export async function runReuse(opts) {
  * @returns {{name: string|null, action: string, file: string|null, reds: any[], [k: string]: any}}
  */
 export function writeGreenRow({ registryDir, bridge = null, meta, record }) {
-  /** save a bridge result and BUILD the write record — the same shape `runReuse`'s
-   * `commit` builds, minus the reporting, which stays the caller's
+  /** the shared record builder, with this write's registry bound in
    * @param {{ok: boolean, reds: any[], bridge: any}} r @param {string|null} name
    * @param {string} action @param {object} [extra] */
-  const commit = (r, name, action, extra = {}) => {
-    if (!r.ok) return { name, action: 'none', file: null, reds: r.reds, ...extra };
-    const s = saveBridge(registryDir, r.bridge);
-    return { name: r.bridge.name, action: s.ok ? action : 'none', file: s.file, reds: s.reds, ...extra };
-  };
+  const commit = (r, name, action, extra = {}) => commitWrite(registryDir, r, name, action, extra);
   /** a refused write, recorded exactly like a committed one @param {string} name
    * @param {any} red @param {object} [extra] */
   const refuseWrite = (name, red, extra = {}) => ({ name, action: 'none', file: null, reds: [red], ...extra });
