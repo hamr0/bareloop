@@ -5773,3 +5773,122 @@ already described rather than rediscovering it as a defect.
   calibration gate exists and is enforced; softgreen has still never rendered a live verdict.
 - **No reuse claim.** 2B is storage. Nothing selects, promotes or inherits from a row it writes.
 - **The arbiter does not move.** No budget, cap, fence, wall or merge semantic changes here.
+
+---
+
+## Addendum v1.77 — 2026-08-23 (v0.13.0 ships; the ladder tells the truth about where it is: two
+things now sit AHEAD of N5, one of them with a calendar deadline — hamr)
+
+**Why this addendum exists.** §10's ladder reads N4 → N5 (scheduler + budget ops) → N6 (panel).
+That is no longer where the work is. Two bodies of work have arrived that §10 never anticipated,
+and one of them expires on a date. A ladder that does not say where you actually are is worse
+than no ladder, because the next agent to read it will plan against a rung nobody is on.
+
+### 1. What shipped
+
+**v0.13.0** (2026-08-23, live on npm, installed artifact validated): the read shim OFF by
+default, G1 at the validation gate, the `estimated`/`rateSource` provenance field, plus four
+fixes found by the release round — the pointer that lied about a file emptied since it was read,
+`judge-round`'s missing provenance, a torn spine line reading as exact spend, and G1's ceiling
+half charging the drafter for its own refusal. **F110** minted: a close is the arbiter's
+instrument, so its host must have the arbiter's lifetime.
+
+**N4 is complete.** Both slices landed and shipped (hitl retired as a class, softgreen shipped
+v0.12.0). §10's ladder text is unchanged and remains correct as far as it goes.
+
+### 2. The two things now ahead of N5
+
+Neither is a rung. Both are unfinished business the ladder inherited, and both block honest
+measurement of anything built after them — which is why they precede N5 rather than queue
+behind it.
+
+**(a) The pricing chain — HAS A DEADLINE OF 2026-08-31.** `bare-agent` is pinned `^0.36.0`; the
+provenance work (BA-21/BA-22) shipped upstream in 0.38.0 and the consume side is BUILT AND INERT
+in this repo. One line wakes it. **It has never executed on either surface — a green install is
+not the provenance working, and that claim requires a run.** After 2026-08-31 sonnet-5's
+introductory rate ends; the generic fallback would then under-price by **1.586x** — a
+PROSPECTIVE projection, never observed, and it must not be retold as measured. The observed
+error over 7,507 archived rounds is **5.7%**. It would apply silently, with no detector. The
+`rates` passthrough follows the bump: hamr's design is settled (enters via the UI, or in the
+terminal as part of the questions asked upfront — explicitly NOT in the signed job spec, because
+a rate change must never re-flip a spec hash; operator-only; absent means sonnet-safe defaults
+that always SCREAM guesstimate unless overridden).
+
+**(b) Generic run replay — an ADMITTED GAP, unscoped.** The external test: if a failed run cannot
+be replayed in under five minutes, the system is not production ready. **We fail it.** Every
+byte needed is already on disk (spine, gate audit, ledger); what does not exist is a tool.
+`scripts/` holds per-battery readouts only, so reconstructing an arbitrary run means hand-slicing
+JSONL. The cheap first slice is the per-run behaviour summary (call counts by verb, exact-repeat
+count) — report-only, gates nothing, mints no red, and answers the standing complaint that the
+ledger says `$1.21` without ever saying how much of it was the same grep nine times.
+
+### 3. Build order from here
+
+**1 → pricing pin bump** (deadline-bound) · **2 → `rates` passthrough** · **3 → run-behaviour
+summary, then generic replay** · **4 → the bench** · **then N5.**
+
+Rationale for putting replay before the bench: the bench needs replay to be readable at all — a
+bench row that changes outcome is worth nothing if the run behind it cannot be reconstructed. And
+replay is the cheaper of the two.
+
+**Also AGREED, small, unblocked, $0** (hamr, this turn): the **stale-index preflight** (W4).
+Nothing checks whether the litectx index is older than the tree at run start. A stale index
+manufactures phantom defects, and flipping `embeddings` on an existing index computes no vectors
+at all — both fail SILENTLY, as a clean answer rather than an error. Report-only, so not arbiter
+territory. Corroborated externally: the one production incident in the Bhaumik talk was exactly
+this class — a policy document updated but never re-embedded, caught only by a user-feedback drop
+and by no check at all.
+
+### 4. The bench — shape agreed, cost NOT established
+
+Detail lives in `docs/02-features/2026-08-23-agreed-build-list.md`; only what binds the ladder is
+recorded here.
+
+Four frozen jobs, freezing the expected OUTCOME rather than a score: G1 greens · G2 never greens ·
+G3 the worker cheats and the close catches it · G4 cap-halt → replan → green. Runs at three
+moments only (worker/judge model change; close-authoring or validation-gate change; before a
+release) — never per commit. Tiered: Tier 0 = $0 archive replay, always first.
+
+**Two rules that make it evidence rather than theatre:**
+
+- **A row freezes the CONFIG, never just the job.** `aurora-testgen` never greens (0 of 43 valid
+  rows, 12 provider-red casualties excluded) while `aurora-testgen-l2accept` — the same job under
+  the Layer-2 shape — greened 3 times. A row naming only a job carries no information.
+- **G2 is load-bearing, and a green there is a QUESTION, not a win** (the model improved, or our
+  ruler broke). A bench where everything passes teaches nothing.
+
+**Honesty constraints carried from the $0 archive read, all of which must survive into the
+build:** G2 is *"the known-unwinnable row"*, mechanism-agnostic — 0-of-43 says it never passes, it
+does NOT say the worker stalls semantically, and F38's own semantic-stall observation is one cell
+that F38 labels an anecdote under the n=1 rule. **The archive baseline is a MONTH stale**, so
+every expected outcome must be re-established on today's code before it can be frozen — a PAID
+run, and the bench's real first cost, which nobody had costed until the archive read went looking.
+
+**Q10, open, and it gates the money question:** can the $0 archive replay pre-screen which of the
+four rows actually NEEDS a paid re-baseline and which can inherit an archived outcome? It may cut
+the first bill substantially or prove it cannot; either is worth knowing **before** a ceiling is
+quoted.
+
+### 5. PARKED — arbiter territory, hamr's explicit go only
+
+- **Model names in the signed spec** (worker/judge model becomes a signed field, so a swap flips
+  the hash). Changes what the runner ACCEPTS.
+- **n per bench row.** A threshold is never picked by an agent from a small observed sample. The
+  input, recorded so it is not re-derived: the archive's green base rates are per job per DATE and
+  a single date still mixes arms and configs — indicative, not proof. Anyone quoting them without
+  that line is quoting something they have not measured. The tension is real and stated as a
+  tension: G2 at 0/43 needs only n=1 for any green to be signal, while the best RECENT G1
+  candidate greens 6/8, so n=1 there red-flags ~25% of the time for no reason — a cry-wolf
+  problem, not a rigour problem.
+- **The bench's Tier 2 money ceiling.**
+- **Enforcement of the prompt-commit shape** (a commit touching a prompt register records what
+  failure caused it). A check means touching CI, which is ask-first. Standing trap: a frozen rule
+  without a wired detector is prose, not protection.
+
+### 6. What this addendum does NOT claim
+
+- **No arbiter movement.** Nothing here changes a budget, cap, fence, wall, close semantic or
+  merge rule. §10's ladder text stands; this addendum records what sits in front of it.
+- **The pricing provenance has never run.** Built and inert is not working.
+- **The bench does not exist**, and its cost is unmeasured. No number in §4 is a quote.
+- **Nothing about replay is designed** — it is an admitted gap with a cheap first slice named.
