@@ -1,5 +1,5 @@
 // THE JUDGED FLOOR'S CORE — softgreen module 1 (design record
-// docs/02-features/2026-08-17-softgreen-review-door-design.md §4, plus the
+// docs/product/2026-08-17-softgreen-review-door-design.md §4, plus the
 // 2026-08-18 threshold addendum). POC: poc/softgreen-judge/poc.mjs — validated
 // logic, rewritten here, never copied (graduation is a rewrite).
 //

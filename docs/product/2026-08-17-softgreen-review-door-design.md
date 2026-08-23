@@ -39,7 +39,7 @@ for the first time.
 
 **And two defects sat under it** — F102 (a pending rerun decision does not survive a
 wall-halt → resume) and F103 (the wall folds across legs, so a decide-time rerun inherits
-leftovers). Both are in `docs/FINDINGS.md`, grounded in the spines above. Neither is a reason
+leftovers). Both are in `docs/logs/FINDINGS.md`, grounded in the spines above. Neither is a reason
 for the decision in §2; they are the reason the fixes in §5 are part of the same build.
 
 **The second authoring run is the one that changed the design.** `msx81t76` ($0.45) authored a

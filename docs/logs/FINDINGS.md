@@ -1,13 +1,13 @@
 # bareloop — findings
 
 No papering over. Every friction point — with the bare suite (filed in
-`docs/UPSTREAM-ASKS.md` and upstream), with the schema (a "can't express" is a finding, not
+`docs/product/UPSTREAM-ASKS.md` and upstream), with the schema (a "can't express" is a finding, not
 a workaround), or with the build ladder (a rung that can't meet its exit stops the ladder;
 the stop is a result) — is logged here, grounded in source (file:line) or in the spine
 (run + seq). "Works as intended" is also a finding.
 
 Numbering starts at F1 in this repo. adaptlearn's F1–F23 are a closed record at
-`docs/00-context/FINDINGS.md` — cite them as `adaptlearn F<n>`, never renumber.
+`docs/logs/ADAPTLEARN-FINDINGS.md` — cite them as `adaptlearn F<n>`, never renumber.
 
 ## F1 — first contact with the suite as a CONSUMER surfaced two upstream gaps; both fixed-and-consumed same session (two-red routing, working as designed)
 
@@ -776,7 +776,7 @@ decision + record), so **14 records = 7 distinct writes, of which 5 were `bytes:
 records at `bytes:0`; the other four: 2×1501, 2×1805). Every one carried `decision: "allow",
 rule: "default"`. It cannot do otherwise: bareguard's fs primitive judges `{type:'write',
 path}` and **never inspects the body** — *a 0-byte write is a legal write*. Filed **BA-4,
-CRITICAL** (`docs/UPSTREAM-ASKS.md`). **hamr's decision (2026-07-14): option (a) — wait for the
+CRITICAL** (`docs/product/UPSTREAM-ASKS.md`). **hamr's decision (2026-07-14): option (a) — wait for the
 upstream fix + version bump, NO local shim; doctrine unamended (design law #10).** That makes
 **BA-4 a hard N2-exit blocker**: bareloop cannot ship a write-capable loop on a primitive that
 can silently empty a source file.
@@ -1983,7 +1983,7 @@ field read defers to the first run whose spine says `root-injected`.
 
 **Trigger (2026-07-20).** hamr asked why bareloop is API-only — "because of budget?" — and
 whether clipipe has cost/budget to wire. The standing answer was adaptlearn's F2
-(`docs/00-context/FINDINGS.md`): `provider-clipipe.js` reports `usage: {inputTokens: 0,
+(`docs/logs/ADAPTLEARN-FINDINGS.md`): `provider-clipipe.js` reports `usage: {inputTokens: 0,
 outputTokens: 0}` and `toolCalls: []` on every call, so the CLI path is money-blind, every
 round reds as unpriced (F6), and no run can satisfy the hard-cap law. That finding was
 inherited as closed context and never re-checked. An upstream ask against bare-agent was
@@ -2117,7 +2117,7 @@ job that produces natural fixation runs the pre-registered ON-vs-OFF acceptance 
 that result flips the default to `true` (ON helps) or keeps it `false` (no lift). A cheaper
 manufactured-fixation probe could answer it sooner, caveated by F41 (strong models resist
 fixating, so the probe may struggle to produce its own precondition). Recorded in
-`docs/01-product/LAYERS.md` (Layer R note) as a Layer 2 TODO.
+`docs/product/LAYERS.md` (Layer R note) as a Layer 2 TODO.
 
 **Lesson.** Two questions answered from one number is a blind-instrument defect wearing
 different clothes — the class that has now shipped five times in this program. And the
@@ -4405,7 +4405,7 @@ the failure the guard was built to catch.
 > since F72 was minted, instead of carrying it as a comment — a rule nobody reads at the moment
 > they launch is not a protection.
 >
-> #### NOT fixed, and accepted — PRD Addendum v1.67 (`docs/01-product/PRD.md:4799`)
+> #### NOT fixed, and accepted — PRD Addendum v1.67 (`docs/archive/PRD.md:4799`)
 >
 > hamr's ruling: *"leave it and mark it in prd as possible known limitations."*
 >
@@ -4859,7 +4859,7 @@ replan channel, unnoticed until now.
 ### The defect INVERTED the experiment that found it
 
 Both rows above are lift-contrast **calibration** runs, judged against the frozen
-`must-GREEN` admission clause (`docs/03-logs/experiments/REUSE-LIFT-CONTRAST-PREREG.md`, calibration
+`must-GREEN` admission clause (`docs/logs/REUSE-LIFT-CONTRAST-PREREG.md`, calibration
 addenda). Both were REJECTED. Neither was rejected for being too hard: both were rejected
 because the harness stopped them while the envelope still had money and time, and in one case
 while the error count was falling on every iteration. **The screen was measuring the workflow's
@@ -5738,7 +5738,7 @@ were missing and one seam was wrong:
 ### A documentation-integrity defect found in the same session: the F-number collision
 
 Both commits on this branch labelled their work **F76** (this finding) and **F77** (F86) in
-**32 source and test comments**, while `docs/FINDINGS.md` already publishes a different F76
+**32 source and test comments**, while `docs/logs/FINDINGS.md` already publishes a different F76
 (*resume at TRY granularity re-buys work the run already owns*) and a different F77 (*the step
 loop's fixed count was a silent second ceiling*), and runs to F84. Verified that zero F76/F77
 references existed in those files before the branch, then renamed **F76 → F85** and
@@ -8299,7 +8299,7 @@ passes `CEILING_USD` with `[...metered]` — every call the run has already paid
 
 **Status: minted 2026-08-23 from the Phase 2 battery fired 2026-08-19 (12 rows, $25.32 of the
 $60 ceiling hamr approved), read off
-`docs/03-logs/experiments/2026-08-18-readshim-phase2-prereg.md` (result committed `fb9c2b7`).
+`docs/product/2026-08-18-readshim-phase2-prereg.md` (result committed `fb9c2b7`).
 Pre-registered BEFORE any number existed, including the arms declared underpowered in advance.
 Cost of the FINDING: $0 (the numbers were already in the record; only this entry was missing).
 F106 is the softgreen lane's; the gap is deliberate, not a lost finding.**

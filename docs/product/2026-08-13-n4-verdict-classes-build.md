@@ -336,4 +336,4 @@ softgreen carries the review door with it. Everything in slice 2's list that is 
 (metered judge, `judgeToAnnotation`, quarantine, itemized reds, the haiku tier) is carried
 forward unchanged.
 
-**The forward record: `docs/02-features/2026-08-17-softgreen-review-door-design.md`.**
+**The forward record: `docs/product/2026-08-17-softgreen-review-door-design.md`.**

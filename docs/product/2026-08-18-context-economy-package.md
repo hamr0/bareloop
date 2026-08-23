@@ -148,7 +148,7 @@ verbs.
 
 - **Upstream (bare-agent):** L3 (listing sizes — the worker cannot know a file's size before
   paying for it without this); the pricing `estimated` state and current-gen `COST_PER_1K`
-  entries, filed as **BA-21** (`docs/UPSTREAM-ASKS.md`, already committed on `n4-softgreen` at
+  entries, filed as **BA-21** (`docs/product/UPSTREAM-ASKS.md`, already committed on `n4-softgreen` at
   `f2f44af` — not restated here).
 - **Local (bareloop):** L1/L2/L4 as API-path seams; G1 as a `validatePlan` rule; the
   context-headroom meter (§4). *(A local `COST_PER_1K` startup patch for `sonnet-5`/`opus-5`

@@ -1,4 +1,4 @@
-// Layer 3 REUSE, modules 1+2 (design record docs/02-features/2026-08-01-layer-3-reuse-design.md).
+// Layer 3 REUSE, modules 1+2 (design record docs/product/2026-08-01-layer-3-reuse-design.md).
 //
 // Module 1 is the registry (D1 storage + D6 status/history): a directory of plain
 // JSON files, one per bridge, operator-supplied path. Module 2 is the LOAD GATE

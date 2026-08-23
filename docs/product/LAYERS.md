@@ -119,7 +119,7 @@ verb blocks the work, the worker files a *request-red* and a human decides.
 |---|---|
 | **green** | hard proof — the judge's exit code says pass; the only thing that mints learning |
 | **soft-green** | a rubric judged it acceptable — weaker credit, kept distinct. *Today: a user-pickable radio value, DECLARED-BUT-LOCKED (v1.57 §1) — picking it returns the counted request-red refusal. Since 2026-08-17 it is **the forward path for every job whose *done* is a judgement** (PRD v1.71 §5): a `judged-floor` stage on the LOCATE+DECIDE pattern — the judge only EXTRACTS facts with quotes from the real artifact, an arbiter-owned `decide()` renders pass/fail — behind a signed rubric card and a signed calibration set the whole pipe must grade correctly before the close is signable. Designed, **not built**, and no build is authorized* |
-| **hitl** | a human rendered the verdict. *~~declared-but-locked~~ → ~~ADMITTED as N4 slice 1~~ → **RETIRED as a verdict class, 2026-08-17** (PRD v1.71 §2; design record `docs/02-features/2026-08-17-softgreen-review-door-design.md`). The slice was BUILT and live-PROVEN first — the first hitl pause in programme history fired on `litectx-maintainer` (F105) — and hamr then retired the class for what it asks of a composer and of a person: the composer is forced to build a mechanical checker for jobs whose essence is subjective (F104), and a human as a mid-run checkpoint is chat. **The machinery is RE-HOMED, not deleted** — it becomes the review door below. On this branch the code still admits hitl; the class retires when the next rung lands* |
+| **hitl** | a human rendered the verdict. *~~declared-but-locked~~ → ~~ADMITTED as N4 slice 1~~ → **RETIRED as a verdict class, 2026-08-17** (PRD v1.71 §2; design record `docs/product/2026-08-17-softgreen-review-door-design.md`). The slice was BUILT and live-PROVEN first — the first hitl pause in programme history fired on `litectx-maintainer` (F105) — and hamr then retired the class for what it asks of a composer and of a person: the composer is forced to build a mechanical checker for jobs whose essence is subjective (F104), and a human as a mid-run checkpoint is chat. **The machinery is RE-HOMED, not deleted** — it becomes the review door below. On this branch the code still admits hitl; the class retires when the next rung lands* |
 | **red** | failed; the gap feeds the next attempt |
 | **already-green** | was green before any work happened — mints **nothing** (credit for work not done poisons inheritance) |
 
@@ -262,7 +262,7 @@ close — the definition of done — was hand-written JavaScript, one script per
 by the assistant. That is *"there shouldn't be user authoring anywhere"* broken from the one
 side nothing else broke it from: the check menu is derived, the plan is drafted, and the layer
 that decides green was the last place a human wrote code. This rung makes the close
-**declared**. Design record `docs/02-features/2026-08-07-close-authoring-design.md` (FROZEN
+**declared**. Design record `docs/product/2026-08-07-close-authoring-design.md` (FROZEN
 2026-08-07).
 
 **Status: M1–M4 BUILT; the whole-branch review CLOSED (three shrinking rounds, 15 findings,
@@ -857,7 +857,7 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
    **Status 2026-08-01: the opening interview is COMPLETE and the design is FROZEN** (hamr,
    2026-07-31 → 2026-08-01, verbatim *"all agreed, lock in and we will validate with pocs
    these assumptions and change as needed"*) — design record
-   `docs/02-features/2026-08-01-layer-3-reuse-design.md` (R1/R2/D1–D9, answering PRD v1.34's
+   `docs/product/2026-08-01-layer-3-reuse-design.md` (R1/R2/D1–D9, answering PRD v1.34's
    inventory; PRD v1.42). **The pre-probe is pre-registered and gates the machinery:**
    `docs/03-logs/experiments/REUSE-PREPROBE-PREREG.md` — draft-only, three arms, $1 hard cap, on
    the cross-patient TYPES pair. Nothing is built before it reads.
@@ -920,7 +920,7 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
    class was then RETIRED**. Everything from *"soft-green + hitl come next"* upward is
    superseded on the CLASS by item 7; the close-authoring surface itself is unchanged.
 7. **Build SOFTGREEN + THE REVIEW DOOR — the next rung** (design record
-   `docs/02-features/2026-08-17-softgreen-review-door-design.md`, PRD v1.71; **no build is
+   `docs/product/2026-08-17-softgreen-review-door-design.md`, PRD v1.71; **no build is
    authorized — it waits on hamr's explicit go**). What happened first, said plainly: the hitl
    slice FIRED live on `litectx-maintainer` and **worked** — the worker took litectx `src/` from
    64 strict errors to 0, the authored `no-suppressions` stage caught the cheat genre twice and

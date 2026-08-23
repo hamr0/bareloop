@@ -26,7 +26,7 @@
 > where `hitl` IS admitted, `human-confirms` IS live, and the three `hitl-*` terminals exist —
 > integrate against what is written here, and expect the class-level rename when the next rung
 > lands. Records: PRD Addendum v1.71 and
-> `docs/02-features/2026-08-17-softgreen-review-door-design.md` (repo-only, not shipped);
+> `docs/product/2026-08-17-softgreen-review-door-design.md` (repo-only, not shipped);
 > evidence F102–F105.
 
 ## What this is
@@ -2115,7 +2115,7 @@ is disclosed to the authoring agent; only admitted verbs are callable per job.
 ## Gotchas
 
 *TBD from real adopter friction; recorded here as they're found (repo-side friction goes
-to `docs/FINDINGS.md`).*
+to `docs/logs/FINDINGS.md`).*
 
 ## Constraints
 

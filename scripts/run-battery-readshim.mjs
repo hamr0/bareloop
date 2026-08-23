@@ -1,6 +1,6 @@
 // READ SHIM — PHASE 2 BATTERY. 4 arms x n=3 = 12 rows on the aurora patient.
 //
-// The frozen design is docs/03-logs/experiments/2026-08-18-readshim-phase2-prereg.md
+// The frozen design is docs/product/2026-08-18-readshim-phase2-prereg.md
 // and it is AUTHORITATIVE. Nothing here loosens it. The claim under test is the SECOND
 // half of the shim's sentence — cost is already measured at $0 over 1,844 archived
 // reads; what is unmeasured is whether a CAPPED worker still greens.
@@ -450,7 +450,7 @@ const fire = async () => {
   let stop = null;
 
   const persist = () => writeFileSync(RESULTS_FILE, JSON.stringify({
-    prereg: 'docs/03-logs/experiments/2026-08-18-readshim-phase2-prereg.md',
+    prereg: 'docs/product/2026-08-18-readshim-phase2-prereg.md',
     specHash, ceilingUsd: CEILING_USD, priorUsd: PRIOR_USD, rowBudgetUsd: ROW_BUDGET_USD,
     plan: PLAN, rows, relaunched: [...relaunched], spentUsd: spent, stop,
   }, null, 2));

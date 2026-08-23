@@ -1,5 +1,5 @@
 // THE TWO SIGNED ARTIFACTS — softgreen module 4 (design record
-// docs/02-features/2026-08-17-softgreen-review-door-design.md §4.3 and §4.4,
+// docs/product/2026-08-17-softgreen-review-door-design.md §4.3 and §4.4,
 // plus the 2026-08-18 threshold addendum).
 //
 // Module 1 built the judged floor's core, module 2 wired the stage into a close,

@@ -651,7 +651,7 @@ gens, $38 stop, fresh world, condition-stamped.
 ### F17 addendum — theoretical frame registered pre-readout (2026-07-10, run at g7)
 
 Registered while the SP-3 run was at g7 (63/64 cells logged, `cohort-result.json` not yet
-written), so it binds as pre-registration: `docs/00-context/CYBERNETICS.md` maps the
+written), so it binds as pre-registration: `docs/logs/CYBERNETICS.md` maps the
 experiment's earned doctrine onto Wiener/Ashby/Conant/Beer/von Foerster and adds one reading
 rule and one diagnostic for THIS readout:
 

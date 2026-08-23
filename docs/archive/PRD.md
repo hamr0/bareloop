@@ -173,7 +173,7 @@ the stop is a result. Budget discipline unchanged: hard cap per run, cap-not-est
    - *locked-but-exists* → request-red → registry admission. Purely in-loop, no upstream PR.
    - *missing/broken* → upstream-gap red → fixed in baresuite (we own the suite:
      fix-and-consume in the same session, version bump in bareloop) — **never a local shim
-     in bareloop**. `docs/UPSTREAM-ASKS.md` queues this red only.
+     in bareloop**. `docs/product/UPSTREAM-ASKS.md` queues this red only.
    Collapsing the two would let "I want browser access" masquerade as "the browser
    primitive is broken."
 4. **New open question (joins §2/§9): graduated disclosure.** Base admitted set (the
@@ -203,7 +203,7 @@ here.
 ## Addendum v1.3 — 2026-07-11 (orchestration position, hamr's question)
 
 Asked and answered against the full F1–F20 record; frame registered in
-`docs/00-context/CYBERNETICS.md` ("Orchestration vs self-healing workflows", O1–O5). Summary:
+`docs/logs/CYBERNETICS.md` ("Orchestration vs self-healing workflows", O1–O5). Summary:
 
 **Orchestration is not a second runtime modality for bareloop — §8's "no swarm, no
 orchestrator frameworks" is now grounded in the record, not just taste.** Three reasons:
@@ -290,7 +290,7 @@ false positives from ~100 close reds**). Consumed here as product commitment:
    maintainer reads it as a pre-drafted upstream to-do: each row carries a suggested ask
    and spine-line evidence pointers (world/cell@seq). Fix lifecycle is human-appended
    (open → filed → fixed → consumed, the A1/A2/A3 pattern); **the tool drafts, never
-   files** — filing and fixing stay human, per law #1's spirit. `docs/UPSTREAM-ASKS.md`
+   files** — filing and fixing stay human, per law #1's spirit. `docs/product/UPSTREAM-ASKS.md`
    becomes the ledger's filed-state view rather than a hand-maintained queue.
 4. **New obligation on admission (lands with the registry, ~N2/N3): per-job known-answer
    smokes.** Each admitted primitive gets a known-answer check emitted as a
@@ -303,7 +303,7 @@ obligation rides the admission machinery (~N2/N3); panel surface at N6. No rung 
 
 ## Addendum v1.6 — 2026-07-12 (the self-healing map: every loop gets its named red and an undeletable signal, hamr via the cybernetics frame)
 
-Frame registered in `docs/00-context/CYBERNETICS.md` ("The self-healing map", V7/V8). The
+Frame registered in `docs/logs/CYBERNETICS.md` ("The self-healing map", V7/V8). The
 one-sentence law: **a system self-heals only at the loops it has; give every subsystem its
 loop, its named red, and its undeletable signal** — a red that lacks a name gets folded
 into a neighbor and teaches the wrong loop; a signal an emergent component can summarize
@@ -926,7 +926,7 @@ earns it sooner. When the panel lands, everything above is the starting layout.
 ---
 ## Addendum v1.13 — 2026-07-15 (the layer map + the stage-verdict rule; hamr)
 
-**`docs/01-product/LAYERS.md` is the canonical plain-language map** — the flow, the wheel,
+**`docs/product/LAYERS.md` is the canonical plain-language map** — the flow, the wheel,
 the verbs, the verdicts, and the four layers, stated without package names (primitive vs
 implementation was a real source of confusion; the map's appendix is the ONE place the
 mapping appears). It renames nothing and adds no doctrine beyond the one decision below;
@@ -1158,7 +1158,7 @@ point: Layer 2's narrow micro-wheel steps, where per-step scopes concentrate rew
 > defaults `false` (armed but off; `true` is the ON arm). The deferred ON/OFF read is
 > unchanged AND now also decides the default: the first Layer 2 job that produces natural
 > fixation runs it, and the result flips the default to `true` (ON helps) or keeps it
-> `false` (no lift). See `docs/01-product/LAYERS.md` (Layer R note). F43 also split the
+> `false` (no lift). See `docs/product/LAYERS.md` (Layer R note). F43 also split the
 > detector (intent) from the note (outcome) in the same review cycle.
 The rung mints no learning claim; v1.19's job #4 battery plan is superseded (its
 patient's failure genre is inaction/semantic-stall, which the ratchet deliberately does
@@ -2450,7 +2450,7 @@ these assumptions and change as needed"*.**
 **v1.34's inventory is now ANSWERED, decision by decision.** All eight items — storage,
 keying/matching, selection, loading and re-validation, adaptation, demotion, attribution, and
 the scout under reuse — plus the reuse envelope and what gates the build, are ruled in the
-design record: **`docs/02-features/2026-08-01-layer-3-reuse-design.md`** (R1, R2, D1–D9). That
+design record: **`docs/product/2026-08-01-layer-3-reuse-design.md`** (R1, R2, D1–D9). That
 record holds the decisions and the learning each leans on; this addendum does not duplicate
 them.
 
@@ -3553,7 +3553,7 @@ IS an operator declaration, so it stands on that surface.
 
 ## Addendum v1.53 — 2026-08-07 (close-authoring design FROZEN: the user declares what done means; nine softgreen/hitl rulings; the next rung — hamr)
 
-The design record `docs/02-features/2026-08-07-close-authoring-design.md` is FROZEN (hamr,
+The design record `docs/product/2026-08-07-close-authoring-design.md` is FROZEN (hamr,
 verbatim, in-turn: *"all approved, fix ledger now (assign to opus and validate), close the
 record and review"*). This addendum is the PRD-side pointer, per the v1.27/v1.42 convention;
 the record is the design's home and is not restated here.
@@ -3746,7 +3746,7 @@ between a true negative and a real catch.
 
 **Where it is docked, and why that is the natural home.** hamr's instruction, verbatim: *"add
 it to next phase with close dev"* — the close-authoring rung (v1.53, design record
-`docs/02-features/2026-08-07-close-authoring-design.md`, FROZEN). That rung is where the close stops
+`docs/product/2026-08-07-close-authoring-design.md`, FROZEN). That rung is where the close stops
 being hand-written per patient and becomes a DECLARATION over operator-owned stage kinds. If a
 declared close composes its own patterns from kinds, **hand-authored operator regexes may
 cease to exist as a surface at all** — which would retire this question rather than answer it.
@@ -3811,8 +3811,8 @@ findings until hamr rules otherwise.
 live-validated once, and under whole-branch review. No experiment is read here and no number
 moves; five decisions, one proposal still awaiting his word (§1), and one sequencing call are
 recorded in the register before the rework starts. The rung's own record is
-`docs/02-features/2026-08-07-close-authoring-design.md` (FROZEN, amended by addendum); the rung
-narrative is `docs/01-product/LAYERS.md`.
+`docs/product/2026-08-07-close-authoring-design.md` (FROZEN, amended by addendum); the rung
+narrative is `docs/product/LAYERS.md`.
 
 ### 1. `verdictType` returns to a USER CHOICE — D4 is superseded
 
@@ -4678,7 +4678,7 @@ is now enforced where the money is actually weighed.
 ## Addendum v1.65 — 2026-08-13 (N4 OPENS: the proving job and the calibration author ruled; BA-20 consumed — hamr)
 
 **Pointer, per the v1.27/v1.42 convention** — the home is the dated addendum on
-`docs/02-features/2026-08-07-close-authoring-design.md` and the build plan
+`docs/product/2026-08-07-close-authoring-design.md` and the build plan
 `docs/02-features/2026-08-13-n4-verdict-classes-build.md`; neither is restated here.
 
 - **The N4 rung (verdict classes: hitl first, then softgreen) is OPEN.** hamr's two in-turn
@@ -4853,7 +4853,7 @@ NOT killing` line every poll. It is a reporting divergence between two clocks, n
 
 ### 3. Cross-references
 
-- **F72** (`docs/FINDINGS.md`) — the measured instance, including the journal-reconciled
+- **F72** (`docs/logs/FINDINGS.md`) — the measured instance, including the journal-reconciled
   timeline and the timezone confound that first produced a false *"the watchdog failed"*
   reading. It did not fail; it fired exactly as specified, on a premise the sleep had
   invalidated.
@@ -5010,7 +5010,7 @@ Both are corroboration from an independent direction, and neither moves a bar:
 ### 3. Not claimed
 
 No claim that the talk is evidence for anything — it carries no n and no controls, and nothing
-in it was replicated here. No finding number is minted (`docs/FINDINGS.md` is untouched:
+in it was replicated here. No finding number is minted (`docs/logs/FINDINGS.md` is untouched:
 findings there are grounded in this repo's own runs and logs). No budget, no rung and no
 sequencing changes. The adopted practice is **unfired**; when its trigger first pulls, what the
 replay finds is a finding and belongs in FINDINGS, not in the context document.
@@ -5048,7 +5048,7 @@ rules, drafter prompt registers, and guards — the sweep produces two candidate
   rule that keeps stopping runs which then succeed is buying refusals, not safety. This is the
   measurable form of "the rule costs more than it prevents".
 - **(c) The too-LOOSE side is deliberately NOT duplicated here.** It is already covered
-  continuously and by better instruments: `docs/FINDINGS.md`, the guard batteries, and the
+  continuously and by better instruments: `docs/logs/FINDINGS.md`, the guard batteries, and the
   standing RSI rule that **verifier hardening never ends** (every battery pass asks "did the
   worker exploit the close?", and finding nothing is itself suspicious). The audit **records this
   asymmetry** rather than building a second, weaker loose-side detector — a too-tight rule has no
@@ -5127,8 +5127,8 @@ paid-adjacent, it waits for hamr's word.
 **DOCS ONLY. Nothing is built here and no build is authorized.** The origin is five runs fired
 today on `litectx-maintainer` — the first live hitl proving loop — plus a second authoring run
 on a documentation job. The full design is the record
-`docs/02-features/2026-08-17-softgreen-review-door-design.md`; the evidence is F102–F105 in
-`docs/FINDINGS.md`, grounded in spines under `bareloop-patients/litectx-maintainer-bareloop/`.
+`docs/product/2026-08-17-softgreen-review-door-design.md`; the evidence is F102–F105 in
+`docs/logs/FINDINGS.md`, grounded in spines under `bareloop-patients/litectx-maintainer-bareloop/`.
 This addendum is where the rulings enter the contract.
 
 ### 1. What the live loop proved, before anything was changed
@@ -5426,7 +5426,7 @@ keep user in the know, never refuse."*
   exports do not reach the table (`require('bare-agent')` → undefined; the deep import throws
   `ERR_PACKAGE_PATH_NOT_EXPORTED`, the strict exports map working as designed). No "proceed
   independently" path exists. **The fix is BA-21 upstream, or nothing.**
-- Filed upstream as **BA-21** (`docs/UPSTREAM-ASKS.md`) with FAIL-able acceptance criteria;
+- Filed upstream as **BA-21** (`docs/product/UPSTREAM-ASKS.md`) with FAIL-able acceptance criteria;
   not restated here.
 
 ### 2. Finding — where the money actually goes (7,507 rounds, ~$236 archive-wide)
@@ -5638,7 +5638,7 @@ ADAPTED to the locate axis not run as-is, judge bounds CONFIRMED, and pure-judge
 SIGNABLE in this rung via the calibration gate — hamr: *"fix it now, we are delivering
 softgreen, isn't that the whole point?"*)
 
-**Full record:** `docs/02-features/2026-08-17-softgreen-review-door-design.md`, second
+**Full record:** `docs/product/2026-08-17-softgreen-review-door-design.md`, second
 same-day addendum. **DOCS ONLY. No build performed by this pass.**
 
 ### 1. RULING — injection battery ADAPTED, not run as-is (selected option "1A")
@@ -5841,7 +5841,7 @@ and by no check at all.
 
 ### 4. The bench — shape agreed, cost NOT established
 
-Detail lives in `docs/02-features/2026-08-23-agreed-build-list.md`; only what binds the ladder is
+Detail lives in `docs/product/2026-08-23-agreed-build-list.md`; only what binds the ladder is
 recorded here.
 
 Four frozen jobs, freezing the expected OUTCOME rather than a score: G1 greens · G2 never greens ·
@@ -5949,7 +5949,7 @@ BEFORE any build rather than discovered during one.
   **run-START** half: an index built at patient-prep time that was already behind before the run
   began.
 - **The motivating story is INHERITED, not ours.** "A stale index manufactures phantom defects"
-  comes from litectx-side memory. **Verified: `docs/FINDINGS.md` contains zero occurrences of
+  comes from litectx-side memory. **Verified: `docs/logs/FINDINGS.md` contains zero occurrences of
   "phantom defect" or "stale index".** It is a hypothesis, and it was carried into an AGREED item
   without that label.
 - **We hold DISCONFIRMING evidence, filed by us.** **F35 — "a fresh index is a ranking no-op."** A
@@ -5979,7 +5979,7 @@ measurement, not the build.
 
 - **Claims, each re-verified in this repo:** `jobs/aurora-testgen.json` is absent and was deleted
   in `507adbb`; F35 exists and says a fresh index is a ranking no-op; F108 exists and covers the
-  in-run half; `docs/FINDINGS.md` has zero hits for the phantom-defect story.
+  in-run half; `docs/logs/FINDINGS.md` has zero hits for the phantom-defect story.
 - **Does not claim** that every archived bench outcome has changed (the commit counts are a proxy),
   that the stale-index check is worthless (it is *unjustified by our record*, which is a different
   and weaker statement), or that any number here is a quote.

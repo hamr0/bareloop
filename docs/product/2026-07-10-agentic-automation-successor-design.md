@@ -161,13 +161,13 @@ design, two of them corrections to amendments above:
    mirror); lineage keys extend to any declared channel condition, not just worker path (V3;
    SP-2's provider non-invariance generalized); HITL escalations travel a channel no emergent
    component summarizes (V4). The cybernetics frame behind V1–V6:
-   `docs/00-context/CYBERNETICS.md`.
+   `docs/logs/CYBERNETICS.md`.
 
 **Pre-repo de-risking is COMPLETE.** Every mechanism the product depends on has now been
 demonstrated on a valid instrument: authorship parity (M4), revision recovery (M5), gated
 inheritance separating on verdict (F19), executed-inheritance transmission (F20), ledger
 attribution (V2). The seed PRD lives at `docs/01-product/successor-product-prd-draft.md`
-(renamed `docs/01-product/PRD.md` at the 2026-07-11 naming pass);
+(renamed `docs/archive/PRD.md` at the 2026-07-11 naming pass);
 the next commit that matters is in the new repo.
 
 ## Open questions (deliberately unresolved until the new repo's PRD)
@@ -182,7 +182,7 @@ the next commit that matters is in the new repo.
   Brainstormed in the new repo; npm-free at check time (`looped` and `reloop` both squatted).
   Suite-family name chosen deliberately: the product is the bare suite's flagship consumer,
   and "bare loop" states the non-goals (no swarm, no orchestrator, one process per run).
-  PRD renamed to `docs/01-product/PRD.md`, header updated to v0.2.
+  PRD renamed to `docs/archive/PRD.md`, header updated to v0.2.
 
 ## 2026-07-14 addendum — the config→plan pivot (interview outcome; this record stays closed above)
 
@@ -209,7 +209,7 @@ config had no live surface on a never-green job (F22). The pivot:
 **Three decisions locked (interview 2026-07-14):** (1) config-v1 dies, plan-v1 replaces;
 (2) one replan per run; (3) the first experiment stays job #1 (litectx planted bug), with a
 scratch POC of Planner + feed-forward BEFORE the rewrite. Full record: **PRD Addendum v1.12**
-(`docs/01-product/PRD.md`) and **FINDINGS F19–F22** (`docs/FINDINGS.md`).
+(`docs/archive/PRD.md`) and **FINDINGS F19–F22** (`docs/logs/FINDINGS.md`).
 
 ## 2026-07-16 addendum — Layer 2 direction: borrow the RLM shape (buffer + refine-leaf)
 

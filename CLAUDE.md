@@ -9,16 +9,20 @@ contrast that attributed it.
 
 ## Ground truth (read before designing anything)
 
-- `docs/01-product/PRD.md` — the PRD. §3 design laws are inherited doctrine, each paid for
-  in the adaptlearn experiment; do not relitigate them without new evidence.
-- `docs/02-features/2026-07-10-agentic-automation-successor-design.md` — the design record
+- `docs/wiki/PRD.md` — the PRD's core spec (§1–§10, design laws, non-goals, risks, build
+  ladder). §3 design laws are inherited doctrine, each paid for in the adaptlearn experiment;
+  do not relitigate them without new evidence. The full addenda history (v1.1–v1.78) is
+  split by theme across `docs/wiki/` (see `docs/index.md`); the original monolith is kept at
+  `docs/archive/PRD.md` — prose untouched, its internal links repointed by the reorg tool.
+- `docs/product/2026-07-10-agentic-automation-successor-design.md` — the design record
   (validated interview + all amendments). Closed; amend with dated addenda, never rewrite.
-- `docs/00-context/` — adaptlearn's FINDINGS (F1–F23) and CYBERNETICS.md, closed records
-  copied for reference. The evidence archive and analysis lenses live in adaptlearn v0.11.1
-  (`../adaptlearn`): the science behind this product.
-- `docs/FINDINGS.md` — THIS repo's findings, starting at F1. No papering over: every
+- `docs/logs/ADAPTLEARN-FINDINGS.md` and `docs/logs/CYBERNETICS.md` — adaptlearn's FINDINGS
+  (F1–F23) and its cybernetics frame, closed records copied for reference. The evidence
+  archive and analysis lenses live in adaptlearn v0.11.1 (`../adaptlearn`): the science
+  behind this product.
+- `docs/logs/FINDINGS.md` — THIS repo's findings, starting at F1. No papering over: every
   friction point gets logged, grounded in source or event log.
-- `docs/UPSTREAM-ASKS.md` — lib gaps filed against the bare suite. Every request-red doubles
+- `docs/product/UPSTREAM-ASKS.md` — lib gaps filed against the bare suite. Every request-red doubles
   as an upstream finding.
 
 ## Hard lines (product form of the arbiter rule)

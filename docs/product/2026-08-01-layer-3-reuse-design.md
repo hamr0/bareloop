@@ -408,7 +408,7 @@ and it behaved as the ruling intended in the hardest available case.
 
 ### 2. What the validation run returned — and the one number that is NOT claimed
 
-Full read: **F73** in `docs/FINDINGS.md`. In one line each, so this record is self-contained:
+Full read: **F73** in `docs/logs/FINDINGS.md`. In one line each, so this record is self-contained:
 
 - **Try 1** picked the same-repo `litectx-u-types` ("a direct match"), used its one replan, and
   **cap-halted on attempts with the close never reached** — $4.7442 / 222 rounds / 27.4 min,

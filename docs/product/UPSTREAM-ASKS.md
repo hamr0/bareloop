@@ -304,7 +304,7 @@ The default is not a safe harbour — it is the second row.
 have a round **silently truncated and reported as a completed turn** — no error, no warning, no
 field to detect it by. In bareloop this is, in the logs, **indistinguishable from "the worker chose
 to stop without writing a fix"** — the exact outcome we have spent a week diagnosing. It may have
-**corrupted an unknown fraction of our prior experimental arms** (`docs/FINDINGS.md` **F25**).
+**corrupted an unknown fraction of our prior experimental arms** (`docs/logs/FINDINGS.md` **F25**).
 
 **The fix.** Surface **`stop_reason`** on `GenerateResult`. A round that stopped on **`max_tokens`
 with zero tool calls** must **NOT** be treated as a finished turn — it must surface as an **error**

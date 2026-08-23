@@ -1,5 +1,5 @@
 // Layer 3 — the REUSE registry (design record:
-// docs/02-features/2026-08-01-layer-3-reuse-design.md, D1/D2/D6, frozen 2026-08-01).
+// docs/product/2026-08-01-layer-3-reuse-design.md, D1/D2/D6, frozen 2026-08-01).
 //
 // A BRIDGE is the plan a green actually executed, kept so the next run of the same
 // SHAPE starts from it instead of cold. This module is the box and the label on it:

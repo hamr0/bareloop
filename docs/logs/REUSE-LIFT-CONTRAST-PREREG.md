@@ -7,7 +7,7 @@ freeze the prereg."* The programme envelope is signed; **each new job spec's res
 still requires hamr's explicit approval before any paid run** (calibration included) — the
 signature gate is structural and this prereg does not substitute for it.
 
-**Design record:** `docs/02-features/2026-08-01-layer-3-reuse-design.md`.
+**Design record:** `docs/product/2026-08-01-layer-3-reuse-design.md`.
 **Predecessor instruments, both read:** `REUSE-PREPROBE-PREREG.md` (draft tier: readable
 lineage DEAD, mechanical-start structure transmits, drafting cost flat) and its execution
 addendum (kill-gate CLEARED on an audited green, n=1, no lift mintable).

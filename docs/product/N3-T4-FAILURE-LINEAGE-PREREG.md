@@ -75,7 +75,7 @@ One patient family, one model, n=8.
 
 # RESULT — 2026-07-25 (both arms complete, n=8 each, $0.49)
 
-Full readout: `docs/FINDINGS.md` F54. Evidence: `n3-preprobe-data/t4-raw.jsonl`.
+Full readout: `docs/logs/FINDINGS.md` F54. Evidence: `n3-preprobe-data/t4-raw.jsonl`.
 
 **Frozen primary `readBeforeWrite`: Q0 0.71 vs Qfail 0.25 → DECLARED UNREADABLE, not
 reported as a result.** The metric required a SEPARATE read-only step before the first write

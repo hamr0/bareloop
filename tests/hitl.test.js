@@ -1,6 +1,6 @@
 // N4 slice 1 — the hitl verdict class, admitted.
 //
-// The frozen record (docs/02-features/2026-08-07-close-authoring-design.md, the nine
+// The frozen record (docs/product/2026-08-07-close-authoring-design.md, the nine
 // rulings + the 2026-08-12 surface addendum) says what the class MEANS; the build
 // plan (docs/02-features/2026-08-13-n4-verdict-classes-build.md §1) says which coupled
 // sites have to move together for a hitl spec to be admissible at all. This file

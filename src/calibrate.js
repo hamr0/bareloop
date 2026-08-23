@@ -1,5 +1,5 @@
 // THE CALIBRATION GATE — softgreen module 5 (design record
-// docs/02-features/2026-08-17-softgreen-review-door-design.md §4.4, the
+// docs/product/2026-08-17-softgreen-review-door-design.md §4.4, the
 // 2026-08-18 threshold addendum rulings 1–3, and the second same-day addendum's
 // rulings 1 and 3).
 //

@@ -1,6 +1,6 @@
 // POC — the softgreen `judged-floor` pipe: LOCATE (haiku-4-5) + a deterministic
 // arbiter-owned decide(). NOT shippable code. Design record:
-// docs/02-features/2026-08-17-softgreen-review-door-design.md §4.
+// docs/product/2026-08-17-softgreen-review-door-design.md §4.
 //
 // Riskiest assumptions aimed at, in order:
 //   1. Does LOCATE+decide() grade a bareloop-shaped case correctly on BOTH sides?

@@ -3,7 +3,7 @@
 **Date frozen:** 2026-08-01 · **Rung:** Layer 3 (the REUSE rung), opening gate ·
 **Status:** pre-registered, NOT yet run · **Owner:** hamr sign-off before firing.
 
-**Design record:** `docs/02-features/2026-08-01-layer-3-reuse-design.md` (D9 authorises exactly
+**Design record:** `docs/product/2026-08-01-layer-3-reuse-design.md` (D9 authorises exactly
 this probe). **Not a continuation of** `N3-PREPROBE-PREREG.md` — that document is the
 F51–F55 TESTGEN lineage programme and is CLOSED; it authorises nothing here, and nothing here
 reopens it.
@@ -127,7 +127,7 @@ Measured on the drafted plan JSON:
 Building the harness (`scripts/reuse-preprobe.mjs`) found **four places the frozen text above
 cannot be implemented literally against the REAL instrument**, plus **one read that is
 degenerate by construction**. Under the design record's amendment discipline
-(`docs/02-features/2026-08-01-layer-3-reuse-design.md` §7) this is the allowed direction:
+(`docs/product/2026-08-01-layer-3-reuse-design.md` §7) this is the allowed direction:
 **correction for principle BEFORE measurement.** No paid draft has run; no number from this
 probe exists; **nothing here loosens a rule to fit a number.** Every $0 fact recorded below was
 established by construction or by the validator — not by the probe's paid measurement.

@@ -1,5 +1,5 @@
 // REUSE — the first real caller of `runReuse` (Layer 3, design record
-// docs/02-features/2026-08-01-layer-3-reuse-design.md, D3/D6/D7 + R1).
+// docs/product/2026-08-01-layer-3-reuse-design.md, D3/D6/D7 + R1).
 //
 // hamr's sentence, verbatim, is what this runner exists to execute:
 //

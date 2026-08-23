@@ -2,7 +2,7 @@
 
 **Date frozen:** 2026-08-08
 **Rung:** CLOSE-DEV (close authoring)
-**Design record:** `docs/02-features/2026-08-07-close-authoring-design.md` (FROZEN, hamr: "all approved")
+**Design record:** `docs/product/2026-08-07-close-authoring-design.md` (FROZEN, hamr: "all approved")
 **Gate 1:** PASS for TYPES with four kind amendments; FAIL as a general catalogue. Done, $0.
 **hamr's bar this session, verbatim:** *"we will poc with no papering or fit to pass and try
 different shapes, llm should give us a close matching what you would have written"*

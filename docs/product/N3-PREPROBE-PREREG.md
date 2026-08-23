@@ -208,7 +208,7 @@ retroactively; this records what the run returned and what the design could not 
 
 ## Result (Stage 1, 39 drafts, $1.31 of the $2 cap, 0 errors, 0 truncations)
 
-Full readout: `docs/FINDINGS.md` F51. Evidence archived at
+Full readout: `docs/logs/FINDINGS.md` F51. Evidence archived at
 `docs/03-logs/experiments/n3-preprobe-data/` (`stage1-raw.jsonl`, `stage1-grade.txt`,
 `source-lineage-plan.json`) — moved out of gitignored scratch so it survives.
 
@@ -339,7 +339,7 @@ of which $1.31 is spent).
 
 ## RE-AIM SCREEN — RESULT (2026-07-24): candidate A DEAD, escalate to B
 
-`S0` n=8, 8/8 valid, 0 truncations, $0.26. Full readout: `docs/FINDINGS.md` F52.
+`S0` n=8, 8/8 valid, 0 truncations, $0.26. Full readout: `docs/logs/FINDINGS.md` F52.
 
 **strategyExplicit: A0 1.00 vs S0 1.00 — identical; aim 1.00 in both.** By the frozen rule
 that is "S0 ≈ A0" → stripping created NO room → **candidate A DEAD as a probe patient.** The
@@ -399,7 +399,7 @@ Budget: ≤$0.40 (cap now $2.50 across the whole pre-probe programme; $1.57 spen
 
 ## VAGUE-ASK SCREEN — RESULT (2026-07-25): no room here either; programme closes
 
-`V0` n=8, 5 valid, $0.23. Full readout: `docs/FINDINGS.md` F53.
+`V0` n=8, 5 valid, $0.23. Full readout: `docs/logs/FINDINGS.md` F53.
 
 **discoversTargets 1.00 (A0) vs 1.00 (V0); topSurvivorFocus 1.00 vs 1.00; discovery step
 0.71 vs 0.80.** By the frozen rule that is V0 ≈ A0 → no room → **`Vfull` NOT run.**
