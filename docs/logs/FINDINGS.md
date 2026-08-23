@@ -8777,3 +8777,12 @@ rates are the only thing that would move a round to `vouched`.
 No opus/fable worker rounds appear in the archive, so this is a **forward** hazard with no
 historical casualties — the same status as F111, and stated rather than rounded up. Whether to
 build the passthrough at all is hamr's call; this finding only relocates its justification.
+
+### Ruled 2026-08-24 (hamr): the passthrough is DEAD — never re-raise
+
+Rates are never hand-rolled; keeping a per-model pricing table current is the **customer's**
+responsibility, and maintaining one here is maintenance overhead and over-committing. The
+shipped design is final: upstream guesstimates with the sonnet rate and a loud
+`'tier'`/`'default'` sign, and our `VOUCHED_RATE_SOURCES` classes those rounds as `guessed` —
+a customer who wants exact opus/fable pricing passes caller rates. The finding above stands
+as a finding, not a build item.

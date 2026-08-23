@@ -162,53 +162,33 @@ fresh-copy patients. The item stays agreed, but the first spend against it shoul
 measurement of how stale archived indexes actually were at run start — not the build
 (PRD.md:5898-5988).
 
-**TODO consolidated (Addendum v1.79 — 2026-08-24):** the standing to-do list, gathered from the
-2026-08-23/24 session stashes and `docs/product/2026-08-23-agreed-build-list.md` (the build
-list stays the handoff surface for shapes and open questions; this is the PRD-side index so the
-list can never go missing again).
+**TODO (Addendum v1.79 — 2026-08-24):** the standing to-do list. This is the index only —
+shapes and open questions live in `docs/product/2026-08-23-agreed-build-list.md`; rulings and
+evidence live in `docs/logs/FINDINGS.md`.
 
-*Done since v1.78:* the pin bump landed (`bare-agent ^0.38.1`, BA-23 fixed upstream) and is
-pushed; the docs reorg is sanctioned and on main; the W4 stale-index measurement ran (F112:
-0.65% stale — **build retired**); BA-24 filed with disconfirming evidence (F111); rates
-passthrough is **DEAD** by hamr's ruling — rates are the customer's responsibility, the
-guesstimate-plus-loud-sign design is final (F113 stands as a finding, not a build item).
+1. **Run-behaviour summary** — agreed, awaiting go (Q7, Q8).
+2. **Generic run replay** — agreed gap, unscoped; item 1 is its cheap first slice.
+3. **The bench** — shape agreed; blocked on Q1, Q3–Q6, Q10; G2 re-author + full re-baseline
+   first (v1.78).
+4. **Prompt-commit shape** — agreed, cheap; Q9 open.
+5. **Model names in the signed spec** — parked, arbiter territory.
+6. **F6 halt semantics for all-zeros usage** (BA-24 shape) — parked, arbiter; companion F6
+   test fix is hamr's call.
+7. **Awaiting ba24** — BA-24 fix candidate, validate with `probe-real-provider.mjs`.
+8. **aurora run-time signature** — sign when a run next fires.
+9. **4 `jobs/*.json` stale doc-path strings** — each edit flips a signed hash; hamr's word.
+10. **`bareloop.context.md` target-design-first flip** — asked, unanswered.
+11. **Accept re-proof wall governance** — arbiter question.
+12. **Green-class registry hole** (`door-accept` on green refuses `no-row-for-run`) — reuse
+    territory, hamr.
+13. **`readShim` default flip** — ships OFF; hamr's call alone.
+14. **Flake-name capture** — held until the peer says "load window open" verbatim.
+15. **Housekeeping** — delete branches `bareagent-0381-bump`, `reorg-v2-test`; broad-`git add`
+    workflow rule (stage by explicit path while a reorg is in flight).
 
-*Open, roughly in order:*
-
-1. **Run-behaviour summary** — AGREED in shape, awaiting go; open Q7 (spine record or
-   surface-only), Q8 (library or scripts).
-2. **Generic run replay** — agreed gap, unscoped; item 2 is its cheap first slice.
-3. **The bench** — AGREED shape (4 frozen configs G1–G4); blocked on Q1 (which patients),
-   Q3 (n per row), Q4 (money ceiling — hamr sets it), Q5 (signing), Q6 (where results live),
-   Q10 (can Tier 0 pre-screen the re-baseline); per v1.78, G2 must be re-authored and all
-   four rows re-baselined before any outcome freezes.
-4. **Prompt-commit shape** — AGREED, cheap; step one is pinning the ~14-file prompt-register
-   inventory; Q9 (enforcement touches CI = ask-first) open.
-5. **Model names in the signed spec** — PARKED, arbiter territory.
-6. **F6 halt semantics** — should an all-zeros usage round (the BA-24 launder shape) also
-   halt? Arbiter territory, parked. Companion: the F6 test still validates against a shape
-   production cannot emit and carries a misleading comment — fix shape is hamr's judgment call.
-7. **AWAITING ba24** — a BA-24 provider-level fix candidate, to be validated here against the
-   real `AnthropicProvider` shape with the `probe-real-provider.mjs` harness.
-8. **aurora run-time signature** — `approvals` is still null; sign when a run next fires.
-9. **4 `jobs/*.json` stale doc-path strings** — editing any flips its signed hash; hamr's word.
-10. **`bareloop.context.md` target-design-first flip** — asked two rungs ago, never answered.
-11. **Accept re-proof wall governance** — a door accept re-runs mechanical stages under no
-    clock; arbiter question.
-12. **Green-class registry hole** — `--review-door --registry --decide accept` on a green run
-    refuses `no-row-for-run`; the one-line fix widens registry entry = reuse territory, hamr.
-13. **`readShim` default flip** — ships OFF; flipping is hamr's call alone.
-14. **Flake-name capture** — HELD until the softgreen peer says "load window open" verbatim.
-15. **Housekeeping** — delete stale branches `bareagent-0381-bump` and `reorg-v2-test`; the
-    broad-`git add` provenance pattern (2 instances, 2 repos) needs a workflow rule: reorg
-    renames commit immediately, everyone stages by explicit path while a reorg is in flight.
-
-*Parked, do-not-build without a measurement first:* read compaction (saving's sign unknown);
-does the worker USE a served stale slice (F32 class); context-headroom meter (no consumer).
-
-*Dead — never re-raise:* rates passthrough / hand-rolled pricing tables; a refuse-to-price
-preflight (guesstimate-and-run ruling); the W4 stale-index build (F112); a memory/recall
-harness (0 overflows in 147 runs).
+Parked pending measurement: read compaction; stale-slice usage; context-headroom meter.
+Dead, never re-raise: rates passthrough (F113 ruling), W4 stale-index build (F112, retired on
+the build list), refuse-to-price preflight, memory/recall harness.
 
 ## History — how the doctrine above was earned
 
