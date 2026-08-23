@@ -4855,3 +4855,70 @@ test('NATIVE clipipe: a per-turn event is explicitly unpriced, so its provenance
   assert.ok(turnEvents.every((e) => e.costUsd === null && e.rateSource === null),
     'every native per-turn event states null cost AND null provenance');
 });
+
+// ── G1's ceiling half, refused at $0 ────────────────────────────────────────
+// `validatePlan` reds `read-blind` when a capped step grants `read` without the
+// retrieval pair. But a step cannot grant what the SIGNED CEILING does not
+// offer, so against a spec whose `tools` lack recall/get, EVERY draft reds
+// identically and the drafter is PAID for each doomed cycle. The condition is
+// knowable before a token: the arm is the operator's argument, the ceiling is
+// already signed. These tests pin the refusal AND its blast radius.
+
+test('a capping arm against a ceiling with no retrieval pair throws before a token is spent', async () => {
+  const wd = mkdtempSync(join(tmpdir(), 'g1-ceiling-'));
+  initPatientRepo(wd);
+  // the default JOB's ceiling is ['read','write','edit'] — no recall, no get
+  const jv = validateJob(JOB(wd));
+  assert.deepEqual(jv.reds, [], 'the fixture job must be validateJob-green');
+  const { events, emit } = collector();
+  // a provider that FAILS THE TEST if the run ever reaches it: the claim is not
+  // "it refuses", it is "it refuses without paying", and only a provider that
+  // cannot be called silently can prove the second half
+  const provider = { generate: async () => { assert.fail('the drafter was called — the guard did not fire at $0'); } };
+
+  await assert.rejects(
+    () => runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 3, remainingUsd: () => 1.5, readShim: 'cap' }),
+    (/** @type {any} */ err) => {
+      assert.ok(err instanceof TypeError, 'an operator param-guard, never a model-output red');
+      assert.match(err.message, /recall/, 'names the missing verb');
+      assert.match(err.message, /get/, 'names the missing verb');
+      assert.match(err.message, /read-blind/, 'names the red every draft would have hit');
+      return true;
+    },
+  );
+  assert.deepEqual(events, [], 'a $0 refusal records nothing — no run began');
+  rmSync(wd, { recursive: true, force: true });
+});
+
+test('the same ceiling is fine with the shim off, and fine under the diff-only arm', async () => {
+  // the guard must narrow NOTHING that works. Off caps nothing; the diff arm
+  // caps nothing either (g1:false), so neither can be read-blind. Both must get
+  // PAST the guard — proven by reaching the provider, which off/diff do and the
+  // capping arm above does not.
+  for (const arm of [false, 'diff']) {
+    const wd = mkdtempSync(join(tmpdir(), 'g1-ok-'));
+    initPatientRepo(wd);
+    const jv = validateJob(JOB(wd));
+    const { emit } = collector();
+    let reached = false;
+    const provider = { generate: async () => { reached = true; throw new Error('stop here — past the guard is all this asserts'); } };
+    await runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 3, remainingUsd: () => 1.5, readShim: arm })
+      .catch(() => {});
+    assert.ok(reached, `readShim:${JSON.stringify(arm)} must pass the ceiling guard — it caps nothing, so it cannot be read-blind`);
+    rmSync(wd, { recursive: true, force: true });
+  }
+});
+
+test('a ceiling that DOES offer the retrieval pair passes the capping arm', async () => {
+  const wd = mkdtempSync(join(tmpdir(), 'g1-pair-'));
+  initPatientRepo(wd);
+  const jv = validateJob(JOB(wd, { tools: ['read', 'write', 'edit', 'recall', 'get'] }));
+  assert.deepEqual(jv.reds, [], 'the widened fixture job must be validateJob-green');
+  const { emit } = collector();
+  let reached = false;
+  const provider = { generate: async () => { reached = true; throw new Error('stop here'); } };
+  await runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 3, remainingUsd: () => 1.5, readShim: 'cap' })
+    .catch(() => {});
+  assert.ok(reached, 'a ceiling offering recall+get satisfies G1 — the guard must not fire');
+  rmSync(wd, { recursive: true, force: true });
+});

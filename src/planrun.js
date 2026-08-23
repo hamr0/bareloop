@@ -21,7 +21,7 @@ import { Gate } from 'bareguard';
 import { LiteCtx } from 'litectx';
 import { runClose, runStages, ralph, CLOSE_FAULTS, boundGap } from './ralph.js';
 import { validatePlan, legalScopes, closeStagesOf } from './plan.js';
-import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU } from './plan.js';
+import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, RETRIEVAL_PAIR } from './plan.js';
 import { snapshotScope, evalExits, CHECK_GAP_MAX } from './exits.js';
 import { createRoot } from './root.js';
 import { createStallWatch, STALL_MS, MAX_STALLS } from './stall.js';
@@ -722,6 +722,28 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // would be wrong and would look fine). Only the guard runs here; the flag itself
   // is still threaded onward as written.
   readShimArm(readShim);
+  // G1's OTHER half, refused at the same $0 door. `validatePlan` reds `read-blind`
+  // when a step grants `read` without the retrieval pair — but a step cannot grant
+  // what the SIGNED CEILING does not offer, so against a spec whose `tools` lack
+  // `recall`/`get` EVERY draft reds identically, and the drafter is paid for each
+  // doomed cycle before the run fails. The condition is knowable here, before a
+  // token: the arm is the operator's argument and the ceiling is already signed.
+  //
+  // Same class as the unknown-arm throw above and deliberately NOT a red: a red is
+  // a verdict on the AGENT's work, and nothing the agent authored is wrong here —
+  // the operator asked for a shim the signature cannot satisfy. Tighten-only, and
+  // it narrows nothing that works: the only configuration it rejects is one that
+  // already fails 100% of the time, just later and for money.
+  //
+  // Keyed on `arm.g1`, not on "is the shim on", for the same reason `plan.js` is:
+  // the diff-only arm caps nothing, so there is nothing to be blind about.
+  if (readShimArm(readShim).g1) {
+    const signedCeiling = Array.isArray(job?.tools) ? job.tools : [...TOOL_MENU];
+    const short = RETRIEVAL_PAIR.filter((v) => !signedCeiling.includes(v));
+    if (short.length) {
+      throw new TypeError(`readShim: this arm caps reads, so a step granting "read" must also grant ${RETRIEVAL_PAIR.join(' and ')} — but the signed ceiling [${signedCeiling.join(', ')}] offers no ${short.join('/')}, so no legal plan exists and every draft would red as "read-blind". Re-sign the spec with ${short.join(' and ')}, or run with the shim off.`);
+    }
+  }
   // ONE spelling of the redaction, housed next to the inventory it reads
   // (src/validate.js) — the same helper the isolate verbs scrub the litectx store
   // with. Two hand-spelled copies of "what a secret looks like" is exactly how

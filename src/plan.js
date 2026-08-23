@@ -53,8 +53,11 @@ export const MAX_SCOPE_MENU = 24;
 /** G1's pair (read shim only): the two verbs that can reach INTO a file the cap
  * cut short — `recall` names where a symbol lives, `get` reads that symbol in
  * full. Named here because the rule that needs them lives here; the cap that
- * makes them mandatory lives in src/readshim.js. */
-const RETRIEVAL_PAIR = Object.freeze(['recall', 'get']);
+ * makes them mandatory lives in src/readshim.js.
+ * EXPORTED because `runPlan` refuses the same pair at $0 (see the G1 ceiling
+ * guard there): the rule and its pre-flight must read ONE spelling of which
+ * verbs count, never two that can drift apart. */
+export const RETRIEVAL_PAIR = Object.freeze(['recall', 'get']);
 
 /**
  * The MENU of legal `tree-changed` scopes — choose-don't-describe (design record
