@@ -464,7 +464,7 @@ export function validateCalibrationSet(cases, { card = null } = {}) {
       if (!str(r.fn)) {
         red('calibration-case', `${rat}.fn`, 'the function this red lands on — the address decide() itself reports');
       }
-      const key = `${String(r.rule)} ${String(r.fn)}`;
+      const key = `${String(r.rule)}\x00${String(r.fn)}`;
       if (seen.has(key)) red('calibration-case', rat, 'the same (rule, function) pair is expected twice — one red is one item');
       else seen.add(key);
     });
@@ -514,7 +514,7 @@ export function expectedOf(decision) {
   for (const item of decision?.items ?? []) {
     for (const r of item?.reds ?? []) {
       const row = { rule: String(item?.rule ?? ''), fn: String(r?.fn ?? '') };
-      const key = `${row.rule} ${row.fn}`;
+      const key = `${row.rule}\x00${row.fn}`;
       if (seen.has(key)) continue;
       seen.add(key);
       reds.push(row);

@@ -1994,6 +1994,12 @@ zero is visibly absurd and a plausible dollar is not.
 Those 289 clipipe rounds are an accidental control: on the same usage fields the CLI's **real**
 cost runs **2.0–2.5x** the `_default` estimate.
 
+> **Correction (2026-08-19):** the 2.0–2.5x ratio above is clipipe's provider-billed surface,
+> which never pools with `anthropic-api` (F48) — it does NOT generalize to the API archive. The
+> measured API-side error is **~5.7% under** at sonnet-5's introductory rate, jumping to
+> **~1.586x under** at list rate when the intro window ends 2026-09-01 (PRD §11). The acceptance
+> criteria below do not depend on the retracted figure.
+
 Also absent from the table: **`claude-opus-5`**. Present: fable-5, opus-4-6/4-7/4-8, sonnet-4-6,
 haiku-4-5. So the table tracks a generation bareloop no longer runs on.
 
