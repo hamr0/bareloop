@@ -9,6 +9,14 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
+- **One transport-class retry** (F115, hamr's ruling): the ONE worker-Loop seam in
+  `src/planrun.js` now retries exactly once on a transport-only throw (TLS fault,
+  `ECONNRESET`/`EPIPE`/`ETIMEDOUT`, `fetch failed` over a network cause — never an HTTP
+  4xx/5xx/429 response), classified by the new `src/transport.js` (`isTransportFailure`,
+  fixed `TRANSPORT_MAX_ATTEMPTS`, never operator-configurable). Emits a report-only
+  `transport-retry` spine record and forces `job-end.spendComplete: false` for the rest of the
+  run — the retried attempt's first throw may already have been billed — surfaced by
+  `scripts/run-u.mjs` as a `retries` line only when a retry occurred.
 - **Run behaviour summary** (build-list item 2, agreed 2026-08-23): `runBehaviour(events, {
   runId? })` and `formatBehaviour(summary)` in `src/behaviour.js`, plus
   `scripts/behaviour-readout.mjs <gate-audit.jsonl> [run_id]`. A report-only text block —

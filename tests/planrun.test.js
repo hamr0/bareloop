@@ -1648,8 +1648,10 @@ test('F64 control: the SAME timeout with time still on the clock stays a provide
     async generate() {
       n += 1;
       // identical rejection, identical call position — the ONLY difference is that
-      // the clock is NOT expired, so the wall cannot have been what bound this call
-      if (n === 3) { clk.advance(1_000); throw timeoutError(); }
+      // the clock is NOT expired, so the wall cannot have been what bound this call.
+      // A genuinely dead socket does not heal between attempts, so it throws on the
+      // transport RETRY too (F115): the casualty must survive the one extra attempt.
+      if (n >= 3) { clk.advance(1_000); throw timeoutError(); }
       const scripted = [{ text: 'scout' }, { text: PLAN(wd) }][n - 1] ?? { text: 'done' };
       return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
     },
@@ -1670,7 +1672,8 @@ test('F64: an unbounded run can never produce a wall-halt — with no cap there 
     name: 'unbounded-timeout',
     async generate() {
       n += 1;
-      if (n === 3) { clk.advance(9_000_000); throw timeoutError(); }
+      // throws on the transport retry too — a dead socket does not heal (F115)
+      if (n >= 3) { clk.advance(9_000_000); throw timeoutError(); }
       const scripted = [{ text: 'scout' }, { text: PLAN(wd) }][n - 1] ?? { text: 'done' };
       return { ...scripted, usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.001, stopReason: 'end_turn' };
     },

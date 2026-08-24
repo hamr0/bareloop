@@ -1249,6 +1249,13 @@ const oc = events.findLast((e) => e.type === 'outer-close');
 const fixed = events.some((e) => e.type === 'fix-loop');
 console.log(`close     first judgment ${oc?.verdict ?? '-'}${oc?.stage ? ` (stage ${oc.stage})` : ''}${fixed ? ` → fix loop ran → ${outcome}` : ''}`);
 console.log(`replan    ${events.some((e) => e.type === 'replan') ? 'YES' : 'no'}`);
+// F115 — absence, never a fabricated 0: printed ONLY when a transport retry
+// actually happened, so a run with none says nothing about retries at all.
+const transportRetries = events.filter((e) => e.type === 'transport-retry');
+if (transportRetries.length > 0) {
+  const recovered = transportRetries.some((e) => e.recovered === true);
+  console.log(`retries   ${transportRetries.length} transport retr${transportRetries.length === 1 ? 'y' : 'ies'} · ${recovered ? 'recovered' : 'not recovered'} (spend is a floor)`);
+}
 for (const e of events.filter((x) => x.type === 'escalation')) console.log(`ESCALATION ${e.category}: ${(e.decision ?? '').slice(0, 160)}`);
 // v1.46 §2 — the MONEY halt reads out like the wall's: the verdict that STANDS, the
 // per-stage trend that says which lever fits, and the three levers themselves. The

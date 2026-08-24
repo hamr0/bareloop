@@ -42,9 +42,101 @@ import {
   REVIEW_DOOR, doorOpens, mechanicalStages,
 } from './kinds.js';
 import { workBranchName, prepareWorkBranch } from './workbranch.js';
+import { TRANSPORT_MAX_ATTEMPTS, isTransportFailure } from './transport.js';
 
 const require = createRequire(import.meta.url);
-const { Loop, wireGate, HaltError } = require('bare-agent');
+const { Loop, Retry, wireGate, HaltError } = require('bare-agent');
+
+// F115 — hamr's ruling verbatim: "one retry for transport layer failure and
+// reporting with the rest end of gate." TRANSPORT_MAX_ATTEMPTS is fixed
+// (src/transport.js — never a job-spec/argv knob); `retryOn` is bare-agent's
+// own extension seam (node_modules/bare-agent/src/retry.js), constrained to
+// ONLY the no-HTTP-response transport class so a provider RESPONSE (4xx/5xx/
+// 429) still rides bare-agent's own unchanged policy. One instance: `Retry`
+// carries no per-call state, so it is safe to share across every worker.
+// timeout:0 disables Retry's own per-attempt race (this run already has its
+// own timing authority — the stall watchdog and the wall clock, src/stall.js
+// / src/clock.js — and a second racing 60s clock here would just be a second,
+// disagreeing one; bare-agent's own BA-18 idle-socket timeout is what
+// actually bounds a hung call, and that is exactly one of the errors this
+// retry is FOR). `backoff` is deliberately left unset: bare-agent's
+// constructor does `options.backoff || 'exponential'`, so a literal `0` is
+// falsy and would silently fall through to the same exponential default
+// anyway — passing it would read as "no pause" while doing the opposite.
+// With `maxAttempts:2` there is only ever ONE delay to compute (attempt 1),
+// so the default exponential backoff's own formula (`2**0 * 1000`, capped at
+// 30s) is a flat ~1s pause before the one retry — named here, not hidden
+// behind a knob that lies about what it does.
+const transportRetry = new Retry({ maxAttempts: TRANSPORT_MAX_ATTEMPTS, retryOn: isTransportFailure, timeout: 0 });
+
+/**
+ * Wrap a Loop provider's `generate` so a single transport-class throw (fetch
+ * itself throwing — no HTTP response was ever produced) gets ONE retry via
+ * `transportRetry`, and the outcome is reported once the retry is settled.
+ * Every other property of `baseProvider` (`.name`, `.model`, `.ownsCycle`,
+ * `.policy`) passes through unchanged — bare-agent's Loop reads those
+ * directly (src/loop.js).
+ *
+ * F64 carve-out: a wall-DERIVED timeout (bare-agent's own `ETIMEDOUT`/
+ * `EDEADLINE`, thrown because `clock.callTimeoutMs()` told the provider to
+ * cut the call — `isWallTimeout`, src/clock.js) is doctrine's governance
+ * stop, never a transport casualty, and retrying it would both mis-spend a
+ * round the operator's clock already ended and corrupt `categorize`'s own
+ * classification (which reads the SAME error a moment later). So the
+ * per-call `retryOn` here is `isTransportFailure(err) && !isWallTimeout(err,
+ * clock)` — the clock's verdict always wins over the transport shape.
+ *
+ * Scope note: this wraps the ONE seam that builds every worker Loop
+ * (scout/drafter/step-worker/fix-worker, planrun.js `newLoop` ~line 2240) —
+ * and ONLY its Loop-driven (anthropic-api-shaped) provider branch. The judge
+ * loops (src/judged.js), the native/CLI session path (this file, `mkWorker`'s
+ * NATIVE branch above `ask`/`askFrom`, AND the toolless native/claude-json
+ * branch of `newLoop`'s own `loopProvider` — a retried native session
+ * re-spends a subscription turn, a different failure/cost model entirely),
+ * and the authoring scout (src/authorscout.js) are each a distinct call site
+ * outside hamr's ruling and are deliberately left unwrapped.
+ * @param {any} baseProvider
+ * @param {string} phase
+ * @param {(type: string, data?: object) => any} emit
+ * @param {(s: string) => string} scrub
+ * @param {import('./clock.js').Clock} clock
+ */
+function withTransportRetry(baseProvider, phase, emit, scrub, clock) {
+  return new Proxy(baseProvider, {
+    get(target, prop, receiver) {
+      if (prop !== 'generate') return Reflect.get(target, prop, receiver);
+      return async (...args) => {
+        let attempts = 0;
+        let firstErr = null;
+        const fn = async () => {
+          attempts += 1;
+          try {
+            return await target.generate(...args);
+          } catch (err) {
+            if (attempts === 1) firstErr = err;
+            throw err;
+          }
+        };
+        // `recovered` is knowable only once the retried attempt has settled
+        // (succeeded or exhausted the budget) — emit exactly once, here,
+        // after the outcome is known, never speculatively before it.
+        const report = (recovered) => {
+          if (attempts <= 1) return; // no retry happened — nothing to report
+          const message = String(firstErr?.message ?? firstErr ?? '').slice(0, 200);
+          emit('transport-retry', { phase, attempt: 1, error: scrub(message), recovered });
+        };
+        try {
+          const result = await transportRetry.call(fn, { retryOn: (err) => isTransportFailure(err) && !isWallTimeout(err, clock) });
+          report(true);
+          return result;
+        } catch (err) {
+          report(false);
+          throw err;
+        }
+      };
+    },
+  });
+}
 const { createShellTools } = require('bare-agent/tools');
 
 /** the scout's hard round bound — read-only survey, never a worker (v1.12 §1) */
@@ -2134,9 +2226,12 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // claude-json TEXT path reports a real per-call cost that the Loop's
     // onLlmResult meters exactly like an API round, so the drafter's spend is
     // never invisible (F6/F44). The gate policy is wired but idle (no tools).
+    // F115's retry wraps ONLY the API-shaped branch — a native/claude-json session
+    // (below) has its own failure and cost model (a retried native session
+    // re-spends a subscription turn, not a metered fetch) and is out of scope.
     const loopProvider = native
       ? /** @type {any} */ (nativeProvider)({ policy, maxTurns, hasTools: false })
-      : (workerProvider ?? provider);
+      : withTransportRetry(workerProvider ?? provider, phase, emit, scrub, clock);
     // F66 — the stall watchdog. bare-agent's `timeoutMs` bounds socket INACTIVITY,
     // not call duration (provider-http.js `req.setTimeout` resets on every byte),
     // so a connection that stays alive while producing nothing is invisible to it:

@@ -23,7 +23,7 @@ import { makeSpine } from '../src/spine.js';
 import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
 import { STALL_MS } from '../src/stall.js';
-import { readSpine, scriptedProvider, initPatientRepo, mockWallClock } from './helpers.js';
+import { readSpine, scriptedProvider, initPatientRepo, mockWallClock, reply } from './helpers.js';
 
 const base = mkdtempSync(join(tmpdir(), 'run-test-'));
 
@@ -257,6 +257,109 @@ test('plan dispatch: a transport-throw provider-red reports spendComplete:false 
   const end = readSpine(file).find((e) => e.type === 'job-end');
   assert.equal(end.outcome, 'provider-red');
   assert.equal(end.spendComplete, false, 'the priced sum is a FLOOR, not the total — mirror the legacy providerRed()');
+});
+
+// F115 — hamr's ruling verbatim: "one retry for transport layer failure and
+// reporting with the rest end of gate." The ONE worker-Loop seam
+// (planrun.js `newLoop`) now retries a transport-class throw exactly once;
+// an HTTP-status error still rides bare-agent's own unchanged policy
+// (no retry from this layer at all).
+
+/** A transport-shaped throw — fetch itself failing, no HTTP response. */
+const transportError = () => Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } });
+/** An HTTP-response-shaped throw — the provider DID answer. */
+const httpError = () => Object.assign(new Error('bad request'), { status: 400, retryable: false });
+
+/**
+ * A provider whose first `throwCount` calls throw `makeErr()`, then falls
+ * through to `script` (via the shared `reply` envelope, sticking on the
+ * last entry) for every call after.
+ * @param {number} throwCount
+ * @param {() => Error} makeErr
+ * @param {Array<{text?: string, toolCalls?: object[]}>} script
+ */
+function throwNTimesThenScript(throwCount, makeErr, script) {
+  const calls = [];
+  return {
+    calls,
+    async generate(messages, tools) {
+      calls.push(1);
+      if (calls.length <= throwCount) throw makeErr();
+      const idx = calls.length - throwCount - 1;
+      return reply(script[Math.min(idx, script.length - 1)]);
+    },
+  };
+}
+
+test('F115: a transport throw on the FIRST scout call gets one retry, recovers, and the run finishes — spendComplete forced false anyway', async () => {
+  const wd = makePlanWork('plan-transport-recovered');
+  const job = planJob();
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write the missing test.', tools: ['write'], rounds: 6,
+      target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    }],
+  });
+  const provider = throwNTimesThenScript(1, transportError, [
+    { text: 'no tests exist yet' },
+    { text: plan },
+    { toolCalls: [tcall2('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'wrote it' },
+  ]);
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file),
+  });
+  assert.equal(outcome, 'green', 'the retried attempt recovered — the run proceeds exactly as if the first throw never happened');
+  const events = readSpine(file);
+  const retries = events.filter((e) => e.type === 'transport-retry');
+  assert.equal(retries.length, 1, 'exactly one transport-retry record for the whole run');
+  assert.equal(retries[0].phase, 'scout');
+  assert.equal(retries[0].attempt, 1);
+  assert.equal(retries[0].recovered, true);
+  assert.equal(typeof retries[0].error, 'string');
+  assert.ok(!('costUsd' in retries[0]), 'report-only — no cost field, the ledger reads worker-round/judge-round alone');
+  const end = events.find((e) => e.type === 'job-end');
+  assert.equal(end.outcome, 'green');
+  assert.equal(end.spendComplete, false, 'the FIRST attempt threw before any usage came back — recovered or not, the floor stands (F6/F44)');
+});
+
+test('F115: two consecutive transport throws exhaust the one retry — provider-red as today, one transport-retry record recovered:false', async () => {
+  const wd = makePlanWork('plan-transport-exhausted');
+  const job = planJob();
+  const provider = throwNTimesThenScript(99, transportError, []);
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file), capRuns: 2,
+  });
+  assert.equal(outcome, 'provider-red');
+  assert.equal(provider.calls.length, 2, 'exactly TRANSPORT_MAX_ATTEMPTS calls — the retry budget is one extra attempt, not unbounded reissue');
+  const events = readSpine(file);
+  const retries = events.filter((e) => e.type === 'transport-retry');
+  assert.equal(retries.length, 1);
+  assert.equal(retries[0].recovered, false);
+  const end = events.find((e) => e.type === 'job-end');
+  assert.equal(end.outcome, 'provider-red');
+  assert.equal(end.spendComplete, false);
+});
+
+test('F115: an HTTP-response-shaped failure is NOT retried by this layer — provider called exactly once, no transport-retry record', async () => {
+  const wd = makePlanWork('plan-http-not-retried');
+  const job = planJob();
+  const provider = throwNTimesThenScript(99, httpError, []);
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file), capRuns: 2,
+  });
+  assert.equal(outcome, 'provider-red');
+  assert.equal(provider.calls.length, 1, 'an HTTP-status error is never transport-classified — no retry, one call, exactly the pre-F115 shape');
+  const events = readSpine(file);
+  assert.equal(events.filter((e) => e.type === 'transport-retry').length, 0);
 });
 
 // W1: the stall case that is NOT terminal. src/stall.js abandons a hung call and

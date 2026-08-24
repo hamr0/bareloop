@@ -8967,3 +8967,16 @@ Two operator errors, logged because they cost real money and real time:
 2. **`pkill -f <script>` killed the shell that issued it** — the pattern matched the issuing
    command line (exit 144). A retune that should have taken one call took three. Cure: kill
    by PID, never by `-f` pattern from a command line that contains the pattern.
+
+### Ruled 2026-08-24 — one transport retry
+
+hamr's ruling, verbatim: "one retry for transport layer failure and reporting with the rest
+end of gate." The no-retry trade named above is reversed for the transport class only: the
+ONE worker-Loop seam (`src/planrun.js` `newLoop`, covering scout/drafter/every step
+worker/fix worker) now gets exactly one extra attempt on a transport-only throw (TLS fault,
+`ECONNRESET`/`EPIPE`/`ETIMEDOUT`, `fetch failed` over a network cause — classified by
+`src/transport.js`'s `isTransportFailure`, never an HTTP 4xx/5xx/429 response, and never
+operator-configurable). Each retry emits a report-only `transport-retry` spine record and
+forces `job-end.spendComplete: false` for the rest of the run, recovered or not — the first
+attempt's possible spend stays invisible either way (F6/F44). Judge loops, the native/CLI
+session path, and `src/authorscout.js` are unchanged.
