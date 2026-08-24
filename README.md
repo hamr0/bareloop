@@ -162,7 +162,7 @@ package, and gaps get fixed upstream rather than shimmed.
 bareloop is the productization of **[adaptlearn](https://github.com/hamr0/adaptlearn)**, a
 closed experimental record on whether agent-authored workflows improve under an honest gate.
 The design laws it inherited, and the open questions it has not answered yet, are in
-[`docs/wiki/PRD.md`](docs/wiki/PRD.md).
+[`docs/product/PRD.md`](docs/product/PRD.md).
 
 ## License
 

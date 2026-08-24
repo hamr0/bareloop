@@ -9,10 +9,12 @@ contrast that attributed it.
 
 ## Ground truth (read before designing anything)
 
-- `docs/wiki/PRD.md` — the PRD's core spec (§1–§10, design laws, non-goals, risks, build
+- `docs/product/PRD.md` — the PRD's core spec (§1–§10, design laws, non-goals, risks, build
   ladder). §3 design laws are inherited doctrine, each paid for in the adaptlearn experiment;
-  do not relitigate them without new evidence. The full addenda history (v1.1–v1.78) is
-  split by theme across `docs/wiki/` (see `docs/index.md`); the original monolith is kept at
+  do not relitigate them without new evidence. New addenda append here (currently to v1.79);
+  the earlier history is split by theme across `docs/wiki/` (see `docs/index.md`) — six
+  companion pages: close-verdicts, money-time, product-surface, providers-context,
+  reuse-layer3, workflow-governance. The original monolith is kept at
   `docs/archive/PRD.md` — prose untouched, its internal links repointed by the reorg tool.
 - `docs/product/2026-07-10-agentic-automation-successor-design.md` — the design record
   (validated interview + all amendments). Closed; amend with dated addenda, never rewrite.
