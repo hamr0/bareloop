@@ -961,7 +961,7 @@ sees (`ledgerDrift: 0` in both arms). **Fold this into BA-6 when it is filed.**
 
 ## F26 — the aim axis was never connected; job #1 is the wrong benchmark
 
-**Full write-up: `docs/03-logs/experiments/REPORT-AIM.md`.** 151 no-harness API samples (one Anthropic call each — no
+**Full write-up: `experiments/REPORT-AIM.md`.** 151 no-harness API samples (one Anthropic call each — no
 bare-agent, no tool loop, no gate), $4.99, `claude-sonnet-5` fixed throughout.
 
 **The result: 0/140 across every legitimate intervention** — baseline, root-cause reframe,
@@ -1017,7 +1017,7 @@ nomination-distribution result does not depend on either.
 
 **Context.** BA-4/5/6/7/1 landed in `bare-agent@0.27.0` (consumed here; the N2 build gate is cleared,
 acceptance re-verified locally). With the primitive confounds gone, job #2 (the elimination-reachable
-replacement benchmark, pre-registered and FROZEN in `docs/03-logs/experiments/JOB2-PREREG.md` before any number existed)
+replacement benchmark, pre-registered and FROZEN in `experiments/JOB2-PREREG.md` before any number existed)
 was calibrated exactly as pre-registered — two probes × two tiers, EFFORT=low, n=15, $3.02 total.
 Patient: `mailproof` @ `091027d`; plant: one line in `src/notify.js` (`if (custom) body = custom;` →
 `body = custom;`), which violates the file's OWN header contract ("a hook throw or falsy return falls
@@ -1420,7 +1420,7 @@ what it needs (layered orchestrator/pure-module seams, high integration-to-unit 
 ## F34 — the aurora enumeration measures the benchmark paradox: a bug a test can see is a bug whose home the test imports; the genuinely hard code is exactly the code no close can gate
 
 **Assignment (hamr): harder patient — copy the local aurora repo, inspect the SOAR
-package for plant sites.** Full enumeration in `docs/03-logs/experiments/AURORA-PREREG.md` (DRAFT; decision
+package for plant sites.** Full enumeration in `experiments/AURORA-PREREG.md` (DRAFT; decision
 rules stay with the operator). Patient copied by local clone, frozen at `d661e50`, own
 venv, close green at HEAD both scopes: soar-only (172 tests, 0.5s) and full repo
 (2,691 tests, ~4.5–6.5 min), 3× deterministic, tree clean through runs.
@@ -2590,7 +2590,7 @@ optional param is the blind-instrument class wearing an API's clothes.
 **Status: minted 2026-07-24 (Layer 3 opening gate). Disposition: mechanical-first
 PROVISIONAL; the readable arm is DEMOTED, not dead — its real niche is untested.**
 
-**Setup (prereg `docs/03-logs/experiments/N3-PREPROBE-PREREG.md`, frozen 44a5062 BEFORE any
+**Setup (prereg `experiments/N3-PREPROBE-PREREG.md`, frozen 44a5062 BEFORE any
 number).** The Layer 3 opening gate: before building any inheritance machinery, does
 prior-run lineage in the drafter's hands change the plan it writes — and change it the
 right way (a general lesson, not a copied answer)? Instrument = the REAL plan drafter
@@ -2896,7 +2896,7 @@ compressed into one, and would have reported a strong negative that the data doe
 ## F55 — T10 plan-share: producing the plan is ~1–2% of a completed run and causes 0 of 15 terminations — inheritance cannot pay for itself on the planning surface
 
 **Status: minted 2026-07-25. $0, archival. Applies the frozen rule of
-`docs/03-logs/experiments/N3-T10-PLAN-SHARE-PREREG.md`. Evidence toward a Layer 3 STOP —
+`experiments/N3-T10-PLAN-SHARE-PREREG.md`. Evidence toward a Layer 3 STOP —
 bounded by one caveat that keeps the battery necessary.**
 
 **Why this ran.** F51–F54 killed the readable-lineage arm on four axes. Layer 3's only
@@ -3046,7 +3046,7 @@ when they lift — an inert-under-conditions finding is not a permanent verdict 
 ## F57 — T1: a per-round rate IS quotable (~$0.019 and ~5.4s per execute round), but a STATIC one would be wrong — the check axis swings 3.8s to 561s, so the meter has to run live
 
 **Status: minted 2026-07-26. $0, archival. Applies the frozen rule of
-`docs/03-logs/experiments/MATERIALS-PREREG.md` (T1). Gates the "inform" half of the
+`experiments/MATERIALS-PREREG.md` (T1). Gates the "inform" half of the
 materials/metering design (PRD v1.27).**
 
 **Why this ran.** hamr's materials framing hands the agent time and money to allocate up
@@ -3116,7 +3116,7 @@ record was written.
 ## F58 — U0(a): job #5's close decomposes into 7 borrowable stages, not the 3 the operator hand-wrote — derivation gives the agent MORE rulers than authoring did
 
 **Status: minted 2026-07-26. $0, code read. Applies the frozen rule of
-`docs/03-logs/experiments/MATERIALS-PREREG.md` (U0 part a). U0(b) — the one-sentence goal probe —
+`experiments/MATERIALS-PREREG.md` (U0 part a). U0(b) — the one-sentence goal probe —
 is NOT run and nothing here speaks to it.**
 
 **Question (PRD v1.28).** Can `scripts/types-close.mjs` be expressed as `close: [{name, cmd}, …]`
@@ -3226,7 +3226,7 @@ the harness was fine and the product was not.
 ## F60 — the materials probe set: the scout DOES transmit (do not delete it), a materials budget makes the planner allocate ~60% MORE, and 2 of 3 planners reach for verbs they were never offered before
 
 **Status: minted 2026-07-26. $1.04, 18 drafts, 25 calls, 0 casualties. Applies
-`docs/03-logs/experiments/MATERIALS-PREREG.md` + amendment 1, both frozen before any number.
+`experiments/MATERIALS-PREREG.md` + amendment 1, both frozen before any number.
 Draft-only: every claim below is about the PLAN, never an outcome.**
 
 ### S0 — the scout question, and it goes against the hypothesis

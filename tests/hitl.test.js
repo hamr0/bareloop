@@ -2,7 +2,7 @@
 //
 // The frozen record (docs/product/2026-08-07-close-authoring-design.md, the nine
 // rulings + the 2026-08-12 surface addendum) says what the class MEANS; the build
-// plan (docs/02-features/2026-08-13-n4-verdict-classes-build.md §1) says which coupled
+// plan (docs/product/2026-08-13-n4-verdict-classes-build.md §1) says which coupled
 // sites have to move together for a hitl spec to be admissible at all. This file
 // pins the ADMISSION half: every site in §1.1's table, plus the two guards that
 // must NOT move with it — soft-green stays locked, and the legacy `close.type:

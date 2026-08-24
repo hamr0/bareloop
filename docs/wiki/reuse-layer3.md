@@ -146,7 +146,7 @@ The two previously-unruled conditions were settled:
    (PRD.md:2466-2468).
 
 The pre-probe gating the machinery was frozen at
-`docs/03-logs/experiments/REUSE-PREPROBE-PREREG.md`: three arms (cold / readable lineage /
+`experiments/REUSE-PREPROBE-PREREG.md`: three arms (cold / readable lineage /
 mechanical start), n=3 each, sonnet, scout on, $1 hard cap, on a cross-patient TYPES pair. No
 inheritance machinery would be built before this probe read, and a follow-up real-execution
 run would fire only if the drafts differed, and only on hamr's word (PRD.md:2470-2475). "Change

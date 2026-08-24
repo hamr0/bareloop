@@ -34,7 +34,7 @@ const CLOSE_TIMEOUT_MS = 1_800_000;
 const FROZEN_SHA_PREFIX = 'b75a7fe7f71199f8';
 const THRESHOLD = 45;
 const SEED_BASELINE_RATE = 15;
-const SEED_DIR = fileURLToPath(new URL('../docs/03-logs/experiments/testgen-seed-suite', import.meta.url));
+const SEED_DIR = fileURLToPath(new URL('../experiments/testgen-seed-suite', import.meta.url));
 const SEED_FILES = ['conftest.py', 'unit/test_orchestrator_helpers.py', 'integration/test_execute_simple_path.py'];
 const SURVIVOR_FUNCS = [
   'execute', '_check_soar_cache_hit', '_configure_health_monitoring', '_phase7_record',

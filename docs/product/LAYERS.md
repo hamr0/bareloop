@@ -859,7 +859,7 @@ run 2 starts from run 1's road and improves it; a red run inherits nothing.
    these assumptions and change as needed"*) — design record
    `docs/product/2026-08-01-layer-3-reuse-design.md` (R1/R2/D1–D9, answering PRD v1.34's
    inventory; PRD v1.42). **The pre-probe is pre-registered and gates the machinery:**
-   `docs/03-logs/experiments/REUSE-PREPROBE-PREREG.md` — draft-only, three arms, $1 hard cap, on
+   `experiments/REUSE-PREPROBE-PREREG.md` — draft-only, three arms, $1 hard cap, on
    the cross-patient TYPES pair. Nothing is built before it reads.
 6. **Build CLOSE-AUTHORING — the close becomes declared** (design record 2026-08-07, FROZEN;
    M1–M4 built 2026-08-08). **This is the rung in flight**, sequenced after Layer 3's park

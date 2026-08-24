@@ -1,7 +1,7 @@
 // REUSE EXECUTION probe — the second instrument (design record D9), the one the
 // draft-tier pre-probe explicitly CANNOT be: it runs the job.
 //
-// Prereg: docs/03-logs/experiments/REUSE-PREPROBE-PREREG.md — §8 states plainly that the
+// Prereg: docs/archive/REUSE-PREPROBE-PREREG.md — §8 states plainly that the
 // draft probe reads drafts and nothing else ("whether a reused plan greens, self-heals,
 // costs less end-to-end, or fails at a stage is entirely outside it. That is the second
 // instrument (D9), fired only if the drafts differ, and only on hamr's word"). The
@@ -117,7 +117,7 @@ const runid = Date.now().toString(36);
 // mistaken for evidence, and the surest way is for it not to live where evidence lives
 const OUT = DRY
   ? new URL(`../scratch-reuse-exec-probe-dry-${runid}.json`, import.meta.url)
-  : new URL(`../docs/03-logs/experiments/reuse-exec-probe-${runid}.json`, import.meta.url);
+  : new URL(`../experiments/reuse-exec-probe-${runid}.json`, import.meta.url);
 
 // `maxWallMs` is OPTIONAL in job-v1 with NO DEFAULT, and inventing one here would be a
 // silent second ceiling (src/clock.js, F45). The spec governs; the runner only NAMES the
@@ -350,7 +350,7 @@ const atSeed = patientHead === SEED && patientDirty === '';
 const SEED_HINT = `  the patient must be clean at its frozen seed (the reset is the OPERATOR's, never this harness's):\n    git -C ${wd} reset --hard ${SEED} && git -C ${wd} clean -fd`;
 
 console.log('REUSE execution probe — ONE full run, REAL dollars, n=1');
-console.log(`  prereg   docs/03-logs/experiments/REUSE-PREPROBE-PREREG.md (§8 + POST-FIRE addendum: this is D9, the second instrument)`);
+console.log(`  prereg   docs/archive/REUSE-PREPROBE-PREREG.md (§8 + POST-FIRE addendum: this is D9, the second instrument)`);
 console.log(`  spec     jobs/${SPEC_FILE}  $${spec.budgetUsd}  wall ${WALL_LABEL}  capRuns=${CAP_RUNS}  model ${MODEL}`);
 console.log(`  patient  ${wd} @ ${(patientHead || '(missing)').slice(0, 12)}${patientPresent ? (atSeed ? ' clean at seed' : ' NOT AT SEED') : ''}`);
 console.log(`  goal     "${spec.goal}"`);
@@ -514,7 +514,7 @@ const results = {
   probe: 'reuse-exec-probe',
   dry: false,
   what: 'ONE full real run of jobs/litectx-u-types.json through the shipped runJob flow, identical to scripts/run-u.mjs\'s litectx-types target EXCEPT that the plan drafter\'s prompt carries arm C\'s mechanical-start block (the aurora bridge as the starting draft).',
-  prereg: 'docs/03-logs/experiments/REUSE-PREPROBE-PREREG.md',
+  prereg: 'docs/archive/REUSE-PREPROBE-PREREG.md',
   designRecord: 'docs/product/2026-08-01-layer-3-reuse-design.md',
   runid,
   startedAt: new Date(started).toISOString(),

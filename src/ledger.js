@@ -1,5 +1,5 @@
 // The upstream ledger (module 4) — reactive lib/primitive incident monitoring.
-// Design record: docs/02-features/2026-07-11-upstream-ledger-design.md (adaptlearn
+// Design record: docs/product/2026-07-11-upstream-ledger-design.md (adaptlearn
 // POC'd spec) + its 2026-07-13 addendum: the bareloop event mapping. One
 // append-only JSONL both the consumer (the panel, N6) and the maintainer read;
 // the A1/A2/A3 upstream-ask flow, mechanized — evidence in, human judgment out.

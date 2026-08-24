@@ -1,6 +1,6 @@
 // POC — Layer R root: the riskiest assumption is DETECTION, not injection.
 // Can the shell see "the reds did not move" from real close output? (Design
-// record docs/02-features/2026-07-19-layer-r-design.md; first run 2026-07-19.)
+// record docs/product/2026-07-19-layer-r-design.md; first run 2026-07-19.)
 //
 // Aimed at the load-bearing claims, with negatives that can fail:
 //   1. REAL `node --test` output, run twice on an identical tree — are the

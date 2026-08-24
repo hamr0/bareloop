@@ -1,5 +1,5 @@
 // T10 — plan-share analysis. $0, archival, applies the FROZEN read only.
-// Prereg: docs/03-logs/experiments/N3-T10-PLAN-SHARE-PREREG.md
+// Prereg: docs/product/N3-T10-PLAN-SHARE-PREREG.md
 //   Q1 spend share by phase · Q2 terminal category · Q3 first-draft redraft rate
 //   node scripts/n3-t10-plan-share.mjs <spineDir> [...]
 

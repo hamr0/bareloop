@@ -1,5 +1,5 @@
 // Layer R — the root: the within-run ratchet (LAYERS.md item 2; design record
-// docs/02-features/2026-07-19-layer-r-design.md). One state that survives attempts
+// docs/product/2026-07-19-layer-r-design.md). One state that survives attempts
 // inside ONE run so a never-green run stops repeating itself (F21). Role is
 // CONTINUITY ONLY — F39 measured that hand-delivered state buys no conversion;
 // the semantic converter is Layer 2's job, not this module's.

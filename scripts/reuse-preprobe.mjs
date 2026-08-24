@@ -1,6 +1,6 @@
 // REUSE pre-probe — the Layer 3 opening gate's COLLECTION harness (D9).
 //
-// Prereg: docs/03-logs/experiments/REUSE-PREPROBE-PREREG.md (FROZEN 2026-08-01) — every
+// Prereg: docs/archive/REUSE-PREPROBE-PREREG.md (FROZEN 2026-08-01) — every
 // rule below is that document's, not this script's. Design record:
 // docs/product/2026-08-01-layer-3-reuse-design.md (D2 mechanical gate, D4 bridge-as-draft,
 // D8 scout stays ON, D9 this probe gates the build).
@@ -126,7 +126,7 @@ const OUT = DRY
   // never the real results path (`scratch-*` is gitignored): a DRY row must never be
   // mistaken for evidence, and the surest way is for it not to live where evidence lives
   ? new URL(`../scratch-reuse-preprobe-dry-${runid}.json`, import.meta.url)
-  : new URL(`../docs/03-logs/experiments/reuse-preprobe-${runid}.json`, import.meta.url);
+  : new URL(`../experiments/reuse-preprobe-${runid}.json`, import.meta.url);
 
 // ── the arm framings. ONE block appended to the captured prompt; nothing else differs.
 const ARM_FRAME = {
@@ -169,7 +169,7 @@ const patientDirty = git(['status', '--porcelain']);
 const atSeed = patientHead === SEED && patientDirty === '';
 
 console.log('REUSE pre-probe — draft-only, 3 arms x 3, sonnet');
-console.log(`  prereg   docs/03-logs/experiments/REUSE-PREPROBE-PREREG.md (FROZEN)`);
+console.log(`  prereg   docs/archive/REUSE-PREPROBE-PREREG.md (FROZEN)`);
 console.log(`  job      jobs/litectx-u-types.json  hash ${specHash}`);
 console.log(`  patient  ${WORKDIR} @ ${patientHead.slice(0, 12)}${patientDirty ? ' (DIRTY)' : ' clean'}`);
 console.log(`  bridge   ${BRIDGE_FILE.split('/').pop()}  (${bridge.plan.steps.length} steps, greened ${bridge.greenAt})`);
@@ -602,7 +602,7 @@ const results = {
   probe: 'reuse-preprobe',
   dry: DRY,
   ...(DRY ? { DRY_NOTICE: 'PLUMBING ONLY. Every number here came from a scripted stub provider, not a model. It is not evidence of anything and must never be read as a result.' } : {}),
-  prereg: 'docs/03-logs/experiments/REUSE-PREPROBE-PREREG.md',
+  prereg: 'docs/archive/REUSE-PREPROBE-PREREG.md',
   designRecord: 'docs/product/2026-08-01-layer-3-reuse-design.md',
   runid,
   startedAt: new Date().toISOString(),

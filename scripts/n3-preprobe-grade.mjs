@@ -1,5 +1,5 @@
 // N3 lineage PRE-PROBE — grader (no spend; re-runnable over scratch-n3-raw.jsonl).
-// Applies the FROZEN read (docs/03-logs/experiments/N3-PREPROBE-PREREG.md §7–§8):
+// Applies the FROZEN read (docs/product/N3-PREPROBE-PREREG.md §7–§8):
 //   Gate 1 — does lineage MOVE the plan vs its OFF baseline?
 //   Gate 2 — does it move toward the winning shape? (0..5 rubric)
 //   Memorization audit — does a TARGET-arm plan echo SOURCE-only function names? (=> copying)

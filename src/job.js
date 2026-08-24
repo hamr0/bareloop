@@ -1,5 +1,5 @@
 // Job-spec validator — the OPERATOR-owned half of the config story (N1,
-// design record: docs/02-features/2026-07-12-n1-job-close-schema-design.md).
+// design record: docs/product/2026-07-12-n1-job-close-schema-design.md).
 // A job spec is the arbiter's rulebook: the close chain, the budget, the
 // outer write fence, the escalation route. It is pure declarative data —
 // no freeform code is expressible anywhere in it — and it validates

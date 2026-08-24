@@ -1,5 +1,5 @@
 // Aurora battery runner — job #3, the frozen 4-plant battery of
-// docs/03-logs/experiments/AURORA-PREREG.md against the frozen aurora patient.
+// docs/product/AURORA-PREREG.md against the frozen aurora patient.
 // A REWRITE of run-battery.mjs for the pytest close genre, never a copy:
 // TAP parsing → pytest FAILED-line parsing, npm test → the operator-owned
 // close wrapper, plus the two frozen aurora conditions — a 15-minute close
@@ -35,7 +35,7 @@ import { scanSecrets } from '../src/validate.js';
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
 
-// ---- the frozen facts (docs/03-logs/experiments/AURORA-PREREG.md — transcribed, never edited) ----
+// ---- the frozen facts (docs/product/AURORA-PREREG.md — transcribed, never edited) ----
 const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/aurora-soar';
 const COMMIT = 'd661e507c5cd0981368d90ed3e3abf6e2bb9ed18';
 const MODEL = 'claude-sonnet-5';
@@ -43,7 +43,7 @@ const BATTERY_CAP_USD = 10; // battery total spend hard-stop (frozen)
 const CLOSE_TIMEOUT_MS = 900_000; // frozen: green close ~6.5 min, red ~4.5 min; the 120s default kills every close
 
 /**
- * The frozen plant table, transcribed EXACTLY from docs/03-logs/experiments/AURORA-PREREG.md
+ * The frozen plant table, transcribed EXACTLY from docs/product/AURORA-PREREG.md
  * ("Accepted plants"). `before` must occur EXACTLY ONCE in `file` at the frozen
  * commit (probe-verified 2026-07-16; A2's anchor is the 5-line block because the
  * one-line guard exists twice — the sequential twin at :935). `fails` are the
