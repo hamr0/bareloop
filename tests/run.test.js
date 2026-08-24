@@ -25,8 +25,9 @@ import { jobSpecHash } from '../src/job.js';
 import { STALL_MS } from '../src/stall.js';
 import { readSpine, scriptedProvider, initPatientRepo, mockWallClock, reply } from './helpers.js';
 // PRD v1.80 TODO #4 / F115 — reading, never modifying: `CHECKPOINT_OUTCOMES` is
-// the LIBRARY's own resumable-terminal list (src/reuse.js), and `readResume` is
-// the ONE reader `--resume` and this test both drive — never a second one.
+// the LIBRARY's own resumable-terminal list (src/reuse.js, folded 2026-08-25),
+// and `readResume` is the ONE reader `--resume` and this test both drive — never
+// a second one.
 import { readResume, CHECKPOINT_OUTCOMES } from '../src/reuse.js';
 
 const base = mkdtempSync(join(tmpdir(), 'run-test-'));
@@ -372,11 +373,12 @@ test('F115: an HTTP-response-shaped failure is NOT retried by this layer — pro
 // `readResume` (src/reuse.js) already builds a step-level checkpoint for any
 // terminal in the caller's own `resumableOutcomes` list — nothing about that
 // function changed — so the whole of "provider-red joins" is which OUTCOME
-// names a caller hands it. `scripts/run-u.mjs`'s `RESUMABLE_HALTS` is that
-// caller for `--resume`; this test proves the reader composes correctly once
-// `provider-red` is in that list, on a REAL two-step run that genuinely dies
-// transport-red after one step lands.
-test('F115/TODO#4: readResume reads a REAL provider-red spine as a step-level CHECKPOINT once the caller widens resumableOutcomes — plan intact, one step done, spend a floor', async () => {
+// names a caller hands it. Since the 2026-08-25 fold `provider-red` is IN the
+// library's own `CHECKPOINT_OUTCOMES` (no per-caller widening needed);
+// `scripts/run-u.mjs`'s `RESUMABLE_HALTS` reads that constant bare for
+// `--resume`, and this test proves the reader composes correctly on a REAL
+// two-step run that genuinely dies transport-red after one step lands.
+test('F115/TODO#4: readResume reads a REAL provider-red spine as a step-level CHECKPOINT via the canonical CHECKPOINT_OUTCOMES list — plan intact, one step done, spend a floor', async () => {
   const wd = makePlanWork('plan-provider-red-resumable');
   const job = planJob();
   const plan = JSON.stringify({
@@ -416,20 +418,23 @@ test('F115/TODO#4: readResume reads a REAL provider-red spine as a step-level CH
   assert.equal(end.spendComplete, false, 'F44: the priced sum is a FLOOR, never rounded up to exact');
   assert.ok(events.some((e) => e.type === 'step-end' && e.step === 'step-one' && e.outcome === 'green'), 'step-one genuinely finished before the transport casualty');
 
-  // COLD CONTROL — a caller that has NOT widened its list (the library's own
-  // CHECKPOINT_OUTCOMES, unmodified) still reads provider-red as a TERMINAL,
-  // exactly as it does today. This is the negative control for the reader
-  // itself: widening `resumableOutcomes` is a per-caller choice, never a
-  // change to what `readResume` does with an unwidened one.
-  const cold = readResume(events, { direct: true, resumableOutcomes: [...CHECKPOINT_OUTCOMES] });
+  // COLD CONTROL — a caller that explicitly EXCLUDES provider-red from its list
+  // still reads it as a TERMINAL, exactly as an unwidened CHECKPOINT_OUTCOMES did
+  // before the 2026-08-25 fold. This is the negative control for the reader
+  // itself: whether a caller offers 'provider-red' as resumable is a per-caller
+  // choice `readResume` honours either way, never a change `readResume` makes on
+  // its own. (Since the fold, CHECKPOINT_OUTCOMES itself carries 'provider-red',
+  // so this control builds the list WITHOUT it rather than reading the bare
+  // constant — the bare constant is now exactly the widened case below.)
+  const cold = readResume(events, { direct: true, resumableOutcomes: CHECKPOINT_OUTCOMES.filter((o) => o !== 'provider-red') });
   assert.equal(cold.ended, true, 'without provider-red in the list, the run still reads as ENDED — nothing to resume');
   assert.equal(cold.restart, null);
 
-  // THE RULED BEHAVIOUR — a caller (scripts/run-u.mjs's RESUMABLE_HALTS) that
-  // widens resumableOutcomes to include 'provider-red' reads the SAME spine as
-  // a CHECKPOINT: the identical mechanism cap-halt/wall-halt/step-stalled
-  // already use, never a second reader.
-  const rr = readResume(events, { direct: true, resumableOutcomes: [...CHECKPOINT_OUTCOMES, 'provider-red'] });
+  // THE RULED BEHAVIOUR — a caller reading the LIBRARY's own CHECKPOINT_OUTCOMES
+  // (which carries 'provider-red' since the 2026-08-25 fold, PRD v1.80 TODO #4)
+  // reads the SAME spine as a CHECKPOINT: the identical mechanism cap-halt/
+  // wall-halt/step-stalled already use, never a second reader.
+  const rr = readResume(events, { direct: true, resumableOutcomes: CHECKPOINT_OUTCOMES });
   assert.equal(rr.ended, false, 'provider-red joins the resumable set: there is work left to continue');
   assert.ok(rr.restart, 'a restart checkpoint is built');
   assert.equal(rr.restart.seed?.phase, 'steps', 'step-two never finished — re-entry is at the STEP phase');
@@ -443,11 +448,11 @@ test('F115/TODO#4: readResume reads a REAL provider-red spine as a step-level CH
 });
 
 // NEGATIVE CONTROL — a graded-red terminal must NOT become resumable, even
-// under the widened list above. "provider-red joins" names ONE outcome; a red
-// the close actually rendered is an ANSWER (REUSE_GRADED_RED's own doctrine,
-// src/reuse.js), and re-buying it as if it were unfinished work would be the
-// exact class of bug a shared, parameterised reader exists to prevent.
-test('F115/TODO#4 negative control: a graded step-red stays TERMINAL under the widened resumableOutcomes list — provider-red joining does not sweep in an unrelated outcome', async () => {
+// under CHECKPOINT_OUTCOMES now that it carries 'provider-red'. A red the close
+// actually rendered is an ANSWER (REUSE_GRADED_RED's own doctrine, src/reuse.js),
+// and re-buying it as if it were unfinished work would be the exact class of bug
+// a shared, parameterised reader exists to prevent.
+test('F115/TODO#4 negative control: a graded step-red stays TERMINAL under CHECKPOINT_OUTCOMES — provider-red joining does not sweep in an unrelated outcome', async () => {
   const wd = makePlanWork('plan-stepred-not-resumable');
   const job = planJob();
   const stubbornPlan = JSON.stringify({ schema: 'plan-v1', steps: [{ id: 'never-writes', action: 'do', tools: ['write'], rounds: 4, target: 'tests/test_x.mjs', exit: [{ type: 'tree-changed', scope: 'tests/**' }] }] });
@@ -467,7 +472,7 @@ test('F115/TODO#4 negative control: a graded step-red stays TERMINAL under the w
   const events = readSpine(file);
   const end = events.find((e) => e.type === 'job-end');
   assert.equal(end.outcome, 'step-red', 'runJob writes the BARE name onto job-end — the same string the reader classifies from');
-  const rr = readResume(events, { direct: true, resumableOutcomes: [...CHECKPOINT_OUTCOMES, 'provider-red'] });
+  const rr = readResume(events, { direct: true, resumableOutcomes: CHECKPOINT_OUTCOMES });
   assert.equal(rr.ended, true, 'a step-red is an ANSWER, never a checkpoint — it stays ended even under the widened list');
   assert.equal(rr.restart, null);
 });

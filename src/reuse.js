@@ -115,8 +115,30 @@ export const REUSE_GRADED_RED = Object.freeze(['escalated']);
  * how they would come to disagree about which member is which: the first three are
  * allowances the loop's remaining tries are meant to spend against, and the human
  * ones are the stop no further try can change (see `hardStop`).
+ *
+ * `provider-red` folded in 2026-08-25 (PRD v1.80 TODO #4, F115 "Ruled: one transport
+ * retry"; hamr's ruling verbatim: *"joins resume anyways and you decide but you are
+ * given an honest readout and with 1 retry"*). It is a MACHINE halt, not a human one
+ * — it does NOT go into `HUMAN_CHECKPOINTS` — but it is a checkpoint by the same
+ * test every other member here passes: the close never got the say it was asked
+ * for (no verdict was rendered, so it is not a graded red — see `REUSE_GRADED_RED`
+ * above), and the scout+draft and every finished step it bought stand on disk
+ * exactly like a cap-halt or a wall-halt. The one transport retry
+ * (`src/planrun.js`'s `withTransportRetry`) already covers the common case; when
+ * that retry ALSO fails, throwing the run away because the transport hiccuped
+ * twice is throwing away real work for no reason a machine can judge. Deliberately
+ * NO cost/step threshold gates this: a threshold is a number picked from a small
+ * observed sample (F115 logged exactly 7 rows), which is arbiter territory
+ * reserved for hamr — the operator decides case by case, every time, off the
+ * honest readout `scripts/run-u.mjs` prints.
+ *
+ * This entry was built 2026-08-24 as a LOCAL widening in `scripts/run-u.mjs`
+ * (`RESUMABLE_HALTS = [...CHECKPOINT_OUTCOMES, 'provider-red']`) because this file
+ * sat outside that pass's scope — the fold here is the follow-up, so this repo
+ * does not end up with two lists that can drift, which is the exact failure this
+ * constant exists to end (see the paragraph above).
  */
-export const CHECKPOINT_OUTCOMES = Object.freeze(['cap-halt', 'wall-halt', 'step-stalled', ...HUMAN_CHECKPOINTS]);
+export const CHECKPOINT_OUTCOMES = Object.freeze(['cap-halt', 'wall-halt', 'step-stalled', 'provider-red', ...HUMAN_CHECKPOINTS]);
 
 /**
  * v1's definition of "the same KIND of recipe" — and it is the LOAD GATE's own: the

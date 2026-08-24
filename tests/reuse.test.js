@@ -30,7 +30,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED, CHECKPOINT_OUTCOMES } from '../src/reuse.js';
+import { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED, CHECKPOINT_OUTCOMES, readResume } from '../src/reuse.js';
 import { HUMAN_CHECKPOINTS } from '../src/declaredclose.js';
 import { makeRegistry, saveBridge, loadRegistry, loadBridge, deriveStatus } from '../src/bridges.js';
 import { jobSpecHash, validateJob } from '../src/job.js';
@@ -539,9 +539,44 @@ test('N4: the human-checkpoint set is the PAUSE half of CHECKPOINT_OUTCOMES — 
   // first cap-halt.
   assert.ok(HUMAN_CHECKPOINTS.length > 0, 'an empty set would make the stop above unreachable');
   for (const o of HUMAN_CHECKPOINTS) assert.ok(CHECKPOINT_OUTCOMES.includes(o), `${o}: a human checkpoint is still a resumable checkpoint`);
-  for (const o of ['cap-halt', 'wall-halt', 'step-stalled']) {
-    assert.ok(!HUMAN_CHECKPOINTS.includes(o), `${o}: an allowance halt is not a person deciding — its carry-on is asserted above`);
+  for (const o of ['cap-halt', 'wall-halt', 'step-stalled', 'provider-red']) {
+    assert.ok(!HUMAN_CHECKPOINTS.includes(o), `${o}: an allowance/transport halt is not a person deciding — its carry-on is asserted above`);
   }
+});
+
+// PRD v1.80 TODO #4 / F115, folded 2026-08-25: 'provider-red' now lives IN the
+// canonical CHECKPOINT_OUTCOMES rather than as a per-caller widening
+// (scripts/run-u.mjs used to add it locally). This is the reuse module's OWN
+// proof that `readResume` — the ONE reader every resumer (the U runner, the
+// kill-resume preview) drives — reads a provider-red spine as a resumable
+// checkpoint off the BARE constant, with no caller-side widening at all; and
+// that a graded red sitting right beside it on the same constant still refuses.
+test('N4/F115: readResume reads a provider-red spine as resumable off the BARE CHECKPOINT_OUTCOMES constant — no caller widening needed post-fold', () => {
+  // the shape a real direct (non-reuse) U spine leaves: job-start, an accepted
+  // plan, one step finished, then the terminal. Only the fields readResume
+  // reads are spelled — same minimal shape tests/resume-u.test.js's own
+  // `haltedSpine` fixture uses for the other governance halts.
+  const events = [
+    { type: 'job-start', job: 'demo-job', ts: '2026-08-25T10:00:00.000Z', seq: 1 },
+    { type: 'plan-accepted', plan: { schema: 'plan-v1', steps: [{ id: 'step-one' }, { id: 'step-two' }] }, ts: '2026-08-25T10:02:00.000Z', seq: 2 },
+    { type: 'worker-round', kind: 'turn', costUsd: 0.3, ts: '2026-08-25T10:04:00.000Z', seq: 3 },
+    { type: 'step-end', step: 'step-one', outcome: 'green', ts: '2026-08-25T10:05:00.000Z', seq: 4 },
+    { type: 'job-end', outcome: 'provider-red', spentUsd: 0.3, spendComplete: false, ts: '2026-08-25T10:06:00.000Z', seq: 5 },
+  ];
+  const rr = readResume(events, { direct: true, resumableOutcomes: CHECKPOINT_OUTCOMES });
+  assert.equal(rr.ended, false, 'provider-red reads as a CHECKPOINT off the bare canonical constant — nothing widened it here');
+  assert.ok(rr.restart, 'a restart checkpoint is built');
+  assert.equal(rr.restart.seed?.phase, 'steps', 'step-two never finished — re-entry is at the STEP phase');
+  assert.deepEqual(rr.restart.seed?.completedSteps?.map((s) => s.id), ['step-one'], 'step-one is preserved as the checkpoint, never re-paid for');
+  assert.equal(rr.spendComplete, false, 'the transport casualty stays a FLOOR (F6/F44), never healed to exact');
+
+  // the negative control: 'escalated' — a GRADED red, the one outcome that
+  // demotes a bridge (REUSE_GRADED_RED) — sits nowhere near CHECKPOINT_OUTCOMES
+  // and must stay terminal even read through the same bare constant.
+  const gradedEvents = events.map((e) => (e.type === 'job-end' ? { ...e, outcome: 'escalated', spendComplete: true } : e));
+  const graded = readResume(gradedEvents, { direct: true, resumableOutcomes: CHECKPOINT_OUTCOMES });
+  assert.equal(graded.ended, true, 'a graded red is an ANSWER, never a checkpoint — it stays ended under the same list');
+  assert.equal(graded.restart, null);
 });
 
 test('an ALREADY-GREEN tree ends the loop but mints NOTHING — no unearned learning credit', async () => {

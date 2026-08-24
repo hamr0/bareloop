@@ -23,6 +23,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
   and the exact `--resume` command — and `--resume` re-enters at the recorded step with the
   accepted plan, folding prior spend in. No cost/step threshold gates the offer (the operator
   decides, every time); verdict terminals (`escalated`/`step-red`/`plan-red`) still refuse.
+  Folded from a local `scripts/run-u.mjs` widening into the library's own canonical
+  `CHECKPOINT_OUTCOMES` (`src/reuse.js`) so the two lists cannot drift.
 - **Run behaviour summary** (build-list item 2, agreed 2026-08-23): `runBehaviour(events, {
   runId? })` and `formatBehaviour(summary)` in `src/behaviour.js`, plus
   `scripts/behaviour-readout.mjs <gate-audit.jsonl> [run_id]`. A report-only text block —

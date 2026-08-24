@@ -231,56 +231,14 @@ const RESUME = arg('resume');
  * the seam. Same reasoning that put the pause TTL in the library (OPEN-2, hamr,
  * 2026-08-13).
  *
- * Nothing else is resumable — a green is done, and a red is an answer.
+ * `provider-red` folded INTO the canonical constant 2026-08-25 (PRD v1.80 TODO
+ * #4, F115) — it lived here as a local widening for one pass because `src/reuse.js`
+ * sat outside that change's file scope; the reasoning for why it belongs on this
+ * list at all now lives beside the constant itself, not here, so there is exactly
+ * one place that reasoning can drift.
  *
- * The first two are governance halts: an operator-owned allowance ran out with the
- * work on disk.
- *
- * `step-stalled` (hamr's go, 2026-08-13) is the third, and it is not an allowance
- * stop — it is the one terminal whose OWN escalation already tells the operator to
- * *"retry the run"* (src/planrun.js) while this runner answered "start a fresh run"
- * and threw away every finished step's spend. Two shapes reach it and resume is the
- * right answer to both: the plain stall (the model stopped producing rounds and the
- * reissue did not recover it — nothing about the work on disk is wrong), and the
- * edge that named this fix, where a stall trips WITH time left, becomes a replan
- * trigger, and the replan gate declines to fund a cycle past the deadline — the run
- * then rides out as `step-stalled` rather than `wall-halt` and lost the checkpoint a
- * wall stop would have kept. The NAME deliberately stays `step-stalled` (src/run.js
- * keys the F44 spend FLOOR on that outcome), so the fix is exactly this: widen which
- * terminals are read as a checkpoint, rename nothing.
- *
- * The floor rides along honestly — a stalled run's `spendComplete:false` reaches the
- * preview's fold as `≥$x` and `runJob` as `priorSpendComplete:false`, so the resumed
- * leg's own terminal stays a floor too rather than healing an unknown by inheriting it.
- *
- * `hitl-pause` (N4 §1.6) is the fourth, and the only one whose missing allowance is a
- * PERSON: the run reached the one stage a machine cannot render and stopped with its
- * work, its plan and its money exactly where they were. Answering it needs `--decide`
- * (below); every other entry here resumes on the hash alone.
- *
- * `provider-red` is the fifth (PRD v1.80 TODO #4, F115 "Ruled: one transport
- * retry" section; hamr's ruling verbatim: *"joins resume anyways and you decide
- * but you are given an honest readout and with 1 retry"*). Today the ONE
- * transport retry (src/planrun.js's `withTransportRetry`) already covers the
- * common case; when that retry ALSO fails the run still ends `provider-red`,
- * but the scout+draft (and every finished step) it bought is real work on
- * disk exactly like a cap-halt or a wall-halt — throwing it away because the
- * transport hiccuped twice is throwing away money for no reason a machine can
- * judge. Deliberately NO cost/step threshold gates this: a threshold is a
- * number picked from a small observed sample (F115 logged exactly 7 rows),
- * which is arbiter territory reserved for hamr — the tail readout below
- * prints the honest floor and the operator decides case by case, every time.
- *
- * This entry is added HERE rather than to the library's own `CHECKPOINT_OUTCOMES`
- * (src/reuse.js) — that file sits outside this change's file scope this pass, so
- * widening it locally is the smaller, reversible move; folding `provider-red`
- * into the canonical list is the natural follow-up once that file is back in
- * scope, so this repo does not end up with two lists that can drift (the exact
- * failure `CHECKPOINT_OUTCOMES` itself was built to end, per its own comment
- * above). Everything downstream (`readResume`, `prepareBranch`, the money/wall
- * fold) reads this array as a plain parameter, so widening it is the WHOLE
- * change — no second reader was built. */
-const RESUMABLE_HALTS = Object.freeze([...CHECKPOINT_OUTCOMES, 'provider-red']);
+ * Nothing else is resumable — a green is done, and a red is an answer. */
+const RESUMABLE_HALTS = CHECKPOINT_OUTCOMES;
 
 // ── THE THREE DOORS (N4, 2026-08-12 §1) — the hitl surface, at the terminal ──
 //
