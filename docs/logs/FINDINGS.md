@@ -8821,3 +8821,67 @@ shipped design is final: upstream guesstimates with the sonnet rate and a loud
 `'tier'`/`'default'` sign, and our `VOUCHED_RATE_SOURCES` classes those rounds as `guessed` —
 a customer who wants exact opus/fable pricing passes caller rates. The finding above stands
 as a finding, not a build item.
+
+---
+
+## F114
+
+**The behaviour block printed live, the read shim's steer showed up in the worker's own
+choices, and the shim turned out to leave no footprint of its own — all from one run that
+died as a transport casualty.**
+
+Live u-run `mt7g7b68` (2026-08-24, `aurora-spawner`, hash `c395b716…`, sonnet-5, `--read-shim
+A1`, $5 cap, 30-min wall). Fired on hamr's in-turn order to validate two things the archive
+cannot: that the run-behaviour block (F-series build item 1) prints at a real run's tail, and
+that the handed-over read shim runs live.
+
+### 1. The behaviour block is delivered, not just built
+
+The driver's tail printed, verbatim:
+
+```
+BEHAVIOUR  60 tool calls · 25 read, 14 edit, 8 grep, 8 recall, 4 get, 1 recent
+           17 exact repeats (~28%)
+```
+
+That closes the "honest remainder" left on PRD TODO item 1: the wiring was previously proven
+only by evaluating the same expression over archived data. Now it has run in-process, at the
+end of a paid run, on a spine it had never seen.
+
+### 2. The shim's steer is visible in what the worker CHOSE
+
+The archive's standing number is that `recall` is drafted 1.4% of the time against `read`'s
+99.3% (litectx underuse is a selection problem). Under A1 this worker reached for retrieval
+verbs **12 of 60 calls (20%)** — 8 `ctx_recall`, 4 `ctx_get` — and the `ctx_get` records show
+what that buys: a function served as a **322-byte** chunk (`observability.py:677-687`) instead
+of a whole-file page. n=1, one job, one arm: this is a *consistent* observation, not a lift
+claim. The Phase 2 battery's verdict stands unchanged (A1 legal and safe; saving not
+established).
+
+### 3. The shim has no footprint — its work cannot be counted after the fact
+
+Looking for the shim's own trace found **nothing**: no spine record type for a pointer served,
+a capped slice, or a re-read refused; the gate audit's read rows carry only
+`args:{tool:'shell_read'}` — no byte count, no "delivered" flag. The shim's *effect* can be
+inferred from spend and from the worker's verb choices; the shim's *actions* are recorded
+nowhere. Under this repo's own instrument doctrine that is the blind-instrument class: a lever
+whose pulls are not logged can never be attributed post hoc, and any future "the shim saved
+X" claim would rest on a spend contrast alone. **Not built; named.** The fix shape is a
+report-only counter on the shim's ledger (pointers served, bytes withheld), surfaced through
+the behaviour block — but that is a spec decision, not a patch.
+
+### 4. The run itself: casualty, not evidence
+
+At 6.1 min / 39 rounds / **$1.3389** (all 39 rounds priced, `rateSource:'tier'`; the
+`spendComplete:false` floor is the failed call's own unknown, F6), the provider path died with
+`SSL routines:ssl3_read_bytes:ssl/tls alert bad record mac` — a TLS-layer transport error
+under the API, not an API response and not our logic. Escalated `provider-red`, verdict
+absent. `--resume` correctly refuses: provider-red is a terminal, not a governance halt, so
+continuing needs a fresh run. Per the standing rule, a provider-red row is a casualty and
+teaches nothing about the job; per the U-run rule, the dead run comes back to hamr rather than
+being re-fired mid-chase.
+
+### What is NOT claimed
+
+No savings number. No green. No statement about whether the worker would have finished. One
+run's verb mix is not a base rate.

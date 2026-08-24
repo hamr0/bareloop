@@ -166,14 +166,12 @@ measurement of how stale archived indexes actually were at run start — not the
 shapes and open questions live in `docs/product/2026-08-23-agreed-build-list.md`; rulings and
 evidence live in `docs/logs/FINDINGS.md`.
 
-1. ~~Run-behaviour summary~~ — **BUILT 2026-08-24** (`ac24855` + driver wiring):
+1. ~~Run-behaviour summary~~ — **DONE 2026-08-24** (`ac24855` + driver wiring + live proof):
    `runBehaviour`/`formatBehaviour` in the library, `scripts/behaviour-readout.mjs` for
-   archived runs, and the `BEHAVIOUR` block wired into `run-u.mjs`'s end-of-run print. Q7
-   answered surface-only (no spine record — a new record type is a new writer every spend
-   instrument must account for); Q8 answered library (documented in `bareloop.context.md`).
-   Validated on 3 real archived audits; suite 2060/2060. **Honest remainder:** the tail
-   print has not yet been SEEN on a live paid run — the wiring expression was proven $0
-   against real audit data, and the next real run is its live proof; done-done only then.
+   archived runs, and the `BEHAVIOUR` block in `run-u.mjs`'s end-of-run print. Q7 answered
+   surface-only (no spine record — a new record type is a new writer every spend instrument
+   must account for); Q8 answered library (documented in `bareloop.context.md`). Printed live
+   at the tail of u-run `mt7g7b68` (F114).
 2. **Generic run replay** — agreed gap, unscoped; item 1 is its cheap first slice.
 3. **The bench** — shape agreed; blocked on Q1, Q3–Q6, Q10; G2 re-author + full re-baseline
    first (v1.78).
