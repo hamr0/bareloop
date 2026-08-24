@@ -8941,3 +8941,29 @@ flip for the transport class is arbiter territory: **named for hamr, not changed
 Not the shim. Not the job's logic. Not proven to be the kernel. Not reproducible at $0 so
 far. Two paid probes could narrow it — a long keep-alive session of tiny requests to the API
 (~$0.02) and one of cached large bodies (~$1) — both are hamr's call.
+
+### Addendum 2026-08-24 — the paid probe did NOT reproduce it; two operator errors on the way
+
+A ~16-minute keep-alive session of 39 run-shaped requests to `api.anthropic.com` (global
+`fetch`, non-streaming POST — the provider's own transport; a 62k-token cached prefix; bodies
+growing 148→224 KB; 20 s apart; under `systemd-inhibit`): **39/39 HTTP 200, zero throws.**
+Kernel log since Aug 9 shows no MCE/EDAC/OOM. So the path this machine → Anthropic carries
+large bodies over a long-lived connection fine, and the failure needs something the probe did
+not have. The candidates that remain are the things a real run does and the probe did not:
+**large responses** (the probe's were 5 tokens; the dying reads are full tool-use turns),
+**bursty back-to-back calls interleaved with child processes** (mypy, the close), and
+**bare-agent's AbortController-timed requests**. Each is a separate paid probe; none is
+authorised. The kernel lead stands unweakened but unproven.
+
+Two operator errors, logged because they cost real money and real time:
+
+1. **The probe was sized by extrapolation, not measurement.** hamr authorised ~$1. The first
+   request priced at $0.019 and I multiplied; the filler used to grow the conversation
+   (`x` repeated) tokenizes at roughly one token per character, so late turns carried ~45k
+   UNCACHED tokens each. Real cost ≈ **$3.5–5.3** (the probe's own rate formula, at standing vs
+   intro sonnet rates). "A sizing/cost claim must be MEASURED, not asserted from a proxy" —
+   this repo's own rule, violated on the repo's own instrument. Cure: log per-request cost and
+   read the growth before the tenth request, and use natural-language filler.
+2. **`pkill -f <script>` killed the shell that issued it** — the pattern matched the issuing
+   command line (exit 144). A retune that should have taken one call took three. Cure: kill
+   by PID, never by `-f` pattern from a command line that contains the pattern.
