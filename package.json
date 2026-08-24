@@ -23,7 +23,7 @@
     "prepublishOnly": "npm run build:types"
   },
   "dependencies": {
-    "bare-agent": "^0.38.1",
+    "bare-agent": "^0.39.0",
     "bareguard": "^0.13.0",
     "litectx": "^0.32.0"
   },
