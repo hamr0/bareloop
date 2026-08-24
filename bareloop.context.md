@@ -2084,6 +2084,36 @@ $0). `VOUCHED_RATE_SOURCES` is the frozen allow-list they key on. **Reporting on
 no class, no halt. CLI lands at N5; the
 panel reads the same file at N6.
 
+### `runBehaviour(events, { runId? })` / `formatBehaviour(summary)` — `src/behaviour.js`
+
+Build-list item 2 (agreed 2026-08-23): one report-only text block summarizing what a run
+DID with its tools, computed entirely from the run's own gate-audit JSONL. **Gates nothing,
+changes no verdict, writes NOTHING to the spine** — a pure function over records that already
+exist, same posture as `spendProvenance` above. `runBehaviour` counts and returns the summary
+object; `formatBehaviour` renders it as the printed block:
+
+```
+94 tool calls · 61 read, 28 grep, 5 recall
+17 exact repeats (~18%)
+```
+
+`llm` action rows are provider rounds, not tool calls, and are always excluded; only
+`decision: 'allow'` rows count toward the total (a `deny` is tallied separately as `N denied`,
+shown only when nonzero). **The exact-repeat key is the FULL recorded action — `type` + `path`
++ every key of `args`** (sorted, stably serialized), never collapsed to `{type, path}`: if the
+gate ever starts recording byte ranges or offsets, two different slices of one file must not
+read as the same repeated call. Repeat detection is therefore exactly as sharp as what the gate
+records, no sharper — a tool that reads identical bytes through two differently-shaped argument
+objects will not be caught by this. `scripts/behaviour-readout.mjs <gate-audit.jsonl> [run_id]`
+prints the block for one run or every run_id found in the file, skipping malformed lines with
+a count rather than throwing.
+
+```js
+import { runBehaviour, formatBehaviour } from 'bareloop';
+const events = fs.readFileSync(auditFile, 'utf8').trim().split('\n').map(JSON.parse);
+console.log(formatBehaviour(runBehaviour(events, { runId })));
+```
+
 ## Architecture
 
 Three layers. An **outer shell** (dumb, permanent): per-run budget cap via bareguard,

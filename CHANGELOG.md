@@ -5,6 +5,19 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Added
+
+- **Run behaviour summary** (build-list item 2, agreed 2026-08-23): `runBehaviour(events, {
+  runId? })` and `formatBehaviour(summary)` in `src/behaviour.js`, plus
+  `scripts/behaviour-readout.mjs <gate-audit.jsonl> [run_id]`. A report-only text block —
+  "94 tool calls · 61 read, 28 grep, 5 recall" / "17 exact repeats (~18%)" — computed entirely
+  from a run's own gate-audit JSONL. Gates nothing, changes no verdict, writes nothing to the
+  spine. The exact-repeat key is the full recorded action (`type` + `path` + every `args` key),
+  never collapsed to `{type, path}` — sharper collapse would have merged different byte ranges
+  of the same file into false repeats.
+
 ## [0.13.0] — 2026-08-23
 
 ### Fixed (2026-08-23 — the release round: a pointer that lied, a close with no home, a rule that charged for its own refusal)

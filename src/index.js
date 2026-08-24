@@ -228,6 +228,11 @@ export {
   HUMAN_PAUSE, HITL_PAUSE, HITL_DECISION_RED, HUMAN_CHECKPOINTS,
 } from './declaredclose.js';
 export { closeStagesOf } from './plan.js';
+// Build-list item 2 (2026-08-23) — the run behaviour summary: a report-only
+// read of a run's gate-audit records. Gates nothing, mints no verdict,
+// writes nothing to the spine; `runBehaviour` computes, `formatBehaviour`
+// renders the printable block.
+export { runBehaviour, formatBehaviour } from './behaviour.js';
 // M4b — the interview, the refusal, the composition, and D9's three gates.
 // `prepareSigning` returns the resolved spec's HASH and the seed evidence; it
 // never signs — the approvals array and the human's word are unchanged.
