@@ -185,8 +185,8 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
    FLOOR (`spendComplete:false` — the first attempt may have been billed). Reported on the
    spine (`transport-retry`) and at the run tail (F115 "Ruled" section; `docs/wiki/money-time.md`
    "Transport retry and the provider-red resume").
-5. **provider-red joins the resumable set — BUILT 2026-08-24** (validation branch; live
-   proof pending the next armed run, per #6 below). If the one retry (#4) also
+5. **provider-red joins the resumable set — BUILT 2026-08-24, LIVE-PROVEN 2026-08-25** (run
+   `mt7ugedk` resumed TLS-killed `mt7gk7oy` to GREEN). If the one retry (#4) also
    fails, the run still ends `provider-red`, but `--resume` will re-enter at the recorded step
    with the accepted plan instead of refusing. No cost or step threshold gates the offer — a
    threshold would be a number picked from a small sample (arbiter territory); instead the
@@ -208,12 +208,13 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
    `runBehaviour`/`formatBehaviour` in the library, `scripts/behaviour-readout.mjs` for
    archived runs, and the `BEHAVIOUR` block in `run-u.mjs`'s end-of-run print. Q7 answered
    surface-only, Q8 answered library. Printed live at the tail of u-run `mt7g7b68` (F114).
-2. **MEMORY-CACHE readout** — **BUILT 2026-08-24** (validation branch); live tail proof
-   pending the next armed run (F114 §3).
-3. **One transport retry** — **BUILT 2026-08-24** (validation branch); live proof pending the
-   next armed run (F115).
-4. **provider-red resumable + honest readout** — **BUILT 2026-08-24** (validation branch);
-   live proof pending the next armed run (F115 addendum; ruling #5 above).
+2. **MEMORY-CACHE readout** — **BUILT 2026-08-24, LIVE-PROVEN 2026-08-25**: printed at the
+   tail of armed resume run `mt7ugedk` (103.4 KB withheld, ~26.5k tokens) (F114 §3).
+3. **One transport retry** — **BUILT 2026-08-24**; live proof still pending — run `mt7ugedk`
+   hit no transport failure, so the retry seam has never fired on a real run (F115).
+4. **provider-red resumable + honest readout** — **BUILT 2026-08-24, LIVE-PROVEN 2026-08-25**:
+   run `mt7ugedk` resumed the TLS-killed `mt7gk7oy` and finished GREEN — money/wall folded
+   (≥$3.0026 of $5, 12.5min of 30), plan reloaded, no re-scout (F115 addendum; ruling #5).
 5. **Chase the TLS `bad record mac` cause** — optional, paid, hamr's call (F115).
 6. **Generic run replay** — agreed gap, unscoped; item 1 was its cheap first slice.
 7. **The bench** — shape agreed; blocked on Q1, Q3–Q6, Q10; G2 re-author + full re-baseline

@@ -8980,3 +8980,19 @@ operator-configurable). Each retry emits a report-only `transport-retry` spine r
 forces `job-end.spendComplete: false` for the rest of the run, recovered or not — the first
 attempt's possible spend stays invisible either way (F6/F44). Judge loops, the native/CLI
 session path, and `src/authorscout.js` are unchanged.
+
+### Addendum 2026-08-25 — the resume closed the loop: the TLS-killed job is GREEN
+
+The job the condition killed twice (`mt7g7b68`, `mt7gk7oy`) finished GREEN through the new
+provider-red resume: run `mt7ugedk` resumed `mt7gk7oy`'s spine on hamr's word after a 2×200
+probe. The fold held live — the leg ran on the remainder ($3.6003 / 25.6min, watchdog armed
+at 1538s, never a fresh $5/30min), reloaded the accepted 1-step plan (no re-scout, no
+re-draft), continued the patient AS LEFT, and the close's own fix loop caught a
+`no-suppressions` red before minting green. Chain readout: ≥$3.0026 of $5 (floor — the dead
+leg's `spendComplete:false` survives the boundary), 12.5min of 30 (this leg 8.2min).
+`MEMORY-CACHE` printed live for the first time (5 reads capped, 103.4 KB withheld, ~26.5k
+tokens not re-sent). NOT proven: the transport retry — no transport failure occurred this
+leg, so the retry seam has still never fired on a real run; the `bad record mac` cause
+remains unchased and unproven. One behaviour note for the record, not a claim: the resumed
+leg chose retrieval verbs 22 of 67 calls (17 recall + 5 get, ~33%) with exact repeats at
+~55% — single leg, n=1, an observation only.
