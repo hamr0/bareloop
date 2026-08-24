@@ -8682,6 +8682,41 @@ routing) and is **named and parked for hamr**, not built. Our F6 test still vali
 unreachable shape and its comment still carries the now-misleading claim that `usage:null` is
 "the ONLY genuinely unpriced shape".
 
+### CLOSED 2026-08-24 — `bare-agent` 0.39.0
+
+The `ba24` session fixed the whole class at **seven** provider sites (the six named above plus
+a seventh it found itself: the CLIPipe native session-close reduced an empty turn array into a
+truthy all-zeros object on a zero-turn session). `GenerateResult.usage` widens to
+`Usage|null`, hence a MINOR release.
+
+Validated from this side **before** the release, $0, against the candidate tree — the real
+`AnthropicProvider` driven at a local HTTP server, never a stub:
+
+| response shape | provider usage | resolveRoundCost | vs 0.38.1 |
+|---|---|---|---|
+| usage block ABSENT | `null` | cost=null source=null | was PRICED $0 `tier` |
+| usage `{}` | `null` | cost=null source=null | was PRICED $0 `tier` |
+| usage `null` | `null` | cost=null source=null | was PRICED $0 `tier` |
+| CONTROL real usage | in:10 out:5 | $0.000105 `tier` | unchanged |
+| CONTROL cache-only | cacheRead:5000 | $0.0015 `tier` | unchanged |
+
+The cache-only control is the must-NOT-fire case flagged in the ask: an all-zeros-but-cache
+round stays priced, so provider-first ordering in `resolveRoundCost` held.
+
+Then end-to-end through bareloop's own `runJob` with that provider injected: an absent-usage
+round produced `outcome: pricing-red`, `spentUsd: 0`, `spendComplete: false`. **The F6 halt is
+reachable on a real provider path for the first time.** A negative control (same harness,
+usage present) did not halt, so the harness could produce the negative.
+
+Post-publish sweep against the published artifact: pin `^0.38.1` → `^0.39.0`, suite
+**2050/2050 / 0 fail**, typecheck 0, build:types 0.
+
+**Our own defect closes as a side effect, not by an edit.** The F6 test's `usage: null` stub was
+a shape production could not emit; under 0.39.0 it is exactly what an absent usage block now
+produces. The fixture became faithful, and its comment's claim became true, without the test
+changing — worth stating plainly, because the same test was a smoke test in disguise the day
+before and nothing in the test file records that it ever was.
+
 ---
 
 ## F112

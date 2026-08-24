@@ -172,9 +172,14 @@ evidence live in `docs/logs/FINDINGS.md`.
    first (v1.78).
 4. **Prompt-commit shape** — agreed, cheap; Q9 open.
 5. **Model names in the signed spec** — parked, arbiter territory.
-6. **F6 halt semantics for all-zeros usage** (BA-24 shape) — parked, arbiter; companion F6
-   test fix is hamr's call.
-7. **Awaiting ba24** — BA-24 fix candidate, validate with `probe-real-provider.mjs`.
+6. ~~F6 halt semantics for all-zeros usage; companion F6 test fix~~ — **CLOSED 2026-08-24**
+   by `bare-agent` 0.39.0: absence no longer manufactures all-zeros at any of the 7 provider
+   sites, so the parked arbiter question has no reachable trigger, and the F6 fixture became
+   faithful without an edit (F111). A genuine zero-token round remains a separate, unraised
+   question.
+7. ~~Awaiting ba24 — BA-24 fix candidate~~ — **CLOSED**: validated pre-release against the
+   real provider (halt reachable end-to-end, negative control held), pin bumped to `^0.39.0`,
+   post-publish sweep 2050/2050 (F111).
 8. **aurora run-time signature** — sign when a run next fires.
 9. **4 `jobs/*.json` stale doc-path strings** — each edit flips a signed hash; hamr's word.
 10. **`bareloop.context.md` target-design-first flip** — asked, unanswered.
