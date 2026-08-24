@@ -8858,17 +8858,19 @@ of a whole-file page. n=1, one job, one arm: this is a *consistent* observation,
 claim. The Phase 2 battery's verdict stands unchanged (A1 legal and safe; saving not
 established).
 
-### 3. The shim has no footprint — its work cannot be counted after the fact
+### 3. The shim has no footprint — and that is FINE for the savings question (hamr's ruling)
 
 Looking for the shim's own trace found **nothing**: no spine record type for a pointer served,
 a capped slice, or a re-read refused; the gate audit's read rows carry only
-`args:{tool:'shell_read'}` — no byte count, no "delivered" flag. The shim's *effect* can be
-inferred from spend and from the worker's verb choices; the shim's *actions* are recorded
-nowhere. Under this repo's own instrument doctrine that is the blind-instrument class: a lever
-whose pulls are not logged can never be attributed post hoc, and any future "the shim saved
-X" claim would rest on a spend contrast alone. **Not built; named.** The fix shape is a
-report-only counter on the shim's ledger (pointers served, bytes withheld), surfaced through
-the behaviour block — but that is a spec decision, not a patch.
+`args:{tool:'shell_read'}`; and the spine does not record the shim ARM at all (every archived
+row reads as unknown — the arm lives only in the driver log and the battery's own results
+file). hamr's ruling the same day, plain: the shim never needs to print its savings. **Savings
+are measured one way only — the same job with the shim ON vs OFF, bills compared** (the
+Phase 2 battery); a counter inside the shim says "I withheld 40KB", never "you paid less", so
+it is the wrong instrument for that question. What the shim DID (this read capped, that
+re-read pointered) is behaviour, not money; if it is ever wanted for debugging the worker's
+reading, it rides the EXISTING gate-audit read row (`bytes`, `served`) so the behaviour block
+picks it up for free — no new record type, no new writer. Nothing to build.
 
 ### 4. The run itself: casualty, not evidence
 
@@ -8885,3 +8887,57 @@ being re-fired mid-chase.
 
 No savings number. No green. No statement about whether the worker would have finished. One
 run's verb mix is not a base rate.
+
+---
+
+## F115
+
+**Every provider-red the aurora-u patient has ever produced is one TLS error, `bad record
+mac`; it appears on every shim arm including OFF, never before Aug 19, and on no other
+network path this machine was tested on. It is a CONDITION, not a casualty — and the cheap
+instruments cannot name its cause.**
+
+### The population
+
+All 21 `aurora-u` u-runs on file, $0 read:
+
+- **Before 2026-08-19** (6 runs, Jul 26–30): 0 provider-reds.
+- **Aug 19 battery** (13 rows): 5 provider-reds — arms **A0, A1, A2, A3 — all four**, shim
+  OFF included. Every one is `SSL routines:ssl3_read_bytes:ssl/tls alert bad record mac`.
+- **Aug 24** (2 runs, this session, shim A1): 2 of 2, same string, at 6.1 and 4.4 min, $1.34
+  and $1.40. The second was fired only after the standing 2-consecutive-200s probe passed —
+  a short probe does not see this failure.
+
+7 of 7 provider-reds in the dir carry this one string; 7 of 15 runs since Aug 19 died of it;
+0 of 6 before. Deaths land at 4–16 min and 36–61 rounds — no size or count threshold: the
+run with the most cache-write tokens (465K) died at 15.9 min, the least (143K) at 5.3.
+
+**The read shim is cleared**: the error hits shim-OFF rows at the same rate as armed ones.
+
+### What was tested and came back clean ($0)
+
+- Wifi: strong link (-39 dBm, 866 Mbit), kernel log silent through both run windows.
+- Node 22.22.2 / OpenSSL 3.5.7 downloading 141 MB over TLS: 8/8 clean.
+- Node fetch POSTing 40 × 200 KB bodies over one keep-alive session: 40/40 clean.
+- Two 200s from `api.anthropic.com` immediately before the second run.
+
+### What changed between the clean and the dirty population
+
+The kernel: 7.1.7 installed Aug 9, 7.1.8 Aug 17, 7.1.9 Aug 23 — the July runs predate all
+three. NIC offloads (TSO/GSO/checksum) are on. This is a lead, not a cause: nothing above
+reproduces the failure, and the only paid work on this machine since Aug 19 outside aurora-u
+is one 27-round authoring run (Aug 23, clean) — too small to separate "this job" from "this
+machine since Aug 9".
+
+### What it costs, structurally
+
+`Retry` on transport failure is deliberately UNWIRED here (a response that dies mid-read may
+already have been billed, so a retry can pay twice). Under this condition that ruling trades a
+possible double-paid round (~$0.05) for a certain dead run (~$1.4). Whether that trade should
+flip for the transport class is arbiter territory: **named for hamr, not changed.**
+
+### What is NOT claimed
+
+Not the shim. Not the job's logic. Not proven to be the kernel. Not reproducible at $0 so
+far. Two paid probes could narrow it — a long keep-alive session of tiny requests to the API
+(~$0.02) and one of cached large bodies (~$1) — both are hamr's call.
