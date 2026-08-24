@@ -162,38 +162,77 @@ fresh-copy patients. The item stays agreed, but the first spend against it shoul
 measurement of how stale archived indexes actually were at run start — not the build
 (PRD.md:5898-5988).
 
-**TODO (Addendum v1.79 — 2026-08-24):** the standing to-do list. This is the index only —
-shapes and open questions live in `docs/product/2026-08-23-agreed-build-list.md`; rulings and
-evidence live in `docs/logs/FINDINGS.md`.
+**Addendum v1.80 (2026-08-24) — rulings.** Findings now go to `docs/logs/FINDINGS.md` and the
+theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, and a pointer.
+
+1. **Rates are the customer's responsibility.** Rates are never handrolled: no per-model
+   pricing table is maintained here; upstream guesstimates on the sonnet rate and stamps a
+   loud `tier`/`default` source; a customer wanting exact pricing passes caller rates.
+   Rates-passthrough is DEAD — never re-raised (F113 ruling section).
+2. **Run-behaviour summary (TODO item 1) is DONE.** Report-only, computed from the gate
+   audit, surface-only — no spine record (a new record type is a new writer every spend
+   instrument must account for); ships in the library (F114 §1).
+3. **MEMORY-CACHE readout.** The read shim reports what it withheld — re-reads answered from
+   memory, reads capped, KB withheld, approx tokens — as one report-only `memory-cache` spine
+   record per armed run (none when off; absence is never a fabricated zero), printed at the
+   run tail. Savings in dollars are measured only by an ON/OFF contrast of the same job; the
+   counter says what was withheld, never what was saved (F114 §3; `docs/wiki/providers-context.md`
+   §3.9).
+4. **One transport retry.** Exactly one extra attempt, only when the request never produced
+   an HTTP response (TLS fault, reset socket, network timeout); HTTP responses (4xx/5xx/429)
+   keep upstream's policy unchanged; the count is a fixed constant, never a spec/argv knob
+   (tighten-only); a wall-clock timeout is never retried. Any retry makes the run's spend a
+   FLOOR (`spendComplete:false` — the first attempt may have been billed). Reported on the
+   spine (`transport-retry`) and at the run tail (F115 "Ruled" section; `docs/wiki/money-time.md`
+   "Transport retry and the provider-red resume").
+5. **provider-red joins the resumable set — BUILD PENDING.** If the one retry (#4) also
+   fails, the run still ends `provider-red`, but `--resume` will re-enter at the recorded step
+   with the accepted plan instead of refusing. No cost or step threshold gates the offer — a
+   threshold would be a number picked from a small sample (arbiter territory); instead the
+   tail prints an honest readout (spend so far as a floor, which step of how many it died in,
+   the exact resume command) and hamr decides (`docs/wiki/money-time.md` "Transport retry and
+   the provider-red resume").
+6. **Live-run validation standard.** "Built" is not "done": a feature's spec includes its
+   CALLER (the delivery clause "at the end of every run" names a call site), and the live tail
+   print counts as proven only once seen on a real run; until then the PRD tick says so (F114).
+7. **The `bad record mac` condition is a FINDING, not a spec change.** Every aurora-u
+   provider-red since Aug 19 is one TLS transport error, on every shim arm, cause unproven;
+   retry (#4) and resume (#5) are the product's answer — chasing the cause is optional and
+   paid (F115).
+
+**TODO (Addendum v1.80 — 2026-08-24):** the standing list (v1.79 folded in); reconciled against
+`docs/product/2026-08-23-agreed-build-list.md` and prior stashed open items. Index only.
 
 1. ~~Run-behaviour summary~~ — **DONE 2026-08-24** (`ac24855` + driver wiring + live proof):
    `runBehaviour`/`formatBehaviour` in the library, `scripts/behaviour-readout.mjs` for
    archived runs, and the `BEHAVIOUR` block in `run-u.mjs`'s end-of-run print. Q7 answered
-   surface-only (no spine record — a new record type is a new writer every spend instrument
-   must account for); Q8 answered library (documented in `bareloop.context.md`). Printed live
-   at the tail of u-run `mt7g7b68` (F114).
-2. **Generic run replay** — agreed gap, unscoped; item 1 is its cheap first slice.
-3. **The bench** — shape agreed; blocked on Q1, Q3–Q6, Q10; G2 re-author + full re-baseline
+   surface-only, Q8 answered library. Printed live at the tail of u-run `mt7g7b68` (F114).
+2. **MEMORY-CACHE readout** — **BUILT 2026-08-24** (validation branch); live tail proof
+   pending the next armed run (F114 §3).
+3. **One transport retry** — **BUILT 2026-08-24** (validation branch); live proof pending the
+   next armed run (F115).
+4. **provider-red resumable + honest readout** — build pending, ruled 2026-08-24 (F115
+   addendum; ruling #5 above).
+5. **Chase the TLS `bad record mac` cause** — optional, paid, hamr's call (F115).
+6. **Generic run replay** — agreed gap, unscoped; item 1 was its cheap first slice.
+7. **The bench** — shape agreed; blocked on Q1, Q3–Q6, Q10; G2 re-author + full re-baseline
    first (v1.78).
-4. **Prompt-commit shape** — agreed, cheap; Q9 open.
-5. **Model names in the signed spec** — parked, arbiter territory.
-6. ~~F6 halt semantics for all-zeros usage; companion F6 test fix~~ — **CLOSED 2026-08-24**
-   by `bare-agent` 0.39.0: absence no longer manufactures all-zeros at any of the 7 provider
-   sites, so the parked arbiter question has no reachable trigger, and the F6 fixture became
-   faithful without an edit (F111). A genuine zero-token round remains a separate, unraised
-   question.
-7. ~~Awaiting ba24 — BA-24 fix candidate~~ — **CLOSED**: validated pre-release against the
-   real provider (halt reachable end-to-end, negative control held), pin bumped to `^0.39.0`,
-   post-publish sweep 2050/2050 (F111).
-8. **aurora run-time signature** — sign when a run next fires.
-9. **4 `jobs/*.json` stale doc-path strings** — each edit flips a signed hash; hamr's word.
-10. **`bareloop.context.md` target-design-first flip** — asked, unanswered.
-11. **Accept re-proof wall governance** — arbiter question.
-12. **Green-class registry hole** (`door-accept` on green refuses `no-row-for-run`) — reuse
+8. **Prompt-commit shape** — agreed, cheap; Q9 open.
+9. **Model names in the signed spec** — parked, arbiter territory.
+10. ~~F6 halt semantics for all-zeros usage; companion F6 test fix~~ — **CLOSED 2026-08-24**
+    by `bare-agent` 0.39.0 (F111).
+11. ~~Awaiting ba24 — BA-24 fix candidate~~ — **CLOSED**: validated pre-release, pin bumped
+    to `^0.39.0`, post-publish sweep 2050/2050 (F111).
+12. **aurora run-time signature** — sign when a run next fires; spec's `approvals` key is
+    `null` today (F110).
+13. **4 `jobs/*.json` stale doc-path strings** — each edit flips a signed hash; hamr's word.
+14. **`bareloop.context.md` target-design-first flip** — asked, unanswered.
+15. **Accept re-proof wall governance** — arbiter question.
+16. **Green-class registry hole** (`door-accept` on green refuses `no-row-for-run`) — reuse
     territory, hamr.
-13. **`readShim` default flip** — ships OFF; hamr's call alone.
-14. **Flake-name capture** — held until the peer says "load window open" verbatim.
-15. **Housekeeping** — delete branches `bareagent-0381-bump`, `reorg-v2-test`; broad-`git add`
+17. **`readShim` default flip** — ships OFF; hamr's call alone.
+18. **Flake-name capture** — held until the peer says "load window open" verbatim.
+19. **Housekeeping** — delete branches `bareagent-0381-bump`, `reorg-v2-test`; broad-`git add`
     workflow rule (stage by explicit path while a reorg is in flight).
 
 Parked pending measurement: read compaction; stale-slice usage; context-headroom meter.
