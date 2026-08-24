@@ -119,6 +119,80 @@ test('the read shim ARM is guarded at runJob\'s door — ahead of the approval g
   assert.equal(existsSync(file), false, 'and not one spine record — the guard runs before the gate, so the spine was never even opened');
 });
 
+test('MEMORY-CACHE: an ARMED run leaves exactly one memory-cache record on its own spine, before job-end, fields exact', async () => {
+  const wd = makePlanWork('plan-memcache-armed');
+  // recall/get join the ceiling so G1 is satisfied (a capping arm requires the
+  // retrieval pair on the signed ceiling) — the scout is granted read/recall/get
+  // automatically (ceiling minus write/store verbs), which is where the shim's
+  // read calls below land.
+  const job = { ...planJob(), tools: ['read', 'write', 'recall', 'get'] };
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write the missing test.', tools: ['write'], rounds: 6,
+      target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    }],
+  });
+  const modPath = join(wd, 'src', 'mod.mjs');
+  const modBody = 'export const x = 1;\n'; // written by makePlanWork — small, well under the cap
+  const provider = scriptedProvider([
+    { toolCalls: [tcall2('s1', 'shell_read', { path: modPath })] },      // scout round 1: full read
+    { toolCalls: [tcall2('s2', 'shell_read', { path: modPath })] },      // scout round 2: unchanged re-read -> pointer
+    { text: 'surveyed the repo' },                                       // scout round 3: final survey text
+    { text: plan },                                                      // drafter
+    { toolCalls: [tcall2('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'wrote it' },
+  ]);
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file), readShim: 'cap',
+  });
+  assert.equal(outcome, 'green');
+  const events = readSpine(file);
+  const mcEvents = events.filter((e) => e.type === 'memory-cache');
+  assert.equal(mcEvents.length, 1, 'exactly one memory-cache record for the whole run');
+  const mc = mcEvents[0];
+  for (const k of ['pointered', 'capped', 'bytesWithheld', 'approxTokens']) {
+    assert.equal(typeof mc[k], 'number', `${k} is present and numeric`);
+  }
+  assert.equal(mc.pointered, 1, 'the unchanged re-read of mod.mjs was answered with a pointer');
+  assert.equal(mc.capped, 0, 'nothing here exceeded the cap');
+  assert.equal(mc.bytesWithheld, Buffer.byteLength(modBody, 'utf8'), 'exactly the bytes the pointer withheld — the whole held file, no estimate');
+  assert.equal(mc.approxTokens, Math.round(mc.bytesWithheld / 4), 'approxTokens is the stated bytes/4 estimate, derived from THIS run\'s own bytesWithheld');
+  const mcIdx = events.indexOf(mc);
+  const endIdx = events.findIndex((e) => e.type === 'job-end');
+  assert.ok(mcIdx >= 0 && endIdx >= 0 && mcIdx < endIdx, 'memory-cache lands on the spine before job-end');
+});
+
+test('MEMORY-CACHE: an UNARMED run leaves zero memory-cache records — absence, never a fabricated zero line', async () => {
+  const wd = makePlanWork('plan-memcache-unarmed');
+  const job = planJob();
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write the missing test.', tools: ['write'], rounds: 6,
+      target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    }],
+  });
+  const provider = scriptedProvider([
+    { text: 'no tests exist yet' },
+    { text: plan },
+    { toolCalls: [tcall2('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'wrote it' },
+  ]);
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file), readShim: false,
+  });
+  assert.equal(outcome, 'green');
+  const events = readSpine(file);
+  assert.equal(events.filter((e) => e.type === 'memory-cache').length, 0, 'an unarmed run emits no memory-cache record at all');
+});
+
 test('plan dispatch: an unapproved plan spec spends zero tokens (the approval gate is shape-agnostic)', async () => {
   const wd = makePlanWork('plan-unapproved');
   const provider = scriptedProvider([{ text: 'never' }]);

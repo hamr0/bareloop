@@ -17,6 +17,12 @@ feature lands, **patch** = docs, fixes, scaffolding.
   spine. The exact-repeat key is the full recorded action (`type` + `path` + every `args` key),
   never collapsed to `{type, path}` — sharper collapse would have merged different byte ranges
   of the same file into false repeats.
+- **`memory-cache` end-of-run readout** for the read shim: `runPlan` emits one spine record
+  (`{pointered, capped, bytesWithheld, approxTokens}`) summing what L1's pointer and L4's cap
+  withheld across the whole run, only when the shim is armed. `scripts/run-u.mjs` prints it as
+  `MEMORY-CACHE  N re-reads answered from memory · M reads capped · X KB withheld (~Tk tokens
+  not re-sent)`; `scripts/behaviour-readout.mjs` prints the same line given the run's spine as
+  an optional third positional. No cost fields — report-only, not a spend record.
 
 ## [0.13.0] — 2026-08-23
 

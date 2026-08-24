@@ -2114,6 +2114,22 @@ const events = fs.readFileSync(auditFile, 'utf8').trim().split('\n').map(JSON.pa
 console.log(formatBehaviour(runBehaviour(events, { runId })));
 ```
 
+#### `memory-cache` — the read shim's own end-of-run readout (`src/readshim.js`, `src/planrun.js`)
+
+A single spine record, emitted once by `runPlan` right before it returns (so it lands on the
+spine before the caller's `job-end`), reporting what the READ SHIM (L1 pointer + L4 cap) saved
+this run: `{pointered, capped, bytesWithheld, approxTokens}`. `pointered` counts re-reads of
+unchanged content answered with a pointer instead of the bytes; `capped` counts reads served as
+a bounded slice; `bytesWithheld` sums exactly the bytes NOT re-sent in both cases (never
+estimated) — the diff lever (L2) isn't counted, it's a different response shape. `approxTokens`
+is `Math.round(bytesWithheld / 4)`, a bytes→tokens ESTIMATE named accordingly so nothing reads
+it as measured. **Emitted only when the shim is armed** (any `readShim` arm but the off one) —
+an unarmed run emits no record at all, never a fabricated zero. It carries no cost fields, so it
+is not a spend record and no spend-slicing instrument needs to account for it.
+`scripts/run-u.mjs` prints it as a `MEMORY-CACHE` line right after `BEHAVIOUR` when armed
+(`no record` if the run ended before the summary could fire); `scripts/behaviour-readout.mjs`
+prints the same line when handed the run's spine file as its optional third positional.
+
 ## Architecture
 
 Three layers. An **outer shell** (dumb, permanent): per-run budget cap via bareguard,

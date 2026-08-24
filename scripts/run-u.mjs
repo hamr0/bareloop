@@ -1447,5 +1447,21 @@ if (audit.length) {
 } else {
   console.log('\nBEHAVIOUR  no gate audit recorded');
 }
+// ── MEMORY-CACHE (src/readshim.js, src/planrun.js): what the read shim saved
+// this run, read from the run's own `memory-cache` spine record. Report-only,
+// no cost fields — never folds into any spend line above. Armed-only: an
+// unarmed run (READ_SHIM_LEVERS.on false) prints nothing at all, and an armed
+// run whose spine has no record (a crash before the run-level `finally` fired)
+// says so rather than fabricating a zero line.
+if (READ_SHIM_LEVERS.on) {
+  const mc = events.findLast((e) => e.type === 'memory-cache');
+  if (mc) {
+    const kb = (mc.bytesWithheld / 1024).toFixed(1);
+    const kTokens = (mc.approxTokens / 1000).toFixed(1);
+    console.log(`MEMORY-CACHE  ${mc.pointered} re-reads answered from memory · ${mc.capped} reads capped · ${kb} KB withheld (~${kTokens}k tokens not re-sent)`);
+  } else {
+    console.log('MEMORY-CACHE  no record (run ended before its summary)');
+  }
+}
 console.log(`\nspine     ${spineFile}`);
 console.log(`patient   left AS THE RUN LEFT IT (read it before the next run resets to the seed)`);

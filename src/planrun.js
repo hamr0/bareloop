@@ -714,6 +714,14 @@ ${scoutBlob || '(no scout notes)'}`;
  *   'step-stalled' | 'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
 export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, readShim = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null }) {
+  // MEMORY-CACHE: what the read shim (src/readshim.js) saved THIS run, summed across
+  // every mkWorker's own shim instance (scout, drafter, each step's worker, the fix
+  // worker) — one accumulator closed over by all of them, because the shim's ledger
+  // is deliberately per-worker (F-class reset boundary) while this readout is
+  // per-run. `wrapRead`'s call sites feed it via `onCount`; nothing here re-derives
+  // a count, it only sums what the shim already measured. Read, never written, by
+  // anything outside the `finally` below.
+  const memoryCacheCounts = { pointered: 0, capped: 0, bytesWithheld: 0 };
   workdir = resolve(workdir);
   // The read shim's ARM, resolved at the door — before the workdir is read, before
   // the scout, before a single token. An unrecognised spelling throws HERE, where
@@ -744,6 +752,12 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       throw new TypeError(`readShim: this arm caps reads, so a step granting "read" must also grant ${RETRIEVAL_PAIR.join(' and ')} — but the signed ceiling [${signedCeiling.join(', ')}] offers no ${short.join('/')}, so no legal plan exists and every draft would red as "read-blind". Re-sign the spec with ${short.join(' and ')}, or run with the shim off.`);
     }
   }
+  // MEMORY-CACHE's own `try`: everything from here on is a run that actually
+  // BEGAN (both $0 refusals above — the unknown-arm throw and the G1 throw —
+  // already happened and never touch this block), so `finally` below is the
+  // one place the accumulated counts are read out, no matter which of the
+  // paths below this point returns or throws.
+  try {
   // ONE spelling of the redaction, housed next to the inventory it reads
   // (src/validate.js) — the same helper the isolate verbs scrub the litectx store
   // with. Two hand-spelled copies of "what a secret looks like" is exactly how
@@ -1961,7 +1975,16 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // are one shim because the cap creates the second problem — its strategy line
     // sends a capped worker to ctx_recall/ctx_get for a whole function, and a stale
     // pointer there is the cap's own dead end, not litectx's.
-    const shim = createReadShim({ arm: shimArm });
+    const shim = createReadShim({
+      arm: shimArm,
+      // MEMORY-CACHE: this worker's shim reports into the RUN-level accumulator
+      // declared at the top of `runPlan` — one shim per worker, one sum per run.
+      onCount: (kind, bytes) => {
+        if (kind === 'pointered') memoryCacheCounts.pointered++;
+        else memoryCacheCounts.capped++;
+        memoryCacheCounts.bytesWithheld += bytes;
+      },
+    });
     const rdTool = shell.find((/** @type {{name: string}} */ t) => t.name === TOOL_BY_VERB.read);
     // F48: on native, bound shell_read below the CLI's tool-result display cap and hand back a
     // TRUSTED truncation notice steering to ctx_get — the CLI's own truncation blinds the worker
@@ -3490,4 +3513,23 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // the verdict was arrived at.
   if (fixOutcome === 'green') await emitReviewDoor('green', lastCloseVerdict);
   return fixOutcome === 'green' ? 'green' : 'escalated';
+  } finally {
+    // Emitted on EVERY exit (return or throw) — `finally` fires exactly once,
+    // right before this call returns to `runJob`, which is where every other
+    // caller's `job-end` lands next. Armed-only: an unarmed run leaves no trace
+    // (absence reported as absence, never a fabricated zero line, PRD antigen).
+    // No cost fields — this is not a spend record and spend-slicing instruments
+    // are unaffected by it (F6/F12's ACCOUNTED_ROUND_TYPES list is untouched).
+    if (readShimArm(readShim).on) {
+      emit('memory-cache', {
+        pointered: memoryCacheCounts.pointered,
+        capped: memoryCacheCounts.capped,
+        bytesWithheld: memoryCacheCounts.bytesWithheld,
+        // bytes→tokens is an ESTIMATE (÷4, the same rough conversion used
+        // elsewhere) — the field is named `approx…` so no consumer reads it
+        // as measured the way `bytesWithheld` itself is.
+        approxTokens: Math.round(memoryCacheCounts.bytesWithheld / 4),
+      });
+    }
+  }
 }

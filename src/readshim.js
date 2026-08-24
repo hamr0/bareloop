@@ -332,13 +332,18 @@ const stalePastEofNotice = (path, startLine, endLine, lines, detail) =>
  * reference to the ledger — see its own note. Both live in one object because
  * they are one worker's shim: the read seam and the retrieval seam the cap
  * steers a capped worker towards.
- * @param {{cap?: number, arm?: ReadShimArm}} [opts] `cap`: delivery bound in bytes (the
- *   shipped value is `READ_SHIM_CAP`; the option exists so the native path can pin the
- *   two bounds to one number rather than two constants drifting apart). `arm`: which
- *   levers are live (`readShimArm`). Defaults to ALL of them, so every caller written
- *   before the arms existed keeps the behaviour it was written against.
+ * @param {{cap?: number, arm?: ReadShimArm, onCount?: ((kind: 'pointered'|'capped', bytesWithheld: number) => void)|null}} [opts]
+ *   `cap`: delivery bound in bytes (the shipped value is `READ_SHIM_CAP`; the option
+ *   exists so the native path can pin the two bounds to one number rather than two
+ *   constants drifting apart). `arm`: which levers are live (`readShimArm`). Defaults to
+ *   ALL of them, so every caller written before the arms existed keeps the behaviour it
+ *   was written against. `onCount`: MEMORY-CACHE — fired once per pointer/capped-slice
+ *   response with exactly the bytes withheld on THAT response, for a caller (e.g.
+ *   `runPlan`) that sums several workers' shims into one run-level readout. Never called
+ *   for a diff response (L2 is its own lever, uncounted here) or a first read under the
+ *   cap (nothing was withheld).
  */
-export function createReadShim({ cap = READ_SHIM_CAP, arm = ARM_ALL } = {}) {
+export function createReadShim({ cap = READ_SHIM_CAP, arm = ARM_ALL, onCount = null } = {}) {
   /** path → what the worker has been handed of the CURRENT content. `full` is
    * the delivered text itself, kept ONLY while the worker holds the whole file
    * (null otherwise) because that is the only state a diff is legal from.
@@ -353,6 +358,22 @@ export function createReadShim({ cap = READ_SHIM_CAP, arm = ARM_ALL } = {}) {
    * ledger; nothing here is process-wide.
    * @type {Map<string, {hash: string, total: number, delivered: number, full: string|null}>} */
   const ledger = new Map();
+
+  // MEMORY-CACHE counters (this worker's own ledger, summed by a caller across
+  // workers for a run-level readout — see `onCount` above). Counted only where
+  // it is EXACT, never estimated: a pointer withholds exactly `total` bytes (the
+  // whole delivery it replaces) and a capped slice withholds exactly `total - end`
+  // (the tail this call did not send) — both numbers the ledger already computes
+  // for its own bookkeeping below, read here rather than re-derived.
+  let pointered = 0;
+  let capped = 0;
+  let bytesWithheld = 0;
+  /** @param {'pointered'|'capped'} kind @param {number} bytes */
+  const count = (kind, bytes) => {
+    if (kind === 'pointered') pointered++; else capped++;
+    bytesWithheld += bytes;
+    if (onCount) onCount(kind, bytes);
+  };
 
   /**
    * THE STALE-POINTER SERVE. When `ctx_get` throws `StalePointerError` — the file
@@ -510,6 +531,9 @@ export function createReadShim({ cap = READ_SHIM_CAP, arm = ARM_ALL } = {}) {
       // slice path and is delivered (as nothing) truthfully.
       if (arm.pointer && seen && seen.hash === hash && start >= total) {
         ledger.set(path, { hash, total, delivered: total, full: r });
+        // Withheld = the whole delivery this pointer replaces: `total` bytes the
+        // worker asked to be re-sent and was not, because it already holds them.
+        count('pointered', total);
         return pointer(path, total);
       }
       ledger.set(path, { hash, total, delivered: end, full: end === total ? r : null });
@@ -518,12 +542,20 @@ export function createReadShim({ cap = READ_SHIM_CAP, arm = ARM_ALL } = {}) {
       // no notice, no reframing. That is the overwhelming majority of reads, and
       // it keeps the shim invisible where it buys nothing.
       if (start === 0 && end === total) return slice;
+      // Withheld = the tail beyond this slice (`total - end`), not the slice
+      // itself — the slice IS what was sent; the remainder is what was not.
+      if (end < total) count('capped', total - end);
       return slice + (end < total ? capNotice(start, end, total) : doneNotice(start, total));
     };
     return tool;
   };
 
-  return { arm, cap, wrapRead, serveStale };
+  /** MEMORY-CACHE: this worker's own counts, exact — never re-derived, never
+   * estimated. `bytesWithheld` sums only the `pointered`/`capped` cases above;
+   * the diff lever (L2) is a different response shape and is not counted here. */
+  const summary = () => ({ pointered, capped, bytesWithheld });
+
+  return { arm, cap, wrapRead, serveStale, summary };
 }
 
 /**
