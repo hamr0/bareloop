@@ -24,6 +24,10 @@ import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
 import { STALL_MS } from '../src/stall.js';
 import { readSpine, scriptedProvider, initPatientRepo, mockWallClock, reply } from './helpers.js';
+// PRD v1.80 TODO #4 / F115 — reading, never modifying: `CHECKPOINT_OUTCOMES` is
+// the LIBRARY's own resumable-terminal list (src/reuse.js), and `readResume` is
+// the ONE reader `--resume` and this test both drive — never a second one.
+import { readResume, CHECKPOINT_OUTCOMES } from '../src/reuse.js';
 
 const base = mkdtempSync(join(tmpdir(), 'run-test-'));
 
@@ -360,6 +364,112 @@ test('F115: an HTTP-response-shaped failure is NOT retried by this layer — pro
   assert.equal(provider.calls.length, 1, 'an HTTP-status error is never transport-classified — no retry, one call, exactly the pre-F115 shape');
   const events = readSpine(file);
   assert.equal(events.filter((e) => e.type === 'transport-retry').length, 0);
+});
+
+// PRD v1.80 TODO #4 / F115 — provider-red JOINS the resumable set. hamr's
+// ruling verbatim: *"joins resume anyways and you decide but you are given an
+// honest readout and with 1 retry"*. This is the READER half of the change:
+// `readResume` (src/reuse.js) already builds a step-level checkpoint for any
+// terminal in the caller's own `resumableOutcomes` list — nothing about that
+// function changed — so the whole of "provider-red joins" is which OUTCOME
+// names a caller hands it. `scripts/run-u.mjs`'s `RESUMABLE_HALTS` is that
+// caller for `--resume`; this test proves the reader composes correctly once
+// `provider-red` is in that list, on a REAL two-step run that genuinely dies
+// transport-red after one step lands.
+test('F115/TODO#4: readResume reads a REAL provider-red spine as a step-level CHECKPOINT once the caller widens resumableOutcomes — plan intact, one step done, spend a floor', async () => {
+  const wd = makePlanWork('plan-provider-red-resumable');
+  const job = planJob();
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [
+      { id: 'step-one', action: 'Write file one.', tools: ['write'], rounds: 6, target: 'tests/test_x.mjs', exit: [{ type: 'tree-changed', scope: 'tests/**' }] },
+      { id: 'step-two', action: 'Write file two.', tools: ['write'], rounds: 6, target: 'tests/test_y.mjs', exit: [{ type: 'tree-changed', scope: 'tests/**' }] },
+    ],
+  });
+  const script = [
+    { text: 'no tests exist yet' },
+    { text: plan },
+    { toolCalls: [tcall2('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'wrote file one' },
+  ];
+  let n = 0;
+  const provider = {
+    calls: [],
+    async generate() {
+      n += 1; provider.calls.push(1);
+      if (n <= script.length) return reply(script[n - 1]);
+      // step-two's worker: every call from here throws transport-shaped —
+      // the one retry (src/planrun.js's withTransportRetry) exhausts and the
+      // run ends provider-red, exactly like the two exhaustion tests above.
+      throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } });
+    },
+  };
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file),
+  });
+  assert.equal(outcome, 'provider-red', 'step-two exhausted its one transport retry');
+  const events = readSpine(file);
+  const end = events.find((e) => e.type === 'job-end');
+  assert.equal(end.outcome, 'provider-red');
+  assert.equal(end.spendComplete, false, 'F44: the priced sum is a FLOOR, never rounded up to exact');
+  assert.ok(events.some((e) => e.type === 'step-end' && e.step === 'step-one' && e.outcome === 'green'), 'step-one genuinely finished before the transport casualty');
+
+  // COLD CONTROL — a caller that has NOT widened its list (the library's own
+  // CHECKPOINT_OUTCOMES, unmodified) still reads provider-red as a TERMINAL,
+  // exactly as it does today. This is the negative control for the reader
+  // itself: widening `resumableOutcomes` is a per-caller choice, never a
+  // change to what `readResume` does with an unwidened one.
+  const cold = readResume(events, { direct: true, resumableOutcomes: [...CHECKPOINT_OUTCOMES] });
+  assert.equal(cold.ended, true, 'without provider-red in the list, the run still reads as ENDED — nothing to resume');
+  assert.equal(cold.restart, null);
+
+  // THE RULED BEHAVIOUR — a caller (scripts/run-u.mjs's RESUMABLE_HALTS) that
+  // widens resumableOutcomes to include 'provider-red' reads the SAME spine as
+  // a CHECKPOINT: the identical mechanism cap-halt/wall-halt/step-stalled
+  // already use, never a second reader.
+  const rr = readResume(events, { direct: true, resumableOutcomes: [...CHECKPOINT_OUTCOMES, 'provider-red'] });
+  assert.equal(rr.ended, false, 'provider-red joins the resumable set: there is work left to continue');
+  assert.ok(rr.restart, 'a restart checkpoint is built');
+  assert.equal(rr.restart.seed?.phase, 'steps', 'step-two never finished — re-entry is at the STEP phase');
+  assert.equal(rr.restart.seed?.plan?.steps?.length, 2, 'the ACCEPTED plan is preserved WHOLE, never truncated to the finished step');
+  assert.deepEqual(rr.restart.seed?.completedSteps?.map((s) => s.id), ['step-one'],
+    'step-one is the checkpoint — a resume re-enters at step-two and never re-pays for step-one');
+  assert.ok(typeof rr.restart.branch === 'string' && rr.restart.branch.length > 0,
+    'the work branch step-one\'s write landed on is preserved for the resume (v1.57 §3)');
+  assert.equal(rr.spendComplete, false, 'the fold stays a FLOOR across the resume boundary, never healed into an exact total (F6/F44)');
+  assert.ok(rr.spentUsd > 0, 'scout+draft+step-one spend is real and is exactly what the resume preserves — the checkpoint, not a re-pay');
+});
+
+// NEGATIVE CONTROL — a graded-red terminal must NOT become resumable, even
+// under the widened list above. "provider-red joins" names ONE outcome; a red
+// the close actually rendered is an ANSWER (REUSE_GRADED_RED's own doctrine,
+// src/reuse.js), and re-buying it as if it were unfinished work would be the
+// exact class of bug a shared, parameterised reader exists to prevent.
+test('F115/TODO#4 negative control: a graded step-red stays TERMINAL under the widened resumableOutcomes list — provider-red joining does not sweep in an unrelated outcome', async () => {
+  const wd = makePlanWork('plan-stepred-not-resumable');
+  const job = planJob();
+  const stubbornPlan = JSON.stringify({ schema: 'plan-v1', steps: [{ id: 'never-writes', action: 'do', tools: ['write'], rounds: 4, target: 'tests/test_x.mjs', exit: [{ type: 'tree-changed', scope: 'tests/**' }] }] });
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: stubbornPlan },
+    { text: 'thinking only' }, { text: 'thinking only' },
+    { text: stubbornPlan },
+    { text: 'thinking only' },
+  ]);
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file), capRuns: 2,
+  });
+  assert.match(outcome, /^step-red:/);
+  const events = readSpine(file);
+  const end = events.find((e) => e.type === 'job-end');
+  assert.equal(end.outcome, 'step-red', 'runJob writes the BARE name onto job-end — the same string the reader classifies from');
+  const rr = readResume(events, { direct: true, resumableOutcomes: [...CHECKPOINT_OUTCOMES, 'provider-red'] });
+  assert.equal(rr.ended, true, 'a step-red is an ANSWER, never a checkpoint — it stays ended even under the widened list');
+  assert.equal(rr.restart, null);
 });
 
 // W1: the stall case that is NOT terminal. src/stall.js abandons a hung call and

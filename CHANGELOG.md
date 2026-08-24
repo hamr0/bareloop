@@ -17,6 +17,12 @@ feature lands, **patch** = docs, fixes, scaffolding.
   `transport-retry` spine record and forces `job-end.spendComplete: false` for the rest of the
   run — the retried attempt's first throw may already have been billed — surfaced by
   `scripts/run-u.mjs` as a `retries` line only when a retry occurred.
+- **provider-red joins the resumable set** (F115, PRD v1.80 TODO #4): when the one transport
+  retry also fails and a `run-u` run ends `provider-red`, its tail now prints an honest
+  readout — spend so far as a floor, "died in step X of Y" (or "before a plan was accepted"),
+  and the exact `--resume` command — and `--resume` re-enters at the recorded step with the
+  accepted plan, folding prior spend in. No cost/step threshold gates the offer (the operator
+  decides, every time); verdict terminals (`escalated`/`step-red`/`plan-red`) still refuse.
 - **Run behaviour summary** (build-list item 2, agreed 2026-08-23): `runBehaviour(events, {
   runId? })` and `formatBehaviour(summary)` in `src/behaviour.js`, plus
   `scripts/behaviour-readout.mjs <gate-audit.jsonl> [run_id]`. A report-only text block —

@@ -17,7 +17,7 @@ import { runPlan, planPrompt, closeGapBlock, boundedNote, BOUND_REASON_MAX, rate
 import { ralph, boundGap, GAP_KEEP_TRIM_MARKER } from '../src/ralph.js';
 import { validateJob } from '../src/job.js';
 import { StallError, MAX_STALLS } from '../src/stall.js';
-import { scriptedProvider, scriptedNativeFactory, initPatientRepo, currentBranch, localBranches } from './helpers.js';
+import { scriptedProvider, scriptedNativeFactory, initPatientRepo, currentBranch, localBranches, reply } from './helpers.js';
 import { scanSecrets } from '../src/validate.js';
 // the check gap's ONE ceiling — the backstop test below derives both arms from it
 // rather than respelling 12000, so a change to the constant moves the test with it
@@ -3260,6 +3260,79 @@ test('resume seed: the accepted plan is RELOADED — no scout, no draft — and 
   assert.deepEqual(exec.steps, [{ id: 'seed-src', outcome: 'skipped' }, { id: 'write-test', outcome: 'green' }],
     'the plan-as-executed record tells skipped from run — a reader can never mistake one for the other');
   assert.equal(existsSync(join(wd, 'src', 'a.mjs')), false, 'the skipped step is genuinely not re-run');
+});
+
+// PRD v1.80 TODO #4 / F115 — provider-red JOINS the resumable set. hamr's ruling
+// verbatim: *"joins resume anyways and you decide but you are given an honest
+// readout and with 1 retry"*. The classification live (which OUTCOME names count
+// as a checkpoint) is scripts/run-u.mjs's RESUMABLE_HALTS / src/reuse.js's
+// CHECKPOINT_OUTCOMES — this file's own scope. What THIS test proves is the other
+// half of "do not build a second parallel path": `runPlan`'s resume machinery
+// (resumeSeed/resumeBranch) does not know or care which terminal minted the
+// checkpoint it is handed, so a checkpoint that happened to come from a
+// transport casualty composes byte-for-byte like a cap-halt/wall-halt one.
+test('resume seed derived from a PROVIDER-RED checkpoint composes exactly like any other governance halt: the accepted plan reloads, the finished step is skipped, and the run finishes on the remaining step alone', async (t) => {
+  const wd = makePatient(t);
+  const plan = TWO_STEP(wd);
+  // LEG 1 (cold): scout, draft, step 'seed-src' finishes green, then step
+  // 'write-test' throws a transport-shaped error on every subsequent call. This
+  // is the SAME shape src/run.js's F115 tests exercise at the runJob layer (one
+  // retry via src/planrun.js's withTransportRetry, then exhausted) — reproduced
+  // here so the checkpoint it leaves behind is read straight off real events,
+  // not hand-waved.
+  const leg1Script = [
+    { text: 'surveyed the repo' },
+    { text: PLAN(wd, plan.steps) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'src', 'a.mjs'), content: 'export const a = 1;\n' })] },
+    { text: 'wrote src/a.mjs' },
+  ];
+  let n1 = 0;
+  const leg1Provider = {
+    calls: [],
+    async generate() {
+      n1 += 1; leg1Provider.calls.push(1);
+      if (n1 <= leg1Script.length) return reply(leg1Script[n1 - 1]);
+      throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } });
+    },
+  };
+  const leg1 = await go(wd, leg1Provider, { job: TWO_STEP_JOB(wd) });
+  assert.equal(leg1.outcome, 'provider-red', 'write-test exhausted its one transport retry (F115) — the same shape src/run.js already covers at the runJob layer');
+  assert.ok(leg1.events.some((e) => e.type === 'step-end' && e.step === 'seed-src' && e.outcome === 'green'),
+    'seed-src genuinely finished — real work is on disk before the transport casualty landed');
+  assert.equal(leg1.events.filter((e) => e.type === 'transport-retry').length, 1, 'exactly one retry was spent, then it gave up');
+  const branch1 = leg1.events.find((e) => e.type === 'work-branch')?.branch ?? null;
+  assert.equal(typeof branch1, 'string', 'a work branch was created for leg 1\'s write (PRD v1.57 §3) — this is what a resume must return to');
+
+  // LEG 2 (the resume): resumeSeed/resumeBranch here are exactly the shape
+  // `readResume` (src/reuse.js) reads back off leg 1's own spine once
+  // provider-red is in the caller's resumableOutcomes — this test hands runPlan
+  // that same shape directly, precisely because runPlan has no reuse.js import
+  // and must not need one: nothing here special-cases where the checkpoint came
+  // from.
+  const leg2Provider = scriptedProvider([
+    { toolCalls: [tcall('t2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok — asserts x\n' })] },
+    { text: 'wrote tests/test_x.mjs' },
+  ]);
+  const leg2 = await go(wd, leg2Provider, {
+    job: TWO_STEP_JOB(wd),
+    resumeSeed: { phase: 'steps', plan, completedSteps: [{ id: 'seed-src', seq: 1, by: 'step-end' }] },
+    resumeBranch: branch1,
+  });
+  assert.equal(leg2.outcome, 'green', 'the resume finishes the plan leg 1 accepted, on the step leg 1 never reached');
+  assert.equal(leg2Provider.calls.length, 2, 'only write-test is paid for — no re-scout, no re-draft, and seed-src is never re-run');
+  assert.ok(!leg2.events.some((e) => e.type === 'scout-start'), 'the scout is not re-paid');
+  assert.ok(leg2.events.some((e) => e.type === 'scout-skipped'), 'and its absence is a RECORD, never silence');
+  assert.ok(!leg2.events.some((e) => e.type === 'step-start' && e.step === 'seed-src'), 'seed-src is never re-run');
+  assert.ok(leg2.events.some((e) => e.type === 'step-skipped' && e.step === 'seed-src'), 'seed-src is SKIPPED, carrying leg 1\'s own evidence forward');
+  const exec = leg2.events.find((e) => e.type === 'plan-executed');
+  assert.deepEqual(exec.steps, [{ id: 'seed-src', outcome: 'skipped' }, { id: 'write-test', outcome: 'green' }],
+    'the plan leg 1 accepted is preserved WHOLE across the transport-red checkpoint, never truncated to the finished step');
+  // LEG 2 resumes onto the SAME branch leg 1 created — a fresh one would strand
+  // leg 1's finished write (v1.57 §3), exactly the rule a cap-halt/wall-halt
+  // resume already relies on.
+  const branch2 = leg2.events.find((e) => e.type === 'work-branch');
+  assert.equal(branch2.branch, branch1, 'the resume returns to leg 1\'s own branch — never a fresh one that would strand its work');
+  assert.equal(branch2.resumed, true);
 });
 
 test('resume seed at the CLOSE: every step is skipped and the run goes straight to the close, which re-runs and opens its fix loop', async (t) => {

@@ -205,7 +205,8 @@ const specHash = jobSpecHash(spec);
 const WALL_MS = typeof spec.maxWallMs === 'number' && Number.isFinite(spec.maxWallMs) ? spec.maxWallMs : null;
 const WALL_LABEL = WALL_MS === null ? 'UNBOUNDED (spec sets no maxWallMs — deliberate operator choice; no outside deadline)' : `${WALL_MS / 60000}min`;
 
-// ── --resume: continue a run its own MONEY (or TIME) cap — or a STALL — stopped ──
+// ── --resume: continue a run its own MONEY (or TIME) cap — a STALL, or a transport
+// casualty that outlived its one retry — stopped ──
 // PRD v1.46 §3, and it closes the third leg of hamr's resume rulings: kill-resume
 // existed on the reuse path and W-2 pauses the wall decision-ready, but the case the
 // original ruling was actually about — "why would i want to waste more money on
@@ -255,8 +256,31 @@ const RESUME = arg('resume');
  * `hitl-pause` (N4 §1.6) is the fourth, and the only one whose missing allowance is a
  * PERSON: the run reached the one stage a machine cannot render and stopped with its
  * work, its plan and its money exactly where they were. Answering it needs `--decide`
- * (below); every other entry here resumes on the hash alone. */
-const RESUMABLE_HALTS = CHECKPOINT_OUTCOMES;
+ * (below); every other entry here resumes on the hash alone.
+ *
+ * `provider-red` is the fifth (PRD v1.80 TODO #4, F115 "Ruled: one transport
+ * retry" section; hamr's ruling verbatim: *"joins resume anyways and you decide
+ * but you are given an honest readout and with 1 retry"*). Today the ONE
+ * transport retry (src/planrun.js's `withTransportRetry`) already covers the
+ * common case; when that retry ALSO fails the run still ends `provider-red`,
+ * but the scout+draft (and every finished step) it bought is real work on
+ * disk exactly like a cap-halt or a wall-halt — throwing it away because the
+ * transport hiccuped twice is throwing away money for no reason a machine can
+ * judge. Deliberately NO cost/step threshold gates this: a threshold is a
+ * number picked from a small observed sample (F115 logged exactly 7 rows),
+ * which is arbiter territory reserved for hamr — the tail readout below
+ * prints the honest floor and the operator decides case by case, every time.
+ *
+ * This entry is added HERE rather than to the library's own `CHECKPOINT_OUTCOMES`
+ * (src/reuse.js) — that file sits outside this change's file scope this pass, so
+ * widening it locally is the smaller, reversible move; folding `provider-red`
+ * into the canonical list is the natural follow-up once that file is back in
+ * scope, so this repo does not end up with two lists that can drift (the exact
+ * failure `CHECKPOINT_OUTCOMES` itself was built to end, per its own comment
+ * above). Everything downstream (`readResume`, `prepareBranch`, the money/wall
+ * fold) reads this array as a plain parameter, so widening it is the WHOLE
+ * change — no second reader was built. */
+const RESUMABLE_HALTS = Object.freeze([...CHECKPOINT_OUTCOMES, 'provider-red']);
 
 // ── THE THREE DOORS (N4, 2026-08-12 §1) — the hitl surface, at the terminal ──
 //
@@ -1279,6 +1303,27 @@ if (outcome === 'step-stalled') {
   console.log(`  resume  node scripts/run-u.mjs --job ${jobKey} --resume ${runid}${SHIM_TAIL} --approve ${specHash}`);
   console.log('          (no spec edit, so the hash is unchanged — this re-enters at the stalled step and re-pays for none of the ones before it)');
   console.log('          (if the allowance is what actually ran out underneath the stall, that preview says so and refuses — it is read there, not asserted here)');
+}
+// PRD v1.80 TODO #4 / F115 — provider-red JOINS the resumable set. The one
+// transport retry (src/planrun.js's `withTransportRetry`) already ran and
+// still failed, so `spent` above is already a FLOOR (`je.spendComplete ===
+// false` from src/run.js's F44 branch) — never rounded up to exact. What is
+// added here is WHERE the death landed, read back off this run's own spine
+// through the SAME reader `--resume` uses (never a second one), and the
+// exact, copy-pasteable command. No cost/step threshold decides anything
+// here — that decision is hamr's, case by case, off this readout.
+if (outcome === 'provider-red') {
+  const pr = readResume(events, { direct: true, resumableOutcomes: RESUMABLE_HALTS });
+  const seed = pr.restart?.seed ?? null;
+  const total = Array.isArray(seed?.plan?.steps) ? seed.plan.steps.length : null;
+  const done = Array.isArray(seed?.completedSteps) ? seed.completedSteps.length : 0;
+  console.log('\nPROVIDER-RED — the transport retry above also failed; no close ever rendered a verdict. The tree, the plan and the steps already finished STAND.');
+  console.log(`  died    ${total === null ? 'before a plan was accepted — nothing paid is re-payable'
+    : done >= total ? `at the close — all ${total} step(s) finished`
+      : `in step ${done + 1} of ${total}`}`);
+  console.log(`  resume  node scripts/run-u.mjs --job ${jobKey} --resume ${runid}${SHIM_TAIL} --approve ${specHash}`);
+  console.log('          (no spec edit, so the hash is unchanged — this re-enters at the recorded step and re-pays for none of the ones before it)');
+  console.log('          (if the allowance is what actually ran out underneath the transport fault, that preview says so and refuses — it is read there, not asserted here)');
 }
 // ── N4 §1.4/§5.2 — THE PAUSE, at the terminal the person is actually standing at.
 // The run stopped decision-ready with the clock stopped (ruling 1) and everything
