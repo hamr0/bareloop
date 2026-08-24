@@ -17,6 +17,7 @@ import { readShimArm } from '../src/readshim.js';
 import { closeStagesOf } from '../src/plan.js';
 import { makeSpine } from '../src/spine.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
+import { runBehaviour, formatBehaviour } from '../src/behaviour.js';
 // the three doors' SEMANTICS live in the library; this script surfaces them
 import { normalizeHumanRuling, resolveHumanRuling } from '../src/kinds.js';
 // SOFTGREEN — the judged stage's PINNED tier. The constant is the library's; a
@@ -1436,6 +1437,15 @@ if (existsSync(lagFile)) {
   const lags = readFileSync(lagFile, 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
   const worst = lags.reduce((a, b) => (b.blockedMs > a.blockedMs ? b : a));
   console.log(`\nLOOP FROZE ${lags.length}x — worst ${(worst.blockedMs / 1000).toFixed(1)}s, ${worst.from} → ${worst.until} (${lagFile})`);
+}
+// ── BEHAVIOUR (PRD build-list §2, agreed 2026-08-23): what the run DID with its
+// tools, read purely from this run's own gate audit — children included, since
+// `audit` is already scoped to this runid's file, never re-filtered here. Gates
+// nothing, mints no verdict; absence is reported as absence, never as a fabricated 0.
+if (audit.length) {
+  console.log(`\nBEHAVIOUR  ${formatBehaviour(runBehaviour(audit)).split('\n').join('\n           ')}`);
+} else {
+  console.log('\nBEHAVIOUR  no gate audit recorded');
 }
 console.log(`\nspine     ${spineFile}`);
 console.log(`patient   left AS THE RUN LEFT IT (read it before the next run resets to the seed)`);
