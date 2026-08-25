@@ -40,6 +40,15 @@ feature lands, **patch** = docs, fixes, scaffolding.
   not re-sent)`; `scripts/behaviour-readout.mjs` prints the same line given the run's spine as
   an optional third positional. No cost fields — report-only, not a spend record.
 
+### Fixed
+
+- **`scripts/readshim-battery.mjs`'s spend reader compared a resumed leg's own money against
+  the wrong job-end figure** (F116): `readSpend`'s `ledgerUsd` now reads
+  `job-end.engagementSpentUsd` (this leg's spend) when a spine carries one, falling back to
+  `job-end.spentUsd` only for a cold run — `spentUsd` on a resumed job-end is a CHAIN total,
+  not this spine's own spend. `chainUsd`/`priorUsd` are exposed as new, honest fields and never
+  folded into `accountedUsd`/`ledgerUsd`/`spendUsd`.
+
 ## [0.13.0] — 2026-08-23
 
 ### Fixed (2026-08-23 — the release round: a pointer that lied, a close with no home, a rule that charged for its own refusal)

@@ -8996,3 +8996,61 @@ leg, so the retry seam has still never fired on a real run; the `bad record mac`
 remains unchased and unproven. One behaviour note for the record, not a claim: the resumed
 leg chose retrieval verbs 22 of 67 calls (17 recall + 5 get, ~33%) with exact repeats at
 ~55% — single leg, n=1, an observation only.
+
+## F116
+
+**The first resumed spine in the archive broke a spend-slicing instrument — the reader
+compared a LEG figure against a CHAIN figure as if they were one number.**
+
+`tests/readshim-battery.test.js:183` (the spend reader runs on real archived spines and
+agrees with each run's own job-end) failed, reproduced twice on a quiet machine, on
+`u-mt7ugedk.jsonl` — the F115 resume addendum's own GREEN run:
+
+```
+reader $1.6029007499999997 vs job-end $3.0026313000000004
+```
+
+`u-mt7ugedk` is the first RESUMED run this archive has ever held (it resumed the
+provider-red `mt7gk7oy`). Its records carry the split honestly:
+
+- `job-start`: `priorSpentUsd: 1.39973…`, `priorSpendComplete: false`, `priorWallMs: 261692`
+- `job-end`: `spentUsd: 3.00263…` (the CHAIN total — the prior leg folded in),
+  `spendComplete: false`, `engagementSpentUsd: 1.60290…` (THIS leg only)
+
+`readSpend(events)` in `scripts/readshim-battery.mjs` sums this spine's own `worker-round`
+records — which can only ever be this leg's money, since the reader has one spine and
+nothing else — and compared that sum against `job-end.spentUsd`. On a cold run those are
+the same number; on a resumed leg they are not, because `spentUsd` on a resumed job-end is
+a CHAIN number. `1.6029 + 1.3997 = 3.0026`, exactly — nothing here was mis-metered; two
+honest numbers were compared as if they were the same claim.
+
+### The fix
+
+`readSpend`'s `ledgerUsd` — the figure the round sum is checked against — now reads
+`job-end.engagementSpentUsd` when the spine carries one (a resumed leg), falling back to
+`job-end.spentUsd` only when it does not (a cold run, where that number already IS the
+leg). The chain and prior-leg figures are exposed honestly as new fields, `chainUsd`
+(`job-end.spentUsd`) and `priorUsd` (`job-start.priorSpentUsd ?? 0`) — never folded into
+`accountedUsd`/`ledgerUsd`/`spendUsd`. Same rule as the halt readout vs. the strike
+governor: a chain-spanning view and a leg-local view have different goals and must never
+be mixed. `spendComplete` is untouched — it already inherited a prior leg's floor across
+the resume boundary correctly.
+
+### The general lesson
+
+Any spend-slicing instrument that reads one spine must first ask whether that spine is a
+LEG of a longer chain, and if so read the leg figure, not the run-level total — a resumed
+job-end's `spentUsd` is a CHAIN number, not this spine's own spend. An instrument built
+before resume existed (this one predates the provider-red resume work) can be correct on
+every spine it was ever tested against and still be silently wrong the day the first
+resumed spine lands.
+
+### What is NOT claimed
+
+No money was mis-metered anywhere in the library or the archive — `job-end` reported both
+figures accurately and they reconcile exactly (`priorUsd + ledgerUsd == chainUsd`). This is
+a defect in one read-only battery instrument's own arithmetic, not in `src/run.js`'s
+ledger, not in the resume mechanism, and not in any budget/ceiling enforcement — the
+battery driver's own ceiling accounting (`spendUsd`, summed across rows) was already
+leg-scoped on the `observed` side of its `max()`; only the `ledgerUsd` side was chain-scoped,
+which this fix corrects.

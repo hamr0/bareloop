@@ -87,13 +87,27 @@ export const ECHO_ROUND_TYPES = Object.freeze(['worker-result', 'worker-plan']);
 /**
  * Read one run's spine into the numbers the battery needs.
  *
+ * A run RESUMED from a provider-red (or any prior) leg carries its own job-start
+ * `priorSpentUsd` (the earlier leg's spend) and its job-end reports TWO honest but
+ * DIFFERENT numbers: `spentUsd` is the CHAIN total (prior leg folded in) and
+ * `engagementSpentUsd` is THIS leg only — the same money this reader's own round sum
+ * can see, since it only ever reads one spine. Comparing this reader's leg-local sum
+ * against the chain-level `spentUsd` is comparing two different honest claims as if
+ * they were one (F116) — a cold run has no such split (no `engagementSpentUsd`), where
+ * `spentUsd` already IS the leg. So `ledgerUsd` is always the LEG figure:
+ * `engagementSpentUsd` when the spine carries one, else `spentUsd`. The chain figure and
+ * the prior-leg figure are exposed honestly alongside it, as `chainUsd`/`priorUsd`, and
+ * are NEVER folded into `accountedUsd`/`ledgerUsd`/`spendUsd` — same rule as "the halt
+ * readout (chain-spanning) and the strike governor (leg-local) must never be mixed."
+ *
  * @param {any[]} events the spine's parsed records, in order
  * @returns {{
  *   accountedUsd: number, accountedRounds: number, unpricedRounds: number,
  *   echoes: Record<string, number>,
  *   unaccounted: {type: string, count: number, sumUsd: number}[], unaccountedUsd: number,
  *   outcome: string|null, ledgerUsd: number|null, spendComplete: boolean,
- *   spendUsd: number, divergenceUsd: number|null, wallMs: number|null
+ *   spendUsd: number, divergenceUsd: number|null, wallMs: number|null,
+ *   chainUsd: number|null, priorUsd: number
  * }}
  */
 export function readSpend(events) {
@@ -106,12 +120,15 @@ export function readSpend(events) {
   const unaccounted = new Map();
   /** @type {any} */
   let end = null;
+  /** @type {any} */
+  let start = null;
   let firstTs = null;
   let lastTs = null;
 
   for (const e of events) {
     if (!e || typeof e !== 'object') continue;
     if (typeof e.ts === 'string') { firstTs ??= e.ts; lastTs = e.ts; }
+    if (e.type === 'job-start' && start === null) start = e;
     if (e.type === 'job-end') end = e;
     const hasCost = Object.prototype.hasOwnProperty.call(e, 'costUsd');
     if (!hasCost) continue;
@@ -133,11 +150,23 @@ export function readSpend(events) {
   }
 
   const unaccountedUsd = [...unaccounted.values()].reduce((a, r) => a + r.sumUsd, 0);
-  const ledgerUsd = typeof end?.spentUsd === 'number' && Number.isFinite(end.spentUsd) ? end.spentUsd : null;
+  // F116 — a resumed leg's job-end carries TWO honest figures: `engagementSpentUsd`
+  // (this leg only, the same money this spine's own rounds can sum) and `spentUsd`
+  // (the CHAIN total, prior leg folded in). This reader is leg-local by construction
+  // (it can only ever see one spine), so `ledgerUsd` must read the LEG figure — a cold
+  // run has no `engagementSpentUsd`, where `spentUsd` already IS the leg.
+  const hasEngagement = typeof end?.engagementSpentUsd === 'number' && Number.isFinite(end.engagementSpentUsd);
+  const ledgerUsd = hasEngagement
+    ? end.engagementSpentUsd
+    : (typeof end?.spentUsd === 'number' && Number.isFinite(end.spentUsd) ? end.spentUsd : null);
+  const chainUsd = typeof end?.spentUsd === 'number' && Number.isFinite(end.spentUsd) ? end.spentUsd : null;
+  const priorUsd = typeof start?.priorSpentUsd === 'number' && Number.isFinite(start.priorSpentUsd) ? start.priorSpentUsd : 0;
   const observed = accountedUsd + unaccountedUsd;
   // The row's spend is the LARGER of what the library reported and what this reader
   // could see. Two readers of one run must not silently disagree, and where they do
-  // the ceiling gets the bigger number — never the flattering one.
+  // the ceiling gets the bigger number — never the flattering one. Both sides of this
+  // max are leg-local now (ledgerUsd never carries the chain figure), so this stays a
+  // same-scope comparison.
   const spendUsd = ledgerUsd === null ? observed : Math.max(ledgerUsd, observed);
   return {
     accountedUsd, accountedRounds, unpricedRounds,
@@ -145,6 +174,7 @@ export function readSpend(events) {
     unaccounted: [...unaccounted.values()], unaccountedUsd,
     outcome: typeof end?.outcome === 'string' ? end.outcome : null,
     ledgerUsd,
+    chainUsd, priorUsd,
     // a run that never emitted job-end has no complete-spend claim to inherit
     spendComplete: end?.spendComplete !== false && end !== null,
     spendUsd,

@@ -180,6 +180,41 @@ test('a floor stays a floor across the reader (spendComplete:false)', () => {
   assert.equal(noEnd.outcome, null);
 });
 
+test('F116 — a RESUMED leg reads the LEG figure, not the chain', () => {
+  // Synthetic mirror of the real archived case (u-mt7ugedk, resumed from mt7gk7oy):
+  // job-start carries the prior leg's spend, this leg's own rounds sum to $1.60, and
+  // job-end honestly reports BOTH the chain total ($3.00) and this leg alone
+  // (engagementSpentUsd, $1.60). The reader can only ever see this one spine, so its
+  // round sum agrees with the LEG figure, never the chain.
+  const events = [
+    { type: 'job-start', priorSpentUsd: 1.4, priorSpendComplete: false, priorWallMs: 261692 },
+    { type: 'worker-round', costUsd: 1.0 },
+    { type: 'worker-round', costUsd: 0.6 },
+    { type: 'job-end', outcome: 'green', spentUsd: 3.0, spendComplete: false, engagementSpentUsd: 1.6 },
+  ];
+  const s = readSpend(events);
+  assert.equal(s.accountedUsd, 1.6, 'this spine\'s own rounds sum to the leg, not the chain');
+  assert.equal(s.ledgerUsd, 1.6, 'ledgerUsd reads the LEG figure (engagementSpentUsd)');
+  assert.equal(s.chainUsd, 3.0, 'chainUsd is exposed honestly — the full chain total');
+  assert.equal(s.priorUsd, 1.4, 'priorUsd is the earlier leg\'s spend, read off job-start');
+  assert.ok(Math.abs(s.divergenceUsd) < 1e-9, 'the leg-local reader agrees with the leg-local ledger');
+  assert.equal(s.spendUsd, 1.6, 'spendUsd stays leg-local too — never the chain figure');
+  assert.ok(Math.abs(s.priorUsd + s.ledgerUsd - s.chainUsd) < 1e-9, 'prior + leg = chain, exactly — nothing is mis-metered');
+});
+
+test('a COLD run (no engagementSpentUsd) has no leg/chain split — spentUsd already IS the leg', () => {
+  const events = [
+    { type: 'job-start' },
+    { type: 'worker-round', costUsd: 2.0 },
+    { type: 'job-end', outcome: 'green', spentUsd: 2.0, spendComplete: true },
+  ];
+  const s = readSpend(events);
+  assert.equal(s.ledgerUsd, 2.0, 'ledgerUsd falls back to spentUsd when there is no engagementSpentUsd');
+  assert.equal(s.chainUsd, 2.0, 'chainUsd is the same number for a cold run — there is no chain to fold');
+  assert.equal(s.priorUsd, 0, 'no prior leg means priorUsd is 0, not null — a cold run truly has none');
+  assert.equal(s.divergenceUsd, 0);
+});
+
 test('the spend reader runs on REAL archived spines and agrees with each run\'s own job-end', { skip: !existsSync(ARCHIVE) && 'no archive on this machine' }, () => {
   const files = readdirSync(ARCHIVE).filter((f) => /^u-[^/]+\.jsonl$/.test(f) && !f.includes('gate-audit'));
   assert.ok(files.length >= 3, `expected real archived spines in ${ARCHIVE}, found ${files.length}`);
