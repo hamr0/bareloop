@@ -169,7 +169,7 @@ test('--all lists every archived run with a header row: id, job, shape, outcome,
   // least one resumed run — measured, not assumed: aurora-u-bareloop does).
   const hasFootnote = lines.some((l) => l.startsWith('* resumed run'));
   assert.equal(lines.length, files.length + 1 + (hasFootnote ? 1 : 0), 'one header row + one line per real spine file (+ the resumed footnote when any row needs it), none dropped or duplicated');
-  assert.match(lines[0], /^id\s+job\s+shape\s+class\s+outcome\s+spend\s+wall\s+steps\s+reason$/, 'the header row names every column');
+  assert.match(lines[0], /^id\s+job\s+shape\s+class\s+model\s+outcome\s+spend\s+wall\s+steps\s+reason$/, 'the header row names every column');
   const line = lines.find((l) => l.startsWith('mszcthk1 '));
   assert.ok(line, 'the known provider-red run appears in the listing');
   assert.match(line, /aurora-u-spawner-types/, 'the job column is present');
@@ -452,7 +452,7 @@ test('u-msf70nei: loop-shape iterations, and CLOSE resolves the LATER fix-loop c
 test('--all on bareagent-u-bareloop: job/shape columns, "N it" for loop-shape, aligned columns', { skip: !existsSync(BAREAGENT_U) && 'no bareagent-u patient on this machine' }, () => {
   const out = execFileSync('node', [SCRIPT, '--all', BAREAGENT_U], { encoding: 'utf8' });
   const lines = out.trim().split('\n');
-  assert.match(lines[0], /^id\s+job\s+shape\s+class\s+outcome\s+spend\s+wall\s+steps\s+reason$/);
+  assert.match(lines[0], /^id\s+job\s+shape\s+class\s+model\s+outcome\s+spend\s+wall\s+steps\s+reason$/);
 
   const msf70 = lines.find((l) => l.startsWith('msf70nei'));
   assert.ok(msf70);
@@ -476,7 +476,7 @@ test('--all on bareagent-u-bareloop: job/shape columns, "N it" for loop-shape, a
   // footnote line is excluded — it is prose, not a table row.
   const dataLines = lines.slice(1, -1);
   const outcomeStarts = new Set(dataLines.map((l) => {
-    const m = l.match(/^\S+\s+\S+\s+\S+\s+\S+\s+/); // id, job, shape, class
+    const m = l.match(/^\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+/); // id, job, shape, class, model
     return m ? m[0].length : -1;
   }));
   assert.equal(outcomeStarts.size, 1, `every outcome column must start at the same offset; saw ${[...outcomeStarts]}`);
@@ -647,4 +647,5 @@ console.log('FAILED tests/test_x.mjs missing'); process.exit(1);\n`;
   assert.doesNotMatch(text, /pre-F117 spine/);
 
   assert.equal(summarizeForAllLine(s).class, 'green');
+  assert.equal(summarizeForAllLine(s).model, 'claude-sonnet-5', 'the --all model column keeps the FULL string, never truncated');
 });

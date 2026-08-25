@@ -931,7 +931,7 @@ export function formatReplay(summary) {
  * all (outcome itself is `null`) — a distinct, named case, not folded into
  * the ordinary escalation reason.
  * @param {ReturnType<typeof replayRun>} summary
- * @returns {{id: string, resumed: boolean, job: string, shape: string, class: string, outcome: string, spend: string, wall: string, steps: string, reason: string}}
+ * @returns {{id: string, resumed: boolean, job: string, shape: string, class: string, model: string, outcome: string, spend: string, wall: string, steps: string, reason: string}}
  */
 export function summarizeForAllLine(summary) {
   const isGreen = summary.outcome === 'green' || summary.outcome === 'already-green';
@@ -977,6 +977,11 @@ export function summarizeForAllLine(summary) {
     // `-` (never `NONE_RECORDED`'s longer prose) — this is a compact table
     // column, same posture as `reason`'s own `-` for a green row.
     class: summary.verdictType ?? '-',
+    // model strings (`claude-sonnet-5`) are kept FULL, never truncated — a
+    // wrong/uncertain model reading is exactly the kind of thing a reader
+    // scanning the whole directory needs to see in full, not guess at from
+    // a cut string.
+    model: summary.model ?? '-',
     outcome: summary.outcome ?? 'unknown',
     spend: money(summary.spentUsd),
     wall: duration(summary.wallMs),
@@ -995,11 +1000,11 @@ export function summarizeForAllLine(summary) {
  * @returns {string}
  */
 export function formatAllLines(entries) {
-  const header = ['id', 'job', 'shape', 'class', 'outcome', 'spend', 'wall', 'steps', 'reason'];
+  const header = ['id', 'job', 'shape', 'class', 'model', 'outcome', 'spend', 'wall', 'steps', 'reason'];
   const spineEntries = entries.filter((e) => e.kind === 'spine');
   const rows = spineEntries.map((e) => {
     const r = /** @type {any} */ (e).row;
-    return [r.id, r.job, r.shape, r.class, r.outcome, r.spend, r.wall, r.steps, r.reason];
+    return [r.id, r.job, r.shape, r.class, r.model, r.outcome, r.spend, r.wall, r.steps, r.reason];
   });
   // No header at all when there is nothing tabular to head — a directory of
   // ONLY `not-a-spine` files gets its plain filename lines with no bare

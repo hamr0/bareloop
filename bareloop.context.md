@@ -2178,7 +2178,10 @@ legitimately has neither, and this reader reports that honestly rather than defa
 (pre-F117 spine)`, `model:   claude-sonnet-5` / `model:   not recorded`
 (the two "not recorded" wordings are deliberately different: a missing `verdictType` is always
 an archive-age gap, a missing `model` can happen on any spine, old or new). `--all` gains a
-`class` column right after `shape` (the verdict class, or `-`).
+`class` column right after `shape` and a `model` column right after `class` (the verdict class /
+the model string, or `-`) — `model` is kept FULL, never truncated, unlike the compact `reason`
+column: a wrong or uncertain model reading is exactly the thing a directory-wide scan needs in
+full, not cut.
 
 **Unknown money/time is always `null`/`unknown` — never `0`, and a partial sum is never stamped
 exact** (F6's rule, carried through every level this module reports at): `spentUsd`/`wallMs` are

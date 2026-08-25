@@ -43,7 +43,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
   required verdict class) and `model` (when the shell-owned provider binding itself carries one)
   — PRD TODO #20, blessed verbatim by hamr the same day. The header prints `class:`/`model:`
   right after `shape:` (`not recorded (pre-F117 spine)` / `not recorded` on an older archive or
-  a provider with no `.model`), and `--all` gains a `class` column.
+  a provider with no `.model`), and `--all` gains `class`/`model` columns (`model` kept FULL,
+  never truncated).
 
 ## [0.14.0] — 2026-08-25
 
