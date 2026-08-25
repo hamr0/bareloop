@@ -8821,3 +8821,236 @@ shipped design is final: upstream guesstimates with the sonnet rate and a loud
 `'tier'`/`'default'` sign, and our `VOUCHED_RATE_SOURCES` classes those rounds as `guessed` —
 a customer who wants exact opus/fable pricing passes caller rates. The finding above stands
 as a finding, not a build item.
+
+---
+
+## F114
+
+**The behaviour block printed live, the read shim's steer showed up in the worker's own
+choices, and the shim turned out to leave no footprint of its own — all from one run that
+died as a transport casualty.**
+
+Live u-run `mt7g7b68` (2026-08-24, `aurora-spawner`, hash `c395b716…`, sonnet-5, `--read-shim
+A1`, $5 cap, 30-min wall). Fired on hamr's in-turn order to validate two things the archive
+cannot: that the run-behaviour block (F-series build item 1) prints at a real run's tail, and
+that the handed-over read shim runs live.
+
+### 1. The behaviour block is delivered, not just built
+
+The driver's tail printed, verbatim:
+
+```
+BEHAVIOUR  60 tool calls · 25 read, 14 edit, 8 grep, 8 recall, 4 get, 1 recent
+           17 exact repeats (~28%)
+```
+
+That closes the "honest remainder" left on PRD TODO item 1: the wiring was previously proven
+only by evaluating the same expression over archived data. Now it has run in-process, at the
+end of a paid run, on a spine it had never seen.
+
+### 2. The shim's steer is visible in what the worker CHOSE
+
+The archive's standing number is that `recall` is drafted 1.4% of the time against `read`'s
+99.3% (litectx underuse is a selection problem). Under A1 this worker reached for retrieval
+verbs **12 of 60 calls (20%)** — 8 `ctx_recall`, 4 `ctx_get` — and the `ctx_get` records show
+what that buys: a function served as a **322-byte** chunk (`observability.py:677-687`) instead
+of a whole-file page. n=1, one job, one arm: this is a *consistent* observation, not a lift
+claim. The Phase 2 battery's verdict stands unchanged (A1 legal and safe; saving not
+established).
+
+### 3. The shim has no footprint — and that is FINE for the savings question (hamr's ruling)
+
+Looking for the shim's own trace found **nothing**: no spine record type for a pointer served,
+a capped slice, or a re-read refused; the gate audit's read rows carry only
+`args:{tool:'shell_read'}`; and the spine does not record the shim ARM at all (every archived
+row reads as unknown — the arm lives only in the driver log and the battery's own results
+file). hamr's ruling the same day, plain: the shim never needs to print its savings. **Savings
+are measured one way only — the same job with the shim ON vs OFF, bills compared** (the
+Phase 2 battery); a counter inside the shim says "I withheld 40KB", never "you paid less", so
+it is the wrong instrument for that question. What the shim DID (this read capped, that
+re-read pointered) is behaviour, not money; if it is ever wanted for debugging the worker's
+reading, it rides the EXISTING gate-audit read row (`bytes`, `served`) so the behaviour block
+picks it up for free — no new record type, no new writer. Nothing to build.
+
+### 4. The run itself: casualty, not evidence
+
+At 6.1 min / 39 rounds / **$1.3389** (all 39 rounds priced, `rateSource:'tier'`; the
+`spendComplete:false` floor is the failed call's own unknown, F6), the provider path died with
+`SSL routines:ssl3_read_bytes:ssl/tls alert bad record mac` — a TLS-layer transport error
+under the API, not an API response and not our logic. Escalated `provider-red`, verdict
+absent. `--resume` correctly refuses: provider-red is a terminal, not a governance halt, so
+continuing needs a fresh run. Per the standing rule, a provider-red row is a casualty and
+teaches nothing about the job; per the U-run rule, the dead run comes back to hamr rather than
+being re-fired mid-chase.
+
+### What is NOT claimed
+
+No savings number. No green. No statement about whether the worker would have finished. One
+run's verb mix is not a base rate.
+
+---
+
+## F115
+
+**Every provider-red the aurora-u patient has ever produced is one TLS error, `bad record
+mac`; it appears on every shim arm including OFF, never before Aug 19, and on no other
+network path this machine was tested on. It is a CONDITION, not a casualty — and the cheap
+instruments cannot name its cause.**
+
+### The population
+
+All 21 `aurora-u` u-runs on file, $0 read:
+
+- **Before 2026-08-19** (6 runs, Jul 26–30): 0 provider-reds.
+- **Aug 19 battery** (13 rows): 5 provider-reds — arms **A0, A1, A2, A3 — all four**, shim
+  OFF included. Every one is `SSL routines:ssl3_read_bytes:ssl/tls alert bad record mac`.
+- **Aug 24** (2 runs, this session, shim A1): 2 of 2, same string, at 6.1 and 4.4 min, $1.34
+  and $1.40. The second was fired only after the standing 2-consecutive-200s probe passed —
+  a short probe does not see this failure.
+
+7 of 7 provider-reds in the dir carry this one string; 7 of 15 runs since Aug 19 died of it;
+0 of 6 before. Deaths land at 4–16 min and 36–61 rounds — no size or count threshold: the
+run with the most cache-write tokens (465K) died at 15.9 min, the least (143K) at 5.3.
+
+**The read shim is cleared**: the error hits shim-OFF rows at the same rate as armed ones.
+
+### What was tested and came back clean ($0)
+
+- Wifi: strong link (-39 dBm, 866 Mbit), kernel log silent through both run windows.
+- Node 22.22.2 / OpenSSL 3.5.7 downloading 141 MB over TLS: 8/8 clean.
+- Node fetch POSTing 40 × 200 KB bodies over one keep-alive session: 40/40 clean.
+- Two 200s from `api.anthropic.com` immediately before the second run.
+
+### What changed between the clean and the dirty population
+
+The kernel: 7.1.7 installed Aug 9, 7.1.8 Aug 17, 7.1.9 Aug 23 — the July runs predate all
+three. NIC offloads (TSO/GSO/checksum) are on. This is a lead, not a cause: nothing above
+reproduces the failure, and the only paid work on this machine since Aug 19 outside aurora-u
+is one 27-round authoring run (Aug 23, clean) — too small to separate "this job" from "this
+machine since Aug 9".
+
+### What it costs, structurally
+
+`Retry` on transport failure is deliberately UNWIRED here (a response that dies mid-read may
+already have been billed, so a retry can pay twice). Under this condition that ruling trades a
+possible double-paid round (~$0.05) for a certain dead run (~$1.4). Whether that trade should
+flip for the transport class is arbiter territory: **named for hamr, not changed.**
+
+### What is NOT claimed
+
+Not the shim. Not the job's logic. Not proven to be the kernel. Not reproducible at $0 so
+far. Two paid probes could narrow it — a long keep-alive session of tiny requests to the API
+(~$0.02) and one of cached large bodies (~$1) — both are hamr's call.
+
+### Addendum 2026-08-24 — the paid probe did NOT reproduce it; two operator errors on the way
+
+A ~16-minute keep-alive session of 39 run-shaped requests to `api.anthropic.com` (global
+`fetch`, non-streaming POST — the provider's own transport; a 62k-token cached prefix; bodies
+growing 148→224 KB; 20 s apart; under `systemd-inhibit`): **39/39 HTTP 200, zero throws.**
+Kernel log since Aug 9 shows no MCE/EDAC/OOM. So the path this machine → Anthropic carries
+large bodies over a long-lived connection fine, and the failure needs something the probe did
+not have. The candidates that remain are the things a real run does and the probe did not:
+**large responses** (the probe's were 5 tokens; the dying reads are full tool-use turns),
+**bursty back-to-back calls interleaved with child processes** (mypy, the close), and
+**bare-agent's AbortController-timed requests**. Each is a separate paid probe; none is
+authorised. The kernel lead stands unweakened but unproven.
+
+Two operator errors, logged because they cost real money and real time:
+
+1. **The probe was sized by extrapolation, not measurement.** hamr authorised ~$1. The first
+   request priced at $0.019 and I multiplied; the filler used to grow the conversation
+   (`x` repeated) tokenizes at roughly one token per character, so late turns carried ~45k
+   UNCACHED tokens each. Real cost ≈ **$3.5–5.3** (the probe's own rate formula, at standing vs
+   intro sonnet rates). "A sizing/cost claim must be MEASURED, not asserted from a proxy" —
+   this repo's own rule, violated on the repo's own instrument. Cure: log per-request cost and
+   read the growth before the tenth request, and use natural-language filler.
+2. **`pkill -f <script>` killed the shell that issued it** — the pattern matched the issuing
+   command line (exit 144). A retune that should have taken one call took three. Cure: kill
+   by PID, never by `-f` pattern from a command line that contains the pattern.
+
+### Ruled 2026-08-24 — one transport retry
+
+hamr's ruling, verbatim: "one retry for transport layer failure and reporting with the rest
+end of gate." The no-retry trade named above is reversed for the transport class only: the
+ONE worker-Loop seam (`src/planrun.js` `newLoop`, covering scout/drafter/every step
+worker/fix worker) now gets exactly one extra attempt on a transport-only throw (TLS fault,
+`ECONNRESET`/`EPIPE`/`ETIMEDOUT`, `fetch failed` over a network cause — classified by
+`src/transport.js`'s `isTransportFailure`, never an HTTP 4xx/5xx/429 response, and never
+operator-configurable). Each retry emits a report-only `transport-retry` spine record and
+forces `job-end.spendComplete: false` for the rest of the run, recovered or not — the first
+attempt's possible spend stays invisible either way (F6/F44). Judge loops, the native/CLI
+session path, and `src/authorscout.js` are unchanged.
+
+### Addendum 2026-08-25 — the resume closed the loop: the TLS-killed job is GREEN
+
+The job the condition killed twice (`mt7g7b68`, `mt7gk7oy`) finished GREEN through the new
+provider-red resume: run `mt7ugedk` resumed `mt7gk7oy`'s spine on hamr's word after a 2×200
+probe. The fold held live — the leg ran on the remainder ($3.6003 / 25.6min, watchdog armed
+at 1538s, never a fresh $5/30min), reloaded the accepted 1-step plan (no re-scout, no
+re-draft), continued the patient AS LEFT, and the close's own fix loop caught a
+`no-suppressions` red before minting green. Chain readout: ≥$3.0026 of $5 (floor — the dead
+leg's `spendComplete:false` survives the boundary), 12.5min of 30 (this leg 8.2min).
+`MEMORY-CACHE` printed live for the first time (5 reads capped, 103.4 KB withheld, ~26.5k
+tokens not re-sent). NOT proven: the transport retry — no transport failure occurred this
+leg, so the retry seam has still never fired on a real run; the `bad record mac` cause
+remains unchased and unproven. One behaviour note for the record, not a claim: the resumed
+leg chose retrieval verbs 22 of 67 calls (17 recall + 5 get, ~33%) with exact repeats at
+~55% — single leg, n=1, an observation only.
+
+## F116
+
+**The first resumed spine in the archive broke a spend-slicing instrument — the reader
+compared a LEG figure against a CHAIN figure as if they were one number.**
+
+`tests/readshim-battery.test.js:183` (the spend reader runs on real archived spines and
+agrees with each run's own job-end) failed, reproduced twice on a quiet machine, on
+`u-mt7ugedk.jsonl` — the F115 resume addendum's own GREEN run:
+
+```
+reader $1.6029007499999997 vs job-end $3.0026313000000004
+```
+
+`u-mt7ugedk` is the first RESUMED run this archive has ever held (it resumed the
+provider-red `mt7gk7oy`). Its records carry the split honestly:
+
+- `job-start`: `priorSpentUsd: 1.39973…`, `priorSpendComplete: false`, `priorWallMs: 261692`
+- `job-end`: `spentUsd: 3.00263…` (the CHAIN total — the prior leg folded in),
+  `spendComplete: false`, `engagementSpentUsd: 1.60290…` (THIS leg only)
+
+`readSpend(events)` in `scripts/readshim-battery.mjs` sums this spine's own `worker-round`
+records — which can only ever be this leg's money, since the reader has one spine and
+nothing else — and compared that sum against `job-end.spentUsd`. On a cold run those are
+the same number; on a resumed leg they are not, because `spentUsd` on a resumed job-end is
+a CHAIN number. `1.6029 + 1.3997 = 3.0026`, exactly — nothing here was mis-metered; two
+honest numbers were compared as if they were the same claim.
+
+### The fix
+
+`readSpend`'s `ledgerUsd` — the figure the round sum is checked against — now reads
+`job-end.engagementSpentUsd` when the spine carries one (a resumed leg), falling back to
+`job-end.spentUsd` only when it does not (a cold run, where that number already IS the
+leg). The chain and prior-leg figures are exposed honestly as new fields, `chainUsd`
+(`job-end.spentUsd`) and `priorUsd` (`job-start.priorSpentUsd ?? 0`) — never folded into
+`accountedUsd`/`ledgerUsd`/`spendUsd`. Same rule as the halt readout vs. the strike
+governor: a chain-spanning view and a leg-local view have different goals and must never
+be mixed. `spendComplete` is untouched — it already inherited a prior leg's floor across
+the resume boundary correctly.
+
+### The general lesson
+
+Any spend-slicing instrument that reads one spine must first ask whether that spine is a
+LEG of a longer chain, and if so read the leg figure, not the run-level total — a resumed
+job-end's `spentUsd` is a CHAIN number, not this spine's own spend. An instrument built
+before resume existed (this one predates the provider-red resume work) can be correct on
+every spine it was ever tested against and still be silently wrong the day the first
+resumed spine lands.
+
+### What is NOT claimed
+
+No money was mis-metered anywhere in the library or the archive — `job-end` reported both
+figures accurately and they reconcile exactly (`priorUsd + ledgerUsd == chainUsd`). This is
+a defect in one read-only battery instrument's own arithmetic, not in `src/run.js`'s
+ledger, not in the resume mechanism, and not in any budget/ceiling enforcement — the
+battery driver's own ceiling accounting (`spendUsd`, summed across rows) was already
+leg-scoped on the `observed` side of its `max()`; only the `ledgerUsd` side was chain-scoped,
+which this fix corrects.

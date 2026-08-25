@@ -205,7 +205,8 @@ const specHash = jobSpecHash(spec);
 const WALL_MS = typeof spec.maxWallMs === 'number' && Number.isFinite(spec.maxWallMs) ? spec.maxWallMs : null;
 const WALL_LABEL = WALL_MS === null ? 'UNBOUNDED (spec sets no maxWallMs — deliberate operator choice; no outside deadline)' : `${WALL_MS / 60000}min`;
 
-// ── --resume: continue a run its own MONEY (or TIME) cap — or a STALL — stopped ──
+// ── --resume: continue a run its own MONEY (or TIME) cap — a STALL, or a transport
+// casualty that outlived its one retry — stopped ──
 // PRD v1.46 §3, and it closes the third leg of hamr's resume rulings: kill-resume
 // existed on the reuse path and W-2 pauses the wall decision-ready, but the case the
 // original ruling was actually about — "why would i want to waste more money on
@@ -230,32 +231,13 @@ const RESUME = arg('resume');
  * the seam. Same reasoning that put the pause TTL in the library (OPEN-2, hamr,
  * 2026-08-13).
  *
- * Nothing else is resumable — a green is done, and a red is an answer.
+ * `provider-red` folded INTO the canonical constant 2026-08-25 (PRD v1.80 TODO
+ * #4, F115) — it lived here as a local widening for one pass because `src/reuse.js`
+ * sat outside that change's file scope; the reasoning for why it belongs on this
+ * list at all now lives beside the constant itself, not here, so there is exactly
+ * one place that reasoning can drift.
  *
- * The first two are governance halts: an operator-owned allowance ran out with the
- * work on disk.
- *
- * `step-stalled` (hamr's go, 2026-08-13) is the third, and it is not an allowance
- * stop — it is the one terminal whose OWN escalation already tells the operator to
- * *"retry the run"* (src/planrun.js) while this runner answered "start a fresh run"
- * and threw away every finished step's spend. Two shapes reach it and resume is the
- * right answer to both: the plain stall (the model stopped producing rounds and the
- * reissue did not recover it — nothing about the work on disk is wrong), and the
- * edge that named this fix, where a stall trips WITH time left, becomes a replan
- * trigger, and the replan gate declines to fund a cycle past the deadline — the run
- * then rides out as `step-stalled` rather than `wall-halt` and lost the checkpoint a
- * wall stop would have kept. The NAME deliberately stays `step-stalled` (src/run.js
- * keys the F44 spend FLOOR on that outcome), so the fix is exactly this: widen which
- * terminals are read as a checkpoint, rename nothing.
- *
- * The floor rides along honestly — a stalled run's `spendComplete:false` reaches the
- * preview's fold as `≥$x` and `runJob` as `priorSpendComplete:false`, so the resumed
- * leg's own terminal stays a floor too rather than healing an unknown by inheriting it.
- *
- * `hitl-pause` (N4 §1.6) is the fourth, and the only one whose missing allowance is a
- * PERSON: the run reached the one stage a machine cannot render and stopped with its
- * work, its plan and its money exactly where they were. Answering it needs `--decide`
- * (below); every other entry here resumes on the hash alone. */
+ * Nothing else is resumable — a green is done, and a red is an answer. */
 const RESUMABLE_HALTS = CHECKPOINT_OUTCOMES;
 
 // ── THE THREE DOORS (N4, 2026-08-12 §1) — the hitl surface, at the terminal ──
@@ -1249,6 +1231,13 @@ const oc = events.findLast((e) => e.type === 'outer-close');
 const fixed = events.some((e) => e.type === 'fix-loop');
 console.log(`close     first judgment ${oc?.verdict ?? '-'}${oc?.stage ? ` (stage ${oc.stage})` : ''}${fixed ? ` → fix loop ran → ${outcome}` : ''}`);
 console.log(`replan    ${events.some((e) => e.type === 'replan') ? 'YES' : 'no'}`);
+// F115 — absence, never a fabricated 0: printed ONLY when a transport retry
+// actually happened, so a run with none says nothing about retries at all.
+const transportRetries = events.filter((e) => e.type === 'transport-retry');
+if (transportRetries.length > 0) {
+  const recovered = transportRetries.some((e) => e.recovered === true);
+  console.log(`retries   ${transportRetries.length} transport retr${transportRetries.length === 1 ? 'y' : 'ies'} · ${recovered ? 'recovered' : 'not recovered'} (spend is a floor)`);
+}
 for (const e of events.filter((x) => x.type === 'escalation')) console.log(`ESCALATION ${e.category}: ${(e.decision ?? '').slice(0, 160)}`);
 // v1.46 §2 — the MONEY halt reads out like the wall's: the verdict that STANDS, the
 // per-stage trend that says which lever fits, and the three levers themselves. The
@@ -1272,6 +1261,27 @@ if (outcome === 'step-stalled') {
   console.log(`  resume  node scripts/run-u.mjs --job ${jobKey} --resume ${runid}${SHIM_TAIL} --approve ${specHash}`);
   console.log('          (no spec edit, so the hash is unchanged — this re-enters at the stalled step and re-pays for none of the ones before it)');
   console.log('          (if the allowance is what actually ran out underneath the stall, that preview says so and refuses — it is read there, not asserted here)');
+}
+// PRD v1.80 TODO #4 / F115 — provider-red JOINS the resumable set. The one
+// transport retry (src/planrun.js's `withTransportRetry`) already ran and
+// still failed, so `spent` above is already a FLOOR (`je.spendComplete ===
+// false` from src/run.js's F44 branch) — never rounded up to exact. What is
+// added here is WHERE the death landed, read back off this run's own spine
+// through the SAME reader `--resume` uses (never a second one), and the
+// exact, copy-pasteable command. No cost/step threshold decides anything
+// here — that decision is hamr's, case by case, off this readout.
+if (outcome === 'provider-red') {
+  const pr = readResume(events, { direct: true, resumableOutcomes: RESUMABLE_HALTS });
+  const seed = pr.restart?.seed ?? null;
+  const total = Array.isArray(seed?.plan?.steps) ? seed.plan.steps.length : null;
+  const done = Array.isArray(seed?.completedSteps) ? seed.completedSteps.length : 0;
+  console.log('\nPROVIDER-RED — the transport retry above also failed; no close ever rendered a verdict. The tree, the plan and the steps already finished STAND.');
+  console.log(`  died    ${total === null ? 'before a plan was accepted — nothing paid is re-payable'
+    : done >= total ? `at the close — all ${total} step(s) finished`
+      : `in step ${done + 1} of ${total}`}`);
+  console.log(`  resume  node scripts/run-u.mjs --job ${jobKey} --resume ${runid}${SHIM_TAIL} --approve ${specHash}`);
+  console.log('          (no spec edit, so the hash is unchanged — this re-enters at the recorded step and re-pays for none of the ones before it)');
+  console.log('          (if the allowance is what actually ran out underneath the transport fault, that preview says so and refuses — it is read there, not asserted here)');
 }
 // ── N4 §1.4/§5.2 — THE PAUSE, at the terminal the person is actually standing at.
 // The run stopped decision-ready with the clock stopped (ruling 1) and everything
@@ -1446,6 +1456,22 @@ if (audit.length) {
   console.log(`\nBEHAVIOUR  ${formatBehaviour(runBehaviour(audit)).split('\n').join('\n           ')}`);
 } else {
   console.log('\nBEHAVIOUR  no gate audit recorded');
+}
+// ── MEMORY-CACHE (src/readshim.js, src/planrun.js): what the read shim saved
+// this run, read from the run's own `memory-cache` spine record. Report-only,
+// no cost fields — never folds into any spend line above. Armed-only: an
+// unarmed run (READ_SHIM_LEVERS.on false) prints nothing at all, and an armed
+// run whose spine has no record (a crash before the run-level `finally` fired)
+// says so rather than fabricating a zero line.
+if (READ_SHIM_LEVERS.on) {
+  const mc = events.findLast((e) => e.type === 'memory-cache');
+  if (mc) {
+    const kb = (mc.bytesWithheld / 1024).toFixed(1);
+    const kTokens = (mc.approxTokens / 1000).toFixed(1);
+    console.log(`MEMORY-CACHE  ${mc.pointered} re-reads answered from memory · ${mc.capped} reads capped · ${kb} KB withheld (~${kTokens}k tokens not re-sent)`);
+  } else {
+    console.log('MEMORY-CACHE  no record (run ended before its summary)');
+  }
 }
 console.log(`\nspine     ${spineFile}`);
 console.log(`patient   left AS THE RUN LEFT IT (read it before the next run resets to the seed)`);

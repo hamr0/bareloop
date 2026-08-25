@@ -77,6 +77,11 @@ A feasibility survey also found bareloop **cannot mint `estimated` today even wi
 
 Across 7,507 rounds (~$236 archive-wide): **76% of all programme spend is the prompt, not the model working** — cache write 41%, cache read 35%, output 24%, input 0.1%. Every admitted token is re-read 10.5x on average; the lifetime cost of admitting one token runs 2.30x the base input rate. Across 150 runs / 6,775 aligned rounds, `shell_read` + `shell_grep` together are 74% of tool-call spend (not `run`, which is locked and out of scope by construction) — `shell_read` alone is 52.8% of cache-write spend and costs 5.4x what `ctx_get` costs per call (PRD.md:5401-5635).
 
+**Rates are the customer's responsibility (ruled 2026-08-24).** No per-model pricing table is
+maintained here — upstream guesstimates on the sonnet rate and stamps a loud `tier`/`default`
+source, and a customer who wants exact pricing passes caller rates. The rates-passthrough item
+this section's own numbers motivated is DEAD — never re-raised (F113 ruling section).
+
 ### 3.3 litectx is unused by selection, not by quality
 
 `ctx_recall` returns **zero zero-hit results** across 2,324 calls, median 5 hits — it indexes, chunks per function, and always finds something. Yet when the agent declares its own tool menu explicitly, it includes a litectx verb only **1.4% of the time** (2 of 148 declarations). The retrieval verbs work; the agent simply does not reach for them unless made to (PRD.md:5401-5635).
@@ -136,6 +141,42 @@ Zero context-overflow events across 147 archived runs. A conference-talk ranked-
 - **Sequencing:** this package lands after the softgreen rung (v1.71–v1.73), which adds a new spend record type, `judge-round` (`ACCOUNTED_ROUND_TYPES` in `src/run.js`) — mandatory in every future spend-slicing instrument from this point forward, or it becomes the F45 unaccounted-writer class again.
 - **Summarize-before-admit is a quality lever, never a cost lever.** Admitting N tokens costs 2.30N over its life; a sonnet summarizer to N/10 nets 0.67N saved, haiku ~1.32N saved; a free slice saves the full 2.07N at zero cost — slicing always beats summarizing on cost; summarizing is justified only where a slice would cut meaning the worker actually needs.
 - **Not claimed:** no paid run has fired; no claim the four levers work in practice (the veto has not been read on a single live arm); no new threshold beyond the ~24KB cap already in the signed shape; the arbiter does not move — L4's cap is a tighten-only operator bound, G1 is a validation-gate rule (not agent-authorable), nothing touches budgets, the fence, or merge (PRD.md:5401-5635).
+
+### 3.9 MEMORY-CACHE: the shim's readout (2026-08-24)
+
+Live u-run `mt7g7b68` (F114) closed the question of whether the read shim leaves any trace of
+its own: it does not. The gate audit's read rows carry only `args:{tool:'shell_read'}`, and no
+spine record type existed for a pointer served, a slice capped, or a re-read refused — the arm
+itself (A0/A1/A2/A3) lived only in the driver log, not the spine. hamr's ruling: the shim never
+needs to print its **savings** — that question is answered only by the Phase 2 ON/OFF
+contrast (§3.6) — but it can report what it **withheld**, for debugging the worker's reading,
+at zero marginal cost since the data already rides the existing gate-audit read row
+(`bytes`, `served`).
+
+**The record.** One report-only `memory-cache` spine record per armed run — none when the
+shim is off; absence is never a fabricated zero, it means the shim was not armed. Fields:
+
+- **re-reads answered from memory** — count of reads served as a pointer (L1) rather than
+  bytes, because the file was unchanged since last delivery.
+- **reads capped** — count of reads that hit the ~24KB cap (L4) and were steered toward
+  `ctx_recall`/`ctx_get`.
+- **KB withheld** — bytes not sent to the worker across both classes above.
+- **approxTokens** — `bytes / 4`, an **ESTIMATE by name**, never a metered token count; do not
+  read it as priced.
+
+**Exactness rule.** A pointer withholds the FULL held size of the unchanged file (the whole
+thing was already delivered once, so the whole thing counts as withheld on the re-read). A cap
+withholds only the UNSENT TAIL — the head that shipped is not counted as withheld. The diff
+lever (L2) is not counted in this record at all; it changes what is sent, not what is
+withheld, and folding it in would double-count against the cap/pointer figures.
+
+**Where it prints.** The `run-u.mjs` tail, alongside the `BEHAVIOUR` block, and via
+`scripts/behaviour-readout.mjs <audit> [run_id] [spine]` for archived runs.
+
+**The savings rule, restated:** dollars saved are measured only by an ON/OFF contrast of the
+same job (§3.6, Phase 2) — this counter says what was withheld, never what was saved. Reading
+"KB withheld" as a dollar figure is the exact class of instrument error this programme's
+measurement discipline exists to catch.
 
 ## 4. Related doctrine surfaced by these addenda
 

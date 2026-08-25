@@ -42,9 +42,101 @@ import {
   REVIEW_DOOR, doorOpens, mechanicalStages,
 } from './kinds.js';
 import { workBranchName, prepareWorkBranch } from './workbranch.js';
+import { TRANSPORT_MAX_ATTEMPTS, isTransportFailure } from './transport.js';
 
 const require = createRequire(import.meta.url);
-const { Loop, wireGate, HaltError } = require('bare-agent');
+const { Loop, Retry, wireGate, HaltError } = require('bare-agent');
+
+// F115 — hamr's ruling verbatim: "one retry for transport layer failure and
+// reporting with the rest end of gate." TRANSPORT_MAX_ATTEMPTS is fixed
+// (src/transport.js — never a job-spec/argv knob); `retryOn` is bare-agent's
+// own extension seam (node_modules/bare-agent/src/retry.js), constrained to
+// ONLY the no-HTTP-response transport class so a provider RESPONSE (4xx/5xx/
+// 429) still rides bare-agent's own unchanged policy. One instance: `Retry`
+// carries no per-call state, so it is safe to share across every worker.
+// timeout:0 disables Retry's own per-attempt race (this run already has its
+// own timing authority — the stall watchdog and the wall clock, src/stall.js
+// / src/clock.js — and a second racing 60s clock here would just be a second,
+// disagreeing one; bare-agent's own BA-18 idle-socket timeout is what
+// actually bounds a hung call, and that is exactly one of the errors this
+// retry is FOR). `backoff` is deliberately left unset: bare-agent's
+// constructor does `options.backoff || 'exponential'`, so a literal `0` is
+// falsy and would silently fall through to the same exponential default
+// anyway — passing it would read as "no pause" while doing the opposite.
+// With `maxAttempts:2` there is only ever ONE delay to compute (attempt 1),
+// so the default exponential backoff's own formula (`2**0 * 1000`, capped at
+// 30s) is a flat ~1s pause before the one retry — named here, not hidden
+// behind a knob that lies about what it does.
+const transportRetry = new Retry({ maxAttempts: TRANSPORT_MAX_ATTEMPTS, retryOn: isTransportFailure, timeout: 0 });
+
+/**
+ * Wrap a Loop provider's `generate` so a single transport-class throw (fetch
+ * itself throwing — no HTTP response was ever produced) gets ONE retry via
+ * `transportRetry`, and the outcome is reported once the retry is settled.
+ * Every other property of `baseProvider` (`.name`, `.model`, `.ownsCycle`,
+ * `.policy`) passes through unchanged — bare-agent's Loop reads those
+ * directly (src/loop.js).
+ *
+ * F64 carve-out: a wall-DERIVED timeout (bare-agent's own `ETIMEDOUT`/
+ * `EDEADLINE`, thrown because `clock.callTimeoutMs()` told the provider to
+ * cut the call — `isWallTimeout`, src/clock.js) is doctrine's governance
+ * stop, never a transport casualty, and retrying it would both mis-spend a
+ * round the operator's clock already ended and corrupt `categorize`'s own
+ * classification (which reads the SAME error a moment later). So the
+ * per-call `retryOn` here is `isTransportFailure(err) && !isWallTimeout(err,
+ * clock)` — the clock's verdict always wins over the transport shape.
+ *
+ * Scope note: this wraps the ONE seam that builds every worker Loop
+ * (scout/drafter/step-worker/fix-worker, planrun.js `newLoop` ~line 2240) —
+ * and ONLY its Loop-driven (anthropic-api-shaped) provider branch. The judge
+ * loops (src/judged.js), the native/CLI session path (this file, `mkWorker`'s
+ * NATIVE branch above `ask`/`askFrom`, AND the toolless native/claude-json
+ * branch of `newLoop`'s own `loopProvider` — a retried native session
+ * re-spends a subscription turn, a different failure/cost model entirely),
+ * and the authoring scout (src/authorscout.js) are each a distinct call site
+ * outside hamr's ruling and are deliberately left unwrapped.
+ * @param {any} baseProvider
+ * @param {string} phase
+ * @param {(type: string, data?: object) => any} emit
+ * @param {(s: string) => string} scrub
+ * @param {import('./clock.js').Clock} clock
+ */
+function withTransportRetry(baseProvider, phase, emit, scrub, clock) {
+  return new Proxy(baseProvider, {
+    get(target, prop, receiver) {
+      if (prop !== 'generate') return Reflect.get(target, prop, receiver);
+      return async (...args) => {
+        let attempts = 0;
+        let firstErr = null;
+        const fn = async () => {
+          attempts += 1;
+          try {
+            return await target.generate(...args);
+          } catch (err) {
+            if (attempts === 1) firstErr = err;
+            throw err;
+          }
+        };
+        // `recovered` is knowable only once the retried attempt has settled
+        // (succeeded or exhausted the budget) — emit exactly once, here,
+        // after the outcome is known, never speculatively before it.
+        const report = (recovered) => {
+          if (attempts <= 1) return; // no retry happened — nothing to report
+          const message = String(firstErr?.message ?? firstErr ?? '').slice(0, 200);
+          emit('transport-retry', { phase, attempt: 1, error: scrub(message), recovered });
+        };
+        try {
+          const result = await transportRetry.call(fn, { retryOn: (err) => isTransportFailure(err) && !isWallTimeout(err, clock) });
+          report(true);
+          return result;
+        } catch (err) {
+          report(false);
+          throw err;
+        }
+      };
+    },
+  });
+}
 const { createShellTools } = require('bare-agent/tools');
 
 /** the scout's hard round bound — read-only survey, never a worker (v1.12 §1) */
@@ -714,6 +806,14 @@ ${scoutBlob || '(no scout notes)'}`;
  *   'step-stalled' | 'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
 export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, readShim = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null }) {
+  // MEMORY-CACHE: what the read shim (src/readshim.js) saved THIS run, summed across
+  // every mkWorker's own shim instance (scout, drafter, each step's worker, the fix
+  // worker) — one accumulator closed over by all of them, because the shim's ledger
+  // is deliberately per-worker (F-class reset boundary) while this readout is
+  // per-run. `wrapRead`'s call sites feed it via `onCount`; nothing here re-derives
+  // a count, it only sums what the shim already measured. Read, never written, by
+  // anything outside the `finally` below.
+  const memoryCacheCounts = { pointered: 0, capped: 0, bytesWithheld: 0 };
   workdir = resolve(workdir);
   // The read shim's ARM, resolved at the door — before the workdir is read, before
   // the scout, before a single token. An unrecognised spelling throws HERE, where
@@ -744,6 +844,12 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       throw new TypeError(`readShim: this arm caps reads, so a step granting "read" must also grant ${RETRIEVAL_PAIR.join(' and ')} — but the signed ceiling [${signedCeiling.join(', ')}] offers no ${short.join('/')}, so no legal plan exists and every draft would red as "read-blind". Re-sign the spec with ${short.join(' and ')}, or run with the shim off.`);
     }
   }
+  // MEMORY-CACHE's own `try`: everything from here on is a run that actually
+  // BEGAN (both $0 refusals above — the unknown-arm throw and the G1 throw —
+  // already happened and never touch this block), so `finally` below is the
+  // one place the accumulated counts are read out, no matter which of the
+  // paths below this point returns or throws.
+  try {
   // ONE spelling of the redaction, housed next to the inventory it reads
   // (src/validate.js) — the same helper the isolate verbs scrub the litectx store
   // with. Two hand-spelled copies of "what a secret looks like" is exactly how
@@ -1961,7 +2067,16 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // are one shim because the cap creates the second problem — its strategy line
     // sends a capped worker to ctx_recall/ctx_get for a whole function, and a stale
     // pointer there is the cap's own dead end, not litectx's.
-    const shim = createReadShim({ arm: shimArm });
+    const shim = createReadShim({
+      arm: shimArm,
+      // MEMORY-CACHE: this worker's shim reports into the RUN-level accumulator
+      // declared at the top of `runPlan` — one shim per worker, one sum per run.
+      onCount: (kind, bytes) => {
+        if (kind === 'pointered') memoryCacheCounts.pointered++;
+        else memoryCacheCounts.capped++;
+        memoryCacheCounts.bytesWithheld += bytes;
+      },
+    });
     const rdTool = shell.find((/** @type {{name: string}} */ t) => t.name === TOOL_BY_VERB.read);
     // F48: on native, bound shell_read below the CLI's tool-result display cap and hand back a
     // TRUSTED truncation notice steering to ctx_get — the CLI's own truncation blinds the worker
@@ -2111,9 +2226,12 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // claude-json TEXT path reports a real per-call cost that the Loop's
     // onLlmResult meters exactly like an API round, so the drafter's spend is
     // never invisible (F6/F44). The gate policy is wired but idle (no tools).
+    // F115's retry wraps ONLY the API-shaped branch — a native/claude-json session
+    // (below) has its own failure and cost model (a retried native session
+    // re-spends a subscription turn, not a metered fetch) and is out of scope.
     const loopProvider = native
       ? /** @type {any} */ (nativeProvider)({ policy, maxTurns, hasTools: false })
-      : (workerProvider ?? provider);
+      : withTransportRetry(workerProvider ?? provider, phase, emit, scrub, clock);
     // F66 — the stall watchdog. bare-agent's `timeoutMs` bounds socket INACTIVITY,
     // not call duration (provider-http.js `req.setTimeout` resets on every byte),
     // so a connection that stays alive while producing nothing is invisible to it:
@@ -3490,4 +3608,23 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // the verdict was arrived at.
   if (fixOutcome === 'green') await emitReviewDoor('green', lastCloseVerdict);
   return fixOutcome === 'green' ? 'green' : 'escalated';
+  } finally {
+    // Emitted on EVERY exit (return or throw) — `finally` fires exactly once,
+    // right before this call returns to `runJob`, which is where every other
+    // caller's `job-end` lands next. Armed-only: an unarmed run leaves no trace
+    // (absence reported as absence, never a fabricated zero line, PRD antigen).
+    // No cost fields — this is not a spend record and spend-slicing instruments
+    // are unaffected by it (F6/F12's ACCOUNTED_ROUND_TYPES list is untouched).
+    if (readShimArm(readShim).on) {
+      emit('memory-cache', {
+        pointered: memoryCacheCounts.pointered,
+        capped: memoryCacheCounts.capped,
+        bytesWithheld: memoryCacheCounts.bytesWithheld,
+        // bytes→tokens is an ESTIMATE (÷4, the same rough conversion used
+        // elsewhere) — the field is named `approx…` so no consumer reads it
+        // as measured the way `bytesWithheld` itself is.
+        approxTokens: Math.round(memoryCacheCounts.bytesWithheld / 4),
+      });
+    }
+  }
 }

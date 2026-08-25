@@ -50,7 +50,9 @@ Resume rests on hamr's ruling: *"even if it gets killed by outside, it should al
 - **Wall-halt** resumes as above (module W-2/W-3) (PRD.md:2324-2377).
 - **Kill-resume** (`--resume <runid|spine-path>`) landed as the answer to outside kill (module C) (PRD.md:2481-2549).
 - **Money cap-halt on the user-mode path (`run-u`)** was the missing third leg — the case hamr's original "why would I waste money on something I already started" ruling was about. Fixed as wiring, not new machinery: `--resume` skips the seed reset, folds the dead run's spend as `priorSpentUsd`, skips the completed plan prefix, and re-enters at the outer close + fix loop; ceiling never silently widens (PRD.md:2679-2742; PRD.md:2743-2783).
+- **`provider-red` widened into the resumable set** (built 2026-08-24, PRD v1.80 TODO #4; hamr: *"joins resume anyways and you decide but you are given an honest readout and with 1 retry"*). A transport casualty is not a verdict — no close graded anything, so the scout+draft and every finished step stand on disk exactly like a cap/wall halt. When the one transport retry (F115) also fails, the `run-u` tail prints an honest readout — spend so far as a FLOOR (`spendComplete:false`, the dead attempt may have been billed), "died in step X of Y" (or "before a plan was accepted"), and the exact copy-pasteable `--resume` command — and hamr decides. Deliberately NO cost/step threshold gates the offer: a threshold is a number picked from a small sample (arbiter territory). Resume re-enters at the recorded step with the accepted plan intact via the same `readResume` path every other halt uses; prior spend folds in, ceiling never widens; a still-terminal verdict (`escalated`/`step-red`/`plan-red`/green) still never resumes. Built 2026-08-24 as a local widening in `scripts/run-u.mjs` (the library's `CHECKPOINT_OUTCOMES` was out of that pass's scope); folded into the canonical `CHECKPOINT_OUTCOMES` (`src/reuse.js`) 2026-08-25 so the two lists cannot drift. Live proof pending the next armed run.
 - **`step-stalled` widened into the resumable set** (hamr: "go"). Two shapes reach that terminal — a plain stall, and a stall-with-time-left that trips a replan the gate then declines to fund past deadline — and resume is the right answer to both. The *name* stays `step-stalled` rather than being renamed to `wall-halt`, because `src/run.js` keys the F44 spend floor on that name; renaming would report unknown spend as exact. A green or a red still never resumes (PRD.md:4596-4677).
+- A resumed leg's own `job-end.spentUsd` is CHAIN-folded (the prior leg's spend included); `job-end.engagementSpentUsd` is that leg alone — a reader that can only see one spine must read the latter, never the former (F116).
 
 ### Live proof: pause → top-up → resume → pass
 
@@ -79,6 +81,65 @@ The check binds **between** metered calls only — never mid-call, because a cap
 This was later hardened at the library seam itself: `capStop` now **throws** on a non-null, non-finite ceiling (`NaN`, `Infinity`, `true`, `{}`, or a numeric string) before the first paid call, closing a gap where only the CLI's own parser enforced the malformed-input rule and a library caller could pass a bad ceiling straight through to a cost book that advertised it while enforcing nothing (PRD.md:4596-4677).
 
 The revise-loop's own clamps (`maxRevisions`, `structureRetries`) are tighten-only, floor 0, ceiling 2 — but were found to be **prose, not protection**: three mutations (deleting the clamp; honoring only the two extremes) all survived undetected, because the existing tests pinned only the ceiling and the floor, never the values between them. Seven new tests now cover the middle of the range; the one remaining equivalent-mutant survivor is a recorded latent hazard (the two constants happen to both equal 2) (PRD.md:4355-4455).
+
+## Transport retry and the provider-red resume (2026-08-24)
+
+Context: every `aurora-u` provider-red since 2026-08-19 (7 of 7 recorded) carries the same
+string, `SSL routines:ssl3_read_bytes:ssl/tls alert bad record mac` — a TLS transport error
+under the API, not an HTTP response and not the job's own logic, on every read-shim arm
+including OFF. Not reproduced at $0; a paid keep-alive probe (39/39 clean) did not reproduce
+it either. Cause unproven, named for hamr rather than chased further (F115).
+
+### What "transport" means, and the fixed retry
+
+`src/transport.js`'s `isTransportFailure` classifies the failure: a TLS fault,
+`ECONNRESET`/`EPIPE`/`ETIMEDOUT`, or `fetch failed` over a network cause — anything where the
+request never produced an HTTP response. An HTTP response that came back 4xx/5xx/429 is
+**not** transport; upstream's existing retry policy for those is unchanged. A wall-clock
+timeout (the run's own deadline expiring mid-call) is never retried either — that keeps
+routing to `wall-halt`, unchanged from the existing rule.
+
+hamr's ruling, verbatim: *"one retry for transport layer failure and reporting with the rest
+end of gate."* The one worker-Loop seam (`src/planrun.js`'s `newLoop`, covering
+scout/drafter/every step worker/fix worker) gets **exactly one** extra attempt on a
+transport-only throw. The count is a fixed constant, never a spec or argv knob — raising it
+past one is a tighten-only-in-the-other-direction change and stays reserved (the same "any
+retry/clamp change is tighten-only, never loosens" doctrine that binds every other cap in this
+programme). Judge loops, the native/CLI session path, and `src/authorscout.js` are unchanged
+— the retry is scoped to the one seam named above.
+
+### Why a retry makes spend a FLOOR, never an exact total
+
+A transport failure can happen **after** the provider has already processed and billed the
+call — the response died in transit, not before it was generated. Retrying pays for a second
+attempt without proof the first one was free. So any retry on this seam forces
+`job-end.spendComplete: false` for the rest of the run, recovered or not: the first attempt's
+possible spend stays invisible either way, exactly the standing F6/F44 honesty floor (unpriced
+or unconfirmed is never rounded down to zero). Each retry also emits a report-only
+`transport-retry` spine record, and the count/outcome print at the run tail.
+
+### If the retry also fails: provider-red joins the resumable set — BUILD PENDING
+
+Today `--resume` refuses on `provider-red` (it is a terminal, not a governance halt — F114
+§4). The ruled change: if the one transport retry (above) also fails, the run still ends
+`provider-red`, but `--resume` will re-enter at the recorded step with the accepted plan
+instead of refusing, the same step-level resume every other halt class already gets.
+
+**No cost or step threshold gates the offer.** A threshold would be a number picked from a
+small observed sample — arbiter territory reserved for hamr, and this programme's own
+doctrine forbids fitting a threshold to a handful of data points. Instead the tail prints an
+honest readout and hamr decides case by case:
+
+```
+outcome   provider-red (after 1 transport retry)
+spent     ≥$4.10 of $5 · died in step 3 of 4
+resume    node scripts/run-u.mjs --job aurora-spawner --resume <runid> --read-shim A1 --approve <hash>
+```
+
+`spent` is stated as a floor (`≥`) because `spendComplete:false` already marks the first
+attempt's spend as possibly unaccounted — the readout must not silently round that up to
+exact. **Not built yet** — this section documents the ruled shape; the resume path itself
+still refuses on `provider-red` until this lands.
 
 ## Attempt bounds now name their cause to the worker
 

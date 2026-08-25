@@ -319,7 +319,7 @@ test('§1.4 readers — a pause NEVER demotes a bridge, and the graded red still
 
 test('§1.4 readers — the checkpoint list is the LIBRARY\'s, so an exported bundle inherits it rather than re-spelling it', () => {
   assert.ok(CHECKPOINT_OUTCOMES.includes('hitl-pause'), 'a pause is a checkpoint: there is something left to continue');
-  assert.deepEqual([...CHECKPOINT_OUTCOMES], ['cap-halt', 'wall-halt', 'step-stalled', 'hitl-pause']);
+  assert.deepEqual([...CHECKPOINT_OUTCOMES], ['cap-halt', 'wall-halt', 'step-stalled', 'provider-red', 'hitl-pause']);
   assert.equal(CHECKPOINT_OUTCOMES.includes('hitl-decision-red'), false, 'a refusal of the operator\'s own input is a verdict already rendered, never re-bought');
   assert.equal(CHECKPOINT_OUTCOMES.includes('hitl-cancel'), false, 'the deleted door mints nothing — and nothing re-buys a name no writer can write');
   assert.equal(CHECKPOINT_OUTCOMES.includes('green'), false);

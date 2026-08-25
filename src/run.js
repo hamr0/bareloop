@@ -254,6 +254,15 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // outcome — keying on the outcome would floor the exact stop too, which is the same
   // dishonesty pointing the other way.
   let cutMidCall = false;
+  // F115 — did any worker call in this run absorb a transport-class retry
+  // (hamr's ruling: one retry, transport-only, planrun.js `withTransportRetry`)?
+  // The FIRST attempt of a retried call may already have been billed and threw
+  // before returning any usage figure — the same unknown a self-healed stall
+  // and a mid-call wall cut carry, so the same one-way floor applies even when
+  // the retry recovered and the run finishes green. Read off the `transport-retry`
+  // spine record's presence alone, never its `recovered` field: a recovered
+  // retry still hides the first attempt's possible spend.
+  let transportRetried = false;
   // The money on the terminal record, and whether the money is EXACT. `spentUsd`
   // is the accumulated sum of PRICED rounds ONLY — never an estimate derived
   // from tokens or averages (cap-not-estimate). When any round came back
@@ -263,7 +272,7 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // branch on field presence.
   // ONE spelling of the four causes, so the terminal and the in-flight money readout can
   // never disagree about whether the same run's figure is exact.
-  const spendComplete = () => !unpriced && !stalled && !cutMidCall && !priorFloor;
+  const spendComplete = () => !unpriced && !stalled && !cutMidCall && !priorFloor && !transportRetried;
   const spend = () => ({
     spentUsd,
     spendComplete: spendComplete(),
@@ -364,6 +373,10 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
     // One-way, and read by `spend()` — the run ends on this record either way, but the
     // between-rounds stop must keep its exact figure rather than inheriting a floor.
     if (type === 'wall-halt' && /** @type {any} */ (data)?.cutMidCall === true) cutMidCall = true;
+    // F115 — one-way, same lane as `stall`/`cutMidCall`: a transport retry's
+    // FIRST attempt threw before any usage figure came back, so the priced sum
+    // is a floor for the rest of the run regardless of `recovered`.
+    if (type === 'transport-retry') transportRetried = true;
     return emit(type, data);
   };
   const pricingRed = () => {

@@ -195,12 +195,22 @@ test('§3 REFUSED: a run that GREENED has nothing to resume', () => {
 });
 
 test('§3 REFUSED: a run that reached a real VERDICT is not a halt — only a governance stop leaves work to continue', () => {
-  for (const outcome of ['escalated', 'step-red', 'plan-red', 'provider-red']) {
+  // provider-red left this list on 2026-08-24 (PRD v1.80 TODO #4, F115 "Ruled"):
+  // a transport casualty is not a VERDICT — no close ever graded anything, so the
+  // paid work on disk is a checkpoint exactly like a cap/wall halt. The three that
+  // remain here are real answers, and answers stay terminal.
+  for (const outcome of ['escalated', 'step-red', 'plan-red']) {
     const { code, out } = preview(['--resume', spineFile(haltedSpine({ outcome }))]);
     assert.equal(code, 2, `${outcome} must not be resumable`);
     assert.match(out, /reached its own terminal/, `${outcome}: the refusal names why`);
     assert.match(out, /cap-halt \/ wall-halt/, 'and names what IS resumable');
   }
+});
+
+test('§3 a PROVIDER-RED is a checkpoint, not a verdict — it resumes (PRD v1.80 TODO #4, F115)', () => {
+  const { code, out } = preview(['--resume', spineFile(haltedSpine({ outcome: 'provider-red' }))]);
+  assert.equal(code, 0, 'the transport died, the work stands — hamr decides off the readout, the machine never refuses');
+  assert.match(out, /RESUME/);
 });
 
 test('§3 REFUSED: a WALL halt IS resumable — the W-2 symmetry, not an exception', () => {

@@ -1093,13 +1093,25 @@ raises it.
 of PRICED rounds ONLY — never an estimate from token counts or averages (cap-not-estimate) —
 and it is stated even on the pre-token reds, where the honest figure is a real `0`.
 `spendComplete` says whether that figure is EXACT; `false` means `spentUsd` is a FLOOR ("at
-least $X", true total unknowable) and must not be read as a total. Four things set it, all
+least $X", true total unknowable) and must not be read as a total. Five things set it, all
 the same class — a call whose cost is unknowable from here: a round that came back unpriced
 (F6); a run that ABSORBED a stall, because the fuse's silent reissue may pay twice for one
 answer and the flag is one-way whatever the outcome; a `wall-halt` that cut a call
-mid-flight (`cutMidCall`); and a RESUME whose fold was itself a floor
+mid-flight (`cutMidCall`); a RESUME whose fold was itself a floor
 (`priorSpendComplete: false` — an unknown does not heal by being carried forward, so every
-round of this attempt being priced repairs nothing about the one before it). A wall stop read BETWEEN iterations or steps has no call in flight,
+round of this attempt being priced repairs nothing about the one before it); and a
+**transport retry** (F115, hamr's ruling: "one retry for transport layer failure and
+reporting with the rest end of gate"). Every worker Loop (scout, drafter, each step, the fix
+worker — the ONE seam in `planrun.js`) gets exactly ONE extra attempt, and only for a
+transport-class throw — fetch itself throwing with no HTTP response at all (a TLS fault,
+`ECONNRESET`/`EPIPE`/`ETIMEDOUT`, `fetch failed` wrapping a network cause); an HTTP response
+(4xx/5xx/429) is never retried here and rides bare-agent's own unchanged policy. The budget is
+fixed (`TRANSPORT_MAX_ATTEMPTS` in `src/transport.js`) — never a job-spec or CLI knob, tighten-only
+doctrine. Each retry emits a report-only `transport-retry` spine record (`{phase, attempt, error,
+recovered}`, no cost field — the ledger is unaffected); the FIRST attempt threw before any usage
+figure came back, so **any** transport retry floors `spendComplete` for the rest of the run even
+when the retry recovers and the run finishes green — the same one-way flag class as `stalled`
+and `cutMidCall`. A wall stop read BETWEEN iterations or steps has no call in flight,
 so it stays exact. Both fields are present on all outcomes, so a consumer never branches on
 field presence and never has to launder a missing `spentUsd` into `$0`.
 
@@ -2113,6 +2125,22 @@ import { runBehaviour, formatBehaviour } from 'bareloop';
 const events = fs.readFileSync(auditFile, 'utf8').trim().split('\n').map(JSON.parse);
 console.log(formatBehaviour(runBehaviour(events, { runId })));
 ```
+
+#### `memory-cache` — the read shim's own end-of-run readout (`src/readshim.js`, `src/planrun.js`)
+
+A single spine record, emitted once by `runPlan` right before it returns (so it lands on the
+spine before the caller's `job-end`), reporting what the READ SHIM (L1 pointer + L4 cap) saved
+this run: `{pointered, capped, bytesWithheld, approxTokens}`. `pointered` counts re-reads of
+unchanged content answered with a pointer instead of the bytes; `capped` counts reads served as
+a bounded slice; `bytesWithheld` sums exactly the bytes NOT re-sent in both cases (never
+estimated) — the diff lever (L2) isn't counted, it's a different response shape. `approxTokens`
+is `Math.round(bytesWithheld / 4)`, a bytes→tokens ESTIMATE named accordingly so nothing reads
+it as measured. **Emitted only when the shim is armed** (any `readShim` arm but the off one) —
+an unarmed run emits no record at all, never a fabricated zero. It carries no cost fields, so it
+is not a spend record and no spend-slicing instrument needs to account for it.
+`scripts/run-u.mjs` prints it as a `MEMORY-CACHE` line right after `BEHAVIOUR` when armed
+(`no record` if the run ended before the summary could fire); `scripts/behaviour-readout.mjs`
+prints the same line when handed the run's spine file as its optional third positional.
 
 ## Architecture
 

@@ -23,7 +23,12 @@ import { makeSpine } from '../src/spine.js';
 import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
 import { STALL_MS } from '../src/stall.js';
-import { readSpine, scriptedProvider, initPatientRepo, mockWallClock } from './helpers.js';
+import { readSpine, scriptedProvider, initPatientRepo, mockWallClock, reply } from './helpers.js';
+// PRD v1.80 TODO #4 / F115 — reading, never modifying: `CHECKPOINT_OUTCOMES` is
+// the LIBRARY's own resumable-terminal list (src/reuse.js, folded 2026-08-25),
+// and `readResume` is the ONE reader `--resume` and this test both drive — never
+// a second one.
+import { readResume, CHECKPOINT_OUTCOMES } from '../src/reuse.js';
 
 const base = mkdtempSync(join(tmpdir(), 'run-test-'));
 
@@ -119,6 +124,80 @@ test('the read shim ARM is guarded at runJob\'s door — ahead of the approval g
   assert.equal(existsSync(file), false, 'and not one spine record — the guard runs before the gate, so the spine was never even opened');
 });
 
+test('MEMORY-CACHE: an ARMED run leaves exactly one memory-cache record on its own spine, before job-end, fields exact', async () => {
+  const wd = makePlanWork('plan-memcache-armed');
+  // recall/get join the ceiling so G1 is satisfied (a capping arm requires the
+  // retrieval pair on the signed ceiling) — the scout is granted read/recall/get
+  // automatically (ceiling minus write/store verbs), which is where the shim's
+  // read calls below land.
+  const job = { ...planJob(), tools: ['read', 'write', 'recall', 'get'] };
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write the missing test.', tools: ['write'], rounds: 6,
+      target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    }],
+  });
+  const modPath = join(wd, 'src', 'mod.mjs');
+  const modBody = 'export const x = 1;\n'; // written by makePlanWork — small, well under the cap
+  const provider = scriptedProvider([
+    { toolCalls: [tcall2('s1', 'shell_read', { path: modPath })] },      // scout round 1: full read
+    { toolCalls: [tcall2('s2', 'shell_read', { path: modPath })] },      // scout round 2: unchanged re-read -> pointer
+    { text: 'surveyed the repo' },                                       // scout round 3: final survey text
+    { text: plan },                                                      // drafter
+    { toolCalls: [tcall2('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'wrote it' },
+  ]);
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file), readShim: 'cap',
+  });
+  assert.equal(outcome, 'green');
+  const events = readSpine(file);
+  const mcEvents = events.filter((e) => e.type === 'memory-cache');
+  assert.equal(mcEvents.length, 1, 'exactly one memory-cache record for the whole run');
+  const mc = mcEvents[0];
+  for (const k of ['pointered', 'capped', 'bytesWithheld', 'approxTokens']) {
+    assert.equal(typeof mc[k], 'number', `${k} is present and numeric`);
+  }
+  assert.equal(mc.pointered, 1, 'the unchanged re-read of mod.mjs was answered with a pointer');
+  assert.equal(mc.capped, 0, 'nothing here exceeded the cap');
+  assert.equal(mc.bytesWithheld, Buffer.byteLength(modBody, 'utf8'), 'exactly the bytes the pointer withheld — the whole held file, no estimate');
+  assert.equal(mc.approxTokens, Math.round(mc.bytesWithheld / 4), 'approxTokens is the stated bytes/4 estimate, derived from THIS run\'s own bytesWithheld');
+  const mcIdx = events.indexOf(mc);
+  const endIdx = events.findIndex((e) => e.type === 'job-end');
+  assert.ok(mcIdx >= 0 && endIdx >= 0 && mcIdx < endIdx, 'memory-cache lands on the spine before job-end');
+});
+
+test('MEMORY-CACHE: an UNARMED run leaves zero memory-cache records — absence, never a fabricated zero line', async () => {
+  const wd = makePlanWork('plan-memcache-unarmed');
+  const job = planJob();
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write the missing test.', tools: ['write'], rounds: 6,
+      target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    }],
+  });
+  const provider = scriptedProvider([
+    { text: 'no tests exist yet' },
+    { text: plan },
+    { toolCalls: [tcall2('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'wrote it' },
+  ]);
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file), readShim: false,
+  });
+  assert.equal(outcome, 'green');
+  const events = readSpine(file);
+  assert.equal(events.filter((e) => e.type === 'memory-cache').length, 0, 'an unarmed run emits no memory-cache record at all');
+});
+
 test('plan dispatch: an unapproved plan spec spends zero tokens (the approval gate is shape-agnostic)', async () => {
   const wd = makePlanWork('plan-unapproved');
   const provider = scriptedProvider([{ text: 'never' }]);
@@ -183,6 +262,219 @@ test('plan dispatch: a transport-throw provider-red reports spendComplete:false 
   const end = readSpine(file).find((e) => e.type === 'job-end');
   assert.equal(end.outcome, 'provider-red');
   assert.equal(end.spendComplete, false, 'the priced sum is a FLOOR, not the total — mirror the legacy providerRed()');
+});
+
+// F115 — hamr's ruling verbatim: "one retry for transport layer failure and
+// reporting with the rest end of gate." The ONE worker-Loop seam
+// (planrun.js `newLoop`) now retries a transport-class throw exactly once;
+// an HTTP-status error still rides bare-agent's own unchanged policy
+// (no retry from this layer at all).
+
+/** A transport-shaped throw — fetch itself failing, no HTTP response. */
+const transportError = () => Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } });
+/** An HTTP-response-shaped throw — the provider DID answer. */
+const httpError = () => Object.assign(new Error('bad request'), { status: 400, retryable: false });
+
+/**
+ * A provider whose first `throwCount` calls throw `makeErr()`, then falls
+ * through to `script` (via the shared `reply` envelope, sticking on the
+ * last entry) for every call after.
+ * @param {number} throwCount
+ * @param {() => Error} makeErr
+ * @param {Array<{text?: string, toolCalls?: object[]}>} script
+ */
+function throwNTimesThenScript(throwCount, makeErr, script) {
+  const calls = [];
+  return {
+    calls,
+    async generate(messages, tools) {
+      calls.push(1);
+      if (calls.length <= throwCount) throw makeErr();
+      const idx = calls.length - throwCount - 1;
+      return reply(script[Math.min(idx, script.length - 1)]);
+    },
+  };
+}
+
+test('F115: a transport throw on the FIRST scout call gets one retry, recovers, and the run finishes — spendComplete forced false anyway', async () => {
+  const wd = makePlanWork('plan-transport-recovered');
+  const job = planJob();
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write the missing test.', tools: ['write'], rounds: 6,
+      target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    }],
+  });
+  const provider = throwNTimesThenScript(1, transportError, [
+    { text: 'no tests exist yet' },
+    { text: plan },
+    { toolCalls: [tcall2('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'wrote it' },
+  ]);
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file),
+  });
+  assert.equal(outcome, 'green', 'the retried attempt recovered — the run proceeds exactly as if the first throw never happened');
+  const events = readSpine(file);
+  const retries = events.filter((e) => e.type === 'transport-retry');
+  assert.equal(retries.length, 1, 'exactly one transport-retry record for the whole run');
+  assert.equal(retries[0].phase, 'scout');
+  assert.equal(retries[0].attempt, 1);
+  assert.equal(retries[0].recovered, true);
+  assert.equal(typeof retries[0].error, 'string');
+  assert.ok(!('costUsd' in retries[0]), 'report-only — no cost field, the ledger reads worker-round/judge-round alone');
+  const end = events.find((e) => e.type === 'job-end');
+  assert.equal(end.outcome, 'green');
+  assert.equal(end.spendComplete, false, 'the FIRST attempt threw before any usage came back — recovered or not, the floor stands (F6/F44)');
+});
+
+test('F115: two consecutive transport throws exhaust the one retry — provider-red as today, one transport-retry record recovered:false', async () => {
+  const wd = makePlanWork('plan-transport-exhausted');
+  const job = planJob();
+  const provider = throwNTimesThenScript(99, transportError, []);
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file), capRuns: 2,
+  });
+  assert.equal(outcome, 'provider-red');
+  assert.equal(provider.calls.length, 2, 'exactly TRANSPORT_MAX_ATTEMPTS calls — the retry budget is one extra attempt, not unbounded reissue');
+  const events = readSpine(file);
+  const retries = events.filter((e) => e.type === 'transport-retry');
+  assert.equal(retries.length, 1);
+  assert.equal(retries[0].recovered, false);
+  const end = events.find((e) => e.type === 'job-end');
+  assert.equal(end.outcome, 'provider-red');
+  assert.equal(end.spendComplete, false);
+});
+
+test('F115: an HTTP-response-shaped failure is NOT retried by this layer — provider called exactly once, no transport-retry record', async () => {
+  const wd = makePlanWork('plan-http-not-retried');
+  const job = planJob();
+  const provider = throwNTimesThenScript(99, httpError, []);
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file), capRuns: 2,
+  });
+  assert.equal(outcome, 'provider-red');
+  assert.equal(provider.calls.length, 1, 'an HTTP-status error is never transport-classified — no retry, one call, exactly the pre-F115 shape');
+  const events = readSpine(file);
+  assert.equal(events.filter((e) => e.type === 'transport-retry').length, 0);
+});
+
+// PRD v1.80 TODO #4 / F115 — provider-red JOINS the resumable set. hamr's
+// ruling verbatim: *"joins resume anyways and you decide but you are given an
+// honest readout and with 1 retry"*. This is the READER half of the change:
+// `readResume` (src/reuse.js) already builds a step-level checkpoint for any
+// terminal in the caller's own `resumableOutcomes` list — nothing about that
+// function changed — so the whole of "provider-red joins" is which OUTCOME
+// names a caller hands it. Since the 2026-08-25 fold `provider-red` is IN the
+// library's own `CHECKPOINT_OUTCOMES` (no per-caller widening needed);
+// `scripts/run-u.mjs`'s `RESUMABLE_HALTS` reads that constant bare for
+// `--resume`, and this test proves the reader composes correctly on a REAL
+// two-step run that genuinely dies transport-red after one step lands.
+test('F115/TODO#4: readResume reads a REAL provider-red spine as a step-level CHECKPOINT via the canonical CHECKPOINT_OUTCOMES list — plan intact, one step done, spend a floor', async () => {
+  const wd = makePlanWork('plan-provider-red-resumable');
+  const job = planJob();
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [
+      { id: 'step-one', action: 'Write file one.', tools: ['write'], rounds: 6, target: 'tests/test_x.mjs', exit: [{ type: 'tree-changed', scope: 'tests/**' }] },
+      { id: 'step-two', action: 'Write file two.', tools: ['write'], rounds: 6, target: 'tests/test_y.mjs', exit: [{ type: 'tree-changed', scope: 'tests/**' }] },
+    ],
+  });
+  const script = [
+    { text: 'no tests exist yet' },
+    { text: plan },
+    { toolCalls: [tcall2('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'wrote file one' },
+  ];
+  let n = 0;
+  const provider = {
+    calls: [],
+    async generate() {
+      n += 1; provider.calls.push(1);
+      if (n <= script.length) return reply(script[n - 1]);
+      // step-two's worker: every call from here throws transport-shaped —
+      // the one retry (src/planrun.js's withTransportRetry) exhausts and the
+      // run ends provider-red, exactly like the two exhaustion tests above.
+      throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } });
+    },
+  };
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file),
+  });
+  assert.equal(outcome, 'provider-red', 'step-two exhausted its one transport retry');
+  const events = readSpine(file);
+  const end = events.find((e) => e.type === 'job-end');
+  assert.equal(end.outcome, 'provider-red');
+  assert.equal(end.spendComplete, false, 'F44: the priced sum is a FLOOR, never rounded up to exact');
+  assert.ok(events.some((e) => e.type === 'step-end' && e.step === 'step-one' && e.outcome === 'green'), 'step-one genuinely finished before the transport casualty');
+
+  // COLD CONTROL — a caller that explicitly EXCLUDES provider-red from its list
+  // still reads it as a TERMINAL, exactly as an unwidened CHECKPOINT_OUTCOMES did
+  // before the 2026-08-25 fold. This is the negative control for the reader
+  // itself: whether a caller offers 'provider-red' as resumable is a per-caller
+  // choice `readResume` honours either way, never a change `readResume` makes on
+  // its own. (Since the fold, CHECKPOINT_OUTCOMES itself carries 'provider-red',
+  // so this control builds the list WITHOUT it rather than reading the bare
+  // constant — the bare constant is now exactly the widened case below.)
+  const cold = readResume(events, { direct: true, resumableOutcomes: CHECKPOINT_OUTCOMES.filter((o) => o !== 'provider-red') });
+  assert.equal(cold.ended, true, 'without provider-red in the list, the run still reads as ENDED — nothing to resume');
+  assert.equal(cold.restart, null);
+
+  // THE RULED BEHAVIOUR — a caller reading the LIBRARY's own CHECKPOINT_OUTCOMES
+  // (which carries 'provider-red' since the 2026-08-25 fold, PRD v1.80 TODO #4)
+  // reads the SAME spine as a CHECKPOINT: the identical mechanism cap-halt/
+  // wall-halt/step-stalled already use, never a second reader.
+  const rr = readResume(events, { direct: true, resumableOutcomes: CHECKPOINT_OUTCOMES });
+  assert.equal(rr.ended, false, 'provider-red joins the resumable set: there is work left to continue');
+  assert.ok(rr.restart, 'a restart checkpoint is built');
+  assert.equal(rr.restart.seed?.phase, 'steps', 'step-two never finished — re-entry is at the STEP phase');
+  assert.equal(rr.restart.seed?.plan?.steps?.length, 2, 'the ACCEPTED plan is preserved WHOLE, never truncated to the finished step');
+  assert.deepEqual(rr.restart.seed?.completedSteps?.map((s) => s.id), ['step-one'],
+    'step-one is the checkpoint — a resume re-enters at step-two and never re-pays for step-one');
+  assert.ok(typeof rr.restart.branch === 'string' && rr.restart.branch.length > 0,
+    'the work branch step-one\'s write landed on is preserved for the resume (v1.57 §3)');
+  assert.equal(rr.spendComplete, false, 'the fold stays a FLOOR across the resume boundary, never healed into an exact total (F6/F44)');
+  assert.ok(rr.spentUsd > 0, 'scout+draft+step-one spend is real and is exactly what the resume preserves — the checkpoint, not a re-pay');
+});
+
+// NEGATIVE CONTROL — a graded-red terminal must NOT become resumable, even
+// under CHECKPOINT_OUTCOMES now that it carries 'provider-red'. A red the close
+// actually rendered is an ANSWER (REUSE_GRADED_RED's own doctrine, src/reuse.js),
+// and re-buying it as if it were unfinished work would be the exact class of bug
+// a shared, parameterised reader exists to prevent.
+test('F115/TODO#4 negative control: a graded step-red stays TERMINAL under CHECKPOINT_OUTCOMES — provider-red joining does not sweep in an unrelated outcome', async () => {
+  const wd = makePlanWork('plan-stepred-not-resumable');
+  const job = planJob();
+  const stubbornPlan = JSON.stringify({ schema: 'plan-v1', steps: [{ id: 'never-writes', action: 'do', tools: ['write'], rounds: 4, target: 'tests/test_x.mjs', exit: [{ type: 'tree-changed', scope: 'tests/**' }] }] });
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: stubbornPlan },
+    { text: 'thinking only' }, { text: 'thinking only' },
+    { text: stubbornPlan },
+    { text: 'thinking only' },
+  ]);
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file), capRuns: 2,
+  });
+  assert.match(outcome, /^step-red:/);
+  const events = readSpine(file);
+  const end = events.find((e) => e.type === 'job-end');
+  assert.equal(end.outcome, 'step-red', 'runJob writes the BARE name onto job-end — the same string the reader classifies from');
+  const rr = readResume(events, { direct: true, resumableOutcomes: CHECKPOINT_OUTCOMES });
+  assert.equal(rr.ended, true, 'a step-red is an ANSWER, never a checkpoint — it stays ended even under the widened list');
+  assert.equal(rr.restart, null);
 });
 
 // W1: the stall case that is NOT terminal. src/stall.js abandons a hung call and

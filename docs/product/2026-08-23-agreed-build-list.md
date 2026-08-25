@@ -41,7 +41,7 @@ territory, waiting on hamr's explicit go.
 
 **Open before build:** items Q1–Q6 below. Q1 and Q2 block; the rest can be answered during design.
 
-## 2. Run behavior summary — AGREED in shape, not yet given a go
+## 2. Run behavior summary — **BUILT 2026-08-24**
 
 One report-only block at the end of every run, built entirely from the spine. Gates nothing,
 changes no verdict, mints no red.
@@ -54,7 +54,13 @@ changes no verdict, mints no red.
 Solves: we can see what a run cost, never what it wasted. Also the cheap first slice of the
 five-minute-replay test (item 4).
 
-**Open:** Q7, Q8.
+`runBehaviour`/`formatBehaviour` shipped in the library, `scripts/behaviour-readout.mjs` for
+archived runs, `BEHAVIOUR` block wired into `run-u.mjs`'s tail print, printed live at the tail
+of u-run `mt7g7b68` (F114 §1) — see `docs/product/PRD.md` addendum v1.80 item 2/TODO item 1.
+
+**Answered:** Q7 — surface only, no spine record (a new record type is a new writer every
+spend instrument must account for). Q8 — ships in the library, documented in
+`bareloop.context.md`.
 
 ## 3. Model names in the signed spec — PARKED
 
@@ -173,12 +179,10 @@ or does one signature stand for the frozen set?
 **Q6 — where results live.** A new bench log, or FINDINGS entries, or both? A row that
 changes outcome is a finding by definition.
 
-**Q7 — where the behavior summary prints.** Run summary surface only, or also written to the
-spine as its own record type? If it is written, it becomes a spend-slicing writer that any
-later instrument must account for.
+**Q7 — ANSWERED 2026-08-24.** Surface only — no spine record (a new record type is a new
+writer every spend instrument must account for).
 
-**Q8 — does the behavior summary ship in the library, or stay in `scripts/`?** Library means
-adopters get it and `bareloop.context.md` must document it.
+**Q8 — ANSWERED 2026-08-24.** Ships in the library; documented in `bareloop.context.md`.
 
 **Q9 — enforcement of the prompt-commit shape.** Convention only (a documented rule), or a
 check? A check means touching CI, which is ask-first. Also: convention-only rules are the

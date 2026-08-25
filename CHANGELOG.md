@@ -7,8 +7,26 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-08-25
+
 ### Added
 
+- **One transport-class retry** (F115, hamr's ruling): the ONE worker-Loop seam in
+  `src/planrun.js` now retries exactly once on a transport-only throw (TLS fault,
+  `ECONNRESET`/`EPIPE`/`ETIMEDOUT`, `fetch failed` over a network cause — never an HTTP
+  4xx/5xx/429 response), classified by the new `src/transport.js` (`isTransportFailure`,
+  fixed `TRANSPORT_MAX_ATTEMPTS`, never operator-configurable). Emits a report-only
+  `transport-retry` spine record and forces `job-end.spendComplete: false` for the rest of the
+  run — the retried attempt's first throw may already have been billed — surfaced by
+  `scripts/run-u.mjs` as a `retries` line only when a retry occurred.
+- **provider-red joins the resumable set** (F115, PRD v1.80 TODO #4): when the one transport
+  retry also fails and a `run-u` run ends `provider-red`, its tail now prints an honest
+  readout — spend so far as a floor, "died in step X of Y" (or "before a plan was accepted"),
+  and the exact `--resume` command — and `--resume` re-enters at the recorded step with the
+  accepted plan, folding prior spend in. No cost/step threshold gates the offer (the operator
+  decides, every time); verdict terminals (`escalated`/`step-red`/`plan-red`) still refuse.
+  Folded from a local `scripts/run-u.mjs` widening into the library's own canonical
+  `CHECKPOINT_OUTCOMES` (`src/reuse.js`) so the two lists cannot drift.
 - **Run behaviour summary** (build-list item 2, agreed 2026-08-23): `runBehaviour(events, {
   runId? })` and `formatBehaviour(summary)` in `src/behaviour.js`, plus
   `scripts/behaviour-readout.mjs <gate-audit.jsonl> [run_id]`. A report-only text block —
@@ -17,6 +35,21 @@ feature lands, **patch** = docs, fixes, scaffolding.
   spine. The exact-repeat key is the full recorded action (`type` + `path` + every `args` key),
   never collapsed to `{type, path}` — sharper collapse would have merged different byte ranges
   of the same file into false repeats.
+- **`memory-cache` end-of-run readout** for the read shim: `runPlan` emits one spine record
+  (`{pointered, capped, bytesWithheld, approxTokens}`) summing what L1's pointer and L4's cap
+  withheld across the whole run, only when the shim is armed. `scripts/run-u.mjs` prints it as
+  `MEMORY-CACHE  N re-reads answered from memory · M reads capped · X KB withheld (~Tk tokens
+  not re-sent)`; `scripts/behaviour-readout.mjs` prints the same line given the run's spine as
+  an optional third positional. No cost fields — report-only, not a spend record.
+
+### Fixed
+
+- **`scripts/readshim-battery.mjs`'s spend reader compared a resumed leg's own money against
+  the wrong job-end figure** (F116): `readSpend`'s `ledgerUsd` now reads
+  `job-end.engagementSpentUsd` (this leg's spend) when a spine carries one, falling back to
+  `job-end.spentUsd` only for a cold run — `spentUsd` on a resumed job-end is a CHAIN total,
+  not this spine's own spend. `chainUsd`/`priorUsd` are exposed as new, honest fields and never
+  folded into `accountedUsd`/`ledgerUsd`/`spendUsd`.
 
 ## [0.13.0] — 2026-08-23
 
