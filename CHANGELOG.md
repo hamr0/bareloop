@@ -7,6 +7,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-08-25
+
 ### Added
 
 - **One transport-class retry** (F115, hamr's ruling): the ONE worker-Loop seam in
