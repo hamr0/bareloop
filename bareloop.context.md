@@ -2364,6 +2364,28 @@ word. `judgedCount` on a close-verdict was never a reliable stand-in for the cla
 (it appears on plain green closes too, not only softgreen ones) — this reads the real
 declared field instead.
 
+**Transport retries and floor reasons (F119, live-proven 2026-08-25)**: every
+`transport-retry` record (`src/planrun.js:126`) whose `seq` falls inside a step's or
+iteration's own window prints a `↳ transport retry ×N (recovered|not recovered|partially
+recovered) — <first 80 chars of the error>` line under that row — the same open-interval
+`seq` windowing `windowSpend` already uses for rounds. A retry whose `seq` falls outside
+every occurrence window (e.g. during the scout/plan phase) is counted instead under the
+`TIMELINE` header as `transport retries outside steps: N`, printed only when that count is
+non-zero. The header's `spent:` line, whenever `spendComplete` is `false`, appends
+`· floor because: <reason(s)>` — derived from the spine, never guessed: `transport retry
+×N` (any `transport-retry` record), `unpriced round(s)` (a `worker-round`/`judge-round`
+with non-finite `costUsd`), `cut mid-call` (a `wall-halt` record with `cutMidCall:true`),
+`stall` (a `stall` record), `prior leg floor` (`job-start.priorSpendComplete === false`) —
+every cause that actually shows evidence prints, never just one; a floor with no derivable
+evidence on this spine (an older archive, or a resumed leg's floor inherited from a file not
+in hand) prints `· floor (reason not in spine)` instead. `--all` adds no new column: a run
+that carried any transport retry gets ` ⟲N` appended directly after its outcome word (same
+posture as the resumed `*` on `id`), with one footnote
+(`⟲N transport retry(ies), recovered inline — see the full replay for detail`) printed once
+when the listing holds at least one such row. Live-proven on `u-mt8yk53k` (F119): two
+recovered TLS `bad record mac` retries, both inside step `fix-mypy-strict`'s window —
+`floor because: transport retry ×2` and `green ⟲2` in `--all`, on a run that finished green.
+
 ```js
 import { replayRun, formatReplay } from 'bareloop';
 const spine = fs.readFileSync(spineFile, 'utf8').trim().split('\n').map(JSON.parse);

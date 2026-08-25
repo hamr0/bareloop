@@ -39,6 +39,14 @@
 //                                                                  src/planrun.js:2897
 //     each `results[i].type` is one of plan.js's EXIT_TYPES; `check-passes`
 //     and `tree-changed` are the two this module reads.
+//   transport-retry {phase, attempt, error, recovered}             src/planrun.js:126
+//     (F119, live-proven 2026-08-25 on u-mt8yk53k, two records): `attempt` is
+//     always `1` (`withTransportRetry`'s own comment there — one retry,
+//     transport-only, hamr's ruling); `recovered` is knowable only once the
+//     retried attempt settles, so it is never speculative. src/run.js:266,393
+//     treats the record's PRESENCE alone (never `recovered`) as a one-way
+//     floor on `spendComplete` — the first attempt may already have been
+//     billed and threw before returning any usage figure.
 //   memory-cache   {pointered, capped, bytesWithheld, approxTokens} src/planrun.js:3619
 //   work-branch    {branch, created, resumed, from, base, repo, collided?}
 //                                                                  src/planrun.js:1589
@@ -240,6 +248,63 @@ function windowWallMs(startTs, endTs) {
 }
 
 /**
+ * `transport-retry` records (F119) whose `seq` falls inside `(startSeq,
+ * endSeq)` — same open-interval windowing as {@link windowSpend}'s rounds.
+ * Multiple retries in one window all count; the displayed error text is the
+ * FIRST record's (every retry is `attempt:1` per src/planrun.js:126's own
+ * comment — one transport-only retry — so the first record represents the
+ * group even when more than one fired in the same occurrence). `label` is
+ * `recovered` only when EVERY retry in the window recovered, `not recovered`
+ * when none did, and `partially recovered` on a genuine mix — never
+ * collapsed to one word that hides a real split.
+ * @param {any[]} retries
+ * @param {number} startSeq
+ * @param {number} endSeq
+ * @returns {{count: number, label: string, error: string|null}|null}
+ */
+function windowTransportRetries(retries, startSeq, endSeq) {
+  const inWindow = retries.filter((r) => typeof r.seq === 'number' && r.seq > startSeq && r.seq < endSeq);
+  if (inWindow.length === 0) return null;
+  const recoveredCount = inWindow.filter((r) => r.recovered === true).length;
+  const label = recoveredCount === inWindow.length ? 'recovered' : recoveredCount === 0 ? 'not recovered' : 'partially recovered';
+  return { count: inWindow.length, label, error: hardTrim(inWindow[0].error, 80) };
+}
+
+/**
+ * The REASON(S) behind a `spendComplete:false` job-end, derived from spine
+ * records — never guessed, never picking just one when more than one truly
+ * applies. Mirrors src/run.js:229-276's four one-way floor flags plus the
+ * resume fold's own fifth: transport retry (any `transport-retry` record's
+ * presence, src/run.js:266,393 — `recovered` is irrelevant to the flag),
+ * unpriced round (a `worker-round`/`judge-round` with non-finite `costUsd`;
+ * `ACCOUNTED_ROUND_TYPES`, src/run.js:38,380), cut mid-call (a `wall-halt`
+ * record with `cutMidCall:true`, src/run.js:257,389), stall (a `stall`
+ * record, src/run.js:246,385), prior leg floor (`job-start.priorSpendComplete
+ * === false`, src/run.js:240,328). Returns `[]` when `spendComplete` is true
+ * (nothing to explain) OR when it is false but this spine carries no
+ * derivable evidence at all (an older archive, or a floor inherited from a
+ * resumed leg not in this file) — the caller prints the honest
+ * "reason not in spine" fallback for that empty case, never a guess.
+ * @param {any[]} spine
+ * @param {any} jobStart
+ * @param {boolean} spendComplete
+ * @returns {string[]}
+ */
+function floorReasons(spine, jobStart, spendComplete) {
+  if (spendComplete) return [];
+  const reasons = [];
+  const transportRetryCount = spine.filter((e) => e.type === 'transport-retry').length;
+  if (transportRetryCount > 0) reasons.push(`transport retry ×${transportRetryCount}`);
+  const unpricedRoundCount = spine.filter((e) => (e.type === 'worker-round' || e.type === 'judge-round')
+    && !(typeof e.costUsd === 'number' && Number.isFinite(e.costUsd))).length;
+  if (unpricedRoundCount > 0) reasons.push('unpriced round(s)');
+  if (spine.some((e) => e.type === 'wall-halt' && e.cutMidCall === true)) reasons.push('cut mid-call');
+  if (spine.some((e) => e.type === 'stall')) reasons.push('stall');
+  if (jobStart && jobStart.priorSpendComplete === false) reasons.push('prior leg floor');
+  return reasons;
+}
+
+/**
  * Which `close-verdict`/`outer-close` record is "the close" — the
  * OPERATOR's real, signed close, never a plan step's own exit-eval judge
  * loop (see the file header's `close-verdict` entry for why `stages` is the
@@ -325,6 +390,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
 
   const spentUsd = jobEnd && typeof jobEnd.spentUsd === 'number' && Number.isFinite(jobEnd.spentUsd) ? jobEnd.spentUsd : null;
   const spendComplete = jobEnd ? jobEnd.spendComplete === true && spentUsd !== null : false;
+  const floorReasonList = floorReasons(spine, jobStart, spendComplete);
 
   const wallMs = windowWallMs(parseTs(jobStart?.ts), parseTs(jobEnd?.ts));
 
@@ -366,6 +432,11 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
   const stepEnds = spine.filter((e) => e.type === 'step-end');
   const workerRounds = spine.filter((e) => e.type === 'worker-round');
   const exitEvals = spine.filter((e) => e.type === 'exit-eval');
+
+  // F119: every `transport-retry` record on this spine, and the (derived,
+  // never guessed) reason(s) behind a `spendComplete:false` job-end — see
+  // {@link floorReasons}'s own doc for the full mapping back to src/run.js.
+  const transportRetries = spine.filter((e) => e.type === 'transport-retry');
 
   // resumed / resumeSeed / thisFileSpend — a RESUMED run's `job-end.spentUsd`
   // is the CHAIN total (prior legs folded in: src/run.js:227's `chainFoldUsd`
@@ -483,6 +554,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
       spentUsd: stepSpentUsd,
       unpricedRounds,
       tripped: tripOf(findTrip(escalations, startSeq, endSeq)),
+      transportRetries: windowTransportRetries(transportRetries, startSeq, endSeq),
     };
   });
 
@@ -536,8 +608,18 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
       spentUsd: iterSpentUsd,
       unpricedRounds,
       tripped: tripOf(findTrip(escalations, startSeq, endSeq)),
+      transportRetries: windowTransportRetries(transportRetries, startSeq, endSeq),
     };
   }) : [];
+
+  // Retries whose seq fell OUTSIDE every occurrence window built above (a
+  // retry during scout/plan/fix-loop phases the steps/iterations timelines
+  // don't cover, or a spine with no windows at all) — counted against
+  // whichever timeline is actually populated, never both (see `timelineKind`'s
+  // own doc: exactly one of steps/iterations is non-empty).
+  const windowedRetryCount = (timelineKind === 'iterations' ? iterations : steps)
+    .reduce((acc, u) => acc + (u.transportRetries ? u.transportRetries.count : 0), 0);
+  const transportRetriesOutsideWindows = transportRetries.length - windowedRetryCount;
 
   // replans: `plan-executed.replans` (src/planrun.js:2688) when present;
   // an older archived spine can predate that field (measured — see file
@@ -601,6 +683,9 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
     stopReason,
     spentUsd,
     spendComplete,
+    floorReasons: floorReasonList,
+    transportRetryCount: transportRetries.length,
+    transportRetriesOutsideWindows,
     wallMs,
     chainClock,
     resumed,
@@ -707,6 +792,16 @@ function closeStageLine(closeStage) {
   if (!closeStage || !closeStage.verdict) return null;
   const failing = Array.isArray(closeStage.stages) ? closeStage.stages.filter((s) => s.verdict !== 'satisfied').map((s) => s.name) : [];
   return `close: ${closeStage.verdict}${failing.length ? ` — ${failing.join(', ')}` : ''}`;
+}
+
+/**
+ * The `↳ transport retry ×N (…)` line under one step/iteration row (F119),
+ * or `null` when no retry fell inside that occurrence's window.
+ * @param {{count: number, label: string, error: string|null}|null} tr
+ */
+function transportRetryLine(tr) {
+  if (!tr) return null;
+  return `transport retry ×${tr.count} (${tr.label}) — ${tr.error ?? 'no error text recorded'}`;
 }
 
 /**
@@ -849,6 +944,16 @@ export function formatReplay(summary) {
       spentLine += ` · ${thisFileText} — MISMATCH vs job-end (diff $${summary.spendMismatch.diffUsd.toFixed(4)}), never hidden`;
     }
   }
+  // F119: WHY a `spendComplete:false` figure is a floor, derived from this
+  // spine's own records (never guessed) — see {@link floorReasons}. A floor
+  // with no derivable evidence (an older archive, or a resumed leg's floor
+  // inherited from a file not in hand) prints the honest fallback, never a
+  // blank or a fabricated single cause.
+  if (!summary.spendComplete) {
+    spentLine += summary.floorReasons.length
+      ? ` · floor because: ${summary.floorReasons.join(', ')}`
+      : ' · floor (reason not in spine)';
+  }
   spentLine += ` · wall ${duration(summary.wallMs)} (this file)`;
   if (summary.chainClock) {
     const { elapsedMs, requestedMs, source } = summary.chainClock;
@@ -872,6 +977,13 @@ export function formatReplay(summary) {
   lines.push('');
   if (summary.timelineKind === 'iterations') {
     lines.push('TIMELINE (iterations — loop-shape run)');
+    // F119: retries whose seq fell outside every iteration window (scout/plan
+    // phases the iterations timeline doesn't cover) — printed only when there
+    // ARE any; a run with every retry accounted for inside a row has nothing
+    // extra to say here.
+    if (summary.transportRetriesOutsideWindows > 0) {
+      lines.push(`  transport retries outside steps: ${summary.transportRetriesOutsideWindows}`);
+    }
     if (summary.iterations.length === 0) {
       lines.push('  (no iterations reached)');
     } else {
@@ -893,10 +1005,15 @@ export function formatReplay(summary) {
         const it = summary.iterations[i - 1];
         const note = it.boundary === 'close-verdict' ? closeStageLine(it.closeStage) : trippedLine(it.tripped);
         if (note) lines.push(`${indent}↳ ${note}`);
+        const retryNote = transportRetryLine(it.transportRetries);
+        if (retryNote) lines.push(`${indent}↳ ${retryNote}`);
       }
     }
   } else {
     lines.push('TIMELINE (steps)');
+    if (summary.transportRetriesOutsideWindows > 0) {
+      lines.push(`  transport retries outside steps: ${summary.transportRetriesOutsideWindows}`);
+    }
     if (summary.steps.length === 0) {
       lines.push('  (no steps reached)');
     } else {
@@ -919,6 +1036,8 @@ export function formatReplay(summary) {
         if (i === 0) continue;
         const note = trippedLine(summary.steps[i - 1].tripped);
         if (note) lines.push(`${indent}↳ ${note}`);
+        const retryNote = transportRetryLine(summary.steps[i - 1].transportRetries);
+        if (retryNote) lines.push(`${indent}↳ ${retryNote}`);
       }
     }
   }
@@ -962,7 +1081,7 @@ export function formatReplay(summary) {
  * all (outcome itself is `null`) — a distinct, named case, not folded into
  * the ordinary escalation reason.
  * @param {ReturnType<typeof replayRun>} summary
- * @returns {{id: string, resumed: boolean, job: string, shape: string, class: string, model: string, outcome: string, spend: string, wall: string, steps: string, reason: string}}
+ * @returns {{id: string, resumed: boolean, job: string, shape: string, class: string, model: string, outcome: string, hadTransportRetries: boolean, spend: string, wall: string, steps: string, reason: string}}
  */
 export function summarizeForAllLine(summary) {
   const isGreen = summary.outcome === 'green' || summary.outcome === 'already-green';
@@ -1013,7 +1132,11 @@ export function summarizeForAllLine(summary) {
     // scanning the whole directory needs to see in full, not guess at from
     // a cut string.
     model: summary.model ?? '-',
-    outcome: summary.outcome ?? 'unknown',
+    // F119: no new column — the retry count rides on the outcome word itself,
+    // `⟲N`, the same posture as the `*` resumed marker riding on `id`. Never
+    // shown on a run with zero retries.
+    outcome: `${summary.outcome ?? 'unknown'}${summary.transportRetryCount > 0 ? ` ⟲${summary.transportRetryCount}` : ''}`,
+    hadTransportRetries: summary.transportRetryCount > 0,
     spend: money(summary.spentUsd),
     wall: duration(summary.wallMs),
     steps: stepsCol,
@@ -1055,6 +1178,10 @@ export function formatAllLines(entries) {
   }
   if (spineEntries.some((e) => /** @type {any} */ (e).row.resumed)) {
     out.push('* resumed run — spend is the chain total, see detail');
+  }
+  // F119: same footnote posture as the resumed `*` above.
+  if (spineEntries.some((e) => /** @type {any} */ (e).row.hadTransportRetries)) {
+    out.push('⟲N transport retry(ies), recovered inline — see the full replay for detail');
   }
   return out.join('\n');
 }

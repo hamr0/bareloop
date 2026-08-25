@@ -79,6 +79,19 @@ feature lands, **patch** = docs, fixes, scaffolding.
   43f2812` / `@ sha unknown` / `not recorded (pre-F118 spine)`; no new `--all` column
   (hamr's index is already full). The library never grows a shell seam to answer this —
   `run` stays the one locked verb.
+- **Replay surfaces transport retries and floor reasons** (F119, live-proven the same day
+  a real run — `u-mt8yk53k` — fired the retry seam twice): `replayRun`/`formatReplay`
+  window `transport-retry` records into the step/iteration occurrence they fell inside
+  (same `seq` windowing as `worker-round`), printing `↳ transport retry ×N (recovered|not
+  recovered|partially recovered) — <error>` under that row; a retry outside every window
+  prints as `transport retries outside steps: N` under the `TIMELINE` header instead. The
+  header's `spent:` line, whenever `spendComplete:false`, now appends `· floor because:
+  <reason(s)>` — derived from the spine, never guessed: `transport retry ×N`, `unpriced
+  round(s)`, `cut mid-call`, `stall`, `prior leg floor`, every cause that shows real
+  evidence, or `floor (reason not in spine)` when none can be derived. `--all` adds no
+  column: a run carrying any retry gets ` ⟲N` appended to its outcome word (same posture
+  as the resumed `*`), with one footnote when the listing holds any. Report-only — reads
+  existing `transport-retry`/`wall-halt`/`stall`/`job-start` records, writes nothing.
 
 ## [0.14.0] — 2026-08-25
 

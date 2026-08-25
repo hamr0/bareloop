@@ -9438,3 +9438,137 @@ New: `src/codeversion.js`, `tests/codeversion.test.js` (6 tests). Suite: 2134 �
 (+6 codeversion, +1 replay). `npm run typecheck` and `npm run build:types` both clean.
 Full `npm test` (including `prompt-commit-check`) green: 2141/2141, `OK — 7 commit(s)
 checked, 0 touching a prompt register with a missing/incomplete label`.
+
+### Addendum: Live proof 2026-08-25
+
+A real paid run, `aurora-u-bareloop/u-mt8yk53k.jsonl`, launched 2026-08-25T17:47:54.057Z
+from code sha `aef0c1b0` (`--read-shim A1 --approve c395b716…`, fresh, patient reset to
+seed `d661e50`), is the first real spine to carry the run→code stamp this addendum
+landed. Its `job-start` record, quoted verbatim:
+
+```
+{"type":"job-start","job":"aurora-u-spawner-types","specHash":"c395b716b7afd...",
+"budgetUsd":5,"shape":"plan","goal":"Make packages/spawner pass mypy --strict without
+weakening the tests.","verdictType":"green","model":"claude-sonnet-5",
+"code":{"version":"0.14.0","sha":"aef0c1b05996f9172363d2b82fb5eebbad35d34b"},
+"seq":1,"ts":"2026-08-25T17:47:54.057Z"}
+```
+
+`replayRun`/`formatReplay` render it exactly as designed — no fabrication, no fallback
+text triggered:
+
+```
+class:   green
+model:   claude-sonnet-5
+code:    bareloop 0.14.0 @ aef0c1b0
+```
+
+The run finished green ($1.9983 floor, wall 8m40s, 1 step). This is the first time
+`verdictType`/`model`/`code` have been observed on a REAL archived spine rather than only
+on the $0 test-harness run F117/F118 originally proved them against — the same fields,
+same rendering, now confirmed live. See F119 below for what else this same run's spine
+surfaced.
+
+## F119
+
+**The transport retry fired live: two TLS `bad record mac` alerts in one run, both
+recovered, green.**
+
+The same real run this addendum opened with, `aurora-u-bareloop/u-mt8yk53k.jsonl`,
+carries two `transport-retry` records — the first time PRD TODO item 3 / F115's retry
+seam has fired on a real archived run since it was built 2026-08-24. Both, quoted
+verbatim, grepped straight off the spine:
+
+```
+{"type":"transport-retry","phase":"step:fix-mypy-strict","attempt":1,
+"error":"0039C0F6E97F0000:error:0A0003FC:SSL routines:ssl3_read_bytes:ssl/tls alert bad
+record mac:ssl/record/rec_layer_s3.c:918:SSL alert number 20\n","recovered":true,
+"seq":62,"ts":"2026-08-25T17:53:26.639Z"}
+
+{"type":"transport-retry","phase":"step:fix-mypy-strict","attempt":1,
+"error":"0039C0F6E97F0000:error:0A0003FC:SSL routines:ssl3_read_bytes:ssl/tls alert bad
+record mac:ssl/record/rec_layer_s3.c:918:SSL alert number 20\n","recovered":true,
+"seq":71,"ts":"2026-08-25T17:54:14.728Z"}
+```
+
+Both fired inside the run's one plan step (`fix-mypy-strict`, `step-start` seq 35,
+`step-end` seq 80) — specifically inside its second `iteration-start`..`close-verdict`
+window (seq 58..78), roughly 39 and 87 seconds apart. Both carry `attempt:1` (the retry
+is always attempt 1 per `withTransportRetry`'s own comment, `src/planrun.js:126`) and
+`recovered:true` — the retried call succeeded both times, and the run went on to close
+green: `job-end.outcome:"green"`.
+
+### The contrast: the same error killed a different run five days earlier
+
+`aurora-u-bareloop/u-mszcthk1.jsonl` (2026-08-19, pre-dates the retry build) carries the
+IDENTICAL error string — `error:0A0003FC:SSL routines:ssl3_read_bytes:ssl/tls alert bad
+record mac:ssl/record/rec_layer_s3.c:918:SSL alert number 20` — as an `escalation`
+(`category:"provider-red"`, seq 77), with no `transport-retry` record anywhere in that
+spine (the seam did not exist yet). That run's `job-end`: `{"outcome":"provider-red",
+"spentUsd":0.8529209000000001,"spendComplete":false,"seq":81}` — killed outright at an
+$0.85 floor. Same failure signature, same condition class (F115's still-unexplained TLS
+alert); the only difference between a dead run and a green one is whether the retry seam
+existed to absorb it.
+
+### What this does and does not prove
+
+**Proves**: the retry mechanism, as built, correctly detects a transport-class failure,
+retries exactly once, and the retried call can succeed — turning what would have been
+this run's death into a green outcome, live, on a real paid run, not a POC or a scripted
+test double.
+
+**Does not prove**: a recovery *rate*. This is n=1 run carrying 2 retry events, both
+recovered — not a sample large enough to say retries recover most of the time, or even
+usually; a run where the retried attempt fails too (both attempts hit the same transport
+error) has not been observed yet, and the code path for that case (report `recovered:
+false`, propagate the original error) remains untested against a real provider. The TLS
+`bad record mac` condition's root CAUSE is still unproven — F115's $0-then-~$5 probe
+(39/39 clean, logged 2026-08-24) never reproduced it, and this run does not change that;
+PRD TODO item 5 (chase the cause) stays optional, on the same reasoning as before, now
+strengthened by direct evidence that the retry absorbs the symptom regardless of cause.
+
+### The honesty flag, live
+
+`job-end.spendComplete:false` on a GREEN run — `src/run.js:266,393`'s one-way floor
+fired exactly as designed: the retried call's first attempt may already have been billed
+before it threw, and that unknown does not heal even though the retry recovered and the
+run finished green. `spentUsd:1.9983196500000002` is a floor, not a total, printed
+honestly as `$1.9983 (floor, not exact)` rather than a laundered exact-looking figure —
+the F6 doctrine in a green run's coat, working exactly as it was built to.
+
+### The replay gap this exposed, and closed
+
+Before this build, `replayRun`/`formatReplay` (F117) read `job-end.spendComplete` and
+printed the bare fact — a floor with no visible cause. Running the real spine through the
+existing reader confirmed the gap directly: `spent: $1.9983 (floor, not exact) of $5.00
+signed` gave no hint that two transport retries were the reason, and neither
+`transport-retry` record appeared anywhere in the report (not in the TIMELINE, not
+anywhere else) — a real, load-bearing event invisible in the tool built to make exactly
+this kind of run explainable in under five minutes. Fixed same day (see the build's own
+commit): `replayRun` now windows `transport-retry` records into the occurrence they fell
+inside (same `seq` windowing as `worker-round`), `formatReplay` prints a `↳ transport
+retry ×N (recovered) — <error>` line under the row and a derived `floor because:
+transport retry ×2` clause on the header's `spent:` line, and `--all` appends ` ⟲2` to
+the outcome word. Verified against this exact run:
+
+```
+spent:   $1.9983 (floor, not exact) of $5.00 signed · floor because: transport retry ×2 · wall 8m40s (this file) · ...
+
+TIMELINE (steps)
+  #  step             result  rounds     tools     checks  tree     wall   spend
+  1  fix-mypy-strict  GREEN   29 rounds  46 tools  1/1     changed  4m14s  $1.4994
+     ↳ transport retry ×2 (recovered) — 0039C0F6E97F0000:error:0A0003FC:SSL routines:ssl3_read_bytes:ssl/tls alert bad r…
+```
+
+and in `--all`: `green ⟲2` on this run's row, with a footnote
+(`⟲N transport retry(ies), recovered inline — see the full replay for detail`).
+
+### Numbers
+
+Changed: `src/replay.js` (windowing + floor-reason derivation, no new spine fields —
+report-only, reads existing `transport-retry`/`wall-halt`/`stall`/`job-start` records
+only), `tests/replay.test.js` (+2: the F119 live-proof case on `u-mt8yk53k`, and a
+control case on a retry-free archived run; +1 existing `--all` test updated to account
+for the new footnote line). Suite: 2141 → 2143. `npm run typecheck` and `npm run
+build:types` both clean. Full `npm test` green: 2143/2143, `prompt-commit-check: OK — 8
+commit(s) checked, 0 touching a prompt register with a missing/incomplete label`.

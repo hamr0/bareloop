@@ -12,7 +12,7 @@ import { readFileSync, readdirSync, existsSync, mkdtempSync, mkdirSync, writeFil
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { replayRun, formatReplay, summarizeForAllLine } from '../src/replay.js';
+import { replayRun, formatReplay, summarizeForAllLine, formatAllLines } from '../src/replay.js';
 import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
 import { makeSpine } from '../src/spine.js';
@@ -166,9 +166,12 @@ test('--all lists every archived run with a header row: id, job, shape, outcome,
   const lines = out.trim().split('\n');
   const files = readdirSync(ARCHIVE).filter((f) => /^u-[^/]+\.jsonl$/.test(f) && !f.includes('gate-audit') && !f.endsWith('.lag.jsonl'));
   // header + one row per spine + (a footnote line IF this archive holds at
-  // least one resumed run — measured, not assumed: aurora-u-bareloop does).
+  // least one resumed run — measured, not assumed: aurora-u-bareloop does) +
+  // (a second footnote line IF it holds at least one run with a transport
+  // retry — F119: measured, u-mt8yk53k does).
   const hasFootnote = lines.some((l) => l.startsWith('* resumed run'));
-  assert.equal(lines.length, files.length + 1 + (hasFootnote ? 1 : 0), 'one header row + one line per real spine file (+ the resumed footnote when any row needs it), none dropped or duplicated');
+  const hasRetryFootnote = lines.some((l) => l.startsWith('⟲N transport retry'));
+  assert.equal(lines.length, files.length + 1 + (hasFootnote ? 1 : 0) + (hasRetryFootnote ? 1 : 0), 'one header row + one line per real spine file (+ the resumed/retry footnotes when any row needs them), none dropped or duplicated');
   assert.match(lines[0], /^id\s+job\s+shape\s+class\s+model\s+outcome\s+spend\s+wall\s+steps\s+reason$/, 'the header row names every column');
   const line = lines.find((l) => l.startsWith('mszcthk1 '));
   assert.ok(line, 'the known provider-red run appears in the listing');
@@ -672,4 +675,63 @@ test('u-msdsmkid (archived, pre-F118) prints "code: not recorded (pre-F118 spine
 
   const text = formatReplay(s);
   assert.match(text, /code: {4}not recorded \(pre-F118 spine\)/);
+});
+
+// ── F119 (2026-08-25): the transport retry fired live on u-mt8yk53k — two
+// TLS "bad record mac" alerts, both recovered, run still green. All numbers
+// below are grepped straight off the real archived spine (see the FINDINGS
+// F119 entry for the full grep output): two `transport-retry` records at
+// seq 62/71, both `recovered:true`, both inside step `fix-mypy-strict`'s own
+// seq window (step-start seq 35, step-end seq 80); `job-end.spendComplete`
+// is `false` for exactly this reason.
+test('u-mt8yk53k (archived, F119 live proof) surfaces both transport retries and why the spend is a floor', { skip: !haveArchive && 'no archive on this machine' }, () => {
+  const { spine, audit } = loadRun('mt8yk53k');
+
+  // Precondition: this real archived spine really carries two recovered
+  // transport-retry records for the same TLS error, both inside the run's
+  // one step window — asserted straight off the raw records, not the reader.
+  const retries = spine.filter((e) => e.type === 'transport-retry');
+  assert.equal(retries.length, 2, 'precondition: this real archived spine carries exactly two transport-retry records');
+  assert.ok(retries.every((r) => r.recovered === true), 'precondition: both retries recovered');
+  assert.match(retries[0].error, /bad record mac/);
+
+  const s = replayRun(spine, audit, { runId: 'mt8yk53k' });
+  assert.equal(s.outcome, 'green');
+  assert.equal(s.spendComplete, false);
+  assert.equal(s.transportRetryCount, 2);
+  assert.equal(s.transportRetriesOutsideWindows, 0, 'both retries fall inside the one step window');
+  assert.deepEqual(s.floorReasons, ['transport retry ×2']);
+  assert.equal(s.steps.length, 1);
+  const oneLineError = retries[0].error.replace(/\s+/g, ' ').trim();
+  assert.deepEqual(s.steps[0].transportRetries, {
+    count: 2,
+    label: 'recovered',
+    error: `${oneLineError.slice(0, 80)}…`,
+  });
+
+  const text = formatReplay(s);
+  assert.match(text, /floor because: transport retry ×2/);
+  assert.match(text, /↳ transport retry ×2 \(recovered\) — 0039C0F6E97F0000.*ssl3_read_bytes/);
+  // no step ran outside the window, so the header's "outside steps" line
+  // never appears for this run.
+  assert.doesNotMatch(text, /transport retries outside steps/);
+
+  const row = summarizeForAllLine(s);
+  assert.equal(row.hadTransportRetries, true);
+  assert.match(row.outcome, /^green ⟲2$/);
+
+  const allText = formatAllLines([{ kind: 'spine', row }]);
+  assert.match(allText, /green ⟲2/);
+  assert.match(allText, /⟲N transport retry\(ies\)/);
+});
+
+test('a run with no transport-retry records carries an empty floorReasons and no ⟲ marker', { skip: !haveArchive && 'no archive on this machine' }, () => {
+  const { spine, audit } = loadRun('ms2c0ls7');
+  assert.equal(spine.filter((e) => e.type === 'transport-retry').length, 0, 'precondition: this real archived spine has no transport-retry records');
+  const s = replayRun(spine, audit, { runId: 'ms2c0ls7' });
+  assert.equal(s.transportRetryCount, 0);
+  assert.deepEqual(s.floorReasons, [], 'spendComplete is true on this run, so there is nothing to explain');
+  const row = summarizeForAllLine(s);
+  assert.equal(row.hadTransportRetries, false);
+  assert.doesNotMatch(row.outcome, /⟲/);
 });
