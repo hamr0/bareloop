@@ -9254,7 +9254,26 @@ non-resumed run in the available archive (aurora-u, bareagent-u, litectx-maintai
 it. `--all` keeps the chain total in its spend column (what a directory scan asks first) but
 marks a resumed row with a trailing `*` and one footnote line when the listing holds any.
 
+### PRD TODO #20 blessed same day — verdictType now on job-start; model landed too
+
+hamr blessed PRD TODO #20 verbatim ("1") the same day this whole item shipped — a spine-WRITER
+change to `job-start` (`src/run.js:303`), which a report-only reader would never make on its own
+authority. `verdictType: job.verdictType` was safe to add outright: it is a REQUIRED spec field
+(`src/job.js:552` reds `missing-required` before `job-start` ever fires), so it is always a real,
+validated string at the emit site — no default was invented because none needed inventing.
+`model` turned out to be citable too, contrary to the original PRD line's assumption that it was
+"only resolvable inside bare-agent or per-round later": `src/planrun.js:76`'s own comment
+documents bare-agent's Loop reading `baseProvider.model` directly off the exact `provider` object
+`runJob` already receives as a parameter, so `model: provider.model` reads a real, synchronously-
+available property rather than guessing one — added conditionally
+(`typeof provider?.model === 'string'`), so a provider double or a native/clipipe binding with no
+such field (measured: `tests/helpers.js`'s `scriptedProvider`) omits it rather than fabricating
+one. Both landed; `src/replay.js` reads them as `class:`/`model:` right after `shape:`, with
+`--all` gaining a `class` column. No test asserts job-start's exact/complete field shape anywhere
+in the suite (checked every `'job-start'` occurrence across `tests/*.test.js`), so nothing broke.
+
 ### Numbers
 
-Suite: 2096 → 2110 (22 tests total in `tests/replay.test.js` across the whole build).
-`npm run typecheck` and `npm run build:types` both clean throughout every round.
+Suite: 2096 → 2114 (24 tests total in `tests/replay.test.js`, +2 in `tests/run.test.js`,
+across the whole build). `npm run typecheck` and `npm run build:types` both clean throughout
+every round.

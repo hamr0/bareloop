@@ -39,8 +39,11 @@ feature lands, **patch** = docs, fixes, scaffolding.
   hidden (measured: 0 of the archive's non-resumed runs trip it). `--all` marks a resumed row
   with a trailing `*` and one footnote line when the listing holds any. Reuses `runBehaviour`/the
   `memory-cache` readout rather than reimplementing either. Reads only, mints no verdict, writes
-  nothing to the spine. The verdict CLASS (green/softgreen) and the worker MODEL name are
-  explicitly NOT surfaced — neither lives in any spine record today (PRD TODO #20, F117).
+  nothing to the spine. `job-start` (`src/run.js`) now also carries `verdictType` (the spec's
+  required verdict class) and `model` (when the shell-owned provider binding itself carries one)
+  — PRD TODO #20, blessed verbatim by hamr the same day. The header prints `class:`/`model:`
+  right after `shape:` (`not recorded (pre-F117 spine)` / `not recorded` on an older archive or
+  a provider with no `.model`), and `--all` gains a `class` column.
 
 ## [0.14.0] — 2026-08-25
 

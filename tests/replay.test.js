@@ -8,11 +8,15 @@
 
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, existsSync, mkdtempSync, writeFileSync, copyFileSync, appendFileSync, rmSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, copyFileSync, appendFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { replayRun, formatReplay } from '../src/replay.js';
+import { replayRun, formatReplay, summarizeForAllLine } from '../src/replay.js';
+import { runJob } from '../src/run.js';
+import { jobSpecHash } from '../src/job.js';
+import { makeSpine } from '../src/spine.js';
+import { scriptedProvider, initPatientRepo } from './helpers.js';
 
 const ARCHIVE = '/home/hamr/PycharmProjects/bareloop-patients/aurora-u-bareloop';
 const AURORA_SOAR = '/home/hamr/PycharmProjects/bareloop-patients/aurora-soar-bareloop';
@@ -165,7 +169,7 @@ test('--all lists every archived run with a header row: id, job, shape, outcome,
   // least one resumed run — measured, not assumed: aurora-u-bareloop does).
   const hasFootnote = lines.some((l) => l.startsWith('* resumed run'));
   assert.equal(lines.length, files.length + 1 + (hasFootnote ? 1 : 0), 'one header row + one line per real spine file (+ the resumed footnote when any row needs it), none dropped or duplicated');
-  assert.match(lines[0], /^id\s+job\s+shape\s+outcome\s+spend\s+wall\s+steps\s+reason$/, 'the header row names every column');
+  assert.match(lines[0], /^id\s+job\s+shape\s+class\s+outcome\s+spend\s+wall\s+steps\s+reason$/, 'the header row names every column');
   const line = lines.find((l) => l.startsWith('mszcthk1 '));
   assert.ok(line, 'the known provider-red run appears in the listing');
   assert.match(line, /aurora-u-spawner-types/, 'the job column is present');
@@ -448,7 +452,7 @@ test('u-msf70nei: loop-shape iterations, and CLOSE resolves the LATER fix-loop c
 test('--all on bareagent-u-bareloop: job/shape columns, "N it" for loop-shape, aligned columns', { skip: !existsSync(BAREAGENT_U) && 'no bareagent-u patient on this machine' }, () => {
   const out = execFileSync('node', [SCRIPT, '--all', BAREAGENT_U], { encoding: 'utf8' });
   const lines = out.trim().split('\n');
-  assert.match(lines[0], /^id\s+job\s+shape\s+outcome\s+spend\s+wall\s+steps\s+reason$/);
+  assert.match(lines[0], /^id\s+job\s+shape\s+class\s+outcome\s+spend\s+wall\s+steps\s+reason$/);
 
   const msf70 = lines.find((l) => l.startsWith('msf70nei'));
   assert.ok(msf70);
@@ -472,7 +476,7 @@ test('--all on bareagent-u-bareloop: job/shape columns, "N it" for loop-shape, a
   // footnote line is excluded — it is prose, not a table row.
   const dataLines = lines.slice(1, -1);
   const outcomeStarts = new Set(dataLines.map((l) => {
-    const m = l.match(/^\S+\s+\S+\s+\S+\s+/);
+    const m = l.match(/^\S+\s+\S+\s+\S+\s+\S+\s+/); // id, job, shape, class
     return m ? m[0].length : -1;
   }));
   assert.equal(outcomeStarts.size, 1, `every outcome column must start at the same offset; saw ${[...outcomeStarts]}`);
@@ -556,4 +560,91 @@ test('spendMismatch fires (never silently) when a constructed non-resumed run ge
   assert.ok(Math.abs(s.spendMismatch.diffUsd - 3.0) < 1e-9);
   const text = formatReplay(s);
   assert.match(text, /MISMATCH vs job-end/);
+});
+
+// ── F117 landed (PRD TODO #20): verdictType on job-start, model when citable
+// (hamr blessed "1" verbatim, 2026-08-25) ───────────────────────────────────
+
+test('u-msdsmkid (archived, pre-F117) prints "class: not recorded (pre-F117 spine)"', { skip: !existsSync(BAREAGENT_U) && 'no bareagent-u patient on this machine' }, () => {
+  const spinePath = join(BAREAGENT_U, 'u-msdsmkid.jsonl');
+  const spine = parseJsonl(spinePath);
+  assert.equal(spine.find((e) => e.type === 'job-start').verdictType, undefined, 'precondition: this real archived job-start really predates verdictType');
+
+  const s = replayRun(spine, [], { runId: 'msdsmkid' });
+  assert.equal(s.verdictType, null);
+  assert.equal(s.model, null);
+
+  const text = formatReplay(s);
+  assert.match(text, /class: {3}not recorded \(pre-F117 spine\)/);
+  assert.match(text, /model: {3}not recorded/);
+});
+
+test('a FRESHLY WRITTEN spine (real runJob() through the $0 test harness) carries its real verdictType, and replay prints it', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bareloop-replay-f117-'));
+  tmpDirs.push(dir);
+  mkdirSync(join(dir, 'tests'), { recursive: true });
+  mkdirSync(join(dir, 'src'), { recursive: true });
+  writeFileSync(join(dir, 'src', 'mod.mjs'), 'export const x = 1;\n');
+  const probe = `import { existsSync, readFileSync } from 'node:fs';
+const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
+if (existsSync(p) && readFileSync(p, 'utf8').includes('ok')) process.exit(0);
+console.log('FAILED tests/test_x.mjs missing'); process.exit(1);\n`;
+  writeFileSync(join(dir, 'close.mjs'), probe);
+  writeFileSync(join(dir, 'check.mjs'), probe);
+  // a real patient is a git checkout: the WORK BRANCH hard rule (PRD v1.57 §3)
+  // makes one a precondition of running a job at all — mirrors
+  // tests/run.test.js's own makePlanWork exactly.
+  initPatientRepo(dir);
+
+  const job = {
+    schema: 'job-v1',
+    job: 'f117-verdicttype-check',
+    description: 'proves job-start carries the real verdictType',
+    provider: 'anthropic-api',
+    cadence: { unit: 'day', every: 1 },
+    budgetUsd: 1.5,
+    writeScope: ['tests/**'],
+    goal: 'Write tests/test_x.mjs with an ok assertion.',
+    verdictType: 'green',
+    close: [{ name: 'clean-run', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' }],
+    tools: ['read', 'write'],
+    escalation: { mode: 'decision-ready' },
+  };
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write the missing test.', tools: ['write'], rounds: 6,
+      target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    }],
+  });
+  const provider = { ...scriptedProvider([
+    { text: 'no tests exist yet' },
+    { text: plan },
+    { toolCalls: [{ id: 't1', name: 'shell_write', arguments: { path: join(dir, 'tests', 'test_x.mjs'), content: 'ok\n' } }] },
+    { text: 'wrote it' },
+  ]), model: 'claude-sonnet-5' };
+
+  const spineFile = join(dir, 'spine.jsonl');
+  const outcome = await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: dir, provider, emit: makeSpine(spineFile),
+  });
+  assert.equal(outcome, 'green');
+
+  const spine = parseJsonl(spineFile);
+  const jobStart = spine.find((e) => e.type === 'job-start');
+  assert.equal(jobStart.verdictType, 'green');
+  assert.equal(jobStart.model, 'claude-sonnet-5');
+
+  const s = replayRun(spine, []);
+  assert.equal(s.verdictType, 'green');
+  assert.equal(s.model, 'claude-sonnet-5');
+
+  const text = formatReplay(s);
+  assert.match(text, /class: {3}green(?!\S)/);
+  assert.match(text, /model: {3}claude-sonnet-5/);
+  assert.doesNotMatch(text, /pre-F117 spine/);
+
+  assert.equal(summarizeForAllLine(s).class, 'green');
 });

@@ -106,6 +106,67 @@ test('plan dispatch: a four-field spec runs SCOUT→PLAN→EXECUTE→close throu
   assert.ok(events.some((e) => e.type === 'plan-executed'));
 });
 
+test('job-start carries verdictType (F117, PRD TODO #20) equal to the spec\'s, and model only when the provider binding carries one', async () => {
+  const wd = makePlanWork('plan-verdicttype');
+  const job = planJob();
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write the missing test.', tools: ['write'], rounds: 6,
+      target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    }],
+  });
+  // a plain scriptedProvider carries NO `.model` at all (tests/helpers.js) —
+  // the model half of F117 must stay honestly absent on it, never guessed.
+  const provider = scriptedProvider([
+    { text: 'no tests exist yet' },
+    { text: plan },
+    { toolCalls: [tcall2('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'wrote it' },
+  ]);
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file),
+  });
+  assert.equal(outcome, 'green');
+  const start = readSpine(file).find((e) => e.type === 'job-start');
+  assert.equal(start.verdictType, job.verdictType, 'the job-start record\'s verdictType is the SPEC\'s own, not a default');
+  assert.equal(start.verdictType, 'green');
+  assert.equal('model' in start, false, 'a provider binding with no .model field must never fabricate one');
+});
+
+test('job-start carries model when the shell-owned provider binding actually has one', async () => {
+  const wd = makePlanWork('plan-model');
+  const job = planJob();
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write the missing test.', tools: ['write'], rounds: 6,
+      target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    }],
+  });
+  // spread a `.model` onto the scripted double — exactly the shape
+  // src/planrun.js:76 documents bare-agent's own Loop reading directly off
+  // the real provider object (`baseProvider.model`).
+  const provider = { ...scriptedProvider([
+    { text: 'no tests exist yet' },
+    { text: plan },
+    { toolCalls: [tcall2('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'wrote it' },
+  ]), model: 'claude-sonnet-5' };
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file),
+  });
+  assert.equal(outcome, 'green');
+  const start = readSpine(file).find((e) => e.type === 'job-start');
+  assert.equal(start.model, 'claude-sonnet-5');
+});
+
 test('the read shim ARM is guarded at runJob\'s door — ahead of the approval gate, ahead of everything', async () => {
   // The mis-spelling this exists to stop is `readShim: 'diff '`. Coerced by
   // truthiness it runs A3 — every lever — while the battery's own log records

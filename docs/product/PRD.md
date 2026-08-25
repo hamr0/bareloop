@@ -239,9 +239,10 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
 18. **Flake-name capture** — held until the peer says "load window open" verbatim.
 19. **Housekeeping** — delete branches `bareagent-0381-bump`, `reorg-v2-test`; broad-`git add`
     workflow rule (stage by explicit path while a reorg is in flight).
-20. **`job-start` to carry `verdictType` + worker model** — replay cannot show verdict
-    class/model today (not in any spine record); spine-writer change in src/run.js, report-only,
-    hamr's word (F117).
+20. ~~`job-start` to carry `verdictType` + worker model~~ — **DONE 2026-08-25** (F117):
+    hamr blessed "1" verbatim; both `verdictType` (`src/run.js:303`, always real — a required
+    spec field) and `model` (conditional on the provider binding carrying one — `src/planrun.js:76`)
+    landed, `src/replay.js` reads both.
 
 Parked pending measurement: read compaction; stale-slice usage; context-headroom meter.
 Dead, never re-raise: rates passthrough (F113 ruling), W4 stale-index build (F112, retired on

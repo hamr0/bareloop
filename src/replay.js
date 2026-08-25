@@ -9,7 +9,15 @@
 //
 // Field provenance (every field this module reads, grepped to its `emit(`
 // site so nothing here is a guessed shape):
-//   job-start      {job, specHash, budgetUsd, shape, goal, ...}   src/run.js:227-256
+//   job-start      {job, specHash, budgetUsd, shape, goal, verdictType, model?, ...}
+//                                                                  src/run.js:227-256,303
+//     `verdictType`/`model` (F117, PRD TODO #20, landed 2026-08-25): `verdictType` is
+//     a REQUIRED spec field (src/job.js:552 reds `missing-required` before job-start
+//     ever fires), so it is always real on every spine carrying it — `null` here means
+//     only "older than the field", never "unset". `model` rides along only when the
+//     shell-owned provider binding itself carried a `.model` string at job-start time
+//     (src/planrun.js:76's own comment: bare-agent's Loop reads `baseProvider.model`
+//     directly) — absent on a native/clipipe call path, never guessed.
 //   job-end        {outcome, spentUsd, spendComplete, engagementSpentUsd}
 //                                                                  src/run.js:288,378-413
 //   escalation     {category, decisionReady, verdicts?, spend?, decision, options, detail?}
@@ -551,6 +559,15 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
   return {
     runId,
     job: jobStart?.job ?? null,
+    // F117 (PRD TODO #20, landed): `verdictType` (src/run.js:303's job-start
+    // emit) — `null` on any spine older than that landing (measured:
+    // u-msdsmkid, an Aug-3 archived run, predates the field). `model` is
+    // narrower still: only present when the shell-owned provider binding
+    // itself carried a `.model` string at job-start time (src/run.js's own
+    // comment there) — a native/clipipe call path can legitimately have
+    // neither, and this reader reports that honestly rather than guessing.
+    verdictType: typeof jobStart?.verdictType === 'string' ? jobStart.verdictType : null,
+    model: typeof jobStart?.model === 'string' ? jobStart.model : null,
     goal: typeof jobStart?.goal === 'string' ? jobStart.goal : null,
     // the RAW last escalation record (or null) — the source `stopReason` was
     // built from, exposed directly rather than only reachable through
@@ -740,6 +757,15 @@ export function formatReplay(summary) {
     : `${summary.steps.length} step${summary.steps.length === 1 ? '' : 's'}, ${summary.replans} replan${summary.replans === 1 ? '' : 's'}`;
   lines.push(`shape:   ${shapeLabel} · ${shapeCount}`);
 
+  // F117 (PRD TODO #20): a spine older than the field lands reads
+  // "not recorded (pre-F117 spine)" — distinct wording from `model`'s bare
+  // "not recorded", because a missing `verdictType` is always an archive-age
+  // gap (the field is REQUIRED on every job — src/job.js:552), while a
+  // missing `model` can happen on ANY spine, old or new, whenever the
+  // provider binding itself carries none (a native/clipipe call path).
+  lines.push(`class:   ${summary.verdictType ?? 'not recorded (pre-F117 spine)'}`);
+  lines.push(`model:   ${summary.model ?? 'not recorded'}`);
+
   const signedWall = summary.chainClock && typeof summary.chainClock.requestedMs === 'number' ? duration(summary.chainClock.requestedMs) : NONE_RECORDED;
   const specShort = summary.specHash ? summary.specHash.slice(0, 8) : NONE_RECORDED;
   lines.push(`signed:  ${money2(summary.budgetUsd)} budget · ${signedWall} wall · spec ${specShort}`);
@@ -905,7 +931,7 @@ export function formatReplay(summary) {
  * all (outcome itself is `null`) — a distinct, named case, not folded into
  * the ordinary escalation reason.
  * @param {ReturnType<typeof replayRun>} summary
- * @returns {{id: string, resumed: boolean, job: string, shape: string, outcome: string, spend: string, wall: string, steps: string, reason: string}}
+ * @returns {{id: string, resumed: boolean, job: string, shape: string, class: string, outcome: string, spend: string, wall: string, steps: string, reason: string}}
  */
 export function summarizeForAllLine(summary) {
   const isGreen = summary.outcome === 'green' || summary.outcome === 'already-green';
@@ -948,6 +974,9 @@ export function summarizeForAllLine(summary) {
     resumed: summary.resumed === true,
     job: summary.job ?? NONE_RECORDED,
     shape,
+    // `-` (never `NONE_RECORDED`'s longer prose) — this is a compact table
+    // column, same posture as `reason`'s own `-` for a green row.
+    class: summary.verdictType ?? '-',
     outcome: summary.outcome ?? 'unknown',
     spend: money(summary.spentUsd),
     wall: duration(summary.wallMs),
@@ -966,11 +995,11 @@ export function summarizeForAllLine(summary) {
  * @returns {string}
  */
 export function formatAllLines(entries) {
-  const header = ['id', 'job', 'shape', 'outcome', 'spend', 'wall', 'steps', 'reason'];
+  const header = ['id', 'job', 'shape', 'class', 'outcome', 'spend', 'wall', 'steps', 'reason'];
   const spineEntries = entries.filter((e) => e.kind === 'spine');
   const rows = spineEntries.map((e) => {
     const r = /** @type {any} */ (e).row;
-    return [r.id, r.job, r.shape, r.outcome, r.spend, r.wall, r.steps, r.reason];
+    return [r.id, r.job, r.shape, r.class, r.outcome, r.spend, r.wall, r.steps, r.reason];
   });
   // No header at all when there is nothing tabular to head — a directory of
   // ONLY `not-a-spine` files gets its plain filename lines with no bare

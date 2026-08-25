@@ -2152,7 +2152,7 @@ NOTHING to the spine**, same posture as `runBehaviour` above, which it reuses ra
 reimplements for the tool-call breakdown. It returns one plain object:
 
 ```
-{ runId, job, goal, budgetUsd, specHash, branch,
+{ runId, job, goal, budgetUsd, specHash, branch, verdictType, model,
   outcome, stopReason, spentUsd, spendComplete, wallMs, chainClock,
   resumed, resumeSeed, thisFileSpend, spendMismatch,
   timelineKind: 'steps'|'iterations', replans, close,
@@ -2163,6 +2163,22 @@ reimplements for the tool-call breakdown. It returns one plain object:
   ending: { record, before /* the 3 records before it */, escalation },
   lastEscalation, behaviour, memoryCache, skipped }
 ```
+
+**`verdictType`/`model`** (F117, PRD TODO #20 — hamr blessed the whole item verbatim, landed
+2026-08-25): `verdictType` reads `job-start.verdictType` (`src/run.js:303`) — a REQUIRED spec
+field (`src/job.js:552` reds `missing-required` before job-start ever fires), so `null` here
+means only "this spine predates the field" (measured: `u-msdsmkid`, an Aug-3 archived run),
+never "unset". `model` reads `job-start.model`, present only when the shell-owned provider
+binding itself carried a `.model` string at job-start time — `src/planrun.js:76`'s own comment
+documents bare-agent's Loop reading `baseProvider.model` directly off that same object, so it is
+a real, citable, synchronously-available property, not a guess; a native/clipipe call path (or
+any provider double with no such field — measured on `tests/helpers.js`'s `scriptedProvider`)
+legitimately has neither, and this reader reports that honestly rather than defaulting one in.
+`formatReplay` prints both right after `shape:` — `class:   softgreen` / `class:   not recorded
+(pre-F117 spine)`, `model:   claude-sonnet-5` / `model:   not recorded`
+(the two "not recorded" wordings are deliberately different: a missing `verdictType` is always
+an archive-age gap, a missing `model` can happen on any spine, old or new). `--all` gains a
+`class` column right after `shape` (the verdict class, or `-`).
 
 **Unknown money/time is always `null`/`unknown` — never `0`, and a partial sum is never stamped
 exact** (F6's rule, carried through every level this module reports at): `spentUsd`/`wallMs` are
@@ -2312,11 +2328,13 @@ include a `job-start` (present on every real spine checked, nested wrappers incl
 misread as an empty run. Both modes mirror `scripts/behaviour-readout.mjs`'s own malformed-line
 handling (skip-and-count, never throw).
 
-**Explicitly NOT surfaced, and why**: the signed verdict CLASS (green/softgreen) and the worker
-MODEL name live only in the signed spec — no spine record carries either (`judgedCount` on a
-close-verdict is not a reliable stand-in: it appears on plain green closes too). Surfacing them
-is a spine-WRITER change to `job-start` (`src/run.js`), which a report-only reader does not make
-on its own authority — parked for hamr's explicit word (PRD TODO #20, F117).
+**F117's PRD TODO #20 is now landed in full**: both the verdict CLASS and the worker MODEL
+name are surfaced (see `verdictType`/`model` above) — hamr blessed the item verbatim
+("1") on 2026-08-25, so the spine-WRITER change to `job-start` (`src/run.js`) that a
+report-only reader would not otherwise make on its own authority went in with his explicit
+word. `judgedCount` on a close-verdict was never a reliable stand-in for the class either way
+(it appears on plain green closes too, not only softgreen ones) — this reads the real
+declared field instead.
 
 ```js
 import { replayRun, formatReplay } from 'bareloop';
