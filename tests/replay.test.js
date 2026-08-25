@@ -78,7 +78,7 @@ test('a GREEN run (u-ms2c0ls7) reconstructs job, spend, steps and ending', { ski
   assert.equal(s.chainClock.requestedMs, wallClockRecord.requestedMs);
 
   const text = formatReplay(s);
-  assert.match(text, /RUN ms2c0ls7/);
+  assert.match(text, /RUN ms2c0ls7 · aurora-u-spawner-types/);
   assert.match(text, /outcome: green/);
   // the wall-clock fallback must NEVER read as "this run took 0 seconds" — it
   // must name what the number actually is (inherited at start) and say plainly
@@ -86,8 +86,11 @@ test('a GREEN run (u-ms2c0ls7) reconstructs job, spend, steps and ending', { ski
   assert.match(text, /clock: 30m00s signed · 0\.0s inherited from prior legs at start \(from wall-clock; no end-of-run reading in this file\)/);
   assert.doesNotMatch(text, /clock: 0\.0s of 30m00s signed/, 'the old wording (reads as "took 0 seconds") must be gone');
   assert.match(text, /\$2\.2072/);
+  assert.match(text, /TIMELINE \(steps\)/);
+  assert.match(text, /CLOSE\n {2}satisfied · 4 stages: changed-from-seed OK · typecheck OK · suite-green OK · no-suppressions OK/, 'the outer-close (the only close on a never-replanned green run) is the CLOSE section');
   assert.match(text, /ENDING/);
   assert.match(text, /BEHAVIOUR/);
+  assert.match(text, /MEMORY-CACHE  not armed on this run/, 'MEMORY-CACHE is ALWAYS printed, even absent');
 });
 
 test('a PROVIDER-RED run (u-mszcthk1) carries a floor spend and a named stop reason', { skip: !haveArchive && 'no archive on this machine' }, () => {
@@ -114,8 +117,15 @@ test('a PROVIDER-RED run (u-mszcthk1) carries a floor spend and a named stop rea
   assert.match(String(s.ending.escalation.detail), /bad record mac/);
   assert.ok(!s.ending.before.some((r) => r.seq === 77), 'precondition: seq 77 really is outside the 3-before window');
 
+  // this run never reached a close at all (no close-verdict, no outer-close) —
+  // verified directly on the real file, not inferred from the outcome.
+  assert.equal(spine.filter((e) => e.type === 'close-verdict').length, 0, 'precondition: no close-verdict anywhere in this file');
+  assert.equal(spine.filter((e) => e.type === 'outer-close').length, 0, 'precondition: no outer-close anywhere in this file');
+  assert.equal(s.close, null);
+
   const text = formatReplay(s);
   assert.match(text, /bad record mac/, 'the formatted report surfaces the real failure, not just the generic category prose');
+  assert.match(text, /CLOSE\n {2}none — the run ended before any close ran/, 'the CLOSE section is never omitted, even when no close ever ran');
 });
 
 test('an ESCALATED (cap-halt) run (u-mszeikq6) states the strike-out reason and per-step checks', { skip: !haveArchive && 'no archive on this machine' }, () => {
@@ -131,17 +141,44 @@ test('an ESCALATED (cap-halt) run (u-mszeikq6) states the strike-out reason and 
   assert.ok(step.checks.passed >= 1 && step.checks.failed >= 1, 'the real archived fix loop recorded both a red and a green check-passes iteration');
   assert.equal(step.treeChanged, true);
   assert.ok(step.toolCalls > 0, 'gate-audit rows fall inside the step-start..step-end window');
+
+  // CLOSE section: the FIX LOOP'S OWN final close-verdict (the run's real
+  // close never satisfied — that's WHY it escalated), never the earlier
+  // outer-close precheck that happened before the fix loop even started.
+  const closeVerdicts = spine.filter((e) => e.type === 'close-verdict' && Array.isArray(e.stages));
+  const outerCloses = spine.filter((e) => e.type === 'outer-close');
+  assert.ok(closeVerdicts.length > 0 && outerCloses.length > 0, 'precondition: this file has BOTH a precheck outer-close and fix-loop close-verdicts');
+  const lastByType = [...outerCloses, ...closeVerdicts].sort((a, b) => a.seq - b.seq);
+  const expected = lastByType[lastByType.length - 1];
+  assert.equal(expected.type, 'close-verdict', 'precondition: the fix loop\'s own close-verdict is LATER (by seq) than the precheck outer-close');
+  assert.equal(s.close.source, 'close-verdict');
+  assert.equal(s.close.iteration, expected.iteration);
+  assert.equal(s.close.verdict, expected.verdict);
+  assert.equal(s.close.verdict, 'needs_revision', 'the fix loop never got this close to satisfied — consistent with the run escalating');
 });
 
-test('--all lists every archived run: id, outcome, spend, stop reason', { skip: !haveArchive && 'no archive on this machine' }, () => {
+test('--all lists every archived run with a header row: id, job, shape, outcome, spend, wall, steps, reason', { skip: !haveArchive && 'no archive on this machine' }, () => {
   const out = execFileSync('node', [SCRIPT, '--all', ARCHIVE], { encoding: 'utf8' });
   const lines = out.trim().split('\n');
   const files = readdirSync(ARCHIVE).filter((f) => /^u-[^/]+\.jsonl$/.test(f) && !f.includes('gate-audit') && !f.endsWith('.lag.jsonl'));
-  assert.equal(lines.length, files.length, 'one line per real spine file, none dropped or duplicated');
+  // header + one row per spine + (a footnote line IF this archive holds at
+  // least one resumed run — measured, not assumed: aurora-u-bareloop does).
+  const hasFootnote = lines.some((l) => l.startsWith('* resumed run'));
+  assert.equal(lines.length, files.length + 1 + (hasFootnote ? 1 : 0), 'one header row + one line per real spine file (+ the resumed footnote when any row needs it), none dropped or duplicated');
+  assert.match(lines[0], /^id\s+job\s+shape\s+outcome\s+spend\s+wall\s+steps\s+reason$/, 'the header row names every column');
   const line = lines.find((l) => l.startsWith('mszcthk1 '));
   assert.ok(line, 'the known provider-red run appears in the listing');
+  assert.match(line, /aurora-u-spawner-types/, 'the job column is present');
+  assert.match(line, /\bplan\b/, 'the shape column is present');
   assert.match(line, /provider-red/);
   assert.match(line, /\$0\.8529/);
+
+  // fixed columns, aligned — never CSV: every `$` in the spend column starts
+  // at the SAME character offset across every data row (the header's own
+  // "spend" label included in the width computation, per hamr's ruling).
+  const dataLines = lines.slice(1);
+  const dollarOffsets = new Set(dataLines.map((l) => l.indexOf('$')).filter((i) => i !== -1));
+  assert.equal(dollarOffsets.size, 1, `every spend column must start at the same offset; saw offsets ${[...dollarOffsets]}`);
 });
 
 test('the CLI resolves the sibling gate-audit and prints a full report for a real run', { skip: !haveArchive && 'no archive on this machine' }, () => {
@@ -266,7 +303,9 @@ test('a step that RUNS TWICE (u-msdsmkid, fix-loop-strict) is split by occurrenc
   assert.notEqual(occurrences[0].checks.failed, undefined);
 
   const text = formatReplay(s);
-  const lines = text.split('\n').filter((l) => l.trim().startsWith('fix-loop-strict'));
+  // row text now leads with a row number ("1  fix-loop-strict …"), so match
+  // on the row-number prefix rather than the id starting the line.
+  const lines = text.split('\n').filter((l) => /^\s*\d+\s+fix-loop-strict/.test(l));
   assert.equal(lines.length, 2);
   assert.doesNotMatch(lines[0], /\(2nd\)/, 'the FIRST occurrence prints unmarked');
   assert.match(lines[1], /fix-loop-strict \(2nd\)/, 'the repeated occurrence prints an ordinal marker');
@@ -293,6 +332,228 @@ test('u-msx87qqs labels "this file" wall vs the chain-scoped signed clock separa
   assert.notEqual(Math.round(s.wallMs), Math.round(s.chainClock.elapsedMs));
 
   const text = formatReplay(s);
-  assert.match(text, /wall: .+\(this file, job-start→job-end\)/);
+  assert.match(text, /wall .+\(this file\)/);
   assert.match(text, /clock: .+ of .+ signed \(chain, from wall-halt\)/);
+});
+
+// ── the signed layout: header block, per-row time/cost/tripped, CLOSE
+// section, loop-shape iterations, and the job/shape --all columns
+// (hamr, 2026-08-25) ─────────────────────────────────────────────────────
+
+test('u-msdsmkid: header block, per-step wall/spend/tripped, replans via the materials fallback, CLOSE none', { skip: !existsSync(BAREAGENT_U) && 'no bareagent-u patient on this machine' }, () => {
+  const spinePath = join(BAREAGENT_U, 'u-msdsmkid.jsonl');
+  const spine = parseJsonl(spinePath);
+  const auditPath = join(BAREAGENT_U, 'u-msdsmkid-gate-audit.jsonl');
+  const audit = existsSync(auditPath) ? parseJsonl(auditPath) : [];
+  const jobStart = spine.find((e) => e.type === 'job-start');
+  const jobEnd = spine.findLast((e) => e.type === 'job-end');
+
+  // preconditions this test's expectations depend on — all read from the
+  // real file, not asserted from memory
+  assert.equal(spine.filter((e) => e.type === 'work-branch').length, 0, 'precondition: this archived run predates the work-branch rung');
+  const planExecuted = spine.findLast((e) => e.type === 'plan-executed');
+  assert.equal(typeof planExecuted.replans, 'undefined', 'precondition: this archived run predates plan-executed.replans');
+  const replanMaterials = spine.filter((e) => e.type === 'materials' && e.phase === 'replan');
+  assert.equal(replanMaterials.length, 1, 'precondition: exactly one real replan-phase materials record');
+
+  const s = replayRun(spine, audit, { runId: 'msdsmkid' });
+  assert.equal(s.job, jobStart.job);
+  assert.equal(s.goal, jobStart.goal);
+  assert.equal(s.budgetUsd, jobStart.budgetUsd);
+  assert.equal(s.specHash, jobStart.specHash);
+  assert.equal(s.branch, null, 'no work-branch record in this file — null, never a derived/guessed name');
+  assert.equal(s.replans, 1, 'falls back to the materials phase:"replan" count when plan-executed.replans is absent');
+  assert.equal(s.close, null, 'this run never reached a close at all');
+
+  assert.equal(s.steps.length, 3);
+  const [occ1, occ2, occ3] = s.steps;
+  assert.equal(occ1.wallMs, Date.parse('2026-08-03T22:36:32.684Z') - Date.parse('2026-08-03T22:25:24.850Z'));
+  assert.ok(occ1.spentUsd > 0 && occ1.unpricedRounds === 0);
+  assert.ok(occ1.tripped && occ1.tripped.category === 'cap-halt');
+  // this occurrence's escalation carries NO `detail` field at all (a
+  // ladder-exhaustion cap-halt, src/ralph.js) — the tripped line must still
+  // say something real by falling back to `decision`, never a bare category.
+  const capHaltEsc = spine.find((e) => e.type === 'escalation' && e.category === 'cap-halt' && e.seq < 130);
+  assert.equal(typeof capHaltEsc.detail, 'undefined', 'precondition: this escalation really has no detail field');
+  assert.match(occ1.tripped.detail, /the step stopped making progress/);
+
+  assert.equal(occ2.tripped, null, 'the SECOND (green) occurrence tripped nothing');
+  assert.ok(occ3.tripped && occ3.tripped.category === 'step-variance');
+
+  const text = formatReplay(s);
+  assert.match(text, /RUN msdsmkid · bareagent-u-types/);
+  assert.match(text, new RegExp(`goal: {4}${jobStart.goal.slice(0, 20)}`));
+  assert.match(text, /shape: {3}plan · 3 steps, 1 replan/);
+  assert.match(text, /signed: {2}\$4\.00 budget · 25m00s wall · spec 1c35a1eb/);
+  assert.match(text, /branch: {2}none recorded/);
+  assert.match(text, /resumed: no/, 'no priorSpentUsd on this real job-start — a genuinely cold run');
+  assert.match(text, /spent: {3}\$3\.5428 of \$4\.00 signed · wall 25m43s \(this file\)/);
+  assert.match(text, /TIMELINE \(steps\)/);
+  assert.match(text, /#\s+step\s+result\s+rounds\s+tools\s+checks\s+tree\s+wall\s+spend/, 'the timeline carries its own column header row');
+  assert.match(text, /fix-loop-strict \(2nd\)/);
+  assert.match(text, /↳ tripped: cap-halt/);
+  assert.match(text, /↳ tripped: step-variance/);
+  assert.match(text, /CLOSE\n {2}none — the run ended before any close ran/);
+  assert.match(text, /MEMORY-CACHE {2}not armed on this run/);
+  assert.equal(s.spentUsd, jobEnd.spentUsd);
+});
+
+test('u-msf70nei: loop-shape iterations, and CLOSE resolves the LATER fix-loop close-verdict over the earlier outer-close precheck', { skip: !existsSync(BAREAGENT_U) && 'no bareagent-u patient on this machine' }, () => {
+  const spinePath = join(BAREAGENT_U, 'u-msf70nei.jsonl');
+  const spine = parseJsonl(spinePath);
+  const auditPath = join(BAREAGENT_U, 'u-msf70nei-gate-audit.jsonl');
+  const audit = existsSync(auditPath) ? parseJsonl(auditPath) : [];
+
+  // preconditions: the file carries an EARLIER outer-close (a precheck that
+  // read red) and a LATER staged close-verdict (the fix loop's own final,
+  // satisfied) — the exact shape that would mislead a type-preferring picker.
+  const outerClose = spine.find((e) => e.type === 'outer-close');
+  const finalCloseVerdict = spine.findLast((e) => e.type === 'close-verdict' && Array.isArray(e.stages));
+  assert.ok(outerClose && finalCloseVerdict, 'precondition: both records exist in this real file');
+  assert.equal(outerClose.verdict, 'needs_revision');
+  assert.ok(outerClose.seq < finalCloseVerdict.seq, "precondition: the outer-close precheck is EARLIER than the fix loop's own close-verdict");
+  assert.equal(finalCloseVerdict.verdict, 'satisfied');
+  assert.equal(spine.filter((e) => e.type === 'step-start').length, 0, 'precondition: no step-start at all — this is the loop-shape case');
+
+  const s = replayRun(spine, audit, { runId: 'msf70nei' });
+  assert.equal(s.timelineKind, 'iterations');
+  assert.equal(s.steps.length, 0);
+  assert.equal(s.iterations.length, 2);
+  assert.equal(s.outcome, 'green');
+
+  // the CLOSE section must pick the LATER, real terminal verdict — never the
+  // earlier precheck, even though the precheck was red and could be mistaken
+  // for "the" answer by a picker that prefers `outer-close`'s type.
+  assert.ok(s.close, 'a close was resolved');
+  assert.equal(s.close.source, 'close-verdict');
+  assert.equal(s.close.verdict, 'satisfied');
+  assert.equal(s.close.iteration, finalCloseVerdict.iteration);
+  assert.deepEqual(s.close.stages.map((st) => st.name), finalCloseVerdict.stages.map((st) => st.name));
+
+  assert.equal(s.iterations[0].verdict, 'needs_revision');
+  assert.equal(s.iterations[1].verdict, 'satisfied');
+  assert.ok(s.iterations[0].closeStage && s.iterations[0].closeStage.verdict === 'needs_revision');
+
+  const text = formatReplay(s);
+  assert.match(text, /shape: {3}loop · 2 iterations/, 'loop-shape header uses the LOOP label, never the (always-\'plan\') job-start.shape field');
+  assert.match(text, /TIMELINE \(iterations — loop-shape run\)/);
+  assert.match(text, /#\s+iteration\s+result\s+rounds\s+tools\s+wall\s+spend/, 'iterations carry their own column header, no checks\\/tree columns');
+  assert.match(text, /iteration 1.*RED/);
+  assert.match(text, /iteration 2.*GREEN/);
+  assert.match(text, /↳ close: needs_revision — typecheck/);
+  assert.match(text, /↳ close: satisfied/);
+  assert.match(text, /CLOSE\n {2}iteration 2 · satisfied · 4 stages: changed-from-seed OK · typecheck OK · suite-green OK · no-suppressions OK/);
+});
+
+test('--all on bareagent-u-bareloop: job/shape columns, "N it" for loop-shape, aligned columns', { skip: !existsSync(BAREAGENT_U) && 'no bareagent-u patient on this machine' }, () => {
+  const out = execFileSync('node', [SCRIPT, '--all', BAREAGENT_U], { encoding: 'utf8' });
+  const lines = out.trim().split('\n');
+  assert.match(lines[0], /^id\s+job\s+shape\s+outcome\s+spend\s+wall\s+steps\s+reason$/);
+
+  const msf70 = lines.find((l) => l.startsWith('msf70nei'));
+  assert.ok(msf70);
+  assert.match(msf70, /^msf70nei\*\s/, 'msf70nei is a REAL resumed run (job-start.priorSpentUsd) — its row carries the asterisk');
+  assert.match(msf70, /\bloop\b/);
+  assert.match(msf70, /\b2 it\b/, 'a loop-shape row shows its iteration count suffixed "it", never a bare number');
+  assert.match(msf70, /-\s*$/, 'a green row\'s reason column is a bare dash');
+
+  const msdsmkid = lines.find((l) => l.startsWith('msdsmkid'));
+  assert.ok(msdsmkid);
+  assert.doesNotMatch(msdsmkid, /^msdsmkid\*/, 'msdsmkid is a genuinely cold run — no asterisk');
+  assert.match(msdsmkid, /\bplan\b/);
+  assert.match(msdsmkid, /\b3\b/, 'a plan-shape row shows its bare step count, no "it" suffix');
+  assert.match(msdsmkid, /step-variance/);
+
+  assert.equal(lines.at(-1), '* resumed run — spend is the chain total, see detail', 'the footnote appears once, at the end, since this directory has resumed rows (msf70nei, mshzvkqw)');
+
+  // fixed columns, aligned — the outcome column starts at the same offset
+  // on every data row (id-column width varies less here, so check outcome
+  // instead of spend for a second, independent alignment axis). The
+  // footnote line is excluded — it is prose, not a table row.
+  const dataLines = lines.slice(1, -1);
+  const outcomeStarts = new Set(dataLines.map((l) => {
+    const m = l.match(/^\S+\s+\S+\s+\S+\s+/);
+    return m ? m[0].length : -1;
+  }));
+  assert.equal(outcomeStarts.size, 1, `every outcome column must start at the same offset; saw ${[...outcomeStarts]}`);
+});
+
+// ── Spend on resumed runs: chain total vs this-file (hamr, 2026-08-25) ─────
+
+test('u-msf70nei: chain total ($5.3389) and this-file spend ($1.2127, summed rounds) both trace to the real file', { skip: !existsSync(BAREAGENT_U) && 'no bareagent-u patient on this machine' }, () => {
+  const spinePath = join(BAREAGENT_U, 'u-msf70nei.jsonl');
+  const spine = parseJsonl(spinePath);
+  const auditPath = join(BAREAGENT_U, 'u-msf70nei-gate-audit.jsonl');
+  const audit = existsSync(auditPath) ? parseJsonl(auditPath) : [];
+
+  const jobEnd = spine.findLast((e) => e.type === 'job-end');
+  const rounds = spine.filter((e) => e.type === 'worker-round');
+  const summed = rounds.reduce((acc, r) => acc + r.costUsd, 0);
+  assert.ok(rounds.every((r) => typeof r.costUsd === 'number'), 'precondition: every real round in this file is priced');
+  assert.equal(typeof jobEnd.engagementSpentUsd, 'undefined', 'precondition: this archived run predates engagementSpentUsd — the summed-rounds fallback is what is under test');
+
+  const s = replayRun(spine, audit, { runId: 'msf70nei' });
+  assert.equal(s.resumed, true, 'job-start.priorSpentUsd is real on this file');
+  assert.equal(s.spentUsd, jobEnd.spentUsd, 'the CHAIN total is job-end.spentUsd, unchanged');
+  assert.equal(s.thisFileSpend.source, 'summed rounds');
+  assert.ok(Math.abs(s.thisFileSpend.value - summed) < 1e-9, "thisFileSpend sums THIS FILE's own worker-round.costUsd exactly");
+  assert.equal(s.thisFileSpend.totalRounds, rounds.length);
+  assert.equal(s.thisFileSpend.unpricedRounds, 0);
+  // the two numbers really do diverge — that IS the finding this fixes
+  assert.ok(Math.abs(s.spentUsd - s.thisFileSpend.value) > 1, 'chain total and this-file spend are NOT the same claim on a resumed run');
+
+  const text = formatReplay(s);
+  assert.match(text, new RegExp(`\\$${jobEnd.spentUsd.toFixed(4)} chain total \\(job-end; prior legs folded\\)`));
+  assert.match(text, new RegExp(`this file \\$${summed.toFixed(4)} \\(${rounds.length} rounds, all priced; summed rounds\\)`));
+});
+
+test('u-msx87qqs (litectx-maintainer) reads resumed: yes from job-start.priorSpentUsd even with NO resume-seed record', { skip: !existsSync(LITECTX_MAINTAINER) && 'no litectx-maintainer patient on this machine' }, () => {
+  const spinePath = join(LITECTX_MAINTAINER, 'u-msx87qqs.jsonl');
+  const spine = parseJsonl(spinePath);
+  assert.equal(spine.filter((e) => e.type === 'resume-seed').length, 0, 'precondition: genuinely no resume-seed record in this real file');
+  const jobStart = spine.find((e) => e.type === 'job-start');
+  assert.ok(typeof jobStart.priorSpentUsd === 'number' && jobStart.priorSpentUsd > 0, 'precondition: a real chain fold on job-start');
+
+  const s = replayRun(spine, []);
+  assert.equal(s.resumed, true, 'resumed is keyed on priorSpentUsd, never on resume-seed alone — a narrower record whose absence does not mean "not resumed"');
+  assert.equal(s.resumeSeed, null);
+
+  const text = formatReplay(s);
+  assert.match(text, /resumed: yes \(no resume-seed detail recorded\)/);
+});
+
+test('every non-resumed real archived run agrees: job-end.spentUsd equals its own summed rounds (0 mismatches found)', () => {
+  const dirs = [ARCHIVE, BAREAGENT_U, LITECTX_MAINTAINER].filter(existsSync);
+  if (dirs.length === 0) { assert.ok(true); return; }
+  let checked = 0;
+  let mismatches = 0;
+  for (const dir of dirs) {
+    for (const f of readdirSync(dir)) {
+      if (!/^u-[^/]+\.jsonl$/.test(f) || f.includes('gate-audit') || f.endsWith('.lag.jsonl')) continue;
+      const spine = parseJsonl(join(dir, f));
+      const s = replayRun(spine, []);
+      if (s.resumed || s.spentUsd === null || s.thisFileSpend.value === null) continue;
+      checked += 1;
+      if (s.spendMismatch) mismatches += 1;
+    }
+  }
+  assert.ok(checked > 0, 'precondition: at least one comparable non-resumed run was found across the available archives');
+  assert.equal(mismatches, 0, `every non-resumed run's job-end.spentUsd must equal its own summed rounds; found ${mismatches} mismatch(es) among ${checked} checked`);
+});
+
+test('spendMismatch fires (never silently) when a constructed non-resumed run genuinely disagrees with its own rounds', () => {
+  const events = [
+    { type: 'job-start', job: 'x', budgetUsd: 5 },
+    { type: 'worker-round', phase: 'fix', costUsd: 1.0, seq: 2 },
+    { type: 'worker-round', phase: 'fix', costUsd: 1.0, seq: 3 },
+    // job-end claims $5 total spend, but the two real rounds above sum to only $2 —
+    // a genuine disagreement on a COLD run (no priorSpentUsd), which must surface.
+    { type: 'job-end', outcome: 'green', spentUsd: 5.0, spendComplete: true, seq: 4 },
+  ];
+  const s = replayRun(events, []);
+  assert.equal(s.resumed, false);
+  assert.ok(s.spendMismatch, 'a real disagreement on a non-resumed run must be flagged, never hidden');
+  assert.ok(Math.abs(s.spendMismatch.diffUsd - 3.0) < 1e-9);
+  const text = formatReplay(s);
+  assert.match(text, /MISMATCH vs job-end/);
 });

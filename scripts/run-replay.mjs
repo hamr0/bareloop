@@ -32,7 +32,7 @@
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { replayRun, formatReplay } from '../src/replay.js';
+import { replayRun, formatReplay, summarizeForAllLine, formatAllLines } from '../src/replay.js';
 
 /**
  * Parse one JSONL file into records, mirroring scripts/behaviour-readout.mjs:
@@ -115,18 +115,14 @@ if (args[0] === '--all') {
     if (candidates.length === 0) {
       console.log(`no .jsonl files found in ${dir}`);
     } else {
-      for (const f of candidates) {
+      const entries = candidates.map((f) => {
         const path = join(dir, f);
         const spine = parseJsonl(path);
-        if (!looksLikeSpine(spine.records)) {
-          console.log(`${f}  not-a-spine`);
-          continue;
-        }
+        if (!looksLikeSpine(spine.records)) return { kind: 'not-a-spine', name: f };
         const summary = replayOne(path, spine);
-        const spend = summary.spentUsd === null ? 'unknown' : `$${summary.spentUsd.toFixed(4)}`;
-        const reason = summary.stopReason ? ` — ${summary.stopReason}` : '';
-        console.log(`${summary.runId}  ${summary.outcome ?? 'unknown'}  ${spend}${reason}`);
-      }
+        return { kind: 'spine', row: summarizeForAllLine(summary) };
+      });
+      console.log(formatAllLines(entries));
     }
   }
 } else {

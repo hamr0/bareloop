@@ -9159,8 +9159,102 @@ plain run-u spine checked, but a wrapper spine that nests multiple job runs insi
 records) summarizes as ONE outer row rather than five nested ones. Known, named, not fixed —
 the nested jobs are still visible in the raw spine, just not split out by `--all`.
 
+### hamr's read of the first output (2026-08-25)
+
+Judged against the committed build (b6f0157), three things had to change, stated plainly:
+
+- **Index vs detail confusion.** The `--all` listing packed the WHOLE escalation paragraph
+  (category, the generic per-category `decision` prose, and the run's own `detail`, all
+  concatenated) into one unbounded line per run — indistinguishable in shape from the single-run
+  detail view's own header line, so a directory listing meant for a fast scan read exactly like
+  20 stacked detail reports with no visual boundary between "the index" and "the detail".
+- **Missing per-step time/cost.** The first build's `TIMELINE` rows carried outcome, rounds, tool
+  calls, checks and tree-changed — but no wall time and no per-occurrence spend at all, so the
+  one thing a 5-minute triage most wants to know first ("where did the money and the clock go")
+  was absent from the very timeline meant to answer it.
+- **Loop-shape runs rendered stepless.** A spine with no `step-start` records (a resumed leg
+  whose only step was already-green-skipped, only the close-fix loop running) printed
+  `TIMELINE\n  (no steps reached)` — technically true and completely uninformative on a run that
+  actually ran two full iterations and $5.34 of real work; the reader had assumed every run was
+  plan-shaped and had nothing to fall back to for the ones that were not.
+
+### The signed layout (hamr, 2026-08-25)
+
+Two views, fixed columns, never CSV:
+
+- **Index (`--all <dir>`)**: one aligned table, header row included in the column-width
+  computation — `id  job  shape  outcome  spend  wall  steps  reason`. `shape` is `plan`/`loop`
+  (derived from which timeline the spine actually has, never the always-literal-`'plan'`
+  `job-start.shape` field); `steps` is a bare count for a plan-shape run, `"N it"` for a
+  loop-shape one; `reason` is `category — <first clause of the escalation's own detail, cut at
+  60 chars with a plain `…`>` — **`detail` only, never `decision`**, because `decision` is the
+  same sentence for every run in a category and this row's whole job is showing what was
+  DIFFERENT about this one. A `.jsonl` that is not a spine prints `<name>  not-a-spine`, at its
+  real position in the listing, never silently dropped.
+- **Detail (`<spine.jsonl>`)**: a header block (`goal:`/`shape:`/`signed:`/`branch:`/`outcome:`/
+  `spent:`), a `TIMELINE (steps)` or `TIMELINE (iterations — loop-shape run)` section with its
+  own column-header row and per-row wall+spend, a `CLOSE` section, `ENDING`, `BEHAVIOUR`, and
+  `MEMORY-CACHE`.
+
+The rulings behind both, load-bearing and unconditional:
+
+- Unknown money/time prints `unknown` (or, in the header block, the literal `none recorded` for
+  an entirely absent record) — never `0`, and a partial sum is never stamped exact. One
+  unpriced `worker-round.costUsd` anywhere in an occurrence's `seq` window makes that occurrence's
+  whole spend `unknown (N unpriced rounds)`, never a sum of only the priced ones.
+- `MEMORY-CACHE` is always printed — the existing wording when the run carried a record,
+  `not armed on this run` when it did not. Absence is never silent.
+- `CLOSE` is never omitted — `none — the run ended before any close ran` when the spine holds
+  no real close at all (measured: `u-msdsmkid`, stopped by a step-variance meter before
+  `judgeClose()` ever fired). Picking the right close-verdict record matters more than it looks:
+  `resolveClose` takes the LAST (by `seq`) record among staged `close-verdict`s and `outer-close`,
+  never a type preference — `outer-close` is a PRECHECK fired once before the fix loop starts, so
+  when it reads red the fix loop's own later close-verdicts are the true final answer. Measured
+  live on `u-msf70nei`: its `outer-close` (seq 14) reads `needs_revision`, but the fix loop's own
+  close-verdict two iterations later (seq 97) reads `satisfied` — and that IS what the run ended
+  on (`job-end.outcome:'green'`). An early implementation that preferred `outer-close`
+  unconditionally reported a run that went green as still needing revision.
+- A repeated step id is split per OCCURRENCE (never merged by name) — see F117's own body above.
+- Loop-shape runs (no `step-start` at all) get their own `iterations[]` timeline, built from
+  `iteration-start`/`close-verdict`/`run-end`/`escalation`, never an empty/misleading steps table.
+- The real escalation `detail` is the stop reason a reader needs; the generic per-category
+  `decision` prose is secondary — present in the full detail view's `stopReason`/`↳ tripped:`
+  lines (which have the room), deliberately absent from the compact `--all` `reason` column
+  (which does not).
+
+### Not in the spine — parked
+
+The signed verdict CLASS (green/softgreen) and the worker MODEL name are NOT carried by any
+spine record — they live only in the signed spec. Surfacing either in the replay means adding
+fields to the `job-start` record in `src/run.js`: a spine-WRITER change, which this report-only
+reader does not make on its own authority. Held for hamr's explicit word (PRD TODO #20). The
+replay prints neither rather than inferring one — `judgedCount` on a close-verdict, for
+instance, is not a reliable stand-in for the verdict class: it appears on plain green closes
+too, not only softgreen ones.
+
+### Spend on resumed runs
+
+Reconciling numbers on `u-msf70nei.jsonl` (a real archived run) turned up a fourth honesty
+defect, same class as the wall/clock split: the header printed `spent: $5.3389`, but the
+file's own 55 `worker-round`s (all priced) sum to `$1.2127`. The run is a RESUME
+(`resume-seed`, `src/planrun.js:2622`) — `job-end.spentUsd` is the CHAIN total (prior legs
+folded in, `src/run.js:227`'s `chainFoldUsd`, seeded from `job-start.priorSpentUsd`), so a
+resumed leg's own spine can NEVER add up to its own header figure and printing only the chain
+number silently hid that. Fixed: the header now states both, each labelled — `spent:
+$5.3389 chain total (job-end; prior legs folded) · this file $1.2127 (55 rounds, all priced;
+summed rounds) · of $8.00 signed`. `resumed` is deliberately keyed on
+`job-start.priorSpentUsd`, never on `resume-seed`'s presence alone — measured directly, 4 real
+archived runs (`litectx-maintainer-bareloop`'s `msx7xoe0`/`msx87qqs`/`msxf9129`/`msxf2mwi`)
+carry a genuine chain fold with NO resume-seed record at all (resumed before any plan reload
+was needed), and keying the check on resume-seed would have printed `resumed: no` on runs that
+really are resumed. A NON-resumed run has nothing to fold — its own `spentUsd` disagreeing with
+its own summed rounds by more than a cent's rounding noise is a real finding, not an expected
+honest split, and prints as `MISMATCH vs job-end`, never hidden; measured across every
+non-resumed run in the available archive (aurora-u, bareagent-u, litectx-maintainer): zero trip
+it. `--all` keeps the chain total in its spend column (what a directory scan asks first) but
+marks a resumed row with a trailing `*` and one footnote line when the listing holds any.
+
 ### Numbers
 
-Suite: 2096 → 2103 (7 new tests, `tests/replay.test.js`; a further wording-only fix to the
-wall-clock line added assertions to an existing test rather than a new one, so the count did
-not move again). `npm run typecheck` and `npm run build:types` both clean throughout.
+Suite: 2096 → 2110 (22 tests total in `tests/replay.test.js` across the whole build).
+`npm run typecheck` and `npm run build:types` both clean throughout every round.

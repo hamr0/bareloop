@@ -239,6 +239,9 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
 18. **Flake-name capture** — held until the peer says "load window open" verbatim.
 19. **Housekeeping** — delete branches `bareagent-0381-bump`, `reorg-v2-test`; broad-`git add`
     workflow rule (stage by explicit path while a reorg is in flight).
+20. **`job-start` to carry `verdictType` + worker model** — replay cannot show verdict
+    class/model today (not in any spine record); spine-writer change in src/run.js, report-only,
+    hamr's word (F117).
 
 Parked pending measurement: read compaction; stale-slice usage; context-headroom meter.
 Dead, never re-raise: rates passthrough (F113 ruling), W4 stale-index build (F112, retired on

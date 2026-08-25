@@ -10,24 +10,37 @@ feature lands, **patch** = docs, fixes, scaffolding.
 ### Added
 
 - **Generic run replay** (PRD build-list #6): `replayRun`/`formatReplay` (`src/replay.js`)
-  reconstruct one run's whole story from its spine JSONL + gate-audit sidecar as a plain
-  summary object or a one-page printable report — job, outcome, stop reason (`category —
-  decision — detail` off the last escalation, so the run's actual failure text rides onto
-  the header instead of just the generic per-category prose), spend (a floor when
-  `spendComplete` is false), a wall reading explicitly labeled "this file" beside a
-  separate chain-scoped `clock:` line read off the run's own `wall-halt`/`wall-clock`
-  record (the two numbers can legitimately diverge on a resumed run — never printed as
-  one), a per-step timeline (each step-start..step-end pair its own OCCURRENCE — a step id
-  that recurs after a replan is never merged into one pooled row — with rounds, tool
-  calls, checks passed/failed, tree-changed), the last spine record plus 3 before it (plus
-  the last escalation, carried even when it falls outside that window), and the
-  `runBehaviour`/`memory-cache` blocks (reused, not reimplemented). Reads only, mints no
-  verdict, writes nothing to the spine. `scripts/run-replay.mjs <spine.jsonl>` prints the
-  report for one run (resolving its sibling `-gate-audit.jsonl` automatically); `--all
-  <dir>` is name-agnostic (a spine is identified by a `job-start`/`run-start` record in its
-  content, never a filename convention — the patient corpus uses several) and lists every
-  spine in a directory (id, outcome, spend, stop reason), flagging any non-spine `.jsonl`
-  as `<name> not-a-spine` rather than dropping it.
+  reconstruct one run's whole story from its spine JSONL + gate-audit sidecar. The single-run
+  report is a signed layout (hamr, 2026-08-25): a header block (`goal:`/`shape:`/`signed:`/
+  `branch:`/`outcome:`/`spent:`, absent fields printing the literal `none recorded`, never
+  blank or a fabricated `0`), a `TIMELINE (steps)` or `TIMELINE (iterations — loop-shape run)`
+  section with its own column-header row and per-row time/cost (wall, `$` — a `null` `costUsd`
+  anywhere in a row's window makes that row's spend `unknown (N unpriced rounds)`, never `0` or
+  a partial sum stamped exact) and a `↳ tripped:`/`↳ close:` line under any row an escalation or
+  close fell inside, a `CLOSE` section (never omitted — `none — the run ended before any close
+  ran` when nothing ever closed; picks the run's REAL final close by seq, never by record type —
+  an early `outer-close` precheck reading red must not shadow a LATER fix-loop close-verdict that
+  went satisfied), `ENDING` (last record + 3 before it, plus an out-of-window escalation), the
+  `BEHAVIOUR` block, and a `MEMORY-CACHE` line always printed (`not armed on this run` when
+  absent — absence is never silent). Stop reason is `category — decision — detail` off the last
+  escalation, so a run's actual failure text (a TLS "bad record mac", a specific mypy error)
+  rides onto the report instead of just the generic per-category decision prose. A step id that
+  recurs after a replan is split per OCCURRENCE, never merged into one pooled row. `--all <dir>`
+  is name-agnostic (a spine is identified by a `job-start`/`run-start` record in its content,
+  never a filename convention) and prints a fixed-column, ALIGNED table (never CSV) — `id job
+  shape outcome spend wall steps reason`, `reason` built from `detail` only (never `decision`,
+  cut at 60 chars) — flagging any non-spine `.jsonl` as `<name> not-a-spine` rather than dropping
+  it. A RESUMED run's `job-end.spentUsd` is a CHAIN total (prior legs folded in) that can never
+  equal this one file's own rounds (measured: `u-msf70nei` header `$5.3389` vs its own 55 rounds
+  summing to `$1.2127`) — the header now prints both, each labelled, plus a `resumed:` line
+  (keyed on `job-start.priorSpentUsd`, never on the narrower `resume-seed` record alone — 4 real
+  archived runs carry a real fold with no resume-seed record at all). A non-resumed run's own
+  spend disagreeing with its summed rounds is a genuine finding and prints as a `MISMATCH`, never
+  hidden (measured: 0 of the archive's non-resumed runs trip it). `--all` marks a resumed row
+  with a trailing `*` and one footnote line when the listing holds any. Reuses `runBehaviour`/the
+  `memory-cache` readout rather than reimplementing either. Reads only, mints no verdict, writes
+  nothing to the spine. The verdict CLASS (green/softgreen) and the worker MODEL name are
+  explicitly NOT surfaced — neither lives in any spine record today (PRD TODO #20, F117).
 
 ## [0.14.0] — 2026-08-25
 
