@@ -14,9 +14,9 @@
 // tests/planrun.test.js; close-crashed and the close-output scrub in
 // tests/ralph.test.js.
 
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { makeSpine } from '../src/spine.js';
@@ -31,6 +31,7 @@ import { readSpine, scriptedProvider, initPatientRepo, mockWallClock, reply } fr
 import { readResume, CHECKPOINT_OUTCOMES } from '../src/reuse.js';
 
 const base = mkdtempSync(join(tmpdir(), 'run-test-'));
+after(() => rmSync(base, { recursive: true, force: true }));
 
 // ─── Layer 2 (module 4c): the plan-shape dispatch — runJob() stays the ONE
 // entry (N2 lock); a four-field spec routes to the plan executor under the

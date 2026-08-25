@@ -3,9 +3,9 @@
 // can fail — the green-path scenario exists so a shell hardwired to red is
 // caught, and vice versa.
 
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { makeSpine } from '../src/spine.js';
@@ -14,6 +14,7 @@ import { StallError } from '../src/stall.js';
 
 const noop = () => {};
 const dir = mkdtempSync(join(tmpdir(), 'ralph-test-'));
+after(() => rmSync(dir, { recursive: true, force: true }));
 
 async function run(name, close, capRuns = 3, middle = noop) {
   const file = join(dir, `${name}.jsonl`);

@@ -20,7 +20,7 @@
 // is the writer the author forgot. Truncation is also faithful to the failure being
 // modelled: a killed process leaves exactly a prefix of its own log.
 
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -37,6 +37,7 @@ import { makeSpine } from '../src/spine.js';
 import { readSpine, scriptedProvider, initPatientRepo, mockWallClock } from './helpers.js';
 
 const base = mkdtempSync(join(tmpdir(), 'resume-test-'));
+after(() => rmSync(base, { recursive: true, force: true }));
 let n = 0;
 const freshRegistry = () => makeRegistry(join(base, `reg-${n += 1}`));
 
