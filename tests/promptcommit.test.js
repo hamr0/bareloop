@@ -6,11 +6,13 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateCommitMessage, evaluateCommits, PROMPT_COMMIT_LABELS } from '../scripts/promptcommitlib.mjs';
+import { validateCommitMessage, evaluateCommits, PROMPT_COMMIT_LABELS, FAILURE_NEEDS_RUN_REF } from '../scripts/promptcommitlib.mjs';
 import { isPromptFile, PROMPT_REGISTERS } from '../src/promptregisters.js';
 
+// 'mszcthk1' is a REAL archived run id (bareloop.context.md's own replayRun
+// example), used here rather than an invented one.
 const COMPLIANT = 'fix: tighten PERSONA_TOOLS\n\n'
-  + 'Failure: worker read the arbiter spine after being told it was denied\n'
+  + 'Failure: run mszcthk1 — worker read the arbiter spine after being told it was denied\n'
   + 'Addresses: PERSONA_TOOLS did not name the spine file explicitly\n'
   + 'Corrects: spells the denied paths from ARBITER_BOOK_STORES\n';
 
@@ -64,6 +66,40 @@ test('validateCommitMessage: message missing all three labels fails and names al
   assert.deepEqual(missing, [...PROMPT_COMMIT_LABELS]);
 });
 
+test('validateCommitMessage: Failure present but no run ref fails with FAILURE_NEEDS_RUN_REF, other labels unaffected', () => {
+  const noRunRef = COMPLIANT.replace('Failure: run mszcthk1 — worker read the arbiter spine after being told it was denied', 'Failure: worker read the arbiter spine after being told it was denied');
+  const { ok, missing } = validateCommitMessage(noRunRef);
+  assert.equal(ok, false);
+  assert.deepEqual(missing, [FAILURE_NEEDS_RUN_REF]);
+});
+
+test('validateCommitMessage: "run u-<id>" form passes', () => {
+  const withPrefixed = COMPLIANT.replace('run mszcthk1', 'run u-mszcthk1');
+  const { ok, missing } = validateCommitMessage(withPrefixed);
+  assert.equal(ok, true);
+  assert.deepEqual(missing, []);
+});
+
+test('validateCommitMessage: "run <id>" form (no u- prefix) passes', () => {
+  const { ok, missing } = validateCommitMessage(COMPLIANT);
+  assert.equal(ok, true);
+  assert.deepEqual(missing, []);
+});
+
+test('validateCommitMessage: two run refs cited on the Failure line both pass', () => {
+  const twoRuns = COMPLIANT.replace('Failure: run mszcthk1 — ', 'Failure: run mszcthk1 and run u-mszcfaof — ');
+  const { ok, missing } = validateCommitMessage(twoRuns);
+  assert.equal(ok, true);
+  assert.deepEqual(missing, []);
+});
+
+test('validateCommitMessage: run-ref matching is case-insensitive on the "run" keyword', () => {
+  const upperRun = COMPLIANT.replace('Failure: run mszcthk1', 'Failure: RUN mszcthk1');
+  const { ok, missing } = validateCommitMessage(upperRun);
+  assert.equal(ok, true);
+  assert.deepEqual(missing, []);
+});
+
 test('evaluateCommits: a commit touching no prompt file passes regardless of message', () => {
   const { ok, offenders } = evaluateCommits(
     [{ sha: 'abc123', message: 'no labels, does not matter', files: ['src/plan.js', 'README.md'] }],
@@ -95,13 +131,14 @@ test('evaluateCommits: multiple commits in a range, mixed compliance', () => {
   const commits = [
     { sha: 'a1', message: 'unrelated change', files: ['README.md'] },
     { sha: 'a2', message: COMPLIANT, files: ['src/authorflow.js'] },
+    // 'x' after Failure: has no run ref, on top of the pre-existing missing Addresses
     { sha: 'a3', message: 'Failure: x\nAddresses:\nCorrects: z', files: ['src/judged.js'] },
     { sha: 'a4', message: 'touches two prompt files, no labels', files: ['src/tools.js', 'src/planrun.js'] },
   ];
   const { ok, offenders } = evaluateCommits(commits, isPromptFile);
   assert.equal(ok, false);
   assert.deepEqual(offenders, [
-    { sha: 'a3', missing: ['Addresses'] },
+    { sha: 'a3', missing: ['Addresses', FAILURE_NEEDS_RUN_REF] },
     { sha: 'a4', missing: [...PROMPT_COMMIT_LABELS] },
   ]);
 });

@@ -3,7 +3,11 @@
 // A commit that changes a prompt register (src/promptregisters.js's
 // PROMPT_REGISTERS — the model-facing system/strategy/instruction strings a
 // worker or judge reads) must say, in its own message, three things:
-//   Failure:   what failure caused the change
+//   Failure:   what failure caused the change — AND which run caused it
+//              (hamr's addition, 2026-08-25): the line must cite a run,
+//              `run <id>` or `run u-<id>` (case-insensitive, multiple refs
+//              fine) — FORMAT ONLY, never verified against a real spine file
+//              (the patient lives outside this repo, unreachable from here).
 //   Addresses: what it addresses
 //   Corrects:  what it corrects
 // Convention-only was rejected — doctrine already on record is "a frozen rule
@@ -108,14 +112,15 @@ function main() {
   const { ok, offenders } = evaluateCommits(commits, isPromptFile);
 
   if (ok) {
-    console.log(`prompt-commit-check: OK — ${commits.length} commit(s) checked, 0 touching a prompt register with a missing label.`);
+    console.log(`prompt-commit-check: OK — ${commits.length} commit(s) checked, 0 touching a prompt register with a missing/incomplete label.`);
     process.exitCode = 0;
     return;
   }
 
-  console.error('prompt-commit-check: FAILED — these commits change a prompt register but are missing required message labels:');
+  console.error(`prompt-commit-check: FAILED — these commits change a prompt register but their message does not satisfy the rule `
+    + `(non-empty ${PROMPT_COMMIT_LABELS.join(', ')} labels; Failure: must also cite the run that caused it, e.g. "run mszcthk1"):`);
   for (const offender of offenders) {
-    console.error(`  ${offender.sha}: missing ${offender.missing.join(', ')} (required: ${PROMPT_COMMIT_LABELS.join(', ')})`);
+    console.error(`  ${offender.sha}: ${offender.missing.map((m) => (PROMPT_COMMIT_LABELS.includes(m) ? `missing ${m}` : m)).join('; ')}`);
   }
   process.exitCode = 1;
 }

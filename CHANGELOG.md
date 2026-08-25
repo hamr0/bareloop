@@ -61,7 +61,12 @@ feature lands, **patch** = docs, fixes, scaffolding.
   `.github/workflows/*` file (ask-first, untouched); an unresolvable range (no `origin`, no
   fetch) is a printed SKIP at exit 0, never a violation. Pure decision logic lives in
   `scripts/promptcommitlib.mjs`, neither of which ships (`scripts/` is outside
-  `package.json`'s `files`).
+  `package.json`'s `files`). hamr's same-day addition: the `Failure:` line must also cite
+  the RUN that caused the change (`run <id>` / `run u-<id>`, `\brun\s+(u-)?[a-z0-9]{6,12}\b`
+  — alphabet/length measured against 231 real archived spine ids, every one exactly 8
+  lowercase-alnum chars), failing with a distinct message
+  (`FAILURE_NEEDS_RUN_REF`) when absent; format only, never checked against a real spine
+  file.
 
 ## [0.14.0] — 2026-08-25
 

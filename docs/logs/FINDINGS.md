@@ -9356,12 +9356,41 @@ with no `origin` remote (a fresh clone) and inside a detached CI checkout that h
 fetched `origin/main` — neither is a rule violation, and failing the whole suite for an
 absent baseline would be a false red distinct from the rule itself.
 
+### Addendum (same day): the Failure line must cite the run
+
+hamr's ruling, same turn as the base build: a prompt-register commit's `Failure:` line
+must also point at the RUN that caused the change — `run <id>` or `run u-<id>`,
+`\brun\s+(u-)?[a-z0-9]{6,12}\b`, case-insensitive at the `run` keyword, multiple refs
+allowed. The alphabet/length was measured, not assumed: `ls
+~/PycharmProjects/bareloop-patients/*/*.jsonl` lists 263 spine-shaped filenames; once the
+`-gate-audit.jsonl` sidecars and `.jsonl.lag` sidecars are stripped, 231 real spine ids
+remain across every prefix this repo's patients use (`u-`, `battery-A1-`, `l2accept-L1-`,
+`reuse-`, `job2-`, ...) — EVERY one exactly 8 characters from `[a-z0-9]`, no exception
+found; `{6,12}` is hamr's own margin around that measured 8. A `Failure:` line without a
+run reference fails with a distinct message, `FAILURE_NEEDS_RUN_REF`
+(`scripts/promptcommitlib.mjs`): `Failure: must cite the run that caused the change (e.g.
+"Failure: run mszcthk1 — ...")`. The commit is one half of a loop this build closes the
+other half of: the commit now points AT the run that motivated it, and `replayRun`/
+`formatReplay` (F117) turn that same run id back into the whole story — a human (or a
+future tool) can walk from either side to the other. The gap this leaves, named rather
+than closed: the check is FORMAT ONLY, by design (a run's patient lives outside this
+repo, unreachable from a commit-message check) — and the run itself does not record which
+CODE COMMIT it ran under, so the loop only closes in the commit→run direction, never
+run→commit. That gap is parked, not built here.
+
 ### Numbers
 
 New: `src/promptregisters.js`, `scripts/prompt-commit-check.mjs`,
-`scripts/promptcommitlib.mjs`, `tests/promptcommit.test.js` (15 tests). Suite: 2114 → 2129.
-`npm run typecheck` and `npm run build:types` both clean. Live-run on this repo's own
-history: `--range origin/main..HEAD` on the `prompt-commit` branch reports `OK — 5 commit(s)
-checked, 0 touching a prompt register with a missing label`; `--range nosuchref..HEAD`
-reports `SKIPPED — range "nosuchref..HEAD" could not be resolved (fatal: ambiguous
-argument...)`, exit 0.
+`scripts/promptcommitlib.mjs`, `tests/promptcommit.test.js` (20 tests, +5 for the run-ref
+addendum). Suite: 2114 → 2129 (base) → 2134 (with the run-ref addendum). `npm run
+typecheck` and `npm run build:types` both clean throughout. Live-run on this repo's own
+history: `--range origin/main..HEAD` on the `prompt-commit` branch reports `OK — 5
+commit(s) checked, 0 touching a prompt register with a missing/incomplete label`;
+`--range nosuchref..HEAD` reports `SKIPPED — range "nosuchref..HEAD" could not be resolved
+(fatal: ambiguous argument...)`, exit 0. A staged demo commit built in an isolated
+throwaway repo (never inside bareloop itself) with a `Failure:` line lacking a run
+reference reproduces the fail path live:
+`prompt-commit-check: FAILED — these commits change a prompt register but their message
+does not satisfy the rule (non-empty Failure, Addresses, Corrects labels; Failure: must
+also cite the run that caused it, e.g. "run mszcthk1"): <sha>: Failure: must cite the run
+that caused the change (e.g. "Failure: run mszcthk1 — ...")`, exit 1.

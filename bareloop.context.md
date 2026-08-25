@@ -2358,6 +2358,16 @@ Convention-only was rejected: doctrine already on record is "a frozen rule witho
 wired detector is prose." `isPromptFile(path)` is the pure predicate the check runs
 against; both are exported from `bareloop`'s root so the inventory has exactly one home.
 
+hamr's addition (2026-08-25, same day): the `Failure:` line must ALSO cite the **run**
+that caused the change — `run <id>` or `run u-<id>` (case-insensitive at the `run`
+keyword, multiple refs fine), matched by `\brun\s+(u-)?[a-z0-9]{6,12}\b`. The commit
+points at the run; `replayRun`/`formatReplay` (above) close the loop the other way,
+turning that run id back into the whole story. A `Failure:` line with no run reference
+fails with a distinct message: `Failure: must cite the run that caused the change (e.g.
+"Failure: run mszcthk1 — ...")`. FORMAT ONLY — the check never verifies the cited run's
+spine file actually exists (a run's patient lives outside this repo entirely, so there is
+nothing here to check it against).
+
 Enforcement is **local only** — wired into `npm test` (see `package.json`'s `test`
 script), never into `.github/workflows/*` (CI already runs `npm test`, so the rule is
 enforced there without an ask-first CI edit). The check itself lives outside the
@@ -2380,7 +2390,7 @@ A compliant message:
 ```
 fix: tighten PERSONA_TOOLS
 
-Failure: worker read the arbiter spine after being told it was denied
+Failure: run mszcthk1 — worker read the arbiter spine after being told it was denied
 Addresses: PERSONA_TOOLS did not name the spine file explicitly
 Corrects: spells the denied paths from ARBITER_BOOK_STORES
 ```
