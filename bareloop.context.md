@@ -2142,6 +2142,94 @@ is not a spend record and no spend-slicing instrument needs to account for it.
 (`no record` if the run ended before the summary could fire); `scripts/behaviour-readout.mjs`
 prints the same line when handed the run's spine file as its optional third positional.
 
+### `replayRun(spineEvents, auditEvents?, { runId? })` / `formatReplay(summary)` — `src/replay.js`
+
+PRD build-list item 6: today no failed run can be reconstructed in under five minutes — every
+byte is on disk (the spine JSONL + its gate-audit sidecar) but only hand-slicing JSONL reads it.
+`replayRun` is a report-only reader over BOTH files: **reads only, mints no verdict, writes
+NOTHING to the spine**, same posture as `runBehaviour` above, which it reuses rather than
+reimplements for the tool-call breakdown. It returns one plain object:
+
+```
+{ runId, job, outcome, stopReason, spentUsd, spendComplete, wallMs, chainClock,
+  steps: [{ id, occurrence, rounds, toolCalls, checks: {passed, failed}, treeChanged, outcome }],
+  ending: { record, before /* the 3 records before it */, escalation },
+  behaviour, memoryCache, skipped }
+```
+
+`spentUsd`/`wallMs` are `null` (never `0`) when the run's own `job-end` is absent or carries no
+spend figure — F6's rule in a reader's coat: an unknown cost is reported as unknown, not
+laundered into a tidy zero. `spendComplete` reads `false` whenever `spentUsd` is `null`,
+regardless of what the record's own flag says, for the same reason. `stopReason` is `null` on a
+green/already-green outcome; otherwise `category — decision — detail` from the last `escalation`
+record, every part present that record actually carries (`category` dropped when it duplicates
+the outcome already shown beside it; `detail` trimmed at 400 chars with an explicit
+`…[+N chars]` marker, never silent) — `decision` alone is the generic one-line prose every
+category shares ("the provider path failed mid-run…" fires for every transport casualty);
+`detail` is what actually killed THIS run (a TLS "bad record mac", a specific mypy error).
+Falls back to the bare outcome string for a pre-escalation red (`plan-red`/`job-red`/
+`smoke-red`). `ending.escalation` carries that same last escalation record whenever it falls
+outside the fixed 3-before window (common on a run that keeps emitting bookkeeping records
+after its real failure) — never silently dropped from the reconstructed ending.
+
+A step id can recur (a replan re-executes the same step): each `step-start`..`step-end` pair is
+its own **occurrence** (`occurrence: 1, 2, …`), and every field on it — `rounds`, `toolCalls`,
+`checks`, `treeChanged` — is scoped to records strictly between THAT pair's own `seq` (the
+spine's monotonic per-record counter, never `ts` — every record in one spine shares the same seq
+counter, so it is an exact ordering where two same-millisecond `ts` stamps are not), never
+pooled across every occurrence sharing the id. `rounds` counts real `worker-round` records
+(`phase === 'step:<id>'`), never the declared cap; `toolCalls` is the one thing still windowed by
+`ts` (the gate-audit carries no `step` or shared `seq` — see `runBehaviour`'s header).
+`formatReplay` marks a repeat occurrence inline, e.g. `fix-loop-strict (2nd)` — the first
+occurrence of an id prints unmarked.
+
+`wallMs` is THIS FILE's own `job-start`→`job-end` span and is labeled as such
+(`wall: 15m12s (this file, job-start→job-end)`) — on a RESUMED leg that is only the latest
+engagement, not the whole signed chain. `chainClock` is the other true number: the SIGNED wall
+read off the run's own clock record — `wall-halt` when present (the terminal reading, taken at
+the exact moment the wall stopped the run; `src/planrun.js:1269`'s `emitWallHalt`), else the
+single `wall-clock` record every run emits near its start (`src/planrun.js:1203`) — both spread
+from `clock.report()` (`src/clock.js:235-247`: `bounded, requestedMs, closeStages, enforcedMs,
+elapsedMs, remainingMs`). `elapsedMs` on either is chain-scoped by construction
+(`createClock`'s `priorElapsedMs` fold, `src/clock.js:174`), so it can legitimately exceed this
+file's own `wallMs` on a resumed run — which is exactly why the two are never printed as one
+number, and why the TWO SOURCES print differently rather than sharing one template. A
+`wall-halt` reading is a TERMINAL one (elapsed at the moment the wall actually stopped this run),
+so `formatReplay` states it as an honest end-of-run figure: `clock: 60m04s of 60m00s signed
+(chain, from wall-halt)`. A `wall-clock` reading is taken at the TOP of the engagement, before
+this run did anything — its `elapsedMs` is whatever chain time a resumed leg already inherited
+(F103's fold) or, on a cold run, ~0. Printing that under the same "X of Y signed" template read
+as "this run took 0 seconds" — the "unknown/partial rendered as zero" honesty class — so the
+wall-clock line names what the number actually is instead: `clock: 30m00s signed · 0.0s
+inherited from prior legs at start (from wall-clock; no end-of-run reading in this file)`.
+
+**`runId` is not a spine field** — no record anywhere carries a run's own `u-<id>` — so it is
+accepted as caller-supplied metadata, the same opt-in shape `runBehaviour(events, {runId})`
+already uses. Malformed/non-object entries in either input array are skipped and counted in
+`skipped`, never thrown on. `formatReplay` renders the summary as one printable page: a header
+(job, outcome, stop reason, spend, wall, the chain clock line when there is one), a per-step
+timeline, an ENDING block (the out-of-window last escalation when there is one, then compact
+JSON for the last record plus its 3 predecessors), the `formatBehaviour` block, and the
+`MEMORY-CACHE` line when the run carried one.
+
+`scripts/run-replay.mjs <spine.jsonl>` resolves the sibling `-gate-audit.jsonl` automatically and
+prints the full report; `--all <dir>` is **name-agnostic** — the patient corpus does not agree on
+one filename convention (`u-<id>.jsonl`, `battery-A1-<id>.jsonl`, `l2accept-L1-<id>.jsonl`,
+`reuse-<id>.jsonl`, `types-screen-C-<id>.jsonl`, …), so a spine is identified by CONTENT: any
+`.jsonl` that is not a sidecar by name (`*-gate-audit.jsonl`, `*.lag.jsonl`) and whose records
+include a `job-start` (present on every real spine checked, nested wrappers included) or
+`run-start` (present on most, absent on a run that died before ralph's first iteration). A
+`.jsonl` matching neither is printed as `<name>  not-a-spine` — never silently dropped or
+misread as an empty run. Both modes mirror `scripts/behaviour-readout.mjs`'s own malformed-line
+handling (skip-and-count, never throw).
+
+```js
+import { replayRun, formatReplay } from 'bareloop';
+const spine = fs.readFileSync(spineFile, 'utf8').trim().split('\n').map(JSON.parse);
+const audit = fs.readFileSync(auditFile, 'utf8').trim().split('\n').map(JSON.parse);
+console.log(formatReplay(replayRun(spine, audit, { runId: 'mszcthk1' })));
+```
+
 ## Architecture
 
 Three layers. An **outer shell** (dumb, permanent): per-run budget cap via bareguard,

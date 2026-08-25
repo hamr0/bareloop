@@ -233,6 +233,12 @@ export { closeStagesOf } from './plan.js';
 // writes nothing to the spine; `runBehaviour` computes, `formatBehaviour`
 // renders the printable block.
 export { runBehaviour, formatBehaviour } from './behaviour.js';
+// PRD build-list item 6 — generic run replay: point it at a run's spine (+
+// its gate-audit sidecar) and get the whole story back as one object
+// (`replayRun`) or one printable page (`formatReplay`). Reads only, mints no
+// verdict, writes nothing to the spine — reuses `runBehaviour` rather than
+// re-implementing the tool-call count.
+export { replayRun, formatReplay } from './replay.js';
 // M4b — the interview, the refusal, the composition, and D9's three gates.
 // `prepareSigning` returns the resolved spec's HASH and the seed evidence; it
 // never signs — the approvals array and the human's word are unchanged.

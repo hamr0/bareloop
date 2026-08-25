@@ -7,6 +7,28 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+
+- **Generic run replay** (PRD build-list #6): `replayRun`/`formatReplay` (`src/replay.js`)
+  reconstruct one run's whole story from its spine JSONL + gate-audit sidecar as a plain
+  summary object or a one-page printable report — job, outcome, stop reason (`category —
+  decision — detail` off the last escalation, so the run's actual failure text rides onto
+  the header instead of just the generic per-category prose), spend (a floor when
+  `spendComplete` is false), a wall reading explicitly labeled "this file" beside a
+  separate chain-scoped `clock:` line read off the run's own `wall-halt`/`wall-clock`
+  record (the two numbers can legitimately diverge on a resumed run — never printed as
+  one), a per-step timeline (each step-start..step-end pair its own OCCURRENCE — a step id
+  that recurs after a replan is never merged into one pooled row — with rounds, tool
+  calls, checks passed/failed, tree-changed), the last spine record plus 3 before it (plus
+  the last escalation, carried even when it falls outside that window), and the
+  `runBehaviour`/`memory-cache` blocks (reused, not reimplemented). Reads only, mints no
+  verdict, writes nothing to the spine. `scripts/run-replay.mjs <spine.jsonl>` prints the
+  report for one run (resolving its sibling `-gate-audit.jsonl` automatically); `--all
+  <dir>` is name-agnostic (a spine is identified by a `job-start`/`run-start` record in its
+  content, never a filename convention — the patient corpus uses several) and lists every
+  spine in a directory (id, outcome, spend, stop reason), flagging any non-spine `.jsonl`
+  as `<name> not-a-spine` rather than dropping it.
+
 ## [0.14.0] — 2026-08-25
 
 ### Added

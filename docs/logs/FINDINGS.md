@@ -9054,3 +9054,113 @@ ledger, not in the resume mechanism, and not in any budget/ceiling enforcement �
 battery driver's own ceiling accounting (`spendUsd`, summed across rows) was already
 leg-scoped on the `observed` side of its `max()`; only the `ledgerUsd` side was chain-scoped,
 which this fix corrects.
+
+## F117
+
+**Generic run replay built; the 5-minute test passes and is what found three defects.**
+
+PRD TODO item 6 / build-list item 4: today no failed run can be reconstructed in under five
+minutes — every byte is on disk (the spine JSONL + its gate-audit sidecar) but only
+hand-slicing JSONL reads it.
+
+### What was built
+
+`replayRun`/`formatReplay`, exported from `src/replay.js` (and `src/index.js`) — a
+report-only reader over a run's spine + gate-audit: reads only, mints no verdict, writes
+NOTHING to the spine, arbiter untouched. Reuses `runBehaviour`/`formatBehaviour` for the
+tool-call breakdown and the `memory-cache` record's readout rather than reimplementing
+either. `scripts/run-replay.mjs <spine.jsonl>` prints the full report for one run
+(resolving its sibling `-gate-audit.jsonl` automatically); `--all <dir>` lists every run in
+a directory.
+
+### The test (pre-declared before the build)
+
+The orchestrator's own pass/fail bar, fixed before any of the three runs were opened: 3
+UNSEEN failed runs, 3 different terminals, pass = each one explained in under 5 minutes.
+
+- `bareagent-u-bareloop/u-msdsmkid.jsonl` — step-red/step-variance territory (a step that
+  escalates, replans, and re-runs to green)
+- `bareagent-u-bareloop/u-msew1uy5.jsonl` — cap-halt, gate-terminated
+- `litectx-maintainer-bareloop/u-msx87qqs.jsonl` — wall-halt
+
+Wall time: 10 seconds to run all three through the CLI; each one's report read and
+understood in under a minute. **PASS on time.**
+
+### The three defects the test surfaced (each fixed and verified on the real file)
+
+**(a) The real error was hidden.** `u-mszcthk1`'s header showed only the generic per-category
+`decision` prose ("the provider path failed mid-run…") — the actual failure, a TLS `bad
+record mac`, lived in the escalation's own `detail` field and never reached the printed
+report. Its terminal escalation record also fell 4 records before `job-end`, outside the
+fixed 3-before ENDING window, and was silently dropped. Fixed: `stopReason` is now
+`category — decision — detail` (detail trimmed at 400 chars with an explicit
+`…[+N chars]` marker, never silent); `ending.escalation` carries the last escalation
+whenever it falls outside the 3-before window.
+
+**(b) `--all` matched only `u-*.jsonl`.** 4 of 12 patients in the archive use other naming
+conventions entirely (`aurora-soar-bareloop`'s 201 files are `battery-A1-<id>.jsonl` /
+`l2accept-L1-<id>.jsonl` / `l2clip-L1-<id>.jsonl`; `mailproof-job2-bareloop`,
+`litectx-job1-bareloop`, `litectx-types-bareloop` each have their own prefix) — every one of
+them read as an empty directory. Fixed: a spine is now identified by CONTENT (a `job-start`
+or `run-start` record present anywhere in the file — measured on every real spine across all
+12 patients, 100% carry a `job-start`), never by filename. A `.jsonl` that is neither a
+gate-audit/lag sidecar by name nor a spine by content is printed as `<name>  not-a-spine`,
+never dropped (found two genuine cases in the real archive: `litectx-types-bareloop`'s
+`types-check-log.jsonl`/`types-close-log.jsonl`, bare `{ts, check, ...}` rows with no `type`
+field at all).
+
+**(c) A step run twice after a replan was merged by name.** `u-msdsmkid`'s `fix-loop-strict`
+step has two `step-start`/`step-end` pairs (escalated, then green after a replan) — the
+timeline printed two rows, but both showed the identical full-file tally (`82 rounds`) because
+`rounds`/`checks`/`tree-changed` were being scanned across the WHOLE spine by step id, not
+scoped to either occurrence. Fixed: each `step-start`→its paired `step-end` is now its own
+OCCURRENCE, attributed by `seq` (the spine's own monotonic counter, never `ts` — every record
+type shares one seq space, so it is an exact ordering `ts` is not). Real split: 54 + 28 = 82,
+matching the file's own `worker-round` count for that step id exactly. Repeats print an
+ordinal marker (`fix-loop-strict (2nd)`); the first occurrence prints unmarked.
+
+### The wall ambiguity
+
+`u-msx87qqs` prints both: the file-scoped wall (`job-start`→`job-end` of this ONE spine,
+15m12s) and the SIGNED chain clock read off the run's own `wall-halt` record (`elapsedMs`
+3603793.6ms of a `requestedMs` 3600000ms signed — `60m04s of 60m00s signed`). Both numbers
+are true and both are now labelled, so neither is mistaken for the other. A run with no
+`wall-halt` (the ordinary case) falls back to the single `wall-clock` record every run emits
+near its start — but that record's `elapsedMs` is a START-of-engagement snapshot (chain time
+already inherited when this engagement began, via `createClock`'s `priorElapsedMs` fold), not
+this run's own elapsed time. Printing it under the same "X of Y signed" template as
+`wall-halt` read as "this run took 0 seconds" on a cold run (`u-ms2c0ls7`: `clock: 0.0s of
+30m00s signed`) — the unknown/partial-rendered-as-zero honesty class this whole reader exists
+to refuse. Fixed: the wall-clock line now reads `clock: 30m00s signed · 0.0s inherited from
+prior legs at start (from wall-clock; no end-of-run reading in this file)` — naming what the
+number is instead of implying an end-of-run total that was never taken.
+
+### Honest rows
+
+`litectx-u-bareloop`'s 4 `reuse-exec-*` spines list as `unknown unknown` under `--all` — each
+was killed mid-scout, before any `job-end` existed. Never fabricated as `$0`/green; the
+absence reads as the absence it is.
+
+### Side finding: a full `npm test` leaked ~155 tmp dirs per run
+
+`ralph-test-*` (49), `reuse-test-*` (48), `run-test-*` (57), `resume-test-*` (2) — file-scope
+`mkdtempSync` in `tests/ralph.test.js`, `tests/reuse.test.js`, `tests/run.test.js`,
+`tests/resume.test.js` with no cleanup. This filled `/tmp` (tmpfs, `ENOSPC`) and blocked the
+first build agent before it wrote a byte. Fixed with a file-scope `after(() =>
+rmSync(dir/base, {recursive:true, force:true}))` in each of the four files; verified
+`ls /tmp | grep -cE '^(ralph|reuse|run|resume)-test-'` at 0 before and 0 after a full
+`npm test`.
+
+### Coverage note — not exhaustive, left as is
+
+`replayRun` pairs the FIRST `job-start` with the LAST `job-end` in a spine. Correct for every
+plain run-u spine checked, but a wrapper spine that nests multiple job runs inside one file
+(e.g. `litectx-u-bareloop/reuse-msc6w93z.jsonl`: 5 `job-start` records, 10 `run-start`
+records) summarizes as ONE outer row rather than five nested ones. Known, named, not fixed —
+the nested jobs are still visible in the raw spine, just not split out by `--all`.
+
+### Numbers
+
+Suite: 2096 → 2103 (7 new tests, `tests/replay.test.js`; a further wording-only fix to the
+wall-clock line added assertions to an existing test rather than a new one, so the count did
+not move again). `npm run typecheck` and `npm run build:types` both clean throughout.

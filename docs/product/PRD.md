@@ -215,7 +215,11 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
 4. **provider-red resumable + honest readout** — **BUILT 2026-08-24, LIVE-PROVEN 2026-08-25**
    (F115 addendum 2026-08-25; ruling #5 above).
 5. **Chase the TLS `bad record mac` cause** — optional, paid, hamr's call (F115).
-6. **Generic run replay** — agreed gap, unscoped; item 1 was its cheap first slice.
+6. ~~Generic run replay~~ — **BUILT 2026-08-25** (F117): `replayRun`/`formatReplay`
+   (`src/replay.js`) + `scripts/run-replay.mjs`, report-only, reuses `runBehaviour`/
+   MEMORY-CACHE; the pre-declared 5-minute test passed on 3 unseen failed runs and found 3
+   defects (escalation detail hidden, `--all` name-matched only, a replanned step merged by
+   id), all fixed.
 7. **The bench** — shape agreed; blocked on Q1, Q3–Q6, Q10; G2 re-author + full re-baseline
    first (v1.78).
 8. **Prompt-commit shape** — agreed, cheap; Q9 open.
